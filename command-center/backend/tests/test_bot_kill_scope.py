@@ -21,7 +21,6 @@ Same class as `taskkill /f /im python.exe`, which killed the live bot for three 
 """
 
 import pytest
-
 from routers import bots
 
 
@@ -37,7 +36,7 @@ def ssh(monkeypatch):
 
     def fake_ssh(cmd: str) -> str:
         sent.append(cmd)
-        return ""              # `get processid` with no digits = the process is gone
+        return ""  # `get processid` with no digits = the process is gone
 
     monkeypatch.setattr(bots, "_ssh", fake_ssh)
     monkeypatch.setattr(bots, "_notify_telegram", lambda *_a, **_k: None)
@@ -74,6 +73,7 @@ def _assert_scoped(cmd: str, bot_key: str) -> None:
 
 
 # ── The routes ────────────────────────────────────────────────────────────────
+
 
 def test_stop_bot_kills_only_this_bots_python_process(stubborn_ssh):
     bots.stop_bot("MPC SOS Fade")
@@ -112,6 +112,7 @@ def test_stop_all_kills_only_registered_bots_python_processes(stubborn_ssh):
 # 🔴 Stop was a hard kill, so the bot never wrote its `shutdown` record and the NEXT startup
 # reported "the previous run ended WITHOUT a shutdown record: it was killed, it crashed, or the
 # box went down." That is the silent-death detector, and it fired on every deliberate restart.
+
 
 def test_a_bot_that_shuts_itself_down_is_never_killed(ssh):
     """The whole point. A clean stop must leave no terminate command behind at all — otherwise
@@ -154,11 +155,12 @@ def test_the_suppress_write_happens_before_the_kill(stubborn_ssh):
     """
     bots.stop_bot("MPC SOS Fade")
     suppress = next(i for i, c in enumerate(stubborn_ssh) if "stop_suppress.json" in c)
-    kill     = next(i for i, c in enumerate(stubborn_ssh) if "call terminate" in c)
+    kill = next(i for i, c in enumerate(stubborn_ssh) if "call terminate" in c)
     assert suppress < kill
 
 
 # ── The routes nobody wrote a test for ────────────────────────────────────────
+
 
 def test_no_call_site_builds_its_own_terminate_command():
     """One kill, one place. A second `call terminate` anywhere in this module is a second
@@ -178,8 +180,11 @@ def test_no_call_site_builds_its_own_terminate_command():
             continue
         body = fn.body[1:] if ast.get_docstring(fn) else fn.body
         for node in ast.walk(ast.Module(body=body, type_ignores=[])):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                    and "call terminate" in node.value:
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and "call terminate" in node.value
+            ):
                 guilty.add(fn.name)
 
     assert guilty == {"_kill_bot"}, (

@@ -28,8 +28,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
-
 _REPO = Path(__file__).resolve().parent.parent.parent
 for _p in (_REPO / "algos" / "notifications", _REPO / "algos" / "shared"):
     if str(_p) not in sys.path:
@@ -93,8 +91,9 @@ def test_a_halted_bridge_is_an_alert(tmp_path):
     this fixture read as an alert either way, which is precisely the bug: the finding could not
     tell an open incident from one that ended hours ago.
     """
-    rows = _healthy() + [_event("halted", "2026-08-05T17:00:00+00:00",
-                                reason="emulator and broker disagree")]
+    rows = _healthy() + [
+        _event("halted", "2026-08-05T17:00:00+00:00", reason="emulator and broker disagree")
+    ]
     rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
     _write(tmp_path, rows)
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
@@ -158,10 +157,14 @@ def test_a_link_outage_that_recovered_is_still_reported(tmp_path):
     """⚠ The charter: `monitor.py` owns NOW, this owns THE RECORD. An outage at 3am that healed
     by 4am leaves no trace anywhere else — `bot_state.json` is overwritten in place and only ever
     describes the present."""
-    _write(tmp_path, _healthy() + [
-        _event("mt5_link_lost", "2026-08-05T03:00:00+00:00"),
-        _event("mt5_link_restored", "2026-08-05T03:50:00+00:00", down_seconds=3000),
-    ])
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("mt5_link_lost", "2026-08-05T03:00:00+00:00"),
+            _event("mt5_link_restored", "2026-08-05T03:50:00+00:00", down_seconds=3000),
+        ],
+    )
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
     assert "mt5_outage" in _keys(found)
@@ -171,12 +174,15 @@ def test_a_link_outage_that_recovered_is_still_reported(tmp_path):
 def test_a_gap_between_heartbeats_that_has_closed_is_reported(tmp_path):
     """A stall the watchdog restarted at 3am: its alert has been and gone, and nothing kept the
     fact that it happened."""
-    _write(tmp_path, [
-        _event("startup", "2026-08-05T10:00:00+00:00", previous_run_clean=True),
-        _pulse("2026-08-05T12:00:00+00:00"),
-        _pulse("2026-08-05T14:00:00+00:00"),          # two hours, no beat
-        _pulse((NOW - timedelta(minutes=5)).isoformat(timespec="seconds")),
-    ])
+    _write(
+        tmp_path,
+        [
+            _event("startup", "2026-08-05T10:00:00+00:00", previous_run_clean=True),
+            _pulse("2026-08-05T12:00:00+00:00"),
+            _pulse("2026-08-05T14:00:00+00:00"),  # two hours, no beat
+            _pulse((NOW - timedelta(minutes=5)).isoformat(timespec="seconds")),
+        ],
+    )
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
     assert "pulse_gap" in _keys(found)
@@ -192,10 +198,13 @@ def test_a_normal_heartbeat_cadence_is_not_a_gap(tmp_path):
 def test_a_running_bot_whose_record_went_quiet_is_an_alert(tmp_path):
     """Alive according to `bot_state.json`, writing nothing to the record. The two disagreeing
     is itself the signal."""
-    _write(tmp_path, [
-        _event("startup", "2026-08-05T10:00:00+00:00", previous_run_clean=True),
-        _pulse("2026-08-05T11:00:00+00:00"),
-    ])
+    _write(
+        tmp_path,
+        [
+            _event("startup", "2026-08-05T10:00:00+00:00", previous_run_clean=True),
+            _pulse("2026-08-05T11:00:00+00:00"),
+        ],
+    )
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
     assert "silent" in _keys(found)
@@ -204,17 +213,24 @@ def test_a_running_bot_whose_record_went_quiet_is_an_alert(tmp_path):
 
 # ── lifecycle ────────────────────────────────────────────────────────────────
 def test_a_kill_is_reported_on_the_next_start(tmp_path):
-    _write(tmp_path, _healthy() + [
-        _event("startup", "2026-08-05T16:00:00+00:00", previous_run_clean=False)])
+    _write(
+        tmp_path,
+        _healthy() + [_event("startup", "2026-08-05T16:00:00+00:00", previous_run_clean=False)],
+    )
 
     assert "unclean" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_clean_restart_is_not_reported(tmp_path):
     """Restarting a bot on purpose is ordinary. Only an ending nobody recorded is news."""
-    _write(tmp_path, _healthy() + [
-        _event("shutdown", "2026-08-05T15:00:00+00:00", exit_code=0, reason="stop requested"),
-        _event("startup", "2026-08-05T15:01:00+00:00", previous_run_clean=True)])
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("shutdown", "2026-08-05T15:00:00+00:00", exit_code=0, reason="stop requested"),
+            _event("startup", "2026-08-05T15:01:00+00:00", previous_run_clean=True),
+        ],
+    )
 
     assert "unclean" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
@@ -233,21 +249,32 @@ def test_repeated_restarts_are_an_alert(tmp_path):
 def test_a_refused_config_change_is_reported(tmp_path):
     """The page can show settings the bot is not using. That is a wrong-number problem, and it
     is exactly the class this repo keeps meeting."""
-    _write(tmp_path, _healthy() + [
-        _event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_risk_pct")])
+    _write(
+        tmp_path,
+        _healthy()
+        + [_event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_risk_pct")],
+    )
 
     assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_failed_start_and_a_version_mismatch_are_alerts(tmp_path):
-    _write(tmp_path, _healthy() + [
-        _event("startup_failed", "2026-08-05T13:00:00+00:00", error="bad config"),
-        _event("version_mismatch", "2026-08-05T13:05:00+00:00", detail="hash differs")])
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("startup_failed", "2026-08-05T13:00:00+00:00", error="bad config"),
+            _event("version_mismatch", "2026-08-05T13:05:00+00:00", detail="hash differs"),
+        ],
+    )
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
     assert {"startup_failed", "version_mismatch"} <= _keys(found)
-    assert all(f.level == lr.ALERT for f in found
-               if f.key.split(":")[0] in {"startup_failed", "version_mismatch"})
+    assert all(
+        f.level == lr.ALERT
+        for f in found
+        if f.key.split(":")[0] in {"startup_failed", "version_mismatch"}
+    )
 
 
 # ── saying it once ───────────────────────────────────────────────────────────
@@ -290,11 +317,17 @@ def test_the_still_halted_finding_keys_on_the_HALT_not_on_the_heartbeat(tmp_path
 def test_a_second_distinct_halt_gets_its_own_key(tmp_path):
     """🔴 The dedup bug that is silent: keying on the kind of thing means the second incident is
     never reported."""
-    _write(tmp_path, _healthy() + [
-        _event("halted", "2026-08-05T14:00:00+00:00", reason="first"),
-        _event("halted", "2026-08-05T17:00:00+00:00", reason="second")])
-    keys = {f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
-            if f.key.startswith("halted:")}
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("halted", "2026-08-05T14:00:00+00:00", reason="first"),
+            _event("halted", "2026-08-05T17:00:00+00:00", reason="second"),
+        ],
+    )
+    keys = {
+        f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW) if f.key.startswith("halted:")
+    }
 
     assert len(keys) == 2
 
@@ -309,9 +342,11 @@ def test_an_unreadable_state_file_re_announces_rather_than_suppressing(monkeypat
 # ── the standing flag ────────────────────────────────────────────────────────
 def test_the_flag_file_is_written_and_carries_the_worst_level(tmp_path):
     """The chip on the Bots page. It survives a notification you scrolled past."""
-    lr.write_flag(tmp_path, "b", [
-        lr.Finding("a:1", lr.WARN, "warn", "d"),
-        lr.Finding("b:2", lr.ALERT, "alert", "d")])
+    lr.write_flag(
+        tmp_path,
+        "b",
+        [lr.Finding("a:1", lr.WARN, "warn", "d"), lr.Finding("b:2", lr.ALERT, "alert", "d")],
+    )
     got = json.loads((tmp_path / "review.json").read_text())
 
     assert got["level"] == lr.ALERT
@@ -347,8 +382,11 @@ def test_findings_print_on_a_cp1252_console(tmp_path, monkeypatch, capsys):
     the second module here to need it, so it is a rule for anything that prints on that box: an
     unencodable character must cost a glyph, never the message.
     """
-    _write(tmp_path, _healthy() + [
-        _event("halted", "2026-08-05T17:00:00+00:00", reason="emulator — broker disagree ⚠")])
+    _write(
+        tmp_path,
+        _healthy()
+        + [_event("halted", "2026-08-05T17:00:00+00:00", reason="emulator — broker disagree ⚠")],
+    )
 
     monkeypatch.setattr(lr._bot_state, "BOT_INSTANCES", {"b": tmp_path})
     monkeypatch.setattr(lr._bot_state, "BOT_NAMES", {"b": "Bot — One"})
@@ -370,12 +408,13 @@ def test_a_recovered_halt_is_reported_in_the_past_tense(tmp_path):
     broken one. Aaron read that chip on 2026-08-07 and asked why a running bot was flagged.
     """
     rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="they disagree")]
-    _write(tmp_path, rows)                       # the LAST pulse still says bridge_state live
-    found = [f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
-             if f.key.startswith("halted:")]
+    _write(tmp_path, rows)  # the LAST pulse still says bridge_state live
+    found = [
+        f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW) if f.key.startswith("halted:")
+    ]
 
     assert len(found) == 1
-    assert found[0].level == lr.WARN             # not ALERT: nothing to act on right now
+    assert found[0].level == lr.WARN  # not ALERT: nothing to act on right now
     assert "again" in found[0].title
     assert "is placing nothing" not in found[0].detail
     # ...and the reason is still carried, because "why did it halt" is the open question.
@@ -388,8 +427,9 @@ def test_a_halt_that_is_STILL_halted_keeps_the_urgent_wording(tmp_path):
     rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="they disagree")]
     rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
     _write(tmp_path, rows)
-    found = [f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
-             if f.key.startswith("halted:")]
+    found = [
+        f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW) if f.key.startswith("halted:")
+    ]
 
     assert len(found) == 1
     assert found[0].level == lr.ALERT
@@ -409,10 +449,12 @@ def test_the_key_is_the_SAME_whether_it_recovered_or_not(tmp_path):
     halted[-2] = _pulse(halted[-2]["ts"], bridge_state="halted")
 
     _write(tmp_path, halted)
-    a = {f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
-         if f.key.startswith("halted:")}
+    a = {
+        f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW) if f.key.startswith("halted:")
+    }
     _write(tmp_path, recovered)
-    b = {f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
-         if f.key.startswith("halted:")}
+    b = {
+        f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW) if f.key.startswith("halted:")
+    }
 
     assert a == b

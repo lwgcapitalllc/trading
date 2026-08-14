@@ -17,15 +17,13 @@ at or below `requests_per_second` regardless of worker count.
 
 from __future__ import annotations
 
-import time
 import json
-import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
 import requests
-
 from run_logger import StageLogger, get_logger
 
 _log = get_logger("hyperliquid.client")
@@ -37,6 +35,7 @@ LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 # ---------------------------------------------------------------------------
 # Shared rate limiter (token bucket)
 # ---------------------------------------------------------------------------
+
 
 class _SharedRateLimiter:
     """
@@ -72,6 +71,7 @@ class _SharedRateLimiter:
 # API Client
 # ---------------------------------------------------------------------------
 
+
 class HyperliquidClient:
     def __init__(
         self,
@@ -103,17 +103,17 @@ class HyperliquidClient:
             except requests.HTTPError as e:
                 status = e.response.status_code if e.response is not None else None
                 if status == 429:
-                    _log.warning(f"Rate limited (attempt {attempt+1}). Sleeping {wait}s")
+                    _log.warning(f"Rate limited (attempt {attempt + 1}). Sleeping {wait}s")
                     time.sleep(wait)
                     wait *= self._backoff
                 elif status and 400 <= status < 500:
                     raise
                 else:
-                    _log.warning(f"HTTP {status} on attempt {attempt+1}. Retrying in {wait}s")
+                    _log.warning(f"HTTP {status} on attempt {attempt + 1}. Retrying in {wait}s")
                     time.sleep(wait)
                     wait *= self._backoff
             except requests.RequestException as e:
-                _log.warning(f"Request error on attempt {attempt+1}: {e}. Retrying in {wait}s")
+                _log.warning(f"Request error on attempt {attempt + 1}: {e}. Retrying in {wait}s")
                 time.sleep(wait)
                 wait *= self._backoff
 
@@ -145,7 +145,7 @@ class HyperliquidClient:
                     # progressively (5s, 10s, 15s…).
                     rl_wait = 5.0 * (attempt + 1)
                     _log.warning(
-                        f"Rate limited (attempt {attempt+1}/{self._max_retries}). "
+                        f"Rate limited (attempt {attempt + 1}/{self._max_retries}). "
                         f"Sleeping {rl_wait:.0f}s"
                     )
                     time.sleep(rl_wait)
@@ -153,15 +153,19 @@ class HyperliquidClient:
                 elif status and 400 <= status < 500:
                     raise  # non-retryable client errors
                 else:
-                    _log.warning(f"HTTP {status} on attempt {attempt+1}. Retrying in {wait:.1f}s")
+                    _log.warning(f"HTTP {status} on attempt {attempt + 1}. Retrying in {wait:.1f}s")
                     time.sleep(wait)
                     wait *= self._backoff
             except requests.RequestException as e:
-                _log.warning(f"Request error on attempt {attempt+1}: {e}. Retrying in {wait:.1f}s")
+                _log.warning(
+                    f"Request error on attempt {attempt + 1}: {e}. Retrying in {wait:.1f}s"
+                )
                 time.sleep(wait)
                 wait *= self._backoff
 
-        raise RuntimeError(f"All {self._max_retries} attempts failed for payload type={payload.get('type')}")
+        raise RuntimeError(
+            f"All {self._max_retries} attempts failed for payload type={payload.get('type')}"
+        )
 
     # ------------------------------------------------------------------
     # Public methods
@@ -224,6 +228,7 @@ class HyperliquidClient:
 # Scanner (Steps 1.1–1.2)
 # ---------------------------------------------------------------------------
 
+
 class HyperliquidScanner:
     """
     Pulls the leaderboard, applies initial count + age filters, and
@@ -237,20 +242,23 @@ class HyperliquidScanner:
         self._min_trades: int = config["qualification"]["min_trades"]
         self._min_age_days: int = config["qualification"]["min_wallet_age_days"]
         hl = config.get("hyperliquid", {})
-        self._max_candidates: int    = hl.get("max_leaderboard_candidates", 3000)
-        self._min_alltime_pnl: float  = hl.get("min_alltime_pnl", 10_000)
-        self._min_alltime_roi: float  = hl.get("min_alltime_roi", 0.5)    # 0.5 = 50%
-        self._min_month_roi: float    = hl.get("min_month_roi", 0.0)      # 0.0 = disabled
-        self._min_week_roi: float     = hl.get("min_week_roi", 0.0)       # 0.0 = disabled
+        self._max_candidates: int = hl.get("max_leaderboard_candidates", 3000)
+        self._min_alltime_pnl: float = hl.get("min_alltime_pnl", 10_000)
+        self._min_alltime_roi: float = hl.get("min_alltime_roi", 0.5)  # 0.5 = 50%
+        self._min_month_roi: float = hl.get("min_month_roi", 0.0)  # 0.0 = disabled
+        self._min_week_roi: float = hl.get("min_week_roi", 0.0)  # 0.0 = disabled
         self._min_account_value: float = hl.get("min_account_value", 1_000)
         # Prescore weights: controls which time-window ROI dominates the pre-scan ranking.
         # Human profile: weight all-time heavily (0.50/0.30/0.20).
         # Bot profile: weight recent heavily (0.20/0.50/0.30) — is it growing right now?
-        self._prescore_weights: dict  = hl.get("prescore_weights", {
-            "alltime_roi": 0.50,
-            "month_roi":   0.30,
-            "week_roi":    0.20,
-        })
+        self._prescore_weights: dict = hl.get(
+            "prescore_weights",
+            {
+                "alltime_roi": 0.50,
+                "month_roi": 0.30,
+                "week_roi": 0.20,
+            },
+        )
 
     def _parse_leaderboard_entry(self, entry: dict) -> dict | None:
         """
@@ -271,20 +279,20 @@ class HyperliquidScanner:
                 perf[window_name] = stats
 
         all_time = perf.get("allTime", {})
-        month    = perf.get("month", {})
-        week     = perf.get("week", {})
+        month = perf.get("month", {})
+        week = perf.get("week", {})
 
         def _f(d: dict, key: str) -> float | None:
             v = d.get(key)
             return float(v) if v is not None else None
 
         return {
-            "address":       address,
+            "address": address,
             "account_value": float(entry.get("accountValue", 0) or 0),
-            "all_time_pnl":  _f(all_time, "pnl"),
-            "all_time_roi":  _f(all_time, "roi"),   # fractional, e.g. 3.9 = 390%
-            "month_roi":     _f(month,    "roi"),
-            "week_roi":      _f(week,     "roi"),
+            "all_time_pnl": _f(all_time, "pnl"),
+            "all_time_roi": _f(all_time, "roi"),  # fractional, e.g. 3.9 = 390%
+            "month_roi": _f(month, "roi"),
+            "week_roi": _f(week, "roi"),
         }
 
     def _get_account_age_days(self, address: str, fills: list[dict]) -> int:
@@ -310,13 +318,14 @@ class HyperliquidScanner:
         A bot with 50%/month ranks far above one that peaked 2 years ago and is flat now.
         """
         import math
+
         w = self._prescore_weights
         pnl = p.get("all_time_pnl") or 0.0
 
         weighted_roi = (
-            (p.get("all_time_roi") or 0.0) * w.get("alltime_roi", 0.50) +
-            (p.get("month_roi")    or 0.0) * w.get("month_roi",   0.30) +
-            (p.get("week_roi")     or 0.0) * w.get("week_roi",    0.20)
+            (p.get("all_time_roi") or 0.0) * w.get("alltime_roi", 0.50)
+            + (p.get("month_roi") or 0.0) * w.get("month_roi", 0.30)
+            + (p.get("week_roi") or 0.0) * w.get("week_roi", 0.20)
         )
 
         score = weighted_roi * math.log10(max(pnl, 1))
@@ -335,7 +344,14 @@ class HyperliquidScanner:
         self._log.info(f"Raw leaderboard entries: {len(raw)}")
         self._log.set("leaderboard_raw", len(raw))
 
-        passed, dropped_pnl, dropped_roi, dropped_val, dropped_month, dropped_week = [], 0, 0, 0, 0, 0
+        passed, dropped_pnl, dropped_roi, dropped_val, dropped_month, dropped_week = (
+            [],
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
         for entry in raw:
             p = self._parse_leaderboard_entry(entry)
             if not p:
@@ -375,8 +391,7 @@ class HyperliquidScanner:
             drop_parts.append(f"{dropped_week} low-week-ROI (<{self._min_week_roi:.0%})")
 
         self._log.info(
-            f"Hard floors: {len(raw)} raw → {len(passed)} pass "
-            f"(dropped {', '.join(drop_parts)})"
+            f"Hard floors: {len(raw)} raw → {len(passed)} pass (dropped {', '.join(drop_parts)})"
         )
 
         # Sort by composite skill score: ROI × log(PnL) + recency bonus
@@ -428,10 +443,7 @@ class HyperliquidScanner:
                 return "failed", {**wallet, "reason": f"API error: {e}"}
 
         # Count only closing fills (non-zero closedPnl)
-        closing_fills = [
-            f for f in fills
-            if float(f.get("closedPnl", 0) or 0) != 0.0
-        ]
+        closing_fills = [f for f in fills if float(f.get("closedPnl", 0) or 0) != 0.0]
         trade_count = len(closing_fills)
         age_days = self._get_account_age_days(address, fills)
 
@@ -440,9 +452,7 @@ class HyperliquidScanner:
             "fills": fills,
             "trade_count": trade_count,
             "account_age_days": age_days,
-            "first_seen_ts": (
-                min(f["time"] for f in fills if "time" in f) if fills else None
-            ),
+            "first_seen_ts": (min(f["time"] for f in fills if "time" in f) if fills else None),
         }
 
         if trade_count < self._min_trades:
@@ -482,19 +492,20 @@ class HyperliquidScanner:
         failed: list[dict] = []
         total = len(candidates)
 
-        hl_cfg  = self._cfg.get("hyperliquid", {})
+        hl_cfg = self._cfg.get("hyperliquid", {})
         workers = hl_cfg.get("concurrent_workers", 5)
 
         # ── Cache: load fills already fetched this session ───────────────────
         # TTL default 24h.  Set fills_cache_hours = 0 to disable.
-        cache_hours   = hl_cfg.get("fills_cache_hours", 24)
+        cache_hours = hl_cfg.get("fills_cache_hours", 24)
         cache_max_age = int(cache_hours * 3600)
-        use_cache     = cache_max_age > 0
+        use_cache = cache_max_age > 0
 
         prefetched: dict[str, list] = {}  # address → cached fills
 
         if use_cache:
             import database as db
+
             cache_hits = 0
             for c in candidates:
                 cached = db.get_cached_fills(c["address"], cache_max_age)
@@ -560,7 +571,7 @@ class HyperliquidScanner:
                     else:
                         failed.append(wallet)
                     if i % 10 == 0 or i == 1 or i == total:
-                        self._log.info(f"Scanned {i}/{total} wallets ({i/total:.0%})…")
+                        self._log.info(f"Scanned {i}/{total} wallets ({i / total:.0%})…")
                     if on_progress:
                         on_progress(i, total, wallet.get("address", ""), result_type)
 
@@ -570,18 +581,20 @@ class HyperliquidScanner:
                         if fills is not None:
                             try:
                                 import database as db
+
                                 db.cache_fills(wallet["address"], fills)
                             except Exception:
                                 pass  # cache write failure is non-fatal
 
         self._log.set("total_scanned", total)
         self._log.info(
-            f"Initial filter: {len(passed)} passed, {len(failed)} failed "
-            f"(from {total} candidates)"
+            f"Initial filter: {len(passed)} passed, {len(failed)} failed (from {total} candidates)"
         )
         return passed, failed
 
-    def run(self, on_progress: Callable[[int, int, str, str], None] | None = None) -> tuple[list[dict], list[dict]]:
+    def run(
+        self, on_progress: Callable[[int, int, str, str], None] | None = None
+    ) -> tuple[list[dict], list[dict]]:
         """
         Full Step 1.1–1.2 execution.
         Returns (passed_wallets, failed_wallets).

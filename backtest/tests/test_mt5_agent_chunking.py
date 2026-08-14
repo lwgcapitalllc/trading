@@ -15,8 +15,8 @@ import pytest
 from backtest.data import mt5_agent
 from backtest.data.mt5_agent import Mt5Agent, Mt5AgentError, _chunk_windows
 
-
 # ── Window splitting ───────────────────────────────────────────────────────────
+
 
 def test_a_short_window_is_still_one_request():
     """The common case must not change shape — one window in, one call out."""
@@ -33,15 +33,19 @@ def test_three_years_of_m15_is_split():
 def test_windows_are_contiguous_and_cover_the_span():
     """No gap and no overlap between chunks — a hole would silently lose bars."""
     import datetime as dt
+
     windows = _chunk_windows("2023-01-01", "2026-07-22", "M5")
     for (_, prev_end), (next_start, _) in zip(windows, windows[1:]):
-        assert dt.date.fromisoformat(next_start) - dt.date.fromisoformat(prev_end) == dt.timedelta(days=1)
+        assert dt.date.fromisoformat(next_start) - dt.date.fromisoformat(prev_end) == dt.timedelta(
+            days=1
+        )
 
 
 @pytest.mark.parametrize("tf,span_days", [("M1", 40), ("M5", 210), ("M15", 630), ("H1", 2600)])
 def test_every_chunk_stays_under_the_bar_cap(tf, span_days):
     """Budget is computed against a 24h day, so a real 24/5 market lands further under still."""
     import datetime as dt
+
     end = dt.date(2026, 7, 22)
     start = end - dt.timedelta(days=span_days * 3)
     per_day = 1440 / mt5_agent.to_minutes(tf)
@@ -51,6 +55,7 @@ def test_every_chunk_stays_under_the_bar_cap(tf, span_days):
 
 
 # ── Fetch + stitch ─────────────────────────────────────────────────────────────
+
 
 class _Resp:
     def __init__(self, payload):
@@ -85,10 +90,13 @@ def _patch_windows(monkeypatch, by_window):
 def test_chunks_are_stitched_into_one_frame(monkeypatch):
     windows = _chunk_windows("2023-07-22", "2026-07-22", "M15")
     assert len(windows) == 2
-    _patch_windows(monkeypatch, {
-        windows[0]: {"bars": [_bar("2024-01-01T00:00:00"), _bar("2024-01-01T00:15:00")]},
-        windows[1]: {"bars": [_bar("2026-01-01T00:00:00")]},
-    })
+    _patch_windows(
+        monkeypatch,
+        {
+            windows[0]: {"bars": [_bar("2024-01-01T00:00:00"), _bar("2024-01-01T00:15:00")]},
+            windows[1]: {"bars": [_bar("2026-01-01T00:00:00")]},
+        },
+    )
     df = Mt5Agent().bars("XAUUSD.s", "M15", "2023-07-22", "2026-07-22")
     assert len(df) == 3
     assert df.index.is_monotonic_increasing
@@ -98,10 +106,13 @@ def test_a_boundary_bar_served_twice_is_kept_once(monkeypatch):
     """Chunk bounds are inclusive on both ends, so neighbours can repeat a bar."""
     windows = _chunk_windows("2023-07-22", "2026-07-22", "M15")
     shared = _bar("2025-04-07T00:00:00")
-    _patch_windows(monkeypatch, {
-        windows[0]: {"bars": [_bar("2024-01-01T00:00:00"), shared]},
-        windows[1]: {"bars": [shared, _bar("2026-01-01T00:00:00")]},
-    })
+    _patch_windows(
+        monkeypatch,
+        {
+            windows[0]: {"bars": [_bar("2024-01-01T00:00:00"), shared]},
+            windows[1]: {"bars": [shared, _bar("2026-01-01T00:00:00")]},
+        },
+    )
     df = Mt5Agent().bars("XAUUSD.s", "M15", "2023-07-22", "2026-07-22")
     assert len(df) == 3
     assert not df.index.duplicated().any()

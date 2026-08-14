@@ -42,16 +42,25 @@ from types import SimpleNamespace
 import pandas as pd
 
 # MetaTrader5 is Windows-only and imported lazily. A stub keeps this runnable on the Mac.
-sys.modules.setdefault("MetaTrader5", types.SimpleNamespace(
-    TIMEFRAME_M1=1, TIMEFRAME_M5=5, TIMEFRAME_M15=15, TIMEFRAME_M30=30,
-    TIMEFRAME_H1=60, TIMEFRAME_H4=240, TIMEFRAME_D1=1440))
+sys.modules.setdefault(
+    "MetaTrader5",
+    types.SimpleNamespace(
+        TIMEFRAME_M1=1,
+        TIMEFRAME_M5=5,
+        TIMEFRAME_M15=15,
+        TIMEFRAME_M30=30,
+        TIMEFRAME_H1=60,
+        TIMEFRAME_H4=240,
+        TIMEFRAME_D1=1440,
+    ),
+)
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 for _p in (str(_REPO), str(_REPO / "algos" / "live"), str(_REPO / "algos" / "shared")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from runner import LiveRunner                                          # noqa: E402
+from runner import LiveRunner  # noqa: E402
 
 
 class _Execution:
@@ -75,7 +84,7 @@ class _Ledger:
     def event(self, name, **kw):
         self.events.append((name, kw))
 
-    def blocked_(self, b):   # pragma: no cover - name kept distinct from the list
+    def blocked_(self, b):  # pragma: no cover - name kept distinct from the list
         self.blocked.append(b)
 
 
@@ -94,22 +103,26 @@ def _warmed_runner(monkeypatch, bars=300):
         engine_config=lambda: {},
     )
     r.ledger = _Ledger()
-    r.log = SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None,
-                            error=lambda *a, **k: None)
+    r.log = SimpleNamespace(
+        info=lambda *a, **k: None, warning=lambda *a, **k: None, error=lambda *a, **k: None
+    )
     r.cfg = SimpleNamespace(warmup_bars=bars, timeframe="M15", symbol="XAUUSD.s")
 
     idx = pd.date_range("2026-05-01", periods=bars, freq="15min", tz="UTC")
-    df = pd.DataFrame({"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0},
-                      index=idx)
-    r.feed = SimpleNamespace(history=lambda n: df, mark_seen=lambda d: None,
-                             bar_seconds=900)
+    df = pd.DataFrame(
+        {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0}, index=idx
+    )
+    r.feed = SimpleNamespace(history=lambda n: df, mark_seen=lambda d: None, bar_seconds=900)
 
     # `warm()` imports these from backtest.replay at call time.
     import backtest.replay as replay
-    monkeypatch.setattr(replay, "EngineStack",
-                        lambda cfg: SimpleNamespace(step=lambda bar: SimpleNamespace()))
-    monkeypatch.setattr(replay, "iter_bars",
-                        lambda d: [SimpleNamespace(index=i) for i in range(len(d))])
+
+    monkeypatch.setattr(
+        replay, "EngineStack", lambda cfg: SimpleNamespace(step=lambda bar: SimpleNamespace())
+    )
+    monkeypatch.setattr(
+        replay, "iter_bars", lambda d: [SimpleNamespace(index=i) for i in range(len(d))]
+    )
     return r, ex
 
 
@@ -152,11 +165,11 @@ def test_a_strategy_without_the_lists_is_not_a_crash(monkeypatch):
     """`mpc_bleg` overrides `_place_entries` and records nothing by construction, and a future
     strategy may too. The clear is defensive on purpose — an AttributeError here would take out
     the warm-up, i.e. kill the bot at startup over a reporting field."""
-    r, ex = _warmed_runner(monkeypatch, bars=300)   # 200 is warm()'s own floor
+    r, ex = _warmed_runner(monkeypatch, bars=300)  # 200 is warm()'s own floor
     del ex.blocks
     del ex.misses
     ex.step = lambda sig, seq: SimpleNamespace()
 
-    r.warm()          # must not raise
+    r.warm()  # must not raise
     warmed = [kw for name, kw in r.ledger.events if name == "warmed"]
     assert warmed[0]["replayed_setups"] == 0

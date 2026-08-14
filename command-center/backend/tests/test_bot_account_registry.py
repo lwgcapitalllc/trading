@@ -34,15 +34,23 @@ if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 from services import bot_account_registry as reg  # noqa: E402
-from services import bot_accounts as ba           # noqa: E402
+from services import bot_accounts as ba  # noqa: E402
 
 _PROFILES = {"puprime_ecn", "puprime_standard", "vantage_demo"}
 
 
 def _acct(**kw):
-    base = dict(account=700152905, label="PU Prime ECN demo", broker="PU Prime", tier="ECN",
-                kind="demo", server="PUPrime-Demo", mt5_path=r"C:\MT5_FFT\terminal64.exe",
-                symbol_suffix=".p", account_profile="puprime_ecn")
+    base = dict(
+        account=700152905,
+        label="PU Prime ECN demo",
+        broker="PU Prime",
+        tier="ECN",
+        kind="demo",
+        server="PUPrime-Demo",
+        mt5_path=r"C:\MT5_FFT\terminal64.exe",
+        symbol_suffix=".p",
+        account_profile="puprime_ecn",
+    )
     base.update(kw)
     return reg.RegisteredAccount(**base)
 
@@ -102,8 +110,10 @@ def test_upsert_REPLACES_the_row_so_a_cleared_field_is_cleared(tmp_path):
 def test_a_hand_written_prose_key_on_a_row_SURVIVES_a_write_from_the_page(tmp_path):
     """MUTATION: drop the prose carry-over → red. The page cannot express these keys, so a write
     from it must not delete an explanation somebody left for the next reader."""
-    p = _file(tmp_path, [{"account": 700152905, "server": "PUPrime-Demo",
-                          "_why": "measured on 2026-08-10"}])
+    p = _file(
+        tmp_path,
+        [{"account": 700152905, "server": "PUPrime-Demo", "_why": "measured on 2026-08-10"}],
+    )
     reg.upsert_account(p, _acct(), _PROFILES)
     row = json.loads(p.read_text())["accounts"][0]
     assert row["_why"] == "measured on 2026-08-10"
@@ -199,8 +209,9 @@ def test_an_account_with_NO_recorded_suffix_leaves_the_symbol_alone_and_SAYS_SO(
     Unrecorded is not "no suffix". Guessing here is the silent failure the rebase exists to
     prevent, so the plan carries a note and the endpoint returns it.
     """
-    plan = ba.assign_plan("bot", 700152905, registered=_acct(symbol_suffix=None),
-                          current_symbol="XAUUSD.s")
+    plan = ba.assign_plan(
+        "bot", 700152905, registered=_acct(symbol_suffix=None), current_symbol="XAUUSD.s"
+    )
     assert "symbol" not in plan.fields
     assert any("no symbol suffix" in n for n in plan.notes)
 
@@ -227,21 +238,40 @@ def test_the_first_bot_on_an_account_lands_UNCAPPED_and_is_told_so():
 def test_joining_an_account_that_HAS_bots_still_adopts_THEIR_cap():
     """The registry holds no cap and must not — this is the half that proves it still comes from
     the instance configs, which are what a bot actually reads."""
-    cfgs = {"a": {"bot_key": "a", "account": 700152905, "server": "PUPrime-Demo",
-                  "symbol": "XAUUSD.p", "magic": 1, "strategy_package": "p",
-                  "account_risk_cap_pct": 10.0, "strategy_params": {"exec_risk_pct": 10.0}}}
+    cfgs = {
+        "a": {
+            "bot_key": "a",
+            "account": 700152905,
+            "server": "PUPrime-Demo",
+            "symbol": "XAUUSD.p",
+            "magic": 1,
+            "strategy_package": "p",
+            "account_risk_cap_pct": 10.0,
+            "strategy_params": {"exec_risk_pct": 10.0},
+        }
+    }
     target = ba.group_by_account(cfgs)[0]
-    plan = ba.assign_plan("bot", 700152905, target=target, registered=_acct(),
-                          current_symbol="XAUUSD.s")
+    plan = ba.assign_plan(
+        "bot", 700152905, target=target, registered=_acct(), current_symbol="XAUUSD.s"
+    )
     assert plan.fields["account_risk_cap_pct"] == 10.0
 
 
 def test_an_unregistered_account_that_a_bot_trades_still_works_and_says_what_is_missing():
     """Backwards compatibility, and the note is the point: the move happens, and the reader is
     told the symbol and the cost profile could not be carried."""
-    cfgs = {"a": {"bot_key": "a", "account": 700107749, "server": "PUPrime-Demo",
-                  "symbol": "XAUUSD.s", "magic": 1, "strategy_package": "p",
-                  "account_risk_cap_pct": None, "strategy_params": {"exec_risk_pct": 10.0}}}
+    cfgs = {
+        "a": {
+            "bot_key": "a",
+            "account": 700107749,
+            "server": "PUPrime-Demo",
+            "symbol": "XAUUSD.s",
+            "magic": 1,
+            "strategy_package": "p",
+            "account_risk_cap_pct": None,
+            "strategy_params": {"exec_risk_pct": 10.0},
+        }
+    }
     target = ba.group_by_account(cfgs)[0]
     plan = ba.assign_plan("bot", 700107749, target=target, current_symbol="XAUUSD.p")
     assert plan.fields["server"] == "PUPrime-Demo"
@@ -258,17 +288,20 @@ def test_an_account_nothing_knows_about_is_refused_outright():
 @pytest.fixture
 def registry(tmp_path, monkeypatch):
     from routers import bots as bots_router
+
     p = _file(tmp_path)
     monkeypatch.setattr(bots_router, "_registry_path", lambda: p)
     return p
 
 
 def test_the_registry_endpoint_lists_accounts_without_a_password_anywhere(
-        client, registry, monkeypatch):
+    client, registry, monkeypatch
+):
     """🔴 There is NO endpoint that returns a password and there must not be one. The page needs
     one bit — will this move be able to connect — and that bit is answerable without the secret
     leaving the box."""
     from routers import bots as bots_router
+
     reg.upsert_account(registry, _acct(), _PROFILES)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
 
@@ -282,7 +315,8 @@ def test_the_registry_endpoint_lists_accounts_without_a_password_anywhere(
 
 
 def test_an_unreachable_VPS_leaves_has_password_UNKNOWN_rather_than_FALSE(
-        client, registry, monkeypatch):
+    client, registry, monkeypatch
+):
     """MUTATION: return `set()` instead of `None` when the box cannot be asked → red.
 
     Rendering an unanswered question as "no password" sends the reader to re-enter one that is
@@ -290,6 +324,7 @@ def test_an_unreachable_VPS_leaves_has_password_UNKNOWN_rather_than_FALSE(
     "no" and "cannot ask" be the same value.
     """
     from routers import bots as bots_router
+
     reg.upsert_account(registry, _acct(), _PROFILES)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: None)
 
@@ -297,22 +332,31 @@ def test_an_unreachable_VPS_leaves_has_password_UNKNOWN_rather_than_FALSE(
     assert body[0]["has_password"] is None
 
 
-def test_registering_an_account_writes_it_and_does_not_need_the_vps(
-        client, registry, monkeypatch):
+def test_registering_an_account_writes_it_and_does_not_need_the_vps(client, registry, monkeypatch):
     from routers import bots as bots_router
+
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: set())
 
-    r = client.put("/bots/accounts/registry/700152905", json={
-        "account": 700152905, "label": "ECN", "server": "PUPrime-Demo",
-        "mt5_path": r"C:\MT5_FFT\terminal64.exe", "symbol_suffix": ".p",
-        "account_profile": "puprime_ecn", "deploy": False})
+    r = client.put(
+        "/bots/accounts/registry/700152905",
+        json={
+            "account": 700152905,
+            "label": "ECN",
+            "server": "PUPrime-Demo",
+            "mt5_path": r"C:\MT5_FFT\terminal64.exe",
+            "symbol_suffix": ".p",
+            "account_profile": "puprime_ecn",
+            "deploy": False,
+        },
+    )
     assert r.status_code == 200, r.text
     assert reg.account_by_number(registry, 700152905).symbol_suffix == ".p"
 
 
 def test_a_body_naming_a_different_account_from_the_path_is_a_400(client, registry):
-    r = client.put("/bots/accounts/registry/700152905",
-                   json={"account": 999, "server": "S", "deploy": False})
+    r = client.put(
+        "/bots/accounts/registry/700152905", json={"account": 999, "server": "S", "deploy": False}
+    )
     assert r.status_code == 400
 
 
@@ -321,12 +365,23 @@ def test_unregistering_an_account_a_bot_still_trades_is_REFUSED(client, registry
     can no longer describe, and it would then be filed under one with no server, no terminal and
     no symbol suffix."""
     from routers import bots as bots_router
+
     reg.upsert_account(registry, _acct(account=700152905), _PROFILES)
 
-    group = ba.AccountGroup(account=700152905, server="PUPrime-Demo", kind="account",
-                            bots=[ba.AccountBot(key="mpc_sos_fade_demo", display="A",
-                                                symbol="XAUUSD.p", magic=1,
-                                                strategy_package="p")])
+    group = ba.AccountGroup(
+        account=700152905,
+        server="PUPrime-Demo",
+        kind="account",
+        bots=[
+            ba.AccountBot(
+                key="mpc_sos_fade_demo",
+                display="A",
+                symbol="XAUUSD.p",
+                magic=1,
+                strategy_package="p",
+            )
+        ],
+    )
     monkeypatch.setattr(bots_router, "_account_groups", lambda: [group])
 
     r = client.delete("/bots/accounts/registry/700152905")
@@ -342,7 +397,8 @@ def test_a_password_for_an_unregistered_account_is_a_404(client, registry):
 
 
 def test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED(
-        client, registry, monkeypatch):
+    client, registry, monkeypatch
+):
     """MUTATION: drop the password pre-check → the move is written, committed, pushed and pulled,
     and fails at the next start. That discovery loop is what this page exists to remove.
 
@@ -350,11 +406,11 @@ def test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED(
     not be asked and must not refuse anything.
     """
     from routers import bots as bots_router
+
     reg.upsert_account(registry, _acct(), _PROFILES)
     monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: set())
 
-    r = client.patch("/bots/mpc_bleg_demo/account",
-                     json={"account": 700152905, "deploy": False})
+    r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700152905, "deploy": False})
     assert r.status_code == 409
     assert "password" in r.json()["detail"].lower()

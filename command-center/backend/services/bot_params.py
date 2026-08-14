@@ -45,8 +45,14 @@ RUNTIME_BOUNDS: dict[str, tuple[float, float]] = {
 
 # Keys of the instance config that are identity/plumbing rather than strategy params.
 _IDENTITY = ("account", "server", "symbol", "timeframe", "mt5_path", "magic")
-_VERSION = ("strategy_package", "strategy_class", "strategy_version",
-            "strategy_source_hash", "promoted_commit", "promoted_at")
+_VERSION = (
+    "strategy_package",
+    "strategy_class",
+    "strategy_version",
+    "strategy_source_hash",
+    "promoted_commit",
+    "promoted_at",
+)
 
 
 def _schema_index(param_schema: Optional[list[dict]]) -> dict[str, dict]:
@@ -62,8 +68,7 @@ def _notes(config: dict) -> dict[str, str]:
     they are written at the moment the decision is made, which is the only time they are
     accurate.
     """
-    return {k.lstrip("_"): v for k, v in config.items()
-            if k.startswith("_") and isinstance(v, str)}
+    return {k.lstrip("_"): v for k, v in config.items() if k.startswith("_") and isinstance(v, str)}
 
 
 def _row(name: str, value: Any, schema: dict, note: Optional[str]) -> dict:
@@ -96,8 +101,12 @@ def _infer_type(value: Any) -> str:
     return "string"
 
 
-def build_view(bot_key: str, config: dict, param_schema: Optional[list[dict]] = None,
-               section: str = "strategy_params") -> dict:
+def build_view(
+    bot_key: str,
+    config: dict,
+    param_schema: Optional[list[dict]] = None,
+    section: str = "strategy_params",
+) -> dict:
     """Turn an instance config.json into the Bots page's parameter view.
 
     `param_schema` is the lab's scanned schema for the same strategy (labels, groups,
@@ -151,7 +160,8 @@ def validate_runtime(updates: dict[str, Any]) -> dict[str, Any]:
             f"Not editable at runtime: {', '.join(illegal)}. "
             f"Only {', '.join(sorted(RUNTIME_EDITABLE))} can be changed on a running bot — "
             f"anything that changes WHICH trades are taken has to go through "
-            f"lab → backtest → promote so the version pin stays meaningful.")
+            f"lab → backtest → promote so the version pin stays meaningful."
+        )
 
     clean: dict[str, Any] = {}
     for name, value in updates.items():

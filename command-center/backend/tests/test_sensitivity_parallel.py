@@ -14,13 +14,11 @@ processes, which is what `run_sweep` already provides.
 import asyncio
 import json
 
-import pytest
-
 from services import lab_db, stress_tester
 from services.stress_tester import (
-    sensitivity_plan,
     _estimate_sens_duration_min,
     _run_shifts_pooled,
+    sensitivity_plan,
 )
 
 # Two params, so a cartesian product would be visibly different from one-at-a-time.
@@ -34,12 +32,13 @@ SHIFTS = [("+10%", 1.10), ("-10%", 0.90)]
 
 # ── The plan ──────────────────────────────────────────────────────────────────
 
+
 def test_the_plan_moves_ONE_param_at_a_time_not_a_grid():
     """Sensitivity asks "what does THIS setting do", so each entry perturbs exactly one param.
     The cartesian product of the same shifts is a different, much larger experiment — which is
     what `expand_grid` would have produced had the shifts been fed through it."""
     plan, _ = sensitivity_plan(PARAMS, BASE, SHIFTS)
-    assert len(plan) == 4                      # 2 params x 2 shifts, NOT 2x2 combinations
+    assert len(plan) == 4  # 2 params x 2 shifts, NOT 2x2 combinations
     assert {e["param"] for e in plan} == {"aplus_window", "exec_tp1_pct"}
     for e in plan:
         assert set(e) == {"param", "label", "value"}
@@ -49,15 +48,16 @@ def test_a_shift_landing_back_on_the_baseline_is_skipped_and_named():
     """0 x 1.10 == 0 re-runs the identical backtest and books a 0% delta, which reads as
     "rock solid" when the truth is "never measured"."""
     plan, skipped = sensitivity_plan(
-        [{"name": "exec_tp2_pct", "type": "float"}], {"exec_tp2_pct": 0.0}, SHIFTS)
+        [{"name": "exec_tp2_pct", "type": "float"}], {"exec_tp2_pct": 0.0}, SHIFTS
+    )
     assert plan == []
     assert len(skipped) == 2 and all("exec_tp2_pct" in s for s in skipped)
 
 
 def test_an_int_that_rounds_onto_a_value_already_planned_runs_once():
     plan, skipped = sensitivity_plan(
-        [{"name": "pivot", "type": "int"}], {"pivot": 5},
-        [("+10%", 1.10), ("+25%", 1.25)])           # 5.5 -> 6 and 6.25 -> 6
+        [{"name": "pivot", "type": "int"}], {"pivot": 5}, [("+10%", 1.10), ("+25%", 1.25)]
+    )  # 5.5 -> 6 and 6.25 -> 6
     assert [e["value"] for e in plan] == [6]
     assert any("(=6)" in s for s in skipped)
 
@@ -66,13 +66,15 @@ def test_param_and_value_identify_a_shift_uniquely():
     """The pooled matcher keys on (param, value). If that pair could repeat, one shift's numbers
     would be attributed to another — so the plan must guarantee it, and it does via the per-param
     `seen_vals` dedupe."""
-    plan, _ = sensitivity_plan(PARAMS, BASE, [("+10%", 1.10), ("-10%", 0.90),
-                                              ("+25%", 1.25), ("-25%", 0.75)])
+    plan, _ = sensitivity_plan(
+        PARAMS, BASE, [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
+    )
     keys = [(e["param"], e["value"]) for e in plan]
     assert len(keys) == len(set(keys))
 
 
 # ── The matcher ───────────────────────────────────────────────────────────────
+
 
 def _ctx(fresh_db_seeded):
     return {
@@ -81,35 +83,56 @@ def _ctx(fresh_db_seeded):
         "strategy": {"class_name": "SosFade"},
         "runner": "python",
         "base_params": BASE,
-        "measured_on": {"cost_layers": ["spread"], "broker_profile": "vantage_demo",
-                        "sizing_mode": "consistent", "manual_risk_pct": None},
+        "measured_on": {
+            "cost_layers": ["spread"],
+            "broker_profile": "vantage_demo",
+            "sizing_mode": "consistent",
+            "manual_risk_pct": None,
+        },
     }
 
 
 def _seed(fresh_db):
     with lab_db._connect() as conn:
-        conn.execute("INSERT OR IGNORE INTO strategies "
-                     "(id, name, class_name, source_path, scanned_at, runner) "
-                     "VALUES ('s1','S','SosFade','x.py',1,'python')")
+        conn.execute(
+            "INSERT OR IGNORE INTO strategies "
+            "(id, name, class_name, source_path, scanned_at, runner) "
+            "VALUES ('s1','S','SosFade','x.py',1,'python')"
+        )
         conn.execute(
             "INSERT INTO backtest_runs (run_id, strategy_id, instrument, params, bar_type, "
             "bar_value, start_date, end_date, commission_per_side, slippage_ticks, status, "
             "created_at) VALUES ('src','s1','XAUUSD','{}','Minute',15,'2020-01-01','2026-01-01',"
-            "0,0,'complete',1)")
-        conn.execute("INSERT INTO stress_tests (stress_test_id, run_id, status, created_at) "
-                     "VALUES ('st1','src','running_sens',1)")
+            "0,0,'complete',1)"
+        )
+        conn.execute(
+            "INSERT INTO stress_tests (stress_test_id, run_id, status, created_at) "
+            "VALUES ('st1','src','running_sens',1)"
+        )
 
 
 def _fake_dispatch(monkeypatch, combos):
     """Stand in for runner_dispatch: the sweep 'runs' and returns `combos` verbatim."""
     from services import runner_dispatch
-    monkeypatch.setattr(runner_dispatch, "start_native_optimization",
-                        lambda spec, runner: {"job_id": spec["job_id"], "status": "running"},
-                        raising=False)
-    monkeypatch.setattr(runner_dispatch, "job_status",
-                        lambda job_id, runner=None: {"status": "complete"}, raising=False)
-    monkeypatch.setattr(runner_dispatch, "native_opt_results",
-                        lambda job_id, runner=None: {"combos": combos}, raising=False)
+
+    monkeypatch.setattr(
+        runner_dispatch,
+        "start_native_optimization",
+        lambda spec, runner: {"job_id": spec["job_id"], "status": "running"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner_dispatch,
+        "job_status",
+        lambda job_id, runner=None: {"status": "complete"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner_dispatch,
+        "native_opt_results",
+        lambda job_id, runner=None: {"combos": combos},
+        raising=False,
+    )
     monkeypatch.setattr(stress_tester, "_POLL_INTERVAL", 0)
 
 
@@ -121,8 +144,14 @@ def test_results_are_matched_by_param_and_value_never_by_index(fresh_db, monkeyp
     plan, _ = sensitivity_plan(PARAMS, BASE, SHIFTS)
     # The sweep comes back SHORT and OUT OF ORDER — the shape a cancel produces.
     combos = [
-        {"params": {"exec_tp1_pct": plan[3]["value"]}, "kpis": {"profit_factor": 9.9, "net_pnl": 99.0}},
-        {"params": {"aplus_window": plan[0]["value"]}, "kpis": {"profit_factor": 1.1, "net_pnl": 11.0}},
+        {
+            "params": {"exec_tp1_pct": plan[3]["value"]},
+            "kpis": {"profit_factor": 9.9, "net_pnl": 99.0},
+        },
+        {
+            "params": {"aplus_window": plan[0]["value"]},
+            "kpis": {"profit_factor": 1.1, "net_pnl": 11.0},
+        },
     ]
     _fake_dispatch(monkeypatch, combos)
 
@@ -152,8 +181,15 @@ def test_every_pooled_child_carries_the_baselines_physics(fresh_db, monkeypatch)
     different cost model reports the cost gap as the parameter's fragility."""
     _seed(fresh_db)
     plan, _ = sensitivity_plan([PARAMS[0]], BASE, [("+10%", 1.10)])
-    _fake_dispatch(monkeypatch, [{"params": {"aplus_window": plan[0]["value"]},
-                                  "kpis": {"profit_factor": 2.0, "net_pnl": 5.0}}])
+    _fake_dispatch(
+        monkeypatch,
+        [
+            {
+                "params": {"aplus_window": plan[0]["value"]},
+                "kpis": {"profit_factor": 2.0, "net_pnl": 5.0},
+            }
+        ],
+    )
 
     out = asyncio.run(_run_shifts_pooled(plan, _ctx(fresh_db)))
     child = lab_db.get_run(out[0]["run_id"])
@@ -169,10 +205,11 @@ def test_every_pooled_child_carries_the_baselines_physics(fresh_db, monkeypatch)
 
 # ── The estimate ──────────────────────────────────────────────────────────────
 
+
 def test_the_estimate_uses_the_runs_own_duration_not_a_constant():
     """`_mins_per_job` says 0.2 min for python. A 6.6-year M15 replay measured 69s a child, so the
     modal quoted ~12 min for a ~69 min job. The source run is the same replay over the same bars."""
-    run = {"started_at": 0, "completed_at": 69}          # 69 seconds
+    run = {"started_at": 0, "completed_at": 69}  # 69 seconds
     slow = _estimate_sens_duration_min(15, "python", run)
     fast = _estimate_sens_duration_min(15, "python", None)
     assert slow > fast
@@ -182,7 +219,7 @@ def test_the_python_estimate_accounts_for_the_workers():
     """Sixty jobs over eleven workers is not sixty jobs of wall clock."""
     run = {"started_at": 0, "completed_at": 60}
     est = _estimate_sens_duration_min(15, "python", run)
-    serial = 15 * 4 * 1.0                                # 60 jobs x 1 min
+    serial = 15 * 4 * 1.0  # 60 jobs x 1 min
     assert est < serial
 
 

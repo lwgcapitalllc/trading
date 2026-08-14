@@ -214,8 +214,10 @@ def cmd_diff(conn: sqlite3.Connection, id_a: str, id_b: str) -> int:
     if not basis:
         print("  Same on all", len(BASIS_FIELDS), "fields. The two are comparable.")
     else:
-        print(f"  {len(basis)} of {len(BASIS_FIELDS)} fields differ. "
-              "These decide what each run was measured ON,")
+        print(
+            f"  {len(basis)} of {len(BASIS_FIELDS)} fields differ. "
+            "These decide what each run was measured ON,"
+        )
         print("  so the result delta below is NOT the difference between the two ideas —")
         print("  it is that difference plus whatever these changed.\n")
         print_table(basis, ("field", "A", "B"))
@@ -239,13 +241,21 @@ def cmd_diff(conn: sqlite3.Connection, id_a: str, id_b: str) -> int:
     print_table(rows, ("metric", "A", "B"))
 
     if basis:
-        moves_dollars = {"sizing_mode", "manual_risk_pct", "cost_layers",
-                         "broker_profile", "commission_per_side", "slippage_ticks"}
+        moves_dollars = {
+            "sizing_mode",
+            "manual_risk_pct",
+            "cost_layers",
+            "broker_profile",
+            "commission_per_side",
+            "slippage_ticks",
+        }
         changed = {f for f, _, _ in basis}
         if changed & moves_dollars:
-            print("\n  Net P&L is not comparable here — "
-                  + ", ".join(sorted(changed & moves_dollars))
-                  + " changed, and each of those moves the dollars without moving the idea.")
+            print(
+                "\n  Net P&L is not comparable here — "
+                + ", ".join(sorted(changed & moves_dollars))
+                + " changed, and each of those moves the dollars without moving the idea."
+            )
         print("\n  VERDICT: not a like-for-like comparison. Re-run B on A's basis first.")
         return 1
 
@@ -256,8 +266,14 @@ def cmd_diff(conn: sqlite3.Connection, id_a: str, id_b: str) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("runs", nargs="*", help="two run ids to compare")
-    ap.add_argument("--list", nargs="?", type=int, const=20, metavar="N",
-                    help="list the N most recent completed runs (default 20)")
+    ap.add_argument(
+        "--list",
+        nargs="?",
+        type=int,
+        const=20,
+        metavar="N",
+        help="list the N most recent completed runs (default 20)",
+    )
     ap.add_argument("--db", default=str(DB_PATH), help="lab.db path")
     args = ap.parse_args()
 

@@ -17,8 +17,7 @@ from typing import Optional
 
 import numpy as np
 
-from services import lab_db
-from services import notify
+from services import lab_db, notify
 from services.alert_format import alert, joined
 from services.metrics import (
     apply_canonical_sharpe,
@@ -50,8 +49,8 @@ MIN_TRADES_FOR_STRESS = 100
 # Walk-forward IS→OOS degradation guards. `1 - OOS/IS` is unstable when the in-sample Sharpe is
 # near zero (a flat in-sample window blows the ratio up), so windows below the floor are excluded
 # as not-assessable and each surviving window is clamped to a sane band before averaging.
-_WF_IS_SHARPE_FLOOR = 0.1          # below this the in-sample window had no real edge to degrade from
-_WF_DEG_CLAMP = (-1.0, 2.0)        # per-window degradation bounded to [-100%, +200%]
+_WF_IS_SHARPE_FLOOR = 0.1  # below this the in-sample window had no real edge to degrade from
+_WF_DEG_CLAMP = (-1.0, 2.0)  # per-window degradation bounded to [-100%, +200%]
 # Minimum closed trades on EACH side of a window for its Sharpe to mean anything. 20 is the point
 # below which a single trade is worth more than 5% of the sample, so the ratio `1 - OOS/IS` reports
 # one trade's luck as a robustness verdict. Deliberately a flat count, not a fraction of the run:
@@ -66,6 +65,7 @@ def _clamp_wf_degradation(deg: float) -> float:
 
 
 # ── What a child run is MEASURED on ───────────────────────────────────────────
+
 
 def _json_list(raw) -> Optional[list]:
     """A stored JSON list, or None when the column was never written.
@@ -107,9 +107,9 @@ def child_measurement_fields(source_run: dict) -> dict:
     nothing") about a row that never made one.
     """
     return {
-        "cost_layers":    _json_list(source_run.get("cost_layers")),
+        "cost_layers": _json_list(source_run.get("cost_layers")),
         "broker_profile": source_run.get("broker_profile"),
-        "sizing_mode":    source_run.get("sizing_mode") or "consistent",
+        "sizing_mode": source_run.get("sizing_mode") or "consistent",
         "manual_risk_pct": source_run.get("manual_risk_pct"),
     }
 
@@ -131,8 +131,8 @@ def child_measurement_fields(source_run: dict) -> dict:
 # The choice is made from the DATA, never from a strategy flag or a config field, so it needs no
 # knowledge of which strategy ran and cannot be tuned per strategy. A fixed-size run keeps the
 # dollar model and its numbers do not move at all.
-_DRIFT_MIN_TRADES = 30      # below this, thirds are too small to judge drift from
-_DRIFT_TRIGGER    = 2.0     # dollar trade size must at least double across the run to look non-stationary
+_DRIFT_MIN_TRADES = 30  # below this, thirds are too small to judge drift from
+_DRIFT_TRIGGER = 2.0  # dollar trade size must at least double across the run to look non-stationary
 
 
 def _median_abs(values: np.ndarray) -> float:
@@ -143,7 +143,7 @@ def _drift(values: np.ndarray) -> float:
     """Median |value| of the last third over the first third. 1.0 = stationary."""
     n = len(values)
     first = _median_abs(values[: n // 3])
-    last = _median_abs(values[2 * n // 3:])
+    last = _median_abs(values[2 * n // 3 :])
     if first <= 0 or last <= 0:
         return 1.0
     return last / first
@@ -188,6 +188,7 @@ def choose_shuffle_series(
 
 
 # ── Monte Carlo ────────────────────────────────────────────────────────────────
+
 
 def run_monte_carlo(
     trade_pnls: list[float],
@@ -269,16 +270,20 @@ def run_monte_carlo(
     # model — compounding is order-dependent — but the pool split is kept, because the reason above
     # is the durable one and it holds for both models.)
     median_final_pnl = float(np.percentile(final_pnl_bs, 50))
-    pct5_final_pnl   = float(np.percentile(final_pnl_bs, 5))   # worst 5% outcome by PnL
-    pct1_final_pnl   = float(np.percentile(final_pnl_bs, 1))   # worst 1% outcome by PnL
-    median_max_dd    = float(np.percentile(all_dds, 50))
-    pct5_max_dd      = float(np.percentile(all_dds, 95))   # 95th pct = worst-5% drawdown
-    pct1_max_dd      = float(np.percentile(all_dds, 99))   # 99th pct = worst-1% drawdown
+    pct5_final_pnl = float(np.percentile(final_pnl_bs, 5))  # worst 5% outcome by PnL
+    pct1_final_pnl = float(np.percentile(final_pnl_bs, 1))  # worst 1% outcome by PnL
+    median_max_dd = float(np.percentile(all_dds, 50))
+    pct5_max_dd = float(np.percentile(all_dds, 95))  # 95th pct = worst-5% drawdown
+    pct1_max_dd = float(np.percentile(all_dds, 99))  # 99th pct = worst-1% drawdown
 
-    pct_of = (lambda q: float(np.percentile(all_dds_pct, q))) if all_dds_pct is not None else (lambda q: None)
+    pct_of = (
+        (lambda q: float(np.percentile(all_dds_pct, q)))
+        if all_dds_pct is not None
+        else (lambda q: None)
+    )
     median_max_dd_pct = pct_of(50)
-    pct5_max_dd_pct   = pct_of(95)
-    pct1_max_dd_pct   = pct_of(99)
+    pct5_max_dd_pct = pct_of(95)
+    pct1_max_dd_pct = pct_of(99)
 
     # None = NOT ASSESSABLE, and it is the correct answer whenever there is no rule to test against
     # (no ruleset at all, or one with no drawdown limit — the "Unconstrained" row by design).
@@ -351,30 +356,31 @@ def run_monte_carlo(
 
     return {
         "median_final_pnl": round(median_final_pnl, 2),
-        "pct5_final_pnl":   round(pct5_final_pnl, 2),
-        "pct1_final_pnl":   round(pct1_final_pnl, 2),
-        "median_max_dd":    round(median_max_dd, 2),
-        "pct5_max_dd":      round(pct5_max_dd, 2),
-        "pct1_max_dd":      round(pct1_max_dd, 2),
+        "pct5_final_pnl": round(pct5_final_pnl, 2),
+        "pct1_final_pnl": round(pct1_final_pnl, 2),
+        "median_max_dd": round(median_max_dd, 2),
+        "pct5_max_dd": round(pct5_max_dd, 2),
+        "pct1_max_dd": round(pct1_max_dd, 2),
         # The same drawdowns against the account. None on a fixed-size run, which has no balance
         # series of its own — see the dd_basis note above.
         "median_max_dd_pct": None if median_max_dd_pct is None else round(median_max_dd_pct, 2),
-        "pct5_max_dd_pct":   None if pct5_max_dd_pct is None else round(pct5_max_dd_pct, 2),
-        "pct1_max_dd_pct":   None if pct1_max_dd_pct is None else round(pct1_max_dd_pct, 2),
+        "pct5_max_dd_pct": None if pct5_max_dd_pct is None else round(pct5_max_dd_pct, 2),
+        "pct1_max_dd_pct": None if pct1_max_dd_pct is None else round(pct1_max_dd_pct, 2),
         # Which of the two the grade must read. Persisted, because a grade computed on the wrong
         # basis is wrong silently.
-        "dd_basis":         dd_basis,
-        "prob_breach":      None if prob_breach is None else round(prob_breach, 4),
-        "prob_pass_eval":   None if prob_pass_eval is None else round(prob_pass_eval, 4),
+        "dd_basis": dd_basis,
+        "prob_breach": None if prob_breach is None else round(prob_breach, 4),
+        "prob_pass_eval": None if prob_pass_eval is None else round(prob_pass_eval, 4),
         # Which series the shuffle used. Not persisted — logged by the caller so a compounding run
         # is never silently re-modelled without it appearing anywhere.
-        "shuffle_model":    model,
-        "sampled_paths":    sampled_paths,
-        "distribution":     distribution,
+        "shuffle_model": model,
+        "sampled_paths": sampled_paths,
+        "distribution": distribution,
     }
 
 
 # ── Walk-forward helpers ───────────────────────────────────────────────────────
+
 
 def _split_windows(start_date: str, end_date: str, n_windows: int) -> list[dict]:
     """Split the run's period into N windows, each 70% in-sample / 30% out-of-sample.
@@ -384,7 +390,7 @@ def _split_windows(start_date: str, end_date: str, n_windows: int) -> list[dict]
     immaterial to the numbers and is still a bar on the wrong side of the only line this phase draws.
     """
     start = date.fromisoformat(start_date)
-    end   = date.fromisoformat(end_date)
+    end = date.fromisoformat(end_date)
     total_days = (end - start).days
     if total_days < n_windows * 10:
         raise ValueError(f"Date range too short for {n_windows} walk-forward windows")
@@ -392,15 +398,17 @@ def _split_windows(start_date: str, end_date: str, n_windows: int) -> list[dict]
     windows = []
     for i in range(n_windows):
         w_start = start + timedelta(days=i * window_days)
-        w_end   = (start + timedelta(days=(i + 1) * window_days)) if i < n_windows - 1 else end
-        split   = w_start + timedelta(days=int(window_days * 0.7))
-        windows.append({
-            "window": i + 1,
-            "is_start": w_start.isoformat(),
-            "is_end":   split.isoformat(),
-            "oos_start": (split + timedelta(days=1)).isoformat(),
-            "oos_end":  w_end.isoformat(),
-        })
+        w_end = (start + timedelta(days=(i + 1) * window_days)) if i < n_windows - 1 else end
+        split = w_start + timedelta(days=int(window_days * 0.7))
+        windows.append(
+            {
+                "window": i + 1,
+                "is_start": w_start.isoformat(),
+                "is_end": split.isoformat(),
+                "oos_start": (split + timedelta(days=1)).isoformat(),
+                "oos_end": w_end.isoformat(),
+            }
+        )
     return windows
 
 
@@ -457,7 +465,8 @@ def perturbable_params(strategy: Optional[dict], base_params: dict) -> list[dict
     Single source of truth for the run loop AND the UI time estimate, so the two cannot drift."""
     schema = (strategy or {}).get("param_schema") or []
     return [
-        p for p in schema
+        p
+        for p in schema
         if p.get("type") in ("int", "float", "double")
         and p.get("name") in base_params
         and not _is_foundational(p)
@@ -510,8 +519,9 @@ def _estimate_wf_duration_min(n_windows: int, runner: str = "ninjatrader") -> in
     return max(1, int(n_windows * 2 * _mins_per_job(runner)))  # 2 backtests per window
 
 
-def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader",
-                                source_run: Optional[dict] = None) -> int:
+def _estimate_sens_duration_min(
+    n_params: int, runner: str = "ninjatrader", source_run: Optional[dict] = None
+) -> int:
     """Wall-clock minutes for the sensitivity phase.
 
     Two corrections, both from a real measurement rather than a constant.
@@ -538,6 +548,7 @@ def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader",
     if runner == "python" and n_jobs:
         try:
             from backtest.optimizer import default_workers
+
             workers = default_workers(n_jobs)
         except Exception:
             workers = 1
@@ -564,8 +575,9 @@ def phases_requested(include_walk_forward: bool, include_sensitivity: bool) -> l
     return phases
 
 
-def sensitivity_plan(numeric_params: list, base_params: dict,
-                     shifts: list) -> tuple[list[dict], list[str]]:
+def sensitivity_plan(
+    numeric_params: list, base_params: dict, shifts: list
+) -> tuple[list[dict], list[str]]:
     """The one-param-at-a-time shift list, and what was refused. PURE — no DB, no backtests.
 
     Split out of the run loop so the DECISIONS (which shifts are worth running) are testable
@@ -619,15 +631,21 @@ def walk_forward_feasibility(trade_count: int, n_windows: int) -> tuple[bool, st
     if oos_per_window >= _WF_MIN_TRADES_PER_WINDOW:
         return (True, "")
     max_windows = int(trade_count * 0.3 // _WF_MIN_TRADES_PER_WINDOW)
-    fix = (f"Use {max_windows} window(s) or fewer" if max_windows >= 1
-           else f"This run needs about {int(_WF_MIN_TRADES_PER_WINDOW / 0.3)} trades for even one "
-                f"window to be assessable")
-    return (False, (
-        f"{n_windows} windows over {trade_count} trades leaves about "
-        f"{oos_per_window:.0f} out-of-sample trades each, under the {_WF_MIN_TRADES_PER_WINDOW} "
-        f"needed for a Sharpe to mean anything — the walk-forward will report 'not assessable' "
-        f"and cap the grade at B. {fix}."
-    ))
+    fix = (
+        f"Use {max_windows} window(s) or fewer"
+        if max_windows >= 1
+        else f"This run needs about {int(_WF_MIN_TRADES_PER_WINDOW / 0.3)} trades for even one "
+        f"window to be assessable"
+    )
+    return (
+        False,
+        (
+            f"{n_windows} windows over {trade_count} trades leaves about "
+            f"{oos_per_window:.0f} out-of-sample trades each, under the {_WF_MIN_TRADES_PER_WINDOW} "
+            f"needed for a Sharpe to mean anything — the walk-forward will report 'not assessable' "
+            f"and cap the grade at B. {fix}."
+        ),
+    )
 
 
 def is_cancelled(stress_test_id: str) -> bool:
@@ -641,6 +659,7 @@ def is_cancelled(stress_test_id: str) -> bool:
 
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────
+
 
 def _sens_child_row(ctx: dict, entry: dict, child_id: str) -> dict:
     """The lab row for one sensitivity shift. Shared by both executors so a child cannot come out
@@ -694,11 +713,15 @@ async def _run_shifts_serial(plan: list, ctx: dict) -> list[dict]:
         }
         ok = await _run_child_backtest(child_id, job_spec, ctx["runner"])
         child = lab_db.get_run(child_id) if ok else None
-        out.append({
-            "entry": entry, "run_id": child_id, "ok": ok,
-            "pf": (child or {}).get("profit_factor"),
-            "pnl": (child or {}).get("net_pnl") or 0.0,
-        })
+        out.append(
+            {
+                "entry": entry,
+                "run_id": child_id,
+                "ok": ok,
+                "pf": (child or {}).get("profit_factor"),
+                "pnl": (child or {}).get("net_pnl") or 0.0,
+            }
+        )
     return out
 
 
@@ -727,7 +750,8 @@ async def _run_shifts_pooled(plan: list, ctx: dict) -> list[dict]:
     ids = {(e["param"], e["value"]): uuid.uuid4().hex[:16] for e in plan}
     for entry in plan:
         lab_db.insert_run_stress_test_child(
-            _sens_child_row(ctx, entry, ids[(entry["param"], entry["value"])]))
+            _sens_child_row(ctx, entry, ids[(entry["param"], entry["value"])])
+        )
 
     job_id = f"sens_{ctx['stress_test_id']}"
     spec = {
@@ -772,7 +796,7 @@ async def _run_shifts_pooled(plan: list, ctx: dict) -> list[dict]:
     for row in rows:
         params = row.get("params") or {}
         if len(params) == 1:
-            (pname, val), = params.items()
+            ((pname, val),) = params.items()
             by_key[(pname, val)] = row.get("kpis") or {}
 
     out = []
@@ -783,8 +807,9 @@ async def _run_shifts_pooled(plan: list, ctx: dict) -> list[dict]:
             # Never written as a zero-KPI "complete" row: a shift the sweep did not return was not
             # measured, and a complete row reading 0 would be scored as "this parameter does
             # nothing" — the most reassuring answer available for an absent measurement.
-            lab_db.update_run_status(child_id, "failed_unknown",
-                                     "sweep returned no result for this shift")
+            lab_db.update_run_status(
+                child_id, "failed_unknown", "sweep returned no result for this shift"
+            )
             out.append({"entry": entry, "run_id": child_id, "ok": False, "pf": None, "pnl": 0.0})
             continue
         # ⚠ No equity_curve / daily_pnl: a sweep worker returns KPIs only. Nothing reads a
@@ -792,16 +817,25 @@ async def _run_shifts_pooled(plan: list, ctx: dict) -> list[dict]:
         # navigates to one), so the paths are NULL rather than pointing at files that do not
         # exist. A canonical Sharpe is likewise not computed — there is no daily series to
         # compute it from, and inventing one would be a fabricated measurement.
-        lab_db.update_run_complete(child_id, kpis,
-                                   {"equity_curve": None, "trades": None, "daily_pnl": None})
-        out.append({"entry": entry, "run_id": child_id, "ok": True,
-                    "pf": kpis.get("profit_factor"), "pnl": kpis.get("net_pnl") or 0.0})
+        lab_db.update_run_complete(
+            child_id, kpis, {"equity_curve": None, "trades": None, "daily_pnl": None}
+        )
+        out.append(
+            {
+                "entry": entry,
+                "run_id": child_id,
+                "ok": True,
+                "pf": kpis.get("profit_factor"),
+                "pnl": kpis.get("net_pnl") or 0.0,
+            }
+        )
     return out
 
 
 async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjatrader") -> bool:
     """Start a VPS backtest and poll to completion. Returns True on success."""
     from services import runner_dispatch
+
     try:
         await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
     except Exception as exc:
@@ -825,7 +859,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
                 result = await asyncio.to_thread(runner_dispatch.job_results, run_id)
                 kpis = result.get("kpis", {})
                 equity_curve = result.get("equity_curve", [])
-                daily_pnl    = result.get("daily_pnl", [])
+                daily_pnl = result.get("daily_pnl", [])
                 run_dir = _RESULTS_DIR / run_id
                 run_dir.mkdir(parents=True, exist_ok=True)
                 eq_path = run_dir / "equity_curve.json"
@@ -833,13 +867,19 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
                 eq_path.write_text(json.dumps(equity_curve, default=str))
                 dp_path.write_text(json.dumps(daily_pnl, default=str))
                 apply_canonical_sharpe(kpis, daily_pnl)  # consistent daily-√252 Sharpe
-                lab_db.update_run_complete(run_id, kpis, {
-                    "equity_curve": str(eq_path),
-                    "trades": None,
-                    "daily_pnl": str(dp_path),
-                })
+                lab_db.update_run_complete(
+                    run_id,
+                    kpis,
+                    {
+                        "equity_curve": str(eq_path),
+                        "trades": None,
+                        "daily_pnl": str(dp_path),
+                    },
+                )
             except Exception as exc:
-                lab_db.update_run_status(run_id, "failed_unknown", f"Could not fetch results: {exc}")
+                lab_db.update_run_status(
+                    run_id, "failed_unknown", f"Could not fetch results: {exc}"
+                )
                 return False
             return True
 
@@ -849,6 +889,7 @@ async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjat
 
         if time.time() - started_at > _STALL_KILL_SEC:
             from services import runner_dispatch as vc
+
             try:
                 await asyncio.to_thread(vc.cancel_job, run_id)
             except Exception:
@@ -872,31 +913,36 @@ async def _run_native_walk_forward(
     Drive NT8's built-in Walk Forward mode for a strategy with fixed params.
     One VPS call instead of N orchestrated backtests.
     """
-    from services import runner_dispatch
     import numpy as np
+
+    from services import runner_dispatch
 
     job_id = f"nwf_{stress_test_id}"
     wf_windows = st.get("walk_forward_windows", 5)
 
     spec = {
-        "job_id":             job_id,
-        "strategy_class":     strategy["class_name"],
-        "instrument":         source_run["instrument"],
-        "bar_type":           source_run["bar_type"],
-        "bar_value":          source_run["bar_value"],
-        "start_date":         source_run["start_date"],
-        "end_date":           source_run["end_date"],
+        "job_id": job_id,
+        "strategy_class": strategy["class_name"],
+        "instrument": source_run["instrument"],
+        "bar_type": source_run["bar_type"],
+        "bar_value": source_run["bar_value"],
+        "start_date": source_run["start_date"],
+        "end_date": source_run["end_date"],
         "commission_per_side": source_run["commission_per_side"],
-        "slippage_ticks":     source_run["slippage_ticks"],
-        "params":             source_run.get("params", {}),
-        "wf_windows":         wf_windows,
-        "oos_pct":            30,
+        "slippage_ticks": source_run["slippage_ticks"],
+        "params": source_run.get("params", {}),
+        "wf_windows": wf_windows,
+        "oos_pct": 30,
     }
 
     try:
         await asyncio.to_thread(runner_dispatch.start_native_walkforward, spec)
     except Exception as exc:
-        log.warning("Native WF submit failed for stress_test %s: %s — falling back to serial", stress_test_id, exc)
+        log.warning(
+            "Native WF submit failed for stress_test %s: %s — falling back to serial",
+            stress_test_id,
+            exc,
+        )
         return False
 
     started_at = time.time()
@@ -946,26 +992,28 @@ async def _run_native_walk_forward(
     degradations = []
     for w_num in sorted(by_window):
         pair = by_window[w_num]
-        is_row  = pair.get("is", {})
+        is_row = pair.get("is", {})
         oos_row = pair.get("oos", {})
-        is_pnl  = is_row.get("net_pnl")
+        is_pnl = is_row.get("net_pnl")
         oos_pnl = oos_row.get("net_pnl")
         # Derive a simple per-window Sharpe proxy from PF (no trade-level data from native WF).
-        is_pf  = is_row.get("profit_factor") or 0.0
+        is_pf = is_row.get("profit_factor") or 0.0
         oos_pf = oos_row.get("profit_factor") or 0.0
         # IS→OOS degradation on PF (consistent with how cumulative mode uses Sharpe)
         if is_pf > 0:
             degradations.append(max(0.0, 1.0 - oos_pf / is_pf))
-        summary.append({
-            "window":    w_num,
-            "is_pnl":    round(is_pnl, 2) if is_pnl is not None else None,
-            "oos_pnl":   round(oos_pnl, 2) if oos_pnl is not None else None,
-            "is_pf":     round(is_pf, 4),
-            "oos_pf":    round(oos_pf, 4),
-            # Sharpe fields expected by the existing WF summary schema
-            "is_sharpe":  None,
-            "oos_sharpe": None,
-        })
+        summary.append(
+            {
+                "window": w_num,
+                "is_pnl": round(is_pnl, 2) if is_pnl is not None else None,
+                "oos_pnl": round(oos_pnl, 2) if oos_pnl is not None else None,
+                "is_pf": round(is_pf, 4),
+                "oos_pf": round(oos_pf, 4),
+                # Sharpe fields expected by the existing WF summary schema
+                "is_sharpe": None,
+                "oos_sharpe": None,
+            }
+        )
 
     # No window had IS PF > 0, so IS→OOS degradation isn't assessable. Store None (not 0.0) —
     # matching the serial path's fix-#4 convention. 0.0 would read as "0% degradation = solid
@@ -1026,7 +1074,8 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
 
     try:
         windows = _split_windows(
-            source_run["start_date"], source_run["end_date"],
+            source_run["start_date"],
+            source_run["end_date"],
             st.get("walk_forward_windows", 5),
         )
     except ValueError as exc:
@@ -1041,35 +1090,44 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     for w in windows:
         if is_cancelled(stress_test_id):
             return (False, "cancelled")
-        window_data = {"window": w["window"], "is_pnl": None, "oos_pnl": None, "is_sharpe": None,
-                       "oos_sharpe": None, "is_trades": None, "oos_trades": None}
+        window_data = {
+            "window": w["window"],
+            "is_pnl": None,
+            "oos_pnl": None,
+            "is_sharpe": None,
+            "oos_sharpe": None,
+            "is_trades": None,
+            "oos_trades": None,
+        }
 
         for period_type, p_start, p_end in [
-            ("is",  w["is_start"],  w["is_end"]),
+            ("is", w["is_start"], w["is_end"]),
             ("oos", w["oos_start"], w["oos_end"]),
         ]:
             if is_cancelled(stress_test_id):
                 return (False, "cancelled")
             child_id = uuid.uuid4().hex[:16]
             wf_tag = f"wf_{w['window']}_{period_type}"
-            lab_db.insert_run_stress_test_child({
-                "run_id": child_id,
-                "strategy_id": source_run["strategy_id"],
-                "instrument": source_run["instrument"],
-                "params": source_run.get("params", {}),
-                "bar_type": source_run["bar_type"],
-                "bar_value": source_run["bar_value"],
-                "start_date": p_start,
-                "end_date": p_end,
-                "commission_per_side": source_run["commission_per_side"],
-                "slippage_ticks": source_run["slippage_ticks"],
-                "status": "running",
-                "created_at": int(time.time()),
-                "stress_test_id": stress_test_id,
-                "walk_forward_window_id": wf_tag,
-                "runner": runner,
-                **measured_on,
-            })
+            lab_db.insert_run_stress_test_child(
+                {
+                    "run_id": child_id,
+                    "strategy_id": source_run["strategy_id"],
+                    "instrument": source_run["instrument"],
+                    "params": source_run.get("params", {}),
+                    "bar_type": source_run["bar_type"],
+                    "bar_value": source_run["bar_value"],
+                    "start_date": p_start,
+                    "end_date": p_end,
+                    "commission_per_side": source_run["commission_per_side"],
+                    "slippage_ticks": source_run["slippage_ticks"],
+                    "status": "running",
+                    "created_at": int(time.time()),
+                    "stress_test_id": stress_test_id,
+                    "walk_forward_window_id": wf_tag,
+                    "runner": runner,
+                    **measured_on,
+                }
+            )
 
             job_spec = {
                 "job_id": child_id,
@@ -1143,21 +1201,28 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     #
     # Refusing is the right answer AND an actionable one: `walk_forward_windows` is a user setting,
     # so the fix is fewer, longer windows, not a looser test.
-    thin = [w["window"] for w in summary
-            if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
-            or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW]
+    thin = [
+        w["window"]
+        for w in summary
+        if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+        or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+    ]
     degradations = [
         _clamp_wf_degradation(1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"])
         for w in summary
-        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR
-        and w["window"] not in thin
+        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR and w["window"] not in thin
     ]
     avg_deg = float(np.mean(degradations)) if degradations else None
     if thin:
-        log.info("Walk-forward %s: %d of %d window(s) excluded — under %d trades on one side "
-                 "(windows %s). Re-run with fewer walk_forward_windows for a longer sample each.",
-                 stress_test_id, len(thin), len(summary), _WF_MIN_TRADES_PER_WINDOW,
-                 ", ".join(str(w) for w in thin))
+        log.info(
+            "Walk-forward %s: %d of %d window(s) excluded — under %d trades on one side "
+            "(windows %s). Re-run with fewer walk_forward_windows for a longer sample each.",
+            stress_test_id,
+            len(thin),
+            len(summary),
+            _WF_MIN_TRADES_PER_WINDOW,
+            ", ".join(str(w) for w in thin),
+        )
 
     lab_db.update_stress_test_walk_forward(stress_test_id, summary, avg_deg)
 
@@ -1165,16 +1230,24 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     # so the row can say so; a partial failure keeps the summary (the windows that ran are real)
     # and is named in the log.
     if failed_periods and len(failed_periods) >= 2 * len(windows):
-        return (False, f"every walk-forward backtest failed ({len(failed_periods)} of "
-                       f"{2 * len(windows)} periods)")
+        return (
+            False,
+            f"every walk-forward backtest failed ({len(failed_periods)} of "
+            f"{2 * len(windows)} periods)",
+        )
     if failed_periods:
-        log.warning("Walk-forward %s: %d of %d period backtests failed (%s)",
-                    stress_test_id, len(failed_periods), 2 * len(windows),
-                    ", ".join(failed_periods))
+        log.warning(
+            "Walk-forward %s: %d of %d period backtests failed (%s)",
+            stress_test_id,
+            len(failed_periods),
+            2 * len(windows),
+            ", ".join(failed_periods),
+        )
     return (True, None)
 
 
 # ── Sensitivity runner ─────────────────────────────────────────────────────────
+
 
 async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]]:
     """Run ±10%/±25% param perturbations sequentially through NT8. Updates DB when done.
@@ -1231,16 +1304,21 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     # config: account size, risk %, commission) are not tunable and many sit at the -1 sentinel.
     numeric_params = perturbable_params(strategy, base_params)
     unreachable = [
-        p["name"] for p in param_schema
+        p["name"]
+        for p in param_schema
         if p.get("type") in ("int", "float", "double")
         and p.get("name") in base_params
         and not _is_foundational(p)
         and not param_is_reachable(p, base_params)
     ]
     if unreachable:
-        log.info("Sensitivity %s: %d param(s) skipped — their own show_if gate is off in this run, "
-                 "so no shift of them can change the result: %s",
-                 stress_test_id, len(unreachable), ", ".join(unreachable))
+        log.info(
+            "Sensitivity %s: %d param(s) skipped — their own show_if gate is off in this run, "
+            "so no shift of them can change the result: %s",
+            stress_test_id,
+            len(unreachable),
+            ", ".join(unreachable),
+        )
 
     # Baseline metrics. Profit factor is the scored one (see the docstring); net P&L is kept
     # alongside it purely so a shift's dollar effect is still visible on the record.
@@ -1252,8 +1330,11 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     # where nothing was actually measured. Grading treats a None the same as not-run.
     pf_usable = baseline_pf is not None and np.isfinite(baseline_pf) and baseline_pf > 0
     if not pf_usable:
-        log.warning("Sensitivity %s: baseline profit factor is %r — degradation is not assessable",
-                    stress_test_id, baseline_pf)
+        log.warning(
+            "Sensitivity %s: baseline profit factor is %r — degradation is not assessable",
+            stress_test_id,
+            baseline_pf,
+        )
 
     # MT5 runs one VPS job at a time — 4 shifts × N params = very long queues.
     # Use 2 shifts for slow runners; ±10% is sufficient to flag parameter sensitivity.
@@ -1271,8 +1352,12 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     plan, skipped = sensitivity_plan(numeric_params, base_params, SHIFTS)
 
     ctx = {
-        "stress_test_id": stress_test_id, "source_run": source_run, "strategy": strategy,
-        "runner": runner, "base_params": base_params, "measured_on": measured_on,
+        "stress_test_id": stress_test_id,
+        "source_run": source_run,
+        "strategy": strategy,
+        "runner": runner,
+        "base_params": base_params,
+        "measured_on": measured_on,
     }
     # HOW to run it. The pool is python-only and that is not a limitation to lift later: NT8 and
     # MT5 each drive one physical terminal, so their shifts have nothing to run in parallel ON.
@@ -1322,24 +1407,31 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
         }
 
         if degradation is not None:
-            max_degradation = degradation if max_degradation is None else max(max_degradation, degradation)
+            max_degradation = (
+                degradation if max_degradation is None else max(max_degradation, degradation)
+            )
 
     if skipped:
-        log.info("Sensitivity %s: skipped %d perturbation(s) that could test nothing: %s",
-                 stress_test_id, len(skipped), ", ".join(skipped))
+        log.info(
+            "Sensitivity %s: skipped %d perturbation(s) that could test nothing: %s",
+            stress_test_id,
+            len(skipped),
+            ", ".join(skipped),
+        )
 
     # What was NOT measured travels with what was. A page reporting "12 params tested" over a phase
     # that quietly refused 30 shifts is describing coverage that never happened — the same reason
     # the optimizer logs what its caps dropped.
     coverage = {
-        "params_perturbed":   len(sensitivity),
-        "shifts_run":         sum(len(v) for v in sensitivity.values()),
-        "shifts_skipped":     skipped,
-        "shifts_failed":      failed_shifts,
+        "params_perturbed": len(sensitivity),
+        "shifts_run": sum(len(v) for v in sensitivity.values()),
+        "shifts_skipped": skipped,
+        "shifts_failed": failed_shifts,
         "params_unreachable": unreachable,
     }
     lab_db.update_stress_test_sensitivity(
-        stress_test_id, sensitivity,
+        stress_test_id,
+        sensitivity,
         None if max_degradation is None else round(max_degradation, 4),
         coverage,
     )
@@ -1348,12 +1440,17 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     if failed_shifts and not sensitivity:
         return (False, f"every sensitivity backtest failed ({len(failed_shifts)} shifts)")
     if failed_shifts:
-        log.warning("Sensitivity %s: %d shift backtest(s) failed (%s)",
-                    stress_test_id, len(failed_shifts), ", ".join(failed_shifts))
+        log.warning(
+            "Sensitivity %s: %d shift backtest(s) failed (%s)",
+            stress_test_id,
+            len(failed_shifts),
+            ", ".join(failed_shifts),
+        )
     return (True, None)
 
 
 # ── Grid sensitivity injection (Step 3A) ──────────────────────────────────────
+
 
 async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) -> bool:
     """
@@ -1377,6 +1474,7 @@ async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) ->
 
     try:
         import json as _json
+
         summary = _json.loads(summary_raw) if isinstance(summary_raw, str) else summary_raw
     except Exception:
         return False
@@ -1387,12 +1485,17 @@ async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) ->
 
 # ── Telegram grade notification ───────────────────────────────────────────────
 
-def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: Optional[str], reasons: list[str]) -> None:
+
+def _fire_grade_notification(
+    stress_test_id: str, run: dict, st: dict, grade: Optional[str], reasons: list[str]
+) -> None:
     strategy = lab_db.get_strategy(run.get("strategy_id", ""))
-    strat_name = (strategy.get("name") or strategy.get("class_name") or "Unknown") if strategy else "Unknown"
+    strat_name = (
+        (strategy.get("name") or strategy.get("class_name") or "Unknown") if strategy else "Unknown"
+    )
     instrument = run.get("instrument", "?")
-    prob_pass  = st.get("prob_pass_eval")
-    p1_dd      = st.get("pct1_max_dd")
+    prob_pass = st.get("prob_pass_eval")
+    p1_dd = st.get("pct1_max_dd")
 
     # The house shape (`services/alert_format.py`): icon, LABEL, subject, grouped facts, then
     # the thing to act on. Plain text — a strategy name is full of underscores and Telegram drops
@@ -1416,18 +1519,20 @@ def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: Op
     if failures:
         # A phase that RAN AND CRASHED leaves a NULL summary, which grading reads as "not run"
         # and does not penalise. Saying so is the difference between a caveat and a fiction.
-        tail.append("Phase failed: " + ", ".join(failures) + " — the grade does not account "
-                    "for it.")
+        tail.append(
+            "Phase failed: " + ", ".join(failures) + " — the grade does not account for it."
+        )
     if reasons:
         tail.append("Why: " + "; ".join(reasons[:3]))
 
-    notify.send_telegram(alert(
-        "🧪", "STRESS TEST", f"{strat_name} {instrument}",
-        joined(facts),
-        *tail), notify.HEALTH)
+    notify.send_telegram(
+        alert("🧪", "STRESS TEST", f"{strat_name} {instrument}", joined(facts), *tail),
+        notify.HEALTH,
+    )
 
 
 # ── Main stress test background task ──────────────────────────────────────────
+
 
 async def run_stress_test_task(
     stress_test_id: str,
@@ -1444,18 +1549,24 @@ async def run_stress_test_task(
 
         run = lab_db.get_run(st["run_id"])
         if not run:
-            lab_db.update_stress_test_status(stress_test_id, "failed_no_run", "Source run not found")
+            lab_db.update_stress_test_status(
+                stress_test_id, "failed_no_run", "Source run not found"
+            )
             return
 
         eq_path = run.get("equity_curve_path")
         if not eq_path or not Path(eq_path).exists():
-            lab_db.update_stress_test_status(stress_test_id, "failed_no_data", "No equity curve data")
+            lab_db.update_stress_test_status(
+                stress_test_id, "failed_no_data", "No equity curve data"
+            )
             return
 
         equity_curve = json.loads(Path(eq_path).read_text())
         trade_pnls = [t["profit"] for t in equity_curve if t.get("profit") is not None]
         if not trade_pnls:
-            lab_db.update_stress_test_status(stress_test_id, "failed_no_trades", "No trades in equity curve")
+            lab_db.update_stress_test_status(
+                stress_test_id, "failed_no_trades", "No trades in equity curve"
+            )
             return
 
         # Balance BEFORE each trade, so the simulation can tell a compounding run from a fixed-size
@@ -1463,7 +1574,8 @@ async def run_stress_test_task(
         # curve, so the opening balance is equity - profit. Built in the same pass as the P&L list so
         # the two stay index-aligned; a curve missing `equity` yields None and the dollar model.
         balances: Optional[list[float]] = [
-            t["equity"] - t["profit"] for t in equity_curve
+            t["equity"] - t["profit"]
+            for t in equity_curve
             if t.get("profit") is not None and t.get("equity") is not None
         ]
         if len(balances) != len(trade_pnls):
@@ -1473,31 +1585,45 @@ async def run_stress_test_task(
 
         # ── Monte Carlo ──
         mc = await asyncio.to_thread(
-            run_monte_carlo, trade_pnls, ruleset,
+            run_monte_carlo,
+            trade_pnls,
+            ruleset,
             st.get("num_simulations", 10_000),
             st.get("num_bootstrap", 1_000),
             100,
             balances,
         )
-        log.info("Stress test %s: Monte Carlo shuffled the %s series over %d trades",
-                 stress_test_id, mc.pop("shuffle_model", "dollars"), len(trade_pnls))
+        log.info(
+            "Stress test %s: Monte Carlo shuffled the %s series over %d trades",
+            stress_test_id,
+            mc.pop("shuffle_model", "dollars"),
+            len(trade_pnls),
+        )
 
         st_dir = _RESULTS_DIR / stress_test_id
         st_dir.mkdir(parents=True, exist_ok=True)
         paths_file = st_dir / "equity_paths.json"
-        dist_file  = st_dir / "distribution.json"
+        dist_file = st_dir / "distribution.json"
         paths_file.write_text(json.dumps(mc.pop("sampled_paths"), default=str))
         dist_file.write_text(json.dumps(mc.pop("distribution"), default=str))
 
         # ⚠ The row moves to the NEXT phase, never straight to `complete`. Marking it complete
         # here released the market lock mid-test and made a crash between phases invisible to
         # `reset_stale_stress_tests` — see lab_db.update_stress_test_mc.
-        after_mc = "running_wf" if include_walk_forward else (
-            "running_sens" if include_sensitivity else "complete")
-        lab_db.update_stress_test_mc(stress_test_id, mc, {
-            "equity_paths_path": str(paths_file),
-            "distribution_path": str(dist_file),
-        }, next_status=after_mc)
+        after_mc = (
+            "running_wf"
+            if include_walk_forward
+            else ("running_sens" if include_sensitivity else "complete")
+        )
+        lab_db.update_stress_test_mc(
+            stress_test_id,
+            mc,
+            {
+                "equity_paths_path": str(paths_file),
+                "distribution_path": str(dist_file),
+            },
+            next_status=after_mc,
+        )
 
         # Already written at creation (see `phases_requested`); recomputed here only so the
         # end-of-run write carries both fields together.
@@ -1553,7 +1679,8 @@ async def run_stress_test_task(
             # died still has to be visible, so it goes in the row's own error field rather than
             # being lost with the reasons a grade would have carried.
             lab_db.update_stress_test_status(
-                stress_test_id, "complete",
+                stress_test_id,
+                "complete",
                 "; ".join(f"{k}: {v}" for k, v in phase_failures.items()) or None,
             )
 
@@ -1564,14 +1691,19 @@ async def run_stress_test_task(
 
 # ── Auto-trigger (called by backtest_runner and optimization_runner) ───────────
 
+
 async def trigger_auto_stress_test(run_id: str, ruleset_ids: list[str]) -> None:
     """MC-only auto-trigger after Tier 1 backtest or optimizer winner."""
     # Sample-size floor — Tier 1 only requires >= 50 trades, so this also skips the auto Monte
     # Carlo for Tier 1 runs with 50-99 trades, where its tail percentiles aren't trustworthy.
     run = lab_db.get_run(run_id) or {}
     if (run.get("trade_count") or 0) < MIN_TRADES_FOR_STRESS:
-        log.info("Auto stress test skipped for %s: only %s trades (< %d)",
-                 run_id, run.get("trade_count"), MIN_TRADES_FOR_STRESS)
+        log.info(
+            "Auto stress test skipped for %s: only %s trades (< %d)",
+            run_id,
+            run.get("trade_count"),
+            MIN_TRADES_FOR_STRESS,
+        )
         return
 
     primary_ruleset_id = None
@@ -1588,13 +1720,15 @@ async def trigger_auto_stress_test(run_id: str, ruleset_ids: list[str]) -> None:
             primary_ruleset_id = primary["id"]
 
     st_id = uuid.uuid4().hex[:16]
-    lab_db.insert_stress_test({
-        "stress_test_id": st_id,
-        "run_id": run_id,
-        "ruleset_id": primary_ruleset_id,
-        "status": "running",
-        "created_at": int(time.time()),
-    })
+    lab_db.insert_stress_test(
+        {
+            "stress_test_id": st_id,
+            "run_id": run_id,
+            "ruleset_id": primary_ruleset_id,
+            "status": "running",
+            "created_at": int(time.time()),
+        }
+    )
     # Fire and forget (no walk-forward for auto-triggers — MC only). The reference is HELD:
     # `asyncio.create_task` alone does not keep one, so a long-awaiting task is collectable and can
     # disappear mid-flight, leaving the row `running` for ever.

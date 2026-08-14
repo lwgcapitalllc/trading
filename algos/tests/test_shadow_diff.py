@@ -26,13 +26,15 @@ import pytest
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location(
-    "shadow_diff", _REPO / "algos" / "tools" / "shadow_diff.py")
+    "shadow_diff", _REPO / "algos" / "tools" / "shadow_diff.py"
+)
 sd = importlib.util.module_from_spec(_spec)
 sys.modules["shadow_diff"] = sd
 _spec.loader.exec_module(sd)
 
 
 # ── reading the ledger ───────────────────────────────────────────────────────────
+
 
 def _write(dir_: Path, name: str, rows: list[dict]) -> None:
     dir_.joinpath(name).write_text("\n".join(json.dumps(r) for r in rows) + "\n")
@@ -42,14 +44,24 @@ def test_only_bar_records_are_read_and_they_come_back_in_time_order(tmp_path):
     # The ledger interleaves bar / blocked / missed / trade / event in one file, and the daily
     # files are read in filename order, which is not necessarily time order once a bot has
     # restarted. Sorting here is what lets the caller trust `live[0]` and `live[-1]`.
-    _write(tmp_path, "decisions-2026-08-02.jsonl", [
-        {"kind": "bar", "bar_time": 300}, {"kind": "blocked", "bar_time": 301},
-        {"kind": "event", "warmed": 1},
-    ])
-    _write(tmp_path, "decisions-2026-08-01.jsonl", [
-        {"kind": "bar", "bar_time": 100}, {"kind": "trade", "bar_time": 150},
-        {"kind": "bar", "bar_time": 200},
-    ])
+    _write(
+        tmp_path,
+        "decisions-2026-08-02.jsonl",
+        [
+            {"kind": "bar", "bar_time": 300},
+            {"kind": "blocked", "bar_time": 301},
+            {"kind": "event", "warmed": 1},
+        ],
+    )
+    _write(
+        tmp_path,
+        "decisions-2026-08-01.jsonl",
+        [
+            {"kind": "bar", "bar_time": 100},
+            {"kind": "trade", "bar_time": 150},
+            {"kind": "bar", "bar_time": 200},
+        ],
+    )
     rows = sd._load_ledger(tmp_path)
     assert [r["bar_time"] for r in rows] == [100, 200, 300]
 
@@ -58,9 +70,14 @@ def test_a_bar_record_with_no_timestamp_is_dropped_not_joined_at_None(tmp_path):
     # `bar_time` is read defensively by the ledger (`getattr(sig, "time_ms", None)`), so a
     # strategy with a different Signals shape writes a null. Joining on None would bucket
     # every such row together and compare them against one arbitrary lab bar.
-    _write(tmp_path, "decisions-2026-08-01.jsonl", [
-        {"kind": "bar", "bar_time": None}, {"kind": "bar", "bar_time": 100},
-    ])
+    _write(
+        tmp_path,
+        "decisions-2026-08-01.jsonl",
+        [
+            {"kind": "bar", "bar_time": None},
+            {"kind": "bar", "bar_time": 100},
+        ],
+    )
     assert [r["bar_time"] for r in sd._load_ledger(tmp_path)] == [100]
 
 
@@ -72,6 +89,7 @@ def test_an_empty_ledger_directory_refuses_rather_than_reporting_a_clean_run(tmp
 
 
 # ── comparing prices ─────────────────────────────────────────────────────────────
+
 
 def test_two_prices_inside_the_tolerance_are_the_same_price():
     assert sd._same_price(4052.13, 4052.1309)
@@ -104,6 +122,7 @@ def test_a_price_of_zero_is_not_treated_as_absent():
 
 
 # ── the field roster ─────────────────────────────────────────────────────────────
+
 
 def test_no_field_is_compared_twice_under_two_kinds():
     fields = sd._BOOL_FIELDS + sd._INT_FIELDS + sd._PRICE_FIELDS

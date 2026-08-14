@@ -68,6 +68,7 @@ def _spec(key: str, df, symbol: str) -> LegSpec:
     # can see it instead of letting the run die three lines into the replay.
     if hasattr(cfg, "exec_secondary") and cfg.exec_secondary:
         import dataclasses
+
         cfg = dataclasses.replace(cfg, exec_secondary=False)
         print(f"  {key}: exec_secondary pinned OFF (a leg is one bar frame)")
     return LegSpec(name=key, strategy_cls=lab["strategy"], config=cfg, df=df)
@@ -78,21 +79,40 @@ def _book(trades) -> tuple[int, float]:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--legs", default="mpc_sos_fade,mpc_bleg",
-                    help=f"comma-separated, from {sorted(_STRATEGIES)}")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--legs",
+        default="mpc_sos_fade,mpc_bleg",
+        help=f"comma-separated, from {sorted(_STRATEGIES)}",
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--start", default=None,
-                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)")
+    ap.add_argument(
+        "--start",
+        default=None,
+        help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)",
+    )
     ap.add_argument("--end", default=None)
-    ap.add_argument("--balance", type=float, default=10_000.0,
-                    help="the account's OPENING balance, shared by every leg")
-    ap.add_argument("--risk-cap", type=float, default=10.0,
-                    help="max open risk as a %% of the LIVE balance, across all legs")
-    ap.add_argument("--entry-floor", type=float, default=0.0,
-                    help="skip an entry granted less than this %% of balance in risk")
+    ap.add_argument(
+        "--balance",
+        type=float,
+        default=10_000.0,
+        help="the account's OPENING balance, shared by every leg",
+    )
+    ap.add_argument(
+        "--risk-cap",
+        type=float,
+        default=10.0,
+        help="max open risk as a %% of the LIVE balance, across all legs",
+    )
+    ap.add_argument(
+        "--entry-floor",
+        type=float,
+        default=0.0,
+        help="skip an entry granted less than this %% of balance in risk",
+    )
     args = ap.parse_args(argv)
 
     keys = [k.strip() for k in args.legs.split(",") if k.strip()]
@@ -100,8 +120,10 @@ def main(argv=None) -> int:
     if unknown:
         raise SystemExit(f"unknown strategies: {unknown}. Known: {sorted(_STRATEGIES)}")
     if len(keys) < 2:
-        raise SystemExit("a stack needs at least two legs — one leg on a shared account is "
-                         "just a solo run with extra steps.")
+        raise SystemExit(
+            "a stack needs at least two legs — one leg on a shared account is "
+            "just a solo run with extra steps."
+        )
 
     from backtest.data.history import floor_for
     from backtest.data.source import BarSource
@@ -112,7 +134,8 @@ def main(argv=None) -> int:
         if fl is None:
             raise SystemExit(
                 f"cannot measure the broker's earliest {args.tf}m history for {args.symbol}. "
-                f"Pass --start explicitly rather than guessing one.")
+                f"Pass --start explicitly rather than guessing one."
+            )
         start = fl.isoformat()
     end = args.end or dt.date.today().isoformat()
 
@@ -125,16 +148,24 @@ def main(argv=None) -> int:
 
     specs = [_spec(k, df, args.symbol) for k in keys]
     print(f"replaying {len(specs)} legs shared + {len(specs)} solo controls ...", flush=True)
-    run = run_stack(specs, balance=args.balance, risk_cap_pct=args.risk_cap / 100.0,
-                    entry_floor_pct=args.entry_floor / 100.0)
+    run = run_stack(
+        specs,
+        balance=args.balance,
+        risk_cap_pct=args.risk_cap / 100.0,
+        entry_floor_pct=args.entry_floor / 100.0,
+    )
 
     print()
-    print(f"SHARED ACCOUNT   opening ${run.opening_balance:,.2f}   "
-          f"cap {args.risk_cap:.2f}% of live balance")
+    print(
+        f"SHARED ACCOUNT   opening ${run.opening_balance:,.2f}   "
+        f"cap {args.risk_cap:.2f}% of live balance"
+    )
     print(f"                 closing ${run.closing_balance:,.2f}")
     print()
-    print(f"{'leg':<16}{'shared trades':>15}{'shared R':>11}"
-          f"{'solo trades':>14}{'solo R':>10}{'solo close':>14}")
+    print(
+        f"{'leg':<16}{'shared trades':>15}{'shared R':>11}"
+        f"{'solo trades':>14}{'solo R':>10}{'solo close':>14}"
+    )
     for spec in specs:
         sn, sr = _book(run.per_leg.get(spec.name, []))
         on, orr = _book(run.solo_per_leg.get(spec.name, []))
@@ -144,8 +175,10 @@ def main(argv=None) -> int:
     print(f"{'TOTAL':<16}{tn:>15}{tr:>11.2f}")
 
     print()
-    print(f"CARRIED     peak open risk {run.peak_reserved_pct * 100:.2f}% of the live balance "
-          f"against a {args.risk_cap:.2f}% cap")
+    print(
+        f"CARRIED     peak open risk {run.peak_reserved_pct * 100:.2f}% of the live balance "
+        f"against a {args.risk_cap:.2f}% cap"
+    )
     print(f"            peak legs holding at once: {run.peak_concurrent} of {len(specs)}")
     print("            (open risk is measured to each trade's CURRENT stop, so a stop moved to")
     print("             breakeven releases its room — which is why this can sit far under the cap")
@@ -161,8 +194,7 @@ def main(argv=None) -> int:
         print(f"CONTENTION  {len(run.contention)} events")
         print(f"{'leg':<16}{'shrunk':>9}{'blocked':>10}{'risk refused $':>18}")
         for leg, row in sorted(summary.items()):
-            print(f"{leg:<16}{row['shrunk']:>9}{row['blocked']:>10}"
-                  f"{row['risk_refused']:>18,.2f}")
+            print(f"{leg:<16}{row['shrunk']:>9}{row['blocked']:>10}{row['risk_refused']:>18,.2f}")
 
     print()
     print(_invariant(run, specs))
@@ -188,9 +220,11 @@ def _invariant(run, specs) -> str:
     worth looking at, not a reason to exit non-zero on a long replay.
     """
     if run.contention:
-        return ("⚠ The cap bound, so shared and solo are expected to differ. Every difference "
-                "should\n  trace to a row in the contention log — check one before trusting the "
-                "totals.")
+        return (
+            "⚠ The cap bound, so shared and solo are expected to differ. Every difference "
+            "should\n  trace to a row in the contention log — check one before trusting the "
+            "totals."
+        )
     bad = []
     for spec in specs:
         shared_r = round(sum(t.r for t in run.per_leg.get(spec.name, [])), 6)
@@ -198,13 +232,17 @@ def _invariant(run, specs) -> str:
         if shared_r != solo_r:
             bad.append(f"{spec.name}: shared {shared_r:+.2f}R vs solo {solo_r:+.2f}R")
     if not bad:
-        return ("✅ No contention, and every leg posts the SAME R shared as solo — so the shared\n"
-                "   account changed the dollars (one balance, compounding both legs) and moved "
-                "no\n   decision. That is the control this run exists to establish.")
-    return ("🔴 No contention, yet the R differs between shared and solo:\n   "
-            + "\n   ".join(bad)
-            + "\n   With nothing refused the two books should be identical in R — a difference\n"
-              "   here is the shared account moving a decision it must not touch.")
+        return (
+            "✅ No contention, and every leg posts the SAME R shared as solo — so the shared\n"
+            "   account changed the dollars (one balance, compounding both legs) and moved "
+            "no\n   decision. That is the control this run exists to establish."
+        )
+    return (
+        "🔴 No contention, yet the R differs between shared and solo:\n   "
+        + "\n   ".join(bad)
+        + "\n   With nothing refused the two books should be identical in R — a difference\n"
+        "   here is the shared account moving a decision it must not touch."
+    )
 
 
 if __name__ == "__main__":

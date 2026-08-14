@@ -20,12 +20,9 @@ API reference: https://www.myfxbook.com/api
 from __future__ import annotations
 
 import os
-import time
 
 import requests
-
 from run_logger import StageLogger
-
 
 MYFXBOOK_BASE = "https://www.myfxbook.com/api"
 

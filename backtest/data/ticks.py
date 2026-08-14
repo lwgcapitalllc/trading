@@ -59,7 +59,7 @@ class Tick:
     def spread(self) -> float:
         return self.ask - self.bid
 
-    def __repr__(self) -> str:                                    # pragma: no cover - debug aid
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"Tick({self.ms}, bid={self.bid}, ask={self.ask})"
 
 
@@ -119,7 +119,7 @@ class TickCache:
         }
         tmp = self.path(symbol, hour_ms).with_suffix(".tmp")
         tmp.write_text(json.dumps(blob, separators=(",", ":")))
-        tmp.replace(self.path(symbol, hour_ms))   # atomic: never leave a half-written bucket
+        tmp.replace(self.path(symbol, hour_ms))  # atomic: never leave a half-written bucket
 
 
 class TickSource:
@@ -153,11 +153,14 @@ class TickSource:
             return cached
         try:
             raw = self.agent.ticks(symbol, _iso(hour_ms), _iso(hour_ms + 3_600_000))
-        except Exception as exc:                                  # agent down / refused / HTTP
+        except Exception as exc:  # agent down / refused / HTTP
             raise TickWindowUnavailable(
-                f"ticks unavailable for {symbol} hour {_iso(hour_ms)}: {exc}") from exc
-        ticks = [Tick(_to_ms(_dt.datetime.fromisoformat(r["time"])), float(r["bid"]), float(r["ask"]))
-                 for r in raw]
+                f"ticks unavailable for {symbol} hour {_iso(hour_ms)}: {exc}"
+            ) from exc
+        ticks = [
+            Tick(_to_ms(_dt.datetime.fromisoformat(r["time"])), float(r["bid"]), float(r["ask"]))
+            for r in raw
+        ]
         ticks.sort(key=lambda t: t.ms)
-        self.cache.save(symbol, hour_ms, ticks)   # empty is cached too — a real, reusable answer
+        self.cache.save(symbol, hour_ms, ticks)  # empty is cached too — a real, reusable answer
         return ticks

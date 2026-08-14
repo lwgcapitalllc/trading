@@ -27,7 +27,7 @@ See `docs/LIVE_SETUP_ALERTS.md` for the messages, the measured volume and the bu
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Protocol, Sequence, Tuple
 
 # ── The four states a setup passes through ───────────────────────────────────────────────────
@@ -37,10 +37,10 @@ from typing import List, Optional, Protocol, Sequence, Tuple
 # `misses` / `blocks` records to find out why — needs a join key those records do not carry, and a
 # join that matches too little invents drift while one that matches too much invents parity. That
 # trap is already recorded for `shadow_diff.py`; this design has nothing to correlate.
-WATCHING = "watching"   #: confluences accumulating — the setup is forming
-RESTING = "resting"     #: every confluence met and an order is live at a price
-FILLED = "filled"       #: it became a trade
-DEAD = "dead"           #: it ended without trading — `reason` says why
+WATCHING = "watching"  #: confluences accumulating — the setup is forming
+RESTING = "resting"  #: every confluence met and an order is live at a price
+FILLED = "filled"  #: it became a trade
+DEAD = "dead"  #: it ended without trading — `reason` says why
 
 STATES = (WATCHING, RESTING, FILLED, DEAD)
 
@@ -88,15 +88,15 @@ class SetupSnapshot:
     key: str
     strategy: str
     symbol: str
-    side: int                                   #: +1 long, -1 short
+    side: int  #: +1 long, -1 short
     state: str
     confluences: Tuple[Confluence, ...] = ()
     zone: Optional[Tuple[float, float]] = None  #: (shallow, deep) — the valid entry range
-    entry: Optional[float] = None               #: the ONE resting price, once there is one
+    entry: Optional[float] = None  #: the ONE resting price, once there is one
     stop: Optional[float] = None
     targets: Tuple[float, ...] = ()
     blocked_by: Tuple[str, ...] = ()
-    reason: str = ""                            #: why it ended — FILLED / DEAD only
+    reason: str = ""  #: why it ended — FILLED / DEAD only
     #: Can this setup still become a trade under the CONFIG THE BOT IS RUNNING? `False` means the
     #: strategy has already decided it cannot — not that it is unlikely, but that no price path
     #: reaches a fill. The alert layer suppresses these, because a signal for a trade the bot
@@ -170,8 +170,9 @@ class SetupSnapshot:
 
     def met_lines(self) -> List[str]:
         """The confluence breakdown, in the strategy's own declared order."""
-        return [f"{c.name} — {c.detail or ('yes' if c.met else 'not yet')}"
-                for c in self.confluences]
+        return [
+            f"{c.name} — {c.detail or ('yes' if c.met else 'not yet')}" for c in self.confluences
+        ]
 
 
 class WatchesSetups(Protocol):
@@ -186,8 +187,7 @@ class WatchesSetups(Protocol):
     registry, and it is indistinguishable from a quiet market.
     """
 
-    def live_setups(self) -> Sequence[SetupSnapshot]:
-        ...
+    def live_setups(self) -> Sequence[SetupSnapshot]: ...
 
 
 def implements_contract(obj: object) -> bool:

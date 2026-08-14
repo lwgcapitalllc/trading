@@ -15,7 +15,6 @@ import json
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from backtest.data.cache import FEED_VERSION, BarCache, _normalize
 from backtest.data.resample import resample_up
@@ -45,11 +44,13 @@ def test_volume_aggregates_by_sum_not_by_first_or_last():
     it first/last/max keeps the number in the right order of magnitude and under-weights every
     resampled bar in a VWAP by roughly the resample ratio.
     """
-    df = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11, 100),
-        ("2026-01-05 09:05", 11, 13, 10, 12, 250),
-        ("2026-01-05 09:10", 12, 14, 11, 13, 30),
-    ])
+    df = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11, 100),
+            ("2026-01-05 09:05", 11, 13, 10, 12, 250),
+            ("2026-01-05 09:10", 12, 14, 11, 13, 30),
+        ]
+    )
     out = resample_up(df, target_minutes=15, base_minutes=5)
 
     assert out.loc["2026-01-05 09:00", "volume"] == 380.0
@@ -63,24 +64,29 @@ def test_a_window_holding_one_unknown_bar_is_unknown_rather_than_short():
     A partly-known window has no honest total, and quietly reporting the known part is exactly the
     failure this file exists to pin: the consumer cannot tell that number from a real one.
     """
-    df = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11, 100),
-        ("2026-01-05 09:05", 11, 13, 10, 12, np.nan),
-        ("2026-01-05 09:10", 12, 14, 11, 13, 30),
-        ("2026-01-05 09:15", 13, 15, 12, 14, 40),
-    ])
+    df = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11, 100),
+            ("2026-01-05 09:05", 11, 13, 10, 12, np.nan),
+            ("2026-01-05 09:10", 12, 14, 11, 13, 30),
+            ("2026-01-05 09:15", 13, 15, 12, 14, 40),
+        ]
+    )
     out = resample_up(df, target_minutes=15, base_minutes=5)
 
-    assert np.isnan(out.loc["2026-01-05 09:00", "volume"])   # NOT 130.0
-    assert out.loc["2026-01-05 09:15", "volume"] == 40.0     # a clean window is unaffected
+    assert np.isnan(out.loc["2026-01-05 09:00", "volume"])  # NOT 130.0
+    assert out.loc["2026-01-05 09:15", "volume"] == 40.0  # a clean window is unaffected
 
 
 def test_a_frame_with_no_volume_column_gets_none_invented():
-    df = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11, None),
-        ("2026-01-05 09:05", 11, 13, 10, 12, None),
-        ("2026-01-05 09:10", 12, 14, 11, 13, None),
-    ], volume=False)
+    df = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11, None),
+            ("2026-01-05 09:05", 11, 13, 10, 12, None),
+            ("2026-01-05 09:10", 12, 14, 11, 13, None),
+        ],
+        volume=False,
+    )
     out = resample_up(df, target_minutes=15, base_minutes=5)
 
     assert "volume" not in out.columns
@@ -88,11 +94,13 @@ def test_a_frame_with_no_volume_column_gets_none_invented():
 
 def test_zero_volume_survives_as_a_measurement():
     """A dead session reports real zeros, and they must not be confused with the absent case."""
-    df = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11, 0),
-        ("2026-01-05 09:05", 11, 13, 10, 12, 0),
-        ("2026-01-05 09:10", 12, 14, 11, 13, 0),
-    ])
+    df = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11, 0),
+            ("2026-01-05 09:05", 11, 13, 10, 12, 0),
+            ("2026-01-05 09:10", 12, 14, 11, 13, 0),
+        ]
+    )
     out = resample_up(df, target_minutes=15, base_minutes=5)
 
     assert "volume" in out.columns
@@ -103,11 +111,16 @@ def test_zero_volume_survives_as_a_measurement():
 
 
 def test_normalize_carries_volume_and_types_it():
-    df = pd.DataFrame({
-        "time": ["2026-01-05 09:00", "2026-01-05 09:15"],
-        "open": [10, 11], "high": [12, 13], "low": [9, 10], "close": [11, 12],
-        "volume": [100, 250],
-    })
+    df = pd.DataFrame(
+        {
+            "time": ["2026-01-05 09:00", "2026-01-05 09:15"],
+            "open": [10, 11],
+            "high": [12, 13],
+            "low": [9, 10],
+            "close": [11, 12],
+            "volume": [100, 250],
+        }
+    )
     out = _normalize(df)
 
     assert list(out.columns) == ["open", "high", "low", "close", "volume"]
@@ -116,19 +129,30 @@ def test_normalize_carries_volume_and_types_it():
 
 
 def test_normalize_does_not_invent_a_volume_column():
-    df = pd.DataFrame({
-        "time": ["2026-01-05 09:00"],
-        "open": [10], "high": [12], "low": [9], "close": [11],
-    })
+    df = pd.DataFrame(
+        {
+            "time": ["2026-01-05 09:00"],
+            "open": [10],
+            "high": [12],
+            "low": [9],
+            "close": [11],
+        }
+    )
     assert list(_normalize(df).columns) == ["open", "high", "low", "close"]
 
 
 def test_a_cached_frame_round_trips_its_volume(tmp_path):
     cache = BarCache(tmp_path)
-    cache.save("XAUUSD.s", "M15", _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11, 100),
-        ("2026-01-05 09:15", 11, 13, 10, 12, 250),
-    ]))
+    cache.save(
+        "XAUUSD.s",
+        "M15",
+        _bars(
+            [
+                ("2026-01-05 09:00", 10, 12, 9, 11, 100),
+                ("2026-01-05 09:15", 11, 13, 10, 12, 250),
+            ]
+        ),
+    )
     out = cache.load("XAUUSD.s", "M15")
 
     assert out["volume"].tolist() == [100.0, 250.0]
@@ -177,10 +201,17 @@ def test_the_sidecar_records_whether_volume_ACTUALLY_ARRIVED(tmp_path):
 def test_a_stale_price_only_file_is_overwritten_rather_than_merged(tmp_path):
     """The merge is where a half-volumed file would be created, so the stale path must not take it."""
     cache = BarCache(tmp_path)
-    cache.save("XAUUSD.s", "M15", _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11, None),
-        ("2026-01-05 09:15", 11, 13, 10, 12, None),
-    ], volume=False))
+    cache.save(
+        "XAUUSD.s",
+        "M15",
+        _bars(
+            [
+                ("2026-01-05 09:00", 10, 12, 9, 11, None),
+                ("2026-01-05 09:15", 11, 13, 10, 12, None),
+            ],
+            volume=False,
+        ),
+    )
     cache.meta_path("XAUUSD.s", "M15").write_text(json.dumps({"feed_version": 2}))
 
     cache.save("XAUUSD.s", "M15", _bars([("2026-01-05 09:30", 12, 14, 11, 13, 300)]))
@@ -204,9 +235,12 @@ def test_the_vps_agent_sends_volume_with_every_bar():
     """
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[2]
-           / "algos" / "markets" / "fx" / "tools" / "mt5_agent.py").read_text()
+    src = (
+        Path(__file__).resolve().parents[2] / "algos" / "markets" / "fx" / "tools" / "mt5_agent.py"
+    ).read_text()
     body = src.split("def _rates_to_bars", 1)[1].split("\ndef ", 1)[0]
 
     assert '"volume"' in body, "the agent stopped sending a volume field"
-    assert 'r["tick_volume"]' in body, "volume must come from tick_volume, not real_volume (0 on a CFD)"
+    assert 'r["tick_volume"]' in body, (
+        "volume must come from tick_volume, not real_volume (0 on a CFD)"
+    )

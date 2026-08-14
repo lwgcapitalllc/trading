@@ -96,8 +96,9 @@ def stub_engines(monkeypatch):
             return bar
 
     monkeypatch.setattr(replay, "EngineStack", _Stack, raising=False)
-    monkeypatch.setattr(replay, "iter_bars", lambda df: [_Bar(i) for i in range(len(df))],
-                        raising=False)
+    monkeypatch.setattr(
+        replay, "iter_bars", lambda df: [_Bar(i) for i in range(len(df))], raising=False
+    )
 
 
 @pytest.fixture
@@ -108,6 +109,7 @@ def df():
 
 def _combos(pkg_mod, values):
     from importlib import import_module
+
     cfg_cls = import_module(pkg_mod).LAB_STRATEGY["config"]
     return [Combo(params={"multiplier": v}, config=cfg_cls(multiplier=v)) for v in values]
 
@@ -117,6 +119,7 @@ def _serial(pkg, df, combos, **kw):
 
 
 # ── the contract ──────────────────────────────────────────────────────────────
+
 
 def test_one_row_per_combo_in_combo_order(fake_pkg, df):
     rows = _serial(fake_pkg, df, _combos(fake_pkg, [1.0, 2.0, 3.0]))
@@ -151,32 +154,37 @@ def test_cancellation_stops_early_and_keeps_finished_rows(fake_pkg, df):
         seen["n"] += 1
         return seen["n"] > 2
 
-    rows = _serial(fake_pkg, df, _combos(fake_pkg, [1.0, 2.0, 3.0, 4.0]),
-                   should_cancel=cancel_after_two)
+    rows = _serial(
+        fake_pkg, df, _combos(fake_pkg, [1.0, 2.0, 3.0, 4.0]), should_cancel=cancel_after_two
+    )
     assert len(rows) == 2
 
 
 def test_progress_reports_done_and_total(fake_pkg, df):
     calls = []
-    _serial(fake_pkg, df, _combos(fake_pkg, [1.0, 2.0, 3.0]),
-            progress=lambda d, t: calls.append((d, t)))
+    _serial(
+        fake_pkg, df, _combos(fake_pkg, [1.0, 2.0, 3.0]), progress=lambda d, t: calls.append((d, t))
+    )
     assert calls == [(1, 3), (2, 3), (3, 3)]
 
 
 # ── the parallel path ─────────────────────────────────────────────────────────
+
 
 def test_parallel_matches_serial(fake_pkg, df, tmp_path):
     """The whole point of workers is that they change only the wall clock. Spawned workers re-import
     the package by name, so this also proves the sys.path handoff into a fresh interpreter works."""
     combos = _combos(fake_pkg, [1.0, 2.0, 3.0, 4.0])
     serial = _serial(fake_pkg, df, combos)
-    parallel = run_sweep(module_path=fake_pkg, df=df, combos=combos,
-                         max_workers=2, monorepo_root=str(tmp_path))
+    parallel = run_sweep(
+        module_path=fake_pkg, df=df, combos=combos, max_workers=2, monorepo_root=str(tmp_path)
+    )
     assert [r["params"] for r in parallel] == [r["params"] for r in serial]
     assert [r["kpis"]["net_pnl"] for r in parallel] == [r["kpis"]["net_pnl"] for r in serial]
 
 
 # ── worker sizing ─────────────────────────────────────────────────────────────
+
 
 def test_never_more_workers_than_combos(monkeypatch):
     monkeypatch.setattr("backtest.optimizer.os.cpu_count", lambda: 16)

@@ -11,7 +11,6 @@ re-runs — ~56 minutes of a 78-minute phase, and 11 params reported a false all
 
 import numpy as np
 import pytest
-
 from services.stress_tester import run_sensitivity_task  # noqa: F401  (import guard)
 
 
@@ -63,13 +62,20 @@ def test_a_normal_param_keeps_all_four_shifts():
 def test_the_real_run_would_have_dropped_two_thirds_of_its_backtests():
     """The 15 params of stress test 630cefbebd8347db, at their real base values."""
     params = [
-        ("aplus_window", 4320, "int"), ("exec_risk_pct", 10, "double"),
-        ("exec_sl_buf_tk", 0, "double"), ("exec_tp1_pct", 0, "double"),
-        ("exec_tp2_pct", -4, "double"), ("exec_be_buf_tk", 30, "double"),
-        ("exec_struct_trail_buf_tk", 20, "double"), ("exec_trail_step", 5, "double"),
-        ("div_rsi_len", 14, "int"), ("div_pivot_len", 5, "int"),
-        ("div_valid_bars", 100, "int"), ("div_extreme_ob", 80, "int"),
-        ("div_extreme_os", 20, "int"), ("flat_by_close_min", 15, "int"),
+        ("aplus_window", 4320, "int"),
+        ("exec_risk_pct", 10, "double"),
+        ("exec_sl_buf_tk", 0, "double"),
+        ("exec_tp1_pct", 0, "double"),
+        ("exec_tp2_pct", -4, "double"),
+        ("exec_be_buf_tk", 30, "double"),
+        ("exec_struct_trail_buf_tk", 20, "double"),
+        ("exec_trail_step", 5, "double"),
+        ("div_rsi_len", 14, "int"),
+        ("div_pivot_len", 5, "int"),
+        ("div_valid_bars", 100, "int"),
+        ("div_extreme_ob", 80, "int"),
+        ("div_extreme_os", 20, "int"),
+        ("flat_by_close_min", 15, "int"),
         ("exec_scratch_r", 0.15, "double"),
     ]
     total_measured = sum(len(_shifts_for(v, t, NT8_SHIFTS)[0]) for _, v, t in params)
@@ -86,6 +92,7 @@ def test_the_real_run_would_have_dropped_two_thirds_of_its_backtests():
 # any parameter that scales position size dominates by arithmetic rather than by fragility — and
 # the optimizer-grid path already reported a profit-factor drop into the SAME field, judged by the
 # SAME grading thresholds. The two had to agree.
+
 
 def _degradation(baseline_pf, child_pf):
     """Mirror of the scoring line in run_sensitivity_task."""
@@ -117,5 +124,5 @@ def test_an_unusable_profit_factor_is_none_never_zero():
     assert _degradation(None, 4.0) is None
     assert _degradation(0.0, 4.0) is None
     assert _degradation(float("inf"), 4.0) is None
-    assert _degradation(5.242, None) is None      # child run failed
+    assert _degradation(5.242, None) is None  # child run failed
     assert _degradation(5.242, float("inf")) is None  # child had no losing trade

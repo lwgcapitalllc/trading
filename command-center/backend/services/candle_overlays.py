@@ -132,7 +132,8 @@ _MAX_MARKS = 20_000
 
 
 def _anchor_bars(
-    times: list[int], anchors: Iterable[tuple],
+    times: list[int],
+    anchors: Iterable[tuple],
 ) -> list[tuple[int, int, str, Optional[int], str, Optional[float]]]:
     """Anchor `(start_ms, direction, end_ms[, outcome[, entry_price]])` → `(anchor index, bar index,
     direction, end bar, outcome, entry price)`, clipped to the loaded candles.
@@ -182,10 +183,16 @@ def _anchor_bars(
             # BEFORE the start is genuinely unusable.
             if j >= i:
                 end_bar = j
-        out.append((
-            n, i, "short" if str(direction).lower().startswith("s") else "long", end_bar, outcome,
-            entry,
-        ))
+        out.append(
+            (
+                n,
+                i,
+                "short" if str(direction).lower().startswith("s") else "long",
+                end_bar,
+                outcome,
+                entry,
+            )
+        )
     return out
 
 
@@ -220,7 +227,11 @@ def _deepest_bar(candles: list[dict], bars: list[int], direction: str) -> int:
     best = bars[0]
     key = "high" if direction == "short" else "low"
     for i in bars:
-        if (candles[i][key] > candles[best][key]) if direction == "short" else (candles[i][key] < candles[best][key]):
+        if (
+            (candles[i][key] > candles[best][key])
+            if direction == "short"
+            else (candles[i][key] < candles[best][key])
+        ):
             best = i
     return best
 
@@ -307,7 +318,11 @@ def _reversal_span(
 
 
 def _in_zone(
-    candles: list[dict], i: int, turn: int, direction: str, entry: Optional[float],
+    candles: list[dict],
+    i: int,
+    turn: int,
+    direction: str,
+    entry: Optional[float],
 ) -> bool:
     """Is bar `i` in the setup's DRAWDOWN — the band the chart paints red between the entry and the
     adverse extreme?
@@ -378,7 +393,7 @@ def build_candle_overlays(
         return []
     bars = _anchor_bars([c["time"] for c in candles], anchors)
     if not bars:
-        return []      # no trade, block or 3/3 miss on screen ⇒ nothing to explain ⇒ nothing to draw
+        return []  # no trade, block or 3/3 miss on screen ⇒ nothing to explain ⇒ nothing to draw
 
     try:
         from candlesticks import CHART_PRESET, CandlestickEngine
@@ -434,7 +449,8 @@ def build_candle_overlays(
         want = -1 if direction == "short" else 1
         prefer = _wanted_direction(direction, outcome)
         in_span = [
-            i for i in range(lo, hi + 1)
+            i
+            for i in range(lo, hi + 1)
             if hits.get(i) and _in_zone(candles, i, turn, direction, entry)
         ]
         for i in in_span:
@@ -511,42 +527,54 @@ def build_candle_overlays(
     for i in sorted(marked):
         c = candles[i]
         found = marked[i]
-        overlays.append({
-            "type": "candle", "group": GROUP_CANDLES,
-            "t": c["time"],
-            "open": c["open"], "high": c["high"], "low": c["low"], "close": c["close"],
-            # The label is the pattern's own name from the registry — nothing here words it, so a
-            # chart and a config can be lined up on one string.
-            "label": found[0].label,
-            # +1 / -1 / 0 exactly as the source Pine DRAWS it. The chart uses it to say which way a
-            # pattern points and to offer a direction filter; it never decides WHETHER the candle is
-            # painted — that call is Aaron's, made in the menu.
-            "patternDir": found[0].direction,
-            "patterns": [p.label for p in found],
-            # Which anchors' spans cover this bar (index into `anchors`). The chart reads it to
-            # badge a trade; it is not derivable downstream, because a span is a bar RANGE and the
-            # spec ships only the marks.
-            "spans": spans.get(i, []),
-            # Which anchors this bar is the DEEPEST mark of. A list, not a flag: one bar can be the
-            # turn of one setup and an ordinary mark inside another's span, and a bare boolean would
-            # let the chart name it as the second setup's reversal.
-            "deepestOf": at_turn.get(i, []),
-            # {anchor index (as a string key): the pattern to NAME that anchor with}. One bar can be
-            # the deepest of two anchors wanting opposite directions, and the bar's single `label` is
-            # whichever the first anchor to reach it ordered — nobody's answer in particular. The
-            # chart reads this for a trade's outcome chip and falls back to `label`.
-            "deepestNames": deepest_names.get(i, {}),
-            # "with" / "neutral" / "against" — the named pattern's direction relative to the SETUP,
-            # which is what the chart's direction filter is asked in. See above for why the chart
-            # cannot work it out from `patternDir`.
-            "align": aligned.get(i, "against"),
-            "style": {"color": _NAVY_EDGE, "fillColor": _NAVY},
-        })
+        overlays.append(
+            {
+                "type": "candle",
+                "group": GROUP_CANDLES,
+                "t": c["time"],
+                "open": c["open"],
+                "high": c["high"],
+                "low": c["low"],
+                "close": c["close"],
+                # The label is the pattern's own name from the registry — nothing here words it, so a
+                # chart and a config can be lined up on one string.
+                "label": found[0].label,
+                # +1 / -1 / 0 exactly as the source Pine DRAWS it. The chart uses it to say which way a
+                # pattern points and to offer a direction filter; it never decides WHETHER the candle is
+                # painted — that call is Aaron's, made in the menu.
+                "patternDir": found[0].direction,
+                "patterns": [p.label for p in found],
+                # Which anchors' spans cover this bar (index into `anchors`). The chart reads it to
+                # badge a trade; it is not derivable downstream, because a span is a bar RANGE and the
+                # spec ships only the marks.
+                "spans": spans.get(i, []),
+                # Which anchors this bar is the DEEPEST mark of. A list, not a flag: one bar can be the
+                # turn of one setup and an ordinary mark inside another's span, and a bare boolean would
+                # let the chart name it as the second setup's reversal.
+                "deepestOf": at_turn.get(i, []),
+                # {anchor index (as a string key): the pattern to NAME that anchor with}. One bar can be
+                # the deepest of two anchors wanting opposite directions, and the bar's single `label` is
+                # whichever the first anchor to reach it ordered — nobody's answer in particular. The
+                # chart reads this for a trade's outcome chip and falls back to `label`.
+                "deepestNames": deepest_names.get(i, {}),
+                # "with" / "neutral" / "against" — the named pattern's direction relative to the SETUP,
+                # which is what the chart's direction filter is asked in. See above for why the chart
+                # cannot work it out from `patternDir`.
+                "align": aligned.get(i, "against"),
+                "style": {"color": _NAVY_EDGE, "fillColor": _NAVY},
+            }
+        )
 
     if len(overlays) > _MAX_MARKS:
         dropped = len(overlays) - _MAX_MARKS
         overlays = overlays[-_MAX_MARKS:]
         log.info("candle overlays: capped at %d marks — dropped the %d oldest", _MAX_MARKS, dropped)
-    log.info("candle overlays: %d bars, %d anchor(s) -> %d marked candle(s) (trend=%s doji=%s)",
-             len(candles), len(bars), len(overlays), cfg["trend"], cfg["doji_size"])
+    log.info(
+        "candle overlays: %d bars, %d anchor(s) -> %d marked candle(s) (trend=%s doji=%s)",
+        len(candles),
+        len(bars),
+        len(overlays),
+        cfg["trend"],
+        cfg["doji_size"],
+    )
     return overlays

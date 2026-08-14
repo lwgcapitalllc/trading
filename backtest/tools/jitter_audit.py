@@ -132,22 +132,36 @@ class Diff:
     price and therefore the size did move.
     """
 
-    __slots__ = ("seed", "lost", "gained", "retimed", "flipped", "shifted",
-                 "total_r", "stop_deltas")
+    __slots__ = (
+        "seed",
+        "lost",
+        "gained",
+        "retimed",
+        "flipped",
+        "shifted",
+        "total_r",
+        "stop_deltas",
+    )
 
     def __init__(self, seed: int):
         self.seed = seed
         self.lost: list = []
         self.gained: list = []
-        self.retimed: list = []      # (baseline trade, jittered trade, bars apart)
-        self.flipped: list = []      # (baseline trade, jittered trade)
+        self.retimed: list = []  # (baseline trade, jittered trade, bars apart)
+        self.flipped: list = []  # (baseline trade, jittered trade)
         self.shifted = 0
         self.total_r = 0.0
         self.stop_deltas: list[float] = []
 
 
-def _diff(base: list, jit: list, seed: int, noise_ceiling: float,
-          bar_ms: int = 15 * 60 * 1000, retime_bars: int = _RETIME_BARS) -> Diff:
+def _diff(
+    base: list,
+    jit: list,
+    seed: int,
+    noise_ceiling: float,
+    bar_ms: int = 15 * 60 * 1000,
+    retime_bars: int = _RETIME_BARS,
+) -> Diff:
     d = Diff(seed)
     d.total_r = sum(t.r for t in jit)
 
@@ -163,8 +177,7 @@ def _diff(base: list, jit: list, seed: int, noise_ceiling: float,
         if abs(j.entry_price - b.entry_price) > noise_ceiling:
             d.flipped.append((b, j))
             if b.stop_distance:
-                d.stop_deltas.append(
-                    100.0 * (j.stop_distance - b.stop_distance) / b.stop_distance)
+                d.stop_deltas.append(100.0 * (j.stop_distance - b.stop_distance) / b.stop_distance)
         elif j.entry_price != b.entry_price:
             d.shifted += 1
 
@@ -174,10 +187,12 @@ def _diff(base: list, jit: list, seed: int, noise_ceiling: float,
     # greedy nearest pass is what stops one jittered trade from being claimed as the retimed twin
     # of two different baseline trades, which would understate both counts at once.
     window = retime_bars * bar_ms
-    cands = [(abs(b.entry_ms - j.entry_ms), i, k, b, j)
-             for i, b in enumerate(unmatched_base)
-             for k, j in enumerate(unmatched_jit)
-             if b.dir == j.dir and abs(b.entry_ms - j.entry_ms) <= window]
+    cands = [
+        (abs(b.entry_ms - j.entry_ms), i, k, b, j)
+        for i, b in enumerate(unmatched_base)
+        for k, j in enumerate(unmatched_jit)
+        if b.dir == j.dir and abs(b.entry_ms - j.entry_ms) <= window
+    ]
     cands.sort(key=lambda c: (c[0], c[1], c[2]))
     used_b: set[int] = set()
     used_j: set[int] = set()
@@ -198,18 +213,26 @@ def _pct(part: int, whole: int) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--start", default=None,
-                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)")
+    ap.add_argument(
+        "--start",
+        default=None,
+        help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)",
+    )
     ap.add_argument("--end", default=None)
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--amp", type=float, default=_DEFAULT_AMP,
-                    help="per-bar offset drawn from [-amp, +amp], in price units")
+    ap.add_argument(
+        "--amp",
+        type=float,
+        default=_DEFAULT_AMP,
+        help="per-bar offset drawn from [-amp, +amp], in price units",
+    )
     ap.add_argument("--seeds", type=int, default=5, help="how many jittered replays")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
@@ -226,7 +249,8 @@ def main(argv=None) -> int:
         if fl is None:
             raise SystemExit(
                 f"cannot measure the broker's earliest {args.tf}m history for {args.symbol}. "
-                f"Pass --start explicitly rather than guessing one.")
+                f"Pass --start explicitly rather than guessing one."
+            )
         start = fl.isoformat()
     end = args.end or dt.date.today().isoformat()
 
@@ -252,22 +276,30 @@ def main(argv=None) -> int:
     # ── report ──
     w = 100
     print("\n" + "=" * w)
-    print(f"JITTER AUDIT   {args.strategy}   +/- {args.amp} per bar   {args.seeds} seeds"
-          f"   {df.index[0].date()} -> {df.index[-1].date()}")
+    print(
+        f"JITTER AUDIT   {args.strategy}   +/- {args.amp} per bar   {args.seeds} seeds"
+        f"   {df.index[0].date()} -> {df.index[-1].date()}"
+    )
     print("=" * w)
     print(f"\nbaseline   {len(base)} trades   {base_r:+.2f}R")
-    print(f"\n  a rung FLIP is an entry moved by more than {ceiling:.3f} — beyond anything the "
-          f"noise can do.\n  a SHIFT is an entry moved by about the noise, which is expected and "
-          f"is not a finding.\n")
+    print(
+        f"\n  a rung FLIP is an entry moved by more than {ceiling:.3f} — beyond anything the "
+        f"noise can do.\n  a SHIFT is an entry moved by about the noise, which is expected and "
+        f"is not a finding.\n"
+    )
 
-    hdr = (f"  {'seed':>4}  {'trades':>6}  {'total R':>9}  {'lost':>5}  {'gained':>6}"
-           f"  {'retimed':>7}  {'FLIPPED':>7}  {'shifted':>7}")
+    hdr = (
+        f"  {'seed':>4}  {'trades':>6}  {'total R':>9}  {'lost':>5}  {'gained':>6}"
+        f"  {'retimed':>7}  {'FLIPPED':>7}  {'shifted':>7}"
+    )
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
     for d in diffs:
         n = len(base) - len(d.lost) + len(d.gained)
-        print(f"  {d.seed:>4}  {n:>6}  {d.total_r:>+9.2f}  {len(d.lost):>5}  {len(d.gained):>6}"
-              f"  {len(d.retimed):>7}  {len(d.flipped):>7}  {d.shifted:>7}")
+        print(
+            f"  {d.seed:>4}  {n:>6}  {d.total_r:>+9.2f}  {len(d.lost):>5}  {len(d.gained):>6}"
+            f"  {len(d.retimed):>7}  {len(d.flipped):>7}  {d.shifted:>7}"
+        )
 
     flips = sum(len(d.flipped) for d in diffs)
     lost = sum(len(d.lost) for d in diffs)
@@ -278,68 +310,126 @@ def main(argv=None) -> int:
     ns = len(diffs)
 
     print(f"\n--- ACROSS ALL {ns} SEEDS ---")
-    print(f"  rung flips        {flips:5d}  = {_pct(flips, per_run)} of baseline trades"
-          f"   ({flips / ns:.1f} per run)")
-    print(f"  trades RETIMED    {retimed:5d}  = {_pct(retimed, per_run)}"
-          f"   ({retimed / ns:.1f} per run)   same setup, filled up to"
-          f" {_RETIME_BARS} bars away")
-    print(f"  trades lost       {lost:5d}  = {_pct(lost, per_run)}"
-          f"   ({lost / ns:.1f} per run)   no twin at all")
+    print(
+        f"  rung flips        {flips:5d}  = {_pct(flips, per_run)} of baseline trades"
+        f"   ({flips / ns:.1f} per run)"
+    )
+    print(
+        f"  trades RETIMED    {retimed:5d}  = {_pct(retimed, per_run)}"
+        f"   ({retimed / ns:.1f} per run)   same setup, filled up to"
+        f" {_RETIME_BARS} bars away"
+    )
+    print(
+        f"  trades lost       {lost:5d}  = {_pct(lost, per_run)}"
+        f"   ({lost / ns:.1f} per run)   no twin at all"
+    )
     print(f"  trades gained     {gained:5d}   ({gained / ns:.1f} per run)")
-    print(f"  ⚠ a flip that also moves the entry BAR is counted as retimed or lost+gained, never")
-    print(f"    as a flip, so the flip figure is a FLOOR on how often the rule changed its mind.")
+    print("  ⚠ a flip that also moves the entry BAR is counted as retimed or lost+gained, never")
+    print("    as a flip, so the flip figure is a FLOOR on how often the rule changed its mind.")
 
     mean_r = statistics.mean(rs)
     sd = statistics.stdev(rs) if ns > 1 else 0.0
-    print(f"\n  total R   baseline {base_r:+.2f}"
-          f"   jittered min {min(rs):+.2f}  median {statistics.median(rs):+.2f}  max {max(rs):+.2f}")
-    print(f"            mean {mean_r:+.2f}  sd {sd:.2f}R over {ns} seeds"
-          f"   (spread {max(rs) - min(rs):.2f}R)")
+    print(
+        f"\n  total R   baseline {base_r:+.2f}"
+        f"   jittered min {min(rs):+.2f}  median {statistics.median(rs):+.2f}  max {max(rs):+.2f}"
+    )
+    print(
+        f"            mean {mean_r:+.2f}  sd {sd:.2f}R over {ns} seeds"
+        f"   (spread {max(rs) - min(rs):.2f}R)"
+    )
     print(f"  ⚠ the sd is over {ns} seeds and is itself an estimate — read it as an order of")
-    print(f"    magnitude for how much of the result is the FEED rather than the edge.")
+    print("    magnitude for how much of the result is the FEED rather than the edge.")
     if rs and min(rs) > 0:
-        print(f"  ✅ every seed finished POSITIVE. The trade LIST moves; the sign of the edge did not.")
+        print(
+            "  ✅ every seed finished POSITIVE. The trade LIST moves; the sign of the edge did not."
+        )
     else:
-        print(f"  🔴 at least one seed finished NEGATIVE — the edge itself did not survive the noise.")
+        print(
+            "  🔴 at least one seed finished NEGATIVE — the edge itself did not survive the noise."
+        )
 
     all_stop = [x for d in diffs for x in d.stop_deltas]
     print("\n--- WHAT A FLIP DID TO THE STOP (position size follows this, R does not) ---")
     if all_stop:
         mags = [abs(x) for x in all_stop]
         print(f"  {len(all_stop)} flips with a measurable stop change")
-        print(f"  |change| in the 1R distance:  min {min(mags):.1f}%"
-              f"   median {statistics.median(mags):.1f}%   max {max(mags):.1f}%")
-        print(f"  ⚠ the nominal R is unchanged by construction — the trade is sized to the stop.")
-        print(f"    What moves is the POSITION SIZE and how far price must travel to fill.")
+        print(
+            f"  |change| in the 1R distance:  min {min(mags):.1f}%"
+            f"   median {statistics.median(mags):.1f}%   max {max(mags):.1f}%"
+        )
+        print("  ⚠ the nominal R is unchanged by construction — the trade is sized to the stop.")
+        print("    What moves is the POSITION SIZE and how far price must travel to fill.")
     else:
         print("  no flips, so nothing to report here.")
 
     # ── files ──
-    out = Path(args.out) if args.out else _ROOT / "backtest" / "reports" / (
-        "jitter_" + dt.datetime.now().strftime("%Y%m%dT%H%M%S"))
+    out = (
+        Path(args.out)
+        if args.out
+        else _ROOT
+        / "backtest"
+        / "reports"
+        / ("jitter_" + dt.datetime.now().strftime("%Y%m%dT%H%M%S"))
+    )
     out.mkdir(parents=True, exist_ok=True)
     with open(out / "flips.csv", "w", newline="") as fh:
         wr = csv.writer(fh)
-        wr.writerow(["seed", "entry_utc", "dir", "base_entry", "jit_entry", "entry_delta",
-                     "base_stop_dist", "jit_stop_dist", "stop_delta_pct", "base_r", "jit_r"])
+        wr.writerow(
+            [
+                "seed",
+                "entry_utc",
+                "dir",
+                "base_entry",
+                "jit_entry",
+                "entry_delta",
+                "base_stop_dist",
+                "jit_stop_dist",
+                "stop_delta_pct",
+                "base_r",
+                "jit_r",
+            ]
+        )
         for d in diffs:
             for b, j in d.flipped:
-                sd = (100.0 * (j.stop_distance - b.stop_distance) / b.stop_distance
-                      if b.stop_distance else "")
-                wr.writerow([
-                    d.seed, dt.datetime.utcfromtimestamp(b.entry_ms / 1000).isoformat(), b.dir,
-                    round(b.entry_price, 5), round(j.entry_price, 5),
-                    round(j.entry_price - b.entry_price, 5),
-                    round(b.stop_distance, 5), round(j.stop_distance, 5),
-                    (round(sd, 2) if sd != "" else ""), round(b.r, 3), round(j.r, 3)])
+                sd = (
+                    100.0 * (j.stop_distance - b.stop_distance) / b.stop_distance
+                    if b.stop_distance
+                    else ""
+                )
+                wr.writerow(
+                    [
+                        d.seed,
+                        dt.datetime.utcfromtimestamp(b.entry_ms / 1000).isoformat(),
+                        b.dir,
+                        round(b.entry_price, 5),
+                        round(j.entry_price, 5),
+                        round(j.entry_price - b.entry_price, 5),
+                        round(b.stop_distance, 5),
+                        round(j.stop_distance, 5),
+                        (round(sd, 2) if sd != "" else ""),
+                        round(b.r, 3),
+                        round(j.r, 3),
+                    ]
+                )
 
     with open(out / "seeds.csv", "w", newline="") as fh:
         wr = csv.writer(fh)
-        wr.writerow(["seed", "trades", "total_r", "lost", "gained", "retimed",
-                     "flipped", "shifted"])
+        wr.writerow(
+            ["seed", "trades", "total_r", "lost", "gained", "retimed", "flipped", "shifted"]
+        )
         for d in diffs:
-            wr.writerow([d.seed, len(base) - len(d.lost) + len(d.gained), round(d.total_r, 3),
-                         len(d.lost), len(d.gained), len(d.retimed), len(d.flipped), d.shifted])
+            wr.writerow(
+                [
+                    d.seed,
+                    len(base) - len(d.lost) + len(d.gained),
+                    round(d.total_r, 3),
+                    len(d.lost),
+                    len(d.gained),
+                    len(d.retimed),
+                    len(d.flipped),
+                    d.shifted,
+                ]
+            )
 
     print(f"\nwrote {out}/flips.csv, seeds.csv")
     return 0

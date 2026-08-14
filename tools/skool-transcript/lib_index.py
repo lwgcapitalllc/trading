@@ -9,6 +9,7 @@ This scans every module folder's summaries/*.md front matter (title, status),
 groups by module, and writes one grouped table per module. Called by the
 skool-transcript tool after each rip; safe to run by hand any time.
 """
+
 import re
 import sys
 from pathlib import Path

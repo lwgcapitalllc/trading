@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import logging
 import math
 import random
 import time
@@ -23,21 +24,28 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-import logging
-
-from services import lab_db, evaluator, runner_dispatch, worthiness
-from services.metrics import daily_sharpe_from_values, apply_canonical_sharpe
+from services import evaluator, lab_db, runner_dispatch, worthiness
+from services.backtest_runner import (
+    _LAB_RESULTS_DIR as _BR_RESULTS_DIR,
+)
+from services.backtest_runner import (
+    _tag_daily_pnl_with_regime,
+    build_date_regime_map,
+    clear_progress,
+    write_job_progress,
+)
+from services.metrics import apply_canonical_sharpe, daily_sharpe_from_values
 from services.objectives import choose_objective
-from services.backtest_runner import build_date_regime_map, write_job_progress, clear_progress, _tag_daily_pnl_with_regime, _LAB_RESULTS_DIR as _BR_RESULTS_DIR
 
 log = logging.getLogger("optimization_runner")
 
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
-_POLL_INTERVAL   = 5
-_STALL_KILL_SEC  = 600
+_POLL_INTERVAL = 5
+_STALL_KILL_SEC = 600
 
 # ── Regime-filtered scoring ───────────────────────────────────────────────────
+
 
 def _regime_filtered_score(
     run_id: str,
@@ -58,17 +66,16 @@ def _regime_filtered_score(
         return float("-inf")
 
     regime_trades = [
-        t for t in equity_curve
-        if t.get("date") and date_to_regime.get(t["date"]) == regime_filter
+        t for t in equity_curve if t.get("date") and date_to_regime.get(t["date"]) == regime_filter
     ]
     if not regime_trades:
         return float("-inf")
 
     profits = [t.get("profit") or 0.0 for t in regime_trades]
-    net_pnl  = sum(profits)
-    wins     = [p for p in profits if p > 0]
-    losses   = [abs(p) for p in profits if p < 0]
-    pf       = sum(wins) / sum(losses) if losses else (1.5 if net_pnl > 0 else 0.0)
+    net_pnl = sum(profits)
+    wins = [p for p in profits if p > 0]
+    losses = [abs(p) for p in profits if p < 0]
+    pf = sum(wins) / sum(losses) if losses else (1.5 if net_pnl > 0 else 0.0)
     win_rate = len(wins) / len(profits) if profits else 0.0
 
     # Cumulative DD on regime sub-sequence
@@ -93,12 +100,12 @@ def _regime_filtered_score(
     sharpe = daily_sharpe_from_values(list(daily.values()))
 
     filtered_kpis = {
-        "net_pnl":       net_pnl,
+        "net_pnl": net_pnl,
         "profit_factor": pf,
-        "max_drawdown":  max_dd,
-        "trade_count":   len(profits),
-        "win_rate":      win_rate,
-        "sharpe":        sharpe,
+        "max_drawdown": max_dd,
+        "trade_count": len(profits),
+        "win_rate": win_rate,
+        "sharpe": sharpe,
     }
     return obj_fn(filtered_kpis, firm)
 
@@ -128,7 +135,7 @@ def _rank(
         # left best_run_id None when every combo was ineligible — a finished optimization with
         # no winner and nothing on the page explaining it. The fallbacks below are the answer.
         if score > best_score:
-            best_score  = score
+            best_score = score
             best_run_id = run_id
     return best_run_id
 
@@ -156,7 +163,9 @@ async def _pick_best_run(
     if regime_filter:
         try:
             opt_strategy = lab_db.get_strategy(opt["strategy_id"])
-            opt_runner = opt_strategy.get("runner", "ninjatrader") if opt_strategy else "ninjatrader"
+            opt_runner = (
+                opt_strategy.get("runner", "ninjatrader") if opt_strategy else "ninjatrader"
+            )
             date_to_regime = await asyncio.to_thread(
                 build_date_regime_map,
                 opt["instrument"],
@@ -164,16 +173,24 @@ async def _pick_best_run(
                 opt["end_date"],
                 opt_runner,
             )
-            log.info("Regime filter '%s': %d trading days mapped", regime_filter, len(date_to_regime))
+            log.info(
+                "Regime filter '%s': %d trading days mapped", regime_filter, len(date_to_regime)
+            )
         except Exception as exc:
-            log.warning("Could not build regime map (filter='%s'): %s — scoring unfiltered", regime_filter, exc)
+            log.warning(
+                "Could not build regime map (filter='%s'): %s — scoring unfiltered",
+                regime_filter,
+                exc,
+            )
             regime_filter = None
 
     # One query for every combo's evaluations, not one per combo.
     evals_by_run = (
-        {} if (regime_filter and date_to_regime)
+        {}
+        if (regime_filter and date_to_regime)
         else await asyncio.to_thread(
-            lab_db.get_evaluations_for_runs, [r["run_id"] for r in complete_rows])
+            lab_db.get_evaluations_for_runs, [r["run_id"] for r in complete_rows]
+        )
     )
 
     def rank(rf: Optional[str], floor: int) -> Optional[str]:
@@ -189,33 +206,37 @@ async def _pick_best_run(
         if best:
             return best, (
                 f"No combination reached the {min_trades}-trade minimum, so the winner is the "
-                "best of the whole grid. Treat it as a small sample.")
+                "best of the whole grid. Treat it as a small sample."
+            )
 
     # Fallback 2 — no combo traded in the target regime (or every combo breached drawdown).
     # Re-score unfiltered; this needs the evaluations the filtered pass skipped.
     if regime_filter:
         evals_by_run = await asyncio.to_thread(
-            lab_db.get_evaluations_for_runs, [r["run_id"] for r in complete_rows])
+            lab_db.get_evaluations_for_runs, [r["run_id"] for r in complete_rows]
+        )
         best = rank(None, min_trades) or rank(None, 0)
         if best:
             return best, (
                 f"No combination produced trades in {regime_filter.replace('_', ' ').lower()} "
                 "conditions, so the winner is scored on ALL trades — the regime filter did "
-                "not apply.")
+                "not apply."
+            )
 
     # Nothing scored at all (an empty grid, or every combo ineligible on both passes).
     if complete_rows:
         best = max(complete_rows, key=lambda r: r.get("profit_factor") or 0.0)["run_id"]
         return best, (
             "Every combination was rejected by the scoring rule, so the winner is simply the "
-            "highest profit factor. Read it as a ranking, not a pass.")
+            "highest profit factor. Read it as a ranking, not a pass."
+        )
     return None, None
 
 
 # NT8 Strategy Analyzer is single-window — only one backtest can use it at a time.
 # Running more than 1 concurrent job causes SA window conflicts, display switch failures,
 # and missing XML logs. Runs must be sequential for NinjaTrader.
-_MAX_CONCURRENT  = 1
+_MAX_CONCURRENT = 1
 
 # Genetic-style: max samples for 3+D grids
 _GENETIC_MAX_SAMPLES = 200
@@ -241,14 +262,18 @@ def _expand_axis(spec: Any, name: str = "parameter") -> list:
     """
     if isinstance(spec, list):
         if not spec:
-            raise ValueError(f"{name}: value list is empty — a swept parameter needs at least one value")
+            raise ValueError(
+                f"{name}: value list is empty — a swept parameter needs at least one value"
+            )
         if len(spec) > _MAX_AXIS_VALUES:
-            raise ValueError(f"{name}: {len(spec)} values is more than the {_MAX_AXIS_VALUES} limit")
+            raise ValueError(
+                f"{name}: {len(spec)} values is more than the {_MAX_AXIS_VALUES} limit"
+            )
         return spec
     if isinstance(spec, dict):
         try:
-            lo   = float(spec["min"])
-            hi   = float(spec["max"])
+            lo = float(spec["min"])
+            hi = float(spec["max"])
             step = float(spec["step"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"{name}: range needs numeric min, max and step ({exc})") from exc
@@ -264,7 +289,8 @@ def _expand_axis(spec: Any, name: str = "parameter") -> list:
         if n > _MAX_AXIS_VALUES:
             raise ValueError(
                 f"{name}: {lo:g} → {hi:g} step {step:g} is {n:,} values, over the "
-                f"{_MAX_AXIS_VALUES:,} limit — widen the step or narrow the range")
+                f"{_MAX_AXIS_VALUES:,} limit — widen the step or narrow the range"
+            )
         return [round(lo + i * step, 8) for i in range(n)]
     return [spec]
 
@@ -284,14 +310,15 @@ def validate_param_grid(param_grid: dict) -> int:
         if total > _MAX_GRID_COMBOS:
             raise ValueError(
                 f"that grid is over {_MAX_GRID_COMBOS:,} combinations — widen a step or "
-                "drop a swept parameter")
+                "drop a swept parameter"
+            )
     return total
 
 
 def expand_grid(param_grid: dict) -> list[dict]:
     """Return list of {param: value} dicts for all combinations."""
-    keys   = list(param_grid.keys())
-    axes   = [_expand_axis(param_grid[k], k) for k in keys]
+    keys = list(param_grid.keys())
+    axes = [_expand_axis(param_grid[k], k) for k in keys]
     combos = list(itertools.product(*axes))
     return [{k: v for k, v in zip(keys, combo)} for combo in combos]
 
@@ -340,7 +367,10 @@ def sample_combinations(combos: list[dict], method: str) -> list[dict]:
 
 # ── Single run poller ─────────────────────────────────────────────────────────
 
-async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str, write_progress: bool = False) -> None:
+
+async def _poll_one(
+    run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str, write_progress: bool = False
+) -> None:
     started_at = time.time()
 
     # When write_progress is set, this poller writes the shared single-run progress
@@ -388,20 +418,22 @@ async def _poll_one(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: 
             clear_progress()
 
 
-async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str) -> None:
+async def _handle_opt_complete(
+    run_id: str, job_id: str, ruleset_ids: list[str], opt_mode: str
+) -> None:
     try:
         result = await asyncio.to_thread(runner_dispatch.job_results, job_id)
     except Exception as exc:
         lab_db.update_run_status(run_id, "failed_unknown", str(exc))
         return
 
-    kpis         = result.get("kpis", {})
+    kpis = result.get("kpis", {})
     equity_curve = result.get("equity_curve", [])
-    daily_pnl    = result.get("daily_pnl", [])
+    daily_pnl = result.get("daily_pnl", [])
 
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    eq_path   = run_dir / "equity_curve.json"
+    eq_path = run_dir / "equity_curve.json"
     dpnl_path = run_dir / "daily_pnl.json"
     eq_path.write_text(json.dumps(equity_curve, default=str))
     dpnl_path.write_text(json.dumps(daily_pnl, default=str))
@@ -421,17 +453,24 @@ async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str],
 
     apply_canonical_sharpe(kpis, daily_pnl)  # consistent daily-√252 Sharpe (winner rerun)
 
-    lab_db.update_run_complete(run_id, kpis, {
-        "equity_curve": str(eq_path),
-        "trades":       None,
-        "daily_pnl":    str(dpnl_path),
-    })
+    lab_db.update_run_complete(
+        run_id,
+        kpis,
+        {
+            "equity_curve": str(eq_path),
+            "trades": None,
+            "daily_pnl": str(dpnl_path),
+        },
+    )
 
     evaluator.evaluate_run(run_id, ruleset_ids, kpis, equity_curve, daily_pnl)
 
     w = worthiness.score_run_after_evals(
-        run_id, ruleset_ids,
-        kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+        run_id,
+        ruleset_ids,
+        kpis.get("profit_factor"),
+        kpis.get("max_drawdown"),
+        kpis.get("trade_count"),
     )
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
@@ -439,13 +478,14 @@ async def _handle_opt_complete(run_id: str, job_id: str, ruleset_ids: list[str],
 
 # ── Semaphore-limited batch runner ────────────────────────────────────────────
 
+
 async def _run_batch(
-    run_ids:       list[str],
-    job_specs:     list[dict],
-    ruleset_ids:   list[str],
-    opt_mode:      str,
-    runner:        str,
-    opt_id:        str,
+    run_ids: list[str],
+    job_specs: list[dict],
+    ruleset_ids: list[str],
+    opt_mode: str,
+    runner: str,
+    opt_id: str,
     write_progress: bool = False,
 ) -> None:
     sem = asyncio.Semaphore(_MAX_CONCURRENT)
@@ -463,13 +503,16 @@ async def _run_batch(
                 lab_db.update_run_status(run_id, "failed_unknown", str(exc))
                 lab_db.increment_optimization_completed(opt_id)
                 return
-            await _poll_one(run_id, job_spec["job_id"], ruleset_ids, opt_mode, write_progress=write_progress)
+            await _poll_one(
+                run_id, job_spec["job_id"], ruleset_ids, opt_mode, write_progress=write_progress
+            )
             lab_db.increment_optimization_completed(opt_id)
 
     await asyncio.gather(*[_one(rid, spec) for rid, spec in zip(run_ids, job_specs)])
 
 
 # ── Grid sensitivity (Part A) ─────────────────────────────────────────────────
+
 
 def _num(v: Any) -> float:
     """Comparable number for a param value. A list-swept axis carries strings and bools, and
@@ -479,6 +522,7 @@ def _num(v: Any) -> float:
         return float(v)
     except (TypeError, ValueError):
         return float("nan")
+
 
 def _compute_grid_sensitivity(
     combos_all: list[dict],
@@ -520,9 +564,15 @@ def _compute_grid_sensitivity(
     # The winner's own PF is read from the grid, keyed off its params, so the degradation is
     # always measured against the row the neighbours are compared to.
     winner = next(
-        (c for c in combos_all
-         if all(abs(_num(c.get("params", {}).get(k)) - _num(v)) < 1e-6
-                for k, v in winner_params.items() if k in param_ranges)),
+        (
+            c
+            for c in combos_all
+            if all(
+                abs(_num(c.get("params", {}).get(k)) - _num(v)) < 1e-6
+                for k, v in winner_params.items()
+                if k in param_ranges
+            )
+        ),
         None,
     )
     if winner is None:
@@ -564,8 +614,11 @@ def _compute_grid_sensitivity(
                 cp = c.get("params", {})
                 if abs(cp.get(pname, -999) - n_val) > 1e-6:
                     continue
-                if all(abs(cp.get(k, -999) - winner_params.get(k, -999)) < 1e-6
-                       for k in winner_params if k != pname):
+                if all(
+                    abs(cp.get(k, -999) - winner_params.get(k, -999)) < 1e-6
+                    for k in winner_params
+                    if k != pname
+                ):
                     n_pf = c.get("kpis", {}).get("profit_factor") or 0.0
                     deg = max(0.0, (winner_pf - n_pf) / winner_pf)
                     max_degradation = max(max_degradation, deg)
@@ -585,6 +638,7 @@ def _compute_grid_sensitivity(
         return None, {}
 
     return round(max_degradation, 4), summary
+
 
 # ── Native optimizer path ─────────────────────────────────────────────────────
 
@@ -652,24 +706,24 @@ async def run_native_optimization(optimization_id: str) -> None:
             log.warning("Could not persist opt log for %s: %s", optimization_id, _exc)
 
     spec = {
-        "job_id":             opt_job_id,
-        "strategy_class":     strategy["class_name"],
-        "instrument":         opt["instrument"],
-        "bar_type":           opt.get("bar_type", "Minute"),
-        "bar_value":          opt.get("bar_value", 5),
-        "start_date":         opt["start_date"],
-        "end_date":           opt["end_date"],
+        "job_id": opt_job_id,
+        "strategy_class": strategy["class_name"],
+        "instrument": opt["instrument"],
+        "bar_type": opt.get("bar_type", "Minute"),
+        "bar_value": opt.get("bar_value", 5),
+        "start_date": opt["start_date"],
+        "end_date": opt["end_date"],
         "commission_per_side": opt["commission_per_side"],
-        "slippage_ticks":     opt["slippage_ticks"],
-        "param_ranges":       param_ranges,
-        "fixed_params":       fixed_params,
+        "slippage_ticks": opt["slippage_ticks"],
+        "param_ranges": param_ranges,
+        "fixed_params": fixed_params,
         # Layered costs ride through to `python_runner._cost_profile`. NT8 and MT5 ignore them
         # (they have no such contract), which is why they are passed unconditionally rather than
         # behind a runner branch — the spec states what was asked for, and each runner charges
         # what it can. ⚠ NULL is NOT [] here either: an optimization row written before this
         # column keeps the old, free-book behaviour rather than being silently re-priced.
-        "cost_layers":        opt.get("cost_layers"),
-        "broker_profile":     opt.get("broker_profile"),
+        "cost_layers": opt.get("cost_layers"),
+        "broker_profile": opt.get("broker_profile"),
     }
 
     try:
@@ -680,7 +734,7 @@ async def run_native_optimization(optimization_id: str) -> None:
         return
 
     # Poll the single job until it completes, is cancelled, or stalls
-    started_at   = time.time()
+    started_at = time.time()
     last_written = -1  # track last completed_count written to DB to avoid redundant writes
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
@@ -695,7 +749,9 @@ async def run_native_optimization(optimization_id: str) -> None:
             return
 
         try:
-            status_data = await asyncio.to_thread(runner_dispatch.job_status, opt_job_id, runner_str)
+            status_data = await asyncio.to_thread(
+                runner_dispatch.job_status, opt_job_id, runner_str
+            )
         except Exception:
             if time.time() - started_at > _NATIVE_OPT_STALL_SEC:
                 lab_db.fail_optimization(optimization_id, "Lost VPS contact")
@@ -754,10 +810,12 @@ async def run_native_optimization(optimization_id: str) -> None:
     # as a drawdown breach.  The strategy's own MaxDailyLoss cap IS the correct per-period
     # comparison: if MaxDailyLoss <= max_loss_eod the strategy never exceeds the daily limit.
     _max_daily_loss = fixed_params.get("MaxDailyLoss")
-    _effective_dd: Optional[float] = float(_max_daily_loss) if _max_daily_loss is not None and _max_daily_loss >= 0 else None
+    _effective_dd: Optional[float] = (
+        float(_max_daily_loss) if _max_daily_loss is not None and _max_daily_loss >= 0 else None
+    )
 
     ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
-    now         = int(time.time())
+    now = int(time.time())
     run_ids: list[str] = []
 
     from services import evaluator, worthiness
@@ -771,25 +829,27 @@ async def run_native_optimization(optimization_id: str) -> None:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
 
-        kpis         = combo.get("kpis", {})
+        kpis = combo.get("kpis", {})
         combo_params = combo.get("params", {})
 
-        rows_to_insert.append({
-            "run_id":             run_id,
-            "strategy_id":        opt["strategy_id"],
-            "instrument":         opt["instrument"],
-            "params":             {**fixed_params, **combo_params},
-            "bar_type":           opt.get("bar_type", "Minute"),
-            "bar_value":          opt.get("bar_value", 5),
-            "start_date":         opt["start_date"],
-            "end_date":           opt["end_date"],
-            "commission_per_side": opt["commission_per_side"],
-            "slippage_ticks":     opt["slippage_ticks"],
-            "created_at":         now,
-            "optimization_id":    optimization_id,
-            "runner":             runner_str,
-            "kpis":               kpis,
-        })
+        rows_to_insert.append(
+            {
+                "run_id": run_id,
+                "strategy_id": opt["strategy_id"],
+                "instrument": opt["instrument"],
+                "params": {**fixed_params, **combo_params},
+                "bar_type": opt.get("bar_type", "Minute"),
+                "bar_value": opt.get("bar_value", 5),
+                "start_date": opt["start_date"],
+                "end_date": opt["end_date"],
+                "commission_per_side": opt["commission_per_side"],
+                "slippage_ticks": opt["slippage_ticks"],
+                "created_at": now,
+                "optimization_id": optimization_id,
+                "runner": runner_str,
+                "kpis": kpis,
+            }
+        )
         scored.append({"run_id": run_id, "kpis": kpis, "combo_params": combo_params})
 
     await asyncio.to_thread(lab_db.insert_complete_optimization_runs, rows_to_insert)
@@ -806,7 +866,8 @@ async def run_native_optimization(optimization_id: str) -> None:
                 kpis_for_eval["max_drawdown"] = _effective_dd
             evaluator.evaluate_run(s["run_id"], ruleset_ids, kpis_for_eval, [], [])
             w = worthiness.score_run_after_evals(
-                s["run_id"], ruleset_ids,
+                s["run_id"],
+                ruleset_ids,
                 kpis.get("profit_factor"),
                 kpis_for_eval.get("max_drawdown"),
                 kpis.get("trade_count"),
@@ -828,7 +889,8 @@ async def run_native_optimization(optimization_id: str) -> None:
     # `funded` it described a row that is not the ★. The page labels this "Winner robustness".
     try:
         winner_params = next(
-            (s["combo_params"] for s in scored if s["run_id"] == best_run_id), None)
+            (s["combo_params"] for s in scored if s["run_id"] == best_run_id), None
+        )
         gs_score, gs_summary = _compute_grid_sensitivity(combos, param_ranges, winner_params)
         if gs_score is None:
             # Nothing written, so the column stays NULL and the card does not render. Storing
@@ -836,8 +898,12 @@ async def run_native_optimization(optimization_id: str) -> None:
             log.info("Native opt %s: grid sensitivity not measurable — left unset", optimization_id)
         else:
             lab_db.update_optimization_grid_sensitivity(optimization_id, gs_score, gs_summary)
-            log.info("Native opt %s: grid_sensitivity_score=%.4f (%d params in summary)",
-                     optimization_id, gs_score, len(gs_summary))
+            log.info(
+                "Native opt %s: grid_sensitivity_score=%.4f (%d params in summary)",
+                optimization_id,
+                gs_score,
+                len(gs_summary),
+            )
     except Exception as exc:
         log.warning("Grid sensitivity compute failed for opt %s: %s", optimization_id, exc)
 
@@ -847,6 +913,7 @@ async def run_native_optimization(optimization_id: str) -> None:
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
+
 
 async def run_optimization(optimization_id: str) -> None:
     opt = lab_db.get_optimization(optimization_id)
@@ -866,10 +933,10 @@ async def run_optimization(optimization_id: str) -> None:
 
     method = pick_search_method(opt["param_grid"], opt["search_method"])
     all_combos = expand_grid(opt["param_grid"])
-    combos     = sample_combinations(all_combos, method)
+    combos = sample_combinations(all_combos, method)
 
     now = int(time.time())
-    run_ids   = []
+    run_ids = []
     job_specs = []
 
     for combo in combos:
@@ -880,39 +947,44 @@ async def run_optimization(optimization_id: str) -> None:
         merged_params = (
             runner_dispatch.inject_foundational(base_params, firm) if firm else base_params
         )
-        lab_db.insert_run_optimization({
-            "run_id":             run_id,
-            "strategy_id":        opt["strategy_id"],
-            "instrument":         opt["instrument"],
-            "params":             merged_params,
-            "bar_type":           opt.get("bar_type", "Minute"),
-            "bar_value":          opt.get("bar_value", 5),
-            "start_date":         opt["start_date"],
-            "end_date":           opt["end_date"],
-            "commission_per_side": opt["commission_per_side"],
-            "slippage_ticks":     opt["slippage_ticks"],
-            "status":             "running",
-            "created_at":         now,
-            "optimization_id":    optimization_id,
-            "runner":             strategy.get("runner", "ninjatrader"),
-        })
+        lab_db.insert_run_optimization(
+            {
+                "run_id": run_id,
+                "strategy_id": opt["strategy_id"],
+                "instrument": opt["instrument"],
+                "params": merged_params,
+                "bar_type": opt.get("bar_type", "Minute"),
+                "bar_value": opt.get("bar_value", 5),
+                "start_date": opt["start_date"],
+                "end_date": opt["end_date"],
+                "commission_per_side": opt["commission_per_side"],
+                "slippage_ticks": opt["slippage_ticks"],
+                "status": "running",
+                "created_at": now,
+                "optimization_id": optimization_id,
+                "runner": strategy.get("runner", "ninjatrader"),
+            }
+        )
 
-        job_specs.append({
-            "job_id":            run_id,
-            "strategy_class":    strategy["class_name"],
-            "instrument":        opt["instrument"],
-            "params":            merged_params,
-            "bar_type":          opt.get("bar_type", "Minute"),
-            "bar_value":         opt.get("bar_value", 5),
-            "start_date":        opt["start_date"],
-            "end_date":          opt["end_date"],
-            "commission_per_side": opt["commission_per_side"],
-            "slippage_ticks":    opt["slippage_ticks"],
-        })
+        job_specs.append(
+            {
+                "job_id": run_id,
+                "strategy_class": strategy["class_name"],
+                "instrument": opt["instrument"],
+                "params": merged_params,
+                "bar_type": opt.get("bar_type", "Minute"),
+                "bar_value": opt.get("bar_value", 5),
+                "start_date": opt["start_date"],
+                "end_date": opt["end_date"],
+                "commission_per_side": opt["commission_per_side"],
+                "slippage_ticks": opt["slippage_ticks"],
+            }
+        )
 
     ruleset_ids = [opt["ruleset_id"]] if opt.get("ruleset_id") else []
     await _run_batch(
-        run_ids, job_specs,
+        run_ids,
+        job_specs,
         ruleset_ids=ruleset_ids,
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
@@ -921,17 +993,15 @@ async def run_optimization(optimization_id: str) -> None:
 
     # Find best run by objective score (regime-filtered if opt["regime_filter"] is set)
     complete_rows = [
-        row for run_id in run_ids
-        if (row := lab_db.get_run(run_id)) and row["status"] == "complete"
+        row for run_id in run_ids if (row := lab_db.get_run(run_id)) and row["status"] == "complete"
     ]
     best_run_id, note = await _pick_best_run(complete_rows, opt, firm)
     lab_db.set_optimization_winner_note(optimization_id, note)
     lab_db.complete_optimization(optimization_id, best_run_id)
     if best_run_id and ruleset_ids:
         from services import stress_tester
-        asyncio.create_task(stress_tester.trigger_auto_stress_test(
-            best_run_id, ruleset_ids
-        ))
+
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(best_run_id, ruleset_ids))
 
 
 def resolve_opt_eval_rulesets(opt: dict) -> list[str]:
@@ -956,7 +1026,9 @@ def resolve_opt_eval_rulesets(opt: dict) -> list[str]:
     return []
 
 
-async def retry_single_optimization_run(run_id: str, evaluate_rulesets: Optional[list[str]] = None) -> None:
+async def retry_single_optimization_run(
+    run_id: str, evaluate_rulesets: Optional[list[str]] = None
+) -> None:
     """Re-fire a single optimization run as a full backtest. Caller must have already
     called reset_run_for_retry. `evaluate_rulesets` is the explicit scoring selection
     (e.g. chosen in the UI prompt); when None, it's resolved from the optimization."""
@@ -971,7 +1043,9 @@ async def retry_single_optimization_run(run_id: str, evaluate_rulesets: Optional
     if not strategy:
         lab_db.update_run_status(run_id, "failed_unknown", "Strategy not found")
         return
-    ruleset_ids = evaluate_rulesets if evaluate_rulesets is not None else resolve_opt_eval_rulesets(opt)
+    ruleset_ids = (
+        evaluate_rulesets if evaluate_rulesets is not None else resolve_opt_eval_rulesets(opt)
+    )
     firm = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
 
     # Keep the optimization's own status as-is (complete/failed) — this is a
@@ -980,19 +1054,20 @@ async def retry_single_optimization_run(run_id: str, evaluate_rulesets: Optional
     lab_db.decrement_optimization_completed(opt_id, 1, set_running=False)
 
     job_spec = {
-        "job_id":             run_id,
-        "strategy_class":     strategy["class_name"],
-        "instrument":         row["instrument"],
-        "params":             row["params"],
-        "bar_type":           row["bar_type"],
-        "bar_value":          row["bar_value"],
-        "start_date":         row["start_date"],
-        "end_date":           row["end_date"],
+        "job_id": run_id,
+        "strategy_class": strategy["class_name"],
+        "instrument": row["instrument"],
+        "params": row["params"],
+        "bar_type": row["bar_type"],
+        "bar_value": row["bar_value"],
+        "start_date": row["start_date"],
+        "end_date": row["end_date"],
         "commission_per_side": row["commission_per_side"],
-        "slippage_ticks":     row["slippage_ticks"],
+        "slippage_ticks": row["slippage_ticks"],
     }
     await _run_batch(
-        [run_id], [job_spec],
+        [run_id],
+        [job_spec],
         ruleset_ids=ruleset_ids,
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
@@ -1007,9 +1082,8 @@ async def retry_single_optimization_run(run_id: str, evaluate_rulesets: Optional
     lab_db.complete_optimization(opt_id, best_run_id)
     if best_run_id and ruleset_ids:
         from services import stress_tester
-        asyncio.create_task(stress_tester.trigger_auto_stress_test(
-            best_run_id, ruleset_ids
-        ))
+
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(best_run_id, ruleset_ids))
 
 
 async def retry_failed_runs(optimization_id: str) -> None:
@@ -1035,25 +1109,26 @@ async def retry_failed_runs(optimization_id: str) -> None:
         lab_db.reset_run_for_retry(row["run_id"])
     lab_db.decrement_optimization_completed(optimization_id, len(failed_rows))
 
-    run_ids   = [r["run_id"] for r in failed_rows]
+    run_ids = [r["run_id"] for r in failed_rows]
     job_specs = [
         {
-            "job_id":             r["run_id"],
-            "strategy_class":     strategy["class_name"],
-            "instrument":         r["instrument"],
-            "params":             r["params"],
-            "bar_type":           r["bar_type"],
-            "bar_value":          r["bar_value"],
-            "start_date":         r["start_date"],
-            "end_date":           r["end_date"],
+            "job_id": r["run_id"],
+            "strategy_class": strategy["class_name"],
+            "instrument": r["instrument"],
+            "params": r["params"],
+            "bar_type": r["bar_type"],
+            "bar_value": r["bar_value"],
+            "start_date": r["start_date"],
+            "end_date": r["end_date"],
             "commission_per_side": r["commission_per_side"],
-            "slippage_ticks":     r["slippage_ticks"],
+            "slippage_ticks": r["slippage_ticks"],
         }
         for r in failed_rows
     ]
 
     await _run_batch(
-        run_ids, job_specs,
+        run_ids,
+        job_specs,
         ruleset_ids=ruleset_ids,
         opt_mode=opt["mode"],
         runner=strategy.get("runner", "ninjatrader"),
@@ -1062,14 +1137,12 @@ async def retry_failed_runs(optimization_id: str) -> None:
 
     # Re-score best run across all complete runs (original + retried)
     all_complete = [
-        r for r in lab_db.list_optimization_runs(optimization_id)
-        if r["status"] == "complete"
+        r for r in lab_db.list_optimization_runs(optimization_id) if r["status"] == "complete"
     ]
     best_run_id, note = await _pick_best_run(all_complete, opt, firm)
     lab_db.set_optimization_winner_note(optimization_id, note)
     lab_db.complete_optimization(optimization_id, best_run_id)
     if best_run_id and ruleset_ids:
         from services import stress_tester
-        asyncio.create_task(stress_tester.trigger_auto_stress_test(
-            best_run_id, ruleset_ids
-        ))
+
+        asyncio.create_task(stress_tester.trigger_auto_stress_test(best_run_id, ruleset_ids))

@@ -37,7 +37,7 @@ from .types import (
 # Gate: 0.618 (E1) must be reached before anything else arms.
 # Retrace group (checked while price is at/through 0.618, on the retracement side):
 _STRUCT_RETRACE: Tuple[Tuple[str, float], ...] = (
-    ("E1", 0.618),   # the gate itself, marked first
+    ("E1", 0.618),  # the gate itself, marked first
     ("E2", 0.702),
     ("E3", 0.786),
     ("E4", 0.886),
@@ -139,12 +139,20 @@ class StructureFib:
         # ── Adopt a more-extreme internal swing for the fib pull only (Pine 2277-2282) ──
         # Runs before the origin/guard below because it can move an anchor's loc, which is what the
         # origin-change detection keys off. Nothing else about structure changes.
-        if (self._dir == 1 and self._i_confirmed_low is not None and self._asl is not None
-                and self._i_confirmed_low < self._asl):
+        if (
+            self._dir == 1
+            and self._i_confirmed_low is not None
+            and self._asl is not None
+            and self._i_confirmed_low < self._asl
+        ):
             self._asl = self._i_confirmed_low
             self._asl_loc = self._i_confirmed_low_loc
-        if (self._dir == -1 and self._i_confirmed_high is not None and self._ash is not None
-                and self._i_confirmed_high > self._ash):
+        if (
+            self._dir == -1
+            and self._i_confirmed_high is not None
+            and self._ash is not None
+            and self._i_confirmed_high > self._ash
+        ):
             self._ash = self._i_confirmed_high
             self._ash_loc = self._i_confirmed_high_loc
 
@@ -174,8 +182,9 @@ class StructureFib:
 
         # Skip touched-checks on the bar the origin changed OR the bar the extending anchor itself
         # moved — a live pullback wick, not a confirmed close (Pine `fiboExtChanged`, mpc 2303-2309).
-        ext_changed = ((self._prev_ash is not None and self._ash != self._prev_ash)
-                       or (self._prev_asl is not None and self._asl != self._prev_asl))
+        ext_changed = (self._prev_ash is not None and self._ash != self._prev_ash) or (
+            self._prev_asl is not None and self._asl != self._prev_asl
+        )
 
         touched_now: List[FibTouch] = []
 
@@ -277,7 +286,9 @@ class SniperFib:
             snh = snap.bull_bos_high if bull else snap.bear_bos_high
             snl = snap.bull_bos_low if bull else snap.bear_bos_low
             d = 1 if bull else -1
-            sn382 = fib_from_origin(snh, snl, d, _SNIPER_382)  # bull: snl + r*0.382 ; bear: snh - r*0.382
+            sn382 = fib_from_origin(
+                snh, snl, d, _SNIPER_382
+            )  # bull: snl + r*0.382 ; bear: snh - r*0.382
             sn50 = fib_from_origin(snh, snl, d, _SNIPER_500)
             self._zone_top = max(sn382, sn50)
             self._zone_bot = min(sn382, sn50)
@@ -310,7 +321,7 @@ class SniperFib:
 # ── Macro cycle fib levels (bull-only: HH sits at 0.0, LL at 1.0, retraces measured down) ──
 # Retrace group — gated by 0.618, tested on the pullback (low) side, same order as Pine:
 _MACRO_RETRACE: Tuple[Tuple[str, float], ...] = (
-    ("E1", 0.618),   # the gate
+    ("E1", 0.618),  # the gate
     ("E2", 0.702),
     ("E3", 0.786),
     ("E4", 0.886),
@@ -351,9 +362,9 @@ class MacroFib:
         # Cycle anchors + direction (Pine `var macro_*`). Locs kept for parity of the anchor bar;
         # the drawing-only `time` fields are dropped.
         self._dir: int = 0
-        self._origin: Optional[float] = None       # locked bottom (LL)
+        self._origin: Optional[float] = None  # locked bottom (LL)
         self._origin_loc: Optional[int] = None
-        self._extreme: Optional[float] = None       # extending top (HH)
+        self._extreme: Optional[float] = None  # extending top (HH)
         self._extreme_loc: Optional[int] = None
         self._origin_locked: bool = False
         self._visible: bool = False
@@ -378,8 +389,9 @@ class MacroFib:
         self._gate_ever = False
 
     # ------------------------------------------------------------------
-    def update(self, bar_index: int, high: float, low: float, close: float,
-               snap: StructureSnapshot) -> MacroFibEvents:
+    def update(
+        self, bar_index: int, high: float, low: float, close: float, snap: StructureSnapshot
+    ) -> MacroFibEvents:
         """Feed one closed bar (index + high/low/close) plus this bar's structure snapshot.
 
         Only feed <=5m bars — the Pine timeframe gate is the caller's responsibility.
@@ -420,8 +432,12 @@ class MacroFib:
         bottom_anchor = self._ll_since
         bottom_anchor_bar = self._ll_since_bar
         new_cycle = False
-        if (snap.bull_sos and not self._origin_locked and bottom_anchor is not None
-                and snap.last_conf_high is not None):
+        if (
+            snap.bull_sos
+            and not self._origin_locked
+            and bottom_anchor is not None
+            and snap.last_conf_high is not None
+        ):
             self._dir = 1
             self._origin = bottom_anchor
             self._origin_loc = bottom_anchor_bar
@@ -436,8 +452,12 @@ class MacroFib:
 
         # ── 5. TOP EXTENDS on every new confirmed HH (Pine 2584) ──
         extended = False
-        if (self._origin_locked and snap.last_conf_high is not None
-                and self._last_conf_high is not None and snap.last_conf_high > self._last_conf_high):
+        if (
+            self._origin_locked
+            and snap.last_conf_high is not None
+            and self._last_conf_high is not None
+            and snap.last_conf_high > self._last_conf_high
+        ):
             self._extreme = snap.last_conf_high
             self._extreme_loc = snap.last_conf_high_loc
             self._last_conf_high = snap.last_conf_high
@@ -450,8 +470,12 @@ class MacroFib:
         #    pre-hide `visible` state, before the HIDE step below (Pine order: extend -> touch ->
         #    hide, changed from the old extend/hide order in the re-paste). ──
         levels: Dict[str, float] = {}
-        if (self._visible and self._origin_locked and self._origin is not None
-                and self._extreme is not None):
+        if (
+            self._visible
+            and self._origin_locked
+            and self._origin is not None
+            and self._extreme is not None
+        ):
             mH = self._extreme
             mL = self._origin
             if mH - mL > 0:
@@ -473,15 +497,24 @@ class MacroFib:
 
         # ── 7. HIDE when price closes above the locked top (Pine 2636) — now AFTER extend + touch,
         #    and it hides only (no state wipe). Stays locked; the fib reappears on the next HH. ──
-        if (self._origin_locked and self._visible and self._extreme is not None
-                and close > self._extreme):
+        if (
+            self._origin_locked
+            and self._visible
+            and self._extreme is not None
+            and close > self._extreme
+        ):
             self._visible = False
 
         self._prev_st_dir = snap.direction  # Pine 2655 (unused)
 
         # Final active reflects the POST-hide state, matching the export's macroActive.
-        active = (self._visible and self._origin_locked and self._origin is not None
-                  and self._extreme is not None and (self._extreme - self._origin) > 0)
+        active = (
+            self._visible
+            and self._origin_locked
+            and self._origin is not None
+            and self._extreme is not None
+            and (self._extreme - self._origin) > 0
+        )
 
         # Edge-detect touches against the PREVIOUS bar's end state (Pine `X and not X[1]`).
         touched_now: List[FibTouch] = [
@@ -512,7 +545,7 @@ class MacroFib:
 #    levels arm the moment E1 is EVER touched (persistent), not only while price is currently
 #    at/through 0.618. ──
 _IFIB_RETRACE: Tuple[Tuple[str, float], ...] = (
-    ("E1", 0.618),   # the gate
+    ("E1", 0.618),  # the gate
     ("E2", 0.702),
     ("E3", 0.786),
     ("E4", 0.886),
@@ -523,8 +556,10 @@ _IFIB_TARGET: Tuple[Tuple[str, float], ...] = (
     ("TP2", 0.382),
     ("TP3", 0.000),
 )
-_IFIB_GATE = "E1"   # 0.618
-_IFIB_TP3 = "TP3"   # 0.0 — full retrace; freezes `_tp3_hit_price` (no longer latches `_reset_active`)
+_IFIB_GATE = "E1"  # 0.618
+_IFIB_TP3 = (
+    "TP3"  # 0.0 — full retrace; freezes `_tp3_hit_price` (no longer latches `_reset_active`)
+)
 _IFIB_ORDER = _IFIB_RETRACE + _IFIB_TARGET
 _IFIB_ROLE = {name: "entry" for name, _ in _IFIB_RETRACE}
 _IFIB_ROLE.update({name: "target" for name, _ in _IFIB_TARGET})
@@ -563,7 +598,7 @@ class InternalFib:
         self._ash_loc: Optional[int] = None
 
         self._touched = {name: False for name in _IFIB_RATIO}
-        self._gate_ever = False            # iFib618EverReached — arms the target side from next bar
+        self._gate_ever = False  # iFib618EverReached — arms the target side from next bar
         # iFibResetActive — declared + reset like the source, but the 2026-07-09 re-paste dropped its
         # TP3-hit setter, so it now stays False for the whole leg (kept as an always-False mirror).
         self._reset_active = False
@@ -589,8 +624,9 @@ class InternalFib:
         self._tp3_hit_price = None
 
     # ------------------------------------------------------------------
-    def update(self, bar_index: int, high: float, low: float,
-               snap: StructureSnapshot) -> InternalFibEvents:
+    def update(
+        self, bar_index: int, high: float, low: float, snap: StructureSnapshot
+    ) -> InternalFibEvents:
         """Feed one closed bar (index + high/low) plus this bar's structure snapshot."""
 
         # ── 1. Seed on an internal break (fired on the iBOS/iSOS bar; Pine sites 1400-1609) ──
@@ -609,7 +645,7 @@ class InternalFib:
         cleared = False
         if snap.bull_bos or snap.bear_bos or snap.bull_sos or snap.bear_sos:
             self._clear()
-            self._prev_ash = None   # Pine 2680 — the external clear resets the prev anchors too
+            self._prev_ash = None  # Pine 2680 — the external clear resets the prev anchors too
             self._prev_asl = None
             cleared = True
 
@@ -629,21 +665,28 @@ class InternalFib:
         active = self._dir != 0 and self._asl is not None and self._ash is not None
         # Skip the touch checks on any bar the moving anchor itself changed — a live wick, not a
         # confirmed close (Pine `iFibExtChanged`, mpc 2705). Geometry/levels still computed for the API.
-        ext_changed = ((self._prev_ash is not None and self._ash != self._prev_ash)
-                       or (self._prev_asl is not None and self._asl != self._prev_asl))
+        ext_changed = (self._prev_ash is not None and self._ash != self._prev_ash) or (
+            self._prev_asl is not None and self._asl != self._prev_asl
+        )
         if active:
             d = self._dir
             levels = {name: fib_level(self._ash, self._asl, d, r) for name, r in _IFIB_ORDER}
 
             if (self._ash - self._asl) > 0 and not ext_changed:
                 gate_price = levels[_IFIB_GATE]
-                gate_reached = (low <= gate_price + _TOUCH_EPS) if d == 1 else (high >= gate_price - _TOUCH_EPS)
+                gate_reached = (
+                    (low <= gate_price + _TOUCH_EPS)
+                    if d == 1
+                    else (high >= gate_price - _TOUCH_EPS)
+                )
 
                 # E1 gate: mark it the moment it is first reached (Pine 2769).
                 if gate_reached and not self._touched[_IFIB_GATE]:
                     self._touched[_IFIB_GATE] = True
                     touched_now.append(
-                        FibTouch(_IFIB_GATE, _IFIB_RATIO[_IFIB_GATE], gate_price, _IFIB_ROLE[_IFIB_GATE])
+                        FibTouch(
+                            _IFIB_GATE, _IFIB_RATIO[_IFIB_GATE], gate_price, _IFIB_ROLE[_IFIB_GATE]
+                        )
                     )
 
                 # Deeper retrace levels — armed the moment E1 is (ever) touched (Pine 2772).
@@ -652,10 +695,14 @@ class InternalFib:
                         if name == _IFIB_GATE or self._touched[name]:
                             continue
                         price = levels[name]
-                        hit = (low <= price + _TOUCH_EPS) if d == 1 else (high >= price - _TOUCH_EPS)
+                        hit = (
+                            (low <= price + _TOUCH_EPS) if d == 1 else (high >= price - _TOUCH_EPS)
+                        )
                         if hit:
                             self._touched[name] = True
-                            touched_now.append(FibTouch(name, _IFIB_RATIO[name], price, _IFIB_ROLE[name]))
+                            touched_now.append(
+                                FibTouch(name, _IFIB_RATIO[name], price, _IFIB_ROLE[name])
+                            )
 
                 # Targets — armed only after E1 was reached on a PREVIOUS bar (Pine 2778).
                 if self._gate_ever:
@@ -663,10 +710,14 @@ class InternalFib:
                         if self._touched[name]:
                             continue
                         price = levels[name]
-                        hit = (high >= price - _TOUCH_EPS) if d == 1 else (low <= price + _TOUCH_EPS)
+                        hit = (
+                            (high >= price - _TOUCH_EPS) if d == 1 else (low <= price + _TOUCH_EPS)
+                        )
                         if hit:
                             self._touched[name] = True
-                            touched_now.append(FibTouch(name, _IFIB_RATIO[name], price, _IFIB_ROLE[name]))
+                            touched_now.append(
+                                FibTouch(name, _IFIB_RATIO[name], price, _IFIB_ROLE[name])
+                            )
                             if name == _IFIB_TP3:
                                 self._tp3_hit_price = price
 

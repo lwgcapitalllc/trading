@@ -9,7 +9,6 @@ half-applied is a way the account ends up with two ceilings and no error anywher
 from __future__ import annotations
 
 import pytest
-
 from services import bot_accounts as ba
 
 
@@ -91,14 +90,16 @@ def test_a_cap_equal_to_the_per_trade_risk_takes_turns():
     """The two numbers together imply something neither states: at a 10% cap against two bots
     each risking 10%, one full-size position or resting order fills the whole budget and the
     other bot is refused until it comes back."""
-    g = ba.group_by_account({"a": _cfg("a", cap=10.0, risk=10.0),
-                             "b": _cfg("b", magic=2, cap=10.0, risk=10.0)})[0]
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=10.0, risk=10.0)}
+    )[0]
     assert g.cap_takes_turns is True
 
 
 def test_a_cap_above_the_summed_risk_does_not_take_turns():
-    g = ba.group_by_account({"a": _cfg("a", cap=25.0, risk=10.0),
-                             "b": _cfg("b", magic=2, cap=25.0, risk=10.0)})[0]
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=25.0, risk=10.0), "b": _cfg("b", magic=2, cap=25.0, risk=10.0)}
+    )[0]
     assert g.cap_takes_turns is False
 
 
@@ -110,8 +111,9 @@ def test_a_single_bot_never_takes_turns_with_itself():
 
 def test_turn_taking_is_not_claimed_when_the_caps_disagree():
     """There is no account cap to compare against, so the question cannot be answered."""
-    g = ba.group_by_account({"a": _cfg("a", cap=10.0, risk=10.0),
-                             "b": _cfg("b", magic=2, cap=50.0, risk=10.0)})[0]
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=50.0, risk=10.0)}
+    )[0]
     assert g.cap_takes_turns is False
 
 
@@ -194,8 +196,9 @@ def test_two_benched_bots_are_NOT_stacked():
 
     They share no balance, so a Stacked chip here would be a false alarm about doubled risk on
     bots that are not trading — the one direction that chip must never fail in."""
-    groups = ba.group_by_account({"a": _cfg("a", account=None),
-                                  "b": _cfg("b", account=None, magic=2)})
+    groups = ba.group_by_account(
+        {"a": _cfg("a", account=None), "b": _cfg("b", account=None, magic=2)}
+    )
     assert len(groups) == 1
     assert groups[0].kind == "bench"
     assert groups[0].stacked is False
@@ -213,8 +216,7 @@ def test_two_bots_on_one_account_sharing_a_magic_are_named():
     """The raw number told the reader nothing ("I don't know what the column magic even means"),
     but two bots sharing one each read the OTHER's orders as their own. So the FACT is reported
     and the number is not shown at all."""
-    g = ba.group_by_account({"a": _cfg("a", magic=770115),
-                             "b": _cfg("b", magic=770115)})[0]
+    g = ba.group_by_account({"a": _cfg("a", magic=770115), "b": _cfg("b", magic=770115)})[0]
     assert g.magic_clash == ["a", "b"]
 
 
@@ -243,8 +245,9 @@ def test_bots_with_no_magic_at_all_do_not_manufacture_a_clash():
 def test_benched_bots_sharing_a_magic_are_not_a_clash():
     """They are on no terminal, so there is no order book for them to collide in — and
     `live_config._assert_magic_is_unique` exempts the bench for the same reason."""
-    g = ba.group_by_account({"a": _cfg("a", account=None, magic=7),
-                             "b": _cfg("b", account=None, magic=7)})[0]
+    g = ba.group_by_account(
+        {"a": _cfg("a", account=None, magic=7), "b": _cfg("b", account=None, magic=7)}
+    )[0]
     assert g.magic_clash == []
 
 
@@ -283,8 +286,7 @@ def test_benching_writes_ONLY_the_account():
 def test_joining_an_account_whose_bots_DISAGREE_about_the_cap_is_refused():
     """MUTATION: drop the `cap_agrees` check → the new bot adopts `None` (the disagreement's
     reported cap) and quietly becomes the third opinion."""
-    target = ba.group_by_account({"a": _cfg("a", cap=10.0),
-                                  "b": _cfg("b", magic=2, cap=20.0)})[0]
+    target = ba.group_by_account({"a": _cfg("a", cap=10.0), "b": _cfg("b", magic=2, cap=20.0)})[0]
     with pytest.raises(ValueError, match="different risk caps"):
         ba.assign_plan("newbot", 700107749, target=target)
 
@@ -292,8 +294,11 @@ def test_joining_an_account_whose_bots_DISAGREE_about_the_cap_is_refused():
 def test_joining_an_account_with_an_unreadable_bot_is_refused():
     groups = ba.group_by_account({"a": _cfg("a", cap=10.0), "broken": None})
     target = next(g for g in groups if g.kind == "account")
-    target.bots.append(ba.AccountBot(key="broken", display="broken", symbol="", magic=0,
-                                     strategy_package="", unreadable=True))
+    target.bots.append(
+        ba.AccountBot(
+            key="broken", display="broken", symbol="", magic=0, strategy_package="", unreadable=True
+        )
+    )
     with pytest.raises(ValueError, match="cannot be read"):
         ba.assign_plan("newbot", 700107749, target=target)
 
@@ -311,6 +316,7 @@ def test_moving_a_bot_to_an_account_nobody_trades_is_a_404(client, monkeypatch):
     """Its server, terminal and cap are read off the bots already there, so a first bot has
     nothing to adopt and the honest answer is that the account does not exist here."""
     from routers import bots as bots_router
+
     monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
     r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 999999})
     assert r.status_code == 404
@@ -325,6 +331,7 @@ def test_a_RUNNING_bot_refuses_to_be_moved(client, monkeypatch):
     """It read its config at startup, so the write cannot reach the live process — the page
     would show it under one account while it went on trading another."""
     from routers import bots as bots_router
+
     monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: True)
     r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700107749})
     assert r.status_code == 409

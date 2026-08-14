@@ -15,17 +15,16 @@ runner. The dispatcher is transparent to every call site.
 
 from __future__ import annotations
 
-from typing import Optional
-import io
-import time
-import uuid
-import urllib.request
-import urllib.error
 import json
+import time
+import urllib.error
+import urllib.request
+import uuid
+from typing import Optional
 
 import config as cfg
-from services import lab_db
-from services import mt5_agent_client, python_runner
+
+from services import lab_db, mt5_agent_client, python_runner
 
 _TIMEOUT = 10  # seconds for all agent calls
 
@@ -51,6 +50,7 @@ def _post(path: str, body: Optional[dict] = None, timeout: int = _TIMEOUT) -> di
 
 
 # ── Observability ─────────────────────────────────────────────────────────────
+
 
 def health() -> dict:
     return _get("/health", timeout=5)
@@ -82,6 +82,7 @@ def nt_log(lines: int = 100) -> str:
 
 # ── Foundational config injection ────────────────────────────────────────────
 
+
 def build_foundational_params(ruleset: dict) -> dict:
     """Return the strategy-param key/value pairs sourced from a ruleset's foundational config.
 
@@ -95,11 +96,11 @@ def build_foundational_params(ruleset: dict) -> dict:
     """
     days = ruleset.get("days_of_week_allowed") or []
     return {
-        "CommissionPerSide":    float(ruleset.get("default_commission_per_side") or 0),
-        "ForceFlatTimeET":      ruleset.get("force_flat_time_et") or "",
-        "EarliestEntryTimeET":  ruleset.get("earliest_entry_time_et") or "",
-        "LatestEntryTimeET":    ruleset.get("latest_entry_time_et") or "",
-        "DaysOfWeekAllowed":    ",".join(days) if isinstance(days, list) else (days or ""),
+        "CommissionPerSide": float(ruleset.get("default_commission_per_side") or 0),
+        "ForceFlatTimeET": ruleset.get("force_flat_time_et") or "",
+        "EarliestEntryTimeET": ruleset.get("earliest_entry_time_et") or "",
+        "LatestEntryTimeET": ruleset.get("latest_entry_time_et") or "",
+        "DaysOfWeekAllowed": ",".join(days) if isinstance(days, list) else (days or ""),
     }
 
 
@@ -121,6 +122,7 @@ def inject_foundational(user_params: dict, ruleset: Optional[dict]) -> dict:
 
 # ── Runner dispatcher ─────────────────────────────────────────────────────────
 
+
 def _resolve_runner(job_id: str, explicit_runner: Optional[str] = None) -> str:
     """Return the runner for a job, preferring an explicit value over a DB lookup.
 
@@ -137,6 +139,7 @@ def _resolve_runner(job_id: str, explicit_runner: Optional[str] = None) -> str:
 
 # ── Job control ───────────────────────────────────────────────────────────────
 
+
 def _nt8_to_mt5_spec(spec: dict) -> dict:
     """
     Translate the NT8-style job_spec to the MT5 agent's expected format.
@@ -146,7 +149,7 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     job_id is passed through so the MT5 agent stores the job under our run_id —
     without this the agent generates its own UUID and status polls return 404.
     """
-    bar_type  = spec.get("bar_type", "Minute")
+    bar_type = spec.get("bar_type", "Minute")
     bar_value = int(spec.get("bar_value") or 60)
 
     if bar_type == "Day":
@@ -178,16 +181,16 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     # sensible standalone defaults here. Strip -1 sentinel f_ values from params before
     # merging so they don't override the defaults we just built.
     foundational_defaults = {
-        "f_AccountSize":           deposit,
-        "f_RiskPerTradePct":       1.0,
-        "f_DailyLossCap":          round(deposit * 0.05, 2),
-        "f_DailyHaltFraction":     0.6,
-        "f_MaxConsecutiveLosses":  0,    # 0 = disabled
-        "f_DailyProfitTarget":     0,    # 0 = disabled
-        "f_DailyProfitLockPct":    0,    # 0 = disabled
-        "f_BrokerToEtOffsetHours": 99,   # 99 = auto-detect
-        "f_CommissionPerSide":     float(spec.get("commission_per_side") or 0),
-        "f_SlippageTicks":         int(spec.get("slippage_ticks") or 0),
+        "f_AccountSize": deposit,
+        "f_RiskPerTradePct": 1.0,
+        "f_DailyLossCap": round(deposit * 0.05, 2),
+        "f_DailyHaltFraction": 0.6,
+        "f_MaxConsecutiveLosses": 0,  # 0 = disabled
+        "f_DailyProfitTarget": 0,  # 0 = disabled
+        "f_DailyProfitLockPct": 0,  # 0 = disabled
+        "f_BrokerToEtOffsetHours": 99,  # 99 = auto-detect
+        "f_CommissionPerSide": float(spec.get("commission_per_side") or 0),
+        "f_SlippageTicks": int(spec.get("slippage_ticks") or 0),
     }
     # Only fill standalone defaults for foundational params THIS strategy declares.
     # `params` carries the strategy's scanned inputs, so an f_ key absent here is one
@@ -199,22 +202,25 @@ def _nt8_to_mt5_spec(spec: dict) -> dict:
     # sentinel before injection), so a missing key genuinely means "not an EA input".
     foundational_defaults = {k: v for k, v in foundational_defaults.items() if k in params}
     # Drop -1 sentinel f_ values so foundational_defaults fill in instead
-    safe_params = {k: v for k, v in params.items()
-                   if not (k.startswith("f_") and isinstance(v, (int, float)) and v < 0)}
+    safe_params = {
+        k: v
+        for k, v in params.items()
+        if not (k.startswith("f_") and isinstance(v, (int, float)) and v < 0)
+    }
     inputs = {**foundational_defaults, **safe_params}
 
     return {
-        "job_id":         spec.get("job_id"),
+        "job_id": spec.get("job_id"),
         "strategy_class": spec["strategy_class"],
-        "symbol":         spec["instrument"],
-        "timeframe":      timeframe,
-        "from_date":      spec["start_date"],
-        "to_date":        spec["end_date"],
-        "model":          1,  # OHLC on M1 — same results as Model=0 for bar-close strategies, ~10x faster
-        "deposit":        deposit,
-        "currency":       "USD",
-        "leverage":       100,
-        "inputs":         inputs,
+        "symbol": spec["instrument"],
+        "timeframe": timeframe,
+        "from_date": spec["start_date"],
+        "to_date": spec["end_date"],
+        "model": 1,  # OHLC on M1 — same results as Model=0 for bar-close strategies, ~10x faster
+        "deposit": deposit,
+        "currency": "USD",
+        "leverage": 100,
+        "inputs": inputs,
     }
 
 
@@ -225,18 +231,20 @@ def _nt8_opt_to_mt5_opt_spec(opt_spec: dict) -> dict:
     NT8 spec: instrument, param_ranges, fixed_params, start_date, end_date, bar_type/bar_value
     MT5 spec: symbol, param_ranges (same), inputs (fixed), from_date, to_date, timeframe
     """
-    base = _nt8_to_mt5_spec({
-        "job_id":             opt_spec.get("job_id"),
-        "strategy_class":     opt_spec["strategy_class"],
-        "instrument":         opt_spec["instrument"],
-        "bar_type":           opt_spec.get("bar_type", "Minute"),
-        "bar_value":          opt_spec.get("bar_value", 60),
-        "start_date":         opt_spec["start_date"],
-        "end_date":           opt_spec["end_date"],
-        "commission_per_side": opt_spec.get("commission_per_side", 0),
-        "slippage_ticks":     opt_spec.get("slippage_ticks", 0),
-        "params":             opt_spec.get("fixed_params", {}),
-    })
+    base = _nt8_to_mt5_spec(
+        {
+            "job_id": opt_spec.get("job_id"),
+            "strategy_class": opt_spec["strategy_class"],
+            "instrument": opt_spec["instrument"],
+            "bar_type": opt_spec.get("bar_type", "Minute"),
+            "bar_value": opt_spec.get("bar_value", 60),
+            "start_date": opt_spec["start_date"],
+            "end_date": opt_spec["end_date"],
+            "commission_per_side": opt_spec.get("commission_per_side", 0),
+            "slippage_ticks": opt_spec.get("slippage_ticks", 0),
+            "params": opt_spec.get("fixed_params", {}),
+        }
+    )
     base["param_ranges"] = opt_spec.get("param_ranges", {})
     return base
 
@@ -267,18 +275,20 @@ def native_opt_results(job_id: str, runner: str = "ninjatrader") -> dict:
 
 def _nt8_wf_to_mt5_wf_spec(wf_spec: dict) -> dict:
     """Translate NT8-style WF spec to MT5 agent format (single IS/OOS split)."""
-    base = _nt8_to_mt5_spec({
-        "job_id":             wf_spec.get("job_id"),
-        "strategy_class":     wf_spec["strategy_class"],
-        "instrument":         wf_spec["instrument"],
-        "bar_type":           wf_spec.get("bar_type", "Minute"),
-        "bar_value":          wf_spec.get("bar_value", 60),
-        "start_date":         wf_spec["start_date"],
-        "end_date":           wf_spec["end_date"],
-        "commission_per_side": wf_spec.get("commission_per_side", 0),
-        "slippage_ticks":     wf_spec.get("slippage_ticks", 0),
-        "params":             wf_spec.get("params", {}),
-    })
+    base = _nt8_to_mt5_spec(
+        {
+            "job_id": wf_spec.get("job_id"),
+            "strategy_class": wf_spec["strategy_class"],
+            "instrument": wf_spec["instrument"],
+            "bar_type": wf_spec.get("bar_type", "Minute"),
+            "bar_value": wf_spec.get("bar_value", 60),
+            "start_date": wf_spec["start_date"],
+            "end_date": wf_spec["end_date"],
+            "commission_per_side": wf_spec.get("commission_per_side", 0),
+            "slippage_ticks": wf_spec.get("slippage_ticks", 0),
+            "params": wf_spec.get("params", {}),
+        }
+    )
     base["oos_pct"] = wf_spec.get("oos_pct", 30)
     return base
 
@@ -329,15 +339,19 @@ def _normalize_mt5_status(raw: dict) -> dict:
         status = "failed_cancelled"
     running = status not in ("complete", "failed_cancelled")
     pct = 100 if status == "complete" else max(5, min(99, raw.get("pct") or 5))
-    message = raw.get("message") or (raw.get("error") or "") or ("MT5 optimization running…" if running else "")
+    message = (
+        raw.get("message")
+        or (raw.get("error") or "")
+        or ("MT5 optimization running…" if running else "")
+    )
     return {
-        "status":          status,
-        "pct":             pct,
-        "message":         message,
+        "status": status,
+        "pct": pct,
+        "message": message,
         "completed_count": raw.get("completed_count"),
-        "total_count":     raw.get("total_count"),
-        "updated_at":      str(time.time()),
-        "error":           raw.get("error"),
+        "total_count": raw.get("total_count"),
+        "updated_at": str(time.time()),
+        "error": raw.get("error"),
     }
 
 
@@ -346,7 +360,7 @@ def job_status(job_id: str, runner: Optional[str] = None) -> dict:
     if resolved == "mt5":
         return _normalize_mt5_status(mt5_agent_client.job_status(job_id))
     if resolved == "python":
-        return python_runner.job_status(job_id)   # already the NT8 status shape
+        return python_runner.job_status(job_id)  # already the NT8 status shape
     return _get(f"/jobs/{job_id}/status")
 
 
@@ -357,11 +371,11 @@ def _normalize_mt5_results(raw: dict) -> dict:
 
     # Compute avg_win / avg_loss from the trades list (MT5 agent doesn't report these)
     profits = [t["profit"] for t in trades if "profit" in t]
-    wins   = [p for p in profits if p > 0]
+    wins = [p for p in profits if p > 0]
     losses = [p for p in profits if p < 0]
-    kpis   = {k: raw[k] for k in _KPI_KEYS if k in raw}
+    kpis = {k: raw[k] for k in _KPI_KEYS if k in raw}
     if wins:
-        kpis["avg_win"]  = round(sum(wins)   / len(wins),   2)
+        kpis["avg_win"] = round(sum(wins) / len(wins), 2)
     if losses:
         kpis["avg_loss"] = round(sum(losses) / len(losses), 2)
 
@@ -380,8 +394,8 @@ def _normalize_mt5_results(raw: dict) -> dict:
     _DIR = {"buy": "Long", "sell": "Short"}
     _OPP = {"buy": "sell", "sell": "buy"}
     raw_curve = raw.get("equity_curve", [])
-    opening   = raw_curve[0].get("equity", 0.0) if raw_curve else 0.0
-    start_ts  = raw_curve[0].get("date", "")    if raw_curve else ""
+    opening = raw_curve[0].get("equity", 0.0) if raw_curve else 0.0
+    start_ts = raw_curve[0].get("date", "") if raw_curve else ""
 
     equity_curve: list[dict] = [{"index": 0, "date": start_ts, "equity": opening}]
     balance = opening
@@ -396,24 +410,28 @@ def _normalize_mt5_results(raw: dict) -> dict:
         entry = pending_entries.pop(0) if pending_entries else None
         entry_dir = (entry or {}).get("direction", "").lower()
         if not entry_dir:
-            entry_dir = _OPP.get((t.get("direction") or "").lower(), (t.get("direction") or "").lower())
+            entry_dir = _OPP.get(
+                (t.get("direction") or "").lower(), (t.get("direction") or "").lower()
+            )
         balance = round(balance + profit, 2)
-        equity_curve.append({
-            "index":     len(equity_curve),
-            "date":      t.get("time", ""),
-            "equity":    balance,
-            "direction": _DIR.get(entry_dir, entry_dir.capitalize()),
-            "profit":    profit,
-            # Per-trade size = MT5 volume (lots). Stored, but NOT a futures-contract count —
-            # the contract-cap check treats MT5 as not_applicable.
-            "size":      t.get("volume"),
-        })
+        equity_curve.append(
+            {
+                "index": len(equity_curve),
+                "date": t.get("time", ""),
+                "equity": balance,
+                "direction": _DIR.get(entry_dir, entry_dir.capitalize()),
+                "profit": profit,
+                # Per-trade size = MT5 volume (lots). Stored, but NOT a futures-contract count —
+                # the contract-cap check treats MT5 as not_applicable.
+                "size": t.get("volume"),
+            }
+        )
 
     out = {
-        "kpis":         kpis,
+        "kpis": kpis,
         "equity_curve": equity_curve,
-        "daily_pnl":    raw.get("daily_pnl", []),
-        "trades":       trades,
+        "daily_pnl": raw.get("daily_pnl", []),
+        "trades": trades,
     }
     # Pass the per-trade record through when a reshaped EA emitted it (the runner→engine
     # contract). backtest_runner._handle_complete sizes the run offline only when this key
@@ -466,6 +484,7 @@ def export_trades() -> dict:
 
 # ── Strategy file management ──────────────────────────────────────────────────
 
+
 def list_strategy_files() -> list[dict]:
     return _get("/files/strategies")
 
@@ -476,15 +495,16 @@ def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict
     url = cfg.NT8_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     boundary = uuid.uuid4().hex
     body_parts = [
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
-        f"filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n".encode(),
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+        f'filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode(),
         content,
-        f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\n"
+        f'\r\n--{boundary}\r\nContent-Disposition: form-data; name="overwrite"\r\n\r\n'
         f"{'true' if overwrite else 'false'}\r\n--{boundary}--\r\n".encode(),
     ]
     body = b"".join(body_parts)
     req = urllib.request.Request(
-        url, data=body,
+        url,
+        data=body,
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )

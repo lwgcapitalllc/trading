@@ -42,7 +42,9 @@ from services.structure_overlays import (  # noqa: E402
     build_market_structure_overlays,
 )
 
-_M5_CACHE = Path(__file__).resolve().parent.parent.parent.parent / "backtest" / "cache" / "XAUUSD__M5.csv"
+_M5_CACHE = (
+    Path(__file__).resolve().parent.parent.parent.parent / "backtest" / "cache" / "XAUUSD__M5.csv"
+)
 _INTERNAL_GROUPS = {GROUP_INTERNAL, GROUP_INTERNAL_HISTORIC}
 
 
@@ -61,11 +63,15 @@ def _real_candles(start: str, end: str) -> list[dict]:
             if not (start <= r["time"] <= end):
                 continue
             ts = datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            out.append({
-                "time": int(ts.timestamp() * 1000),
-                "open": float(r["open"]), "high": float(r["high"]),
-                "low": float(r["low"]), "close": float(r["close"]),
-            })
+            out.append(
+                {
+                    "time": int(ts.timestamp() * 1000),
+                    "open": float(r["open"]),
+                    "high": float(r["high"]),
+                    "low": float(r["low"]),
+                    "close": float(r["close"]),
+                }
+            )
     return out
 
 
@@ -97,12 +103,19 @@ def _engine_breaks(candles):
     eng = StructureEngine()
     out: dict[int, set[float]] = {}
     for i, c in enumerate(candles):
-        n = eng.update(Bar(index=i, open=c["open"], high=c["high"],
-                           low=c["low"], close=c["close"])).internal
-        prices = {p for fired, p in (
-            (n.bull_bos, n.bull_bos_price), (n.bear_bos, n.bear_bos_price),
-            (n.bull_sos, n.bull_sos_price), (n.bear_sos, n.bear_sos_price),
-        ) if fired and p is not None}
+        n = eng.update(
+            Bar(index=i, open=c["open"], high=c["high"], low=c["low"], close=c["close"])
+        ).internal
+        prices = {
+            p
+            for fired, p in (
+                (n.bull_bos, n.bull_bos_price),
+                (n.bear_bos, n.bear_bos_price),
+                (n.bull_sos, n.bull_sos_price),
+                (n.bear_sos, n.bear_sos_price),
+            )
+            if fired and p is not None
+        }
         if prices:
             out[c["time"]] = prices
     return out
@@ -198,7 +211,9 @@ def test_the_break_bar_is_the_engines_own_and_not_the_fib_seed():
     disagreements = 0
     checked = 0
     for i, c in enumerate(candles):
-        n = eng.update(Bar(index=i, open=c["open"], high=c["high"], low=c["low"], close=c["close"])).internal
+        n = eng.update(
+            Bar(index=i, open=c["open"], high=c["high"], low=c["low"], close=c["close"])
+        ).internal
         if not n.bear_sos:
             continue
         checked += 1

@@ -37,6 +37,7 @@ and needs a far larger edge than one with a $12 stop to survive the translation.
     usage:  python3 backtest/tools/intraday_edge.py
             python3 backtest/tools/intraday_edge.py --horizon 32 --target 2.0
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,7 +45,7 @@ import collections
 import random
 import statistics
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,18 +53,17 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "engines"))
 sys.path.insert(0, str(ROOT))
 
-from market_structure import Bar, StructureEngine  # noqa: E402
-from vwap import VwapEngine  # noqa: E402
-from sessions import SessionEngine  # noqa: E402
-from liquidity import LiquidityEngine  # noqa: E402
+import csv as _csv  # noqa: E402
+
 from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
+from liquidity import LiquidityEngine  # noqa: E402
+from market_structure import Bar, StructureEngine  # noqa: E402
+from sessions import SessionEngine  # noqa: E402
+from vwap import VwapEngine  # noqa: E402
 
 # ONE loader, shared with trigger_edge.py — a cache result and a published screen number
 # cannot drift apart if there is only one thing reading the file.
 from backtest.tools.trigger_edge import Row, atr, drop_coarse  # noqa: E402
-
-import csv as _csv  # noqa: E402
-
 
 # 🔴 THE COST IS PER SYMBOL AND IT IS THE AXIS THAT DECIDES INTRADAY, so it is a measured
 # table rather than one constant. Values are the broker's own live `spread_price` off
@@ -86,20 +86,20 @@ CONFIRM_BARS = 8
 class Event:
     kind: str
     entry_i: int
-    direction: int          # +1 long, -1 short
+    direction: int  # +1 long, -1 short
     entry: float
     stop: float
     risk_atr: float
     risk_usd: float
     outcome: str = ""
     year: int = 0
-    tag: str = ""           # free-form split label (side, session, ...)
+    tag: str = ""  # free-form split label (side, session, ...)
     # Confluence flags, frozen from CLOSED-bar state at the moment the trigger fired.
     # Every one is a fact known before the entry bar's close — see the look-ahead note.
-    f_vwap: bool = False    # entering on the trend's own side of the session VWAP
-    f_trend: bool = False   # entering with the structure trend (last SOS)
-    f_dbias: bool = False   # entering with yesterday's direction (prev day close vs open)
-    f_kz: bool = False      # inside a NY kill zone
+    f_vwap: bool = False  # entering on the trend's own side of the session VWAP
+    f_trend: bool = False  # entering with the structure trend (last SOS)
+    f_dbias: bool = False  # entering with yesterday's direction (prev day close vs open)
+    f_kz: bool = False  # inside a NY kill zone
     f_narrow: bool = False  # the opening range was NARROW vs ATR (a coiled spring)
 
 
@@ -112,8 +112,17 @@ def load(symbol="XAUUSD"):
     with path.open() as f:
         for rec in _csv.DictReader(f):
             t = datetime.strptime(rec["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            rows.append(Row(0, int(t.timestamp() * 1000), float(rec["open"]), float(rec["high"]),
-                            float(rec["low"]), float(rec["close"]), float(rec["volume"] or 0)))
+            rows.append(
+                Row(
+                    0,
+                    int(t.timestamp() * 1000),
+                    float(rec["open"]),
+                    float(rec["high"]),
+                    float(rec["low"]),
+                    float(rec["close"]),
+                    float(rec["volume"] or 0),
+                )
+            )
     return rows
 
 
@@ -149,8 +158,18 @@ def control(rows, direction, risk_atr, target_r, horizon, n=8000, seed=7):
         i = rnd.randrange(200, len(rows) - horizon - 2)
         entry = rows[i].c
         stop = entry - direction * risk_atr * a[i]
-        out.append(Event("CTRL", i, direction, entry, stop, risk_atr, abs(entry - stop),
-                         outcome=resolve(rows, i, direction, entry, stop, target_r, horizon)))
+        out.append(
+            Event(
+                "CTRL",
+                i,
+                direction,
+                entry,
+                stop,
+                risk_atr,
+                abs(entry - stop),
+                outcome=resolve(rows, i, direction, entry, stop, target_r, horizon),
+            )
+        )
     _CTRL[key] = out
     return out
 
@@ -181,9 +200,20 @@ def stats(evs, rows, target_r, horizon):
     # +0.073R fade that never cleared cost, and every trigger here has a stop of a few dollars
     # of gold against a ~$0.30 round trip. Cost in R = cost_usd / stop_usd, charged per trade.
     exp_net = exp - (COST_USD / medusd if medusd > 0 else 0.0)
-    return dict(n=n, wr=wr, exp=exp, exp_net=exp_net, med=med, medusd=medusd, cwr=cwr,
-                edge=wr - cwr, z=z, dec=dec, openpct=1 - dec / n,
-                costr=(COST_USD / medusd if medusd > 0 else 0.0))
+    return dict(
+        n=n,
+        wr=wr,
+        exp=exp,
+        exp_net=exp_net,
+        med=med,
+        medusd=medusd,
+        cwr=cwr,
+        edge=wr - cwr,
+        z=z,
+        dec=dec,
+        openpct=1 - dec / n,
+        costr=(COST_USD / medusd if medusd > 0 else 0.0),
+    )
 
 
 def line(label, evs, rows, target_r, horizon):
@@ -191,17 +221,20 @@ def line(label, evs, rows, target_r, horizon):
     if s is None:
         print(f"{label:<38} n=0")
         return
-    print(f"{label:<38} n={s['n']:>4}  WR={s['wr']:>5.1%}  expR={s['exp']:>+6.3f}  "
-          f"NET={s['exp_net']:>+6.3f}  ${s['medusd']:>6.2f}(cost {s['costr']:>4.1%}R)  "
-          f"ctrl={s['cwr']:>5.1%}  edge={s['edge']:>+6.1%} ({s['z']:>+4.1f}s)")
+    print(
+        f"{label:<38} n={s['n']:>4}  WR={s['wr']:>5.1%}  expR={s['exp']:>+6.3f}  "
+        f"NET={s['exp_net']:>+6.3f}  ${s['medusd']:>6.2f}(cost {s['costr']:>4.1%}R)  "
+        f"ctrl={s['cwr']:>5.1%}  edge={s['edge']:>+6.1%} ({s['z']:>+4.1f}s)"
+    )
 
 
 # ----------------------------------------------------------------------------- triggers
 @dataclass
 class Pending:
     """A level that has been swept and is waiting for its close-back-inside confirmation."""
+
     kind: str
-    side: str               # "high" (swept above -> fade short) | "low"
+    side: str  # "high" (swept above -> fade short) | "low"
     price: float
     start_i: int
     extreme: float
@@ -263,19 +296,21 @@ def collect(rows, horizon):
         for lv in lev.mitigated:
             tag = None
             if lv.kind == "session" and lv.session_name == "Asia" and (se.in_london or se.in_ny):
-                tag = "ASIA"          # the judas swing — Asia's range grabbed in London/NY
+                tag = "ASIA"  # the judas swing — Asia's range grabbed in London/NY
             elif lv.kind == "session" and lv.session_name == "London" and se.in_ny:
                 tag = "LDN"
             elif lv.kind == "daily":
-                tag = "PD"            # PDH / PDL
+                tag = "PD"  # PDH / PDL
             if tag is None:
                 continue
-            pend.append(Pending(tag, lv.side, lv.price, r.i,
-                                r.h if lv.side == "high" else r.l))
+            pend.append(Pending(tag, lv.side, lv.price, r.i, r.h if lv.side == "high" else r.l))
 
         for lv in eqe.mitigated:
-            eq_pend.append(Pending("EQ", "high" if lv.is_high else "low", lv.price, r.i,
-                                   r.h if lv.is_high else r.l))
+            eq_pend.append(
+                Pending(
+                    "EQ", "high" if lv.is_high else "low", lv.price, r.i, r.h if lv.is_high else r.l
+                )
+            )
 
         for bag in (pend, eq_pend):
             for p in list(bag):
@@ -291,14 +326,24 @@ def collect(rows, horizon):
                     bag.remove(p)
                     continue
                 if r.i == p.start_i:
-                    continue          # the sweep bar itself cannot confirm its own sweep
+                    continue  # the sweep bar itself cannot confirm its own sweep
                 if confirmed:
                     stop = p.extreme
                     risk = abs(r.c - stop)
                     if risk > 1e-9:
-                        evs.append(Event(f"{p.kind}_FADE", r.i, direction, r.c, stop,
-                                         risk / a[r.i], risk, year=year,
-                                         tag="long" if direction == 1 else "short"))
+                        evs.append(
+                            Event(
+                                f"{p.kind}_FADE",
+                                r.i,
+                                direction,
+                                r.c,
+                                stop,
+                                risk / a[r.i],
+                                risk,
+                                year=year,
+                                tag="long" if direction == 1 else "short",
+                            )
+                        )
                     bag.remove(p)
 
         # ---------------------------------------------------------------- 2. VWAP
@@ -318,9 +363,19 @@ def collect(rows, horizon):
                     stop = ext_peak
                     risk = abs(r.c - stop)
                     if risk > 1e-9:
-                        evs.append(Event("VWAP_STRETCH_FADE", r.i, -d, r.c, stop,
-                                         risk / a[r.i], risk, year=year,
-                                         tag="long" if -d == 1 else "short"))
+                        evs.append(
+                            Event(
+                                "VWAP_STRETCH_FADE",
+                                r.i,
+                                -d,
+                                r.c,
+                                stop,
+                                risk / a[r.i],
+                                risk,
+                                year=year,
+                                tag="long" if -d == 1 else "short",
+                            )
+                        )
                         ext_dir, ext_peak = 0, None
             elif abs(dist) < 1.0:
                 ext_dir, ext_peak = 0, None
@@ -329,16 +384,26 @@ def collect(rows, horizon):
             # session VWAP, then closes back on the trend's side. The "easy confluence"
             # everyone trades. Stop below the tagging bar.
             if trend != 0:
-                tagged = (r.l <= vwap <= r.h)
+                tagged = r.l <= vwap <= r.h
                 on_side = (r.c > vwap) if trend == 1 else (r.c < vwap)
                 was_side = (prev_close > prev_vwap) if trend == 1 else (prev_close < prev_vwap)
                 if tagged and on_side and was_side:
                     stop = r.l if trend == 1 else r.h
                     risk = abs(r.c - stop)
                     if risk > 1e-9:
-                        evs.append(Event("VWAP_TREND_BOUNCE", r.i, trend, r.c, stop,
-                                         risk / a[r.i], risk, year=year,
-                                         tag="long" if trend == 1 else "short"))
+                        evs.append(
+                            Event(
+                                "VWAP_TREND_BOUNCE",
+                                r.i,
+                                trend,
+                                r.c,
+                                stop,
+                                risk / a[r.i],
+                                risk,
+                                year=year,
+                                tag="long" if trend == 1 else "short",
+                            )
+                        )
 
         # ---------------------------------------------------------------- 3. NY OPEN RANGE
         # One shot per side per day: the first M15 bar to CLOSE outside the 09:30-09:35 NY
@@ -351,8 +416,12 @@ def collect(rows, horizon):
                 prev_day_dir = 1 if prev_close > day_open else -1
             day_open = r.o
             orb_day, orb_done = year, set()
-        if (se.ny_range_high is not None and se.ny_range_low is not None
-                and se.in_ny_range_extend and se.ny_range_high > se.ny_range_low):
+        if (
+            se.ny_range_high is not None
+            and se.ny_range_low is not None
+            and se.in_ny_range_extend
+            and se.ny_range_high > se.ny_range_low
+        ):
             rh, rl = se.ny_range_high, se.ny_range_low
             narrow = (rh - rl) < 0.8 * a[r.i]
 
@@ -361,15 +430,38 @@ def collect(rows, horizon):
                 if risk <= 1e-9:
                     return
                 on_vwap = vwap is not None and ((r.c > vwap) if d == 1 else (r.c < vwap))
-                evs.append(Event("ORB_BREAK", r.i, d, r.c, stop_px, risk / a[r.i], risk,
-                                 year=year, tag="long" if d == 1 else "short",
-                                 f_vwap=on_vwap, f_trend=(trend == d),
-                                 f_dbias=(prev_day_dir == d), f_kz=se.in_killzone,
-                                 f_narrow=narrow))
+                evs.append(
+                    Event(
+                        "ORB_BREAK",
+                        r.i,
+                        d,
+                        r.c,
+                        stop_px,
+                        risk / a[r.i],
+                        risk,
+                        year=year,
+                        tag="long" if d == 1 else "short",
+                        f_vwap=on_vwap,
+                        f_trend=(trend == d),
+                        f_dbias=(prev_day_dir == d),
+                        f_kz=se.in_killzone,
+                        f_narrow=narrow,
+                    )
+                )
                 if abs(r.c - fade_stop) > 1e-9:
-                    evs.append(Event("ORB_FADE", r.i, -d, r.c, fade_stop,
-                                     abs(r.c - fade_stop) / a[r.i], abs(r.c - fade_stop),
-                                     year=year, tag="short" if d == 1 else "long"))
+                    evs.append(
+                        Event(
+                            "ORB_FADE",
+                            r.i,
+                            -d,
+                            r.c,
+                            fade_stop,
+                            abs(r.c - fade_stop) / a[r.i],
+                            abs(r.c - fade_stop),
+                            year=year,
+                            tag="short" if d == 1 else "long",
+                        )
+                    )
 
             if r.c > rh and "up" not in orb_done:
                 orb_done.add("up")
@@ -389,30 +481,45 @@ def collect(rows, horizon):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="XAUUSD", help="XAUUSD | NAS100 (must be cached)")
-    ap.add_argument("--horizon", type=int, default=32,
-                    help="max bars held. 32 M15 bars = 8 hours (default, intraday)")
+    ap.add_argument(
+        "--horizon",
+        type=int,
+        default=32,
+        help="max bars held. 32 M15 bars = 8 hours (default, intraday)",
+    )
     ap.add_argument("--target", type=float, default=2.0, help="R target scored against -1R")
     args = ap.parse_args()
 
     global COST_USD
     COST_USD = COSTS.get(args.symbol, 0.30)
     rows = drop_coarse(load(args.symbol))
-    print(f"{args.symbol}: {len(rows)} true-M15 bars, "
-          f"{datetime.fromtimestamp(rows[0].ts/1000, timezone.utc):%Y-%m-%d} -> "
-          f"{datetime.fromtimestamp(rows[-1].ts/1000, timezone.utc):%Y-%m-%d}")
-    print(f"scored at +{args.target}R before -1R, horizon {args.horizon} bars "
-          f"({args.horizon/4:.0f}h) | breakeven WR = {1/(1+args.target):.1%}\n")
+    print(
+        f"{args.symbol}: {len(rows)} true-M15 bars, "
+        f"{datetime.fromtimestamp(rows[0].ts / 1000, timezone.utc):%Y-%m-%d} -> "
+        f"{datetime.fromtimestamp(rows[-1].ts / 1000, timezone.utc):%Y-%m-%d}"
+    )
+    print(
+        f"scored at +{args.target}R before -1R, horizon {args.horizon} bars "
+        f"({args.horizon / 4:.0f}h) | breakeven WR = {1 / (1 + args.target):.1%}\n"
+    )
 
     evs = collect(rows, args.horizon)
     for e in evs:
-        e.outcome = resolve(rows, e.entry_i, e.direction, e.entry, e.stop, args.target, args.horizon)
+        e.outcome = resolve(
+            rows, e.entry_i, e.direction, e.entry, e.stop, args.target, args.horizon
+        )
     evs = [e for e in evs if e.outcome != "bad"]
 
     print("── HARNESS SELF-CHECK: the control must land on breakeven ──")
     for dr, nm in ((1, "long"), (-1, "short")):
         for ra in (0.5, 1.0, 2.0):
-            line(f"  random {nm} @{ra}ATR", control(rows, dr, ra, args.target, args.horizon),
-                 rows, args.target, args.horizon)
+            line(
+                f"  random {nm} @{ra}ATR",
+                control(rows, dr, ra, args.target, args.horizon),
+                rows,
+                args.target,
+                args.horizon,
+            )
 
     kinds = sorted({e.kind for e in evs})
     print("\n── EVERY INTRADAY TRIGGER, vs a matched control ──")
@@ -422,15 +529,25 @@ def main():
     print("\n── by SIDE (gold tripled: a long-only 'edge' is the drift talking) ──")
     for k in kinds:
         for side in ("long", "short"):
-            line(f"  {k} {side}", [e for e in evs if e.kind == k and e.tag == side],
-                 rows, args.target, args.horizon)
+            line(
+                f"  {k} {side}",
+                [e for e in evs if e.kind == k and e.tag == side],
+                rows,
+                args.target,
+                args.horizon,
+            )
 
     print("\n── HALF SPLIT (a sign flip is regime, not edge) ──")
     mid = rows[len(rows) // 2].i
     for k in kinds:
         for nm, sel in (("1st", lambda e: e.entry_i < mid), ("2nd", lambda e: e.entry_i >= mid)):
-            line(f"  {k} {nm}", [e for e in evs if e.kind == k and sel(e)],
-                 rows, args.target, args.horizon)
+            line(
+                f"  {k} {nm}",
+                [e for e in evs if e.kind == k and sel(e)],
+                rows,
+                args.target,
+                args.horizon,
+            )
 
     print("\n── ROBUSTNESS: vs R target, and vs horizon ──")
     print("   (an edge that exists only at one R target is an artefact of that target;")
@@ -440,17 +557,41 @@ def main():
             continue
         cells = []
         for tr in (1.0, 1.5, 2.0, 3.0):
-            sub = [Event(e.kind, e.entry_i, e.direction, e.entry, e.stop, e.risk_atr,
-                         e.risk_usd, resolve(rows, e.entry_i, e.direction, e.entry, e.stop,
-                                             tr, args.horizon), e.year, e.tag)
-                   for e in evs if e.kind == k]
+            sub = [
+                Event(
+                    e.kind,
+                    e.entry_i,
+                    e.direction,
+                    e.entry,
+                    e.stop,
+                    e.risk_atr,
+                    e.risk_usd,
+                    resolve(rows, e.entry_i, e.direction, e.entry, e.stop, tr, args.horizon),
+                    e.year,
+                    e.tag,
+                )
+                for e in evs
+                if e.kind == k
+            ]
             s = stats(sub, rows, tr, args.horizon)
             cells.append(f"{tr}R:{s['edge']:>+5.1%}({s['z']:>+4.1f}s)")
         for hz, nm in ((96, "24h"), (384, "4d")):
-            sub = [Event(e.kind, e.entry_i, e.direction, e.entry, e.stop, e.risk_atr,
-                         e.risk_usd, resolve(rows, e.entry_i, e.direction, e.entry, e.stop,
-                                             args.target, hz), e.year, e.tag)
-                   for e in evs if e.kind == k]
+            sub = [
+                Event(
+                    e.kind,
+                    e.entry_i,
+                    e.direction,
+                    e.entry,
+                    e.stop,
+                    e.risk_atr,
+                    e.risk_usd,
+                    resolve(rows, e.entry_i, e.direction, e.entry, e.stop, args.target, hz),
+                    e.year,
+                    e.tag,
+                )
+                for e in evs
+                if e.kind == k
+            ]
             s = stats(sub, rows, args.target, hz)
             cells.append(f"{nm}:{s['edge']:>+5.1%}({s['z']:>+4.1f}s)")
         print(f"  {k:<24} " + "  ".join(cells))
@@ -459,15 +600,17 @@ def main():
     print("   (NET is the only column that decides anything. A filter that raises the edge")
     print("    while shrinking n has to raise it enough to still be there at n/4.)")
     orb = [e for e in evs if e.kind == "ORB_BREAK"]
-    filts = [("all", lambda e: True),
-             ("+ pro-trend VWAP side", lambda e: e.f_vwap),
-             ("+ with structure trend", lambda e: e.f_trend),
-             ("+ with yesterday's direction", lambda e: e.f_dbias),
-             ("+ inside a NY kill zone", lambda e: e.f_kz),
-             ("+ narrow opening range", lambda e: e.f_narrow),
-             ("+ VWAP and trend", lambda e: e.f_vwap and e.f_trend),
-             ("+ VWAP and narrow", lambda e: e.f_vwap and e.f_narrow),
-             ("+ VWAP and trend and narrow", lambda e: e.f_vwap and e.f_trend and e.f_narrow)]
+    filts = [
+        ("all", lambda e: True),
+        ("+ pro-trend VWAP side", lambda e: e.f_vwap),
+        ("+ with structure trend", lambda e: e.f_trend),
+        ("+ with yesterday's direction", lambda e: e.f_dbias),
+        ("+ inside a NY kill zone", lambda e: e.f_kz),
+        ("+ narrow opening range", lambda e: e.f_narrow),
+        ("+ VWAP and trend", lambda e: e.f_vwap and e.f_trend),
+        ("+ VWAP and narrow", lambda e: e.f_vwap and e.f_narrow),
+        ("+ VWAP and trend and narrow", lambda e: e.f_vwap and e.f_trend and e.f_narrow),
+    ]
     for nm, fn in filts:
         line(f"  ORB {nm}", [e for e in orb if fn(e)], rows, args.target, args.horizon)
 

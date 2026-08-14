@@ -37,10 +37,10 @@ const AFFIRMATIONS = [
 //
 // The exit is a plain fade, deliberately duller than the entrance: two ends
 // competing for attention would make the change feel like an effect.
-const HOLD_MS = 20_000   // how long the finished line stays up, dead still
-const WORD_MS = 520      // one word's fade-up
-const STAGGER = 75       // gap between consecutive words
-const EXIT_MS = 400      // the whole line fading out together
+const HOLD_MS = 20_000 // how long the finished line stays up, dead still
+const WORD_MS = 520 // one word's fade-up
+const STAGGER = 75 // gap between consecutive words
+const EXIT_MS = 400 // the whole line fading out together
 
 type Phase = 'enter' | 'in' | 'out'
 
@@ -51,8 +51,9 @@ function AffirmationRibbon() {
   // Honour the OS setting: reduced motion keeps the change (a plain crossfade)
   // and drops the travel and the stagger.
   const [reduceMotion] = useState(
-    () => typeof window !== 'undefined'
-      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
   )
 
   const words = AFFIRMATIONS[idx].split(' ')
@@ -69,9 +70,15 @@ function AffirmationRibbon() {
   useEffect(() => {
     if (phase !== 'enter') return
     let inner = 0
-    const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => setPhase('in')) })
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setPhase('in'))
+    })
     const fallback = setTimeout(() => setPhase('in'), 80)
-    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); clearTimeout(fallback) }
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+      clearTimeout(fallback)
+    }
   }, [phase])
 
   // in → out, once the line has had its turn.
@@ -85,7 +92,7 @@ function AffirmationRibbon() {
   useEffect(() => {
     if (phase !== 'out') return
     const t = setTimeout(() => {
-      setIdx(i => (i + 1) % AFFIRMATIONS.length)
+      setIdx((i) => (i + 1) % AFFIRMATIONS.length)
       setPhase('enter')
     }, EXIT_MS)
     return () => clearTimeout(t)
@@ -95,7 +102,8 @@ function AffirmationRibbon() {
   // as one piece, so leaving never performs.
   const wordStyle = (i: number): React.CSSProperties => {
     const rise = reduceMotion ? 0 : 10
-    if (phase === 'enter') return { opacity: 0, transform: `translateY(${rise}px)`, transition: 'none' }
+    if (phase === 'enter')
+      return { opacity: 0, transform: `translateY(${rise}px)`, transition: 'none' }
     if (phase === 'out') {
       return {
         opacity: 0,
@@ -126,7 +134,8 @@ function AffirmationRibbon() {
         aria-hidden
         className="absolute w-[min(760px,72%)] h-[40px] rounded-pill"
         style={{
-          background: 'radial-gradient(ellipse at center, rgba(217,164,65,0.20) 0%, rgba(0,229,255,0.08) 48%, transparent 72%)',
+          background:
+            'radial-gradient(ellipse at center, rgba(217,164,65,0.20) 0%, rgba(0,229,255,0.08) 48%, transparent 72%)',
           filter: 'blur(7px)',
         }}
       />

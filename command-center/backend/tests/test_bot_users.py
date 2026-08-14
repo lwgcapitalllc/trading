@@ -17,14 +17,12 @@ import json
 
 import pytest
 from fastapi import HTTPException
-from pydantic import ValidationError
-
-from routers import bots
 from models import TelegramUserCreate, TelegramUserRoleUpdate
-
+from pydantic import ValidationError
+from routers import bots
 
 EXISTING = {
-    "111": {"name": "Aaron", "role": "admin",  "added": "2026-01-01"},
+    "111": {"name": "Aaron", "role": "admin", "added": "2026-01-01"},
     "222": {"name": "Brother", "role": "readonly", "added": "2026-02-02"},
 }
 
@@ -35,11 +33,12 @@ def vps(monkeypatch):
     state = {"read": json.dumps({"users": EXISTING}), "written": None, "write_ok": True}
 
     def fake_ssh(cmd: str) -> str:
-        if "sys.stdout.write" in cmd:                 # the read one-liner
+        if "sys.stdout.write" in cmd:  # the read one-liner
             return state["read"]
-        if "base64" in cmd:                           # the write one-liner
+        if "base64" in cmd:  # the write one-liner
             b64 = cmd.split("b64decode(b'")[1].split("'")[0]
             import base64 as _b64
+
             state["written"] = json.loads(_b64.b64decode(b64).decode())["users"]
             return bots._USERS_WRITTEN if state["write_ok"] else ""
         return ""
@@ -49,6 +48,7 @@ def vps(monkeypatch):
 
 
 # ── The file is absent — the genuine first-user path ──────────────────────────
+
 
 def test_absent_file_reads_as_no_users(vps):
     vps["read"] = bots._USERS_ABSENT
@@ -62,6 +62,7 @@ def test_the_first_user_can_be_added_to_an_absent_file(vps):
 
 
 # ── The file is unreadable — the case that used to delete everyone ────────────
+
 
 @pytest.mark.parametrize("answer", ["", "not json at all", "{}", '{"users": "oops"}'])
 def test_an_unreadable_file_refuses_to_be_read_as_empty(vps, answer):
@@ -101,6 +102,7 @@ def test_listing_users_reports_the_failure_instead_of_an_empty_list(vps):
 
 # ── The file is present — the ordinary path still works ──────────────────────
 
+
 def test_a_legitimately_empty_users_object_is_not_an_error(vps):
     """Removing the last user writes `{"users": {}}`. That is a real state, not a failure —
     only a file we cannot parse is."""
@@ -132,6 +134,7 @@ def test_a_role_change_touches_only_that_row(vps):
 # it only fires when the file is MISSING or unparseable, so a file listing everyone as
 # readonly is read exactly as written and the primary admin loses the commands too.
 
+
 def test_removing_the_last_admin_is_refused(vps):
     vps["read"] = json.dumps({"users": {"111": dict(EXISTING["111"])}})
     with pytest.raises(HTTPException) as e:
@@ -149,10 +152,14 @@ def test_demoting_the_last_admin_is_refused(vps):
 
 
 def test_removing_an_admin_is_fine_while_another_remains(vps):
-    vps["read"] = json.dumps({"users": {
-        "111": dict(EXISTING["111"]),
-        "333": {"name": "Second", "role": "admin", "added": "2026-03-03"},
-    }})
+    vps["read"] = json.dumps(
+        {
+            "users": {
+                "111": dict(EXISTING["111"]),
+                "333": {"name": "Second", "role": "admin", "added": "2026-03-03"},
+            }
+        }
+    )
     bots.remove_user("111")
     assert set(vps["written"]) == {"333"}
 
@@ -176,6 +183,7 @@ def test_a_role_outside_the_known_set_is_refused():
 
 # ── Two edits at once ────────────────────────────────────────────────────────
 
+
 def test_concurrent_adds_do_not_lose_one(monkeypatch):
     """Every write replaces the whole file, so an overlapping pair means the second one's
     READ can predate the first one's WRITE — and the first user silently vanishes. FastAPI
@@ -196,10 +204,11 @@ def test_concurrent_adds_do_not_lose_one(monkeypatch):
             # every thread the latest state and this test would pass with no lock at all
             # (measured — it did, until this line moved).
             answer = json.dumps({"users": store["users"]})
-            time.sleep(0.05)                      # widen the window
+            time.sleep(0.05)  # widen the window
             return answer
         if "base64" in cmd:
             import base64 as _b64
+
             b64 = cmd.split("b64decode(b'")[1].split("'")[0]
             store["users"] = json.loads(_b64.b64decode(b64).decode())["users"]
             return bots._USERS_WRITTEN
@@ -208,8 +217,9 @@ def test_concurrent_adds_do_not_lose_one(monkeypatch):
     monkeypatch.setattr(bots, "_ssh", fake_ssh)
 
     threads = [
-        threading.Thread(target=bots.add_user,
-                         args=(TelegramUserCreate(chat_id=cid, name=cid, role="readonly"),))
+        threading.Thread(
+            target=bots.add_user, args=(TelegramUserCreate(chat_id=cid, name=cid, role="readonly"),)
+        )
         for cid in ("901", "902", "903")
     ]
     for t in threads:
@@ -221,6 +231,7 @@ def test_concurrent_adds_do_not_lose_one(monkeypatch):
 
 
 # ── The write itself ─────────────────────────────────────────────────────────
+
 
 def test_an_unconfirmed_write_is_reported_as_a_failure(vps):
     """A remote Python traceback exits non-zero with empty stdout — which `_ssh` correctly

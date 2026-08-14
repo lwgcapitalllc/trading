@@ -21,7 +21,7 @@ caller passes a DataFrame.
 from __future__ import annotations
 
 from collections import deque
-from typing import Iterable, List, Optional, Union
+from typing import List, Optional
 
 from .types import Bar, ExternalEvents, InternalEvents, StructureEvents, SwingLevel
 
@@ -130,7 +130,9 @@ class _InternalState:
 
         self.sw_price: Optional[float] = None
         self.sw_loc: Optional[int] = None
-        self.sw_locked: bool = False  # tracks whether the active i_sw_* came from pullback confirmation
+        self.sw_locked: bool = (
+            False  # tracks whether the active i_sw_* came from pullback confirmation
+        )
 
         self.tracked_ext: Optional[float] = None
         self.tracked_ext_loc: Optional[int] = None
@@ -196,6 +198,7 @@ class StructureEngine:
         """
         try:
             import pandas as pd
+
             _PANDAS = True
         except ImportError:
             pd = None
@@ -249,25 +252,33 @@ class StructureEngine:
     def active_swing_high(self) -> Optional[SwingLevel]:
         if self._ext.ash is None:
             return None
-        return SwingLevel(price=self._ext.ash, index=self._ext.ash_loc, locked=self._ext.ash_type == "LOCKED")
+        return SwingLevel(
+            price=self._ext.ash, index=self._ext.ash_loc, locked=self._ext.ash_type == "LOCKED"
+        )
 
     @property
     def active_swing_low(self) -> Optional[SwingLevel]:
         if self._ext.asl is None:
             return None
-        return SwingLevel(price=self._ext.asl, index=self._ext.asl_loc, locked=self._ext.asl_type == "LOCKED")
+        return SwingLevel(
+            price=self._ext.asl, index=self._ext.asl_loc, locked=self._ext.asl_type == "LOCKED"
+        )
 
     @property
     def last_confirmed_high(self) -> Optional[SwingLevel]:
         if self._ext.last_conf_high is None:
             return None
-        return SwingLevel(price=self._ext.last_conf_high, index=self._ext.last_conf_high_loc, locked=True)
+        return SwingLevel(
+            price=self._ext.last_conf_high, index=self._ext.last_conf_high_loc, locked=True
+        )
 
     @property
     def last_confirmed_low(self) -> Optional[SwingLevel]:
         if self._ext.last_conf_low is None:
             return None
-        return SwingLevel(price=self._ext.last_conf_low, index=self._ext.last_conf_low_loc, locked=True)
+        return SwingLevel(
+            price=self._ext.last_conf_low, index=self._ext.last_conf_low_loc, locked=True
+        )
 
     @property
     def internal_mode(self) -> int:
@@ -278,7 +289,9 @@ class StructureEngine:
     def internal_swing(self) -> Optional[SwingLevel]:
         if self._int.sw_price is None:
             return None
-        return SwingLevel(price=self._int.sw_price, index=self._int.sw_loc, locked=self._int.sw_locked)
+        return SwingLevel(
+            price=self._int.sw_price, index=self._int.sw_loc, locked=self._int.sw_locked
+        )
 
     # Live pullback state — surfaces st.pb_mode / st.pb_extreme / st.pb_extreme_loc so a
     # consumer (the Structure fib) can follow the in-progress pullback extreme exactly as
@@ -323,13 +336,15 @@ class StructureEngine:
             return None, None
 
         # self._bars[-1] is the current bar; the candidate pivot bar is L bars before it.
-        window = list(self._bars)[n - (2 * L + 1):n]
+        window = list(self._bars)[n - (2 * L + 1) : n]
         candidate = window[L]  # centered element
         left = window[:L]
-        right = window[L + 1:]
+        right = window[L + 1 :]
 
         ph_val = None
-        if all(candidate.high > b.high for b in left) and all(candidate.high > b.high for b in right):
+        if all(candidate.high > b.high for b in left) and all(
+            candidate.high > b.high for b in right
+        ):
             ph_val = candidate.high
 
         pl_val = None
@@ -350,7 +365,9 @@ class StructureEngine:
     # External structure — port of `method process(SMCStructure st, ...)`
     # ------------------------------------------------------------------
 
-    def _process_external(self, bar: Bar, ph_val: Optional[float], pl_val: Optional[float]) -> ExternalEvents:
+    def _process_external(
+        self, bar: Bar, ph_val: Optional[float], pl_val: Optional[float]
+    ) -> ExternalEvents:
         st = self._ext
         close, high, low, open_ = bar.close, bar.high, bar.low, bar.open
         bar_index = bar.index
@@ -420,8 +437,14 @@ class StructureEngine:
                     extreme_updated_1 = True
                 extreme_is_bearish_1 = extreme_updated_1 and close < open_
                 is_candle1_1 = st.pb_last_qualify_close is None and not extreme_updated_1
-                if (not is_inside or is_candle1_1) and (not extreme_updated_1 or extreme_is_bearish_1):
-                    threshold = st.pb_extreme if st.pb_last_qualify_high is None else st.pb_last_qualify_high
+                if (not is_inside or is_candle1_1) and (
+                    not extreme_updated_1 or extreme_is_bearish_1
+                ):
+                    threshold = (
+                        st.pb_extreme
+                        if st.pb_last_qualify_high is None
+                        else st.pb_last_qualify_high
+                    )
                     if close < threshold:  # pbBuffer == 0.0
                         st.pb_count += 1
                         st.pb_last_qualify_close = close
@@ -457,8 +480,14 @@ class StructureEngine:
                     extreme_updated_m1 = True
                 extreme_is_bullish_m1 = extreme_updated_m1 and close > open_
                 is_candle1_m1 = st.pb_last_qualify_close is None and not extreme_updated_m1
-                if (not is_inside or is_candle1_m1) and (not extreme_updated_m1 or extreme_is_bullish_m1):
-                    threshold = st.pb_extreme if st.pb_last_qualify_high is None else st.pb_last_qualify_high
+                if (not is_inside or is_candle1_m1) and (
+                    not extreme_updated_m1 or extreme_is_bullish_m1
+                ):
+                    threshold = (
+                        st.pb_extreme
+                        if st.pb_last_qualify_high is None
+                        else st.pb_last_qualify_high
+                    )
                     if close > threshold:  # pbBuffer == 0.0
                         st.pb_count += 1
                         st.pb_last_qualify_close = close
@@ -604,10 +633,12 @@ class StructureEngine:
         bar_index = bar.index
         st.bull_bos = True
         st.bull_bos_price = st.ash
-        st.bull_bos_high = st.ash          # Pine: st.bull_bos_high  := st.ash
-        st.bull_bos_h_loc = st.ash_loc     # Pine: st.bull_bos_h_loc := st.ash_loc
+        st.bull_bos_high = st.ash  # Pine: st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc = st.ash_loc  # Pine: st.bull_bos_h_loc := st.ash_loc
 
-        was_in_bear_pb = st.pb_mode == -1 and st.pb_extreme is not None and st.pb_extreme_loc is not None
+        was_in_bear_pb = (
+            st.pb_mode == -1 and st.pb_extreme is not None and st.pb_extreme_loc is not None
+        )
         st.pb_mode = 0
         st.pb_count = 0
 
@@ -617,7 +648,7 @@ class StructureEngine:
         if is_choch:
             st.choch_lock = True
 
-        brk_already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+        brk_already_conf_high = st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc
         if not brk_already_conf_high:
             brk_is_hh = st.last_conf_high is None or st.ash >= st.last_conf_high
             st.broken_high_label = "HH" if brk_is_hh else "LH"
@@ -637,10 +668,14 @@ class StructureEngine:
             # the internal engine, and Pine deliberately never seeds internal off a
             # break-promotion swing. Setting it here diverged from Pine (validated on the
             # XAUUSD-15m export at bar 1947) — so it is intentionally not set.
-            st.bull_bos_low = st.pb_extreme        # Pine: st.bull_bos_low  := st.pb_extreme
+            st.bull_bos_low = st.pb_extreme  # Pine: st.bull_bos_low  := st.pb_extreme
             st.bull_bos_l_loc = st.pb_extreme_loc  # Pine: st.bull_bos_l_loc := st.pb_extreme_loc
 
-            pb_is_hl = False if is_choch else (st.last_conf_low is None or st.pb_extreme >= st.last_conf_low)
+            pb_is_hl = (
+                False
+                if is_choch
+                else (st.last_conf_low is None or st.pb_extreme >= st.last_conf_low)
+            )
             # On an SOS (fast reversal) the extreme is only the ACTIVE swing low — it prints as
             # ASL and is confirmed to HL/LL by the NEXT bullish break, so it must NOT overwrite
             # the confirmed-swing map here.
@@ -664,9 +699,13 @@ class StructureEngine:
             st.pb_mode = 1
         else:
             if st.asl is not None:
-                already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+                already_conf_low = st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc
                 if not already_conf_low:
-                    old_is_hl = False if is_choch else (st.last_conf_low is None or st.asl >= st.last_conf_low)
+                    old_is_hl = (
+                        False
+                        if is_choch
+                        else (st.last_conf_low is None or st.asl >= st.last_conf_low)
+                    )
                     st.broken_low_label = "HL" if old_is_hl else "LL"
                     st.broken_low_price = st.asl
                     st.broken_low_index = st.asl_loc
@@ -676,7 +715,9 @@ class StructureEngine:
 
             lowest_val = bar.low
             lowest_loc = bar_index
-            bars_back = bar_index if st.last_conf_high_loc is None else bar_index - st.last_conf_high_loc
+            bars_back = (
+                bar_index if st.last_conf_high_loc is None else bar_index - st.last_conf_high_loc
+            )
             if bars_back > 0:
                 max_lb = min(min(bars_back, _RESCAN_BOUND), bar_index)
                 for i in range(0, max_lb + 1):
@@ -685,8 +726,8 @@ class StructureEngine:
                         lowest_val = b.low
                         lowest_loc = bar_index - i
 
-            st.bull_bos_low = lowest_val       # Pine: st.bull_bos_low  := lowest_val
-            st.bull_bos_l_loc = lowest_loc     # Pine: st.bull_bos_l_loc := lowest_loc
+            st.bull_bos_low = lowest_val  # Pine: st.bull_bos_low  := lowest_val
+            st.bull_bos_l_loc = lowest_loc  # Pine: st.bull_bos_l_loc := lowest_loc
 
             st.asl = lowest_val
             st.asl_loc = lowest_loc
@@ -708,10 +749,12 @@ class StructureEngine:
         bar_index = bar.index
         st.bear_bos = True
         st.bear_bos_price = st.asl
-        st.bear_bos_low = st.asl           # Pine: st.bear_bos_low  := st.asl
-        st.bear_bos_l_loc = st.asl_loc     # Pine: st.bear_bos_l_loc := st.asl_loc
+        st.bear_bos_low = st.asl  # Pine: st.bear_bos_low  := st.asl
+        st.bear_bos_l_loc = st.asl_loc  # Pine: st.bear_bos_l_loc := st.asl_loc
 
-        was_in_bull_pb = st.pb_mode == 1 and st.pb_extreme is not None and st.pb_extreme_loc is not None
+        was_in_bull_pb = (
+            st.pb_mode == 1 and st.pb_extreme is not None and st.pb_extreme_loc is not None
+        )
         st.pb_mode = 0
         st.pb_count = 0
 
@@ -721,7 +764,7 @@ class StructureEngine:
         if is_choch:
             st.choch_lock = True
 
-        brk_already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+        brk_already_conf_low = st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc
         if not brk_already_conf_low:
             brk_is_hl = st.last_conf_low is None or st.asl >= st.last_conf_low
             st.broken_low_label = "HL" if brk_is_hl else "LL"
@@ -741,7 +784,7 @@ class StructureEngine:
             # the internal engine, and Pine deliberately never seeds internal off a
             # break-promotion swing. Setting it here diverged from Pine (validated on the
             # XAUUSD-15m export) — so it is intentionally not set. Mirror of _on_ash_broken.
-            st.bear_bos_high = st.pb_extreme       # Pine: st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_high = st.pb_extreme  # Pine: st.bear_bos_high  := st.pb_extreme
             st.bear_bos_h_loc = st.pb_extreme_loc  # Pine: st.bear_bos_h_loc := st.pb_extreme_loc
 
             pb_is_hh = st.last_conf_high is None or st.pb_extreme >= st.last_conf_high
@@ -769,7 +812,9 @@ class StructureEngine:
         else:
             highest_val = bar.high
             highest_loc = bar_index
-            bars_back = bar_index if st.last_conf_low_loc is None else bar_index - st.last_conf_low_loc
+            bars_back = (
+                bar_index if st.last_conf_low_loc is None else bar_index - st.last_conf_low_loc
+            )
             if bars_back > 0:
                 max_lb = min(min(bars_back, _RESCAN_BOUND), bar_index)
                 for i in range(0, max_lb + 1):
@@ -779,12 +824,18 @@ class StructureEngine:
                         highest_loc = bar_index - i
 
             if st.ash is not None:
-                already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+                already_conf_high = (
+                    st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc
+                )
                 if not already_conf_high:
                     # NOTE: Pine hardcodes old_is_hh = true when is_choch (line 470), asymmetric
                     # with the mirror-image branch in _on_ash_broken (which hardcodes False for
                     # old_is_hl when is_choch). Ported faithfully — not "fixed" to be symmetric.
-                    old_is_hh = True if is_choch else (st.last_conf_high is None or st.ash >= st.last_conf_high)
+                    old_is_hh = (
+                        True
+                        if is_choch
+                        else (st.last_conf_high is None or st.ash >= st.last_conf_high)
+                    )
                     st.broken_high_label = "HH" if old_is_hh else "LH"
                     st.broken_high_price = st.ash
                     st.broken_high_index = st.ash_loc
@@ -804,8 +855,8 @@ class StructureEngine:
                     st.last_conf_high = highest_val
                     st.last_conf_high_loc = highest_loc
 
-            st.bear_bos_high = highest_val     # Pine: st.bear_bos_high  := highest_val
-            st.bear_bos_h_loc = highest_loc    # Pine: st.bear_bos_h_loc := highest_loc
+            st.bear_bos_high = highest_val  # Pine: st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc = highest_loc  # Pine: st.bear_bos_h_loc := highest_loc
 
             st.ash = highest_val
             st.ash_loc = highest_loc
@@ -917,8 +968,10 @@ class StructureEngine:
                     ist.pb_lqh = None
                     ext_chg = True
                 is_inside = (
-                    ist.prev_high is not None and ist.prev_low is not None
-                    and high < ist.prev_high and low > ist.prev_low
+                    ist.prev_high is not None
+                    and ist.prev_low is not None
+                    and high < ist.prev_high
+                    and low > ist.prev_low
                 )
                 ext_dir = ext_chg and close < open_
                 is_c1 = ist.pb_lqc is None and not ext_chg
@@ -968,8 +1021,10 @@ class StructureEngine:
                     ist.pb_lqh = None
                     ext_chg = True
                 is_inside = (
-                    ist.prev_high is not None and ist.prev_low is not None
-                    and high < ist.prev_high and low > ist.prev_low
+                    ist.prev_high is not None
+                    and ist.prev_low is not None
+                    and high < ist.prev_high
+                    and low > ist.prev_low
                 )
                 ext_dir = ext_chg and close > open_
                 is_c1 = ist.pb_lqc is None and not ext_chg
@@ -1016,8 +1071,10 @@ class StructureEngine:
                 events.bull_bos = True
                 events.bull_bos_price = ist.sw_price
                 events.bull_bos_loc = ist.sw_loc
-                events.int_bull_break = True                      # Pine int_bull_break := true
-                events.int_break_origin_loc = ist.tracked_ext_loc  # Pine := i_tracked_ext_loc (pre-reset)
+                events.int_bull_break = True  # Pine int_bull_break := true
+                events.int_break_origin_loc = (
+                    ist.tracked_ext_loc
+                )  # Pine := i_tracked_ext_loc (pre-reset)
 
                 if ist.tracked_ext is not None:
                     ist.last_hl = ist.tracked_ext
@@ -1054,8 +1111,10 @@ class StructureEngine:
                 events.bear_bos = True
                 events.bear_bos_price = ist.sw_price
                 events.bear_bos_loc = ist.sw_loc
-                events.int_bear_break = True                      # Pine int_bear_break := true
-                events.int_break_origin_loc = ist.tracked_ext_loc  # Pine := i_tracked_ext_loc (pre-reset)
+                events.int_bear_break = True  # Pine int_bear_break := true
+                events.int_break_origin_loc = (
+                    ist.tracked_ext_loc
+                )  # Pine := i_tracked_ext_loc (pre-reset)
 
                 if ist.tracked_ext is not None:
                     ist.last_lh = ist.tracked_ext
@@ -1090,7 +1149,12 @@ class StructureEngine:
 
         # ── iSOS detection (watches last iHL / iLH) (lines 821-928) ──
         if ist.seeded and ist.had_bos:
-            if ist.last_mode == 1 and ist.last_hl is not None and close < ist.last_hl and ist.mode == 0:
+            if (
+                ist.last_mode == 1
+                and ist.last_hl is not None
+                and close < ist.last_hl
+                and ist.mode == 0
+            ):
                 ist.sos_watch_hh = ist.sw_price
                 ist.sos_watch_hh_loc = ist.sw_loc
                 ist.sos_watch_ll = None
@@ -1098,7 +1162,7 @@ class StructureEngine:
                 events.bear_sos = True
                 events.bear_sos_price = ist.last_hl
                 events.bear_sos_loc = ist.last_hl_loc
-                events.int_bear_break = True              # Pine int_bear_break := true
+                events.int_bear_break = True  # Pine int_bear_break := true
                 events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 # Internal-fib seed — bear iSOS: bottom = the watched extreme (i_tracked_ext),
@@ -1123,7 +1187,12 @@ class StructureEngine:
                 ist.last_mode = -1
                 ist.mode = -1
 
-            elif ist.last_mode == -1 and ist.last_lh is not None and close > ist.last_lh and ist.mode == 0:
+            elif (
+                ist.last_mode == -1
+                and ist.last_lh is not None
+                and close > ist.last_lh
+                and ist.mode == 0
+            ):
                 ist.sos_watch_ll = ist.sw_price
                 ist.sos_watch_ll_loc = ist.sw_loc
                 ist.sos_watch_hh = None
@@ -1131,7 +1200,7 @@ class StructureEngine:
                 events.bull_sos = True
                 events.bull_sos_price = ist.last_lh
                 events.bull_sos_loc = ist.last_lh_loc
-                events.int_bull_break = True              # Pine int_bull_break := true
+                events.int_bull_break = True  # Pine int_bull_break := true
                 events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 # Internal-fib seed — bull iSOS: bottom = i_sw_price (the iHL), top = the iLH
@@ -1156,11 +1225,16 @@ class StructureEngine:
                 ist.last_mode = 1
                 ist.mode = 1
 
-            elif ist.last_mode == -1 and ist.sos_watch_hh is not None and close > ist.sos_watch_hh and ist.mode == 0:
+            elif (
+                ist.last_mode == -1
+                and ist.sos_watch_hh is not None
+                and close > ist.sos_watch_hh
+                and ist.mode == 0
+            ):
                 events.bull_sos = True
                 events.bull_sos_price = ist.sos_watch_hh
                 events.bull_sos_loc = ist.sos_watch_hh_loc
-                events.int_bull_break = True              # Pine int_bull_break := true
+                events.int_bull_break = True  # Pine int_bull_break := true
                 events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 # Internal-fib seed — bull iSOS (2nd-level watch): bottom = i_sw_price (last iHL),
@@ -1189,11 +1263,16 @@ class StructureEngine:
                 ist.mode = 1
                 ist.sos_watch_hh = None
 
-            elif ist.last_mode == 1 and ist.sos_watch_ll is not None and close < ist.sos_watch_ll and ist.mode == 0:
+            elif (
+                ist.last_mode == 1
+                and ist.sos_watch_ll is not None
+                and close < ist.sos_watch_ll
+                and ist.mode == 0
+            ):
                 events.bear_sos = True
                 events.bear_sos_price = ist.sos_watch_ll
                 events.bear_sos_loc = ist.sos_watch_ll_loc
-                events.int_bear_break = True              # Pine int_bear_break := true
+                events.int_bear_break = True  # Pine int_bear_break := true
                 events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 # Internal-fib seed — bear iSOS (2nd-level watch): bottom = the watched level being

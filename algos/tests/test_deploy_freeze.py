@@ -16,7 +16,6 @@ deployment.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -69,13 +68,22 @@ def bot(tmp_path, monkeypatch):
 
     instances = tmp_path / "instances"
     (instances / "demo_bot").mkdir(parents=True)
-    (instances / "demo_bot" / "config.json").write_text(json.dumps({
-        "bot_key": "demo_bot", "display_name": "Demo",
-        "mt5_path": "C:/x/terminal64.exe", "account": 1, "server": "S",
-        "symbol": "XAUUSD", "magic": 1, "strategy_package": "demo_pkg",
-        "strategy_class": "DemoStrategy",
-        "strategy_params": {"exec_risk_pct": 10.0},
-    }))
+    (instances / "demo_bot" / "config.json").write_text(
+        json.dumps(
+            {
+                "bot_key": "demo_bot",
+                "display_name": "Demo",
+                "mt5_path": "C:/x/terminal64.exe",
+                "account": 1,
+                "server": "S",
+                "symbol": "XAUUSD",
+                "magic": 1,
+                "strategy_package": "demo_pkg",
+                "strategy_class": "DemoStrategy",
+                "strategy_params": {"exec_risk_pct": 10.0},
+            }
+        )
+    )
 
     monkeypatch.setattr(live_config, "_REPO_ROOT", repo)
     monkeypatch.setattr(live_config, "_INSTANCES", instances)
@@ -90,8 +98,9 @@ def _promote(bot, **kw) -> int:
     if not ok:
         return 1
     promote_tool.activate(bot, staging)
-    promote_tool.write_pin(bot, live_version.deployment_hash(bot.source_roots), "abc1234",
-                           "2026-08-03", n)
+    promote_tool.write_pin(
+        bot, live_version.deployment_hash(bot.source_roots), "abc1234", "2026-08-03", n
+    )
     return 0
 
 
@@ -148,7 +157,8 @@ def test_a_failed_promote_leaves_the_running_deployment_untouched(bot):
     good_hash = live_version.deployment_hash(fresh.source_roots)
 
     (bot.repo_root / "strategies" / "python" / "demo_pkg" / "strategy.py").write_text(
-        "import nonexistent_module_xyz\n")
+        "import nonexistent_module_xyz\n"
+    )
     trees = promote_tool.repo_trees(bot)
     staging, _ = promote_tool.stage(bot, trees)
     ok, _ = promote_tool.verify(bot, staging)
@@ -178,9 +188,12 @@ def test_settings_the_deployment_does_not_state_are_reported(bot):
     between versions, so promote names them while there is still a decision to make."""
     assert _promote(bot) == 0
     pkg = bot.repo_root / "strategies" / "python" / "demo_pkg" / "strategy.py"
-    pkg.write_text(pkg.read_text().replace(
-        "    exec_risk_pct: float = 10.0\n",
-        "    exec_risk_pct: float = 10.0\n    exec_fib_nearest: bool = True\n"))
+    pkg.write_text(
+        pkg.read_text().replace(
+            "    exec_risk_pct: float = 10.0\n",
+            "    exec_risk_pct: float = 10.0\n    exec_fib_nearest: bool = True\n",
+        )
+    )
 
     staging, _ = promote_tool.stage(bot, promote_tool.repo_trees(bot))
     ok, detail = promote_tool.verify(bot, staging)

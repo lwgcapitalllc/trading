@@ -32,11 +32,12 @@ class FairValueGap:
     mirrors it: `top` = A's low, `bottom` = C's high, when `high < low[2]` and `close[1] < low[2]`.
     Either way `top > bottom`.
     """
+
     top: float
     bottom: float
     is_bullish: bool
-    born_index: int    # bar index the gap formed on (Pine fvgBorn)
-    id: int            # stable id so a consumer can match a formed gap to its later mitigation
+    born_index: int  # bar index the gap formed on (Pine fvgBorn)
+    id: int  # stable id so a consumer can match a formed gap to its later mitigation
 
 
 @dataclass
@@ -55,7 +56,9 @@ class FvgEvents:
         by a newer gap. Pine array.shifts the oldest; not a trading signal.
     """
 
-    formed: List[FairValueGap] = field(default_factory=list)      # gaps created THIS bar (events)
-    mitigated: List[FairValueGap] = field(default_factory=list)   # gaps closed fully past THIS bar (events)
-    evicted: List[FairValueGap] = field(default_factory=list)     # gaps aged out (FIFO > max) THIS bar
-    active: List[FairValueGap] = field(default_factory=list)      # live gaps, oldest-first (state)
+    formed: List[FairValueGap] = field(default_factory=list)  # gaps created THIS bar (events)
+    mitigated: List[FairValueGap] = field(
+        default_factory=list
+    )  # gaps closed fully past THIS bar (events)
+    evicted: List[FairValueGap] = field(default_factory=list)  # gaps aged out (FIFO > max) THIS bar
+    active: List[FairValueGap] = field(default_factory=list)  # live gaps, oldest-first (state)

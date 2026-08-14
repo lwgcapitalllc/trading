@@ -16,9 +16,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from backtest.output import (build_blocked_setups, build_daily_pnl, build_engine_trades,
-                             build_equity_curve, build_kpis, build_missed_setups,
-                             build_results, engine_trades_csv)
+from backtest.output import (
+    build_blocked_setups,
+    build_daily_pnl,
+    build_engine_trades,
+    build_equity_curve,
+    build_kpis,
+    build_missed_setups,
+    build_results,
+    engine_trades_csv,
+)
 
 
 def _ms(y, mo, d, h=12, mi=0) -> int:
@@ -28,6 +35,7 @@ def _ms(y, mo, d, h=12, mi=0) -> int:
 @dataclass
 class FakeTrade:
     """The duck-type `output` consumes — mirrors execution.Trade's public fields."""
+
     dir: int
     entry_index: int
     entry_price: float
@@ -46,16 +54,43 @@ class FakeTrade:
     costs_usd: float = 0.0
 
 
-def _t(pnl, *, day=1, dir=1, entry=100.0, exit=110.0, qty=1.0, reason="L-TP1",
-       stop=5.0, hour=12, mfe=0.0, mae=0.0, costs=0.0) -> FakeTrade:
-    return FakeTrade(dir=dir, entry_index=0, entry_price=entry, exit_index=1, qty=qty,
-                     risk_usd=5.0, pnl_usd=pnl, r=pnl / 5.0,
-                     entry_ms=_ms(2026, 1, day, hour), exit_ms=_ms(2026, 1, day, hour + 1),
-                     exit_price=exit, stop_distance=stop, exit_reason=reason,
-                     mfe_usd=mfe, mae_usd=mae, costs_usd=costs)
+def _t(
+    pnl,
+    *,
+    day=1,
+    dir=1,
+    entry=100.0,
+    exit=110.0,
+    qty=1.0,
+    reason="L-TP1",
+    stop=5.0,
+    hour=12,
+    mfe=0.0,
+    mae=0.0,
+    costs=0.0,
+) -> FakeTrade:
+    return FakeTrade(
+        dir=dir,
+        entry_index=0,
+        entry_price=entry,
+        exit_index=1,
+        qty=qty,
+        risk_usd=5.0,
+        pnl_usd=pnl,
+        r=pnl / 5.0,
+        entry_ms=_ms(2026, 1, day, hour),
+        exit_ms=_ms(2026, 1, day, hour + 1),
+        exit_price=exit,
+        stop_distance=stop,
+        exit_reason=reason,
+        mfe_usd=mfe,
+        mae_usd=mae,
+        costs_usd=costs,
+    )
 
 
 # ── equity curve ──────────────────────────────────────────────────────────────
+
 
 def test_equity_curve_accumulates_and_is_one_point_per_trade():
     curve = build_equity_curve([_t(100.0, day=1), _t(-40.0, day=2), _t(10.0, day=3)])
@@ -86,15 +121,34 @@ def test_long_plus_short_equals_trade_count():
 
 def test_equity_curve_point_has_exactly_the_lab_contract_keys():
     p = build_equity_curve([_t(100.0)])[0]
-    assert set(p) == {"index", "equity", "date", "entry_ms", "exit_ms", "direction",
-                      "profit", "exit_name", "size", "favorable", "adverse", "costs_usd",
-                      "entry_price", "exit_price", "kind",
-                      "mfe_price", "mae_price", "stop_price", "legs", "tp_targets",
-                      # 2026-08-03 — the trade's own R and the dollars it risked, COPIED from the
-                      # strategy. Together they describe it exactly (`profit == r * risk_usd`),
-                      # which is what lets `backtest/reprice.py` re-walk a balance without
-                      # recovering either from a 2dp profit and a 5dp stop price.
-                      "r", "risk_usd"}
+    assert set(p) == {
+        "index",
+        "equity",
+        "date",
+        "entry_ms",
+        "exit_ms",
+        "direction",
+        "profit",
+        "exit_name",
+        "size",
+        "favorable",
+        "adverse",
+        "costs_usd",
+        "entry_price",
+        "exit_price",
+        "kind",
+        "mfe_price",
+        "mae_price",
+        "stop_price",
+        "legs",
+        "tp_targets",
+        # 2026-08-03 — the trade's own R and the dollars it risked, COPIED from the
+        # strategy. Together they describe it exactly (`profit == r * risk_usd`),
+        # which is what lets `backtest/reprice.py` re-walk a balance without
+        # recovering either from a 2dp profit and a 5dp stop price.
+        "r",
+        "risk_usd",
+    }
 
 
 def test_a_trade_without_r_or_a_stop_omits_those_keys_rather_than_faking_them():
@@ -134,6 +188,7 @@ def test_equity_curve_excursion_defaults_to_zero_when_trade_lacks_it():
 
 # ── the trade's fib leg ───────────────────────────────────────────────────────
 
+
 class _FakeFib:
     def __init__(self, levels, start_ms=None):
         self.levels, self.start_ms = levels, start_ms
@@ -143,8 +198,10 @@ def test_equity_curve_carries_the_trade_s_fib_leg():
     t = _t(100.0)
     t.fib = _FakeFib([(0.0, 110.0), (0.618, 103.82), (1.0, 100.0)], start_ms=1_700_000_000_000)
     p = build_equity_curve([t])[0]
-    assert p["fib"] == {"levels": [[0.0, 110.0], [0.618, 103.82], [1.0, 100.0]],
-                        "start_ms": 1_700_000_000_000}
+    assert p["fib"] == {
+        "levels": [[0.0, 110.0], [0.618, 103.82], [1.0, 100.0]],
+        "start_ms": 1_700_000_000_000,
+    }
 
 
 def test_a_trade_with_no_fib_omits_the_key_entirely():
@@ -162,8 +219,12 @@ def test_the_fib_ladder_is_COPIED_never_recomputed():
     had in hand at placement. A ladder whose ratios are not evenly spaced (a strategy with its own
     set) passes through untouched rather than being 'corrected' onto a line."""
     t = _t(100.0)
-    t.fib = _FakeFib([(0.0, 110.0), (0.236, 108.0), (0.5, 99.0)])   # deliberately NOT linear
-    assert build_equity_curve([t])[0]["fib"]["levels"] == [[0.0, 110.0], [0.236, 108.0], [0.5, 99.0]]
+    t.fib = _FakeFib([(0.0, 110.0), (0.236, 108.0), (0.5, 99.0)])  # deliberately NOT linear
+    assert build_equity_curve([t])[0]["fib"]["levels"] == [
+        [0.0, 110.0],
+        [0.236, 108.0],
+        [0.5, 99.0],
+    ]
 
 
 def test_stop_price_is_derived_from_distance_and_direction():
@@ -186,8 +247,10 @@ def test_legs_pass_through_rounded():
     """The per-rung exit ledger flows to the chart, price-rounded, order preserved."""
     t = _t(100.0)
     t.mfe_price = 90.123456
-    t.legs = [{"reason": "S-TP1", "price": 95.123456, "ms": 111, "qty": 0.3},
-              {"reason": "S-RUN", "price": 90.5, "ms": 222, "qty": 0.7}]
+    t.legs = [
+        {"reason": "S-TP1", "price": 95.123456, "ms": 111, "qty": 0.3},
+        {"reason": "S-RUN", "price": 90.5, "ms": 222, "qty": 0.7},
+    ]
     p = build_equity_curve([t])[0]
     assert p["mfe_price"] == 90.12346
     assert [lg["reason"] for lg in p["legs"]] == ["S-TP1", "S-RUN"]
@@ -210,10 +273,10 @@ def test_two_trades_closing_the_same_minute_stay_separate():
 
 # ── daily P&L ─────────────────────────────────────────────────────────────────
 
+
 def test_daily_pnl_sums_per_day_and_books_on_exit_day():
     days = build_daily_pnl([_t(100.0, day=1), _t(-40.0, day=1), _t(10.0, day=2)])
-    assert days == [{"date": "2026-01-01", "pnl": 60.0},
-                    {"date": "2026-01-02", "pnl": 10.0}]
+    assert days == [{"date": "2026-01-01", "pnl": 60.0}, {"date": "2026-01-02", "pnl": 10.0}]
 
 
 def test_daily_pnl_skips_days_with_no_trades():
@@ -228,6 +291,7 @@ def test_daily_pnl_is_sorted_by_date():
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
 
+
 def test_kpis_hand_computed():
     # wins 100 + 50 = 150; losses 40 + 10 = 50 → PF 3.0, win rate 50%
     trades = [_t(100.0, day=1), _t(-40.0, day=2), _t(50.0, day=3), _t(-10.0, day=4)]
@@ -238,7 +302,7 @@ def test_kpis_hand_computed():
     assert k["profit_factor"] == 3.0
     assert k["trade_count"] == 4
     assert k["win_count"] == 2
-    assert k["win_rate"] == 0.5   # fraction, not percent — lab-wide convention
+    assert k["win_rate"] == 0.5  # fraction, not percent — lab-wide convention
     assert k["avg_win"] == 75.0
     assert k["avg_loss"] == -25.0
 
@@ -291,6 +355,7 @@ def test_avg_duration_minutes():
 
 # ── engine_trades ─────────────────────────────────────────────────────────────
 
+
 def test_engine_trades_carry_stop_distance_and_iso_times():
     rows = build_engine_trades([_t(100.0, stop=7.5)], point_value=2.0)
     r = rows[0]
@@ -319,10 +384,17 @@ def test_engine_trades_csv_roundtrips():
 
 # ── build_results ─────────────────────────────────────────────────────────────
 
+
 def test_build_results_has_the_lab_keys():
     res = build_results([_t(100.0)], point_value=1.0)
-    assert set(res) == {"equity_curve", "daily_pnl", "kpis", "engine_trades",
-                        "blocked_setups", "missed_setups"}
+    assert set(res) == {
+        "equity_curve",
+        "daily_pnl",
+        "kpis",
+        "engine_trades",
+        "blocked_setups",
+        "missed_setups",
+    }
 
 
 def test_build_results_reports_no_blocked_setups_when_none_were_recorded():
@@ -353,6 +425,7 @@ def test_exit_price_reproduces_pnl():
 
 # ── blocked setups ────────────────────────────────────────────────────────────
 
+
 class _Blk:
     """The duck-type `build_blocked_setups` consumes — deliberately NOT the strategy's own
     class, so the test proves the adapter needs nothing but these attributes."""
@@ -363,23 +436,28 @@ class _Blk:
 
 
 def test_blocked_setups_map_direction_and_sort_by_time():
-    rows = build_blocked_setups([
-        _Blk(-1, 2_000, [3], 1234.5678, ["Final hour"], ["no new entries 16:00-18:00 NY"]),
-        _Blk(1, 1_000, [4], 1200.0, ["Divergence / RSI veto"], ["opposing divergence"]),
-    ])
+    rows = build_blocked_setups(
+        [
+            _Blk(-1, 2_000, [3], 1234.5678, ["Final hour"], ["no new entries 16:00-18:00 NY"]),
+            _Blk(1, 1_000, [4], 1200.0, ["Divergence / RSI veto"], ["opposing divergence"]),
+        ]
+    )
     assert [r["time_ms"] for r in rows] == [1_000, 2_000]
     assert [r["direction"] for r in rows] == ["Long", "Short"]
     assert rows[1]["edge"] == 1234.5678
     assert rows[1]["reasons"] == [
-        {"label": "Final hour", "reason": "no new entries 16:00-18:00 NY"}]
+        {"label": "Final hour", "reason": "no new entries 16:00-18:00 NY"}
+    ]
 
 
 def test_blocked_setups_carry_every_reason_in_order():
     """A setup can be refused by several rules at once — the row keeps them ALL, in the
     strategy's precedence order, which is what lets the chart filter by reason."""
-    rows = build_blocked_setups([
-        _Blk(1, 1_000, [1, 3], 1200.0, ["Direction off", "Final hour"], ["a", "b"]),
-    ])
+    rows = build_blocked_setups(
+        [
+            _Blk(1, 1_000, [1, 3], 1200.0, ["Direction off", "Final hour"], ["a", "b"]),
+        ]
+    )
     assert [r["label"] for r in rows[0]["reasons"]] == ["Direction off", "Final hour"]
     assert rows[0]["codes"] == [1, 3]
 
@@ -398,12 +476,29 @@ class _Miss:
 
 
 def test_missed_setups_map_direction_score_and_sort_by_time():
-    rows = build_missed_setups([
-        _Miss(-1, 2_000, 3, 1234.5678, ["Never filled"], ["price never touched it"],
-              ["Arm — Sweep", "SOS — confirmed", "Zone — 0.5-0.886 tagged"]),
-        _Miss(1, 1_000, 2, 1200.0, ["No retrace"], ["never came back"],
-              ["SOS — confirmed"], near=False),
-    ])
+    rows = build_missed_setups(
+        [
+            _Miss(
+                -1,
+                2_000,
+                3,
+                1234.5678,
+                ["Never filled"],
+                ["price never touched it"],
+                ["Arm — Sweep", "SOS — confirmed", "Zone — 0.5-0.886 tagged"],
+            ),
+            _Miss(
+                1,
+                1_000,
+                2,
+                1200.0,
+                ["No retrace"],
+                ["never came back"],
+                ["SOS — confirmed"],
+                near=False,
+            ),
+        ]
+    )
     assert [r["time_ms"] for r in rows] == [1_000, 2_000]
     assert [r["direction"] for r in rows] == ["Long", "Short"]
     assert [(r["met"], r["of"]) for r in rows] == [(2, 3), (3, 3)]
@@ -415,10 +510,12 @@ def test_missed_setups_carry_the_near_flag_verbatim():
     """`near` is the STRATEGY's own judgement about which misses are worth opening on. The
     adapter must pass it through untouched — the chart derives its default filters from it,
     so a dropped or defaulted flag silently changes what the reader sees first."""
-    rows = build_missed_setups([
-        _Miss(1, 1_000, 2, 1.0, ["No retrace"], ["…"], [], near=False),
-        _Miss(1, 2_000, 3, 1.0, ["Final hour"], ["…"], [], near=True),
-    ])
+    rows = build_missed_setups(
+        [
+            _Miss(1, 1_000, 2, 1.0, ["No retrace"], ["…"], [], near=False),
+            _Miss(1, 2_000, 3, 1.0, ["Final hour"], ["…"], [], near=True),
+        ]
+    )
     assert [r["near"] for r in rows] == [False, True]
 
 
@@ -427,6 +524,7 @@ def test_missed_setups_tolerates_none():
 
 
 # ── the real contract: does the lab's sizing engine accept our rows? ───────────
+
 
 def test_engine_trades_feed_the_real_sizing_engine_RawTrade():
     """Constructs the ACTUAL `sizing_engine.RawTrade` from our rows — this is what

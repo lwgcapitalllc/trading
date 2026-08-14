@@ -131,8 +131,10 @@ from services import some_service
 
 router = APIRouter(prefix="/things", tags=["things"])
 
+
 @router.get("", response_model=list[ThingA])
 def list_things(): ...
+
 
 @router.post("", response_model=ThingA, status_code=201)
 def create_thing(body: ThingCreate): ...
@@ -328,6 +330,22 @@ manages risk.
   Locks the runner→engine column contract.
 - **Tests:** `tests/test_sizing_engine.py` (20), `tests/test_decision_log.py` (7),
   `tests/test_sizing_pipeline.py` (7) — all green.
+
+🔴 **`sizing_pipeline` RE-EXPORTS `MODES` / `MODE_BULLET` / `MODE_CONSISTENT` / `MODE_MANUAL`, and
+the autofixer deleted them (2026-08-14).** `backtest_runner._handle_complete` reads them off THIS
+module (`sizing_pipeline.MODES`) rather than importing `sizing_engine` itself, so they are imported
+here and never used here — which is precisely what `ruff check --fix` removes. **F401's "unused" is
+per-MODULE and cannot see an attribute read in another file**, so the repo-wide reformat stripped
+them and nothing failed at import: the break is an `AttributeError` at line 537, inside the branch
+that only runs when a non-self-sizing strategy carries `engine_trades`. ⚠ **The pre-check that
+cleared the reformat looked at `__init__.py` files only** — the `__all__` reasoning that protects a
+package's public API does not reach a plain module, and this laundered straight past it.
+⚠ **`test_sizing_pipeline.py::test_unit_size_strategy_is_still_sized_by_the_engine` is the only
+thing that caught it**, because it is the one test that drives the full run row → `_handle_complete`
+→ pipeline → engine path. The import now carries `# noqa: F401` and a comment naming its consumer;
+**do not "tidy" either away.** ⚠ **If you add another cross-module re-export, mark it the same way** —
+the next `--fix` is indiscriminate. Rule and the wider lesson: root `CLAUDE.md` → *Formatting,
+linting and the test gate*.
 
 **Current state:** ORB.cs (NT8) and LondonBreakout.mq5 (MT5) are both reshaped to trade unit
 size and emit `engine_trades.csv` (the runner→engine contract). `nt8_backtest_runner` and the
@@ -1301,6 +1319,39 @@ is the kind of quoting that works until a value changes shape. Same shape as
 only the wrapper would let a new call site aim at the trades room unseen — **a sweep that
 silently stops covering a function is worse than no sweep, because green reads as checked.**
 
+#### The deploy that ships this feature can never thread its own STOPPED
+
+⚠ **STRUCTURAL, not a bug, and it will be reported as one — it was.** STOPPED is sent by the
+process being REPLACED, which is running whatever `algos/live/runner.py` was on disk when it
+STARTED. On the deploy that first carries the threading code, that process predates it and has no
+`_deploy_thread` at all. **Measured on the 2026-08-14 promote: the stopping bot's own banner reads
+`commit 1bc3297` — the commit before the feature — while the bot that replaced it reads
+`d65c996`.** The generalisation is worth more than the instance: **a change to `algos/live/` reaches
+the STOPPING process only on the deploy AFTER the one that ships it**, so any behaviour you add to
+the shutdown path is unobservable exactly once, on the deploy you would naturally check it on.
+
+#### 🔴 And the write could not report its own failure, which is why the ONLINE half took an hour
+
+**The same deploy sent all three messages loose. Every hop was then verified working IN ISOLATION**
+— `_set_alert_thread` put the file on the VPS from this machine, and the bot's own `_deploy_thread`
+read the id back out of it — **and nothing on either machine said which hop had dropped it.** That
+is the least useful outcome an investigation can have, and it was designed in:
+
+- **`subprocess.run` has no `check=True` here** (deliberately — raising would let a Telegram
+  convenience fail a promote), so it does **not** raise on a non-zero exit. The blanket try/except
+  therefore caught the failures that raise and waved through every failure ssh reports by EXIT
+  CODE — a refused connection, a remote traceback, a read-only path.
+- **A falsy `message_id` returned in silence.** `send_telegram_id` answers `None` for *the send
+  failed* and `0` for *delivered but the id was unreadable* (it has a 5s timeout, and a response
+  that arrives late is delivered-and-lost), and both land in that branch. It is where a brief
+  Telegram hiccup becomes a whole deploy's worth of unthreaded messages.
+
+`_set_alert_thread` returns a bool and prints on all three failure paths. ⚠ **Nothing branches on
+the return value and nothing should** — the promote genuinely does not care. **The point is that a
+helper allowed to fail must still be ABLE to say it did; otherwise the second occurrence is as
+unreadable as the first.** ⚠ It is `print`, not a raised error, for the same reason the whole
+helper is best-effort.
+
 ### The PROMOTED alert now names the versions it moved between (2026-08-14)
 
 🔴 It said only *"It is now running the code that was just deployed"* — a sentence a reader cannot
@@ -1717,6 +1768,7 @@ When walk-forward/sensitivity weren't run, those conditions are skipped (grade i
 ```python
 import sys
 from pathlib import Path
+
 # engines/ on sys.path so the canonical engines import by bare name
 _ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:

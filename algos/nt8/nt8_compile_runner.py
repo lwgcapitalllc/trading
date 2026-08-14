@@ -30,9 +30,9 @@ except ImportError:
     print("ERROR:pywinauto not installed — pip install pywinauto comtypes")
     sys.exit(2)
 
-NT8_DOCS       = Path.home() / "Documents" / "NinjaTrader 8"
+NT8_DOCS = Path.home() / "Documents" / "NinjaTrader 8"
 NT8_CUSTOM_DLL = NT8_DOCS / "bin" / "Custom" / "NinjaTrader.Custom.dll"
-TIMEOUT_SECS   = 90
+TIMEOUT_SECS = 90
 
 # NT8 keeps F5 compile errors ONLY in the editor's in-memory error grid — they are
 # never written to any trace/log file. The status bar shows this exact string when a
@@ -106,6 +106,7 @@ def _find_cc_hwnd() -> int | None:
     it in pywinauto for child interaction.
     """
     import ctypes
+
     found: list[int] = []
     buf = ctypes.create_unicode_buffer(512)
 
@@ -163,6 +164,7 @@ def main():
 
     try:
         import ctypes
+
         dt = Desktop(backend="uia")
         ed = open_ns_editor(dt)
         # Snapshot any pre-existing "errors must be resolved" marker BEFORE we
@@ -208,10 +210,15 @@ def main():
                 for e in errors:
                     print(f"ERROR:{e}", flush=True)
             else:
-                print("ERROR:NinjaTrader reports build errors. Open the NinjaScript "
-                      "Editor error panel on the VPS for the full list.", flush=True)
-            log(f"compile failed in ~{round(time.time() - start, 1)}s "
-                f"({len(errors)} error rows read)")
+                print(
+                    "ERROR:NinjaTrader reports build errors. Open the NinjaScript "
+                    "Editor error panel on the VPS for the full list.",
+                    flush=True,
+                )
+            log(
+                f"compile failed in ~{round(time.time() - start, 1)}s "
+                f"({len(errors)} error rows read)"
+            )
             print("STATUS:failed", flush=True)
             sys.exit(1)
 

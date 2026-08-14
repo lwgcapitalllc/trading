@@ -36,21 +36,24 @@ async function real<T>(page: Page, path: string): Promise<T> {
  * matches nothing and `Opening Range Breakout` is a label somebody may rename.
  * The platform badge is what makes this row the one under test. */
 function nt8Row(page: Page) {
-  return page.locator('tbody tr')
+  return page
+    .locator('tbody tr')
     .filter({ has: page.getByRole('img', { name: 'NinjaTrader 8' }) })
     .first()
 }
 
 /** Serve a mutated copy of one endpoint. */
 async function mock(page: Page, path: string, body: unknown) {
-  await page.route(`**/api${path}`, r =>
-    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }))
+  await page.route(`**/api${path}`, (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  )
 }
 
 /** Make one endpoint fail the way an unreachable agent really fails. */
 async function fail(page: Page, path: string, detail: string) {
-  await page.route(`**/api${path}`, r =>
-    r.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ detail }) }))
+  await page.route(`**/api${path}`, (r) =>
+    r.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ detail }) })
+  )
 }
 
 const AGENT_DOWN =
@@ -71,7 +74,7 @@ test('one dead platform still lists the other, and names the one that failed', a
   const listing = await real<StrategyFilesResponse>(page, '/strategy-files')
   await mock(page, '/strategy-files', {
     ...listing,
-    files: listing.files.filter(f => f.platform === 'MT5'),
+    files: listing.files.filter((f) => f.platform === 'MT5'),
     nt8_error: AGENT_DOWN,
     mt5_error: null,
   })
@@ -87,17 +90,25 @@ test('one dead platform still lists the other, and names the one that failed', a
 
 test('a strategy that needs deploying still says so with the agent down', async ({ page }) => {
   const sync = await real<StrategyFileSyncResponse>(page, '/strategy-files/sync-status')
-  const nt8 = sync.statuses.find(s => s.expected_filename.endsWith('.cs'))
+  const nt8 = sync.statuses.find((s) => s.expected_filename.endsWith('.cs'))
   test.skip(!nt8, 'needs at least one NT8 strategy registered')
 
   await mock(page, '/strategy-files/sync-status', {
     ...sync,
     nt8_error: AGENT_DOWN,
-    statuses: sync.statuses.map(s => s.expected_filename.endsWith('.cs')
-      // What the backend now serves when NT8 is unreachable: the hash-derived
-      // fields survive, the agent-derived ones go null.
-      ? { ...s, file_exists_on_vps: null, in_sync: null, needs_deploy: true, needs_compile: false }
-      : s),
+    statuses: sync.statuses.map((s) =>
+      s.expected_filename.endsWith('.cs')
+        ? // What the backend now serves when NT8 is unreachable: the hash-derived
+          // fields survive, the agent-derived ones go null.
+          {
+            ...s,
+            file_exists_on_vps: null,
+            in_sync: null,
+            needs_deploy: true,
+            needs_compile: false,
+          }
+        : s
+    ),
   })
   await page.goto('/strategies')
 
@@ -129,23 +140,34 @@ test('a whole sync failure never leaves a deploying strategy offering Run', asyn
   await expect(row.getByText('unknown')).toBeVisible()
   // A python strategy has no deploy step at all, so its Run button is correct
   // here — the guard must not blanket-disable the page.
-  const py = page.locator('tbody tr').filter({ has: page.getByRole('img', { name: /Python/i }) }).first()
+  const py = page
+    .locator('tbody tr')
+    .filter({ has: page.getByRole('img', { name: /Python/i }) })
+    .first()
   if (await py.count()) await expect(py.getByRole('button', { name: /^Run$/ })).toBeVisible()
 })
 
 test('a deployment whose file is gone from the VPS is not "In sync"', async ({ page }) => {
   const sync = await real<StrategyFileSyncResponse>(page, '/strategy-files/sync-status')
-  const nt8 = sync.statuses.find(s => s.expected_filename.endsWith('.cs'))
+  const nt8 = sync.statuses.find((s) => s.expected_filename.endsWith('.cs'))
   test.skip(!nt8, 'needs at least one NT8 strategy registered')
 
   await mock(page, '/strategy-files/sync-status', {
     ...sync,
-    statuses: sync.statuses.map(s => s.expected_filename.endsWith('.cs')
-      // Hashes agree — so every pill the page used to draw reads green — but the
-      // file was deleted off the box by hand. `file_exists_on_vps` and `in_sync`
-      // were computed for exactly this and rendered nowhere.
-      ? { ...s, needs_deploy: false, needs_compile: false, file_exists_on_vps: false, in_sync: false }
-      : s),
+    statuses: sync.statuses.map((s) =>
+      s.expected_filename.endsWith('.cs')
+        ? // Hashes agree — so every pill the page used to draw reads green — but the
+          // file was deleted off the box by hand. `file_exists_on_vps` and `in_sync`
+          // were computed for exactly this and rendered nowhere.
+          {
+            ...s,
+            needs_deploy: false,
+            needs_compile: false,
+            file_exists_on_vps: false,
+            in_sync: false,
+          }
+        : s
+    ),
   })
   await page.goto('/strategies')
 
@@ -163,8 +185,12 @@ test('an unconfirmable deployment says so instead of claiming "In sync"', async 
     ...sync,
     nt8_error: AGENT_DOWN,
     mt5_error: AGENT_DOWN,
-    statuses: sync.statuses.map(s => ({
-      ...s, needs_deploy: false, needs_compile: false, file_exists_on_vps: null, in_sync: null,
+    statuses: sync.statuses.map((s) => ({
+      ...s,
+      needs_deploy: false,
+      needs_compile: false,
+      file_exists_on_vps: null,
+      in_sync: null,
     })),
   })
   await page.goto('/strategies')
@@ -177,11 +203,23 @@ test('an unconfirmable deployment says so instead of claiming "In sync"', async 
 
 test('a compile whose status cannot be read is still dismissible', async ({ page }) => {
   const listing = await real<StrategyFilesResponse>(page, '/strategy-files')
-  test.skip(!listing.files.some(f => f.platform === 'NT8'), 'needs an NT8 file for the compile button')
+  test.skip(
+    !listing.files.some((f) => f.platform === 'NT8'),
+    'needs an NT8 file for the compile button'
+  )
 
-  await page.route('**/api/strategy-files/compile', r =>
-    r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ compile_job_id: 'stuck-job' }) }))
-  await fail(page, '/strategy-files/compile/stuck-job', 'VPS agent /compile/stuck-job: HTTP Error 404: NOT FOUND')
+  await page.route('**/api/strategy-files/compile', (r) =>
+    r.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ compile_job_id: 'stuck-job' }),
+    })
+  )
+  await fail(
+    page,
+    '/strategy-files/compile/stuck-job',
+    'VPS agent /compile/stuck-job: HTTP Error 404: NOT FOUND'
+  )
 
   await page.goto('/strategies?tab=deployed')
   await page.getByRole('button', { name: /Compile NT8/ }).click()
@@ -196,12 +234,23 @@ test('a compile whose status cannot be read is still dismissible', async ({ page
 
 test('escape closes the compile modal', async ({ page }) => {
   const listing = await real<StrategyFilesResponse>(page, '/strategy-files')
-  test.skip(!listing.files.some(f => f.platform === 'NT8'), 'needs an NT8 file for the compile button')
+  test.skip(
+    !listing.files.some((f) => f.platform === 'NT8'),
+    'needs an NT8 file for the compile button'
+  )
 
-  await page.route('**/api/strategy-files/compile', r =>
-    r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ compile_job_id: 'running-job' }) }))
+  await page.route('**/api/strategy-files/compile', (r) =>
+    r.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ compile_job_id: 'running-job' }),
+    })
+  )
   await mock(page, '/strategy-files/compile/running-job', {
-    compile_job_id: 'running-job', status: 'running', errors: [], warnings: [],
+    compile_job_id: 'running-job',
+    status: 'running',
+    errors: [],
+    warnings: [],
   })
 
   await page.goto('/strategies?tab=deployed')
@@ -216,19 +265,31 @@ test('escape closes the compile modal', async ({ page }) => {
 
 // ── The version chip must name what is RUNNING ───────────────────────────────
 
-test('with a compile pending, the chip does not claim the new version is running', async ({ page }) => {
+test('with a compile pending, the chip does not claim the new version is running', async ({
+  page,
+}) => {
   const sync = await real<StrategyFileSyncResponse>(page, '/strategy-files/sync-status')
-  const nt8 = sync.statuses.find(s => s.expected_filename.endsWith('.cs'))
+  const nt8 = sync.statuses.find((s) => s.expected_filename.endsWith('.cs'))
   test.skip(!nt8, 'needs at least one NT8 strategy registered')
 
   await mock(page, '/strategy-files/sync-status', {
     ...sync,
-    statuses: sync.statuses.map(s => s.expected_filename.endsWith('.cs')
-      // v7 deployed, v6 compiled: NinjaTrader is still EXECUTING v6, because it
-      // runs the DLL and not the source. The chip used to read "running v7".
-      ? { ...s, current_version: 7, deployed_version: 7, compiled_version: 6,
-          needs_deploy: false, needs_compile: true, file_exists_on_vps: true, in_sync: true }
-      : s),
+    statuses: sync.statuses.map((s) =>
+      s.expected_filename.endsWith('.cs')
+        ? // v7 deployed, v6 compiled: NinjaTrader is still EXECUTING v6, because it
+          // runs the DLL and not the source. The chip used to read "running v7".
+          {
+            ...s,
+            current_version: 7,
+            deployed_version: 7,
+            compiled_version: 6,
+            needs_deploy: false,
+            needs_compile: true,
+            file_exists_on_vps: true,
+            in_sync: true,
+          }
+        : s
+    ),
   })
   await page.goto('/strategies')
 
@@ -242,7 +303,11 @@ test('an orphaned strategy offers Reconcile on a cold page load', async ({ page 
   const strategies = await real<Array<Record<string, unknown>>>(page, '/strategies')
   test.skip(!strategies.length, 'needs at least one strategy registered')
 
-  await mock(page, '/strategies', strategies.map((s, i) => i === 0 ? { ...s, is_orphan: true } : s))
+  await mock(
+    page,
+    '/strategies',
+    strategies.map((s, i) => (i === 0 ? { ...s, is_orphan: true } : s))
+  )
   await page.goto('/strategies')
 
   // The defect: this button read `scan.data?.orphans` — MUTATION state — so an

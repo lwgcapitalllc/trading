@@ -8,6 +8,7 @@ repo's most-repeated defect — a comparison whose two sides were measured on di
 Same call `reprice.py` makes about `bid_ask_fills`: a thing this shape cannot price is refused and
 named, never approximated.
 """
+
 import pytest
 
 from backtest.optimizer import Combo, _replay_one
@@ -63,5 +64,10 @@ def test_the_refusal_fires_BEFORE_a_pool_is_spawned():
 
     combos = [Combo(params={"a": i}, config=_Cfg(True)) for i in range(64)]
     with pytest.raises(ValueError, match="exec_secondary"):
-        run_sweep(module_path="strategies.python.mpc_sos_fade", df=None, combos=combos,
-                  max_workers=8, progress=_never)
+        run_sweep(
+            module_path="strategies.python.mpc_sos_fade",
+            df=None,
+            combos=combos,
+            max_workers=8,
+            progress=_never,
+        )

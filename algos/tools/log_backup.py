@@ -63,8 +63,8 @@ from pathlib import Path
 # DERIVED, never hardcoded — the same rule as algos/shared/bot_state.py. A literal
 # C:/trading path is right on the VPS and quietly wrong everywhere else.
 ALGOS_ROOT = Path(__file__).resolve().parent.parent
-INSTANCES  = ALGOS_ROOT / "markets" / "fx" / "instances"
-ARCHIVE    = ALGOS_ROOT / "log_archive"
+INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
+ARCHIVE = ALGOS_ROOT / "log_archive"
 
 if str(ALGOS_ROOT / "live") not in sys.path:
     sys.path.insert(0, str(ALGOS_ROOT / "live"))
@@ -72,14 +72,14 @@ if str(ALGOS_ROOT / "live") not in sys.path:
 # IMPORTED, not restated. The writer owns the filename shape; a copy of the pattern here would
 # drift the day somebody adds a third stream, and the drift's symptom is a whole stream that is
 # silently never committed — which looks exactly like a stream that was never written.
-from ledger import STREAM_RE                                          # noqa: E402
+from ledger import STREAM_RE  # noqa: E402
 
 KEEP_DAYS = 90
 
 # Kept as its own name because `tools/ledger_sync.py` imports it. It matches the DECISION
 # stream only, which is what the pre-2026-08-05 pipeline knew about.
 LEDGER_RE = re.compile(r"^decisions-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
-ZIP_RE    = re.compile(r"^logs-(\d{4})-(\d{2})-(\d{2})\.zip$")
+ZIP_RE = re.compile(r"^logs-(\d{4})-(\d{2})-(\d{2})\.zip$")
 # One text log per day, written by `algos/live/runner.DailyFileHandler`. It sits in the
 # INSTANCE dir rather than in `ledger/`, because it is prose about the process and the ledger
 # dir holds the structured record.
@@ -136,8 +136,7 @@ def open_files(instances: Path, today: date) -> list[Path]:
     return [p for p in found if _dated(p)[0] == today]
 
 
-def archive_logs(instances: Path, archive: Path, today: date,
-                 dry_run: bool = False) -> Path | None:
+def archive_logs(instances: Path, archive: Path, today: date, dry_run: bool = False) -> Path | None:
     """Snapshot every instance `.log` into one dated zip. Copies, never rotates.
 
     This stays even though the text logs are now committed by `ledger_sync.py`: the zip is the
@@ -158,8 +157,9 @@ def archive_logs(instances: Path, archive: Path, today: date,
     return target
 
 
-def prune(archive: Path, today: date, keep_days: int = KEEP_DAYS,
-          dry_run: bool = False) -> list[Path]:
+def prune(
+    archive: Path, today: date, keep_days: int = KEEP_DAYS, dry_run: bool = False
+) -> list[Path]:
     """Delete zips older than `keep_days`, dated by FILENAME not mtime.
 
     An mtime is rewritten by a copy, a restore, or a backup tool, so pruning on it can throw
@@ -181,10 +181,16 @@ def prune(archive: Path, today: date, keep_days: int = KEEP_DAYS,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Zip and prune VPS bot logs.")
     ap.add_argument("--dry-run", action="store_true", help="report, change nothing")
-    ap.add_argument("--list-closed", action="store_true",
-                    help="print closed record paths (relative to the instances dir) and exit")
-    ap.add_argument("--list-open", action="store_true",
-                    help="print TODAY's record paths — still being written — and exit")
+    ap.add_argument(
+        "--list-closed",
+        action="store_true",
+        help="print closed record paths (relative to the instances dir) and exit",
+    )
+    ap.add_argument(
+        "--list-open",
+        action="store_true",
+        help="print TODAY's record paths — still being written — and exit",
+    )
     ap.add_argument("--keep-days", type=int, default=KEEP_DAYS)
     args = ap.parse_args(argv)
 
@@ -193,7 +199,7 @@ def main(argv=None) -> int:
 
     if args.list_closed or args.list_open:
         # Machine-readable and nothing else: ledger_sync.py parses this over ssh.
-        for path in (closed if args.list_closed else open_files(INSTANCES, today)):
+        for path in closed if args.list_closed else open_files(INSTANCES, today):
             print(str(path.relative_to(INSTANCES)).replace("\\", "/"))
         return 0
 

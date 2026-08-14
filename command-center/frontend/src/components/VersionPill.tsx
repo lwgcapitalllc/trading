@@ -20,7 +20,10 @@ import type { BotDeployedVersion } from '@/types'
  * `grid_sensitivity_score` follow. A version display that can be quietly wrong is worse than none,
  * because it is what you check before deciding anything.
  */
-export function VersionPill({ version, loading }: {
+export function VersionPill({
+  version,
+  loading,
+}: {
   version: BotDeployedVersion | null | undefined
   /** The query has not answered yet. Distinct from "answered, cannot say" — one is a wait and
    *  the other is a finding, and an em-dash for both makes a slow fetch look like a fault. */
@@ -53,18 +56,23 @@ export function VersionPill({ version, loading }: {
     <span
       data-testid="version-pill"
       data-state={behind > 0 ? 'behind' : 'current'}
-      title={behind > 0
-        ? `Deployed v${c.deployed_version}, backtester on v${c.local_version} — `
-          + `${behind} change${behind === 1 ? '' : 's'} to this bot's code waiting to go out. `
-          + `Deploy it from Configure.`
-        : `Deployed v${c.deployed_version} — the same code the backtester runs.`}
+      title={
+        behind > 0
+          ? `Deployed v${c.deployed_version}, backtester on v${c.local_version} — ` +
+            `${behind} change${behind === 1 ? '' : 's'} to this bot's code waiting to go out. ` +
+            `Deploy it from Configure.`
+          : `Deployed v${c.deployed_version} — the same code the backtester runs.`
+      }
       className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                  rounded-pill uppercase tracking-[0.4px] cursor-default ${behind > 0
-        ? 'bg-warn-muted text-warn-text'
-        : 'bg-bg-surface-2 text-text-secondary'}`}
+                  rounded-pill uppercase tracking-[0.4px] cursor-default ${
+                    behind > 0
+                      ? 'bg-warn-muted text-warn-text'
+                      : 'bg-bg-surface-2 text-text-secondary'
+                  }`}
     >
       {behind > 0 ? <AlertTriangle size={9} /> : <CheckCircle2 size={9} />}
-      {label}{behind > 0 ? ` · ${behind} behind` : ''}
+      {label}
+      {behind > 0 ? ` · ${behind} behind` : ''}
     </span>
   )
 }

@@ -122,22 +122,24 @@ plus the bar's high/low (needed only for the running session / NY-range extremes
 ```python
 from sessions import SessionEngine, SessionSpec, SessionEvents, SessionRange
 
-se = SessionEngine()   # Pine defaults: Tokyo/London/NY each in its own city's zone; KZ + NY range on NY time
+se = (
+    SessionEngine()
+)  # Pine defaults: Tokyo/London/NY each in its own city's zone; KZ + NY range on NY time
 
 # Each closed bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
 ev = se.update(bar.index, bar.timestamp_ms, bar.high, bar.low)
 
-ev.in_asia, ev.in_london, ev.in_ny          # session flags (state)
-ev.in_kz1, ev.in_kz2, ev.in_kz3, ev.in_killzone   # kill-zone flags (state)
+ev.in_asia, ev.in_london, ev.in_ny  # session flags (state)
+ev.in_kz1, ev.in_kz2, ev.in_kz3, ev.in_killzone  # kill-zone flags (state)
 ev.in_ny_range_window, ev.in_ny_range_extend
-ev.ny_range_high, ev.ny_range_low           # live NY opening range (None until first formed)
+ev.ny_range_high, ev.ny_range_low  # live NY opening range (None until first formed)
 ev.is_new_day, ev.is_weekday
-for name in ev.opened:                       # sessions that opened THIS bar (edge)
+for name in ev.opened:  # sessions that opened THIS bar (edge)
     ...
-for r in ev.closed:                          # sessions that closed THIS bar, finalized (edge)
+for r in ev.closed:  # sessions that closed THIS bar, finalized (edge)
     r.name, r.high, r.low, r.start_index, r.end_index
 
-se.current_range("NY")                       # live running high/low for a session (read)
+se.current_range("NY")  # live running high/low for a session (read)
 ```
 
 Custom windows: pass `SessionEngine(sessions=[SessionSpec.from_pine("Asia", "0900-1800", "Asia/Tokyo"), ...])`.

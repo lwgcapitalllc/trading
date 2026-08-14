@@ -15,8 +15,16 @@ interface Props {
 
 export default function RobustnessGradeBadge({ grade, size = 'md' }: Props) {
   if (!grade) return null
-  const cfg = GRADE_CONFIG[grade] ?? { label: grade, cls: 'bg-bg-hover text-text-secondary border border-border-subtle' }
-  const sizeClass = size === 'sm' ? 'text-xs px-1.5 py-0.5' : size === 'lg' ? 'text-2xl px-3 py-1 font-black' : 'text-sm px-2 py-0.5 font-bold'
+  const cfg = GRADE_CONFIG[grade] ?? {
+    label: grade,
+    cls: 'bg-bg-hover text-text-secondary border border-border-subtle',
+  }
+  const sizeClass =
+    size === 'sm'
+      ? 'text-xs px-1.5 py-0.5'
+      : size === 'lg'
+        ? 'text-2xl px-3 py-1 font-black'
+        : 'text-sm px-2 py-0.5 font-bold'
   return (
     <span className={`inline-flex items-center rounded font-mono ${sizeClass} ${cfg.cls}`}>
       {cfg.label}

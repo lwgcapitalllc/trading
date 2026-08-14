@@ -2,7 +2,11 @@
 // workbench's overlay). They MUST read identically — same starting-balance anchor, same ticks,
 // same regime bands — so the numbers live here once instead of being re-derived per page.
 
-export interface TimeBand { x1: number; x2: number; regime: string }
+export interface TimeBand {
+  x1: number
+  x2: number
+  regime: string
+}
 
 /**
  * Equity-chart x-axis. 'date' is the default and canonical view — regime bands only have a true
@@ -15,10 +19,18 @@ export type XMode = 'date' | 'trade'
 const XMODE_KEY = 'equity_x_mode'
 
 export function getXMode(): XMode {
-  try { return localStorage.getItem(XMODE_KEY) === 'trade' ? 'trade' : 'date' } catch { return 'date' }
+  try {
+    return localStorage.getItem(XMODE_KEY) === 'trade' ? 'trade' : 'date'
+  } catch {
+    return 'date'
+  }
 }
 export function setXModePref(v: XMode) {
-  try { localStorage.setItem(XMODE_KEY, v) } catch { /* quota */ }
+  try {
+    localStorage.setItem(XMODE_KEY, v)
+  } catch {
+    /* quota */
+  }
 }
 
 /** Evenly spaced integer ticks across [0, n] — the trade-number axis. */
@@ -37,7 +49,7 @@ export function tradeTicks(n: number, max = 10): number[] {
  */
 export function regimeBandsByIndex(
   points: Array<{ index: number; date?: string | null }>,
-  dateToRegime: Map<string, string>,
+  dateToRegime: Map<string, string>
 ): TimeBand[] {
   const bands: TimeBand[] = []
   for (const p of points) {
@@ -47,7 +59,7 @@ export function regimeBandsByIndex(
     else bands.push({ x1: p.index, x2: p.index, regime })
   }
   for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
-  return bands.filter(b => b.regime !== 'UNKNOWN')
+  return bands.filter((b) => b.regime !== 'UNKNOWN')
 }
 
 /** 'YYYY-MM-DD' (or an ISO timestamp) → local-midnight epoch ms. */
@@ -73,9 +85,13 @@ export function monthTicks(from: number, to: number, max = 10): number[] {
   if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return []
   const out: number[] = []
   const d = new Date(from)
-  d.setDate(1); d.setHours(0, 0, 0, 0)
+  d.setDate(1)
+  d.setHours(0, 0, 0, 0)
   if (d.getTime() < from) d.setMonth(d.getMonth() + 1)
-  while (d.getTime() <= to) { out.push(d.getTime()); d.setMonth(d.getMonth() + 1) }
+  while (d.getTime() <= to) {
+    out.push(d.getTime())
+    d.setMonth(d.getMonth() + 1)
+  }
   const every = Math.ceil(out.length / max) || 1
   return out.filter((_, i) => i % every === 0)
 }
@@ -109,7 +125,7 @@ export function balanceTicks(startBal: number, yMin: number, yMax: number): numb
  * emitted one) gets an empty list and the caller falls back.
  */
 export function regimeBandsFromTimeline(
-  timeline: Array<{ date: string; regime: string }>,
+  timeline: Array<{ date: string; regime: string }>
 ): TimeBand[] {
   const sorted = [...timeline].sort((a, b) => a.date.localeCompare(b.date))
   const bands: TimeBand[] = []
@@ -122,5 +138,5 @@ export function regimeBandsFromTimeline(
   }
   // Tile so there are no transparent seams between regimes.
   for (let i = 0; i < bands.length - 1; i++) bands[i].x2 = bands[i + 1].x1
-  return bands.filter(b => b.regime !== 'UNKNOWN')
+  return bands.filter((b) => b.regime !== 'UNKNOWN')
 }

@@ -33,12 +33,14 @@ import bot_state as bs  # noqa: E402
 @pytest.fixture
 def instances(tmp_path, monkeypatch):
     """A private instances tree, so nothing here reads the real live bot's config."""
+
     def _write(key, body):
         d = tmp_path / key
         d.mkdir(parents=True, exist_ok=True)
         (d / "config.json").write_text(json.dumps(body))
         bs.BOT_INSTANCES[key] = d
         return d
+
     monkeypatch.setattr(bs, "BOT_INSTANCES", dict(bs.BOT_INSTANCES))
     return _write
 

@@ -24,8 +24,9 @@ from ledger import Ledger  # noqa: E402
 
 # ── ledger ────────────────────────────────────────────────────────────────────
 def _rows(directory: Path):
-    return [json.loads(l) for f in sorted(directory.glob("*.jsonl"))
-            for l in f.read_text().splitlines()]
+    return [
+        json.loads(l) for f in sorted(directory.glob("*.jsonl")) for l in f.read_text().splitlines()
+    ]
 
 
 def test_every_record_carries_a_timestamp_bot_and_kind(tmp_path):
@@ -50,8 +51,8 @@ def test_the_file_is_named_by_day(tmp_path):
     naming is per-day at all, from the side that reads the files back.
     """
     led = Ledger(tmp_path, "botA")
-    led.event("x")                                       # health
-    led.bar(SimpleNamespace(), SimpleNamespace(time_ms=1), SimpleNamespace())   # decisions
+    led.event("x")  # health
+    led.bar(SimpleNamespace(), SimpleNamespace(time_ms=1), SimpleNamespace())  # decisions
     assert len(list(tmp_path.glob("health-????-??-??.jsonl"))) == 1
     assert len(list(tmp_path.glob("decisions-????-??-??.jsonl"))) == 1
 
@@ -60,12 +61,13 @@ def test_a_write_failure_never_raises(tmp_path, monkeypatch):
     """A log that can take down the loop it observes is worse than a missing line."""
     led = Ledger(tmp_path, "botA")
     monkeypatch.setattr(Path, "open", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
-    led.event("x")          # must not raise
+    led.event("x")  # must not raise
 
 
 def test_bar_records_read_a_decision_defensively(tmp_path):
     """The ledger must not know what an A+ stage IS. A strategy with a different Decision shape
     logs what it has rather than crashing the bot."""
+
     class _Bare:
         pass
 
@@ -78,8 +80,14 @@ def test_a_trade_record_keeps_both_the_intended_and_the_real_price(tmp_path):
     """The gap between them is the only honest measure of live execution quality, and it is
     invisible if only one is kept."""
     Ledger(tmp_path, "botA").trade_opened(
-        ticket=1, direction="LONG", symbol="XAUUSD", lots=0.4,
-        price=3289.7, stop=3280.0, intended_price=3290.0)
+        ticket=1,
+        direction="LONG",
+        symbol="XAUUSD",
+        lots=0.4,
+        price=3289.7,
+        stop=3280.0,
+        intended_price=3290.0,
+    )
     row = _rows(tmp_path)[0]
     assert row["price"] == 3289.7 and row["intended_price"] == 3290.0
     assert row["slippage"] == pytest.approx(-0.3)
@@ -89,14 +97,21 @@ def test_slippage_is_none_when_there_was_no_intended_price(tmp_path):
     """A market close has no resting price to compare against — reporting 0 slippage there
     would read as a perfect fill."""
     Ledger(tmp_path, "botA").trade_opened(
-        ticket=1, direction="LONG", symbol="XAUUSD", lots=0.4, price=3289.7, stop=3280.0)
+        ticket=1, direction="LONG", symbol="XAUUSD", lots=0.4, price=3289.7, stop=3280.0
+    )
     assert _rows(tmp_path)[0]["slippage"] is None
 
 
 # ── instance config ───────────────────────────────────────────────────────────
 def _write_cfg(tmp_path, **overrides):
-    body = {"bot_key": "b1", "mt5_path": "C:/MT5/terminal64.exe", "account": 123,
-            "server": "Demo", "symbol": "XAUUSD", "magic": 770115}
+    body = {
+        "bot_key": "b1",
+        "mt5_path": "C:/MT5/terminal64.exe",
+        "account": 123,
+        "server": "Demo",
+        "symbol": "XAUUSD",
+        "magic": 770115,
+    }
     body.update(overrides)
     d = tmp_path / "b1"
     d.mkdir(parents=True, exist_ok=True)
@@ -106,8 +121,14 @@ def _write_cfg(tmp_path, **overrides):
 
 def _write_sibling(tmp_path, key, **overrides):
     """A SECOND instance directory, so the per-account guards have something to compare against."""
-    body = {"bot_key": key, "mt5_path": "C:/MT5/terminal64.exe", "account": 123,
-            "server": "Demo", "symbol": "XAUUSD", "magic": 880226}
+    body = {
+        "bot_key": key,
+        "mt5_path": "C:/MT5/terminal64.exe",
+        "account": 123,
+        "server": "Demo",
+        "symbol": "XAUUSD",
+        "magic": 880226,
+    }
     body.update(overrides)
     d = tmp_path / key
     d.mkdir(parents=True, exist_ok=True)
@@ -148,7 +169,7 @@ def test_a_capped_bot_beside_an_uncapped_one_is_refused(tmp_path, monkeypatch):
     bot that was configured correctly."""
     monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
     _write_cfg(tmp_path, account_risk_cap_pct=10.0)
-    _write_sibling(tmp_path, "b2")                      # no cap at all
+    _write_sibling(tmp_path, "b2")  # no cap at all
     with pytest.raises(ValueError, match="no cap"):
         live_config.load("b1")
 
@@ -255,7 +276,7 @@ def test_an_unknown_key_is_a_hard_error(tmp_path, monkeypatch):
     """A typo'd key is a setting that reads as applied and is not — on a live bot that is a
     parameter nobody chose. Loud beats convenient."""
     monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
-    _write_cfg(tmp_path, risk_pct=2.0)          # not a LiveConfig field
+    _write_cfg(tmp_path, risk_pct=2.0)  # not a LiveConfig field
     with pytest.raises(ValueError, match="risk_pct"):
         live_config.load("b1")
 
@@ -299,6 +320,7 @@ def test_the_shipped_template_loads(tmp_path, monkeypatch):
 # ── Telegram routing is PER BOT ─────────────────────────────────────────────────────────────
 # Two bots can trade two accounts on two terminals; they must be able to report into two
 # different places, as two different Telegram identities, or every deployment shares one feed.
+
 
 def test_telegram_routing_defaults_to_the_shared_group(tmp_path, monkeypatch):
     """Empty means "use the shared default", so an existing single-bot setup needs no keys."""

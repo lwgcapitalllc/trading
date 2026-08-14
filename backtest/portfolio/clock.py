@@ -25,8 +25,9 @@ __all__ = ["Tick", "merge_streams"]
 @dataclass(frozen=True)
 class Tick:
     """All the legs that have a bar at one timestamp."""
-    time: int                       # epoch ms
-    bars: list[tuple[str, Any]]     # (leg_name, bar), one per leg present at this time
+
+    time: int  # epoch ms
+    bars: list[tuple[str, Any]]  # (leg_name, bar), one per leg present at this time
 
 
 def merge_streams(
@@ -40,6 +41,7 @@ def merge_streams(
     timestamp are grouped into one Tick, in the leg order the streams dict was given (a
     stable merge), so the simulator sees co-timed bars deterministically.
     """
+
     # a bound helper, not a bare genexp — a genexp would close over the loop's `leg` late
     # and tag every bar with the last leg.
     def _tag(leg: str, stream: Iterable[Any]):

@@ -5,6 +5,7 @@ here is the SEAM. Three things about it would each mislead silently if broken: r
 starting balance from the curve, reporting a layer that cannot be re-priced instead of dropping it,
 and captioning a figure that is accurate rather than exact.
 """
+
 import json
 import time
 
@@ -17,11 +18,30 @@ def _curve(tmp_path, rows):
     return str(p)
 
 
-def _point(i, *, equity, profit, entry=2000.0, stop=1990.0, size=10.0, legacy=False,
-           entry_ms=1_700_000_000_000, exit_ms=1_700_003_600_000):
-    row = {"index": i, "equity": equity, "profit": profit, "entry_price": entry,
-           "stop_price": stop, "size": size, "direction": "Long", "legs": [],
-           "entry_ms": entry_ms, "exit_ms": exit_ms}
+def _point(
+    i,
+    *,
+    equity,
+    profit,
+    entry=2000.0,
+    stop=1990.0,
+    size=10.0,
+    legacy=False,
+    entry_ms=1_700_000_000_000,
+    exit_ms=1_700_003_600_000,
+):
+    row = {
+        "index": i,
+        "equity": equity,
+        "profit": profit,
+        "entry_price": entry,
+        "stop_price": stop,
+        "size": size,
+        "direction": "Long",
+        "legs": [],
+        "entry_ms": entry_ms,
+        "exit_ms": exit_ms,
+    }
     if not legacy:
         risk = abs(entry - stop) * size
         row.update({"r": profit / risk, "risk_usd": risk})
@@ -33,21 +53,41 @@ def priced_run(fresh_db, tmp_path):
     """A completed python run with a two-trade curve starting from $10,000."""
     from services import lab_db
 
-    lab_db.upsert_strategy({"id": "s1", "name": "S", "class_name": "S", "runner": "python",
-                            "source_path": "strategies/python/s/__init__.py",
-                            "scanned_at": int(time.time()), "default_params": {},
-                            "param_schema": []})
+    lab_db.upsert_strategy(
+        {
+            "id": "s1",
+            "name": "S",
+            "class_name": "S",
+            "runner": "python",
+            "source_path": "strategies/python/s/__init__.py",
+            "scanned_at": int(time.time()),
+            "default_params": {},
+            "param_schema": [],
+        }
+    )
     run_id = "repriceabc123"
-    lab_db.insert_run({"run_id": run_id, "strategy_id": "s1", "instrument": "XAUUSD",
-                       "params": {}, "bar_type": "Minute", "bar_value": 15,
-                       "start_date": "2024-01-01", "end_date": "2024-12-31",
-                       "status": "running", "created_at": int(time.time()),
-                       "commission_per_side": 0.0, "slippage_ticks": 0,
-                       "cost_layers": [], "broker_profile": "vantage_demo"})
-    rows = [_point(1, equity=11_000.0, profit=1_000.0),
-            _point(2, equity=10_500.0, profit=-500.0)]
-    lab_db.update_run_complete(run_id, {"net_pnl": 500.0, "trade_count": 2},
-                               {"equity_curve": _curve(tmp_path, rows)})
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": "s1",
+            "instrument": "XAUUSD",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "status": "running",
+            "created_at": int(time.time()),
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "cost_layers": [],
+            "broker_profile": "vantage_demo",
+        }
+    )
+    rows = [_point(1, equity=11_000.0, profit=1_000.0), _point(2, equity=10_500.0, profit=-500.0)]
+    lab_db.update_run_complete(
+        run_id, {"net_pnl": 500.0, "trade_count": 2}, {"equity_curve": _curve(tmp_path, rows)}
+    )
     return run_id
 
 
@@ -96,8 +136,7 @@ def test_the_per_layer_prices_sum_to_the_total(client, priced_run):
     """They are in R precisely so they can. In dollars they could not — charging one layer changes
     the balance and so every later position's size — and rows that don't add up to the total under
     them read as a bug whether or not they are one."""
-    body = client.get(
-        f"/backtests/runs/{priced_run}/repriced?layers=spread,commission,swap").json()
+    body = client.get(f"/backtests/runs/{priced_run}/repriced?layers=spread,commission,swap").json()
     assert sum(body["layer_cost_r"].values()) == pytest.approx(body["total_cost_r"])
 
 
@@ -113,8 +152,7 @@ def test_a_layer_that_cannot_be_repriced_is_REPORTED_not_dropped(client, priced_
     produce it. Silently ignoring it would show a spread-only number under a bid/ask label — the
     exact defect this whole area was rebuilt to end. A 400 would be wrong too: the question is
     reasonable and the honest answer is 'that one needs a re-run'."""
-    body = client.get(
-        f"/backtests/runs/{priced_run}/repriced?layers=spread,bid_ask_fills").json()
+    body = client.get(f"/backtests/runs/{priced_run}/repriced?layers=spread,bid_ask_fills").json()
     assert body["needs_rerun"] == ["bid_ask_fills"]
     assert body["layers"] == ["spread"]
 
@@ -138,17 +176,40 @@ def test_a_run_predating_the_stored_r_is_flagged_as_derived(client, fresh_db, tm
     """Old runs re-price to ~0.02%, which is fine to show and not fine to present as exact."""
     from services import lab_db
 
-    lab_db.upsert_strategy({"id": "s2", "name": "S", "class_name": "S", "runner": "python",
-                            "source_path": "x", "scanned_at": int(time.time()),
-                            "default_params": {}, "param_schema": []})
-    lab_db.insert_run({"run_id": "legacyrun999", "strategy_id": "s2", "instrument": "XAUUSD",
-                       "params": {}, "bar_type": "Minute", "bar_value": 15,
-                       "start_date": "2024-01-01", "end_date": "2024-12-31",
-                       "commission_per_side": 0.0, "slippage_ticks": 0,
-                       "status": "running", "created_at": int(time.time())})
+    lab_db.upsert_strategy(
+        {
+            "id": "s2",
+            "name": "S",
+            "class_name": "S",
+            "runner": "python",
+            "source_path": "x",
+            "scanned_at": int(time.time()),
+            "default_params": {},
+            "param_schema": [],
+        }
+    )
+    lab_db.insert_run(
+        {
+            "run_id": "legacyrun999",
+            "strategy_id": "s2",
+            "instrument": "XAUUSD",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "status": "running",
+            "created_at": int(time.time()),
+        }
+    )
     rows = [_point(1, equity=11_000.0, profit=1_000.0, legacy=True)]
-    lab_db.update_run_complete("legacyrun999", {"net_pnl": 1000.0, "trade_count": 1},
-                               {"equity_curve": _curve(tmp_path, rows)})
+    lab_db.update_run_complete(
+        "legacyrun999",
+        {"net_pnl": 1000.0, "trade_count": 1},
+        {"equity_curve": _curve(tmp_path, rows)},
+    )
 
     body = client.get("/backtests/runs/legacyrun999/repriced?layers=spread").json()
     assert body["derived_basis"] is True and body["is_exact"] is False
@@ -160,9 +221,10 @@ def test_the_broker_defaults_to_the_one_the_run_was_made_against(client, priced_
     body = client.get(f"/backtests/runs/{priced_run}/repriced?layers=spread").json()
     assert body["broker_profile"] == "vantage_demo"
     other = client.get(
-        f"/backtests/runs/{priced_run}/repriced?layers=spread&broker=puprime_standard").json()
+        f"/backtests/runs/{priced_run}/repriced?layers=spread&broker=puprime_standard"
+    ).json()
     assert other["broker_profile"] == "puprime_standard"
-    assert other["total_cost_usd"] > body["total_cost_usd"]      # 0.33 vs 0.22
+    assert other["total_cost_usd"] > body["total_cost_usd"]  # 0.33 vs 0.22
 
 
 def test_an_unknown_broker_is_a_400(client, priced_run):
@@ -174,8 +236,7 @@ def test_a_missing_run_is_a_404(client):
     assert client.get("/backtests/runs/nosuchrun/repriced").status_code == 404
 
 
-def test_a_run_with_no_stored_curve_refuses_rather_than_returning_an_empty_book(client,
-                                                                                seeded_run):
+def test_a_run_with_no_stored_curve_refuses_rather_than_returning_an_empty_book(client, seeded_run):
     """NT8/MT5 runs and any run whose curve file is gone. Returning an empty, zero-cost report
     would render as 'costs changed nothing', which is a claim about a run nobody measured."""
     r = client.get(f"/backtests/runs/{seeded_run}/repriced?layers=spread")
@@ -188,30 +249,54 @@ def test_a_run_with_no_stored_curve_refuses_rather_than_returning_an_empty_book(
 # so charging it again bills one cost twice and produces a plausible number rather than an error.
 # Nothing downstream can catch it — the page would simply be wrong by a believable amount.
 
+
 @pytest.fixture
 def spread_charged_run(fresh_db, tmp_path):
     """The same run, but launched with `spread` already charged at replay time."""
     from services import lab_db
 
-    lab_db.upsert_strategy({"id": "s2", "name": "S2", "class_name": "S2", "runner": "python",
-                            "source_path": "strategies/python/s2/__init__.py",
-                            "scanned_at": int(time.time()), "default_params": {},
-                            "param_schema": []})
+    lab_db.upsert_strategy(
+        {
+            "id": "s2",
+            "name": "S2",
+            "class_name": "S2",
+            "runner": "python",
+            "source_path": "strategies/python/s2/__init__.py",
+            "scanned_at": int(time.time()),
+            "default_params": {},
+            "param_schema": [],
+        }
+    )
     run_id = "alreadyspread01"
-    lab_db.insert_run({"run_id": run_id, "strategy_id": "s2", "instrument": "XAUUSD",
-                       "params": {}, "bar_type": "Minute", "bar_value": 15,
-                       "start_date": "2024-01-01", "end_date": "2024-12-31",
-                       "status": "running", "created_at": int(time.time()),
-                       "commission_per_side": 0.0, "slippage_ticks": 0,
-                       "cost_layers": ["spread"], "broker_profile": "vantage_demo"})
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": "s2",
+            "instrument": "XAUUSD",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "status": "running",
+            "created_at": int(time.time()),
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "cost_layers": ["spread"],
+            "broker_profile": "vantage_demo",
+        }
+    )
     # Held THREE DAYS, unlike the base fixture's one-hour trades: swap only charges on a rollover
     # crossed, so an intraday trade prices it at exactly 0.0 and could not tell "this layer was
     # refused" apart from "this layer costs nothing here".
     hold = 3 * 86_400_000
-    rows = [_point(1, equity=11_000.0, profit=1_000.0, exit_ms=1_700_000_000_000 + hold),
-            _point(2, equity=10_500.0, profit=-500.0, exit_ms=1_700_000_000_000 + hold)]
-    lab_db.update_run_complete(run_id, {"net_pnl": 500.0, "trade_count": 2},
-                               {"equity_curve": _curve(tmp_path, rows)})
+    rows = [
+        _point(1, equity=11_000.0, profit=1_000.0, exit_ms=1_700_000_000_000 + hold),
+        _point(2, equity=10_500.0, profit=-500.0, exit_ms=1_700_000_000_000 + hold),
+    ]
+    lab_db.update_run_complete(
+        run_id, {"net_pnl": 500.0, "trade_count": 2}, {"equity_curve": _curve(tmp_path, rows)}
+    )
     return run_id
 
 
@@ -230,8 +315,9 @@ def test_a_layer_the_run_already_charged_is_never_charged_twice(client, spread_c
     assert body["already_charged"] == ["spread"], "and it must SAY so rather than silently ignoring"
 
 
-def test_an_already_charged_layer_is_reported_even_when_nothing_is_ticked(client,
-                                                                         spread_charged_run):
+def test_an_already_charged_layer_is_reported_even_when_nothing_is_ticked(
+    client, spread_charged_run
+):
     """The UI renders those rows as already-on, so the field describes the RUN, not the request.
     Keyed off `wanted` it would be empty until the user ticked a row that then did nothing —
     a checkbox indistinguishable from a broken one."""
@@ -239,8 +325,9 @@ def test_an_already_charged_layer_is_reported_even_when_nothing_is_ticked(client
     assert body["already_charged"] == ["spread"]
 
 
-def test_an_already_charged_layer_is_priced_at_zero_not_at_what_it_would_cost(client,
-                                                                             spread_charged_run):
+def test_an_already_charged_layer_is_priced_at_zero_not_at_what_it_would_cost(
+    client, spread_charged_run
+):
     """`layer_cost_r` answers "what does turning this on cost from here", and the answer is nothing.
     Quoting its standalone price would invite exactly the double charge the endpoint refuses."""
     body = client.get(f"/backtests/runs/{spread_charged_run}/repriced").json()

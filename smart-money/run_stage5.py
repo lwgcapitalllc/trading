@@ -16,8 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import database as db
-from run_logger import StageLogger
 from ranking.unified_pool import UnifiedPool
+from run_logger import StageLogger
 
 CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
 
@@ -51,9 +51,7 @@ def run_stage5(config: dict) -> dict:
     # Export unified disqualified log
     all_disq = db.get_disqualified()
     disq_path = (
-        Path(__file__).parent
-        / config["output"]["reports_dir"]
-        / "all_disqualified_final.json"
+        Path(__file__).parent / config["output"]["reports_dir"] / "all_disqualified_final.json"
     )
     with open(disq_path, "w", encoding="utf-8") as f:
         json.dump(all_disq, f, indent=2, default=str)

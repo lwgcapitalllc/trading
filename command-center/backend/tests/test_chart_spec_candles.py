@@ -20,7 +20,6 @@ and it would catch a future rewrite that read wall-clock digits instead.
 
 import pandas as pd
 import pytest
-
 from services import chart_spec
 
 
@@ -62,7 +61,8 @@ def test_prices_are_floats_even_when_the_frame_stores_ints(monkeypatch):
     # JSON would serialise an int silently and the chart would still draw; this pins the
     # contract rather than the appearance.
     df = _frame(["2026-01-01 00:00"], n=1).astype(
-        {"open": "int64", "high": "int64", "low": "int64", "close": "int64"})
+        {"open": "int64", "high": "int64", "low": "int64", "close": "int64"}
+    )
     c = _rows(monkeypatch, df)[0]
     assert all(isinstance(c[k], float) for k in ("open", "high", "low", "close"))
 

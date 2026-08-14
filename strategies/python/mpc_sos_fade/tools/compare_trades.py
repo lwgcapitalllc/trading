@@ -201,15 +201,24 @@ def _utc_offset_hours(tz: str) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("tv_csv", type=Path, help="TradingView 'List of trades' export")
     ap.add_argument("equity_json", type=Path, help="reports/lab/<run_id>/equity_curve.json")
-    ap.add_argument("--tz", default="Etc/GMT+4",
-                    help="the chart's exchange timezone. Default is a FIXED UTC-4 (Etc/GMT+4 is "
-                         "UTC MINUS 4 — the POSIX sign is inverted), which is what the Vantage "
-                         "XAUUSD chart uses; it does not observe US DST (default: %(default)s)")
-    ap.add_argument("--tol-min", type=int, default=90,
-                    help="how far apart two entries may be and still be the same trade (default: %(default)s min)")
+    ap.add_argument(
+        "--tz",
+        default="Etc/GMT+4",
+        help="the chart's exchange timezone. Default is a FIXED UTC-4 (Etc/GMT+4 is "
+        "UTC MINUS 4 — the POSIX sign is inverted), which is what the Vantage "
+        "XAUUSD chart uses; it does not observe US DST (default: %(default)s)",
+    )
+    ap.add_argument(
+        "--tol-min",
+        type=int,
+        default=90,
+        help="how far apart two entries may be and still be the same trade (default: %(default)s min)",
+    )
     ap.add_argument("--json", type=Path, help="also write the full pairing to this file")
     args = ap.parse_args()
 
@@ -220,16 +229,24 @@ def main() -> int:
     tv_pnl = sum(p.pnl for p in tv)
     our_pnl = sum(p.pnl for p in ours)
     print(f"\nTradingView : {len(tv):>3} trades   net {tv_pnl:>+12,.2f}   ({args.tv_csv.name})")
-    print(f"Ours        : {len(ours):>3} trades   net {our_pnl:>+12,.2f}   ({args.equity_json.parent.name})")
-    print(f"Paired      : {len(matched):>3}   TV-only {len(tv_only)}   ours-only {len(ours_only)}\n")
+    print(
+        f"Ours        : {len(ours):>3} trades   net {our_pnl:>+12,.2f}   ({args.equity_json.parent.name})"
+    )
+    print(
+        f"Paired      : {len(matched):>3}   TV-only {len(tv_only)}   ours-only {len(ours_only)}\n"
+    )
 
     if matched:
-        print(f"{'#':>3} {'entry (UTC)':16} {'dir':5} {'TV pnl':>11} {'our pnl':>11} {'diff':>11} "
-              f"{'entry Δ':>8} {'TV px':>9} {'our px':>9}")
+        print(
+            f"{'#':>3} {'entry (UTC)':16} {'dir':5} {'TV pnl':>11} {'our pnl':>11} {'diff':>11} "
+            f"{'entry Δ':>8} {'TV px':>9} {'our px':>9}"
+        )
         for i, (t, o) in enumerate(matched, 1):
-            print(f"{i:>3} {t.entry_iso:16} {t.direction:5} {t.pnl:>+11,.2f} {o.pnl:>+11,.2f} "
-                  f"{o.pnl - t.pnl:>+11,.2f} {(o.entry_ms - t.entry_ms)//60000:>7}m "
-                  f"{t.entry_price:>9,.2f} {o.entry_price:>9,.2f}")
+            print(
+                f"{i:>3} {t.entry_iso:16} {t.direction:5} {t.pnl:>+11,.2f} {o.pnl:>+11,.2f} "
+                f"{o.pnl - t.pnl:>+11,.2f} {(o.entry_ms - t.entry_ms) // 60000:>7}m "
+                f"{t.entry_price:>9,.2f} {o.entry_price:>9,.2f}"
+            )
         # The matched-set gap is the honest apples-to-apples number: it excludes the trades
         # only one side took, so it isolates fills/costs/sizing from signal disagreement.
         # A whole-hour bias on every pairing means the timezone is wrong, not the trades —
@@ -238,25 +255,48 @@ def main() -> int:
         median = offs[len(offs) // 2]
         if median and median % 60 == 0:
             hrs = median // 60
-            print(f"\n  note: every pairing is off by ~{hrs:+d}h — the chart's exchange timezone is not "
-                  f"{args.tz}. Re-run with --tz Etc/GMT{-(hrs - _utc_offset_hours(args.tz)):+d}.")
+            print(
+                f"\n  note: every pairing is off by ~{hrs:+d}h — the chart's exchange timezone is not "
+                f"{args.tz}. Re-run with --tz Etc/GMT{-(hrs - _utc_offset_hours(args.tz)):+d}."
+            )
         gap = sum(o.pnl - t.pnl for t, o in matched)
-        print(f"\nMatched-set P&L gap: {gap:+,.2f}  "
-              f"(the rest of the {our_pnl - tv_pnl:+,.2f} total gap is the unpaired trades)")
+        print(
+            f"\nMatched-set P&L gap: {gap:+,.2f}  "
+            f"(the rest of the {our_pnl - tv_pnl:+,.2f} total gap is the unpaired trades)"
+        )
 
     for label, group in (("ONLY TRADINGVIEW TOOK", tv_only), ("ONLY WE TOOK", ours_only)):
         if group:
             print(f"\n{label} ({len(group)}):")
             for p in group:
-                print(f"  {p.entry_iso}  {p.direction:5} {p.pnl:>+11,.2f}  @{p.entry_price:,.2f}  {'/'.join(p.legs)}")
+                print(
+                    f"  {p.entry_iso}  {p.direction:5} {p.pnl:>+11,.2f}  @{p.entry_price:,.2f}  {'/'.join(p.legs)}"
+                )
 
     if args.json:
-        args.json.write_text(json.dumps({
-            "matched": [{"entry": t.entry_iso, "dir": t.direction, "tv_pnl": t.pnl, "our_pnl": o.pnl}
-                        for t, o in matched],
-            "tv_only": [{"entry": p.entry_iso, "dir": p.direction, "tv_pnl": p.pnl} for p in tv_only],
-            "ours_only": [{"entry": p.entry_iso, "dir": p.direction, "our_pnl": p.pnl} for p in ours_only],
-        }, indent=2))
+        args.json.write_text(
+            json.dumps(
+                {
+                    "matched": [
+                        {
+                            "entry": t.entry_iso,
+                            "dir": t.direction,
+                            "tv_pnl": t.pnl,
+                            "our_pnl": o.pnl,
+                        }
+                        for t, o in matched
+                    ],
+                    "tv_only": [
+                        {"entry": p.entry_iso, "dir": p.direction, "tv_pnl": p.pnl} for p in tv_only
+                    ],
+                    "ours_only": [
+                        {"entry": p.entry_iso, "dir": p.direction, "our_pnl": p.pnl}
+                        for p in ours_only
+                    ],
+                },
+                indent=2,
+            )
+        )
         print(f"\nwrote {args.json}")
 
     ok = not tv_only and not ours_only

@@ -23,7 +23,6 @@ Run:  python3 -m pytest equal_highs_lows/tests/ -q      (from engines/)
 
 from __future__ import annotations
 
-import math
 import random
 import sys
 from pathlib import Path
@@ -34,10 +33,10 @@ if str(_ENGINES_ROOT) not in sys.path:
 
 from equal_highs_lows import EqualHighsLowsEngine
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def run(bars, **kwargs):
     """Feed (high, low, close) triples; return the list of per-bar EqEvents."""
@@ -49,6 +48,7 @@ def run(bars, **kwargs):
 # Independent, array-based reference (structurally different from the engine).
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def ref_atr(highs, lows, closes, length):
     n = len(highs)
     trs = []
@@ -56,7 +56,9 @@ def ref_atr(highs, lows, closes, length):
         if i == 0:
             trs.append(highs[i] - lows[i])
         else:
-            trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+            trs.append(
+                max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+            )
     atr = [None] * n
     seed = []
     val = None
@@ -147,14 +149,14 @@ def ref_run(highs, lows, closes, pivot_len=2, atr_mult=0.1, max_levels=6, atr_le
             else:
                 keep_l.append(p)
         eql = keep_l
-        out.append({"tol": tol, "formed": formed, "mit": mit,
-                    "eqh": list(eqh), "eql": list(eql)})
+        out.append({"tol": tol, "formed": formed, "mit": mit, "eqh": list(eqh), "eql": list(eql)})
     return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Hand-checks
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_atr_tolerance_warmup():
     """eqTol is 0 until ATR(50) seeds (bar index 49); then ATR×0.1. With constant TR=2, tol=0.2."""
@@ -163,7 +165,7 @@ def test_atr_tolerance_warmup():
     evs = run(bars)
     for i in range(49):
         assert evs[i].tolerance == 0.0, f"bar {i} tol should be 0 during ATR warm-up"
-    assert abs(evs[49].tolerance - 0.2) < 1e-9   # ATR seeds at bar 49 → 2.0 × 0.1
+    assert abs(evs[49].tolerance - 0.2) < 1e-9  # ATR seeds at bar 49 → 2.0 × 0.1
     assert abs(evs[59].tolerance - 0.2) < 1e-9
 
 
@@ -172,14 +174,14 @@ def test_pivot_confirmation_lag():
     bars = [
         (1.0, 0.0, 0.5),
         (2.0, 0.5, 1.0),
-        (5.0, 1.0, 2.0),   # bar 2: strict pivot high
+        (5.0, 1.0, 2.0),  # bar 2: strict pivot high
         (2.0, 0.5, 1.0),
         (1.0, 0.0, 0.5),
     ]
     evs = run(bars)
-    assert evs[2].pivot_high is None      # not yet confirmed
+    assert evs[2].pivot_high is None  # not yet confirmed
     assert evs[3].pivot_high is None
-    assert evs[4].pivot_high == 5.0       # confirmed 2 bars late
+    assert evs[4].pivot_high == 5.0  # confirmed 2 bars late
     assert all(e.pivot_high is None for e in (evs[0], evs[1]))
 
 
@@ -188,21 +190,21 @@ def test_eqh_forms_on_equal_second_pivot():
     bars = [
         (1.0, 0.0, 0.5),
         (2.0, 0.5, 1.0),
-        (5.0, 1.0, 2.0),   # bar 2: pivot high (confirms bar 4) → latched, no level yet
+        (5.0, 1.0, 2.0),  # bar 2: pivot high (confirms bar 4) → latched, no level yet
         (2.0, 0.5, 1.0),
         (1.0, 0.0, 0.5),
         (2.0, 0.5, 1.0),
-        (5.0, 1.0, 2.0),   # bar 6: equal pivot high (confirms bar 8) → EQH forms
+        (5.0, 1.0, 2.0),  # bar 6: equal pivot high (confirms bar 8) → EQH forms
         (2.0, 0.5, 1.0),
         (1.0, 0.0, 0.5),
     ]
     evs = run(bars)
-    assert not any(e.formed for e in evs[:8])          # nothing before the second pivot confirms
+    assert not any(e.formed for e in evs[:8])  # nothing before the second pivot confirms
     assert len(evs[8].formed) == 1
     lvl = evs[8].formed[0]
     assert lvl.is_high is True
-    assert lvl.price == 5.0                            # max(5, 5)
-    assert lvl.left_bar == 2                           # anchored at the FIRST pivot's bar
+    assert lvl.price == 5.0  # max(5, 5)
+    assert lvl.left_bar == 2  # anchored at the FIRST pivot's bar
     assert lvl.formed_bar == 8
     assert evs[8].active_eqh == [5.0]
     assert evs[8].active_eql == []
@@ -211,9 +213,16 @@ def test_eqh_forms_on_equal_second_pivot():
 def test_eqh_mitigation_on_close_above():
     """An active EQH is taken when a later bar CLOSES above it."""
     bars = [
-        (1.0, 0.0, 0.5), (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),
-        (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),   # EQH @5 at bar 8
-        (6.0, 4.0, 6.0),                                                        # bar 9: close 6 > 5 → taken
+        (1.0, 0.0, 0.5),
+        (2.0, 0.5, 1.0),
+        (5.0, 1.0, 2.0),
+        (2.0, 0.5, 1.0),
+        (1.0, 0.0, 0.5),
+        (2.0, 0.5, 1.0),
+        (5.0, 1.0, 2.0),
+        (2.0, 0.5, 1.0),
+        (1.0, 0.0, 0.5),  # EQH @5 at bar 8
+        (6.0, 4.0, 6.0),  # bar 9: close 6 > 5 → taken
     ]
     evs = run(bars)
     assert evs[8].active_eqh == [5.0]
@@ -227,20 +236,20 @@ def test_eql_forms_and_mitigates_on_close_below():
     bars = [
         (10.0, 9.0, 9.5),
         (9.5, 8.0, 8.5),
-        (9.0, 5.0, 6.0),   # bar 2: pivot low @5
+        (9.0, 5.0, 6.0),  # bar 2: pivot low @5
         (9.5, 8.0, 8.5),
         (10.0, 9.0, 9.5),
         (9.5, 8.0, 8.5),
-        (9.0, 5.0, 6.0),   # bar 6: equal pivot low @5 → EQL forms at bar 8
+        (9.0, 5.0, 6.0),  # bar 6: equal pivot low @5 → EQL forms at bar 8
         (9.5, 8.0, 8.5),
         (10.0, 9.0, 9.5),
-        (6.0, 4.0, 4.0),   # bar 9: close 4 < 5 → taken
+        (6.0, 4.0, 4.0),  # bar 9: close 4 < 5 → taken
     ]
     evs = run(bars)
     assert len(evs[8].formed) == 1
     lvl = evs[8].formed[0]
     assert lvl.is_high is False
-    assert lvl.price == 5.0                            # min(5, 5)
+    assert lvl.price == 5.0  # min(5, 5)
     assert evs[8].active_eql == [5.0]
     assert len(evs[9].mitigated) == 1 and evs[9].active_eql == []
 
@@ -252,13 +261,14 @@ def test_fifo_cap():
     bars = seg * 4 + [(1.0, 0.0, 0.5)]
     evs = run(bars, max_levels=2)
     eqh_formed = sum(1 for e in evs for l in e.formed if l.is_high)
-    assert eqh_formed == 3                             # equal pivot highs at 2,6,10,14 → 3 pairs
-    assert len(evs[-1].active_eqh) == 2                # capped at 2 despite 3 formed
+    assert eqh_formed == 3  # equal pivot highs at 2,6,10,14 → 3 pairs
+    assert len(evs[-1].active_eqh) == 2  # capped at 2 despite 3 formed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Full independent reference cross-check
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _random_walk(n, seed):
     rng = random.Random(seed)
@@ -283,15 +293,17 @@ def test_reference_cross_check():
     base = closes[-1]
     tail = [
         (base + 0.5, base - 0.5, base),
-        (base + 20.000, base + 1.0, base + 2.0),   # strict pivot high
+        (base + 20.000, base + 1.0, base + 2.0),  # strict pivot high
         (base + 0.5, base - 0.5, base),
         (base + 0.4, base - 0.6, base - 0.1),
-        (base + 20.001, base + 1.0, base + 2.0),   # near-equal strict pivot high (diff 0.001)
+        (base + 20.001, base + 1.0, base + 2.0),  # near-equal strict pivot high (diff 0.001)
         (base + 0.5, base - 0.5, base),
         (base + 0.4, base - 0.6, base - 0.1),
     ]
     for h, l, c in tail:
-        highs.append(h); lows.append(l); closes.append(c)
+        highs.append(h)
+        lows.append(l)
+        closes.append(c)
 
     bars = list(zip(highs, lows, closes))
     evs = run(bars)

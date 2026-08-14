@@ -37,7 +37,13 @@ const CHILDREN: Child[] = [
   { id: 'aaa111aaa111', parent: BASELINE_ID, pf: 4.9, trades: 120, edits: { exec_tp1_pct: 40 } },
   { id: 'bbb222bbb222', parent: BASELINE_ID, pf: 2.0, trades: 90, edits: { exec_tp2_pct: 25 } },
   // A GRANDCHILD — tuning an iteration. The page listed direct children only and dropped it.
-  { id: 'ccc333ccc333', parent: 'aaa111aaa111', pf: 3.0, trades: 80, edits: { exec_tp1_pct: 40, exec_risk_pct: 5 } },
+  {
+    id: 'ccc333ccc333',
+    parent: 'aaa111aaa111',
+    pf: 3.0,
+    trades: 80,
+    edits: { exec_tp1_pct: 40, exec_risk_pct: 5 },
+  },
   // Highest PF on the page and three trades behind it. It may rank first; it may not be starred.
   { id: 'fff444fff444', parent: BASELINE_ID, pf: 99.0, trades: 3, edits: { exec_tp1_pct: 90 } },
   // A SWEEP child. `source_run_id` is stamped by sweeps and optimizations too, so this used to
@@ -56,10 +62,14 @@ type Fixture = { detailUrls: string[] }
 
 async function mockLeaderboard(page: Page): Promise<Fixture> {
   const runs = await getJson<BacktestSummary[]>('/backtests/runs')
-  const base = runs.find(r => r.run_id === BASELINE_ID)
-  if (!base) throw new Error(`run ${BASELINE_ID} is not in the lab any more — pick another baseline`)
+  const base = runs.find((r) => r.run_id === BASELINE_ID)
+  if (!base)
+    throw new Error(`run ${BASELINE_ID} is not in the lab any more — pick another baseline`)
   const baseDetail = await getJson<BacktestDetail>(`/backtests/runs/${BASELINE_ID}`)
-  expect(baseDetail.regime_timeline.length, 'the baseline must carry a timeline for the slim path').toBeGreaterThan(0)
+  expect(
+    baseDetail.regime_timeline.length,
+    'the baseline must carry a timeline for the slim path'
+  ).toBeGreaterThan(0)
 
   const summaries: BacktestSummary[] = CHILDREN.map((c, i) => ({
     ...base,
@@ -74,28 +84,43 @@ async function mockLeaderboard(page: Page): Promise<Fixture> {
     params: { ...base.params, ...c.edits },
   }))
 
-  await page.route(u => u.pathname.endsWith('/api/backtests/runs'), route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([...runs, ...summaries]) }))
+  await page.route(
+    (u) => u.pathname.endsWith('/api/backtests/runs'),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([...runs, ...summaries]),
+      })
+  )
 
   const fixture: Fixture = { detailUrls: [] }
-  await page.route(u => /\/api\/backtests\/runs\/[0-9a-z]+$/.test(u.pathname), async route => {
-    const url = new URL(route.request().url())
-    fixture.detailUrls.push(url.pathname.split('/').pop()! + url.search)
-    const id = url.pathname.split('/').pop()!
-    const child = CHILDREN.find(c => c.id === id)
-    if (!child) return route.continue()
-    const body: BacktestDetail = {
-      ...baseDetail,
-      run_id: id,
-      source_run_id: child.parent,
-      profit_factor: child.pf,
-      trade_count: child.trades,
-      params: { ...baseDetail.params, ...child.edits },
-      // The endpoint's own contract — the page asks for this and must survive getting it.
-      regime_timeline: url.searchParams.get('timeline') === 'false' ? [] : baseDetail.regime_timeline,
+  await page.route(
+    (u) => /\/api\/backtests\/runs\/[0-9a-z]+$/.test(u.pathname),
+    async (route) => {
+      const url = new URL(route.request().url())
+      fixture.detailUrls.push(url.pathname.split('/').pop()! + url.search)
+      const id = url.pathname.split('/').pop()!
+      const child = CHILDREN.find((c) => c.id === id)
+      if (!child) return route.continue()
+      const body: BacktestDetail = {
+        ...baseDetail,
+        run_id: id,
+        source_run_id: child.parent,
+        profit_factor: child.pf,
+        trade_count: child.trades,
+        params: { ...baseDetail.params, ...child.edits },
+        // The endpoint's own contract — the page asks for this and must survive getting it.
+        regime_timeline:
+          url.searchParams.get('timeline') === 'false' ? [] : baseDetail.regime_timeline,
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(body),
+      })
     }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
-  })
+  )
   return fixture
 }
 
@@ -111,39 +136,52 @@ test.describe('Tuning workbench — the leaderboard', () => {
 
     const labels = await runCells(page).allInnerTexts()
     // Baseline + 4 tweaks. The grandchild is there because descendants are walked transitively.
-    expect(labels.some(t => t.includes('Tweak ccc333'))).toBe(true)
+    expect(labels.some((t) => t.includes('Tweak ccc333'))).toBe(true)
     // The sweep child is excluded by its own sweep_id, not by hoping nothing else stamps
     // source_run_id.
-    expect(labels.some(t => t.includes('Tweak swp555'))).toBe(false)
+    expect(labels.some((t) => t.includes('Tweak swp555'))).toBe(false)
   })
 
-  test('the table is ordered by profit factor, because that is what its caption says', async ({ page }) => {
+  test('the table is ordered by profit factor, because that is what its caption says', async ({
+    page,
+  }) => {
     await mockLeaderboard(page)
     await page.goto(`/backtests/runs/${BASELINE_ID}/tune`)
     await expect(page.getByText('Iterations (5)')).toBeVisible()
 
-    const order = (await runCells(page).allInnerTexts()).map(t => t.split('\n')[0].trim())
+    const order = (await runCells(page).allInnerTexts()).map((t) => t.split('\n')[0].trim())
     // 99.0, 4.9, 3.781 (the real baseline), 3.0, 2.0
     expect(order).toEqual([
-      'Tweak fff444', 'Tweak aaa111', 'Baseline', 'Tweak ccc333', 'Tweak bbb222',
+      'Tweak fff444',
+      'Tweak aaa111',
+      'Baseline',
+      'Tweak ccc333',
+      'Tweak bbb222',
     ])
   })
 
-  test('the ★ goes to the best profit factor with a real sample, not to a 3-trade fluke', async ({ page }) => {
+  test('the ★ goes to the best profit factor with a real sample, not to a 3-trade fluke', async ({
+    page,
+  }) => {
     await mockLeaderboard(page)
     await page.goto(`/backtests/runs/${BASELINE_ID}/tune`)
     await expect(page.getByText('Iterations (5)')).toBeVisible()
 
     // The fluke ranks FIRST and is still not the winner — the two facts have to hold together, or
     // the sort and the floor are testing each other rather than the page.
-    const starred = await page.locator('table tbody tr').filter({ has: page.locator('svg.lucide-star') })
-      .locator('td:nth-child(2)').innerText()
+    const starred = await page
+      .locator('table tbody tr')
+      .filter({ has: page.locator('svg.lucide-star') })
+      .locator('td:nth-child(2)')
+      .innerText()
     expect(starred).toContain('Tweak aaa111')
     // And the floor is on screen, because a threshold nobody can see reads as a bug.
     await expect(page.getByText(/best over 10 trades/)).toBeVisible()
   })
 
-  test('Max DD leads with the peak-relative percent and keeps the dollars beneath it', async ({ page }) => {
+  test('Max DD leads with the peak-relative percent and keeps the dollars beneath it', async ({
+    page,
+  }) => {
     await mockLeaderboard(page)
     await page.goto(`/backtests/runs/${BASELINE_ID}/tune`)
     await expect(page.getByText('Iterations (5)')).toBeVisible()
@@ -165,7 +203,9 @@ test.describe('Tuning workbench — the leaderboard', () => {
     await expect(page.getByText('exec_tp1_pct=40', { exact: false }).first()).toBeVisible()
   })
 
-  test('the regime bands get a key, and the iterations skip the 96 KB calendar', async ({ page }) => {
+  test('the regime bands get a key, and the iterations skip the 96 KB calendar', async ({
+    page,
+  }) => {
     const fx = await mockLeaderboard(page)
     await page.goto(`/backtests/runs/${BASELINE_ID}/tune`)
     await expect(page.getByText('Iterations (5)')).toBeVisible()
@@ -174,13 +214,16 @@ test.describe('Tuning workbench — the leaderboard', () => {
     await expect(page.locator('.recharts-wrapper').first()).toBeVisible()
 
     // The baseline is fetched WHOLE (the chart bands off its calendar); every iteration is slimmed.
-    const forBase = fx.detailUrls.filter(u => u.startsWith(BASELINE_ID))
+    const forBase = fx.detailUrls.filter((u) => u.startsWith(BASELINE_ID))
     expect(forBase.length).toBeGreaterThan(0)
-    expect(forBase.every(u => !u.includes('timeline=false'))).toBe(true)
-    for (const c of CHILDREN.filter(c => !c.sweep)) {
-      const asked = fx.detailUrls.filter(u => u.startsWith(c.id))
+    expect(forBase.every((u) => !u.includes('timeline=false'))).toBe(true)
+    for (const c of CHILDREN.filter((c) => !c.sweep)) {
+      const asked = fx.detailUrls.filter((u) => u.startsWith(c.id))
       expect(asked.length, `${c.id} was never fetched`).toBeGreaterThan(0)
-      expect(asked.every(u => u.includes('timeline=false')), `${c.id} was fetched whole`).toBe(true)
+      expect(
+        asked.every((u) => u.includes('timeline=false')),
+        `${c.id} was fetched whole`
+      ).toBe(true)
     }
   })
 })

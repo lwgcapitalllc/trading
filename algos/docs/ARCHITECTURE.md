@@ -99,15 +99,40 @@ Free functions (import directly): `now_utc`, `is_market_close`, `should_close_fo
 Each bot exposes module-level functions that forward to `_mt5`. Call sites stay unchanged:
 
 ```python
-def connect():              return _mt5.connect()
-def get_candles(tf, n):     return _mt5.get_candles(tf, n)
-def get_tick():             return _mt5.get_tick()
-def get_deal_result(t):     return _mt5.get_deal_result(t)
-def close_position(t, d, r=""): return _mt5.close_position(t, d, r)
-def close_all_positions(r="emergency"): return _mt5.close_all_positions(r)
-def move_sl(t, sl, tp=None): return _mt5.move_sl(t, sl, tp)
-def handle_dead_zone(ot, atr, logger, ai): return _mt5.handle_dead_zone(ot, atr, logger, ai)
-def reconcile_on_startup(ot, logger, ai): return _mt5.reconcile_on_startup(ot, logger, ai)
+def connect():
+    return _mt5.connect()
+
+
+def get_candles(tf, n):
+    return _mt5.get_candles(tf, n)
+
+
+def get_tick():
+    return _mt5.get_tick()
+
+
+def get_deal_result(t):
+    return _mt5.get_deal_result(t)
+
+
+def close_position(t, d, r=""):
+    return _mt5.close_position(t, d, r)
+
+
+def close_all_positions(r="emergency"):
+    return _mt5.close_all_positions(r)
+
+
+def move_sl(t, sl, tp=None):
+    return _mt5.move_sl(t, sl, tp)
+
+
+def handle_dead_zone(ot, atr, logger, ai):
+    return _mt5.handle_dead_zone(ot, atr, logger, ai)
+
+
+def reconcile_on_startup(ot, logger, ai):
+    return _mt5.reconcile_on_startup(ot, logger, ai)
 ```
 
 ### What stays bot-specific

@@ -16,7 +16,7 @@ calls them, matching the "replay, don't reinvent" rule in this package's CLAUDE.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Put engines/ on sys.path so the canonical engines import by bare name, matching
@@ -26,7 +26,9 @@ _ENGINES = Path(__file__).resolve().parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
-from market_structure import Bar, StructureEngine, StructureEvents  # noqa: E402
+import pandas as pd  # noqa: E402
+from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
+from fair_value_gaps import FairValueGapEngine, FvgEvents  # noqa: E402
 from fibonacci import (  # noqa: E402
     InternalFib,
     InternalFibEvents,
@@ -38,14 +40,11 @@ from fibonacci import (  # noqa: E402
     StructureFibEvents,
     StructureSnapshot,
 )
-from fair_value_gaps import FairValueGapEngine, FvgEvents  # noqa: E402
-from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
+from liquidity import LiquidityEngine, LiquidityEvents  # noqa: E402
+from market_structure import Bar, StructureEngine, StructureEvents  # noqa: E402
 from order_blocks import OrderBlockEngine, OrderBlockEvents  # noqa: E402
 from rsi_divergence import RsiDivergenceEngine, RsiDivEvents  # noqa: E402
-from liquidity import LiquidityEngine, LiquidityEvents  # noqa: E402
 from sessions import SessionEngine, SessionEvents  # noqa: E402
-
-import pandas as pd  # noqa: E402
 
 from .loop import ReplayBar, iter_bars
 
@@ -177,8 +176,9 @@ class EngineStack:
         self.macro = MacroFib()
         self.internal = InternalFib()
         self.fvg = FairValueGapEngine(
-            max_count=c.fvg_max_count, threshold_pct=c.fvg_threshold_pct,
-            require_close=c.fvg_require_close
+            max_count=c.fvg_max_count,
+            threshold_pct=c.fvg_threshold_pct,
+            require_close=c.fvg_require_close,
         )
         self.rsi = RsiDivergenceEngine(
             rsi_len=c.rsi_len,
@@ -191,9 +191,15 @@ class EngineStack:
         self.sessions = SessionEngine()
         # Only built when the coupling is on: an unused engine still costs a per-bar ATR and a
         # pivot scan on every replay in the repo, and the flag is off for every consumer but one.
-        self.eq = EqualHighsLowsEngine(
-            pivot_len=c.eq_pivot_len, atr_mult=c.eq_atr_mult, max_levels=c.eq_max_levels,
-        ) if c.eq_exempt_fvg else None
+        self.eq = (
+            EqualHighsLowsEngine(
+                pivot_len=c.eq_pivot_len,
+                atr_mult=c.eq_atr_mult,
+                max_levels=c.eq_max_levels,
+            )
+            if c.eq_exempt_fvg
+            else None
+        )
         # Same opt-in shape as `eq`, same reason — see `EngineConfig.order_blocks`. Built with no
         # kwargs: the engine's defaults ARE mpc_assistant.pine's constants (max_active=10,
         # body_only=False, …), and that Pine is the only OB source left in the repo since the

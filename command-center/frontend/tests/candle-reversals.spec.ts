@@ -61,7 +61,12 @@ async function navyPixels(page: Page) {
       const d = g.getImageData(0, 0, c.width, c.height).data
       for (let i = 0; i < d.length; i += 4) {
         // A tolerance, because the body is stroked with a lighter edge and antialiased against it.
-        if (Math.abs(d[i] - 47) < 14 && Math.abs(d[i + 1] - 95) < 14 && Math.abs(d[i + 2] - 224) < 14) n++
+        if (
+          Math.abs(d[i] - 47) < 14 &&
+          Math.abs(d[i + 1] - 95) < 14 &&
+          Math.abs(d[i + 2] - 224) < 14
+        )
+          n++
       }
     }
     return n
@@ -86,7 +91,12 @@ async function edgePixels(page: Page) {
       if (!g || !c.width || !c.height) continue
       const d = g.getImageData(0, 0, c.width, c.height).data
       for (let i = 0; i < d.length; i += 4) {
-        if (Math.abs(d[i] - 126) < 20 && Math.abs(d[i + 1] - 162) < 20 && Math.abs(d[i + 2] - 255) < 20) n++
+        if (
+          Math.abs(d[i] - 126) < 20 &&
+          Math.abs(d[i + 1] - 162) < 20 &&
+          Math.abs(d[i + 2] - 255) < 20
+        )
+          n++
       }
     }
     return n
@@ -135,7 +145,7 @@ test('ticking it repaints candles, and unticking it puts them back', async ({ pa
 
   await toggleAnalysis(page)
   await page.getByRole('button', { name: new RegExp(LAYER) }).click()
-  await toggleAnalysis(page)          // close the menu so it cannot be counted as chart pixels
+  await toggleAnalysis(page) // close the menu so it cannot be counted as chart pixels
   await expect.poll(() => navyPixels(page), { timeout: 20_000 }).toBeGreaterThan(0)
 
   // And back — a layer that cannot be switched off is not a toggle. This also rules out the navy
@@ -151,7 +161,7 @@ test('the layer is withdrawn off the timeframe it was computed on', async ({ pag
   // at H1, and dropping the matching `continue` in the render loop leaves it PAINTING M15 bars over
   // H1 candles — which is the more dangerous half, because it states something nobody measured.
   await openPriceTab(page)
-  await goToDate(page, DATE_WITH_A_MARK)   // see the note in the check above
+  await goToDate(page, DATE_WITH_A_MARK) // see the note in the check above
   await toggleAnalysis(page)
   await page.getByRole('button', { name: new RegExp(LAYER) }).click()
   await toggleAnalysis(page)
@@ -199,7 +209,9 @@ test('the pattern name is off by default and comes on from Chart settings', asyn
   await expect.poll(() => edgePixels(page), { timeout: 20_000 }).toBe(off)
 })
 
-test('the setting explains itself from the ⓘ, not from a paragraph under its label', async ({ page }) => {
+test('the setting explains itself from the ⓘ, not from a paragraph under its label', async ({
+  page,
+}) => {
   // Proven by MUTATION: rendering `def.help` inline again turns the first assertion red, and
   // dropping the `<InfoTip>` turns the second red.
   //
@@ -214,7 +226,11 @@ test('the setting explains itself from the ⓘ, not from a paragraph under its l
 
   // ...and one hover away. `InfoTip` portals to <body>, so this also rules out the panel's own
   // scroll box cropping it — the reason the shared control is used here rather than a local span.
-  await page.getByText('Name the pattern').locator('xpath=../..').locator('span.cursor-help').hover()
+  await page
+    .getByText('Name the pattern')
+    .locator('xpath=../..')
+    .locator('span.cursor-help')
+    .hover()
   await expect(page.getByText(HELP)).toBeVisible()
 })
 
@@ -229,7 +245,7 @@ test('the Missed layer filters by SCORE as well as by reason', async ({ page }) 
   await openPriceTab(page)
   await toggleAnalysis(page)
   const missed = page.getByRole('button', { name: /^Missed/ })
-  await missed.click()                                   // switch the layer on to reveal its filters
+  await missed.click() // switch the layer on to reveal its filters
 
   // ⚠ Every score starts SHOWN, and this assertion is why the check is not vacuous. The layer's
   // opening view is the emitter's `missNoise` recommendation; a score defaulting to hidden would be
@@ -237,7 +253,9 @@ test('the Missed layer filters by SCORE as well as by reason', async ({ page }) 
   // two had hidden a marker. Without this, a mutation defaulting `2/3` hidden passes.
   for (const s of ['3 of 3', '2 of 3']) {
     await expect(page.getByRole('button', { name: new RegExp(`^${s}`) })).toHaveAttribute(
-      'aria-pressed', 'true')
+      'aria-pressed',
+      'true'
+    )
   }
 
   const count = async () => Number((await missed.textContent())!.replace(/\D/g, ''))
@@ -260,7 +278,9 @@ test('the Missed layer filters by SCORE as well as by reason', async ({ page }) 
   expect(await count()).toBe(all)
 })
 
-test("the Missed layer's two filters cross — each side counts what the other is showing", async ({ page }) => {
+test("the Missed layer's two filters cross — each side counts what the other is showing", async ({
+  page,
+}) => {
   // Aaron, 2026-08-08, reading it off the screen: *"if I have on missed 3/3 or 2/3 shouldn't the
   // knobs that influence that toggle accordingly also?"* With "3 of 3" alone the layer drew 35
   // markers while the MISSING chips went on reading 179 / 238 / 21 / 10 / 4 — which sum to 452, the
@@ -294,7 +314,7 @@ test("the Missed layer's two filters cross — each side counts what the other i
 
   // …and the mirror: the SCORE counts follow the reason filter. `No retrace` starts hidden (it is
   // in the emitter's `missNoise`), so ticking it back on can only ever ADD misses to a score.
-  await page.getByRole('button', { name: /^2 of 3/ }).click()      // both scores shown again
+  await page.getByRole('button', { name: /^2 of 3/ }).click() // both scores shown again
   const before = await chip('2 of 3')
   await page.getByRole('button', { name: /^No retrace/ }).click()
   await expect.poll(() => chip('2 of 3')).toBeGreaterThan(before)
@@ -313,8 +333,10 @@ test('the direction filter removes marks and every direction starts shown', asyn
   await toggleAnalysis(page)
   await page.getByRole('button', { name: new RegExp(LAYER) }).click()
   for (const d of ['With the setup', 'Neutral', 'Against it']) {
-    await expect(page.getByRole('button', { name: new RegExp(`^${d}`) }))
-      .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: new RegExp(`^${d}`) })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
   }
   await toggleAnalysis(page)
   await goToDate(page, DATE_WITH_A_MARK)
@@ -357,7 +379,7 @@ test('"Only the deepest" thins the marks without emptying the layer', async ({ p
 
   await toggleSettings(page)
   const only = page.getByText('Only the deepest').locator('xpath=../..').getByRole('switch')
-  await expect(only).toHaveAttribute('aria-checked', 'false')   // the full reading is the default
+  await expect(only).toHaveAttribute('aria-checked', 'false') // the full reading is the default
   await only.click()
   await toggleSettings(page)
   await expect.poll(() => navyPixels(page), { timeout: 20_000 }).toBeLessThan(all)

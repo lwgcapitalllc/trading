@@ -1,14 +1,33 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload, CheckCircle2, XCircle, AlertTriangle, Layers, WifiOff, X } from 'lucide-react'
+import {
+  RefreshCw,
+  Play,
+  ChevronRight,
+  Upload,
+  Trash2,
+  CloudUpload,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Layers,
+  WifiOff,
+  X,
+} from 'lucide-react'
 import {
   useStrategies,
-  useScanStrategies, useReconcileStrategies,
-  useStrategyFiles, useStrategyFileSyncStatus,
-  useUploadStrategyFile, useDeleteStrategyFile,
-  useTriggerCompile, useCompileStatus,
-  useTriggerCompileMt5, useCompileStatusMt5,
-  useDeployStrategy, useRunningVpsJob,
+  useScanStrategies,
+  useReconcileStrategies,
+  useStrategyFiles,
+  useStrategyFileSyncStatus,
+  useUploadStrategyFile,
+  useDeleteStrategyFile,
+  useTriggerCompile,
+  useCompileStatus,
+  useTriggerCompileMt5,
+  useCompileStatusMt5,
+  useDeployStrategy,
+  useRunningVpsJob,
 } from '@/hooks/useLab'
 import { ConfirmDeleteModal } from '@/pages/Backtests'
 import { EmptyState } from '@/components/EmptyState'
@@ -31,11 +50,19 @@ import type { Strategy, StrategyFileSyncStatus } from '@/types'
 // Run button. Both hooks are `silent` now and the failure is drawn here.
 
 /** One dependency the page could not reach, stated where the reader is looking. */
-function AgentDownBanner({ what, detail, className = '' }: {
-  what: string; detail?: string | null; className?: string
+function AgentDownBanner({
+  what,
+  detail,
+  className = '',
+}: {
+  what: string
+  detail?: string | null
+  className?: string
 }) {
   return (
-    <div className={`flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-warn-text/25 bg-warn-muted ${className}`}>
+    <div
+      className={`flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-warn-text/25 bg-warn-muted ${className}`}
+    >
       <WifiOff size={14} className="text-warn-text shrink-0 mt-[2px]" />
       <div className="min-w-0">
         <p className="text-[12.5px] text-warn-text font-medium">
@@ -43,8 +70,8 @@ function AgentDownBanner({ what, detail, className = '' }: {
         </p>
         <p className="text-[11.5px] text-warn-text/80 leading-[1.45] mt-0.5">
           Deploy and compile state below come from the local source and this app’s own deploy
-          record, so they are still accurate. What is actually ON the VPS is unknown until the
-          agent answers.{detail ? ` (${detail})` : ''}
+          record, so they are still accurate. What is actually ON the VPS is unknown until the agent
+          answers.{detail ? ` (${detail})` : ''}
         </p>
       </div>
     </div>
@@ -55,18 +82,22 @@ function AgentDownBanner({ what, detail, className = '' }: {
 
 type Tab = 'strategies' | 'deployed'
 
-function TabBar({ active, onChange, counts }: {
+function TabBar({
+  active,
+  onChange,
+  counts,
+}: {
   active: Tab
   onChange: (t: Tab) => void
   counts: Partial<Record<Tab, number>>
 }) {
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'strategies', label: 'Strategies' },
-    { id: 'deployed',   label: 'Deployed' },
+    { id: 'deployed', label: 'Deployed' },
   ]
   return (
     <div className="flex items-center gap-0 border-b border-border-subtle mb-6">
-      {tabs.map(t => (
+      {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
@@ -78,11 +109,11 @@ function TabBar({ active, onChange, counts }: {
         >
           {t.label}
           {counts[t.id] != null && (
-            <span className={`text-[11px] font-semibold px-1.5 py-[1px] rounded-full min-w-[18px] text-center tabular-nums ${
-              active === t.id
-                ? 'bg-accent/15 text-accent'
-                : 'bg-bg-surface-2 text-text-tertiary'
-            }`}>
+            <span
+              className={`text-[11px] font-semibold px-1.5 py-[1px] rounded-full min-w-[18px] text-center tabular-nums ${
+                active === t.id ? 'bg-accent/15 text-accent' : 'bg-bg-surface-2 text-text-tertiary'
+              }`}
+            >
               {counts[t.id]}
             </span>
           )}
@@ -94,15 +125,21 @@ function TabBar({ active, onChange, counts }: {
 
 // ── Market filter ─────────────────────────────────────────────────────────────
 
-function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (v: MarketFilter) => void }) {
+function MarketFilterBar({
+  value,
+  onChange,
+}: {
+  value: MarketFilter
+  onChange: (v: MarketFilter) => void
+}) {
   const opts: Array<{ id: MarketFilter; label: string }> = [
-    { id: 'all',     label: 'All' },
+    { id: 'all', label: 'All' },
     { id: 'futures', label: 'Futures' },
-    { id: 'forex',   label: 'Forex' },
+    { id: 'forex', label: 'Forex' },
   ]
   return (
     <div className="flex gap-[2px] bg-bg-sunken rounded-md p-[3px]">
-      {opts.map(o => (
+      {opts.map((o) => (
         <button
           key={o.id}
           onClick={() => onChange(o.id)}
@@ -123,10 +160,10 @@ function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (
 
 type MarketFilter = 'all' | 'futures' | 'forex'
 
-const strategyMarket = runnerMarket   // MT5 and Python are both forex; only NT8 is futures
+const strategyMarket = runnerMarket // MT5 and Python are both forex; only NT8 is futures
 
 const GRADES = ['A', 'B', 'C', 'D', 'F'] as const
-type Grade = typeof GRADES[number]
+type Grade = (typeof GRADES)[number]
 /** Narrow the grades endpoint's bare `string` to the badge's own union. */
 function asGrade(g: string): Grade | null {
   return (GRADES as readonly string[]).includes(g) ? (g as Grade) : null
@@ -147,8 +184,8 @@ function StrategiesTab() {
   // stayed invisible until somebody happened to press Scan — whether a source
   // file exists on disk is answerable at any moment, so it rides on the row.
   const orphans = useMemo(
-    () => (strategies ?? []).filter(s => s.is_orphan).map(s => s.id),
-    [strategies],
+    () => (strategies ?? []).filter((s) => s.is_orphan).map((s) => s.id),
+    [strategies]
   )
   const deploy = useDeployStrategy()
   const compileMut = useTriggerCompile()
@@ -162,11 +199,16 @@ function StrategiesTab() {
   const [searchParams, setSearchParams] = useSearchParams()
   const raw = searchParams.get('market')
   const marketFilter: MarketFilter = raw === 'futures' || raw === 'forex' ? raw : 'all'
-  const setMarketFilter = (m: MarketFilter) => setSearchParams(prev => {
-    const next = new URLSearchParams(prev)
-    if (m === 'all') next.delete('market'); else next.set('market', m)
-    return next
-  }, { replace: true })
+  const setMarketFilter = (m: MarketFilter) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (m === 'all') next.delete('market')
+        else next.set('market', m)
+        return next
+      },
+      { replace: true }
+    )
   // Portfolio stacking, straight off this list — tick 2+ PYTHON strategies and hand them to the
   // SAME `StackConfigModal` the Backtests → Stacks tab uses, so a stack is configured identically
   // wherever you start it. Stacking is python-only (the runner the stack engine replays), so a
@@ -176,38 +218,45 @@ function StrategiesTab() {
 
   const syncByStrategy = useMemo(() => {
     const m: Record<string, StrategyFileSyncStatus> = {}
-    syncStatus?.forEach(s => { m[s.strategy_id] = s })
+    syncStatus?.forEach((s) => {
+      m[s.strategy_id] = s
+    })
     return m
   }, [syncStatus])
 
-  const visible = useMemo(() =>
-    (strategies ?? []).filter(s =>
-      marketFilter === 'all' || strategyMarket(s.runner) === marketFilter
-    ),
+  const visible = useMemo(
+    () =>
+      (strategies ?? []).filter(
+        (s) => marketFilter === 'all' || strategyMarket(s.runner) === marketFilter
+      ),
     [strategies, marketFilter]
   )
 
-  const sorted = useMemo(() =>
-    [...visible].sort((a, b) => {
-      // Group by platform, then by the name actually shown in the row.
-      const pa = RUNNER_LABEL[runnerScope(a.runner)]
-      const pb = RUNNER_LABEL[runnerScope(b.runner)]
-      return pa.localeCompare(pb) || (a.name || a.class_name).localeCompare(b.name || b.class_name)
-    }),
+  const sorted = useMemo(
+    () =>
+      [...visible].sort((a, b) => {
+        // Group by platform, then by the name actually shown in the row.
+        const pa = RUNNER_LABEL[runnerScope(a.runner)]
+        const pb = RUNNER_LABEL[runnerScope(b.runner)]
+        return (
+          pa.localeCompare(pb) || (a.name || a.class_name).localeCompare(b.name || b.class_name)
+        )
+      }),
     [visible]
   )
 
   // Stackable = the python rows currently VISIBLE (a filtered-out row can't be ticked, so it must
   // not count toward the selection either).
-  const stackable = useMemo(() => sorted.filter(s => s.runner === 'python'), [sorted])
-  const toggleStack = (id: string) => setStackSel(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
+  const stackable = useMemo(() => sorted.filter((s) => s.runner === 'python'), [sorted])
+  const toggleStack = (id: string) =>
+    setStackSel((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   const stackCount = useMemo(
-    () => stackable.filter(s => stackSel.has(s.id)).length,
-    [stackable, stackSel],
+    () => stackable.filter((s) => stackSel.has(s.id)).length,
+    [stackable, stackSel]
   )
 
   const handleDeploy = async (strategyId: string) => {
@@ -249,7 +298,11 @@ function StrategiesTab() {
             <button
               onClick={() => setStackOpen(true)}
               disabled={stackCount < 2}
-              title={stackCount < 2 ? 'Tick 2 or more Python strategies to stack them' : `Stack ${stackCount} strategies over one instrument, timeframe and window`}
+              title={
+                stackCount < 2
+                  ? 'Tick 2 or more Python strategies to stack them'
+                  : `Stack ${stackCount} strategies over one instrument, timeframe and window`
+              }
               className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors disabled:opacity-40 disabled:hover:bg-gold-muted"
             >
               <Layers size={12} />
@@ -299,9 +352,15 @@ function StrategiesTab() {
       {(syncFailed || sync?.nt8_error || sync?.mt5_error) && (
         <AgentDownBanner
           className="mb-4"
-          what={syncFailed ? 'backend'
-            : sync?.nt8_error && sync?.mt5_error ? 'NT8 or MT5 agent'
-            : sync?.nt8_error ? 'NT8 agent' : 'MT5 agent'}
+          what={
+            syncFailed
+              ? 'backend'
+              : sync?.nt8_error && sync?.mt5_error
+                ? 'NT8 or MT5 agent'
+                : sync?.nt8_error
+                  ? 'NT8 agent'
+                  : 'MT5 agent'
+          }
           detail={sync?.nt8_error ?? sync?.mt5_error}
         />
       )}
@@ -319,7 +378,9 @@ function StrategiesTab() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-border-subtle">
-                {stackable.length >= 2 && <th className="w-9 pl-4 py-3" title="Select Python strategies to stack" />}
+                {stackable.length >= 2 && (
+                  <th className="w-9 pl-4 py-3" title="Select Python strategies to stack" />
+                )}
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Name</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Platform</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
@@ -330,7 +391,7 @@ function StrategiesTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {sorted.map(s => (
+              {sorted.map((s) => (
                 <StrategyRow
                   key={s.id}
                   strategy={s}
@@ -355,20 +416,23 @@ function StrategiesTab() {
 
       {stackOpen && (
         <StackConfigModal
-          initial={{ strategyIds: stackable.filter(s => stackSel.has(s.id)).map(s => s.id) }}
-          onClose={() => { setStackOpen(false); setStackSel(new Set()) }}
+          initial={{ strategyIds: stackable.filter((s) => stackSel.has(s.id)).map((s) => s.id) }}
+          onClose={() => {
+            setStackOpen(false)
+            setStackSel(new Set())
+          }}
         />
       )}
       {runStrategy && (
-        <RunBacktestModal
-          strategy={runStrategy}
-          onClose={() => setRunStrategy(null)}
-        />
+        <RunBacktestModal strategy={runStrategy} onClose={() => setRunStrategy(null)} />
       )}
       {activeCompileId && (
         <CompileModal
           compileJobId={activeCompileId}
-          onClose={() => { setActiveCompileId(null); refetchSync() }}
+          onClose={() => {
+            setActiveCompileId(null)
+            refetchSync()
+          }}
           usePollHook={useCompileStatus}
         />
       )}
@@ -376,7 +440,10 @@ function StrategiesTab() {
         <CompileModal
           compileJobId={activeMt5CompileId}
           title="Compiling MT5 Strategy"
-          onClose={() => { setActiveMt5CompileId(null); refetchSync() }}
+          onClose={() => {
+            setActiveMt5CompileId(null)
+            refetchSync()
+          }}
           usePollHook={useCompileStatusMt5}
         />
       )}
@@ -385,8 +452,19 @@ function StrategiesTab() {
 }
 
 function StrategyRow({
-  strategy: s, sync, isDeploying, bestGrade, onView, onRun, onDeploy, onCompile, onScan, scanning,
-  stackCol, stackChecked, onStackToggle,
+  strategy: s,
+  sync,
+  isDeploying,
+  bestGrade,
+  onView,
+  onRun,
+  onDeploy,
+  onCompile,
+  onScan,
+  scanning,
+  stackCol,
+  stackChecked,
+  onStackToggle,
 }: {
   strategy: Strategy
   sync?: StrategyFileSyncStatus
@@ -405,7 +483,7 @@ function StrategyRow({
   onStackToggle?: () => void
 }) {
   const navigate = useNavigate()
-  const needsDeploy  = sync?.needs_deploy
+  const needsDeploy = sync?.needs_deploy
   const needsCompile = sync?.needs_compile
   const curVer = sync?.current_version
   const depVer = sync?.deployed_version
@@ -428,11 +506,16 @@ function StrategyRow({
       tabIndex={0}
       role="link"
       aria-label={`Open ${s.name || s.class_name}`}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView() } }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onView()
+        }
+      }}
       className="hover:bg-bg-hover cursor-pointer transition-colors focus:outline-none focus-visible:bg-bg-hover focus-visible:ring-1 focus-visible:ring-accent/50"
     >
       {stackCol && (
-        <td className="w-9 pl-4 py-3" onClick={e => e.stopPropagation()}>
+        <td className="w-9 pl-4 py-3" onClick={(e) => e.stopPropagation()}>
           {onStackToggle && (
             <input
               type="checkbox"
@@ -452,7 +535,9 @@ function StrategyRow({
           <ChevronRight size={13} className="text-text-tertiary opacity-60" />
         </div>
       </td>
-      <td className="px-4 py-3"><RunnerBadge runner={s.runner} /></td>
+      <td className="px-4 py-3">
+        <RunnerBadge runner={s.runner} />
+      </td>
       <td className="px-4 py-3 text-text-secondary">{s.param_schema.length}</td>
       <td className="px-4 py-3 tabular-nums">{s.run_count}</td>
       <td className="px-4 py-3">
@@ -461,7 +546,10 @@ function StrategyRow({
             it's the only status pill (no deploy/compile). Click to Scan Strategies now. */}
         {s.needs_scan && (
           <button
-            onClick={e => { e.stopPropagation(); onScan() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onScan()
+            }}
             disabled={scanning}
             title="This strategy's source changed since the last scan. Click to Scan Strategies and refresh its parameters."
             className="text-[11px] px-1.5 py-[2px] mb-1 rounded-full bg-warn-muted text-warn-text border border-warn-text/20 hover:bg-warn-muted/70 transition-colors flex items-center gap-1"
@@ -474,11 +562,17 @@ function StrategyRow({
           <div className="flex flex-wrap items-center gap-1.5">
             {curVer != null && (
               <span
-                title={`Local v${curVer}${liveVer != null ? ` · compiled v${liveVer} is what runs`
-                  : depVer != null ? ' · deployed but never compiled, so nothing of it is running'
-                  : ' · not deployed'}`}
+                title={`Local v${curVer}${
+                  liveVer != null
+                    ? ` · compiled v${liveVer} is what runs`
+                    : depVer != null
+                      ? ' · deployed but never compiled, so nothing of it is running'
+                      : ' · not deployed'
+                }`}
                 className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle"
-              >v{curVer}</span>
+              >
+                v{curVer}
+              </span>
             )}
             {/* ⚠ ONE PILL, and the branches are ORDERED WORST-FIRST. The first
                 attempt drew "Missing on VPS" as an extra chip BESIDE the
@@ -487,30 +581,48 @@ function StrategyRow({
                 exists to remove, reintroduced one line lower. Caught by
                 `tests/strategies.spec.ts`, not by reading it back. */}
             {needsDeploy ? (
-              <span title={depVer != null ? `Deployed v${depVer}, local is v${curVer}` : 'Never deployed'}
-                className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
+              <span
+                title={
+                  depVer != null ? `Deployed v${depVer}, local is v${curVer}` : 'Never deployed'
+                }
+                className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20"
+              >
+                ● Needs deploy
+              </span>
             ) : missingOnVps ? (
               // The deploy record agrees with the local source while the file
               // itself has been deleted off the box by hand. Every hash-derived
               // pill would read green over nothing; `file_exists_on_vps` was
               // computed by the backend for exactly this and rendered NOWHERE
               // until 2026-08-06.
-              <span title={`${sync.expected_filename} is not in the VPS strategy folder. Deploy it again.`}
-                className="text-[11px] px-1.5 py-[2px] rounded-full bg-neg-muted text-neg-text border border-neg-text/25">● Missing on VPS</span>
+              <span
+                title={`${sync.expected_filename} is not in the VPS strategy folder. Deploy it again.`}
+                className="text-[11px] px-1.5 py-[2px] rounded-full bg-neg-muted text-neg-text border border-neg-text/25"
+              >
+                ● Missing on VPS
+              </span>
             ) : needsCompile ? (
-              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
+              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">
+                ● Needs compile
+              </span>
             ) : sync.file_exists_on_vps == null ? (
               // The hashes agree, but nobody could confirm the file is there.
               // "In sync" would be a claim about a VPS this app cannot see.
-              <span title="The deploy record matches the local source, but the agent could not be reached to confirm the file is on the VPS."
-                className="text-[11px] px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-tertiary border border-border-subtle">● VPS unknown</span>
+              <span
+                title="The deploy record matches the local source, but the agent could not be reached to confirm the file is on the VPS."
+                className="text-[11px] px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-tertiary border border-border-subtle"
+              >
+                ● VPS unknown
+              </span>
             ) : (
-              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
+              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">
+                ● In sync
+              </span>
             )}
           </div>
         )}
       </td>
-      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         {bestGrade ? (
           <button
             onClick={() => navigate(`/stress-tests/${bestGrade.stress_test_id}`)}
@@ -527,7 +639,7 @@ function StrategyRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {/* ⚠ A DEPLOYING RUNNER WITH NO SYNC ROW MUST NOT OFFER "Run".
               `needsDeploy`/`needsCompile` are undefined when the sync request
               itself failed, and `undefined` is falsy — so this used to fall
@@ -540,12 +652,18 @@ function StrategyRow({
                 <button
                   onClick={onDeploy}
                   disabled={isDeploying}
-                  title={missingOnVps && !needsDeploy
-                    ? 'The deploy record matches, but the file is gone from the VPS — send it again.'
-                    : undefined}
+                  title={
+                    missingOnVps && !needsDeploy
+                      ? 'The deploy record matches, but the file is gone from the VPS — send it again.'
+                      : undefined
+                  }
                   className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  {isDeploying ? <RefreshCw size={10} className="animate-spin" /> : <CloudUpload size={10} />}
+                  {isDeploying ? (
+                    <RefreshCw size={10} className="animate-spin" />
+                  ) : (
+                    <CloudUpload size={10} />
+                  )}
                   {missingOnVps && !needsDeploy ? 'Redeploy' : 'Deploy'}
                 </button>
               )}
@@ -573,7 +691,9 @@ function StrategyRow({
             <span
               title="This strategy's deploy state could not be read, so there is nothing safe to offer here."
               className="text-[11px] text-text-tertiary"
-            >unknown</span>
+            >
+              unknown
+            </span>
           )}
         </div>
       </td>
@@ -584,7 +704,7 @@ function StrategyRow({
 function StrategiesSkeleton() {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden animate-pulse">
-      {[0, 1, 2].map(i => (
+      {[0, 1, 2].map((i) => (
         <div key={i} className="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0">
           <div className="h-4 w-40 bg-bg-hover rounded" />
           <div className="h-4 w-48 bg-bg-hover rounded" />
@@ -605,7 +725,6 @@ function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-
 /** Status for one row of the Deployed table.
  *
  * ⚠ It takes no `vpsFiles` any more. It used to re-`find` the row's own file in
@@ -614,34 +733,73 @@ function fmtBytes(n: number): string {
  * i.e. it defaulted to healthy for a strategy it knew nothing about. */
 function FileStatusBadge({ sync }: { sync?: StrategyFileSyncStatus }) {
   if (!sync) {
-    return <span title="This file is on the VPS but matches no registered strategy, so there is nothing to compare it against."
-      className="text-[11px] px-2 py-[2px] rounded-full bg-bg-sunken text-text-tertiary border border-border-subtle">● Unregistered</span>
+    return (
+      <span
+        title="This file is on the VPS but matches no registered strategy, so there is nothing to compare it against."
+        className="text-[11px] px-2 py-[2px] rounded-full bg-bg-sunken text-text-tertiary border border-border-subtle"
+      >
+        ● Unregistered
+      </span>
+    )
   }
   const ver = sync.current_version
-  const chip = ver != null
-    ? <span className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle">v{ver}</span>
-    : null
+  const chip =
+    ver != null ? (
+      <span className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle">
+        v{ver}
+      </span>
+    ) : null
   // Content-aware, matching the Strategies tab — presence alone is not "in sync".
-  const pill = sync.needs_deploy
-    ? <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
-    : sync.needs_compile
-    ? <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
-    : <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
-  return <div className="flex items-center gap-1.5">{chip}{pill}</div>
+  const pill = sync.needs_deploy ? (
+    <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">
+      ● Needs deploy
+    </span>
+  ) : sync.needs_compile ? (
+    <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">
+      ● Needs compile
+    </span>
+  ) : (
+    <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">
+      ● In sync
+    </span>
+  )
+  return (
+    <div className="flex items-center gap-1.5">
+      {chip}
+      {pill}
+    </div>
+  )
 }
 
 // Round status badge shown in the modal header — spinner / check / X.
 function StatusIcon({ status }: { status?: 'running' | 'success' | 'failed' }) {
   if (status === 'success')
-    return <div className="shrink-0 mt-0.5 size-7 rounded-full bg-pos-muted flex items-center justify-center"><CheckCircle2 size={18} className="text-pos-text" /></div>
+    return (
+      <div className="shrink-0 mt-0.5 size-7 rounded-full bg-pos-muted flex items-center justify-center">
+        <CheckCircle2 size={18} className="text-pos-text" />
+      </div>
+    )
   if (status === 'failed')
-    return <div className="shrink-0 mt-0.5 size-7 rounded-full bg-neg-muted flex items-center justify-center"><XCircle size={18} className="text-neg-text" /></div>
-  return <div className="shrink-0 mt-0.5 size-7 rounded-full bg-bg-sunken flex items-center justify-center"><RefreshCw size={16} className="text-accent animate-spin" /></div>
+    return (
+      <div className="shrink-0 mt-0.5 size-7 rounded-full bg-neg-muted flex items-center justify-center">
+        <XCircle size={18} className="text-neg-text" />
+      </div>
+    )
+  return (
+    <div className="shrink-0 mt-0.5 size-7 rounded-full bg-bg-sunken flex items-center justify-center">
+      <RefreshCw size={16} className="text-accent animate-spin" />
+    </div>
+  )
 }
 
 // A titled, color-coded block of compiler lines (errors or warnings). Each line is a
 // monospace row so CS codes and line/column numbers stay aligned and readable.
-function CompileSection({ label, count, tone, lines }: {
+function CompileSection({
+  label,
+  count,
+  tone,
+  lines,
+}: {
   label: string
   count: number
   tone: 'neg' | 'warn'
@@ -653,13 +811,21 @@ function CompileSection({ label, count, tone, lines }: {
     <div className="space-y-2">
       <div className={`flex items-center gap-1.5 text-[12px] font-medium ${accent}`}>
         <Icon size={13} />
-        <span>{count} {label}</span>
+        <span>
+          {count} {label}
+        </span>
       </div>
       <div className="space-y-1.5">
         {lines.map((line, i) => (
           <div key={i} className="flex gap-2 bg-bg-sunken rounded-lg p-2.5">
-            <span className="text-text-tertiary text-[11px] tabular-nums select-none shrink-0 w-5 text-right">{i + 1}</span>
-            <pre className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono ${accent} m-0`}>{line}</pre>
+            <span className="text-text-tertiary text-[11px] tabular-nums select-none shrink-0 w-5 text-right">
+              {i + 1}
+            </span>
+            <pre
+              className={`text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono ${accent} m-0`}
+            >
+              {line}
+            </pre>
           </div>
         ))}
       </div>
@@ -667,7 +833,12 @@ function CompileSection({ label, count, tone, lines }: {
   )
 }
 
-function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', usePollHook }: {
+function CompileModal({
+  compileJobId,
+  onClose,
+  title = 'Compiling NinjaScript',
+  usePollHook,
+}: {
   compileJobId: string
   onClose: () => void
   title?: string
@@ -702,7 +873,9 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
   // whose only exit is a conditional footer button is one failed request away
   // from trapping the reader.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -721,14 +894,17 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
           <div className="min-w-0 flex-1">
             <h3 className="text-text-primary font-semibold text-[15px] leading-tight">{title}</h3>
             <p className="text-[12px] mt-0.5 text-text-tertiary">
-              {isError && 'Lost contact with the compiler — the compile may still be running on the VPS.'}
+              {isError &&
+                'Lost contact with the compiler — the compile may still be running on the VPS.'}
               {!isError && (!job || job.status === 'running') && `Compiling… ${elapsed}s elapsed`}
-              {!isError && job?.status === 'success' && (
-                job.warnings.length > 0
+              {!isError &&
+                job?.status === 'success' &&
+                (job.warnings.length > 0
                   ? `Compiled with ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`
-                  : 'All strategies compiled successfully'
-              )}
-              {!isError && job?.status === 'failed' && `Failed — ${job.errors.length} error${job.errors.length === 1 ? '' : 's'}`}
+                  : 'All strategies compiled successfully')}
+              {!isError &&
+                job?.status === 'failed' &&
+                `Failed — ${job.errors.length} error${job.errors.length === 1 ? '' : 's'}`}
             </p>
           </div>
           <button
@@ -746,11 +922,13 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
             <div className="space-y-2">
               <p className="text-[13px] text-text-secondary">
                 The compile was started, but this app can no longer read its status. Nothing here
-                says whether it succeeded — check the NT8 agent, then re-open this from the
-                Deployed tab.
+                says whether it succeeded — check the NT8 agent, then re-open this from the Deployed
+                tab.
               </p>
               {errMsg && (
-                <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono text-neg-text bg-bg-sunken rounded-lg p-2.5 m-0">{errMsg}</pre>
+                <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono text-neg-text bg-bg-sunken rounded-lg p-2.5 m-0">
+                  {errMsg}
+                </pre>
               )}
             </div>
           )}
@@ -759,15 +937,23 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
             <div className="space-y-2.5" aria-label="Compiling">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex gap-2 bg-bg-sunken rounded-lg p-2.5">
-                  <div className="h-3 w-5 rounded bg-bg-hover shrink-0 animate-pulse" style={{ animationDelay: `${i * 150}ms` }} />
-                  <div className="h-3 rounded bg-bg-hover animate-pulse" style={{ width: `${70 - i * 18}%`, animationDelay: `${i * 150}ms` }} />
+                  <div
+                    className="h-3 w-5 rounded bg-bg-hover shrink-0 animate-pulse"
+                    style={{ animationDelay: `${i * 150}ms` }}
+                  />
+                  <div
+                    className="h-3 rounded bg-bg-hover animate-pulse"
+                    style={{ width: `${70 - i * 18}%`, animationDelay: `${i * 150}ms` }}
+                  />
                 </div>
               ))}
             </div>
           )}
 
           {job?.status === 'success' && job.warnings.length === 0 && (
-            <p className="text-[13px] text-text-secondary">No errors, no warnings. You're good to run a backtest.</p>
+            <p className="text-[13px] text-text-secondary">
+              No errors, no warnings. You're good to run a backtest.
+            </p>
           )}
 
           {job?.status === 'failed' && job.errors.length > 0 && (
@@ -792,7 +978,12 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
         {/* Footer */}
         {(isError || (job?.status && job.status !== 'running')) && (
           <div className="flex justify-end p-4 shrink-0 border-t border-border-subtle">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg bg-bg-sunken border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary hover:border-border-default transition-colors">Close</button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-bg-sunken border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary hover:border-border-default transition-colors"
+            >
+              Close
+            </button>
           </div>
         )}
       </div>
@@ -813,34 +1004,39 @@ function FilesTab() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [overwriteConfirm, setOverwriteConfirm] = useState<{ file: File; filename: string } | null>(null)
+  const [overwriteConfirm, setOverwriteConfirm] = useState<{ file: File; filename: string } | null>(
+    null
+  )
   const [activeCompileId, setActiveCompileId] = useState<string | null>(null)
   const [activeMt5CompileId, setActiveMt5CompileId] = useState<string | null>(null)
 
   // Only show files that match a registered strategy — excludes platform defaults
   const ourFilenames = useMemo(
-    () => new Set(syncStatus?.map(s => s.expected_filename) ?? []),
+    () => new Set(syncStatus?.map((s) => s.expected_filename) ?? []),
     [syncStatus]
   )
   const syncByFilename = useMemo(() => {
     const m: Record<string, StrategyFileSyncStatus> = {}
-    syncStatus?.forEach(s => { m[s.expected_filename] = s })
+    syncStatus?.forEach((s) => {
+      m[s.expected_filename] = s
+    })
     return m
   }, [syncStatus])
   const ourFiles = useMemo(
-    () => (files ?? []).filter(f => ourFilenames.has(f.filename)),
+    () => (files ?? []).filter((f) => ourFilenames.has(f.filename)),
     [files, ourFilenames]
   )
 
-  const hasMt5Files = useMemo(() => ourFiles.some(f => f.platform === 'MT5'), [ourFiles])
+  const hasMt5Files = useMemo(() => ourFiles.some((f) => f.platform === 'MT5'), [ourFiles])
   // Symmetry with the MT5 button: offering "Compile NT8" with no NT8 file on the
   // box is a control whose only outcome is a wasted pywinauto pass.
-  const hasNt8Files = useMemo(() => ourFiles.some(f => f.platform === 'NT8'), [ourFiles])
+  const hasNt8Files = useMemo(() => ourFiles.some((f) => f.platform === 'NT8'), [ourFiles])
 
-  const sortedFiles = useMemo(() =>
-    [...ourFiles].sort((a, b) =>
-      a.platform.localeCompare(b.platform) || a.filename.localeCompare(b.filename)
-    ),
+  const sortedFiles = useMemo(
+    () =>
+      [...ourFiles].sort(
+        (a, b) => a.platform.localeCompare(b.platform) || a.filename.localeCompare(b.filename)
+      ),
     [ourFiles]
   )
 
@@ -866,33 +1062,46 @@ function FilesTab() {
     }
   }
 
-  const handleFiles = useCallback((droppedFiles: FileList | null) => {
-    if (!droppedFiles?.length) return
-    // One at a time is the contract (the endpoint takes one file), but dropping
-    // three and having two vanish with no message is not — say so.
-    if (droppedFiles.length > 1) {
-      toast.error(`Drop one file at a time — uploading ${droppedFiles[0].name} only.`)
-    }
-    const f = droppedFiles[0]
-    if (!f.name.endsWith('.cs') && !f.name.endsWith('.mq5')) { toast.error('Only .cs or .mq5 files are allowed'); return }
-    const existing = files?.find(vf => vf.filename === f.name)
-    if (existing) {
-      setOverwriteConfirm({ file: f, filename: f.name })
-    } else {
-      uploadMut.mutate({ filename: f.name, file: f, overwrite: false })
-    }
-  }, [files, uploadMut])
+  const handleFiles = useCallback(
+    (droppedFiles: FileList | null) => {
+      if (!droppedFiles?.length) return
+      // One at a time is the contract (the endpoint takes one file), but dropping
+      // three and having two vanish with no message is not — say so.
+      if (droppedFiles.length > 1) {
+        toast.error(`Drop one file at a time — uploading ${droppedFiles[0].name} only.`)
+      }
+      const f = droppedFiles[0]
+      if (!f.name.endsWith('.cs') && !f.name.endsWith('.mq5')) {
+        toast.error('Only .cs or .mq5 files are allowed')
+        return
+      }
+      const existing = files?.find((vf) => vf.filename === f.name)
+      if (existing) {
+        setOverwriteConfirm({ file: f, filename: f.name })
+      } else {
+        uploadMut.mutate({ filename: f.name, file: f, overwrite: false })
+      }
+    },
+    [files, uploadMut]
+  )
 
   const confirmOverwrite = () => {
     if (!overwriteConfirm) return
-    uploadMut.mutate({ filename: overwriteConfirm.filename, file: overwriteConfirm.file, overwrite: true })
+    uploadMut.mutate({
+      filename: overwriteConfirm.filename,
+      file: overwriteConfirm.file,
+      overwrite: true,
+    })
     setOverwriteConfirm(null)
   }
 
   useEffect(() => {
     const el = dropRef.current
     if (!el) return
-    const onDragOver = (e: DragEvent) => { e.preventDefault(); setDragging(true) }
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault()
+      setDragging(true)
+    }
     // ⚠ `dragleave` fires when the pointer crosses onto a CHILD element, so a
     // bare handler makes the highlight flicker as you move across the zone's own
     // text. `relatedTarget` is where the pointer went — only clear when it left
@@ -901,7 +1110,11 @@ function FilesTab() {
       const to = e.relatedTarget as Node | null
       if (!to || !el.contains(to)) setDragging(false)
     }
-    const onDrop = (e: DragEvent) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer?.files ?? null) }
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      setDragging(false)
+      handleFiles(e.dataTransfer?.files ?? null)
+    }
     el.addEventListener('dragover', onDragOver)
     el.addEventListener('dragleave', onDragLeave)
     el.addEventListener('drop', onDrop)
@@ -917,7 +1130,10 @@ function FilesTab() {
       <div className="flex items-center justify-between mb-4">
         <span className="text-text-secondary text-[13px]">Last refreshed: {lastRefreshed}</span>
         <div className="flex items-center gap-2">
-          <button onClick={() => refetch()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary text-[13px]">
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary text-[13px]"
+          >
             <RefreshCw size={13} /> Refresh
           </button>
           {hasNt8Files && (
@@ -951,7 +1167,10 @@ function FilesTab() {
         }`}
       >
         <Upload size={24} className="mx-auto mb-2 text-text-tertiary" />
-        <p className="text-text-secondary text-[13px]">Drop a <span className="font-mono">.cs</span> or <span className="font-mono">.mq5</span> file here to upload, or click to browse</p>
+        <p className="text-text-secondary text-[13px]">
+          Drop a <span className="font-mono">.cs</span> or <span className="font-mono">.mq5</span>{' '}
+          file here to upload, or click to browse
+        </p>
         {/* ⚠ `value = ''` after handling, or picking the SAME file twice fires no
             change event at all and the second attempt silently does nothing —
             which is exactly what happens after a failed upload or a cancelled
@@ -961,7 +1180,10 @@ function FilesTab() {
           type="file"
           accept=".cs,.mq5"
           className="hidden"
-          onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
+          onChange={(e) => {
+            handleFiles(e.target.files)
+            e.target.value = ''
+          }}
         />
         {uploadMut.isPending && (
           <div className="absolute inset-0 bg-bg-base/60 flex items-center justify-center rounded-lg">
@@ -978,9 +1200,15 @@ function FilesTab() {
       {(isError || listing?.nt8_error || listing?.mt5_error) && (
         <AgentDownBanner
           className="mb-4"
-          what={isError ? 'backend'
-            : listing?.nt8_error && listing?.mt5_error ? 'NT8 or MT5 agent'
-            : listing?.nt8_error ? 'NT8 agent' : 'MT5 agent'}
+          what={
+            isError
+              ? 'backend'
+              : listing?.nt8_error && listing?.mt5_error
+                ? 'NT8 or MT5 agent'
+                : listing?.nt8_error
+                  ? 'NT8 agent'
+                  : 'MT5 agent'
+          }
           detail={listing?.nt8_error ?? listing?.mt5_error}
         />
       )}
@@ -996,12 +1224,16 @@ function FilesTab() {
       ) : !ourFiles.length ? (
         <EmptyState
           icon={<Upload size={24} />}
-          title={listing?.nt8_error || listing?.mt5_error
-            ? 'No files from the platform that answered'
-            : 'No files deployed'}
-          description={listing?.nt8_error || listing?.mt5_error
-            ? 'One agent is unreachable, so this list is partial — see the banner above.'
-            : 'Drop a strategy file above to deploy it.'}
+          title={
+            listing?.nt8_error || listing?.mt5_error
+              ? 'No files from the platform that answered'
+              : 'No files deployed'
+          }
+          description={
+            listing?.nt8_error || listing?.mt5_error
+              ? 'One agent is unreachable, so this list is partial — see the banner above.'
+              : 'Drop a strategy file above to deploy it.'
+          }
         />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -1017,13 +1249,21 @@ function FilesTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {sortedFiles.map(f => (
+              {sortedFiles.map((f) => (
                 <tr key={f.filename} className="hover:bg-bg-sunken">
                   <td className="px-4 py-3 font-mono text-text-primary">{f.filename}</td>
-                  <td className="px-4 py-3"><RunnerBadge runner={f.platform} /></td>
-                  <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>
-                  <td className="px-4 py-3 tabular-nums text-text-secondary">{new Date(f.modified_at).toLocaleString()}</td>
-                  <td className="px-4 py-3"><FileStatusBadge sync={syncByFilename[f.filename]} /></td>
+                  <td className="px-4 py-3">
+                    <RunnerBadge runner={f.platform} />
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-text-secondary">
+                    {fmtBytes(f.size_bytes)}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-text-secondary">
+                    {new Date(f.modified_at).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    <FileStatusBadge sync={syncByFilename[f.filename]} />
+                  </td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setConfirmDelete(f.filename)}
@@ -1045,11 +1285,22 @@ function FilesTab() {
           <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-[400px] shadow-xl">
             <h3 className="text-text-primary font-semibold mb-2">Overwrite file?</h3>
             <p className="text-text-secondary text-[13px] mb-5">
-              <span className="font-mono text-text-primary">{overwriteConfirm.filename}</span> already exists on the VPS. Overwrite it?
+              <span className="font-mono text-text-primary">{overwriteConfirm.filename}</span>{' '}
+              already exists on the VPS. Overwrite it?
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setOverwriteConfirm(null)} className="px-4 py-2 rounded-lg border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary">Cancel</button>
-              <button onClick={confirmOverwrite} className="px-4 py-2 rounded-lg bg-warn-muted text-warn-text border border-warn-text/20 text-[13px] hover:opacity-80">Overwrite</button>
+              <button
+                onClick={() => setOverwriteConfirm(null)}
+                className="px-4 py-2 rounded-lg border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmOverwrite}
+                className="px-4 py-2 rounded-lg bg-warn-muted text-warn-text border border-warn-text/20 text-[13px] hover:opacity-80"
+              >
+                Overwrite
+              </button>
             </div>
           </div>
         </div>
@@ -1060,12 +1311,21 @@ function FilesTab() {
           <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-[400px] shadow-xl">
             <h3 className="text-text-primary font-semibold mb-2">Delete file?</h3>
             <p className="text-text-secondary text-[13px] mb-5">
-              Delete <span className="font-mono text-text-primary">{confirmDelete}</span> from the VPS? This cannot be undone.
+              Delete <span className="font-mono text-text-primary">{confirmDelete}</span> from the
+              VPS? This cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 rounded-lg border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary">Cancel</button>
               <button
-                onClick={() => { deleteMut.mutate(confirmDelete!); setConfirmDelete(null) }}
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 rounded-lg border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteMut.mutate(confirmDelete!)
+                  setConfirmDelete(null)
+                }}
                 className="px-4 py-2 rounded-lg bg-neg-muted text-neg-text border border-neg-text/20 text-[13px] hover:opacity-80"
               >
                 Delete
@@ -1081,7 +1341,10 @@ function FilesTab() {
       {activeCompileId && (
         <CompileModal
           compileJobId={activeCompileId}
-          onClose={() => { setActiveCompileId(null); refetchSync() }}
+          onClose={() => {
+            setActiveCompileId(null)
+            refetchSync()
+          }}
           title="Compiling NinjaScript"
           usePollHook={useCompileStatus}
         />
@@ -1089,7 +1352,10 @@ function FilesTab() {
       {activeMt5CompileId && (
         <CompileModal
           compileJobId={activeMt5CompileId}
-          onClose={() => { setActiveMt5CompileId(null); refetchSync() }}
+          onClose={() => {
+            setActiveMt5CompileId(null)
+            refetchSync()
+          }}
           title="Compiling MQL5 (MetaEditor)"
           usePollHook={useCompileStatusMt5}
         />
@@ -1108,11 +1374,15 @@ export function Strategies() {
   // ⚠ MERGE, never rebuild. `setSearchParams({tab})` replaces the WHOLE query
   // string, so switching tabs silently dropped `market` — the same defect the
   // Bots page fixed for its `?bot=` selection.
-  const setTab = (t: Tab) => setSearchParams(prev => {
-    const next = new URLSearchParams(prev)
-    next.set('tab', t)
-    return next
-  }, { replace: true })
+  const setTab = (t: Tab) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('tab', t)
+        return next
+      },
+      { replace: true }
+    )
 
   // Rulesets moved to their own top-level page — redirect old deep links.
   useEffect(() => {
@@ -1131,29 +1401,35 @@ export function Strategies() {
 
   const deployedCount = useMemo(() => {
     if (!listing?.files || !sync?.statuses) return undefined
-    const ourFilenames = new Set(sync.statuses.map(s => s.expected_filename))
-    return listing.files.filter(f => ourFilenames.has(f.filename)).length
+    const ourFilenames = new Set(sync.statuses.map((s) => s.expected_filename))
+    return listing.files.filter((f) => ourFilenames.has(f.filename)).length
   }, [listing, sync])
 
   const counts: Partial<Record<Tab, number>> = {
     strategies: strategies?.length,
-    deployed:   deployedCount,
+    deployed: deployedCount,
   }
 
   return (
     <div>
       <StickyHeader>
-        {scrolled => (
+        {(scrolled) => (
           <>
-            <div className={`flex items-end gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}>
-              <h1 className={`font-semibold transition-all duration-200 ${scrolled ? 'text-[16px]' : 'text-h1'}`}>Strategies</h1>
+            <div
+              className={`flex items-end gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}
+            >
+              <h1
+                className={`font-semibold transition-all duration-200 ${scrolled ? 'text-[16px]' : 'text-h1'}`}
+              >
+                Strategies
+              </h1>
             </div>
             <TabBar active={tab} onChange={setTab} counts={counts} />
           </>
         )}
       </StickyHeader>
       {tab === 'strategies' && <StrategiesTab />}
-      {tab === 'deployed'   && <FilesTab />}
+      {tab === 'deployed' && <FilesTab />}
     </div>
   )
 }

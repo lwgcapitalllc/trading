@@ -23,13 +23,15 @@ export default function InfoTip({ text }: { text: string }) {
   // Measure the rendered tooltip before painting it: its height depends on the text,
   // so "does it fit above?" can't be answered until it exists.
   useLayoutEffect(() => {
-    if (!anchor || !tipRef.current) { setPos(null); return }
+    if (!anchor || !tipRef.current) {
+      setPos(null)
+      return
+    }
     const h = tipRef.current.offsetHeight
     const left = Math.min(Math.max(MARGIN, anchor.left), window.innerWidth - TIP_W - MARGIN)
     const above = anchor.top - MARGIN - h
-    const top = above >= MARGIN
-      ? above
-      : Math.min(anchor.bottom + MARGIN, window.innerHeight - h - MARGIN)
+    const top =
+      above >= MARGIN ? above : Math.min(anchor.bottom + MARGIN, window.innerHeight - h - MARGIN)
     setPos({ top: Math.max(MARGIN, top), left })
   }, [anchor, text])
 
@@ -44,21 +46,22 @@ export default function InfoTip({ text }: { text: string }) {
           nobody hovers what they can't see. 11px at full tertiary is legible without competing
           with the value beside it. */}
       <Info size={11} className="text-text-tertiary hover:text-accent transition-colors" />
-      {anchor && createPortal(
-        <span
-          ref={tipRef}
-          style={{
-            position: 'fixed',
-            top: pos?.top ?? 0,
-            left: pos?.left ?? 0,
-            visibility: pos ? 'visible' : 'hidden',
-          }}
-          className="z-[100] w-[208px] rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal"
-        >
-          {text}
-        </span>,
-        document.body,
-      )}
+      {anchor &&
+        createPortal(
+          <span
+            ref={tipRef}
+            style={{
+              position: 'fixed',
+              top: pos?.top ?? 0,
+              left: pos?.left ?? 0,
+              visibility: pos ? 'visible' : 'hidden',
+            }}
+            className="z-[100] w-[208px] rounded-lg bg-bg-base border border-border-default px-3 py-2.5 text-[11px] text-text-secondary shadow-2xl pointer-events-none leading-relaxed normal-case tracking-normal font-normal"
+          >
+            {text}
+          </span>,
+          document.body
+        )}
     </span>
   )
 }

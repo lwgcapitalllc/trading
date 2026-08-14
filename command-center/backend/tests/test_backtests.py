@@ -11,8 +11,8 @@ lives only at the sweep level. Those tests were dropped.)
 
 from unittest.mock import patch
 
-
 # ── List / detail ──────────────────────────────────────────────────────────────
+
 
 def test_list_runs_empty_initially(client):
     r = client.get("/backtests/runs")
@@ -45,15 +45,19 @@ def test_list_runs_returns_seeded_run(client, seeded_run):
 
 # ── Trigger endpoint ───────────────────────────────────────────────────────────
 
+
 def test_trigger_404_unknown_strategy(client):
-    r = client.post("/backtests/run", json={
-        "strategy_id": "no_such_strategy",
-        "instrument": "MNQ 06-26",
-        "params": {},
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "evaluate_firms": [],
-    })
+    r = client.post(
+        "/backtests/run",
+        json={
+            "strategy_id": "no_such_strategy",
+            "instrument": "MNQ 06-26",
+            "params": {},
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "evaluate_firms": [],
+        },
+    )
     assert r.status_code == 404
 
 
@@ -63,14 +67,17 @@ def test_trigger_404_unknown_firm(client):
     strategies = client.get("/strategies").json()
     strat_id = strategies[0]["id"]
 
-    r = client.post("/backtests/run", json={
-        "strategy_id": strat_id,
-        "instrument": "MNQ 06-26",
-        "params": {},
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "evaluate_firms": ["firm_does_not_exist"],
-    })
+    r = client.post(
+        "/backtests/run",
+        json={
+            "strategy_id": strat_id,
+            "instrument": "MNQ 06-26",
+            "params": {},
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "evaluate_firms": ["firm_does_not_exist"],
+        },
+    )
     assert r.status_code == 404
 
 
@@ -80,14 +87,17 @@ def test_trigger_returns_run_id(client):
     strategies = client.get("/strategies").json()
     strat_id = strategies[0]["id"]
 
-    r = client.post("/backtests/run", json={
-        "strategy_id": strat_id,
-        "instrument": "MNQ 06-26",
-        "params": {},
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "evaluate_firms": ["lucidflex_50k_eval"],
-    })
+    r = client.post(
+        "/backtests/run",
+        json={
+            "strategy_id": strat_id,
+            "instrument": "MNQ 06-26",
+            "params": {},
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "evaluate_firms": ["lucidflex_50k_eval"],
+        },
+    )
     assert r.status_code == 202
     body = r.json()
     assert "run_id" in body
@@ -95,6 +105,7 @@ def test_trigger_returns_run_id(client):
 
 
 # ── Delete ─────────────────────────────────────────────────────────────────────
+
 
 def test_delete_run(client, seeded_run):
     r = client.delete(f"/backtests/runs/{seeded_run}")
@@ -108,6 +119,7 @@ def test_delete_run_404_unknown(client):
 
 # ── Retry / rerun ──────────────────────────────────────────────────────────────
 
+
 def test_retry_keeps_the_window_when_no_period_sent(client, seeded_run):
     """A plain rerun is unchanged — it re-fires over the run's stored dates."""
     r = client.post(f"/backtests/runs/{seeded_run}/retry")
@@ -119,10 +131,13 @@ def test_retry_keeps_the_window_when_no_period_sent(client, seeded_run):
 def test_retry_with_new_period_moves_the_window(client, seeded_run):
     """Rerunning over a longer span persists the new window on the run itself, so the
     stored record never describes a period the result wasn't produced over."""
-    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={
-        "start_date": "2022-01-01",
-        "end_date": "2025-06-30",
-    })
+    r = client.post(
+        f"/backtests/runs/{seeded_run}/retry",
+        json={
+            "start_date": "2022-01-01",
+            "end_date": "2025-06-30",
+        },
+    )
     assert r.status_code == 202
     detail = client.get(f"/backtests/runs/{seeded_run}").json()
     assert (detail["start_date"], detail["end_date"]) == ("2022-01-01", "2025-06-30")
@@ -134,18 +149,24 @@ def test_retry_rejects_half_a_period(client, seeded_run):
 
 
 def test_retry_rejects_inverted_period(client, seeded_run):
-    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={
-        "start_date": "2025-06-30",
-        "end_date": "2022-01-01",
-    })
+    r = client.post(
+        f"/backtests/runs/{seeded_run}/retry",
+        json={
+            "start_date": "2025-06-30",
+            "end_date": "2022-01-01",
+        },
+    )
     assert r.status_code == 400
 
 
 def test_retry_rejects_malformed_dates(client, seeded_run):
-    r = client.post(f"/backtests/runs/{seeded_run}/retry", json={
-        "start_date": "01/01/2022",
-        "end_date": "30/06/2025",
-    })
+    r = client.post(
+        f"/backtests/runs/{seeded_run}/retry",
+        json={
+            "start_date": "01/01/2022",
+            "end_date": "30/06/2025",
+        },
+    )
     assert r.status_code == 400
 
 
@@ -184,14 +205,19 @@ def test_retry_leaves_another_jobs_progress_alone(client, seeded_run):
 def _seed_timeline(monkeypatch, tmp_path, run_id):
     """Give `run_id` a regime_timeline.json under a temp results dir."""
     import json
+
     from routers import backtests as bt
 
     run_dir = tmp_path / run_id
     run_dir.mkdir(parents=True)
-    (run_dir / "regime_timeline.json").write_text(json.dumps([
-        {"date": "2024-01-02", "regime": "TRENDING"},
-        {"date": "2024-01-03", "regime": "RANGING"},
-    ]))
+    (run_dir / "regime_timeline.json").write_text(
+        json.dumps(
+            [
+                {"date": "2024-01-02", "regime": "TRENDING"},
+                {"date": "2024-01-03", "regime": "RANGING"},
+            ]
+        )
+    )
     monkeypatch.setattr(bt, "LAB_RESULTS_DIR", tmp_path)
 
 
@@ -210,8 +236,10 @@ def test_timeline_false_drops_it(client, seeded_run, monkeypatch, tmp_path):
 
 def test_timeline_true_is_the_same_as_omitting_it(client, seeded_run, monkeypatch, tmp_path):
     _seed_timeline(monkeypatch, tmp_path, seeded_run)
-    assert (client.get(f"/backtests/runs/{seeded_run}?timeline=true").json()
-            == client.get(f"/backtests/runs/{seeded_run}").json())
+    assert (
+        client.get(f"/backtests/runs/{seeded_run}?timeline=true").json()
+        == client.get(f"/backtests/runs/{seeded_run}").json()
+    )
 
 
 def test_slimming_drops_nothing_but_the_timeline(client, seeded_run, monkeypatch, tmp_path):
@@ -222,5 +250,6 @@ def test_slimming_drops_nothing_but_the_timeline(client, seeded_run, monkeypatch
     full = client.get(f"/backtests/runs/{seeded_run}").json()
     slim = client.get(f"/backtests/runs/{seeded_run}?timeline=false").json()
     assert set(full) == set(slim)
-    assert {k: v for k, v in full.items() if k != "regime_timeline"} == \
-           {k: v for k, v in slim.items() if k != "regime_timeline"}
+    assert {k: v for k, v in full.items() if k != "regime_timeline"} == {
+        k: v for k, v in slim.items() if k != "regime_timeline"
+    }

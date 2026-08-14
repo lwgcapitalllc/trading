@@ -6,10 +6,7 @@ The optimizer ranks param sets by the chosen objective.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from services.metrics import effective_dd_limit_usd
-
 
 OBJECTIVES = {}
 
@@ -18,6 +15,7 @@ def _register(name: str):
     def decorator(fn):
         OBJECTIVES[name] = fn
         return fn
+
     return decorator
 
 
@@ -52,7 +50,7 @@ def eval_pass_probability(run: dict, firm: dict) -> float:
         return 0.0
     if not target_eval.get("target_pass"):
         net = run.get("net_pnl") or 0.0
-        pt  = firm.get("profit_target") or 1
+        pt = firm.get("profit_target") or 1
         return 0.5 * min(1.0, net / pt) if pt > 0 else 0.0
 
     sim_days = target_eval.get("simulated_eval_days") or 30

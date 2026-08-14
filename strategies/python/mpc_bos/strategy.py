@@ -40,16 +40,21 @@ from .execution import BosExecution  # noqa: E402
 
 
 class MpcBosStrategy(MpcSosFadeStrategy):
-    def __init__(self, config: Optional[BosConfig] = None,
-                 initial_capital: float = 1_000_000.0, tick_source=None,
-                 cost_profile=None) -> None:
+    def __init__(
+        self,
+        config: Optional[BosConfig] = None,
+        initial_capital: float = 1_000_000.0,
+        tick_source=None,
+        cost_profile=None,
+    ) -> None:
         self.config = config or BosConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
         resolver, profile = self._fill_model(tick_source, cost_profile)
-        self.execution = BosExecution(self.config, initial_capital=initial_capital,
-                                      resolver=resolver, profile=profile)
-        self.tracker: Optional[BosTracker] = None   # built in run() once the timeframe is known
+        self.execution = BosExecution(
+            self.config, initial_capital=initial_capital, resolver=resolver, profile=profile
+        )
+        self.tracker: Optional[BosTracker] = None  # built in run() once the timeframe is known
         self.decisions: List[Decision] = []
         # The tracker's per-bar state, recorded alongside the decisions. REPORTING ONLY —
         # nothing reads it back, so it cannot move a decision. `compare_bos.py` diffs it against
@@ -91,8 +96,14 @@ class MpcBosStrategy(MpcSosFadeStrategy):
         the engines FROM the export rather than trusting this function.
         """
         from backtest.replay import EngineConfig
-        return EngineConfig(fvg_max_count=8, show_internal=False, fvg_require_close=False,
-                            fvg_threshold_pct=0.04, eq_exempt_fvg=False)
+
+        return EngineConfig(
+            fvg_max_count=8,
+            show_internal=False,
+            fvg_require_close=False,
+            fvg_threshold_pct=0.04,
+            eq_exempt_fvg=False,
+        )
 
     # ── one bar ──────────────────────────────────────────────────────────────────
     def _step_bar(self, state, bar) -> Decision:
@@ -109,7 +120,7 @@ class MpcBosStrategy(MpcSosFadeStrategy):
         # for a field only this fork reads would put a permanently-None column on the other two
         # bots. `bos.py::_atr_of` reads it back with a default, so a hand-built Signals in a
         # test simply behaves as "ATR unknown".
-        setattr(sig, "bos_atr14", self.execution.prime_atr(sig))
+        sig.bos_atr14 = self.execution.prime_atr(sig)
         bos = self.tracker.update(sig, bar)
         dec = self.execution.step(sig, seq, bos)
         return dec, bos, self._exit_stage()

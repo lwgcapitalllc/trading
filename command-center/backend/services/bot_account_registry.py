@@ -36,12 +36,20 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-__all__ = ["RegisteredAccount", "RegistryError", "registry_path", "load_accounts",
-           "account_by_number", "upsert_account", "remove_account", "rebase_symbol"]
+__all__ = [
+    "RegisteredAccount",
+    "RegistryError",
+    "registry_path",
+    "load_accounts",
+    "account_by_number",
+    "upsert_account",
+    "remove_account",
+    "rebase_symbol",
+]
 
 # Keys carrying prose rather than data. They are round-tripped untouched so a hand-written
 # explanation in the file survives a write from the page — the same discipline every instance
@@ -57,15 +65,16 @@ class RegistryError(ValueError):
 @dataclass
 class RegisteredAccount:
     """One broker account, as far as putting a bot on it is concerned."""
+
     account: int
     label: str = ""
     broker: str = ""
-    tier: str = ""                       # "ECN" / "Standard" / … — the broker's own word
-    kind: str = "demo"                   # "demo" | "live"
+    tier: str = ""  # "ECN" / "Standard" / … — the broker's own word
+    kind: str = "demo"  # "demo" | "live"
     server: str = ""
-    mt5_path: str = ""                   # "" = no terminal serves it ⇒ not assignable
+    mt5_path: str = ""  # "" = no terminal serves it ⇒ not assignable
     symbol_suffix: Optional[str] = None  # None = unrecorded; "" = bare symbols
-    account_profile: str = ""            # a key of backtest.fills.PROFILES
+    account_profile: str = ""  # a key of backtest.fills.PROFILES
     note: str = ""
 
     @property
@@ -83,9 +92,11 @@ class RegisteredAccount:
     def unassignable_reason(self) -> str:
         if self.mt5_path:
             return ""
-        return (f"account {self.account} has no terminal on the VPS logged into it, so a bot "
-                f"assigned to it could not connect. Log a terminal into it and record that "
-                f"terminal's path on the account first.")
+        return (
+            f"account {self.account} has no terminal on the VPS logged into it, so a bot "
+            f"assigned to it could not connect. Log a terminal into it and record that "
+            f"terminal's path on the account first."
+        )
 
 
 def registry_path(monorepo_root: Path) -> Path:
@@ -105,11 +116,15 @@ def _read_raw(path: Path) -> dict:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
-        raise RegistryError(f"{path} exists and could not be parsed ({e}). Fix the file — "
-                            f"writing over it would discard every account in it.")
+        raise RegistryError(
+            f"{path} exists and could not be parsed ({e}). Fix the file — "
+            f"writing over it would discard every account in it."
+        )
     if not isinstance(raw, dict) or not isinstance(raw.get("accounts"), list):
-        raise RegistryError(f"{path} is not an account registry (expected an object with an "
-                            f"'accounts' list). Refusing to overwrite it.")
+        raise RegistryError(
+            f"{path} is not an account registry (expected an object with an "
+            f"'accounts' list). Refusing to overwrite it."
+        )
     return raw
 
 
@@ -148,15 +163,21 @@ def _validate(entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> N
         raise RegistryError(
             f"account {entry.account} needs a server: an account number IS a login on a server, "
             f"and the pair is the identity. Half of it is a connection failure at startup with a "
-            f"confusing message.")
+            f"confusing message."
+        )
     if entry.kind not in ("demo", "live"):
-        raise RegistryError(f"kind must be 'demo' or 'live', not {entry.kind!r} — the page tints "
-                            f"a live account and warns before every fleet action on one, so an "
-                            f"unrecognised value would quietly drop both.")
-    if entry.symbol_suffix is not None and not re.fullmatch(r"[.\-_A-Za-z0-9]*", entry.symbol_suffix):
+        raise RegistryError(
+            f"kind must be 'demo' or 'live', not {entry.kind!r} — the page tints "
+            f"a live account and warns before every fleet action on one, so an "
+            f"unrecognised value would quietly drop both."
+        )
+    if entry.symbol_suffix is not None and not re.fullmatch(
+        r"[.\-_A-Za-z0-9]*", entry.symbol_suffix
+    ):
         raise RegistryError(
             f"symbol_suffix {entry.symbol_suffix!r} is not a symbol suffix. It is appended to an "
-            f"instrument name and sent to the broker; leave it null if it is not known.")
+            f"instrument name and sent to the broker; leave it null if it is not known."
+        )
     # ⚠ `None` means the caller could not supply the roster, so the check is SKIPPED and that is
     # the caller's decision to state — never a silent pass. The router always supplies it.
     if known_profiles is not None and entry.account_profile:
@@ -164,7 +185,8 @@ def _validate(entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> N
             raise RegistryError(
                 f"account_profile {entry.account_profile!r} is not a measured cost profile. "
                 f"Known: {', '.join(sorted(known_profiles))}. A name nothing can price is a "
-                f"backtest that refuses and a live config that claims a broker it cannot name.")
+                f"backtest that refuses and a live config that claims a broker it cannot name."
+            )
 
 
 def _atomic_write(path: Path, raw: dict) -> None:
@@ -176,8 +198,9 @@ def _atomic_write(path: Path, raw: dict) -> None:
     os.replace(tmp, path)
 
 
-def upsert_account(path: Path, entry: RegisteredAccount,
-                   known_profiles: Optional[set[str]]) -> tuple[RegisteredAccount, bool]:
+def upsert_account(
+    path: Path, entry: RegisteredAccount, known_profiles: Optional[set[str]]
+) -> tuple[RegisteredAccount, bool]:
     """Add an account, or replace the one with that number. Returns `(stored, created)`.
 
     ⚠ **It REPLACES the row rather than merging into it**, so a field cleared on the page is

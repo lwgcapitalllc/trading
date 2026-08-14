@@ -20,13 +20,11 @@ def _trade(t: int, pnl: float, *, exit_t: int = 0, direction: str = "long") -> d
     return {"entryTime": t, "exitTime": exit_t or t + 1000, "pnl": pnl, "dir": direction}
 
 
-def _miss(t: int, met: int, of: int, direction: str = "long",
-          *, zone=500, turn=560) -> dict:
+def _miss(t: int, met: int, of: int, direction: str = "long", *, zone=500, turn=560) -> dict:
     """`time` is the bar the setup DIED; `zoneTime`/`zoneTurn` bracket the RETRACE. They are far
     apart on purpose — on the reference run the death bar is a median 17 and up to 717 bars after
     the turn, which is the whole reason the layer stopped anchoring on it."""
-    return {"time": t, "met": met, "of": of, "dir": direction,
-            "zoneTime": zone, "zoneTurn": turn}
+    return {"time": t, "met": met, "of": of, "dir": direction, "zoneTime": zone, "zoneTurn": turn}
 
 
 def test_a_trade_is_an_anchor_whether_it_won_or_lost():
@@ -87,6 +85,7 @@ def test_BLOCKED_setups_are_not_even_reachable_from_here():
     block-anchored mark, so a behavioural test cannot exist — the only way blocks come back is
     somebody adding the parameter, and this fails in front of them with the reason."""
     import inspect
+
     assert list(inspect.signature(reversal_anchors).parameters) == ["trades", "misses"]
 
 

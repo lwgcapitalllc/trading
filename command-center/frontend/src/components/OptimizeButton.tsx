@@ -4,7 +4,14 @@ import { Sliders, AlertTriangle, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
 import { ParamEditor, sweepChoices, type ParamValue } from '@/components/ParamEditor'
-import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes, useStrategy } from '@/hooks/useLab'
+import {
+  useTriggerOptimization,
+  useFirms,
+  useRunningVpsJob,
+  useOptimizations,
+  useParamTypes,
+  useStrategy,
+} from '@/hooks/useLab'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
@@ -22,8 +29,8 @@ type AxisEdit =
 // Number of values a range produces — matches RangePreview's inclusive loop.
 // Returns null when the range is incomplete or invalid.
 function rangeValueCount(min: string, max: string, step: string): number | null {
-  const lo   = parseFloat(min)
-  const hi   = parseFloat(max)
+  const lo = parseFloat(min)
+  const hi = parseFloat(max)
   const incr = parseFloat(step)
   if (isNaN(lo) || isNaN(hi) || isNaN(incr) || incr <= 0 || lo > hi) return null
   return Math.floor((hi - lo) / incr + 1e-9) + 1
@@ -33,41 +40,38 @@ function rangeValueCount(min: string, max: string, step: string): number | null 
 // only "shows — combos" is one the user reads as still typing; an inverted min/max is a
 // finished, wrong answer and the backend rejects it. Say which.
 function rangeProblem(min: string, max: string, step: string): string | null {
-  const lo = parseFloat(min), hi = parseFloat(max), incr = parseFloat(step)
+  const lo = parseFloat(min),
+    hi = parseFloat(max),
+    incr = parseFloat(step)
   if (isNaN(lo) || isNaN(hi) || isNaN(incr)) return 'incomplete'
   if (incr <= 0) return 'step must be greater than 0'
-  if (lo > hi)   return 'max is below min'
+  if (lo > hi) return 'max is below min'
   return null
 }
 
 // ── Optimizer modal ────────────────────────────────────────────────────────────
 
-function OptimizerModal({
-  run,
-  onClose,
-}: {
-  run: BacktestDetail
-  onClose: () => void
-}) {
-  const navigate      = useNavigate()
+function OptimizerModal({ run, onClose }: { run: BacktestDetail; onClose: () => void }) {
+  const navigate = useNavigate()
   const { data: firms } = useFirms()
-  const triggerOpt    = useTriggerOptimization()
+  const triggerOpt = useTriggerOptimization()
   const { data: runningJob } = useRunningVpsJob()
   const { data: paramTypes } = useParamTypes(run.strategy_id)
   const { data: strategy } = useStrategy(run.strategy_id)
   // Ruleset/mode/regime are NT8-only (they drive injected foundational params); MT5 and
   // Python both run raw. The lock, separately, is per-runner.
-  const isNt8       = isNt8Runner(run.runner)
+  const isNt8 = isNt8Runner(run.runner)
   const blockingJob = runningJobFor(runningJob, run.runner)
-  const jobBlocked  = !!blockingJob?.running
+  const jobBlocked = !!blockingJob?.running
   const runnerLabel = RUNNER_LABEL[runnerScope(run.runner)]
 
   const evalFirm = run.evaluations[0]
-  const [firmId, setFirmId]         = useState(evalFirm?.ruleset_id ?? '')
-  const [mode, setMode]             = useState<'eval' | 'funded'>('eval')
+  const [firmId, setFirmId] = useState(evalFirm?.ruleset_id ?? '')
+  const [mode, setMode] = useState<'eval' | 'funded'>('eval')
 
-  const selectedFirm = firms?.find(f => f.id === firmId)
-  const isPropFirm = selectedFirm?.ruleset_type === 'prop_eval' || selectedFirm?.ruleset_type === 'prop_funded'
+  const selectedFirm = firms?.find((f) => f.id === firmId)
+  const isPropFirm =
+    selectedFirm?.ruleset_type === 'prop_eval' || selectedFirm?.ruleset_type === 'prop_funded'
   const [regimeFilter, setRegimeFilter] = useState<string>('')
 
   // Minimum trades a combo needs before it is allowed to WIN. Profit factor has no opinion
@@ -80,10 +84,18 @@ function OptimizerModal({
 
   // Foundational params are injected from the ruleset — never exposed in the optimizer grid.
   const FOUNDATIONAL_PARAMS = new Set([
-    'AccountSize', 'RiskPerTradePct', 'MaxDailyLoss', 'DailyHaltFraction',
-    'MaxConsecutiveLosses', 'CommissionPerSide', 'ForceFlatTimeET',
-    'EarliestEntryTimeET', 'LatestEntryTimeET', 'DaysOfWeekAllowed',
-    'DailyProfitTarget', 'DailyProfitLockPct',
+    'AccountSize',
+    'RiskPerTradePct',
+    'MaxDailyLoss',
+    'DailyHaltFraction',
+    'MaxConsecutiveLosses',
+    'CommissionPerSide',
+    'ForceFlatTimeET',
+    'EarliestEntryTimeET',
+    'LatestEntryTimeET',
+    'DaysOfWeekAllowed',
+    'DailyProfitTarget',
+    'DailyProfitLockPct',
   ])
 
   // Build initial axis state from strategy_logic params only
@@ -107,13 +119,13 @@ function OptimizerModal({
   }
   // True once the user has changed anything from the opened-run defaults.
   const isDirty =
-    Object.values(axes).some(a => a.mode !== 'fixed') ||
+    Object.values(axes).some((a) => a.mode !== 'fixed') ||
     firmId !== (evalFirm?.ruleset_id ?? '') ||
     mode !== 'eval' ||
     regimeFilter !== '' ||
     minTrades !== '30'
 
-  const rangeParamCount = Object.values(axes).filter(a => a.mode !== 'fixed').length
+  const rangeParamCount = Object.values(axes).filter((a) => a.mode !== 'fixed').length
 
   // Total backtests = cartesian product of every swept range's value count.
   // `incomplete` flags ranges still being typed; `rangeErrors` flags ones that are finished
@@ -123,12 +135,18 @@ function OptimizerModal({
   let comboIncomplete = false
   const rangeErrors: Record<string, string> = {}
   for (const [name, ax] of Object.entries(axes)) {
-    if (ax.mode === 'list') { comboCount *= Math.max(1, ax.values.length); continue }
+    if (ax.mode === 'list') {
+      comboCount *= Math.max(1, ax.values.length)
+      continue
+    }
     if (ax.mode !== 'range') continue
     const problem = rangeProblem(ax.min, ax.max, ax.step)
     if (problem && problem !== 'incomplete') rangeErrors[name] = problem
     const c = rangeValueCount(ax.min, ax.max, ax.step)
-    if (c == null) { comboIncomplete = true; continue }
+    if (c == null) {
+      comboIncomplete = true
+      continue
+    }
     comboCount *= c
   }
 
@@ -136,31 +154,44 @@ function OptimizerModal({
   // Python sweep is predictable this way — it replays the SAME bars this run replayed, on this
   // box, across cores. NT8 and MT5 load data once and parallelise inside their own tester, so
   // per-combo cost there is not this run's cost and no estimate is offered.
-  const runSeconds = run.started_at && run.completed_at
-    ? Math.max(1, (new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000)
-    : null
+  const runSeconds =
+    run.started_at && run.completed_at
+      ? Math.max(
+          1,
+          (new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000
+        )
+      : null
   const cores = Math.max(1, (navigator.hardwareConcurrency || 4) - 1)
-  const estSeconds = run.runner === 'python' && runSeconds && !comboIncomplete
-    ? (runSeconds * comboCount) / cores
-    : null
+  const estSeconds =
+    run.runner === 'python' && runSeconds && !comboIncomplete
+      ? (runSeconds * comboCount) / cores
+      : null
   const fmtEta = (s: number) =>
-    s < 90 ? `~${Math.round(s)}s`
-    : s < 5400 ? `~${Math.round(s / 60)} min`
-    : s < 172800 ? `~${(s / 3600).toFixed(1)} hours`
-    : `~${(s / 86400).toFixed(1)} days`
+    s < 90
+      ? `~${Math.round(s)}s`
+      : s < 5400
+        ? `~${Math.round(s / 60)} min`
+        : s < 172800
+          ? `~${(s / 3600).toFixed(1)} hours`
+          : `~${(s / 86400).toFixed(1)} days`
   // Color thresholds — each combo is a full backtest, so nudge the user to taper.
   const comboTone =
-    comboCount > 1000 ? { text: 'text-neg-text',  bg: 'bg-neg-muted',  border: 'border-neg-text/20'  }
-    : comboCount > 250 ? { text: 'text-warn-text', bg: 'bg-warn-muted', border: 'border-warn-text/20' }
-    : { text: 'text-accent', bg: 'bg-accent/10', border: 'border-accent/20' }
+    comboCount > 1000
+      ? { text: 'text-neg-text', bg: 'bg-neg-muted', border: 'border-neg-text/20' }
+      : comboCount > 250
+        ? { text: 'text-warn-text', bg: 'bg-warn-muted', border: 'border-warn-text/20' }
+        : { text: 'text-accent', bg: 'bg-accent/10', border: 'border-accent/20' }
 
   const intErrors: Record<string, string> = {}
   for (const [name, ax] of Object.entries(axes)) {
     if (ax.mode !== 'range' || paramTypes?.[name] !== 'int') continue
-    const lo = parseFloat(ax.min), hi = parseFloat(ax.max), st = parseFloat(ax.step)
+    const lo = parseFloat(ax.min),
+      hi = parseFloat(ax.max),
+      st = parseFloat(ax.step)
     if (isNaN(lo) || isNaN(hi) || isNaN(st) || st <= 0) continue
-    const hasDecimal = [lo, hi, st].some(v => !Number.isInteger(v))
-    if (hasDecimal) intErrors[name] = 'Must be whole numbers — this param is an integer in the strategy'
+    const hasDecimal = [lo, hi, st].some((v) => !Number.isInteger(v))
+    if (hasDecimal)
+      intErrors[name] = 'Must be whole numbers — this param is an integer in the strategy'
   }
 
   // A dropdown / on-off param is swept as its own value SET, and only the Python runner can walk
@@ -168,7 +199,7 @@ function OptimizerModal({
   // for them too, so this is not the only guard).
   const listSweepOk = run.runner === 'python'
   const choicesOf = (name: string) => {
-    const p = strategy?.param_schema?.find(x => x.name === name)
+    const p = strategy?.param_schema?.find((x) => x.name === name)
     return p ? sweepChoices(p) : []
   }
 
@@ -177,20 +208,23 @@ function OptimizerModal({
     if (cur && cur.mode !== 'fixed') {
       // Demote back to fixed
       const back = cur.mode === 'range' ? cur.min : String(run.params[name] ?? '')
-      setAxes(prev => ({ ...prev, [name]: { mode: 'fixed', value: back } }))
+      setAxes((prev) => ({ ...prev, [name]: { mode: 'fixed', value: back } }))
       return
     }
     const choices = listSweepOk ? choicesOf(name) : []
     if (choices.length >= 2) {
       // Start with EVERY option ticked, then untick what you don't want — one click is a complete
       // sweep, which is the point of a closed set.
-      setAxes(prev => ({ ...prev, [name]: { mode: 'list', values: choices.map(c => c.value) } }))
+      setAxes((prev) => ({
+        ...prev,
+        [name]: { mode: 'list', values: choices.map((c) => c.value) },
+      }))
       return
     }
     // Promote to range: use current value as default for min/max. `cur` can be
     // absent when optimizing from a run whose params predate a schema param.
     const numVal = Number(cur?.value ?? run.params[name] ?? 0)
-    setAxes(prev => ({
+    setAxes((prev) => ({
       ...prev,
       [name]: { mode: 'range', min: String(numVal), max: String(numVal + 10), step: '5' },
     }))
@@ -199,24 +233,30 @@ function OptimizerModal({
   // Tick / untick one value of a list axis. Never empties it: a swept param with nothing selected
   // expands to zero combinations, so the whole optimization would run nothing.
   const toggleListValue = (name: string, value: string) => {
-    const all = choicesOf(name).map(c => c.value)
-    setAxes(prev => {
+    const all = choicesOf(name).map((c) => c.value)
+    setAxes((prev) => {
       const cur = prev[name]
       if (cur?.mode !== 'list') return prev
       const has = cur.values.includes(value)
       if (has && cur.values.length === 1) return prev
-      const next = has ? cur.values.filter(x => x !== value) : [...cur.values, value]
+      const next = has ? cur.values.filter((x) => x !== value) : [...cur.values, value]
       // Keep the schema's order rather than click order, so the grid reads the way the panel does.
-      return { ...prev, [name]: { mode: 'list', values: all.length ? all.filter(x => next.includes(x)) : next } }
+      return {
+        ...prev,
+        [name]: { mode: 'list', values: all.length ? all.filter((x) => next.includes(x)) : next },
+      }
     })
   }
 
   const updateAxis = (name: string, field: string, value: string) => {
-    setAxes(prev => ({ ...prev, [name]: { ...prev[name], [field]: value } as AxisEdit }))
+    setAxes((prev) => ({ ...prev, [name]: { ...prev[name], [field]: value } as AxisEdit }))
   }
 
   const handleGo = () => {
-    if (isNt8 && !firmId) { toast.error('Select a ruleset'); return }
+    if (isNt8 && !firmId) {
+      toast.error('Select a ruleset')
+      return
+    }
 
     const param_grid: Record<string, ParamAxisSpec> = {}
     for (const [k, ax] of Object.entries(axes)) {
@@ -225,8 +265,8 @@ function OptimizerModal({
       } else if (ax.mode === 'list') {
         // A bool ships as a real boolean — the strategy's config field is typed, and the string
         // "false" is truthy everywhere it would land.
-        const isBool = strategy?.param_schema?.find(p => p.name === k)?.type === 'bool'
-        param_grid[k] = isBool ? ax.values.map(v => v === 'true') : ax.values
+        const isBool = strategy?.param_schema?.find((p) => p.name === k)?.type === 'bool'
+        param_grid[k] = isBool ? ax.values.map((v) => v === 'true') : ax.values
       }
     }
 
@@ -243,39 +283,44 @@ function OptimizerModal({
       return
     }
 
-    triggerOpt.mutate({
-      strategy_id:        run.strategy_id,
-      instrument:         run.instrument,
-      bar_type:           run.bar_type,
-      bar_value:          run.bar_value,
-      start_date:         run.start_date,
-      end_date:           run.end_date,
-      commission_per_side: run.commission_per_side,
-      slippage_ticks:     run.slippage_ticks,
-      ruleset_id:         isNt8 ? firmId : null,
-      mode:               isNt8 && isPropFirm ? mode : 'raw',
-      search_method:      'native',
-      param_grid,
-      regime_filter:      isNt8 ? (regimeFilter || null) : null,
-      source_run_id:      run.run_id,
-      // Inherit the source run's cost contract. Without this the whole grid was ranked on a
-      // FREE book and its winner then compared against a run that had spread and swap charged
-      // — two numbers produced under different physics, presented as a comparison.
-      cost_layers:        run.cost_layers,
-      broker_profile:     run.broker_profile,
-      min_trades:         minTradesNum,
-    }, {
-      onSuccess: (data) => {
-        onClose()
-        navigate(`/optimizations/${data.optimization_id}`)
+    triggerOpt.mutate(
+      {
+        strategy_id: run.strategy_id,
+        instrument: run.instrument,
+        bar_type: run.bar_type,
+        bar_value: run.bar_value,
+        start_date: run.start_date,
+        end_date: run.end_date,
+        commission_per_side: run.commission_per_side,
+        slippage_ticks: run.slippage_ticks,
+        ruleset_id: isNt8 ? firmId : null,
+        mode: isNt8 && isPropFirm ? mode : 'raw',
+        search_method: 'native',
+        param_grid,
+        regime_filter: isNt8 ? regimeFilter || null : null,
+        source_run_id: run.run_id,
+        // Inherit the source run's cost contract. Without this the whole grid was ranked on a
+        // FREE book and its winner then compared against a run that had spread and swap charged
+        // — two numbers produced under different physics, presented as a comparison.
+        cost_layers: run.cost_layers,
+        broker_profile: run.broker_profile,
+        min_trades: minTradesNum,
       },
-    })
+      {
+        onSuccess: (data) => {
+          onClose()
+          navigate(`/optimizations/${data.optimization_id}`)
+        },
+      }
+    )
   }
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
     >
       <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[900px] max-h-[85vh] flex flex-col shadow-2xl">
         {/* Header */}
@@ -291,7 +336,8 @@ function OptimizerModal({
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">{runnerLabel} is busy:</span> {blockingJob?.description} — wait for it to finish.
+              <span className="font-semibold">{runnerLabel} is busy:</span>{' '}
+              {blockingJob?.description} — wait for it to finish.
             </p>
           </div>
         )}
@@ -303,22 +349,30 @@ function OptimizerModal({
             {isNt8 && (
               <>
                 <div className={isPropFirm ? '' : 'col-span-3'}>
-                  <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Ruleset</label>
+                  <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
+                    Ruleset
+                  </label>
                   <select
                     value={firmId}
-                    onChange={e => setFirmId(e.target.value)}
+                    onChange={(e) => setFirmId(e.target.value)}
                     className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
                   >
                     <option value="">Select ruleset…</option>
-                    {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    {firms?.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 {isPropFirm && (
                   <div>
-                    <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">Mode</label>
+                    <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
+                      Mode
+                    </label>
                     <select
                       value={mode}
-                      onChange={e => setMode(e.target.value as 'eval' | 'funded')}
+                      onChange={(e) => setMode(e.target.value as 'eval' | 'funded')}
                       className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
                     >
                       <option value="eval">Eval</option>
@@ -331,11 +385,14 @@ function OptimizerModal({
             {isNt8 && (
               <div className="col-span-3">
                 <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
-                  Regime Filter <span className="normal-case font-normal">(optional — score only trades in this regime)</span>
+                  Regime Filter{' '}
+                  <span className="normal-case font-normal">
+                    (optional — score only trades in this regime)
+                  </span>
                 </label>
                 <select
                   value={regimeFilter}
-                  onChange={e => setRegimeFilter(e.target.value)}
+                  onChange={(e) => setRegimeFilter(e.target.value)}
                   className="w-full bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] focus:outline-none focus:border-accent"
                 >
                   <option value="">No filter — score all trades</option>
@@ -357,7 +414,7 @@ function OptimizerModal({
                   min={0}
                   step={1}
                   value={minTrades}
-                  onChange={e => setMinTrades(e.target.value)}
+                  onChange={(e) => setMinTrades(e.target.value)}
                   className="w-24 bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] font-mono focus:outline-none focus:border-accent"
                 />
                 <span className="text-[11px] text-text-tertiary leading-snug">
@@ -372,11 +429,26 @@ function OptimizerModal({
           {/* Cost inheritance — what this grid will be charged, stated rather than assumed */}
           <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-bg-sunken border border-border-subtle">
             <span className="text-[11px] text-text-tertiary leading-snug">
-              {run.runner !== 'python'
-                ? <>Costs come from the {runnerLabel} tester's own settings — commission ${run.commission_per_side}/side, {run.slippage_ticks} tick slippage.</>
-                : run.cost_layers?.length
-                ? <>Every combo is charged the same costs as this run — <span className="text-text-secondary font-medium">{run.cost_layers.join(', ')}</span> on <span className="font-mono">{run.broker_profile}</span>. The winner is comparable to the run you launched from.</>
-                : <>This run charged <span className="text-text-secondary font-medium">no costs</span>, so the grid runs free too. A free winner is not comparable to a priced run.</>}
+              {run.runner !== 'python' ? (
+                <>
+                  Costs come from the {runnerLabel} tester's own settings — commission $
+                  {run.commission_per_side}/side, {run.slippage_ticks} tick slippage.
+                </>
+              ) : run.cost_layers?.length ? (
+                <>
+                  Every combo is charged the same costs as this run —{' '}
+                  <span className="text-text-secondary font-medium">
+                    {run.cost_layers.join(', ')}
+                  </span>{' '}
+                  on <span className="font-mono">{run.broker_profile}</span>. The winner is
+                  comparable to the run you launched from.
+                </>
+              ) : (
+                <>
+                  This run charged <span className="text-text-secondary font-medium">no costs</span>
+                  , so the grid runs free too. A free winner is not comparable to a priced run.
+                </>
+              )}
             </span>
           </div>
 
@@ -407,22 +479,36 @@ function OptimizerModal({
             <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-neg-muted border border-neg-text/20">
               <AlertTriangle size={13} className="text-neg-text flex-shrink-0 mt-[1px]" />
               <p className="text-[12px] text-neg-text leading-snug">
-                {Object.entries(rangeErrors).map(([k, why]) => `${k}: ${why}`).join(' · ')}
+                {Object.entries(rangeErrors)
+                  .map(([k, why]) => `${k}: ${why}`)
+                  .join(' · ')}
               </p>
             </div>
           )}
 
           {rangeParamCount > 0 && (
             <p className="text-[11px] text-text-tertiary">
-              {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept using the native optimizer.
-              {estSeconds != null && <>
-                {' '}At this run's own speed that is roughly{' '}
-                <span className={estSeconds > 6 * 3600 ? 'text-warn-text font-semibold' : 'text-text-secondary font-medium'}>
-                  {fmtEta(estSeconds)}
-                </span>
-                {' '}on {cores} core{cores !== 1 ? 's' : ''}.
-              </>}
-              {comboCount > 1000 && !comboIncomplete && ' That is a lot of combinations — consider widening the step or trimming a range.'}
+              {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept using the
+              native optimizer.
+              {estSeconds != null && (
+                <>
+                  {' '}
+                  At this run's own speed that is roughly{' '}
+                  <span
+                    className={
+                      estSeconds > 6 * 3600
+                        ? 'text-warn-text font-semibold'
+                        : 'text-text-secondary font-medium'
+                    }
+                  >
+                    {fmtEta(estSeconds)}
+                  </span>{' '}
+                  on {cores} core{cores !== 1 ? 's' : ''}.
+                </>
+              )}
+              {comboCount > 1000 &&
+                !comboIncomplete &&
+                ' That is a lot of combinations — consider widening the step or trimming a range.'}
             </p>
           )}
         </div>
@@ -452,31 +538,36 @@ function OptimizerModal({
             </button>
           </div>
           <div className="flex items-center gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleGo}
-            title={
-              comboIncomplete ? 'One of the ranges is not filled in yet'
-              : Object.keys(rangeErrors).length ? 'One of the ranges is invalid'
-              : undefined
-            }
-            // comboIncomplete and rangeErrors are both blocking now. They were shown as
-            // "— combos" and nothing else, so Go stayed enabled and the backend was handed a
-            // grid it could not expand.
-            disabled={
-              triggerOpt.isPending || rangeParamCount === 0 || jobBlocked ||
-              comboIncomplete || Object.keys(rangeErrors).length > 0 ||
-              Object.keys(intErrors).length > 0
-            }
-            className="px-5 py-[7px] rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {triggerOpt.isPending ? 'Starting…' : 'Go'}
-          </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleGo}
+              title={
+                comboIncomplete
+                  ? 'One of the ranges is not filled in yet'
+                  : Object.keys(rangeErrors).length
+                    ? 'One of the ranges is invalid'
+                    : undefined
+              }
+              // comboIncomplete and rangeErrors are both blocking now. They were shown as
+              // "— combos" and nothing else, so Go stayed enabled and the backend was handed a
+              // grid it could not expand.
+              disabled={
+                triggerOpt.isPending ||
+                rangeParamCount === 0 ||
+                jobBlocked ||
+                comboIncomplete ||
+                Object.keys(rangeErrors).length > 0 ||
+                Object.keys(intErrors).length > 0
+              }
+              className="px-5 py-[7px] rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {triggerOpt.isPending ? 'Starting…' : 'Go'}
+            </button>
           </div>
         </div>
       </div>
@@ -496,11 +587,16 @@ function Tier1ConfirmModal({
   onClose: () => void
 }) {
   const pf = run.profit_factor?.toFixed(2) ?? '—'
-  const dd = run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'
+  const dd =
+    run.max_drawdown != null
+      ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : '—'
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
     >
       <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[420px] shadow-2xl">
         <div className="px-5 py-4 border-b border-border-subtle">
@@ -508,8 +604,9 @@ function Tier1ConfirmModal({
         </div>
         <div className="px-5 py-4">
           <p className="text-[13px] text-text-secondary">
-            This strategy scored <span className="text-pos-text font-semibold">Tier 1 (STRESS TEST)</span>{' '}
-            with a profit factor of <span className="font-mono">{pf}</span> and max drawdown of{' '}
+            This strategy scored{' '}
+            <span className="text-pos-text font-semibold">Tier 1 (STRESS TEST)</span> with a profit
+            factor of <span className="font-mono">{pf}</span> and max drawdown of{' '}
             <span className="font-mono">{dd}</span>.
           </p>
           <p className="text-[13px] text-text-secondary mt-2">
@@ -546,13 +643,14 @@ export function OptimizeButton({ run }: Props) {
   const { data: runningJob } = useRunningVpsJob()
   const { data: optimizations } = useOptimizations(run.strategy_id)
   const blockingJob = runningJobFor(runningJob, run.runner)
-  const jobBlocked  = !!blockingJob?.running
+  const jobBlocked = !!blockingJob?.running
 
   const runningOpt = optimizations?.find(
-    o => o.source_run_id === run.run_id &&
-         o.status !== 'complete' &&
-         !o.status.startsWith('failed') &&
-         o.status !== 'cancelled'
+    (o) =>
+      o.source_run_id === run.run_id &&
+      o.status !== 'complete' &&
+      !o.status.startsWith('failed') &&
+      o.status !== 'cancelled'
   )
 
   if (run.status !== 'complete') return null
@@ -587,7 +685,11 @@ export function OptimizeButton({ run }: Props) {
       <button
         onClick={handleClick}
         disabled={jobBlocked}
-        title={jobBlocked ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy: ${blockingJob?.description}` : undefined}
+        title={
+          jobBlocked
+            ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy: ${blockingJob?.description}`
+            : undefined
+        }
         className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />
@@ -610,12 +712,7 @@ export function OptimizeButton({ run }: Props) {
         />
       )}
 
-      {modal === 'optimizer' && (
-        <OptimizerModal
-          run={run}
-          onClose={() => setModal('none')}
-        />
-      )}
+      {modal === 'optimizer' && <OptimizerModal run={run} onClose={() => setModal('none')} />}
     </>
   )
 }

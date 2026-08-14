@@ -18,9 +18,7 @@ The fix is that `hard_edge` now also requires the oldest bar to sit on the broke
 history floor, and an unknown floor answers False — no measurement, no claim.
 """
 
-import pandas as pd
 import pytest
-
 from services import chart_spec
 
 RUN = {"runner": "python", "instrument": "XAUUSD"}
@@ -43,12 +41,14 @@ def drill(monkeypatch):
     def go(*, first_ms, from_ms, to_ms, floor_date):
         monkeypatch.setattr(chart_spec.lab_db, "get_run", lambda rid: dict(RUN))
         monkeypatch.setattr(
-            chart_spec, "_fetch_candles",
+            chart_spec,
+            "_fetch_candles",
             lambda *a, **k: (_candles(first_ms), None),
         )
         monkeypatch.setattr(
-            chart_spec.history_limits, "limits_for",
-            lambda *a, **k: ({"earliest_date": floor_date} if floor_date else None),
+            chart_spec.history_limits,
+            "limits_for",
+            lambda *a, **k: {"earliest_date": floor_date} if floor_date else None,
         )
         return chart_spec.build_run_candles("r1", "M1", from_ms, to_ms)
 
@@ -59,8 +59,8 @@ def test_a_gap_in_our_cache_is_not_reported_as_the_brokers_limit(drill):
     # THE INCIDENT. We asked for 12 days of M1 and got back only the newest day, because the
     # cache had a hole. The broker's real floor is years earlier, so this is OUR edge, not its.
     out = drill(
-        first_ms=FLOOR_MS + 2000 * DAY,          # bars start LONG after the broker's floor
-        from_ms=FLOOR_MS + 1988 * DAY,           # ...and long after what we asked for
+        first_ms=FLOOR_MS + 2000 * DAY,  # bars start LONG after the broker's floor
+        from_ms=FLOOR_MS + 1988 * DAY,  # ...and long after what we asked for
         to_ms=FLOOR_MS + 2001 * DAY,
         floor_date="2018-09-14",
     )

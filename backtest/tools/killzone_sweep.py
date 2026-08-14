@@ -56,17 +56,16 @@ from backtest.tools.killzone_profile import (  # noqa: E402
     NY,
     UTC,
     _fade_trade,
-    _mean,
     _pct,
-    _slice,
     load_days,
     parse_window,
     profile_days,
 )
 
 
-def sweeps_in_window(symbol: str, tf: str, win_start: dt.time, win_end: dt.time
-                     ) -> dict[dt.date, list[tuple[str, str]]]:
+def sweeps_in_window(
+    symbol: str, tf: str, win_start: dt.time, win_end: dt.time
+) -> dict[dt.date, list[tuple[str, str]]]:
     """Replay the whole bar stream through the canonical liquidity engine and collect,
     per NY date, the (level name, side) pairs that price MITIGATED inside the window.
 
@@ -104,8 +103,7 @@ def directed_trade(bars, entry_t, entry, win_high, win_low, side, target_r) -> d
     so passing -side gives the trade we want) — one fill model, not two that can drift.
     """
     out = _fade_trade(bars, entry_t, entry, win_high, win_low, -side, target_r)
-    return {"dir_dir": out["fade_dir"], "dir_r": out["fade_r"],
-            "dir_outcome": out["fade_outcome"]}
+    return {"dir_dir": out["fade_dir"], "dir_r": out["fade_r"], "dir_outcome": out["fade_outcome"]}
 
 
 def _stats(rows: list[dict], key: str) -> tuple[int, float, float, float]:
@@ -113,8 +111,12 @@ def _stats(rows: list[dict], key: str) -> tuple[int, float, float, float]:
     if not live:
         return 0, float("nan"), float("nan"), 0.0
     wins = [r for r in live if r[key] > 0]
-    return (len(live), 100 * len(wins) / len(live),
-            statistics.fmean(r[key] for r in live), sum(r[key] for r in live))
+    return (
+        len(live),
+        100 * len(wins) / len(live),
+        statistics.fmean(r[key] for r in live),
+        sum(r[key] for r in live),
+    )
 
 
 def _line(label: str, rows: list[dict], key: str, floor: int = 25) -> None:
@@ -124,8 +126,15 @@ def _line(label: str, rows: list[dict], key: str, floor: int = 25) -> None:
     print(f"  {label:<28}{n:>8}{win:>8.1f}%{exp:>9.3f}{tot:>9.1f}")
 
 
-def build_rows(symbol: str, tf: str, win_start: dt.time, win_end: dt.time,
-               target_r: float, start=None, end=None) -> tuple[list[dict], dict]:
+def build_rows(
+    symbol: str,
+    tf: str,
+    win_start: dt.time,
+    win_end: dt.time,
+    target_r: float,
+    start=None,
+    end=None,
+) -> tuple[list[dict], dict]:
     """Per-day rows with the real swept levels joined on and both baselines priced.
 
     Returns (rows, days) so a caller can re-slice without replaying anything.
@@ -160,16 +169,20 @@ def build_rows(symbol: str, tf: str, win_start: dt.time, win_end: dt.time,
         # only cut in this study that ever came out positive.
         r["continuation"] = side != 0 and side == r["pre_dir"]
         if side:
-            r.update(directed_trade(days[date], win_end, r["ref_close"],
-                                    r["win_high"], r["win_low"], side, target_r))
+            r.update(
+                directed_trade(
+                    days[date], win_end, r["ref_close"], r["win_high"], r["win_low"], side, target_r
+                )
+            )
         else:
             r.update({"dir_dir": 0, "dir_r": None, "dir_outcome": ""})
     return rows, days
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="M15")
     ap.add_argument("--window", default="10:00-11:00")
@@ -183,23 +196,28 @@ def main() -> int:
     end = dt.date.fromisoformat(args.end) if args.end else None
     win_start, win_end = parse_window(args.window)
 
-    rows, days = build_rows(args.symbol, args.tf, win_start, win_end,
-                            args.target_r, start, end)
+    rows, days = build_rows(args.symbol, args.tf, win_start, win_end, args.target_r, start, end)
     if not rows:
         raise SystemExit("no days survived the filters")
 
     print(f"\n{'=' * 84}")
-    print(f"  {args.symbol} {args.tf} — REAL LIQUIDITY SWEEPS in {args.window} NY — "
-          f"{len(rows)} days, {rows[0]['date']} → {rows[-1]['date']}")
+    print(
+        f"  {args.symbol} {args.tf} — REAL LIQUIDITY SWEEPS in {args.window} NY — "
+        f"{len(rows)} days, {rows[0]['date']} → {rows[-1]['date']}"
+    )
     print(f"{'=' * 84}\n")
 
     swept = [r for r in rows if r["swept_any"]]
     print("HOW OFTEN IS A REAL LEVEL TAKEN IN THIS WINDOW")
-    print(f"  any level swept       {100 * len(swept) / len(rows):.1f}% of days "
-          f"({len(swept)} of {len(rows)})")
-    print(f"  high side only        {_pct(rows, 'swept_high_lvl'):.1f}%      "
-          f"low side only  {_pct(rows, 'swept_low_lvl'):.1f}%      "
-          f"both sides {_pct(rows, 'swept_both'):.1f}%")
+    print(
+        f"  any level swept       {100 * len(swept) / len(rows):.1f}% of days "
+        f"({len(swept)} of {len(rows)})"
+    )
+    print(
+        f"  high side only        {_pct(rows, 'swept_high_lvl'):.1f}%      "
+        f"low side only  {_pct(rows, 'swept_low_lvl'):.1f}%      "
+        f"both sides {_pct(rows, 'swept_both'):.1f}%"
+    )
 
     counts = defaultdict(int)
     for r in rows:
@@ -209,24 +227,27 @@ def main() -> int:
     for name, n in sorted(counts.items(), key=lambda kv: -kv[1]):
         print(f"    {name:<12}{n:>6} days  ({100 * n / len(rows):>4.1f}%)")
 
-    print(f"\nBASELINE A — FADE THE LEG INTO THE WINDOW "
-          f"(stop at window extreme, {args.target_r:g}R, flat {FADE_EXIT:%H:%M})")
+    print(
+        f"\nBASELINE A — FADE THE LEG INTO THE WINDOW "
+        f"(stop at window extreme, {args.target_r:g}R, flat {FADE_EXIT:%H:%M})"
+    )
     print(f"  {'cut':<28}{'trades':>8}{'win%':>8}{'expR':>9}{'totR':>9}")
     _line("all days", rows, "fade_r")
     _line("a real level was swept", swept, "fade_r")
     _line("no level swept", [r for r in rows if not r["swept_any"]], "fade_r")
 
-    print(f"\nBASELINE B — TRADE THE SWEEP'S OWN DIRECTION "
-          f"(swept high = sell, swept low = buy)")
+    print("\nBASELINE B — TRADE THE SWEEP'S OWN DIRECTION (swept high = sell, swept low = buy)")
     print(f"  {'cut':<28}{'trades':>8}{'win%':>8}{'expR':>9}{'totR':>9}")
     directed = [r for r in rows if r["sweep_side"] != 0]
     _line("every clean sweep", directed, "dir_r")
     _line("swept high → short", [r for r in directed if r["sweep_side"] < 0], "dir_r")
     _line("swept low → long", [r for r in directed if r["sweep_side"] > 0], "dir_r")
-    _line("sweep AGREES with fade", [r for r in directed
-                                     if r["sweep_side"] == -r["pre_dir"]], "dir_r")
-    _line("sweep OPPOSES the fade", [r for r in directed
-                                     if r["sweep_side"] == r["pre_dir"]], "dir_r")
+    _line(
+        "sweep AGREES with fade", [r for r in directed if r["sweep_side"] == -r["pre_dir"]], "dir_r"
+    )
+    _line(
+        "sweep OPPOSES the fade", [r for r in directed if r["sweep_side"] == r["pre_dir"]], "dir_r"
+    )
     _line("both sides swept (whipsaw)", [r for r in rows if r["swept_both"]], "fade_r")
 
     print("\nBASELINE B BY LEVEL — which level's sweep carries information")

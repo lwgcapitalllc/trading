@@ -1,12 +1,30 @@
 import { useState, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { runningJobFor, runnerScope, runnerMarket, RUNNER_LABEL } from '@/lib/runner'
-import { RefreshCw, Play, ChevronRight, ChevronDown, Layers, Sliders, Trash2, Activity, X, Plus } from 'lucide-react'
+import {
+  RefreshCw,
+  Play,
+  ChevronRight,
+  ChevronDown,
+  Layers,
+  Sliders,
+  Trash2,
+  Activity,
+  X,
+  Plus,
+} from 'lucide-react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import {
-  useBacktestRuns, useLabProgress, useDeleteRun, useRetryBacktest, useRunningVpsJob,
-  useOptimizations, useSweeps, useDeleteSweep,
-  useStacks, useDeleteStack,
+  useBacktestRuns,
+  useLabProgress,
+  useDeleteRun,
+  useRetryBacktest,
+  useRunningVpsJob,
+  useOptimizations,
+  useSweeps,
+  useDeleteSweep,
+  useStacks,
+  useDeleteStack,
 } from '@/hooks/useLab'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { useRunningStressLock } from '@/hooks/useStressTests'
@@ -25,22 +43,34 @@ type MarketFilter = 'all' | 'futures' | 'forex'
 // Market is derived from the runner, not the instrument name: MT5 = forex, NinjaTrader = futures.
 // Name-matching broke on broker suffixes (e.g. "GBPJPY.s" isn't 6 bare uppercase letters) and on
 // futures contract months ("MYM 06-26"), so forex runs were silently bucketed as futures.
-const runMarket = runnerMarket   // MT5 and Python are both forex; only NT8 is futures
+const runMarket = runnerMarket // MT5 and Python are both forex; only NT8 is futures
 
-function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (v: MarketFilter) => void }) {
+function MarketFilterBar({
+  value,
+  onChange,
+}: {
+  value: MarketFilter
+  onChange: (v: MarketFilter) => void
+}) {
   const opts: Array<{ id: MarketFilter; label: string }> = [
-    { id: 'all',     label: 'All' },
+    { id: 'all', label: 'All' },
     { id: 'futures', label: 'Futures' },
-    { id: 'forex',   label: 'Forex' },
+    { id: 'forex', label: 'Forex' },
   ]
   return (
     <div className="flex gap-[2px] bg-bg-sunken rounded-md p-[3px]">
-      {opts.map(o => (
-        <button key={o.id} onClick={() => onChange(o.id)}
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
           className={`px-2.5 py-[3px] rounded text-[11px] font-medium transition-colors ${
-            value === o.id ? 'bg-bg-surface text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
+            value === o.id
+              ? 'bg-bg-surface text-text-primary shadow-sm'
+              : 'text-text-tertiary hover:text-text-secondary'
           }`}
-        >{o.label}</button>
+        >
+          {o.label}
+        </button>
       ))}
     </div>
   )
@@ -90,7 +120,6 @@ function fmtDuration(createdAt: string, completedAt: string | null): string {
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-
 // ── Verdict pills ─────────────────────────────────────────────────────────────
 
 function firmShortName(firmId: string): string {
@@ -98,24 +127,24 @@ function firmShortName(firmId: string): string {
   if (parts.length < 3) return firmId
   const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
   const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
-  const size  = (parts[1] ?? '').toUpperCase()
-  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  const size = (parts[1] ?? '').toUpperCase()
+  const tier = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
   return `${brand}${size} ${tier}`
 }
 
 function challengeCls(firmId: string): string {
-  if (firmId.includes('_eval'))   return 'bg-warn-muted text-warn-text'
+  if (firmId.includes('_eval')) return 'bg-warn-muted text-warn-text'
   if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text'
   return 'bg-bg-hover text-text-secondary'
 }
 
 function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
   if (!verdicts.length) return <span className="text-text-tertiary text-[11px]">—</span>
-  const visible  = verdicts.slice(0, 2)
+  const visible = verdicts.slice(0, 2)
   const overflow = verdicts.length - visible.length
   return (
     <div className="flex gap-[4px] items-center flex-wrap">
-      {visible.map(v => (
+      {visible.map((v) => (
         <span
           key={v.ruleset_id}
           title={v.ruleset_id}
@@ -124,9 +153,7 @@ function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
           {firmShortName(v.ruleset_id)}
         </span>
       ))}
-      {overflow > 0 && (
-        <span className="text-[10px] text-text-tertiary">+{overflow}</span>
-      )}
+      {overflow > 0 && <span className="text-[10px] text-text-tertiary">+{overflow}</span>}
     </div>
   )
 }
@@ -134,7 +161,12 @@ function ChallengePills({ verdicts }: { verdicts: VerdictSummary[] }) {
 // ── Delete confirmation modal ─────────────────────────────────────────────────
 
 export function ConfirmDeleteModal({
-  count, onConfirm, onCancel, isPending, customMessage, confirmLabel,
+  count,
+  onConfirm,
+  onCancel,
+  isPending,
+  customMessage,
+  confirmLabel,
 }: {
   count: number
   onConfirm: () => void
@@ -143,13 +175,16 @@ export function ConfirmDeleteModal({
   customMessage?: string
   confirmLabel?: string
 }) {
-  const defaultMsg = count === 1
-    ? 'Its evaluations and result files will also be removed.'
-    : `All ${count} runs' evaluations and result files will also be removed.`
+  const defaultMsg =
+    count === 1
+      ? 'Its evaluations and result files will also be removed.'
+      : `All ${count} runs' evaluations and result files will also be removed.`
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel()
+      }}
     >
       <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[400px] shadow-2xl">
         <div className="px-5 py-4 border-b border-border-subtle">
@@ -159,17 +194,24 @@ export function ConfirmDeleteModal({
         </div>
         <div className="px-5 py-4">
           <p className="text-[13px] text-text-secondary">
-            {customMessage ?? defaultMsg}{' '}This cannot be undone.
+            {customMessage ?? defaultMsg} This cannot be undone.
           </p>
         </div>
         <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle">
-          <button onClick={onCancel} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">Cancel</button>
+          <button
+            onClick={onCancel}
+            className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+          >
+            Cancel
+          </button>
           <button
             onClick={onConfirm}
             disabled={isPending}
             className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
           >
-            {isPending ? 'Deleting…' : (confirmLabel ?? (count === 1 ? 'Delete' : `Delete ${count}`))}
+            {isPending
+              ? 'Deleting…'
+              : (confirmLabel ?? (count === 1 ? 'Delete' : `Delete ${count}`))}
           </button>
         </div>
       </div>
@@ -182,8 +224,15 @@ export function ConfirmDeleteModal({
 type Tab = 'runs' | 'sweeps' | 'stacks'
 
 function TabBar({
-  active, onChange, runsCount, sweepsCount, stacksCount,
-  runsActive, sweepsActive, stacksActive, right,
+  active,
+  onChange,
+  runsCount,
+  sweepsCount,
+  stacksCount,
+  runsActive,
+  sweepsActive,
+  stacksActive,
+  right,
 }: {
   active: Tab
   onChange: (t: Tab) => void
@@ -196,36 +245,38 @@ function TabBar({
   right?: ReactNode
 }) {
   const tabs: Array<{ id: Tab; label: string; count?: number; active?: boolean }> = [
-    { id: 'runs',          label: 'Runs',          count: runsCount,   active: runsActive },
-    { id: 'sweeps',        label: 'Sweeps',        count: sweepsCount, active: sweepsActive },
-    { id: 'stacks',        label: 'Stacks',        count: stacksCount, active: stacksActive },
+    { id: 'runs', label: 'Runs', count: runsCount, active: runsActive },
+    { id: 'sweeps', label: 'Sweeps', count: sweepsCount, active: sweepsActive },
+    { id: 'stacks', label: 'Stacks', count: stacksCount, active: stacksActive },
   ]
   return (
     <div className="flex items-center justify-between border-b border-border-subtle mb-6">
       <div className="flex items-center gap-0">
-      {tabs.map(t => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium transition-colors -mb-px border-b-2 ${
-            active === t.id
-              ? 'text-text-primary border-accent'
-              : 'text-text-tertiary border-transparent hover:text-text-secondary'
-          }`}
-        >
-          {t.label}
-          {t.count != null && (
-            <span className={`text-[11px] font-mono tabular-nums px-[5px] py-[1px] rounded-full ${
-              active === t.id ? 'bg-accent/15 text-accent' : 'bg-bg-hover text-text-tertiary'
-            }`}>
-              {t.count}
-            </span>
-          )}
-          {t.active && (
-            <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse flex-shrink-0" />
-          )}
-        </button>
-      ))}
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium transition-colors -mb-px border-b-2 ${
+              active === t.id
+                ? 'text-text-primary border-accent'
+                : 'text-text-tertiary border-transparent hover:text-text-secondary'
+            }`}
+          >
+            {t.label}
+            {t.count != null && (
+              <span
+                className={`text-[11px] font-mono tabular-nums px-[5px] py-[1px] rounded-full ${
+                  active === t.id ? 'bg-accent/15 text-accent' : 'bg-bg-hover text-text-tertiary'
+                }`}
+              >
+                {t.count}
+              </span>
+            )}
+            {t.active && (
+              <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse flex-shrink-0" />
+            )}
+          </button>
+        ))}
       </div>
       {right && <div className="flex items-center gap-2">{right}</div>}
     </div>
@@ -234,27 +285,35 @@ function TabBar({
 
 // ── Runs tab ──────────────────────────────────────────────────────────────────
 
-function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketFilter: MarketFilter }) {
-  const navigate  = useNavigate()
-  const qc        = useQueryClient()
-  const progress  = useLabProgress()
+function RunsTab({
+  statusFilter,
+  marketFilter,
+}: {
+  statusFilter: string
+  marketFilter: MarketFilter
+}) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const progress = useLabProgress()
   const deleteRun = useDeleteRun()
 
-  const retryRun  = useRetryBacktest()
+  const retryRun = useRetryBacktest()
 
-  const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set())
-  const [deleteRunId, setDeleteRunId]         = useState<string | null>(null)
-  const [rerunRunId, setRerunRunId]           = useState<string | null>(null)
-  const [bulkDeleting, setBulkDeleting]       = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleteRunId, setDeleteRunId] = useState<string | null>(null)
+  const [rerunRunId, setRerunRunId] = useState<string | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
-  const [collapsedRuns, setCollapsedRuns]     = useState<Set<string>>(new Set())
+  const [collapsedRuns, setCollapsedRuns] = useState<Set<string>>(new Set())
 
   // Filters live in the page shell (rendered on the tab row); clear any selection when they change
   // so the bulk-delete set never references rows that the new filter has hidden.
-  useEffect(() => { setSelectedIds(new Set()) }, [statusFilter, marketFilter])
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [statusFilter, marketFilter])
 
   const toggleCollapse = (id: string) =>
-    setCollapsedRuns(prev => {
+    setCollapsedRuns((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
@@ -263,8 +322,8 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   const { data: allRuns, isLoading } = useBacktestRuns(
     statusFilter ? { status: statusFilter } : undefined
   )
-  const { data: allOpts }    = useOptimizations()
-  const { data: allSweeps }  = useSweeps()
+  const { data: allOpts } = useOptimizations()
+  const { data: allSweeps } = useSweeps()
   const { data: stressLock } = useRunningStressLock()
   const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
 
@@ -283,8 +342,7 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
 
   const fullBtNestIds = useMemo(() => {
     const set = new Set<string>()
-    for (const runs of fullBtRunsByParent.values())
-      for (const r of runs) set.add(r.run_id)
+    for (const runs of fullBtRunsByParent.values()) for (const r of runs) set.add(r.run_id)
     return set
   }, [fullBtRunsByParent])
 
@@ -307,7 +365,8 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   const runningTuneSourceRuns = useMemo(() => {
     const set = new Set<string>()
     for (const r of allRuns ?? []) {
-      if (r.status === 'running' && r.source_run_id && !r.sweep_id && !r.optimization_id) set.add(r.source_run_id)
+      if (r.status === 'running' && r.source_run_id && !r.sweep_id && !r.optimization_id)
+        set.add(r.source_run_id)
     }
     return set
   }, [allRuns])
@@ -317,14 +376,14 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
     // their container. A UI-created sweep nests under its origin run (SweepNestRow); a standalone
     // (legacy, no source_run_id) sweep lives only in the Sweeps tab. Either way it's filtered here.
     const base = allRuns
-      ?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id)
-      ?.filter(r => !fullBtNestIds.has(r.run_id))
-      ?.filter(r => marketFilter === 'all' || runMarket(r.runner) === marketFilter)
+      ?.filter((r) => (!r.optimization_id || r.status === 'running') && !r.sweep_id)
+      ?.filter((r) => !fullBtNestIds.has(r.run_id))
+      ?.filter((r) => marketFilter === 'all' || runMarket(r.runner) === marketFilter)
     if (!base) return base
     // Tune iterations are never top-level rows. They nest under their baseline when it's
     // visible; otherwise (e.g. tuned from an optimization winner) they live only in the
     // workbench — reachable via the optimization banner and the run-detail breadcrumb.
-    return base.filter(r => !(r.source_run_id && !r.sweep_id && !r.optimization_id))
+    return base.filter((r) => !(r.source_run_id && !r.sweep_id && !r.optimization_id))
   }, [allRuns, fullBtNestIds, marketFilter])
 
   const optsBySourceRun = useMemo(() => {
@@ -351,40 +410,49 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
     return map
   }, [allSweeps])
 
-  const cascadeMessage = useCallback((runId: string) => {
-    const opts   = optsBySourceRun.get(runId) ?? []
-    const sweeps = sweepsBySourceRun.get(runId) ?? []
-    const tunes  = tuneRunsBySourceRun.get(runId) ?? []
-    const parts: string[] = []
-    if (opts.length)   parts.push(`${opts.length} optimization${opts.length !== 1 ? 's' : ''}`)
-    if (sweeps.length) parts.push(`${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}`)
-    if (tunes.length)  parts.push(`${tunes.length} tuning iteration${tunes.length !== 1 ? 's' : ''}`)
-    if (!parts.length) return undefined
-    return `This run has ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
-  }, [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun])
+  const cascadeMessage = useCallback(
+    (runId: string) => {
+      const opts = optsBySourceRun.get(runId) ?? []
+      const sweeps = sweepsBySourceRun.get(runId) ?? []
+      const tunes = tuneRunsBySourceRun.get(runId) ?? []
+      const parts: string[] = []
+      if (opts.length) parts.push(`${opts.length} optimization${opts.length !== 1 ? 's' : ''}`)
+      if (sweeps.length) parts.push(`${sweeps.length} sweep${sweeps.length !== 1 ? 's' : ''}`)
+      if (tunes.length)
+        parts.push(`${tunes.length} tuning iteration${tunes.length !== 1 ? 's' : ''}`)
+      if (!parts.length) return undefined
+      return `This run has ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
+    },
+    [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun]
+  )
 
   // The same warning across a SELECTION. 🔴 The bulk path was the only reachable delete on this
   // page (nothing ever set `deleteRunId`, so `cascadeMessage` was dead code) — so the one warning
   // that names what a delete takes with it was the one warning nobody could see, on the path that
   // deletes the most.
-  const bulkCascadeMessage = useCallback((ids: string[]) => {
-    let opts = 0, sweeps = 0, tunes = 0
-    for (const id of ids) {
-      opts   += (optsBySourceRun.get(id) ?? []).length
-      sweeps += (sweepsBySourceRun.get(id) ?? []).length
-      tunes  += (tuneRunsBySourceRun.get(id) ?? []).length
-    }
-    const parts: string[] = []
-    if (opts)   parts.push(`${opts} optimization${opts !== 1 ? 's' : ''}`)
-    if (sweeps) parts.push(`${sweeps} sweep${sweeps !== 1 ? 's' : ''}`)
-    if (tunes)  parts.push(`${tunes} tuning iteration${tunes !== 1 ? 's' : ''}`)
-    if (!parts.length) return undefined
-    return `These runs have ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
-  }, [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun])
+  const bulkCascadeMessage = useCallback(
+    (ids: string[]) => {
+      let opts = 0,
+        sweeps = 0,
+        tunes = 0
+      for (const id of ids) {
+        opts += (optsBySourceRun.get(id) ?? []).length
+        sweeps += (sweepsBySourceRun.get(id) ?? []).length
+        tunes += (tuneRunsBySourceRun.get(id) ?? []).length
+      }
+      const parts: string[] = []
+      if (opts) parts.push(`${opts} optimization${opts !== 1 ? 's' : ''}`)
+      if (sweeps) parts.push(`${sweeps} sweep${sweeps !== 1 ? 's' : ''}`)
+      if (tunes) parts.push(`${tunes} tuning iteration${tunes !== 1 ? 's' : ''}`)
+      if (!parts.length) return undefined
+      return `These runs have ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
+    },
+    [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun]
+  )
 
   const rerunTarget = useMemo(
-    () => (rerunRunId ? (allRuns ?? []).find(r => r.run_id === rerunRunId) ?? null : null),
-    [rerunRunId, allRuns],
+    () => (rerunRunId ? ((allRuns ?? []).find((r) => r.run_id === rerunRunId) ?? null) : null),
+    [rerunRunId, allRuns]
   )
 
   const confirmRerun = useCallback(() => {
@@ -396,7 +464,9 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
         // detail page opens a picker; this list has no room for one, so it SAYS so and sends the
         // reader there rather than closing on a success that did not happen.
         if (data?.status === 'needs_ruleset') {
-          toast.error('This run needs a ruleset to be scored against — open it and rerun from there')
+          toast.error(
+            'This run needs a ruleset to be scored against — open it and rerun from there'
+          )
           return
         }
         setRerunRunId(null)
@@ -407,12 +477,16 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   // Don't surface the single-run progress banner here when the running job is a tune
   // iteration — it isn't shown in this list (it lives in the workbench), so a banner
   // with no matching row would just be a confusing orphan indicator.
-  const runningIsTune = progress.data?.status === 'running'
-    && allRuns?.some(r => r.run_id === progress.data?.job_id && !!r.source_run_id && !r.sweep_id && !r.optimization_id)
+  const runningIsTune =
+    progress.data?.status === 'running' &&
+    allRuns?.some(
+      (r) =>
+        r.run_id === progress.data?.job_id && !!r.source_run_id && !r.sweep_id && !r.optimization_id
+    )
   const isRunning = progress.data?.status === 'running' && !runningIsTune
 
   const toggleSelect = (id: string) =>
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
@@ -429,7 +503,11 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
     deleteRun.mutate(deleteRunId, {
       onSuccess: () => {
         setDeleteRunId(null)
-        setSelectedIds(prev => { const n = new Set(prev); n.delete(deleteRunId); return n })
+        setSelectedIds((prev) => {
+          const n = new Set(prev)
+          n.delete(deleteRunId)
+          return n
+        })
       },
     })
   }, [deleteRunId, deleteRun])
@@ -438,8 +516,10 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
     setBulkDeleting(true)
     const ids = Array.from(selectedIds)
     try {
-      const results = await Promise.allSettled(ids.map(id => api.delete<void>(`/backtests/runs/${id}`)))
-      const failed = results.filter(r => r.status === 'rejected').length
+      const results = await Promise.allSettled(
+        ids.map((id) => api.delete<void>(`/backtests/runs/${id}`))
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
       const succeeded = ids.length - failed
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
@@ -468,23 +548,23 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   return (
     <div>
       {showControls && (
-      <div className="flex items-center mb-4 gap-3">
-        {isRunning && (
-          <span className="flex items-center gap-1 text-[12px] text-accent">
-            <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
-            {progress.data?.pct}% — {progress.data?.strategy_id} {progress.data?.instrument}
-          </span>
-        )}
-        {selectedIds.size > 0 && (
-          <button
-            onClick={() => setShowBulkConfirm(true)}
-            className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
-          >
-            <Trash2 size={11} />
-            Delete {selectedIds.size}
-          </button>
-        )}
-      </div>
+        <div className="flex items-center mb-4 gap-3">
+          {isRunning && (
+            <span className="flex items-center gap-1 text-[12px] text-accent">
+              <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
+              {progress.data?.pct}% — {progress.data?.strategy_id} {progress.data?.instrument}
+            </span>
+          )}
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowBulkConfirm(true)}
+              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors"
+            >
+              <Trash2 size={11} />
+              Delete {selectedIds.size}
+            </button>
+          )}
+        </div>
       )}
 
       {isLoading ? (
@@ -506,87 +586,103 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
         />
       ) : (
         <>
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="px-3 py-3 w-8">
-                  <input type="checkbox" checked={allChecked} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-accent cursor-pointer" />
-                </th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Win%</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Duration</th>
-                <th className="px-3 py-3 w-16" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {runs.map(run => {
-                const childSweeps  = sweepsBySourceRun.get(run.run_id) ?? []
-                const childOpts    = optsBySourceRun.get(run.run_id) ?? []
-                const childTunes   = tuneRunsBySourceRun.get(run.run_id) ?? []
-                const hasChildren  = childSweeps.length > 0 || childOpts.length > 0 || childTunes.length > 0 || childOpts.some(o => fullBtRunsByParent.has(o.optimization_id))
-                const isCollapsed  = collapsedRuns.has(run.run_id)
-                return (
-                  <Fragment key={run.run_id}>
-                    <RunRow
-                      run={run}
-                      selected={selectedIds.has(run.run_id)}
-                      onSelect={() => toggleSelect(run.run_id)}
-                      onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
-                      hasChildren={hasChildren}
-                      isCollapsed={isCollapsed}
-                      onToggleCollapse={() => toggleCollapse(run.run_id)}
-                      hasRunningStress={stressRunIds.has(run.run_id)}
-                      onRerun={() => setRerunRunId(run.run_id)}
-                      onDelete={() => setDeleteRunId(run.run_id)}
+          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-border-subtle">
+                  <th className="px-3 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={toggleSelectAll}
+                      className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
                     />
-                    {!isCollapsed && childTunes.map(t => (
-                      <TuneNestRow
-                        key={t.run_id}
-                        run={t}
-                        colSpan={12}
-                        onClick={() => navigate(`/backtests/runs/${t.run_id}`)}
+                  </th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Win%</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Duration</th>
+                  <th className="px-3 py-3 w-16" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {runs.map((run) => {
+                  const childSweeps = sweepsBySourceRun.get(run.run_id) ?? []
+                  const childOpts = optsBySourceRun.get(run.run_id) ?? []
+                  const childTunes = tuneRunsBySourceRun.get(run.run_id) ?? []
+                  const hasChildren =
+                    childSweeps.length > 0 ||
+                    childOpts.length > 0 ||
+                    childTunes.length > 0 ||
+                    childOpts.some((o) => fullBtRunsByParent.has(o.optimization_id))
+                  const isCollapsed = collapsedRuns.has(run.run_id)
+                  return (
+                    <Fragment key={run.run_id}>
+                      <RunRow
+                        run={run}
+                        selected={selectedIds.has(run.run_id)}
+                        onSelect={() => toggleSelect(run.run_id)}
+                        onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
+                        hasChildren={hasChildren}
+                        isCollapsed={isCollapsed}
+                        onToggleCollapse={() => toggleCollapse(run.run_id)}
+                        hasRunningStress={stressRunIds.has(run.run_id)}
+                        onRerun={() => setRerunRunId(run.run_id)}
+                        onDelete={() => setDeleteRunId(run.run_id)}
                       />
-                    ))}
-                    {!isCollapsed && childSweeps.map(sw => (
-                      <SweepNestRow
-                        key={sw.sweep_id}
-                        sweep={sw}
-                        colSpan={12}
-                        onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
-                      />
-                    ))}
-                    {!isCollapsed && childOpts.map(opt => (
-                      <Fragment key={opt.optimization_id}>
-                        <OptimizationNestRow
-                          opt={opt}
-                          colSpan={12}
-                          onClick={() => navigate(`/optimizations/${opt.optimization_id}`)}
-                          hasRunningStress={!!opt.best_run_id && stressRunIds.has(opt.best_run_id)}
-                          hasRunningTune={!!opt.best_run_id && runningTuneSourceRuns.has(opt.best_run_id)}
-                        />
-                        {(fullBtRunsByParent.get(opt.optimization_id) ?? []).map(r => (
-                          <FullBacktestNestRow
-                            key={r.run_id}
+                      {!isCollapsed &&
+                        childTunes.map((t) => (
+                          <TuneNestRow
+                            key={t.run_id}
+                            run={t}
                             colSpan={12}
-                            onClick={() => navigate(`/backtests/runs/${r.run_id}`)}
+                            onClick={() => navigate(`/backtests/runs/${t.run_id}`)}
                           />
                         ))}
-                      </Fragment>
-                    ))}
-                  </Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                      {!isCollapsed &&
+                        childSweeps.map((sw) => (
+                          <SweepNestRow
+                            key={sw.sweep_id}
+                            sweep={sw}
+                            colSpan={12}
+                            onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
+                          />
+                        ))}
+                      {!isCollapsed &&
+                        childOpts.map((opt) => (
+                          <Fragment key={opt.optimization_id}>
+                            <OptimizationNestRow
+                              opt={opt}
+                              colSpan={12}
+                              onClick={() => navigate(`/optimizations/${opt.optimization_id}`)}
+                              hasRunningStress={
+                                !!opt.best_run_id && stressRunIds.has(opt.best_run_id)
+                              }
+                              hasRunningTune={
+                                !!opt.best_run_id && runningTuneSourceRuns.has(opt.best_run_id)
+                              }
+                            />
+                            {(fullBtRunsByParent.get(opt.optimization_id) ?? []).map((r) => (
+                              <FullBacktestNestRow
+                                key={r.run_id}
+                                colSpan={12}
+                                onClick={() => navigate(`/backtests/runs/${r.run_id}`)}
+                              />
+                            ))}
+                          </Fragment>
+                        ))}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -626,7 +722,12 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
 // derived artefact discarded. That is a destructive action, and it was one unconfirmed click on
 // an icon button inside a row whose own click navigates. The detail page has asked first since
 // the day it existed; this is the same question in the same words.
-function ConfirmRerunModal({ run, onConfirm, onCancel, isPending }: {
+function ConfirmRerunModal({
+  run,
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
   run: BacktestSummary
   onConfirm: () => void
   onCancel: () => void
@@ -634,10 +735,13 @@ function ConfirmRerunModal({ run, onConfirm, onCancel, isPending }: {
 }) {
   const isFailed = run.status.startsWith('failed')
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onCancel}
+    >
       <div
         className="w-full max-w-[420px] rounded-lg border border-border-default bg-bg-surface p-5 space-y-4"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div>
           <h3 className="text-[15px] font-semibold text-text-primary">
@@ -652,20 +756,25 @@ function ConfirmRerunModal({ run, onConfirm, onCancel, isPending }: {
           <span className="text-text-primary">same run</span>
           {isFailed
             ? '.'
-            : ' — this run’s current result, charts and evaluations are discarded and replaced.'}
-          {' '}To change the parameters instead, open the run and use{' '}
-          <span className="text-text-primary">Tune</span>, which creates a new run and leaves this one alone.
+            : ' — this run’s current result, charts and evaluations are discarded and replaced.'}{' '}
+          To change the parameters instead, open the run and use{' '}
+          <span className="text-text-primary">Tune</span>, which creates a new run and leaves this
+          one alone.
         </p>
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
             className="px-3 py-[6px] rounded-md text-[12px] font-medium border border-border-default text-text-secondary hover:text-text-primary transition-colors"
-          >Cancel</button>
+          >
+            Cancel
+          </button>
           <button
             onClick={onConfirm}
             disabled={isPending}
             className="px-3 py-[6px] rounded-md text-[12px] font-medium bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
-          >{isPending ? 'Starting…' : isFailed ? 'Retry' : 'Rerun'}</button>
+          >
+            {isPending ? 'Starting…' : isFailed ? 'Retry' : 'Rerun'}
+          </button>
         </div>
       </div>
     </div>
@@ -675,17 +784,22 @@ function ConfirmRerunModal({ run, onConfirm, onCancel, isPending }: {
 // ── Nested optimization row ───────────────────────────────────────────────────
 
 export function fmtOptStatus(s: string) {
-  if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-  if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+  if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+  if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
   // Cancelling stores 'failed_cancelled', so the generic failed branch below labelled a
   // deliberate stop as a fault — and the detail page said "Cancelled" for the same row.
-  if (s === 'failed_cancelled') return { label: 'Cancelled', cls: 'bg-bg-hover text-text-secondary' }
-  if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
+  if (s === 'failed_cancelled')
+    return { label: 'Cancelled', cls: 'bg-bg-hover text-text-secondary' }
+  if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
   return { label: s, cls: 'bg-bg-hover text-text-secondary' }
 }
 
 function OptimizationNestRow({
-  opt, colSpan, onClick, hasRunningStress, hasRunningTune,
+  opt,
+  colSpan,
+  onClick,
+  hasRunningStress,
+  hasRunningTune,
 }: {
   opt: import('@/types').OptimizationSummary
   colSpan: number
@@ -695,26 +809,38 @@ function OptimizationNestRow({
 }) {
   const st = fmtOptStatus(opt.status)
   return (
-    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35">
+    <tr
+      onClick={onClick}
+      className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35"
+    >
       <td className="px-3 py-2" />
       <td className="px-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Optimization</span>
-          <span className="text-[10px] text-text-tertiary">{opt.completed_runs}/{opt.estimated_runs} combos</span>
+          <span className="text-[10px] text-text-tertiary">
+            {opt.completed_runs}/{opt.estimated_runs} combos
+          </span>
           {opt.status === 'running' && (
-            <span className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0" title="Optimization in progress" />
+            <span
+              className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0"
+              title="Optimization in progress"
+            />
           )}
           {hasRunningStress && (
-            <span title="Stress test in progress"
-              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
+            <span
+              title="Stress test in progress"
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent"
+            >
               <Activity size={8} className="animate-pulse" />
               STRESS TESTING
             </span>
           )}
           {hasRunningTune && (
-            <span title="A tuning iteration is running on the winner"
-              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
+            <span
+              title="A tuning iteration is running on the winner"
+              className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent"
+            >
               <Sliders size={8} className="animate-pulse" />
               TUNING
             </span>
@@ -722,7 +848,11 @@ function OptimizationNestRow({
         </div>
       </td>
       <td className="px-4 py-2">
-        <span className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>{st.label}</span>
+        <span
+          className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
+        >
+          {st.label}
+        </span>
       </td>
       <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
         <span className="text-[11px] text-accent">View →</span>
@@ -733,18 +863,21 @@ function OptimizationNestRow({
 
 // ── Nested full-backtest row (winner run from an optimization) ────────────────
 
-function FullBacktestNestRow({ colSpan, onClick }: {
-  colSpan: number
-  onClick: () => void
-}) {
+function FullBacktestNestRow({ colSpan, onClick }: { colSpan: number; onClick: () => void }) {
   return (
-    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35">
+    <tr
+      onClick={onClick}
+      className="hover:bg-bg-hover cursor-pointer transition-colors bg-gold-muted/5 border-l-2 border-l-gold-text/35"
+    >
       <td className="px-3 py-2" />
       <td className="pl-10 pr-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-gold-text">Full Backtest</span>
-          <span className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0" title="Running" />
+          <span
+            className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0"
+            title="Running"
+          />
         </div>
       </td>
       <td className="px-4 py-2">
@@ -763,36 +896,49 @@ function FullBacktestNestRow({ colSpan, onClick }: {
 // ── Nested sweep row ──────────────────────────────────────────────────────────
 
 function SweepNestRow({
-  sweep, colSpan, onClick,
+  sweep,
+  colSpan,
+  onClick,
 }: {
   sweep: import('@/types').SweepSummary
   colSpan: number
   onClick: () => void
 }) {
   function fmtSweepSt(s: string) {
-    if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-    if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
-    if (s === 'partial')        return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
-    if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial') return { label: 'Partial', cls: 'bg-warn-muted text-warn-text' }
+    if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
     return { label: s, cls: 'bg-bg-hover text-text-secondary' }
   }
   const st = fmtSweepSt(sweep.status)
   return (
-    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-accent/[0.03] border-l-2 border-l-accent/30">
+    <tr
+      onClick={onClick}
+      className="hover:bg-bg-hover cursor-pointer transition-colors bg-accent/[0.03] border-l-2 border-l-accent/30"
+    >
       <td className="px-3 py-2" />
       <td className="px-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-accent/50 font-mono">↳</span>
           <span className="text-[11px] font-semibold text-accent/80">Sweep</span>
-          <span className="text-[10px] text-text-tertiary">{sweep.total_instruments} instruments</span>
+          <span className="text-[10px] text-text-tertiary">
+            {sweep.total_instruments} instruments
+          </span>
           {sweep.status === 'running' && (
-            <span className="text-[10px] text-text-tertiary">· {sweep.completed_instruments}/{sweep.total_instruments} done</span>
+            <span className="text-[10px] text-text-tertiary">
+              · {sweep.completed_instruments}/{sweep.total_instruments} done
+            </span>
           )}
         </div>
       </td>
       <td className="px-4 py-2">
-        <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
-          {sweep.status === 'running' && <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />}
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
+        >
+          {sweep.status === 'running' && (
+            <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />
+          )}
           {st.label}
         </span>
       </td>
@@ -805,18 +951,27 @@ function SweepNestRow({
 
 // ── Nested tuning-iteration row ───────────────────────────────────────────────
 
-function TuneNestRow({ run, colSpan, onClick }: {
+function TuneNestRow({
+  run,
+  colSpan,
+  onClick,
+}: {
   run: BacktestSummary
   colSpan: number
   onClick: () => void
 }) {
   const isRunning = run.status === 'running'
-  const isFailed  = run.status.startsWith('failed')
-  const st = isRunning ? { label: 'Running', cls: 'bg-accent/10 text-accent' }
-    : isFailed ? { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
-    : { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+  const isFailed = run.status.startsWith('failed')
+  const st = isRunning
+    ? { label: 'Running', cls: 'bg-accent/10 text-accent' }
+    : isFailed
+      ? { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
+      : { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
   return (
-    <tr onClick={onClick} className="hover:bg-bg-hover cursor-pointer transition-colors bg-accent/[0.03] border-l-2 border-l-accent/30">
+    <tr
+      onClick={onClick}
+      className="hover:bg-bg-hover cursor-pointer transition-colors bg-accent/[0.03] border-l-2 border-l-accent/30"
+    >
       <td className="px-3 py-2" />
       <td className="px-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
@@ -825,12 +980,16 @@ function TuneNestRow({ run, colSpan, onClick }: {
           <span className="text-[11px] font-semibold text-accent/80">Tune</span>
           <span className="text-[10px] text-text-tertiary font-mono">{run.run_id.slice(0, 6)}</span>
           {run.status === 'complete' && run.profit_factor != null && (
-            <span className="text-[10px] text-text-tertiary">PF {run.profit_factor.toFixed(2)}</span>
+            <span className="text-[10px] text-text-tertiary">
+              PF {run.profit_factor.toFixed(2)}
+            </span>
           )}
         </div>
       </td>
       <td className="px-4 py-2">
-        <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
+        >
           {isRunning && <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />}
           {st.label}
         </span>
@@ -848,19 +1007,34 @@ function TuneNestRow({ run, colSpan, onClick }: {
 
 function RunStatusIcon({ status }: { status: string }) {
   if (status === 'running')
-    return <span title="Running" className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse flex-shrink-0" />
+    return (
+      <span
+        title="Running"
+        className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse flex-shrink-0"
+      />
+    )
   if (status.startsWith('failed'))
     return <X size={12} className="text-neg-text flex-shrink-0" aria-label="Failed" />
   if (status === 'complete')
-    return <span title="Complete" className="w-[7px] h-[7px] rounded-full bg-pos-text flex-shrink-0" />
+    return (
+      <span title="Complete" className="w-[7px] h-[7px] rounded-full bg-pos-text flex-shrink-0" />
+    )
   return null
 }
 
 // ── Run row ───────────────────────────────────────────────────────────────────
 
 function RunRow({
-  run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress,
-  onRerun, onDelete,
+  run,
+  selected,
+  onSelect,
+  onClick,
+  hasChildren,
+  isCollapsed,
+  onToggleCollapse,
+  hasRunningStress,
+  onRerun,
+  onDelete,
 }: {
   run: BacktestSummary
   selected: boolean
@@ -883,21 +1057,29 @@ function RunRow({
   const { data: runningJob } = useRunningVpsJob()
   const platformLocked = !!runningJobFor(runningJob, run.runner)?.running
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
-  const isOptChild   = !!run.optimization_id
+  const isOptChild = !!run.optimization_id
   const isSweepChild = !!run.sweep_id
   return (
     <tr
       onClick={onClick}
       className={`hover:bg-bg-hover cursor-pointer transition-colors ${selected ? 'bg-accent/5' : ''} ${isOptChild ? 'border-l-2 border-l-gold-text/40' : isSweepChild ? 'border-l-2 border-l-accent/40' : ''}`}
     >
-      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-        <input type="checkbox" checked={selected} onChange={onSelect} className="w-3.5 h-3.5 rounded accent-accent cursor-pointer" />
+      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onSelect}
+          className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+        />
       </td>
       <td className="px-4 py-3 font-medium">
         <div className="flex items-center gap-1.5 flex-wrap">
           {hasChildren && (
             <button
-              onClick={e => { e.stopPropagation(); onToggleCollapse?.() }}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleCollapse?.()
+              }}
               className="flex-shrink-0 text-text-tertiary hover:text-text-secondary transition-colors"
               title={isCollapsed ? 'Expand children' : 'Collapse children'}
             >
@@ -908,7 +1090,10 @@ function RunRow({
           <RunStatusIcon status={run.status} />
           {run.sweep_id && (
             <span
-              onClick={e => { e.stopPropagation(); navigate(`/backtests/sweeps/${run.sweep_id}`) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate(`/backtests/sweeps/${run.sweep_id}`)
+              }}
               title={`Sweep: ${run.sweep_id}`}
               className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent cursor-pointer hover:bg-accent/20 transition-colors"
             >
@@ -918,7 +1103,10 @@ function RunRow({
           )}
           {run.optimization_id && (
             <span
-              onClick={e => { e.stopPropagation(); navigate(`/optimizations/${run.optimization_id}`) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate(`/optimizations/${run.optimization_id}`)
+              }}
               title={`Optimization: ${run.optimization_id}`}
               className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-gold-muted text-gold-text cursor-pointer hover:opacity-80 transition-opacity"
             >
@@ -941,8 +1129,12 @@ function RunRow({
       <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
         {run.start_date && run.end_date ? fmtDateRange(run.start_date, run.end_date) : '—'}
       </td>
-      <td className="px-4 py-3"><WorthinessBadge worthiness={run.worthiness} /></td>
-      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{run.trade_count != null ? run.trade_count.toLocaleString() : '—'}</td>
+      <td className="px-4 py-3">
+        <WorthinessBadge worthiness={run.worthiness} />
+      </td>
+      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+        {run.trade_count != null ? run.trade_count.toLocaleString() : '—'}
+      </td>
       <td className={`px-4 py-3 font-mono tabular-nums ${pnlClass}`}>{fmtMoney(run.net_pnl)}</td>
       {/* Dollars ALONE were the misleading part (fixed 2026-08-01): $1.7M of drawdown listed
           beside $14M of profit reads as ~12%, where the honest peak-relative figure is 56%. The
@@ -962,11 +1154,17 @@ function RunRow({
               </div>
             )}
           </>
-        ) : '—'}
+        ) : (
+          '—'
+        )}
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">{fmtPct(run.win_rate)}</td>
-      <td className="px-4 py-3"><ChallengePills verdicts={run.verdicts} /></td>
-      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{fmtDuration(run.started_at ?? run.created_at, run.completed_at)}</td>
+      <td className="px-4 py-3">
+        <ChallengePills verdicts={run.verdicts} />
+      </td>
+      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+        {fmtDuration(run.started_at ?? run.created_at, run.completed_at)}
+      </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1 justify-end">
           {/* ⚠ Both of these ASK first. This button used to fire `retry.mutate` on the click — one
@@ -974,19 +1172,31 @@ function RunRow({
               It sat inside a row whose own click navigates, at icon size, next to the chevron.
               The detail page had opened a modal for the same action since the day it existed. */}
           <button
-            onClick={e => { e.stopPropagation(); onRerun() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRerun()
+            }}
             disabled={platformLocked || run.status === 'running'}
             className="p-[5px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-            title={platformLocked ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy — wait for the current job to finish`
-              : run.status === 'running' ? 'Already running'
-              : run.status.startsWith('failed') ? 'Retry — replaces this run’s result' : 'Rerun — replaces this run’s result'}
+            title={
+              platformLocked
+                ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy — wait for the current job to finish`
+                : run.status === 'running'
+                  ? 'Already running'
+                  : run.status.startsWith('failed')
+                    ? 'Retry — replaces this run’s result'
+                    : 'Rerun — replaces this run’s result'
+            }
           >
             <Play size={13} />
           </button>
           {/* There was no per-row delete at all. The only way to remove a run was the bulk
               checkbox path — which is the ONE path that never showed the cascade warning. */}
           <button
-            onClick={e => { e.stopPropagation(); onDelete() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
             disabled={run.status === 'running'}
             className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-text/10 transition-colors disabled:opacity-40"
             title={run.status === 'running' ? 'Stop the run before deleting it' : 'Delete this run'}
@@ -1003,7 +1213,7 @@ function RunRow({
 export function RunsTableSkeleton() {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden animate-pulse">
-      {[0, 1, 2].map(i => (
+      {[0, 1, 2].map((i) => (
         <div key={i} className="flex gap-4 px-4 py-3 border-b border-border-subtle last:border-0">
           <div className="h-4 w-32 bg-bg-hover rounded" />
           <div className="h-4 w-20 bg-bg-hover rounded" />
@@ -1018,18 +1228,20 @@ export function RunsTableSkeleton() {
 // ── Sweeps tab ────────────────────────────────────────────────────────────────
 
 function SweepsTab() {
-  const navigate    = useNavigate()
+  const navigate = useNavigate()
   const deleteSweep = useDeleteSweep()
   const { data: sweeps, isLoading } = useSweeps()
   const { data: allRuns } = useBacktestRuns()
-  const hasRuns = (allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length ?? 0) > 0
+  const hasRuns =
+    (allRuns?.filter((r) => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length ??
+      0) > 0
   const [deleteSweepId, setDeleteSweepId] = useState<string | null>(null)
 
   function fmtSweepStatus(s: string) {
-    if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-    if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
-    if (s === 'partial')        return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
-    if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial') return { label: 'Partial', cls: 'bg-warn-muted text-warn-text' }
+    if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
     return { label: s, cls: 'bg-bg-hover text-text-secondary' }
   }
 
@@ -1041,9 +1253,11 @@ function SweepsTab() {
         <EmptyState
           icon={<Layers size={20} />}
           title="No sweeps yet"
-          description={hasRuns
-            ? "Open a completed run's detail page to sweep that strategy across multiple instruments."
-            : "Run a backtest first, then open its detail page to sweep that strategy across multiple instruments."}
+          description={
+            hasRuns
+              ? "Open a completed run's detail page to sweep that strategy across multiple instruments."
+              : 'Run a backtest first, then open its detail page to sweep that strategy across multiple instruments.'
+          }
           action={
             <button
               onClick={() => navigate(hasRuns ? '/backtests?tab=runs' : '/strategies')}
@@ -1069,7 +1283,7 @@ function SweepsTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {sweeps.map(sw => {
+              {sweeps.map((sw) => {
                 const st = fmtSweepStatus(sw.status)
                 return (
                   <tr
@@ -1078,36 +1292,74 @@ function SweepsTab() {
                     className="hover:bg-bg-hover cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3 font-medium">{sw.strategy_name}</td>
-                    <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">{fmtDateRange(sw.start_date, sw.end_date)}</td>
+                    <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
+                      {fmtDateRange(sw.start_date, sw.end_date)}
+                    </td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
                       {sw.completed_instruments}/{sw.total_instruments}
-                      {sw.failed_instruments > 0 && <span className="ml-1 text-neg-text text-[11px]">({sw.failed_instruments} failed)</span>}
+                      {sw.failed_instruments > 0 && (
+                        <span className="ml-1 text-neg-text text-[11px]">
+                          ({sw.failed_instruments} failed)
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>
-                        {sw.status === 'running' && <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />}
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
+                      >
+                        {sw.status === 'running' && (
+                          <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />
+                        )}
                         {st.label}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <WorthinessBadge worthiness={sw.best_worthiness ? { tier: sw.best_worthiness as WorthinessScore['tier'], reason: null, computed_against_firm: null } : null} />
+                      <WorthinessBadge
+                        worthiness={
+                          sw.best_worthiness
+                            ? {
+                                tier: sw.best_worthiness as WorthinessScore['tier'],
+                                reason: null,
+                                computed_against_firm: null,
+                              }
+                            : null
+                        }
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-[4px] items-center flex-wrap">
-                        {sw.ruleset_ids.slice(0, 2).map(f => (
-                          <span key={f} className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(f)}`}>{firmShortName(f)}</span>
+                        {sw.ruleset_ids.slice(0, 2).map((f) => (
+                          <span
+                            key={f}
+                            className={`inline-flex items-center px-[6px] py-[2px] rounded text-[10px] font-semibold font-mono ${challengeCls(f)}`}
+                          >
+                            {firmShortName(f)}
+                          </span>
                         ))}
-                        {sw.ruleset_ids.length > 2 && <span className="text-[10px] text-text-tertiary">+{sw.ruleset_ids.length - 2}</span>}
-                        {sw.ruleset_ids.length === 0 && <span className="text-text-tertiary text-[11px]">—</span>}
+                        {sw.ruleset_ids.length > 2 && (
+                          <span className="text-[10px] text-text-tertiary">
+                            +{sw.ruleset_ids.length - 2}
+                          </span>
+                        )}
+                        {sw.ruleset_ids.length === 0 && (
+                          <span className="text-text-tertiary text-[11px]">—</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <button
-                          onClick={e => { e.stopPropagation(); setDeleteSweepId(sw.sweep_id) }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteSweepId(sw.sweep_id)
+                          }}
                           disabled={sw.status === 'running'}
                           className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={sw.status === 'running' ? 'Wait for sweep to finish before deleting' : 'Delete sweep'}
+                          title={
+                            sw.status === 'running'
+                              ? 'Wait for sweep to finish before deleting'
+                              : 'Delete sweep'
+                          }
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1125,7 +1377,9 @@ function SweepsTab() {
       {deleteSweepId && (
         <ConfirmDeleteModal
           count={1}
-          onConfirm={() => deleteSweep.mutate(deleteSweepId, { onSettled: () => setDeleteSweepId(null) })}
+          onConfirm={() =>
+            deleteSweep.mutate(deleteSweepId, { onSettled: () => setDeleteSweepId(null) })
+          }
           onCancel={() => setDeleteSweepId(null)}
           isPending={deleteSweep.isPending}
           customMessage="This will permanently delete the sweep and all its instrument runs, evaluations, and result files."
@@ -1147,10 +1401,10 @@ function StacksTab() {
   const [deleteStackId, setDeleteStackId] = useState<string | null>(null)
 
   function fmtStackStatus(s: string) {
-    if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
-    if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
-    if (s === 'partial')        return { label: 'Partial',  cls: 'bg-warn-muted text-warn-text' }
-    if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
+    if (s === 'partial') return { label: 'Partial', cls: 'bg-warn-muted text-warn-text' }
+    if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
     return { label: s, cls: 'bg-bg-hover text-text-secondary' }
   }
 
@@ -1158,7 +1412,8 @@ function StacksTab() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-[12px] text-text-tertiary max-w-[560px]">
-          Layer multiple Python strategies over one instrument to see combined portfolio P&L, then toggle any strategy off to see its effect.
+          Layer multiple Python strategies over one instrument to see combined portfolio P&L, then
+          toggle any strategy off to see its effect.
         </p>
         {/* Header button only once stacks exist — the empty state has its own centered CTA. */}
         {!!stacks?.length && (
@@ -1204,7 +1459,7 @@ function StacksTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {stacks.map(st => {
+              {stacks.map((st) => {
                 const s = fmtStackStatus(st.status)
                 return (
                   <tr
@@ -1212,7 +1467,9 @@ function StacksTab() {
                     onClick={() => navigate(`/backtests/stacks/${st.stack_id}`)}
                     className="hover:bg-bg-hover cursor-pointer transition-colors"
                   >
-                    <td className="px-4 py-3 font-medium max-w-[280px] truncate">{st.strategy_names}</td>
+                    <td className="px-4 py-3 font-medium max-w-[280px] truncate">
+                      {st.strategy_names}
+                    </td>
                     {/* A screen and a shared simulation over the same legs report different
                         numbers. Two rows side by side with no way to tell them apart is a
                         comparison the reader cannot make. */}
@@ -1234,7 +1491,9 @@ function StacksTab() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-text-secondary font-mono">{st.instrument}</td>
-                    <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">{fmtDateRange(st.start_date, st.end_date)}</td>
+                    <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
+                      {fmtDateRange(st.start_date, st.end_date)}
+                    </td>
                     {/* The result, so this list can be READ rather than opened row by row — it is
                         the one thing every other list in this app has had and this one did not.
                         ⚠ An em-dash means NOTHING HAS FINISHED, not a flat result: `net_pnl` is
@@ -1244,28 +1503,49 @@ function StacksTab() {
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
                       {st.trade_count ?? '—'}
                     </td>
-                    <td className={`px-4 py-3 font-mono tabular-nums font-medium ${
-                      st.net_pnl == null ? 'text-text-tertiary'
-                        : st.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+                    <td
+                      className={`px-4 py-3 font-mono tabular-nums font-medium ${
+                        st.net_pnl == null
+                          ? 'text-text-tertiary'
+                          : st.net_pnl >= 0
+                            ? 'text-pos-text'
+                            : 'text-neg-text'
+                      }`}
+                    >
                       {st.net_pnl == null ? '—' : fmtMoney(st.net_pnl)}
                     </td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
                       {st.completed_strategies}/{st.total_strategies}
-                      {st.failed_strategies > 0 && <span className="ml-1 text-neg-text text-[11px]">({st.failed_strategies} failed)</span>}
+                      {st.failed_strategies > 0 && (
+                        <span className="ml-1 text-neg-text text-[11px]">
+                          ({st.failed_strategies} failed)
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${s.cls}`}>
-                        {st.status === 'running' && <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />}
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${s.cls}`}
+                      >
+                        {st.status === 'running' && (
+                          <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />
+                        )}
                         {s.label}
                       </span>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <button
-                          onClick={e => { e.stopPropagation(); setDeleteStackId(st.stack_id) }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteStackId(st.stack_id)
+                          }}
                           disabled={st.status === 'running'}
                           className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={st.status === 'running' ? 'Wait for the stack to finish before deleting' : 'Delete stack'}
+                          title={
+                            st.status === 'running'
+                              ? 'Wait for the stack to finish before deleting'
+                              : 'Delete stack'
+                          }
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1285,7 +1565,9 @@ function StacksTab() {
       {deleteStackId && (
         <ConfirmDeleteModal
           count={1}
-          onConfirm={() => deleteStack.mutate(deleteStackId, { onSettled: () => setDeleteStackId(null) })}
+          onConfirm={() =>
+            deleteStack.mutate(deleteStackId, { onSettled: () => setDeleteStackId(null) })
+          }
           onCancel={() => setDeleteStackId(null)}
           isPending={deleteStack.isPending}
           customMessage="This will permanently delete the stack and all its strategy runs and result files."
@@ -1313,24 +1595,26 @@ export function Backtests() {
   const qc = useQueryClient()
   const runsFetching = useIsFetching({ queryKey: ['lab', 'runs'] }) > 0
 
-  const { data: allRuns }   = useBacktestRuns()
+  const { data: allRuns } = useBacktestRuns()
   const { data: allSweeps } = useSweeps()
   const { data: allStacks } = useStacks()
   // A tune iteration is a standalone run with source_run_id; it lives in the workbench, not the Runs list.
   const isTuneRun = (r: BacktestSummary) => !!r.source_run_id && !r.sweep_id && !r.optimization_id
-  const runsCount    = allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id && !isTuneRun(r)).length
-  const sweepsCount  = allSweeps?.length
-  const stacksCount  = allStacks?.length
-  const runsActive   = allRuns?.some(r => !r.sweep_id && !isTuneRun(r) && r.status === 'running')
-  const sweepsActive = allSweeps?.some(s => s.status === 'running')
-  const stacksActive = allStacks?.some(s => s.status === 'running')
+  const runsCount = allRuns?.filter(
+    (r) => (!r.optimization_id || r.status === 'running') && !r.sweep_id && !isTuneRun(r)
+  ).length
+  const sweepsCount = allSweeps?.length
+  const stacksCount = allStacks?.length
+  const runsActive = allRuns?.some((r) => !r.sweep_id && !isTuneRun(r) && r.status === 'running')
+  const sweepsActive = allSweeps?.some((s) => s.status === 'running')
+  const stacksActive = allStacks?.some((s) => s.status === 'running')
 
   const runsControls = (
     <>
       <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
       <select
         value={statusFilter}
-        onChange={e => setStatusFilter(e.target.value)}
+        onChange={(e) => setStatusFilter(e.target.value)}
         className="bg-bg-sunken border border-border-subtle rounded-md px-2 py-[5px] text-[12px] text-text-secondary focus:outline-none focus:border-accent transition-colors"
       >
         <option value="">All statuses</option>
@@ -1353,27 +1637,40 @@ export function Backtests() {
   return (
     <div>
       <StickyHeader>
-        {scrolled => (
+        {(scrolled) => (
           <>
-            <div className={`flex items-end gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}>
-              <h1 className={`font-semibold transition-all duration-200 ${scrolled ? 'text-[16px]' : 'text-h1'}`}>Backtests</h1>
+            <div
+              className={`flex items-end gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}
+            >
+              <h1
+                className={`font-semibold transition-all duration-200 ${scrolled ? 'text-[16px]' : 'text-h1'}`}
+              >
+                Backtests
+              </h1>
             </div>
 
             <TabBar
-              active={tab} onChange={setTab}
-              runsCount={runsCount} sweepsCount={sweepsCount} stacksCount={stacksCount}
-              runsActive={runsActive} sweepsActive={sweepsActive} stacksActive={stacksActive}
+              active={tab}
+              onChange={setTab}
+              runsCount={runsCount}
+              sweepsCount={sweepsCount}
+              stacksCount={stacksCount}
+              runsActive={runsActive}
+              sweepsActive={sweepsActive}
+              stacksActive={stacksActive}
               right={tab === 'runs' ? runsControls : undefined}
             />
 
             {tab === 'runs' && (allRuns?.length ?? 0) > 0 && (
-              <div className="mb-4"><WorthinessLegend forceCollapsed={scrolled} /></div>
+              <div className="mb-4">
+                <WorthinessLegend forceCollapsed={scrolled} />
+              </div>
             )}
           </>
         )}
       </StickyHeader>
 
-      {tab === 'runs'   && <RunsTab statusFilter={statusFilter} marketFilter={marketFilter} />}
+      {tab === 'runs' && <RunsTab statusFilter={statusFilter} marketFilter={marketFilter} />}
       {tab === 'sweeps' && <SweepsTab />}
       {tab === 'stacks' && <StacksTab />}
     </div>

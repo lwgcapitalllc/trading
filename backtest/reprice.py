@@ -23,18 +23,26 @@ actually produced.
 — free, and charged — then rebuilds the second from the first's stored curve and asserts equality
 to the cent. The spread case reproduces 130.27R / $16,266,933.57 exactly.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Iterable, Optional, Sequence
-
+from typing import Iterable, Sequence
 from zoneinfo import ZoneInfo
 
 from .fills import AccountProfile
 
-__all__ = ["REPRICEABLE_LAYERS", "EXACT_LAYERS", "APPROXIMATE_LAYERS", "RepriceError",
-           "RepricedTrade", "RepricedRun", "reprice_curve", "rollovers_between"]
+__all__ = [
+    "REPRICEABLE_LAYERS",
+    "EXACT_LAYERS",
+    "APPROXIMATE_LAYERS",
+    "RepriceError",
+    "RepricedTrade",
+    "RepricedRun",
+    "reprice_curve",
+    "rollovers_between",
+]
 
 # The cost layers a stored run can be re-priced at. Deliberately NOT the same roster as
 # `python_runner.COST_LAYERS`: that one includes `bid_ask_fills`, which changes the trade list and
@@ -69,12 +77,12 @@ class RepriceError(ValueError):
 @dataclass(frozen=True)
 class RepricedTrade:
     index: int
-    r: float                 # R after the charge
-    r_before: float          # R as the stored run measured it
-    cost_r: float            # what the layers took off, in R
-    cost_usd: float          # ...and in dollars on the RE-PRICED equity path
-    profit: float            # the trade's own dollars on that path
-    equity: float            # balance after it closed
+    r: float  # R after the charge
+    r_before: float  # R as the stored run measured it
+    cost_r: float  # what the layers took off, in R
+    cost_usd: float  # ...and in dollars on the RE-PRICED equity path
+    profit: float  # the trade's own dollars on that path
+    equity: float  # balance after it closed
 
 
 @dataclass(frozen=True)
@@ -175,7 +183,7 @@ def rollovers_between(entry_ms: int, exit_ms: int, close_hour_ny: int) -> list[d
     start = datetime.fromtimestamp(entry_ms / 1000.0, tz=timezone.utc).astimezone(_NY).date()
     end = datetime.fromtimestamp(exit_ms / 1000.0, tz=timezone.utc).astimezone(_NY).date()
     out: list[date] = []
-    day = start - timedelta(days=1)          # a position can span the boundary on its entry day
+    day = start - timedelta(days=1)  # a position can span the boundary on its entry day
     while day <= end:
         if day.weekday() not in _SHUT_WEEKDAYS:
             roll_ms = int(datetime.combine(day, time(close_hour_ny), tzinfo=_NY).timestamp() * 1000)
@@ -201,8 +209,9 @@ def _qty_open_at(row: dict, when_ms: int) -> float:
     return max(qty, 0.0)
 
 
-def _cost_r(row: dict, *, profile: AccountProfile, layers: Sequence[str],
-            dist: float, close_hour_ny: int) -> float:
+def _cost_r(
+    row: dict, *, profile: AccountProfile, layers: Sequence[str], dist: float, close_hour_ny: int
+) -> float:
     """What the chosen layers charge this trade, as a fraction of its own 1R.
 
     Everything here is computed **per unit of size and then divided by the trade's 1R**, so the
@@ -213,8 +222,10 @@ def _cost_r(row: dict, *, profile: AccountProfile, layers: Sequence[str],
     qty = float(row.get("size") or 0.0)
     risk_usd = dist * qty
     if risk_usd <= 0:
-        raise RepriceError(f"trade #{row.get('index')} risked nothing measurable "
-                           f"(size {qty}, stop distance {dist})")
+        raise RepriceError(
+            f"trade #{row.get('index')} risked nothing measurable "
+            f"(size {qty}, stop distance {dist})"
+        )
     cost = 0.0
 
     if "spread" in layers:
@@ -233,12 +244,15 @@ def _cost_r(row: dict, *, profile: AccountProfile, layers: Sequence[str],
     if "swap" in layers and getattr(profile, "swap", None) is not None:
         entry_ms, exit_ms = int(row.get("entry_ms") or 0), int(row.get("exit_ms") or 0)
         if not entry_ms or not exit_ms:
-            raise RepriceError(f"trade #{row.get('index')} has no entry/exit time, so the nights "
-                               f"it was held cannot be counted")
+            raise RepriceError(
+                f"trade #{row.get('index')} has no entry/exit time, so the nights "
+                f"it was held cannot be counted"
+            )
         direction = 1 if str(row.get("direction", "")).lower().startswith("l") else -1
         for roll_date in rollovers_between(entry_ms, exit_ms, close_hour_ny):
-            roll_ms = int(datetime.combine(roll_date, time(close_hour_ny),
-                                           tzinfo=_NY).timestamp() * 1000)
+            roll_ms = int(
+                datetime.combine(roll_date, time(close_hour_ny), tzinfo=_NY).timestamp() * 1000
+            )
             held = _qty_open_at(row, roll_ms)
             if held > 0:
                 # NEGATIVE for a charge, positive for a credit (a short's gold swap is a credit),
@@ -248,8 +262,14 @@ def _cost_r(row: dict, *, profile: AccountProfile, layers: Sequence[str],
     return cost / risk_usd
 
 
-def reprice_curve(curve: Sequence[dict], *, profile: AccountProfile, layers: Iterable[str],
-                  initial_capital: float, close_hour_ny: int = 17) -> RepricedRun:
+def reprice_curve(
+    curve: Sequence[dict],
+    *,
+    profile: AccountProfile,
+    layers: Iterable[str],
+    initial_capital: float,
+    close_hour_ny: int = 17,
+) -> RepricedRun:
     """Rebuild a stored equity curve with `layers` charged, exactly.
 
     `curve` is `equity_curve.json` as `backtest/output.py` writes it. Two things are READ off each
@@ -271,7 +291,8 @@ def reprice_curve(curve: Sequence[dict], *, profile: AccountProfile, layers: Ite
     if bad:
         raise RepriceError(
             f"{', '.join(bad)} cannot be re-priced from a stored run — it changes which trades "
-            f"fill, so it needs a re-run. Re-priceable: {', '.join(REPRICEABLE_LAYERS)}")
+            f"fill, so it needs a re-run. Re-priceable: {', '.join(REPRICEABLE_LAYERS)}"
+        )
 
     free_equity = equity = float(initial_capital)
     derived = False
@@ -283,7 +304,8 @@ def reprice_curve(curve: Sequence[dict], *, profile: AccountProfile, layers: Ite
         if not entry or not stop or qty <= 0:
             raise RepriceError(
                 f"trade #{row.get('index', i)} is missing the entry price, stop price or size that "
-                f"pricing a cost needs — it predates those fields, so this run needs a re-run")
+                f"pricing a cost needs — it predates those fields, so this run needs a re-run"
+            )
         dist = abs(entry - stop)
         # Prefer the two numbers the STRATEGY measured over recovering them from stored prices.
         # Recovery is correct but lossy — `profit` is rounded to cents and `stop_price` to 5dp —
@@ -292,21 +314,36 @@ def reprice_curve(curve: Sequence[dict], *, profile: AccountProfile, layers: Ite
         # must caption that, which is what `used_stored_r` is for.
         stored_r, stored_risk = row.get("r"), row.get("risk_usd")
         exact = isinstance(stored_r, (int, float)) and isinstance(stored_risk, (int, float))
-        risk_usd = float(stored_risk) if exact else dist * qty     # the 1R it risked, stored path
-        r_before = (float(stored_r) if isinstance(stored_r, (int, float))
-                    else float(row.get("profit") or 0.0) / risk_usd)
+        risk_usd = float(stored_risk) if exact else dist * qty  # the 1R it risked, stored path
+        r_before = (
+            float(stored_r)
+            if isinstance(stored_r, (int, float))
+            else float(row.get("profit") or 0.0) / risk_usd
+        )
         derived = derived or not exact
-        k = risk_usd / free_equity                 # ...as a fraction of the balance it had then
-        cost_r = _cost_r(row, profile=profile, layers=layers, dist=dist,
-                         close_hour_ny=close_hour_ny) if layers else 0.0
+        k = risk_usd / free_equity  # ...as a fraction of the balance it had then
+        cost_r = (
+            _cost_r(row, profile=profile, layers=layers, dist=dist, close_hour_ny=close_hour_ny)
+            if layers
+            else 0.0
+        )
         r = r_before - cost_r
 
-        free_equity += r_before * risk_usd         # walk the stored path in parallel, to keep `k` honest
-        risk_now = k * equity                      # what the same trade risks on the re-priced path
+        free_equity += r_before * risk_usd  # walk the stored path in parallel, to keep `k` honest
+        risk_now = k * equity  # what the same trade risks on the re-priced path
         equity += r * risk_now
-        out.append(RepricedTrade(index=int(row.get("index", i)), r=r, r_before=r_before,
-                                 cost_r=cost_r, cost_usd=cost_r * risk_now,
-                                 profit=r * risk_now, equity=equity))
+        out.append(
+            RepricedTrade(
+                index=int(row.get("index", i)),
+                r=r,
+                r_before=r_before,
+                cost_r=cost_r,
+                cost_usd=cost_r * risk_now,
+                profit=r * risk_now,
+                equity=equity,
+            )
+        )
 
-    return RepricedRun(trades=out, layers=layers, initial_capital=float(initial_capital),
-                       derived_basis=derived)
+    return RepricedRun(
+        trades=out, layers=layers, initial_capital=float(initial_capital), derived_basis=derived
+    )

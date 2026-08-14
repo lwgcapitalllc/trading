@@ -50,26 +50,44 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from market_structure import Bar, StructureEngine
 from fibonacci import InternalFib, MacroFib, SniperFib, StructureFib, StructureSnapshot
+from market_structure import Bar, StructureEngine
 
 # Column suffix -> Python level name (see fib_export.pine plot titles). TP4 (-0.270) and TP5
 # (-0.618) were dropped in the 2026-07-08 mpc_assistant.pine re-paste.
 _LVL = [
-    ("e1", "E1"), ("e2", "E2"), ("e3", "E3"), ("e4", "E4"), ("100", "1.0"),
-    ("tp1", "TP1"), ("tp2", "TP2"), ("tp3", "TP3"),
+    ("e1", "E1"),
+    ("e2", "E2"),
+    ("e3", "E3"),
+    ("e4", "E4"),
+    ("100", "1.0"),
+    ("tp1", "TP1"),
+    ("tp2", "TP2"),
+    ("tp3", "TP3"),
 ]
 # Macro fib level suffix -> Python level name.
 _MACRO_LVL = [
-    ("e1", "E1"), ("e2", "E2"), ("e3", "E3"), ("e4", "E4"), ("ll", "LL"),
-    ("tp1", "TP1"), ("tp2", "TP2"), ("hh", "HH"),
+    ("e1", "E1"),
+    ("e2", "E2"),
+    ("e3", "E3"),
+    ("e4", "E4"),
+    ("ll", "LL"),
+    ("tp1", "TP1"),
+    ("tp2", "TP2"),
+    ("hh", "HH"),
 ]
 # Internal fib: same 8 levels as the Structure fib, but the export carries TOUCH pulses only (no
 # per-level price columns — they'd push the harness past TradingView's 64-plot limit). The touch
 # pulses validate the geometry indirectly (a touch fires exactly when price crosses a level).
 _IFIB_LVL = [
-    ("e1", "E1"), ("e2", "E2"), ("e3", "E3"), ("e4", "E4"), ("100", "1.0"),
-    ("tp1", "TP1"), ("tp2", "TP2"), ("tp3", "TP3"),
+    ("e1", "E1"),
+    ("e2", "E2"),
+    ("e3", "E3"),
+    ("e4", "E4"),
+    ("100", "1.0"),
+    ("tp1", "TP1"),
+    ("tp2", "TP2"),
+    ("tp3", "TP3"),
 ]
 
 # ── Structure fib columns ──
@@ -78,13 +96,25 @@ TOUCH_FIELDS = [f"px_fib_{sfx}_touch" for sfx, _ in _LVL]
 
 # ── Sniper fib columns ──
 SNIPER_PRICE_FIELDS = ["px_sniper_top", "px_sniper_bot"]
-SNIPER_PULSE_FIELDS = ["px_sniper_active", "px_sniper_created", "px_sniper_confirmed", "px_sniper_zone_active"]
+SNIPER_PULSE_FIELDS = [
+    "px_sniper_active",
+    "px_sniper_created",
+    "px_sniper_confirmed",
+    "px_sniper_zone_active",
+]
 
 # ── Macro fib columns ──
-MACRO_PRICE_FIELDS = [f"px_macro_{sfx}_price" for sfx, _ in _MACRO_LVL] + ["px_macro_top", "px_macro_bot"]
+MACRO_PRICE_FIELDS = [f"px_macro_{sfx}_price" for sfx, _ in _MACRO_LVL] + [
+    "px_macro_top",
+    "px_macro_bot",
+]
 MACRO_TOUCH_FIELDS = [f"px_macro_{sfx}_touch" for sfx, _ in _MACRO_LVL]
 MACRO_PULSE_FIELDS = MACRO_TOUCH_FIELDS + [
-    "px_macro_active", "px_macro_locked", "px_macro_visible", "px_macro_new_cycle", "px_macro_extended",
+    "px_macro_active",
+    "px_macro_locked",
+    "px_macro_visible",
+    "px_macro_new_cycle",
+    "px_macro_extended",
 ]
 
 # ── Internal fib columns (touch pulses + state only, no price columns) ──
@@ -93,8 +123,11 @@ IFIB_PULSE_FIELDS = IFIB_TOUCH_FIELDS + ["px_ifib_active", "px_ifib_reset_active
 
 PRICE_FIELDS = FIB_PRICE_FIELDS + SNIPER_PRICE_FIELDS + MACRO_PRICE_FIELDS
 PULSE_FIELDS = (
-    TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_reset_active", "px_fibo_half_reached"]
-    + SNIPER_PULSE_FIELDS + MACRO_PULSE_FIELDS + IFIB_PULSE_FIELDS
+    TOUCH_FIELDS
+    + ["px_fib_active", "px_fib_origin", "px_fib_reset_active", "px_fibo_half_reached"]
+    + SNIPER_PULSE_FIELDS
+    + MACRO_PULSE_FIELDS
+    + IFIB_PULSE_FIELDS
 )
 DIR_FIELDS = ["px_fib_dir", "px_sniper_dir", "px_macro_dir", "px_ifib_dir"]
 ALL_FIELDS = PRICE_FIELDS + PULSE_FIELDS + DIR_FIELDS
@@ -149,9 +182,9 @@ def _resolve_columns(header):
     cols = {k: find(k) for k in ("open", "high", "low", "close")}
     cols["time"] = find("time", required=False)
     for f in STRUCT_FIELDS:
-        cols[f] = find(f)                     # required
+        cols[f] = find(f)  # required
     for f in STRUCT_OPT_FIELDS + SNIPER_FIELDS + MACRO_FIELDS + IFIB_FIELDS:
-        cols[f] = find(f, required=False)     # optional (older / higher-TF exports lack these)
+        cols[f] = find(f, required=False)  # optional (older / higher-TF exports lack these)
     return cols
 
 
@@ -228,15 +261,18 @@ def _load_rows(path, cols):
         rows = list(csv.DictReader(f))
     tcol = cols.get("time")
     if tcol:
+
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
                 return int(raw)
             try:
                 from datetime import datetime
+
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
+
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -244,12 +280,26 @@ def _load_rows(path, cols):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("csv", help="CSV exported from TradingView with fib_export.pine on the chart")
-    ap.add_argument("--major-length", type=int, default=15, help="must match the Pine build (default 15)")
-    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
+    ap.add_argument(
+        "--major-length", type=int, default=15, help="must match the Pine build (default 15)"
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-6,
+        help="abs tolerance for price fields (default 1e-6)",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engines)")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engines)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -267,11 +317,14 @@ def main(argv=None):
     # The Macro fib only runs on <=5m in Pine; a higher-TF export carries the columns but they are
     # never active. Only compare Macro if the export actually exercised it (px_macro_active hits 1).
     macro_col = cols.get("px_macro_active")
-    macro_exercised = have_macro and macro_col is not None and any(_num(r.get(macro_col)) == 1.0 for r in rows)
+    macro_exercised = (
+        have_macro and macro_col is not None and any(_num(r.get(macro_col)) == 1.0 for r in rows)
+    )
 
     # Only compare fields the CSV carries; drop Macro fields on an export that never exercised it.
     compare_fields = [
-        fld for fld in ALL_FIELDS
+        fld
+        for fld in ALL_FIELDS
         if cols.get(fld) is not None and not (fld in MACRO_FIELDS and not macro_exercised)
     ]
 
@@ -339,11 +392,15 @@ def main(argv=None):
         notes.append("Internal fib columns absent")
     if notes:
         scope += "  (" + "; ".join(notes) + ")"
-    print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})")
+    print(
+        f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})"
+    )
     print(f"Scope: {scope}")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
-        print(f"✓ FIB PARITY: every compared field matched on every bar. Python fibs == Pine source ({scope}).")
+        print(
+            f"✓ FIB PARITY: every compared field matched on every bar. Python fibs == Pine source ({scope})."
+        )
         return 0
 
     print("MISMATCHES BY FIELD:")
@@ -352,17 +409,21 @@ def main(argv=None):
         if n:
             print(f"  {fld:<22} {n} bar(s)")
     print("-" * 72)
-    print(f"Last mismatching bar: {last_mismatch_bar}  "
-          f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})")
+    print(
+        f"Last mismatching bar: {last_mismatch_bar}  "
+        f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})"
+    )
     print(f"First {len(detailed)} mismatching bar(s) (row index, time, field: python vs pine):")
     for idx, tval, ms in detailed:
         print(f"  bar {idx}  {tval}")
         for fld, pv, pinev in ms:
             print(f"      {fld:<20} python={pv!r:<12} pine={pinev!r}")
     print("-" * 72)
-    print("Tip: fib mismatches confined to early bars = warmup (structure not yet converged, or a "
-          "leg that began before the export window). Persistent mismatches after a clean run of "
-          "bars = a real logic gap to fix against mpc_assistant.pine.")
+    print(
+        "Tip: fib mismatches confined to early bars = warmup (structure not yet converged, or a "
+        "leg that began before the export window). Persistent mismatches after a clean run of "
+        "bars = a real logic gap to fix against mpc_assistant.pine."
+    )
     return 1
 
 

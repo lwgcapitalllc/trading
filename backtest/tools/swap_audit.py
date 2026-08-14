@@ -46,8 +46,9 @@ _MS_PER_DAY = 86_400_000
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--strategy", default="mpc_sos_fade")
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
@@ -77,14 +78,20 @@ def main(argv=None) -> int:
     trades = strat.execution.trades
 
     be_buf = cfg.exec_be_buf_tk * 0.01
-    print(f"\nswap long {swap.per_lot_per_night(1):+.2f}/lot/night   "
-          f"short {swap.per_lot_per_night(-1):+.2f}/lot/night   "
-          f"triple on weekday {swap.triple_weekday}")
-    print(f"  per OUNCE per night: long {swap.per_lot_per_night(1)/swap.contract_size:+.3f}   "
-          f"short {swap.per_lot_per_night(-1)/swap.contract_size:+.3f}")
+    print(
+        f"\nswap long {swap.per_lot_per_night(1):+.2f}/lot/night   "
+        f"short {swap.per_lot_per_night(-1):+.2f}/lot/night   "
+        f"triple on weekday {swap.triple_weekday}"
+    )
+    print(
+        f"  per OUNCE per night: long {swap.per_lot_per_night(1) / swap.contract_size:+.3f}   "
+        f"short {swap.per_lot_per_night(-1) / swap.contract_size:+.3f}"
+    )
     print(f"  breakeven buffer  exec_be_buf_tk = {cfg.exec_be_buf_tk:.0f} ticks = ${be_buf:.2f}")
-    print(f"  -> ONE night of long swap is {abs(swap.per_lot_per_night(1)/swap.contract_size)/be_buf:.1f}x "
-          f"the whole buffer\n")
+    print(
+        f"  -> ONE night of long swap is {abs(swap.per_lot_per_night(1) / swap.contract_size) / be_buf:.1f}x "
+        f"the whole buffer\n"
+    )
 
     # `costs_usd` on this profile is pure swap — no commission, no slippage. See the docstring.
     print(f"{len(trades)} trades")
@@ -92,8 +99,10 @@ def main(argv=None) -> int:
         side = [t for t in trades if t.dir == d]
         paid = sum(t.costs_usd for t in side)
         in_r = sum(t.costs_usd / t.risk_usd for t in side)
-        print(f"  {name:6s} n={len(side):<4d} swap total {in_r:+8.2f}R   "
-              f"(a NEGATIVE R here is money paid out)")
+        print(
+            f"  {name:6s} n={len(side):<4d} swap total {in_r:+8.2f}R   "
+            f"(a NEGATIVE R here is money paid out)"
+        )
 
     total_r = sum(t.costs_usd / t.risk_usd for t in trades)
     print(f"  {'ALL':6s} n={len(trades):<4d} swap total {total_r:+8.2f}R\n")
@@ -107,44 +116,57 @@ def main(argv=None) -> int:
         side = [t for t in trades if t.dir == d]
         net = sum(t.r for t in side)
         sw = sum(t.costs_usd / t.risk_usd for t in side)
-        print(f"  {name:8s} {len(side):>4d} {net - sw:>+9.2f} {sw:>+9.2f} {net:>+9.2f} "
-              f"{net/len(side):>+12.3f}")
+        print(
+            f"  {name:8s} {len(side):>4d} {net - sw:>+9.2f} {sw:>+9.2f} {net:>+9.2f} "
+            f"{net / len(side):>+12.3f}"
+        )
     print()
 
     # How far the stop would have to move to cover the swap on each trade. In price units per
     # unit held, which is directly comparable to the buffer.
     print("how far a stop would have to move to cover the swap (price per ounce)")
-    print(f"  {'':8s} {'n':>4s} {'median':>9s} {'p90':>9s} {'worst':>9s}   vs the ${be_buf:.2f} buffer")
+    print(
+        f"  {'':8s} {'n':>4s} {'median':>9s} {'p90':>9s} {'worst':>9s}   vs the ${be_buf:.2f} buffer"
+    )
     for d, name in ((1, "long"), (-1, "short")):
         # Only trades that PAID (a credit needs no covering).
-        need = sorted(-t.costs_usd / t.qty for t in trades
-                      if t.dir == d and t.costs_usd < 0 and t.qty > 0)
+        need = sorted(
+            -t.costs_usd / t.qty for t in trades if t.dir == d and t.costs_usd < 0 and t.qty > 0
+        )
         if not need:
             print(f"  {name:8s} none paid swap — this side is CREDITED")
             continue
         med, p90, worst = (statistics.median(need), need[int(len(need) * 0.9)], need[-1])
-        print(f"  {name:8s} {len(need):>4d} {med:>9.3f} {p90:>9.3f} {worst:>9.3f}   "
-              f"median is {med/be_buf:.1f}x the buffer")
+        print(
+            f"  {name:8s} {len(need):>4d} {med:>9.3f} {p90:>9.3f} {worst:>9.3f}   "
+            f"median is {med / be_buf:.1f}x the buffer"
+        )
 
     # The ceiling on what a stop ratchet could recover: the swap paid by trades whose stop had
     # already staged into profit. Those are the ones a ratchet can move without touching a trade
     # that is still genuinely at risk.
     scratch = [t for t in trades if 0 < t.dir * (t.exit_price - t.entry_price) <= be_buf * 1.5]
     paid = [t for t in scratch if t.costs_usd < 0]
-    print(f"\nCEILING on a stage-1 stop ratchet (scratch cohort only)")
+    print("\nCEILING on a stage-1 stop ratchet (scratch cohort only)")
     print(f"  {len(scratch)} scratches, {len(paid)} of them paid swap")
-    print(f"  recoverable at most {-sum(t.costs_usd / t.risk_usd for t in paid):+.2f}R "
-          f"over the whole history")
-    print(f"  ⚠ UPPER BOUND. Moving a stop changes when it triggers; only a replay settles it.")
-    print(f"  ⚠ Against this strategy's run-to-run spread of sd 15.06R (jitter_audit.py).")
+    print(
+        f"  recoverable at most {-sum(t.costs_usd / t.risk_usd for t in paid):+.2f}R "
+        f"over the whole history"
+    )
+    print("  ⚠ UPPER BOUND. Moving a stop changes when it triggers; only a replay settles it.")
+    print("  ⚠ Against this strategy's run-to-run spread of sd 15.06R (jitter_audit.py).")
 
     # Nights held is what decides whether a FIXED buffer could ever work.
     nights = sorted(max(0, (t.exit_ms - t.entry_ms) // _MS_PER_DAY) for t in trades if t.exit_ms)
     if nights:
-        print(f"\nnights held: median {statistics.median(nights):.0f}  "
-              f"p90 {nights[int(len(nights)*0.9)]}  max {nights[-1]}")
-        print("  A fixed buffer can only be right for one hold length. That is the argument for\n"
-              "  ratcheting per rollover rather than widening exec_be_buf_tk.")
+        print(
+            f"\nnights held: median {statistics.median(nights):.0f}  "
+            f"p90 {nights[int(len(nights) * 0.9)]}  max {nights[-1]}"
+        )
+        print(
+            "  A fixed buffer can only be right for one hold length. That is the argument for\n"
+            "  ratcheting per rollover rather than widening exec_be_buf_tk."
+        )
     return 0
 
 

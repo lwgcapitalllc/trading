@@ -79,7 +79,7 @@ BOTS = {
     # On the BENCH today (`account: null`). Registered anyway, and skipped per-pass by
     # `_is_assigned` — see the same note in `monitor.py`: registering a bot only once somebody
     # assigns it would let the Bots page arm a bot no switch is watching.
-    "mpc_bleg_demo":     "MPC B-LEG",
+    "mpc_bleg_demo": "MPC B-LEG",
 }
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor
@@ -109,6 +109,7 @@ def _is_assigned(bot_key: str) -> bool:
     """
     try:
         import bot_state as bs
+
         return bs.is_assigned(bot_key)
     except Exception:
         return True
@@ -129,7 +130,7 @@ def _bot_state() -> dict:
             path = bs.BOT_INSTANCES[key] / "bot_state.json"
             out[key] = json.loads(path.read_text()).get(key) or {}
         except Exception:
-            out[key] = None      # None = could not ask. Never {} — see the docstring above.
+            out[key] = None  # None = could not ask. Never {} — see the docstring above.
     return out
 
 
@@ -143,7 +144,9 @@ def _running_keys() -> set[str] | None:
     try:
         r = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except Exception:
         return None
@@ -233,8 +236,10 @@ def main(argv=None) -> int:
             print(f"configured: yes  ({url[:28]}...)")
         else:
             print("configured: NO - there is no external dead-man's switch on this box.")
-            print(f"  set `deadman_url` in {ALGOS_ROOT / 'credentials.json'}"
-                  f" or {env_name('deadman_url')}")
+            print(
+                f"  set `deadman_url` in {ALGOS_ROOT / 'credentials.json'}"
+                f" or {env_name('deadman_url')}"
+            )
         return 0
 
     problems = check_health()

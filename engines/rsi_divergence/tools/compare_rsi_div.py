@@ -59,10 +59,10 @@ if str(_REPO_ROOT) not in sys.path:
 from rsi_divergence import RsiDivergenceEngine
 
 # ── column groups ──
-RSI_FIELDS = ["px_div_rsi", "px_div_pl", "px_div_ph"]                 # RSI-scale, tolerance, na-aware
-PULSE_FIELDS = ["px_div_bull", "px_div_bear"]                         # 0/1 this-bar pulses
-FLAG_FIELDS = ["px_div_bull_active", "px_div_bear_active"]            # 0/1 live-confluence state
-AGE_FIELDS = ["px_div_bull_age", "px_div_bear_age"]                   # index differences, na-aware
+RSI_FIELDS = ["px_div_rsi", "px_div_pl", "px_div_ph"]  # RSI-scale, tolerance, na-aware
+PULSE_FIELDS = ["px_div_bull", "px_div_bear"]  # 0/1 this-bar pulses
+FLAG_FIELDS = ["px_div_bull_active", "px_div_bear_active"]  # 0/1 live-confluence state
+AGE_FIELDS = ["px_div_bull_age", "px_div_bear_age"]  # index differences, na-aware
 INT_FIELDS = PULSE_FIELDS + FLAG_FIELDS + AGE_FIELDS
 
 ALL_FIELDS = RSI_FIELDS + INT_FIELDS
@@ -132,8 +132,12 @@ def _python_row(ev, i, state):
         "px_div_bear": 1.0 if bear_pulse else 0.0,
         "px_div_bull_active": 1.0 if ev.bull_active else 0.0,
         "px_div_bear_active": 1.0 if ev.bear_active else 0.0,
-        "px_div_bull_age": None if state["last_bull_bar"] is None else float(i - state["last_bull_bar"]),
-        "px_div_bear_age": None if state["last_bear_bar"] is None else float(i - state["last_bear_bar"]),
+        "px_div_bull_age": None
+        if state["last_bull_bar"] is None
+        else float(i - state["last_bull_bar"]),
+        "px_div_bear_age": None
+        if state["last_bear_bar"] is None
+        else float(i - state["last_bear_bar"]),
     }
     return row
 
@@ -165,15 +169,18 @@ def _load_rows(path, cols):
         rows = list(csv.DictReader(f))
     tcol = cols.get("time")
     if tcol:
+
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
                 return int(raw)
             try:
                 from datetime import datetime
+
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
+
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -181,16 +188,40 @@ def _load_rows(path, cols):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("csv", help="CSV exported from TradingView with rsi_div_export.pine on the chart")
-    ap.add_argument("--rsi-len", type=int, default=14, help="must match the Pine divRsiLen (default 14)")
-    ap.add_argument("--pivot-len", type=int, default=5, help="must match the Pine divPivotLen (default 5)")
-    ap.add_argument("--oversold", type=float, default=25.0, help="must match the Pine divOS (default 25)")
-    ap.add_argument("--overbought", type=float, default=75.0, help="must match the Pine divOB (default 75)")
-    ap.add_argument("--valid-bars", type=int, default=100, help="must match the Pine divValidBars (default 100)")
-    ap.add_argument("--tolerance", type=float, default=1e-2, help="abs tolerance for RSI-value fields (default 1e-2, covers CSV rounding)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "csv", help="CSV exported from TradingView with rsi_div_export.pine on the chart"
+    )
+    ap.add_argument(
+        "--rsi-len", type=int, default=14, help="must match the Pine divRsiLen (default 14)"
+    )
+    ap.add_argument(
+        "--pivot-len", type=int, default=5, help="must match the Pine divPivotLen (default 5)"
+    )
+    ap.add_argument(
+        "--oversold", type=float, default=25.0, help="must match the Pine divOS (default 25)"
+    )
+    ap.add_argument(
+        "--overbought", type=float, default=75.0, help="must match the Pine divOB (default 75)"
+    )
+    ap.add_argument(
+        "--valid-bars", type=int, default=100, help="must match the Pine divValidBars (default 100)"
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-2,
+        help="abs tolerance for RSI-value fields (default 1e-2, covers CSV rounding)",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -202,9 +233,13 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
-    div = RsiDivergenceEngine(rsi_len=args.rsi_len, pivot_len=args.pivot_len,
-                              oversold=args.oversold, overbought=args.overbought,
-                              valid_bars=args.valid_bars)
+    div = RsiDivergenceEngine(
+        rsi_len=args.rsi_len,
+        pivot_len=args.pivot_len,
+        oversold=args.oversold,
+        overbought=args.overbought,
+        valid_bars=args.valid_bars,
+    )
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
@@ -241,12 +276,16 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(f"\nCompared {total} bars from {path.name}  "
-          f"(rsi_len={args.rsi_len}, pivot_len={args.pivot_len}, os={args.oversold}, ob={args.overbought}, "
-          f"valid_bars={args.valid_bars}, tol={args.tolerance})")
+    print(
+        f"\nCompared {total} bars from {path.name}  "
+        f"(rsi_len={args.rsi_len}, pivot_len={args.pivot_len}, os={args.oversold}, ob={args.overbought}, "
+        f"valid_bars={args.valid_bars}, tol={args.tolerance})"
+    )
     print("-" * 72)
     if not any(per_field_mismatch.values()):
-        print("✓ RSI-DIV PARITY: every compared field matched on every bar. Python engine == Pine source.")
+        print(
+            "✓ RSI-DIV PARITY: every compared field matched on every bar. Python engine == Pine source."
+        )
         return 0
 
     print("MISMATCHES BY FIELD:")
@@ -255,18 +294,22 @@ def main(argv=None):
         if n:
             print(f"  {fld:<22} {n} bar(s)")
     print("-" * 72)
-    print(f"Last mismatching bar: {last_mismatch_bar}  "
-          f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})")
+    print(
+        f"Last mismatching bar: {last_mismatch_bar}  "
+        f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})"
+    )
     print(f"First {len(detailed)} mismatching bar(s) (row index, time, field: python vs pine):")
     for idx, tval, ms in detailed:
         print(f"  bar {idx}  {tval}")
         for fld, pv, pinev in ms:
             print(f"      {fld:<22} python={pv!r:<14} pine={pinev!r}")
     print("-" * 72)
-    print("Tip: mismatches confined to early bars = warmup (Pine's RSI was already smoothed and it "
-          "may hold an off-window pivot/divergence; the cold-started Python engine converges once its "
-          "Wilder RMA settles and it establishes its own in-window pivots). Persistent mismatches "
-          "after a clean run = a real logic gap to fix against mpc_assistant.pine.")
+    print(
+        "Tip: mismatches confined to early bars = warmup (Pine's RSI was already smoothed and it "
+        "may hold an off-window pivot/divergence; the cold-started Python engine converges once its "
+        "Wilder RMA settles and it establishes its own in-window pivots). Persistent mismatches "
+        "after a clean run = a real logic gap to fix against mpc_assistant.pine."
+    )
     return 1
 
 

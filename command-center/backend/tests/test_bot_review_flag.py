@@ -34,10 +34,24 @@ def _a_bot() -> str:
 
 def test_a_review_is_parsed_for_the_bot_that_owns_it():
     key = _a_bot()
-    got = bots._parse_reviews(_snap(key, {
-        "bot": key, "level": "alert", "checked_at": "2026-08-05T18:00:00+00:00",
-        "findings": [{"key": "halted:1", "level": "alert",
-                      "title": "Bridge HALTED", "detail": "places nothing"}]}))
+    got = bots._parse_reviews(
+        _snap(
+            key,
+            {
+                "bot": key,
+                "level": "alert",
+                "checked_at": "2026-08-05T18:00:00+00:00",
+                "findings": [
+                    {
+                        "key": "halted:1",
+                        "level": "alert",
+                        "title": "Bridge HALTED",
+                        "detail": "places nothing",
+                    }
+                ],
+            },
+        )
+    )
 
     assert got[key]["level"] == "alert"
     assert got[key]["findings"][0]["title"] == "Bridge HALTED"
@@ -64,8 +78,9 @@ def test_an_empty_findings_list_is_not_a_flag():
     """A file written with no findings would raise a chip saying nothing is wrong. Belt and
     braces against the writer's own clear failing — a stale chip trains you to ignore the chip."""
     key = _a_bot()
-    assert bots._parse_reviews(_snap(key, {"level": "warn", "checked_at": "x",
-                                           "findings": []})) == {}
+    assert (
+        bots._parse_reviews(_snap(key, {"level": "warn", "checked_at": "x", "findings": []})) == {}
+    )
 
 
 def test_malformed_json_is_dropped_rather_than_raising():

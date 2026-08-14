@@ -8,13 +8,22 @@ the append-only file round trip.
 """
 
 from services.decision_log import (
-    TradeDecision, GateVerdict, SizingDecision, DecisionLog, classify_exit,
-    OUTCOME_TAKEN, OUTCOME_BLOCKED, OUTCOME_SKIPPED,
-    EXIT_TARGET, EXIT_STOP, EXIT_TIME_FLAT, EXIT_BREAKEVEN, EXIT_OTHER,
+    EXIT_BREAKEVEN,
+    EXIT_OTHER,
+    EXIT_STOP,
+    EXIT_TARGET,
+    EXIT_TIME_FLAT,
+    OUTCOME_BLOCKED,
+    OUTCOME_SKIPPED,
+    OUTCOME_TAKEN,
+    DecisionLog,
+    SizingDecision,
+    TradeDecision,
+    classify_exit,
 )
 
-
 # ── Exit classification ───────────────────────────────────────────────────────
+
 
 def test_classify_exit_maps_common_labels():
     assert classify_exit("ORB_Long Profit target") == EXIT_TARGET
@@ -27,27 +36,46 @@ def test_classify_exit_maps_common_labels():
 
 # ── Outcomes ──────────────────────────────────────────────────────────────────
 
+
 def test_blocked_by_first_failing_gate():
-    d = (TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=1)
-         .gate("session", True, "inside RTH")
-         .gate("daily_loss", False, "day already down past the halt")
-         .gate("regime", True, "trending"))   # later pass doesn't un-block
+    d = (
+        TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=1)
+        .gate("session", True, "inside RTH")
+        .gate("daily_loss", False, "day already down past the halt")
+        .gate("regime", True, "trending")
+    )  # later pass doesn't un-block
     d.finalize()
     assert d.blocked_by == "daily_loss"
     assert d.outcome == OUTCOME_BLOCKED
 
 
 def test_taken_records_full_life():
-    d = (TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=1,
-                       setup_score="A+", setup_reason="range break + 1 confirm",
-                       stop_distance=5.0)
-         .gate("session", True, "inside RTH")
-         .set_sizing(SizingDecision(contracts=2, bound_by="contract_ladder",
-                                    room_to_floor=2000.0, ladder_cap=2))
-         .snapshot(balance=50000, day_pnl=0.0, floor_distance=2000.0)
-         .set_entry(time="2024-01-02T09:40:00", price=17000, stop=16995, target=17010)
-         .set_exit(time="2024-01-02T10:05:00", price=17010, reason=EXIT_TARGET,
-                   gross=40.0, net=38.0, r_multiple=2.0))
+    d = (
+        TradeDecision(
+            timestamp="2024-01-02T09:40:00",
+            instrument="MNQ",
+            direction=1,
+            setup_score="A+",
+            setup_reason="range break + 1 confirm",
+            stop_distance=5.0,
+        )
+        .gate("session", True, "inside RTH")
+        .set_sizing(
+            SizingDecision(
+                contracts=2, bound_by="contract_ladder", room_to_floor=2000.0, ladder_cap=2
+            )
+        )
+        .snapshot(balance=50000, day_pnl=0.0, floor_distance=2000.0)
+        .set_entry(time="2024-01-02T09:40:00", price=17000, stop=16995, target=17010)
+        .set_exit(
+            time="2024-01-02T10:05:00",
+            price=17010,
+            reason=EXIT_TARGET,
+            gross=40.0,
+            net=38.0,
+            r_multiple=2.0,
+        )
+    )
     d.finalize()
     assert d.outcome == OUTCOME_TAKEN
     assert d.blocked_by is None
@@ -56,16 +84,25 @@ def test_taken_records_full_life():
 
 
 def test_skipped_when_sized_to_zero():
-    d = (TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=-1)
-         .gate("session", True, "inside RTH")
-         .set_sizing(SizingDecision(contracts=0, bound_by="drawdown_clamp",
-                                    room_to_floor=80.0, skipped=True,
-                                    note="one contract's risk exceeds the room left")))
+    d = (
+        TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=-1)
+        .gate("session", True, "inside RTH")
+        .set_sizing(
+            SizingDecision(
+                contracts=0,
+                bound_by="drawdown_clamp",
+                room_to_floor=80.0,
+                skipped=True,
+                note="one contract's risk exceeds the room left",
+            )
+        )
+    )
     d.finalize()
     assert d.outcome == OUTCOME_SKIPPED
 
 
 # ── Extensibility ─────────────────────────────────────────────────────────────
+
 
 def test_arbitrary_future_gate_is_accepted():
     # A gate the logger has never heard of just works — no schema change.
@@ -78,14 +115,20 @@ def test_arbitrary_future_gate_is_accepted():
 
 # ── File round trip ───────────────────────────────────────────────────────────
 
+
 def test_append_only_round_trip(tmp_path):
     path = tmp_path / "run123" / "decisions.jsonl"
     log = DecisionLog(path)
-    log.write(TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=1)
-              .gate("session", True, "ok")
-              .set_sizing(SizingDecision(contracts=1, bound_by="risk_budget")))
-    log.write(TradeDecision(timestamp="2024-01-02T09:55:00", instrument="MNQ", direction=-1)
-              .gate("daily_loss", False, "halted"))
+    log.write(
+        TradeDecision(timestamp="2024-01-02T09:40:00", instrument="MNQ", direction=1)
+        .gate("session", True, "ok")
+        .set_sizing(SizingDecision(contracts=1, bound_by="risk_budget"))
+    )
+    log.write(
+        TradeDecision(timestamp="2024-01-02T09:55:00", instrument="MNQ", direction=-1).gate(
+            "daily_loss", False, "halted"
+        )
+    )
 
     rows = DecisionLog.read(path)
     assert len(rows) == 2

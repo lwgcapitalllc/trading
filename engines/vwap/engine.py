@@ -70,7 +70,7 @@ class VwapEngine:
     def __init__(
         self,
         htf_timezone: str = _DEFAULT_HTF_TZ,
-        htf_rollover_hours: int = 18,   # XAUUSD trading day opens 18:00 NY — validated at Pine parity
+        htf_rollover_hours: int = 18,  # XAUUSD trading day opens 18:00 NY — validated at Pine parity
     ) -> None:
         self._tz: tzinfo = _resolve_tz(htf_timezone)
         # Shift the clock FORWARD so the session-open hour becomes midnight — this rolls an EVENING
@@ -78,21 +78,24 @@ class VwapEngine:
         self._shift = timedelta(hours=(24 - (htf_rollover_hours % 24)) % 24)
 
         self._cur_key: Optional[object] = None
-        self._sum_pv = 0.0   # sum(hlc3 * volume) since the anchor
-        self._sum_v = 0.0    # sum(volume) since the anchor
-        self._last_side: Optional[int] = None   # last non-zero side, for cross detection
+        self._sum_pv = 0.0  # sum(hlc3 * volume) since the anchor
+        self._sum_v = 0.0  # sum(volume) since the anchor
+        self._last_side: Optional[int] = None  # last non-zero side, for cross detection
 
     # ------------------------------------------------------------------
-    def update(self, index: int, timestamp_ms: int, high: float, low: float, close: float,
-               volume: float) -> VwapEvents:
+    def update(
+        self, index: int, timestamp_ms: int, high: float, low: float, close: float, volume: float
+    ) -> VwapEvents:
         """Feed one closed bar: its index, UTC open time (epoch milliseconds, == Pine `time`), the
         bar's high/low/close, and its volume. Returns this bar's VwapEvents."""
         ev = VwapEvents()
 
         # Trading-day clock: to the anchor timezone, then shift forward so an evening open cuts the
         # day correctly (see the module docstring).
-        local = (datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc)
-                 .astimezone(self._tz) + self._shift)
+        local = (
+            datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc).astimezone(self._tz)
+            + self._shift
+        )
         key = _key_day(local)
 
         # Re-anchor on a new trading day (clear the accumulator). The very first fed bar sets the key

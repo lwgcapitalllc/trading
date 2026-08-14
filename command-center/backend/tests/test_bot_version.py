@@ -19,9 +19,7 @@ quietly reconciled.
 import json
 
 import pytest
-
 from routers import bots
-
 
 DEPLOYED = {
     "strategy_source_hash": "e42a95c96bb27b2868eee7b1e4f78e4c",
@@ -55,8 +53,7 @@ def vps(monkeypatch):
         # test_the_running_hash_costs_no_extra_round_trip below. The state section is
         # answered only when the command actually asked for it, so a bot with no registered
         # state file gets what the real VPS would give it: nothing.
-        out = (f"{state['head']}\n===AHEAD===\n{state['ahead']}\n"
-               f"===SHOW===\n{state['show']}")
+        out = f"{state['head']}\n===AHEAD===\n{state['ahead']}\n===SHOW===\n{state['show']}"
         if "bot_state.json" in cmd:
             live = json.dumps({"mpc_sos_fade_demo": {"source_hash": state["running_hash"]}})
             out += f"\n===STATE===\n{live}"
@@ -71,8 +68,9 @@ def vps(monkeypatch):
         )
 
     monkeypatch.setattr(bots, "_fetch_vps_snapshot", _no_snapshot)
-    monkeypatch.setattr(bots, "_read_instance_config",
-                        lambda k: {"strategy_params": state["config_params"]})
+    monkeypatch.setattr(
+        bots, "_read_instance_config", lambda k: {"strategy_params": state["config_params"]}
+    )
     return state
 
 
@@ -91,8 +89,8 @@ def test_the_params_are_the_ones_that_version_was_deployed_with(vps):
     "what settings is this version running" afterwards."""
     vps["config_params"]["exec_risk_pct"] = 2.0
     v = bots.get_bot_version("MPC SOS Fade")
-    assert v.params["exec_risk_pct"] == 10.0        # as deployed
-    assert v.params_drift == ["exec_risk_pct"]      # and the difference is named
+    assert v.params["exec_risk_pct"] == 10.0  # as deployed
+    assert v.params_drift == ["exec_risk_pct"]  # and the difference is named
 
 
 def test_an_unpromoted_bot_is_reported_as_not_frozen(vps):
@@ -127,7 +125,7 @@ def test_a_promote_not_yet_restarted_into_is_visible(vps):
     vps["running_hash"] = "aaaabbbbcccc"
     v = bots.get_bot_version("MPC SOS Fade")
     assert v.running_hash == "aaaabbbbcccc"
-    assert not v.hash.startswith(v.running_hash)     # what the UI warns on
+    assert not v.hash.startswith(v.running_hash)  # what the UI warns on
 
 
 # ── What counts as drift ──────────────────────────────────────────────────────
@@ -135,6 +133,7 @@ def test_a_promote_not_yet_restarted_into_is_visible(vps):
 # `params_drift` answers "has anybody changed a setting since this version was deployed?".
 # It used to compare `deployed.get(k, current_value) != current_value` over the CURRENT keys
 # only, which is blind in both directions — and blind hardest on the case that matters.
+
 
 def test_a_setting_added_since_the_promote_is_drift(vps):
     """The old form defaulted a missing deployed key to the current value, so it compared
@@ -164,6 +163,7 @@ def test_an_unchanged_bot_reports_no_drift(vps):
 
 
 # ── Where the running hash comes from ─────────────────────────────────────────
+
 
 def test_the_running_hash_costs_no_extra_round_trip(vps):
     """It used to come from a second `_fetch_vps_snapshot()` — two commands returning every
@@ -205,6 +205,11 @@ def test_a_matching_running_hash_is_not_a_warning(vps):
 
 def test_an_unreadable_record_does_not_crash_the_page(vps, monkeypatch):
     """A corrupt file must degrade to "unpromoted", not take out the whole Bots page."""
-    monkeypatch.setattr(bots, "_ssh", lambda cmd: "{not json" if "deployed.json" in cmd
-                        else "abc1234\n===AHEAD===\n0\n===SHOW===\n")
+    monkeypatch.setattr(
+        bots,
+        "_ssh",
+        lambda cmd: (
+            "{not json" if "deployed.json" in cmd else "abc1234\n===AHEAD===\n0\n===SHOW===\n"
+        ),
+    )
     assert bots.get_bot_version("MPC SOS Fade").frozen is False

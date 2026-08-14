@@ -72,9 +72,15 @@ log = logging.getLogger("CHARTSPEC")
 # reset a reader's switches, and these are the labels on the chart legend rather than an identifier
 # anything resolves through.
 _FX_SESSIONS = [
-    {"name": "Tokyo",    "tz": "Asia/Tokyo",        "start": "09:00", "end": "18:00", "color": "#f472b6"},
-    {"name": "London",   "tz": "Europe/London",     "start": "08:00", "end": "17:00", "color": "#60a5fa"},
-    {"name": "New York", "tz": "America/New_York",  "start": "08:00", "end": "17:00", "color": "#fb923c"},
+    {"name": "Tokyo", "tz": "Asia/Tokyo", "start": "09:00", "end": "18:00", "color": "#f472b6"},
+    {"name": "London", "tz": "Europe/London", "start": "08:00", "end": "17:00", "color": "#60a5fa"},
+    {
+        "name": "New York",
+        "tz": "America/New_York",
+        "start": "08:00",
+        "end": "17:00",
+        "color": "#fb923c",
+    },
 ]
 
 
@@ -131,14 +137,20 @@ def _iso_to_epoch_ms(s: str) -> Optional[int]:
     return int(dt.timestamp() * 1000)
 
 
-def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str, runner: str) -> list[dict]:
+def _build_candles(
+    instrument: str, start_date: str, end_date: str, base_tf: str, runner: str
+) -> list[dict]:
     """Candle rows for a window, or `[]`. The spec build's view — it degrades to an empty chart
     either way, so it does not need to know WHY."""
     return _fetch_candles(instrument, start_date, end_date, base_tf, runner)[0]
 
 
 def _fetch_candles(
-    instrument: str, start_date: str, end_date: str, base_tf: str, runner: str,
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    base_tf: str,
+    runner: str,
 ) -> tuple[list[dict], Optional[str]]:
     """`(rows, error)` — and the error half is the point.
 
@@ -154,7 +166,9 @@ def _fetch_candles(
     # ohlc_fetcher normalizes the symbol (strips the broker suffix, re-adds a configured one), so
     # we can pass the run instrument as-is — the MT5 agent's terminal uses plain names.
     try:
-        df = ohlc_fetcher.get_ohlc(instrument, start_date, end_date, timeframe=base_tf, runner=runner)
+        df = ohlc_fetcher.get_ohlc(
+            instrument, start_date, end_date, timeframe=base_tf, runner=runner
+        )
     except Exception as exc:  # noqa: BLE001 — fetch is best-effort; empty candles degrade gracefully
         log.warning("chart_spec: candle fetch failed for %s %s: %s", instrument, base_tf, exc)
         return [], f"{type(exc).__name__}: {exc}"[:200]
@@ -242,7 +256,9 @@ def _trade_fib(p: dict, entry_price: float, mae_price: Optional[float]) -> Optio
         return None
     levels = [
         {"ratio": float(r), "price": float(v)}
-        for r, v in (lv for lv in (raw.get("levels") or []) if isinstance(lv, (list, tuple)) and len(lv) == 2)
+        for r, v in (
+            lv for lv in (raw.get("levels") or []) if isinstance(lv, (list, tuple)) and len(lv) == 2
+        )
         if isinstance(r, (int, float)) and isinstance(v, (int, float))
     ]
     if len(levels) < 2:
@@ -298,7 +314,7 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
     trades: list[dict] = []
     n = 0
     for p in equity_curve:
-        if not p.get("direction"):        # skip any opening-balance / no-direction point
+        if not p.get("direction"):  # skip any opening-balance / no-direction point
             continue
         entry_ms = p.get("entry_ms")
         exit_ms = p.get("exit_ms")
@@ -310,7 +326,9 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
         xp = p.get("exit_price") or price_at(xt)
         if ep is None or xp is None:
             continue
-        direction = "short" if (p.get("direction") or "").strip().lower().startswith("s") else "long"
+        direction = (
+            "short" if (p.get("direction") or "").strip().lower().startswith("s") else "long"
+        )
         n += 1
         # Profit-depth fields (optional; a real price is never 0, so `or None` == "absent").
         dir_sign = -1.0 if direction == "short" else 1.0
@@ -322,38 +340,44 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
         # this is what keeps a breakeven exit from being drawn as if it took profit.
         scratch = 0.1 * abs(ep - stop_price) if stop_price else 0.0
         profit_legs = [
-            {"price": round(float(lg["price"]), 5), "label": _leg_label(str(lg.get("reason") or ""))}
+            {
+                "price": round(float(lg["price"]), 5),
+                "label": _leg_label(str(lg.get("reason") or "")),
+            }
             for lg in (p.get("legs") or [])
             if isinstance(lg.get("price"), (int, float))
             and (float(lg["price"]) - ep) * dir_sign > max(scratch, 1e-9)
         ]
         fib = _trade_fib(p, ep, mae_price)
-        trades.append({
-            "id": f"T{n}",
-            "dir": direction,
-            "entryTime": et,
-            "entryPrice": ep,
-            "exitTime": xt,
-            "exitPrice": xp,
-            "pnl": float(p.get("profit") or 0.0),
-            "kind": p.get("kind") or "primary",
-            "exitReason": p.get("exit_name") or "",
-            "mfePrice": mfe_price,
-            "maePrice": mae_price,
-            "stopPrice": stop_price,
-            "profitLegs": profit_legs,
-            # TP TARGET ladder (nearest→furthest) — the chart draws the first UNHIT one faintly so a
-            # runner's near-miss of the next TP is visible. Empty for a trade carrying no targets.
-            "tpTargets": [
-                round(float(t), 5) for t in (p.get("tp_targets") or [])
-                if isinstance(t, (int, float)) and t
-            ],
-            # The fib LEG the trade was priced off, plus where the entry and the deepest adverse
-            # price sat ON it. OPTIONAL: absent for any runner or strategy that doesn't record one
-            # (NT8/MT5, older Python runs, the B-LEG fork), which is what makes the chart's Trade
-            # fibs toggle disappear rather than render an empty layer.
-            **({"fib": fib} if fib else {}),
-        })
+        trades.append(
+            {
+                "id": f"T{n}",
+                "dir": direction,
+                "entryTime": et,
+                "entryPrice": ep,
+                "exitTime": xt,
+                "exitPrice": xp,
+                "pnl": float(p.get("profit") or 0.0),
+                "kind": p.get("kind") or "primary",
+                "exitReason": p.get("exit_name") or "",
+                "mfePrice": mfe_price,
+                "maePrice": mae_price,
+                "stopPrice": stop_price,
+                "profitLegs": profit_legs,
+                # TP TARGET ladder (nearest→furthest) — the chart draws the first UNHIT one faintly so a
+                # runner's near-miss of the next TP is visible. Empty for a trade carrying no targets.
+                "tpTargets": [
+                    round(float(t), 5)
+                    for t in (p.get("tp_targets") or [])
+                    if isinstance(t, (int, float)) and t
+                ],
+                # The fib LEG the trade was priced off, plus where the entry and the deepest adverse
+                # price sat ON it. OPTIONAL: absent for any runner or strategy that doesn't record one
+                # (NT8/MT5, older Python runs, the B-LEG fork), which is what makes the chart's Trade
+                # fibs toggle disappear rather than render an empty layer.
+                **({"fib": fib} if fib else {}),
+            }
+        )
     return trades
 
 
@@ -397,22 +421,26 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
             raw_reasons = [{"label": b.get("label"), "reason": b.get("reason")}]  # pre-list file
         reasons = [
             {"label": str(r.get("label") or "Blocked"), "reason": str(r.get("reason") or "")}
-            for r in (raw_reasons or []) if isinstance(r, dict)
+            for r in (raw_reasons or [])
+            if isinstance(r, dict)
         ]
         if not reasons:
-            continue        # a record naming no rule can't be filtered or explained — drop it
-        out.append({
-            "id": f"B{i}",
-            "time": int(t),
-            "dir": "short" if str(b.get("direction", "")).lower().startswith("s") else "long",
-            "price": float(b.get("edge") or 0.0),
-            "reasons": reasons,
-        })
+            continue  # a record naming no rule can't be filtered or explained — drop it
+        out.append(
+            {
+                "id": f"B{i}",
+                "time": int(t),
+                "dir": "short" if str(b.get("direction", "")).lower().startswith("s") else "long",
+                "price": float(b.get("edge") or 0.0),
+                "reasons": reasons,
+            }
+        )
     return out
 
 
 def reversal_anchors(
-    trades: list[dict], misses: list[dict],
+    trades: list[dict],
+    misses: list[dict],
 ) -> list[tuple[int, str, Optional[int], str, Optional[float]]]:
     """Where the Candlestick Reversals layer is allowed to paint a candle.
 
@@ -472,13 +500,20 @@ def reversal_anchors(
     going unmarked. ⚠ **A MISS passes `None` on purpose: no position was opened, so it has no
     drawdown**, and its span is already the visit into the zone.
     """
-    return (
-        [(t["entryTime"], t["dir"], t["exitTime"],
-          "win" if (t.get("pnl") or 0) > 0 else "loss", t.get("entryPrice"))
-         for t in trades]
-        + [(m["zoneTime"], m["dir"], m["zoneTurn"], "miss", None) for m in misses
-           if m["of"] > 0 and m["met"] >= m["of"] and m.get("zoneTime") and m.get("zoneTurn")]
-    )
+    return [
+        (
+            t["entryTime"],
+            t["dir"],
+            t["exitTime"],
+            "win" if (t.get("pnl") or 0) > 0 else "loss",
+            t.get("entryPrice"),
+        )
+        for t in trades
+    ] + [
+        (m["zoneTime"], m["dir"], m["zoneTurn"], "miss", None)
+        for m in misses
+        if m["of"] > 0 and m["met"] >= m["of"] and m.get("zoneTime") and m.get("zoneTurn")
+    ]
 
 
 def _build_misses(run_dir: Path, candles: list[dict]) -> tuple[list[dict], list[str]]:
@@ -516,10 +551,11 @@ def _build_misses(run_dir: Path, candles: list[dict]) -> tuple[list[dict], list[
             continue
         reasons = [
             {"label": str(r.get("label") or "Missed"), "reason": str(r.get("reason") or "")}
-            for r in (m.get("reasons") or []) if isinstance(r, dict)
+            for r in (m.get("reasons") or [])
+            if isinstance(r, dict)
         ]
         if not reasons:
-            continue    # a record naming nothing can't be filtered or explained — drop it
+            continue  # a record naming nothing can't be filtered or explained — drop it
         is_near = bool(m.get("near", True))
         for r in reasons:
             if r["label"] not in all_labels:
@@ -527,23 +563,25 @@ def _build_misses(run_dir: Path, candles: list[dict]) -> tuple[list[dict], list[
             if is_near:
                 near_labels.add(r["label"])
         ms = lambda v: int(v) if isinstance(v, (int, float)) else None
-        out.append({
-            "id": f"M{i}",
-            "time": int(t),
-            # The RETRACE — first bar in the zone, and the deepest bar of that visit. The only
-            # honest bracket for anything asking what price DID here, because `time` is the bar
-            # the setup died. Absent on a run made before the strategy recorded them, and absent
-            # means absent.
-            "zoneTime": ms(m.get("zone_time_ms")),
-            "zoneTurn": ms(m.get("zone_turn_ms")),
-            "dir": "short" if str(m.get("direction", "")).lower().startswith("s") else "long",
-            "price": float(m.get("edge") or 0.0),
-            "met": int(m.get("met") or 0),
-            "of": int(m.get("of") or 0),
-            "near": is_near,
-            "metLines": [str(s) for s in (m.get("met_lines") or [])],
-            "reasons": reasons,
-        })
+        out.append(
+            {
+                "id": f"M{i}",
+                "time": int(t),
+                # The RETRACE — first bar in the zone, and the deepest bar of that visit. The only
+                # honest bracket for anything asking what price DID here, because `time` is the bar
+                # the setup died. Absent on a run made before the strategy recorded them, and absent
+                # means absent.
+                "zoneTime": ms(m.get("zone_time_ms")),
+                "zoneTurn": ms(m.get("zone_turn_ms")),
+                "dir": "short" if str(m.get("direction", "")).lower().startswith("s") else "long",
+                "price": float(m.get("edge") or 0.0),
+                "met": int(m.get("met") or 0),
+                "of": int(m.get("of") or 0),
+                "near": is_near,
+                "metLines": [str(s) for s in (m.get("met_lines") or [])],
+                "reasons": reasons,
+            }
+        )
     return out, [lb for lb in all_labels if lb not in near_labels]
 
 
@@ -568,8 +606,8 @@ def _wilder_atr(daily: list[dict], period: int) -> dict[int, float]:
         h, lo, pc = daily[i]["high"], daily[i]["low"], daily[i - 1]["close"]
         trs.append(max(h - lo, abs(h - pc), abs(lo - pc)))
     out: dict[int, float] = {}
-    atr = sum(trs[:period]) / period            # seed = SMA of first `period` TRs
-    out[daily[period]["time"]] = atr            # trs[i] belongs to daily[i+1]
+    atr = sum(trs[:period]) / period  # seed = SMA of first `period` TRs
+    out[daily[period]["time"]] = atr  # trs[i] belongs to daily[i+1]
     for i in range(period, len(trs)):
         atr = (atr * (period - 1) + trs[i]) / period
         out[daily[i + 1]["time"]] = atr
@@ -577,7 +615,10 @@ def _wilder_atr(daily: list[dict], period: int) -> dict[int, float]:
 
 
 def _build_structure(
-    m15: list[dict], trades: list[dict], daily: list[dict], params: dict,
+    m15: list[dict],
+    trades: list[dict],
+    daily: list[dict],
+    params: dict,
 ) -> tuple[list[dict], list[dict]]:
     """Recompute the London-breakout structure (Asian range box + ATR-buffered buy/sell levels)
     for each day a trade occurred, plus the daily ATR series as a sub-pane indicator."""
@@ -608,27 +649,56 @@ def _build_structure(
             continue
         hi = max(c["high"] for c in window)
         low = min(c["low"] for c in window)
-        overlays.append({
-            "type": "box", "group": "ORB Range", "t0": a0, "t1": a1,
-            "top": hi, "bottom": low, "style": {"color": "#2dd4bf", "fillColor": "rgba(45,212,191,0.20)", "lineStyle": "dashed"},
-        })
+        overlays.append(
+            {
+                "type": "box",
+                "group": "ORB Range",
+                "t0": a0,
+                "t1": a1,
+                "top": hi,
+                "bottom": low,
+                "style": {
+                    "color": "#2dd4bf",
+                    "fillColor": "rgba(45,212,191,0.20)",
+                    "lineStyle": "dashed",
+                },
+            }
+        )
         atr = atr_before(day)
         if atr:
-            overlays.append({
-                "type": "hline", "group": "ORB Range", "t0": a1, "t1": t_flat,
-                "price": round(hi + buffer_atr * atr, 5),
-                "style": {"color": "#33ff99", "lineStyle": "dashed"},
-            })
-            overlays.append({
-                "type": "hline", "group": "ORB Range", "t0": a1, "t1": t_flat,
-                "price": round(low - buffer_atr * atr, 5),
-                "style": {"color": "#ff6680", "lineStyle": "dashed"},
-            })
+            overlays.append(
+                {
+                    "type": "hline",
+                    "group": "ORB Range",
+                    "t0": a1,
+                    "t1": t_flat,
+                    "price": round(hi + buffer_atr * atr, 5),
+                    "style": {"color": "#33ff99", "lineStyle": "dashed"},
+                }
+            )
+            overlays.append(
+                {
+                    "type": "hline",
+                    "group": "ORB Range",
+                    "t0": a1,
+                    "t1": t_flat,
+                    "price": round(low - buffer_atr * atr, 5),
+                    "style": {"color": "#ff6680", "lineStyle": "dashed"},
+                }
+            )
 
-    indicators = [{
-        "name": f"ATR({period}) D1", "params": {"period": period},
-        "pane": "sub", "series": atr_series,
-    }] if atr_series else []
+    indicators = (
+        [
+            {
+                "name": f"ATR({period}) D1",
+                "params": {"period": period},
+                "pane": "sub",
+                "series": atr_series,
+            }
+        ]
+        if atr_series
+        else []
+    )
     return overlays, indicators
 
 
@@ -820,8 +890,15 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
 
     run_dir.mkdir(parents=True, exist_ok=True)
     _write_spec_cache(spec_path, spec)
-    log.info("chart_spec: built for %s — %d candles, %d trades, %d overlays, %d indicators (%s)",
-             run_id, len(candles), len(trades), len(overlays), len(indicators), base_tf)
+    log.info(
+        "chart_spec: built for %s — %d candles, %d trades, %d overlays, %d indicators (%s)",
+        run_id,
+        len(candles),
+        len(trades),
+        len(overlays),
+        len(indicators),
+        base_tf,
+    )
     return spec
 
 
@@ -839,8 +916,17 @@ def _overlay_identity(o: dict) -> tuple:
     and stack two identical rectangles. Geometry plus the label IS the identity — nothing here is
     per-leg — so the dedupe merges their `layers` instead.
     """
-    return (o.get("group"), o.get("type"), o.get("t0"), o.get("t1"),
-            o.get("t"), o.get("p0"), o.get("p1"), o.get("price"), o.get("label"))
+    return (
+        o.get("group"),
+        o.get("type"),
+        o.get("t0"),
+        o.get("t1"),
+        o.get("t"),
+        o.get("p0"),
+        o.get("p1"),
+        o.get("price"),
+        o.get("label"),
+    )
 
 
 def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dict]:
@@ -899,8 +985,8 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
         return None
 
     first_spec: Optional[dict] = None
-    base_spec: Optional[dict] = None      # first leg that actually has candles
-    base_run_id: Optional[str] = None     # its run_id — drives the price chart's drill-down/fullscreen
+    base_spec: Optional[dict] = None  # first leg that actually has candles
+    base_run_id: Optional[str] = None  # its run_id — drives the price chart's drill-down/fullscreen
     all_trades: list[dict] = []
     all_blocks: list[dict] = []
     all_misses: list[dict] = []
@@ -920,11 +1006,13 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
         if base_spec is None and spec.get("candles"):
             base_spec = spec
             base_run_id = r["run_id"]
-        layers.append({
-            "strategy_id": sid,
-            "strategy_name": r.get("strategy_name", ""),
-            "run_id": r["run_id"],
-        })
+        layers.append(
+            {
+                "strategy_id": sid,
+                "strategy_name": r.get("strategy_name", ""),
+                "run_id": r["run_id"],
+            }
+        )
         for tr in spec.get("trades", []):
             t = dict(tr)
             t["layer"] = sid
@@ -968,8 +1056,11 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
     # chart carries the base leg's, giving it full BacktestDetail parity (structure layers, ATR pane,
     # fib/measurement tools all read the same spec). The anchored groups are merged above instead,
     # and the candle marks are dropped — see the docstring for why that one cannot be merged.
-    overlays = [dict(o) for o in src.get("overlays", [])
-                if o.get("group") not in (*_ANCHORED_GROUPS, GROUP_CANDLES)]
+    overlays = [
+        dict(o)
+        for o in src.get("overlays", [])
+        if o.get("group") not in (*_ANCHORED_GROUPS, GROUP_CANDLES)
+    ]
     overlays.extend(anchored.values())
 
     return {
@@ -1018,9 +1109,7 @@ def _is_broker_floor(instrument: str, timeframe: str, data_start_ms: int, runner
     earliest = (limit or {}).get("earliest_date")
     if not earliest:
         return False
-    floor_ms = int(
-        datetime.fromisoformat(earliest).replace(tzinfo=timezone.utc).timestamp() * 1000
-    )
+    floor_ms = int(datetime.fromisoformat(earliest).replace(tzinfo=timezone.utc).timestamp() * 1000)
     return data_start_ms - floor_ms <= _FLOOR_SLOP_MS
 
 
@@ -1070,7 +1159,10 @@ def _drill_structure(candles: list[dict], from_ms: int, to_ms: int) -> list[dict
 
 
 def build_run_candles(
-    run_id: str, timeframe: str, from_ms: int, to_ms: int,
+    run_id: str,
+    timeframe: str,
+    from_ms: int,
+    to_ms: int,
 ) -> Optional[dict]:
     """Candles for a bounded [from_ms, to_ms] window of a run at an ARBITRARY timeframe — the
     DRILL-DOWN data path (e.g. 1m under a 15m run, to see a trade's exact entry).
@@ -1185,6 +1277,15 @@ def build_run_candles(
         # overlays while a drill-down is showing — see `_drill_structure`.
         "overlays": overlays,
     }
-    log.info("run_candles: %s %s [%s, %s] -> %d candles, %d overlays (hard_edge=%s, feed_error=%s)",
-             run_id, timeframe, start_date, end_date, len(candles), len(overlays), hard_edge, feed_error)
+    log.info(
+        "run_candles: %s %s [%s, %s] -> %d candles, %d overlays (hard_edge=%s, feed_error=%s)",
+        run_id,
+        timeframe,
+        start_date,
+        end_date,
+        len(candles),
+        len(overlays),
+        hard_edge,
+        feed_error,
+    )
     return out

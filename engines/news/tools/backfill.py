@@ -23,7 +23,9 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from news.sources.forex_factory_history import (  # noqa: E402
-    ForexFactoryHistorySource, _month_bounds_ms, _months_between,
+    ForexFactoryHistorySource,
+    _month_bounds_ms,
+    _months_between,
 )
 from news.store import EventStore  # noqa: E402
 
@@ -45,9 +47,13 @@ def _range_covered(ranges, lo, hi) -> bool:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Backfill historical FF calendar months into the cache.")
+    ap = argparse.ArgumentParser(
+        description="Backfill historical FF calendar months into the cache."
+    )
     ap.add_argument("--from", dest="start", required=True, type=_parse_month, help="YYYY-MM[-DD]")
-    ap.add_argument("--to", dest="end", type=_parse_month, default=None, help="YYYY-MM[-DD] (default: today)")
+    ap.add_argument(
+        "--to", dest="end", type=_parse_month, default=None, help="YYYY-MM[-DD] (default: today)"
+    )
     ap.add_argument("--force", action="store_true", help="re-fetch months even if already cached")
     ap.add_argument("--sleep", type=float, default=1.0, help="seconds between month requests")
     args = ap.parse_args(argv)
@@ -78,9 +84,15 @@ def main(argv=None) -> int:
         print(f"[backfill] {year}-{month:02d}: {len(res.events)} events ({changed} new/updated)")
 
     start = store.coverage_start_ms()
-    startstr = datetime.fromtimestamp(start / 1000, tz=timezone.utc).strftime("%Y-%m-%d") if start else "n/a"
-    print(f"[backfill] done: {fetched} month(s) fetched, {skipped} cached/skipped, "
-          f"{added_total} events new/updated. Cache now starts {startstr} -> {store.path}")
+    startstr = (
+        datetime.fromtimestamp(start / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        if start
+        else "n/a"
+    )
+    print(
+        f"[backfill] done: {fetched} month(s) fetched, {skipped} cached/skipped, "
+        f"{added_total} events new/updated. Cache now starts {startstr} -> {store.path}"
+    )
     return 0
 
 

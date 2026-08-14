@@ -36,35 +36,35 @@ export default function App() {
           <TopBar />
           <main className="flex-1 overflow-y-auto p-[22px]">
             <Routes>
-              <Route path="/"                         element={<Overview />} />
+              <Route path="/" element={<Overview />} />
               {/* Routes and nav items move together — a page with no way to reach
                   it is still reachable by URL, which is not "removed". */}
               {FEATURES.smartMoney && (
                 <>
-                  <Route path="/smart-money"              element={<SmartMoney />} />
+                  <Route path="/smart-money" element={<SmartMoney />} />
                   <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
                 </>
               )}
-              <Route path="/bots"                     element={<Bots />} />
-              <Route path="/calendar"                 element={<Calendar />} />
-              <Route path="/strategies"                             element={<Strategies />} />
-              <Route path="/rulesets"                               element={<Rulesets />} />
-              <Route path="/backtests"                              element={<Backtests />} />
-              <Route path="/backtests/runs/:runId"              element={<BacktestDetail />} />
-              <Route path="/strategies/:strategyId"            element={<StrategyDetail />} />
-              <Route path="/backtests/sweeps/:sweepId"         element={<SweepDetail />} />
-              <Route path="/backtests/stacks/:stackId"         element={<StackDetail />} />
-              <Route path="/optimizations"                      element={<Optimizations />} />
-              <Route path="/optimizations/:optimizationId"      element={<OptimizationDetail />} />
-              <Route path="/backtests/runs/:runId/tune"         element={<TuningWorkbench />} />
+              <Route path="/bots" element={<Bots />} />
+              <Route path="/calendar" element={<Calendar />} />
+              <Route path="/strategies" element={<Strategies />} />
+              <Route path="/rulesets" element={<Rulesets />} />
+              <Route path="/backtests" element={<Backtests />} />
+              <Route path="/backtests/runs/:runId" element={<BacktestDetail />} />
+              <Route path="/strategies/:strategyId" element={<StrategyDetail />} />
+              <Route path="/backtests/sweeps/:sweepId" element={<SweepDetail />} />
+              <Route path="/backtests/stacks/:stackId" element={<StackDetail />} />
+              <Route path="/optimizations" element={<Optimizations />} />
+              <Route path="/optimizations/:optimizationId" element={<OptimizationDetail />} />
+              <Route path="/backtests/runs/:runId/tune" element={<TuningWorkbench />} />
               <Route path="/backtests/stress-tests/:stressTestId" element={<StressTestDetail />} />
-              <Route path="/stress-tests"                       element={<StressTests />} />
-              <Route path="/stress-tests/:stressTestId"         element={<StressTestDetail />} />
-              <Route path="/settings"                 element={<Settings />} />
+              <Route path="/stress-tests" element={<StressTests />} />
+              <Route path="/stress-tests/:stressTestId" element={<StressTestDetail />} />
+              <Route path="/settings" element={<Settings />} />
               {/* An unmatched path rendered nothing at all — a blank main area beside
                   a working sidebar, which reads as the app breaking. A bookmark to a
                   flagged-off page (or any typo) lands on the Overview instead. */}
-              <Route path="*"                         element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
         </div>

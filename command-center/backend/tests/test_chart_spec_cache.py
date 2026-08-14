@@ -16,7 +16,6 @@ a tidy-up — it is what makes the fast path safe, and the tests below pin both 
 import json
 
 import pytest
-
 from services import chart_spec
 
 
@@ -82,8 +81,11 @@ def test_the_cache_is_written_atomically_and_leaves_no_temp_behind(lab_dir, monk
     confirmed exactly that before this was rewritten."""
     calls = []
     real_replace = chart_spec.os.replace
-    monkeypatch.setattr(chart_spec.os, "replace",
-                        lambda a, b: (calls.append((str(a), str(b))), real_replace(a, b))[1])
+    monkeypatch.setattr(
+        chart_spec.os,
+        "replace",
+        lambda a, b: (calls.append((str(a), str(b))), real_replace(a, b))[1],
+    )
     d = lab_dir / "r5"
     d.mkdir()
     chart_spec._write_spec_cache(d / "chart_spec.json", {"candles": [], "trades": []})

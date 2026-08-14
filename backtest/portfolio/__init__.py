@@ -22,7 +22,13 @@ from .combine import Leg, combine_runs, leg_from_result
 from .runner import LegSpec, StackRun, contention_summary, run_stack
 
 __all__ = [
-    "Leg", "combine_runs", "leg_from_result",
-    "PortfolioAccount", "SoloAccount",
-    "LegSpec", "StackRun", "run_stack", "contention_summary",
+    "Leg",
+    "combine_runs",
+    "leg_from_result",
+    "PortfolioAccount",
+    "SoloAccount",
+    "LegSpec",
+    "StackRun",
+    "run_stack",
+    "contention_summary",
 ]

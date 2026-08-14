@@ -39,9 +39,13 @@ def test_a_subject_is_optional():
 
 
 def test_each_group_of_facts_gets_its_own_line():
-    msg = af.alert("📈", "ENTRY", "LONG XAUUSD.s",
-                   "Entry 3,290.00 · Stop 3,280.00",
-                   "Size 0.42 lots · Risking $200.00 (10%)")
+    msg = af.alert(
+        "📈",
+        "ENTRY",
+        "LONG XAUUSD.s",
+        "Entry 3,290.00 · Stop 3,280.00",
+        "Size 0.42 lots · Risking $200.00 (10%)",
+    )
     assert msg.splitlines() == [
         "📈 ENTRY · LONG XAUUSD.s",
         "Entry 3,290.00 · Stop 3,280.00",
@@ -58,8 +62,18 @@ def test_a_missing_fact_is_absent_not_a_blank_line():
 
 
 def test_the_header_stays_short_enough_for_a_lock_screen():
-    for label in ("ONLINE", "STOPPED", "HALTED", "NO MT5 LINK", "WILL NOT START", "REVIEW",
-                  "SETTINGS NOT APPLIED", "STALLED", "RECOVERED", "RESTARTED"):
+    for label in (
+        "ONLINE",
+        "STOPPED",
+        "HALTED",
+        "NO MT5 LINK",
+        "WILL NOT START",
+        "REVIEW",
+        "SETTINGS NOT APPLIED",
+        "STALLED",
+        "RECOVERED",
+        "RESTARTED",
+    ):
         head = af.alert("⚠️", label, "MPC SOS Fade").splitlines()[0]
         assert len(head) <= 45, f"{label!r} makes a {len(head)}-char header: {head!r}"
 
@@ -75,8 +89,10 @@ def test_an_unknown_balance_is_not_rendered_as_zero():
 
 
 def test_joined_drops_what_is_missing():
-    assert af.joined(["live", None, "XAUUSD.s M15", "", "$2,000.00"]) == \
-        "live · XAUUSD.s M15 · $2,000.00"
+    assert (
+        af.joined(["live", None, "XAUUSD.s M15", "", "$2,000.00"])
+        == "live · XAUUSD.s M15 · $2,000.00"
+    )
 
 
 # ── timestamps ───────────────────────────────────────────────────────────────────
@@ -92,7 +108,7 @@ def test_a_past_moment_is_rendered_in_the_local_clock_with_the_zone_named():
     be an hour of arithmetic away from the record it points at."""
     out = af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc), now=_SAME_DAY)
     assert "1:06 PM" in out
-    assert "C" in out.split()[-1]           # CDT or CST depending on the date
+    assert "C" in out.split()[-1]  # CDT or CST depending on the date
 
 
 def test_the_hour_has_no_leading_zero_and_the_format_string_is_portable():
@@ -100,19 +116,23 @@ def test_the_hour_has_no_leading_zero_and_the_format_string_is_portable():
     `ValueError: Invalid format string` on Windows, where the equivalent is `%#I`. The suite was
     green here and `log_review.py` crashed on the VPS on its first run. The stripping is done in
     Python so one string works on both."""
-    assert af.when(datetime(2026, 8, 5, 6, 6, tzinfo=timezone.utc),
-                   now=_SAME_DAY).startswith("1:06")
-    assert af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc),
-                   now=_SAME_DAY).startswith("1:06")
-    assert af.when(datetime(2026, 8, 5, 15, 6, tzinfo=timezone.utc),
-                   now=_SAME_DAY).startswith("10:06")
+    assert af.when(datetime(2026, 8, 5, 6, 6, tzinfo=timezone.utc), now=_SAME_DAY).startswith(
+        "1:06"
+    )
+    assert af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc), now=_SAME_DAY).startswith(
+        "1:06"
+    )
+    assert af.when(datetime(2026, 8, 5, 15, 6, tzinfo=timezone.utc), now=_SAME_DAY).startswith(
+        "10:06"
+    )
 
 
 def test_a_naive_timestamp_is_read_as_utc():
     """Every timestamp in the ledger is UTC. Reading a naive one as local would shift the same
     event by hours depending on which machine rendered it."""
     assert af.when(datetime(2026, 8, 5, 18, 6)) == af.when(
-        datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc))
+        datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc)
+    )
 
 
 def test_an_iso_string_is_accepted_because_that_is_what_the_ledger_holds():
@@ -134,7 +154,7 @@ def test_an_unparseable_timestamp_is_returned_rather_than_raising():
 # in the chat they were indistinguishable — "4 starts since 11:12 AM CDT" read as this morning
 # when it meant yesterday morning. Every stamp was CORRECT and the reader still concluded the
 # wrong thing, which is the repo's standing rule about metrics arriving one layer up.
-_REVIEW_RAN = datetime(2026, 8, 13, 21, 20, tzinfo=timezone.utc)      # 4:20 PM CDT
+_REVIEW_RAN = datetime(2026, 8, 13, 21, 20, tzinfo=timezone.utc)  # 4:20 PM CDT
 
 
 def test_a_moment_from_an_EARLIER_DAY_carries_its_date():
@@ -158,8 +178,8 @@ def test_the_day_is_decided_in_the_READING_zone_never_in_UTC():
     around it. Comparing the UTC dates would stamp it "Aug 13" and send the reader to the wrong
     day's log, which is worse than the bare time this replaced.
     """
-    late_evening = datetime(2026, 8, 13, 1, 0, tzinfo=timezone.utc)   # 8:00 PM CDT on the 12th
-    reading_it = datetime(2026, 8, 13, 2, 0, tzinfo=timezone.utc)     # 9:00 PM CDT on the 12th
+    late_evening = datetime(2026, 8, 13, 1, 0, tzinfo=timezone.utc)  # 8:00 PM CDT on the 12th
+    reading_it = datetime(2026, 8, 13, 2, 0, tzinfo=timezone.utc)  # 9:00 PM CDT on the 12th
     out = af.when(late_evening, now=reading_it)
     assert out.startswith("8:00 PM"), out
     assert "Aug" not in out, "same local evening, different UTC dates — this is not another day"
@@ -182,6 +202,7 @@ def _mirror():
     """The command center's copy, loaded by PATH rather than imported — that app is not on this
     suite's sys.path and must not be put there, which is the whole point of the boundary."""
     import importlib.util
+
     path = _REPO / "command-center" / "backend" / "services" / "alert_format.py"
     spec = importlib.util.spec_from_file_location("cc_alert_format", path)
     mod = importlib.util.module_from_spec(spec)

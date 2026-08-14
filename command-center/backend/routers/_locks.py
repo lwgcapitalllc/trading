@@ -10,10 +10,9 @@ with the job's runner before creating it. This is the single source of truth for
 the lock — gates must not read `lab_progress.json` (that file is for the progress
 bar only and is shared across both platforms).
 """
+
 from fastapi import HTTPException
-
 from services import lab_db
-
 
 _LABELS = {"mt5": "MT5", "python": "Python"}
 

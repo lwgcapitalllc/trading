@@ -27,7 +27,7 @@ export function runnerScope(runner?: string | null): RunnerScope {
 /** The running job holding this runner's lock, or undefined if that scope is idle. */
 export function runningJobFor(
   job: RunningJobStatus | undefined,
-  runner?: string | null,
+  runner?: string | null
 ): RunningJobInfo | undefined {
   return job?.[runnerScope(runner)]
 }

@@ -1,8 +1,21 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceLine, Cell } from 'recharts'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  ReferenceLine,
+  Cell,
+} from 'recharts'
 import { C } from '@/themes/chart'
 import type { WalkForwardWindow } from '@/types'
 
-interface Props { windows: WalkForwardWindow[]; height?: number }
+interface Props {
+  windows: WalkForwardWindow[]
+  height?: number
+}
 
 /** Mirrors stress_tester._WF_MIN_TRADES_PER_WINDOW. Below this on EITHER side the window is
  *  excluded from the degradation average, so the chart has to say which bars are which. */
@@ -16,15 +29,16 @@ export default function WalkForwardChart({ windows, height = 248 }: Props) {
   // This chart read `is_sharpe ?? 0` regardless, so that whole path drew a row of ZERO bars — a
   // chart asserting "Sharpe 0.00 in and out" for five windows nothing had measured a Sharpe on,
   // while the KPI cards beside it correctly printed "—". Never render a null as a value.
-  const isPf = windows.every(w => w.is_sharpe == null) && windows.some(w => w.is_pf != null)
+  const isPf = windows.every((w) => w.is_sharpe == null) && windows.some((w) => w.is_pf != null)
   const pick = (w: WalkForwardWindow, side: 'is' | 'oos') =>
-    isPf ? (side === 'is' ? w.is_pf : w.oos_pf) : (side === 'is' ? w.is_sharpe : w.oos_sharpe)
+    isPf ? (side === 'is' ? w.is_pf : w.oos_pf) : side === 'is' ? w.is_sharpe : w.oos_sharpe
 
-  const data = windows.map(w => {
+  const data = windows.map((w) => {
     // A window excluded for thin evidence is drawn faded, so a tall bar that contributed NOTHING
     // to the verdict cannot be read as the thing that decided it.
-    const thin = (w.is_trades != null && w.is_trades < MIN_TRADES)
-      || (w.oos_trades != null && w.oos_trades < MIN_TRADES)
+    const thin =
+      (w.is_trades != null && w.is_trades < MIN_TRADES) ||
+      (w.oos_trades != null && w.oos_trades < MIN_TRADES)
     return {
       window: `W${w.window}`,
       is: pick(w, 'is'),
@@ -34,7 +48,7 @@ export default function WalkForwardChart({ windows, height = 248 }: Props) {
       thin,
     }
   })
-  const anyThin = data.some(d => d.thin)
+  const anyThin = data.some((d) => d.thin)
   const metric = isPf ? 'Profit factor' : 'Sharpe'
 
   return (
@@ -47,13 +61,24 @@ export default function WalkForwardChart({ windows, height = 248 }: Props) {
             tickLine={false}
             axisLine={false}
             label={{
-              value: isPf ? 'Profit factor (1.0 = break-even)' : 'Sharpe (higher = better, < 0 = losing)',
-              angle: -90, position: 'insideLeft', fill: C.axisTick, fontSize: 10,
+              value: isPf
+                ? 'Profit factor (1.0 = break-even)'
+                : 'Sharpe (higher = better, < 0 = losing)',
+              angle: -90,
+              position: 'insideLeft',
+              fill: C.axisTick,
+              fontSize: 10,
               style: { textAnchor: 'middle' },
             }}
           />
           <Tooltip
-            contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+            contentStyle={{
+              background: C.tooltipBg,
+              border: `1px solid ${C.tooltipBorder}`,
+              borderRadius: 8,
+              fontSize: 13,
+              padding: '8px 12px',
+            }}
             labelStyle={{ color: C.axisTick }}
             itemStyle={{ color: '#e5e7eb' }}
             cursor={false}
@@ -63,19 +88,36 @@ export default function WalkForwardChart({ windows, height = 248 }: Props) {
               const row = entry?.payload as (typeof data)[number] | undefined
               const label = String(name)
               const trades = label.startsWith('In') ? row?.is_trades : row?.oos_trades
-              const suffix = trades != null
-                ? ` · ${trades} trade${trades === 1 ? '' : 's'}${trades < MIN_TRADES ? ' (too thin to count)' : ''}`
-                : ''
+              const suffix =
+                trades != null
+                  ? ` · ${trades} trade${trades === 1 ? '' : 's'}${trades < MIN_TRADES ? ' (too thin to count)' : ''}`
+                  : ''
               return [v == null ? 'not measured' : `${Number(v).toFixed(2)}${suffix}`, label]
             }}
           />
           <Legend wrapperStyle={{ fontSize: 12, color: C.axisTick }} />
           <ReferenceLine y={isPf ? 1 : 0} stroke={C.refLine} />
-          <Bar dataKey="is" name={`In-Sample ${metric} (first 70%)`} fill={C.accent} radius={[2, 2, 0, 0]} activeBar={{ fillOpacity: 1 }}>
-            {data.map((d, i) => <Cell key={i} fillOpacity={d.thin ? 0.22 : 0.6} />)}
+          <Bar
+            dataKey="is"
+            name={`In-Sample ${metric} (first 70%)`}
+            fill={C.accent}
+            radius={[2, 2, 0, 0]}
+            activeBar={{ fillOpacity: 1 }}
+          >
+            {data.map((d, i) => (
+              <Cell key={i} fillOpacity={d.thin ? 0.22 : 0.6} />
+            ))}
           </Bar>
-          <Bar dataKey="oos" name={`Out-of-Sample ${metric} (unseen last 30%)`} fill={C.pos} radius={[2, 2, 0, 0]} activeBar={{ fillOpacity: 1 }}>
-            {data.map((d, i) => <Cell key={i} fillOpacity={d.thin ? 0.22 : 0.6} />)}
+          <Bar
+            dataKey="oos"
+            name={`Out-of-Sample ${metric} (unseen last 30%)`}
+            fill={C.pos}
+            radius={[2, 2, 0, 0]}
+            activeBar={{ fillOpacity: 1 }}
+          >
+            {data.map((d, i) => (
+              <Cell key={i} fillOpacity={d.thin ? 0.22 : 0.6} />
+            ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>

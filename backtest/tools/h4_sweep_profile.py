@@ -104,7 +104,7 @@ SESSIONS = (("Asia", 19, 3), ("London", 3, 8), ("NY", 8, 17), ("Late", 17, 19))
 
 @dataclass(frozen=True)
 class Bar:
-    t: dt.datetime          # NY-localised open time
+    t: dt.datetime  # NY-localised open time
     open: float
     high: float
     low: float
@@ -145,8 +145,15 @@ def load_bars(symbol: str, tf: str) -> list[Bar]:
     with path.open() as fh:
         for row in csv.DictReader(fh):
             t = dt.datetime.strptime(row["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-            bars.append(Bar(t.astimezone(NY), float(row["open"]), float(row["high"]),
-                            float(row["low"]), float(row["close"])))
+            bars.append(
+                Bar(
+                    t.astimezone(NY),
+                    float(row["open"]),
+                    float(row["high"]),
+                    float(row["low"]),
+                    float(row["close"]),
+                )
+            )
     bars.sort(key=lambda b: b.t)
     return bars
 
@@ -196,7 +203,7 @@ def adr_series(bars: list[Bar]) -> list[Optional[float]]:
     out: list[Optional[float]] = []
     for b in bars:
         i = pos[b.t.date()]
-        prior = [ranges[d] for d in order[max(0, i - ADR_LEN):i]]
+        prior = [ranges[d] for d in order[max(0, i - ADR_LEN) : i]]
         out.append(statistics.fmean(prior) if len(prior) >= 5 else None)
     return out
 
@@ -263,8 +270,8 @@ def pivot_levels(bars: list[Bar], length: int) -> list[tuple[Optional[float], Op
         p = i - length
         if p - length < 0:
             continue
-        left = bars[p - length:p]
-        right = bars[p + 1:i + 1]
+        left = bars[p - length : p]
+        right = bars[p + 1 : i + 1]
         c = bars[p]
         if all(b.high <= c.high for b in left) and all(b.high < c.high for b in right):
             live_high = c.high
@@ -289,8 +296,11 @@ def session_of(t: dt.datetime) -> str:
     return "?"
 
 
-def build_rows(bars: list[Bar], levels: list[tuple[Optional[float], Optional[float]]],
-               horizons: tuple[int, ...]) -> list[dict]:
+def build_rows(
+    bars: list[Bar],
+    levels: list[tuple[Optional[float], Optional[float]]],
+    horizons: tuple[int, ...],
+) -> list[dict]:
     """One row per H4 bar — sweep or not. Control rows are produced by the SAME code
     path as event rows so nothing can differ between them except the event flag."""
     atr = true_ranges(bars)
@@ -362,16 +372,14 @@ def build_rows(bars: list[Bar], levels: list[tuple[Optional[float], Optional[flo
             row["level"] = None
 
         # Trend agreement — does the continuation direction run WITH the H4 EMA50?
-        row["trend_agrees"] = (
-            None if trend[i] is None else (cont_dir > 0) == (b.close > trend[i])
-        )
+        row["trend_agrees"] = None if trend[i] is None else (cont_dir > 0) == (b.close > trend[i])
         # Does the bar's own body agree with the continuation direction? On a wick sweep
         # it usually will not, and that is the interesting cell.
         row["body_agrees"] = (b.close - b.open) * cont_dir > 0
 
         # --- what came after, signed in the CONTINUATION direction throughout
         for h in horizons:
-            fwd = bars[i + 1:i + 1 + h]
+            fwd = bars[i + 1 : i + 1 + h]
             move = (fwd[-1].close - b.close) * cont_dir
             # Written out rather than compressed: MFE is the best excursion in the
             # continuation direction, MAE the worst against it.
@@ -384,9 +392,13 @@ def build_rows(bars: list[Bar], levels: list[tuple[Optional[float], Optional[flo
             row[f"move_{h}_adr"] = move / a
             row[f"mfe_{h}_adr"] = mfe / a
             row[f"mae_{h}_adr"] = mae / a
-            row[f"outcome_{h}"] = ("continued" if move / a >= FLAT_ADR
-                                   else "reverted" if move / a <= -FLAT_ADR
-                                   else "neither")
+            row[f"outcome_{h}"] = (
+                "continued"
+                if move / a >= FLAT_ADR
+                else "reverted"
+                if move / a <= -FLAT_ADR
+                else "neither"
+            )
         rows.append(row)
 
     return rows
@@ -407,8 +419,9 @@ class M15Index:
         return self.bars[lo:hi]
 
 
-def simulate(row: dict, h4: list[Bar], m15: M15Index, horizon: int,
-             target_r: float, direction: int) -> Optional[dict]:
+def simulate(
+    row: dict, h4: list[Bar], m15: M15Index, horizon: int, target_r: float, direction: int
+) -> Optional[dict]:
     """One naive trade. `direction` is +1 to take the continuation, -1 the reversal.
 
     Entry is the sweep bar's close. The stop is the sweep bar's far extreme relative to
@@ -455,23 +468,24 @@ class TradePlan:
     runner exits below open the directions that were missing.
     """
 
-    direction: int = -1          # -1 = fade the sweep, +1 = continue through it
-    confirm_bars: int = 16       # M15 bars allowed for acceptance
-    fill_bars: int = 16          # M15 bars the limit rests before cancellation
-    entry_mode: str = "limit"    # "limit" = retrace into the leg | "market" = confirm close
-    retrace: float = 0.5         # limit only. risk = leg × (1 − retrace), so SMALLER = wider stop
-    stop_model: str = "leg"      # "leg" = the leg origin | "atr" = H4 ATR(14) × stop_atr
+    direction: int = -1  # -1 = fade the sweep, +1 = continue through it
+    confirm_bars: int = 16  # M15 bars allowed for acceptance
+    fill_bars: int = 16  # M15 bars the limit rests before cancellation
+    entry_mode: str = "limit"  # "limit" = retrace into the leg | "market" = confirm close
+    retrace: float = 0.5  # limit only. risk = leg × (1 − retrace), so SMALLER = wider stop
+    stop_model: str = "leg"  # "leg" = the leg origin | "atr" = H4 ATR(14) × stop_atr
     stop_atr: float = 1.0
-    min_stop_pct: float = 0.1    # the repo's own guard, as % of price
-    horizon: int = 4             # H4 bars from the sweep before the trade is given up
-    target_r: float = 2.0        # 0 = no ceiling; the runner exits on trail or horizon
-    be_at_r: float = 0.0         # move the stop to entry once this much R is seen (0 = off)
-    trail_mode: str = "none"     # "none" | "pct" (of price) | "atr" (H4 ATR14 multiple)
+    min_stop_pct: float = 0.1  # the repo's own guard, as % of price
+    horizon: int = 4  # H4 bars from the sweep before the trade is given up
+    target_r: float = 2.0  # 0 = no ceiling; the runner exits on trail or horizon
+    be_at_r: float = 0.0  # move the stop to entry once this much R is seen (0 = off)
+    trail_mode: str = "none"  # "none" | "pct" (of price) | "atr" (H4 ATR14 multiple)
     trail_val: float = 0.0
 
 
-def run_trade(row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan,
-              cost: float) -> Optional[dict]:
+def run_trade(
+    row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan, cost: float
+) -> Optional[dict]:
     """Simulate one trade off one sweep event. The single trade implementation in this
     tool — `simulate_confirmed` is a thin call into it, so the study's published numbers
     and any sweep run share one code path and cannot drift apart.
@@ -502,7 +516,7 @@ def run_trade(row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan,
     # --- acceptance beyond the swept extreme
     leg_end = trigger
     confirmed_at = None
-    for k, bar in enumerate(path[:plan.confirm_bars]):
+    for k, bar in enumerate(path[: plan.confirm_bars]):
         leg_end = max(leg_end, bar.high) if d > 0 else min(leg_end, bar.low)
         origin = min(origin, bar.low) if d > 0 else max(origin, bar.high)
         if (bar.close > trigger) if d > 0 else (bar.close < trigger):
@@ -535,7 +549,7 @@ def run_trade(row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan,
     def book(r: float, outcome: str) -> dict:
         return {"outcome": outcome, "r": r, "r_net": r - cost / risk, "risk": risk}
 
-    rest = path[confirmed_at:] if plan.entry_mode == "market" else path[confirmed_at + 1:]
+    rest = path[confirmed_at:] if plan.entry_mode == "market" else path[confirmed_at + 1 :]
     filled = plan.entry_mode == "market"
     run_extreme = entry
 
@@ -544,7 +558,7 @@ def run_trade(row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan,
             if k >= plan.fill_bars:
                 return {"outcome": "no_fill", "r": None}
             if (bar.low <= entry) if d > 0 else (bar.high >= entry):
-                filled = True   # the fill bar can still stop us out — stop wins below
+                filled = True  # the fill bar can still stop us out — stop wins below
             else:
                 continue
 
@@ -558,8 +572,11 @@ def run_trade(row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan,
         if plan.be_at_r > 0 and abs(run_extreme - entry) >= plan.be_at_r * risk:
             stop = max(stop, entry) if d > 0 else min(stop, entry)
         if plan.trail_mode != "none" and plan.trail_val > 0:
-            dist = (bar.close * plan.trail_val / 100.0 if plan.trail_mode == "pct"
-                    else (atr or 0.0) * plan.trail_val)
+            dist = (
+                bar.close * plan.trail_val / 100.0
+                if plan.trail_mode == "pct"
+                else (atr or 0.0) * plan.trail_val
+            )
             if dist > 0:
                 trail = run_extreme - d * dist
                 stop = max(stop, trail) if d > 0 else min(stop, trail)
@@ -569,8 +586,9 @@ def run_trade(row: dict, h4: list[Bar], m15: M15Index, plan: TradePlan,
     return book(d * (rest[-1].close - entry) / risk, "timed_out")
 
 
-def simulate_confirmed(row: dict, h4: list[Bar], m15: M15Index, cfg: "ConfirmCfg",
-                       target_r: float, direction: int) -> Optional[dict]:
+def simulate_confirmed(
+    row: dict, h4: list[Bar], m15: M15Index, cfg: "ConfirmCfg", target_r: float, direction: int
+) -> Optional[dict]:
     """The trade the chosen DESIGN actually implies: H4 sweep for context, 15m for entry.
 
     The blind version above enters at the sweep bar's close — the worst price on the bar
@@ -593,10 +611,17 @@ def simulate_confirmed(row: dict, h4: list[Bar], m15: M15Index, cfg: "ConfirmCfg
     `qty = risk / distance` explode; it has detonated two bots in this repo already
     (A+ Run 4, BOS Run 1). Trades under the floor are dropped and counted, not clipped.
     """
-    plan = TradePlan(direction=direction, confirm_bars=cfg.confirm_bars,
-                     fill_bars=cfg.fill_bars, entry_mode="limit", retrace=cfg.retrace,
-                     stop_model="leg", min_stop_pct=cfg.min_stop_pct,
-                     horizon=cfg.horizon, target_r=target_r)
+    plan = TradePlan(
+        direction=direction,
+        confirm_bars=cfg.confirm_bars,
+        fill_bars=cfg.fill_bars,
+        entry_mode="limit",
+        retrace=cfg.retrace,
+        stop_model="leg",
+        min_stop_pct=cfg.min_stop_pct,
+        horizon=cfg.horizon,
+        target_r=target_r,
+    )
     return run_trade(row, h4, m15, plan, cost=0.0)
 
 
@@ -634,8 +659,7 @@ def _fmt(x: float, places: int = 3) -> str:
 
 
 def table(headers: list[str], rows: list[list[str]]) -> str:
-    out = ["| " + " | ".join(headers) + " |",
-           "|" + "|".join("---" for _ in headers) + "|"]
+    out = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
     out += ["| " + " | ".join(r) + " |" for r in rows]
     return "\n".join(out)
 
@@ -654,42 +678,71 @@ def outcome_row(label: str, rows: list[dict], h: int) -> list[str]:
     ]
 
 
-OUTCOME_HEADERS = ["slice", "n", "cont %", "rev %", "flat %",
-                   "mean move", "med move", "mean MFE", "mean MAE"]
+OUTCOME_HEADERS = [
+    "slice",
+    "n",
+    "cont %",
+    "rev %",
+    "flat %",
+    "mean move",
+    "med move",
+    "mean MFE",
+    "mean MAE",
+]
 
 
 # ---------------------------------------------------------------------------
 # report
 
 
-def report(name: str, rows: list[dict], h4: list[Bar], m15: M15Index,
-           horizons: tuple[int, ...], horizon: int, target_r: float,
-           cfg: "ConfirmCfg", cost: float, out: list[str]) -> None:
+def report(
+    name: str,
+    rows: list[dict],
+    h4: list[Bar],
+    m15: M15Index,
+    horizons: tuple[int, ...],
+    horizon: int,
+    target_r: float,
+    cfg: "ConfirmCfg",
+    cost: float,
+    out: list[str],
+) -> None:
     sweeps = [r for r in rows if r["is_sweep"]]
     control = [r for r in rows if not r["is_sweep"]]
     wicks = [r for r in sweeps if r["sweep_class"] == "wick"]
     breaks = [r for r in sweeps if r["sweep_class"] == "break"]
 
     out.append(f"\n\n## Definition: {name}\n")
-    out.append(f"{len(rows)} usable H4 bars · **{len(sweeps)} swept "
-               f"({100 * len(sweeps) / max(1, len(rows)):.1f}% of bars)** · "
-               f"{len(control)} control · {len(wicks)} wick / {len(breaks)} break")
+    out.append(
+        f"{len(rows)} usable H4 bars · **{len(sweeps)} swept "
+        f"({100 * len(sweeps) / max(1, len(rows)):.1f}% of bars)** · "
+        f"{len(control)} control · {len(wicks)} wick / {len(breaks)} break"
+    )
     if len(sweeps) / max(1, len(rows)) > 0.5:
-        out.append("\n⚠ More than half of all H4 bars fire this event. It is close to a "
-                   "base rate, not a rare signal — read every row against the control.")
+        out.append(
+            "\n⚠ More than half of all H4 bars fire this event. It is close to a "
+            "base rate, not a rare signal — read every row against the control."
+        )
 
     out.append("\n### Forward outcome, signed in the continuation direction\n")
-    out.append("`cont %` = closed ≥ +0.25 ADR further in the sweep's direction. "
-               "`rev %` = closed ≥ 0.25 ADR back. Control rows use the bar's own body "
-               "direction.\n")
+    out.append(
+        "`cont %` = closed ≥ +0.25 ADR further in the sweep's direction. "
+        "`rev %` = closed ≥ 0.25 ADR back. Control rows use the bar's own body "
+        "direction.\n"
+    )
     for h in horizons:
         out.append(f"\n**+{h} H4 bar{'s' if h > 1 else ''} ({h * 4}h)**\n")
-        out.append(table(OUTCOME_HEADERS, [
-            outcome_row("sweep (all)", sweeps, h),
-            outcome_row("  · wick (closed back in)", wicks, h),
-            outcome_row("  · break (closed beyond)", breaks, h),
-            outcome_row("CONTROL (no sweep)", control, h),
-        ]))
+        out.append(
+            table(
+                OUTCOME_HEADERS,
+                [
+                    outcome_row("sweep (all)", sweeps, h),
+                    outcome_row("  · wick (closed back in)", wicks, h),
+                    outcome_row("  · break (closed beyond)", breaks, h),
+                    outcome_row("CONTROL (no sweep)", control, h),
+                ],
+            )
+        )
 
     # ---- splits, all at the single reporting horizon
     h = horizon
@@ -708,56 +761,78 @@ def report(name: str, rows: list[dict], h4: list[Bar], m15: M15Index,
         depths = sorted(r["depth_atr"] for r in sweeps if r["depth_atr"] is not None)
         if len(depths) >= 40:
             lo, hi = depths[len(depths) // 4], depths[3 * len(depths) // 4]
-            yield "shallow poke (bottom 25%)", [r for r in sweeps
-                                                if r["depth_atr"] is not None and r["depth_atr"] <= lo]
-            yield "deep poke (top 25%)", [r for r in sweeps
-                                          if r["depth_atr"] is not None and r["depth_atr"] >= hi]
+            yield (
+                "shallow poke (bottom 25%)",
+                [r for r in sweeps if r["depth_atr"] is not None and r["depth_atr"] <= lo],
+            )
+            yield (
+                "deep poke (top 25%)",
+                [r for r in sweeps if r["depth_atr"] is not None and r["depth_atr"] >= hi],
+            )
 
-    out.append(table(OUTCOME_HEADERS, [outcome_row(lbl, sub, h)
-                                       for lbl, sub in cuts() if sub]))
+    out.append(table(OUTCOME_HEADERS, [outcome_row(lbl, sub, h) for lbl, sub in cuts() if sub]))
 
     out.append(f"\n### Out-of-sample — sweeps only, +{h} H4 bars\n")
-    out.append("A split that changes sign between the halves is regime, not edge. This "
-               "is the check the BOS regime run failed.\n")
+    out.append(
+        "A split that changes sign between the halves is regime, not edge. This "
+        "is the check the BOS regime run failed.\n"
+    )
     years = sorted({r["year"] for r in sweeps})
     mid = years[len(years) // 2] if years else 0
-    out.append(table(OUTCOME_HEADERS, [
-        outcome_row(f"1st half (≤{mid - 1})", [r for r in sweeps if r["year"] < mid], h),
-        outcome_row(f"2nd half (≥{mid})", [r for r in sweeps if r["year"] >= mid], h),
-    ] + [outcome_row(str(y), [r for r in sweeps if r["year"] == y], h) for y in years]))
+    out.append(
+        table(
+            OUTCOME_HEADERS,
+            [
+                outcome_row(f"1st half (≤{mid - 1})", [r for r in sweeps if r["year"] < mid], h),
+                outcome_row(f"2nd half (≥{mid})", [r for r in sweeps if r["year"] >= mid], h),
+            ]
+            + [outcome_row(str(y), [r for r in sweeps if r["year"] == y], h) for y in years],
+        )
+    )
 
     # ---- the naive trades
-    out.append(f"\n### Naive trade — entry at the sweep bar's close, "
-               f"stop at the bar's far extreme, give up after {horizon} H4 bars\n")
-    out.append("Crude on purpose, and NOT a proposed strategy — no costs, no filter, no "
-               "exit ladder. It exists so a promising outcome table has to survive "
-               "contact with a stop. Fills resolved on M15; stop wins an ambiguous bar.\n")
+    out.append(
+        f"\n### Naive trade — entry at the sweep bar's close, "
+        f"stop at the bar's far extreme, give up after {horizon} H4 bars\n"
+    )
+    out.append(
+        "Crude on purpose, and NOT a proposed strategy — no costs, no filter, no "
+        "exit ladder. It exists so a promising outcome table has to survive "
+        "contact with a stop. Fills resolved on M15; stop wins an ambiguous bar.\n"
+    )
     trade_rows = []
     for tr in sorted({1.0, 2.0, 3.0, target_r}):
-        for label, direction, subset in (("continuation", 1, sweeps),
-                                         ("reversal", -1, sweeps),
-                                         ("control (cont dir)", 1, control)):
-            res = [t for t in (simulate(r, h4, m15, horizon, tr, direction)
-                               for r in subset) if t]
+        for label, direction, subset in (
+            ("continuation", 1, sweeps),
+            ("reversal", -1, sweeps),
+            ("control (cont dir)", 1, control),
+        ):
+            res = [t for t in (simulate(r, h4, m15, horizon, tr, direction) for r in subset) if t]
             if not res:
                 continue
             rs = [t["r"] for t in res]
-            trade_rows.append([
-                f"{label} @ {tr:g}R", str(len(res)),
-                f"{100 * sum(1 for t in res if t['outcome'] == 'target') / len(res):.1f}",
-                f"{100 * sum(1 for t in res if t['outcome'] == 'stop') / len(res):.1f}",
-                _fmt(statistics.fmean(rs), 3), f"{sum(rs):+.1f}",
-            ])
+            trade_rows.append(
+                [
+                    f"{label} @ {tr:g}R",
+                    str(len(res)),
+                    f"{100 * sum(1 for t in res if t['outcome'] == 'target') / len(res):.1f}",
+                    f"{100 * sum(1 for t in res if t['outcome'] == 'stop') / len(res):.1f}",
+                    _fmt(statistics.fmean(rs), 3),
+                    f"{sum(rs):+.1f}",
+                ]
+            )
     out.append(table(["trade", "n", "target %", "stop %", "exp R", "sum R"], trade_rows))
 
     # ---- the confirmed trade — the shape the design actually calls for
-    out.append(f"\n### Confirmed trade — H4 sweep for context, 15m for entry\n")
-    out.append(f"Acceptance beyond the swept extreme within {cfg.confirm_bars} M15 bars, "
-               f"then a resting limit at {cfg.retrace:g} of the displacement leg, stop at "
-               f"the leg origin, min-stop floor {cfg.min_stop_pct:g}% of price, give up "
-               f"after {cfg.horizon} H4 bars. Still no costs and no exit ladder — but this "
-               f"is the entry price and stop the real bot would get, so a null result here "
-               f"is worth much more than a null on the blind trade above.\n")
+    out.append("\n### Confirmed trade — H4 sweep for context, 15m for entry\n")
+    out.append(
+        f"Acceptance beyond the swept extreme within {cfg.confirm_bars} M15 bars, "
+        f"then a resting limit at {cfg.retrace:g} of the displacement leg, stop at "
+        f"the leg origin, min-stop floor {cfg.min_stop_pct:g}% of price, give up "
+        f"after {cfg.horizon} H4 bars. Still no costs and no exit ladder — but this "
+        f"is the entry price and stop the real bot would get, so a null result here "
+        f"is worth much more than a null on the blind trade above.\n"
+    )
     conf_rows = []
     for tr in sorted({2.0, 3.0, target_r}):
         # The side split is not optional. Gold ran 1,200 → 4,100 across this window, so
@@ -771,8 +846,9 @@ def report(name: str, rows: list[dict], h4: list[Bar], m15: M15Index,
             ("  · rev after LOW sweep = long", -1, [r for r in sweeps if r["side"] == "low"]),
             ("control (body dir)", 1, control),
         ):
-            res = [t for t in (simulate_confirmed(r, h4, m15, cfg, tr, direction)
-                               for r in subset) if t]
+            res = [
+                t for t in (simulate_confirmed(r, h4, m15, cfg, tr, direction) for r in subset) if t
+            ]
             taken = [(src, t) for src, t in zip(subset, res) if t["r"] is not None]
             if not taken:
                 continue
@@ -789,46 +865,92 @@ def report(name: str, rows: list[dict], h4: list[Bar], m15: M15Index,
             risks = [t["risk"] for _, t in taken]
             net = [t["r"] - cost / t["risk"] for _, t in taken]
             dropped = sum(1 for t in res if t["outcome"] == "stop_too_tight")
-            conf_rows.append([
-                f"{label} @ {tr:g}R", f"{len(taken)} / {len(res)}",
-                f"{100 * sum(1 for _, t in taken if t['outcome'] == 'target') / len(taken):.1f}",
-                _fmt(statistics.fmean(rs), 3),
-                f"{_fmt(statistics.fmean(h1), 3) if h1 else '—'} / {len(h1)}",
-                f"{_fmt(statistics.fmean(h2), 3) if h2 else '—'} / {len(h2)}",
-                f"{statistics.median(risks):.2f}",
-                _fmt(statistics.fmean(net), 3), f"{sum(net):+.1f}",
-                str(dropped),
-            ])
-    out.append(table(["trade", "taken / events", "target %", "exp R gross",
-                      f"1st half (≤{mid - 1}) / n", f"2nd half (≥{mid}) / n",
-                      "med stop $", f"exp R net (${cost:g} r/t)", "sum R net",
-                      "stop too tight"], conf_rows))
+            conf_rows.append(
+                [
+                    f"{label} @ {tr:g}R",
+                    f"{len(taken)} / {len(res)}",
+                    f"{100 * sum(1 for _, t in taken if t['outcome'] == 'target') / len(taken):.1f}",
+                    _fmt(statistics.fmean(rs), 3),
+                    f"{_fmt(statistics.fmean(h1), 3) if h1 else '—'} / {len(h1)}",
+                    f"{_fmt(statistics.fmean(h2), 3) if h2 else '—'} / {len(h2)}",
+                    f"{statistics.median(risks):.2f}",
+                    _fmt(statistics.fmean(net), 3),
+                    f"{sum(net):+.1f}",
+                    str(dropped),
+                ]
+            )
+    out.append(
+        table(
+            [
+                "trade",
+                "taken / events",
+                "target %",
+                "exp R gross",
+                f"1st half (≤{mid - 1}) / n",
+                f"2nd half (≥{mid}) / n",
+                "med stop $",
+                f"exp R net (${cost:g} r/t)",
+                "sum R net",
+                "stop too tight",
+            ],
+            conf_rows,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--start", default=None, help="YYYY-MM-DD; default = all cached bars")
     ap.add_argument("--end", default=None, help="YYYY-MM-DD")
-    ap.add_argument("--pivot-len", type=int, default=2,
-                    help="bars either side of an H4 swing pivot (definition b)")
-    ap.add_argument("--horizon", type=int, default=4,
-                    help="H4 bars held by the naive trade and used for the split tables")
+    ap.add_argument(
+        "--pivot-len",
+        type=int,
+        default=2,
+        help="bars either side of an H4 swing pivot (definition b)",
+    )
+    ap.add_argument(
+        "--horizon",
+        type=int,
+        default=4,
+        help="H4 bars held by the naive trade and used for the split tables",
+    )
     ap.add_argument("--target-r", type=float, default=2.0)
-    ap.add_argument("--cost", type=float, default=0.30,
-                    help="round-trip cost in price units (gold: ~$0.30 spread+slip)")
-    ap.add_argument("--confirm-bars", type=int, default=16,
-                    help="M15 bars allowed for acceptance beyond the swept extreme")
-    ap.add_argument("--fill-bars", type=int, default=16,
-                    help="M15 bars the entry limit rests before it is cancelled")
-    ap.add_argument("--retrace", type=float, default=0.5,
-                    help="entry retrace into the displacement leg (0.5 = midpoint)")
-    ap.add_argument("--min-stop-pct", type=float, default=0.1,
-                    help="stop distance floor as %% of price — the repo's own guard")
+    ap.add_argument(
+        "--cost",
+        type=float,
+        default=0.30,
+        help="round-trip cost in price units (gold: ~$0.30 spread+slip)",
+    )
+    ap.add_argument(
+        "--confirm-bars",
+        type=int,
+        default=16,
+        help="M15 bars allowed for acceptance beyond the swept extreme",
+    )
+    ap.add_argument(
+        "--fill-bars",
+        type=int,
+        default=16,
+        help="M15 bars the entry limit rests before it is cancelled",
+    )
+    ap.add_argument(
+        "--retrace",
+        type=float,
+        default=0.5,
+        help="entry retrace into the displacement leg (0.5 = midpoint)",
+    )
+    ap.add_argument(
+        "--min-stop-pct",
+        type=float,
+        default=0.1,
+        help="stop distance floor as %% of price — the repo's own guard",
+    )
     ap.add_argument("--out", default=None, help="write the per-event CSVs to this prefix")
     args = ap.parse_args()
 
@@ -838,8 +960,9 @@ def main() -> int:
     def window(bars: list[Bar]) -> list[Bar]:
         lo = dt.date.fromisoformat(args.start) if args.start else None
         hi = dt.date.fromisoformat(args.end) if args.end else None
-        return [b for b in bars
-                if (lo is None or b.t.date() >= lo) and (hi is None or b.t.date() <= hi)]
+        return [
+            b for b in bars if (lo is None or b.t.date() >= lo) and (hi is None or b.t.date() <= hi)
+        ]
 
     h4 = window(h4)
     m15 = window(m15)
@@ -851,16 +974,24 @@ def main() -> int:
         horizons = tuple(sorted(set(horizons) | {args.horizon}))
 
     idx = M15Index(m15)
-    cfg = ConfirmCfg(horizon=args.horizon, confirm_bars=args.confirm_bars,
-                     fill_bars=args.fill_bars, retrace=args.retrace,
-                     min_stop_pct=args.min_stop_pct)
+    cfg = ConfirmCfg(
+        horizon=args.horizon,
+        confirm_bars=args.confirm_bars,
+        fill_bars=args.fill_bars,
+        retrace=args.retrace,
+        min_stop_pct=args.min_stop_pct,
+    )
     out: list[str] = []
     out.append("# H4 sweep profile — " + args.symbol)
-    out.append(f"\n{len(h4)} H4 bars, {h4[0].t.date()} → {h4[-1].t.date()} "
-               f"· {len(m15)} M15 bars for fill resolution "
-               f"· ADR{ADR_LEN} normalised · flat band ±{FLAT_ADR} ADR")
-    out.append("\nThe H4 grid is the broker's own, so its boundaries shift with the "
-               "broker's DST exactly as the TradingView 240 chart does.")
+    out.append(
+        f"\n{len(h4)} H4 bars, {h4[0].t.date()} → {h4[-1].t.date()} "
+        f"· {len(m15)} M15 bars for fill resolution "
+        f"· ADR{ADR_LEN} normalised · flat band ±{FLAT_ADR} ADR"
+    )
+    out.append(
+        "\nThe H4 grid is the broker's own, so its boundaries shift with the "
+        "broker's DST exactly as the TradingView 240 chart does."
+    )
 
     datasets = {
         "prev H4 candle high/low (what the indicator draws)": prev_levels(h4),
@@ -868,8 +999,7 @@ def main() -> int:
     }
     for name, levels in datasets.items():
         rows = build_rows(h4, levels, horizons)
-        report(name, rows, h4, idx, horizons, args.horizon, args.target_r, cfg,
-               args.cost, out)
+        report(name, rows, h4, idx, horizons, args.horizon, args.target_r, cfg, args.cost, out)
         if args.out:
             prefix = Path(args.out)
             prefix.parent.mkdir(parents=True, exist_ok=True)

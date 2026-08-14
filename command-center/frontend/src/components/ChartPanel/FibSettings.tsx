@@ -43,8 +43,17 @@ interface FibSettingsProps {
 }
 
 export default function FibSettings({
-  x, y, scope, levels, resetKey, isCustom,
-  onChange, onClose, onSaveAsDefault, onUseDefault, onResetFactory,
+  x,
+  y,
+  scope,
+  levels,
+  resetKey,
+  isCustom,
+  onChange,
+  onClose,
+  onSaveAsDefault,
+  onUseDefault,
+  onResetFactory,
 }: FibSettingsProps) {
   const [count, setCount] = useState<{ shown: number; total: number }>({ shown: 0, total: 0 })
 
@@ -52,8 +61,8 @@ export default function FibSettings({
     <div
       // Stops the host's outside-mousedown close AND the chart body's measure-mode click handler
       // from firing on anything in here.
-      onMouseDown={e => e.stopPropagation()}
-      onClick={e => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       className="fixed rounded-md border border-border-subtle bg-bg-surface shadow-xl"
       style={{
         left: Math.max(6, Math.min(x, window.innerWidth - PANEL_W - 6)),
@@ -74,7 +83,10 @@ export default function FibSettings({
         <span className="ml-auto font-mono text-[10px] text-text-tertiary">
           {count.shown}/{count.total}
         </span>
-        <button onClick={onClose} className="text-text-tertiary transition-colors hover:text-text-primary">
+        <button
+          onClick={onClose}
+          className="text-text-tertiary transition-colors hover:text-text-primary"
+        >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>

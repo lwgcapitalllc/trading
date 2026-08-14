@@ -69,10 +69,13 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize("tool,fn,tf", [
-    ("killzone_profile", "load_days", "M15"),
-    ("h4_sweep_profile", "load_bars", "H4"),
-])
+@pytest.mark.parametrize(
+    "tool,fn,tf",
+    [
+        ("killzone_profile", "load_days", "M15"),
+        ("h4_sweep_profile", "load_bars", "H4"),
+    ],
+)
 @pytest.mark.parametrize("version,must_refuse,why", _CASES)
 def test_the_version_guard_is_a_floor(tmp_path, tool, fn, tf, version, must_refuse, why):
     mod = _load(tool)
@@ -91,10 +94,13 @@ def test_the_version_guard_is_a_floor(tmp_path, tool, fn, tf, version, must_refu
     )
 
 
-@pytest.mark.parametrize("tool,fn,tf", [
-    ("killzone_profile", "load_days", "M15"),
-    ("h4_sweep_profile", "load_bars", "H4"),
-])
+@pytest.mark.parametrize(
+    "tool,fn,tf",
+    [
+        ("killzone_profile", "load_days", "M15"),
+        ("h4_sweep_profile", "load_bars", "H4"),
+    ],
+)
 def test_a_sidecar_with_no_version_is_treated_as_the_version_1_era(tmp_path, tool, fn, tf):
     """A sidecar predating the key is a v1-era file, the same default `cache.py` applies.
 
@@ -109,10 +115,13 @@ def test_a_sidecar_with_no_version_is_treated_as_the_version_1_era(tmp_path, too
         getattr(mod, fn)("XAUUSD", tf, **kwargs)
 
 
-@pytest.mark.parametrize("tool,fn,tf", [
-    ("killzone_profile", "load_days", "M15"),
-    ("h4_sweep_profile", "load_bars", "H4"),
-])
+@pytest.mark.parametrize(
+    "tool,fn,tf",
+    [
+        ("killzone_profile", "load_days", "M15"),
+        ("h4_sweep_profile", "load_bars", "H4"),
+    ],
+)
 def test_a_missing_bar_file_says_so_rather_than_blaming_the_version(tmp_path, tool, fn, tf):
     """The no-bars case must not be answered with the version message.
 

@@ -34,6 +34,7 @@ def _fresh_logger():
     in production (one process runs one bot) but it makes these tests pass alone and fail
     together, which is worse than failing outright."""
     import logging
+
     yield
     log = logging.getLogger("smoke")
     for h in list(log.handlers):
@@ -42,8 +43,14 @@ def _fresh_logger():
 
 
 def _cfg(tmp_path, monkeypatch, **overrides):
-    body = {"bot_key": "smoke", "mt5_path": "C:/MT5/terminal64.exe", "account": 1,
-            "server": "Demo", "symbol": "XAUUSD", "magic": 1}
+    body = {
+        "bot_key": "smoke",
+        "mt5_path": "C:/MT5/terminal64.exe",
+        "account": 1,
+        "server": "Demo",
+        "symbol": "XAUUSD",
+        "magic": 1,
+    }
     body.update(overrides)
     (tmp_path / "smoke").mkdir(parents=True, exist_ok=True)
     (tmp_path / "smoke" / "config.json").write_text(json.dumps(body))
@@ -57,7 +64,7 @@ def test_the_runner_can_be_constructed(tmp_path, monkeypatch):
     r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
     assert r.log is not None
     assert r.ledger is not None
-    assert r.dry_run is True          # sending orders is never the default
+    assert r.dry_run is True  # sending orders is never the default
 
 
 def test_a_line_the_console_cannot_encode_is_still_written(tmp_path, monkeypatch):
@@ -78,7 +85,7 @@ def test_a_line_the_console_cannot_encode_is_still_written(tmp_path, monkeypatch
     assert len(logs) == 1, f"expected one dated log, found {[p.name for p in logs]}"
     written = logs[0].read_text(encoding="utf-8")
     assert "Warmed 5000 bars" in written
-    assert "holding a position" in written      # the END of the line survived, not just the start
+    assert "holding a position" in written  # the END of the line survived, not just the start
 
 
 def test_constructing_twice_does_not_double_every_log_line(tmp_path, monkeypatch):
@@ -87,7 +94,7 @@ def test_constructing_twice_does_not_double_every_log_line(tmp_path, monkeypatch
     cfg = _cfg(tmp_path, monkeypatch)
     first = runner.LiveRunner(cfg)
     runner.LiveRunner(cfg)
-    assert len(first.log.handlers) == 2         # one file, one stdout
+    assert len(first.log.handlers) == 2  # one file, one stdout
 
 
 def test_logs_land_in_the_bots_own_instance_dir(tmp_path, monkeypatch):
@@ -117,7 +124,7 @@ def test_the_version_pin_is_checked_before_anything_connects(tmp_path, monkeypat
 
     monkeypatch.setattr(r, "connect", _boom)
     monkeypatch.setattr(r, "_notify_health", lambda text: None)
-    assert r.run() == 2                      # 2 = version mismatch, a distinct exit code
+    assert r.run() == 2  # 2 = version mismatch, a distinct exit code
 
 
 def test_a_version_mismatch_is_recorded_and_announced(tmp_path, monkeypatch):
@@ -130,8 +137,11 @@ def test_a_version_mismatch_is_recorded_and_announced(tmp_path, monkeypatch):
     r.run()
 
     assert sent and "refused to start" in sent[0]
-    rows = [json.loads(l) for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
-            for l in f.read_text().splitlines()]
+    rows = [
+        json.loads(l)
+        for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
+        for l in f.read_text().splitlines()
+    ]
     assert any(row.get("event") == "version_mismatch" for row in rows)
 
 
@@ -167,10 +177,15 @@ def test_being_on_the_bench_is_an_ORDINARY_ending_not_a_fault(tmp_path, monkeypa
     assert r.run() == 0
     assert sent == []
 
-    rows = [json.loads(l) for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
-            for l in f.read_text().splitlines()]
+    rows = [
+        json.loads(l)
+        for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
+        for l in f.read_text().splitlines()
+    ]
     # It still leaves a trace: "no shutdown record" must keep meaning "killed or crashed", so a
     # deliberate ending has to write one. Both records are the evidence that it ended on purpose.
     assert any(row.get("event") == "not_assigned" for row in rows)
-    assert any(row.get("event") == "shutdown"
-               and row.get("reason") == "not assigned to an account" for row in rows)
+    assert any(
+        row.get("event") == "shutdown" and row.get("reason") == "not assigned to an account"
+        for row in rows
+    )

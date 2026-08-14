@@ -39,7 +39,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import itertools
 import statistics
 import sys
 from dataclasses import replace
@@ -50,7 +49,13 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from backtest.tools.h4_sweep_profile import (  # noqa: E402
-    M15Index, TradePlan, build_rows, load_bars, pivot_levels, prev_levels, run_trade,
+    M15Index,
+    TradePlan,
+    build_rows,
+    load_bars,
+    pivot_levels,
+    prev_levels,
+    run_trade,
     table,
 )
 
@@ -61,8 +66,9 @@ HORIZONS = (1, 2, 4, 8)
 # scoring
 
 
-def score(rows: list[dict], h4, m15: M15Index, plan: TradePlan, cost: float,
-          risk_pct: float, mid: int) -> dict | None:
+def score(
+    rows: list[dict], h4, m15: M15Index, plan: TradePlan, cost: float, risk_pct: float, mid: int
+) -> dict | None:
     """Replay one plan over one event set and reduce it to a row of the results table."""
     taken = []
     for r in rows:
@@ -98,7 +104,8 @@ def score(rows: list[dict], h4, m15: M15Index, plan: TradePlan, cost: float,
         "sum": sum(nets),
         "h1": statistics.fmean(h1) if h1 else float("nan"),
         "h2": statistics.fmean(h2) if h2 else float("nan"),
-        "n1": len(h1), "n2": len(h2),
+        "n1": len(h1),
+        "n2": len(h2),
         "equity": eq,
         "dd": 100 * dd,
         "robust": bool(h1 and h2 and statistics.fmean(h1) > 0 and statistics.fmean(h2) > 0),
@@ -109,15 +116,35 @@ def render(results: list[tuple[str, dict]], top: int, risk_pct: float) -> str:
     ranked = sorted(results, key=lambda p: p[1]["sum"], reverse=True)[:top]
     body = []
     for label, s in ranked:
-        body.append([
-            ("✅ " if s["robust"] else "⚠ ") + label,
-            str(s["n"]), f"{s['per_yr']:.0f}", f"{s['win']:.0f}",
-            f"{s['exp']:+.3f}", f"{s['sum']:+.1f}",
-            f"{s['h1']:+.3f}/{s['n1']}", f"{s['h2']:+.3f}/{s['n2']}",
-            f"{s['equity']:.2f}x", f"{s['dd']:.0f}%",
-        ])
-    return table(["config", "n", "/yr", "win %", "exp R net", "sum R",
-                  "1st half", "2nd half", f"equity @{risk_pct:g}%", "max DD"], body)
+        body.append(
+            [
+                ("✅ " if s["robust"] else "⚠ ") + label,
+                str(s["n"]),
+                f"{s['per_yr']:.0f}",
+                f"{s['win']:.0f}",
+                f"{s['exp']:+.3f}",
+                f"{s['sum']:+.1f}",
+                f"{s['h1']:+.3f}/{s['n1']}",
+                f"{s['h2']:+.3f}/{s['n2']}",
+                f"{s['equity']:.2f}x",
+                f"{s['dd']:.0f}%",
+            ]
+        )
+    return table(
+        [
+            "config",
+            "n",
+            "/yr",
+            "win %",
+            "exp R net",
+            "sum R",
+            "1st half",
+            "2nd half",
+            f"equity @{risk_pct:g}%",
+            "max DD",
+        ],
+        body,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -133,14 +160,19 @@ def phase_geometry(base: TradePlan):
     """
     yield "market entry · stop=leg", replace(base, entry_mode="market", stop_model="leg")
     for rt in (0.236, 0.382, 0.5):
-        yield f"limit {rt} · stop=leg", replace(base, entry_mode="limit", retrace=rt,
-                                                stop_model="leg")
+        yield (
+            f"limit {rt} · stop=leg",
+            replace(base, entry_mode="limit", retrace=rt, stop_model="leg"),
+        )
     for mult in (1.0, 1.5, 2.0):
-        yield f"market entry · stop={mult}×ATR", replace(base, entry_mode="market",
-                                                         stop_model="atr", stop_atr=mult)
-        yield f"limit 0.382 · stop={mult}×ATR", replace(base, entry_mode="limit",
-                                                        retrace=0.382, stop_model="atr",
-                                                        stop_atr=mult)
+        yield (
+            f"market entry · stop={mult}×ATR",
+            replace(base, entry_mode="market", stop_model="atr", stop_atr=mult),
+        )
+        yield (
+            f"limit 0.382 · stop={mult}×ATR",
+            replace(base, entry_mode="limit", retrace=0.382, stop_model="atr", stop_atr=mult),
+        )
 
 
 def phase_exit(base: TradePlan):
@@ -159,16 +191,19 @@ def phase_exit(base: TradePlan):
             yield f"h{h} · fixed {tr:g}R", replace(base, horizon=h, target_r=tr, **flat)
         yield f"h{h} · runner, no trail", replace(base, horizon=h, target_r=0.0, **flat)
         for tv in (0.5, 1.0, 2.0, 3.0):
-            yield f"h{h} · runner, {tv:g}% trail", replace(base, horizon=h, target_r=0.0,
-                                                           be_at_r=0.0, trail_mode="pct",
-                                                           trail_val=tv)
+            yield (
+                f"h{h} · runner, {tv:g}% trail",
+                replace(base, horizon=h, target_r=0.0, be_at_r=0.0, trail_mode="pct", trail_val=tv),
+            )
         for tv in (1.0, 2.0, 3.0, 4.0):
-            yield f"h{h} · runner, {tv:g}×ATR trail", replace(base, horizon=h, target_r=0.0,
-                                                              be_at_r=0.0, trail_mode="atr",
-                                                              trail_val=tv)
-        yield f"h{h} · runner, BE@1R, 1% trail", replace(base, horizon=h, target_r=0.0,
-                                                         be_at_r=1.0, trail_mode="pct",
-                                                         trail_val=1.0)
+            yield (
+                f"h{h} · runner, {tv:g}×ATR trail",
+                replace(base, horizon=h, target_r=0.0, be_at_r=0.0, trail_mode="atr", trail_val=tv),
+            )
+        yield (
+            f"h{h} · runner, BE@1R, 1% trail",
+            replace(base, horizon=h, target_r=0.0, be_at_r=1.0, trail_mode="pct", trail_val=1.0),
+        )
 
 
 FILTERS = {
@@ -181,8 +216,8 @@ FILTERS = {
     "London+NY": lambda r: r["session"] in ("London", "NY"),
     "high sweep (short)": lambda r: r["side"] == "high",
     "low sweep (long)": lambda r: r["side"] == "low",
-    "with H4 trend": lambda r: r["trend_agrees"] is False,   # fade runs WITH trend when
-                                                            # the sweep ran against it
+    "with H4 trend": lambda r: r["trend_agrees"] is False,  # fade runs WITH trend when
+    # the sweep ran against it
     "against H4 trend": lambda r: r["trend_agrees"] is True,
     "deep poke": lambda r: (r["depth_atr"] or 0) >= 0.25,
     "shallow poke": lambda r: (r["depth_atr"] or 0) < 0.25,
@@ -193,11 +228,13 @@ FILTERS = {
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("phase", choices=["geometry", "exit", "filter", "detail"])
-    ap.add_argument("--filters", default="all",
-                    help="detail phase: comma-joined filter names, ANDed together")
+    ap.add_argument(
+        "--filters", default="all", help="detail phase: comma-joined filter names, ANDed together"
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--cost", type=float, default=0.30)
     ap.add_argument("--risk-pct", type=float, default=2.0)
@@ -222,23 +259,33 @@ def main() -> int:
     defs = {}
     for name in args.defs.split(","):
         name = name.strip()
-        levels = (prev_levels(h4) if name == "prev"
-                  else pivot_levels(h4, int(name.removeprefix("pivot"))))
+        levels = (
+            prev_levels(h4) if name == "prev" else pivot_levels(h4, int(name.removeprefix("pivot")))
+        )
         rows = build_rows(h4, levels, HORIZONS)
         defs[name] = [r for r in rows if r["is_sweep"]]
 
     years = sorted({r["year"] for rs in defs.values() for r in rs})
     mid = years[len(years) // 2]
 
-    base = TradePlan(direction=-1, entry_mode=args.entry_mode, retrace=args.retrace,
-                     stop_model=args.stop_model, stop_atr=args.stop_atr,
-                     horizon=args.horizon, target_r=args.target_r,
-                     trail_mode=args.trail_mode, trail_val=args.trail_val,
-                     be_at_r=args.be_at_r)
+    base = TradePlan(
+        direction=-1,
+        entry_mode=args.entry_mode,
+        retrace=args.retrace,
+        stop_model=args.stop_model,
+        stop_atr=args.stop_atr,
+        horizon=args.horizon,
+        target_r=args.target_r,
+        trail_mode=args.trail_mode,
+        trail_val=args.trail_val,
+        be_at_r=args.be_at_r,
+    )
 
     print(f"# H4 sweep — phase: {args.phase}")
-    print(f"\n{args.symbol} · {len(h4)} H4 bars · fade direction · cost ${args.cost:g} "
-          f"round trip · {args.risk_pct:g}% risk/trade · halves split at {mid}")
+    print(
+        f"\n{args.symbol} · {len(h4)} H4 bars · fade direction · cost ${args.cost:g} "
+        f"round trip · {args.risk_pct:g}% risk/trade · halves split at {mid}"
+    )
     print("\n✅ = positive in BOTH halves. ⚠ = one half negative — regime, not edge.\n")
 
     results: list[tuple[str, dict]] = []
@@ -252,29 +299,51 @@ def main() -> int:
             print(f"\n## {dname} · {' + '.join(names)} · {base}\n")
             per_year = []
             for y in sorted({r["year"] for r in sub}):
-                s = score([r for r in sub if r["year"] == y], h4, m15, base,
-                          args.cost, args.risk_pct, mid)
+                s = score(
+                    [r for r in sub if r["year"] == y], h4, m15, base, args.cost, args.risk_pct, mid
+                )
                 if s:
                     per_year.append((str(y), s))
                 else:
                     yr = [r for r in sub if r["year"] == y]
-                    ts = [t for t in (run_trade(r, h4, m15, base, args.cost) for r in yr)
-                          if t and t.get("r") is not None]
+                    ts = [
+                        t
+                        for t in (run_trade(r, h4, m15, base, args.cost) for r in yr)
+                        if t and t.get("r") is not None
+                    ]
                     if ts:
                         rs = [t["r_net"] for t in ts]
-                        per_year.append((f"{y} (small n)", {
-                            "n": len(ts), "per_yr": len(ts), "win": 100 * sum(1 for x in rs if x > 0) / len(rs),
-                            "exp": statistics.fmean(rs), "sum": sum(rs), "h1": float("nan"),
-                            "h2": float("nan"), "n1": 0, "n2": 0, "equity": 1.0, "dd": 0.0,
-                            "robust": False}))
-            body = [[lbl, str(s["n"]), f"{s['win']:.0f}", f"{s['exp']:+.3f}",
-                     f"{s['sum']:+.1f}"] for lbl, s in per_year]
+                        per_year.append(
+                            (
+                                f"{y} (small n)",
+                                {
+                                    "n": len(ts),
+                                    "per_yr": len(ts),
+                                    "win": 100 * sum(1 for x in rs if x > 0) / len(rs),
+                                    "exp": statistics.fmean(rs),
+                                    "sum": sum(rs),
+                                    "h1": float("nan"),
+                                    "h2": float("nan"),
+                                    "n1": 0,
+                                    "n2": 0,
+                                    "equity": 1.0,
+                                    "dd": 0.0,
+                                    "robust": False,
+                                },
+                            )
+                        )
+            body = [
+                [lbl, str(s["n"]), f"{s['win']:.0f}", f"{s['exp']:+.3f}", f"{s['sum']:+.1f}"]
+                for lbl, s in per_year
+            ]
             print(table(["year", "n", "win %", "exp R net", "sum R net"], body))
             total = score(sub, h4, m15, base, args.cost, args.risk_pct, mid)
             if total:
-                print(f"\n**Total: {total['n']} trades · {total['exp']:+.3f} exp R net · "
-                      f"{total['sum']:+.1f}R · {total['equity']:.2f}x @{args.risk_pct:g}% "
-                      f"· {total['dd']:.0f}% max DD**")
+                print(
+                    f"\n**Total: {total['n']} trades · {total['exp']:+.3f} exp R net · "
+                    f"{total['sum']:+.1f}R · {total['equity']:.2f}x @{args.risk_pct:g}% "
+                    f"· {total['dd']:.0f}% max DD**"
+                )
         return 0
 
     if args.phase == "filter":

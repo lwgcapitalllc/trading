@@ -42,22 +42,22 @@ except ImportError:
     print("pip install requests")
     sys.exit(1)
 
-ALGOS_ROOT      = Path("C:/trading/algos")
+ALGOS_ROOT = Path("C:/trading/algos")
 # Telegram credentials are resolved from the environment or the git-ignored
 # algos/credentials.json — never pasted here. See algos/shared/credentials.py.
 # ADMIN_CHAT is the primary admin — always has access even if users.json is missing.
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+from alert_format import alert  # noqa: E402
 from credentials import telegram_credentials  # noqa: E402
-from notify import chat_for, HEALTH            # noqa: E402
-from alert_format import alert                 # noqa: E402
+from notify import HEALTH, chat_for  # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
-USERS_FILE      = ALGOS_ROOT / "users.json"
-OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
-TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"
-PID_FILE        = ALGOS_ROOT / "telegram_bot.pid"
-TEXAS           = ZoneInfo("America/Chicago")
-POLL_INTERVAL   = 10
+USERS_FILE = ALGOS_ROOT / "users.json"
+OFFSET_FILE = ALGOS_ROOT / "telegram_offset.json"
+TELEGRAM_START = ALGOS_ROOT / "telegram_start.json"
+PID_FILE = ALGOS_ROOT / "telegram_bot.pid"
+TEXAS = ZoneInfo("America/Chicago")
+POLL_INTERVAL = 10
 
 # Commands allowed per role.
 # ⚠ `/report`, `/demo`, `/live`, `/all` and `/force` were removed 2026-08-05 with
@@ -65,22 +65,18 @@ POLL_INTERVAL   = 10
 # `/force` only to push one out on a weekend — leaving any of them in this set would grant
 # a role a command that no longer dispatches, which reads as a working permission.
 ROLE_COMMANDS = {
-    "admin":    {"/status", "/balance", "/help", "/users"},
+    "admin": {"/status", "/balance", "/help", "/users"},
     "readonly": {"/status", "/balance", "/help"},
 }
 
 
-
-
-
-_CRASH_CHECK_INTERVAL = 6   # kept for poll_count modulo — crash alerting is in monitor.py
-
-
+_CRASH_CHECK_INTERVAL = 6  # kept for poll_count modulo — crash alerting is in monitor.py
 
 
 # =============================================================================
 # TELEGRAM API
 # =============================================================================
+
 
 def get_updates(offset: int = 0) -> list:
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
@@ -105,7 +101,7 @@ def send(text: str):
     if not TELEGRAM_TOKEN or not dest:
         print(f"Send dropped (Telegram not configured): {text[:80]}")
         return
-    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": dest, "text": text, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
@@ -115,7 +111,7 @@ def send(text: str):
 
 def send_to(chat_id: str, text: str):
     """Reply to a specific chat — the one the command came from. Not routed by kind; see `send`."""
-    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
@@ -142,7 +138,7 @@ def load_users() -> dict:
 def get_role(user_id: str) -> str | None:
     """Return role for user_id or None if not authorized."""
     users = load_users()
-    user  = users.get(user_id)
+    user = users.get(user_id)
     return user["role"] if user else None
 
 
@@ -171,7 +167,6 @@ def save_offset(offset: int):
 # =============================================================================
 
 
-
 def acquire_singleton():
     """Exit immediately if another telegram_bot instance is already running.
 
@@ -183,7 +178,9 @@ def acquire_singleton():
             old_pid = int(PID_FILE.read_text().strip())
             r = subprocess.run(
                 ["wmic", "process", "where", f"processid={old_pid}", "get", "commandline"],
-                capture_output=True, text=True, timeout=5
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if "telegram_bot" in r.stdout:
                 print(f"Another telegram_bot is already running (PID {old_pid}). Exiting.")
@@ -204,21 +201,13 @@ def is_running(script: str) -> bool:
     try:
         r = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return script in r.stdout
     except Exception:
         return False
-
-
-
-
-
-
-
-
-
-
 
 
 # =============================================================================
@@ -226,18 +215,10 @@ def is_running(script: str) -> bool:
 # =============================================================================
 
 
-
-
-
-
-
-
-
-
-
 # =============================================================================
 # READ-ONLY COMMANDS
 # =============================================================================
+
 
 def cmd_status() -> str:
     """What is running, read off the bots' OWN state files rather than a registry in this file.
@@ -251,7 +232,7 @@ def cmd_status() -> str:
     link is up. A bot can be alive and blind — that is exactly what happened on 2026-08-04, when
     the terminal restarted underneath it and every check in the system still said RUNNING.
     """
-    from bot_state import read_all, get_uptime_str
+    from bot_state import get_uptime_str, read_all
 
     states = read_all()
     bots = {k: v for k, v in states.items() if isinstance(v, dict) and v.get("name")}
@@ -273,16 +254,21 @@ def cmd_status() -> str:
             bits.append(f"${bal:,.2f}")
         lines.append(f"{dot} " + " · ".join(str(b) for b in bits))
 
-    tg = "🟢 Telegram bot · running" if is_running("telegram_bot.py") else "🔴 Telegram bot · stopped"
+    tg = (
+        "🟢 Telegram bot · running"
+        if is_running("telegram_bot.py")
+        else "🔴 Telegram bot · stopped"
+    )
     lines.append(tg)
     return "\n".join(lines)
 
 
 def cmd_balance() -> str:
     sys.path.insert(0, str(ALGOS_ROOT / "shared"))
-    from bot_state import read_all, BOT_NAMES
+    from bot_state import BOT_NAMES, read_all
+
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
-    lines  = [f"💰 *Account Balances*  _{now_tx}_", ""]
+    lines = [f"💰 *Account Balances*  _{now_tx}_", ""]
     all_states = read_all()
     for key, state in all_states.items():
         # ⚠ Both of these are read WITHOUT a numeric default, and that is the point.
@@ -292,8 +278,8 @@ def cmd_balance() -> str:
         # `pnl_tracker.py`, which had been deleted, so this line reported dead flat on a
         # live account. A number nobody measured must not be printed as a measurement.
         balance = state.get("balance")
-        pct     = state.get("total_pnl_pct")
-        name    = BOT_NAMES.get(key, key)
+        pct = state.get("total_pnl_pct")
+        name = BOT_NAMES.get(key, key)
         if balance is None:
             lines.append(f"`{name:<16}` _no MT5 link_")
             continue
@@ -301,23 +287,21 @@ def cmd_balance() -> str:
             lines.append(f"`{name:<16}` *${balance:,.2f}*")
             continue
         arrow = "↑" if pct > 0 else "↓" if pct < 0 else "—"
-        sign  = "+" if pct >= 0 else ""
+        sign = "+" if pct >= 0 else ""
         lines.append(f"`{name:<16}` *${balance:,.2f}*  {arrow} {sign}{pct:.1f}%")
     return "\n".join(lines)
 
 
-
-
 def cmd_users(user_id: str) -> str:
     """Admin only — list all authorized users."""
-    users  = load_users()
+    users = load_users()
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
-    lines  = [f"*Users*  _{now_tx}_", ""]
+    lines = [f"*Users*  _{now_tx}_", ""]
     for uid, info in users.items():
-        name  = info.get("name", "Unknown")
-        role  = info.get("role", "readonly").upper()
+        name = info.get("name", "Unknown")
+        role = info.get("role", "readonly").upper()
         added = info.get("added", "")
-        you   = " ← you" if uid == user_id else ""
+        you = " ← you" if uid == user_id else ""
         lines.append(f"`{uid}`  {name}  {role}{you}")
         if added:
             lines.append(f"  _Added {added}_")
@@ -340,12 +324,10 @@ def cmd_help() -> str:
     )
 
 
-
-
-
 # =============================================================================
 # MESSAGE ROUTER
 # =============================================================================
+
 
 def handle_message(text: str, chat_id: str, user_id: str) -> str:
     """
@@ -371,15 +353,19 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
     phone command that cannot count processes cannot be made safe by adding a confirmation step.
     """
     parts = text.strip().split()
-    cmd   = parts[0].lower() if parts else ""
+    cmd = parts[0].lower() if parts else ""
 
     def denied() -> str:
         return "You do not have permission to use that command."
 
-    if cmd == "/status":        return cmd_status() if can(user_id, cmd) else denied()
-    if cmd == "/balance":       return cmd_balance() if can(user_id, cmd) else denied()
-    if cmd == "/help":          return cmd_help()
-    if cmd == "/users":         return cmd_users(user_id) if can(user_id, cmd) else denied()
+    if cmd == "/status":
+        return cmd_status() if can(user_id, cmd) else denied()
+    if cmd == "/balance":
+        return cmd_balance() if can(user_id, cmd) else denied()
+    if cmd == "/help":
+        return cmd_help()
+    if cmd == "/users":
+        return cmd_users(user_id) if can(user_id, cmd) else denied()
 
     return f"Unknown command: {cmd}\nSend /help for the list."
 
@@ -388,9 +374,15 @@ def main():
     acquire_singleton()
     print(f"Telegram bot started — polling every {POLL_INTERVAL}s")
     try:
-        send(alert("🟢", "COMMANDS ONLINE", "Telegram bot",
-                   "It is listening again. Send /help for the list."))
-        offset     = load_offset()
+        send(
+            alert(
+                "🟢",
+                "COMMANDS ONLINE",
+                "Telegram bot",
+                "It is listening again. Send /help for the list.",
+            )
+        )
+        offset = load_offset()
         poll_count = 0
 
         while True:
@@ -399,10 +391,10 @@ def main():
                 for update in updates:
                     offset = update["update_id"] + 1
                     save_offset(offset)
-                    msg     = update.get("message", {})
-                    text    = msg.get("text", "").strip()
-                    chat_id = str(msg.get("chat", {}).get("id", ""))   # where to reply
-                    user_id = str(msg.get("from", {}).get("id", ""))   # who sent it
+                    msg = update.get("message", {})
+                    text = msg.get("text", "").strip()
+                    chat_id = str(msg.get("chat", {}).get("id", ""))  # where to reply
+                    user_id = str(msg.get("from", {}).get("id", ""))  # who sent it
                     if not text:
                         continue
 
@@ -410,9 +402,11 @@ def main():
                     role = get_role(user_id)
                     if not role:
                         from_user = msg.get("from", {})
-                        username  = from_user.get("username", "unknown")
-                        name      = from_user.get("first_name", "")
-                        print(f"UNAUTHORIZED: chat={chat_id} user={user_id} (@{username}) ({name}) text={text[:50]}")
+                        username = from_user.get("username", "unknown")
+                        name = from_user.get("first_name", "")
+                        print(
+                            f"UNAUTHORIZED: chat={chat_id} user={user_id} (@{username}) ({name}) text={text[:50]}"
+                        )
                         send_to(chat_id, "This bot is private. You are not authorized.")
                         continue
                     response = handle_message(text, chat_id, user_id)

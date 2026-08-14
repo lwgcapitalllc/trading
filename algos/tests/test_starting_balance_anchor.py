@@ -70,7 +70,7 @@ def test_moving_the_bot_to_another_account_re_anchors(isolated):
 
 def test_an_anchor_from_before_this_field_existed_is_adopted_not_reset(isolated):
     """A real measurement is never discarded to satisfy a bookkeeping field."""
-    bot_state.write_bot(BOT, {"starting_balance": 2_000.0})       # no account key: pre-migration
+    bot_state.write_bot(BOT, {"starting_balance": 2_000.0})  # no account key: pre-migration
 
     bot_state.ensure_starting_balance(BOT, 9_996.99, 700107749)
 

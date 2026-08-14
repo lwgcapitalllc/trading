@@ -23,8 +23,6 @@ base, a displacement and the engine's 10-bar read-late wait. The bullish feed is
 engine's own `_bullish_turn_feed`, so a change that stops it creating a block fails there too.
 """
 
-import pytest
-
 from services.ob_overlays import GROUP_OB, build_ob_overlays
 
 BAR_MS = 15 * 60 * 1000
@@ -57,11 +55,11 @@ def _candles(rows):
 # The base candle is deliberately SMALL — the height ceiling (2 x ATR) refuses an anchor that IS the
 # move rather than its base, and a wider one here would silently test nothing.
 _TURN = _flat(30, 100.0, 1.0) + [
-    _bar(100.0, 100.5, 99.0, 100.0),      # 30  base
-    _bar(100.0, 100.3, 98.5,  99.8),      # 31  the pivot low — the anchor candle
-    _bar( 99.8, 100.2, 99.2, 100.1),      # 32  closes clear of the pivot body: base ends
-    _bar(100.1, 100.4, 99.5, 100.3),      # 33  the pivot confirms
-    _bar(100.3, 106.0, 100.2, 105.5),     # 34  the drive
+    _bar(100.0, 100.5, 99.0, 100.0),  # 30  base
+    _bar(100.0, 100.3, 98.5, 99.8),  # 31  the pivot low — the anchor candle
+    _bar(99.8, 100.2, 99.2, 100.1),  # 32  closes clear of the pivot body: base ends
+    _bar(100.1, 100.4, 99.5, 100.3),  # 33  the pivot confirms
+    _bar(100.3, 106.0, 100.2, 105.5),  # 34  the drive
 ]
 _HOLD = _bar(105.5, 106.5, 104.8, 106.0)  # holds clear, never wicking back toward the zone
 
@@ -85,10 +83,10 @@ _FEED_MITIGATED = _candles(
 # The bear mirror of _TURN — a pivot HIGH and a drive down. Anchor bar 31, top 101.5 / bottom 99.7.
 _TURN_BEAR = _flat(30, 100.0, 1.0) + [
     _bar(100.0, 101.0, 99.5, 100.0),
-    _bar(100.0, 101.5, 99.7, 100.2),      # 31  the pivot high — the anchor candle
-    _bar(100.2, 100.8, 99.8,  99.9),
-    _bar( 99.9, 100.5, 99.6,  99.7),
-    _bar( 99.7,  99.8, 94.0,  94.5),      # 34  the drive
+    _bar(100.0, 101.5, 99.7, 100.2),  # 31  the pivot high — the anchor candle
+    _bar(100.2, 100.8, 99.8, 99.9),
+    _bar(99.9, 100.5, 99.6, 99.7),
+    _bar(99.7, 99.8, 94.0, 94.5),  # 34  the drive
 ]
 _HOLD_BEAR = _bar(94.5, 95.2, 93.5, 94.0)
 _BEAR_TOP, _BEAR_BOTTOM = 101.5, 99.7
@@ -100,13 +98,11 @@ _FEED_BEAR_NEAR = _candles(_TURN_BEAR + [_HOLD_BEAR] * 35 + [_bar(94.5, 98.5, 94
 
 def _spans(overlays):
     """{(top, bottom): (first_bar_drawn, last_bar_drawn)} for readable assertions."""
-    return {
-        (ov["top"], ov["bottom"]): (ov["t0"] // BAR_MS, ov["t1"] // BAR_MS)
-        for ov in overlays
-    }
+    return {(ov["top"], ov["bottom"]): (ov["t0"] // BAR_MS, ov["t1"] // BAR_MS) for ov in overlays}
 
 
 # ── What gets drawn ───────────────────────────────────────────────────────────
+
 
 def test_no_trade_block_or_miss_means_no_order_blocks_at_all():
     """The layer exists to explain a signal. With nothing to explain it draws nothing — not every
@@ -149,17 +145,20 @@ def test_anchors_outside_the_candle_window_are_ignored():
 
 
 def test_a_bearish_turn_draws_its_own_block():
-    assert _spans(build_ob_overlays(_FEED_BEAR, [50 * BAR_MS])) == {(_BEAR_TOP, _BEAR_BOTTOM): (31, 61)}
+    assert _spans(build_ob_overlays(_FEED_BEAR, [50 * BAR_MS])) == {
+        (_BEAR_TOP, _BEAR_BOTTOM): (31, 61)
+    }
 
 
 # ── Box geometry — the Pine box's real span ───────────────────────────────────
+
 
 def test_the_box_is_a_fixed_stub_running_forward_from_the_anchor_candle():
     """`left = origin`, `right = origin + OB_STUB`. This is the rule that most obviously differs
     from the gap layer, where a box tracks the live bar: an order block is a fixed-width zone by
     construction (mpc_assistant.pine:170-181), which is what makes a set of them scan as one family
     of levels rather than a ragged row."""
-    (left, right), = _spans(build_ob_overlays(_FEED, [50 * BAR_MS])).values()
+    ((left, right),) = _spans(build_ob_overlays(_FEED, [50 * BAR_MS])).values()
     assert (left, right) == (_ORIGIN, _ORIGIN + 30)
     assert right < 74, "the stub must not follow the live bar"
 
@@ -175,14 +174,16 @@ def test_the_near_test_mirrors_for_a_bear_block():
     bar's low against the top on one side and its high against the bottom on the other. Getting the
     mirror wrong would leave every bear block frozen at its stub, which reads as a rendering bug
     rather than a wrong rule."""
-    assert _spans(build_ob_overlays(_FEED_BEAR_NEAR, [60 * BAR_MS])) == {(_BEAR_TOP, _BEAR_BOTTOM): (31, 70)}
+    assert _spans(build_ob_overlays(_FEED_BEAR_NEAR, [60 * BAR_MS])) == {
+        (_BEAR_TOP, _BEAR_BOTTOM): (31, 70)
+    }
 
 
 def test_the_box_keeps_the_span_it_last_held_even_though_it_outlives_the_block():
     """The stub deliberately runs PAST the live bar into empty space, so a block that dies on bar 55
     still had a box reaching to bar 61 on the last frame it was drawn. Emitting the death bar
     instead would trim every zone the reader actually saw."""
-    (_, right), = _spans(build_ob_overlays(_FEED_MITIGATED, [50 * BAR_MS])).values()
+    ((_, right),) = _spans(build_ob_overlays(_FEED_MITIGATED, [50 * BAR_MS])).values()
     assert right == _ORIGIN + 30 > _MITIGATED_ON
 
 
@@ -190,13 +191,14 @@ def test_the_box_is_clamped_to_the_last_candle():
     """A stub running past the end of the data has nowhere to land — klinecharts anchors a box to
     candle timestamps, so an out-of-range right edge would be clamped onto the plot edge anyway.
     Cut the feed two bars after creation and the box has to end on the last bar, not 18 past it."""
-    short = _candles(_TURN + [_HOLD] * 11)          # bars 0…45, block created on 43
+    short = _candles(_TURN + [_HOLD] * 11)  # bars 0…45, block created on 43
     n = len(short)
-    (_, right), = _spans(build_ob_overlays(short, [45 * BAR_MS])).values()
+    ((_, right),) = _spans(build_ob_overlays(short, [45 * BAR_MS])).values()
     assert right == n - 1
 
 
 # ── The settings are mpc_assistant's ─────────────────────────────────────────
+
 
 def test_the_style_is_mpcs_orange_outline_with_the_OB_tag():
     """One deep orange for BOTH directions, drawn as an outline with a whisper of fill — the
@@ -204,19 +206,25 @@ def test_the_style_is_mpcs_orange_outline_with_the_OB_tag():
     identical here exactly as they do on the indicator. The `OB` tag is what names the shape at 94%
     transparency, and it is RIGHT-aligned because the box's left edge is its anchor candle, where
     the price bars are."""
-    bull, = build_ob_overlays(_FEED, [50 * BAR_MS])
-    bear, = build_ob_overlays(_FEED_BEAR, [50 * BAR_MS])
+    (bull,) = build_ob_overlays(_FEED, [50 * BAR_MS])
+    (bear,) = build_ob_overlays(_FEED_BEAR, [50 * BAR_MS])
     for ov in (bull, bear):
         assert ov["type"] == "box"
         assert ov["group"] == GROUP_OB
         assert ov["label"] == "OB"
         assert ov["labelAlign"] == "right"
-        assert ov["style"] == {"color": "#E65100", "fillColor": "rgba(230,81,0,0.06)", "lineWidth": 1}
+        assert ov["style"] == {
+            "color": "#E65100",
+            "fillColor": "rgba(230,81,0,0.06)",
+            "lineWidth": 1,
+        }
     assert bull["style"] == bear["style"], "mpc paints both directions the same — no direction cue"
 
 
 def test_the_stub_width_is_configurable_for_a_parity_replay():
-    assert _spans(build_ob_overlays(_FEED, [50 * BAR_MS], stub_bars=5)) == {(_TOP, _BOTTOM): (31, 36)}
+    assert _spans(build_ob_overlays(_FEED, [50 * BAR_MS], stub_bars=5)) == {
+        (_TOP, _BOTTOM): (31, 36)
+    }
 
 
 def test_engine_settings_reach_the_engine():
@@ -228,6 +236,7 @@ def test_engine_settings_reach_the_engine():
 
 
 # ── Failing safe ──────────────────────────────────────────────────────────────
+
 
 def test_too_few_candles_is_not_an_error():
     assert build_ob_overlays(_candles(_flat(2)), [0]) == []
@@ -242,6 +251,7 @@ def test_a_broken_engine_does_not_take_the_chart_down(monkeypatch):
         def __init__(self, **kw):
             raise RuntimeError("engine exploded")
 
-    monkeypatch.setitem(__import__("sys").modules, "order_blocks",
-                        type("m", (), {"OrderBlockEngine": _Boom}))
+    monkeypatch.setitem(
+        __import__("sys").modules, "order_blocks", type("m", (), {"OrderBlockEngine": _Boom})
+    )
     assert mod.build_ob_overlays(_FEED, [50 * BAR_MS]) == []

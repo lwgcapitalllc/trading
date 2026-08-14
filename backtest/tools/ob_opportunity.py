@@ -78,6 +78,7 @@ def _fib_price(sig, ratio: float):
     fiboP* is None.
     """
     from engines.fibonacci.geometry import fib_level
+
     if sig.fibo_ash is None or sig.fibo_asl is None or sig.fibo_dir == 0:
         return None
     return fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir, ratio)
@@ -98,10 +99,10 @@ class _Watch:
     def reset(self, sos_bar):
         self.sos_bar = sos_bar
         self.bars_in_band = 0
-        self.narrow = False      # a block overlapped [lo, hi] while price was in the band
-        self.wide = False        # ...and the same for the shipped 0.5-0.886 POI band
-        self.edge = None         # where a limit off that block would have rested
-        self.n_blocks = 0        # distinct blocks seen qualifying (upper bound — see report)
+        self.narrow = False  # a block overlapped [lo, hi] while price was in the band
+        self.wide = False  # ...and the same for the shipped 0.5-0.886 POI band
+        self.edge = None  # where a limit off that block would have rested
+        self.n_blocks = 0  # distinct blocks seen qualifying (upper bound — see report)
 
 
 def _overlaps(a_top, a_bot, b_top, b_bot) -> bool:
@@ -124,7 +125,7 @@ def _scan(watch, sig, is_long: bool, lo_r: float, hi_r: float, any_dir: bool, pr
         return
     band_lo, band_hi = (p2, p6) if p2 <= p6 else (p6, p2)
     if sig.low > band_hi or sig.high < band_lo:
-        return                                   # price is not in the retrace band this bar
+        return  # price is not in the retrace band this bar
     watch.bars_in_band += 1
     probe["band_bars"] += 1
 
@@ -154,22 +155,33 @@ def _scan(watch, sig, is_long: bool, lo_r: float, hi_r: float, any_dir: bool, pr
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--start", default=None,
-                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)")
+    ap.add_argument(
+        "--start",
+        default=None,
+        help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)",
+    )
     ap.add_argument("--end", default=None)
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
     ap.add_argument("--lo", type=float, default=0.618, help="shallow end of the band to count in")
     ap.add_argument("--hi", type=float, default=0.786, help="deep end of the band to count in")
-    ap.add_argument("--any-direction", action="store_true",
-                    help="count a block whichever way it points (default: same-direction only)")
-    ap.add_argument("--expect-trades", type=int, default=None,
-                    help="assert the run reproduces this trade count — the check that the "
-                         "order-block engine did not move the baseline it is being measured against")
+    ap.add_argument(
+        "--any-direction",
+        action="store_true",
+        help="count a block whichever way it points (default: same-direction only)",
+    )
+    ap.add_argument(
+        "--expect-trades",
+        type=int,
+        default=None,
+        help="assert the run reproduces this trade count — the check that the "
+        "order-block engine did not move the baseline it is being measured against",
+    )
     args = ap.parse_args(argv)
 
     from backtest.data.history import floor_for
@@ -180,14 +192,17 @@ def main(argv=None) -> int:
     if _MISS_LABEL.get(_NO_FVG_CODE) != "No FVG in zone":
         raise SystemExit(
             f"miss code {_NO_FVG_CODE} is {_MISS_LABEL.get(_NO_FVG_CODE)!r}, not 'No FVG in zone'. "
-            f"The codes were renumbered — fix _NO_FVG_CODE before trusting any count here.")
+            f"The codes were renumbered — fix _NO_FVG_CODE before trusting any count here."
+        )
 
     start = args.start
     if start is None:
         fl = floor_for(args.symbol, args.tf)
         if fl is None:
-            raise SystemExit(f"cannot measure the broker's earliest {args.tf}m history for "
-                             f"{args.symbol}. Pass --start explicitly rather than guessing one.")
+            raise SystemExit(
+                f"cannot measure the broker's earliest {args.tf}m history for "
+                f"{args.symbol}. Pass --start explicitly rather than guessing one."
+            )
         start = fl.isoformat()
     end = args.end or dt.date.today().isoformat()
 
@@ -206,8 +221,9 @@ def main(argv=None) -> int:
     #   exec_secondary=False   — `run()` is primary-only (it never calls step_secondary), so this
     #                            is inert here; it is pinned so the trade count is comparable to
     #                            the documented primary-only baseline rather than coincidentally so.
-    cfg = ConfigCls(fill_model="bar", symbol=args.symbol,
-                    exec_poi_source="FVG", exec_secondary=False)
+    cfg = ConfigCls(
+        fill_model="bar", symbol=args.symbol, exec_poi_source="FVG", exec_secondary=False
+    )
     strat = StrategyCls(config=cfg, initial_capital=args.capital)
 
     # Force the order-block engine ON while the entry still reads gaps only. This is the whole
@@ -216,6 +232,7 @@ def main(argv=None) -> int:
     stack_cfg = dataclasses.replace(StrategyCls.engine_config(), order_blocks=True)
 
     from backtest.replay import EngineStack, iter_bars
+
     stack = EngineStack(strat.stack_config(stack_cfg))
     wl, ws = _Watch(), _Watch()
     hits, misses_seen = [], 0
@@ -225,8 +242,14 @@ def main(argv=None) -> int:
     # history because it paired every miss with an already-reset latch. These counters are what
     # separate the two, and the run REFUSES below rather than reporting a zero it cannot stand
     # behind. Same rule as `mt5_link`: "no" and "cannot ask" must never be the same value.
-    probe = {"block_bars": 0, "alive_bars": 0, "band_bars": 0,
-             "blocks_offered": 0, "blocks_aligned": 0, "block_in_wide": 0}
+    probe = {
+        "block_bars": 0,
+        "alive_bars": 0,
+        "band_bars": 0,
+        "blocks_offered": 0,
+        "blocks_aligned": 0,
+        "block_in_wide": 0,
+    }
 
     print("  replaying (gaps trade, blocks only watch) ...", flush=True)
     for bar in iter_bars(df):
@@ -271,18 +294,23 @@ def main(argv=None) -> int:
         raise SystemExit(
             f"\nBASELINE MOVED: {len(trades)} trades, expected {args.expect_trades}. Adding the "
             f"order-block engine to the stack was supposed to change NOTHING about what trades — "
-            f"if it did, every count below describes a different strategy. Stop and find out why.")
+            f"if it did, every count below describes a different strategy. Stop and find out why."
+        )
 
     # Refuse before reporting anything, because every number below is a count of things NOT
     # happening, and each of these being zero makes the whole report meaningless in a way the
     # report itself cannot show.
     if probe["block_bars"] == 0:
-        raise SystemExit("\nthe order-block engine produced NO live blocks on any bar. It is not "
-                         "running — every count below would be a fact about the tool, not the "
-                         "market. Check that stack_config kept order_blocks=True.")
+        raise SystemExit(
+            "\nthe order-block engine produced NO live blocks on any bar. It is not "
+            "running — every count below would be a fact about the tool, not the "
+            "market. Check that stack_config kept order_blocks=True."
+        )
     if probe["band_bars"] == 0:
-        raise SystemExit("\nno live setup ever had price in its own retrace band. The scan never "
-                         "ran, so a zero here means nothing.")
+        raise SystemExit(
+            "\nno live setup ever had price in its own retrace band. The scan never "
+            "ran, so a zero here means nothing."
+        )
 
     by_code: dict[int, int] = {}
     for m in strat.execution.misses:
@@ -303,22 +331,34 @@ def main(argv=None) -> int:
         print(f"      {_MISS_LABEL.get(code, code):<26} {cnt:>5}{mark}")
     print()
     print(f"  'No FVG in zone' misses             {n:>5}")
-    print(f"    ...with a block in {band:<14} {len(narrow):>5}   "
-          f"({100.0 * len(narrow) / n:.0f}%)" if n else "")
-    print(f"    ...with a block in 0.5-0.886      {len(wide):>5}   "
-          f"({100.0 * len(wide) / n:.0f}%)   <- the band the entry rule uses today" if n else "")
+    print(
+        f"    ...with a block in {band:<14} {len(narrow):>5}   ({100.0 * len(narrow) / n:.0f}%)"
+        if n
+        else ""
+    )
+    print(
+        f"    ...with a block in 0.5-0.886      {len(wide):>5}   "
+        f"({100.0 * len(wide) / n:.0f}%)   <- the band the entry rule uses today"
+        if n
+        else ""
+    )
     print()
     print(f"  for scale: trades the run DID take  {len(trades):>5}")
     print("=" * 78)
-    print(f"  the scan really ran: {probe['block_bars']:,} bars held a live block · "
-          f"{probe['band_bars']:,} bars had a live setup with price in its band")
-    print(f"  {probe['blocks_offered']:,} block-bars offered, {probe['blocks_aligned']:,} "
-          f"{dirn}, {probe['block_in_wide']:,} of those overlapping the 0.5-0.886 band")
+    print(
+        f"  the scan really ran: {probe['block_bars']:,} bars held a live block · "
+        f"{probe['band_bars']:,} bars had a live setup with price in its band"
+    )
+    print(
+        f"  {probe['blocks_offered']:,} block-bars offered, {probe['blocks_aligned']:,} "
+        f"{dirn}, {probe['block_in_wide']:,} of those overlapping the 0.5-0.886 band"
+    )
 
     if narrow:
         print(f"\n  the {len(narrow)} in {band}, oldest first:\n")
-        print(f"  {'when the setup died':<22} {'dir':>4} {'would rest at':>14} "
-              f"{'bars in band':>13}")
+        print(
+            f"  {'when the setup died':<22} {'dir':>4} {'would rest at':>14} {'bars in band':>13}"
+        )
         for m, _nw, _wd, edge, bars, _nb in narrow:
             when = dt.datetime.fromtimestamp(m.time_ms / 1000, dt.timezone.utc)
             side = "long" if m.dir > 0 else "short"

@@ -33,7 +33,7 @@ from mpc_sos_fade.signals import Signals  # noqa: E402
 
 # The bull leg every fixture below uses: high anchor 110, low 100.
 #   0.382=106.18  0.5=105.0  0.618=103.82  0.786=102.0  0.886=101.14  1.0=100.0
-_P3 = 103.82                      # the 0.618 — where a no-gap fallback rests
+_P3 = 103.82  # the 0.618 — where a no-gap fallback rests
 # A gap sitting inside the 0.5-0.886 band, deep enough to pass `exec_fvg_deep_only`.
 _GAP = (104.5, 104.0, True, 1)
 
@@ -49,20 +49,48 @@ def _sig(dir=1, **kw) -> Signals:
     production does not produce, which is the fixture-more-complete-than-the-code trap that hid
     the `run_dual` AttributeError for three weeks (see this package's CLAUDE.md)."""
     base = dict(
-        index=10, time_ms=9_000_000, open=104.0, high=104.0, low=104.0, close=104.0,
-        session_gap_bar=False, ny_hour=8,
-        bull_sos=False, bear_sos=False, bull_bos=False, bear_bos=False,
-        recent_ssl="", recent_ssl_bar=None, recent_ssl_time=None,
-        recent_bsl="", recent_bsl_bar=None, recent_bsl_time=None,
-        last_bull_div_bar=None, last_bear_div_bar=None,
-        bull_div_active=False, bear_div_active=False,
-        veto_on=False, veto_rsi_ob=False, veto_rsi_os=False,
+        index=10,
+        time_ms=9_000_000,
+        open=104.0,
+        high=104.0,
+        low=104.0,
+        close=104.0,
+        session_gap_bar=False,
+        ny_hour=8,
+        bull_sos=False,
+        bear_sos=False,
+        bull_bos=False,
+        bear_bos=False,
+        recent_ssl="",
+        recent_ssl_bar=None,
+        recent_ssl_time=None,
+        recent_bsl="",
+        recent_bsl_bar=None,
+        recent_bsl_time=None,
+        last_bull_div_bar=None,
+        last_bear_div_bar=None,
+        bull_div_active=False,
+        bear_div_active=False,
+        veto_on=False,
+        veto_rsi_ob=False,
+        veto_rsi_os=False,
         fibo_dir=dir,
-        fibo_p1=106.18, fibo_p2=105.0, fibo_p3=_P3, fibo_p4=102.8,
-        fibo_p5=102.0, fibo_p6=101.14, fibo_p7=110.0, fibo_p10=100.0,
-        fibo_ash=110.0, fibo_asl=100.0,
-        fibo_half_reached=True, fibo_618_ever_reached=True, fibo7_touched=False,
-        fvgs=[], poi_long_now=False, poi_short_now=False,
+        fibo_p1=106.18,
+        fibo_p2=105.0,
+        fibo_p3=_P3,
+        fibo_p4=102.8,
+        fibo_p5=102.0,
+        fibo_p6=101.14,
+        fibo_p7=110.0,
+        fibo_p10=100.0,
+        fibo_ash=110.0,
+        fibo_asl=100.0,
+        fibo_half_reached=True,
+        fibo_618_ever_reached=True,
+        fibo7_touched=False,
+        fvgs=[],
+        poi_long_now=False,
+        poi_short_now=False,
     )
     base.update(kw)
     return Signals(**base)
@@ -70,12 +98,28 @@ def _sig(dir=1, **kw) -> Signals:
 
 def _seq(*, swp_l=False, div_l=False, swp_s=False, div_s=False) -> SeqState:
     return SeqState(
-        l_stage=4, s_stage=4, l_sos_bar=1, s_sos_bar=1,
-        l_half=True, l_618=True, s_half=True, s_618=True,
-        l_poi=False, s_poi=False, l_fvg=False, s_fvg=False,
-        sos_l_swp=swp_l, sos_l_div=div_l, sos_s_swp=swp_s, sos_s_div=div_s,
-        new_sweep_l=False, new_div_l=False, new_sweep_s=False, new_div_s=False,
-        retro_link_l=False, retro_link_s=False,
+        l_stage=4,
+        s_stage=4,
+        l_sos_bar=1,
+        s_sos_bar=1,
+        l_half=True,
+        l_618=True,
+        s_half=True,
+        s_618=True,
+        l_poi=False,
+        s_poi=False,
+        l_fvg=False,
+        s_fvg=False,
+        sos_l_swp=swp_l,
+        sos_l_div=div_l,
+        sos_s_swp=swp_s,
+        sos_s_div=div_s,
+        new_sweep_l=False,
+        new_div_l=False,
+        new_sweep_s=False,
+        new_div_s=False,
+        retro_link_l=False,
+        retro_link_s=False,
     )
 
 
@@ -91,7 +135,7 @@ def test_the_shipped_default_is_Any():
 
 
 def test_Any_rests_at_the_0618_whatever_armed_the_setup():
-    """"Any" must be byte-identical to what `exec_req_fvg = False` did before this field existed.
+    """ "Any" must be byte-identical to what `exec_req_fvg = False` did before this field existed.
     Every historical no-FVG figure in this package was measured on that branch."""
     for seq in (_seq(swp_l=True), _seq(div_l=True), _seq(swp_l=True, div_l=True)):
         long_edge, _short = _edges(_cfg(exec_nogap_arm="Any"), _sig(), seq)
@@ -108,16 +152,20 @@ def test_Any_is_still_the_default_when_the_field_is_not_named():
 
 # ── the gate ────────────────────────────────────────────────────────────────────
 def test_gated_takes_the_setup_when_BOTH_sources_were_live():
-    long_edge, _short = _edges(_cfg(exec_nogap_arm="Sweep + RSI div"), _sig(),
-                               _seq(swp_l=True, div_l=True))
+    long_edge, _short = _edges(
+        _cfg(exec_nogap_arm="Sweep + RSI div"), _sig(), _seq(swp_l=True, div_l=True)
+    )
     assert long_edge == pytest.approx(_P3)
 
 
-@pytest.mark.parametrize("seq,why", [
-    (_seq(swp_l=True), "a sweep with no divergence — the 95 trades that made +0.007R each"),
-    (_seq(div_l=True), "a divergence with no sweep"),
-    (_seq(), "neither source"),
-])
+@pytest.mark.parametrize(
+    "seq,why",
+    [
+        (_seq(swp_l=True), "a sweep with no divergence — the 95 trades that made +0.007R each"),
+        (_seq(div_l=True), "a divergence with no sweep"),
+        (_seq(), "neither source"),
+    ],
+)
 def test_gated_refuses_a_setup_missing_either_source(seq, why):
     long_edge, _short = _edges(_cfg(exec_nogap_arm="Sweep + RSI div"), _sig(), seq)
     assert long_edge is None, why
@@ -151,7 +199,7 @@ def test_the_gate_is_never_consulted_when_a_gap_qualifies():
     be untouched — otherwise this lever would quietly re-price the shipped book."""
     cfg = _cfg(exec_req_fvg=True, exec_nogap_arm="Sweep + RSI div")
     sig = _sig(fvgs=[_GAP])
-    gated, _short = _edges(cfg, sig, _seq())            # no arm sources at all
+    gated, _short = _edges(cfg, sig, _seq())  # no arm sources at all
     ungated, _short2 = _edges(dataclasses.replace(cfg, exec_nogap_arm="Any"), sig, _seq())
     assert gated is not None
     assert gated == pytest.approx(ungated)

@@ -42,8 +42,8 @@ class _FakeMt5:
     """
 
     def __init__(self, *, quotes: bool = True, moving: bool = True):
-        self._quotes = quotes          # does this account quote the symbol at all
-        self._moving = moving          # is the market actually printing new ticks
+        self._quotes = quotes  # does this account quote the symbol at all
+        self._moving = moving  # is the market actually printing new ticks
         self._watched: set[str] = set()
         self._n = 0
         self.select_calls: list[tuple[str, bool]] = []

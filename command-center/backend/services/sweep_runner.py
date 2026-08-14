@@ -14,16 +14,15 @@ import json
 import time
 from pathlib import Path
 
-from services import lab_db, evaluator, runner_dispatch, worthiness
+from services import evaluator, lab_db, runner_dispatch, worthiness
 from services.metrics import apply_canonical_sharpe
 
-
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
-_POLL_INTERVAL   = 5
-_STALL_KILL_SEC  = 600
+_POLL_INTERVAL = 5
+_STALL_KILL_SEC = 600
 
 # NT8 SA window can only run one job at a time.
-_MAX_CONCURRENT  = 1
+_MAX_CONCURRENT = 1
 
 
 async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> None:
@@ -33,36 +32,45 @@ async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> 
         lab_db.update_run_status(run_id, "failed_unknown", f"Could not fetch results: {exc}")
         return
 
-    kpis         = result.get("kpis", {})
+    kpis = result.get("kpis", {})
     equity_curve = result.get("equity_curve", [])
-    daily_pnl    = result.get("daily_pnl", [])
+    daily_pnl = result.get("daily_pnl", [])
 
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    eq_path   = run_dir / "equity_curve.json"
+    eq_path = run_dir / "equity_curve.json"
     dpnl_path = run_dir / "daily_pnl.json"
     eq_path.write_text(json.dumps(equity_curve, default=str))
     dpnl_path.write_text(json.dumps(daily_pnl, default=str))
 
     apply_canonical_sharpe(kpis, daily_pnl)  # consistent daily-√252 Sharpe across run paths
 
-    lab_db.update_run_complete(run_id, kpis, {
-        "equity_curve": str(eq_path),
-        "trades":       None,
-        "daily_pnl":    str(dpnl_path),
-    })
+    lab_db.update_run_complete(
+        run_id,
+        kpis,
+        {
+            "equity_curve": str(eq_path),
+            "trades": None,
+            "daily_pnl": str(dpnl_path),
+        },
+    )
 
     evaluator.evaluate_run(run_id, ruleset_ids, kpis, equity_curve, daily_pnl)
 
     w = worthiness.score_run_after_evals(
-        run_id, ruleset_ids,
-        kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+        run_id,
+        ruleset_ids,
+        kpis.get("profit_factor"),
+        kpis.get("max_drawdown"),
+        kpis.get("trade_count"),
     )
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
 
 
-async def _run_one(run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[str], runner: str) -> None:
+async def _run_one(
+    run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[str], runner: str
+) -> None:
     """Start a VPS job and poll it to completion. Called while holding the SA semaphore."""
     try:
         await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)
@@ -103,9 +111,9 @@ async def _run_one(run_id: str, job_id: str, job_spec: dict, ruleset_ids: list[s
 
 
 async def run_sweep(
-    sweep_id:   str,
-    run_specs:  list[dict],   # [{run_id, job_id, strategy_id, instrument, ruleset_ids, runner}]
-    job_specs:  list[dict],   # VPS job_spec payloads, one per run
+    sweep_id: str,
+    run_specs: list[dict],  # [{run_id, job_id, strategy_id, instrument, ruleset_ids, runner}]
+    job_specs: list[dict],  # VPS job_spec payloads, one per run
 ) -> None:
     """Run all N instruments one at a time through the single NT8 SA window."""
     sem = asyncio.Semaphore(_MAX_CONCURRENT)
@@ -114,7 +122,9 @@ async def run_sweep(
         async with sem:
             await _run_one(spec["run_id"], spec["job_id"], job, spec["ruleset_ids"], spec["runner"])
 
-    await asyncio.gather(*[_one(spec, job) for spec, job in zip(run_specs, job_specs)], return_exceptions=True)
+    await asyncio.gather(
+        *[_one(spec, job) for spec, job in zip(run_specs, job_specs)], return_exceptions=True
+    )
 
 
 async def retry_single_sweep_run(run_id: str) -> None:
@@ -136,15 +146,30 @@ async def retry_single_sweep_run(run_id: str) -> None:
                 ruleset_ids = [e["ruleset_id"] for e in evals]
                 break
 
-    run_specs = [{"run_id": run_id, "job_id": run_id, "strategy_id": row["strategy_id"],
-                  "instrument": row["instrument"], "ruleset_ids": ruleset_ids,
-                  "runner": strategy.get("runner", "ninjatrader")}]
-    job_specs = [{"job_id": run_id, "strategy_class": strategy["class_name"],
-                  "instrument": row["instrument"], "params": row["params"],
-                  "bar_type": row["bar_type"], "bar_value": row["bar_value"],
-                  "start_date": row["start_date"], "end_date": row["end_date"],
-                  "commission_per_side": row["commission_per_side"],
-                  "slippage_ticks": row["slippage_ticks"]}]
+    run_specs = [
+        {
+            "run_id": run_id,
+            "job_id": run_id,
+            "strategy_id": row["strategy_id"],
+            "instrument": row["instrument"],
+            "ruleset_ids": ruleset_ids,
+            "runner": strategy.get("runner", "ninjatrader"),
+        }
+    ]
+    job_specs = [
+        {
+            "job_id": run_id,
+            "strategy_class": strategy["class_name"],
+            "instrument": row["instrument"],
+            "params": row["params"],
+            "bar_type": row["bar_type"],
+            "bar_value": row["bar_value"],
+            "start_date": row["start_date"],
+            "end_date": row["end_date"],
+            "commission_per_side": row["commission_per_side"],
+            "slippage_ticks": row["slippage_ticks"],
+        }
+    ]
     await run_sweep(sweep_id, run_specs, job_specs)
 
 
@@ -154,7 +179,7 @@ async def retry_failed_sweep_runs(sweep_id: str) -> None:
     if not failed_rows:
         return
 
-    first    = failed_rows[0]
+    first = failed_rows[0]
     strategy = lab_db.get_strategy(first["strategy_id"])
     if not strategy:
         for row in failed_rows:
@@ -175,27 +200,27 @@ async def retry_failed_sweep_runs(sweep_id: str) -> None:
 
     run_specs = [
         {
-            "run_id":       row["run_id"],
-            "job_id":       row["run_id"],
-            "strategy_id":  row["strategy_id"],
-            "instrument":   row["instrument"],
-            "ruleset_ids":  ruleset_ids,
-            "runner":       strategy.get("runner", "ninjatrader"),
+            "run_id": row["run_id"],
+            "job_id": row["run_id"],
+            "strategy_id": row["strategy_id"],
+            "instrument": row["instrument"],
+            "ruleset_ids": ruleset_ids,
+            "runner": strategy.get("runner", "ninjatrader"),
         }
         for row in failed_rows
     ]
     job_specs = [
         {
-            "job_id":              row["run_id"],
-            "strategy_class":      strategy["class_name"],
-            "instrument":          row["instrument"],
-            "params":              row["params"],
-            "bar_type":            row["bar_type"],
-            "bar_value":           row["bar_value"],
-            "start_date":          row["start_date"],
-            "end_date":            row["end_date"],
+            "job_id": row["run_id"],
+            "strategy_class": strategy["class_name"],
+            "instrument": row["instrument"],
+            "params": row["params"],
+            "bar_type": row["bar_type"],
+            "bar_value": row["bar_value"],
+            "start_date": row["start_date"],
+            "end_date": row["end_date"],
             "commission_per_side": row["commission_per_side"],
-            "slippage_ticks":      row["slippage_ticks"],
+            "slippage_ticks": row["slippage_ticks"],
         }
         for row in failed_rows
     ]

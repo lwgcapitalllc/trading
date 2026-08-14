@@ -20,7 +20,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from algos.shared.fleet_halt import (  # noqa: E402
-    DEFAULT_FLAG_NAME, FleetHaltReading, flag_path, read_fleet_halt)
+    DEFAULT_FLAG_NAME,
+    FleetHaltReading,
+    flag_path,
+    read_fleet_halt,
+)
 
 
 def test_no_flag_is_not_a_halt(tmp_path):
@@ -82,7 +86,7 @@ def test_an_UNREADABLE_DIRECTORY_halts(tmp_path):
         assert r.readable is False
         assert "cannot read the halt flag" in r.reason
     finally:
-        d.chmod(0o700)   # or tmp_path cleanup fails and takes the whole session's teardown with it
+        d.chmod(0o700)  # or tmp_path cleanup fails and takes the whole session's teardown with it
 
 
 def test_pathlib_exists_cannot_tell_a_missing_FLAG_from_a_missing_BOX(tmp_path):
@@ -100,7 +104,7 @@ def test_pathlib_exists_cannot_tell_a_missing_FLAG_from_a_missing_BOX(tmp_path):
     justification for the directory probe.
     """
     (tmp_path / DEFAULT_FLAG_NAME).unlink(missing_ok=True)
-    assert (tmp_path / DEFAULT_FLAG_NAME).exists() is False          # healthy: no halt requested
+    assert (tmp_path / DEFAULT_FLAG_NAME).exists() is False  # healthy: no halt requested
     assert (tmp_path / "gone" / DEFAULT_FLAG_NAME).exists() is False  # broken: cannot be told
     # ...and the module tells them apart, which is the point.
     assert read_fleet_halt(tmp_path).halted is False
@@ -121,4 +125,4 @@ def test_a_reading_is_immutable():
     `halted` after the fact would make the ledger record and the message disagree."""
     r = FleetHaltReading(True, "why", readable=True)
     with pytest.raises(Exception):
-        r.halted = False        # type: ignore[misc]
+        r.halted = False  # type: ignore[misc]

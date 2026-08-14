@@ -15,8 +15,9 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mpc_bleg import MpcBLegStrategy  # noqa: E402
 from mpc_sos_fade import MpcSosFadeStrategy  # noqa: E402
+
+from mpc_bleg import MpcBLegStrategy  # noqa: E402
 
 
 def test_the_fork_pins_the_eq_fvg_coupling_OFF_where_the_parent_pins_it_ON():
@@ -67,5 +68,6 @@ def test_the_fork_pins_the_secondary_OFF():
 
     assert SosFadeConfig().exec_secondary is True, (
         "the parent no longer defaults this ON — if it was deliberately reverted, this pin is "
-        "now redundant rather than load-bearing; say which in the same commit")
+        "now redundant rather than load-bearing; say which in the same commit"
+    )
     assert BLegConfig().exec_secondary is False

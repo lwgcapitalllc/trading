@@ -174,24 +174,25 @@ Two frozen dataclasses and one method. Reporting only.
 ```python
 @dataclass(frozen=True)
 class Confluence:
-    name: str            # "Sweep", "Shift of structure", "Retrace zone"
+    name: str  # "Sweep", "Shift of structure", "Retrace zone"
     met: bool
-    detail: str = ""     # "Day High" / "confirmed" / "0.5-0.886 tagged, no FVG yet"
+    detail: str = ""  # "Day High" / "confirmed" / "0.5-0.886 tagged, no FVG yet"
+
 
 @dataclass(frozen=True)
 class SetupSnapshot:
-    key: str                            # stable for this setup's whole life — the thread id
+    key: str  # stable for this setup's whole life — the thread id
     strategy: str
     symbol: str
-    side: int                           # +1 long, -1 short
-    state: str                          # WATCHING / RESTING / FILLED / DEAD
+    side: int  # +1 long, -1 short
+    state: str  # WATCHING / RESTING / FILLED / DEAD
     confluences: tuple[Confluence, ...]
-    zone: tuple[float, float] | None    # (shallow, deep) — the whole valid entry range
-    entry: float | None                 # the ONE resting price; None until there is one
-    stop: float | None                  # projected from the deep edge before an order exists
+    zone: tuple[float, float] | None  # (shallow, deep) — the whole valid entry range
+    entry: float | None  # the ONE resting price; None until there is one
+    stop: float | None  # projected from the deep edge before an order exists
     targets: tuple[float, ...]
-    blocked_by: tuple[str, ...]         # rules currently refusing it
-    reason: str = ""                    # why it ended — FILLED / DEAD only
+    blocked_by: tuple[str, ...]  # rules currently refusing it
+    reason: str = ""  # why it ended — FILLED / DEAD only
 ```
 
 **`zone` and `entry` are different questions and both are wanted** (Aaron, 2026-08-13: *"you have a

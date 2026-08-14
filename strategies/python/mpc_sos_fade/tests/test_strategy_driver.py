@@ -16,6 +16,7 @@ sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 sys.path.insert(0, str(_ROOT / "backtest" / "tests"))
 
 from _synth import synth_bars  # noqa: E402
+
 from mpc_sos_fade import MpcSosFadeStrategy  # noqa: E402
 
 
@@ -25,7 +26,7 @@ def test_driver_runs_end_to_end():
     # equity is a finite number and every completed trade has a finite R
     assert isinstance(strat.execution.equity, float)
     for t in strat.execution.trades:
-        assert t.r == t.r          # not NaN
+        assert t.r == t.r  # not NaN
         assert t.qty > 0
 
 
@@ -58,11 +59,11 @@ def test_engine_config_pins_every_input_the_pine_moved_off_its_default():
     also gets a `cfg_eq_exempt` export column and the harness configures the bot FROM the export.
     This assertion pins the LIVE default; the column is what makes any other value checkable."""
     ec = MpcSosFadeStrategy.engine_config()
-    assert ec.fvg_max_count == 7           # Pine fvgMaxCount (engine default 8)
-    assert ec.fvg_require_close is True    # Pine hardcodes close[1] past the gap
-    assert ec.show_internal is False       # Pine "Show Internal Structure" defaults OFF
-    assert ec.fvg_threshold_pct == 0.1     # Pine fvgThreshHTF at 15m (engine default 0.0)
-    assert ec.eq_exempt_fvg is True        # Pine eqExemptFvg, ON since 2026-08-03
+    assert ec.fvg_max_count == 7  # Pine fvgMaxCount (engine default 8)
+    assert ec.fvg_require_close is True  # Pine hardcodes close[1] past the gap
+    assert ec.show_internal is False  # Pine "Show Internal Structure" defaults OFF
+    assert ec.fvg_threshold_pct == 0.1  # Pine fvgThreshHTF at 15m (engine default 0.0)
+    assert ec.eq_exempt_fvg is True  # Pine eqExemptFvg, ON since 2026-08-03
 
 
 def test_the_eq_coupling_actually_reaches_the_fvg_engine():
@@ -75,6 +76,7 @@ def test_the_eq_coupling_actually_reaches_the_fvg_engine():
     a plain FIFO, byte-identical to every replay that predates the coupling).
     """
     import dataclasses
+
     from backtest.replay import EngineStack
 
     ec = MpcSosFadeStrategy.engine_config()

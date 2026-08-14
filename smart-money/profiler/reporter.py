@@ -15,10 +15,10 @@ from pathlib import Path
 
 from run_logger import StageLogger
 
-
 # ---------------------------------------------------------------------------
 # Profile builder (Step 1.7)
 # ---------------------------------------------------------------------------
+
 
 def _avg(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
@@ -61,12 +61,14 @@ def _preferred_instruments(trades: list[dict], top_n: int = 5) -> list[dict]:
     results = []
     for instrument, t_list in sorted(by_instrument.items(), key=lambda x: -len(x[1])):
         wins = sum(1 for t in t_list if t["is_win"])
-        results.append({
-            "instrument": instrument,
-            "trade_count": len(t_list),
-            "win_rate": round(wins / len(t_list), 4) if t_list else 0.0,
-            "total_pnl": round(sum(t["pnl"] for t in t_list), 4),
-        })
+        results.append(
+            {
+                "instrument": instrument,
+                "trade_count": len(t_list),
+                "win_rate": round(wins / len(t_list), 4) if t_list else 0.0,
+                "total_pnl": round(sum(t["pnl"] for t in t_list), 4),
+            }
+        )
 
     return results[:top_n]
 
@@ -75,8 +77,7 @@ def _preferred_days(trades: list[dict]) -> list[dict]:
     """Returns weekdays ranked by frequency (0=Monday, 6=Sunday)."""
     day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     day_counter: Counter = Counter(
-        datetime.fromtimestamp(t["close_ts"] / 1000, tz=timezone.utc).weekday()
-        for t in trades
+        datetime.fromtimestamp(t["close_ts"] / 1000, tz=timezone.utc).weekday() for t in trades
     )
     return [
         {"day": day_names[d], "trade_count": count}
@@ -118,12 +119,14 @@ def _month_over_month_balance(trades: list[dict], initial: float = 10_000.0) -> 
         cum_pnl += window_pnl
 
         dt = datetime.fromtimestamp(window_start / 1000, tz=timezone.utc)
-        progression.append({
-            "month_label": dt.strftime("%Y-%m"),
-            "starting_balance": round(start_bal, 2),
-            "ending_balance": round(initial + cum_pnl, 2),
-            "window_pnl": round(window_pnl, 4),
-        })
+        progression.append(
+            {
+                "month_label": dt.strftime("%Y-%m"),
+                "starting_balance": round(start_bal, 2),
+                "ending_balance": round(initial + cum_pnl, 2),
+                "window_pnl": round(window_pnl, 4),
+            }
+        )
         window_start = window_end
 
     return progression
@@ -159,23 +162,20 @@ def build_wallet_profile(
         "rank": score.get("rank"),
         "composite_score": score.get("composite_score"),
         "lookback_tier": score.get("lookback_tier"),
-
         # Leaderboard stats (real, from Hyperliquid — not synthetic)
         "leaderboard": {
-            "account_value": wallet.get("account_value"),      # current USD account value
-            "all_time_pnl": wallet.get("all_time_pnl"),        # total USD profit all time
-            "all_time_roi": wallet.get("all_time_roi"),        # fractional, e.g. 3.9 = 390%
+            "account_value": wallet.get("account_value"),  # current USD account value
+            "all_time_pnl": wallet.get("all_time_pnl"),  # total USD profit all time
+            "all_time_roi": wallet.get("all_time_roi"),  # fractional, e.g. 3.9 = 390%
             "month_roi": wallet.get("month_roi"),
             "week_roi": wallet.get("week_roi"),
         },
         "lookback_span_days": score.get("lookback_span_days"),
-
         # Balance & Growth
         "balance_metrics": {
             **balance_stats,
             "month_over_month_progression": _month_over_month_balance(trades),
         },
-
         # Performance Metrics
         "performance_metrics": {
             "total_trades": len(trades),
@@ -187,7 +187,6 @@ def build_wallet_profile(
             "average_hold_hours": avg_hold_hours,
             "peak_drawdown_pct": balance_stats.get("peak_drawdown_pct"),
         },
-
         # Sub-scores
         "score_breakdown": {
             "win_rate_consistency": score.get("win_rate_consistency"),
@@ -196,7 +195,6 @@ def build_wallet_profile(
             "trade_frequency": score.get("trade_frequency"),
             "instrument_day_consistency": score.get("instrument_day_consistency"),
         },
-
         # Behavioral Patterns
         "behavioral_patterns": {
             "preferred_instruments": _preferred_instruments(trades),
@@ -205,29 +203,30 @@ def build_wallet_profile(
             "average_hold_hours": avg_hold_hours,
             "exit_efficiency_score": score.get("exit_efficiency"),
         },
-
         # Strike / Flag Status
         "flags": {
             "yellow_flags": yellow_flags,
             "window_count": len(windows),
-            "windows_below_threshold": sum(1 for w in windows if w["win_rate"] < 0.80 and w["trade_count"] > 0),
+            "windows_below_threshold": sum(
+                1 for w in windows if w["win_rate"] < 0.80 and w["trade_count"] > 0
+            ),
             "data_coverage_pct": wallet.get("data_coverage_pct"),
             "data_coverage_low": wallet.get("data_coverage_low", False),
         },
-
         # Raw monthly windows (for manual validation)
         "monthly_windows": [
             {
-                "month": datetime.fromtimestamp(
-                    w["window_start"] / 1000, tz=timezone.utc
-                ).strftime("%Y-%m"),
+                "month": datetime.fromtimestamp(w["window_start"] / 1000, tz=timezone.utc).strftime(
+                    "%Y-%m"
+                ),
                 "trade_count": w["trade_count"],
                 "win_rate": round(w["win_rate"], 4),
                 "total_pnl": w["total_pnl"],
                 "active_weeks": w["active_weeks"],
                 "strike_level": w["strike_level"],
             }
-            for w in windows if w["trade_count"] > 0
+            for w in windows
+            if w["trade_count"] > 0
         ],
     }
 
@@ -235,6 +234,7 @@ def build_wallet_profile(
 # ---------------------------------------------------------------------------
 # Exporters (Step 1.8)
 # ---------------------------------------------------------------------------
+
 
 class StageReporter:
     def __init__(self, config: dict, logger: StageLogger, run_id: str = ""):
@@ -272,13 +272,15 @@ class StageReporter:
         for d in disqualified:
             source = d.get("source", "hyperliquid")
             market = "forex" if source in ("myfxbook", "fx_blue") else "crypto"
-            disq_mapped.append({
-                "id": d.get("address", d.get("id", "")),
-                "market": market,
-                "source": source,
-                "reason": d.get("reason", ""),
-                "stage": "stage1",
-            })
+            disq_mapped.append(
+                {
+                    "id": d.get("address", d.get("id", "")),
+                    "market": market,
+                    "source": source,
+                    "reason": d.get("reason", ""),
+                    "stage": "stage1",
+                }
+            )
         with open(run_dir / "disqualified.json", "w", encoding="utf-8") as f:
             json.dump(disq_mapped, f, indent=2, default=str)
 
@@ -300,8 +302,16 @@ class StageReporter:
             "by_market": by_market,
             "by_source": by_source,
             "funnel": [
-                {"label": "Leaderboard scan", "count_in": total_scanned, "count_out": passed_initial},
-                {"label": "Qualification filters", "count_in": passed_initial, "count_out": total_qualified},
+                {
+                    "label": "Leaderboard scan",
+                    "count_in": total_scanned,
+                    "count_out": passed_initial,
+                },
+                {
+                    "label": "Qualification filters",
+                    "count_in": passed_initial,
+                    "count_out": total_qualified,
+                },
             ],
         }
         with open(run_dir / "meta.json", "w", encoding="utf-8") as f:
@@ -345,8 +355,7 @@ class StageReporter:
             ],
             "overall_win_rate": pm.get("overall_win_rate") or 0.0,
             "monthly_win_rate": [
-                {"month": w.get("month", ""), "value": w.get("win_rate", 0.0)}
-                for w in windows
+                {"month": w.get("month", ""), "value": w.get("win_rate", 0.0)} for w in windows
             ],
             "win_rate_trend": pm.get("win_rate_trend") or "stable",
             "avg_win": pm.get("average_win_usd") or 0.0,
@@ -359,8 +368,11 @@ class StageReporter:
                 for d in bp.get("preferred_days") or []
             ],
             "preferred_instruments": [
-                {"label": i.get("instrument", ""), "count": i.get("trade_count", 0),
-                 "win_rate": i.get("win_rate")}
+                {
+                    "label": i.get("instrument", ""),
+                    "count": i.get("trade_count", 0),
+                    "win_rate": i.get("win_rate"),
+                }
                 for i in bp.get("preferred_instruments") or []
             ],
             "typical_entry_hour_utc": bp.get("typical_entry_hour_utc"),
@@ -395,39 +407,43 @@ class StageReporter:
             sb = p.get("score_breakdown", {})
             bp = p.get("behavioral_patterns", {})
             flags = p.get("flags", {})
-            top_inst = bp.get("preferred_instruments", [{}])[0] if bp.get("preferred_instruments") else {}
+            top_inst = (
+                bp.get("preferred_instruments", [{}])[0] if bp.get("preferred_instruments") else {}
+            )
 
-            flat_rows.append({
-                "rank": p.get("rank"),
-                "address": p.get("address"),
-                "source": p.get("source"),
-                "composite_score": p.get("composite_score"),
-                "lookback_tier": p.get("lookback_tier"),
-                "lookback_span_days": p.get("lookback_span_days"),
-                "starting_balance": bm.get("starting_balance"),
-                "ending_balance": bm.get("ending_balance"),
-                "net_growth_pct": bm.get("net_growth_pct"),
-                "peak_balance": bm.get("peak_balance"),
-                "lowest_balance": bm.get("lowest_balance"),
-                "total_trades": pm.get("total_trades"),
-                "overall_win_rate": pm.get("overall_win_rate"),
-                "win_rate_trend": pm.get("win_rate_trend"),
-                "avg_win_usd": pm.get("average_win_usd"),
-                "avg_loss_usd": pm.get("average_loss_usd"),
-                "avg_rr_ratio": pm.get("average_rr_ratio"),
-                "avg_hold_hours": pm.get("average_hold_hours"),
-                "peak_drawdown_pct": pm.get("peak_drawdown_pct"),
-                "score_win_rate_consistency": sb.get("win_rate_consistency"),
-                "score_risk_adjusted": sb.get("risk_adjusted_return"),
-                "score_exit_efficiency": sb.get("exit_efficiency"),
-                "score_trade_frequency": sb.get("trade_frequency"),
-                "score_inst_day_consistency": sb.get("instrument_day_consistency"),
-                "top_instrument": top_inst.get("instrument"),
-                "top_instrument_win_rate": top_inst.get("win_rate"),
-                "yellow_flags": flags.get("yellow_flags"),
-                "windows_below_threshold": flags.get("windows_below_threshold"),
-                "data_coverage_pct": flags.get("data_coverage_pct"),
-            })
+            flat_rows.append(
+                {
+                    "rank": p.get("rank"),
+                    "address": p.get("address"),
+                    "source": p.get("source"),
+                    "composite_score": p.get("composite_score"),
+                    "lookback_tier": p.get("lookback_tier"),
+                    "lookback_span_days": p.get("lookback_span_days"),
+                    "starting_balance": bm.get("starting_balance"),
+                    "ending_balance": bm.get("ending_balance"),
+                    "net_growth_pct": bm.get("net_growth_pct"),
+                    "peak_balance": bm.get("peak_balance"),
+                    "lowest_balance": bm.get("lowest_balance"),
+                    "total_trades": pm.get("total_trades"),
+                    "overall_win_rate": pm.get("overall_win_rate"),
+                    "win_rate_trend": pm.get("win_rate_trend"),
+                    "avg_win_usd": pm.get("average_win_usd"),
+                    "avg_loss_usd": pm.get("average_loss_usd"),
+                    "avg_rr_ratio": pm.get("average_rr_ratio"),
+                    "avg_hold_hours": pm.get("average_hold_hours"),
+                    "peak_drawdown_pct": pm.get("peak_drawdown_pct"),
+                    "score_win_rate_consistency": sb.get("win_rate_consistency"),
+                    "score_risk_adjusted": sb.get("risk_adjusted_return"),
+                    "score_exit_efficiency": sb.get("exit_efficiency"),
+                    "score_trade_frequency": sb.get("trade_frequency"),
+                    "score_inst_day_consistency": sb.get("instrument_day_consistency"),
+                    "top_instrument": top_inst.get("instrument"),
+                    "top_instrument_win_rate": top_inst.get("win_rate"),
+                    "yellow_flags": flags.get("yellow_flags"),
+                    "windows_below_threshold": flags.get("windows_below_threshold"),
+                    "data_coverage_pct": flags.get("data_coverage_pct"),
+                }
+            )
 
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=list(flat_rows[0].keys()))
@@ -437,8 +453,7 @@ class StageReporter:
         self._log.info(f"CSV report  → {path}")
         return path
 
-    def export_markdown_summary(self, profiles: list[dict], stage: str,
-                                run_counts: dict) -> Path:
+    def export_markdown_summary(self, profiles: list[dict], stage: str, run_counts: dict) -> Path:
         ts = self._timestamp_str()
         path = self._reports_dir / f"{stage}_summary_{ts}.md"
         shortlist = profiles[: self._shortlist_n]
@@ -448,8 +463,8 @@ class StageReporter:
             f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
             "",
             "## Run Summary",
-            f"| Metric | Count |",
-            f"|--------|-------|",
+            "| Metric | Count |",
+            "|--------|-------|",
         ]
         for k, v in run_counts.items():
             lines.append(f"| {k.replace('_', ' ').title()} | {v} |")
@@ -469,7 +484,7 @@ class StageReporter:
                 f"| `{p.get('address', '')[:12]}…` "
                 f"| {p.get('composite_score'):.1f} "
                 f"| {p.get('lookback_tier')} "
-                f"| {pm.get('overall_win_rate', 0)*100:.1f}% "
+                f"| {pm.get('overall_win_rate', 0) * 100:.1f}% "
                 f"| {bm.get('net_growth_pct', 0):.1f}% "
                 f"| {bm.get('peak_drawdown_pct', 0):.1f}% |"
             )
@@ -490,7 +505,7 @@ class StageReporter:
             lines += [
                 f"### #{p.get('rank')} — `{p.get('address', '')}`",
                 f"- **Score:** {p.get('composite_score'):.1f} | **Tier:** {p.get('lookback_tier')} ({p.get('lookback_span_days')}d)",
-                f"- **Win Rate:** {pm.get('overall_win_rate', 0)*100:.1f}% ({pm.get('win_rate_trend')}) | **Trades:** {pm.get('total_trades')}",
+                f"- **Win Rate:** {pm.get('overall_win_rate', 0) * 100:.1f}% ({pm.get('win_rate_trend')}) | **Trades:** {pm.get('total_trades')}",
                 f"- **Net Growth:** {bm.get('net_growth_pct', 0):.1f}% | **Peak DD:** {bm.get('peak_drawdown_pct', 0):.1f}%",
                 f"- **Avg Win/Loss:** ${pm.get('average_win_usd', 0):.2f} / ${abs(pm.get('average_loss_usd', 0)):.2f} | **R/R:** {pm.get('average_rr_ratio') or 'N/A'}",
                 f"- **Preferred Instruments:** {', '.join(insts) or 'N/A'} | **Avg Hold:** {pm.get('average_hold_hours')}h",

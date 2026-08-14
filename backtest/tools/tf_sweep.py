@@ -73,15 +73,20 @@ def _max_dd_r(rs):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tfs", default="15,30,60,240")
     ap.add_argument("--start", default="2020-01-01")
     ap.add_argument("--end", default=None)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--expect-15m-trades", type=int, default=159,
-                    help="assert the 15m control row reproduces the documented baseline")
+    ap.add_argument(
+        "--expect-15m-trades",
+        type=int,
+        default=159,
+        help="assert the 15m control row reproduces the documented baseline",
+    )
     args = ap.parse_args(argv)
 
     from backtest.data.source import BarSource
@@ -94,7 +99,8 @@ def main(argv=None) -> int:
             raise SystemExit(
                 f"--tfs {t} is below {_MIN_TF}m. `engine_config()` pins the minimum-gap floor at "
                 f"0.1, which is the Pine's 15m-and-above value; below 15m the Pine uses 0.0, so "
-                f"this run would replay a strategy configured for a floor it is not under.")
+                f"this run would replay a strategy configured for a floor it is not under."
+            )
 
     StrategyCls, ConfigCls = LAB_STRATEGY["strategy"], LAB_STRATEGY["config"]
     src = BarSource()
@@ -123,11 +129,14 @@ def main(argv=None) -> int:
         raise SystemExit(
             f"the 15m control made {len(ctrl[3])} trades, not the documented "
             f"{args.expect_15m_trades}. This sweep is not replaying the shipped bot, so no row "
-            f"below can be compared to anything.")
+            f"below can be compared to anything."
+        )
 
     print()
-    print(f"{'tf':<5} {'bars':>9} {'trades':>7} {'total R':>10} {'avg R':>9} {'+/- se':>8} "
-          f"{'maxDD R':>9} {'win%':>6}  {'ex-best R':>10}")
+    print(
+        f"{'tf':<5} {'bars':>9} {'trades':>7} {'total R':>10} {'avg R':>9} {'+/- se':>8} "
+        f"{'maxDD R':>9} {'win%':>6}  {'ex-best R':>10}"
+    )
     print("-" * 84)
     for label, _tf, nbars, rs in rows:
         if not rs:
@@ -136,8 +145,10 @@ def main(argv=None) -> int:
         m, sd = _mean_sd(rs)
         se = sd / len(rs) ** 0.5
         w = sum(1 for r in rs if r > _SCRATCH_R)
-        print(f"{label:<5} {nbars:>9,} {len(rs):>7} {sum(rs):>+10.2f} {m:>+9.3f} {se:>8.3f} "
-              f"{_max_dd_r(rs):>9.2f} {w / len(rs) * 100:>5.1f}% {sum(rs) - max(rs):>+10.2f}")
+        print(
+            f"{label:<5} {nbars:>9,} {len(rs):>7} {sum(rs):>+10.2f} {m:>+9.3f} {se:>8.3f} "
+            f"{_max_dd_r(rs):>9.2f} {w / len(rs) * 100:>5.1f}% {sum(rs) - max(rs):>+10.2f}"
+        )
 
     print()
     print("  avg R is the number to read; total R scales with how many bars the timeframe has.")

@@ -65,9 +65,11 @@ def _runner(monkeypatch, observed):
     r._account_mismatch_halted = False
     r._observed_account = observed
     r.errors, r.alerts = [], []
-    r.log = SimpleNamespace(info=lambda m, *a, **k: None,
-                            warning=lambda m, *a, **k: None,
-                            error=lambda m, *a, **k: r.errors.append(m))
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: None,
+        warning=lambda m, *a, **k: None,
+        error=lambda m, *a, **k: r.errors.append(m),
+    )
     monkeypatch.setattr(r, "_notify_health", lambda text: r.alerts.append(text))
     return r
 
@@ -179,7 +181,7 @@ def test_a_link_that_cannot_answer_leaves_no_stale_account_behind(monkeypatch, i
 
 
 def test_an_account_info_without_a_login_is_unreadable_not_a_match(monkeypatch):
-    r, (up, _) = _probe(monkeypatch, _Info(9996.99))          # no `login` attribute at all
+    r, (up, _) = _probe(monkeypatch, _Info(9996.99))  # no `login` attribute at all
 
     assert up is True, "the balance answered, so the link is alive"
     assert r._observed_account is None, "but the identity was not established"

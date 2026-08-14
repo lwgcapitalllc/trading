@@ -46,19 +46,18 @@ from __future__ import annotations
 
 import csv
 import datetime
-import json
-import sys
-import threading
-import time
-
-import broker_clock
 import os
 import re
 import subprocess
+import sys
+import threading
+import time
 import uuid
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
+
+import broker_clock
 
 try:
     from flask import Flask, jsonify, request
@@ -68,6 +67,7 @@ except ImportError:
 
 try:
     import MetaTrader5 as mt5
+
     MT5_AVAILABLE = True
 except ImportError:
     mt5 = None  # type: ignore[assignment]
@@ -75,6 +75,7 @@ except ImportError:
 
 PORT = 8766
 MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — MQL5 files are typically 5–50 KB
+
 
 # Task Scheduler on Windows disconnects stdout/stderr; writing to the broken
 # handle raises OSError. Replace with devnull so Flask and our code can print
@@ -97,6 +98,7 @@ def _fix_stdio() -> None:
                 except Exception:
                     pass
 
+
 _fix_stdio()
 
 app = Flask(__name__)
@@ -110,31 +112,33 @@ _lock = threading.Lock()
 _experts_dir: Optional[Path] = None
 
 _terminal_path: Optional[Path] = None  # cached tester executable path
-_lab_bound            = False          # True once the API is bound to MT5_Lab (logged once)
-_BACKTEST_TIMEOUT     = 300            # seconds before force-kill
-_REPORT_POLL_INTERVAL = 5              # seconds between report-file polls
+_lab_bound = False  # True once the API is bound to MT5_Lab (logged once)
+_BACKTEST_TIMEOUT = 300  # seconds before force-kill
+_REPORT_POLL_INTERVAL = 5  # seconds between report-file polls
 
 
 # ── Timeframe constants ────────────────────────────────────────────────────────
+
 
 def _tf_const(name: str) -> Optional[int]:
     """Resolve a timeframe name to an MT5 constant. Returns None if unavailable."""
     if not MT5_AVAILABLE:
         return None
     _map = {
-        "M1":    mt5.TIMEFRAME_M1,
-        "M5":    mt5.TIMEFRAME_M5,
-        "M15":   mt5.TIMEFRAME_M15,
-        "M30":   mt5.TIMEFRAME_M30,
-        "H1":    mt5.TIMEFRAME_H1,
-        "H4":    mt5.TIMEFRAME_H4,
-        "D1":    mt5.TIMEFRAME_D1,
+        "M1": mt5.TIMEFRAME_M1,
+        "M5": mt5.TIMEFRAME_M5,
+        "M15": mt5.TIMEFRAME_M15,
+        "M30": mt5.TIMEFRAME_M30,
+        "H1": mt5.TIMEFRAME_H1,
+        "H4": mt5.TIMEFRAME_H4,
+        "D1": mt5.TIMEFRAME_D1,
         "daily": mt5.TIMEFRAME_D1,
     }
     return _map.get(name.upper() if name.upper() in _map else name)
 
 
 # ── Logging helpers ────────────────────────────────────────────────────────────
+
 
 def _alog(msg: str):
     ts = time.strftime("%H:%M:%S")
@@ -218,9 +222,11 @@ def _ensure_mt5() -> tuple[bool, Optional[str]]:
 
     lab_exe = _lab_terminal_exe()
     if lab_exe is None:
-        return False, ("Cannot locate the MT5_Lab terminal — set TERMINAL_PATH or "
-                       "MT5_DATA_DIR so the backtest binds to MT5_Lab. Refusing to "
-                       "connect to an unknown terminal.")
+        return False, (
+            "Cannot locate the MT5_Lab terminal — set TERMINAL_PATH or "
+            "MT5_DATA_DIR so the backtest binds to MT5_Lab. Refusing to "
+            "connect to an unknown terminal."
+        )
     lab_dir = str(lab_exe.parent).lower()
 
     def _connected_dir() -> str:
@@ -239,15 +245,19 @@ def _ensure_mt5() -> tuple[bool, Optional[str]]:
                 return False, f"MT5 init failed for lab terminal {lab_exe}: {mt5.last_error()}"
             if _connected_dir() != lab_dir:
                 mt5.shutdown()
-                return False, (f"Refusing to run: MT5 connected to {_connected_dir() or 'an unknown terminal'}, "
-                               f"not the lab terminal at {lab_dir}. Close other MT5 terminals "
-                               f"or check TERMINAL_PATH / MT5_DATA_DIR.")
+                return False, (
+                    f"Refusing to run: MT5 connected to {_connected_dir() or 'an unknown terminal'}, "
+                    f"not the lab terminal at {lab_dir}. Close other MT5 terminals "
+                    f"or check TERMINAL_PATH / MT5_DATA_DIR."
+                )
 
         if not _lab_bound:
             acc = mt5.account_info()
             if acc is not None:
-                _alog(f"MT5 data bound to MT5_Lab: account {getattr(acc, 'login', '?')} "
-                      f"on {getattr(acc, 'server', '?')} ({lab_exe})")
+                _alog(
+                    f"MT5 data bound to MT5_Lab: account {getattr(acc, 'login', '?')} "
+                    f"on {getattr(acc, 'server', '?')} ({lab_exe})"
+                )
             else:
                 _alog(f"MT5 data bound to MT5_Lab terminal {lab_exe} (no account logged in)")
             _lab_bound = True
@@ -336,6 +346,7 @@ def _detect_experts_dir() -> Optional[Path]:
 
 import traceback as _traceback
 
+
 @app.errorhandler(Exception)
 def _unhandled(exc):
     tb = _traceback.format_exc()
@@ -345,21 +356,23 @@ def _unhandled(exc):
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 
+
 @app.after_request
 def _cors(response):
-    response.headers["Access-Control-Allow-Origin"]  = "*"
+    response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
 
 @app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
-@app.route("/<path:path>",             methods=["OPTIONS"])
+@app.route("/<path:path>", methods=["OPTIONS"])
 def _options(path):
     return "", 204
 
 
 # ── Step 1 endpoints ───────────────────────────────────────────────────────────
+
 
 @app.route("/health")
 def health():
@@ -390,7 +403,7 @@ def status():
 
     with _mt5_lock:
         info = mt5.terminal_info()
-        acc  = mt5.account_info()
+        acc = mt5.account_info()
 
     result["mt5_connected"] = True
     if info:
@@ -401,7 +414,7 @@ def status():
             result["experts_path"] = str(ep)
     if acc:
         result["account"] = getattr(acc, "login", None)
-        result["server"]  = getattr(acc, "server", None)
+        result["server"] = getattr(acc, "server", None)
 
     # Try to populate experts_dir if not yet detected
     _detect_experts_dir()
@@ -457,19 +470,23 @@ def symbol_info():
         "volume_min": float(getattr(info, "volume_min", 0.0) or 0.0),
         "volume_step": float(getattr(info, "volume_step", 0.0) or 0.0),
         "volume_max": float(getattr(info, "volume_max", 0.0) or 0.0),
-        "spread_points": spread_points,          # terminal's current spread, integer points
-        "spread_price": spread_points * point,   # the same spread in price terms
+        "spread_points": spread_points,  # terminal's current spread, integer points
+        "spread_price": spread_points * point,  # the same spread in price terms
         "swap_long": float(getattr(info, "swap_long", 0.0) or 0.0),
         "swap_short": float(getattr(info, "swap_short", 0.0) or 0.0),
         "swap_mode": int(getattr(info, "swap_mode", 0) or 0),
-        "swap_rollover3days": int(getattr(info, "swap_rollover3days", 0) or 0),  # MT5 day-of-week of triple swap
+        "swap_rollover3days": int(
+            getattr(info, "swap_rollover3days", 0) or 0
+        ),  # MT5 day-of-week of triple swap
         "currency_base": getattr(info, "currency_base", None),
         "currency_profit": getattr(info, "currency_profit", None),
         "currency_margin": getattr(info, "currency_margin", None),
         "bid": (float(getattr(tick, "bid", 0.0) or 0.0) if tick else None),
         "ask": (float(getattr(tick, "ask", 0.0) or 0.0) if tick else None),
     }
-    _alog(f"symbol_info: {used} spread={spread_points}pt swap L/S={result['swap_long']}/{result['swap_short']}")
+    _alog(
+        f"symbol_info: {used} spread={spread_points}pt swap L/S={result['swap_long']}/{result['swap_short']}"
+    )
     return jsonify(result)
 
 
@@ -484,7 +501,11 @@ def data_availability():
     symbol = request.args.get("symbol", "").strip()
     if not symbol:
         return jsonify({"error": "symbol required"}), 400
-    tf_names = [t.strip() for t in request.args.get("timeframes", "M1,M5,M15,M30,H1,H4").split(",") if t.strip()]
+    tf_names = [
+        t.strip()
+        for t in request.args.get("timeframes", "M1,M5,M15,M30,H1,H4").split(",")
+        if t.strip()
+    ]
 
     ok, err = _ensure_mt5()
     if not ok:
@@ -501,16 +522,26 @@ def data_availability():
             if tf is None:
                 out[name] = {"error": f"unknown timeframe: {name}"}
                 continue
-            first = mt5.copy_rates_from(used, tf, epoch0, 1)    # oldest bar at/after 2000 = start of history
-            last  = mt5.copy_rates_from_pos(used, tf, 0, 1)     # newest bar
+            first = mt5.copy_rates_from(
+                used, tf, epoch0, 1
+            )  # oldest bar at/after 2000 = start of history
+            last = mt5.copy_rates_from_pos(used, tf, 0, 1)  # newest bar
             if first is None or len(first) == 0 or last is None or len(last) == 0:
                 out[name] = {"earliest": None, "latest": None, "span_days": 0}
                 continue
             t0 = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(first[0]["time"]))
             t1 = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(last[0]["time"]))
-            out[name] = {"earliest": t0.isoformat(), "latest": t1.isoformat(), "span_days": (t1 - t0).days}
-    _alog("data_availability: " + used + " -> " +
-          ", ".join(f"{k}:{v.get('span_days', '?')}d" for k, v in out.items()))
+            out[name] = {
+                "earliest": t0.isoformat(),
+                "latest": t1.isoformat(),
+                "span_days": (t1 - t0).days,
+            }
+    _alog(
+        "data_availability: "
+        + used
+        + " -> "
+        + ", ".join(f"{k}:{v.get('span_days', '?')}d" for k, v in out.items())
+    )
     return jsonify({"symbol": used, "timeframes": out})
 
 
@@ -529,10 +560,12 @@ def historical_data():
         {"bars": [{"time": "ISO", "open": f, "high": f, "low": f, "close": f}, ...],
          "symbol": "EURUSD", "timeframe": "H1", "count": N}
     """
-    symbol     = request.args.get("symbol", "").strip()   # preserve case — broker symbols are case-sensitive (e.g. "GBPJPY.s")
-    timeframe  = request.args.get("timeframe", "H1")
+    symbol = request.args.get(
+        "symbol", ""
+    ).strip()  # preserve case — broker symbols are case-sensitive (e.g. "GBPJPY.s")
+    timeframe = request.args.get("timeframe", "H1")
     start_date = request.args.get("start_date", "")
-    end_date   = request.args.get("end_date", "")
+    end_date = request.args.get("end_date", "")
 
     if not symbol:
         return jsonify({"error": "symbol required"}), 400
@@ -541,7 +574,9 @@ def historical_data():
 
     tf = _tf_const(timeframe)
     if tf is None:
-        return jsonify({"error": f"Unknown timeframe: {timeframe!r}. Use M1, M5, M15, M30, H1, H4, D1, daily"}), 400
+        return jsonify(
+            {"error": f"Unknown timeframe: {timeframe!r}. Use M1, M5, M15, M30, H1, H4, D1, daily"}
+        ), 400
 
     ok, err = _ensure_mt5()
     if not ok:
@@ -550,7 +585,7 @@ def historical_data():
     try:
         dt_from = datetime.datetime.strptime(start_date, "%Y-%m-%d")
         # end_date is inclusive — add one day so the last day is included
-        dt_to   = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
+        dt_to = datetime.datetime.strptime(end_date, "%Y-%m-%d") + datetime.timedelta(days=1)
     except ValueError as exc:
         return jsonify({"error": f"Invalid date: {exc}"}), 400
 
@@ -568,23 +603,25 @@ def historical_data():
     # would silently drop the last 2-3h of end_date while the data layer recorded the full range as
     # fetched (a cache-coverage hole that never re-fetches). Pad + filter makes the contract exact.
     rates = None
-    used  = symbol
+    used = symbol
     with _mt5_lock:
         for cand in candidates:
             mt5.symbol_select(cand, True)
-            r = mt5.copy_rates_range(cand, tf,
-                                     dt_from - datetime.timedelta(days=1),
-                                     dt_to + datetime.timedelta(days=1))
+            r = mt5.copy_rates_range(
+                cand, tf, dt_from - datetime.timedelta(days=1), dt_to + datetime.timedelta(days=1)
+            )
             if r is not None and len(r) > 0:
                 rates, used = r, cand
                 break
 
     if rates is None or len(rates) == 0:
         err_info = mt5.last_error() if MT5_AVAILABLE else ("", "")
-        return jsonify({
-            "error": f"MT5 returned no data for {symbol} {timeframe}",
-            "mt5_error": str(err_info),
-        }), 404
+        return jsonify(
+            {
+                "error": f"MT5 returned no data for {symbol} {timeframe}",
+                "mt5_error": str(err_info),
+            }
+        ), 404
 
     bars = [b for b in _rates_to_bars(rates) if start_date <= b["time"][:10] <= end_date]
     _alog(f"historical_data: {used} {timeframe} [{start_date}, {end_date}] -> {len(bars)} bars")
@@ -611,14 +648,16 @@ def _rates_to_bars(rates) -> list[dict]:
     bars = []
     for r in rates:
         ts = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(r["time"]))
-        bars.append({
-            "time":   ts.isoformat(),
-            "open":   float(r["open"]),
-            "high":   float(r["high"]),
-            "low":    float(r["low"]),
-            "close":  float(r["close"]),
-            "volume": float(r["tick_volume"]),
-        })
+        bars.append(
+            {
+                "time": ts.isoformat(),
+                "open": float(r["open"]),
+                "high": float(r["high"]),
+                "low": float(r["low"]),
+                "close": float(r["close"]),
+                "volume": float(r["tick_volume"]),
+            }
+        )
     return bars
 
 
@@ -659,9 +698,9 @@ def ticks():
     range that would exceed `_TICK_ROW_CAP` is refused with 413 rather than being silently truncated
     — a truncated tick window would produce fills that look real and are not.
     """
-    symbol     = request.args.get("symbol", "").strip()
+    symbol = request.args.get("symbol", "").strip()
     start_date = request.args.get("start_date", "")
-    end_date   = request.args.get("end_date", "")
+    end_date = request.args.get("end_date", "")
 
     if not symbol:
         return jsonify({"error": "symbol required"}), 400
@@ -674,7 +713,7 @@ def ticks():
 
     try:
         dt_from, _ = _parse_bound(start_date, end=False)
-        dt_to, _   = _parse_bound(end_date, end=True)
+        dt_to, _ = _parse_bound(end_date, end=True)
     except ValueError as exc:
         return jsonify({"error": f"Invalid date: {exc}"}), 400
     if dt_to <= dt_from:
@@ -688,7 +727,7 @@ def ticks():
     # The bounds above are TRUE UTC, but copy_ticks_range matches BROKER-local stamps. Pad by more
     # than the largest possible offset so the window can't be clipped, then filter exactly below.
     pad = datetime.timedelta(hours=max(broker_clock.STD_OFFSET, broker_clock.DST_OFFSET) + 1)
-    raw  = None
+    raw = None
     used = symbol
     with _mt5_lock:
         for cand in candidates:
@@ -707,19 +746,22 @@ def ticks():
         return jsonify({"ticks": [], "symbol": symbol, "count": 0})
 
     if len(raw) > _TICK_ROW_CAP:
-        return jsonify({
-            "error": f"tick window too large: {len(raw)} rows > cap {_TICK_ROW_CAP}. "
-                     f"Request a shorter date range.",
-            "rows": int(len(raw)),
-            "cap": _TICK_ROW_CAP,
-        }), 413
+        return jsonify(
+            {
+                "error": f"tick window too large: {len(raw)} rows > cap {_TICK_ROW_CAP}. "
+                f"Request a shorter date range.",
+                "rows": int(len(raw)),
+                "cap": _TICK_ROW_CAP,
+            }
+        ), 413
 
     ticks_out = []
     for t in raw:
         msc = int(t["time_msc"])
-        ts = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(msc // 1000)) \
-            .replace(microsecond=(msc % 1000) * 1000)
-        if not (dt_from <= ts < dt_to):     # half-open, in TRUE UTC
+        ts = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(msc // 1000)).replace(
+            microsecond=(msc % 1000) * 1000
+        )
+        if not (dt_from <= ts < dt_to):  # half-open, in TRUE UTC
             continue
         ticks_out.append({"time": ts.isoformat(), "bid": float(t["bid"]), "ask": float(t["ask"])})
 
@@ -747,10 +789,10 @@ def list_strategy_files():
 def _file_info(p: Path) -> dict:
     st = p.stat()
     return {
-        "filename":    p.name,
-        "size_bytes":  st.st_size,
+        "filename": p.name,
+        "size_bytes": st.st_size,
         "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(),
-        "platform":    "MT5",
+        "platform": "MT5",
     }
 
 
@@ -797,7 +839,9 @@ def _get_tester_exe() -> Optional[Path]:
             origin = Path(data_dir_env) / "origin.txt"
             if origin.is_file():
                 try:
-                    terminal_dir = Path(origin.read_text(encoding="utf-8", errors="replace").strip())
+                    terminal_dir = Path(
+                        origin.read_text(encoding="utf-8", errors="replace").strip()
+                    )
                     if terminal_dir.is_dir():
                         dirs.append(terminal_dir)
                         _alog(f"Terminal dir (origin.txt): {terminal_dir}")
@@ -813,10 +857,12 @@ def _get_tester_exe() -> Optional[Path]:
                 raw = getattr(info, "path", None)
                 if raw:
                     dirs.append(Path(raw))
-                    _alog(f"WARNING: falling back to connected terminal {raw} — set TERMINAL_PATH or MT5_DATA_DIR to use the lab terminal")
+                    _alog(
+                        f"WARNING: falling back to connected terminal {raw} — set TERMINAL_PATH or MT5_DATA_DIR to use the lab terminal"
+                    )
 
     for d in dirs:
-        t  = d / "terminal64.exe"
+        t = d / "terminal64.exe"
         mt = d / "metatester64.exe"
         if t.is_file():
             _terminal_path = t
@@ -867,6 +913,7 @@ def _write_set_file_with_ranges(
     dest = data_dir / "MQL5" / "Profiles" / "Tester"
     dest.mkdir(parents=True, exist_ok=True)
     filename = f"opt_{job_id[:8]}.set"
+
     # MT5 set file format: value||start||step||stop||Y  (Y = optimize, N = fixed)
     def _range_line(k: str, current, lo, step, hi) -> str:
         return f"{k}={current}||{lo}||{step}||{hi}||Y"
@@ -881,7 +928,7 @@ def _write_set_file_with_ranges(
                 lo, hi = spec[0], spec[-1]
                 step = round(spec[1] - spec[0], 8) if len(spec) > 1 else 1
             else:
-                lo = hi = (spec[0] if isinstance(spec, list) and spec else spec)
+                lo = hi = spec[0] if isinstance(spec, list) and spec else spec
                 step = 1
             lines.append(_range_line(k, v, lo, step, hi))
         else:
@@ -896,7 +943,7 @@ def _write_set_file_with_ranges(
                 lo, hi = spec[0], spec[-1]
                 step = round(spec[1] - spec[0], 8) if len(spec) > 1 else 1
             else:
-                lo = hi = (spec[0] if isinstance(spec, list) and spec else spec)
+                lo = hi = spec[0] if isinstance(spec, list) and spec else spec
                 step = 1
             lines.append(_range_line(k, lo, lo, step, hi))
     (dest / filename).write_text("\n".join(lines), encoding="utf-8")
@@ -921,6 +968,7 @@ def _write_tester_ini(
     forward_mode: int = 0,
 ) -> None:
     """Write MT5 [Tester] section config file. Dates converted to YYYY.MM.DD."""
+
     def _dot(d: str) -> str:
         return d.replace("-", ".")
 
@@ -987,7 +1035,8 @@ def _kill_by_path(exe_path: Path) -> bool:
     try:
         result = subprocess.run(
             ["powershell", "-NonInteractive", "-Command", script],
-            capture_output=True, timeout=15,
+            capture_output=True,
+            timeout=15,
         )
         if result.returncode == 0:
             time.sleep(4)  # let the terminal release the single-instance lock
@@ -1024,8 +1073,8 @@ class _TableParser(HTMLParser):
         super().__init__()
         self.tables: list[list[list[str]]] = []
         self._table: list[list[str]] = []
-        self._row:   list[str] = []
-        self._cell   = ""
+        self._row: list[str] = []
+        self._cell = ""
         self._in_cell = False
 
     def handle_starttag(self, tag, attrs):
@@ -1056,8 +1105,12 @@ class _TableParser(HTMLParser):
 # "DAILY" is how the ohlc_fetcher calls it; D1 is what the .ini expects.
 _TF_PERIOD = {
     "DAILY": "D1",
-    "M1": "M1", "M5": "M5", "M15": "M15", "M30": "M30",
-    "H1": "H1", "H4": "H4",
+    "M1": "M1",
+    "M5": "M5",
+    "M15": "M15",
+    "M30": "M30",
+    "H1": "H1",
+    "H4": "H4",
     "D1": "D1",
 }
 
@@ -1088,13 +1141,13 @@ def _parse_mt5_report(html: str) -> dict:
         except ValueError:
             return default
 
-    net_pnl      = _f("Total Net Profit")
+    net_pnl = _f("Total Net Profit")
     gross_profit = _f("Gross Profit")
-    gross_loss   = abs(_f("Gross Loss"))
-    pf_raw       = _f("Profit Factor")
+    gross_loss = abs(_f("Gross Loss"))
+    pf_raw = _f("Profit Factor")
     profit_factor = pf_raw if pf_raw > 0 else (gross_profit / gross_loss if gross_loss else 0.0)
-    max_dd       = _f("Equity Drawdown Maximal") or _f("Balance Drawdown Maximal")
-    sharpe       = _f("Sharpe Ratio")
+    max_dd = _f("Equity Drawdown Maximal") or _f("Balance Drawdown Maximal")
+    sharpe = _f("Sharpe Ratio")
     total_trades = int(_f("Total Trades"))
 
     # Win rate: use "Profit Trades (% of total)" which always appears; fall back to "Win Trades"
@@ -1121,20 +1174,20 @@ def _parse_mt5_report(html: str) -> dict:
             if "Balance" not in hdr or "Time" not in hdr:
                 continue
 
-            i_time    = _col_idx(hdr, ["Time", "Open Time"])
+            i_time = _col_idx(hdr, ["Time", "Open Time"])
             # "Direction" col = "in"/"out" (entry vs exit); "Type" col = "buy"/"sell" (long vs short).
             # Keep them separate so we can filter by Direction and map Long/Short from Type.
-            i_dir     = _col_idx(hdr, ["Direction", "Type"])   # non-empty → trade row
-            i_type    = _col_idx(hdr, ["Type"])                 # buy/sell → Long/Short
-            i_vol     = _col_idx(hdr, ["Volume", "Size", "Lots"])
-            i_price   = _col_idx(hdr, ["Price", "Open Price"])
-            i_profit  = _col_idx(hdr, ["Profit"])
+            i_dir = _col_idx(hdr, ["Direction", "Type"])  # non-empty → trade row
+            i_type = _col_idx(hdr, ["Type"])  # buy/sell → Long/Short
+            i_vol = _col_idx(hdr, ["Volume", "Size", "Lots"])
+            i_price = _col_idx(hdr, ["Price", "Open Price"])
+            i_profit = _col_idx(hdr, ["Profit"])
             i_balance = _col_idx(hdr, ["Balance"])
 
             if i_time < 0 or i_balance < 0:
                 continue
 
-            for row in table[hdr_idx + 1:]:
+            for row in table[hdr_idx + 1 :]:
                 if len(row) <= max(i_time, i_balance):
                     continue
                 raw_time = row[i_time].strip()
@@ -1160,39 +1213,53 @@ def _parse_mt5_report(html: str) -> dict:
 
                 # Use the Type column (buy/sell) for Long/Short when it's a separate column;
                 # fall back to direction (covers reports where Type IS the only direction col).
-                trade_type = row[i_type].strip().lower() if 0 <= i_type < len(row) and i_type != i_dir else direction
+                trade_type = (
+                    row[i_type].strip().lower()
+                    if 0 <= i_type < len(row) and i_type != i_dir
+                    else direction
+                )
 
                 day = ts.date().isoformat()
                 daily_map[day] = daily_map.get(day, 0.0) + profit
 
-                trades.append({
-                    "time":      ts.isoformat(),
-                    "direction": trade_type,   # "buy"/"sell" → mapped to Long/Short by backend
-                    "volume":    _cell_float(row, i_vol),
-                    "price":     _cell_float(row, i_price),
-                    "profit":    profit,
-                })
+                trades.append(
+                    {
+                        "time": ts.isoformat(),
+                        "direction": trade_type,  # "buy"/"sell" → mapped to Long/Short by backend
+                        "volume": _cell_float(row, i_vol),
+                        "price": _cell_float(row, i_price),
+                        "profit": profit,
+                    }
+                )
             found = True
             break
 
     daily_pnl = [{"date": d, "pnl": round(p, 2)} for d, p in sorted(daily_map.items())]
 
     return {
-        "net_pnl":       round(net_pnl, 2),
+        "net_pnl": round(net_pnl, 2),
         "profit_factor": round(profit_factor, 4),
-        "win_rate":      round(win_rate, 4),
-        "max_drawdown":  round(max_dd, 2),
-        "sharpe":        round(sharpe, 4),
-        "trade_count":   total_trades,
-        "trades":        trades,
-        "equity_curve":  equity_curve,
-        "daily_pnl":     daily_pnl,
+        "win_rate": round(win_rate, 4),
+        "max_drawdown": round(max_dd, 2),
+        "sharpe": round(sharpe, 4),
+        "trade_count": total_trades,
+        "trades": trades,
+        "equity_curve": equity_curve,
+        "daily_pnl": daily_pnl,
     }
 
 
 _ENGINE_TRADES_COLS = (
-    "index", "entry_time", "exit_time", "direction", "entry_price", "exit_price",
-    "stop_distance", "point_value", "commission_per_side", "exit_reason",
+    "index",
+    "entry_time",
+    "exit_time",
+    "direction",
+    "entry_price",
+    "exit_price",
+    "stop_distance",
+    "point_value",
+    "commission_per_side",
+    "exit_reason",
 )
 
 
@@ -1239,18 +1306,20 @@ def _read_engine_trades(data_dir: Path) -> list[dict]:
             for rec in csv.DictReader(fh):
                 if not rec.get("entry_time") or not rec.get("exit_time"):
                     continue
-                rows.append({
-                    "index":               int(float(rec["index"])),
-                    "entry_time":          rec["entry_time"].strip(),
-                    "exit_time":           rec["exit_time"].strip(),
-                    "direction":           rec["direction"].strip(),
-                    "entry_price":         float(rec["entry_price"]),
-                    "exit_price":          float(rec["exit_price"]),
-                    "stop_distance":       float(rec["stop_distance"]),
-                    "point_value":         float(rec["point_value"]),
-                    "commission_per_side": float(rec.get("commission_per_side", 0) or 0),
-                    "exit_reason":         (rec.get("exit_reason") or "").strip().strip('"'),
-                })
+                rows.append(
+                    {
+                        "index": int(float(rec["index"])),
+                        "entry_time": rec["entry_time"].strip(),
+                        "exit_time": rec["exit_time"].strip(),
+                        "direction": rec["direction"].strip(),
+                        "entry_price": float(rec["entry_price"]),
+                        "exit_price": float(rec["exit_price"]),
+                        "stop_distance": float(rec["stop_distance"]),
+                        "point_value": float(rec["point_value"]),
+                        "commission_per_side": float(rec.get("commission_per_side", 0) or 0),
+                        "exit_reason": (rec.get("exit_reason") or "").strip().strip('"'),
+                    }
+                )
     except Exception:
         return []
     return rows
@@ -1292,7 +1361,11 @@ def _read_opt_progress(data_dir: Path) -> str:
         log_file = candidates[-1]
     try:
         raw = log_file.read_bytes()
-        text = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8", errors="replace")
+        text = (
+            raw.decode("utf-16")
+            if raw[:2] in (b"\xff\xfe", b"\xfe\xff")
+            else raw.decode("utf-8", errors="replace")
+        )
         for line in reversed(text.splitlines()):
             lo = line.lower()
             if "processing" in lo or "autotesting" in lo or "optimization" in lo:
@@ -1319,12 +1392,12 @@ def _parse_mt5_optimization_report(html: str, param_names: list[str]) -> list[di
     tp.feed(html)
 
     _KPI_COLS = {
-        "profit":           "net_pnl",
-        "drawdown":         "max_drawdown",
-        "profit factor":    "profit_factor",
-        "expected payoff":  "expected_payoff",
-        "trades":           "trade_count",
-        "factor":           "profit_factor",
+        "profit": "net_pnl",
+        "drawdown": "max_drawdown",
+        "profit factor": "profit_factor",
+        "expected payoff": "expected_payoff",
+        "trades": "trade_count",
+        "factor": "profit_factor",
     }
 
     param_names_lower = {p.lower(): p for p in param_names}
@@ -1337,7 +1410,7 @@ def _parse_mt5_optimization_report(html: str, param_names: list[str]) -> list[di
 
         # Identify param and KPI column indices
         param_col_map: dict[str, int] = {}
-        kpi_col_map:   dict[str, int] = {}
+        kpi_col_map: dict[str, int] = {}
         for i, h in enumerate(hdr_lower):
             for plow, porig in param_names_lower.items():
                 if plow == h or plow in h:
@@ -1414,9 +1487,9 @@ def _parse_mt5_forward_sections(html: str) -> tuple[dict, dict]:
                 return 0.0
 
         gross_profit = _f("Gross Profit")
-        gross_loss   = abs(_f("Gross Loss"))
-        pf_raw       = _f("Profit Factor")
-        pf           = pf_raw if pf_raw > 0 else (gross_profit / gross_loss if gross_loss else 0.0)
+        gross_loss = abs(_f("Gross Loss"))
+        pf_raw = _f("Profit Factor")
+        pf = pf_raw if pf_raw > 0 else (gross_profit / gross_loss if gross_loss else 0.0)
         total_trades = int(_f("Total Trades"))
 
         win_trades = 0
@@ -1428,12 +1501,14 @@ def _parse_mt5_forward_sections(html: str) -> tuple[dict, dict]:
                 break
 
         return {
-            "net_pnl":       round(_f("Total Net Profit"), 2),
-            "max_drawdown":  round(abs(_f("Equity Drawdown Maximal") or _f("Balance Drawdown Maximal")), 2),
+            "net_pnl": round(_f("Total Net Profit"), 2),
+            "max_drawdown": round(
+                abs(_f("Equity Drawdown Maximal") or _f("Balance Drawdown Maximal")), 2
+            ),
             "profit_factor": round(pf, 4),
-            "trade_count":   total_trades,
-            "win_rate":      round(win_trades / total_trades, 4) if total_trades > 0 else 0.0,
-            "sharpe":        round(_f("Sharpe Ratio"), 4),
+            "trade_count": total_trades,
+            "win_rate": round(win_trades / total_trades, 4) if total_trades > 0 else 0.0,
+            "sharpe": round(_f("Sharpe Ratio"), 4),
         }
 
     # Find the "Forward" section boundary in the table list.
@@ -1450,7 +1525,7 @@ def _parse_mt5_forward_sections(html: str) -> tuple[dict, dict]:
         return _extract_kpis(tp.tables), {}
 
     # Re-parse HTML up to forward boundary (IS section) and from it (OOS section)
-    tp_is  = _TableParser()
+    tp_is = _TableParser()
     tp_is.feed(html[:fwd_idx])
     tp_oos = _TableParser()
     tp_oos.feed(html[fwd_idx:])
@@ -1489,24 +1564,33 @@ def _extract_input_params(html: str, param_names: list[str]) -> dict:
 
 
 _F_PARAM_DEFAULTS: dict = {
-    "f_AccountSize":          10000.0,
-    "f_RiskPerTradePct":      1.0,
-    "f_DailyLossCap":         500.0,
-    "f_DailyHaltFraction":    0.5,
+    "f_AccountSize": 10000.0,
+    "f_RiskPerTradePct": 1.0,
+    "f_DailyLossCap": 500.0,
+    "f_DailyHaltFraction": 0.5,
     "f_MaxConsecutiveLosses": 0,
-    "f_DailyProfitTarget":    0.0,
-    "f_DailyProfitLockPct":   0.0,
+    "f_DailyProfitTarget": 0.0,
+    "f_DailyProfitLockPct": 0.0,
 }
 
-_OPT_KPI_COLS = frozenset({
-    "net_pnl", "profit_factor", "max_drawdown",
-    "trade_count", "win_trades", "sharpe", "gross_profit", "gross_loss",
-})
+_OPT_KPI_COLS = frozenset(
+    {
+        "net_pnl",
+        "profit_factor",
+        "max_drawdown",
+        "trade_count",
+        "win_trades",
+        "sharpe",
+        "gross_profit",
+        "gross_loss",
+    }
+)
 
 
 def _parse_opt_csv(csv_path: Path, param_ranges: dict) -> list[dict]:
     """Parse opt_results.csv written by OnTesterPass into combos list."""
     import csv as csv_mod
+
     results: list[dict] = []
     try:
         text = csv_path.read_text(encoding="utf-8", errors="replace")
@@ -1515,7 +1599,7 @@ def _parse_opt_csv(csv_path: Path, param_ranges: dict) -> list[dict]:
     reader = csv_mod.DictReader(text.splitlines())
     for row in reader:
         params: dict = {}
-        kpis: dict   = {}
+        kpis: dict = {}
         for col, val in row.items():
             col = col.strip()
             try:
@@ -1531,18 +1615,20 @@ def _parse_opt_csv(csv_path: Path, param_ranges: dict) -> list[dict]:
         # Only keep ranged params in the combo params dict (matches how sequential worked)
         combo_params = {k: params[k] for k in param_ranges if k in params}
         trade_count = int(kpis.get("trade_count", 0))
-        win_trades  = int(kpis.get("win_trades",  0))
-        results.append({
-            "params": combo_params,
-            "kpis": {
-                "net_pnl":       kpis.get("net_pnl",       0.0),
-                "profit_factor": kpis.get("profit_factor",  0.0),
-                "max_drawdown":  kpis.get("max_drawdown",   0.0),
-                "trade_count":   trade_count,
-                "win_rate":      win_trades / trade_count if trade_count > 0 else 0.0,
-                "sharpe":        kpis.get("sharpe",         0.0),
-            },
-        })
+        win_trades = int(kpis.get("win_trades", 0))
+        results.append(
+            {
+                "params": combo_params,
+                "kpis": {
+                    "net_pnl": kpis.get("net_pnl", 0.0),
+                    "profit_factor": kpis.get("profit_factor", 0.0),
+                    "max_drawdown": kpis.get("max_drawdown", 0.0),
+                    "trade_count": trade_count,
+                    "win_rate": win_trades / trade_count if trade_count > 0 else 0.0,
+                    "sharpe": kpis.get("sharpe", 0.0),
+                },
+            }
+        )
     return results
 
 
@@ -1574,16 +1660,16 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     data_dir = _tester_data_dir(tester_exe)
 
     strategy_class = spec.get("strategy_class", "")
-    symbol         = spec.get("symbol", "")
-    timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
-    from_date      = spec.get("from_date", "")
-    to_date        = spec.get("to_date", "")
-    model          = int(spec.get("model", 0))
-    deposit        = float(spec.get("deposit", 100000))
-    currency       = spec.get("currency", "USD")
-    leverage       = int(spec.get("leverage", 100))
-    inputs         = dict(spec.get("inputs", {}))
-    param_ranges   = spec.get("param_ranges", {})
+    symbol = spec.get("symbol", "")
+    timeframe = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
+    from_date = spec.get("from_date", "")
+    to_date = spec.get("to_date", "")
+    model = int(spec.get("model", 0))
+    deposit = float(spec.get("deposit", 100000))
+    currency = spec.get("currency", "USD")
+    leverage = int(spec.get("leverage", 100))
+    inputs = dict(spec.get("inputs", {}))
+    param_ranges = spec.get("param_ranges", {})
 
     if not all([strategy_class, symbol, from_date, to_date]):
         fail("Missing required fields: strategy_class, symbol, from_date, to_date")
@@ -1618,15 +1704,15 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     jl(f"MT5 native optimization: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]")
     jl(f"Param ranges: {list(param_ranges.keys())} → ~{total} combos (Optimization=1)")
 
-    tester_dir  = data_dir / "MQL5" / "Profiles" / "Tester"
+    tester_dir = data_dir / "MQL5" / "Profiles" / "Tester"
     reports_dir = data_dir / "reports"
     tester_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     set_filename = _write_set_file_with_ranges(data_dir, job_id, inputs, param_ranges)
-    stem         = f"nopt_{job_id[:8]}"
-    ini_path     = data_dir / f"{stem}.ini"
-    csv_out      = data_dir / "MQL5" / "Files" / "opt_results.csv"
+    stem = f"nopt_{job_id[:8]}"
+    ini_path = data_dir / f"{stem}.ini"
+    csv_out = data_dir / "MQL5" / "Files" / "opt_results.csv"
 
     csv_out.unlink(missing_ok=True)
 
@@ -1674,14 +1760,20 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         # Report live row count so the frontend progress bar moves
         if csv_out.exists():
             try:
-                rows = sum(1 for _ in csv_out.read_text(encoding="utf-8", errors="replace").splitlines()) - 1
+                rows = (
+                    sum(
+                        1
+                        for _ in csv_out.read_text(encoding="utf-8", errors="replace").splitlines()
+                    )
+                    - 1
+                )
                 rows = max(0, rows)
             except Exception:
                 rows = 0
             pct = min(99, int(rows / total * 100)) if total > 0 else 0
             with _lock:
-                _jobs[job_id]["pct"]             = pct
-                _jobs[job_id]["message"]         = f"{rows}/{total} combos"
+                _jobs[job_id]["pct"] = pct
+                _jobs[job_id]["message"] = f"{rows}/{total} combos"
                 _jobs[job_id]["completed_count"] = rows
         time.sleep(3)
     else:
@@ -1694,8 +1786,10 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
     time.sleep(2)
 
     if not csv_out.exists():
-        fail("opt_results.csv not written — OnTesterPass may not have fired. "
-             "Ensure the strategy .ex5 is compiled from the latest source.")
+        fail(
+            "opt_results.csv not written — OnTesterPass may not have fired. "
+            "Ensure the strategy .ex5 is compiled from the latest source."
+        )
         return
 
     results = _parse_opt_csv(csv_out, param_ranges)
@@ -1706,13 +1800,15 @@ def _run_mt5_optimization(job_id: str, spec: dict) -> None:
         return
 
     with _lock:
-        _jobs[job_id].update({
-            "status":          "done",
-            "pct":             100,
-            "completed_count": len(results),
-            "result":          {"combos": results, "combo_count": len(results)},
-            "process":         None,
-        })
+        _jobs[job_id].update(
+            {
+                "status": "done",
+                "pct": 100,
+                "completed_count": len(results),
+                "result": {"combos": results, "combo_count": len(results)},
+                "process": None,
+            }
+        )
 
 
 def _run_mt5_forward_test(job_id: str, spec: dict) -> None:
@@ -1737,17 +1833,17 @@ def _run_mt5_forward_test(job_id: str, spec: dict) -> None:
     data_dir = _tester_data_dir(tester_exe)
 
     strategy_class = spec.get("strategy_class", "")
-    symbol         = spec.get("symbol", "")
-    timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
-    from_date      = spec.get("from_date", "")
-    to_date        = spec.get("to_date", "")
-    model          = int(spec.get("model", 0))
-    deposit        = float(spec.get("deposit", 100000))
-    currency       = spec.get("currency", "USD")
-    leverage       = int(spec.get("leverage", 100))
-    inputs         = spec.get("inputs", {})
+    symbol = spec.get("symbol", "")
+    timeframe = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
+    from_date = spec.get("from_date", "")
+    to_date = spec.get("to_date", "")
+    model = int(spec.get("model", 0))
+    deposit = float(spec.get("deposit", 100000))
+    currency = spec.get("currency", "USD")
+    leverage = int(spec.get("leverage", 100))
+    inputs = spec.get("inputs", {})
     # ForwardMode: 2=1/2, 3=1/3, 4=1/4 of period is OOS. Default: 3 (33% OOS ≈ 30% target).
-    oos_pct        = int(spec.get("oos_pct", 30))
+    oos_pct = int(spec.get("oos_pct", 30))
     if oos_pct >= 50:
         forward_mode = 2
     elif oos_pct >= 33:
@@ -1764,16 +1860,18 @@ def _run_mt5_forward_test(job_id: str, spec: dict) -> None:
         fail(f"EA not found: {ex5}")
         return
 
-    jl(f"MT5 forward test: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]  forward_mode={forward_mode}")
+    jl(
+        f"MT5 forward test: {strategy_class} {symbol} {timeframe} [{from_date} -> {to_date}]  forward_mode={forward_mode}"
+    )
 
     try:
-        set_filename  = _write_set_file(data_dir, job_id, inputs)
-        reports_dir   = data_dir / "reports"
+        set_filename = _write_set_file(data_dir, job_id, inputs)
+        reports_dir = data_dir / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
-        report_stem   = f"fwd_{job_id[:8]}"
-        report_file   = reports_dir / f"{report_stem}.htm"
+        report_stem = f"fwd_{job_id[:8]}"
+        report_file = reports_dir / f"{report_stem}.htm"
         report_prefix = f"reports\\{report_stem}"
-        ini_path      = data_dir / f"fwd_{job_id[:8]}.ini"
+        ini_path = data_dir / f"fwd_{job_id[:8]}.ini"
         _write_tester_ini(
             ini_path,
             expert=strategy_class,
@@ -1828,7 +1926,11 @@ def _run_mt5_forward_test(job_id: str, spec: dict) -> None:
 
     try:
         raw_bytes = report_file.read_bytes()  # type: ignore[union-attr]
-        html_text = raw_bytes.decode("utf-16") if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff") else raw_bytes.decode("utf-8", errors="replace")
+        html_text = (
+            raw_bytes.decode("utf-16")
+            if raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff")
+            else raw_bytes.decode("utf-8", errors="replace")
+        )
         is_kpis, oos_kpis = _parse_mt5_forward_sections(html_text)
     except Exception as exc:
         fail(f"Forward test report parsing failed: {exc}")
@@ -1845,15 +1947,17 @@ def _run_mt5_forward_test(job_id: str, spec: dict) -> None:
     jl(f"Complete — IS pnl={is_kpis.get('net_pnl')}  OOS pnl={oos_kpis.get('net_pnl')}")
 
     with _lock:
-        _jobs[job_id].update({
-            "status": "done",
-            "result": {
-                "is_kpis":  is_kpis,
-                "oos_kpis": oos_kpis,
-                "forward_mode": forward_mode,
-            },
-            "process": None,
-        })
+        _jobs[job_id].update(
+            {
+                "status": "done",
+                "result": {
+                    "is_kpis": is_kpis,
+                    "oos_kpis": oos_kpis,
+                    "forward_mode": forward_mode,
+                },
+                "process": None,
+            }
+        )
 
 
 def _run_backtest(job_id: str, spec: dict) -> None:
@@ -1879,15 +1983,15 @@ def _run_backtest(job_id: str, spec: dict) -> None:
     jl(f"Data dir: {data_dir}")
 
     strategy_class = spec.get("strategy_class", "")
-    symbol         = spec.get("symbol", "")  # preserve broker suffix case (e.g. XAUUSD.s on PU Prime)
-    timeframe      = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
-    from_date      = spec.get("from_date", "")
-    to_date        = spec.get("to_date", "")
-    model          = int(spec.get("model", 0))
-    deposit        = float(spec.get("deposit", 10000))
-    currency       = spec.get("currency", "USD")
-    leverage       = int(spec.get("leverage", 100))
-    inputs         = spec.get("inputs", {})
+    symbol = spec.get("symbol", "")  # preserve broker suffix case (e.g. XAUUSD.s on PU Prime)
+    timeframe = _TF_PERIOD.get(spec.get("timeframe", "H1").upper(), "H1")
+    from_date = spec.get("from_date", "")
+    to_date = spec.get("to_date", "")
+    model = int(spec.get("model", 0))
+    deposit = float(spec.get("deposit", 10000))
+    currency = spec.get("currency", "USD")
+    leverage = int(spec.get("leverage", 100))
+    inputs = spec.get("inputs", {})
 
     if not all([strategy_class, symbol, from_date, to_date]):
         fail("Missing required fields: strategy_class, symbol, from_date, to_date")
@@ -1904,10 +2008,10 @@ def _run_backtest(job_id: str, spec: dict) -> None:
         set_filename = _write_set_file(data_dir, job_id, inputs)
         jl(f"Set file: {set_filename}")
 
-        reports_dir   = data_dir / "reports"
+        reports_dir = data_dir / "reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
-        report_stem   = f"bt_{job_id[:8]}"
-        report_file   = reports_dir / f"{report_stem}.htm"
+        report_stem = f"bt_{job_id[:8]}"
+        report_file = reports_dir / f"{report_stem}.htm"
         # MT5 resolves Report= relative to the data directory, not the exe directory.
         # Use a relative path so MT5 writes <data_dir>/reports/<stem>.htm.
         report_prefix = f"reports\\{report_stem}"
@@ -1981,7 +2085,7 @@ def _run_backtest(job_id: str, spec: dict) -> None:
 
     if report_file is None or not report_file.is_file():  # type: ignore[union-attr]
         journal = _read_mt5_journal(data_dir)
-        detail  = f"\nMT5 journal (last lines):\n{journal}" if journal else ""
+        detail = f"\nMT5 journal (last lines):\n{journal}" if journal else ""
         fail(f"Backtest finished but no report file found. Check symbol, dates, and EA.{detail}")
         return
 
@@ -2035,7 +2139,7 @@ def start_backtest():
            model?, deposit?, currency?, leverage?, inputs?}
     Returns 202: {job_id, status: "running"}
     """
-    body    = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True) or {}
     missing = [f for f in ["strategy_class", "symbol", "from_date", "to_date"] if not body.get(f)]
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
@@ -2043,14 +2147,14 @@ def start_backtest():
     job_id = body.get("job_id") or str(uuid.uuid4())
     with _lock:
         _jobs[job_id] = {
-            "job_id":     job_id,
-            "status":     "running",
+            "job_id": job_id,
+            "status": "running",
             "created_at": int(time.time()),
-            "spec":       body,
-            "log":        [],
-            "process":    None,
-            "error":      None,
-            "result":     None,
+            "spec": body,
+            "log": [],
+            "process": None,
+            "error": None,
+            "result": None,
         }
 
     threading.Thread(target=_run_backtest, args=(job_id, body), daemon=True).start()
@@ -2108,8 +2212,8 @@ def cancel_job(job_id: str):
 
     with _lock:
         proc = job.get("process")
-        _jobs[job_id]["status"]  = "cancelled"
-        _jobs[job_id]["error"]   = "Cancelled by user"
+        _jobs[job_id]["status"] = "cancelled"
+        _jobs[job_id]["error"] = "Cancelled by user"
         _jobs[job_id]["process"] = None
 
     if proc is not None:
@@ -2124,6 +2228,7 @@ def cancel_job(job_id: str):
 
 
 # ── MT5 Native Optimizer (Step 4) ────────────────────────────────────────────
+
 
 @app.route("/native-optimize", methods=["POST"])
 def start_native_optimize():
@@ -2145,16 +2250,16 @@ def start_native_optimize():
         if job_id in _jobs and _jobs[job_id]["status"] == "running":
             return jsonify({"error": "Job already running"}), 409
         _jobs[job_id] = {
-            "job_id":     job_id,
-            "status":     "running",
-            "pct":        0,
-            "message":    "Starting MT5 optimization",
+            "job_id": job_id,
+            "status": "running",
+            "pct": 0,
+            "message": "Starting MT5 optimization",
             "created_at": int(time.time()),
-            "spec":       body,
-            "log":        [],
-            "process":    None,
-            "error":      None,
-            "result":     None,
+            "spec": body,
+            "log": [],
+            "process": None,
+            "error": None,
+            "result": None,
         }
     _alog(f"MT5 opt job {job_id[:8]} queued: {body.get('strategy_class')} {body.get('symbol')}")
     threading.Thread(target=_run_mt5_optimization, args=(job_id, body), daemon=True).start()
@@ -2196,14 +2301,14 @@ def start_native_walkforward():
         if job_id in _jobs and _jobs[job_id]["status"] == "running":
             return jsonify({"error": "Job already running"}), 409
         _jobs[job_id] = {
-            "job_id":     job_id,
-            "status":     "running",
+            "job_id": job_id,
+            "status": "running",
             "created_at": int(time.time()),
-            "spec":       body,
-            "log":        [],
-            "process":    None,
-            "error":      None,
-            "result":     None,
+            "spec": body,
+            "log": [],
+            "process": None,
+            "error": None,
+            "result": None,
         }
     _alog(f"MT5 forward job {job_id[:8]} queued: {body.get('strategy_class')} {body.get('symbol')}")
     threading.Thread(target=_run_mt5_forward_test, args=(job_id, body), daemon=True).start()
@@ -2228,6 +2333,7 @@ def native_wf_results(job_id: str):
 
 
 # ── Step 9: MT5 deployment ────────────────────────────────────────────────────
+
 
 def _find_metaeditor() -> Optional[Path]:
     """Locate metaeditor64.exe — same directory as terminal64.exe."""
@@ -2280,21 +2386,27 @@ def _run_compile(job_id: str, experts_dir: Path) -> None:
     meta = _find_metaeditor()
     if meta is None:
         with _lock:
-            _compile_jobs[job_id].update({
-                "status": "failed",
-                "errors": ["metaeditor64.exe not found — set METAEDITOR_PATH or ensure it is in the MT5 terminal directory"],
-                "completed_at": time.time(),
-            })
+            _compile_jobs[job_id].update(
+                {
+                    "status": "failed",
+                    "errors": [
+                        "metaeditor64.exe not found — set METAEDITOR_PATH or ensure it is in the MT5 terminal directory"
+                    ],
+                    "completed_at": time.time(),
+                }
+            )
         return
 
     sources = sorted(experts_dir.glob("*.mq5"))
     if not sources:
         with _lock:
-            _compile_jobs[job_id].update({
-                "status": "failed",
-                "errors": [f"No .mq5 files found in {experts_dir}"],
-                "completed_at": time.time(),
-            })
+            _compile_jobs[job_id].update(
+                {
+                    "status": "failed",
+                    "errors": [f"No .mq5 files found in {experts_dir}"],
+                    "completed_at": time.time(),
+                }
+            )
         return
 
     errors: list[str] = []
@@ -2302,7 +2414,7 @@ def _run_compile(job_id: str, experts_dir: Path) -> None:
     compiled: list[str] = []
     try:
         for src in sources:
-            ex5      = src.with_suffix(".ex5")
+            ex5 = src.with_suffix(".ex5")
             log_path = src.with_suffix(".log")
             # Record the binary's mtime BEFORE — this is the authoritative
             # success signal, not MetaEditor's exit code.
@@ -2332,29 +2444,41 @@ def _run_compile(job_id: str, experts_dir: Path) -> None:
                 # mtime did not advance → no new binary was produced (silent no-op
                 # or a compile error). Surface the compiler log so the failure is loud.
                 errors.append(f"{src.name}: .ex5 not updated — no new binary produced")
-                err_lines = [ln for ln in log_lines if ": error" in ln.lower() or "error(s)" in ln.lower()]
+                err_lines = [
+                    ln for ln in log_lines if ": error" in ln.lower() or "error(s)" in ln.lower()
+                ]
                 errors.extend(f"{src.name}: {ln}" for ln in (err_lines or log_lines[-10:]))
 
             log_path.unlink(missing_ok=True)
 
         status = "success" if not errors else "failed"
         with _lock:
-            _compile_jobs[job_id].update({
-                "status": status, "errors": errors,
-                "warnings": warnings, "compiled": compiled,
-                "completed_at": time.time(),
-            })
-        _alog(f"Compile {job_id[:8]}: {status} — {len(compiled)} binary(ies) updated, {len(errors)} error line(s)")
+            _compile_jobs[job_id].update(
+                {
+                    "status": status,
+                    "errors": errors,
+                    "warnings": warnings,
+                    "compiled": compiled,
+                    "completed_at": time.time(),
+                }
+            )
+        _alog(
+            f"Compile {job_id[:8]}: {status} — {len(compiled)} binary(ies) updated, {len(errors)} error line(s)"
+        )
     except subprocess.TimeoutExpired:
         with _lock:
-            _compile_jobs[job_id].update({
-                "status": "failed",
-                "errors": errors + ["MetaEditor compile timed out (120 s)"],
-                "completed_at": time.time(),
-            })
+            _compile_jobs[job_id].update(
+                {
+                    "status": "failed",
+                    "errors": errors + ["MetaEditor compile timed out (120 s)"],
+                    "completed_at": time.time(),
+                }
+            )
     except Exception as exc:
         with _lock:
-            _compile_jobs[job_id].update({"status": "failed", "errors": errors + [str(exc)], "completed_at": time.time()})
+            _compile_jobs[job_id].update(
+                {"status": "failed", "errors": errors + [str(exc)], "completed_at": time.time()}
+            )
 
 
 @app.route("/files/strategies/<filename>", methods=["POST"])
@@ -2439,8 +2563,6 @@ def compile_status(compile_job_id: str):
     if job is None:
         return jsonify({"error": "Compile job not found"}), 404
     return jsonify(job)
-
-
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────

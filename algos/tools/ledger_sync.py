@@ -79,7 +79,8 @@ from log_backup import LEDGER_RE  # noqa: E402,F401  — one definition of a led
 # ANCHOR too rather than loosening it.
 REMOTE_PATH_RE = re.compile(
     r"^[A-Za-z0-9._-]+/(?:ledger/(?:decisions|health)-\d{4}-\d{2}-\d{2}\.jsonl"
-    r"|[A-Za-z0-9._-]+-\d{4}-\d{2}-\d{2}\.log)$")
+    r"|[A-Za-z0-9._-]+-\d{4}-\d{2}-\d{2}\.log)$"
+)
 
 REPO_ROOT = _HERE.parent.parent
 # 🔴 The archive is a SEPARATE tree from the bot's own instance directory, and that is not
@@ -112,11 +113,10 @@ def remote_files(host: str, which: str) -> list[str]:
     sides ever disagreed, the way it would show up is a half-written day committed as a whole
     one — which is unreadable later and looks fine at the time.
     """
-    out = _run("ssh", host, f'{REMOTE_PYTHON} {REMOTE_SCRIPT} --list-{which}')
+    out = _run("ssh", host, f"{REMOTE_PYTHON} {REMOTE_SCRIPT} --list-{which}")
     if out.returncode != 0:
         raise RuntimeError(f"could not list {which} files on {host}: {out.stderr.strip()}")
-    return [line.strip() for line in out.stdout.splitlines()
-            if REMOTE_PATH_RE.match(line.strip())]
+    return [line.strip() for line in out.stdout.splitlines() if REMOTE_PATH_RE.match(line.strip())]
 
 
 def _whole_lines(path: Path) -> None:
@@ -210,8 +210,10 @@ def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
 
     days = sorted({m[0] for p in paths for m in [re.findall(r"\d{4}-\d{2}-\d{2}", p.name)] if m})
     span = (days[0] if len(days) == 1 else f"{days[0]}..{days[-1]}") if days else "?"
-    msg = (f"chore(ledger): bot record {span}\n\n"
-           f"Fetched from the VPS by algos/tools/ledger_sync.py. {len(rel)} file(s).")
+    msg = (
+        f"chore(ledger): bot record {span}\n\n"
+        f"Fetched from the VPS by algos/tools/ledger_sync.py. {len(rel)} file(s)."
+    )
     c = _run("git", "-C", str(REPO_ROOT), "commit", "-m", msg, "--", *rel)
     if c.returncode != 0 and "nothing to commit" not in c.stdout:
         print(f"  git commit failed: {c.stderr.strip() or c.stdout.strip()}")
@@ -231,8 +233,11 @@ def main(argv=None) -> int:
     ap.add_argument("--host", default=DEFAULT_HOST)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-push", action="store_true")
-    ap.add_argument("--closed-only", action="store_true",
-                    help="skip today's still-open files (the pre-2026-08-05 behaviour)")
+    ap.add_argument(
+        "--closed-only",
+        action="store_true",
+        help="skip today's still-open files (the pre-2026-08-05 behaviour)",
+    )
     args = ap.parse_args(argv)
 
     today = datetime.now(timezone.utc).date()
@@ -267,8 +272,9 @@ def main(argv=None) -> int:
     # drops out of `pending()` looking exactly like a file that is already committed.
     blocked = ignored(local)
     for p in blocked:
-        print(f"  ! IGNORED by .gitignore, so it can never be backed up: "
-              f"{p.relative_to(REPO_ROOT)}")
+        print(
+            f"  ! IGNORED by .gitignore, so it can never be backed up: {p.relative_to(REPO_ROOT)}"
+        )
 
     todo = pending(local)
     if not todo:

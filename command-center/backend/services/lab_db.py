@@ -41,7 +41,7 @@ def _restamp_profit_concentration(conn: sqlite3.Connection) -> None:
             "WHERE status = 'complete' AND profit_concentration_basis IS NULL"
         ).fetchall()
     except sqlite3.OperationalError:
-        return                                    # column not added yet (fresh DB, first pass)
+        return  # column not added yet (fresh DB, first pass)
     if not rows:
         return
 
@@ -94,7 +94,7 @@ def _backfill_run_shape_metrics(conn: sqlite3.Connection) -> None:
             "WHERE status = 'complete' AND max_drawdown_pct IS NULL"
         ).fetchall()
     except sqlite3.OperationalError:
-        return                                    # columns not added yet (fresh DB, first pass)
+        return  # columns not added yet (fresh DB, first pass)
     if not rows:
         return
 
@@ -112,8 +112,12 @@ def _backfill_run_shape_metrics(conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE backtest_runs SET max_drawdown_pct=?, scratch_count=?, "
             "trade_concentration_pct=? WHERE run_id=?",
-            (dd if dd is not None else -1.0, scratch_count(equity),
-             trade_concentration_pct(equity), row["run_id"]),
+            (
+                dd if dd is not None else -1.0,
+                scratch_count(equity),
+                trade_concentration_pct(equity),
+                row["run_id"],
+            ),
         )
 
 
@@ -513,8 +517,8 @@ def init_db() -> None:
             "WHERE id IN ('fundednext_flex_50k_eval','fundednext_flex_100k_eval')",
             # Extra rule links (JSON arrays, parsed like the other JSON columns).
             "UPDATE rulesets SET reference_urls = "
-            "'[\"https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown\","
-            "\"https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan\"]' "
+            '\'["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown",'
+            '"https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]\' '
             "WHERE id IN ('lucidflex_50k_eval','lucidflex_100k_eval')",
             "UPDATE rulesets SET reference_urls = "
             "'[\"https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge\"]' "
@@ -673,8 +677,8 @@ def init_db() -> None:
             # blanket defaults for all remaining NULL rows
             "UPDATE rulesets SET risk_per_trade_pct = 0.5 WHERE risk_per_trade_pct IS NULL",
             "UPDATE rulesets SET max_consecutive_losses = 3 WHERE max_consecutive_losses IS NULL",
-            f"UPDATE rulesets SET earliest_entry_time_et = '09:30' WHERE earliest_entry_time_et IS NULL",
-            f"UPDATE rulesets SET latest_entry_time_et = '15:00' WHERE latest_entry_time_et IS NULL",
+            "UPDATE rulesets SET earliest_entry_time_et = '09:30' WHERE earliest_entry_time_et IS NULL",
+            "UPDATE rulesets SET latest_entry_time_et = '15:00' WHERE latest_entry_time_et IS NULL",
             f"UPDATE rulesets SET days_of_week_allowed = '{_DAYS_JSON}' WHERE days_of_week_allowed IS NULL",
             "UPDATE rulesets SET default_commission_per_side = 2.25 WHERE default_commission_per_side IS NULL",
             "UPDATE rulesets SET default_slippage_ticks = 1 WHERE default_slippage_ticks IS NULL",
@@ -818,13 +822,31 @@ def _migrate_optimizations_nullable_ruleset() -> None:
         # bar_type/bar_value/grid_sensitivity_* went missing on fresh DBs.
         existing_cols = {c[1] for c in info}
         col_list = ", ".join(
-            c for c in [
-                "optimization_id", "strategy_id", "instrument", "start_date",
-                "end_date", "commission_per_side", "slippage_ticks", "ruleset_id",
-                "mode", "search_method", "param_grid", "status", "estimated_runs",
-                "completed_runs", "best_run_id", "source_run_id", "created_at",
-                "completed_at", "regime_filter", "bar_type", "bar_value",
-                "grid_sensitivity_score", "grid_sensitivity_summary",
+            c
+            for c in [
+                "optimization_id",
+                "strategy_id",
+                "instrument",
+                "start_date",
+                "end_date",
+                "commission_per_side",
+                "slippage_ticks",
+                "ruleset_id",
+                "mode",
+                "search_method",
+                "param_grid",
+                "status",
+                "estimated_runs",
+                "completed_runs",
+                "best_run_id",
+                "source_run_id",
+                "created_at",
+                "completed_at",
+                "regime_filter",
+                "bar_type",
+                "bar_value",
+                "grid_sensitivity_score",
+                "grid_sensitivity_summary",
             ]
             if c in existing_cols
         )
@@ -862,8 +884,10 @@ def _migrate_optimizations_nullable_ruleset() -> None:
             COMMIT;
         """)
     except Exception:
-        try: raw.execute("ROLLBACK")
-        except Exception: pass
+        try:
+            raw.execute("ROLLBACK")
+        except Exception:
+            pass
     finally:
         raw.execute("PRAGMA foreign_keys=ON")
         raw.close()
@@ -882,9 +906,9 @@ def _migrate_strategy_renames() -> None:
     raw.execute("PRAGMA foreign_keys=OFF")
     try:
         for old_id, new_id, new_class, new_name in [
-            ("orb_lucidflex",      "orb",      "ORB",      "Opening Range Breakout"),
-            ("vwap_mr_lucidflex",  "vwap_mr",  "VWAP_MR",  "VWAP Mean Reversion"),
-            ("momentum_lucidflex", "momentum", "Momentum",  "Intraday Momentum Pullback"),
+            ("orb_lucidflex", "orb", "ORB", "Opening Range Breakout"),
+            ("vwap_mr_lucidflex", "vwap_mr", "VWAP_MR", "VWAP Mean Reversion"),
+            ("momentum_lucidflex", "momentum", "Momentum", "Intraday Momentum Pullback"),
         ]:
             if not raw.execute("SELECT 1 FROM strategies WHERE id=?", (old_id,)).fetchone():
                 continue
@@ -925,9 +949,7 @@ def _migrate_personal_demo_rename() -> None:
     try:
         if raw.execute("SELECT 1 FROM rulesets WHERE id=?", (old_id,)).fetchone():
             for tbl in ("evaluations", "optimizations", "stress_tests"):
-                raw.execute(
-                    f"UPDATE {tbl} SET ruleset_id=? WHERE ruleset_id=?", (new_id, old_id)
-                )
+                raw.execute(f"UPDATE {tbl} SET ruleset_id=? WHERE ruleset_id=?", (new_id, old_id))
             if raw.execute("SELECT 1 FROM rulesets WHERE id=?", (new_id,)).fetchone():
                 # new id already seeded with the verified demo values — drop the stale row
                 raw.execute("DELETE FROM rulesets WHERE id=?", (old_id,))
@@ -962,51 +984,97 @@ _APEX_EOD_NOTES = (
     "not modeled). Contract limit is total contracts mapped to mini/micro. Verified from "
     "docs_url 2026-06-11."
 )
-_APEX_INSTRUMENTS = '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]'
-_APEX_DOCS = "https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/"
+_APEX_INSTRUMENTS = (
+    '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]'
+)
+_APEX_DOCS = (
+    "https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/"
+)
 _APEX_REF = '["https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/"]'
 _APEX_DAYS = '["mon","tue","wed","thu","fri"]'
 
 _APEX_EOD_EVAL_ROWS = [
     {
-        "id": "apex_eod_50k_eval", "name": "EOD $50k Evaluation",
-        "account_size": 50000, "profit_target": 3000, "max_loss_eod": 2000,
-        "max_loss_intraday": None, "drawdown_type": "trailing_eod",
-        "consistency_pct": None, "min_trading_days": None, "force_flat_time_et": None,
+        "id": "apex_eod_50k_eval",
+        "name": "EOD $50k Evaluation",
+        "account_size": 50000,
+        "profit_target": 3000,
+        "max_loss_eod": 2000,
+        "max_loss_intraday": None,
+        "drawdown_type": "trailing_eod",
+        "consistency_pct": None,
+        "min_trading_days": None,
+        "force_flat_time_et": None,
         "allowed_instruments": _APEX_INSTRUMENTS,
         "max_contracts": '{"mini_max": 6, "micro_max": 60, "scaling": null}',
-        "platform_support": '["NinjaTrader", "Rithmic"]', "account_tier": "eval",
-        "docs_url": _APEX_DOCS, "notes": _APEX_EOD_NOTES,
-        "eval_cost_usd": None, "activation_fee_usd": None, "profit_split_pct": None,
-        "ruleset_type": "prop_eval", "daily_loss_cap": 1000, "weekly_loss_cap": None,
-        "daily_profit_goal": None, "description": None,
-        "risk_per_trade_pct": 0.5, "max_consecutive_losses": 3,
-        "earliest_entry_time_et": "09:30", "latest_entry_time_et": "15:00",
-        "days_of_week_allowed": _APEX_DAYS, "daily_profit_target": 1500,
-        "daily_profit_lock_pct": 0.8, "default_commission_per_side": 2.25,
-        "default_slippage_ticks": 1, "daily_halt_fraction": 0.6,
-        "market": "futures", "drawdown_unit": "usd",
-        "mll_lock_balance": 53000, "consistency_breach_action": None, "reference_urls": _APEX_REF,
+        "platform_support": '["NinjaTrader", "Rithmic"]',
+        "account_tier": "eval",
+        "docs_url": _APEX_DOCS,
+        "notes": _APEX_EOD_NOTES,
+        "eval_cost_usd": None,
+        "activation_fee_usd": None,
+        "profit_split_pct": None,
+        "ruleset_type": "prop_eval",
+        "daily_loss_cap": 1000,
+        "weekly_loss_cap": None,
+        "daily_profit_goal": None,
+        "description": None,
+        "risk_per_trade_pct": 0.5,
+        "max_consecutive_losses": 3,
+        "earliest_entry_time_et": "09:30",
+        "latest_entry_time_et": "15:00",
+        "days_of_week_allowed": _APEX_DAYS,
+        "daily_profit_target": 1500,
+        "daily_profit_lock_pct": 0.8,
+        "default_commission_per_side": 2.25,
+        "default_slippage_ticks": 1,
+        "daily_halt_fraction": 0.6,
+        "market": "futures",
+        "drawdown_unit": "usd",
+        "mll_lock_balance": 53000,
+        "consistency_breach_action": None,
+        "reference_urls": _APEX_REF,
     },
     {
-        "id": "apex_eod_100k_eval", "name": "EOD $100k Evaluation",
-        "account_size": 100000, "profit_target": 6000, "max_loss_eod": 3000,
-        "max_loss_intraday": None, "drawdown_type": "trailing_eod",
-        "consistency_pct": None, "min_trading_days": None, "force_flat_time_et": None,
+        "id": "apex_eod_100k_eval",
+        "name": "EOD $100k Evaluation",
+        "account_size": 100000,
+        "profit_target": 6000,
+        "max_loss_eod": 3000,
+        "max_loss_intraday": None,
+        "drawdown_type": "trailing_eod",
+        "consistency_pct": None,
+        "min_trading_days": None,
+        "force_flat_time_et": None,
         "allowed_instruments": _APEX_INSTRUMENTS,
         "max_contracts": '{"mini_max": 8, "micro_max": 80, "scaling": null}',
-        "platform_support": '["NinjaTrader", "Rithmic"]', "account_tier": "eval",
-        "docs_url": _APEX_DOCS, "notes": _APEX_EOD_NOTES,
-        "eval_cost_usd": None, "activation_fee_usd": None, "profit_split_pct": None,
-        "ruleset_type": "prop_eval", "daily_loss_cap": 1500, "weekly_loss_cap": None,
-        "daily_profit_goal": None, "description": None,
-        "risk_per_trade_pct": 0.5, "max_consecutive_losses": 3,
-        "earliest_entry_time_et": "09:30", "latest_entry_time_et": "15:00",
-        "days_of_week_allowed": _APEX_DAYS, "daily_profit_target": 1500,
-        "daily_profit_lock_pct": 0.8, "default_commission_per_side": 2.25,
-        "default_slippage_ticks": 1, "daily_halt_fraction": 0.6,
-        "market": "futures", "drawdown_unit": "usd",
-        "mll_lock_balance": 106000, "consistency_breach_action": None, "reference_urls": _APEX_REF,
+        "platform_support": '["NinjaTrader", "Rithmic"]',
+        "account_tier": "eval",
+        "docs_url": _APEX_DOCS,
+        "notes": _APEX_EOD_NOTES,
+        "eval_cost_usd": None,
+        "activation_fee_usd": None,
+        "profit_split_pct": None,
+        "ruleset_type": "prop_eval",
+        "daily_loss_cap": 1500,
+        "weekly_loss_cap": None,
+        "daily_profit_goal": None,
+        "description": None,
+        "risk_per_trade_pct": 0.5,
+        "max_consecutive_losses": 3,
+        "earliest_entry_time_et": "09:30",
+        "latest_entry_time_et": "15:00",
+        "days_of_week_allowed": _APEX_DAYS,
+        "daily_profit_target": 1500,
+        "daily_profit_lock_pct": 0.8,
+        "default_commission_per_side": 2.25,
+        "default_slippage_ticks": 1,
+        "daily_halt_fraction": 0.6,
+        "market": "futures",
+        "drawdown_unit": "usd",
+        "mll_lock_balance": 106000,
+        "consistency_breach_action": None,
+        "reference_urls": _APEX_REF,
     },
 ]
 
@@ -1016,20 +1084,20 @@ _APEX_EOD_EVAL_ROWS = [
 # "LucidFlex" stays because it is Lucid's PROGRAM name, not the firm name
 # (firm: Lucid Trading; verified against the stored docs_url articles).
 _RULESET_DISPLAY_NAMES = {
-    "lucidflex_50k_eval":          "LucidFlex $50k Evaluation",
-    "lucidflex_100k_eval":         "LucidFlex $100k Evaluation",
-    "lucidflex_50k_funded":        "LucidFlex $50k Funded",
-    "lucidflex_100k_funded":       "LucidFlex $100k Funded",
-    "tradeify_50k_eval":           "Select $50k Evaluation",
-    "tradeify_100k_eval":          "Select $100k Evaluation",
-    "tradeify_50k_funded":         "Select $50k Funded (Flex)",
-    "tradeify_100k_funded":        "Select $100k Funded (Flex)",
-    "fundednext_flex_50k_eval":    "Futures Flex $50k Challenge",
-    "fundednext_flex_100k_eval":   "Futures Flex $100k Challenge",
-    "fundednext_flex_50k_funded":  "Futures Flex $50k Funded",
+    "lucidflex_50k_eval": "LucidFlex $50k Evaluation",
+    "lucidflex_100k_eval": "LucidFlex $100k Evaluation",
+    "lucidflex_50k_funded": "LucidFlex $50k Funded",
+    "lucidflex_100k_funded": "LucidFlex $100k Funded",
+    "tradeify_50k_eval": "Select $50k Evaluation",
+    "tradeify_100k_eval": "Select $100k Evaluation",
+    "tradeify_50k_funded": "Select $50k Funded (Flex)",
+    "tradeify_100k_funded": "Select $100k Funded (Flex)",
+    "fundednext_flex_50k_eval": "Futures Flex $50k Challenge",
+    "fundednext_flex_100k_eval": "Futures Flex $100k Challenge",
+    "fundednext_flex_50k_funded": "Futures Flex $50k Funded",
     "fundednext_flex_100k_funded": "Futures Flex $100k Funded",
-    "apex_eod_50k_eval":           "EOD $50k Evaluation",
-    "apex_eod_100k_eval":          "EOD $100k Evaluation",
+    "apex_eod_50k_eval": "EOD $50k Evaluation",
+    "apex_eod_100k_eval": "EOD $100k Evaluation",
 }
 
 
@@ -1058,10 +1126,22 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     # max_loss_eod is NOT NULL in the schema, so 0 is the sentinel for "no trailing
     # EOD rule on personal accounts" — the evaluator must treat it as rule-absent.
     # account_tier 'demo' so nothing downstream treats these as live accounts.
-    _FX_INSTRUMENTS = json.dumps([
-        "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "GBPJPY",
-        "USDJPY", "AUDJPY", "CADJPY", "AUDUSD", "USDCAD", "EURGBP", "NAS100",
-    ])
+    _FX_INSTRUMENTS = json.dumps(
+        [
+            "XAUUSD",
+            "XAGUSD",
+            "EURUSD",
+            "GBPUSD",
+            "GBPJPY",
+            "USDJPY",
+            "AUDJPY",
+            "CADJPY",
+            "AUDUSD",
+            "USDCAD",
+            "EURGBP",
+            "NAS100",
+        ]
+    )
     _FX_DAYS = json.dumps(["sun", "mon", "tue", "wed", "thu"])
     _FUT_DAYS = json.dumps(["mon", "tue", "wed", "thu", "fri"])
 
@@ -1081,24 +1161,45 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     """
 
     if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_demo",)).fetchone():
-        conn.execute(_PERSONAL_DEMO_SQL, (
-            "personal_forex_demo",
-            "Personal Forex Demo Account",
-            10000, 0, 0, None,                  # max_loss_eod 0 = sentinel, no trailing EOD rule
-            "static", None, None, None,         # force_flat_time_et null — MT5 strategies manage sessions
-            _FX_INSTRUMENTS,
-            None,                               # max_contracts null — no scaling on personal
-            json.dumps(["MT5"]),
-            "demo", "personal", "forex", "usd",
-            500, None, 1000,
-            0.80, 1.0, 3,
-            None, None,                         # entry hours null — FX runs 24h
-            _FX_DAYS,
-            0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
-            15.0, 3,
-            "Forex demo/paper account. No real capital at risk.",
-            now, now,
-        ))
+        conn.execute(
+            _PERSONAL_DEMO_SQL,
+            (
+                "personal_forex_demo",
+                "Personal Forex Demo Account",
+                10000,
+                0,
+                0,
+                None,  # max_loss_eod 0 = sentinel, no trailing EOD rule
+                "static",
+                None,
+                None,
+                None,  # force_flat_time_et null — MT5 strategies manage sessions
+                _FX_INSTRUMENTS,
+                None,  # max_contracts null — no scaling on personal
+                json.dumps(["MT5"]),
+                "demo",
+                "personal",
+                "forex",
+                "usd",
+                500,
+                None,
+                1000,
+                0.80,
+                1.0,
+                3,
+                None,
+                None,  # entry hours null — FX runs 24h
+                _FX_DAYS,
+                0.0,
+                0,
+                None,  # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
+                15.0,
+                3,
+                "Forex demo/paper account. No real capital at risk.",
+                now,
+                now,
+            ),
+        )
 
     # ── Personal forex risk tolerance: the ONE bar Aaron actually accepts ────────
     # `unconstrained` states no limit, so a run against it cannot be graded — every grade in
@@ -1117,26 +1218,47 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     # would fire constantly at 10-12.5% risk per trade and turn the verdict into a statement about
     # the cap rather than about drawdown, which is the one thing this row exists to measure.
     if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_forex_risk",)).fetchone():
-        conn.execute(_PERSONAL_DEMO_SQL, (
-            "personal_forex_risk",
-            "Personal Forex — 55% Drawdown",
-            10000, 0, 0, None,                  # profit_target 0, max_loss_eod 0 = no trailing floor
-            "static", None, None, None,         # no consistency, no min days, no force-flat
-            _FX_INSTRUMENTS,
-            None,                               # max_contracts null — no ladder
-            json.dumps(["MT5", "Python"]),
-            "demo", "personal", "forex", "usd",
-            None, None, None,                   # daily_loss_cap / weekly / daily_profit_target
-            None, 1.0, None,                    # no lock %, 1% risk fallback, no loss streak cap
-            None, None,                         # entry hours null — FX runs 24h
-            _FX_DAYS,
-            0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
-            55.0, None,                         # THE limit, and the only one
-            "Forex risk tolerance: fail at 55% drawdown from peak, no other limits. The gradeable "
-            "counterpart to Unconstrained — same raw behaviour, but with the one bar stated, so a "
-            "stress test can return a letter instead of 'not graded'.",
-            now, now,
-        ))
+        conn.execute(
+            _PERSONAL_DEMO_SQL,
+            (
+                "personal_forex_risk",
+                "Personal Forex — 55% Drawdown",
+                10000,
+                0,
+                0,
+                None,  # profit_target 0, max_loss_eod 0 = no trailing floor
+                "static",
+                None,
+                None,
+                None,  # no consistency, no min days, no force-flat
+                _FX_INSTRUMENTS,
+                None,  # max_contracts null — no ladder
+                json.dumps(["MT5", "Python"]),
+                "demo",
+                "personal",
+                "forex",
+                "usd",
+                None,
+                None,
+                None,  # daily_loss_cap / weekly / daily_profit_target
+                None,
+                1.0,
+                None,  # no lock %, 1% risk fallback, no loss streak cap
+                None,
+                None,  # entry hours null — FX runs 24h
+                _FX_DAYS,
+                0.0,
+                0,
+                None,  # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
+                55.0,
+                None,  # THE limit, and the only one
+                "Forex risk tolerance: fail at 55% drawdown from peak, no other limits. The gradeable "
+                "counterpart to Unconstrained — same raw behaviour, but with the one bar stated, so a "
+                "stress test can return a letter instead of 'not graded'.",
+                now,
+                now,
+            ),
+        )
 
     # ── Unconstrained: measure the strategy, not an account ──────────────────────
     # Every limit is deliberately absent. This exists so a run can answer "what does the
@@ -1148,66 +1270,628 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     # Do NOT add limits here. Anything with a limit belongs in its own ruleset — the point of
     # this row is that it has none.
     if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("unconstrained",)).fetchone():
-        conn.execute(_PERSONAL_DEMO_SQL, (
-            "unconstrained",
-            "Unconstrained (No Limits)",
-            10000, 0, 0, None,                  # profit_target 0, max_loss_eod 0 = no floor
-            "static", None, None, None,         # no consistency, no min days, no force-flat
-            json.dumps(sorted(set(json.loads(_FX_INSTRUMENTS)) | {"MES", "MNQ", "MGC", "MCL"})),
-            None,                               # max_contracts null — no ladder
-            json.dumps(["MT5", "NinjaTrader", "Python"]),
-            "demo", "personal", "forex", "usd",
-            None, None, None,                   # daily_loss_cap / weekly / daily_profit_target
-            None, 1.0, None,                    # no lock %, 1% risk fallback, no loss streak cap
-            None, None,                         # entry hours null — no session gate
-            _FX_DAYS,
-            0.0, 0, None,                       # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
-            None, None,                         # NO peak drawdown, NO consecutive-loss-day cap
-            "No limits: no daily loss cap, no profit target, no drawdown floor, no contract "
-            "ladder, no halts. Measures the strategy's raw behaviour — not whether it would "
-            "pass an account's rules. Pair with manual sizing to make X% mean exactly X%.",
-            now, now,
-        ))
+        conn.execute(
+            _PERSONAL_DEMO_SQL,
+            (
+                "unconstrained",
+                "Unconstrained (No Limits)",
+                10000,
+                0,
+                0,
+                None,  # profit_target 0, max_loss_eod 0 = no floor
+                "static",
+                None,
+                None,
+                None,  # no consistency, no min days, no force-flat
+                json.dumps(sorted(set(json.loads(_FX_INSTRUMENTS)) | {"MES", "MNQ", "MGC", "MCL"})),
+                None,  # max_contracts null — no ladder
+                json.dumps(["MT5", "NinjaTrader", "Python"]),
+                "demo",
+                "personal",
+                "forex",
+                "usd",
+                None,
+                None,
+                None,  # daily_loss_cap / weekly / daily_profit_target
+                None,
+                1.0,
+                None,  # no lock %, 1% risk fallback, no loss streak cap
+                None,
+                None,  # entry hours null — no session gate
+                _FX_DAYS,
+                0.0,
+                0,
+                None,  # commission 0 + slippage 0 — matches the Pine (TV↔Python parity)
+                None,
+                None,  # NO peak drawdown, NO consecutive-loss-day cap
+                "No limits: no daily loss cap, no profit target, no drawdown floor, no contract "
+                "ladder, no halts. Measures the strategy's raw behaviour — not whether it would "
+                "pass an account's rules. Pair with manual sizing to make X% mean exactly X%.",
+                now,
+                now,
+            ),
+        )
 
     if not conn.execute("SELECT 1 FROM rulesets WHERE id=?", ("personal_futures_demo",)).fetchone():
-        conn.execute(_PERSONAL_DEMO_SQL, (
-            "personal_futures_demo",
-            "Personal Futures Demo Account",
-            10000, 0, 0, None,                  # max_loss_eod 0 = sentinel, no trailing EOD rule
-            "static", None, None, "15:50",
-            json.dumps(["MES", "MNQ", "MGC", "MCL"]),
-            None,                               # max_contracts null — no scaling on personal
-            json.dumps(["NinjaTrader", "Tradovate"]),
-            "demo", "personal", "futures", "usd",
-            500, None, 1000,
-            0.80, 1.0, 3,
-            "09:30", "15:00",
-            _FUT_DAYS,
-            2.25, 1, 0.5,
-            15.0, 3,
-            "Futures demo/paper account. No real capital at risk.",
-            now, now,
-        ))
+        conn.execute(
+            _PERSONAL_DEMO_SQL,
+            (
+                "personal_futures_demo",
+                "Personal Futures Demo Account",
+                10000,
+                0,
+                0,
+                None,  # max_loss_eod 0 = sentinel, no trailing EOD rule
+                "static",
+                None,
+                None,
+                "15:50",
+                json.dumps(["MES", "MNQ", "MGC", "MCL"]),
+                None,  # max_contracts null — no scaling on personal
+                json.dumps(["NinjaTrader", "Tradovate"]),
+                "demo",
+                "personal",
+                "futures",
+                "usd",
+                500,
+                None,
+                1000,
+                0.80,
+                1.0,
+                3,
+                "09:30",
+                "15:00",
+                _FUT_DAYS,
+                2.25,
+                1,
+                0.5,
+                15.0,
+                3,
+                "Futures demo/paper account. No real capital at risk.",
+                now,
+                now,
+            ),
+        )
 
     # ── FundedNext + Tradeify prop rows (cleanup) ────────────────────────────────
     # Seeded from the corrected live-DB values so a from-scratch rebuild reproduces all
     # three firms (LucidFlex seeded above). Full column set, so the rows are correct
     # regardless of backfill ordering. Per-id existence check → idempotent; never
     # overwrites edited rows (same pattern as the personal rows).
-    _PROP_SEED_COLS = ['id', 'name', 'account_size', 'profit_target', 'max_loss_eod', 'max_loss_intraday', 'drawdown_type', 'consistency_pct', 'min_trading_days', 'force_flat_time_et', 'allowed_instruments', 'max_contracts', 'platform_support', 'account_tier', 'docs_url', 'notes', 'eval_cost_usd', 'activation_fee_usd', 'profit_split_pct', 'ruleset_type', 'daily_loss_cap', 'weekly_loss_cap', 'daily_profit_goal', 'description', 'risk_per_trade_pct', 'max_consecutive_losses', 'earliest_entry_time_et', 'latest_entry_time_et', 'days_of_week_allowed', 'daily_profit_target', 'daily_profit_lock_pct', 'default_commission_per_side', 'default_slippage_ticks', 'daily_halt_fraction', 'market', 'drawdown_unit', 'mll_lock_balance', 'consistency_breach_action', 'reference_urls']
+    _PROP_SEED_COLS = [
+        "id",
+        "name",
+        "account_size",
+        "profit_target",
+        "max_loss_eod",
+        "max_loss_intraday",
+        "drawdown_type",
+        "consistency_pct",
+        "min_trading_days",
+        "force_flat_time_et",
+        "allowed_instruments",
+        "max_contracts",
+        "platform_support",
+        "account_tier",
+        "docs_url",
+        "notes",
+        "eval_cost_usd",
+        "activation_fee_usd",
+        "profit_split_pct",
+        "ruleset_type",
+        "daily_loss_cap",
+        "weekly_loss_cap",
+        "daily_profit_goal",
+        "description",
+        "risk_per_trade_pct",
+        "max_consecutive_losses",
+        "earliest_entry_time_et",
+        "latest_entry_time_et",
+        "days_of_week_allowed",
+        "daily_profit_target",
+        "daily_profit_lock_pct",
+        "default_commission_per_side",
+        "default_slippage_ticks",
+        "daily_halt_fraction",
+        "market",
+        "drawdown_unit",
+        "mll_lock_balance",
+        "consistency_breach_action",
+        "reference_urls",
+    ]
     _PROP_SEED_ROWS = [
-        {'id': 'lucidflex_50k_eval', 'name': 'LucidFlex $50k Evaluation', 'account_size': 50000, 'profit_target': 3000, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 50.0, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 4, "micro_max": 40, "scaling": null}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 50100.0, 'consistency_breach_action': None, 'reference_urls': '["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown","https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]'},
-        {'id': 'lucidflex_100k_eval', 'name': 'LucidFlex $100k Evaluation', 'account_size': 100000, 'profit_target': 6000, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 50.0, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 6, "micro_max": 60, "scaling": null}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 100100.0, 'consistency_breach_action': None, 'reference_urls': '["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown","https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]'},
-        {'id': 'lucidflex_50k_funded', 'name': 'LucidFlex $50k Funded', 'account_size': 50000, 'profit_target': 0, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 2, "micro_max": 20, "scaling": {"mode": "bidirectional_band", "trigger_basis": "eod_simulated_profit", "bands": [{"profit_min": 0, "profit_max": 999, "mini": 2, "micro": 20}, {"profit_min": 1000, "profit_max": 1999, "mini": 3, "micro": 30}, {"profit_min": 2000, "profit_max": null, "mini": 4, "micro": 40}], "ceiling": {"mini": 4, "micro": 40}}}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 2000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'lucidflex_100k_funded', 'name': 'LucidFlex $100k Funded', 'account_size': 100000, 'profit_target': 0, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:45', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": {"mode": "bidirectional_band", "trigger_basis": "eod_simulated_profit", "bands": [{"profit_min": 0, "profit_max": 999, "mini": 3, "micro": 30}, {"profit_min": 1000, "profit_max": 1999, "mini": 4, "micro": 40}, {"profit_min": 2000, "profit_max": 2999, "mini": 5, "micro": 50}, {"profit_min": 3000, "profit_max": null, "mini": 6, "micro": 60}], "ceiling": {"mini": 6, "micro": 60}}}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account', 'notes': "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.", 'eval_cost_usd': None, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 3000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'fundednext_flex_50k_eval', 'name': 'Futures Flex $50k Challenge', 'account_size': 50000, 'profit_target': 2500, 'max_loss_eod': 1500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'One-time fee (base ~$134; promo code FLEX ~$69.99; reset ~$78). No activation fee to funded. DRAWDOWN: EOD trailing $1,500, locks permanently at $50,100 ($100 above start), then stops trailing. NO daily loss limit (MLL only). CONSISTENCY 40% CHALLENGE-PHASE ONLY -- UNUSUAL MECHANIC: breaching it does NOT fail the account; it RAISES the profit target instead. 40% rule mathematically forces >=3 winning days (no separate min-days rule found). CONTRACTS fixed (no scaling), 3 mini / 30 micro, mixable at 1:10; exceeding = excess-contract profit voided (penalty, not breach). Intraday only: flat by 3:10pm CT (16:10 ET, DST-adjusted), no overnight/weekend, auto-closed if left open. News trading allowed. Automated/EA/bots allowed (no latency abuse / order flooding). PROHIBITED: tight-bracket/no-slippage exploitation, grid, hedging, correlated-instrument hedging, trading within 2% of CME price limit. Platforms NinjaTrader + Tradovate. allowed_instruments = standard CME set we trade; verify exact FundedNext product list. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': 134, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 50100.0, 'consistency_breach_action': 'raise_target', 'reference_urls': '["https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge"]'},
-        {'id': 'fundednext_flex_100k_eval', 'name': 'Futures Flex $100k Challenge', 'account_size': 100000, 'profit_target': 5000, 'max_loss_eod': 2500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 5, "micro_max": 50, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'eval', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'One-time fee (base ~$250; promo ~$129.99; reset ~$145). No activation fee. DRAWDOWN: EOD trailing $2,500, locks at $100,100 ($100 above start). NO daily loss limit. CONSISTENCY 40% CHALLENGE-ONLY; breaching RAISES the target (not a fail); forces >=3 winning days. CONTRACTS fixed 5 mini / 50 micro, mixable 1:10; excess = profit-void penalty. Intraday only, flat 3:10pm CT (16:10 ET), no overnight. News allowed. Automated/EA OK (no latency abuse). PROHIBITED: tight-bracket exploitation, grid, hedging, within 2% of CME price limit. Platforms NinjaTrader + Tradovate. allowed_instruments = standard CME set; verify exact list. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': 250, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 100100.0, 'consistency_breach_action': 'raise_target', 'reference_urls': '["https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge"]'},
-        {'id': 'fundednext_flex_50k_funded', 'name': 'Futures Flex $50k Funded', 'account_size': 50000, 'profit_target': 0, 'max_loss_eod': 1500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'FundedNext (funded) stage. NO consistency rule, NO daily loss limit. Reward split base 80%; 90% available only if the 90% add-on was bought at challenge purchase. DRAWDOWN: EOD trailing $1,500, locks at $50,100; first withdrawal also sets/locks the MLL. Payout requires 5 Benchmark (winning) days; withdrawal caps apply (50%-of-growth style, capped by size -- VERIFY exact amounts). Intraday only, flat 3:10pm CT (16:10 ET). Automated/EA OK (no HFT). Contracts fixed 3/30, mixable 1:10, excess = profit-void penalty. VERIFY: contract-limit policy says limits can differ by STAGE; funded-stage limit assumed same as challenge (3/30) -- confirm against the contract-limit policy doc. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 80.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 1500, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'fundednext_flex_100k_funded', 'name': 'Futures Flex $100k Funded', 'account_size': 100000, 'profit_target': 0, 'max_loss_eod': 2500, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:10', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 5, "micro_max": 50, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}', 'platform_support': '["NinjaTrader", "Tradovate"]', 'account_tier': 'funded', 'docs_url': 'https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge', 'notes': 'FundedNext (funded) stage. NO consistency rule, NO daily loss limit. Split base 80% (90% only with add-on bought at purchase). DRAWDOWN: EOD trailing $2,500, locks at $100,100; first withdrawal also locks MLL. Payout: 5 Benchmark days; withdrawal caps apply -- VERIFY amounts. Intraday only, flat 3:10pm CT (16:10 ET). Automated/EA OK (no HFT). Contracts fixed 5/50, mixable 1:10, excess = profit-void penalty. VERIFY: funded-stage contract limit assumed same as challenge (5/50) -- policy says limits can differ by stage; confirm. Verified from docs_url on 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 80.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 2500, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'tradeify_50k_eval', 'name': 'Select $50k Evaluation', 'account_size': 50000, 'profit_target': 3000, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': 3, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 4, "micro_max": 40, "scaling": null}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'eval', 'docs_url': 'https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts', 'notes': 'One-time purchase (Tradeify 3.0). Price ~$165 / reset ~$95 UNVERIFIED (confirm at checkout). CONTRACTS: eval full day one, no scaling = 4/40. Cannot hold minis+micros at once (hedging); can switch between sessions. DRAWDOWN: EOD trailing $2,000, trails up never down, real-time enforced, NO lock during eval. No DLL during eval. 40% consistency => min 3 days. Activity rule: >50% of trades AND >50% of profit from trades held >10s. No overnight; flat 4:59pm ET (12:59 holidays). News allowed. Bots/algos OK (sole owner, no HFT). Tradovate+Rithmic day one; native NinjaTrader Elite-only. Verified 2026-05-31.', 'eval_cost_usd': 165, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 50100.0, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'tradeify_100k_eval', 'name': 'Select $100k Evaluation', 'account_size': 100000, 'profit_target': 6000, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': 40.0, 'min_trading_days': 3, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 8, "micro_max": 80, "scaling": null}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'eval', 'docs_url': 'https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts', 'notes': 'One-time purchase. Price ~$265 / reset ~$169 UNVERIFIED. CONTRACTS: eval full day one = 8/80, no scaling. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $3,000, trails up never down, NO lock during eval. No DLL during eval. 40% consistency, min 3 days. >10-sec activity rule. No overnight; flat 4:59pm ET. News allowed. Bots/algos OK (no HFT). Tradovate+Rithmic day one; native NinjaTrader Elite-only. Note: Select 100k drawdown ($3,000) TIGHTER than Growth 100k ($3,500). Verified 2026-05-31.', 'eval_cost_usd': 265, 'activation_fee_usd': None, 'profit_split_pct': None, 'ruleset_type': 'prop_eval', 'daily_loss_cap': None, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': 1500, 'daily_profit_lock_pct': 0.8, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': 0.6, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': 100100.0, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'tradeify_50k_funded', 'name': 'Select $50k Funded (Flex)', 'account_size': 50000, 'profit_target': 0, 'max_loss_eod': 2000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 2, "micro_max": 20, "scaling": {"mode": "cumulative_ratchet", "trigger_basis": "eod_profit_above_start", "start": {"mini": 2, "micro": 20}, "tiers": [{"profit_trigger": 1500, "mini": 3, "micro": 30}, {"profit_trigger": 2000, "mini": 4, "micro": 40}], "ceiling": {"mini": 4, "micro": 40}}}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'funded', 'docs_url': 'https://help.tradeify.co/en/articles/12853966-select-flex-and-select-daily-payout-policies', 'notes': 'Select FLEX funded. No consistency rule, no DLL. 90/10. CONTRACTS scale CUMULATIVELY (retained once reached): start 2/20; +$1,500 -> 3/30; +$2,000 -> 4/40 (max). Tiers from Tradeify support assistant; re-confirm vs funded payout doc. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $2,000, LOCKS at $100 above start ($50,100) once EOD clears $52,100 or first payout. Payout: 5 winning days; Flex cap up to 50% of profit, max $3,000/payout. >10-sec activity rule. No overnight; flat 4:59pm ET. Verified 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 90.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 2000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
-        {'id': 'tradeify_100k_funded', 'name': 'Select $100k Funded (Flex)', 'account_size': 100000, 'profit_target': 0, 'max_loss_eod': 3000, 'max_loss_intraday': None, 'drawdown_type': 'trailing_eod', 'consistency_pct': None, 'min_trading_days': None, 'force_flat_time_et': '16:59', 'allowed_instruments': '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]', 'max_contracts': '{"mini_max": 3, "micro_max": 30, "scaling": {"mode": "cumulative_ratchet", "trigger_basis": "eod_profit_above_start", "start": {"mini": 3, "micro": 30}, "tiers": [{"profit_trigger": 1500, "mini": 4, "micro": 40}, {"profit_trigger": 2000, "mini": 5, "micro": 50}, {"profit_trigger": 3000, "mini": 8, "micro": 80}], "ceiling": {"mini": 8, "micro": 80}}}', 'platform_support': '["Tradovate", "Rithmic"]', 'account_tier': 'funded', 'docs_url': 'https://help.tradeify.co/en/articles/12853966-select-flex-and-select-daily-payout-policies', 'notes': 'Select FLEX funded. No consistency rule, no DLL. 90/10. CONTRACTS scale CUMULATIVELY: start 3/30; +$1,500 -> 4/40; +$2,000 -> 5/50; +$3,000 -> 8/80 (max). Tiers from Tradeify support assistant; re-confirm vs funded payout doc. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $3,000, LOCKS at $100 above start ($100,100) once EOD clears $103,100 or first payout. Payout: 5 winning days; Flex cap up to 50% of profit, max $4,000/payout. >10-sec activity rule. No overnight; flat 4:59pm ET. Verified 2026-05-31.', 'eval_cost_usd': None, 'activation_fee_usd': 0, 'profit_split_pct': 90.0, 'ruleset_type': 'prop_funded', 'daily_loss_cap': 3000, 'weekly_loss_cap': None, 'daily_profit_goal': None, 'description': None, 'risk_per_trade_pct': 0.5, 'max_consecutive_losses': 3, 'earliest_entry_time_et': '09:30', 'latest_entry_time_et': '15:00', 'days_of_week_allowed': '["mon","tue","wed","thu","fri"]', 'daily_profit_target': None, 'daily_profit_lock_pct': None, 'default_commission_per_side': 2.25, 'default_slippage_ticks': 1, 'daily_halt_fraction': None, 'market': 'futures', 'drawdown_unit': 'usd', 'mll_lock_balance': None, 'consistency_breach_action': None, 'reference_urls': None},
+        {
+            "id": "lucidflex_50k_eval",
+            "name": "LucidFlex $50k Evaluation",
+            "account_size": 50000,
+            "profit_target": 3000,
+            "max_loss_eod": 2000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": 50.0,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:45",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]',
+            "max_contracts": '{"mini_max": 4, "micro_max": 40, "scaling": null}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "eval",
+            "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_eval",
+            "daily_loss_cap": None,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": 1500,
+            "daily_profit_lock_pct": 0.8,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": 0.6,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": 50100.0,
+            "consistency_breach_action": None,
+            "reference_urls": '["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown","https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]',
+        },
+        {
+            "id": "lucidflex_100k_eval",
+            "name": "LucidFlex $100k Evaluation",
+            "account_size": 100000,
+            "profit_target": 6000,
+            "max_loss_eod": 3000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": 50.0,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:45",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]',
+            "max_contracts": '{"mini_max": 6, "micro_max": 60, "scaling": null}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "eval",
+            "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_eval",
+            "daily_loss_cap": None,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": 1500,
+            "daily_profit_lock_pct": 0.8,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": 0.6,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": 100100.0,
+            "consistency_breach_action": None,
+            "reference_urls": '["https://support.lucidtrading.com/en/articles/12945815-lucidflex-drawdown","https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan"]',
+        },
+        {
+            "id": "lucidflex_50k_funded",
+            "name": "LucidFlex $50k Funded",
+            "account_size": 50000,
+            "profit_target": 0,
+            "max_loss_eod": 2000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": None,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:45",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]',
+            "max_contracts": '{"mini_max": 2, "micro_max": 20, "scaling": {"mode": "bidirectional_band", "trigger_basis": "eod_simulated_profit", "bands": [{"profit_min": 0, "profit_max": 999, "mini": 2, "micro": 20}, {"profit_min": 1000, "profit_max": 1999, "mini": 3, "micro": 30}, {"profit_min": 2000, "profit_max": null, "mini": 4, "micro": 40}], "ceiling": {"mini": 4, "micro": 40}}}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "funded",
+            "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_funded",
+            "daily_loss_cap": 2000,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": None,
+            "daily_profit_lock_pct": None,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": None,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": None,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "lucidflex_100k_funded",
+            "name": "LucidFlex $100k Funded",
+            "account_size": 100000,
+            "profit_target": 0,
+            "max_loss_eod": 3000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": None,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:45",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K"]',
+            "max_contracts": '{"mini_max": 3, "micro_max": 30, "scaling": {"mode": "bidirectional_band", "trigger_basis": "eod_simulated_profit", "bands": [{"profit_min": 0, "profit_max": 999, "mini": 3, "micro": 30}, {"profit_min": 1000, "profit_max": 1999, "mini": 4, "micro": 40}, {"profit_min": 2000, "profit_max": 2999, "mini": 5, "micro": 50}, {"profit_min": 3000, "profit_max": null, "mini": 6, "micro": 60}], "ceiling": {"mini": 6, "micro": 60}}}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "funded",
+            "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_funded",
+            "daily_loss_cap": 3000,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": None,
+            "daily_profit_lock_pct": None,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": None,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": None,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "fundednext_flex_50k_eval",
+            "name": "Futures Flex $50k Challenge",
+            "account_size": 50000,
+            "profit_target": 2500,
+            "max_loss_eod": 1500,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": 40.0,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:10",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 3, "micro_max": 30, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "eval",
+            "docs_url": "https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge",
+            "notes": "One-time fee (base ~$134; promo code FLEX ~$69.99; reset ~$78). No activation fee to funded. DRAWDOWN: EOD trailing $1,500, locks permanently at $50,100 ($100 above start), then stops trailing. NO daily loss limit (MLL only). CONSISTENCY 40% CHALLENGE-PHASE ONLY -- UNUSUAL MECHANIC: breaching it does NOT fail the account; it RAISES the profit target instead. 40% rule mathematically forces >=3 winning days (no separate min-days rule found). CONTRACTS fixed (no scaling), 3 mini / 30 micro, mixable at 1:10; exceeding = excess-contract profit voided (penalty, not breach). Intraday only: flat by 3:10pm CT (16:10 ET, DST-adjusted), no overnight/weekend, auto-closed if left open. News trading allowed. Automated/EA/bots allowed (no latency abuse / order flooding). PROHIBITED: tight-bracket/no-slippage exploitation, grid, hedging, correlated-instrument hedging, trading within 2% of CME price limit. Platforms NinjaTrader + Tradovate. allowed_instruments = standard CME set we trade; verify exact FundedNext product list. Verified from docs_url on 2026-05-31.",
+            "eval_cost_usd": 134,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_eval",
+            "daily_loss_cap": None,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": 1500,
+            "daily_profit_lock_pct": 0.8,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": 0.6,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": 50100.0,
+            "consistency_breach_action": "raise_target",
+            "reference_urls": '["https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge"]',
+        },
+        {
+            "id": "fundednext_flex_100k_eval",
+            "name": "Futures Flex $100k Challenge",
+            "account_size": 100000,
+            "profit_target": 5000,
+            "max_loss_eod": 2500,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": 40.0,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:10",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 5, "micro_max": 50, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "eval",
+            "docs_url": "https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge",
+            "notes": "One-time fee (base ~$250; promo ~$129.99; reset ~$145). No activation fee. DRAWDOWN: EOD trailing $2,500, locks at $100,100 ($100 above start). NO daily loss limit. CONSISTENCY 40% CHALLENGE-ONLY; breaching RAISES the target (not a fail); forces >=3 winning days. CONTRACTS fixed 5 mini / 50 micro, mixable 1:10; excess = profit-void penalty. Intraday only, flat 3:10pm CT (16:10 ET), no overnight. News allowed. Automated/EA OK (no latency abuse). PROHIBITED: tight-bracket exploitation, grid, hedging, within 2% of CME price limit. Platforms NinjaTrader + Tradovate. allowed_instruments = standard CME set; verify exact list. Verified from docs_url on 2026-05-31.",
+            "eval_cost_usd": 250,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_eval",
+            "daily_loss_cap": None,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": 1500,
+            "daily_profit_lock_pct": 0.8,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": 0.6,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": 100100.0,
+            "consistency_breach_action": "raise_target",
+            "reference_urls": '["https://helpfutures.fundednext.com/en/articles/14878830-how-do-i-pass-fundednext-futures-flex-challenge"]',
+        },
+        {
+            "id": "fundednext_flex_50k_funded",
+            "name": "Futures Flex $50k Funded",
+            "account_size": 50000,
+            "profit_target": 0,
+            "max_loss_eod": 1500,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": None,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:10",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 3, "micro_max": 30, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "funded",
+            "docs_url": "https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge",
+            "notes": "FundedNext (funded) stage. NO consistency rule, NO daily loss limit. Reward split base 80%; 90% available only if the 90% add-on was bought at challenge purchase. DRAWDOWN: EOD trailing $1,500, locks at $50,100; first withdrawal also sets/locks the MLL. Payout requires 5 Benchmark (winning) days; withdrawal caps apply (50%-of-growth style, capped by size -- VERIFY exact amounts). Intraday only, flat 3:10pm CT (16:10 ET). Automated/EA OK (no HFT). Contracts fixed 3/30, mixable 1:10, excess = profit-void penalty. VERIFY: contract-limit policy says limits can differ by STAGE; funded-stage limit assumed same as challenge (3/30) -- confirm against the contract-limit policy doc. Verified from docs_url on 2026-05-31.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": 0,
+            "profit_split_pct": 80.0,
+            "ruleset_type": "prop_funded",
+            "daily_loss_cap": 1500,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": None,
+            "daily_profit_lock_pct": None,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": None,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": None,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "fundednext_flex_100k_funded",
+            "name": "Futures Flex $100k Funded",
+            "account_size": 100000,
+            "profit_target": 0,
+            "max_loss_eod": 2500,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": None,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:10",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 5, "micro_max": 50, "scaling": null, "mix_allowed": true, "mix_ratio_micro_per_mini": 10}',
+            "platform_support": '["NinjaTrader", "Tradovate"]',
+            "account_tier": "funded",
+            "docs_url": "https://helpfutures.fundednext.com/en/articles/14878751-what-is-fundednext-futures-flex-challenge",
+            "notes": "FundedNext (funded) stage. NO consistency rule, NO daily loss limit. Split base 80% (90% only with add-on bought at purchase). DRAWDOWN: EOD trailing $2,500, locks at $100,100; first withdrawal also locks MLL. Payout: 5 Benchmark days; withdrawal caps apply -- VERIFY amounts. Intraday only, flat 3:10pm CT (16:10 ET). Automated/EA OK (no HFT). Contracts fixed 5/50, mixable 1:10, excess = profit-void penalty. VERIFY: funded-stage contract limit assumed same as challenge (5/50) -- policy says limits can differ by stage; confirm. Verified from docs_url on 2026-05-31.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": 0,
+            "profit_split_pct": 80.0,
+            "ruleset_type": "prop_funded",
+            "daily_loss_cap": 2500,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": None,
+            "daily_profit_lock_pct": None,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": None,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": None,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "tradeify_50k_eval",
+            "name": "Select $50k Evaluation",
+            "account_size": 50000,
+            "profit_target": 3000,
+            "max_loss_eod": 2000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": 40.0,
+            "min_trading_days": 3,
+            "force_flat_time_et": "16:59",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 4, "micro_max": 40, "scaling": null}',
+            "platform_support": '["Tradovate", "Rithmic"]',
+            "account_tier": "eval",
+            "docs_url": "https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts",
+            "notes": "One-time purchase (Tradeify 3.0). Price ~$165 / reset ~$95 UNVERIFIED (confirm at checkout). CONTRACTS: eval full day one, no scaling = 4/40. Cannot hold minis+micros at once (hedging); can switch between sessions. DRAWDOWN: EOD trailing $2,000, trails up never down, real-time enforced, NO lock during eval. No DLL during eval. 40% consistency => min 3 days. Activity rule: >50% of trades AND >50% of profit from trades held >10s. No overnight; flat 4:59pm ET (12:59 holidays). News allowed. Bots/algos OK (sole owner, no HFT). Tradovate+Rithmic day one; native NinjaTrader Elite-only. Verified 2026-05-31.",
+            "eval_cost_usd": 165,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_eval",
+            "daily_loss_cap": None,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": 1500,
+            "daily_profit_lock_pct": 0.8,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": 0.6,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": 50100.0,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "tradeify_100k_eval",
+            "name": "Select $100k Evaluation",
+            "account_size": 100000,
+            "profit_target": 6000,
+            "max_loss_eod": 3000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": 40.0,
+            "min_trading_days": 3,
+            "force_flat_time_et": "16:59",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 8, "micro_max": 80, "scaling": null}',
+            "platform_support": '["Tradovate", "Rithmic"]',
+            "account_tier": "eval",
+            "docs_url": "https://help.tradeify.co/en/articles/12853921-select-evaluation-accounts",
+            "notes": "One-time purchase. Price ~$265 / reset ~$169 UNVERIFIED. CONTRACTS: eval full day one = 8/80, no scaling. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $3,000, trails up never down, NO lock during eval. No DLL during eval. 40% consistency, min 3 days. >10-sec activity rule. No overnight; flat 4:59pm ET. News allowed. Bots/algos OK (no HFT). Tradovate+Rithmic day one; native NinjaTrader Elite-only. Note: Select 100k drawdown ($3,000) TIGHTER than Growth 100k ($3,500). Verified 2026-05-31.",
+            "eval_cost_usd": 265,
+            "activation_fee_usd": None,
+            "profit_split_pct": None,
+            "ruleset_type": "prop_eval",
+            "daily_loss_cap": None,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": 1500,
+            "daily_profit_lock_pct": 0.8,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": 0.6,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": 100100.0,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "tradeify_50k_funded",
+            "name": "Select $50k Funded (Flex)",
+            "account_size": 50000,
+            "profit_target": 0,
+            "max_loss_eod": 2000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": None,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:59",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 2, "micro_max": 20, "scaling": {"mode": "cumulative_ratchet", "trigger_basis": "eod_profit_above_start", "start": {"mini": 2, "micro": 20}, "tiers": [{"profit_trigger": 1500, "mini": 3, "micro": 30}, {"profit_trigger": 2000, "mini": 4, "micro": 40}], "ceiling": {"mini": 4, "micro": 40}}}',
+            "platform_support": '["Tradovate", "Rithmic"]',
+            "account_tier": "funded",
+            "docs_url": "https://help.tradeify.co/en/articles/12853966-select-flex-and-select-daily-payout-policies",
+            "notes": "Select FLEX funded. No consistency rule, no DLL. 90/10. CONTRACTS scale CUMULATIVELY (retained once reached): start 2/20; +$1,500 -> 3/30; +$2,000 -> 4/40 (max). Tiers from Tradeify support assistant; re-confirm vs funded payout doc. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $2,000, LOCKS at $100 above start ($50,100) once EOD clears $52,100 or first payout. Payout: 5 winning days; Flex cap up to 50% of profit, max $3,000/payout. >10-sec activity rule. No overnight; flat 4:59pm ET. Verified 2026-05-31.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": 0,
+            "profit_split_pct": 90.0,
+            "ruleset_type": "prop_funded",
+            "daily_loss_cap": 2000,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": None,
+            "daily_profit_lock_pct": None,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": None,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": None,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
+        {
+            "id": "tradeify_100k_funded",
+            "name": "Select $100k Funded (Flex)",
+            "account_size": 100000,
+            "profit_target": 0,
+            "max_loss_eod": 3000,
+            "max_loss_intraday": None,
+            "drawdown_type": "trailing_eod",
+            "consistency_pct": None,
+            "min_trading_days": None,
+            "force_flat_time_et": "16:59",
+            "allowed_instruments": '["MES", "MNQ", "MGC", "MCL", "MYM", "M2K", "ES", "NQ", "GC", "CL", "YM", "RTY"]',
+            "max_contracts": '{"mini_max": 3, "micro_max": 30, "scaling": {"mode": "cumulative_ratchet", "trigger_basis": "eod_profit_above_start", "start": {"mini": 3, "micro": 30}, "tiers": [{"profit_trigger": 1500, "mini": 4, "micro": 40}, {"profit_trigger": 2000, "mini": 5, "micro": 50}, {"profit_trigger": 3000, "mini": 8, "micro": 80}], "ceiling": {"mini": 8, "micro": 80}}}',
+            "platform_support": '["Tradovate", "Rithmic"]',
+            "account_tier": "funded",
+            "docs_url": "https://help.tradeify.co/en/articles/12853966-select-flex-and-select-daily-payout-policies",
+            "notes": "Select FLEX funded. No consistency rule, no DLL. 90/10. CONTRACTS scale CUMULATIVELY: start 3/30; +$1,500 -> 4/40; +$2,000 -> 5/50; +$3,000 -> 8/80 (max). Tiers from Tradeify support assistant; re-confirm vs funded payout doc. Cannot hold minis+micros at once. DRAWDOWN: EOD trailing $3,000, LOCKS at $100 above start ($100,100) once EOD clears $103,100 or first payout. Payout: 5 winning days; Flex cap up to 50% of profit, max $4,000/payout. >10-sec activity rule. No overnight; flat 4:59pm ET. Verified 2026-05-31.",
+            "eval_cost_usd": None,
+            "activation_fee_usd": 0,
+            "profit_split_pct": 90.0,
+            "ruleset_type": "prop_funded",
+            "daily_loss_cap": 3000,
+            "weekly_loss_cap": None,
+            "daily_profit_goal": None,
+            "description": None,
+            "risk_per_trade_pct": 0.5,
+            "max_consecutive_losses": 3,
+            "earliest_entry_time_et": "09:30",
+            "latest_entry_time_et": "15:00",
+            "days_of_week_allowed": '["mon","tue","wed","thu","fri"]',
+            "daily_profit_target": None,
+            "daily_profit_lock_pct": None,
+            "default_commission_per_side": 2.25,
+            "default_slippage_ticks": 1,
+            "daily_halt_fraction": None,
+            "market": "futures",
+            "drawdown_unit": "usd",
+            "mll_lock_balance": None,
+            "consistency_breach_action": None,
+            "reference_urls": None,
+        },
     ]
     _prop_seed_sql = (
         "INSERT INTO rulesets (" + ", ".join(_PROP_SEED_COLS) + ", created_at, updated_at) "
@@ -1234,30 +1918,147 @@ def _seed_instrument_metadata(conn: sqlite3.Connection) -> None:
         # broker_suffix is blank — user populates after checking PU Prime symbol names.
         # point_value_usd is per standard lot (100k units) where applicable; null where
         # it depends heavily on the current exchange rate (JPY pairs, NAS100).
-        ("XAUUSD",  "forex", "Gold (XAU/USD)",                 0.01,    1.0,    "", "24h",     "Spread-based; point value per 0.01 move per lot"),
-        ("XAGUSD",  "forex", "Silver (XAG/USD)",               0.001,   None,   "", "24h",     "Highly variable point value; update after testing"),
-        ("EURUSD",  "forex", "Euro / US Dollar",               0.00001, 10.0,   "", "london",  "Majors pair; $10/pip per std lot"),
-        ("GBPUSD",  "forex", "British Pound / US Dollar",      0.00001, 10.0,   "", "london",  "Majors pair; $10/pip per std lot"),
-        ("GBPJPY",  "forex", "British Pound / Japanese Yen",   0.001,   None,   "", "london",  "Cross pair; pip value varies with JPY rate"),
-        ("USDJPY",  "forex", "US Dollar / Japanese Yen",       0.001,   None,   "", "london",  "Majors pair; pip value varies with JPY rate"),
-        ("AUDUSD",  "forex", "Australian Dollar / US Dollar",  0.00001, 10.0,   "", "london",  "Majors pair; $10/pip per std lot"),
-        ("USDCAD",  "forex", "US Dollar / Canadian Dollar",    0.00001, None,   "", "newyork", "Pip value varies with CAD rate"),
-        ("EURGBP",  "forex", "Euro / British Pound",           0.00001, None,   "", "london",  "Cross pair; pip value varies with GBP rate"),
-        ("NAS100",  "forex", "Nasdaq 100 (Index CFD)",         0.01,    None,   "", "newyork", "Index CFD; contract size broker-specific"),
+        (
+            "XAUUSD",
+            "forex",
+            "Gold (XAU/USD)",
+            0.01,
+            1.0,
+            "",
+            "24h",
+            "Spread-based; point value per 0.01 move per lot",
+        ),
+        (
+            "XAGUSD",
+            "forex",
+            "Silver (XAG/USD)",
+            0.001,
+            None,
+            "",
+            "24h",
+            "Highly variable point value; update after testing",
+        ),
+        (
+            "EURUSD",
+            "forex",
+            "Euro / US Dollar",
+            0.00001,
+            10.0,
+            "",
+            "london",
+            "Majors pair; $10/pip per std lot",
+        ),
+        (
+            "GBPUSD",
+            "forex",
+            "British Pound / US Dollar",
+            0.00001,
+            10.0,
+            "",
+            "london",
+            "Majors pair; $10/pip per std lot",
+        ),
+        (
+            "GBPJPY",
+            "forex",
+            "British Pound / Japanese Yen",
+            0.001,
+            None,
+            "",
+            "london",
+            "Cross pair; pip value varies with JPY rate",
+        ),
+        (
+            "USDJPY",
+            "forex",
+            "US Dollar / Japanese Yen",
+            0.001,
+            None,
+            "",
+            "london",
+            "Majors pair; pip value varies with JPY rate",
+        ),
+        (
+            "AUDUSD",
+            "forex",
+            "Australian Dollar / US Dollar",
+            0.00001,
+            10.0,
+            "",
+            "london",
+            "Majors pair; $10/pip per std lot",
+        ),
+        (
+            "USDCAD",
+            "forex",
+            "US Dollar / Canadian Dollar",
+            0.00001,
+            None,
+            "",
+            "newyork",
+            "Pip value varies with CAD rate",
+        ),
+        (
+            "EURGBP",
+            "forex",
+            "Euro / British Pound",
+            0.00001,
+            None,
+            "",
+            "london",
+            "Cross pair; pip value varies with GBP rate",
+        ),
+        (
+            "NAS100",
+            "forex",
+            "Nasdaq 100 (Index CFD)",
+            0.01,
+            None,
+            "",
+            "newyork",
+            "Index CFD; contract size broker-specific",
+        ),
         # ── Futures ──────────────────────────────────────────────────────────
         # point_value_usd = dollar value of one full point (not tick).
-        ("MES",     "futures", "Micro E-mini S&P 500",         0.25,    5.0,    "", "newyork", "$1.25/tick; $5/point"),
-        ("ES",      "futures", "E-mini S&P 500",               0.25,    50.0,   "", "newyork", "$12.50/tick; $50/point"),
-        ("MNQ",     "futures", "Micro E-mini Nasdaq 100",      0.25,    2.0,    "", "newyork", "$0.50/tick; $2/point"),
-        ("NQ",      "futures", "E-mini Nasdaq 100",            0.25,    20.0,   "", "newyork", "$5.00/tick; $20/point"),
-        ("MGC",     "futures", "Micro Gold",                   0.10,    1.0,    "", "newyork", "$0.10/tick; $1/point"),
-        ("GC",      "futures", "Gold (full)",                  0.10,    10.0,   "", "newyork", "$1.00/tick; $10/point"),
-        ("MCL",     "futures", "Micro Crude Oil",              0.01,    1.0,    "", "newyork", "$0.01/tick; $1/point"),
-        ("CL",      "futures", "Crude Oil (full)",             0.01,    10.0,   "", "newyork", "$0.10/tick; $10/point"),
-        ("MYM",     "futures", "Micro E-mini Dow",             1.0,     0.5,    "", "newyork", "$0.50/tick; $0.50/point"),
-        ("YM",      "futures", "E-mini Dow",                   1.0,     5.0,    "", "newyork", "$5.00/tick; $5/point"),
-        ("M2K",     "futures", "Micro E-mini Russell 2000",    0.10,    0.5,    "", "newyork", "$0.05/tick; $0.50/point"),
-        ("RTY",     "futures", "E-mini Russell 2000",          0.10,    5.0,    "", "newyork", "$0.50/tick; $5/point"),
+        (
+            "MES",
+            "futures",
+            "Micro E-mini S&P 500",
+            0.25,
+            5.0,
+            "",
+            "newyork",
+            "$1.25/tick; $5/point",
+        ),
+        ("ES", "futures", "E-mini S&P 500", 0.25, 50.0, "", "newyork", "$12.50/tick; $50/point"),
+        (
+            "MNQ",
+            "futures",
+            "Micro E-mini Nasdaq 100",
+            0.25,
+            2.0,
+            "",
+            "newyork",
+            "$0.50/tick; $2/point",
+        ),
+        ("NQ", "futures", "E-mini Nasdaq 100", 0.25, 20.0, "", "newyork", "$5.00/tick; $20/point"),
+        ("MGC", "futures", "Micro Gold", 0.10, 1.0, "", "newyork", "$0.10/tick; $1/point"),
+        ("GC", "futures", "Gold (full)", 0.10, 10.0, "", "newyork", "$1.00/tick; $10/point"),
+        ("MCL", "futures", "Micro Crude Oil", 0.01, 1.0, "", "newyork", "$0.01/tick; $1/point"),
+        ("CL", "futures", "Crude Oil (full)", 0.01, 10.0, "", "newyork", "$0.10/tick; $10/point"),
+        ("MYM", "futures", "Micro E-mini Dow", 1.0, 0.5, "", "newyork", "$0.50/tick; $0.50/point"),
+        ("YM", "futures", "E-mini Dow", 1.0, 5.0, "", "newyork", "$5.00/tick; $5/point"),
+        (
+            "M2K",
+            "futures",
+            "Micro E-mini Russell 2000",
+            0.10,
+            0.5,
+            "",
+            "newyork",
+            "$0.05/tick; $0.50/point",
+        ),
+        ("RTY", "futures", "E-mini Russell 2000", 0.10, 5.0, "", "newyork", "$0.50/tick; $5/point"),
     ]
     conn.executemany(
         """INSERT OR IGNORE INTO instrument_metadata
@@ -1269,6 +2070,7 @@ def _seed_instrument_metadata(conn: sqlite3.Connection) -> None:
 
 
 # ── Strategies ────────────────────────────────────────────────────────────────
+
 
 def list_strategies() -> list[dict]:
     with _connect() as conn:
@@ -1285,14 +2087,17 @@ def list_strategies() -> list[dict]:
 
 def get_strategy(strategy_id: str) -> Optional[dict]:
     with _connect() as conn:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT s.*, COUNT(r.run_id) AS run_count
             FROM strategies s
             LEFT JOIN backtest_runs r
               ON r.strategy_id = s.id AND r.stress_test_id IS NULL
             WHERE s.id = ?
             GROUP BY s.id
-        """, (strategy_id,)).fetchone()
+        """,
+            (strategy_id,),
+        ).fetchone()
     if not row:
         return None
     return _parse_json_fields(dict(row), ["default_params", "param_schema", "steps"])
@@ -1316,7 +2121,8 @@ def update_strategy_description(strategy_id: str, description: Optional[str]) ->
 
 def upsert_strategy(data: dict) -> None:
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
@@ -1337,18 +2143,25 @@ def upsert_strategy(data: dict) -> None:
                 steps=excluded.steps,
                 avoid_news=excluded.avoid_news,
                 self_sizing=excluded.self_sizing
-        """, (
-            data["id"], data["name"], data["class_name"], data["source_path"],
-            data.get("category"), data.get("suggested_instrument"),
-            json.dumps(data.get("default_params", {})),
-            json.dumps(data.get("param_schema", [])),
-            data["scanned_at"], data.get("source_hash"),
-            data.get("runner", "ninjatrader"),
-            data.get("edge"),
-            json.dumps(data.get("steps", [])),
-            1 if data.get("avoid_news") else 0,
-            1 if data.get("self_sizing") else 0,
-        ))
+        """,
+            (
+                data["id"],
+                data["name"],
+                data["class_name"],
+                data["source_path"],
+                data.get("category"),
+                data.get("suggested_instrument"),
+                json.dumps(data.get("default_params", {})),
+                json.dumps(data.get("param_schema", [])),
+                data["scanned_at"],
+                data.get("source_hash"),
+                data.get("runner", "ninjatrader"),
+                data.get("edge"),
+                json.dumps(data.get("steps", [])),
+                1 if data.get("avoid_news") else 0,
+                1 if data.get("self_sizing") else 0,
+            ),
+        )
 
 
 def mark_runner_compiled(runner: str) -> None:
@@ -1369,8 +2182,10 @@ def mark_runner_compiled(runner: str) -> None:
 # monotonic version per strategy, so reverting to earlier content reuses its
 # original version number. This is the source of truth for "what version is X".
 
-def ensure_strategy_version(strategy_id: str, source_hash: str,
-                            size_bytes: Optional[int] = None) -> int:
+
+def ensure_strategy_version(
+    strategy_id: str, source_hash: str, size_bytes: Optional[int] = None
+) -> int:
     """Return the version for this (strategy, content hash), creating it if new."""
     with _connect() as conn:
         row = conn.execute(
@@ -1443,10 +2258,14 @@ def delete_strategy(strategy_id: str) -> bool:
     with _connect() as conn:
         conn.execute(
             "DELETE FROM evaluations WHERE run_id IN "
-            "(SELECT run_id FROM backtest_runs WHERE strategy_id = ?)", (strategy_id,))
+            "(SELECT run_id FROM backtest_runs WHERE strategy_id = ?)",
+            (strategy_id,),
+        )
         conn.execute(
             "DELETE FROM stress_tests WHERE run_id IN "
-            "(SELECT run_id FROM backtest_runs WHERE strategy_id = ?)", (strategy_id,))
+            "(SELECT run_id FROM backtest_runs WHERE strategy_id = ?)",
+            (strategy_id,),
+        )
         conn.execute("DELETE FROM backtest_runs WHERE strategy_id = ?", (strategy_id,))
         conn.execute("DELETE FROM optimizations WHERE strategy_id = ?", (strategy_id,))
         conn.execute("DELETE FROM strategy_versions WHERE strategy_id = ?", (strategy_id,))
@@ -1456,7 +2275,13 @@ def delete_strategy(strategy_id: str) -> bool:
 
 # ── Rulesets ──────────────────────────────────────────────────────────────────
 
-_RULESET_JSON_FIELDS = ["allowed_instruments", "max_contracts", "platform_support", "days_of_week_allowed", "reference_urls"]
+_RULESET_JSON_FIELDS = [
+    "allowed_instruments",
+    "max_contracts",
+    "platform_support",
+    "days_of_week_allowed",
+    "reference_urls",
+]
 
 
 def list_rulesets() -> list[dict]:
@@ -1493,9 +2318,15 @@ def insert_ruleset(data: dict) -> None:
                 created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                data["id"], data["name"], data["account_size"], data["profit_target"],
-                data["max_loss_eod"], data.get("max_loss_intraday"), data["drawdown_type"],
-                data.get("consistency_pct"), data.get("min_trading_days"),
+                data["id"],
+                data["name"],
+                data["account_size"],
+                data["profit_target"],
+                data["max_loss_eod"],
+                data.get("max_loss_intraday"),
+                data["drawdown_type"],
+                data.get("consistency_pct"),
+                data.get("min_trading_days"),
                 data.get("force_flat_time_et"),
                 json.dumps(data.get("allowed_instruments", [])),
                 json.dumps(data.get("max_contracts", {})),
@@ -1504,18 +2335,29 @@ def insert_ruleset(data: dict) -> None:
                 data.get("ruleset_type", "prop_eval"),
                 data.get("market", "futures"),
                 data.get("drawdown_unit", "usd"),
-                data.get("daily_loss_cap"), data.get("weekly_loss_cap"),
-                data.get("daily_profit_goal"), data.get("description"),
-                data.get("docs_url"), data.get("eval_cost_usd"),
-                data.get("activation_fee_usd"), data.get("profit_split_pct"),
+                data.get("daily_loss_cap"),
+                data.get("weekly_loss_cap"),
+                data.get("daily_profit_goal"),
+                data.get("description"),
+                data.get("docs_url"),
+                data.get("eval_cost_usd"),
+                data.get("activation_fee_usd"),
+                data.get("profit_split_pct"),
                 data.get("notes"),
-                data.get("risk_per_trade_pct"), data.get("max_consecutive_losses"),
-                data.get("earliest_entry_time_et"), data.get("latest_entry_time_et"),
-                json.dumps(data.get("days_of_week_allowed", [])) if data.get("days_of_week_allowed") is not None else None,
-                data.get("daily_profit_target"), data.get("daily_profit_lock_pct"),
-                data.get("default_commission_per_side"), data.get("default_slippage_ticks"),
+                data.get("risk_per_trade_pct"),
+                data.get("max_consecutive_losses"),
+                data.get("earliest_entry_time_et"),
+                data.get("latest_entry_time_et"),
+                json.dumps(data.get("days_of_week_allowed", []))
+                if data.get("days_of_week_allowed") is not None
+                else None,
+                data.get("daily_profit_target"),
+                data.get("daily_profit_lock_pct"),
+                data.get("default_commission_per_side"),
+                data.get("default_slippage_ticks"),
                 data.get("daily_halt_fraction"),
-                now, now,
+                now,
+                now,
             ),
         )
 
@@ -1541,9 +2383,14 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
                updated_at=?
                WHERE id=?""",
             (
-                data["name"], data["account_size"], data["profit_target"],
-                data["max_loss_eod"], data.get("max_loss_intraday"), data["drawdown_type"],
-                data.get("consistency_pct"), data.get("min_trading_days"),
+                data["name"],
+                data["account_size"],
+                data["profit_target"],
+                data["max_loss_eod"],
+                data.get("max_loss_intraday"),
+                data["drawdown_type"],
+                data.get("consistency_pct"),
+                data.get("min_trading_days"),
                 data.get("force_flat_time_et"),
                 json.dumps(data.get("allowed_instruments", [])),
                 json.dumps(data.get("max_contracts", {})),
@@ -1552,18 +2399,29 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
                 data.get("ruleset_type", "prop_eval"),
                 data.get("market", "futures"),
                 data.get("drawdown_unit", "usd"),
-                data.get("daily_loss_cap"), data.get("weekly_loss_cap"),
-                data.get("daily_profit_goal"), data.get("description"),
-                data.get("docs_url"), data.get("eval_cost_usd"),
-                data.get("activation_fee_usd"), data.get("profit_split_pct"),
+                data.get("daily_loss_cap"),
+                data.get("weekly_loss_cap"),
+                data.get("daily_profit_goal"),
+                data.get("description"),
+                data.get("docs_url"),
+                data.get("eval_cost_usd"),
+                data.get("activation_fee_usd"),
+                data.get("profit_split_pct"),
                 data.get("notes"),
-                data.get("risk_per_trade_pct"), data.get("max_consecutive_losses"),
-                data.get("earliest_entry_time_et"), data.get("latest_entry_time_et"),
-                json.dumps(data.get("days_of_week_allowed", [])) if data.get("days_of_week_allowed") is not None else None,
-                data.get("daily_profit_target"), data.get("daily_profit_lock_pct"),
-                data.get("default_commission_per_side"), data.get("default_slippage_ticks"),
+                data.get("risk_per_trade_pct"),
+                data.get("max_consecutive_losses"),
+                data.get("earliest_entry_time_et"),
+                data.get("latest_entry_time_et"),
+                json.dumps(data.get("days_of_week_allowed", []))
+                if data.get("days_of_week_allowed") is not None
+                else None,
+                data.get("daily_profit_target"),
+                data.get("daily_profit_lock_pct"),
+                data.get("default_commission_per_side"),
+                data.get("default_slippage_ticks"),
                 data.get("daily_halt_fraction"),
-                now, ruleset_id,
+                now,
+                ruleset_id,
             ),
         )
     return cur.rowcount > 0
@@ -1573,10 +2431,15 @@ def update_ruleset(ruleset_id: str, data: dict) -> bool:
 # the router validates the body shape (PersonalRulesetPatch, extra=forbid) and the
 # personal-row guard; this allowlist makes the SQL layer refuse anything else even
 # if a future caller bypasses the router.
-_PERSONAL_PATCH_FIELDS = frozenset({
-    "account_size", "daily_loss_cap", "daily_profit_target",
-    "max_drawdown_from_peak_pct", "max_consecutive_loss_days",
-})
+_PERSONAL_PATCH_FIELDS = frozenset(
+    {
+        "account_size",
+        "daily_loss_cap",
+        "daily_profit_target",
+        "max_drawdown_from_peak_pct",
+        "max_consecutive_loss_days",
+    }
+)
 
 
 def update_ruleset_fields(ruleset_id: str, fields: dict) -> bool:
@@ -1604,6 +2467,7 @@ def delete_ruleset(ruleset_id: str) -> bool:
 
 # ── Instrument metadata ───────────────────────────────────────────────────────
 
+
 def get_instrument_metadata(symbol: str) -> Optional[dict]:
     with _connect() as conn:
         row = conn.execute(
@@ -1613,6 +2477,7 @@ def get_instrument_metadata(symbol: str) -> Optional[dict]:
 
 
 # ── Backtest runs ─────────────────────────────────────────────────────────────
+
 
 def list_runs(
     strategy_id: Optional[str] = None,
@@ -1670,12 +2535,15 @@ def list_runs(
 
 def get_run(run_id: str) -> Optional[dict]:
     with _connect() as conn:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT r.*, s.runner, s.name AS strategy_name
             FROM backtest_runs r
             JOIN strategies s ON s.id = r.strategy_id
             WHERE r.run_id = ?
-        """, (run_id,)).fetchone()
+        """,
+            (run_id,),
+        ).fetchone()
     if not row:
         return None
     return _parse_json_fields(dict(row), ["params", "evaluate_firms"])
@@ -1683,40 +2551,53 @@ def get_run(run_id: str) -> Optional[dict]:
 
 def insert_run(data: dict) -> None:
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, evaluate_firms, runner, optimization_id,
                  source_run_id, sizing_mode, manual_risk_pct, cost_layers, broker_profile)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["run_id"], data["strategy_id"], data["instrument"],
-            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
-            data["start_date"], data["end_date"],
-            data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
-            json.dumps(data.get("evaluate_rulesets") or data.get("evaluate_firms") or []),
-            data.get("runner", "ninjatrader"),
-            data.get("optimization_id"),
-            data.get("source_run_id"),
-            data.get("sizing_mode", "consistent"),
-            data.get("manual_risk_pct"),
-            # '[]' is "charge nothing", NULL is "no layered-cost contract on this row", and
-            # `python_runner._cost_profile` treats them differently on purpose — NULL falls back
-            # to the legacy commission/slippage branch.
-            #
-            # ⚠ The KEY BEING ABSENT and the key being explicitly None are different requests.
-            # Absent (sweeps, stacks, every caller that has no opinion) → '[]', so a new python
-            # run can never land in the legacy branch by omission. Explicitly None → NULL, which
-            # is what an NT8/MT5 run is: those runners have no layer switches at all, and storing
-            # '[]' for them made the detail page report a tester that charged commission and
-            # slippage as "deliberately frictionless".
-            (None
-             if "cost_layers" in data and data["cost_layers"] is None
-             else json.dumps(data.get("cost_layers") or [])),
-            data.get("broker_profile") or "vantage_demo",
-        ))
+        """,
+            (
+                data["run_id"],
+                data["strategy_id"],
+                data["instrument"],
+                json.dumps(data["params"]),
+                data["bar_type"],
+                data["bar_value"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["status"],
+                data["created_at"],
+                data.get("started_at", data["created_at"]),
+                json.dumps(data.get("evaluate_rulesets") or data.get("evaluate_firms") or []),
+                data.get("runner", "ninjatrader"),
+                data.get("optimization_id"),
+                data.get("source_run_id"),
+                data.get("sizing_mode", "consistent"),
+                data.get("manual_risk_pct"),
+                # '[]' is "charge nothing", NULL is "no layered-cost contract on this row", and
+                # `python_runner._cost_profile` treats them differently on purpose — NULL falls back
+                # to the legacy commission/slippage branch.
+                #
+                # ⚠ The KEY BEING ABSENT and the key being explicitly None are different requests.
+                # Absent (sweeps, stacks, every caller that has no opinion) → '[]', so a new python
+                # run can never land in the legacy branch by omission. Explicitly None → NULL, which
+                # is what an NT8/MT5 run is: those runners have no layer switches at all, and storing
+                # '[]' for them made the detail page report a tester that charged commission and
+                # slippage as "deliberately frictionless".
+                (
+                    None
+                    if "cost_layers" in data and data["cost_layers"] is None
+                    else json.dumps(data.get("cost_layers") or [])
+                ),
+                data.get("broker_profile") or "vantage_demo",
+            ),
+        )
 
 
 def update_run_chart_paths(run_id: str, paths: dict) -> None:
@@ -1745,7 +2626,8 @@ def update_run_status(run_id: str, status: str, error_message: Optional[str] = N
 def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
     now = int(time.time())
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE backtest_runs SET
                 status='complete', completed_at=?,
                 net_pnl=?, max_drawdown=?, profit_factor=?, win_rate=?,
@@ -1757,21 +2639,38 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
                 max_drawdown_pct=?, scratch_count=?, trade_concentration_pct=?,
                 equity_curve_path=?, trades_path=?, daily_pnl_path=?
             WHERE run_id=?
-        """, (
-            now,
-            kpis.get("net_pnl"), kpis.get("max_drawdown"), kpis.get("profit_factor"),
-            kpis.get("win_rate"), kpis.get("win_count"), kpis.get("trade_count"),
-            kpis.get("sharpe"), kpis.get("sortino"), kpis.get("cagr"),
-            kpis.get("avg_win"), kpis.get("avg_loss"), kpis.get("avg_trade_duration_min"),
-            kpis.get("worst_day_pnl"), kpis.get("worst_losing_streak"),
-            kpis.get("platform_sharpe"),
-            int(kpis["sharpe_low_sample"]) if kpis.get("sharpe_low_sample") is not None else None,
-            kpis.get("profit_concentration_pct"), kpis.get("profit_concentration_basis"),
-            kpis.get("max_drawdown_pct"), kpis.get("scratch_count"),
-            kpis.get("trade_concentration_pct"),
-            file_paths.get("equity_curve"), file_paths.get("trades"),
-            file_paths.get("daily_pnl"), run_id,
-        ))
+        """,
+            (
+                now,
+                kpis.get("net_pnl"),
+                kpis.get("max_drawdown"),
+                kpis.get("profit_factor"),
+                kpis.get("win_rate"),
+                kpis.get("win_count"),
+                kpis.get("trade_count"),
+                kpis.get("sharpe"),
+                kpis.get("sortino"),
+                kpis.get("cagr"),
+                kpis.get("avg_win"),
+                kpis.get("avg_loss"),
+                kpis.get("avg_trade_duration_min"),
+                kpis.get("worst_day_pnl"),
+                kpis.get("worst_losing_streak"),
+                kpis.get("platform_sharpe"),
+                int(kpis["sharpe_low_sample"])
+                if kpis.get("sharpe_low_sample") is not None
+                else None,
+                kpis.get("profit_concentration_pct"),
+                kpis.get("profit_concentration_basis"),
+                kpis.get("max_drawdown_pct"),
+                kpis.get("scratch_count"),
+                kpis.get("trade_concentration_pct"),
+                file_paths.get("equity_curve"),
+                file_paths.get("trades"),
+                file_paths.get("daily_pnl"),
+                run_id,
+            ),
+        )
 
 
 def _purge_stress_tests_for_runs(conn, run_ids: list[str]) -> list[str]:
@@ -1789,14 +2688,16 @@ def _purge_stress_tests_for_runs(conn, run_ids: list[str]) -> list[str]:
         return []
     ph = ",".join("?" * len(run_ids))
     st_ids = [
-        r["stress_test_id"] for r in conn.execute(
+        r["stress_test_id"]
+        for r in conn.execute(
             f"SELECT stress_test_id FROM stress_tests WHERE run_id IN ({ph})", run_ids
         ).fetchall()
     ]
     deleted_child_ids: list[str] = []
     for st_id in st_ids:
         child_ids = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE stress_test_id = ?", (st_id,)
             ).fetchall()
         ]
@@ -1820,13 +2721,15 @@ def delete_run(run_id: str) -> list[str]:
     with _connect() as conn:
         # Cascade: delete associated optimizations (and their child runs/evals)
         opt_ids = [
-            r["optimization_id"] for r in conn.execute(
+            r["optimization_id"]
+            for r in conn.execute(
                 "SELECT optimization_id FROM optimizations WHERE source_run_id = ?", (run_id,)
             ).fetchall()
         ]
         for oid in opt_ids:
             child_ids = [
-                r["run_id"] for r in conn.execute(
+                r["run_id"]
+                for r in conn.execute(
                     "SELECT run_id FROM backtest_runs WHERE optimization_id = ?", (oid,)
                 ).fetchall()
             ]
@@ -1841,7 +2744,8 @@ def delete_run(run_id: str) -> list[str]:
 
         # Cascade: delete associated sweeps (runs where source_run_id = this run)
         sweep_child_ids = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE source_run_id = ?", (run_id,)
             ).fetchall()
         ]
@@ -1874,7 +2778,8 @@ def delete_optimization(optimization_id: str) -> tuple[bool, list[str]]:
     """
     with _connect() as conn:
         child_ids = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE optimization_id = ?", (optimization_id,)
             ).fetchall()
         ]
@@ -1916,11 +2821,12 @@ def get_run_verdict_summaries(run_ids: list[str]) -> dict[str, list[dict]]:
         # SQLite's default host-parameter ceiling is 999; chunk rather than assume the list is
         # short, because an unfiltered Runs tab grows without bound.
         for i in range(0, len(run_ids), 500):
-            chunk = run_ids[i:i + 500]
+            chunk = run_ids[i : i + 500]
             ph = ",".join("?" * len(chunk))
             for r in conn.execute(
                 f"SELECT run_id, ruleset_id, verdict, notes FROM evaluations "
-                f"WHERE run_id IN ({ph})", chunk
+                f"WHERE run_id IN ({ph})",
+                chunk,
             ).fetchall():
                 row = dict(r)
                 out[row.pop("run_id")].append(row)
@@ -1929,9 +2835,11 @@ def get_run_verdict_summaries(run_ids: list[str]) -> dict[str, list[dict]]:
 
 # ── Evaluations ───────────────────────────────────────────────────────────────
 
+
 def get_evaluations(run_id: str) -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT e.*,
                    rs.name            AS ruleset_name,
                    rs.ruleset_type    AS ruleset_type,
@@ -1944,14 +2852,17 @@ def get_evaluations(run_id: str) -> list[dict]:
             FROM evaluations e
             JOIN rulesets rs ON rs.id = e.ruleset_id
             WHERE e.run_id = ?
-        """, (run_id,)).fetchall()
+        """,
+            (run_id,),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
 def insert_evaluation(data: dict) -> None:
     now = int(time.time())
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR REPLACE INTO evaluations
                 (eval_id, run_id, ruleset_id, verdict, drawdown_pass, target_pass,
                  consistency_pass, simulated_eval_days, breach_count,
@@ -1959,19 +2870,28 @@ def insert_evaluation(data: dict) -> None:
                  mll_final_floor, mll_highest_eod_balance,
                  mll_breach_day, mll_min_floor_distance, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["eval_id"], data["run_id"], data["ruleset_id"],
-            data["verdict"],
-            int(data["drawdown_pass"]), int(data["target_pass"]),
-            int(data["consistency_pass"]) if data.get("consistency_pass") is not None else None,
-            data.get("simulated_eval_days"), data["breach_count"],
-            data.get("largest_day_share_pct"), data.get("adjusted_profit_target"),
-            data.get("contract_cap_status"),
-            data.get("mll_final_floor"), data.get("mll_highest_eod_balance"),
-            data.get("mll_breach_day"), data.get("mll_min_floor_distance"),
-            data.get("notes"),
-            now,
-        ))
+        """,
+            (
+                data["eval_id"],
+                data["run_id"],
+                data["ruleset_id"],
+                data["verdict"],
+                int(data["drawdown_pass"]),
+                int(data["target_pass"]),
+                int(data["consistency_pass"]) if data.get("consistency_pass") is not None else None,
+                data.get("simulated_eval_days"),
+                data["breach_count"],
+                data.get("largest_day_share_pct"),
+                data.get("adjusted_profit_target"),
+                data.get("contract_cap_status"),
+                data.get("mll_final_floor"),
+                data.get("mll_highest_eod_balance"),
+                data.get("mll_breach_day"),
+                data.get("mll_min_floor_distance"),
+                data.get("notes"),
+                now,
+            ),
+        )
 
 
 def update_run_worthiness(run_id: str, tier: str, reason: Optional[str], ruleset_id: str) -> None:
@@ -1986,15 +2906,19 @@ def update_run_worthiness(run_id: str, tier: str, reason: Optional[str], ruleset
 
 # ── Sweeps ────────────────────────────────────────────────────────────────────
 
+
 def list_sweep_runs(sweep_id: str) -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT r.*, s.name AS strategy_name
             FROM backtest_runs r
             JOIN strategies s ON s.id = r.strategy_id
             WHERE r.sweep_id = ?
             ORDER BY r.created_at ASC
-        """, (sweep_id,)).fetchall()
+        """,
+            (sweep_id,),
+        ).fetchall()
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 
 
@@ -2005,7 +2929,8 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
         where += " AND r.strategy_id = ?"
         params.append(strategy_id)
     with _connect() as conn:
-        rows = conn.execute(f"""
+        rows = conn.execute(
+            f"""
             SELECT
                 r.sweep_id,
                 r.strategy_id,
@@ -2043,11 +2968,13 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
             {where}
             GROUP BY r.sweep_id
             ORDER BY created_at DESC
-        """, params).fetchall()
+        """,
+            params,
+        ).fetchall()
     result = []
     for r in rows:
         d = dict(r)
-        d['ruleset_ids'] = [f for f in (d.pop('ruleset_ids_csv') or '').split(',') if f]
+        d["ruleset_ids"] = [f for f in (d.pop("ruleset_ids_csv") or "").split(",") if f]
         result.append(d)
     return result
 
@@ -2055,14 +2982,17 @@ def list_sweeps(strategy_id: Optional[str] = None) -> list[dict]:
 def delete_sweep(sweep_id: str) -> tuple[bool, list[str]]:
     with _connect() as conn:
         child_ids = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE sweep_id = ?", (sweep_id,)
             ).fetchall()
         ]
         if child_ids:
             placeholders = ",".join("?" * len(child_ids))
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({placeholders})", child_ids)
-            cur = conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids)
+            cur = conn.execute(
+                f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids
+            )
         else:
             cur = conn.execute("SELECT 1 WHERE 0")
     return len(child_ids) > 0, child_ids
@@ -2099,16 +3029,16 @@ def get_nav_activity() -> dict:
     dot, or a python backtest fail to.
     """
     with _connect() as conn:
+
         def exists(sql: str) -> bool:
             return conn.execute(sql).fetchone() is not None
+
         return {
             "backtests": exists(
                 "SELECT 1 FROM backtest_runs WHERE status = 'running' "
                 "AND optimization_id IS NULL LIMIT 1"
             ),
-            "optimizations": exists(
-                "SELECT 1 FROM optimizations WHERE status = 'running' LIMIT 1"
-            ),
+            "optimizations": exists("SELECT 1 FROM optimizations WHERE status = 'running' LIMIT 1"),
             # LIKE 'running%', not '= running' — a stress test is `running`, `running_wf` or
             # `running_sens` depending on the phase, and matching only the first would leave the
             # dot off for most of the test's life.
@@ -2204,7 +3134,7 @@ def get_running_job() -> dict:
                 LEFT JOIN strategies s ON s.id = r.strategy_id
                 WHERE r.status = 'running' AND r.sweep_id IS NULL AND r.optimization_id IS NULL
                   AND r.stack_id IS NULL
-                  AND {predicate.format(col='r.runner')}
+                  AND {predicate.format(col="r.runner")}
                 LIMIT 1
                 """,
                 f"""
@@ -2213,7 +3143,7 @@ def get_running_job() -> dict:
                 FROM backtest_runs r
                 LEFT JOIN strategies s ON s.id = r.strategy_id
                 WHERE r.status = 'running' AND r.sweep_id IS NOT NULL
-                  AND {predicate.format(col='r.runner')}
+                  AND {predicate.format(col="r.runner")}
                 LIMIT 1
                 """,
                 f"""
@@ -2221,7 +3151,7 @@ def get_running_job() -> dict:
                        'Portfolio stack (' || COUNT(*) || ' strategies)' AS description
                 FROM backtest_runs r
                 WHERE r.status = 'running' AND r.stack_id IS NOT NULL
-                  AND {predicate.format(col='r.runner')}
+                  AND {predicate.format(col="r.runner")}
                 GROUP BY r.stack_id
                 LIMIT 1
                 """,
@@ -2232,7 +3162,7 @@ def get_running_job() -> dict:
                        || ' (' || o.completed_runs || '/' || o.estimated_runs || ')' AS description
                 FROM optimizations o
                 LEFT JOIN strategies s ON s.id = o.strategy_id
-                WHERE o.status = 'running' AND {predicate.format(col='s.runner')}
+                WHERE o.status = 'running' AND {predicate.format(col="s.runner")}
                 LIMIT 1
                 """,
             )
@@ -2247,21 +3177,33 @@ def get_running_job() -> dict:
 
 def insert_run_sweep(data: dict) -> None:
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, sweep_id, source_run_id, runner)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["run_id"], data["strategy_id"], data["instrument"],
-            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
-            data["start_date"], data["end_date"],
-            data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
-            data["sweep_id"],
-            data.get("source_run_id"), data.get("runner", "ninjatrader"),
-        ))
+        """,
+            (
+                data["run_id"],
+                data["strategy_id"],
+                data["instrument"],
+                json.dumps(data["params"]),
+                data["bar_type"],
+                data["bar_value"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["status"],
+                data["created_at"],
+                data.get("started_at", data["created_at"]),
+                data["sweep_id"],
+                data.get("source_run_id"),
+                data.get("runner", "ninjatrader"),
+            ),
+        )
 
 
 def _backfill_stack_membership(conn) -> None:
@@ -2280,18 +3222,28 @@ def _backfill_stack_membership(conn) -> None:
             "INSERT OR IGNORE INTO stacks (stack_id, instrument, bar_type, bar_value, "
             "start_date, end_date, commission_per_side, slippage_ticks, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (s["stack_id"], s["instrument"], s["bar_type"], s["bar_value"],
-             s["start_date"], s["end_date"], s["commission_per_side"] or 0.0,
-             s["slippage_ticks"] or 0, s["created_at"]),
+            (
+                s["stack_id"],
+                s["instrument"],
+                s["bar_type"],
+                s["bar_value"],
+                s["start_date"],
+                s["end_date"],
+                s["commission_per_side"] or 0.0,
+                s["slippage_ticks"] or 0,
+                s["created_at"],
+            ),
         )
         children = conn.execute(
             "SELECT run_id, created_at FROM backtest_runs WHERE stack_id = ? "
-            "ORDER BY created_at ASC", (s["stack_id"],)
+            "ORDER BY created_at ASC",
+            (s["stack_id"],),
         ).fetchall()
         for pos, c in enumerate(children):
             conn.execute(
                 "INSERT OR IGNORE INTO stack_members (stack_id, run_id, owned, position) "
-                "VALUES (?, ?, 1, ?)", (s["stack_id"], c["run_id"], pos),
+                "VALUES (?, ?, 1, ?)",
+                (s["stack_id"], c["run_id"], pos),
             )
 
 
@@ -2311,13 +3263,21 @@ def insert_stack(data: dict) -> None:
             "end_date, commission_per_side, slippage_ticks, created_at, "
             "mode, account_size, risk_cap_pct, entry_floor_pct) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (data["stack_id"], data["instrument"], data["bar_type"], data["bar_value"],
-             data["start_date"], data["end_date"], data["commission_per_side"],
-             data["slippage_ticks"], data["created_at"],
-             data.get("mode") or "screen",
-             data.get("account_size") if shared else None,
-             data.get("risk_cap_pct") if shared else None,
-             data.get("entry_floor_pct") if shared else None),
+            (
+                data["stack_id"],
+                data["instrument"],
+                data["bar_type"],
+                data["bar_value"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["created_at"],
+                data.get("mode") or "screen",
+                data.get("account_size") if shared else None,
+                data.get("risk_cap_pct") if shared else None,
+                data.get("entry_floor_pct") if shared else None,
+            ),
         )
 
 
@@ -2325,28 +3285,34 @@ def add_stack_member(stack_id: str, run_id: str, owned: int, position: int) -> N
     with _connect() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO stack_members (stack_id, run_id, owned, position) "
-            "VALUES (?, ?, ?, ?)", (stack_id, run_id, owned, position),
+            "VALUES (?, ?, ?, ?)",
+            (stack_id, run_id, owned, position),
         )
 
 
 def get_stack_settings(stack_id: str) -> Optional[dict]:
     with _connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM stacks WHERE stack_id = ?", (stack_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM stacks WHERE stack_id = ?", (stack_id,)).fetchone()
     return dict(row) if row else None
 
 
 def find_matching_stack_run(
-    strategy_id: str, instrument: str, bar_type: str, bar_value: int,
-    start_date: str, end_date: str, commission_per_side: float, slippage_ticks: int,
+    strategy_id: str,
+    instrument: str,
+    bar_type: str,
+    bar_value: int,
+    start_date: str,
+    end_date: str,
+    commission_per_side: float,
+    slippage_ticks: int,
 ) -> Optional[dict]:
     """Most-recent COMPLETED standalone Python run that matches a stack leg's exact
     backtest identity, so it can be reused instead of re-run. Standalone only
     (stack_id IS NULL, no stress child) so a reused run stays a real Runs-tab row and
     never gets deleted out from under another stack."""
     with _connect() as conn:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT r.*, s.name AS strategy_name
             FROM backtest_runs r
             JOIN strategies s ON s.id = r.strategy_id
@@ -2359,8 +3325,18 @@ def find_matching_stack_run(
               AND r.sweep_id IS NULL AND r.optimization_id IS NULL
             ORDER BY r.completed_at DESC
             LIMIT 1
-        """, (strategy_id, instrument, bar_type, bar_value, start_date, end_date,
-              commission_per_side, slippage_ticks)).fetchone()
+        """,
+            (
+                strategy_id,
+                instrument,
+                bar_type,
+                bar_value,
+                start_date,
+                end_date,
+                commission_per_side,
+                slippage_ticks,
+            ),
+        ).fetchone()
     return _parse_json_fields(dict(row), ["params"]) if row else None
 
 
@@ -2368,20 +3344,32 @@ def insert_run_stack(data: dict) -> None:
     """Insert one child run of a portfolio stack. Same shape as insert_run_sweep but
     grouped by stack_id instead of sweep_id — one row per strategy in the stack."""
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, stack_id, runner)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["run_id"], data["strategy_id"], data["instrument"],
-            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
-            data["start_date"], data["end_date"],
-            data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
-            data["stack_id"], data.get("runner", "python"),
-        ))
+        """,
+            (
+                data["run_id"],
+                data["strategy_id"],
+                data["instrument"],
+                json.dumps(data["params"]),
+                data["bar_type"],
+                data["bar_value"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["status"],
+                data["created_at"],
+                data.get("started_at", data["created_at"]),
+                data["stack_id"],
+                data.get("runner", "python"),
+            ),
+        )
 
 
 def list_stack_runs(stack_id: str) -> list[dict]:
@@ -2389,14 +3377,17 @@ def list_stack_runs(stack_id: str) -> list[dict]:
     INNER JOIN drops a reused run the user later deleted from the Runs tab, so the
     stack degrades to its surviving legs rather than 500-ing on a dangling reference."""
     with _connect() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT r.*, s.name AS strategy_name, m.owned AS stack_owned
             FROM stack_members m
             JOIN backtest_runs r ON r.run_id = m.run_id
             JOIN strategies s ON s.id = r.strategy_id
             WHERE m.stack_id = ?
             ORDER BY m.position ASC
-        """, (stack_id,)).fetchall()
+        """,
+            (stack_id,),
+        ).fetchall()
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 
 
@@ -2415,12 +3406,11 @@ def list_stacks() -> list[dict]:
     Driven by the `stacks` settings table so a fully-reused stack (no owned child) still
     appears; member statuses come from stack_members → backtest_runs."""
     with _connect() as conn:
-        stacks = conn.execute(
-            "SELECT * FROM stacks ORDER BY created_at DESC"
-        ).fetchall()
+        stacks = conn.execute("SELECT * FROM stacks ORDER BY created_at DESC").fetchall()
         result = []
         for st in stacks:
-            members = conn.execute("""
+            members = conn.execute(
+                """
                 SELECT r.status AS status, s.name AS name, s.id AS strategy_id,
                        r.net_pnl AS net_pnl, r.trade_count AS trade_count
                 FROM stack_members m
@@ -2428,11 +3418,13 @@ def list_stacks() -> list[dict]:
                 JOIN strategies s ON s.id = r.strategy_id
                 WHERE m.stack_id = ?
                 ORDER BY m.position ASC
-            """, (st["stack_id"],)).fetchall()
-            total     = len(members)
+            """,
+                (st["stack_id"],),
+            ).fetchall()
+            total = len(members)
             completed = sum(1 for m in members if m["status"] == "complete")
-            failed    = sum(1 for m in members if str(m["status"]).startswith("failed"))
-            running   = sum(1 for m in members if m["status"] == "running")
+            failed = sum(1 for m in members if str(m["status"]).startswith("failed"))
+            running = sum(1 for m in members if m["status"] == "running")
             if total == 0:
                 status = "failed"
             elif running > 0:
@@ -2443,40 +3435,42 @@ def list_stacks() -> list[dict]:
                 status = "failed"
             else:
                 status = "partial"
-            result.append({
-                "stack_id":             st["stack_id"],
-                "instrument":           st["instrument"],
-                "start_date":           st["start_date"],
-                "end_date":             st["end_date"],
-                "created_at":           st["created_at"],
-                "total_strategies":     total,
-                "completed_strategies": completed,
-                "failed_strategies":    failed,
-                "status":               status,
-                "strategy_names":       " + ".join(m["name"] for m in members),
-                # The ids beside the names, so a caller can ask "which stacks is THIS strategy
-                # in" without matching on a display name — a name is a label somebody renames,
-                # and this app already keys bots by their key for exactly that reason.
-                "strategy_ids":         [m["strategy_id"] for m in members],
-                # A screen and a shared simulation answer different questions, so the list has
-                # to say which one a row is. Without it two rows over the same legs and window
-                # sit side by side reporting different numbers, and nothing explains why.
-                "mode":                 st["mode"] if "mode" in st.keys() else "screen",
-                "risk_cap_pct":         st["risk_cap_pct"] if "risk_cap_pct" in st.keys() else None,
-                # The portfolio's own result, so the list can be READ rather than opened row by
-                # row. Both modes sum the same way — a stack's combined P&L is the sum of its
-                # legs', which is exactly what the detail page composes — so this is the same
-                # number that page's Made hero shows, not a second definition of it.
-                #
-                # ⚠ `None` when NO leg has finished, never 0.0. A stack still replaying and a
-                # stack that made nothing are different facts, and 0.0 is the one that reads as
-                # a measurement.
-                # ⚠ It is INCOMPLETE while `completed_strategies < total_strategies`, and the
-                # caller has both counts to say so. Summing what has landed so far is right —
-                # the alternative is withholding the number for the whole of a long replay.
-                "net_pnl":              _sum_or_none(m["net_pnl"] for m in members),
-                "trade_count":          _sum_or_none(m["trade_count"] for m in members),
-            })
+            result.append(
+                {
+                    "stack_id": st["stack_id"],
+                    "instrument": st["instrument"],
+                    "start_date": st["start_date"],
+                    "end_date": st["end_date"],
+                    "created_at": st["created_at"],
+                    "total_strategies": total,
+                    "completed_strategies": completed,
+                    "failed_strategies": failed,
+                    "status": status,
+                    "strategy_names": " + ".join(m["name"] for m in members),
+                    # The ids beside the names, so a caller can ask "which stacks is THIS strategy
+                    # in" without matching on a display name — a name is a label somebody renames,
+                    # and this app already keys bots by their key for exactly that reason.
+                    "strategy_ids": [m["strategy_id"] for m in members],
+                    # A screen and a shared simulation answer different questions, so the list has
+                    # to say which one a row is. Without it two rows over the same legs and window
+                    # sit side by side reporting different numbers, and nothing explains why.
+                    "mode": st["mode"] if "mode" in st.keys() else "screen",
+                    "risk_cap_pct": st["risk_cap_pct"] if "risk_cap_pct" in st.keys() else None,
+                    # The portfolio's own result, so the list can be READ rather than opened row by
+                    # row. Both modes sum the same way — a stack's combined P&L is the sum of its
+                    # legs', which is exactly what the detail page composes — so this is the same
+                    # number that page's Made hero shows, not a second definition of it.
+                    #
+                    # ⚠ `None` when NO leg has finished, never 0.0. A stack still replaying and a
+                    # stack that made nothing are different facts, and 0.0 is the one that reads as
+                    # a measurement.
+                    # ⚠ It is INCOMPLETE while `completed_strategies < total_strategies`, and the
+                    # caller has both counts to say so. Summing what has landed so far is right —
+                    # the alternative is withholding the number for the whole of a long replay.
+                    "net_pnl": _sum_or_none(m["net_pnl"] for m in members),
+                    "trade_count": _sum_or_none(m["trade_count"] for m in members),
+                }
+            )
     return result
 
 
@@ -2485,18 +3479,21 @@ def delete_stack(stack_id: str) -> tuple[bool, list[str]]:
     backtest_runs; REUSED legs (owned=0) are left untouched. Returns the owned run_ids so
     the caller can rmtree their report dirs."""
     with _connect() as conn:
-        existed = conn.execute(
-            "SELECT 1 FROM stacks WHERE stack_id = ?", (stack_id,)
-        ).fetchone() is not None
+        existed = (
+            conn.execute("SELECT 1 FROM stacks WHERE stack_id = ?", (stack_id,)).fetchone()
+            is not None
+        )
         owned_ids = [
-            m["run_id"] for m in conn.execute(
+            m["run_id"]
+            for m in conn.execute(
                 "SELECT run_id FROM stack_members WHERE stack_id = ? AND owned = 1",
                 (stack_id,),
             ).fetchall()
         ]
         # A legacy stack may predate the members table; fall back to the stack_id column.
         legacy_ids = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE stack_id = ?", (stack_id,)
             ).fetchall()
         ]
@@ -2523,10 +3520,12 @@ def cancel_stack_runs(stack_id: str) -> None:
 
 # ── Optimizations ─────────────────────────────────────────────────────────────
 
+
 def insert_optimization(data: dict) -> None:
     now = int(time.time())
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO optimizations
                 (optimization_id, strategy_id, instrument, start_date, end_date,
                  commission_per_side, slippage_ticks, ruleset_id, mode, search_method,
@@ -2534,19 +3533,32 @@ def insert_optimization(data: dict) -> None:
                  source_run_id, regime_filter, bar_type, bar_value,
                  cost_layers, broker_profile, min_trades)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["optimization_id"], data["strategy_id"], data["instrument"],
-            data["start_date"], data["end_date"],
-            data["commission_per_side"], data["slippage_ticks"],
-            data["ruleset_id"], data["mode"], data["search_method"],
-            json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
-            now, data.get("source_run_id"), data.get("regime_filter"),
-            data.get("bar_type", "Minute"), data.get("bar_value", 5),
-            # ⚠ NULL, not '[]', when the caller says nothing — same contract as backtest_runs.
-            None if data.get("cost_layers") is None else json.dumps(data["cost_layers"]),
-            data.get("broker_profile"),
-            int(data.get("min_trades") or 0),
-        ))
+        """,
+            (
+                data["optimization_id"],
+                data["strategy_id"],
+                data["instrument"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["ruleset_id"],
+                data["mode"],
+                data["search_method"],
+                json.dumps(data["param_grid"]),
+                data["status"],
+                data["estimated_runs"],
+                now,
+                data.get("source_run_id"),
+                data.get("regime_filter"),
+                data.get("bar_type", "Minute"),
+                data.get("bar_value", 5),
+                # ⚠ NULL, not '[]', when the caller says nothing — same contract as backtest_runs.
+                None if data.get("cost_layers") is None else json.dumps(data["cost_layers"]),
+                data.get("broker_profile"),
+                int(data.get("min_trades") or 0),
+            ),
+        )
 
 
 def get_optimization(optimization_id: str) -> Optional[dict]:
@@ -2658,10 +3670,13 @@ def reset_optimization_for_rerun(optimization_id: str) -> list[str]:
     re-run crashed on every one of them until 2026-08-04.
     """
     with _connect() as conn:
-        run_ids = [r["run_id"] for r in conn.execute(
-            "SELECT run_id FROM backtest_runs WHERE optimization_id=?",
-            (optimization_id,),
-        ).fetchall()]
+        run_ids = [
+            r["run_id"]
+            for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE optimization_id=?",
+                (optimization_id,),
+            ).fetchall()
+        ]
         removed = list(run_ids)
         if run_ids:
             removed.extend(_purge_stress_tests_for_runs(conn, run_ids))
@@ -2714,7 +3729,9 @@ def update_run_period(run_id: str, start_date: str, end_date: str) -> None:
         )
 
 
-def decrement_optimization_completed(optimization_id: str, count: int, set_running: bool = True) -> None:
+def decrement_optimization_completed(
+    optimization_id: str, count: int, set_running: bool = True
+) -> None:
     if set_running:
         sql = "UPDATE optimizations SET completed_runs = MAX(0, completed_runs - ?), status='running', completed_at=NULL WHERE optimization_id=?"
     else:
@@ -2747,21 +3764,32 @@ def list_sweep_failed_runs(sweep_id: str) -> list[dict]:
 
 def insert_run_optimization(data: dict) -> None:
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, optimization_id, runner)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["run_id"], data["strategy_id"], data["instrument"],
-            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
-            data["start_date"], data["end_date"],
-            data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
-            data["optimization_id"],
-            data.get("runner", "ninjatrader"),
-        ))
+        """,
+            (
+                data["run_id"],
+                data["strategy_id"],
+                data["instrument"],
+                json.dumps(data["params"]),
+                data["bar_type"],
+                data["bar_value"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["status"],
+                data["created_at"],
+                data.get("started_at", data["created_at"]),
+                data["optimization_id"],
+                data.get("runner", "ninjatrader"),
+            ),
+        )
 
 
 def insert_complete_optimization_runs(rows: list[dict]) -> None:
@@ -2779,24 +3807,48 @@ def insert_complete_optimization_runs(rows: list[dict]) -> None:
         return
     payload = [
         (
-            r["run_id"], r["strategy_id"], r["instrument"], json.dumps(r["params"]),
-            r["bar_type"], r["bar_value"], r["start_date"], r["end_date"],
-            r["commission_per_side"], r["slippage_ticks"],
-            r["created_at"], r["created_at"], r["created_at"],
-            r["optimization_id"], r.get("runner", "ninjatrader"),
-            (k := r.get("kpis") or {}).get("net_pnl"), k.get("max_drawdown"),
-            k.get("profit_factor"), k.get("win_rate"), k.get("win_count"),
-            k.get("trade_count"), k.get("sharpe"), k.get("sortino"), k.get("cagr"),
-            k.get("avg_win"), k.get("avg_loss"), k.get("avg_trade_duration_min"),
-            k.get("worst_day_pnl"), k.get("worst_losing_streak"), k.get("platform_sharpe"),
+            r["run_id"],
+            r["strategy_id"],
+            r["instrument"],
+            json.dumps(r["params"]),
+            r["bar_type"],
+            r["bar_value"],
+            r["start_date"],
+            r["end_date"],
+            r["commission_per_side"],
+            r["slippage_ticks"],
+            r["created_at"],
+            r["created_at"],
+            r["created_at"],
+            r["optimization_id"],
+            r.get("runner", "ninjatrader"),
+            (k := r.get("kpis") or {}).get("net_pnl"),
+            k.get("max_drawdown"),
+            k.get("profit_factor"),
+            k.get("win_rate"),
+            k.get("win_count"),
+            k.get("trade_count"),
+            k.get("sharpe"),
+            k.get("sortino"),
+            k.get("cagr"),
+            k.get("avg_win"),
+            k.get("avg_loss"),
+            k.get("avg_trade_duration_min"),
+            k.get("worst_day_pnl"),
+            k.get("worst_losing_streak"),
+            k.get("platform_sharpe"),
             int(k["sharpe_low_sample"]) if k.get("sharpe_low_sample") is not None else None,
-            k.get("profit_concentration_pct"), k.get("profit_concentration_basis"),
-            k.get("max_drawdown_pct"), k.get("scratch_count"), k.get("trade_concentration_pct"),
+            k.get("profit_concentration_pct"),
+            k.get("profit_concentration_basis"),
+            k.get("max_drawdown_pct"),
+            k.get("scratch_count"),
+            k.get("trade_concentration_pct"),
         )
         for r in rows
     ]
     with _connect() as conn:
-        conn.executemany("""
+        conn.executemany(
+            """
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
@@ -2808,7 +3860,9 @@ def insert_complete_optimization_runs(rows: list[dict]) -> None:
                  max_drawdown_pct, scratch_count, trade_concentration_pct)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, payload)
+        """,
+            payload,
+        )
 
 
 def update_run_worthiness_bulk(rows: list[tuple[str, str, Optional[str], str]]) -> None:
@@ -2836,7 +3890,7 @@ def get_evaluations_for_runs(run_ids: list[str]) -> dict[str, list[dict]]:
         # SQLite's default host-parameter ceiling is 999 — chunk rather than assume the grid
         # is small, because the whole point of this function is the thousand-combo case.
         for i in range(0, len(run_ids), 500):
-            chunk = run_ids[i:i + 500]
+            chunk = run_ids[i : i + 500]
             ph = ",".join("?" * len(chunk))
             for r in conn.execute(
                 f"SELECT * FROM evaluations WHERE run_id IN ({ph})", chunk
@@ -2847,13 +3901,16 @@ def get_evaluations_for_runs(run_ids: list[str]) -> dict[str, list[dict]]:
 
 def list_optimization_runs(optimization_id: str) -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT r.*, s.name AS strategy_name
             FROM backtest_runs r
             JOIN strategies s ON s.id = r.strategy_id
             WHERE r.optimization_id = ?
             ORDER BY r.created_at ASC
-        """, (optimization_id,)).fetchall()
+        """,
+            (optimization_id,),
+        ).fetchall()
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 
 
@@ -2863,31 +3920,41 @@ def list_optimization_runs(optimization_id: str) -> list[dict]:
 # decodes four of five columns hands the fifth to the API as a raw string, which Pydantic then
 # rejects or (worse) coerces.
 _STRESS_JSON_FIELDS = [
-    "walk_forward_summary", "sensitivity_summary", "grade_reasons",
-    "sensitivity_coverage", "phases_requested", "phase_failures",
+    "walk_forward_summary",
+    "sensitivity_summary",
+    "grade_reasons",
+    "sensitivity_coverage",
+    "phases_requested",
+    "phase_failures",
 ]
 
 
 def insert_stress_test(data: dict) -> None:
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO stress_tests
                 (stress_test_id, run_id, ruleset_id, status, created_at,
                  num_simulations, num_bootstrap, walk_forward_windows, phases_requested)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["stress_test_id"], data["run_id"], data.get("ruleset_id"),
-            data["status"], data["created_at"],
-            data.get("num_simulations", 10_000),
-            data.get("num_bootstrap", 1_000),
-            data.get("walk_forward_windows", 5),
-            # Written HERE, at creation, because that is the only point that cannot be missed.
-            # Recorded at the END it is absent for the whole run — so a page showing a live test
-            # has to GUESS which phases are coming, and a task that dies mid-flight leaves no
-            # record of what was asked for at all. The frontend comment claiming it was "written
-            # before anything can fail" was a label describing code that did not exist yet.
-            json.dumps(data["phases_requested"]) if data.get("phases_requested") else None,
-        ))
+        """,
+            (
+                data["stress_test_id"],
+                data["run_id"],
+                data.get("ruleset_id"),
+                data["status"],
+                data["created_at"],
+                data.get("num_simulations", 10_000),
+                data.get("num_bootstrap", 1_000),
+                data.get("walk_forward_windows", 5),
+                # Written HERE, at creation, because that is the only point that cannot be missed.
+                # Recorded at the END it is absent for the whole run — so a page showing a live test
+                # has to GUESS which phases are coming, and a task that dies mid-flight leaves no
+                # record of what was asked for at all. The frontend comment claiming it was "written
+                # before anything can fail" was a label describing code that did not exist yet.
+                json.dumps(data["phases_requested"]) if data.get("phases_requested") else None,
+            ),
+        )
 
 
 def get_stress_test(stress_test_id: str) -> Optional[dict]:
@@ -2920,12 +3987,15 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
     summary must fetch the detail; do not teach a list consumer to read a null here as an answer.**"""
     clauses, params = [], []
     if run_id:
-        clauses.append("st.run_id = ?"); params.append(run_id)
+        clauses.append("st.run_id = ?")
+        params.append(run_id)
     if grade:
-        clauses.append("st.grade = ?"); params.append(grade)
+        clauses.append("st.grade = ?")
+        params.append(grade)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     with _connect() as conn:
-        rows = conn.execute(f"""
+        rows = conn.execute(
+            f"""
             SELECT st.stress_test_id, st.run_id, st.ruleset_id, st.status, st.created_at,
                    st.completed_at, st.mc_completed_at, st.wf_completed_at,
                    st.num_simulations, st.num_bootstrap,
@@ -2943,11 +4013,14 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
             LEFT JOIN strategies s ON s.id = r.strategy_id
             {where}
             ORDER BY st.created_at DESC
-        """, params).fetchall()
+        """,
+            params,
+        ).fetchall()
     return [_parse_json_fields(dict(r), _STRESS_JSON_FIELDS) for r in rows]
 
 
-_GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
+_GRADE_ORDER = ["A", "B", "C", "D", "F"]
+
 
 def best_grades_by_strategy() -> dict:
     """Returns {strategy_id: {grade, stress_test_id}} for the best completed grade per strategy."""
@@ -2978,7 +4051,7 @@ def reset_stale_stress_tests() -> int:
         if not stale:
             return 0
         ids = [r["stress_test_id"] for r in stale]
-        ph  = ",".join("?" * len(ids))
+        ph = ",".join("?" * len(ids))
         conn.execute(
             f"UPDATE backtest_runs SET status='failed_timeout', error_message='Backend restarted mid-run' "
             f"WHERE stress_test_id IN ({ph}) AND status = 'running'",
@@ -3014,10 +4087,12 @@ def reset_stale_runs() -> int:
     return runs + opts
 
 
-def update_stress_test_status(stress_test_id: str, status: str, error_message: Optional[str] = None) -> None:
+def update_stress_test_status(
+    stress_test_id: str, status: str, error_message: Optional[str] = None
+) -> None:
     now = int(time.time())
     with _connect() as conn:
-        if status in ("complete", ) or status.startswith("failed"):
+        if status in ("complete",) or status.startswith("failed"):
             conn.execute(
                 "UPDATE stress_tests SET status=?, error_message=?, completed_at=? WHERE stress_test_id=?",
                 (status, error_message, now, stress_test_id),
@@ -3029,8 +4104,9 @@ def update_stress_test_status(stress_test_id: str, status: str, error_message: O
             )
 
 
-def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict,
-                          next_status: str = "complete") -> None:
+def update_stress_test_mc(
+    stress_test_id: str, mc: dict, paths: dict, next_status: str = "complete"
+) -> None:
     """Store the Monte Carlo result and move the row to `next_status`.
 
     ⚠ **`next_status` is not cosmetic.** This used to hardcode `status='complete'` and stamp
@@ -3043,7 +4119,8 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict,
     now = int(time.time())
     done = next_status == "complete" or next_status.startswith("failed")
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE stress_tests SET
                 status=?, completed_at=?, mc_completed_at=?,
                 median_final_pnl=?, pct5_final_pnl=?, pct1_final_pnl=?,
@@ -3052,16 +4129,28 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict,
                 prob_breach=?, prob_pass_eval=?,
                 equity_paths_path=?, distribution_path=?
             WHERE stress_test_id=?
-        """, (
-            next_status, (now if done else None), now,
-            mc.get("median_final_pnl"), mc.get("pct5_final_pnl"), mc.get("pct1_final_pnl"),
-            mc.get("median_max_dd"), mc.get("pct5_max_dd"), mc.get("pct1_max_dd"),
-            mc.get("median_max_dd_pct"), mc.get("pct5_max_dd_pct"), mc.get("pct1_max_dd_pct"),
-            mc.get("dd_basis"),
-            mc.get("prob_breach"), mc.get("prob_pass_eval"),
-            paths.get("equity_paths_path"), paths.get("distribution_path"),
-            stress_test_id,
-        ))
+        """,
+            (
+                next_status,
+                (now if done else None),
+                now,
+                mc.get("median_final_pnl"),
+                mc.get("pct5_final_pnl"),
+                mc.get("pct1_final_pnl"),
+                mc.get("median_max_dd"),
+                mc.get("pct5_max_dd"),
+                mc.get("pct1_max_dd"),
+                mc.get("median_max_dd_pct"),
+                mc.get("pct5_max_dd_pct"),
+                mc.get("pct1_max_dd_pct"),
+                mc.get("dd_basis"),
+                mc.get("prob_breach"),
+                mc.get("prob_pass_eval"),
+                paths.get("equity_paths_path"),
+                paths.get("distribution_path"),
+                stress_test_id,
+            ),
+        )
 
 
 def update_stress_test_walk_forward(stress_test_id: str, summary: list, degradation: float) -> None:
@@ -3073,9 +4162,12 @@ def update_stress_test_walk_forward(stress_test_id: str, summary: list, degradat
         )
 
 
-def update_stress_test_sensitivity(stress_test_id: str, summary: dict,
-                                   max_degradation: Optional[float],
-                                   coverage: Optional[dict] = None) -> None:
+def update_stress_test_sensitivity(
+    stress_test_id: str,
+    summary: dict,
+    max_degradation: Optional[float],
+    coverage: Optional[dict] = None,
+) -> None:
     """`max_degradation` is None when sensitivity ran but nothing could be measured (no params, or
     an unusable baseline profit factor). Grading treats None as not-run — never as a clean 0.0.
 
@@ -3086,13 +4178,18 @@ def update_stress_test_sensitivity(stress_test_id: str, summary: dict,
         conn.execute(
             "UPDATE stress_tests SET sensitivity_summary=?, sensitivity_max_degradation=?, "
             "sensitivity_coverage=? WHERE stress_test_id=?",
-            (json.dumps(summary), max_degradation,
-             json.dumps(coverage) if coverage is not None else None, stress_test_id),
+            (
+                json.dumps(summary),
+                max_degradation,
+                json.dumps(coverage) if coverage is not None else None,
+                stress_test_id,
+            ),
         )
 
 
-def update_stress_test_phases(stress_test_id: str, requested: list[str],
-                              failures: dict[str, str]) -> None:
+def update_stress_test_phases(
+    stress_test_id: str, requested: list[str], failures: dict[str, str]
+) -> None:
     """Which phases were asked for, and which of them failed and why.
 
     ⚠ This is the ONLY thing that separates "walk-forward was not requested" from "walk-forward ran
@@ -3184,7 +4281,8 @@ def _restamp_stress_tests() -> int:
         # marker and silently leave every row in between on whatever engine wrote it.
         rows = conn.execute(
             "SELECT * FROM stress_tests WHERE (grade_engine IS NULL OR grade_engine < ?) "
-            "AND status = 'complete'", (GRADE_ENGINE,)
+            "AND status = 'complete'",
+            (GRADE_ENGINE,),
         ).fetchall()
         if not rows:
             return 0
@@ -3196,7 +4294,8 @@ def _restamp_stress_tests() -> int:
                 r["walk_forward_window_id"]: dict(r)
                 for r in conn.execute(
                     "SELECT walk_forward_window_id, trade_count, profit_factor "
-                    "FROM backtest_runs WHERE stress_test_id = ?", (st["stress_test_id"],)
+                    "FROM backtest_runs WHERE stress_test_id = ?",
+                    (st["stress_test_id"],),
                 ).fetchall()
                 if r["walk_forward_window_id"]
             }
@@ -3224,10 +4323,12 @@ def _restamp_stress_tests() -> int:
             prob_breach = st.get("prob_breach") if probs_measurable else None
             prob_pass = st.get("prob_pass_eval") if probs_measurable else None
 
-            st_for_grade = {**st,
-                            "prob_breach": prob_breach,
-                            "walk_forward_degradation": wf_deg,
-                            "sensitivity_max_degradation": sens_deg}
+            st_for_grade = {
+                **st,
+                "prob_breach": prob_breach,
+                "walk_forward_degradation": wf_deg,
+                "sensitivity_max_degradation": sens_deg,
+            }
             grade, reasons = (None, ["Not graded — this test was not evaluated against a ruleset"])
             if ruleset:
                 grade, reasons = compute_grade(st_for_grade, wf_summary, sens_summary, ruleset)
@@ -3236,10 +4337,18 @@ def _restamp_stress_tests() -> int:
                 "UPDATE stress_tests SET walk_forward_summary=?, walk_forward_degradation=?, "
                 "sensitivity_summary=?, sensitivity_max_degradation=?, prob_breach=?, "
                 "prob_pass_eval=?, grade=?, grade_reasons=?, grade_engine=? WHERE stress_test_id=?",
-                (json.dumps(wf_summary) if wf_summary is not None else None, wf_deg,
-                 json.dumps(sens_summary) if sens_summary is not None else None, sens_deg,
-                 prob_breach, prob_pass,
-                 grade, json.dumps(reasons), GRADE_ENGINE, st["stress_test_id"]),
+                (
+                    json.dumps(wf_summary) if wf_summary is not None else None,
+                    wf_deg,
+                    json.dumps(sens_summary) if sens_summary is not None else None,
+                    sens_deg,
+                    prob_breach,
+                    prob_pass,
+                    grade,
+                    json.dumps(reasons),
+                    GRADE_ENGINE,
+                    st["stress_test_id"],
+                ),
             )
             restamped += 1
     return restamped
@@ -3251,6 +4360,7 @@ def _stress_limit_exists(ruleset: Optional[dict], st: dict) -> bool:
     Read on the basis the test itself used, so it agrees with grading: percent once the run
     compounds, dollars otherwise."""
     from services.metrics import effective_dd_limit_pct, effective_dd_limit_usd
+
     if not ruleset:
         return False
     if st.get("dd_basis") == "percent" and st.get("pct1_max_dd_pct") is not None:
@@ -3262,8 +4372,11 @@ def _rebuild_wf(summary, children: dict):
     """Re-derive the walk-forward summary + degradation, filling per-window trade counts from the
     child runs. Returns (summary, degradation) — both None when there was no walk-forward."""
     from services.stress_tester import (
-        _WF_IS_SHARPE_FLOOR, _WF_MIN_TRADES_PER_WINDOW, _clamp_wf_degradation,
+        _WF_IS_SHARPE_FLOOR,
+        _WF_MIN_TRADES_PER_WINDOW,
+        _clamp_wf_degradation,
     )
+
     if not summary:
         return (None, None)
     out = []
@@ -3275,14 +4388,16 @@ def _rebuild_wf(summary, children: dict):
                 w[f"{side}_trades"] = child.get("trade_count")
         out.append(w)
 
-    thin = {w["window"] for w in out
-            if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
-            or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW}
+    thin = {
+        w["window"]
+        for w in out
+        if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+        or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+    }
     degs = [
         _clamp_wf_degradation(1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"])
         for w in out
-        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR
-        and w["window"] not in thin
+        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR and w["window"] not in thin
     ]
     return (out, (sum(degs) / len(degs)) if degs else None)
 
@@ -3296,6 +4411,7 @@ def _rebuild_sens(summary, children: dict, base_pf) -> tuple:
     than merely discardable — and where a child is gone, the shift reports `degradation: None`,
     which grading already treats as not-measured."""
     import math
+
     if not summary:
         return (None, None)
     usable_base = base_pf is not None and math.isfinite(base_pf) and base_pf > 0
@@ -3350,18 +4466,21 @@ def cancel_stress_test(stress_test_id: str) -> Optional[list[str]]:
         if not str(row["status"]).startswith("running"):
             return None
         children = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE stress_test_id=? AND status='running'",
                 (stress_test_id,),
             ).fetchall()
         ]
         conn.execute(
             "UPDATE backtest_runs SET status='failed_cancelled', error_message='Stress test cancelled' "
-            "WHERE stress_test_id=? AND status='running'", (stress_test_id,),
+            "WHERE stress_test_id=? AND status='running'",
+            (stress_test_id,),
         )
         conn.execute(
             "UPDATE stress_tests SET status='failed_cancelled', completed_at=?, "
-            "error_message='Cancelled' WHERE stress_test_id=?", (now, stress_test_id),
+            "error_message='Cancelled' WHERE stress_test_id=?",
+            (now, stress_test_id),
         )
     return children
 
@@ -3378,7 +4497,8 @@ def delete_stress_test(stress_test_id: str) -> Optional[list[str]]:
     with _connect() as conn:
         # cascade: delete stress-test child runs
         child_ids = [
-            r["run_id"] for r in conn.execute(
+            r["run_id"]
+            for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE stress_test_id=?", (stress_test_id,)
             ).fetchall()
         ]
@@ -3391,6 +4511,7 @@ def delete_stress_test(stress_test_id: str) -> Optional[list[str]]:
 
 
 # ── OHLC Cache ────────────────────────────────────────────────────────────────
+
 
 def get_cached_ohlc(instrument: str, start_date: str, end_date: str) -> list[dict]:
     """Return cached OHLC rows for instrument in [start_date, end_date], sorted by date asc."""
@@ -3414,8 +4535,16 @@ def upsert_ohlc_rows(rows: list[dict]) -> None:
             "(instrument, date, open, high, low, close, fetched_at, source) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                (r["instrument"], r["date"], r["open"], r["high"],
-                 r["low"], r["close"], now, r["source"])
+                (
+                    r["instrument"],
+                    r["date"],
+                    r["open"],
+                    r["high"],
+                    r["low"],
+                    r["close"],
+                    now,
+                    r["source"],
+                )
                 for r in rows
             ],
         )
@@ -3455,8 +4584,17 @@ def upsert_intraday_ohlc_rows(rows: list[dict]) -> None:
             "(instrument, timeframe, timestamp, open, high, low, close, fetched_at, source) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                (r["instrument"], r["timeframe"], r["timestamp"],
-                 r["open"], r["high"], r["low"], r["close"], now, r["source"])
+                (
+                    r["instrument"],
+                    r["timeframe"],
+                    r["timestamp"],
+                    r["open"],
+                    r["high"],
+                    r["low"],
+                    r["close"],
+                    now,
+                    r["source"],
+                )
                 for r in rows
             ],
         )
@@ -3473,23 +4611,35 @@ def insert_run_stress_test_child(data: dict) -> None:
     """
     layers = data.get("cost_layers")
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, stress_test_id, walk_forward_window_id, runner,
                  cost_layers, broker_profile, sizing_mode, manual_risk_pct)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data["run_id"], data["strategy_id"], data["instrument"],
-            json.dumps(data["params"]), data["bar_type"], data["bar_value"],
-            data["start_date"], data["end_date"],
-            data["commission_per_side"], data["slippage_ticks"],
-            data["status"], data["created_at"], data.get("started_at", data["created_at"]),
-            data["stress_test_id"], data.get("walk_forward_window_id"),
-            data.get("runner", "ninjatrader"),
-            None if layers is None else json.dumps(layers),
-            data.get("broker_profile"),
-            data.get("sizing_mode") or "consistent",
-            data.get("manual_risk_pct"),
-        ))
+        """,
+            (
+                data["run_id"],
+                data["strategy_id"],
+                data["instrument"],
+                json.dumps(data["params"]),
+                data["bar_type"],
+                data["bar_value"],
+                data["start_date"],
+                data["end_date"],
+                data["commission_per_side"],
+                data["slippage_ticks"],
+                data["status"],
+                data["created_at"],
+                data.get("started_at", data["created_at"]),
+                data["stress_test_id"],
+                data.get("walk_forward_window_id"),
+                data.get("runner", "ninjatrader"),
+                None if layers is None else json.dumps(layers),
+                data.get("broker_profile"),
+                data.get("sizing_mode") or "consistent",
+                data.get("manual_risk_pct"),
+            ),
+        )

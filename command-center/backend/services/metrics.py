@@ -153,8 +153,8 @@ def apply_canonical_sharpe(kpis: dict, daily_pnl: list[dict]) -> dict:
     never on paths that lack it (e.g. native optimizer combos), where daily_sharpe([]) would
     overwrite the platform Sharpe with 0.0.
     """
-    kpis["platform_sharpe"]   = kpis.get("sharpe")
-    kpis["sharpe"]            = daily_sharpe(daily_pnl)
+    kpis["platform_sharpe"] = kpis.get("sharpe")
+    kpis["sharpe"] = daily_sharpe(daily_pnl)
     kpis["sharpe_low_sample"] = active_day_count(daily_pnl) < SHARPE_LOW_SAMPLE_DAYS
     return kpis
 
@@ -219,8 +219,11 @@ def profit_concentration_pct(
             points.append((str(e["date"])[:10], float(e.get("profit", 0.0) or 0.0) / before))
     else:
         basis = CONCENTRATION_DOLLARS
-        points = [(str(d["date"])[:10], float(d.get("pnl", 0.0) or 0.0))
-                  for d in daily_pnl if d.get("date")]
+        points = [
+            (str(d["date"])[:10], float(d.get("pnl", 0.0) or 0.0))
+            for d in daily_pnl
+            if d.get("date")
+        ]
 
     if len(points) < 2:
         return None, basis
@@ -285,8 +288,7 @@ def _trade_weights(equity_curve: Optional[list[dict]]) -> tuple[list[float], str
     if not equity_curve:
         return [], CONCENTRATION_DOLLARS
     if _equity_base(equity_curve) <= 0:
-        return ([float(e.get("profit", 0.0) or 0.0) for e in equity_curve],
-                CONCENTRATION_DOLLARS)
+        return ([float(e.get("profit", 0.0) or 0.0) for e in equity_curve], CONCENTRATION_DOLLARS)
     out = []
     for e in equity_curve:
         profit = float(e.get("profit", 0.0) or 0.0)
@@ -314,11 +316,12 @@ def max_drawdown_pct(equity_curve: Optional[list[dict]]) -> Optional[float]:
     peak = float("-inf")
     worst: Optional[float] = None
     base = _equity_base(equity_curve)
-    series = ([base] if base > 0 else []) + \
-             [float(e.get("equity", 0.0) or 0.0) for e in equity_curve]
+    series = ([base] if base > 0 else []) + [
+        float(e.get("equity", 0.0) or 0.0) for e in equity_curve
+    ]
     for value in series:
         peak = max(peak, value)
-        if peak <= 0:                      # a non-positive peak has no meaningful percent
+        if peak <= 0:  # a non-positive peak has no meaningful percent
             continue
         pct = (peak - value) / peak
         if worst is None or pct > worst:
@@ -481,16 +484,22 @@ def compute_regime_breakdown(
         # Prefer the regime-intrinsic daily sum; fall back to the trade sum for a
         # trade-only bucket (a trade whose day never made it into daily_pnl).
         net_pnl = day["net_pnl"] if day else (t["net_pnl"] if t else 0.0)
-        rows.append({
-            "regime": regime,
-            "days": day["days"] if day else 0,
-            "trades": trades,
-            "net_pnl": round(net_pnl, 2),
-            # win_rate = real wins (entries are profit 0, never counted) over the rescaled count.
-            "win_rate": (t["wins"] / trades) if (t and trades) else None,
-            "profit_factor": (t["gross_win"] / t["gross_loss"]) if (t and t["gross_loss"] > 0) else None,
-            "worst_day": round(day["worst_day"], 2) if (day and day["worst_day"] is not None) else None,
-        })
+        rows.append(
+            {
+                "regime": regime,
+                "days": day["days"] if day else 0,
+                "trades": trades,
+                "net_pnl": round(net_pnl, 2),
+                # win_rate = real wins (entries are profit 0, never counted) over the rescaled count.
+                "win_rate": (t["wins"] / trades) if (t and trades) else None,
+                "profit_factor": (t["gross_win"] / t["gross_loss"])
+                if (t and t["gross_loss"] > 0)
+                else None,
+                "worst_day": round(day["worst_day"], 2)
+                if (day and day["worst_day"] is not None)
+                else None,
+            }
+        )
 
     rows.sort(key=lambda r: (-r["days"], -r["trades"]))
     unknown_idx = next((i for i, r in enumerate(rows) if r["regime"] == _REGIME_UNKNOWN), None)

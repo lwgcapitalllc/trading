@@ -49,8 +49,14 @@ def _fresh_logger():
 
 
 def _cfg(tmp_path, monkeypatch, **overrides):
-    body = {"bot_key": "smoke", "mt5_path": "C:/MT5/terminal64.exe", "account": 1,
-            "server": "Demo", "symbol": "XAUUSD", "magic": 1}
+    body = {
+        "bot_key": "smoke",
+        "mt5_path": "C:/MT5/terminal64.exe",
+        "account": 1,
+        "server": "Demo",
+        "symbol": "XAUUSD",
+        "magic": 1,
+    }
     body.update(overrides)
     (tmp_path / "smoke").mkdir(parents=True, exist_ok=True)
     (tmp_path / "smoke" / "config.json").write_text(json.dumps(body))
@@ -159,8 +165,9 @@ def test_a_ledger_failure_cannot_change_the_exit_code(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, monkeypatch)
     r = runner.LiveRunner(cfg)
     monkeypatch.setattr(r, "already_running", lambda: True)
-    monkeypatch.setattr(r.ledger, "event",
-                        lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(
+        r.ledger, "event", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full"))
+    )
 
     assert r.run() == 0
 
@@ -171,7 +178,7 @@ def test_a_start_after_a_kill_says_the_previous_run_was_not_clean(tmp_path, monk
     hard kill has to be written by the NEXT process, because the killed one wrote nothing."""
     cfg = _cfg(tmp_path, monkeypatch)
     killed = runner.LiveRunner(cfg)
-    killed.ledger.event("startup")          # ...and then the process vanished
+    killed.ledger.event("startup")  # ...and then the process vanished
 
     r = runner.LiveRunner(cfg)
     monkeypatch.setattr(r, "already_running", lambda: False)
@@ -259,7 +266,7 @@ def test_every_pulse_names_the_account_its_other_fields_belong_to(tmp_path, monk
     written before the halt would still be mislabelled.
     """
     cfg, r = _pulse_ready(tmp_path, monkeypatch)
-    r._observed_account = 700152905                 # what the terminal just said
+    r._observed_account = 700152905  # what the terminal just said
 
     r._maybe_pulse(link_up=True, balance=9996.99)
 
@@ -269,7 +276,8 @@ def test_every_pulse_names_the_account_its_other_fields_belong_to(tmp_path, monk
 
 
 def test_a_pulse_that_could_not_ask_reports_no_account_rather_than_the_configured_one(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     """The blind case. Falling back to `cfg.account` here would write the bot's BELIEF into a
     record whose whole job is saying what was OBSERVED — and it would do it at exactly the moment
     the belief is least likely to be checkable."""
@@ -292,13 +300,15 @@ def test_the_text_log_rolls_onto_a_new_file_at_midnight(tmp_path):
     rec = logging.LogRecord("smoke", logging.INFO, __file__, 1, "before", None, None)
 
     h.emit(rec)
-    h._day = "2026-08-04"          # pretend the last write was yesterday
+    h._day = "2026-08-04"  # pretend the last write was yesterday
     h.emit(logging.LogRecord("smoke", logging.INFO, __file__, 1, "after", None, None))
     h.close()
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     assert (tmp_path / f"smoke-{today}.log").read_text(encoding="utf-8").splitlines() == [
-        "before", "after"]
+        "before",
+        "after",
+    ]
 
 
 def test_a_log_write_failure_never_takes_the_bot_down(tmp_path, monkeypatch):
@@ -306,8 +316,7 @@ def test_a_log_write_failure_never_takes_the_bot_down(tmp_path, monkeypatch):
     missing line."""
     h = runner.DailyFileHandler(tmp_path / "nope", "smoke")
     h.setFormatter(logging.Formatter("%(message)s"))
-    monkeypatch.setattr(Path, "mkdir",
-                        lambda *a, **k: (_ for _ in ()).throw(OSError("read-only")))
+    monkeypatch.setattr(Path, "mkdir", lambda *a, **k: (_ for _ in ()).throw(OSError("read-only")))
     monkeypatch.setattr(logging, "raiseExceptions", False)
 
     h.emit(logging.LogRecord("smoke", logging.INFO, __file__, 1, "x", None, None))

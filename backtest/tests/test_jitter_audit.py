@@ -25,14 +25,15 @@ import pytest
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 _spec = importlib.util.spec_from_file_location(
-    "jitter_audit", _REPO / "backtest" / "tools" / "jitter_audit.py")
+    "jitter_audit", _REPO / "backtest" / "tools" / "jitter_audit.py"
+)
 ja = importlib.util.module_from_spec(_spec)
 sys.modules["jitter_audit"] = ja
 _spec.loader.exec_module(ja)
 
 
-_BAR = 15 * 60 * 1000        # the default bar_ms the diff is told to assume
-_MS = 1_700_000_000_000      # an arbitrary anchor; only differences matter
+_BAR = 15 * 60 * 1000  # the default bar_ms the diff is told to assume
+_MS = 1_700_000_000_000  # an arbitrary anchor; only differences matter
 
 
 class T:
@@ -47,6 +48,7 @@ class T:
 
 
 # ── the flip threshold ───────────────────────────────────────────────────────────
+
 
 def test_a_move_bigger_than_the_noise_can_produce_is_a_FLIP():
     # amp 0.05 => two runs can differ by at most 0.10 from noise. $10 is a different rung.
@@ -88,6 +90,7 @@ def test_an_identical_entry_is_neither_flipped_nor_shifted():
 
 # ── trades appearing and disappearing ────────────────────────────────────────────
 
+
 def test_a_baseline_trade_with_no_jittered_twin_is_LOST_not_flipped():
     d = ja._diff([T(100, 4000.0)], [], seed=1, noise_ceiling=0.10)
     assert len(d.lost) == 1 and d.flipped == []
@@ -108,6 +111,7 @@ def test_a_flip_that_moves_the_ENTRY_BAR_is_never_counted_as_a_flip():
 
 # ── retiming: the same setup filling a bar or two away ───────────────────────────
 
+
 def test_a_setup_that_fills_a_bar_later_is_RETIMED_not_lost_and_gained():
     # The refinement that keeps this tool honest. A resting limit tagged one bar later is the
     # same setup, and scoring it as one trade destroyed plus one invented would report the trade
@@ -115,7 +119,7 @@ def test_a_setup_that_fills_a_bar_later_is_RETIMED_not_lost_and_gained():
     d = ja._diff([T(_MS)], [T(_MS + _BAR, 4000.02)], seed=1, noise_ceiling=0.10)
     assert len(d.retimed) == 1
     assert d.lost == [] and d.gained == []
-    assert d.retimed[0][2] == 1          # one bar apart
+    assert d.retimed[0][2] == 1  # one bar apart
 
 
 def test_a_setup_that_fills_far_away_is_genuinely_lost_and_gained():
@@ -140,8 +144,9 @@ def test_retiming_works_BACKWARD_as_well_as_forward():
 def test_an_OPPOSITE_direction_trade_is_never_a_retimed_twin():
     # A long vanishing and a short appearing nearby are two different facts about the market,
     # and folding them together would hide a direction flip as a timing wobble.
-    d = ja._diff([T(_MS, direction=1)], [T(_MS + _BAR, 4000.02, direction=-1)],
-                 seed=1, noise_ceiling=0.10)
+    d = ja._diff(
+        [T(_MS, direction=1)], [T(_MS + _BAR, 4000.02, direction=-1)], seed=1, noise_ceiling=0.10
+    )
     assert d.retimed == []
     assert len(d.lost) == 1 and len(d.gained) == 1
 
@@ -183,9 +188,11 @@ def test_matching_is_by_entry_time_not_by_position_in_the_list():
 
 # ── the stop, which is the part that changes position size ───────────────────────
 
+
 def test_a_flip_records_the_stop_change_as_a_signed_percentage():
-    d = ja._diff([T(100, 4000.0, stop=32.28)], [T(100, 4010.0, stop=22.16)],
-                 seed=1, noise_ceiling=0.10)
+    d = ja._diff(
+        [T(100, 4000.0, stop=32.28)], [T(100, 4010.0, stop=22.16)], seed=1, noise_ceiling=0.10
+    )
     assert len(d.stop_deltas) == 1
     assert d.stop_deltas[0] == pytest.approx(-31.35, abs=0.05)
 
@@ -193,8 +200,9 @@ def test_a_flip_records_the_stop_change_as_a_signed_percentage():
 def test_a_zero_baseline_stop_records_no_percentage_rather_than_dividing_by_zero():
     # A zero stop distance cancels the order in the strategy, so this should not occur — but the
     # tool must not crash on a trade list it did not produce, and reporting 0% would be a lie.
-    d = ja._diff([T(100, 4000.0, stop=0.0)], [T(100, 4010.0, stop=22.0)],
-                 seed=1, noise_ceiling=0.10)
+    d = ja._diff(
+        [T(100, 4000.0, stop=0.0)], [T(100, 4010.0, stop=22.0)], seed=1, noise_ceiling=0.10
+    )
     assert len(d.flipped) == 1
     assert d.stop_deltas == []
 
@@ -202,21 +210,26 @@ def test_a_zero_baseline_stop_records_no_percentage_rather_than_dividing_by_zero
 def test_a_shift_records_no_stop_change():
     # Only flips carry a stop delta; folding shifts in would dilute the median toward zero and
     # make the size effect look smaller than it is.
-    d = ja._diff([T(100, 4000.0, stop=32.0)], [T(100, 4000.02, stop=32.02)],
-                 seed=1, noise_ceiling=0.10)
+    d = ja._diff(
+        [T(100, 4000.0, stop=32.0)], [T(100, 4000.02, stop=32.02)], seed=1, noise_ceiling=0.10
+    )
     assert d.stop_deltas == []
 
 
 # ── the jitter itself ────────────────────────────────────────────────────────────
 
+
 def _frame(n=50):
     idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz=None)
-    return pd.DataFrame({
-        "open": [4000.0 + i for i in range(n)],
-        "high": [4001.0 + i for i in range(n)],
-        "low": [3999.0 + i for i in range(n)],
-        "close": [4000.5 + i for i in range(n)],
-    }, index=idx)
+    return pd.DataFrame(
+        {
+            "open": [4000.0 + i for i in range(n)],
+            "high": [4001.0 + i for i in range(n)],
+            "low": [3999.0 + i for i in range(n)],
+            "close": [4000.5 + i for i in range(n)],
+        },
+        index=idx,
+    )
 
 
 def test_jitter_moves_all_four_prices_of_a_bar_by_the_SAME_offset():
@@ -269,5 +282,3 @@ def test_jitter_does_not_mutate_the_frame_it_was_given():
     before = df.copy()
     ja._jitter(df, 0.05, seed=9)
     assert df.equals(before)
-
-

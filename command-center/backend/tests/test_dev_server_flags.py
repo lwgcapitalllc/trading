@@ -12,6 +12,7 @@ worker PID alive at 0% CPU twenty seconds later. Nothing logs it and nothing rec
 finds nothing passes for ever, which is how a renamed file turns a guard into decoration — the same
 vacuous-check trap the notification-routing sweeps and the Stress Test browser suite both hit.
 """
+
 from pathlib import Path
 
 START_SH = Path(__file__).resolve().parents[2] / "start.sh"
@@ -25,7 +26,9 @@ def _uvicorn_line() -> str:
     ]
     # Non-vacuity: if start.sh stops launching uvicorn this way, fail here rather than
     # silently asserting over an empty string.
-    assert len(lines) == 1, f"expected exactly one uvicorn launch line in start.sh, found {len(lines)}"
+    assert len(lines) == 1, (
+        f"expected exactly one uvicorn launch line in start.sh, found {len(lines)}"
+    )
     return lines[0]
 
 

@@ -15,23 +15,48 @@ from news.sources.forex_factory import ForexFactorySource
 # A saved slice of the real feed schema (confirmed live 2026-07-05), plus edge rows: a released
 # event carrying `actual`, a Holiday, an empty-impact row, and a row with no date.
 SAMPLE = [
-    {"title": "Non-Farm Employment Change", "country": "USD",
-     "date": "2026-07-03T08:30:00-04:00", "impact": "High",
-     "forecast": "168K", "previous": "199K", "actual": "206K"},
-    {"title": "German Factory Orders m/m", "country": "EUR",
-     "date": "2026-07-06T02:00:00-04:00", "impact": "Low",
-     "forecast": "1.1%", "previous": "-3.8%"},
-    {"title": "FOMC Meeting Minutes", "country": "USD",
-     "date": "2026-07-08T14:00:00-04:00", "impact": "High",
-     "forecast": "", "previous": ""},
-    {"title": "Bank Holiday", "country": "CAD",
-     "date": "2026-07-01T00:00:00-04:00", "impact": "Holiday",
-     "forecast": "", "previous": ""},
-    {"title": "Something Unrated", "country": "GBP",
-     "date": "2026-07-07T05:00:00-04:00", "impact": "",
-     "forecast": "", "previous": ""},
-    {"title": "Tentative Event No Time", "country": "USD",
-     "date": None, "impact": "Medium"},
+    {
+        "title": "Non-Farm Employment Change",
+        "country": "USD",
+        "date": "2026-07-03T08:30:00-04:00",
+        "impact": "High",
+        "forecast": "168K",
+        "previous": "199K",
+        "actual": "206K",
+    },
+    {
+        "title": "German Factory Orders m/m",
+        "country": "EUR",
+        "date": "2026-07-06T02:00:00-04:00",
+        "impact": "Low",
+        "forecast": "1.1%",
+        "previous": "-3.8%",
+    },
+    {
+        "title": "FOMC Meeting Minutes",
+        "country": "USD",
+        "date": "2026-07-08T14:00:00-04:00",
+        "impact": "High",
+        "forecast": "",
+        "previous": "",
+    },
+    {
+        "title": "Bank Holiday",
+        "country": "CAD",
+        "date": "2026-07-01T00:00:00-04:00",
+        "impact": "Holiday",
+        "forecast": "",
+        "previous": "",
+    },
+    {
+        "title": "Something Unrated",
+        "country": "GBP",
+        "date": "2026-07-07T05:00:00-04:00",
+        "impact": "",
+        "forecast": "",
+        "previous": "",
+    },
+    {"title": "Tentative Event No Time", "country": "USD", "date": None, "impact": "Medium"},
 ]
 
 
@@ -59,8 +84,8 @@ def test_impact_normalisation():
     events = ForexFactorySource.parse_entries(SAMPLE)
     by_title = {e.title: e for e in events}
     assert by_title["German Factory Orders m/m"].impact == Impact.LOW
-    assert by_title["Bank Holiday"].impact == Impact.NONE       # Holiday -> NONE magnitude...
-    assert by_title["Bank Holiday"].is_holiday is True          # ...but flagged as a bank holiday
+    assert by_title["Bank Holiday"].impact == Impact.NONE  # Holiday -> NONE magnitude...
+    assert by_title["Bank Holiday"].is_holiday is True  # ...but flagged as a bank holiday
     assert by_title["Something Unrated"].impact == Impact.NONE  # "" -> NONE
     assert by_title["Something Unrated"].is_holiday is False
 

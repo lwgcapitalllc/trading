@@ -31,8 +31,9 @@ class FakeAgent:
     exactly the behaviour observed on Vantage, which is the whole reason this module exists.
     """
 
-    def __init__(self, server="FakeBroker-Demo", intraday_from="2018-09-14",
-                 daily_from="2007-06-21"):
+    def __init__(
+        self, server="FakeBroker-Demo", intraday_from="2018-09-14", daily_from="2007-06-21"
+    ):
         self._server = server
         self.intraday_from = dt.date.fromisoformat(intraday_from)
         self.daily_from = dt.date.fromisoformat(daily_from)
@@ -49,7 +50,7 @@ class FakeAgent:
         minutes = _MINUTES[tf_name]
         if minutes >= 1440 or day >= self.intraday_from:
             return _PER_DAY[minutes]
-        return 1        # the substitution: one DAILY bar, whatever was asked for
+        return 1  # the substitution: one DAILY bar, whatever was asked for
 
 
 def _floors(agent, tmp_path):
@@ -63,6 +64,7 @@ def _frame(start: str, periods: int, minutes: int) -> pd.DataFrame:
 
 # ── probing finds the real floor ────────────────────────────────────────────────
 
+
 def test_probe_finds_the_intraday_floor(tmp_path):
     f = _floors(FakeAgent(intraday_from="2018-09-14"), tmp_path)
     # Exact: the binary search brackets, then phase 2 scans forward to the first real day.
@@ -73,7 +75,7 @@ def test_probe_adapts_to_a_deeper_broker(tmp_path):
     """The whole point of measuring: a broker with more history must NOT be truncated."""
     f = _floors(FakeAgent(server="DeepBroker-Live", intraday_from="2012-03-05"), tmp_path)
     assert f.floor("XAUUSD", 15) == dt.date(2012, 3, 5)
-    f.assert_window("XAUUSD", 15, "2013-01-01", "2020-01-01")   # would have been refused
+    f.assert_window("XAUUSD", 15, "2013-01-01", "2020-01-01")  # would have been refused
 
 
 def test_probe_adapts_to_a_shallower_broker(tmp_path):
@@ -95,15 +97,16 @@ def test_broker_suffix_is_the_same_instrument(tmp_path):
 
 # ── caching, and per-broker isolation ───────────────────────────────────────────
 
+
 def test_result_is_cached_so_the_probe_runs_once(tmp_path):
     agent = FakeAgent()
     f = _floors(agent, tmp_path)
     f.floor("XAUUSD", 15)
     after_first = agent.calls
     assert after_first > 0
-    f2 = _floors(agent, tmp_path)          # fresh instance, same cache dir
+    f2 = _floors(agent, tmp_path)  # fresh instance, same cache dir
     f2.floor("XAUUSD", 15)
-    assert agent.calls == after_first      # zero extra probes
+    assert agent.calls == after_first  # zero extra probes
 
 
 def test_switching_broker_does_not_reuse_the_old_floor(tmp_path):
@@ -120,34 +123,43 @@ def test_refresh_reprobes_when_a_broker_extends_history(tmp_path):
     agent = FakeAgent(intraday_from="2024-01-08")
     f = _floors(agent, tmp_path)
     assert f.floor("XAUUSD", 15).year == 2024
-    agent.intraday_from = dt.date(2015, 6, 1)          # broker back-fills history
-    assert f.floor("XAUUSD", 15).year == 2024          # cached — unchanged
+    agent.intraday_from = dt.date(2015, 6, 1)  # broker back-fills history
+    assert f.floor("XAUUSD", 15).year == 2024  # cached — unchanged
     assert f.floor("XAUUSD", 15, refresh=True).year == 2015
 
 
 # ── unknown / unreachable ───────────────────────────────────────────────────────
 
+
 def test_unreachable_agent_yields_unknown_not_a_guess(tmp_path):
     class Dead:
-        def status(self): raise RuntimeError("tunnel down")
-        def bar_count(self, *a, **k): return 0
+        def status(self):
+            raise RuntimeError("tunnel down")
+
+        def bar_count(self, *a, **k):
+            return 0
+
     f = _floors(Dead(), tmp_path)
-    assert f.floor("XAUUSD", 15) is None      # None = unknown, never "unlimited"
-    f.assert_window("XAUUSD", 15, "1999-01-01")   # cannot refuse what it cannot measure
+    assert f.floor("XAUUSD", 15) is None  # None = unknown, never "unlimited"
+    f.assert_window("XAUUSD", 15, "1999-01-01")  # cannot refuse what it cannot measure
 
 
 def test_seed_is_not_applied_to_a_different_broker(tmp_path):
     """A seeded fallback exists for Vantage. It must never be imposed on another broker —
     that would truncate a deeper one and fictionalise a shallower one."""
+
     class NoBars(FakeAgent):
-        def bar_count(self, *a, **k): return 0
+        def bar_count(self, *a, **k):
+            return 0
+
     other = _floors(NoBars(server="SomeoneElse-Live"), tmp_path)
     assert other.floor("XAUUSD", 15) is None
     vantage = _floors(NoBars(server="VantageMarkets-Demo"), tmp_path)
-    assert vantage.floor("XAUUSD", 15) == dt.date(2018, 9, 14)   # seed applies here only
+    assert vantage.floor("XAUUSD", 15) == dt.date(2018, 9, 14)  # seed applies here only
 
 
 # ── window assertion ────────────────────────────────────────────────────────────
+
 
 def test_window_on_or_after_the_floor_is_allowed(tmp_path):
     f = _floors(FakeAgent(intraday_from="2018-09-14"), tmp_path)
@@ -180,6 +192,7 @@ def test_describe_reports_how_it_knows(tmp_path):
 
 
 # ── spacing backstop (pure) ─────────────────────────────────────────────────────
+
 
 def test_daily_bars_labelled_as_15m_are_refused():
     """The actual production failure: Jan-2010 M15 returned 21 daily bars."""

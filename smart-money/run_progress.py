@@ -2,6 +2,7 @@
 Pipeline run progress writer. Atomically updates reports/progress.json so the
 command-center can poll it without reading a partial file.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,19 +62,29 @@ class ProgressWriter:
             self._last_qualified = qualified_so_far
         if disqualified_so_far > self._last_disqualified:
             self._last_disqualified = disqualified_so_far
-        self._write(self._payload(
-            pct, phase, message,
-            wallets_scanned, wallets_total,
-            qualified_so_far, disqualified_so_far,
-            recent_addresses=recent_addresses,
-        ))
+        self._write(
+            self._payload(
+                pct,
+                phase,
+                message,
+                wallets_scanned,
+                wallets_total,
+                qualified_so_far,
+                disqualified_so_far,
+                recent_addresses=recent_addresses,
+            )
+        )
 
     def complete(self):
         # Preserve the peak scan counts so the UI can show a meaningful summary
         data = self._payload(
-            100, "complete", "",
-            self._last_wallets_scanned, self._last_wallets_total,
-            self._last_qualified, self._last_disqualified,
+            100,
+            "complete",
+            "",
+            self._last_wallets_scanned,
+            self._last_wallets_total,
+            self._last_qualified,
+            self._last_disqualified,
         )
         data["status"] = "complete"
         self._write(data)

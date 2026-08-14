@@ -23,13 +23,13 @@ import pandas as pd
 # name → (MT5 timeframe constant name, seconds per bar). The constants are looked up off the
 # module at call time so this file imports on a machine with no MetaTrader5 (tests, the Mac).
 TIMEFRAMES = {
-    "M1":  ("TIMEFRAME_M1",  60),
-    "M5":  ("TIMEFRAME_M5",  300),
+    "M1": ("TIMEFRAME_M1", 60),
+    "M5": ("TIMEFRAME_M5", 300),
     "M15": ("TIMEFRAME_M15", 900),
     "M30": ("TIMEFRAME_M30", 1800),
-    "H1":  ("TIMEFRAME_H1",  3600),
-    "H4":  ("TIMEFRAME_H4",  14400),
-    "D1":  ("TIMEFRAME_D1",  86400),
+    "H1": ("TIMEFRAME_H1", 3600),
+    "H4": ("TIMEFRAME_H4", 14400),
+    "D1": ("TIMEFRAME_D1", 86400),
 }
 
 
@@ -56,7 +56,7 @@ def to_canonical(df: pd.DataFrame) -> pd.DataFrame:
     """
     if df is None or df.empty or "time" not in df.columns:
         return pd.DataFrame(columns=["open", "high", "low", "close"])
-    out = df.iloc[:-1]                    # drop the still-forming bar — see the module docstring
+    out = df.iloc[:-1]  # drop the still-forming bar — see the module docstring
     if out.empty:
         return pd.DataFrame(columns=["open", "high", "low", "close"])
     out = out.set_index(pd.DatetimeIndex(out["time"], name=None))
@@ -80,6 +80,7 @@ class BarFeed:
 
     def _tf_const(self):
         import MetaTrader5 as mt5
+
         return mt5_timeframe(self.timeframe, mt5)
 
     def history(self, count: int) -> pd.DataFrame:

@@ -49,13 +49,18 @@ def test_the_real_repo_does_not_ignore_what_the_sync_fetches(rel):
     first version of this test failed on a correctly-committable file. Without it, exit 0 and a
     printed path mean ignored and nothing else. `ledger_sync.ignored()` reads it the same way.
     """
-    out = subprocess.run(["git", "-C", str(_REPO), "check-ignore", "--", rel],
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        ["git", "-C", str(_REPO), "check-ignore", "--", rel], capture_output=True, text=True
+    )
     if out.returncode == 0:
-        why = subprocess.run(["git", "-C", str(_REPO), "check-ignore", "-v", "--", rel],
-                             capture_output=True, text=True).stdout.strip()
-        pytest.fail(f"{rel} is ignored by git, so the backup can fetch it and never commit "
-                    f"it:\n  {why}")
+        why = subprocess.run(
+            ["git", "-C", str(_REPO), "check-ignore", "-v", "--", rel],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        pytest.fail(
+            f"{rel} is ignored by git, so the backup can fetch it and never commit it:\n  {why}"
+        )
 
 
 def test_an_ignored_fetch_is_reported_rather_than_dropped(tmp_path, monkeypatch):

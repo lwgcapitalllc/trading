@@ -18,8 +18,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 _HERE = Path(__file__).resolve().parent
 _LIVE = _HERE.parent / "live"
 _SHARED = _HERE.parent / "shared"
@@ -29,25 +27,41 @@ for _p in (str(_HERE), str(_LIVE), str(_SHARED)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import bridge as live_bridge  # noqa: E402
 import position_state  # noqa: E402
 from test_live_bridge import (  # noqa: E402
-    _FakeExecution, _FakeMt5Ops, _Pos, _bridge,
+    _bridge,
+    _FakeExecution,
+    _FakeMt5Ops,
+    _Pos,
 )
-
-import bridge as live_bridge  # noqa: E402
-
 
 # The emulator state a real record carries. Opaque to `position_state` and to the bridge by
 # design — only `Execution.restore_position` reads it — so a fake one is honest here.
 _SNAP = {"_pos_dir": 1, "_stage": 1, "_max_fav": 3301.5}
 
 
-def _record(tmp_path, *, ticket=901, direction=1, lots=0.42, entry=3290.0, stop=3280.0,
-            magic=770115, symbol="XAUUSD", strategy=None):
+def _record(
+    tmp_path,
+    *,
+    ticket=901,
+    direction=1,
+    lots=0.42,
+    entry=3290.0,
+    stop=3280.0,
+    magic=770115,
+    symbol="XAUUSD",
+    strategy=None,
+):
     position_state.write(
-        tmp_path, bot="BOT_TEST", symbol=symbol, magic=magic, ticket=ticket,
+        tmp_path,
+        bot="BOT_TEST",
+        symbol=symbol,
+        magic=magic,
+        ticket=ticket,
         broker=position_state.BrokerFacts(dir=direction, lots=lots, entry=entry, stop=stop),
-        strategy=_SNAP if strategy is None else strategy)
+        strategy=_SNAP if strategy is None else strategy,
+    )
 
 
 def _held(ticket=901, direction=1, lots=0.42, entry=3290.0, stop=3280.0):
@@ -58,13 +72,15 @@ def _held(ticket=901, direction=1, lots=0.42, entry=3290.0, stop=3280.0):
 def _startup(tmp_path, *, positions, execution=None):
     ops = _FakeMt5Ops()
     ops.positions = list(positions)
-    b, ops, ledger, notes = _bridge(execution or _FakeExecution(), mt5ops=ops,
-                                    instance_dir=tmp_path)
+    b, ops, ledger, notes = _bridge(
+        execution or _FakeExecution(), mt5ops=ops, instance_dir=tmp_path
+    )
     b.adopt_broker_state()
     return b, ops, ledger, notes
 
 
 # ── the file itself ──────────────────────────────────────────────────────────
+
 
 def test_a_record_round_trips(tmp_path):
     _record(tmp_path)
@@ -80,8 +96,9 @@ def test_a_torn_record_reads_as_NO_record_not_as_a_best_effort(tmp_path):
     """Corrupt and absent must be the SAME answer, because the caller's response to both is to
     halt. A partial parse here would hand the emulator a position with fields it invented."""
     _record(tmp_path)
-    position_state.path_for(tmp_path).write_text('{"version": 1, "broker": {"dir": 1',
-                                                 encoding="utf-8")
+    position_state.path_for(tmp_path).write_text(
+        '{"version": 1, "broker": {"dir": 1', encoding="utf-8"
+    )
     assert position_state.read(tmp_path) is None
 
 
@@ -124,6 +141,7 @@ def test_writing_leaves_no_temp_file_behind(tmp_path):
 
 # ── the comparison ───────────────────────────────────────────────────────────
 
+
 def test_a_price_difference_below_one_point_is_not_a_disagreement(tmp_path):
     """MT5 rounds to the symbol's digits and a float round-trip through JSON is not bit-exact, so
     an equality test would halt on every ordinary restart and the feature would be switched off
@@ -144,18 +162,19 @@ def test_a_moved_stop_IS_a_disagreement_and_says_both_numbers(tmp_path):
 def test_a_flipped_direction_IS_a_disagreement(tmp_path):
     _record(tmp_path, direction=1)
     rec = position_state.read(tmp_path)
-    assert any("direction" in d for d in
-               position_state.disagreements(rec, _held(direction=-1), point=0.01))
+    assert any(
+        "direction" in d for d in position_state.disagreements(rec, _held(direction=-1), point=0.01)
+    )
 
 
 def test_a_different_size_IS_a_disagreement(tmp_path):
     _record(tmp_path, lots=0.42)
     rec = position_state.read(tmp_path)
-    assert any("size" in d for d in
-               position_state.disagreements(rec, _held(lots=0.84), point=0.01))
+    assert any("size" in d for d in position_state.disagreements(rec, _held(lots=0.84), point=0.01))
 
 
 # ── the bridge, at startup ───────────────────────────────────────────────────
+
 
 def test_a_matching_record_is_staged_rather_than_halted(tmp_path):
     _record(tmp_path)
@@ -172,8 +191,9 @@ def test_it_is_NOT_applied_until_after_the_warmup(tmp_path):
     _record(tmp_path)
     ex = _FakeExecution()
     b, _, _, _ = _startup(tmp_path, positions=[_held()], execution=ex)
-    assert getattr(ex, "restored", None) is None, \
+    assert getattr(ex, "restored", None) is None, (
         "adopt_broker_state must not touch the emulator — the warm-up has not run yet"
+    )
 
 
 def test_apply_restore_hands_it_to_the_strategy_and_goes_LIVE(tmp_path):
@@ -183,9 +203,10 @@ def test_apply_restore_hands_it_to_the_strategy_and_goes_LIVE(tmp_path):
     assert b.apply_restore() is True
     assert ex.restored == _SNAP
     b.begin_live()
-    assert b.state is live_bridge.BridgeState.LIVE, \
-        "a restored position is a real fill this bot made, not a warm-up artefact — WARMING here " \
+    assert b.state is live_bridge.BridgeState.LIVE, (
+        "a restored position is a real fill this bot made, not a warm-up artefact — WARMING here "
         "would reproduce the very failure the restore exists to end"
+    )
     assert any(r[0] == "event:position_restored" for r in ledger.rows)
 
 
@@ -197,6 +218,7 @@ def test_a_restored_bot_announces_it_once(tmp_path):
 
 
 # ── every other shape still halts ────────────────────────────────────────────
+
 
 def test_no_record_halts(tmp_path):
     b, _, _, _ = _startup(tmp_path, positions=[_held()])
@@ -260,6 +282,7 @@ def test_a_strategy_that_refuses_the_record_halts_rather_than_running_on(tmp_pat
 
     def _boom(snap):
         raise ValueError("missing: _stage")
+
     ex.restore_position = _boom
 
     b, _, _, _ = _startup(tmp_path, positions=[_held()], execution=ex)
@@ -269,6 +292,7 @@ def test_a_strategy_that_refuses_the_record_halts_rather_than_running_on(tmp_pat
 
 
 # ── writing it, over the trade's life ────────────────────────────────────────
+
 
 def test_the_record_is_cleared_when_the_trade_closes(tmp_path):
     """A record naming a dead ticket cannot restore anything, but it would sit in the instance
@@ -302,6 +326,7 @@ class _Sig:
 
 # ── carrying it across a re-warm ─────────────────────────────────────────────
 
+
 def test_a_rewarm_carries_the_open_position_across_the_rebuild(tmp_path):
     """🔴 The more likely door onto the same failure than a process restart. `_recover_link` and
     the `gap > 4` branch both rebuild the strategy and replay through a FRESH emulator — so a
@@ -315,7 +340,7 @@ def test_a_rewarm_carries_the_open_position_across_the_rebuild(tmp_path):
     b.apply_restore()
 
     b.stage_rewarm()
-    fresh = _FakeExecution()          # what `_build_strategy` hands back
+    fresh = _FakeExecution()  # what `_build_strategy` hands back
     b._ex = fresh
     assert b.apply_restore(announce=False) is True
     assert fresh.restored == _SNAP
@@ -355,6 +380,7 @@ def test_a_snapshot_that_raises_during_a_rewarm_does_not_halt(tmp_path):
 
     def _boom():
         raise RuntimeError("nope")
+
     ex.snapshot_position = _boom
 
     b, _, _, _ = _startup(tmp_path, positions=[_held()], execution=ex)

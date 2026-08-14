@@ -18,33 +18,38 @@ import json
 
 from routers import bots
 
-
 # The section NAME is derived from the registry, never spelled out here — the whole point
 # of the 2026-08-04 registry change is that a bot is declared once. A literal in the test
 # would keep passing while the fetch command asked for a different section entirely.
-_SECTION = bots._BOTS[0].state_section          # e.g. "state_mpc_sos_fade_demo"
-_MARKER  = f"==={_SECTION.upper()}==="
+_SECTION = bots._BOTS[0].state_section  # e.g. "state_mpc_sos_fade_demo"
+_MARKER = f"==={_SECTION.upper()}==="
 
 
 def _state_blob() -> str:
-    return json.dumps({
-        "mpc_sos_fade_demo": {
-            "name": "MPC SOS Fade", "status": "live", "started": 1785471363.6,
-            "account": 700107749, "balance": 2000.0, "mt5_link": True,
-            "last_updated": "2026-07-31T04:18:43+00:00",
+    return json.dumps(
+        {
+            "mpc_sos_fade_demo": {
+                "name": "MPC SOS Fade",
+                "status": "live",
+                "started": 1785471363.6,
+                "account": 700107749,
+                "balance": 2000.0,
+                "mt5_link": True,
+                "last_updated": "2026-07-31T04:18:43+00:00",
+            },
+            "last_updated": "2026-07-31T04:18:43.940729",
         },
-        "last_updated": "2026-07-31T04:18:43.940729",
-    }, indent=2)
+        indent=2,
+    )
 
 
 def test_a_section_marker_glued_to_the_previous_line_is_still_found():
     """`type` leaves no trailing newline. Without the `echo.` guard in the fetch command
     this is exactly what comes back, and BOTH sections are lost."""
-    raw = (f"{_MARKER}\n{_state_blob()}"
-           '===TELEGRAM_START===\n{"started": 1785468642.7}')
+    raw = f'{_MARKER}\n{_state_blob()}===TELEGRAM_START===\n{{"started": 1785468642.7}}'
     sections = bots._parse_sections(raw, "head")
     assert "telegram_start" in sections, "the glued marker was not recognised"
-    json.loads(sections[_SECTION])                  # must be parseable on its own
+    json.loads(sections[_SECTION])  # must be parseable on its own
 
 
 def test_bot_state_is_read_out_of_its_section():
@@ -56,8 +61,7 @@ def test_bot_state_is_read_out_of_its_section():
 def test_a_bot_that_has_never_run_leaves_the_later_sections_intact():
     """The empty-state-file case — the first cmd quirk. A bot with no state file yet must
     not take the Telegram row down with it."""
-    raw = (f"{_MARKER}\n"
-           '===TELEGRAM_START===\n{"started": 1785468642.7}')
+    raw = f'{_MARKER}\n===TELEGRAM_START===\n{{"started": 1785468642.7}}'
     sections = bots._parse_sections(raw, "head")
     assert sections[_SECTION] == ""
     assert json.loads(sections["telegram_start"])["started"] == 1785468642.7
@@ -72,14 +76,16 @@ def test_every_declared_state_section_has_a_path_to_fetch_it():
 def test_schtasks_paths_resolve_to_task_names():
     """schtasks reports `\\SYS_MONITOR`, not `SYS_MONITOR`. Matching the raw value meant
     _parse_tasks returned {} and EVERY job read UNKNOWN from the day it was written."""
-    raw = ('===TASKS===\n'
-           '"\\SYS_MONITOR","N/A","Disabled"\n'
-           '"\\SYS_TELEGRAM","N/A","Running"\n'
-           '"\\Folder\\SYS_DEADMAN","N/A","Ready"\n')
+    raw = (
+        "===TASKS===\n"
+        '"\\SYS_MONITOR","N/A","Disabled"\n'
+        '"\\SYS_TELEGRAM","N/A","Running"\n'
+        '"\\Folder\\SYS_DEADMAN","N/A","Ready"\n'
+    )
     tasks = bots._parse_tasks(bots._parse_sections(raw, "head"))
     assert tasks["SYS_MONITOR"] == "Disabled"
     assert tasks["SYS_TELEGRAM"] == "Running"
-    assert tasks["SYS_DEADMAN"] == "Ready"         # nested folders resolve too
+    assert tasks["SYS_DEADMAN"] == "Ready"  # nested folders resolve too
 
 
 def test_the_bot_key_is_what_identifies_the_process():

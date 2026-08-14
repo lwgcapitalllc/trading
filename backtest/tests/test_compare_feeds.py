@@ -110,8 +110,10 @@ def test_offset_profile_detects_dst_change():
     # MT5 is a price-faithful copy of TV, +2h ahead in the first half and +3h in
     # the second (a DST boundary in the middle).
     tv = _frame("2025-01-06 00:00", 400, freq="1h")
-    winter = tv.iloc[:200].copy(); winter.index = winter.index + pd.Timedelta(hours=2)
-    summer = tv.iloc[200:].copy(); summer.index = summer.index + pd.Timedelta(hours=3)
+    winter = tv.iloc[:200].copy()
+    winter.index = winter.index + pd.Timedelta(hours=2)
+    summer = tv.iloc[200:].copy()
+    summer.index = summer.index + pd.Timedelta(hours=3)
     mt5 = pd.concat([winter, summer])
     prof = cf.offset_profile(tv, mt5, chunks=8)
     assert {-2, -3}.issubset({c.shift_hours for c in prof})
@@ -119,8 +121,10 @@ def test_offset_profile_detects_dst_change():
 
 def test_dst_correct_removes_variable_offset():
     tv = _frame("2025-01-06 00:00", 400, freq="1h")
-    winter = tv.iloc[:200].copy(); winter.index = winter.index + pd.Timedelta(hours=2)
-    summer = tv.iloc[200:].copy(); summer.index = summer.index + pd.Timedelta(hours=3)
+    winter = tv.iloc[:200].copy()
+    winter.index = winter.index + pd.Timedelta(hours=2)
+    summer = tv.iloc[200:].copy()
+    summer.index = summer.index + pd.Timedelta(hours=3)
     mt5 = pd.concat([winter, summer])
     prof = cf.offset_profile(tv, mt5, chunks=8)
     corrected = cf.dst_correct(tv, mt5, prof)
@@ -133,5 +137,5 @@ def test_dst_correct_removes_variable_offset():
 def test_align_and_diff_applies_shift_before_join():
     tv = _frame("2025-01-06 00:00", 20)
     mt5 = _frame("2025-01-06 02:00", 20)  # 2h ahead; shifting -2h realigns the grids
-    assert cf.align_and_diff(tv, mt5, 0).matched == 12   # unshifted: only the overlap
+    assert cf.align_and_diff(tv, mt5, 0).matched == 12  # unshifted: only the overlap
     assert cf.align_and_diff(tv, mt5, -2).matched == 20  # shifted: grids coincide

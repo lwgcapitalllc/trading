@@ -48,15 +48,15 @@ from collections import deque
 from typing import Deque, Dict, List, Optional, Tuple
 
 from .types import (
-    PATTERNS,
     PATTERN_KEYS,
+    PATTERNS,
     CandlePattern,
     CandlestickEvents,
     PatternSpec,
     resolve_keys,
 )
 
-_TREND_SENTINEL = -1     # PatternSpec.min_history value meaning "needs `trend` bars"
+_TREND_SENTINEL = -1  # PatternSpec.min_history value meaning "needs `trend` bars"
 
 
 class CandlestickEngine:
@@ -71,8 +71,9 @@ class CandlestickEngine:
     unselected ones are skipped, not redefined.
     """
 
-    def __init__(self, trend: int = 5, doji_size: float = 0.05,
-                 patterns: Optional[List[str]] = None) -> None:
+    def __init__(
+        self, trend: int = 5, doji_size: float = 0.05, patterns: Optional[List[str]] = None
+    ) -> None:
         if trend < 1:
             raise ValueError(f"trend must be >= 1 (Pine minval), got {trend}")
         if doji_size <= 0:
@@ -89,13 +90,11 @@ class CandlestickEngine:
 
         # Rolling OHLC window, newest LAST. Deepest reads: `open[trend]` and the ten lows behind
         # `ta.lowest(10)[1]` (bars [1]..[10]), so the window must hold max(trend, 10) + 1 bars.
-        self._window: Deque[Tuple[float, float, float, float]] = deque(
-            maxlen=max(trend, 10) + 1
-        )
+        self._window: Deque[Tuple[float, float, float, float]] = deque(maxlen=max(trend, 10) + 1)
 
         self._bar_index: int = -1
         self._bars_seen: int = 0
-        self._last_bar: Dict[str, int] = {}       # key -> bar index it last fired on
+        self._last_bar: Dict[str, int] = {}  # key -> bar index it last fired on
 
     # ------------------------------------------------------------------
     # public
@@ -113,8 +112,9 @@ class CandlestickEngine:
         """The pattern keys this instance evaluates, in registry order."""
         return self._enabled
 
-    def update(self, bar_index: int, open_: float, high: float, low: float,
-               close: float) -> CandlestickEvents:
+    def update(
+        self, bar_index: int, open_: float, high: float, low: float, close: float
+    ) -> CandlestickEvents:
         """Feed one closed bar (index + OHLC). Returns the patterns that fired on it."""
         self._window.append((open_, high, low, close))
         self._bar_index = bar_index
@@ -185,7 +185,7 @@ class CandlestickEngine:
         lows = [self._l(k) for k in range(1, 11)]
         if any(v is None for v in lows):
             return None
-        return min(lows)          # type: ignore[arg-type]
+        return min(lows)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
     # the fifteen rules — each one line-for-line against candle_sticks.pine
@@ -193,7 +193,7 @@ class CandlestickEngine:
     def _doji(self) -> bool:
         # doji = math.abs(open - close) <= (high - low) * dojiSize
         o, h, l, c = self._o(), self._h(), self._l(), self._c()
-        return abs(o - c) <= (h - l) * self._doji_size          # type: ignore[operator]
+        return abs(o - c) <= (h - l) * self._doji_size  # type: ignore[operator]
 
     def _bearish_harami(self) -> bool:
         # close[1] > open[1] and open > close and open <= close[1] and open[1] <= close
@@ -201,8 +201,14 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         ot = self._o(self._trend)
-        return (c1 > o1 and o > c and o <= c1 and o1 <= c            # type: ignore[operator]
-                and (o - c) < (c1 - o1) and ot < o)                 # type: ignore[operator]
+        return (
+            c1 > o1
+            and o > c
+            and o <= c1
+            and o1 <= c  # type: ignore[operator]
+            and (o - c) < (c1 - o1)
+            and ot < o
+        )  # type: ignore[operator]
 
     def _bullish_harami(self) -> bool:
         # open[1] > close[1] and close > open and close <= open[1] and close[1] <= open
@@ -210,8 +216,14 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         ot = self._o(self._trend)
-        return (o1 > c1 and c > o and c <= o1 and c1 <= o            # type: ignore[operator]
-                and (c - o) < (o1 - c1) and ot > o)                 # type: ignore[operator]
+        return (
+            o1 > c1
+            and c > o
+            and c <= o1
+            and c1 <= o  # type: ignore[operator]
+            and (c - o) < (o1 - c1)
+            and ot > o
+        )  # type: ignore[operator]
 
     def _bearish_engulfing(self) -> bool:
         # close[1] > open[1] and open > close and open >= close[1] and open[1] >= close
@@ -219,8 +231,14 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         ot = self._o(self._trend)
-        return (c1 > o1 and o > c and o >= c1 and o1 >= c            # type: ignore[operator]
-                and (o - c) > (c1 - o1) and ot < o)                 # type: ignore[operator]
+        return (
+            c1 > o1
+            and o > c
+            and o >= c1
+            and o1 >= c  # type: ignore[operator]
+            and (o - c) > (c1 - o1)
+            and ot < o
+        )  # type: ignore[operator]
 
     def _bullish_engulfing(self) -> bool:
         # open[1] > close[1] and close > open and close >= open[1] and close[1] >= open
@@ -232,8 +250,14 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         ot = self._o(self._trend)
-        return (o1 > c1 and c > o and c >= o1 and c1 >= o            # type: ignore[operator]
-                and (c - o) > (o1 - c1) and ot > o)                 # type: ignore[operator]
+        return (
+            o1 > c1
+            and c > o
+            and c >= o1
+            and c1 >= o  # type: ignore[operator]
+            and (c - o) > (o1 - c1)
+            and ot > o
+        )  # type: ignore[operator]
 
     def _piercing_line(self) -> bool:
         # close[1] < open[1] and open < low[1] and close > close[1] + ((open[1] - close[1]) / 2)
@@ -241,9 +265,13 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1, l1 = self._o(1), self._c(1), self._l(1)
         ot = self._o(self._trend)
-        return (c1 < o1 and o < l1                                   # type: ignore[operator]
-                and c > c1 + ((o1 - c1) / 2) and c < o1              # type: ignore[operator]
-                and ot > o)                                          # type: ignore[operator]
+        return (
+            c1 < o1
+            and o < l1  # type: ignore[operator]
+            and c > c1 + ((o1 - c1) / 2)
+            and c < o1  # type: ignore[operator]
+            and ot > o
+        )  # type: ignore[operator]
 
     def _bullish_belt(self) -> bool:
         # lower = ta.lowest(10)[1]
@@ -255,22 +283,27 @@ class CandlestickEngine:
         lower = self._lowest10_prev()
         if lower is None:
             return False
-        return (l == o and o < lower and o < c                        # type: ignore[operator]
-                and c > ((h1 - l1) / 2) + l1 and ot > o)              # type: ignore[operator]
+        return (
+            l == o
+            and o < lower
+            and o < c  # type: ignore[operator]
+            and c > ((h1 - l1) / 2) + l1
+            and ot > o
+        )  # type: ignore[operator]
 
     def _bullish_kicker(self) -> bool:
         # open[1] > close[1] and open >= open[1] and close > open and open[trend] > open
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         ot = self._o(self._trend)
-        return o1 > c1 and o >= o1 and c > o and ot > o                # type: ignore[operator]
+        return o1 > c1 and o >= o1 and c > o and ot > o  # type: ignore[operator]
 
     def _bearish_kicker(self) -> bool:
         # open[1] < close[1] and open <= open[1] and close <= open and open[trend] < open
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         ot = self._o(self._trend)
-        return o1 < c1 and o <= o1 and c <= o and ot < o                # type: ignore[operator]
+        return o1 < c1 and o <= o1 and c <= o and ot < o  # type: ignore[operator]
 
     def _hanging_man(self) -> bool:
         # (high - low > 4 * math.abs(open - close))
@@ -280,11 +313,15 @@ class CandlestickEngine:
         o, h, l, c = self._o(), self._h(), self._l(), self._c()
         h1, h2 = self._h(1), self._h(2)
         ot = self._o(self._trend)
-        rng = 0.001 + h - l                                            # type: ignore[operator]
-        return ((h - l > 4 * abs(o - c))                               # type: ignore[operator]
-                and ((c - l) / rng >= 0.75)                            # type: ignore[operator]
-                and ((o - l) / rng >= 0.75)                            # type: ignore[operator]
-                and ot < o and h1 < o and h2 < o)                      # type: ignore[operator]
+        rng = 0.001 + h - l  # type: ignore[operator]
+        return (
+            (h - l > 4 * abs(o - c))  # type: ignore[operator]
+            and ((c - l) / rng >= 0.75)  # type: ignore[operator]
+            and ((o - l) / rng >= 0.75)  # type: ignore[operator]
+            and ot < o
+            and h1 < o
+            and h2 < o
+        )  # type: ignore[operator]
 
     def _evening_star(self) -> bool:
         # close[2] > open[2] and math.min(open[1], close[1]) > close[2]
@@ -292,8 +329,12 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         o2, c2 = self._o(2), self._c(2)
-        return (c2 > o2 and min(o1, c1) > c2                           # type: ignore[operator]
-                and o < min(o1, c1) and c < o)                         # type: ignore[operator]
+        return (
+            c2 > o2
+            and min(o1, c1) > c2  # type: ignore[operator]
+            and o < min(o1, c1)
+            and c < o
+        )  # type: ignore[operator]
 
     def _morning_star(self) -> bool:
         # close[2] < open[2] and math.max(open[1], close[1]) < close[2]
@@ -301,8 +342,12 @@ class CandlestickEngine:
         o, c = self._o(), self._c()
         o1, c1 = self._o(1), self._c(1)
         o2, c2 = self._o(2), self._c(2)
-        return (c2 < o2 and max(o1, c1) < c2                           # type: ignore[operator]
-                and o > max(o1, c1) and c > o)                         # type: ignore[operator]
+        return (
+            c2 < o2
+            and max(o1, c1) < c2  # type: ignore[operator]
+            and o > max(o1, c1)
+            and c > o
+        )  # type: ignore[operator]
 
     def _shooting_star(self) -> bool:
         # open[1] < close[1] and open > close[1]
@@ -310,30 +355,37 @@ class CandlestickEngine:
         #   and math.min(close, open) - low <= math.abs(open - close)
         o, h, l, c = self._o(), self._h(), self._l(), self._c()
         o1, c1 = self._o(1), self._c(1)
-        body = abs(o - c)                                              # type: ignore[operator]
-        return (o1 < c1 and o > c1                                     # type: ignore[operator]
-                and h - max(o, c) >= body * 3                          # type: ignore[operator]
-                and min(c, o) - l <= body)                             # type: ignore[operator]
+        body = abs(o - c)  # type: ignore[operator]
+        return (
+            o1 < c1
+            and o > c1  # type: ignore[operator]
+            and h - max(o, c) >= body * 3  # type: ignore[operator]
+            and min(c, o) - l <= body
+        )  # type: ignore[operator]
 
     def _hammer(self) -> bool:
         # (high - low > 3 * math.abs(open - close))
         #   and ((close - low) / (0.001 + high - low) > 0.6)
         #   and ((open  - low) / (0.001 + high - low) > 0.6)
         o, h, l, c = self._o(), self._h(), self._l(), self._c()
-        rng = 0.001 + h - l                                            # type: ignore[operator]
-        return ((h - l > 3 * abs(o - c))                               # type: ignore[operator]
-                and ((c - l) / rng > 0.6)                              # type: ignore[operator]
-                and ((o - l) / rng > 0.6))                             # type: ignore[operator]
+        rng = 0.001 + h - l  # type: ignore[operator]
+        return (
+            (h - l > 3 * abs(o - c))  # type: ignore[operator]
+            and ((c - l) / rng > 0.6)  # type: ignore[operator]
+            and ((o - l) / rng > 0.6)
+        )  # type: ignore[operator]
 
     def _inverted_hammer(self) -> bool:
         # (high - low > 3 * math.abs(open - close))
         #   and ((high - close) / (0.001 + high - low) > 0.6)
         #   and ((high - open)  / (0.001 + high - low) > 0.6)
         o, h, l, c = self._o(), self._h(), self._l(), self._c()
-        rng = 0.001 + h - l                                            # type: ignore[operator]
-        return ((h - l > 3 * abs(o - c))                               # type: ignore[operator]
-                and ((h - c) / rng > 0.6)                              # type: ignore[operator]
-                and ((h - o) / rng > 0.6))                             # type: ignore[operator]
+        rng = 0.001 + h - l  # type: ignore[operator]
+        return (
+            (h - l > 3 * abs(o - c))  # type: ignore[operator]
+            and ((h - c) / rng > 0.6)  # type: ignore[operator]
+            and ((h - o) / rng > 0.6)
+        )  # type: ignore[operator]
 
     # Bound at class level so `update()` dispatches by key without a fifteen-branch chain. Keys are
     # the registry's, so a pattern added to PATTERNS with no detector here fails loudly at import.
@@ -359,8 +411,8 @@ class CandlestickEngine:
 # A registry row with no detector would be a pattern that silently never fires — the quietest
 # failure available here — so it is a hard error at import time rather than a runtime absence.
 _missing = [k for k in PATTERN_KEYS if k not in CandlestickEngine._DETECTORS]
-if _missing:      # pragma: no cover - import-time guard
+if _missing:  # pragma: no cover - import-time guard
     raise RuntimeError(f"candlesticks: PATTERNS rows with no detector: {_missing}")
 _orphan = [k for k in CandlestickEngine._DETECTORS if k not in PATTERN_KEYS]
-if _orphan:       # pragma: no cover - import-time guard
+if _orphan:  # pragma: no cover - import-time guard
     raise RuntimeError(f"candlesticks: detectors with no PATTERNS row: {_orphan}")

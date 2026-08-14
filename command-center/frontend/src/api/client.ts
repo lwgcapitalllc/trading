@@ -8,7 +8,10 @@ const BASE = '/api'
  * message on top of it — that is two toasts, and the one that survives is the useless one.
  * Read `err.detail` when you need to BRANCH on the reason; leave the message to `request`. */
 export class ApiError extends Error {
-  constructor(public status: number, public detail: string) {
+  constructor(
+    public status: number,
+    public detail: string
+  ) {
     super(`${status} ${detail}`)
     this.name = 'ApiError'
   }
@@ -24,11 +27,19 @@ export class ApiError extends Error {
  * plus a burst on every window focus). A toast is an EVENT; a dependency that is
  * down is a STATE, and a state belongs in the layout, not in a queue of
  * disappearing popups. */
-export interface RequestOpts { silent?: boolean }
+export interface RequestOpts {
+  silent?: boolean
+}
 
-async function request<T>(path: string, init?: RequestInit, asText?: boolean,
-                          opts?: RequestOpts): Promise<T> {
-  const shout = (msg: string) => { if (!opts?.silent) toast.error(msg) }
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  asText?: boolean,
+  opts?: RequestOpts
+): Promise<T> {
+  const shout = (msg: string) => {
+    if (!opts?.silent) toast.error(msg)
+  }
   let res: Response
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -43,7 +54,11 @@ async function request<T>(path: string, init?: RequestInit, asText?: boolean,
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     let detail = text
-    try { detail = JSON.parse(text).detail ?? text } catch { /* not json */ }
+    try {
+      detail = JSON.parse(text).detail ?? text
+    } catch {
+      /* not json */
+    }
     shout(`${res.status} ${detail}`)
     throw new ApiError(res.status, String(detail))
   }
@@ -53,13 +68,13 @@ async function request<T>(path: string, init?: RequestInit, asText?: boolean,
 }
 
 export const api = {
-  get:     <T>(path: string, opts?: RequestOpts) => request<T>(path, undefined, false, opts),
-  getText: (path: string)    => request<string>(path, undefined, true),
-  put:     <T>(path: string, body: unknown) =>
+  get: <T>(path: string, opts?: RequestOpts) => request<T>(path, undefined, false, opts),
+  getText: (path: string) => request<string>(path, undefined, true),
+  put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
-  post:    <T>(path: string, body?: unknown) =>
+  post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
-  patch:   <T>(path: string, body: unknown) =>
+  patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete:  <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }

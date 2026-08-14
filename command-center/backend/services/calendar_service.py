@@ -61,26 +61,26 @@ from news.types import NewsEvent  # noqa: E402
 # Inflation Expectations / Food Inflation / TD-MI Inflation Gauge).
 _LOWER_IS_BETTER: Tuple[str, ...] = (
     # ── Inflation. The regime call (unchanged): a cooler print reads risk-on / gold-positive. ──
-    "inflation",               # Inflation Rate, Core Inflation Rate, *Inflation Expectations, …
+    "inflation",  # Inflation Rate, Core Inflation Rate, *Inflation Expectations, …
     "cpi",
     "ppi",
-    "pce",                     # PCE Price Index MoM/YoY, Core PCE Prices QoQ — the HIGH-impact gap
-    "import prices",           # Import Prices, Producer & Import Prices (an inflation INPUT)
+    "pce",  # PCE Price Index MoM/YoY, Core PCE Prices QoQ — the HIGH-impact gap
+    "import prices",  # Import Prices, Producer & Import Prices (an inflation INPUT)
     "raw materials prices",
-    "prices paid",             # Philly Fed / regional Fed price gauges
+    "prices paid",  # Philly Fed / regional Fed price gauges
     "ism manufacturing prices",
     "ism services prices",
-    "price expectations",      # Selling Price Expectations, DMP Output Price Expectations
+    "price expectations",  # Selling Price Expectations, DMP Output Price Expectations
     # ── Wage inflation. Read as a rates print, which is the lens the whole column uses. ──
     "employment cost",
-    "labour cost",             # Labour Cost Index, Labour Costs Index, Unit Labour Costs
+    "labour cost",  # Labour Cost Index, Labour Costs Index, Unit Labour Costs
     "wage price index",
     # ── Labour market slack. ──
     "unemployment rate",
-    "jobless claims",          # Initial / Continuing / 4-week Average
+    "jobless claims",  # Initial / Continuing / 4-week Average
     # ── Inventories & energy stocks: a BUILD is the weak print, a DRAW the strong one. ──
-    "stocks change",           # every EIA row (crude, Cushing, gasoline, distillate, natural gas)
-    "inventories",             # Business / Wholesale / Retail Inventories
+    "stocks change",  # every EIA row (crude, Cushing, gasoline, distillate, natural gas)
+    "inventories",  # Business / Wholesale / Retail Inventories
     # ── Balance-sheet stress. ──
     "debt to gdp",
     "household debt",
@@ -93,6 +93,7 @@ _LOWER_RE = re.compile("|".join(r"\b" + re.escape(k) for k in _LOWER_IS_BETTER))
 def _lower_is_better(title: str) -> bool:
     """True when a LOWER actual than forecast is the 'good' (green) print for this event."""
     return _LOWER_RE.search(title.lower()) is not None
+
 
 # ── In-memory fetch cache (per window+countries, ~60s) ──────────────────────────
 

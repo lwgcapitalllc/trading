@@ -17,11 +17,10 @@ day bot #2 lands — which is the whole reason the audit that found this ran.
 """
 
 import pytest
-
 from routers import bots
 
-
 # ── The registration itself ───────────────────────────────────────────────────
+
 
 def test_account_type_cannot_be_omitted():
     """No default, on purpose. A bot registered without one is a TypeError at import — loud,
@@ -47,9 +46,16 @@ def test_the_conventional_names_are_derived_from_the_key():
 
 
 def test_a_bot_that_breaks_the_convention_can_override_every_one():
-    b = bots.BotReg(task="BOT_X", key="x_demo", display="X", account_type="live",
-                    instance_dir="shared_dir", log_file="custom.log",
-                    suppress_key="short", state_section="state_shared")
+    b = bots.BotReg(
+        task="BOT_X",
+        key="x_demo",
+        display="X",
+        account_type="live",
+        instance_dir="shared_dir",
+        log_file="custom.log",
+        suppress_key="short",
+        state_section="state_shared",
+    )
     assert (b.instance_dir, b.log_file, b.suppress_key) == ("shared_dir", "custom.log", "short")
     assert b.state_file.endswith(r"\shared_dir\bot_state.json")
 
@@ -57,10 +63,12 @@ def test_a_bot_that_breaks_the_convention_can_override_every_one():
 def test_two_bots_sharing_a_state_file_share_one_section():
     """`_BOT_STATE_SECTIONS` groups by FILE — a single bot_state.json can hold several bot
     keys, which is why its value is a list and not a key."""
-    a = bots.BotReg(task="A", key="a", display="A", account_type="demo",
-                    state_section="state_shared")
-    b = bots.BotReg(task="B", key="b", display="B", account_type="demo",
-                    state_section="state_shared")
+    a = bots.BotReg(
+        task="A", key="a", display="A", account_type="demo", state_section="state_shared"
+    )
+    b = bots.BotReg(
+        task="B", key="b", display="B", account_type="demo", state_section="state_shared"
+    )
     sections = [
         (s, [x.key for x in (a, b) if x.state_section == s])
         for s in dict.fromkeys(x.state_section for x in (a, b))
@@ -69,6 +77,7 @@ def test_two_bots_sharing_a_state_file_share_one_section():
 
 
 # ── Every derived map covers every bot ────────────────────────────────────────
+
 
 def test_every_registered_bot_appears_in_every_derived_map():
     """The failure this replaces was never a crash — it was one map missing one bot."""
@@ -100,6 +109,7 @@ def test_bot_keys_and_display_names_are_unique():
 
 # ── The two behaviours the missing entries broke ──────────────────────────────
 
+
 def test_stop_all_kills_every_registered_bot(monkeypatch):
     """It used to iterate `_SUPPRESS_KEYS`, which is a different question that happened to
     have the same answer."""
@@ -119,6 +129,7 @@ def test_the_snapshot_reports_each_bots_own_account_type(monkeypatch):
 
 
 # ── Which name identifies a bot ───────────────────────────────────────────────
+
 
 def test_a_bot_resolves_by_its_key(monkeypatch):
     """The key is the stable identifier. Every route was keyed on the DISPLAY NAME — a

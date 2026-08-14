@@ -41,7 +41,7 @@ export async function copyChartAsPng(container: HTMLElement | null): Promise<boo
     ctx.scale(scale, scale)
     ctx.drawImage(img, 0, 0)
 
-    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'))
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
     if (!blob) throw new Error('encode failed')
 
     const canClipboard = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write

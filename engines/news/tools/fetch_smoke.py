@@ -62,8 +62,10 @@ def main(argv=None) -> int:
     for e in shown:
         when = "past" if e.timestamp_ms < now_ms else "up next"
         star = "*" if e.impact == Impact.HIGH else " "
-        print(f"  {star} {_fmt(e.timestamp_ms)}  {e.currency:<4} {e.impact.name:<6} "
-              f"{e.title}  (f:{e.forecast} p:{e.previous} a:{e.actual}) [{when}]")
+        print(
+            f"  {star} {_fmt(e.timestamp_ms)}  {e.currency:<4} {e.impact.name:<6} "
+            f"{e.title}  (f:{e.forecast} p:{e.previous} a:{e.actual}) [{when}]"
+        )
 
     # Prove the engine consumes it end to end at 'now'.
     eng = NewsEngine(res.events, policy=NewsPolicy.usd(), covered_ranges=res.covered_ranges)

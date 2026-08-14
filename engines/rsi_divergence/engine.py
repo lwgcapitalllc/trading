@@ -59,7 +59,7 @@ class _Rma:
 
     def update(self, src: Optional[float]) -> Optional[float]:
         if src is None:
-            return self._value          # na source (only bar-0 change): leave state untouched
+            return self._value  # na source (only bar-0 change): leave state untouched
         if not self._seeded:
             self._seed.append(src)
             if len(self._seed) == self._length:
@@ -86,7 +86,7 @@ class _RsiState:
 
     def update(self, close: float) -> Optional[float]:
         if self._prev_close is None:
-            change = None               # ta.change(close) is na on the first bar
+            change = None  # ta.change(close) is na on the first bar
         else:
             change = close - self._prev_close
         self._prev_close = close
@@ -107,6 +107,7 @@ class _RsiState:
 
 class _Bar:
     """One bar's fields the divergence logic needs: absolute index, price extremes, RSI value."""
+
     __slots__ = ("index", "high", "low", "rsi")
 
     def __init__(self, index: int, high: float, low: float, rsi: Optional[float]) -> None:
@@ -124,13 +125,19 @@ class RsiDivergenceEngine:
     25, overbought 75, and a divergence stays "live" confluence for 100 bars after its pivot.
     """
 
-    def __init__(self, rsi_len: int = 14, pivot_len: int = 5, oversold: float = 25.0,
-                 overbought: float = 75.0, valid_bars: int = 100) -> None:
-        self._rsi_len = rsi_len            # Pine divRsiLen (default 14)
-        self._pivot_len = pivot_len        # Pine divPivotLen (default 5)
-        self._oversold = oversold          # Pine divOS (default 25)
-        self._overbought = overbought      # Pine divOB (default 75)
-        self._valid_bars = valid_bars      # Pine divValidBars (default 100)
+    def __init__(
+        self,
+        rsi_len: int = 14,
+        pivot_len: int = 5,
+        oversold: float = 25.0,
+        overbought: float = 75.0,
+        valid_bars: int = 100,
+    ) -> None:
+        self._rsi_len = rsi_len  # Pine divRsiLen (default 14)
+        self._pivot_len = pivot_len  # Pine divPivotLen (default 5)
+        self._oversold = oversold  # Pine divOS (default 25)
+        self._overbought = overbought  # Pine divOB (default 75)
+        self._valid_bars = valid_bars  # Pine divValidBars (default 100)
 
         self._rsi = _RsiState(rsi_len)
 
@@ -158,14 +165,16 @@ class RsiDivergenceEngine:
         self._window.append(_Bar(bar_index, high, low, rsi))
         events = RsiDivEvents(rsi=rsi)
 
-        pl_rsi = self._pivot_low_rsi()    # ta.pivotlow(divRsi, L, L): candidate RSI or None
-        ph_rsi = self._pivot_high_rsi()   # ta.pivothigh(divRsi, L, L)
+        pl_rsi = self._pivot_low_rsi()  # ta.pivotlow(divRsi, L, L): candidate RSI or None
+        ph_rsi = self._pivot_high_rsi()  # ta.pivothigh(divRsi, L, L)
         events.pivot_low_rsi = pl_rsi
         events.pivot_high_rsi = ph_rsi
 
         # The candidate bar is L bars back — it is the centre of the window, and its own high/low are
         # exactly Pine's low[divPivotLen] / high[divPivotLen].
-        candidate = self._window[self._pivot_len] if len(self._window) == self._window.maxlen else None
+        candidate = (
+            self._window[self._pivot_len] if len(self._window) == self._window.maxlen else None
+        )
 
         # ── Bullish divergence: confirmed RSI pivot LOW ──
         if pl_rsi is not None and candidate is not None:
@@ -173,15 +182,24 @@ class RsiDivergenceEngine:
             p_bar = candidate.index
             if self._prev_low_rsi is not None:
                 # Lower price low, higher RSI low, the lower RSI coming from oversold.
-                if (p_low < self._prev_low_price and pl_rsi > self._prev_low_rsi
-                        and min(pl_rsi, self._prev_low_rsi) <= self._oversold):
+                if (
+                    p_low < self._prev_low_price
+                    and pl_rsi > self._prev_low_rsi
+                    and min(pl_rsi, self._prev_low_rsi) <= self._oversold
+                ):
                     self._last_bull_bar = p_bar
-                    events.detected.append(RsiDivergence(
-                        is_bullish=True,
-                        pivot_bar=p_bar, pivot_price=p_low, pivot_rsi=pl_rsi,
-                        prev_bar=self._prev_low_bar, prev_price=self._prev_low_price,
-                        prev_rsi=self._prev_low_rsi, id=self._take_id(),
-                    ))
+                    events.detected.append(
+                        RsiDivergence(
+                            is_bullish=True,
+                            pivot_bar=p_bar,
+                            pivot_price=p_low,
+                            pivot_rsi=pl_rsi,
+                            prev_bar=self._prev_low_bar,
+                            prev_price=self._prev_low_price,
+                            prev_rsi=self._prev_low_rsi,
+                            id=self._take_id(),
+                        )
+                    )
             self._prev_low_rsi = pl_rsi
             self._prev_low_price = p_low
             self._prev_low_bar = p_bar
@@ -192,24 +210,35 @@ class RsiDivergenceEngine:
             p_bar = candidate.index
             if self._prev_high_rsi is not None:
                 # Higher price high, lower RSI high, the higher RSI coming from overbought.
-                if (p_high > self._prev_high_price and ph_rsi < self._prev_high_rsi
-                        and max(ph_rsi, self._prev_high_rsi) >= self._overbought):
+                if (
+                    p_high > self._prev_high_price
+                    and ph_rsi < self._prev_high_rsi
+                    and max(ph_rsi, self._prev_high_rsi) >= self._overbought
+                ):
                     self._last_bear_bar = p_bar
-                    events.detected.append(RsiDivergence(
-                        is_bullish=False,
-                        pivot_bar=p_bar, pivot_price=p_high, pivot_rsi=ph_rsi,
-                        prev_bar=self._prev_high_bar, prev_price=self._prev_high_price,
-                        prev_rsi=self._prev_high_rsi, id=self._take_id(),
-                    ))
+                    events.detected.append(
+                        RsiDivergence(
+                            is_bullish=False,
+                            pivot_bar=p_bar,
+                            pivot_price=p_high,
+                            pivot_rsi=ph_rsi,
+                            prev_bar=self._prev_high_bar,
+                            prev_price=self._prev_high_price,
+                            prev_rsi=self._prev_high_rsi,
+                            id=self._take_id(),
+                        )
+                    )
             self._prev_high_rsi = ph_rsi
             self._prev_high_price = p_high
             self._prev_high_bar = p_bar
 
         # ── Live confluence flags (Pine bullDivActive / bearDivActive) ──
-        events.bull_active = (self._last_bull_bar is not None
-                              and bar_index - self._last_bull_bar <= self._valid_bars)
-        events.bear_active = (self._last_bear_bar is not None
-                              and bar_index - self._last_bear_bar <= self._valid_bars)
+        events.bull_active = (
+            self._last_bull_bar is not None and bar_index - self._last_bull_bar <= self._valid_bars
+        )
+        events.bear_active = (
+            self._last_bear_bar is not None and bar_index - self._last_bear_bar <= self._valid_bars
+        )
         return events
 
     # ------------------------------------------------------------------
@@ -232,10 +261,10 @@ class RsiDivergenceEngine:
             if b.rsi is None:
                 return None
             if i < L:
-                if b.rsi < c:                    # left: an equal low is allowed, a lower one disqualifies
+                if b.rsi < c:  # left: an equal low is allowed, a lower one disqualifies
                     return None
             elif i > L:
-                if b.rsi <= c:                   # right: an equal (or lower) bar disqualifies — later bar wins ties
+                if b.rsi <= c:  # right: an equal (or lower) bar disqualifies — later bar wins ties
                     return None
         return c
 
@@ -250,10 +279,10 @@ class RsiDivergenceEngine:
             if b.rsi is None:
                 return None
             if i < L:
-                if b.rsi > c:                    # left: an equal high is allowed, a higher one disqualifies
+                if b.rsi > c:  # left: an equal high is allowed, a higher one disqualifies
                     return None
             elif i > L:
-                if b.rsi >= c:                   # right: an equal (or higher) bar disqualifies — later bar wins ties
+                if b.rsi >= c:  # right: an equal (or higher) bar disqualifies — later bar wins ties
                     return None
         return c
 

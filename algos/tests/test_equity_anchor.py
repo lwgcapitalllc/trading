@@ -58,9 +58,11 @@ def _runner(*, balance, emulator_balance=4422.88):
     r.strategy = SimpleNamespace(execution=SimpleNamespace(_account=account))
     r.ledger = _Ledger()
     r.notes, r.warns = [], []
-    r.log = SimpleNamespace(info=lambda m, *a, **k: r.notes.append(m),
-                            warning=lambda m, *a, **k: r.warns.append(m),
-                            error=lambda m, *a, **k: r.warns.append(m))
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: r.notes.append(m),
+        warning=lambda m, *a, **k: r.warns.append(m),
+        error=lambda m, *a, **k: r.warns.append(m),
+    )
     r.probe_link = lambda: (balance is not None, balance)
     return r, account
 
@@ -94,7 +96,7 @@ def test_a_balance_the_terminal_cannot_supply_leaves_the_emulator_alone():
     """
     r, account = _runner(balance=None)
     r.reanchor_equity("after warm-up")
-    assert account.balance == pytest.approx(4422.88)      # untouched
+    assert account.balance == pytest.approx(4422.88)  # untouched
     assert "equity_reanchored" not in r.ledger.kinds()
     assert any("Could not read the account balance" in w for w in r.warns)
 
@@ -132,6 +134,5 @@ def test_a_strategy_that_is_not_built_yet_is_a_no_op():
     not be the thing that raises on the way out."""
     r, _ = _runner(balance=2000.0)
     r.strategy = None
-    r.reanchor_equity("after warm-up")            # must not raise
+    r.reanchor_equity("after warm-up")  # must not raise
     assert r.ledger.kinds() == []
-

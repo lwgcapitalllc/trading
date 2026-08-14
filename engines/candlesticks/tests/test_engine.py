@@ -33,9 +33,9 @@ if str(_ENGINES_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENGINES_ROOT))
 
 from candlesticks import (
-    CHART_PRESET,
     BEARISH,
     BULLISH,
+    CHART_PRESET,
     NEUTRAL,
     PATTERN_KEYS,
     CandlestickEngine,
@@ -43,7 +43,7 @@ from candlesticks import (
     spec_for,
 )
 
-TREND = 5      # the Pine default, and what every fixture below is built around
+TREND = 5  # the Pine default, and what every fixture below is built around
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -128,8 +128,8 @@ def test_hammer_and_inverted_hammer_are_emitted_NEUTRAL_as_the_pine_draws_them()
 # ──────────────────────────────────────────────────────────────────────────────
 # 2-bar patterns
 # ──────────────────────────────────────────────────────────────────────────────
-_PREV_BULL = (100.0, 111.0, 99.0, 110.0)     # close[1] > open[1], body 10
-_PREV_BEAR = (110.0, 111.0, 99.0, 100.0)     # open[1] > close[1], body 10
+_PREV_BULL = (100.0, 111.0, 99.0, 110.0)  # close[1] > open[1], body 10
+_PREV_BEAR = (110.0, 111.0, 99.0, 100.0)  # open[1] > close[1], body 10
 
 
 def test_bearish_harami_needs_an_inside_bearish_body_after_an_up_bar():
@@ -243,37 +243,45 @@ def test_bullish_belt_is_refused_when_the_open_is_not_below_the_ten_bar_low():
 # ──────────────────────────────────────────────────────────────────────────────
 def test_evening_star_needs_a_gapped_up_middle_bar_and_a_down_close():
     # c[2]=110 > o[2]=100; min(o1,c1)=112 > c[2]; o=111 < 112; c=105 < o
-    bars = _bars3(100.0, (100.0, 111.0, 99.0, 110.0), (112.0, 116.0, 111.0, 114.0),
-                  (111.0, 112.0, 104.0, 105.0))
+    bars = _bars3(
+        100.0,
+        (100.0, 111.0, 99.0, 110.0),
+        (112.0, 116.0, 111.0, 114.0),
+        (111.0, 112.0, 104.0, 105.0),
+    )
     assert "evening_star" in _fired(bars)
 
 
 def test_morning_star_needs_a_gapped_down_middle_bar_and_an_up_close():
     # c[2]=100 < o[2]=110; max(o1,c1)=98 < c[2]; o=99 > 98; c=106 > o
-    bars = _bars3(100.0, (110.0, 111.0, 99.0, 100.0), (98.0, 99.0, 94.0, 96.0),
-                  (99.0, 107.0, 98.0, 106.0))
+    bars = _bars3(
+        100.0, (110.0, 111.0, 99.0, 100.0), (98.0, 99.0, 94.0, 96.0), (99.0, 107.0, 98.0, 106.0)
+    )
     assert "morning_star" in _fired(bars)
 
 
 def test_morning_star_is_refused_when_the_middle_bar_does_not_clear_the_first_close():
     # max(o1,c1) = 101 is NOT < c[2] = 100 — the gap the pattern is made of never happened.
-    bars = _bars3(100.0, (110.0, 111.0, 99.0, 100.0), (101.0, 102.0, 94.0, 96.0),
-                  (102.0, 107.0, 98.0, 106.0))
+    bars = _bars3(
+        100.0, (110.0, 111.0, 99.0, 100.0), (101.0, 102.0, 94.0, 96.0), (102.0, 107.0, 98.0, 106.0)
+    )
     assert "morning_star" not in _fired(bars)
 
 
 def test_hanging_man_needs_two_lower_highs_behind_it_as_well_as_the_wick():
     # h-l = 11 > 4*body = 2; (c-l)/rng = 0.954 >= 0.75; (o-l)/rng = 0.909 >= 0.75;
     # open[trend]=90 < 100; high[1]=95 < 100; high[2]=95 < 100
-    bars = _bars3(90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0),
-                  (100.0, 101.0, 90.0, 100.5))
+    bars = _bars3(
+        90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0), (100.0, 101.0, 90.0, 100.5)
+    )
     assert "hanging_man" in _fired(bars)
 
 
 def test_hanging_man_is_refused_when_the_previous_high_reaches_the_open():
     # high[1] = 100 is NOT < open = 100. Same candle, one bar of context changed.
-    bars = _bars3(90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 100.0, 91.0, 94.0),
-                  (100.0, 101.0, 90.0, 100.5))
+    bars = _bars3(
+        90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 100.0, 91.0, 94.0), (100.0, 101.0, 90.0, 100.5)
+    )
     assert "hanging_man" not in _fired(bars)
 
 
@@ -282,8 +290,9 @@ def test_a_hanging_man_candle_is_also_a_hammer_and_the_engine_reports_both():
     # only in the context Hanging Man additionally demands. The Pine plots both shapes on that bar,
     # so an engine that suppressed one would disagree with the chart. A consumer that wants one
     # answer per bar picks by direction, not by hoping only one fires.
-    bars = _bars3(90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0),
-                  (100.0, 101.0, 90.0, 100.5))
+    bars = _bars3(
+        90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0), (100.0, 101.0, 90.0, 100.5)
+    )
     fired = _fired(bars)
     assert "hanging_man" in fired and "hammer" in fired
 
@@ -330,16 +339,18 @@ def test_a_single_bar_can_still_produce_the_zero_history_patterns():
 def test_detected_comes_out_in_the_pine_declaration_order():
     # Pins the ordering contract: a consumer taking "the first pattern on this bar" must get the
     # same one the chart lists first, whatever order the rules happen to be evaluated in.
-    bars = _bars3(90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0),
-                  (100.0, 101.0, 90.0, 100.5))
+    bars = _bars3(
+        90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0), (100.0, 101.0, 90.0, 100.5)
+    )
     _, ev = _run(bars)
     order = [PATTERN_KEYS.index(k) for k in ev.keys]
     assert order == sorted(order)
 
 
 def test_matching_filters_by_key_and_by_direction():
-    bars = _bars3(90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0),
-                  (100.0, 101.0, 90.0, 100.5))
+    bars = _bars3(
+        90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0), (100.0, 101.0, 90.0, 100.5)
+    )
     _, ev = _run(bars)
     assert [p.key for p in ev.matching(direction=BEARISH)] == ["hanging_man"]
     assert [p.key for p in ev.matching(keys=("hammer",))] == ["hammer"]
@@ -359,10 +370,11 @@ def test_bars_since_counts_from_the_firing_bar_and_says_NEVER_rather_than_a_big_
 
 
 def test_narrowing_the_pattern_set_skips_rules_without_redefining_any_of_them():
-    bars = _bars3(90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0),
-                  (100.0, 101.0, 90.0, 100.5))
+    bars = _bars3(
+        90.0, (92.0, 95.0, 91.0, 93.0), (93.0, 95.0, 91.0, 94.0), (100.0, 101.0, 90.0, 100.5)
+    )
     assert _fired(bars, patterns=["hanging_man"]) == {"hanging_man"}
-    assert "hanging_man" in _fired(bars)      # unchanged when the rest are enabled
+    assert "hanging_man" in _fired(bars)  # unchanged when the rest are enabled
 
 
 def test_asking_a_disabled_pattern_for_its_age_raises_instead_of_answering_never():
@@ -378,7 +390,7 @@ def test_asking_a_disabled_pattern_for_its_age_raises_instead_of_answering_never
 # ──────────────────────────────────────────────────────────────────────────────
 def test_an_unknown_pattern_key_raises_rather_than_matching_nothing():
     with pytest.raises(KeyError):
-        spec_for("bullish_engulphing")            # a real typo, one letter out
+        spec_for("bullish_engulphing")  # a real typo, one letter out
     with pytest.raises(KeyError):
         CandlestickEngine(patterns=["bullish_engulphing"])
 

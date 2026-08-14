@@ -17,10 +17,10 @@ from datetime import datetime, timezone
 
 from run_logger import StageLogger
 
-
 # ---------------------------------------------------------------------------
 # Monthly window builder
 # ---------------------------------------------------------------------------
+
 
 def build_monthly_windows(trades: list[dict], window_days: int = 30) -> list[dict]:
     """
@@ -43,10 +43,7 @@ def build_monthly_windows(trades: list[dict], window_days: int = 30) -> list[dic
 
     while window_start <= sorted_trades[-1]["close_ts"]:
         window_end = window_start + window_ms
-        bucket = [
-            t for t in sorted_trades
-            if window_start <= t["close_ts"] < window_end
-        ]
+        bucket = [t for t in sorted_trades if window_start <= t["close_ts"] < window_end]
 
         if bucket:
             wins = sum(1 for t in bucket if t["is_win"])
@@ -70,19 +67,21 @@ def build_monthly_windows(trades: list[dict], window_days: int = 30) -> list[dic
                 for t in bucket
             }
 
-            windows.append({
-                "window_start": window_start,
-                "window_end": window_end,
-                "trade_count": len(bucket),
-                "win_count": wins,
-                "loss_count": losses,
-                "win_rate": wins / len(bucket) if bucket else 0.0,
-                "total_pnl": round(total_pnl, 4),
-                "peak_cum_pnl": round(peak_cum, 4),
-                "trough_cum_pnl": round(trough_cum, 4),
-                "active_weeks": len(weeks),
-                "strike_level": 0,
-            })
+            windows.append(
+                {
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "trade_count": len(bucket),
+                    "win_count": wins,
+                    "loss_count": losses,
+                    "win_rate": wins / len(bucket) if bucket else 0.0,
+                    "total_pnl": round(total_pnl, 4),
+                    "peak_cum_pnl": round(peak_cum, 4),
+                    "trough_cum_pnl": round(trough_cum, 4),
+                    "active_weeks": len(weeks),
+                    "strike_level": 0,
+                }
+            )
 
         window_start = window_end
 
@@ -92,6 +91,7 @@ def build_monthly_windows(trades: list[dict], window_days: int = 30) -> list[dic
 # ---------------------------------------------------------------------------
 # Strike system (Step 1.4)
 # ---------------------------------------------------------------------------
+
 
 def apply_strike_system(windows: list[dict], config: dict) -> tuple[bool, list[dict]]:
     """
@@ -137,6 +137,7 @@ def apply_strike_system(windows: list[dict], config: dict) -> tuple[bool, list[d
 # Disqualification filters (Step 1.5)
 # ---------------------------------------------------------------------------
 
+
 class DisqualificationFilter:
     """
     Applies all Step 1.5 disqualification rules to a set of matched trades.
@@ -160,9 +161,7 @@ class DisqualificationFilter:
         # Default 0.0 (disabled) so existing configs without the key are unchanged.
         self._min_overall_win_rate: float = q.get("min_overall_win_rate", 0.0)
 
-    def check_trade_concentration(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_trade_concentration(self, trades: list[dict]) -> tuple[bool, str | None]:
         """No single trade > max_single_trade_pnl_share of total absolute PnL."""
         total_abs_pnl = sum(abs(t["pnl"]) for t in trades)
         if total_abs_pnl == 0:
@@ -171,14 +170,11 @@ class DisqualificationFilter:
         share = worst / total_abs_pnl
         if share > self._max_single_pnl_share:
             return False, (
-                f"Single trade PnL share {share:.1%} > "
-                f"{self._max_single_pnl_share:.0%} limit"
+                f"Single trade PnL share {share:.1%} > {self._max_single_pnl_share:.0%} limit"
             )
         return True, None
 
-    def check_weekly_activity(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_weekly_activity(self, trades: list[dict]) -> tuple[bool, str | None]:
         """
         Each 30-day window must have trades across ≥ min_active_weeks_per_month distinct weeks.
         A wallet fails if *any* window has fewer active weeks.
@@ -193,9 +189,7 @@ class DisqualificationFilter:
                 )
         return True, None
 
-    def check_drawdown(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_drawdown(self, trades: list[dict]) -> tuple[bool, str | None]:
         """Peak drawdown across full period must not exceed max_drawdown."""
         sorted_trades = sorted(trades, key=lambda t: t["close_ts"])
         peak_cum = 0.0
@@ -212,19 +206,12 @@ class DisqualificationFilter:
                     max_dd = dd
 
         if max_dd > self._max_drawdown:
-            return False, (
-                f"Peak drawdown {max_dd:.1%} > {self._max_drawdown:.0%} limit"
-            )
+            return False, (f"Peak drawdown {max_dd:.1%} > {self._max_drawdown:.0%} limit")
         return True, None
 
-    def check_hold_time(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_hold_time(self, trades: list[dict]) -> tuple[bool, str | None]:
         """Average hold time must not exceed max_avg_hold_hours."""
-        trades_with_hold = [
-            t for t in trades
-            if t.get("hold_time_seconds") is not None
-        ]
+        trades_with_hold = [t for t in trades if t.get("hold_time_seconds") is not None]
         if not trades_with_hold:
             return True, None  # cannot determine — pass conservatively
 
@@ -232,14 +219,10 @@ class DisqualificationFilter:
         avg_hours = avg_seconds / 3600
 
         if avg_hours > self._max_hold_hours:
-            return False, (
-                f"Average hold time {avg_hours:.1f}h > {self._max_hold_hours}h limit"
-            )
+            return False, (f"Average hold time {avg_hours:.1f}h > {self._max_hold_hours}h limit")
         return True, None
 
-    def check_instrument_concentration(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_instrument_concentration(self, trades: list[dict]) -> tuple[bool, str | None]:
         """PnL must not be concentrated in a single instrument."""
         if not trades:
             return True, None
@@ -272,9 +255,7 @@ class DisqualificationFilter:
             )
         return True, None
 
-    def check_overall_profitability(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_overall_profitability(self, trades: list[dict]) -> tuple[bool, str | None]:
         """
         Total cumulative PnL across all trades must be positive.
 
@@ -285,14 +266,10 @@ class DisqualificationFilter:
         """
         total_pnl = sum(t["pnl"] for t in trades)
         if total_pnl <= 0:
-            return False, (
-                f"Net unprofitable: total PnL ${total_pnl:,.0f}"
-            )
+            return False, (f"Net unprofitable: total PnL ${total_pnl:,.0f}")
         return True, None
 
-    def check_overall_win_rate(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def check_overall_win_rate(self, trades: list[dict]) -> tuple[bool, str | None]:
         """
         Aggregate win rate across all matched trades must meet the floor.
 
@@ -313,9 +290,7 @@ class DisqualificationFilter:
             )
         return True, None
 
-    def apply_all(
-        self, trades: list[dict]
-    ) -> tuple[bool, str | None]:
+    def apply_all(self, trades: list[dict]) -> tuple[bool, str | None]:
         """
         Runs all checks. Returns (qualifies, first_failing_reason).
         Runs all checks so the log captures all issues but returns on first failure.
@@ -346,6 +321,7 @@ class DisqualificationFilter:
 # Combined qualification gate (Steps 1.4 + 1.5)
 # ---------------------------------------------------------------------------
 
+
 class QualificationGate:
     """
     Combines the monthly win rate check (1.4), strike system (1.4),
@@ -366,9 +342,7 @@ class QualificationGate:
         monthly_windows has strike_level set on each window.
         If disqualification_reason is None the wallet qualifies.
         """
-        windows = build_monthly_windows(
-            trades, self._config["lookback"]["window_days"]
-        )
+        windows = build_monthly_windows(trades, self._config["lookback"]["window_days"])
 
         # Require minimum trading span — wallet age alone is not enough.
         # Measured from oldest to newest close_ts across actual trades, not window boundaries.

@@ -64,6 +64,7 @@ def _candles_with_hammer(at: int, total: int = 60) -> list[dict]:
 
 def _fired(candles: list[dict], at: int) -> bool:
     from candlesticks import CHART_PRESET, CandlestickEngine
+
     cs = CandlestickEngine(**CHART_PRESET)
     hit = False
     for i, c in enumerate(candles):
@@ -75,6 +76,7 @@ def _fired(candles: list[dict], at: int) -> bool:
 
 # ── the fixture itself has to be real ────────────────────────────────────────────────
 
+
 def test_the_fixture_really_fires_a_pattern_where_the_tests_place_one():
     """Guards every test below. If the hammer stops being a hammer, they would all go green by
     drawing nothing, and none of them would say why."""
@@ -83,6 +85,7 @@ def test_the_fixture_really_fires_a_pattern_where_the_tests_place_one():
 
 
 # ── which anchors produce a mark ─────────────────────────────────────────────────────
+
 
 def test_no_anchor_means_no_marks_at_all():
     """The whole point of the layer: five of these patterns fire on 5-9% of ALL bars, so without
@@ -118,6 +121,7 @@ def test_an_anchor_outside_the_loaded_candles_is_dropped():
 
 # ── which bar of the window it lands on ──────────────────────────────────────────────
 
+
 def test_price_running_further_before_it_turns_marks_the_turn_not_the_anchor():
     """Aaron's rule: 'if not, then price went down a little more and reversed, plot it there.'"""
     candles = _candles_with_hammer(40)
@@ -135,8 +139,8 @@ def test_EVERY_pattern_in_the_span_is_marked_not_only_the_one_at_the_turn():
 
     ⚠ Watch it go red by marking only the turn — that is exactly what this used to do."""
     bars = _flat(60)
-    bars[38] = _bar(38, 100.0, 100.5, 99.5, 100.0)   # a doji, well above the low
-    bars[40] = _hammer_at(40)                        # the turn
+    bars[38] = _bar(38, 100.0, 100.5, 99.5, 100.0)  # a doji, well above the low
+    bars[40] = _hammer_at(40)  # the turn
     assert _fired(bars, 38) and _fired(bars, 40), "both bars must fire or this proves nothing"
     out = build_candle_overlays(bars, [(bars[38]["time"], "long", None)])
     assert [o["t"] for o in out] == [bars[38]["time"], bars[40]["time"]]
@@ -157,12 +161,14 @@ def test_a_pattern_COMPLETING_just_after_the_turn_is_still_that_turns_reversal()
     bars[40] = _bar(40, 100.0, 100.05, 90.0, 90.05)  # the turn — a long body, no pattern
     # ⚠ Its low must stay ABOVE bar 40's, or the hammer becomes the turn itself and the test is no
     # longer about a pattern completing after one.
-    bars[42] = _hammer_at(42, 97.0)                  # ...the reversal, completing 2 bars later
+    bars[42] = _hammer_at(42, 97.0)  # ...the reversal, completing 2 bars later
     assert not _fired(bars, 40), "the turn bar must be quiet or this proves nothing"
     assert _fired(bars, 42)
     out = build_candle_overlays(bars, [(bars[38]["time"], "long", bars[55]["time"])])
     assert [o["t"] for o in out] == [bars[42]["time"]]
-    assert out[0]["deepestOf"] == [0], "it IS the turn's reversal, so it is that span's deepest mark"
+    assert out[0]["deepestOf"] == [0], (
+        "it IS the turn's reversal, so it is that span's deepest mark"
+    )
 
 
 def test_nothing_is_marked_PAST_the_confirmation_WINDOW():
@@ -170,8 +176,8 @@ def test_nothing_is_marked_PAST_the_confirmation_WINDOW():
     past the turn price is moving the setup's way, and a reversal candle there is a different
     subject. ⚠ This is what stops `_CONFIRM_BARS` being read as a tuning dial."""
     bars = _flat(60)
-    bars[40] = _hammer_at(40)                        # the turn (the low of the whole window)
-    bars[45] = _bar(45, 100.0, 100.5, 99.5, 100.0)   # a doji 5 bars later, well above the low
+    bars[40] = _hammer_at(40)  # the turn (the low of the whole window)
+    bars[45] = _bar(45, 100.0, 100.5, 99.5, 100.0)  # a doji 5 bars later, well above the low
     assert _fired(bars, 40) and _fired(bars, 45), "both bars must fire or this proves nothing"
     out = build_candle_overlays(bars, [(bars[38]["time"], "long", bars[55]["time"])])
     assert [o["t"] for o in out] == [bars[40]["time"]]
@@ -203,6 +209,7 @@ def test_two_anchors_resolving_to_one_candle_produce_ONE_mark():
 # 117-bar trend, so in an uptrend the bullish rules cannot fire at all — which is exactly why the
 # reference trade's mark was bearish. The tier that rescues it is the NEUTRAL one.
 
+
 def _uptrend(n: int = 200, price: float = 100.0) -> list[dict]:
     """A long, gentle uptrend — enough bars for `trend=117` to have an opinion, which every
     DIRECTIONAL pattern in the preset needs before it will fire at all."""
@@ -222,9 +229,13 @@ def _neutral_and_opposing(with_neutral: bool = True) -> list[dict]:
         b = bars[150]["open"]
         bars[150] = _bar(150, b, b + 0.1, b - 6.0, b + 0.05)
     prev = bars[151]
-    bars[151] = _bar(151, prev["close"], prev["close"] + 2.0, prev["close"] - 0.2, prev["close"] + 1.8)
+    bars[151] = _bar(
+        151, prev["close"], prev["close"] + 2.0, prev["close"] - 0.2, prev["close"] + 1.8
+    )
     prev = bars[151]
-    bars[152] = _bar(152, prev["close"] + 0.5, prev["close"] + 0.7, prev["open"] - 9.2, prev["open"] - 9.0)
+    bars[152] = _bar(
+        152, prev["close"] + 0.5, prev["close"] + 0.7, prev["open"] - 9.2, prev["open"] - 9.0
+    )
     return bars
 
 
@@ -237,7 +248,8 @@ def test_a_neutral_candle_and_an_OPPOSING_one_are_both_drawn():
     assert bars[152]["low"] < bars[150]["low"], "152 must be the adverse extreme of the window"
     out = build_candle_overlays(bars, [(bars[150]["time"], "long", None)])
     assert [(o["t"], o["patternDir"]) for o in out] == [
-        (bars[150]["time"], 0), (bars[152]["time"], -1),
+        (bars[150]["time"], 0),
+        (bars[152]["time"], -1),
     ]
 
 
@@ -257,10 +269,14 @@ def test_a_bar_carrying_BOTH_is_named_after_the_one_pointing_the_setups_way():
     a bar that also printed a neutral reversal is the same defect one level down."""
     bars = _uptrend()
     prev = bars[151]
-    bars[151] = _bar(151, prev["close"], prev["close"] + 2.0, prev["close"] - 0.2, prev["close"] + 1.8)
+    bars[151] = _bar(
+        151, prev["close"], prev["close"] + 2.0, prev["close"] - 0.2, prev["close"] + 1.8
+    )
     prev = bars[151]
     # Engulfs the bar before AND has a long lower wick with a small body — Bearish Engulfing + Hammer.
-    bars[152] = _bar(152, prev["close"] + 0.5, prev["close"] + 0.7, prev["open"] - 9.0, prev["open"] - 0.5)
+    bars[152] = _bar(
+        152, prev["close"] + 0.5, prev["close"] + 0.7, prev["open"] - 9.0, prev["open"] - 0.5
+    )
     out = build_candle_overlays(bars, [(bars[152]["time"], "long", None)])
     assert len(out) == 1
     assert set(out[0]["patterns"]) == {"Bearish Engulfing", "Hammer"}, "fixture must carry both"
@@ -281,12 +297,15 @@ def test_a_pattern_pointing_AGAINST_the_setup_is_still_marked():
 
 # ── a winner is searched over its hold ───────────────────────────────────────────────
 
+
 def test_a_winning_hold_finds_a_turn_far_beyond_the_short_window():
     """MEASURED on the live lab: a winner's adverse extreme is a median 2 bars past entry but p90
     is 27, so a fixed short window finds the real turn on barely half of them."""
     candles = _candles_with_hammer(40)
     entry, exit_ = candles[20]["time"], candles[55]["time"]
-    assert build_candle_overlays(candles, [(entry, "long", None)]) == [], "short window should miss it"
+    assert build_candle_overlays(candles, [(entry, "long", None)]) == [], (
+        "short window should miss it"
+    )
     out = build_candle_overlays(candles, [(entry, "long", exit_)])
     assert len(out) == 1
     assert out[0]["t"] == candles[40]["time"]
@@ -298,13 +317,13 @@ def test_a_pattern_mid_hold_IS_drawn_even_though_it_is_far_from_the_turn():
     on the way down, which is the whole question. ⚠ The tolerance used to DELETE it — the span
     covers it now, and the marks between the entry and the turn are the answer he asked for."""
     bars = _flat(60)
-    bars[30] = _hammer_at(30)                        # a pattern, mid-hold
+    bars[30] = _hammer_at(30)  # a pattern, mid-hold
     # ⚠ A lone bearish bar after bullish filler makes its NEIGHBOURS a Morning/Evening Star — a
     # three-bar pattern is a property of the bars AROUND the one you are placing — so the turn is
     # built with plain bodies either side and asserted quiet.
     for j in range(46, 56):
-        bars[j] = _bar(j, 101.5, 101.9, 100.5, 100.9)      # plain bearish bodies
-    bars[50] = _bar(50, 100.0, 100.05, 80.0, 80.05)        # one long body, almost no wick
+        bars[j] = _bar(j, 101.5, 101.9, 100.5, 100.9)  # plain bearish bodies
+    bars[50] = _bar(50, 100.0, 100.05, 80.0, 80.05)  # one long body, almost no wick
     assert _fired(bars, 30), "the mid-hold pattern must really fire or this test is vacuous"
     for j in range(48, 53):
         assert not _fired(bars, j), f"bar {j} is at the turn and must carry NO pattern"
@@ -316,13 +335,15 @@ def test_an_exit_before_the_entry_degrades_to_the_short_window():
     """A malformed hold must not drop a real setup — it still gets the answer it can have."""
     candles = _candles_with_hammer(40)
     out = build_candle_overlays(
-        candles, [(candles[40]["time"], "long", candles[10]["time"])],
+        candles,
+        [(candles[40]["time"], "long", candles[10]["time"])],
     )
     assert len(out) == 1
     assert out[0]["t"] == candles[40]["time"]
 
 
 # ── the payload ──────────────────────────────────────────────────────────────────────
+
 
 def test_the_mark_carries_the_bars_own_OHLC():
     """The frontend REDRAWS the candle rather than boxing it, so all four prices have to be here —
@@ -331,7 +352,10 @@ def test_the_mark_carries_the_bars_own_OHLC():
     out = build_candle_overlays(candles, [(candles[40]["time"], "long", None)])
     c = candles[40]
     assert (out[0]["open"], out[0]["high"], out[0]["low"], out[0]["close"]) == (
-        c["open"], c["high"], c["low"], c["close"],
+        c["open"],
+        c["high"],
+        c["low"],
+        c["close"],
     )
 
 
@@ -360,6 +384,7 @@ def test_marks_come_out_in_time_order():
 
 # ── it must never take the chart down ────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("candles", [[], [_bar(0, 1, 1, 1, 1)]])
 def test_too_few_candles_returns_empty_rather_than_raising(candles):
     assert build_candle_overlays(candles, [(_T0, "long", None)]) == []
@@ -370,6 +395,7 @@ def test_the_engine_defaults_are_NOT_used__the_chart_preset_is():
     brother's inputs (117 / 0.01). Pinning this stops a future tidy-up quietly repointing the layer
     at the defaults, which would make the chart stop matching the indicator beside it."""
     from candlesticks import CHART_PRESET
+
     assert CHART_PRESET["trend"] == 117
     assert CHART_PRESET["doji_size"] == 0.01
     assert len(CHART_PRESET["patterns"]) == 11
@@ -478,10 +504,13 @@ def test_the_deepest_mark_names_itself_PER_ANCHOR():
     `label` is whichever anchor reached it first and is nobody's answer in particular. Each anchor
     gets its own name off `deepestNames`."""
     bars = _neutral_and_opposing()
-    out = build_candle_overlays(bars, [
-        (bars[150]["time"], "long", None, "win"),
-        (bars[150]["time"], "long", None, "loss"),
-    ])
+    out = build_candle_overlays(
+        bars,
+        [
+            (bars[150]["time"], "long", None, "win"),
+            (bars[150]["time"], "long", None, "loss"),
+        ],
+    )
     named = {n: nm for o in out for n, nm in (o.get("deepestNames") or {}).items()}
     assert set(named) == {"0", "1"}, "both anchors must be named"
     assert named["0"] != named["1"], "a winner and a loser on one leg want different candles"
@@ -525,10 +554,11 @@ def _deep_early__shallow_late() -> list[dict]:
     correct for so long.
     """
     bars = _uptrend(200)
-    _plant_bear_engulf(bars, 155, reach=24.0)   # deeper (higher), earlier
-    _plant_bear_engulf(bars, 170, reach=0.7)    # shallower, later
-    bars[185] = _bar(185, bars[185]["open"], bars[185]["high"] + 60.0,
-                     bars[185]["low"], bars[185]["close"])
+    _plant_bear_engulf(bars, 155, reach=24.0)  # deeper (higher), earlier
+    _plant_bear_engulf(bars, 170, reach=0.7)  # shallower, later
+    bars[185] = _bar(
+        185, bars[185]["open"], bars[185]["high"] + 60.0, bars[185]["low"], bars[185]["close"]
+    )
     return bars
 
 
@@ -600,6 +630,7 @@ def test_a_span_holding_a_NEUTRAL_candle_is_still_named():
 
 # ── the span covers the whole DRAWDOWN, not two bars past the extreme ────────────────
 
+
 def _short_with_a_long_drawdown() -> tuple[list[dict], float]:
     """A short entered at 100 that runs against itself, tops out EARLY, then grinds sideways ABOVE
     the entry for a long time before finally dropping away.
@@ -609,13 +640,13 @@ def _short_with_a_long_drawdown() -> tuple[list[dict], float]:
     while the trade stays above its entry until 05:30, so the layer saw 9 bars of a 21-bar zone.
     """
     entry = 100.0
-    bars = _flat(30, price=90.0)                  # below the entry: context before the trade
-    bars += [_bar(30 + i, 101.0, 101.6, 100.6, 101.2) for i in range(30)]   # the drawdown, adverse
-    bars[32] = _bar(32, 108.0, 112.0, 107.9, 108.0)   # the adverse EXTREME, early in the zone
-    bars[34] = _hammer_at(34, 101.0)              # inside turn + _CONFIRM_BARS (turn is 32)
-    bars[50] = _hammer_at(50, 101.0)              # still above the entry, far past the extreme
-    bars += _flat(20, start=60, price=80.0)       # price has left the band for good
-    bars[70] = _hammer_at(70, 80.0)               # favourable side — must NOT be marked
+    bars = _flat(30, price=90.0)  # below the entry: context before the trade
+    bars += [_bar(30 + i, 101.0, 101.6, 100.6, 101.2) for i in range(30)]  # the drawdown, adverse
+    bars[32] = _bar(32, 108.0, 112.0, 107.9, 108.0)  # the adverse EXTREME, early in the zone
+    bars[34] = _hammer_at(34, 101.0)  # inside turn + _CONFIRM_BARS (turn is 32)
+    bars[50] = _hammer_at(50, 101.0)  # still above the entry, far past the extreme
+    bars += _flat(20, start=60, price=80.0)  # price has left the band for good
+    bars[70] = _hammer_at(70, 80.0)  # favourable side — must NOT be marked
     return bars, entry
 
 
@@ -630,7 +661,8 @@ def test_the_span_covers_the_WHOLE_drawdown_not_two_bars_past_the_extreme():
     assert _fired(bars, 34) and _fired(bars, 50), "fixture must fire in BOTH halves of the zone"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "short", bars[79]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "short", bars[79]["time"], "win", entry)],
     )
     times = {o["t"] for o in out}
     assert bars[34]["time"] in times, "the candle near the extreme was already drawn"
@@ -649,7 +681,8 @@ def test_a_candle_past_the_drawdown_is_NOT_marked():
     assert _fired(bars, 70), "fixture must fire a pattern out past the zone"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "short", bars[79]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "short", bars[79]["time"], "win", entry)],
     )
     assert bars[70]["time"] not in {o["t"] for o in out}
 
@@ -675,6 +708,7 @@ def test_an_anchor_with_NO_entry_price_keeps_the_turn_relative_span():
 
 # ── the zone is a PRICE band, not a stretch of time ──────────────────────────────────
 
+
 def _long_that_drifts_up_then_dips_then_takes_off() -> tuple[list[dict], float]:
     """A long entered at 100 that drifts ABOVE its entry first, then dips into a real drawdown,
     then leaves the band for good and rallies away — Aaron's 2026-07-15 long in miniature.
@@ -687,15 +721,15 @@ def _long_that_drifts_up_then_dips_then_takes_off() -> tuple[list[dict], float]:
     """
     entry = 100.0
     bars = _flat(30, price=90.0)
-    bars += [_bar(30 + i, 101.4, 102.0, 100.8, 101.6) for i in range(4)]      # above the entry
-    bars += [_bar(34 + i, 99.0, 99.6, 98.2, 99.2) for i in range(8)]          # the drawdown
-    bars += _flat(20, start=42, price=110.0)                                   # gone for good
-    bars[32] = _hammer_at(32, 108.0)          # low 102 — favourable side
-    bars[36] = _bar(36, 96.0, 96.4, 92.0, 96.1)   # the adverse EXTREME
-    bars[40] = _hammer_at(40, 99.5)           # low 93.5 — deep in the band
+    bars += [_bar(30 + i, 101.4, 102.0, 100.8, 101.6) for i in range(4)]  # above the entry
+    bars += [_bar(34 + i, 99.0, 99.6, 98.2, 99.2) for i in range(8)]  # the drawdown
+    bars += _flat(20, start=42, price=110.0)  # gone for good
+    bars[32] = _hammer_at(32, 108.0)  # low 102 — favourable side
+    bars[36] = _bar(36, 96.0, 96.4, 92.0, 96.1)  # the adverse EXTREME
+    bars[40] = _hammer_at(40, 99.5)  # low 93.5 — deep in the band
     bars[41] = _bar(41, 99.8, 100.4, 99.7, 100.2)  # the last bar touching the entry
-    bars[43] = _hammer_at(43, 112.0)          # low 106 — two bars past the drawdown
-    bars[52] = _hammer_at(52, 112.0)          # low 106 — far into the rally
+    bars[43] = _hammer_at(43, 112.0)  # low 106 — two bars past the drawdown
+    bars[52] = _hammer_at(52, 112.0)  # low 106 — far into the rally
     return bars, entry
 
 
@@ -712,7 +746,8 @@ def test_a_candle_two_bars_past_the_drawdown_is_NOT_marked():
     assert _fired(bars, 43), "fixture must fire a pattern two bars past the drawdown"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
     )
     times = {o["t"] for o in out}
     assert bars[43]["time"] not in times, "two bars past the band is the takeoff, not the drawdown"
@@ -731,7 +766,8 @@ def test_a_favourable_candle_BEFORE_the_turn_is_NOT_marked():
     assert _fired(bars, 32), "fixture must fire a pattern above the entry, before the turn"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
     )
     assert bars[32]["time"] not in {o["t"] for o in out}
 
@@ -745,7 +781,8 @@ def test_the_candles_INSIDE_the_band_are_still_drawn():
     assert _fired(bars, 40), "fixture must fire a pattern inside the band"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
     )
     assert bars[40]["time"] in {o["t"] for o in out}
 
@@ -763,19 +800,21 @@ def test_a_pattern_completing_just_after_the_turn_is_still_marked():
     """
     entry = 100.0
     bars = _flat(30, price=90.0)
-    bars += [_bar(30 + i, 99.0, 99.5, 98.0, 99.2) for i in range(5)]   # in the band
-    bars += _flat(25, start=35, price=110.0)                            # straight out of it
-    bars[34] = _bar(34, 96.0, 96.4, 92.0, 96.1)                         # the extreme, last in band
-    bars[35] = _hammer_at(35, 112.0)                                    # low 106 — turn + 1
+    bars += [_bar(30 + i, 99.0, 99.5, 98.0, 99.2) for i in range(5)]  # in the band
+    bars += _flat(25, start=35, price=110.0)  # straight out of it
+    bars[34] = _bar(34, 96.0, 96.4, 92.0, 96.1)  # the extreme, last in band
+    bars[35] = _hammer_at(35, 112.0)  # low 106 — turn + 1
     assert _fired(bars, 35), "fixture must fire a pattern one bar past the extreme"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
     )
     assert bars[35]["time"] in {o["t"] for o in out}
 
 
 # ── the zone stops at the EXIT, and re-opens whenever price comes BACK ────────────────
+
 
 def _short_stopped_out_at_its_high() -> tuple[list[dict], float]:
     """A short at 100 that runs straight against itself and is stopped out on its worst bar — so the
@@ -784,7 +823,7 @@ def _short_stopped_out_at_its_high() -> tuple[list[dict], float]:
     bars = _flat(30, price=90.0)
     bars += [_bar(30 + i, 101.0 + i, 102.6 + i, 100.6 + i, 102.2 + i) for i in range(5)]  # 30..34
     bars += _flat(25, start=35, price=106.0)
-    bars[36] = _hammer_at(36, 108.0)          # two bars past the exit
+    bars[36] = _hammer_at(36, 108.0)  # two bars past the exit
     return bars, entry
 
 
@@ -801,7 +840,8 @@ def test_nothing_is_marked_after_the_trade_has_CLOSED():
     assert _fired(bars, 36), "fixture must fire a pattern after the exit"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "short", bars[34]["time"], "loss", entry)],
+        bars,
+        [(bars[30]["time"], "short", bars[34]["time"], "loss", entry)],
     )
     assert bars[36]["time"] not in {o["t"] for o in out}
 
@@ -811,10 +851,10 @@ def _short_that_dips_then_returns_to_its_entry() -> tuple[list[dict], float]:
     later in the hold — the re-test, with a hammer on it — before dropping away for good."""
     entry = 100.0
     bars = _flat(30, price=90.0)
-    bars += [_bar(30 + i, 101.0, 101.8, 100.4, 101.2) for i in range(4)]     # 30..33 in the band
-    bars[32] = _bar(32, 103.0, 106.0, 102.8, 103.2)                          # the adverse extreme
-    bars += _flat(26, start=34, price=90.0)                                   # away, into profit
-    bars[40] = _hammer_at(40, 100.0)          # back AT the entry: high 100.1
+    bars += [_bar(30 + i, 101.0, 101.8, 100.4, 101.2) for i in range(4)]  # 30..33 in the band
+    bars[32] = _bar(32, 103.0, 106.0, 102.8, 103.2)  # the adverse extreme
+    bars += _flat(26, start=34, price=90.0)  # away, into profit
+    bars[40] = _hammer_at(40, 100.0)  # back AT the entry: high 100.1
     return bars, entry
 
 
@@ -834,6 +874,7 @@ def test_a_candle_that_comes_BACK_to_the_entry_is_marked():
     assert _fired(bars, 40), "fixture must fire a pattern on the re-test"
 
     out = build_candle_overlays(
-        bars, [(bars[30]["time"], "short", bars[59]["time"], "win", entry)],
+        bars,
+        [(bars[30]["time"], "short", bars[59]["time"], "win", entry)],
     )
     assert bars[40]["time"] in {o["t"] for o in out}

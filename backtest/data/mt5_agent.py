@@ -64,7 +64,7 @@ class Mt5Agent:
                 with urllib.request.urlopen(url, timeout=self.timeout) as resp:
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError:
-                raise                                    # the agent answered — not transient
+                raise  # the agent answered — not transient
             except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
                 last = exc
                 if attempt < _RETRIES - 1:
@@ -74,9 +74,7 @@ class Mt5Agent:
             f"({what}; is the SSH tunnel up?): {last}"
         ) from last
 
-    def bars(
-        self, symbol: str, tf_name: str, start_date: str, end_date: str
-    ) -> pd.DataFrame:
+    def bars(self, symbol: str, tf_name: str, start_date: str, end_date: str) -> pd.DataFrame:
         """Fetch [start_date, end_date] (inclusive, YYYY-MM-DD) bars at tf_name.
 
         Long windows are split into chunks that each stay under the terminal's bar cap
@@ -94,8 +92,8 @@ class Mt5Agent:
                 frames.append(self._bars_window(symbol, tf_name, w_start, w_end))
             except Mt5AgentError:
                 if len(windows) == 1:
-                    raise            # single-window request — the caller asked, the answer is no data
-                continue             # a gap at the edge of history; other chunks may still answer
+                    raise  # single-window request — the caller asked, the answer is no data
+                continue  # a gap at the edge of history; other chunks may still answer
         if not frames:
             raise Mt5AgentError(
                 f"MT5 agent returned no bars for {symbol} {tf_name} "
@@ -125,19 +123,15 @@ class Mt5Agent:
         except urllib.error.HTTPError as exc:
             detail = _read_error(exc)
             raise Mt5AgentError(
-                f"MT5 agent {exc.code} for {symbol} {tf_name} "
-                f"[{start_date}, {end_date}]: {detail}"
+                f"MT5 agent {exc.code} for {symbol} {tf_name} [{start_date}, {end_date}]: {detail}"
             ) from exc
 
         if "error" in payload:
-            raise Mt5AgentError(
-                f"MT5 agent error for {symbol} {tf_name}: {payload['error']}"
-            )
+            raise Mt5AgentError(f"MT5 agent error for {symbol} {tf_name}: {payload['error']}")
         bars = payload.get("bars", [])
         if not bars:
             raise Mt5AgentError(
-                f"MT5 agent returned no bars for {symbol} {tf_name} "
-                f"[{start_date}, {end_date}]"
+                f"MT5 agent returned no bars for {symbol} {tf_name} [{start_date}, {end_date}]"
             )
         return _normalize(pd.DataFrame(bars))
 
@@ -163,10 +157,14 @@ class Mt5Agent:
         raises on an empty answer: "no bars here" is the ANSWER when you are searching
         for where history begins, not a failure.
         """
-        query = urllib.parse.urlencode({
-            "symbol": symbol, "timeframe": tf_name,
-            "start_date": start_date, "end_date": end_date,
-        })
+        query = urllib.parse.urlencode(
+            {
+                "symbol": symbol,
+                "timeframe": tf_name,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
         try:
             payload = self._fetch(f"{self.base_url}/historical_data?{query}", "bar_count")
         except Exception:

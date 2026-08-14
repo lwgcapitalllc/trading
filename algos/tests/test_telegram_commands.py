@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -44,12 +43,14 @@ def bot(monkeypatch, tmp_path):
     for name in ("telegram_bot",):
         sys.modules.pop(name, None)
     import telegram_bot as tb
+
     monkeypatch.setattr(tb, "ALGOS_ROOT", tmp_path, raising=False)
     monkeypatch.setattr(tb, "USERS_FILE", tmp_path / "users.json", raising=False)
     # The real file shape — `load_users` reads the "users" key, and a flat dict would silently
     # fall through to the admin-only default and test something else.
     (tmp_path / "users.json").write_text(
-        json.dumps({"users": {"1": {"name": "Aaron", "role": "admin"}}}))
+        json.dumps({"users": {"1": {"name": "Aaron", "role": "admin"}}})
+    )
     return tb
 
 
@@ -83,9 +84,21 @@ def test_a_deleted_command_is_not_advertised(bot, cmd):
 def test_the_helpers_behind_them_are_gone_too(bot):
     """Left in place they are dead code wearing a working name, and the next person wires a new
     command to `do_stop` and gets an empty-list no-op all over again."""
-    for gone in ("do_restart", "do_stop", "do_emergency_stop", "cmd_trades", "cmd_confirm",
-                 "request_confirm", "parse_bot_key", "task_start", "task_stop",
-                 "get_today_trades", "BOTS", "TASK_NAMES", "pending_actions"):
+    for gone in (
+        "do_restart",
+        "do_stop",
+        "do_emergency_stop",
+        "cmd_trades",
+        "cmd_confirm",
+        "request_confirm",
+        "parse_bot_key",
+        "task_start",
+        "task_stop",
+        "get_today_trades",
+        "BOTS",
+        "TASK_NAMES",
+        "pending_actions",
+    ):
         assert not hasattr(bot, gone), f"{gone} survived the deletion"
 
 
@@ -96,7 +109,7 @@ def test_this_module_cannot_stop_a_bot(bot):
     be made safe by adding a confirmation step."""
     src = (_ALGOS / "notifications" / "telegram_bot.py").read_text()
     assert "taskkill" not in src
-    assert "call\", \"terminate" not in src
+    assert 'call", "terminate' not in src
     assert "schtasks" not in src
 
 
@@ -115,14 +128,20 @@ def test_help_lists_exactly_what_dispatches(bot):
     advertised = {w.strip("`,.") for w in bot.cmd_help().split() if w.startswith("`/")}
     advertised = {a.strip("`") for a in advertised}
     for cmd in advertised:
-        assert "Unknown command" not in bot.handle_message(cmd, "-100", "1"), \
+        assert "Unknown command" not in bot.handle_message(cmd, "-100", "1"), (
             f"{cmd} is advertised but not answered"
+        )
 
 
 # ── /status reads the runner's own state ─────────────────────────────────────────
 def _state(**over):
-    st = {"name": "MPC SOS Fade", "status": "live", "balance": 2000.0,
-          "heartbeat": 1e12, "mt5_link": True}
+    st = {
+        "name": "MPC SOS Fade",
+        "status": "live",
+        "balance": 2000.0,
+        "heartbeat": 1e12,
+        "mt5_link": True,
+    }
     st.update(over)
     return {"mpc_sos_fade_demo": st}
 
@@ -133,6 +152,7 @@ def test_status_lists_a_bot_that_is_running(bot, monkeypatch):
     files are written by the runner every poll, so a bot appears here by RUNNING — the only
     registry that cannot go stale."""
     import bot_state
+
     monkeypatch.setattr(bot_state, "read_all", lambda: _state())
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "3h 12m")
     monkeypatch.setattr(bot, "is_running", lambda s: True)
@@ -147,12 +167,13 @@ def test_status_separates_alive_from_blind(bot, monkeypatch):
     2026-08-04, when MetaTrader restarted underneath it and every check in the system still said
     RUNNING. Two facts, never merged."""
     import bot_state
+
     monkeypatch.setattr(bot_state, "read_all", lambda: _state(mt5_link=False))
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "3h 12m")
     monkeypatch.setattr(bot, "is_running", lambda s: True)
     out = bot.cmd_status()
     assert "no MT5 link" in out
-    assert "stopped" not in out              # it IS running; that is the other fact
+    assert "stopped" not in out  # it IS running; that is the other fact
 
 
 def test_an_unasked_link_is_not_reported_as_disconnected(bot, monkeypatch):
@@ -167,6 +188,7 @@ def test_an_unasked_link_is_not_reported_as_disconnected(bot, monkeypatch):
     until you have seen it red for the right reason.
     """
     import bot_state
+
     monkeypatch.setattr(bot_state, "read_all", lambda: _state(mt5_link=None))
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "1m")
     monkeypatch.setattr(bot, "is_running", lambda s: True)
@@ -179,6 +201,7 @@ def test_status_matches_the_bot_key_not_the_script_name(bot, monkeypatch):
     of them was."""
     seen = []
     import bot_state
+
     monkeypatch.setattr(bot_state, "read_all", lambda: _state())
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "1m")
     monkeypatch.setattr(bot, "is_running", lambda s: seen.append(s) or True)
@@ -190,6 +213,7 @@ def test_status_says_so_when_nothing_has_written_a_state_file(bot, monkeypatch):
     """Silence would read as "all quiet". An empty answer and a broken one must not look
     alike — the rule this repo has now met six times."""
     import bot_state
+
     monkeypatch.setattr(bot_state, "read_all", lambda: {})
     monkeypatch.setattr(bot, "is_running", lambda s: False)
     out = bot.cmd_status()

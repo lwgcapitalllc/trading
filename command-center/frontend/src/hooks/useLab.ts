@@ -3,17 +3,45 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  Strategy, ScanResult, ReconcileResult, DeployJobStatus,
-  Ruleset, RulesetCreate, PersonalRulesetPatch,
-  BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport, HistoryLimit,
-  BrokerProfile, CostLayer, RunRepriceReport,
-  LabProgress, SystemHealth, NavActivity, ReadinessReport,
-  SweepRequest, SweepResponse, SweepDetail,
-  StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
-  StackPreviewRequest, StackPreviewResponse, StackSharedReport,
-  OptimizationRequest, OptimizationSummary, OptimizationDetail,
-  InstrumentSummary, RunningJobStatus,
-  StrategyFile, StrategyFilesResponse, StrategyFileSyncResponse, CompileJobStatus,
+  Strategy,
+  ScanResult,
+  ReconcileResult,
+  DeployJobStatus,
+  Ruleset,
+  RulesetCreate,
+  PersonalRulesetPatch,
+  BacktestRunRequest,
+  BacktestSummary,
+  BacktestDetail,
+  RunNewsReport,
+  HistoryLimit,
+  BrokerProfile,
+  CostLayer,
+  RunRepriceReport,
+  LabProgress,
+  SystemHealth,
+  NavActivity,
+  ReadinessReport,
+  SweepRequest,
+  SweepResponse,
+  SweepDetail,
+  StackRequest,
+  StackResponse,
+  StackSummary,
+  StackDetail,
+  StackChartSpec,
+  StackPreviewRequest,
+  StackPreviewResponse,
+  StackSharedReport,
+  OptimizationRequest,
+  OptimizationSummary,
+  OptimizationDetail,
+  InstrumentSummary,
+  RunningJobStatus,
+  StrategyFile,
+  StrategyFilesResponse,
+  StrategyFileSyncResponse,
+  CompileJobStatus,
   RegimeDay,
 } from '@/types'
 import type { ChartSpec, ChartPage } from '@/components/ChartPanel/types'
@@ -38,7 +66,8 @@ export function useStrategy(strategyId: string | null) {
 export function useParamTypes(strategyId: string | null) {
   return useQuery({
     queryKey: ['lab', 'strategies', strategyId, 'param-types'],
-    queryFn: () => api.get<Record<string, 'int' | 'double'>>(`/strategies/${strategyId}/param-types`),
+    queryFn: () =>
+      api.get<Record<string, 'int' | 'double'>>(`/strategies/${strategyId}/param-types`),
     enabled: !!strategyId,
     staleTime: Infinity,
   })
@@ -60,7 +89,10 @@ export function useDeployStrategy() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (strategyId: string) => {
-      const { deploy_job_id } = await api.post<{ deploy_job_id: string }>(`/strategies/${strategyId}/deploy`, {})
+      const { deploy_job_id } = await api.post<{ deploy_job_id: string }>(
+        `/strategies/${strategyId}/deploy`,
+        {}
+      )
       return api.get<DeployJobStatus>(`/strategies/${strategyId}/deploy/${deploy_job_id}`)
     },
     onSuccess: (data) => {
@@ -84,7 +116,7 @@ export function useScanStrategies() {
       // this the scan reports success with "0 updated", the strategy keeps its
       // stale param schema, and its "Needs scan" pill never goes away with
       // nothing anywhere saying why. The backend names it; say it out loud.
-      data.warnings?.forEach(w => toast.error(`Scan: ${w}`))
+      data.warnings?.forEach((w) => toast.error(`Scan: ${w}`))
       qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
     },
   })
@@ -178,9 +210,9 @@ export function useBacktestRuns(filters?: {
   source_run_id?: string
 }) {
   const params = new URLSearchParams()
-  if (filters?.strategy_id)   params.set('strategy_id',   filters.strategy_id)
-  if (filters?.ruleset_id)    params.set('ruleset_id',    filters.ruleset_id)
-  if (filters?.status)        params.set('status',        filters.status)
+  if (filters?.strategy_id) params.set('strategy_id', filters.strategy_id)
+  if (filters?.ruleset_id) params.set('ruleset_id', filters.ruleset_id)
+  if (filters?.status) params.set('status', filters.status)
   if (filters?.source_run_id) params.set('source_run_id', filters.source_run_id)
   const qs = params.toString()
 
@@ -191,7 +223,7 @@ export function useBacktestRuns(filters?: {
     // dot and the Runs-tab status) stay current; back off when everything is settled.
     refetchInterval: (query) => {
       const data = query.state.data as BacktestSummary[] | undefined
-      return data?.some(r => r.status === 'running') ? 3_000 : 15_000
+      return data?.some((r) => r.status === 'running') ? 3_000 : 15_000
     },
   })
 }
@@ -219,15 +251,16 @@ export function useHistoryLimit(
   instrument: string | null,
   barType = 'Minute',
   barValue = 15,
-  runner = 'python',
+  runner = 'python'
 ) {
   return useQuery({
     queryKey: ['lab', 'history-limit', instrument, barType, barValue, runner],
-    queryFn: () => api.get<HistoryLimit | null>(
-      `/backtests/history-limit?instrument=${encodeURIComponent(instrument!)}`
-      + `&bar_type=${encodeURIComponent(barType)}&bar_value=${barValue}`
-      + `&runner=${encodeURIComponent(runner)}`,
-    ),
+    queryFn: () =>
+      api.get<HistoryLimit | null>(
+        `/backtests/history-limit?instrument=${encodeURIComponent(instrument!)}` +
+          `&bar_type=${encodeURIComponent(barType)}&bar_value=${barValue}` +
+          `&runner=${encodeURIComponent(runner)}`
+      ),
     enabled: !!instrument,
     staleTime: 60 * 60_000,
   })
@@ -253,7 +286,7 @@ export function useRunNews(runId: string | null, pre = 15, post = 30, enabled = 
     queryFn: () => api.get<RunNewsReport>(`/backtests/runs/${runId}/news?pre=${pre}&post=${post}`),
     enabled: !!runId && enabled,
     staleTime: Infinity,
-    placeholderData: (prev) => prev,   // keep the last window's tags visible while a new pre/post loads (no flicker on slider drag)
+    placeholderData: (prev) => prev, // keep the last window's tags visible while a new pre/post loads (no flicker on slider drag)
   })
 }
 
@@ -267,20 +300,22 @@ export function useRunReprice(runId: string | null, layers: CostLayer[], enabled
   const key = [...layers].sort().join(',')
   return useQuery({
     queryKey: ['lab', 'run', runId, 'repriced', key],
-    queryFn: () => api.get<RunRepriceReport>(
-      `/backtests/runs/${runId}/repriced?layers=${encodeURIComponent(key)}`,
-      // ⚠ `silent`, because the refusal is RENDERED — the pill reads "Can't price this run" with
-      // the server's own sentence in its popover (`useCostFilter` reads `isError` deliberately).
-      // A toast on top is the same message twice, and `retry: 1` makes it twice again: a Rerun
-      // deletes the run's artefacts, so this fires against a run with no curve and put TWO red
-      // popups over the page for a state already on screen. Silent hides the TOAST, never the
-      // error — do not use it here without keeping the pill's `failed` branch.
-      { silent: true }),
+    queryFn: () =>
+      api.get<RunRepriceReport>(
+        `/backtests/runs/${runId}/repriced?layers=${encodeURIComponent(key)}`,
+        // ⚠ `silent`, because the refusal is RENDERED — the pill reads "Can't price this run" with
+        // the server's own sentence in its popover (`useCostFilter` reads `isError` deliberately).
+        // A toast on top is the same message twice, and `retry: 1` makes it twice again: a Rerun
+        // deletes the run's artefacts, so this fires against a run with no curve and put TWO red
+        // popups over the page for a state already on screen. Silent hides the TOAST, never the
+        // error — do not use it here without keeping the pill's `failed` branch.
+        { silent: true }
+      ),
     // Fetched even with NOTHING ticked: the response carries every layer's own price, which is
     // what the pill shows on each row before you turn any of them on.
     enabled: !!runId && enabled,
     staleTime: Infinity,
-    placeholderData: (prev) => prev,   // keep the last set on screen while a new one loads
+    placeholderData: (prev) => prev, // keep the last set on screen while a new one loads
   })
 }
 
@@ -339,11 +374,19 @@ export function useRefreshChartSpec() {
 export function useRunCandles(runId: string | null) {
   return useCallback(
     async (tf: string, fromMs: number, toMs: number): Promise<ChartPage> => {
-      if (!runId) return { candles: [], overlays: [], available: false, feedError: 'no run', dataStartMs: null, hardEdge: false }
+      if (!runId)
+        return {
+          candles: [],
+          overlays: [],
+          available: false,
+          feedError: 'no run',
+          dataStartMs: null,
+          hardEdge: false,
+        }
       const q = `tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
-      const res = await api.get<ChartPage & { data_start_ms: number | null; hard_edge: boolean; feed_error: string | null }>(
-        `/backtests/runs/${runId}/candles?${q}`,
-      )
+      const res = await api.get<
+        ChartPage & { data_start_ms: number | null; hard_edge: boolean; feed_error: string | null }
+      >(`/backtests/runs/${runId}/candles?${q}`)
       return {
         candles: res.candles ?? [],
         // Structure for THESE bars at THIS timeframe. `?? []` is the honest default for a backend
@@ -357,7 +400,7 @@ export function useRunCandles(runId: string | null) {
         hardEdge: !!res.hard_edge,
       }
     },
-    [runId],
+    [runId]
   )
 }
 
@@ -443,7 +486,12 @@ export function useStopBacktest() {
   })
 }
 
-type RetryVars = { runId: string; evaluateRulesets?: string[]; startDate?: string; endDate?: string }
+type RetryVars = {
+  runId: string
+  evaluateRulesets?: string[]
+  startDate?: string
+  endDate?: string
+}
 
 export function useRetryBacktest() {
   const qc = useQueryClient()
@@ -456,7 +504,10 @@ export function useRetryBacktest() {
       const v: RetryVars = typeof vars === 'string' ? { runId: vars } : vars
       const bodyData: Record<string, unknown> = {}
       if (v.evaluateRulesets !== undefined) bodyData.evaluate_rulesets = v.evaluateRulesets
-      if (v.startDate && v.endDate) { bodyData.start_date = v.startDate; bodyData.end_date = v.endDate }
+      if (v.startDate && v.endDate) {
+        bodyData.start_date = v.startDate
+        bodyData.end_date = v.endDate
+      }
       const body = Object.keys(bodyData).length > 0 ? bodyData : undefined
       return api.post<{ run_id: string; status: string }>(`/backtests/runs/${v.runId}/retry`, body)
     },
@@ -493,7 +544,9 @@ export function useReloadCharts() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (runId: string) =>
-      api.post<{ equity_points: number; daily_bars: number }>(`/backtests/runs/${runId}/reload-charts`),
+      api.post<{ equity_points: number; daily_bars: number }>(
+        `/backtests/runs/${runId}/reload-charts`
+      ),
     onSuccess: (data, runId) => {
       toast.success(`Charts loaded — ${data.equity_points} trades, ${data.daily_bars} trading days`)
       qc.invalidateQueries({ queryKey: ['lab', 'run', runId] })
@@ -519,8 +572,7 @@ export function useLabProgress() {
 export function useStopLab() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () =>
-      api.post<{ stopped: boolean; job_id: string | null }>('/lab/stop', {}),
+    mutationFn: () => api.post<{ stopped: boolean; job_id: string | null }>('/lab/stop', {}),
     onSuccess: (data) => {
       if (data.stopped) toast.success('Lab job cancelled')
       else toast.error('No active job to stop')
@@ -662,7 +714,9 @@ export function useRetrySweep() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (sweepId: string) =>
-      api.post<{ sweep_id: string; retrying: number; status: string }>(`/backtests/sweeps/${sweepId}/retry-failed`),
+      api.post<{ sweep_id: string; retrying: number; status: string }>(
+        `/backtests/sweeps/${sweepId}/retry-failed`
+      ),
     onSuccess: (data, sweepId) => {
       toast.success(`Retrying ${data.retrying} failed run${data.retrying !== 1 ? 's' : ''}`)
       qc.invalidateQueries({ queryKey: ['lab', 'sweep', sweepId] })
@@ -679,7 +733,10 @@ export function useReevaluateSweep() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ sweepId, ruleset_ids }: { sweepId: string; ruleset_ids: string[] }) =>
-      api.post<{ sweep_id: string; reevaluated: number }>(`/backtests/sweeps/${sweepId}/reevaluate`, { ruleset_ids }),
+      api.post<{ sweep_id: string; reevaluated: number }>(
+        `/backtests/sweeps/${sweepId}/reevaluate`,
+        { ruleset_ids }
+      ),
     onSuccess: (data, { sweepId }) => {
       toast.success(`Scored ${data.reevaluated} run${data.reevaluated !== 1 ? 's' : ''}`)
       qc.invalidateQueries({ queryKey: ['lab', 'sweep', sweepId] })
@@ -721,7 +778,7 @@ export function useStacks() {
     queryFn: () => api.get<StackSummary[]>('/backtests/stacks'),
     refetchInterval: (query) => {
       const data = query.state.data as StackSummary[] | undefined
-      return data?.some(s => s.status === 'running') ? 3_000 : 30_000
+      return data?.some((s) => s.status === 'running') ? 3_000 : 30_000
     },
   })
 }
@@ -759,11 +816,10 @@ export function useStack(stackId: string | null) {
 export function useStackRegimeTimeline(stackId: string | null, enabled: boolean) {
   return useQuery({
     queryKey: ['lab', 'stack-regimes', stackId],
-    queryFn: () => api.get<{ regime_timeline: RegimeDay[] }>(
-      `/backtests/stacks/${stackId}/regime-timeline`,
-    ),
+    queryFn: () =>
+      api.get<{ regime_timeline: RegimeDay[] }>(`/backtests/stacks/${stackId}/regime-timeline`),
     enabled: !!stackId && enabled,
-    staleTime: Infinity,   // a finished stack's calendar is a fixed window; it cannot change
+    staleTime: Infinity, // a finished stack's calendar is a fixed window; it cannot change
   })
 }
 
@@ -788,7 +844,11 @@ export function useStackRegimeTimeline(stackId: string | null, enabled: boolean)
 // legs are already `complete` and the artefact is a beat behind — `_persist` marks the last leg
 // complete BEFORE it writes `shared_summary.json`, so stopping on the stack's status alone would
 // give up exactly one poll early. Progress being present is the proof somebody is still working.
-export function useStackContention(stackId: string | null, enabled: boolean, stackRunning: boolean) {
+export function useStackContention(
+  stackId: string | null,
+  enabled: boolean,
+  stackRunning: boolean
+) {
   return useQuery({
     queryKey: ['lab', 'stack-contention', stackId],
     queryFn: () => api.get<StackSharedReport>(`/backtests/stacks/${stackId}/contention`),
@@ -796,7 +856,7 @@ export function useStackContention(stackId: string | null, enabled: boolean, sta
     refetchInterval: (query) => {
       const data = query.state.data as StackSharedReport | undefined
       if (!data) return 3_000
-      if (data.available) return false            // a finished report never changes
+      if (data.available) return false // a finished report never changes
       const phase = data.progress?.phase
       // `complete` is a stop too: the summary is written BEFORE that phase is set, so a report
       // still unavailable there is a write that failed rather than one still in flight.
@@ -856,7 +916,9 @@ export function useTriggerStack() {
   return useMutation({
     mutationFn: (body: StackRequest) => api.post<StackResponse>('/backtests/stack', body),
     onSuccess: (res) => {
-      toast.success(res.status === 'complete' ? 'Stack assembled from existing runs' : 'Stack started')
+      toast.success(
+        res.status === 'complete' ? 'Stack assembled from existing runs' : 'Stack started'
+      )
       qc.invalidateQueries({ queryKey: ['lab', 'stacks'] })
       qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
@@ -909,7 +971,7 @@ export function useOptimizations(strategyId?: string) {
     queryFn: () => api.get<OptimizationSummary[]>(`/optimizations${qs}`),
     refetchInterval: (query) => {
       const data = query.state.data as OptimizationSummary[] | undefined
-      return data?.some(o => o.status === 'running') ? 3_000 : 15_000
+      return data?.some((o) => o.status === 'running') ? 3_000 : 15_000
     },
   })
 }
@@ -922,8 +984,8 @@ export function useOptimization(optimizationId: string | null) {
     refetchInterval: (query) => {
       const data = query.state.data as OptimizationDetail | undefined
       if (!data) return false
-      const hasRunning = data.runs.some(r => r.status === 'running')
-      return (data.status === 'running' || hasRunning) ? 3_000 : false
+      const hasRunning = data.runs.some((r) => r.status === 'running')
+      return data.status === 'running' || hasRunning ? 3_000 : false
     },
   })
 }
@@ -932,7 +994,10 @@ export function useTriggerOptimization() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: OptimizationRequest) =>
-      api.post<{ optimization_id: string; status: string; estimated_runs: number }>('/optimizations/run', body),
+      api.post<{ optimization_id: string; status: string; estimated_runs: number }>(
+        '/optimizations/run',
+        body
+      ),
     onSuccess: () => {
       toast.success('Optimization started')
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
@@ -950,12 +1015,16 @@ export function useCancelOptimization() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (optimizationId: string) =>
-      api.post<{ optimization_id: string; status: string; job_stopped?: boolean }>(`/optimizations/${optimizationId}/cancel`),
+      api.post<{ optimization_id: string; status: string; job_stopped?: boolean }>(
+        `/optimizations/${optimizationId}/cancel`
+      ),
     onSuccess: (data, optimizationId) => {
       // The row is cancelled either way; whether the RUNNER was reached is a different fact
       // and the one that decides whether the machine is still busy.
       if (data.job_stopped === false) {
-        toast.warning('Marked cancelled, but the runner could not be reached — it may still be working')
+        toast.warning(
+          'Marked cancelled, but the runner could not be reached — it may still be working'
+        )
       } else {
         toast.success('Optimization cancelled')
       }
@@ -970,7 +1039,9 @@ export function useRetryOptimization() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (optimizationId: string) =>
-      api.post<{ optimization_id: string; retrying: number; status: string }>(`/optimizations/${optimizationId}/retry-failed`),
+      api.post<{ optimization_id: string; retrying: number; status: string }>(
+        `/optimizations/${optimizationId}/retry-failed`
+      ),
     onSuccess: (data, optimizationId) => {
       toast.success(`Retrying ${data.retrying} failed run${data.retrying !== 1 ? 's' : ''}`)
       qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
@@ -983,7 +1054,9 @@ export function useRerunOptimization() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (optimizationId: string) =>
-      api.post<{ optimization_id: string; status: string; estimated_runs: number }>(`/optimizations/${optimizationId}/rerun`),
+      api.post<{ optimization_id: string; status: string; estimated_runs: number }>(
+        `/optimizations/${optimizationId}/rerun`
+      ),
     onSuccess: (_data, optimizationId) => {
       toast.success('Re-running optimization')
       qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
@@ -999,17 +1072,20 @@ export function useInstrumentSummary(
   strategyId: string | null,
   rulesetId?: string,
   startDate?: string,
-  endDate?: string,
+  endDate?: string
 ) {
   const params = new URLSearchParams()
   if (rulesetId) params.set('ruleset_id', rulesetId)
   if (startDate) params.set('start_date', startDate)
-  if (endDate)   params.set('end_date',   endDate)
+  if (endDate) params.set('end_date', endDate)
   const qs = params.toString()
 
   return useQuery({
     queryKey: ['lab', 'instrument-summary', strategyId, rulesetId, startDate, endDate],
-    queryFn: () => api.get<InstrumentSummary>(`/strategies/${strategyId}/instrument_summary${qs ? `?${qs}` : ''}`),
+    queryFn: () =>
+      api.get<InstrumentSummary>(
+        `/strategies/${strategyId}/instrument_summary${qs ? `?${qs}` : ''}`
+      ),
     enabled: !!strategyId,
   })
 }
@@ -1064,7 +1140,8 @@ export function useStrategyFiles() {
 export function useStrategyFileSyncStatus() {
   return useQuery({
     queryKey: ['lab', 'strategy-files', 'sync-status'],
-    queryFn: () => api.get<StrategyFileSyncResponse>('/strategy-files/sync-status', { silent: true }),
+    queryFn: () =>
+      api.get<StrategyFileSyncResponse>('/strategy-files/sync-status', { silent: true }),
     refetchInterval: 60_000,
     retry: false,
   })
@@ -1073,7 +1150,15 @@ export function useStrategyFileSyncStatus() {
 export function useUploadStrategyFile() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ filename, file, overwrite }: { filename: string; file: File; overwrite: boolean }) => {
+    mutationFn: async ({
+      filename,
+      file,
+      overwrite,
+    }: {
+      filename: string
+      file: File
+      overwrite: boolean
+    }) => {
       const fd = new FormData()
       fd.append('file', file, filename)
       fd.append('filename', filename)

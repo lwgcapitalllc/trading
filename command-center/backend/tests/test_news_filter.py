@@ -8,8 +8,8 @@ holidays are always flagged (and kept separable from news so the UI can remove t
 
 from datetime import datetime, timezone
 
+from news import Impact, NewsEvent  # importable: news_filter put engines/ on sys.path
 from services import news_filter
-from news import Impact, NewsEvent, NewsPolicy  # importable: news_filter put engines/ on sys.path
 
 _UTC = timezone.utc
 
@@ -44,10 +44,10 @@ def _tags(trades):
 
 def test_window_is_15_before_and_30_after():
     trades = [
-        {"index": 1, "entry_ms": ms(2025, 2, 12, 13, 15)},   # exactly 15 min before -> in
-        {"index": 2, "entry_ms": ms(2025, 2, 12, 13, 14)},   # 16 min before -> out
-        {"index": 3, "entry_ms": ms(2025, 2, 12, 14, 0)},    # exactly 30 min after -> in
-        {"index": 4, "entry_ms": ms(2025, 2, 12, 14, 1)},    # 31 min after -> out
+        {"index": 1, "entry_ms": ms(2025, 2, 12, 13, 15)},  # exactly 15 min before -> in
+        {"index": 2, "entry_ms": ms(2025, 2, 12, 13, 14)},  # 16 min before -> out
+        {"index": 3, "entry_ms": ms(2025, 2, 12, 14, 0)},  # exactly 30 min after -> in
+        {"index": 4, "entry_ms": ms(2025, 2, 12, 14, 1)},  # 31 min after -> out
     ]
     got = [t["in_news"] for t in _tags(trades)]
     assert got == [True, False, True, False]
@@ -56,8 +56,8 @@ def test_window_is_15_before_and_30_after():
 def test_output_order_matches_input_order():
     # Fed out of time order; the returned list must stay in input order for the UI to zip by index.
     trades = [
-        {"index": 9, "entry_ms": ms(2025, 2, 12, 14, 1)},    # clean (out of window)
-        {"index": 8, "entry_ms": ms(2025, 2, 12, 13, 30)},   # at the event -> news
+        {"index": 9, "entry_ms": ms(2025, 2, 12, 14, 1)},  # clean (out of window)
+        {"index": 8, "entry_ms": ms(2025, 2, 12, 13, 30)},  # at the event -> news
     ]
     out = _tags(trades)
     assert [t["index"] for t in out] == [9, 8]
@@ -94,9 +94,9 @@ def test_missing_timestamp_is_left_untagged():
 
 def test_report_counts_and_coverage_boundary():
     trades = [
-        {"index": 1, "entry_ms": ms(2025, 2, 12, 13, 30)},   # news
-        {"index": 2, "entry_ms": ms(2025, 2, 17, 15, 0)},    # holiday
-        {"index": 3, "entry_ms": ms(2025, 2, 12, 9, 0)},     # clean
+        {"index": 1, "entry_ms": ms(2025, 2, 12, 13, 30)},  # news
+        {"index": 2, "entry_ms": ms(2025, 2, 17, 15, 0)},  # holiday
+        {"index": 3, "entry_ms": ms(2025, 2, 12, 9, 0)},  # clean
     ]
     rep = news_filter.build_report(trades, store=_store())
     assert rep["has_data"] is True

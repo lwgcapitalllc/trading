@@ -19,13 +19,17 @@ import { useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { NEW_LEVEL_COLOR, nextFibRatio, type FibLevel } from './fibLevels'
 
-interface Row { ratio: string; color: string; visible: boolean }
+interface Row {
+  ratio: string
+  color: string
+  visible: boolean
+}
 
 const toRows = (levels: FibLevel[]): Row[] =>
-  levels.map(l => ({ ratio: String(l.ratio), color: l.color, visible: l.visible !== false }))
+  levels.map((l) => ({ ratio: String(l.ratio), color: l.color, visible: l.visible !== false }))
 
 const toLevels = (rows: Row[]): FibLevel[] =>
-  rows.flatMap(r => {
+  rows.flatMap((r) => {
     const ratio = Number(r.ratio)
     return r.ratio.trim() === '' || !Number.isFinite(ratio)
       ? []
@@ -54,8 +58,16 @@ export interface FibLevelEditorProps {
 }
 
 export default function FibLevelEditor({
-  scope, levels, resetKey, isCustom, maxRowsHeight = 248,
-  onChange, onSaveAsDefault, onUseDefault, onResetFactory, onCountChange,
+  scope,
+  levels,
+  resetKey,
+  isCustom,
+  maxRowsHeight = 248,
+  onChange,
+  onSaveAsDefault,
+  onUseDefault,
+  onResetFactory,
+  onCountChange,
 }: FibLevelEditorProps) {
   const [rows, setRows] = useState<Row[]>(() => toRows(levels))
 
@@ -70,16 +82,23 @@ export default function FibLevelEditor({
   // and skips the seed, and the reset does nothing at all. Measured, not theorised.
   const seededRef = useRef(levels)
   seededRef.current = levels
-  useEffect(() => { setRows(toRows(seededRef.current)) }, [resetKey])
+  useEffect(() => {
+    setRows(toRows(seededRef.current))
+  }, [resetKey])
 
-  const shownCount = rows.filter(r => r.visible).length
+  const shownCount = rows.filter((r) => r.visible).length
   // Reported UP rather than rendered here, because the count belongs in the host's header and this
   // component deliberately has no header of its own.
   const countRef = useRef(onCountChange)
   countRef.current = onCountChange
-  useEffect(() => { countRef.current?.(shownCount, rows.length) }, [shownCount, rows.length])
+  useEffect(() => {
+    countRef.current?.(shownCount, rows.length)
+  }, [shownCount, rows.length])
 
-  const commit = (next: Row[]) => { setRows(next); onChange(toLevels(next)) }
+  const commit = (next: Row[]) => {
+    setRows(next)
+    onChange(toLevels(next))
+  }
   const patch = (i: number, p: Partial<Row>) =>
     commit(rows.map((r, j) => (j === i ? { ...r, ...p } : r)))
   const remove = (i: number) => commit(rows.filter((_, j) => j !== i))
@@ -89,7 +108,7 @@ export default function FibLevelEditor({
   const add = () => {
     const ratio = nextFibRatio(toLevels(rows))
     const row: Row = { ratio: String(ratio), color: NEW_LEVEL_COLOR, visible: true }
-    const at = rows.findIndex(r => Number(r.ratio) > ratio)
+    const at = rows.findIndex((r) => Number(r.ratio) > ratio)
     commit(at < 0 ? [...rows, row] : [...rows.slice(0, at), row, ...rows.slice(at)])
   }
 
@@ -98,11 +117,16 @@ export default function FibLevelEditor({
       <div className="overflow-y-auto py-1" style={{ maxHeight: maxRowsHeight }}>
         {rows.length === 0 && (
           <div className="px-3 py-4 text-center text-[10px] text-text-tertiary">
-            No levels — this fib draws nothing.<br />Add one below.
+            No levels — this fib draws nothing.
+            <br />
+            Add one below.
           </div>
         )}
         {rows.map((row, i) => (
-          <div key={i} className="flex items-center gap-2 px-2.5 py-1 transition-colors hover:bg-bg-sunken">
+          <div
+            key={i}
+            className="flex items-center gap-2 px-2.5 py-1 transition-colors hover:bg-bg-sunken"
+          >
             <button
               onClick={() => patch(i, { visible: !row.visible })}
               title={row.visible ? 'Hide this level (keeps it in the set)' : 'Show this level'}
@@ -112,7 +136,7 @@ export default function FibLevelEditor({
             </button>
             <input
               value={row.ratio}
-              onChange={e => patch(i, { ratio: e.target.value })}
+              onChange={(e) => patch(i, { ratio: e.target.value })}
               inputMode="decimal"
               spellCheck={false}
               className={`w-[74px] flex-shrink-0 rounded border border-border-subtle bg-bg-sunken px-1.5 py-1 font-mono text-[11px] tabular-nums outline-none transition-colors focus:border-accent ${
@@ -129,7 +153,7 @@ export default function FibLevelEditor({
               <input
                 type="color"
                 value={row.color}
-                onChange={e => patch(i, { color: e.target.value })}
+                onChange={(e) => patch(i, { color: e.target.value })}
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               />
             </label>
@@ -183,8 +207,8 @@ export default function FibLevelEditor({
         <p className="mt-1.5 text-[10px] leading-snug text-text-tertiary">
           {scope === 'drawing'
             ? 'Changes apply to this fib only.'
-            : 'Applies to new fibs and every fib you have not customised.'}
-          {' '}Ratios past 1 or below 0 draw extensions.
+            : 'Applies to new fibs and every fib you have not customised.'}{' '}
+          Ratios past 1 or below 0 draw extensions.
         </p>
       </div>
     </>

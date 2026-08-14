@@ -17,7 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from services import calendar_service as cal
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "tradingview_titles.txt"
@@ -71,7 +70,7 @@ def _matches_only(key: str, title: str) -> bool:
 @pytest.mark.parametrize(
     "title",
     [
-        "Core PCE Price Index MoM",   # HIGH impact USD — the one that was backwards
+        "Core PCE Price Index MoM",  # HIGH impact USD — the one that was backwards
         "Core PCE Price Index YoY",
         "PCE Price Index MoM",
         "PCE Prices QoQ Adv",
@@ -225,9 +224,9 @@ def _blow_up(exc):
     "exc",
     [
         __import__("json").JSONDecodeError("Expecting value", "", 0),  # an HTML error page
-        TimeoutError("timed out"),                                     # a read timeout
-        RuntimeError("TradingView calendar fetch failed"),             # what the source raises
-        KeyError("result"),                                            # a shape change
+        TimeoutError("timed out"),  # a read timeout
+        RuntimeError("TradingView calendar fetch failed"),  # what the source raises
+        KeyError("result"),  # a shape change
     ],
 )
 def test_every_upstream_failure_is_a_runtime_error(monkeypatch, exc):
@@ -310,7 +309,9 @@ def test_the_roster_is_the_currencies_the_feed_actually_returns():
     roster = set(cal.currencies_for())
     seen = {cur for _imp, cur, _title in _corpus()}
     assert not (seen - roster), f"the feed returns currencies with no chip: {sorted(seen - roster)}"
-    assert not (roster - seen), f"chips for currencies the feed never returns: {sorted(roster - seen)}"
+    assert not (roster - seen), (
+        f"chips for currencies the feed never returns: {sorted(roster - seen)}"
+    )
 
 
 def test_the_roster_follows_the_query_not_a_constant():

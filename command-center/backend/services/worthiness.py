@@ -69,8 +69,8 @@ def score_run_after_evals(
     from services import lab_db
     from services.metrics import effective_dd_limit_usd
 
-    prop_strictest = None             # smallest max_loss_eod among prop rulesets
-    personal_strictest = None         # (limit_usd, ruleset) among personal/demo rulesets
+    prop_strictest = None  # smallest max_loss_eod among prop rulesets
+    personal_strictest = None  # (limit_usd, ruleset) among personal/demo rulesets
     for rid in ruleset_ids:
         ruleset = lab_db.get_ruleset(rid)
         if ruleset is None:

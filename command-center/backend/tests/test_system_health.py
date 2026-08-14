@@ -9,9 +9,9 @@ MT5 dot carried the Flask agent's liveness rather than the terminal's.
 """
 
 import pytest
-
-from services import agent_supervisor as sup, readiness
 from routers import system
+from services import agent_supervisor as sup
+from services import readiness
 
 
 @pytest.fixture(autouse=True)
@@ -32,11 +32,11 @@ def _stub(monkeypatch, *, tunnel, vps, nt8, mt5, terminal=None):
     monkeypatch.setattr(sup, "vps_reachable", lambda: vps)
     monkeypatch.setattr(sup, "mt5_terminal_status", lambda: terminal)
     monkeypatch.setattr(
-        "services.runner_dispatch.health",
-        (lambda: {"status": "ok"}) if nt8 else _raiser)
+        "services.runner_dispatch.health", (lambda: {"status": "ok"}) if nt8 else _raiser
+    )
     monkeypatch.setattr(
-        "services.mt5_agent_client.health",
-        (lambda: {"status": "ok"}) if mt5 else _raiser)
+        "services.mt5_agent_client.health", (lambda: {"status": "ok"}) if mt5 else _raiser
+    )
     monkeypatch.setattr("services.runner_dispatch.nt_health", _raiser)
     monkeypatch.setattr("services.runner_dispatch.nt_compile_status", _raiser)
 
@@ -47,14 +47,15 @@ def _raiser(*_a, **_k):
 
 # ── ssh_tunnel means the TUNNEL now ───────────────────────────────────────────
 
+
 def test_ssh_tunnel_reports_the_forwards_not_a_fresh_connection(monkeypatch):
     """The bug this fixes: the dot went green off `ssh forexvps echo ok`, which
     succeeds over a completely dead tunnel — so the one indicator that could
     have named the problem pointed at the VPS instead."""
     _stub(monkeypatch, tunnel=False, vps=True, nt8=False, mt5=False)
     h = system._build_health()
-    assert h["ssh_tunnel"] is False      # the forwards are down…
-    assert h["vps_reachable"] is True    # …and the VPS is fine. Two facts, two fields.
+    assert h["ssh_tunnel"] is False  # the forwards are down…
+    assert h["vps_reachable"] is True  # …and the VPS is fine. Two facts, two fields.
 
 
 def test_a_healthy_tunnel_and_a_dead_vps_cannot_both_be_reported(monkeypatch):
@@ -66,12 +67,19 @@ def test_a_healthy_tunnel_and_a_dead_vps_cannot_both_be_reported(monkeypatch):
 
 # ── MT5: the agent and the terminal are different questions ───────────────────
 
+
 def test_a_responding_agent_with_a_disconnected_terminal(monkeypatch):
     """The gap: /health answers 'ok' whether or not MT5 is logged in, so a
     terminal that had dropped its broker connection showed green and every
     python run needing uncached bars failed at fetch time."""
-    _stub(monkeypatch, tunnel=True, vps=True, nt8=True, mt5=True,
-          terminal={"connected": False, "account": None, "server": None, "error": "IPC timeout"})
+    _stub(
+        monkeypatch,
+        tunnel=True,
+        vps=True,
+        nt8=True,
+        mt5=True,
+        terminal={"connected": False, "account": None, "server": None, "error": "IPC timeout"},
+    )
     h = system._build_health()
     assert h["mt5_agent"] is True
     assert h["mt5_connected"] is False
@@ -80,9 +88,19 @@ def test_a_responding_agent_with_a_disconnected_terminal(monkeypatch):
 def test_a_connected_terminal_reports_which_account_it_is_bound_to(monkeypatch):
     """Worth surfacing: the agent binds MT5_Lab ONLY, and a run against the
     wrong account would produce a plausible result off the wrong feed."""
-    _stub(monkeypatch, tunnel=True, vps=True, nt8=True, mt5=True,
-          terminal={"connected": True, "account": 25893735,
-                    "server": "VantageMarkets-Demo", "error": None})
+    _stub(
+        monkeypatch,
+        tunnel=True,
+        vps=True,
+        nt8=True,
+        mt5=True,
+        terminal={
+            "connected": True,
+            "account": 25893735,
+            "server": "VantageMarkets-Demo",
+            "error": None,
+        },
+    )
     h = system._build_health()
     assert h["mt5_connected"] is True
     assert h["mt5_server"] == "VantageMarkets-Demo"
@@ -110,14 +128,16 @@ def test_the_terminal_is_not_probed_when_the_agent_is_down(monkeypatch):
 
 # ── Readiness: the checks whose failure mode is silence ───────────────────────
 
+
 def _fake_news(monkeypatch, events):
     """Stand in for the canonical engine's EventStore. `_news_calendar` imports
     it inside the function, so patching sys.modules is what reaches it."""
+
     class Store:
         def load(self):
             return events, []
-    monkeypatch.setitem(__import__("sys").modules, "news",
-                        type("m", (), {"EventStore": Store})())
+
+    monkeypatch.setitem(__import__("sys").modules, "news", type("m", (), {"EventStore": Store})())
 
 
 def test_an_empty_news_cache_is_reported(monkeypatch):
@@ -132,6 +152,7 @@ def test_a_stale_news_cache_is_reported_with_the_date_it_stops(monkeypatch):
     """Half-backfilled is the nastier case — the filter works on old trades and
     silently tags nothing on recent ones, so the delta looks like a real result."""
     import time as _t
+
     old_ms = int((_t.time() - 200 * 86400) * 1000)
     _fake_news(monkeypatch, [type("e", (), {"timestamp_ms": old_ms})()])
     msg = readiness._news_calendar()
@@ -140,6 +161,7 @@ def test_a_stale_news_cache_is_reported_with_the_date_it_stops(monkeypatch):
 
 def test_a_current_news_cache_is_silent(monkeypatch):
     import time as _t
+
     _fake_news(monkeypatch, [type("e", (), {"timestamp_ms": int(_t.time() * 1000)})()])
     assert readiness._news_calendar() is None
 
@@ -163,10 +185,11 @@ def test_missing_telegram_credentials_are_reported(monkeypatch):
 def test_readiness_never_raises_on_an_unreadable_cache(monkeypatch):
     """It runs inside the startup hook. An exception here would stop the backend
     booting over a git-ignored cache file."""
+
     class Boom:
         def load(self):
             raise OSError("corrupt")
-    monkeypatch.setitem(__import__("sys").modules, "news",
-                        type("m", (), {"EventStore": Boom})())
+
+    monkeypatch.setitem(__import__("sys").modules, "news", type("m", (), {"EventStore": Boom})())
     msg = readiness._news_calendar()
     assert msg and "unreadable" in msg

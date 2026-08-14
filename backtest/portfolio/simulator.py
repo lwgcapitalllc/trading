@@ -38,17 +38,18 @@ __all__ = ["PortfolioResult", "simulate"]
 
 @dataclass
 class PortfolioResult:
-    trades: list = field(default_factory=list)        # combined, every leg's closed trades
-    per_leg: dict = field(default_factory=dict)       # leg name -> its own trades
-    contention: list = field(default_factory=list)    # the account's shrink/block log
-    cancelled: bool = False                           # stopped early — the book is PARTIAL
+    trades: list = field(default_factory=list)  # combined, every leg's closed trades
+    per_leg: dict = field(default_factory=dict)  # leg name -> its own trades
+    contention: list = field(default_factory=list)  # the account's shrink/block log
+    cancelled: bool = False  # stopped early — the book is PARTIAL
 
 
 _CHECK_EVERY = 512
 
 
-def simulate(legs: Sequence[Any], account: Any, *,
-             progress: Any = None, should_cancel: Any = None) -> PortfolioResult:
+def simulate(
+    legs: Sequence[Any], account: Any, *, progress: Any = None, should_cancel: Any = None
+) -> PortfolioResult:
     """Run all legs through `account` on one merged clock. `account` is a `PortfolioAccount`
     (or `SoloAccount` for a single leg). Returns the combined trades, per-leg trades, and the
     contention log.
@@ -91,6 +92,9 @@ def simulate(legs: Sequence[Any], account: Any, *,
 
     per_leg = {leg.name: list(leg.trades) for leg in legs}
     combined = [t for leg in legs for t in leg.trades]
-    return PortfolioResult(trades=combined, per_leg=per_leg,
-                           contention=list(getattr(account, "contention", [])),
-                           cancelled=cancelled)
+    return PortfolioResult(
+        trades=combined,
+        per_leg=per_leg,
+        contention=list(getattr(account, "contention", [])),
+        cancelled=cancelled,
+    )

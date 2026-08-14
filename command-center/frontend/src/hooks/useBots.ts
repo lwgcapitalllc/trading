@@ -2,9 +2,14 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  BotAccountAssignResult, BotAccountCapResult, BotAccountGroup, BotAccountRegistration,
-  BotAccountRegistrationWrite, BotDeployedVersion,
-  BotPromoteResult, BotSnapshot,
+  BotAccountAssignResult,
+  BotAccountCapResult,
+  BotAccountGroup,
+  BotAccountRegistration,
+  BotAccountRegistrationWrite,
+  BotDeployedVersion,
+  BotPromoteResult,
+  BotSnapshot,
 } from '@/types'
 
 export function useBotSnapshot() {
@@ -47,8 +52,8 @@ function useControlAction(action: 'start' | 'stop' | 'restart') {
   })
 }
 
-export const useBotStart   = () => useControlAction('start')
-export const useBotStop    = () => useControlAction('stop')
+export const useBotStart = () => useControlAction('start')
+export const useBotStop = () => useControlAction('stop')
 export const useBotRestart = () => useControlAction('restart')
 
 // ── Per-bot control actions ───────────────────────────────────────────────────
@@ -69,8 +74,8 @@ function useBotAction(action: 'start' | 'stop' | 'restart') {
   })
 }
 
-export const useBotStartOne   = () => useBotAction('start')
-export const useBotStopOne    = () => useBotAction('stop')
+export const useBotStartOne = () => useBotAction('start')
+export const useBotStopOne = () => useBotAction('stop')
 export const useBotRestartOne = () => useBotAction('restart')
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -132,7 +137,7 @@ export function useBotVersion(botName: string | null) {
  */
 export function useBotVersions(botNames: string[]) {
   return useQueries({
-    queries: botNames.map(name => ({
+    queries: botNames.map((name) => ({
       queryKey: ['bots', 'version', name],
       queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(name)}/version`),
       staleTime: 30_000,
@@ -144,8 +149,10 @@ export function useBotVersions(botNames: string[]) {
 export function usePreviewPromote() {
   return useMutation({
     mutationFn: ({ botName }: { botName: string }) =>
-      api.post<BotPromoteResult>(
-        `/bots/${encodeURIComponent(botName)}/promote/preview`, { pull: true, restart: false }),
+      api.post<BotPromoteResult>(`/bots/${encodeURIComponent(botName)}/promote/preview`, {
+        pull: true,
+        restart: false,
+      }),
     onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
   })
 }
@@ -155,13 +162,17 @@ export function usePromoteBot() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ botName, restart }: { botName: string; restart: boolean }) =>
-      api.post<BotPromoteResult>(
-        `/bots/${encodeURIComponent(botName)}/promote`, { pull: true, restart }),
+      api.post<BotPromoteResult>(`/bots/${encodeURIComponent(botName)}/promote`, {
+        pull: true,
+        restart,
+      }),
     onSuccess: (data, { botName }) => {
       if (data.ok) {
-        toast.success(data.restarted
-          ? `${botName} promoted and restarting`
-          : `${botName} promoted — restart it to run the new version`)
+        toast.success(
+          data.restarted
+            ? `${botName} promoted and restarting`
+            : `${botName} promoted — restart it to run the new version`
+        )
       } else {
         // Not a thrown error: promote REFUSES cleanly (dirty tree, a snapshot that will not
         // import) and leaves the running bot alone. That is a result to read, not a crash.
@@ -180,11 +191,15 @@ export function useSaveBotRuntime() {
   return useMutation({
     mutationFn: ({ botName, values }: { botName: string; values: Record<string, number> }) =>
       api.patch<{ status: string; changed: boolean; detail?: string }>(
-        `/bots/${encodeURIComponent(botName)}/runtime`, { values, deploy: true }),
+        `/bots/${encodeURIComponent(botName)}/runtime`,
+        { values, deploy: true }
+      ),
     onSuccess: (data, { botName }) => {
-      toast.success(data.changed
-        ? `${botName}: ${data.detail} — applies at the next bar the bot is flat`
-        : `${botName} already at those values`)
+      toast.success(
+        data.changed
+          ? `${botName}: ${data.detail} — applies at the next bar the bot is flat`
+          : `${botName} already at those values`
+      )
       qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
@@ -241,8 +256,10 @@ export function useRegisterAccount() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: BotAccountRegistrationWrite) =>
-      api.put<BotAccountRegistration>(
-        `/bots/accounts/registry/${body.account}`, { deploy: true, ...body }),
+      api.put<BotAccountRegistration>(`/bots/accounts/registry/${body.account}`, {
+        deploy: true,
+        ...body,
+      }),
     onSuccess: (data) => {
       toast.success(`Account ${data.account} saved`)
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
@@ -257,7 +274,8 @@ export function useRegisterAccount() {
 export function useUnregisterAccount() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (account: number) => api.delete<{ status: string }>(`/bots/accounts/registry/${account}`),
+    mutationFn: (account: number) =>
+      api.delete<{ status: string }>(`/bots/accounts/registry/${account}`),
     onSuccess: () => {
       toast.success('Account removed from the list')
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
@@ -297,14 +315,17 @@ export function useSetAccountRiskCap() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ account, riskCapPct }: { account: number; riskCapPct: number | null }) =>
-      api.patch<BotAccountCapResult>(`/bots/accounts/${account}/risk-cap`,
-        { risk_cap_pct: riskCapPct, deploy: true }),
+      api.patch<BotAccountCapResult>(`/bots/accounts/${account}/risk-cap`, {
+        risk_cap_pct: riskCapPct,
+        deploy: true,
+      }),
     onSuccess: (data) => {
       if (!data.changed) {
         toast.info(data.detail || 'Already at that cap')
       } else {
         toast.success(
-          `${data.detail} — restart ${data.updated.length === 1 ? 'it' : 'them'} to apply`)
+          `${data.detail} — restart ${data.updated.length === 1 ? 'it' : 'them'} to apply`
+        )
       }
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
@@ -325,14 +346,18 @@ export function useAssignBotAccount() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ botKey, account }: { botKey: string; account: number | null }) =>
-      api.patch<BotAccountAssignResult>(`/bots/${encodeURIComponent(botKey)}/account`,
-        { account, deploy: true }),
+      api.patch<BotAccountAssignResult>(`/bots/${encodeURIComponent(botKey)}/account`, {
+        account,
+        deploy: true,
+      }),
     onSuccess: (data) => {
       // Never "moved and running" — a bot reads its account at startup, so the honest report is
       // what was written plus what still has to happen. Same rule as the risk cap above.
-      toast.success(data.account === null
-        ? `${data.bot} taken off the account — it will not start until it is on one again`
-        : `${data.bot} added to account ${data.account} — start it to trade`)
+      toast.success(
+        data.account === null
+          ? `${data.bot} taken off the account — it will not start until it is on one again`
+          : `${data.bot} added to account ${data.account} — start it to trade`
+      )
       // ⚠ A note is what the move could NOT carry — an unregistered account, or one with no
       // recorded symbol suffix. It is raised as a WARNING rather than folded into the success
       // line, because the failure it describes is silent on the box: a bot pointed at a symbol
@@ -371,7 +396,8 @@ export function useAddUser() {
 export function useRemoveUser() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (chatId: string) => api.delete<{ status: string }>(`/bots/users/${encodeURIComponent(chatId)}`),
+    mutationFn: (chatId: string) =>
+      api.delete<{ status: string }>(`/bots/users/${encodeURIComponent(chatId)}`),
     onSuccess: () => {
       toast.success('User removed')
       qc.invalidateQueries({ queryKey: ['bots', 'users'] })

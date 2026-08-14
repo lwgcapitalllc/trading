@@ -29,18 +29,26 @@ async function liveSnapshot(): Promise<BotSnapshot> {
 async function mockSnapshot(
   page: Page,
   mutate: (s: BotSnapshot) => void,
-  opts: { failAfterFirst?: boolean } = {},
+  opts: { failAfterFirst?: boolean } = {}
 ) {
   const real = await liveSnapshot()
   let served = 0
-  await page.route('**/api/bots/snapshot', async route => {
+  await page.route('**/api/bots/snapshot', async (route) => {
     if (opts.failAfterFirst && served > 0) {
-      return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"ssh dead"}' })
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: '{"detail":"ssh dead"}',
+      })
     }
     served++
     const snap = JSON.parse(JSON.stringify(real)) as BotSnapshot
     mutate(snap)
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(snap) })
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(snap),
+    })
   })
 }
 
@@ -49,14 +57,16 @@ const statCard = (page: Page, label: string) => page.locator(`button:has-text("$
 const eventRows = (page: Page) => page.getByRole('button').filter({ hasText: /^\d{1,2}:\d{2}/ })
 
 test.describe('Overview — the live box', () => {
-  test('a DISABLED job never wears the "scheduled" pill, and a STOPPED one still does', async ({ page }) => {
+  test('a DISABLED job never wears the "scheduled" pill, and a STOPPED one still does', async ({
+    page,
+  }) => {
     // ⚠ THE DISABLED STATE IS MOCKED, and it has to be. This test named `P&L Tracker` and
     // `Reporter` until 2026-08-06 — the two jobs that were DELETED on 2026-08-05 for carrying an
     // empty bot registry — so it had been asserting on a subject that no longer exists, and it
     // failed for that reason rather than for the defect. Nothing on the live box is DISABLED
     // today and nothing should have to be: a rendering rule must not be coupled to which jobs
     // the fleet happens to contain, or deleting a job silently deletes the guard with it.
-    await mockSnapshot(page, s => {
+    await mockSnapshot(page, (s) => {
       expect(s.scheduled_jobs.length, 'need two jobs to compare').toBeGreaterThan(1)
       s.scheduled_jobs[0].status = 'DISABLED'
       s.scheduled_jobs[1].status = 'STOPPED'
@@ -67,10 +77,18 @@ test.describe('Overview — the live box', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const pills = await page.$$eval('span[title]', els => els
-      .filter(e => /Scheduled — waiting|Disabled — will not run|^Running$/.test(e.getAttribute('title')!))
-      .map(e => ({ text: e.textContent!.trim(), title: e.getAttribute('title')!, cls: e.className })))
-    const byName = Object.fromEntries(pills.map(p => [p.text, p]))
+    const pills = await page.$$eval('span[title]', (els) =>
+      els
+        .filter((e) =>
+          /Scheduled — waiting|Disabled — will not run|^Running$/.test(e.getAttribute('title')!)
+        )
+        .map((e) => ({
+          text: e.textContent!.trim(),
+          title: e.getAttribute('title')!,
+          cls: e.className,
+        }))
+    )
+    const byName = Object.fromEntries(pills.map((p) => [p.text, p]))
 
     // A task that will never fire must not read as covered. This is the whole defect.
     expect(byName[offJob.name], `${offJob.name} should be reported`).toBeDefined()
@@ -83,19 +101,21 @@ test.describe('Overview — the live box', () => {
     expect(byName[onJob.name].cls).toContain('text-gold-text')
   })
 
-  test('a calendar row lands on that event\'s own day, not the bare week', async ({ page }) => {
+  test("a calendar row lands on that event's own day, not the bare week", async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     const row = eventRows(page).first()
-    test.skip(await row.count() === 0, 'no upcoming events left this week')
+    test.skip((await row.count()) === 0, 'no upcoming events left this week')
     await row.click()
     await expect(page).toHaveURL(/\/calendar\?day=\d/)
   })
 
   test('renders with no console errors', async ({ page }) => {
     const errors: string[] = []
-    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
-    page.on('pageerror', e => errors.push(String(e)))
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text())
+    })
+    page.on('pageerror', (e) => errors.push(String(e)))
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1500)
@@ -105,7 +125,9 @@ test.describe('Overview — the live box', () => {
 
 test.describe('Overview — states the live box cannot produce', () => {
   test('a bot that is RUNNING and BLIND is not a healthy fleet', async ({ page }) => {
-    await mockSnapshot(page, s => { s.bots[0].mt5_link = false })
+    await mockSnapshot(page, (s) => {
+      s.bots[0].mt5_link = false
+    })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
@@ -123,7 +145,9 @@ test.describe('Overview — states the live box cannot produce', () => {
   })
 
   test('a balance that could not be read is named, never summed as $0', async ({ page }) => {
-    await mockSnapshot(page, s => { s.bots[0].balance = null })
+    await mockSnapshot(page, (s) => {
+      s.bots[0].balance = null
+    })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     const sub = await statCard(page, 'Balance').textContent()
@@ -132,9 +156,12 @@ test.describe('Overview — states the live box cannot produce', () => {
   })
 
   test('a partly-reporting fleet flags the total as incomplete', async ({ page }) => {
-    await mockSnapshot(page, s => {
+    await mockSnapshot(page, (s) => {
       const second = JSON.parse(JSON.stringify(s.bots[0]))
-      second.key = 'orb_live'; second.name = 'ORB'; second.balance = null; second.account_type = 'live'
+      second.key = 'orb_live'
+      second.name = 'ORB'
+      second.balance = null
+      second.account_type = 'live'
       s.bots.push(second)
     })
     await page.goto('/')
@@ -143,7 +170,9 @@ test.describe('Overview — states the live box cannot produce', () => {
   })
 
   test('an empty fleet does not read "all bots live"', async ({ page }) => {
-    await mockSnapshot(page, s => { s.bots = [] })
+    await mockSnapshot(page, (s) => {
+      s.bots = []
+    })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     // `runningBots === totalBots` is TRUE at 0 / 0 — the branch order is the fix.
@@ -167,12 +196,14 @@ test.describe('Overview — states the live box cannot produce', () => {
    * It is kept in the default run rather than tagged and skipped: this is the branch that decides
    * whether a dead VPS looks like a healthy fleet, and a test nobody runs protects nothing.
    */
-  test('a VPS that dies mid-session dates its stale rows instead of passing them off as live', async ({ page }) => {
+  test('a VPS that dies mid-session dates its stale rows instead of passing them off as live', async ({
+    page,
+  }) => {
     test.setTimeout(120_000)
-    await mockSnapshot(page, s => s, { failAfterFirst: true })
+    await mockSnapshot(page, (s) => s, { failAfterFirst: true })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await expect(page.getByText('MPC SOS Fade')).toBeVisible()   // a good snapshot first
+    await expect(page.getByText('MPC SOS Fade')).toBeVisible() // a good snapshot first
 
     // TanStack keeps the last good `data` through a failed refetch, so the error and real bot
     // rows render together — and those rows still say RUNNING. Dating them is the whole fix.
@@ -180,8 +211,9 @@ test.describe('Overview — states the live box cannot produce', () => {
   })
 
   test('a dead calendar feed reads as unavailable, not "Loading…" for ever', async ({ page }) => {
-    await page.route('**/api/calendar*', r =>
-      r.fulfill({ status: 502, contentType: 'application/json', body: '{"detail":"feed down"}' }))
+    await page.route('**/api/calendar*', (r) =>
+      r.fulfill({ status: 502, contentType: 'application/json', body: '{"detail":"feed down"}' })
+    )
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await expect(page.getByText('Calendar unavailable')).toBeVisible()
@@ -189,17 +221,25 @@ test.describe('Overview — states the live box cannot produce', () => {
   })
 
   test('one upcoming event, promoted into the callout, leaves no empty grid', async ({ page }) => {
-    const week = await (await fetch(
-      `${API}/calendar?from=${new Date(Date.now() - 3 * 864e5).toISOString()}` +
-      `&to=${new Date(Date.now() + 4 * 864e5).toISOString()}`)).json()
-    await page.route('**/api/calendar*', r => r.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({
-        ...week,
-        events: week.events.filter((e: { timestamp_ms: number }) => e.timestamp_ms > week.server_now_ms)
-          .slice(0, 1).map((e: object) => ({ ...e, impact: 'HIGH' })),
-      }),
-    }))
+    const week = await (
+      await fetch(
+        `${API}/calendar?from=${new Date(Date.now() - 3 * 864e5).toISOString()}` +
+          `&to=${new Date(Date.now() + 4 * 864e5).toISOString()}`
+      )
+    ).json()
+    await page.route('**/api/calendar*', (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...week,
+          events: week.events
+            .filter((e: { timestamp_ms: number }) => e.timestamp_ms > week.server_now_ms)
+            .slice(0, 1)
+            .map((e: object) => ({ ...e, impact: 'HIGH' })),
+        }),
+      })
+    )
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     // `upcoming.length === 0` is false here, so the grid branch used to render with no children.
@@ -212,17 +252,23 @@ test.describe('Overview — the clock', () => {
   /** A HIGH event 90s out, where the countdown carries SECONDS. Above an hour it renders whole
    *  minutes and a short sample cannot prove the clock moves — which is how a frozen one shipped. */
   async function eventInNinetySeconds(page: Page) {
-    const week = await (await fetch(
-      `${API}/calendar?from=${new Date(Date.now() - 3 * 864e5).toISOString()}` +
-      `&to=${new Date(Date.now() + 4 * 864e5).toISOString()}`)).json()
-    await page.route('**/api/calendar*', r => r.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({
-        ...week,
-        server_now_ms: Date.now(),
-        events: [{ ...week.events[0], impact: 'HIGH', timestamp_ms: Date.now() + 90_000 }],
-      }),
-    }))
+    const week = await (
+      await fetch(
+        `${API}/calendar?from=${new Date(Date.now() - 3 * 864e5).toISOString()}` +
+          `&to=${new Date(Date.now() + 4 * 864e5).toISOString()}`
+      )
+    ).json()
+    await page.route('**/api/calendar*', (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...week,
+          server_now_ms: Date.now(),
+          events: [{ ...week.events[0], impact: 'HIGH', timestamp_ms: Date.now() + 90_000 }],
+        }),
+      })
+    )
   }
 
   test('the Overview countdown ticks rather than freezing on server_now_ms', async ({ page }) => {
@@ -248,11 +294,11 @@ test.describe('Overview — the clock', () => {
     // LAST week for ever and read "no more events this week". ⚠ This test is only evidence
     // because it FAILS against that code — it did, when it was run against it.
     const asked: string[] = []
-    page.on('request', r => {
+    page.on('request', (r) => {
       const m = r.url().match(/\/api\/calendar\?from=([^&]+)/)
       if (m) asked.push(decodeURIComponent(m[1]).slice(0, 10))
     })
-    await page.clock.install({ time: new Date(2026, 7, 9, 23, 59, 50) })  // Sunday, 10s to midnight
+    await page.clock.install({ time: new Date(2026, 7, 9, 23, 59, 50) }) // Sunday, 10s to midnight
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1500)
@@ -265,11 +311,11 @@ test.describe('Overview — the clock', () => {
 
   test('a week containing a DST changeover spans a real 7 days', async ({ page }) => {
     const asked: [string, string][] = []
-    page.on('request', r => {
+    page.on('request', (r) => {
       const m = r.url().match(/\/api\/calendar\?from=([^&]+)&to=([^&]+)/)
       if (m) asked.push([decodeURIComponent(m[1]), decodeURIComponent(m[2])])
     })
-    await page.goto('/calendar?week=12')   // US fall-back, 2026-11-01
+    await page.goto('/calendar?week=12') // US fall-back, 2026-11-01
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1000)
     const [from, to] = asked.at(-1)!
@@ -289,8 +335,9 @@ test.describe('Overview — the silent-failure warnings', () => {
   }
 
   test('names each degraded dependency', async ({ page }) => {
-    await page.route('**/api/system/readiness', r =>
-      r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(degraded) }))
+    await page.route('**/api/system/readiness', (r) =>
+      r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(degraded) })
+    )
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await expect(page.getByText('2 dependencies are degraded')).toBeVisible()
@@ -301,10 +348,13 @@ test.describe('Overview — the silent-failure warnings', () => {
   test('renders NOTHING when everything is fine', async ({ page }) => {
     // ⚠ Not "all dependencies OK". A permanent green tick in this spot teaches the reader to
     // stop looking at it, and this is the one row that must be read the day it speaks up.
-    await page.route('**/api/system/readiness', r => r.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({ warnings: [], checked_at: new Date().toISOString() }),
-    }))
+    await page.route('**/api/system/readiness', (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ warnings: [], checked_at: new Date().toISOString() }),
+      })
+    )
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await expect(page.getByText(/dependenc(y|ies) (is|are) degraded/)).toHaveCount(0)
@@ -316,14 +366,16 @@ test.describe('Sidebar — the running dots', () => {
     // The whole point of the change: Sidebar.tsx is mounted on every page, so deriving these
     // client-side made a ~137 KB runs response a permanent cost of having the app open.
     const calls: string[] = []
-    page.on('request', r => {
-      const m = r.url().match(/\/api\/(backtests\/runs|optimizations|stress-tests|system\/activity)(\?|$)/)
+    page.on('request', (r) => {
+      const m = r
+        .url()
+        .match(/\/api\/(backtests\/runs|optimizations|stress-tests|system\/activity)(\?|$)/)
       if (m) calls.push(m[1])
     })
     // A page that does not itself render any of those lists.
     await page.goto('/rulesets')
     await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(6000)   // past one activity poll
+    await page.waitForTimeout(6000) // past one activity poll
 
     expect(calls).toContain('system/activity')
     expect(calls).not.toContain('backtests/runs')
@@ -332,10 +384,13 @@ test.describe('Sidebar — the running dots', () => {
   })
 
   test('lights the Backtests dot when the endpoint says so', async ({ page }) => {
-    await page.route('**/api/system/activity', r => r.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify({ backtests: true, optimizations: false, stress_tests: false }),
-    }))
+    await page.route('**/api/system/activity', (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ backtests: true, optimizations: false, stress_tests: false }),
+      })
+    )
     await page.goto('/rulesets')
     await page.waitForLoadState('networkidle')
     await expect(page.getByText('Running').first()).toBeVisible()
@@ -347,7 +402,10 @@ test.describe('Overview — layout', () => {
   // including the one the first verification pass called "verified".
   for (const width of [1670, 1280, 1024]) {
     test(`nothing overflows its container at ${width}px`, async ({ page }) => {
-      await mockSnapshot(page, s => { s.bots[0].mt5_link = false; s.bots[0].day_locked = true })
+      await mockSnapshot(page, (s) => {
+        s.bots[0].mt5_link = false
+        s.bots[0].day_locked = true
+      })
       await page.setViewportSize({ width, height: 940 })
       await page.goto('/')
       await page.waitForLoadState('networkidle')
@@ -355,17 +413,23 @@ test.describe('Overview — layout', () => {
       const overflowing = await page.evaluate(() => {
         const out: string[] = []
         for (const el of Array.from(document.querySelectorAll('div,span,p,button'))) {
-          if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0
-              && getComputedStyle(el).overflowX === 'visible'
-              && !String(el.className).includes('truncate')) {
-            out.push(`${el.tagName} ${el.scrollWidth}>${el.clientWidth} ${String(el.className).slice(0, 60)}`)
+          if (
+            el.scrollWidth > el.clientWidth + 1 &&
+            el.clientWidth > 0 &&
+            getComputedStyle(el).overflowX === 'visible' &&
+            !String(el.className).includes('truncate')
+          ) {
+            out.push(
+              `${el.tagName} ${el.scrollWidth}>${el.clientWidth} ${String(el.className).slice(0, 60)}`
+            )
           }
         }
         return out
       })
       expect(overflowing).toEqual([])
-      expect(await page.evaluate(() =>
-        document.documentElement.scrollWidth > window.innerWidth)).toBe(false)
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+      ).toBe(false)
     })
   }
 })

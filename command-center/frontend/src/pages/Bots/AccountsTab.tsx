@@ -1,12 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Activity, AlertTriangle, GripVertical, KeyRound, Layers, MonitorSmartphone, Play, Plus,
-  ShieldCheck, ShieldOff, SlidersHorizontal, Trash2, X,
+  Activity,
+  AlertTriangle,
+  GripVertical,
+  KeyRound,
+  Layers,
+  MonitorSmartphone,
+  Play,
+  Plus,
+  ShieldCheck,
+  ShieldOff,
+  SlidersHorizontal,
+  Trash2,
+  X,
 } from 'lucide-react'
 import {
-  useBotAccounts, useBotSnapshot, useBotVersions, useSetAccountRiskCap, useAssignBotAccount,
-  useRegisteredAccounts, useRegisterAccount, useUnregisterAccount, useSetAccountPassword,
+  useBotAccounts,
+  useBotSnapshot,
+  useBotVersions,
+  useSetAccountRiskCap,
+  useAssignBotAccount,
+  useRegisteredAccounts,
+  useRegisterAccount,
+  useUnregisterAccount,
+  useSetAccountPassword,
 } from '@/hooks/useBots'
 import { useStrategies } from '@/hooks/useLab'
 import { StackConfigModal } from '@/components/StackConfigModal'
@@ -36,7 +54,7 @@ function usePaneHeight() {
     if (!el) return
     const measure = () => {
       const next = Math.max(420, window.innerHeight - el.getBoundingClientRect().top - 22)
-      setH(prev => (prev === null || Math.abs(prev - next) > 1 ? next : prev))
+      setH((prev) => (prev === null || Math.abs(prev - next) > 1 ? next : prev))
     }
     measure()
     window.addEventListener('resize', measure)
@@ -61,9 +79,11 @@ export function useAccountCount(): number | undefined {
   const { data: groups } = useBotAccounts()
   const { data: registry } = useRegisteredAccounts()
   if (!registry || !groups) return undefined
-  const known = new Set(registry.map(a => a.account))
-  return registry.length + groups.filter(
-    g => g.kind === 'account' && g.account !== null && !known.has(g.account)).length
+  const known = new Set(registry.map((a) => a.account))
+  return (
+    registry.length +
+    groups.filter((g) => g.kind === 'account' && g.account !== null && !known.has(g.account)).length
+  )
 }
 
 /**
@@ -102,17 +122,14 @@ export function AccountsTab() {
   const [form, setForm] = useState<'add' | 'edit' | null>(null)
   const [shellRef, paneH] = usePaneHeight()
 
-  const allKeys = useMemo(
-    () => (groups ?? []).flatMap(g => g.bots.map(b => b.key)),
-    [groups],
-  )
+  const allKeys = useMemo(() => (groups ?? []).flatMap((g) => g.bots.map((b) => b.key)), [groups])
   // Shares `useBotVersion`'s cache entries with the Monitor tab and the Configure banner, so one
   // bot's version is ONE fetch and the three surfaces cannot disagree. See `useBotVersions`.
   const versionQueries = useBotVersions(allKeys)
   const versionByKey = useMemo(
     () => new Map(allKeys.map((k, i) => [k, versionQueries[i]])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allKeys.join(','), versionQueries.map(q => q.dataUpdatedAt).join(',')],
+    [allKeys.join(','), versionQueries.map((q) => q.dataUpdatedAt).join(',')]
   )
 
   // Running state comes from the SNAPSHOT, joined on `key`. The accounts endpoint deliberately
@@ -126,27 +143,27 @@ export function AccountsTab() {
 
   if (isLoading) return <div className="text-small text-text-tertiary">Loading accounts…</div>
 
-  const regByAccount = new Map((registry ?? []).map(a => [a.account, a]))
+  const regByAccount = new Map((registry ?? []).map((a) => [a.account, a]))
 
   // An entry per REGISTERED account, whether or not a bot is on it yet — that is the whole point
   // of the registry. Before it existed, the first bot on a new account could not be moved from
   // this page at all, which is why the 2026-08-12 ECN migration was a hand-edited VPS config.
-  const registered = (registry ?? []).map(a => ({
+  const registered = (registry ?? []).map((a) => ({
     reg: a as BotAccountRegistration | undefined,
-    group: (groups ?? []).find(g => g.kind === 'account' && g.account === a.account)
-      ?? emptyGroup(a),
+    group:
+      (groups ?? []).find((g) => g.kind === 'account' && g.account === a.account) ?? emptyGroup(a),
   }))
 
   // Accounts a bot names that nobody registered. They still work (the move reads the peers), and
   // they are shown with their gap named rather than hidden — a bot trading an account this page
   // cannot describe is exactly what the registry exists to end.
   const unregistered = (groups ?? [])
-    .filter(g => g.kind === 'account' && g.account !== null && !regByAccount.has(g.account))
-    .map(g => ({ reg: undefined, group: g }))
+    .filter((g) => g.kind === 'account' && g.account !== null && !regByAccount.has(g.account))
+    .map((g) => ({ reg: undefined, group: g }))
 
   const others = (groups ?? [])
-    .filter(g => g.kind !== 'account')
-    .map(g => ({ reg: undefined as BotAccountRegistration | undefined, group: g }))
+    .filter((g) => g.kind !== 'account')
+    .map((g) => ({ reg: undefined as BotAccountRegistration | undefined, group: g }))
 
   const entries = [...registered, ...unregistered, ...others]
 
@@ -154,8 +171,8 @@ export function AccountsTab() {
   // be written, committed, pushed and pulled and then fail at connect() with a message about
   // credentials — pointing the reader at the password rather than at the missing terminal.
   const targets = entries
-    .filter(e => e.group.kind === 'account' && e.group.account !== null)
-    .map(e => ({
+    .filter((e) => e.group.kind === 'account' && e.group.account !== null)
+    .map((e) => ({
       account: e.group.account as number,
       label: nameOf(e.reg, e.group),
       sub: [e.reg?.tier, e.reg?.kind].filter(Boolean).join(' · '),
@@ -168,11 +185,11 @@ export function AccountsTab() {
   // lowest — on this box a retired Standard demo — and opening on it makes the page's first
   // answer to *what is running* an account with nothing on it.
   const busiest = [...entries]
-    .filter(e => e.group.kind === 'account')
+    .filter((e) => e.group.kind === 'account')
     .sort((a, b) => b.group.bots.length - a.group.bots.length)[0]
   const fallback = busiest?.group.bots.length ? busiest : entries[0]
   const selectedId = params.get('account') ?? idOf(fallback?.group)
-  const selected = entries.find(e => idOf(e.group) === selectedId) ?? fallback
+  const selected = entries.find((e) => idOf(e.group) === selectedId) ?? fallback
 
   const select = (id: string) => {
     const next = new URLSearchParams(params)
@@ -211,13 +228,17 @@ export function AccountsTab() {
     // floating above a tall detail, or the reverse, which is what "kind of not aligned" looked
     // like from the screen. The height is MEASURED; see `usePaneHeight` for why it is not a
     // `calc()`.
-    <div ref={shellRef}
-         style={paneH ? { height: paneH } : undefined}
-         className="flex items-stretch gap-4 min-h-[420px]">
+    <div
+      ref={shellRef}
+      style={paneH ? { height: paneH } : undefined}
+      className="flex items-stretch gap-4 min-h-[420px]"
+    >
       {/* ── Rail: the only thing that grows ──────────────────────────────────── */}
       <div className="w-[248px] shrink-0 h-full">
-        <div className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]
-                        flex flex-col h-full">
+        <div
+          className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]
+                        flex flex-col h-full"
+        >
           {/* ⚠ **Add account is ABOVE the list and the list scrolls under it, not the page.**
               Below the list it was already 10px off the bottom of a 940px viewport with five
               accounts registered — so the one control that makes this tab work would have been
@@ -226,8 +247,10 @@ export function AccountsTab() {
           {/* The count lives on the TAB CHIP, not here — see `useAccountCount`. A number in both
               places is two claims about one set, and the tab is where it is readable without
               opening the tab. */}
-          <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text
-                        px-[10px] pt-[6px] pb-[8px] shrink-0">
+          <p
+            className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text
+                        px-[10px] pt-[6px] pb-[8px] shrink-0"
+          >
             Accounts
           </p>
           <div className="px-[4px] pb-[8px] shrink-0">
@@ -371,7 +394,13 @@ function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
  * ⚠ **It is a DROP TARGET.** A bot dragged out of the detail pane lands here, which is the one
  * gesture that works when the source and the destination cannot both be on screen as cards.
  */
-function RailRow({ group, registration, selected, onSelect, statusByKey }: {
+function RailRow({
+  group,
+  registration,
+  selected,
+  onSelect,
+  statusByKey,
+}: {
   group: BotAccountGroup
   registration?: BotAccountRegistration
   selected: boolean
@@ -399,15 +428,15 @@ function RailRow({ group, registration, selected, onSelect, statusByKey }: {
     setDropping(false)
     const key = e.dataTransfer.getData('text/bot-key')
     if (!key) return
-    if (group.bots.some(b => b.key === key)) return          // already here — a no-op deploy
-    if (statusByKey.get(key) === 'RUNNING') return           // refused server-side too
+    if (group.bots.some((b) => b.key === key)) return // already here — a no-op deploy
+    if (statusByKey.get(key) === 'RUNNING') return // refused server-side too
     if (group.kind === 'unknown') return
     assign.mutate({ botKey: key, account: isAccount ? (group.account as number) : null })
   }
 
   const warn = registration
-    ? (!registration.assignable || registration.has_password === false)
-    : (isAccount || group.kind === 'unknown')
+    ? !registration.assignable || registration.has_password === false
+    : isAccount || group.kind === 'unknown'
 
   return (
     <button
@@ -417,7 +446,7 @@ function RailRow({ group, registration, selected, onSelect, statusByKey }: {
       data-dropping={dropping ? 'true' : undefined}
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
-      onDragOver={e => {
+      onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('text/bot-key')) return
         // ⚠ Only `preventDefault` makes an element a valid drop target, so NOT calling it is what
         // refuses a drop onto an account with no terminal — the cursor says no while the reader
@@ -429,18 +458,27 @@ function RailRow({ group, registration, selected, onSelect, statusByKey }: {
       onDragLeave={() => setDropping(false)}
       onDrop={onDrop}
       className={`w-full text-left px-[10px] py-[9px] rounded-md border transition-colors duration-[100ms] cursor-pointer ${
-        dropping ? 'bg-accent-muted border-accent'
-          : selected ? 'bg-accent-muted border-accent/30'
-          : 'bg-transparent border-transparent hover:bg-bg-hover'}`}
+        dropping
+          ? 'bg-accent-muted border-accent'
+          : selected
+            ? 'bg-accent-muted border-accent/30'
+            : 'bg-transparent border-transparent hover:bg-bg-hover'
+      }`}
     >
       <div className="flex items-center gap-[6px]">
-        <span className={`text-[12px] truncate ${
-          selected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
+        <span
+          className={`text-[12px] truncate ${
+            selected ? 'text-text-primary font-medium' : 'text-text-secondary'
+          }`}
+        >
           {nameOf(registration, group)}
         </span>
         {warn && (
-          <AlertTriangle size={10} className="ml-auto shrink-0 text-warn-text"
-                         aria-label="needs attention" />
+          <AlertTriangle
+            size={10}
+            className="ml-auto shrink-0 text-warn-text"
+            aria-label="needs attention"
+          />
         )}
       </div>
 
@@ -452,16 +490,22 @@ function RailRow({ group, registration, selected, onSelect, statusByKey }: {
 
       <div className="flex items-center gap-[5px] mt-[5px] flex-wrap">
         {registration?.tier && (
-          <span className="inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill
-                           uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
+          <span
+            className="inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill
+                           uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary"
+          >
             {registration.tier}
           </span>
         )}
         {registration && (
-          <span className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill
+          <span
+            className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill
                             uppercase tracking-[0.4px] ${
-            registration.kind === 'live'
-              ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'}`}>
+                              registration.kind === 'live'
+                                ? 'bg-warn-muted text-warn-text'
+                                : 'bg-bg-surface-2 text-text-tertiary'
+                            }`}
+          >
             {registration.kind}
           </span>
         )}
@@ -519,7 +563,13 @@ type MoveTarget = {
 }
 
 function AccountDetail({
-  group, registration, targets, statusByKey, versionByKey, onEdit, onConfigure,
+  group,
+  registration,
+  targets,
+  statusByKey,
+  versionByKey,
+  onEdit,
+  onConfigure,
 }: {
   group: BotAccountGroup
   /** The registry row, when this account has one. Absent = a legacy account a bot names. */
@@ -544,9 +594,9 @@ function AccountDetail({
   const [capValue, setCapValue] = useState(group.risk_cap_pct ?? 10)
 
   const isAccount = group.kind === 'account' && group.account !== null
-  const isBench   = group.kind === 'bench'
+  const isBench = group.kind === 'bench'
   const totalRisk = group.bots.reduce((s, b) => s + (b.risk_pct ?? 0), 0)
-  const live      = liveOf(group, statusByKey)
+  const live = liveOf(group, statusByKey)
 
   // Map each bot's strategy PACKAGE to the lab's own strategy id, so "Backtest this stack"
   // opens preselected. A package with no scanned strategy is simply not preselected — the
@@ -558,9 +608,7 @@ function AccountDetail({
       const pkg = (s.source_path || '').split('/').filter(Boolean).pop()
       if (pkg) byPackage.set(pkg, s.id)
     }
-    return group.bots
-      .map(b => byPackage.get(b.strategy_package))
-      .filter((x): x is string => !!x)
+    return group.bots.map((b) => byPackage.get(b.strategy_package)).filter((x): x is string => !!x)
   }, [strategies, group.bots])
 
   const save = (value: number | null) => {
@@ -572,10 +620,12 @@ function AccountDetail({
     // ⚠ **`h-full` + one scrolling body, not a card that grows.** The header stays put while the
     // bot list scrolls under it, so the account you are looking at is never scrolled off the thing
     // you are reading about — and the card's bottom edge lines up with the rail's.
-    <div data-testid="account-card" data-kind={group.kind}
-         className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col
-                    overflow-hidden">
-
+    <div
+      data-testid="account-card"
+      data-kind={group.kind}
+      className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col
+                    overflow-hidden"
+    >
       {/* ── Identity ────────────────────────────────────────────────────────── */}
       <div className="px-5 pt-4 pb-[14px] border-b border-border-subtle shrink-0">
         <div className="flex items-start gap-3 flex-wrap">
@@ -585,19 +635,28 @@ function AccountDetail({
                 {nameOf(registration, group)}
               </span>
               {registration?.tier && (
-                <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill
-                                 uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
+                <span
+                  className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill
+                                 uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary"
+                >
                   {registration.tier}
                 </span>
               )}
               {registration && (
-                <span data-testid={registration.kind === 'live' ? 'live-chip' : 'demo-chip'}
-                      title={registration.kind === 'live'
-                        ? 'A LIVE account. Every action here moves real money.' : undefined}
-                      className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill
+                <span
+                  data-testid={registration.kind === 'live' ? 'live-chip' : 'demo-chip'}
+                  title={
+                    registration.kind === 'live'
+                      ? 'A LIVE account. Every action here moves real money.'
+                      : undefined
+                  }
+                  className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill
                                   uppercase tracking-[0.4px] ${
-                        registration.kind === 'live'
-                          ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'}`}>
+                                    registration.kind === 'live'
+                                      ? 'bg-warn-muted text-warn-text'
+                                      : 'bg-bg-surface-2 text-text-tertiary'
+                                  }`}
+                >
                   {registration.kind}
                 </span>
               )}
@@ -606,9 +665,11 @@ function AccountDetail({
             {/* The identity line, in the order it is read: number, then where it lives, then how
                 it quotes. Separated by hairlines rather than by spacing, so the three facts do not
                 run into one string. */}
-            <div className="flex items-center gap-[10px] mt-[9px] text-micro text-text-tertiary flex-wrap
+            <div
+              className="flex items-center gap-[10px] mt-[9px] text-micro text-text-tertiary flex-wrap
                             [&>span+span]:before:content-['·'] [&>span+span]:before:mr-[10px]
-                            [&>span+span]:before:text-border-default">
+                            [&>span+span]:before:text-border-default"
+            >
               {isAccount && (
                 <span className="font-mono tabular-nums text-[13px] text-text-secondary tracking-[0.3px]">
                   #{group.account}
@@ -617,9 +678,14 @@ function AccountDetail({
               {(group.server || registration?.server) && (
                 <span>{group.server || registration?.server}</span>
               )}
-              {registration?.symbol_suffix
-                ? <span>symbols <span className="font-mono text-text-secondary">{registration.symbol_suffix}</span></span>
-                : null}
+              {registration?.symbol_suffix ? (
+                <span>
+                  symbols{' '}
+                  <span className="font-mono text-text-secondary">
+                    {registration.symbol_suffix}
+                  </span>
+                </span>
+              ) : null}
               {isBench && <span>Registered and deliberately not trading</span>}
               {group.kind === 'unknown' && (
                 <span>These configs could not be read, so which account they trade is unknown</span>
@@ -645,10 +711,12 @@ function AccountDetail({
               <button
                 data-testid={`unregister-${registration.account}`}
                 disabled={group.bots.length > 0 || unregister.isPending}
-                title={group.bots.length > 0
-                  ? 'Move or bench the bots on this account first — removing it would leave them on '
-                    + 'an account this page can no longer describe.'
-                  : 'Forget this account. It does not touch the stored password.'}
+                title={
+                  group.bots.length > 0
+                    ? 'Move or bench the bots on this account first — removing it would leave them on ' +
+                      'an account this page can no longer describe.'
+                    : 'Forget this account. It does not touch the stored password.'
+                }
                 onClick={() => unregister.mutate(registration.account)}
                 className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
                            border border-border-default bg-bg-surface text-text-tertiary
@@ -682,25 +750,39 @@ function AccountDetail({
             <Chip
               testid="running-chip"
               tone={live.state === true ? 'pos' : live.state === false ? 'muted' : 'warn'}
-              icon={live.state === true ? <Activity size={9} />
-                : live.state === null ? <AlertTriangle size={9} /> : undefined}
-              title={live.state === true
-                ? `${live.running} of ${live.total} bot${live.total === 1 ? '' : 's'} on this `
-                  + 'account is running right now, so this balance is being traded.'
-                : live.state === false
-                  ? 'Every bot on this account is stopped, so nothing is trading this balance. '
-                    + 'The bots are still assigned — start one from the Monitor tab.'
-                  : 'The VPS could not be asked, so whether these bots are running is unknown. '
-                    + 'It is not the same as nothing running.'}
+              icon={
+                live.state === true ? (
+                  <Activity size={9} />
+                ) : live.state === null ? (
+                  <AlertTriangle size={9} />
+                ) : undefined
+              }
+              title={
+                live.state === true
+                  ? `${live.running} of ${live.total} bot${live.total === 1 ? '' : 's'} on this ` +
+                    'account is running right now, so this balance is being traded.'
+                  : live.state === false
+                    ? 'Every bot on this account is stopped, so nothing is trading this balance. ' +
+                      'The bots are still assigned — start one from the Monitor tab.'
+                    : 'The VPS could not be asked, so whether these bots are running is unknown. ' +
+                      'It is not the same as nothing running.'
+              }
             >
-              {live.state === true ? `Trading · ${live.running} of ${live.total}`
-                : live.state === false ? 'Nothing running' : 'Running state unknown'}
+              {live.state === true
+                ? `Trading · ${live.running} of ${live.total}`
+                : live.state === false
+                  ? 'Nothing running'
+                  : 'Running state unknown'}
             </Chip>
           )}
 
           {group.stacked && (
-            <Chip testid="stacked-chip" tone="accent" icon={<Layers size={9} />}
-                  title="More than one bot trades this balance">
+            <Chip
+              testid="stacked-chip"
+              tone="accent"
+              icon={<Layers size={9} />}
+              title="More than one bot trades this balance"
+            >
               Stacked · {group.bots.length}
             </Chip>
           )}
@@ -711,39 +793,59 @@ function AccountDetail({
           {registration && (
             <Chip
               testid="password-chip"
-              tone={registration.has_password === null ? 'muted'
-                : registration.has_password ? 'pos' : 'warn'}
+              tone={
+                registration.has_password === null
+                  ? 'muted'
+                  : registration.has_password
+                    ? 'pos'
+                    : 'warn'
+              }
               icon={<KeyRound size={9} />}
-              title={registration.has_password === null
-                ? 'The VPS could not be asked, so whether a password is stored here is unknown.'
-                : registration.has_password
-                  ? 'An MT5 password is stored for this account on the VPS.'
-                  : 'No MT5 password is stored, so a bot moved here could not log in.'}
+              title={
+                registration.has_password === null
+                  ? 'The VPS could not be asked, so whether a password is stored here is unknown.'
+                  : registration.has_password
+                    ? 'An MT5 password is stored for this account on the VPS.'
+                    : 'No MT5 password is stored, so a bot moved here could not log in.'
+              }
             >
-              {registration.has_password === null ? 'Password unknown'
-                : registration.has_password ? 'Password set' : 'No password'}
+              {registration.has_password === null
+                ? 'Password unknown'
+                : registration.has_password
+                  ? 'Password set'
+                  : 'No password'}
             </Chip>
           )}
 
-          {registration && (
-            registration.assignable ? (
-              <Chip testid="terminal-chip" tone="pos" icon={<MonitorSmartphone size={9} />}
-                    title={`This account is served by ${registration.mt5_path} on the VPS.`}>
+          {registration &&
+            (registration.assignable ? (
+              <Chip
+                testid="terminal-chip"
+                tone="pos"
+                icon={<MonitorSmartphone size={9} />}
+                title={`This account is served by ${registration.mt5_path} on the VPS.`}
+              >
                 Terminal
               </Chip>
             ) : (
-              <Chip testid="no-terminal" tone="warn" icon={<AlertTriangle size={9} />}
-                    title={registration.unassignable_reason}>
+              <Chip
+                testid="no-terminal"
+                tone="warn"
+                icon={<AlertTriangle size={9} />}
+                title={registration.unassignable_reason}
+              >
                 No terminal
               </Chip>
-            )
-          )}
+            ))}
 
           {isAccount && !registration && (
-            <Chip testid="unregistered" tone="muted"
-                  title="No bot can be moved onto this account from here until it is registered — its
+            <Chip
+              testid="unregistered"
+              tone="muted"
+              title="No bot can be moved onto this account from here until it is registered — its
                          server, terminal, symbol suffix and cost profile are only known to the bots
-                         already on it.">
+                         already on it."
+            >
               Not registered
             </Chip>
           )}
@@ -752,11 +854,21 @@ function AccountDetail({
             <Chip
               testid="cap-chip"
               tone={!group.cap_agrees ? 'neg' : group.risk_cap_pct === null ? 'muted' : 'pos'}
-              icon={group.risk_cap_pct === null && group.cap_agrees ? <ShieldOff size={9} />
-                : group.cap_agrees ? <ShieldCheck size={9} /> : <AlertTriangle size={9} />}
+              icon={
+                group.risk_cap_pct === null && group.cap_agrees ? (
+                  <ShieldOff size={9} />
+                ) : group.cap_agrees ? (
+                  <ShieldCheck size={9} />
+                ) : (
+                  <AlertTriangle size={9} />
+                )
+              }
             >
-              {group.risk_cap_pct === null && group.cap_agrees ? 'Uncapped'
-                : group.cap_agrees ? `Cap ${group.risk_cap_pct}%` : 'Cap disagreement'}
+              {group.risk_cap_pct === null && group.cap_agrees
+                ? 'Uncapped'
+                : group.cap_agrees
+                  ? `Cap ${group.risk_cap_pct}%`
+                  : 'Cap disagreement'}
             </Chip>
           )}
         </div>
@@ -764,206 +876,242 @@ function AccountDetail({
 
       {/* ── Body: everything under the header scrolls, so the identity stays put ── */}
       <div className="flex-1 overflow-y-auto">
-
-      {/* ── What is trading here ────────────────────────────────────────────── */}
-      <div className="px-5 py-[11px] border-b border-border-subtle flex items-center gap-[10px]">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
-          {isAccount ? 'Bots on this balance' : 'Bots'}
-        </span>
-        {group.bots.length > 0 && (
-          <span className="text-[10px] font-mono tabular-nums text-text-tertiary">
-            {group.bots.length}
+        {/* ── What is trading here ────────────────────────────────────────────── */}
+        <div className="px-5 py-[11px] border-b border-border-subtle flex items-center gap-[10px]">
+          <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
+            {isAccount ? 'Bots on this balance' : 'Bots'}
           </span>
-        )}
-        {isAccount && (
-          <button
-            data-testid="add-bot"
-            disabled={registration ? !registration.assignable : false}
-            title={registration && !registration.assignable
-              ? registration.unassignable_reason : undefined}
-            onClick={() => setAdding(true)}
-            className="ml-auto inline-flex items-center gap-[6px] px-3 py-[5px] rounded-md text-small
+          {group.bots.length > 0 && (
+            <span className="text-[10px] font-mono tabular-nums text-text-tertiary">
+              {group.bots.length}
+            </span>
+          )}
+          {isAccount && (
+            <button
+              data-testid="add-bot"
+              disabled={registration ? !registration.assignable : false}
+              title={
+                registration && !registration.assignable
+                  ? registration.unassignable_reason
+                  : undefined
+              }
+              onClick={() => setAdding(true)}
+              className="ml-auto inline-flex items-center gap-[6px] px-3 py-[5px] rounded-md text-small
                        border border-border-default bg-bg-surface text-text-secondary
                        hover:bg-bg-hover hover:text-text-primary transition-colors
                        disabled:opacity-30 disabled:cursor-not-allowed
                        disabled:hover:bg-bg-surface disabled:hover:text-text-secondary"
-          >
-            <Plus size={12} /> Add bot
-          </button>
-        )}
-      </div>
+            >
+              <Plus size={12} /> Add bot
+            </button>
+          )}
+        </div>
 
-      {group.magic_clash.length > 0 && (
-        /* The fact the old raw `magic` column was trying to convey, shown only when it is
+        {group.magic_clash.length > 0 && (
+          /* The fact the old raw `magic` column was trying to convey, shown only when it is
            true. Two bots on one account sharing an order tag each read the OTHER's orders as
            their own — cancelling them, moving their stops, booking their fills. */
-        <div data-testid="magic-clash"
-             className="mx-5 my-3 text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
-          <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
-          read the other's orders as its own — cancelling them, moving their stops and booking
-          their fills. They will refuse to start until one is given a different one.
-        </div>
-      )}
+          <div
+            data-testid="magic-clash"
+            className="mx-5 my-3 text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]"
+          >
+            <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
+            read the other's orders as its own — cancelling them, moving their stops and booking
+            their fills. They will refuse to start until one is given a different one.
+          </div>
+        )}
 
-      {isAccount && group.bots.length === 0 ? (
-        <div data-testid="no-bots" className="px-5 py-4 text-micro text-text-tertiary">
-          No bot trades this account yet.{' '}
-          {registration?.assignable === false
-            ? 'Log a terminal into it and record that terminal on the account first.'
-            : 'Use Add bot above, or drag one here from another account.'}
-        </div>
-      ) : group.bots.length === 0 ? (
-        <div className="px-5 py-4 text-micro text-text-tertiary">Nothing here.</div>
-      ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              {['', 'Bot', 'Strategy', 'Symbol', 'Version', 'Risk / trade', 'Its cap', 'State', '']
-                .map((h, i) => (
-                  <th key={h || `c${i}`}
-                      className="text-left text-[10px] font-semibold uppercase tracking-[0.7px]
+        {isAccount && group.bots.length === 0 ? (
+          <div data-testid="no-bots" className="px-5 py-4 text-micro text-text-tertiary">
+            No bot trades this account yet.{' '}
+            {registration?.assignable === false
+              ? 'Log a terminal into it and record that terminal on the account first.'
+              : 'Use Add bot above, or drag one here from another account.'}
+          </div>
+        ) : group.bots.length === 0 ? (
+          <div className="px-5 py-4 text-micro text-text-tertiary">Nothing here.</div>
+        ) : (
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                {[
+                  '',
+                  'Bot',
+                  'Strategy',
+                  'Symbol',
+                  'Version',
+                  'Risk / trade',
+                  'Its cap',
+                  'State',
+                  '',
+                ].map((h, i) => (
+                  <th
+                    key={h || `c${i}`}
+                    className="text-left text-[10px] font-semibold uppercase tracking-[0.7px]
                                  text-text-tertiary px-3 py-[8px] bg-bg-surface-2/50
-                                 border-b border-border-subtle whitespace-nowrap first:pl-5 last:pr-5">
+                                 border-b border-border-subtle whitespace-nowrap first:pl-5 last:pr-5"
+                  >
                     {h}
                   </th>
                 ))}
-            </tr>
-          </thead>
-          <tbody>
-            {group.bots.map(b => {
-              const status = statusByKey.get(b.key)
-              const q = versionByKey.get(b.key)
-              const running = status === 'RUNNING'
-              const movable = !running && !b.unreadable
-              return (
-                <tr key={b.key}
+              </tr>
+            </thead>
+            <tbody>
+              {group.bots.map((b) => {
+                const status = statusByKey.get(b.key)
+                const q = versionByKey.get(b.key)
+                const running = status === 'RUNNING'
+                const movable = !running && !b.unreadable
+                return (
+                  <tr
+                    key={b.key}
                     /* ⚠ A RUNNING bot is not draggable at all, matching the Move menu and the
                        Remove button beside it: it read its config at startup, so a write cannot
                        reach the live process and the page would show it under one account while
                        it traded another. */
                     draggable={movable}
                     data-testid={`bot-row-${b.key}`}
-                    onDragStart={e => {
+                    onDragStart={(e) => {
                       e.dataTransfer.setData('text/bot-key', b.key)
                       e.dataTransfer.effectAllowed = 'move'
                     }}
                     className={`border-b border-border-subtle last:border-0 text-small
                                 hover:bg-bg-hover/40 transition-colors duration-[80ms] ${
-                      movable ? 'cursor-grab active:cursor-grabbing' : ''}`}>
-                  {/* ⚠ **The grip is the only thing on screen that SAYS the row can be dragged.**
+                                  movable ? 'cursor-grab active:cursor-grabbing' : ''
+                                }`}
+                  >
+                    {/* ⚠ **The grip is the only thing on screen that SAYS the row can be dragged.**
                       A `draggable` attribute is invisible — the gesture existed for a day with
                       nothing advertising it but a sentence under the rail, which read as an
                       instruction for a feature nobody could find. It is a marker, not a handle:
                       the whole row is the drag source, so grabbing anywhere still works. */}
-                  <td className="pl-5 pr-1 py-[9px] w-[22px]"
-                      title={movable
-                        ? `Drag ${b.display} onto an account in the list on the left to move it. `
-                          + 'Or use the Move menu on this row.'
-                        : running
-                          ? `Stop ${b.display} first — a running bot cannot be moved.`
-                          : undefined}>
-                    <GripVertical
-                      size={13}
-                      aria-hidden
-                      data-testid={movable ? `grip-${b.key}` : undefined}
-                      className={movable ? 'text-text-tertiary/60' : 'text-text-tertiary/20'}
-                    />
-                  </td>
-                  <td className="px-3 py-[9px] text-text-primary font-medium">
-                    {b.display}
-                    {movable && (
-                      <span className="sr-only"> — drag onto an account in the list to move it</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-[9px] text-micro font-mono text-text-tertiary">
-                    {b.strategy_package || '—'}
-                  </td>
-                  <td className="px-3 py-[9px] text-text-secondary whitespace-nowrap">{b.symbol || '—'}</td>
-                  <td className="px-3 py-[9px]">
-                    <VersionPill version={q?.data} loading={q?.isPending} />
-                  </td>
-                  <td className="px-3 py-[9px] text-text-secondary font-mono tabular-nums">
-                    {b.risk_pct === null ? '—' : `${b.risk_pct}%`}
-                  </td>
-                  <td className="px-3 py-[9px] text-text-secondary font-mono tabular-nums">
-                    {b.unreadable ? 'unknown' : b.cap_pct === null ? 'uncapped' : `${b.cap_pct}%`}
-                  </td>
-                  <td className="px-3 py-[9px] text-text-secondary">
-                    {/* `undefined` is NOT stopped — the snapshot may not have answered. */}
-                    {status === undefined
-                      ? <span className="text-text-tertiary">—</span>
-                      : <BotStatusPill status={status} />}
-                  </td>
-                  <td className="pl-3 pr-5 py-[9px] text-right whitespace-nowrap">
-                    {!b.unreadable && (
-                      <div className="inline-flex items-center gap-[6px]">
-                        {/* Answers "what is Configure for" from the row it applies to: this tab
+                    <td
+                      className="pl-5 pr-1 py-[9px] w-[22px]"
+                      title={
+                        movable
+                          ? `Drag ${b.display} onto an account in the list on the left to move it. ` +
+                            'Or use the Move menu on this row.'
+                          : running
+                            ? `Stop ${b.display} first — a running bot cannot be moved.`
+                            : undefined
+                      }
+                    >
+                      <GripVertical
+                        size={13}
+                        aria-hidden
+                        data-testid={movable ? `grip-${b.key}` : undefined}
+                        className={movable ? 'text-text-tertiary/60' : 'text-text-tertiary/20'}
+                      />
+                    </td>
+                    <td className="px-3 py-[9px] text-text-primary font-medium">
+                      {b.display}
+                      {movable && (
+                        <span className="sr-only">
+                          {' '}
+                          — drag onto an account in the list to move it
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-[9px] text-micro font-mono text-text-tertiary">
+                      {b.strategy_package || '—'}
+                    </td>
+                    <td className="px-3 py-[9px] text-text-secondary whitespace-nowrap">
+                      {b.symbol || '—'}
+                    </td>
+                    <td className="px-3 py-[9px]">
+                      <VersionPill version={q?.data} loading={q?.isPending} />
+                    </td>
+                    <td className="px-3 py-[9px] text-text-secondary font-mono tabular-nums">
+                      {b.risk_pct === null ? '—' : `${b.risk_pct}%`}
+                    </td>
+                    <td className="px-3 py-[9px] text-text-secondary font-mono tabular-nums">
+                      {b.unreadable ? 'unknown' : b.cap_pct === null ? 'uncapped' : `${b.cap_pct}%`}
+                    </td>
+                    <td className="px-3 py-[9px] text-text-secondary">
+                      {/* `undefined` is NOT stopped — the snapshot may not have answered. */}
+                      {status === undefined ? (
+                        <span className="text-text-tertiary">—</span>
+                      ) : (
+                        <BotStatusPill status={status} />
+                      )}
+                    </td>
+                    <td className="pl-3 pr-5 py-[9px] text-right whitespace-nowrap">
+                      {!b.unreadable && (
+                        <div className="inline-flex items-center gap-[6px]">
+                          {/* Answers "what is Configure for" from the row it applies to: this tab
                             decides WHICH account, that one decides how the bot trades on it. */}
-                        <button
-                          data-testid={`configure-${b.key}`}
-                          onClick={() => onConfigure(b.key)}
-                          title={`Open ${b.display} on the Configure tab — its risk, its parameters `
-                            + 'and the version it runs. This tab only decides which account it is on.'}
-                          className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
+                          <button
+                            data-testid={`configure-${b.key}`}
+                            onClick={() => onConfigure(b.key)}
+                            title={
+                              `Open ${b.display} on the Configure tab — its risk, its parameters ` +
+                              'and the version it runs. This tab only decides which account it is on.'
+                            }
+                            className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
                                      text-text-tertiary hover:text-text-primary hover:bg-bg-hover
                                      transition-colors"
-                        >
-                          <SlidersHorizontal size={10} /> Configure
-                        </button>
-                        <MoveMenu
-                          botKey={b.key}
-                          display={b.display}
-                          from={isAccount ? (group.account as number) : null}
-                          targets={targets}
-                          running={running}
-                          busy={assign.isPending}
-                          onMove={account => assign.mutate({ botKey: b.key, account })}
-                        />
-                        {isAccount && (
-                          <button
-                            data-testid={`remove-${b.key}`}
-                            disabled={assign.isPending || running}
-                            title={running
-                              ? 'Stop this bot first — it read its account at startup, so moving it '
-                                + 'now would leave the page showing one account while it traded another.'
-                              : `Take ${b.display} off account ${group.account}. It will not start `
-                                + 'again until it is on an account.'}
-                            onClick={() => assign.mutate({ botKey: b.key, account: null })}
-                            className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
+                          >
+                            <SlidersHorizontal size={10} /> Configure
+                          </button>
+                          <MoveMenu
+                            botKey={b.key}
+                            display={b.display}
+                            from={isAccount ? (group.account as number) : null}
+                            targets={targets}
+                            running={running}
+                            busy={assign.isPending}
+                            onMove={(account) => assign.mutate({ botKey: b.key, account })}
+                          />
+                          {isAccount && (
+                            <button
+                              data-testid={`remove-${b.key}`}
+                              disabled={assign.isPending || running}
+                              title={
+                                running
+                                  ? 'Stop this bot first — it read its account at startup, so moving it ' +
+                                    'now would leave the page showing one account while it traded another.'
+                                  : `Take ${b.display} off account ${group.account}. It will not start ` +
+                                    'again until it is on an account.'
+                              }
+                              onClick={() => assign.mutate({ botKey: b.key, account: null })}
+                              className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
                                        text-text-tertiary hover:text-neg-text hover:bg-neg-muted
                                        transition-colors disabled:opacity-30
                                        disabled:cursor-not-allowed disabled:hover:bg-transparent
                                        disabled:hover:text-text-tertiary"
-                          >
-                            <X size={10} /> Remove
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                            >
+                              <X size={10} /> Remove
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+
+        {adding && group.account !== null && (
+          <AddBotRow
+            account={group.account}
+            here={new Set(group.bots.map((b) => b.key))}
+            busy={assign.isPending}
+            onPick={(key) => {
+              assign.mutate(
+                { botKey: key, account: group.account },
+                {
+                  onSuccess: () => setAdding(false),
+                }
               )
-            })}
-          </tbody>
-        </table>
-      )}
-
-      {adding && group.account !== null && (
-        <AddBotRow
-          account={group.account}
-          here={new Set(group.bots.map(b => b.key))}
-          busy={assign.isPending}
-          onPick={key => {
-            assign.mutate({ botKey: key, account: group.account }, {
-              onSuccess: () => setAdding(false),
-            })
-          }}
-          onClose={() => setAdding(false)}
-          statusByKey={statusByKey}
-        />
-      )}
-
-      </div>{/* ── end of the scrolling body ─────────────────────────────────── */}
+            }}
+            onClose={() => setAdding(false)}
+            statusByKey={statusByKey}
+          />
+        )}
+      </div>
+      {/* ── end of the scrolling body ─────────────────────────────────── */}
 
       {/* ── The one thing that is genuinely configuration ────────────────────── */}
       {isAccount && (
@@ -978,12 +1126,14 @@ function AccountDetail({
           </div>
 
           {!group.cap_agrees && (
-            <div data-testid="cap-disagreement"
-                 className="text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
+            <div
+              data-testid="cap-disagreement"
+              className="text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]"
+            >
               These bots state different account caps, so the account's real ceiling is whichever
               bot asks — and a bot with no cap fills the balance while a capped one is refused.
-              Saving below writes the same value to all of them. A bot will refuse to START in
-              this state, which is deliberate.
+              Saving below writes the same value to all of them. A bot will refuse to START in this
+              state, which is deliberate.
             </div>
           )}
 
@@ -994,14 +1144,16 @@ function AccountDetail({
             </div>
           )}
 
-          <div className="flex items-center gap-3 flex-wrap bg-bg-sunken border border-border-subtle
-                          rounded-md px-3 py-[10px]">
+          <div
+            className="flex items-center gap-3 flex-wrap bg-bg-sunken border border-border-subtle
+                          rounded-md px-3 py-[10px]"
+          >
             <label className="flex items-center gap-[6px] text-micro text-text-secondary cursor-pointer">
               <input
                 type="checkbox"
                 data-testid="cap-enabled"
                 checked={capped}
-                onChange={e => setCapped(e.target.checked)}
+                onChange={(e) => setCapped(e.target.checked)}
               />
               Capped
             </label>
@@ -1015,7 +1167,7 @@ function AccountDetail({
                   max={100}
                   step={0.5}
                   value={capValue}
-                  onChange={e => setCapValue(Number(e.target.value))}
+                  onChange={(e) => setCapValue(Number(e.target.value))}
                   className="w-[70px] bg-bg-base border border-border-default rounded px-2 py-[4px] text-small text-text-primary"
                 />
                 <span className="text-micro text-text-tertiary">% of live balance</span>
@@ -1048,7 +1200,6 @@ function AccountDetail({
         </div>
       )}
 
-
       {showStack && (
         <StackConfigModal
           title={`Backtest account ${group.account} as a shared stack`}
@@ -1076,7 +1227,15 @@ function AccountDetail({
  * Hiding it makes an account that exists look like one that does not, which is the same rule the
  * Add bot list follows for a running bot.
  */
-function MoveMenu({ botKey, display, from, targets, running, busy, onMove }: {
+function MoveMenu({
+  botKey,
+  display,
+  from,
+  targets,
+  running,
+  busy,
+  onMove,
+}: {
   botKey: string
   display: string
   from: number | null
@@ -1085,7 +1244,7 @@ function MoveMenu({ botKey, display, from, targets, running, busy, onMove }: {
   busy: boolean
   onMove: (account: number | null) => void
 }) {
-  const elsewhere = targets.filter(t => t.account !== from)
+  const elsewhere = targets.filter((t) => t.account !== from)
   if (elsewhere.length === 0 && from === null) return null
 
   return (
@@ -1093,11 +1252,13 @@ function MoveMenu({ botKey, display, from, targets, running, busy, onMove }: {
       data-testid={`move-${botKey}`}
       disabled={running || busy}
       value=""
-      title={running
-        ? `Stop ${display} first — it read its account at startup, so a move could not reach the `
-          + 'live process.'
-        : `Move ${display} to another account.`}
-      onChange={e => {
+      title={
+        running
+          ? `Stop ${display} first — it read its account at startup, so a move could not reach the ` +
+            'live process.'
+          : `Move ${display} to another account.`
+      }
+      onChange={(e) => {
         const v = e.target.value
         e.currentTarget.value = ''
         if (!v) return
@@ -1111,9 +1272,10 @@ function MoveMenu({ botKey, display, from, targets, running, busy, onMove }: {
                  disabled:opacity-30 disabled:cursor-not-allowed"
     >
       <option value="">Move to…</option>
-      {elsewhere.map(t => (
+      {elsewhere.map((t) => (
         <option key={t.account} value={t.account} disabled={!t.assignable}>
-          {t.label} #{t.account}{t.sub ? ` · ${t.sub}` : ''}
+          {t.label} #{t.account}
+          {t.sub ? ` · ${t.sub}` : ''}
           {t.assignable ? '' : ' — no terminal'}
         </option>
       ))}
@@ -1134,7 +1296,14 @@ function MoveMenu({ botKey, display, from, targets, running, busy, onMove }: {
  * this list is empty, and an empty dropdown with no explanation reads as a broken control — the
  * shape this repo keeps recording as a feature nobody has driven end to end.
  */
-function AddBotRow({ account, here, busy, onPick, onClose, statusByKey }: {
+function AddBotRow({
+  account,
+  here,
+  busy,
+  onPick,
+  onClose,
+  statusByKey,
+}: {
   account: number
   here: Set<string>
   busy: boolean
@@ -1145,40 +1314,41 @@ function AddBotRow({ account, here, busy, onPick, onClose, statusByKey }: {
   const { data: groups } = useBotAccounts()
 
   const candidates = (groups ?? [])
-    .flatMap(g => g.bots.map(b => ({ ...b, from: g })))
-    .filter(b => !here.has(b.key) && !b.unreadable)
+    .flatMap((g) => g.bots.map((b) => ({ ...b, from: g })))
+    .filter((b) => !here.has(b.key) && !b.unreadable)
 
   return (
-    <div data-testid="add-bot-row"
-         className="px-4 py-3 border-t border-border-subtle bg-bg-surface-2 flex flex-col gap-2">
+    <div
+      data-testid="add-bot-row"
+      className="px-4 py-3 border-t border-border-subtle bg-bg-surface-2 flex flex-col gap-2"
+    >
       <div className="flex items-center gap-2">
-        <span className="text-micro text-text-secondary">
-          Add a bot to account {account}
-        </span>
-        <button onClick={onClose}
-                className="ml-auto text-text-tertiary hover:text-text-primary">
+        <span className="text-micro text-text-secondary">Add a bot to account {account}</span>
+        <button onClick={onClose} className="ml-auto text-text-tertiary hover:text-text-primary">
           <X size={12} />
         </button>
       </div>
 
       {candidates.length === 0 ? (
         <div data-testid="no-candidates" className="text-micro text-text-tertiary">
-          Every registered bot is already on this account. A new one needs its instance created
-          in the repo first — that is a code change, not something this page can do.
+          Every registered bot is already on this account. A new one needs its instance created in
+          the repo first — that is a code change, not something this page can do.
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          {candidates.map(b => {
+          {candidates.map((b) => {
             const running = statusByKey.get(b.key) === 'RUNNING'
             return (
               <button
                 key={b.key}
                 data-testid={`add-${b.key}`}
                 disabled={busy || running}
-                title={running
-                  ? 'This bot is running. Stop it before moving it — it read its account at '
-                    + 'startup, so the move could not reach the live process.'
-                  : undefined}
+                title={
+                  running
+                    ? 'This bot is running. Stop it before moving it — it read its account at ' +
+                      'startup, so the move could not reach the live process.'
+                    : undefined
+                }
                 onClick={() => onPick(b.key)}
                 className="flex items-center gap-2 px-2 py-[6px] rounded text-small text-left
                            text-text-secondary hover:bg-bg-hover hover:text-text-primary
@@ -1224,7 +1394,10 @@ function AddBotRow({ account, here, busy, onPick, onClose, statusByKey }: {
  * blank changes nothing. It travels to the git-ignored credentials file on the VPS, never into
  * the git-tracked registry.
  */
-function AccountForm({ existing, onClose }: {
+function AccountForm({
+  existing,
+  onClose,
+}: {
   existing?: BotAccountRegistration
   onClose: () => void
 }) {
@@ -1251,24 +1424,41 @@ function AccountForm({ existing, onClose }: {
 
   const submit = () => {
     if (!valid) return
-    save.mutate({
-      account: num, label, broker, tier, kind, server, mt5_path: mt5Path,
-      symbol_suffix: hasSuffix ? suffix : null,
-      account_profile: profile, note: existing?.note ?? '',
-      // Sent on the SAME request when there is one, so the credential lands before the registry
-      // row is committed and pushed — a registered account with no password is a visible, fixable
-      // state, while a pushed row whose password write failed afterwards reads as complete.
-      password: password || undefined,
-      deploy: true,
-    }, { onSuccess: () => { setPwd(''); onClose() } })
+    save.mutate(
+      {
+        account: num,
+        label,
+        broker,
+        tier,
+        kind,
+        server,
+        mt5_path: mt5Path,
+        symbol_suffix: hasSuffix ? suffix : null,
+        account_profile: profile,
+        note: existing?.note ?? '',
+        // Sent on the SAME request when there is one, so the credential lands before the registry
+        // row is committed and pushed — a registered account with no password is a visible, fixable
+        // state, while a pushed row whose password write failed afterwards reads as complete.
+        password: password || undefined,
+        deploy: true,
+      },
+      {
+        onSuccess: () => {
+          setPwd('')
+          onClose()
+        },
+      }
+    )
   }
 
   return (
     // Same shape as the detail pane it replaces — full height, one scrolling body — so switching
     // between reading an account and editing one does not resize the page under the reader.
-    <div data-testid="account-form"
-         className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col
-                    overflow-hidden">
+    <div
+      data-testid="account-form"
+      className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col
+                    overflow-hidden"
+    >
       <div className="flex items-center gap-2 px-5 py-[14px] border-b border-border-subtle shrink-0">
         <div className="text-[15px] text-text-primary font-semibold">
           {existing ? `Edit account ${existing.account}` : 'Add a broker account'}
@@ -1279,90 +1469,159 @@ function AccountForm({ existing, onClose }: {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3 max-w-[720px]">
-        <Field label="Account number" hint="The MT5 login.">
-          <input type="number" data-testid="f-account" value={account} disabled={!!existing}
-                 onChange={e => setAccount(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Server" hint="An account number IS a login on a server — the pair is the identity.">
-          <input data-testid="f-server" value={server} placeholder="PUPrime-Demo"
-                 onChange={e => setServer(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Broker" hint="The name this account is listed under in the rail.">
-          <input data-testid="f-broker" value={broker} placeholder="PU Prime"
-                 onChange={e => setBroker(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Name" hint="Optional. Used instead of the broker when it is set.">
-          <input data-testid="f-label" value={label} placeholder="PU Prime ECN demo"
-                 onChange={e => setLabel(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Tier" hint="The broker's own word for it. Display only.">
-          <input value={tier} placeholder="ECN"
-                 onChange={e => setTier(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Demo or live"
-               hint="A live account is tinted and warned on before every fleet action.">
-          <select data-testid="f-kind" value={kind}
-                  onChange={e => setKind(e.target.value)} className={inputCls}>
-            <option value="demo">demo</option>
-            <option value="live">live</option>
-          </select>
-        </Field>
-        <Field label="Terminal path"
-               hint="The terminal on the VPS logged into this account. Leave blank and no bot can be assigned — a move would be written, pushed, and then fail at connect time.">
-          <input data-testid="f-path" value={mt5Path} placeholder="C:\\MT5_FFT\\terminal64.exe"
-                 onChange={e => setMt5Path(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Cost profile"
-               hint="Which measured cost model prices this account, e.g. puprime_ecn. Refused if it names no known profile.">
-          <input data-testid="f-profile" value={profile} placeholder="puprime_ecn"
-                 onChange={e => setProfile(e.target.value)} className={inputCls} />
-        </Field>
-      </div>
+        <div className="grid grid-cols-2 gap-3 max-w-[720px]">
+          <Field label="Account number" hint="The MT5 login.">
+            <input
+              type="number"
+              data-testid="f-account"
+              value={account}
+              disabled={!!existing}
+              onChange={(e) => setAccount(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+          <Field
+            label="Server"
+            hint="An account number IS a login on a server — the pair is the identity."
+          >
+            <input
+              data-testid="f-server"
+              value={server}
+              placeholder="PUPrime-Demo"
+              onChange={(e) => setServer(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Broker" hint="The name this account is listed under in the rail.">
+            <input
+              data-testid="f-broker"
+              value={broker}
+              placeholder="PU Prime"
+              onChange={(e) => setBroker(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Name" hint="Optional. Used instead of the broker when it is set.">
+            <input
+              data-testid="f-label"
+              value={label}
+              placeholder="PU Prime ECN demo"
+              onChange={(e) => setLabel(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Tier" hint="The broker's own word for it. Display only.">
+            <input
+              value={tier}
+              placeholder="ECN"
+              onChange={(e) => setTier(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+          <Field
+            label="Demo or live"
+            hint="A live account is tinted and warned on before every fleet action."
+          >
+            <select
+              data-testid="f-kind"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+              className={inputCls}
+            >
+              <option value="demo">demo</option>
+              <option value="live">live</option>
+            </select>
+          </Field>
+          <Field
+            label="Terminal path"
+            hint="The terminal on the VPS logged into this account. Leave blank and no bot can be assigned — a move would be written, pushed, and then fail at connect time."
+          >
+            <input
+              data-testid="f-path"
+              value={mt5Path}
+              placeholder="C:\\MT5_FFT\\terminal64.exe"
+              onChange={(e) => setMt5Path(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+          <Field
+            label="Cost profile"
+            hint="Which measured cost model prices this account, e.g. puprime_ecn. Refused if it names no known profile."
+          >
+            <input
+              data-testid="f-profile"
+              value={profile}
+              placeholder="puprime_ecn"
+              onChange={(e) => setProfile(e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+        </div>
 
-      {/* The field the 2026-08-12 move forgot. It gets its own block and its own sentence. */}
-      <div className="flex flex-col gap-1 border-t border-border-subtle pt-3">
-        <label className="flex items-center gap-[6px] text-micro text-text-secondary cursor-pointer">
-          <input type="checkbox" data-testid="f-has-suffix" checked={hasSuffix}
-                 onChange={e => setHasSuffix(e.target.checked)} />
-          This account puts a suffix on its symbols
-        </label>
-        {hasSuffix && (
-          <input data-testid="f-suffix" value={suffix} placeholder=".p"
-                 onChange={e => setSuffix(e.target.value)}
-                 className={`${inputCls} max-w-[120px]`} />
-        )}
-        <div className="text-micro text-text-tertiary max-w-[720px]">
-          Moving a bot here keeps its instrument and swaps the suffix — <span className="font-mono">
-          XAUUSD.s</span> becomes <span className="font-mono">XAUUSD{suffix || '.p'}</span>. Unticked
-          means this broker quotes bare symbols. Leave it unticked only if that is true: a bot
-          pointed at a symbol its terminal does not quote connects, warms up and receives no bars,
-          which looks exactly like a quiet market.
+        {/* The field the 2026-08-12 move forgot. It gets its own block and its own sentence. */}
+        <div className="flex flex-col gap-1 border-t border-border-subtle pt-3">
+          <label className="flex items-center gap-[6px] text-micro text-text-secondary cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="f-has-suffix"
+              checked={hasSuffix}
+              onChange={(e) => setHasSuffix(e.target.checked)}
+            />
+            This account puts a suffix on its symbols
+          </label>
+          {hasSuffix && (
+            <input
+              data-testid="f-suffix"
+              value={suffix}
+              placeholder=".p"
+              onChange={(e) => setSuffix(e.target.value)}
+              className={`${inputCls} max-w-[120px]`}
+            />
+          )}
+          <div className="text-micro text-text-tertiary max-w-[720px]">
+            Moving a bot here keeps its instrument and swaps the suffix —{' '}
+            <span className="font-mono">XAUUSD.s</span> becomes{' '}
+            <span className="font-mono">XAUUSD{suffix || '.p'}</span>. Unticked means this broker
+            quotes bare symbols. Leave it unticked only if that is true: a bot pointed at a symbol
+            its terminal does not quote connects, warms up and receives no bars, which looks exactly
+            like a quiet market.
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 border-t border-border-subtle pt-3">
+          <Field
+            label="MT5 password"
+            hint="Stored on the VPS in a git-ignored file and never shown again. Leave blank to keep the current one."
+          >
+            <input
+              type="password"
+              data-testid="f-password"
+              value={password}
+              autoComplete="new-password"
+              placeholder={existing?.has_password ? '•••••••• (unchanged)' : ''}
+              onChange={(e) => setPwd(e.target.value)}
+              className={`${inputCls} max-w-[260px]`}
+            />
+          </Field>
+          {existing && password && (
+            <button
+              data-testid="save-password"
+              disabled={setPassword.isPending}
+              onClick={() =>
+                setPassword.mutate(
+                  { account: existing.account, password },
+                  { onSuccess: () => setPwd('') }
+                )
+              }
+              className="self-start px-3 py-[5px] rounded-md text-small bg-accent-muted
+                       text-text-primary hover:brightness-110 transition disabled:opacity-40"
+            >
+              {setPassword.isPending ? 'Saving…' : 'Save password only'}
+            </button>
+          )}
         </div>
       </div>
-
-      <div className="flex flex-col gap-1 border-t border-border-subtle pt-3">
-        <Field label="MT5 password"
-               hint="Stored on the VPS in a git-ignored file and never shown again. Leave blank to keep the current one.">
-          <input type="password" data-testid="f-password" value={password} autoComplete="new-password"
-                 placeholder={existing?.has_password ? '•••••••• (unchanged)' : ''}
-                 onChange={e => setPwd(e.target.value)}
-                 className={`${inputCls} max-w-[260px]`} />
-        </Field>
-        {existing && password && (
-          <button
-            data-testid="save-password"
-            disabled={setPassword.isPending}
-            onClick={() => setPassword.mutate({ account: existing.account, password },
-                                              { onSuccess: () => setPwd('') })}
-            className="self-start px-3 py-[5px] rounded-md text-small bg-accent-muted
-                       text-text-primary hover:brightness-110 transition disabled:opacity-40"
-          >
-            {setPassword.isPending ? 'Saving…' : 'Save password only'}
-          </button>
-        )}
-      </div>
-      </div>{/* ── end of the scrolling body ─────────────────────────────────── */}
+      {/* ── end of the scrolling body ─────────────────────────────────── */}
 
       {/* Pinned, so the one control that commits the form cannot scroll off the way
           Add account did. */}
@@ -1376,9 +1635,11 @@ function AccountForm({ existing, onClose }: {
         >
           {save.isPending ? 'Saving…' : existing ? 'Save account' : 'Add account'}
         </button>
-        <button onClick={onClose}
-                className="px-3 py-[5px] rounded-md text-small border border-border-default
-                           bg-bg-surface text-text-secondary hover:bg-bg-hover transition-colors">
+        <button
+          onClick={onClose}
+          className="px-3 py-[5px] rounded-md text-small border border-border-default
+                           bg-bg-surface text-text-secondary hover:bg-bg-hover transition-colors"
+        >
           Cancel
         </button>
         <span className="text-micro text-text-tertiary">
@@ -1389,34 +1650,56 @@ function AccountForm({ existing, onClose }: {
   )
 }
 
-const inputCls = 'w-full bg-bg-base border border-border-default rounded px-2 py-[5px] '
-  + 'text-small text-text-primary'
+const inputCls =
+  'w-full bg-bg-base border border-border-default rounded px-2 py-[5px] ' +
+  'text-small text-text-primary'
 
 /** One readiness fact. Every chip on this tab is this shape, so a new one cannot drift from the
  *  Monitor row's pill sizing the way three hand-written ones did. */
-function Chip({ testid, tone, icon, title, children }: {
+function Chip({
+  testid,
+  tone,
+  icon,
+  title,
+  children,
+}: {
   testid?: string
   tone: 'pos' | 'neg' | 'warn' | 'accent' | 'muted'
   icon?: React.ReactNode
   title?: string
   children: React.ReactNode
 }) {
-  const cls = tone === 'pos' ? 'bg-pos-muted text-pos-text'
-    : tone === 'neg' ? 'bg-neg-muted text-neg-text'
-    : tone === 'warn' ? 'bg-warn-muted text-warn-text'
-    : tone === 'accent' ? 'bg-accent-muted text-text-primary'
-    : 'bg-bg-surface-2 text-text-tertiary'
+  const cls =
+    tone === 'pos'
+      ? 'bg-pos-muted text-pos-text'
+      : tone === 'neg'
+        ? 'bg-neg-muted text-neg-text'
+        : tone === 'warn'
+          ? 'bg-warn-muted text-warn-text'
+          : tone === 'accent'
+            ? 'bg-accent-muted text-text-primary'
+            : 'bg-bg-surface-2 text-text-tertiary'
   return (
-    <span data-testid={testid} title={title}
-          className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                      rounded-pill uppercase tracking-[0.4px] cursor-default ${cls}`}>
-      {icon}{children}
+    <span
+      data-testid={testid}
+      title={title}
+      className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                      rounded-pill uppercase tracking-[0.4px] cursor-default ${cls}`}
+    >
+      {icon}
+      {children}
     </span>
   )
 }
 
-function Field({ label, hint, children }: {
-  label: string; hint: string; children: React.ReactNode
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint: string
+  children: React.ReactNode
 }) {
   return (
     <label className="flex flex-col gap-1">

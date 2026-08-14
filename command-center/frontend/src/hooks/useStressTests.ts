@@ -1,7 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { StressTest, StressTestDetail, StressTestCreate, StressTestTriggerResponse, StressLock } from '@/types'
+import type {
+  StressTest,
+  StressTestDetail,
+  StressTestCreate,
+  StressTestTriggerResponse,
+  StressLock,
+} from '@/types'
 
 export function useStressTests(runId?: string, grade?: string) {
   const params = new URLSearchParams()
@@ -59,7 +65,10 @@ export function useRunningStressLock() {
 export function useStrategyBestGrades() {
   return useQuery({
     queryKey: ['stress-tests', 'strategy-grades'],
-    queryFn: () => api.get<Record<string, { grade: string; stress_test_id: string }>>('/stress-tests/strategy-grades'),
+    queryFn: () =>
+      api.get<Record<string, { grade: string; stress_test_id: string }>>(
+        '/stress-tests/strategy-grades'
+      ),
     refetchInterval: 30_000,
   })
 }
@@ -68,13 +77,19 @@ export function useCancelStressTest() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (stressTestId: string) =>
-      api.post<{ children_cancelled: number; job_stopped: boolean }>(`/stress-tests/${stressTestId}/cancel`, {}),
+      api.post<{ children_cancelled: number; job_stopped: boolean }>(
+        `/stress-tests/${stressTestId}/cancel`,
+        {}
+      ),
     onSuccess: (data) => {
       // `job_stopped: false` means the row is cancelled but the runner could not be told, so the
       // platform may still be busy. Two different facts; only one of them means you can start
       // something else — the same distinction the optimizer's cancel reports.
       if (data.job_stopped) toast.success('Stress test cancelled')
-      else toast.error('Cancelled, but the runner could not be reached — the platform may still be busy')
+      else
+        toast.error(
+          'Cancelled, but the runner could not be reached — the platform may still be busy'
+        )
       qc.invalidateQueries({ queryKey: ['stress-tests'] })
       qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },

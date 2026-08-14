@@ -20,11 +20,16 @@ Endpoints:
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from models import (StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
-                    StrategyFilesResponse, StrategyFileSyncResponse)
-from services import runner_dispatch, lab_db, mt5_agent_client, strategy_scanner
 import config as cfg
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from models import (
+    CompileJobStatus,
+    StrategyFile,
+    StrategyFilesResponse,
+    StrategyFileSyncResponse,
+    StrategyFileSyncStatus,
+)
+from services import lab_db, mt5_agent_client, runner_dispatch, strategy_scanner
 
 router = APIRouter(prefix="/strategy-files", tags=["strategy-files"])
 
@@ -219,7 +224,8 @@ def sync_status():
             fp = monorepo_root / source_path
             if fp.exists():
                 current_hash = strategy_scanner.source_hash(
-                    fp.read_text(encoding="utf-8", errors="replace"))
+                    fp.read_text(encoding="utf-8", errors="replace")
+                )
                 lab_db.ensure_strategy_version(strategy_id, current_hash, fp.stat().st_size)
 
         deployed_hash = s.get("deployed_source_hash")
@@ -236,21 +242,23 @@ def sync_status():
         if is_mt5 and is_compiled is False and deployed_hash is not None:
             needs_compile = True
 
-        result.append(StrategyFileSyncStatus(
-            strategy_id=strategy_id,
-            expected_filename=expected,
-            file_exists_on_vps=(vps_file is not None) if agent_answered else None,
-            file_size_bytes=vps_file["size_bytes"] if vps_file else None,
-            file_modified_at=vps_file["modified_at"] if vps_file else None,
-            in_sync=((vps_file is not None) and not needs_deploy) if agent_answered else None,
-            is_compiled=is_compiled,
-            current_version=lab_db.version_for_hash(strategy_id, current_hash),
-            current_source_hash=current_hash,
-            deployed_version=lab_db.version_for_hash(strategy_id, deployed_hash),
-            deployed_at=s.get("deployed_at"),
-            compiled_version=lab_db.version_for_hash(strategy_id, compiled_hash),
-            compiled_at=s.get("compiled_at"),
-            needs_deploy=needs_deploy,
-            needs_compile=needs_compile,
-        ))
+        result.append(
+            StrategyFileSyncStatus(
+                strategy_id=strategy_id,
+                expected_filename=expected,
+                file_exists_on_vps=(vps_file is not None) if agent_answered else None,
+                file_size_bytes=vps_file["size_bytes"] if vps_file else None,
+                file_modified_at=vps_file["modified_at"] if vps_file else None,
+                in_sync=((vps_file is not None) and not needs_deploy) if agent_answered else None,
+                is_compiled=is_compiled,
+                current_version=lab_db.version_for_hash(strategy_id, current_hash),
+                current_source_hash=current_hash,
+                deployed_version=lab_db.version_for_hash(strategy_id, deployed_hash),
+                deployed_at=s.get("deployed_at"),
+                compiled_version=lab_db.version_for_hash(strategy_id, compiled_hash),
+                compiled_at=s.get("compiled_at"),
+                needs_deploy=needs_deploy,
+                needs_compile=needs_compile,
+            )
+        )
     return StrategyFileSyncResponse(statuses=result, nt8_error=nt8_error, mt5_error=mt5_error)

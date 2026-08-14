@@ -126,19 +126,19 @@ broker-dependent. **Validated for VANTAGE:XAUUSD: the session opens 18:00 New Yo
 ```python
 from liquidity import LiquidityEngine
 
-liq = LiquidityEngine()   # Pine defaults; composes its own sessions engine internally
+liq = LiquidityEngine()  # Pine defaults; composes its own sessions engine internally
 
 # Each closed bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
 ev = liq.update(bar.index, bar.timestamp_ms, bar.high, bar.low, bar.close)
 
-for lvl in ev.created:      # levels created THIS bar (a period completed / a session closed) — edge
+for lvl in ev.created:  # levels created THIS bar (a period completed / a session closed) — edge
     lvl.kind, lvl.side, lvl.name, lvl.price, lvl.rule, lvl.id
-for lvl in ev.mitigated:    # levels price TOOK this bar — edge
-    lvl.name, lvl.mitigated_index, lvl.sweep_label   # sweep_label: "BSL"/"SSL" for H4
-for lvl in ev.evicted:      # levels removed this bar (roll / new-day tidy) — NOT a signal
+for lvl in ev.mitigated:  # levels price TOOK this bar — edge
+    lvl.name, lvl.mitigated_index, lvl.sweep_label  # sweep_label: "BSL"/"SSL" for H4
+for lvl in ev.evicted:  # levels removed this bar (roll / new-day tidy) — NOT a signal
     ...
-ev.active                   # every currently-live level, incl. mitigated-but-shown (state)
-liq.active_levels()         # same as ev.active (read)
+ev.active  # every currently-live level, incl. mitigated-but-shown (state)
+liq.active_levels()  # same as ev.active (read)
 ```
 
 Feature toggles (`enable_daily`/`enable_weekly`/…/`enable_sessions`), `hide_mitigated_on_new_day`,

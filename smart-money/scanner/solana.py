@@ -19,7 +19,7 @@ Status: SCAFFOLD — API integration pending.
 from __future__ import annotations
 
 import os
-import time
+
 from run_logger import StageLogger
 
 
@@ -32,8 +32,8 @@ class DuneScanner:
     DUNE_API_BASE = "https://api.dune.com/api/v1"
 
     # Public query IDs for perpetuals PnL (community queries — verify before use)
-    DRIFT_PNL_QUERY_ID = None   # TODO: find or create Drift Protocol PnL query
-    MANGO_PNL_QUERY_ID = None   # TODO: find or create Mango Markets PnL query
+    DRIFT_PNL_QUERY_ID = None  # TODO: find or create Drift Protocol PnL query
+    MANGO_PNL_QUERY_ID = None  # TODO: find or create Mango Markets PnL query
 
     def __init__(self, config: dict, logger: StageLogger):
         self._cfg = config
@@ -133,10 +133,7 @@ class SolanaScanner:
         Returns candidate wallets with fills ready for profiling.
         Returns empty list if no sources are configured.
         """
-        configured = [
-            s for s in [self._dune, self._flipside, self._birdeye]
-            if s.is_configured()
-        ]
+        configured = [s for s in [self._dune, self._flipside, self._birdeye] if s.is_configured()]
         if not configured:
             self._log.warning(
                 "No Solana API keys configured. "

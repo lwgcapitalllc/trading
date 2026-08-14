@@ -99,17 +99,17 @@ Parity export build: `indicators/engines/vwap_export.pine`.
 ```python
 from vwap import VwapEngine
 
-vw = VwapEngine()   # Pine defaults: hlc3, volume-weighted, 18:00-NY trading-day anchor
+vw = VwapEngine()  # Pine defaults: hlc3, volume-weighted, 18:00-NY trading-day anchor
 
 # Each closed bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
 ev = vw.update(bar.index, bar.timestamp_ms, bar.high, bar.low, bar.close, bar.volume)
 
-ev.value          # session VWAP price this bar (None until first volume) — Pine-validated
-ev.anchored       # did the session reset (new trading day) on this bar? (edge)
-ev.side           # +1 close above VWAP, -1 below, 0 on it
-ev.crossed_up     # DERIVED: close crossed up through VWAP this bar (edge)
-ev.crossed_down   # DERIVED: close crossed down through VWAP this bar (edge)
-vw.value()        # current VWAP (read)
+ev.value  # session VWAP price this bar (None until first volume) — Pine-validated
+ev.anchored  # did the session reset (new trading day) on this bar? (edge)
+ev.side  # +1 close above VWAP, -1 below, 0 on it
+ev.crossed_up  # DERIVED: close crossed up through VWAP this bar (edge)
+ev.crossed_down  # DERIVED: close crossed down through VWAP this bar (edge)
+vw.value()  # current VWAP (read)
 ```
 
 `htf_timezone` and `htf_rollover_hours` are the two constructor knobs.

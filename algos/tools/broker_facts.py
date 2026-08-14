@@ -77,7 +77,8 @@ def attach(mt5, path: str, want_account: int) -> None:
         mt5.shutdown()
         raise SystemExit(
             f"WRONG TERMINAL: attached to account {got} on {srv}, expected {want_account}. "
-            f"Refusing to report one broker's costs as another's.")
+            f"Refusing to report one broker's costs as another's."
+        )
 
 
 def spec(mt5, symbol: str) -> dict:
@@ -150,15 +151,23 @@ def sample_spread(mt5, symbol: str, seconds: int, point: float) -> dict:
 
     if not seen:
         if none_reads and not stale:
-            note = ("the terminal returned NO tick at all - the symbol is not streaming. "
-                    f"symbol_select({symbol}) returned {selected}; check it is in Market Watch "
-                    "and that this account quotes it. This is NOT a shut market.")
+            note = (
+                "the terminal returned NO tick at all - the symbol is not streaming. "
+                f"symbol_select({symbol}) returned {selected}; check it is in Market Watch "
+                "and that this account quotes it. This is NOT a shut market."
+            )
         else:
             note = "no fresh ticks - market shut?"
-        return {"n": 0, "stale_reads": stale, "none_reads": none_reads,
-                "selected": selected, "note": note}
+        return {
+            "n": 0,
+            "stale_reads": stale,
+            "none_reads": none_reads,
+            "selected": selected,
+            "note": note,
+        }
 
     seen.sort()
+
     def pct(p: float) -> float:
         return seen[min(len(seen) - 1, int(p / 100 * len(seen)))]
 
@@ -231,10 +240,10 @@ def history_spread(mt5, symbol: str, days: int, point: float) -> dict:
         for t in ticks:
             bid, ask = float(t[1]), float(t[2])
             if bid <= 0.0 or ask <= 0.0:
-                continue                      # a half-populated tick is not a spread
+                continue  # a half-populated tick is not a spread
             s = ask - bid
             if s < 0:
-                continue                      # crossed book — never a cost, always a data artefact
+                continue  # crossed book — never a cost, always a data artefact
             spreads.append(s)
             if offset_h is not None:
                 # `None` = the live tick could not be read, so the offset is UNKNOWN. Bucketing
@@ -248,9 +257,14 @@ def history_spread(mt5, symbol: str, days: int, point: float) -> dict:
 
     spreads.sort()
     out = {
-        "n": len(spreads), "days": days_seen, "server_offset_h": offset_h,
-        "min": spreads[0], "median": statistics.median(spreads),
-        "p90": _pct(spreads, 90), "p99": _pct(spreads, 99), "max": spreads[-1],
+        "n": len(spreads),
+        "days": days_seen,
+        "server_offset_h": offset_h,
+        "min": spreads[0],
+        "median": statistics.median(spreads),
+        "p90": _pct(spreads, 90),
+        "p99": _pct(spreads, 99),
+        "max": spreads[-1],
         "median_points": statistics.median(spreads) / point if point else None,
         "by_hour": {},
     }
@@ -283,21 +297,27 @@ def sibling_symbols(mt5, symbol: str) -> list:
     """
     root = symbol.split(".", 1)[0].upper()
     out = []
-    for s in (mt5.symbols_get() or []):
+    for s in mt5.symbols_get() or []:
         if s.name.split(".", 1)[0].upper() != root:
             continue
-        mt5.symbol_select(s.name, True)      # market watch only — changes no order state
+        mt5.symbol_select(s.name, True)  # market watch only — changes no order state
         f = mt5.symbol_info(s.name) or s
         tick = mt5.symbol_info_tick(s.name)
-        out.append({
-            "symbol": f.name, "path": f.path,
-            "trade_mode": _TRADE_MODE.get(f.trade_mode, f.trade_mode),
-            "contract_size": f.trade_contract_size, "digits": f.digits,
-            "swap_long": f.swap_long, "swap_short": f.swap_short,
-            "spread_points": f.spread,
-            "live_spread": (round(tick.ask - tick.bid, 5)
-                            if tick and tick.ask and tick.bid else None),
-        })
+        out.append(
+            {
+                "symbol": f.name,
+                "path": f.path,
+                "trade_mode": _TRADE_MODE.get(f.trade_mode, f.trade_mode),
+                "contract_size": f.trade_contract_size,
+                "digits": f.digits,
+                "swap_long": f.swap_long,
+                "swap_short": f.swap_short,
+                "spread_points": f.spread,
+                "live_spread": (
+                    round(tick.ask - tick.bid, 5) if tick and tick.ask and tick.bid else None
+                ),
+            }
+        )
     return sorted(out, key=lambda r: r["symbol"])
 
 
@@ -311,26 +331,48 @@ def main(argv=None) -> int:
     # expects and still refuses a terminal logged into a different one. That check is the whole
     # reason this tool can be trusted — reporting one tier's costs as another's is the error it
     # exists to end, and it would look completely normal.
-    ap.add_argument("--bot", help="a registered bot key; reads terminal, account and symbol from "
-                                  "its instance config")
-    ap.add_argument("--path", help="terminal64.exe of an ALREADY-RUNNING, already-logged-in "
-                                   "terminal (use with --account and --symbol)")
-    ap.add_argument("--account", type=int,
-                    help="the account number you EXPECT to be logged in. Refuses on mismatch.")
-    ap.add_argument("--symbol", help="symbol to read. Required with --path, and worth passing even "
-                                     "with --bot: PU Prime suffixes the tier onto the name, so the "
-                                     "same market is XAUUSD.s on Standard and XAUUSD.p on a raw "
-                                     "tier. --symbols lists what this account actually carries.")
-    ap.add_argument("--symbols", action="store_true",
-                    help="ALSO list every symbol on this terminal sharing this one's root, with "
-                         "its trade mode, swap and spread. This is how you check whether a cost "
-                         "you are about to assume is shared actually is — see sibling_symbols().")
-    ap.add_argument("--sample", type=int, default=120,
-                    help="seconds of live ticks to sample for the spread distribution (0 = skip)")
-    ap.add_argument("--history-days", type=int, default=0,
-                    help="ALSO read the terminal's stored ticks over the last N days and report the "
-                         "spread by UTC hour. This is the only way to see the Asian session and the "
-                         "rollover without waiting for them.")
+    ap.add_argument(
+        "--bot",
+        help="a registered bot key; reads terminal, account and symbol from its instance config",
+    )
+    ap.add_argument(
+        "--path",
+        help="terminal64.exe of an ALREADY-RUNNING, already-logged-in "
+        "terminal (use with --account and --symbol)",
+    )
+    ap.add_argument(
+        "--account",
+        type=int,
+        help="the account number you EXPECT to be logged in. Refuses on mismatch.",
+    )
+    ap.add_argument(
+        "--symbol",
+        help="symbol to read. Required with --path, and worth passing even "
+        "with --bot: PU Prime suffixes the tier onto the name, so the "
+        "same market is XAUUSD.s on Standard and XAUUSD.p on a raw "
+        "tier. --symbols lists what this account actually carries.",
+    )
+    ap.add_argument(
+        "--symbols",
+        action="store_true",
+        help="ALSO list every symbol on this terminal sharing this one's root, with "
+        "its trade mode, swap and spread. This is how you check whether a cost "
+        "you are about to assume is shared actually is — see sibling_symbols().",
+    )
+    ap.add_argument(
+        "--sample",
+        type=int,
+        default=120,
+        help="seconds of live ticks to sample for the spread distribution (0 = skip)",
+    )
+    ap.add_argument(
+        "--history-days",
+        type=int,
+        default=0,
+        help="ALSO read the terminal's stored ticks over the last N days and report the "
+        "spread by UTC hour. This is the only way to see the Asian session and the "
+        "rollover without waiting for them.",
+    )
     args = ap.parse_args(argv)
 
     if args.bot:
@@ -341,22 +383,33 @@ def main(argv=None) -> int:
     else:
         # No partial credit: a path with no account would attach to whatever is open and report it
         # without checking, which is precisely the failure `attach()` exists to prevent.
-        missing = [f for f, v in (("--path", args.path), ("--account", args.account),
-                                  ("--symbol", args.symbol)) if not v]
+        missing = [
+            f
+            for f, v in (
+                ("--path", args.path),
+                ("--account", args.account),
+                ("--symbol", args.symbol),
+            )
+            if not v
+        ]
         if missing:
-            ap.error(f"either --bot, or all of --path/--account/--symbol (missing: "
-                     f"{', '.join(missing)})")
+            ap.error(
+                f"either --bot, or all of --path/--account/--symbol (missing: {', '.join(missing)})"
+            )
         path, account, symbol = args.path, args.account, args.symbol
         label = f"account {account}"
 
     import MetaTrader5 as mt5
+
     attach(mt5, path, account)
     try:
         acct = mt5.account_info()
         print(f"broker_facts {label}")
         print(f"  terminal   {path}")
-        print(f"  account    {acct.login} / {acct.server} / {acct.currency} "
-              f"/ balance {acct.balance:,.2f}")
+        print(
+            f"  account    {acct.login} / {acct.server} / {acct.currency} "
+            f"/ balance {acct.balance:,.2f}"
+        )
         # ── everything the ACCOUNT itself declares (2026-08-08) ────────────────────────────────
         # Added because two PU Prime demos of supposedly DIFFERENT tiers (Prime 700152904 and ECN
         # 700152905) came back byte-identical on the symbol specification — same `XAUUSD.p`, same
@@ -371,50 +424,79 @@ def main(argv=None) -> int:
         #
         # `leverage` and the two stop-out levels are the plausible tier-linked fields; `company`
         # and `margin_mode` are printed to catch an account that is quietly on a different entity.
-        for name, val in (("company", acct.company), ("leverage", f"1:{acct.leverage}"),
-                          ("margin_mode", acct.margin_mode), ("trade_mode", acct.trade_mode),
-                          ("margin_so_call", acct.margin_so_call),
-                          ("margin_so_so", acct.margin_so_so),
-                          ("limit_orders", acct.limit_orders),
-                          ("fifo_close", acct.fifo_close)):
+        for name, val in (
+            ("company", acct.company),
+            ("leverage", f"1:{acct.leverage}"),
+            ("margin_mode", acct.margin_mode),
+            ("trade_mode", acct.trade_mode),
+            ("margin_so_call", acct.margin_so_call),
+            ("margin_so_so", acct.margin_so_so),
+            ("limit_orders", acct.limit_orders),
+            ("fifo_close", acct.fifo_close),
+        ):
             print(f"  {name:<16} {val}")
         print()
 
         s = spec(mt5, symbol)
         print(f"SPECIFICATION - {s['symbol']}")
-        for k in ("digits", "point", "contract_size", "tick_value", "tick_size",
-                  "volume_min", "volume_max", "volume_step",
-                  "stops_level_points", "freeze_level_points",
-                  "swap_long", "swap_short", "swap_mode", "swap_rollover_3days",
-                  "spread_now_points", "spread_float"):
+        for k in (
+            "digits",
+            "point",
+            "contract_size",
+            "tick_value",
+            "tick_size",
+            "volume_min",
+            "volume_max",
+            "volume_step",
+            "stops_level_points",
+            "freeze_level_points",
+            "swap_long",
+            "swap_short",
+            "swap_mode",
+            "swap_rollover_3days",
+            "spread_now_points",
+            "spread_float",
+        ):
             print(f"  {k:<22} {s[k]}")
 
         pt = float(s["point"] or 0.01)
         print()
         print("READ THESE TWO CAREFULLY")
-        print(f"  broker minimum stop  {s['stops_level_points']} points "
-              f"= ${s['stops_level_points'] * pt:.2f} - enforced by the TERMINAL, independent of "
-              f"exec_min_stop_mode")
-        print(f"  swap long / short    {s['swap_long']} / {s['swap_short']} - a POSITIVE value is "
-              f"a credit paid TO you, and gold's short swap normally is one")
+        print(
+            f"  broker minimum stop  {s['stops_level_points']} points "
+            f"= ${s['stops_level_points'] * pt:.2f} - enforced by the TERMINAL, independent of "
+            f"exec_min_stop_mode"
+        )
+        print(
+            f"  swap long / short    {s['swap_long']} / {s['swap_short']} - a POSITIVE value is "
+            f"a credit paid TO you, and gold's short swap normally is one"
+        )
 
         if args.symbols:
             sibs = sibling_symbols(mt5, symbol)
             print()
             print(f"SIBLING SYMBOLS - same market, quoted again on this terminal ({len(sibs)})")
-            print(f"  {'symbol':<16} {'trade_mode':<11} {'swap_long':>10} {'swap_short':>11} "
-                  f"{'spread':>8}  path")
+            print(
+                f"  {'symbol':<16} {'trade_mode':<11} {'swap_long':>10} {'swap_short':>11} "
+                f"{'spread':>8}  path"
+            )
             for r in sibs:
                 sp = "-" if r["live_spread"] is None else f"{r['live_spread']:.3f}"
-                print(f"  {r['symbol']:<16} {r['trade_mode']:<11} {r['swap_long']:>10.2f} "
-                      f"{r['swap_short']:>11.2f} {sp:>8}  {r['path']}")
+                print(
+                    f"  {r['symbol']:<16} {r['trade_mode']:<11} {r['swap_long']:>10.2f} "
+                    f"{r['swap_short']:>11.2f} {sp:>8}  {r['path']}"
+                )
             pairs = {(r["swap_long"], r["swap_short"]) for r in sibs}
             if len(sibs) > 1 and len(pairs) > 1:
-                print(f"  -> {len(pairs)} DISTINCT swap pairs across {len(sibs)} quotes of one "
-                      f"market. A cost is NOT safe to assume shared - measure the one you trade.")
+                print(
+                    f"  -> {len(pairs)} DISTINCT swap pairs across {len(sibs)} quotes of one "
+                    f"market. A cost is NOT safe to assume shared - measure the one you trade."
+                )
             elif len(sibs) > 1:
-                print("  -> every sibling carries the same swap on THIS account. That is a fact "
-                      "about these symbols, and still says nothing about another ACCOUNT TIER.")
+                print(
+                    "  -> every sibling carries the same swap on THIS account. That is a fact "
+                    "about these symbols, and still says nothing about another ACCOUNT TIER."
+                )
             else:
                 print("  -> one quote only, so this terminal cannot speak for any other tier.")
 
@@ -424,14 +506,20 @@ def main(argv=None) -> int:
             d = sample_spread(mt5, symbol, args.sample, pt)
             if not d.get("n"):
                 print(f"  {d.get('note')}")
-                print(f"  ({d['stale_reads']} repeated ticks, {d.get('none_reads', 0)} no-answer "
-                      f"reads, symbol_select -> {d.get('selected')})")
+                print(
+                    f"  ({d['stale_reads']} repeated ticks, {d.get('none_reads', 0)} no-answer "
+                    f"reads, symbol_select -> {d.get('selected')})"
+                )
             else:
-                print(f"  {d['n']} fresh reads ({d['stale_reads']} repeats, "
-                      f"{d.get('none_reads', 0)} no-answer)")
-                print(f"  min ${d['min']:.2f} | median ${d['median']:.2f} "
-                      f"({d['median_points']:.0f} points) | p90 ${d['p90']:.2f} "
-                      f"| p99 ${d['p99']:.2f} | max ${d['max']:.2f}")
+                print(
+                    f"  {d['n']} fresh reads ({d['stale_reads']} repeats, "
+                    f"{d.get('none_reads', 0)} no-answer)"
+                )
+                print(
+                    f"  min ${d['min']:.2f} | median ${d['median']:.2f} "
+                    f"({d['median_points']:.0f} points) | p90 ${d['p90']:.2f} "
+                    f"| p99 ${d['p99']:.2f} | max ${d['max']:.2f}"
+                )
                 print()
                 print("  NOTE: a few minutes is a SNAPSHOT of one session, not the spread. Gold")
                 print("  widens at the 17:00 NY rollover, around news and out of hours. Sample")
@@ -445,14 +533,20 @@ def main(argv=None) -> int:
                 print(f"  {h.get('note')}")
             else:
                 off = h["server_offset_h"]
-                print(f"  {h['n']:,} ticks over {h['days']} day(s); server clock measured at "
-                      + (f"UTC{off:+d}" if off is not None else "UNKNOWN (no live tick)"))
-                print(f"  min ${h['min']:.2f} | median ${h['median']:.2f} "
-                      f"({h['median_points']:.0f} points) | p90 ${h['p90']:.2f} "
-                      f"| p99 ${h['p99']:.2f} | max ${h['max']:.2f}")
+                print(
+                    f"  {h['n']:,} ticks over {h['days']} day(s); server clock measured at "
+                    + (f"UTC{off:+d}" if off is not None else "UNKNOWN (no live tick)")
+                )
+                print(
+                    f"  min ${h['min']:.2f} | median ${h['median']:.2f} "
+                    f"({h['median_points']:.0f} points) | p90 ${h['p90']:.2f} "
+                    f"| p99 ${h['p99']:.2f} | max ${h['max']:.2f}"
+                )
                 if not h["by_hour"]:
-                    print("  by-hour breakdown SKIPPED - the server clock could not be measured, "
-                          "and broker hours under a UTC heading is a wrong answer, not a partial one.")
+                    print(
+                        "  by-hour breakdown SKIPPED - the server clock could not be measured, "
+                        "and broker hours under a UTC heading is a wrong answer, not a partial one."
+                    )
                 else:
                     print("  by UTC hour (median / p99 / ticks):")
                 for hr, v in h["by_hour"].items():

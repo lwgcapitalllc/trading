@@ -6,7 +6,6 @@ and everything else cannot. These tests pin that line from both sides.
 """
 
 import pytest
-
 from services import bot_params
 
 
@@ -40,10 +39,22 @@ def _config(**overrides):
 
 
 _SCHEMA = [
-    {"name": "aplus_window", "label": "Arm → SOS timeout", "group": "What arms a setup",
-     "type": "int", "unit": "minutes", "desc": "How long an armed setup waits."},
-    {"name": "exec_risk_pct", "label": "Risk per trade", "group": "Position sizing",
-     "type": "double", "unit": "%", "core": True},
+    {
+        "name": "aplus_window",
+        "label": "Arm → SOS timeout",
+        "group": "What arms a setup",
+        "type": "int",
+        "unit": "minutes",
+        "desc": "How long an armed setup waits.",
+    },
+    {
+        "name": "exec_risk_pct",
+        "label": "Risk per trade",
+        "group": "Position sizing",
+        "type": "double",
+        "unit": "%",
+        "core": True,
+    },
 ]
 
 
@@ -65,7 +76,7 @@ def test_every_strategy_param_is_shown_even_with_no_schema():
 def test_an_unschemad_param_falls_back_to_a_readable_name():
     v = bot_params.build_view("demo_bot", _config(), _SCHEMA)
     row = next(r for r in v["strategy"] if r["name"] == "exec_sl_level")
-    assert row["label"] == "exec sl level"      # not the raw snake_case, not blank
+    assert row["label"] == "exec sl level"  # not the raw snake_case, not blank
 
 
 def test_the_config_note_rides_along_with_the_field_it_explains():
@@ -95,7 +106,7 @@ def test_no_secret_can_reach_the_view():
 def test_strategy_rows_follow_the_labs_param_order():
     v = bot_params.build_view("demo_bot", _config(), _SCHEMA)
     names = [r["name"] for r in v["strategy"]]
-    assert names.index("aplus_window") < names.index("exec_longs")   # schema'd first
+    assert names.index("aplus_window") < names.index("exec_longs")  # schema'd first
 
 
 # ── validation ──────────────────────────────────────────────────────────────────

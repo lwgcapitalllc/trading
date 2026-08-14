@@ -47,7 +47,7 @@ import sys
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import pandas as pd
 
@@ -57,40 +57,85 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mpc_bos import BosConfig, MpcBosStrategy  # noqa: E402
 from mpc_sos_fade.tools.compare_strategy import load_export  # noqa: E402
+
+from mpc_bos import BosConfig, MpcBosStrategy  # noqa: E402
 
 # ── the packed decoders — MUST match mpc_bos_strategy_export.pine's plot scheme ──
 # Each is mirrored in the Pine's own PARITY EXPORT header comment. Kept as literal dicts
 # rather than derived, so a scheme change here fails loudly instead of shifting silently.
 _CFG_BITS = {
-    "exec_longs": 1, "exec_shorts": 2, "bos_use_fvg": 4, "exec_req_fvg": 8,
-    "exec_fvg_deep_only": 16, "exec_deep_fib": 32, "exec_conf_sz2": 64, "exec_fvg_50": 128,
-    "bos_req_hold": 256, "bos_respect_veto": 512, "exec_no_late_day": 1024,
-    "bos_tp3_measured": 2048, "bos_close_opp_div": 4096,
+    "exec_longs": 1,
+    "exec_shorts": 2,
+    "bos_use_fvg": 4,
+    "exec_req_fvg": 8,
+    "exec_fvg_deep_only": 16,
+    "exec_deep_fib": 32,
+    "exec_conf_sz2": 64,
+    "exec_fvg_50": 128,
+    "bos_req_hold": 256,
+    "bos_respect_veto": 512,
+    "exec_no_late_day": 1024,
+    "bos_tp3_measured": 2048,
+    "bos_close_opp_div": 4096,
     # engine-side, decoded into EngineConfig rather than BosConfig
-    "fvg_require_close": 8192, "fvg_keep_until_broken": 16384, "eq_exempt_fvg": 32768,
+    "fvg_require_close": 8192,
+    "fvg_keep_until_broken": 16384,
+    "eq_exempt_fvg": 32768,
     # these two are enums wearing a bit, because each has exactly two states
-    "bos_shallow": 65536, "bos_expansion_anchor": 131072,
-    "bos_vwap_on": 262144, "use_struct_trail": 524288,
+    "bos_shallow": 65536,
+    "bos_expansion_anchor": 131072,
+    "bos_vwap_on": 262144,
+    "use_struct_trail": 524288,
 }
 _ENTRY_FIB = {0: "0.382", 1: "0.5", 2: "0.618", 3: "0.702", 4: "0.786", 5: "0.886"}
 _WHICH = {0: "1st only", 1: "1st + 2nd", 2: "All"}
-_SL_MODEL = {0: "Fib 1.0 (leg origin)", 1: "Broken swing level", 2: "Fib 0.886",
-             3: "Last confirmed swing", 4: "ATR"}
+_SL_MODEL = {
+    0: "Fib 1.0 (leg origin)",
+    1: "Broken swing level",
+    2: "Fib 0.886",
+    3: "Last confirmed swing",
+    4: "ATR",
+}
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 _MOVE_STOP = {0: "Off", 1: "$ of price", 2: "Structure (swing)"}
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 _HTF_REQ = {0: "Ignore", 1: "Must agree", 2: "Must not oppose", 3: "Must oppose (reversal)"}
 
 # px_struct / px_arm / px_ready / px_gate / px_src bit maps.
-_STRUCT = {"bull_bos": 1, "bear_bos": 2, "bull_sos": 4, "bear_sos": 8,
-           "session_gap": 16, "fired_l": 32, "fired_s": 64}
-_ARM = {"l_on": 1, "s_on": 2, "reg_l": 4, "reg_s": 8, "long_armed": 16, "short_armed": 32,
-        "pos_long": 64, "pos_short": 128, "fill_bar": 256, "close_bar": 512}
+_STRUCT = {
+    "bull_bos": 1,
+    "bear_bos": 2,
+    "bull_sos": 4,
+    "bear_sos": 8,
+    "session_gap": 16,
+    "fired_l": 32,
+    "fired_s": 64,
+}
+_ARM = {
+    "l_on": 1,
+    "s_on": 2,
+    "reg_l": 4,
+    "reg_s": 8,
+    "long_armed": 16,
+    "short_armed": 32,
+    "pos_long": 64,
+    "pos_short": 128,
+    "fill_bar": 256,
+    "close_bar": 512,
+}
 _READY = {"l_ready": 1, "s_ready": 2, "l_half": 4, "s_half": 8}
-_GATE = {"late": 1, "htf_l": 2, "htf_s": 4, "vwap_l": 8, "vwap_s": 16,
-         "veto_l": 32, "veto_s": 64, "blk_ready_l": 128, "blk_ready_s": 256}
+_GATE = {
+    "late": 1,
+    "htf_l": 2,
+    "htf_s": 4,
+    "vwap_l": 8,
+    "vwap_s": 16,
+    "veto_l": 32,
+    "veto_s": 64,
+    "blk_ready_l": 128,
+    "blk_ready_s": 256,
+}
 
 
 class ExportIncomplete(RuntimeError):
@@ -123,11 +168,29 @@ def config_from_export(df: pd.DataFrame, base: Optional[BosConfig] = None) -> Bo
     settings is green about nothing — so nothing here defaults quietly: every field comes off a
     column, and a missing column raises.
     """
-    _require(df, ("cfg_bits", "cfg_enum1", "cfg_enum2", "cfg_min_disp", "cfg_min_leg",
-                  "cfg_max_days", "cfg_max_regime", "cfg_sl_atr", "cfg_sl_buf",
-                  "cfg_min_stop_val", "cfg_move_stop_val", "cfg_tp1_pct", "cfg_tp2_pct",
-                  "cfg_tp3_pct", "cfg_be_buf", "cfg_struct_buf", "cfg_trail_step",
-                  "cfg_risk_pct"))
+    _require(
+        df,
+        (
+            "cfg_bits",
+            "cfg_enum1",
+            "cfg_enum2",
+            "cfg_min_disp",
+            "cfg_min_leg",
+            "cfg_max_days",
+            "cfg_max_regime",
+            "cfg_sl_atr",
+            "cfg_sl_buf",
+            "cfg_min_stop_val",
+            "cfg_move_stop_val",
+            "cfg_tp1_pct",
+            "cfg_tp2_pct",
+            "cfg_tp3_pct",
+            "cfg_be_buf",
+            "cfg_struct_buf",
+            "cfg_trail_step",
+            "cfg_risk_pct",
+        ),
+    )
     row = df.iloc[0]
     bits = int(row["cfg_bits"])
     e1, e2 = int(row["cfg_enum1"]), int(row["cfg_enum2"])
@@ -149,11 +212,13 @@ def config_from_export(df: pd.DataFrame, base: Optional[BosConfig] = None) -> Bo
         bos_tp3_measured=_bit(bits, _CFG_BITS["bos_tp3_measured"]),
         bos_close_opp_div=_bit(bits, _CFG_BITS["bos_close_opp_div"]),
         bos_entry_top="0.382" if _bit(bits, _CFG_BITS["bos_shallow"]) else "0.5",
-        bos_fib_anchor=("Expansion leg" if _bit(bits, _CFG_BITS["bos_expansion_anchor"])
-                        else "Break leg"),
+        bos_fib_anchor=(
+            "Expansion leg" if _bit(bits, _CFG_BITS["bos_expansion_anchor"]) else "Break leg"
+        ),
         bos_vwap_req="Trend's side" if _bit(bits, _CFG_BITS["bos_vwap_on"]) else "Off",
-        exec_runner_trail=("Structure (swing)" if _bit(bits, _CFG_BITS["use_struct_trail"])
-                           else "Fixed step"),
+        exec_runner_trail=(
+            "Structure (swing)" if _bit(bits, _CFG_BITS["use_struct_trail"]) else "Fixed step"
+        ),
         bos_entry_fib=_ENTRY_FIB[e1 % 10],
         bos_which=_WHICH[(e1 // 10) % 10],
         bos_sl_model=_SL_MODEL[(e1 // 100) % 10],
@@ -199,7 +264,7 @@ def engine_config_from_export(df: pd.DataFrame):
         fvg_threshold_pct=float(row["cfg_fvg_thresh"]),
         fvg_require_close=_bit(bits, _CFG_BITS["fvg_require_close"]),
         eq_exempt_fvg=_bit(bits, _CFG_BITS["eq_exempt_fvg"]),
-        show_internal=False,     # this Pine's "Show Internal Structure" input defaults off
+        show_internal=False,  # this Pine's "Show Internal Structure" input defaults off
     )
 
 
@@ -246,17 +311,28 @@ def _py_row(dec, bos, stage: int) -> dict:
     """One bar of the PYTHON stream, in the export's own vocabulary."""
     lv, sv = bos.l_levels, bos.s_levels
     return {
-        "l_on": bos.long.on, "s_on": bos.short.on,
-        "reg_l": bos.regime_l, "reg_s": bos.regime_s,
-        "long_armed": dec.long_armed, "short_armed": dec.short_armed,
-        "l_ready": bos.l_ready, "s_ready": bos.s_ready,
-        "l_half": bos.long.half, "s_half": bos.short.half,
-        "vwap_block_l": bos.vwap_block_l, "vwap_block_s": bos.vwap_block_s,
-        "veto_l": dec.long_veto, "veto_s": dec.short_veto,
-        "fired_l": bos.fired_l, "fired_s": bos.fired_s,
-        "long_edge": dec.long_edge, "short_edge": dec.short_edge,
-        "l_ext": lv.get(0.0), "l_org": lv.get(1.0),
-        "s_ext": sv.get(0.0), "s_org": sv.get(1.0),
+        "l_on": bos.long.on,
+        "s_on": bos.short.on,
+        "reg_l": bos.regime_l,
+        "reg_s": bos.regime_s,
+        "long_armed": dec.long_armed,
+        "short_armed": dec.short_armed,
+        "l_ready": bos.l_ready,
+        "s_ready": bos.s_ready,
+        "l_half": bos.long.half,
+        "s_half": bos.short.half,
+        "vwap_block_l": bos.vwap_block_l,
+        "vwap_block_s": bos.vwap_block_s,
+        "veto_l": dec.long_veto,
+        "veto_s": dec.short_veto,
+        "fired_l": bos.fired_l,
+        "fired_s": bos.fired_s,
+        "long_edge": dec.long_edge,
+        "short_edge": dec.short_edge,
+        "l_ext": lv.get(0.0),
+        "l_org": lv.get(1.0),
+        "s_ext": sv.get(0.0),
+        "s_org": sv.get(1.0),
         "vwap": bos.vwap,
         # RAW, not zeroed when disarmed. Pine plots `bosL_n` unconditionally and that var keeps
         # the last armed leg's ordinal after a death — this used to read `... if bos.long.on
@@ -308,10 +384,31 @@ def _drop_forming_tail(df: pd.DataFrame) -> pd.DataFrame:
 
 def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
     df = load_export(csv_path)
-    _require(df, ("px_struct", "px_arm", "px_ready", "px_gate", "px_edge_l", "px_edge_s",
-                  "px_l_ext", "px_l_org", "px_s_ext", "px_s_org", "px_ord_l", "px_ord_s",
-                  "px_tier_l", "px_tier_s", "px_blk_l", "px_blk_s", "px_stage", "px_vwap",
-                  "px_closed_r", "px_src"))
+    _require(
+        df,
+        (
+            "px_struct",
+            "px_arm",
+            "px_ready",
+            "px_gate",
+            "px_edge_l",
+            "px_edge_s",
+            "px_l_ext",
+            "px_l_org",
+            "px_s_ext",
+            "px_s_org",
+            "px_ord_l",
+            "px_ord_s",
+            "px_tier_l",
+            "px_tier_s",
+            "px_blk_l",
+            "px_blk_s",
+            "px_stage",
+            "px_vwap",
+            "px_closed_r",
+            "px_src",
+        ),
+    )
     df = _drop_forming_tail(df)
     cfg = config_from_export(df)
     eng = engine_config_from_export(df)
@@ -327,11 +424,15 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
             "resulting empty book agreement."
         )
 
-    print(f"config from export: sl={cfg.bos_sl_model} entry={cfg.bos_entry_fib} "
-          f"anchor={cfg.bos_fib_anchor} useFvg={cfg.bos_use_fvg} vwap={cfg.bos_vwap_req} "
-          f"which={cfg.bos_which} tp={cfg.exec_tp1_pct}/{cfg.exec_tp2_pct}/{cfg.exec_tp3_pct}")
-    print(f"engines from export: fvg_max={eng.fvg_max_count} thresh={eng.fvg_threshold_pct} "
-          f"req_close={eng.fvg_require_close} eq_exempt={eng.eq_exempt_fvg}")
+    print(
+        f"config from export: sl={cfg.bos_sl_model} entry={cfg.bos_entry_fib} "
+        f"anchor={cfg.bos_fib_anchor} useFvg={cfg.bos_use_fvg} vwap={cfg.bos_vwap_req} "
+        f"which={cfg.bos_which} tp={cfg.exec_tp1_pct}/{cfg.exec_tp2_pct}/{cfg.exec_tp3_pct}"
+    )
+    print(
+        f"engines from export: fvg_max={eng.fvg_max_count} thresh={eng.fvg_threshold_pct} "
+        f"req_close={eng.fvg_require_close} eq_exempt={eng.eq_exempt_fvg}"
+    )
 
     strat = MpcBosStrategy(cfg).run(_bars_from(df), engine_config=eng)
 
@@ -340,7 +441,8 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
     compared = 0
 
     for i, (dec, bos, stage) in enumerate(
-            zip(strat.decisions, strat.bos_states, strat.exit_stages)):
+        zip(strat.decisions, strat.bos_states, strat.exit_stages)
+    ):
         if i < warmup:
             continue
         row = df.iloc[i]
@@ -363,7 +465,7 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
             mismatches.append(f"bar {i} closed_r: py={py['closed_r']} pine={row['px_closed_r']}")
 
         if mismatches:
-            break        # the FIRST divergence is the only informative one
+            break  # the FIRST divergence is the only informative one
 
     _report_coverage(coverage, compared, cfg)
 
@@ -456,11 +558,15 @@ def _report_coverage(coverage: Counter, compared: int, cfg: BosConfig) -> None:
     if not coverage["armed"]:
         print("  ⚠ NOTHING EVER ARMED — this run proves nothing about the entry ladder.")
     if cfg.bos_use_fvg and not coverage["zone_priced"]:
-        print("  ⚠ the Sniper Zone never priced an entry, and the export carries no "
-              "px_sz_top/px_sz_bot either — that branch is UNVERIFIED.")
+        print(
+            "  ⚠ the Sniper Zone never priced an entry, and the export carries no "
+            "px_sz_top/px_sz_bot either — that branch is UNVERIFIED."
+        )
     if cfg.exec_min_stop_mode != "Off" and not coverage["block_6"]:
-        print("  ⚠ the minimum-stop floor is ON and refused NOTHING — it is untested here. "
-              "This is the exact shape of the 2026-08-04 min-stop incident.")
+        print(
+            "  ⚠ the minimum-stop floor is ON and refused NOTHING — it is untested here. "
+            "This is the exact shape of the 2026-08-04 min-stop incident."
+        )
     if cfg.bos_vwap_req != "Off" and not coverage["block_7"]:
         print("  ⚠ the session VWAP filter is ON and refused NOTHING — it is untested here.")
 
@@ -468,13 +574,17 @@ def _report_coverage(coverage: Counter, compared: int, cfg: BosConfig) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("csv", type=Path)
-    ap.add_argument("--warmup", type=int, default=100,
-                    help="bars to skip before comparing — the engines are streaming state "
-                         "machines and a cold one legitimately disagrees with a Pine that "
-                         "loaded more history. Raise it until the run is green from a stable "
-                         "point, then check it stays green when raised further: a mismatch "
-                         "that only disappears at a HIGH warmup is warmup; one that persists "
-                         "is drift.")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=100,
+        help="bars to skip before comparing — the engines are streaming state "
+        "machines and a cold one legitimately disagrees with a Pine that "
+        "loaded more history. Raise it until the run is green from a stable "
+        "point, then check it stays green when raised further: a mismatch "
+        "that only disappears at a HIGH warmup is warmup; one that persists "
+        "is drift.",
+    )
     ap.add_argument("--price-tol", type=float, default=0.01)
     ap.add_argument("--r-tol", type=float, default=0.02)
     args = ap.parse_args()

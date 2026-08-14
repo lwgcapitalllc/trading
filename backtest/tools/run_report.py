@@ -66,6 +66,7 @@ _STRATEGIES = {
 # Everything below is REPORTING. None of it is fed back into the strategy, so adding
 # or changing a tag can never move a trade — the run is identical with or without it.
 
+
 def _session(hour_ny: int) -> str:
     """Which session the entry landed in, by NY hour. Matches the session windows the
     Pine draws (Tokyo 20-05, London 04-13, NY 09-18) — overlaps resolve to the one
@@ -89,7 +90,7 @@ def _regime_at(df, i: int, cache: dict) -> str:
     slowly-moving averages, so recomputing it for two trades an hour apart returns the
     same label at real cost.
     """
-    bucket = i // 16          # 16 x 15m = one H4 bar
+    bucket = i // 16  # 16 x 15m = one H4 bar
     if bucket in cache:
         return cache[bucket]
     from engines.regime.classifier import classify_regime
@@ -97,18 +98,22 @@ def _regime_at(df, i: int, cache: dict) -> str:
     # 34 H4 bars is the classifier's stated minimum; 1000 15m bars gives ~62 with room
     # for the market's closed hours.
     lo = max(0, i - 1000)
-    window = df.iloc[lo:i + 1]
+    window = df.iloc[lo : i + 1]
     if len(window) < 200:
         cache[bucket] = "UNKNOWN"
         return cache[bucket]
-    long_df = window.resample("4h").agg(
-        {"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+    long_df = (
+        window.resample("4h")
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+        .dropna()
+    )
     label = classify_regime(window.tail(200), long_df)
     cache[bucket] = label
     return label
 
 
 # ── setup reconstruction ─────────────────────────────────────────────────────────
+
 
 class Leg:
     """One A+ leg that reached the SOS stage, tracked across the bars it was alive.
@@ -118,8 +123,17 @@ class Leg:
     the side's stage is 2 or higher; it ends when the stage falls back below 2.
     """
 
-    __slots__ = ("dir", "start", "end", "stage_max", "edge_ever", "veto_ever",
-                 "armed_ever", "traded", "edge_first")
+    __slots__ = (
+        "dir",
+        "start",
+        "end",
+        "stage_max",
+        "edge_ever",
+        "veto_ever",
+        "armed_ever",
+        "traded",
+        "edge_first",
+    )
 
     def __init__(self, direction: int, start: int):
         self.dir = direction
@@ -182,6 +196,7 @@ def _collect_legs(decisions) -> list[Leg]:
 
 
 # ── reporting ────────────────────────────────────────────────────────────────────
+
 
 def _assert_timeframe(df, tf: str) -> None:
     """Refuse to replay bars that are not the timeframe we asked for.
@@ -254,11 +269,13 @@ def _summary(label: str, rows: list[dict], band: float) -> str:
     g = [_grade(r["r"], band) for r in rows]
     wins = [r["r"] for r, k in zip(rows, g) if k == "win"]
     losses = [r["r"] for r, k in zip(rows, g) if k == "loss"]
-    return (f"{label:<16} n={len(rows):4d}  sumR={sum(rs):8.1f}  avgR={statistics.mean(rs):6.2f}  "
-            f"win={len(wins):3d} loss={len(losses):3d} be={g.count('be'):3d}  "
-            f"wr={100 * len(wins) / len(rows):3.0f}%  "
-            f"avgWin={statistics.mean(wins) if wins else 0:5.2f}  "
-            f"avgLoss={statistics.mean(losses) if losses else 0:6.2f}")
+    return (
+        f"{label:<16} n={len(rows):4d}  sumR={sum(rs):8.1f}  avgR={statistics.mean(rs):6.2f}  "
+        f"win={len(wins):3d} loss={len(losses):3d} be={g.count('be'):3d}  "
+        f"wr={100 * len(wins) / len(rows):3.0f}%  "
+        f"avgWin={statistics.mean(wins) if wins else 0:5.2f}  "
+        f"avgLoss={statistics.mean(losses) if losses else 0:6.2f}"
+    )
 
 
 def _by(rows: list[dict], key: str, band: float, title: str) -> None:
@@ -271,27 +288,50 @@ def _by(rows: list[dict], key: str, band: float, title: str) -> None:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15", help="target timeframe in minutes")
-    ap.add_argument("--start", default=None,
-                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this "
-                         "timeframe, from backtest/data/history.py)")
+    ap.add_argument(
+        "--start",
+        default=None,
+        help="YYYY-MM-DD (default: the broker's measured earliest bar at this "
+        "timeframe, from backtest/data/history.py)",
+    )
     ap.add_argument("--end", default=None, help="YYYY-MM-DD (default: today)")
-    ap.add_argument("--warmup", type=int, default=1000,
-                    help="bars the engines warm on before decisions are recorded")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=1000,
+        help="bars the engines warm on before decisions are recorded",
+    )
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--fill-model", default="bar", choices=["bar", "tick"],
-                    help="'bar' = zero-cost Pine-equivalent guess; 'tick' = real fills + costs")
-    ap.add_argument("--out", default=None, help="output directory (default: backtest/reports/<stamp>)")
-    ap.add_argument("--set", dest="overrides", action="append", default=[], metavar="FIELD=VALUE",
-                    help="override a config field, e.g. --set exec_trail_step=2.0. Repeatable. "
-                         "The field must already exist on the strategy's config — a typo raises "
-                         "rather than silently running the default, which would make the run a lie.")
-    ap.add_argument("--no-regime", action="store_true",
-                    help="skip the regime tag (faster; drops the 'what market' answer)")
+    ap.add_argument(
+        "--fill-model",
+        default="bar",
+        choices=["bar", "tick"],
+        help="'bar' = zero-cost Pine-equivalent guess; 'tick' = real fills + costs",
+    )
+    ap.add_argument(
+        "--out", default=None, help="output directory (default: backtest/reports/<stamp>)"
+    )
+    ap.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="FIELD=VALUE",
+        help="override a config field, e.g. --set exec_trail_step=2.0. Repeatable. "
+        "The field must already exist on the strategy's config — a typo raises "
+        "rather than silently running the default, which would make the run a lie.",
+    )
+    ap.add_argument(
+        "--no-regime",
+        action="store_true",
+        help="skip the regime tag (faster; drops the 'what market' answer)",
+    )
     args = ap.parse_args(argv)
 
     import importlib
@@ -339,6 +379,7 @@ def main(argv=None) -> int:
         print(f"  override {field} = {val!r} (was {cur!r})")
     if patch:
         import dataclasses
+
         cfg = dataclasses.replace(cfg, **patch)
     strat = StrategyCls(config=cfg, initial_capital=args.capital)
     print(f"replaying {args.strategy} (warmup {args.warmup}) ...", flush=True)
@@ -349,7 +390,11 @@ def main(argv=None) -> int:
     band = getattr(cfg, "exec_scratch_r", 0.15)
     print(f"  {len(trades)} trades, {len(legs)} A+ legs reached SOS", flush=True)
 
-    out = Path(args.out) if args.out else _ROOT / "backtest" / "reports" / dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    out = (
+        Path(args.out)
+        if args.out
+        else _ROOT / "backtest" / "reports" / dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    )
     out.mkdir(parents=True, exist_ok=True)
 
     # ── trades.csv ──
@@ -358,30 +403,32 @@ def main(argv=None) -> int:
     for t in trades:
         ts = df.index[t.entry_index] if t.entry_index < len(df.index) else df.index[-1]
         ny = ts.tz_localize("UTC").tz_convert(NY) if ts.tzinfo is None else ts.astimezone(NY)
-        rows.append({
-            "entry_utc": ts.isoformat(),
-            "entry_ny": ny.strftime("%Y-%m-%d %H:%M"),
-            "year": ny.year,
-            "month": f"{ny.month:02d}",
-            "weekday": ny.strftime("%a"),
-            "hour_ny": f"{ny.hour:02d}",
-            "session": _session(ny.hour),
-            "regime": "off" if args.no_regime else _regime_at(df, t.entry_index, regime_cache),
-            "dir": "long" if t.dir > 0 else "short",
-            "r": round(t.r, 3),
-            "grade": _grade(t.r, band),
-            "pnl_usd": round(t.pnl_usd, 2),
-            "entry_price": round(t.entry_price, 2),
-            "exit_price": round(t.exit_price, 2),
-            "stop_distance": round(t.stop_distance, 2),
-            "bars_held": t.exit_index - t.entry_index,
-            "mfe_usd": round(t.mfe_usd, 2),
-            "mae_usd": round(t.mae_usd, 2),
-            "mfe_r": round(t.mfe_usd / t.risk_usd, 3) if t.risk_usd else 0.0,
-            "mae_r": round(t.mae_usd / t.risk_usd, 3) if t.risk_usd else 0.0,
-            "exit_reason": t.exit_reason,
-            "costs_usd": round(t.costs_usd, 2),
-        })
+        rows.append(
+            {
+                "entry_utc": ts.isoformat(),
+                "entry_ny": ny.strftime("%Y-%m-%d %H:%M"),
+                "year": ny.year,
+                "month": f"{ny.month:02d}",
+                "weekday": ny.strftime("%a"),
+                "hour_ny": f"{ny.hour:02d}",
+                "session": _session(ny.hour),
+                "regime": "off" if args.no_regime else _regime_at(df, t.entry_index, regime_cache),
+                "dir": "long" if t.dir > 0 else "short",
+                "r": round(t.r, 3),
+                "grade": _grade(t.r, band),
+                "pnl_usd": round(t.pnl_usd, 2),
+                "entry_price": round(t.entry_price, 2),
+                "exit_price": round(t.exit_price, 2),
+                "stop_distance": round(t.stop_distance, 2),
+                "bars_held": t.exit_index - t.entry_index,
+                "mfe_usd": round(t.mfe_usd, 2),
+                "mae_usd": round(t.mae_usd, 2),
+                "mfe_r": round(t.mfe_usd / t.risk_usd, 3) if t.risk_usd else 0.0,
+                "mae_r": round(t.mae_usd / t.risk_usd, 3) if t.risk_usd else 0.0,
+                "exit_reason": t.exit_reason,
+                "costs_usd": round(t.costs_usd, 2),
+            }
+        )
     if rows:
         with open(out / "trades.csv", "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows[0]))
@@ -393,22 +440,24 @@ def main(argv=None) -> int:
     for lg in legs:
         ts = df.index[min(lg.start, len(df.index) - 1)]
         ny = ts.tz_localize("UTC").tz_convert(NY) if ts.tzinfo is None else ts.astimezone(NY)
-        leg_rows.append({
-            "sos_utc": ts.isoformat(),
-            "year": ny.year,
-            "hour_ny": f"{ny.hour:02d}",
-            "session": _session(ny.hour),
-            "dir": "long" if lg.dir > 0 else "short",
-            "bars_alive": lg.end - lg.start,
-            "stage_max": lg.stage_max,
-            "reached_zone": lg.stage_max >= 3,
-            "edge_ever": lg.edge_ever,
-            "veto_ever": lg.veto_ever,
-            "armed_ever": lg.armed_ever,
-            "traded": lg.traded,
-            "verdict": lg.verdict(),
-            "edge_price": round(lg.edge_first, 2) if lg.edge_first is not None else "",
-        })
+        leg_rows.append(
+            {
+                "sos_utc": ts.isoformat(),
+                "year": ny.year,
+                "hour_ny": f"{ny.hour:02d}",
+                "session": _session(ny.hour),
+                "dir": "long" if lg.dir > 0 else "short",
+                "bars_alive": lg.end - lg.start,
+                "stage_max": lg.stage_max,
+                "reached_zone": lg.stage_max >= 3,
+                "edge_ever": lg.edge_ever,
+                "veto_ever": lg.veto_ever,
+                "armed_ever": lg.armed_ever,
+                "traded": lg.traded,
+                "verdict": lg.verdict(),
+                "edge_price": round(lg.edge_first, 2) if lg.edge_first is not None else "",
+            }
+        )
     if leg_rows:
         with open(out / "setups.csv", "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(leg_rows[0]))
@@ -417,8 +466,10 @@ def main(argv=None) -> int:
 
     # ── stdout ──
     print("\n" + "=" * 108)
-    print(f"{args.strategy}  {args.symbol} {args.tf}m   {df.index[0].date()} -> {df.index[-1].date()}"
-          f"   fill={args.fill_model}   breakeven band ±{band}R")
+    print(
+        f"{args.strategy}  {args.symbol} {args.tf}m   {df.index[0].date()} -> {df.index[-1].date()}"
+        f"   fill={args.fill_model}   breakeven band ±{band}R"
+    )
     print("=" * 108)
     if rows:
         print("\n" + _summary("ALL", rows, band))
@@ -437,9 +488,11 @@ def main(argv=None) -> int:
             ls = per_year[y]
             dead = [r for r in ls if r["mfe_r"] < 0.1]
             gave = [r for r in ls if r["mfe_r"] >= 0.5]
-            print(f"  {y}  losses={len(ls):3d}  never-worked(mfe<0.1R)={len(dead):3d}  "
-                  f"gave-back(mfe>=0.5R)={len(gave):3d}  "
-                  f"medianMfe={statistics.median([r['mfe_r'] for r in ls]):.2f}R")
+            print(
+                f"  {y}  losses={len(ls):3d}  never-worked(mfe<0.1R)={len(dead):3d}  "
+                f"gave-back(mfe>=0.5R)={len(gave):3d}  "
+                f"medianMfe={statistics.median([r['mfe_r'] for r in ls]):.2f}R"
+            )
 
     if leg_rows:
         print("\n--- SETUPS THAT NEVER TRADED, by reason ---")

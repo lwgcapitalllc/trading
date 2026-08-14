@@ -68,11 +68,11 @@ def main(argv=None) -> int:
     import datetime as dt
     import importlib
 
+    from setup_alerts import SetupAlerts
+
     from backtest.data.source import BarSource
     from backtest.replay import EngineStack, iter_bars
     from backtest.setups import implements_contract
-
-    from setup_alerts import SetupAlerts
 
     mod = importlib.import_module(_STRATEGIES[args.strategy])
     spec = mod.LAB_STRATEGY
@@ -96,9 +96,11 @@ def main(argv=None) -> int:
         # 🔴 REFUSE rather than reporting zero. A strategy that cannot answer and a strategy with
         # nothing to say would otherwise print the same table, and the zero would read as "this
         # bot is quiet" — root CLAUDE.md rule 1.
-        print(f"\n{type(strat.execution).__name__} does not implement live_setups(), so this "
-              f"strategy can produce NO setup alerts at all.\nThat is not a rate of zero — it is "
-              f"an unanswerable question. See docs/LIVE_SETUP_ALERTS.md §2.")
+        print(
+            f"\n{type(strat.execution).__name__} does not implement live_setups(), so this "
+            f"strategy can produce NO setup alerts at all.\nThat is not a rate of zero — it is "
+            f"an unanswerable question. See docs/LIVE_SETUP_ALERTS.md §2."
+        )
         return 2
 
     sent: list = []
@@ -121,7 +123,7 @@ def main(argv=None) -> int:
         if i >= args.warmup:
             alerts.on_bar(strat)
         else:
-            strat.execution.drain_setups()      # warm-up setups are not this run's
+            strat.execution.drain_setups()  # warm-up setups are not this run's
 
     months = (df.index[-1] - df.index[0]).days / 30.44
     heads = Counter(m["text"].split("\n")[0].split(" · ")[0] for m in sent)
@@ -130,16 +132,20 @@ def main(argv=None) -> int:
         threads[m["reply_to"] or m["id"]].append(m)
 
     print("\n" + "=" * 72)
-    print(f"{args.strategy}  {args.symbol} {args.tf}m  "
-          f"{df.index[0].date()} -> {df.index[-1].date()}   ({months:.1f} months)")
+    print(
+        f"{args.strategy}  {args.symbol} {args.tf}m  "
+        f"{df.index[0].date()} -> {df.index[-1].date()}   ({months:.1f} months)"
+    )
     print("=" * 72)
     print(f"\n{'message':<34}{'count':>8}{'per month':>12}")
     for head, n in heads.most_common():
         print(f"  {head:<32}{n:>8}{n / months:>12.1f}")
     print(f"  {'-' * 30}")
     print(f"  {'TOTAL':<32}{len(sent):>8}{len(sent) / months:>12.1f}")
-    print(f"\n{len(threads)} setups announced — one Telegram thread each "
-          f"({len(threads) / months:.1f}/month)")
+    print(
+        f"\n{len(threads)} setups announced — one Telegram thread each "
+        f"({len(threads) / months:.1f}/month)"
+    )
     if len(sent):
         days = months * 30.44 / len(sent)
         print(f"roughly one message every {days:.1f} days")
@@ -147,9 +153,11 @@ def main(argv=None) -> int:
     trades = len(strat.execution.trades)
     roots = len(threads)
     if roots:
-        print(f"\n{trades} of {roots} announced setups became trades "
-              f"({100.0 * trades / roots:.0f}%) — the rest are the reason the wording says "
-              f"SETUP FORMING rather than POTENTIAL TRADE.")
+        print(
+            f"\n{trades} of {roots} announced setups became trades "
+            f"({100.0 * trades / roots:.0f}%) — the rest are the reason the wording says "
+            f"SETUP FORMING rather than POTENTIAL TRADE."
+        )
 
     # ── THE INVARIANT: every trade must have been announced first ────────────────────────────
     #
@@ -164,18 +172,22 @@ def main(argv=None) -> int:
     # — those snapshots are discarded rather than posted — so the tolerance is stated, not zero.
     entered = sum(1 for m in sent if m["text"].startswith("✅"))
     missing = trades - entered
-    print(f"\nINVARIANT — every trade was announced first:")
+    print("\nINVARIANT — every trade was announced first:")
     print(f"  {trades} trades closed, {entered} announced as ENTERED")
     if missing <= 0:
-        print(f"  ✅ HOLDS — no trade reached the broker without a signal thread.")
+        print("  ✅ HOLDS — no trade reached the broker without a signal thread.")
     elif missing <= 1:
-        print(f"  ✅ HOLDS — {missing} unannounced, which is the warm-up boundary: a setup that "
-              f"opened before the window began is discarded rather than posted.")
+        print(
+            f"  ✅ HOLDS — {missing} unannounced, which is the warm-up boundary: a setup that "
+            f"opened before the window began is discarded rather than posted."
+        )
     else:
-        print(f"  🔴 BROKEN — {missing} trades had NO signal thread. The `tradeable` filter is "
-              f"suppressing setups that go on to trade. Do not ship this.")
+        print(
+            f"  🔴 BROKEN — {missing} trades had NO signal thread. The `tradeable` filter is "
+            f"suppressing setups that go on to trade. Do not ship this."
+        )
 
-    for root in list(threads)[-args.show:] if args.show else []:
+    for root in list(threads)[-args.show :] if args.show else []:
         print("\n" + "-" * 72)
         for m in threads[root]:
             pre = "  ↳ " if m["reply_to"] else ""

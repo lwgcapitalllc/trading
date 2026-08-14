@@ -59,20 +59,20 @@ SYMBOLS = [
 # Per-timeframe configuration: (mt5_constant, days_back, label)
 # Days are sized to what PU Prime demo serves with a small safety margin
 TIMEFRAME_CONFIG = {
-    "M5":  (mt5.TIMEFRAME_M5,  240),    # ~8 months (limit ~270d)
-    "M15": (mt5.TIMEFRAME_M15, 720),    # ~2 years (limit ~730d)
-    "H1":  (mt5.TIMEFRAME_H1,  1095),   # 3 years
-    "H4":  (mt5.TIMEFRAME_H4,  1095),   # 3 years
-    "D1":  (mt5.TIMEFRAME_D1,  1095),   # 3 years
+    "M5": (mt5.TIMEFRAME_M5, 240),  # ~8 months (limit ~270d)
+    "M15": (mt5.TIMEFRAME_M15, 720),  # ~2 years (limit ~730d)
+    "H1": (mt5.TIMEFRAME_H1, 1095),  # 3 years
+    "H4": (mt5.TIMEFRAME_H4, 1095),  # 3 years
+    "D1": (mt5.TIMEFRAME_D1, 1095),  # 3 years
 }
 
 # Rough expected bar counts (per the windows above) for verification
 EXPECTED_BARS = {
-    "M5":  240 * 288 * 0.7,    # 288 bars/24h, 70% threshold for weekend gaps
+    "M5": 240 * 288 * 0.7,  # 288 bars/24h, 70% threshold for weekend gaps
     "M15": 720 * 96 * 0.7,
-    "H1":  1095 * 24 * 0.7,
-    "H4":  1095 * 6 * 0.7,
-    "D1":  1095 * 0.7,
+    "H1": 1095 * 24 * 0.7,
+    "H4": 1095 * 6 * 0.7,
+    "D1": 1095 * 0.7,
 }
 
 # Common broker suffixes to try if the bare symbol doesn't exist
@@ -156,10 +156,15 @@ def verify_history(symbol, timeframe_const, days_back):
 
 def main():
     parser = argparse.ArgumentParser(description="Download MT5 historical data for the LWG lab")
-    parser.add_argument("--symbols", type=str, default=None,
-                        help="Comma-separated symbol list (default: all). Example: EURUSD,GBPUSD")
-    parser.add_argument("--verify", action="store_true",
-                        help="Verify existing data, do not re-download")
+    parser.add_argument(
+        "--symbols",
+        type=str,
+        default=None,
+        help="Comma-separated symbol list (default: all). Example: EURUSD,GBPUSD",
+    )
+    parser.add_argument(
+        "--verify", action="store_true", help="Verify existing data, do not re-download"
+    )
     args = parser.parse_args()
 
     if args.symbols:
@@ -172,11 +177,13 @@ def main():
     print("=" * 70)
     print(f"  Mode:     {'VERIFY ONLY' if args.verify else 'DOWNLOAD'}")
     print(f"  Symbols:  {len(target_symbols)}")
-    print(f"  Windows:  M5={TIMEFRAME_CONFIG['M5'][1]}d, "
-          f"M15={TIMEFRAME_CONFIG['M15'][1]}d, "
-          f"H1={TIMEFRAME_CONFIG['H1'][1]}d, "
-          f"H4={TIMEFRAME_CONFIG['H4'][1]}d, "
-          f"D1={TIMEFRAME_CONFIG['D1'][1]}d")
+    print(
+        f"  Windows:  M5={TIMEFRAME_CONFIG['M5'][1]}d, "
+        f"M15={TIMEFRAME_CONFIG['M15'][1]}d, "
+        f"H1={TIMEFRAME_CONFIG['H1'][1]}d, "
+        f"H4={TIMEFRAME_CONFIG['H4'][1]}d, "
+        f"D1={TIMEFRAME_CONFIG['D1'][1]}d"
+    )
     print()
 
     if not init_mt5():
@@ -208,7 +215,7 @@ def main():
 
     print(f"{'Verifying' if args.verify else 'Downloading'} history...")
     print(f"  {'Symbol':<15} {'TF':<5} {'Days':>5} {'Bars':>10} {'Status':<15}")
-    print(f"  {'-'*15} {'-'*5} {'-'*5} {'-'*10} {'-'*15}")
+    print(f"  {'-' * 15} {'-' * 5} {'-' * 5} {'-' * 10} {'-' * 15}")
 
     total_ops = 0
     successful = 0

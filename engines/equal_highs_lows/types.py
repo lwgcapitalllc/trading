@@ -34,11 +34,12 @@ class EqLevel:
     anchor, Pine `eqPrev*Bar`); `formed_bar` is the bar the second pivot CONFIRMED on (when the level
     printed, `pivot_len` bars after the second pivot's extreme). `id` is a stable per-engine id.
     """
+
     is_high: bool
     price: float
-    left_bar: int          # first pivot's bar — Pine eqPrevPhBar / eqPrevPlBar
-    formed_bar: int        # bar the level printed on (second pivot's confirmation bar)
-    id: int                # stable id so a consumer can track a specific level
+    left_bar: int  # first pivot's bar — Pine eqPrevPhBar / eqPrevPlBar
+    formed_bar: int  # bar the level printed on (second pivot's confirmation bar)
+    id: int  # stable id so a consumer can track a specific level
 
 
 @dataclass
@@ -53,10 +54,10 @@ class EqEvents:
     diagnostics, not signals.
     """
 
-    formed: List[EqLevel] = field(default_factory=list)       # levels that printed THIS bar
-    mitigated: List[EqLevel] = field(default_factory=list)    # levels taken (closed through) THIS bar
-    active_eqh: List[float] = field(default_factory=list)     # live EQH prices, oldest→newest
-    active_eql: List[float] = field(default_factory=list)     # live EQL prices, oldest→newest
-    tolerance: float = 0.0                                     # eqTol this bar (diagnostic)
-    pivot_high: Optional[float] = None                        # strict price pivot high confirmed this bar
-    pivot_low: Optional[float] = None                         # strict price pivot low confirmed this bar
+    formed: List[EqLevel] = field(default_factory=list)  # levels that printed THIS bar
+    mitigated: List[EqLevel] = field(default_factory=list)  # levels taken (closed through) THIS bar
+    active_eqh: List[float] = field(default_factory=list)  # live EQH prices, oldest→newest
+    active_eql: List[float] = field(default_factory=list)  # live EQL prices, oldest→newest
+    tolerance: float = 0.0  # eqTol this bar (diagnostic)
+    pivot_high: Optional[float] = None  # strict price pivot high confirmed this bar
+    pivot_low: Optional[float] = None  # strict price pivot low confirmed this bar

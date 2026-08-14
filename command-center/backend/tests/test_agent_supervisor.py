@@ -8,7 +8,6 @@ about the guard, not the loop.
 """
 
 import pytest
-
 from services import agent_supervisor as sup
 
 
@@ -90,6 +89,7 @@ def run(state):
 
 # ── The happy path does nothing at all ────────────────────────────────────────
 
+
 def test_everything_up_takes_no_action(rig):
     result = run(rig)
     assert result["actions"] == []
@@ -98,6 +98,7 @@ def test_everything_up_takes_no_action(rig):
 
 
 # ── The two tunnel failures ───────────────────────────────────────────────────
+
 
 def test_dead_tunnel_is_reopened(rig):
     """Laptop slept: ssh is gone, so neither port is bound."""
@@ -116,7 +117,7 @@ def test_stale_tunnel_is_restarted_even_though_the_ports_are_bound(rig):
     alone never recovers this — the documented fix is to rebuild the tunnel
     first, which is what the supervisor does.
     """
-    rig["nt8"] = rig["mt5"] = False   # ports still bound
+    rig["nt8"] = rig["mt5"] = False  # ports still bound
     run(rig)
     assert rig["tunnel_restarts"] == 1
 
@@ -130,6 +131,7 @@ def test_one_agent_down_does_not_touch_the_tunnel(rig):
 
 
 # ── The guard: never act under a live job ─────────────────────────────────────
+
 
 def test_a_running_job_does_NOT_block_reopening_a_dead_tunnel(rig):
     """The asymmetry, and it is deliberate.
@@ -151,7 +153,7 @@ def test_a_running_job_DOES_block_restarting_a_merely_stale_tunnel(rig):
     GUESS, and it has a real false positive: an agent driving a heavy backtest
     stops answering /health while working perfectly (the NT8 agent does this
     under pywinauto). Killing the tunnel there breaks a live run."""
-    rig["nt8"] = rig["mt5"] = False   # ports still bound
+    rig["nt8"] = rig["mt5"] = False  # ports still bound
     rig["busy"] = {"nt8"}
     result = run(rig)
     assert rig["tunnel_restarts"] == 0
@@ -199,8 +201,10 @@ def test_an_unreadable_job_table_is_treated_as_busy(monkeypatch):
     the real `busy_scopes` rather than the rig's stub — the fallback IS the
     behaviour under test.
     """
+
     def boom():
         raise RuntimeError("db locked")
+
     monkeypatch.setattr("services.lab_db.get_running_job", boom)
     assert sup.busy_scopes() == {"nt8", "mt5", "python"}
 
@@ -208,13 +212,13 @@ def test_an_unreadable_job_table_is_treated_as_busy(monkeypatch):
 def test_only_scopes_reporting_running_are_busy(monkeypatch):
     monkeypatch.setattr(
         "services.lab_db.get_running_job",
-        lambda: {"nt8": {"running": False}, "mt5": {"running": True},
-                 "python": {"running": False}},
+        lambda: {"nt8": {"running": False}, "mt5": {"running": True}, "python": {"running": False}},
     )
     assert sup.busy_scopes() == {"mt5"}
 
 
 # ── schtasks lies, so the fire is always verified ─────────────────────────────
+
 
 def test_a_task_that_fires_but_does_not_start_is_reported_as_such(rig):
     """`schtasks /run` returns SUCCESS for a task Windows refuses to launch.
@@ -249,10 +253,11 @@ def test_a_successful_start_is_reported_as_started(rig):
 # days while both the supervisor and the sidebar's Start button fired the task
 # once a minute and Windows refused every one of them (0x800710E0).
 
+
 def test_a_wedged_agent_is_killed_and_restarted(rig):
     rig["nt8"] = False
-    rig["recovers"] = set()               # the first fire cannot work…
-    rig["wedged"] = {sup.NT8_SCRIPT}      # …because a corpse holds the task
+    rig["recovers"] = set()  # the first fire cannot work…
+    rig["wedged"] = {sup.NT8_SCRIPT}  # …because a corpse holds the task
     result = run(rig)
 
     assert rig["killed"] == [sup.NT8_SCRIPT]
@@ -310,7 +315,7 @@ def test_an_unbound_port_is_never_killed_either(rig):
     rig["nt8"] = False
     rig["ports"] = {sup.NT8_PORT: False, sup.MT5_PORT: True}
     rig["wedged"] = {sup.NT8_SCRIPT}
-    rig["vps"] = False        # keep the tunnel branch from rebuilding the port
+    rig["vps"] = False  # keep the tunnel branch from rebuilding the port
     result = run(rig)
     assert rig["killed"] == []
     assert "nt8-skipped (no tunnel)" in result["actions"]
@@ -318,16 +323,18 @@ def test_an_unbound_port_is_never_killed_either(rig):
 
 def test_a_failed_fire_does_not_abort_the_other_agent(rig, monkeypatch):
     """One bad schtask must not leave the second agent unattended."""
+
     def only_nt8_fails(task):
         rig["fired"].append(task)
         if task == sup.NT8_TASK:
             raise sup.SchtaskError("schtasks failed: access denied")
         rig["mt5"] = True
         return {"status": "ok", "output": ""}
+
     monkeypatch.setattr(sup, "schtasks_run", only_nt8_fails)
     rig["nt8"] = rig["mt5"] = False
     rig["ports"] = {sup.NT8_PORT: True, sup.MT5_PORT: True}
-    rig["vps"] = False   # keep the stale-tunnel branch out of the way
+    rig["vps"] = False  # keep the stale-tunnel branch out of the way
     result = run(rig)
     assert rig["fired"] == [sup.NT8_TASK, sup.MT5_TASK]
     assert any("nt8-fire-failed" in a for a in result["actions"])
@@ -336,11 +343,12 @@ def test_a_failed_fire_does_not_abort_the_other_agent(rig, monkeypatch):
 
 # ── Nothing to reach the agent through ────────────────────────────────────────
 
+
 def test_no_tunnel_means_no_pointless_schtask(rig):
     """Firing a task we cannot then observe would 'succeed' and change nothing."""
     rig["ports"] = {sup.NT8_PORT: False, sup.MT5_PORT: False}
     rig["nt8"] = rig["mt5"] = False
-    rig["vps"] = False   # so the tunnel cannot be rebuilt either
+    rig["vps"] = False  # so the tunnel cannot be rebuilt either
     result = run(rig)
     assert rig["fired"] == []
     assert "nt8-skipped (no tunnel)" in result["actions"]
@@ -358,11 +366,14 @@ def test_an_unreachable_vps_is_not_something_the_supervisor_can_fix(rig):
 
 # ── The MT5 terminal question is separate from the MT5 agent question ─────────
 
+
 def test_terminal_status_is_None_when_the_agent_cannot_be_asked(monkeypatch):
     """None is 'we did not find out', never 'disconnected'. Rendering an
     unanswered question as a failure invents a measurement."""
+
     def boom():
         raise RuntimeError("unreachable")
+
     monkeypatch.setattr("services.mt5_agent_client.status", boom)
     assert sup.mt5_terminal_status() is None
 
@@ -370,12 +381,20 @@ def test_terminal_status_is_None_when_the_agent_cannot_be_asked(monkeypatch):
 def test_terminal_status_reports_the_account_it_is_bound_to(monkeypatch):
     monkeypatch.setattr(
         "services.mt5_agent_client.status",
-        lambda: {"mt5_connected": True, "account": 25893735,
-                 "server": "VantageMarkets-Demo", "error": None},
+        lambda: {
+            "mt5_connected": True,
+            "account": 25893735,
+            "server": "VantageMarkets-Demo",
+            "error": None,
+        },
     )
     st = sup.mt5_terminal_status()
-    assert st == {"connected": True, "account": 25893735,
-                  "server": "VantageMarkets-Demo", "error": None}
+    assert st == {
+        "connected": True,
+        "account": 25893735,
+        "server": "VantageMarkets-Demo",
+        "error": None,
+    }
 
 
 def test_a_responding_agent_with_a_disconnected_terminal_is_not_ok(monkeypatch):
@@ -383,8 +402,7 @@ def test_a_responding_agent_with_a_disconnected_terminal_is_not_ok(monkeypatch):
     so an agent up with a dead terminal showed green and failed at fetch time."""
     monkeypatch.setattr(
         "services.mt5_agent_client.status",
-        lambda: {"mt5_connected": False, "account": None, "server": None,
-                 "error": "IPC timeout"},
+        lambda: {"mt5_connected": False, "account": None, "server": None, "error": "IPC timeout"},
     )
     st = sup.mt5_terminal_status()
     assert st["connected"] is False

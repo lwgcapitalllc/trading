@@ -65,8 +65,11 @@ def backfill(force: bool = False, only_run_id: str | None = None) -> dict:
 
         try:
             timeline, tagged = build_regime_timeline_and_tag(
-                row["instrument"], row["start_date"], row["end_date"],
-                daily_pnl, row["runner"] or "ninjatrader",
+                row["instrument"],
+                row["start_date"],
+                row["end_date"],
+                daily_pnl,
+                row["runner"] or "ninjatrader",
             )
         except Exception as exc:
             print(f"  ✗ {run_id}: {exc}")
@@ -74,8 +77,10 @@ def backfill(force: bool = False, only_run_id: str | None = None) -> dict:
             continue
 
         if not timeline:
-            print(f"  ✗ {run_id}: no OHLC for {row['instrument']} "
-                  f"[{row['start_date']} → {row['end_date']}]")
+            print(
+                f"  ✗ {run_id}: no OHLC for {row['instrument']} "
+                f"[{row['start_date']} → {row['end_date']}]"
+            )
             failed += 1
             continue
 

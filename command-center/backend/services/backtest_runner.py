@@ -19,7 +19,7 @@ from typing import Optional
 
 import pandas as pd
 
-from services import lab_db, evaluator, runner_dispatch, worthiness, sizing_pipeline
+from services import evaluator, lab_db, runner_dispatch, sizing_pipeline, worthiness
 
 # Add engines/ to sys.path so we can import from trading/engines/regime/
 _ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
@@ -27,14 +27,21 @@ if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
 from regime import classify_regime
+
+from services.metrics import (
+    apply_canonical_sharpe,
+    max_drawdown_pct,
+    profit_concentration_pct,
+    scratch_count,
+    trade_concentration_pct,
+)
 from services.ohlc_fetcher import get_ohlc
-from services.metrics import (apply_canonical_sharpe, max_drawdown_pct, profit_concentration_pct,
-                              scratch_count, trade_concentration_pct)
 
 log = logging.getLogger("backtest_runner")
 
 
 # ── NT8 Trades CSV parser ──────────────────────────────────────────────────────
+
 
 def _parse_dollar(s: str) -> float:
     """'($2448.00)' → -2448.0, '$594.00' → 594.0"""
@@ -76,8 +83,8 @@ def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
         except (ValueError, TypeError):
             continue
 
-        cum_pnl   = _parse_dollar(row.get("Cum. net profit", "0"))
-        profit    = _parse_dollar(row.get("Profit", "0"))
+        cum_pnl = _parse_dollar(row.get("Cum. net profit", "0"))
+        profit = _parse_dollar(row.get("Profit", "0"))
         direction = (row.get("Market pos.", "") or "").strip()
         exit_name = (row.get("Exit name", "") or "").strip()
 
@@ -97,30 +104,29 @@ def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
         entry_dt = _parse_nt8_dt(row.get("Entry time", ""))
         entry_ms = int(entry_dt.timestamp() * 1000) if entry_dt else None
 
-        equity_curve.append({
-            "index":     trade_num,
-            "equity":    round(cum_pnl, 2),
-            "date":      exit_date,
-            "entry_ms":  entry_ms,
-            "direction": direction or None,
-            "profit":    round(profit, 2),
-            "exit_name": exit_name or None,
-            "size":      size,
-        })
+        equity_curve.append(
+            {
+                "index": trade_num,
+                "equity": round(cum_pnl, 2),
+                "date": exit_date,
+                "entry_ms": entry_ms,
+                "direction": direction or None,
+                "profit": round(profit, 2),
+                "exit_name": exit_name or None,
+                "size": size,
+            }
+        )
 
         if exit_date:
-            daily_map[exit_date] = round(
-                daily_map.get(exit_date, 0.0) + profit, 2
-            )
+            daily_map[exit_date] = round(daily_map.get(exit_date, 0.0) + profit, 2)
 
-    daily_pnl = [
-        {"date": d, "pnl": v} for d, v in sorted(daily_map.items())
-    ]
+    daily_pnl = [{"date": d, "pnl": v} for d, v in sorted(daily_map.items())]
     return equity_curve, daily_pnl
 
-_POLL_INTERVAL   = 5     # seconds between agent polls
-_STALL_WARN_SEC  = 120   # 2 min — warn but keep polling
-_STALL_KILL_SEC  = 600   # 10 min with NO HEARTBEAT — cancel job, mark failed_timeout
+
+_POLL_INTERVAL = 5  # seconds between agent polls
+_STALL_WARN_SEC = 120  # 2 min — warn but keep polling
+_STALL_KILL_SEC = 600  # 10 min with NO HEARTBEAT — cancel job, mark failed_timeout
 
 # A job that is heartbeating is WORKING, however long it takes. This used to be the same
 # constant as the stall kill, so every backtest carried a hard 10-minute ceiling and a healthy
@@ -130,11 +136,12 @@ _STALL_KILL_SEC  = 600   # 10 min with NO HEARTBEAT — cancel job, mark failed_
 _MAX_RUNTIME_SEC = 6 * 3600
 
 _LAB_PROGRESS_PATH = Path(__file__).parent.parent / "data" / "lab_progress.json"
-_LAB_RESULTS_DIR   = Path(__file__).parent.parent / "reports" / "lab"
-LAB_RESULTS_DIR    = _LAB_RESULTS_DIR
+_LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
+LAB_RESULTS_DIR = _LAB_RESULTS_DIR
 
 
 # ── Progress file helpers ──────────────────────────────────────────────────────
+
 
 def _write_progress(data: dict) -> None:
     _LAB_PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -153,29 +160,34 @@ def clear_progress() -> None:
 
 
 def write_job_progress(job_id: str, pct: int, message: str, started_at: float) -> None:
-    _write_progress({
-        "job_id": job_id,
-        "status": "running",
-        "pct": pct,
-        "message": message,
-        "started_at": str(started_at),
-        "updated_at": str(time.time()),
-    })
+    _write_progress(
+        {
+            "job_id": job_id,
+            "status": "running",
+            "pct": pct,
+            "message": message,
+            "started_at": str(started_at),
+            "updated_at": str(time.time()),
+        }
+    )
 
 
 # ── Failure path ───────────────────────────────────────────────────────────────
 
+
 def _fail(run_id: str, job_id: str, status: str, error_msg: str) -> None:
     lab_db.update_run_status(run_id, status, error_msg)
-    _write_progress({
-        "job_id": job_id,
-        "status": status,
-        "pct": 0,
-        "message": error_msg,
-        "error_message": error_msg,
-        "updated_at": str(time.time()),
-        "heartbeat_age_seconds": 0.0,
-    })
+    _write_progress(
+        {
+            "job_id": job_id,
+            "status": status,
+            "pct": 0,
+            "message": error_msg,
+            "error_message": error_msg,
+            "updated_at": str(time.time()),
+            "heartbeat_age_seconds": 0.0,
+        }
+    )
 
 
 def _write_or_clear(path: Path, payload: list) -> None:
@@ -205,7 +217,7 @@ def run_was_cancelled(run_id: str) -> bool:
     """
     try:
         row = lab_db.get_run(run_id)
-    except Exception:                              # noqa: BLE001 — a poll must not die on a read
+    except Exception:  # noqa: BLE001 — a poll must not die on a read
         return False
     if not row:
         return False
@@ -214,8 +226,8 @@ def run_was_cancelled(run_id: str) -> bool:
 
 # ── Regime classification helper ──────────────────────────────────────────────
 
-_WARMUP_DAYS = 50   # fetch this many extra days before backtest start for classifier warmup
-_WINDOW_SIZE = 34   # classifier needs 34 bars to produce a non-UNKNOWN label
+_WARMUP_DAYS = 50  # fetch this many extra days before backtest start for classifier warmup
+_WINDOW_SIZE = 34  # classifier needs 34 bars to produce a non-UNKNOWN label
 
 
 def _fetch_regime_dfs(
@@ -285,21 +297,28 @@ def _tag_daily_pnl_with_regime(
     runner="mt5"         — H1 + H4 via MT5 agent; classify_regime(h1, h4).
     runner="python"      — H1 + H4 from the backtest cache (the bars the run replayed).
     """
-    warmup_start = (
-        date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
-    ).isoformat()
-    intraday = runner in ("mt5", "python")   # both fetch H1/H4, not daily bars
+    warmup_start = (date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)).isoformat()
+    intraday = runner in ("mt5", "python")  # both fetch H1/H4, not daily bars
 
     try:
         df_short, df_long = _fetch_regime_dfs(instrument, warmup_start, end_date, runner)
     except Exception as exc:
-        log.warning("OHLC fetch failed for %s [%s, %s]: %s — all regime_tags = UNKNOWN",
-                    instrument, start_date, end_date, exc)
+        log.warning(
+            "OHLC fetch failed for %s [%s, %s]: %s — all regime_tags = UNKNOWN",
+            instrument,
+            start_date,
+            end_date,
+            exc,
+        )
         return [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
 
     if df_long.empty:
-        log.warning("No OHLC rows for %s [%s, %s] — all regime_tags = UNKNOWN",
-                    instrument, start_date, end_date)
+        log.warning(
+            "No OHLC rows for %s [%s, %s] — all regime_tags = UNKNOWN",
+            instrument,
+            start_date,
+            end_date,
+        )
         return [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
 
     result = []
@@ -311,7 +330,7 @@ def _tag_daily_pnl_with_regime(
 
         try:
             window_short = _build_window(df_short, entry_date, intraday)
-            window_long  = _build_window(df_long,  entry_date, intraday)
+            window_long = _build_window(df_long, entry_date, intraday)
         except Exception:
             result.append({**entry, "regime_tag": "UNKNOWN"})
             continue
@@ -329,8 +348,13 @@ def _tag_daily_pnl_with_regime(
         result.append({**entry, "regime_tag": label})
 
     tagged = sum(1 for r in result if r.get("regime_tag") != "UNKNOWN")
-    log.info("Regime classification (%s): %d/%d days tagged (instrument=%s)",
-             runner, tagged, len(result), instrument)
+    log.info(
+        "Regime classification (%s): %d/%d days tagged (instrument=%s)",
+        runner,
+        tagged,
+        len(result),
+        instrument,
+    )
     return result
 
 
@@ -356,8 +380,12 @@ def build_regime_timeline_and_tag(
     """
     date_map = build_date_regime_map(instrument, start_date, end_date, runner)
     if not date_map:
-        log.warning("No regime map for %s [%s, %s] — all regime_tags = UNKNOWN",
-                    instrument, start_date, end_date)
+        log.warning(
+            "No regime map for %s [%s, %s] — all regime_tags = UNKNOWN",
+            instrument,
+            start_date,
+            end_date,
+        )
         return [], [{**entry, "regime_tag": "UNKNOWN"} for entry in daily_pnl]
 
     timeline = [{"date": d, "regime": r} for d, r in sorted(date_map.items())]
@@ -376,8 +404,14 @@ def build_regime_timeline_and_tag(
         tagged.append({**entry, "regime_tag": label or "UNKNOWN"})
 
     tagged_n = sum(1 for r in tagged if r.get("regime_tag") != "UNKNOWN")
-    log.info("Regime classification (%s): %d calendar days, %d/%d P&L days tagged (instrument=%s)",
-             runner, len(timeline), tagged_n, len(tagged), instrument)
+    log.info(
+        "Regime classification (%s): %d calendar days, %d/%d P&L days tagged (instrument=%s)",
+        runner,
+        len(timeline),
+        tagged_n,
+        len(tagged),
+        instrument,
+    )
     return timeline, tagged
 
 
@@ -396,10 +430,8 @@ def build_date_regime_map(
     runner="mt5"         — H1+H4 OHLC; collects distinct dates from H4 bars,
                            builds intraday windows at end of each day.
     """
-    warmup_start = (
-        date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)
-    ).isoformat()
-    intraday = runner in ("mt5", "python")   # both fetch H1/H4, not daily bars
+    warmup_start = (date.fromisoformat(start_date) - timedelta(days=_WARMUP_DAYS)).isoformat()
+    intraday = runner in ("mt5", "python")  # both fetch H1/H4, not daily bars
 
     try:
         df_short, df_long = _fetch_regime_dfs(instrument, warmup_start, end_date, runner)
@@ -415,13 +447,12 @@ def build_date_regime_map(
     if intraday:
         # Use H4 bar dates as the set of "trading days" to classify (H4 has fewer
         # bars than H1, so iterating over it is the natural anchor).
-        trading_dates = sorted({
-            str(ts.date()) for ts in df_long.index
-            if start_date <= str(ts.date()) <= end_date
-        })
+        trading_dates = sorted(
+            {str(ts.date()) for ts in df_long.index if start_date <= str(ts.date()) <= end_date}
+        )
         for date_str in trading_dates:
             window_short = _build_window(df_short, date_str, intraday=True)
-            window_long  = _build_window(df_long,  date_str, intraday=True)
+            window_long = _build_window(df_long, date_str, intraday=True)
             if len(window_long) < _WINDOW_SIZE or len(window_short) < _WINDOW_SIZE:
                 result[date_str] = "UNKNOWN"
             else:
@@ -443,12 +474,19 @@ def build_date_regime_map(
                 except Exception:
                     result[date_str] = "UNKNOWN"
 
-    log.info("build_date_regime_map (%s): %d trading days classified for %s [%s, %s]",
-             runner, len(result), instrument, start_date, end_date)
+    log.info(
+        "build_date_regime_map (%s): %d trading days classified for %s [%s, %s]",
+        runner,
+        len(result),
+        instrument,
+        start_date,
+        end_date,
+    )
     return result
 
 
 # ── Completion path ────────────────────────────────────────────────────────────
+
 
 async def _handle_complete(
     run_id: str,
@@ -470,9 +508,9 @@ async def _handle_complete(
         log.info("run %s: cancelled while results were being fetched — discarding them", run_id)
         return
 
-    kpis         = result.get("kpis", {})
+    kpis = result.get("kpis", {})
     equity_curve = result.get("equity_curve", [])
-    daily_pnl    = result.get("daily_pnl", [])
+    daily_pnl = result.get("daily_pnl", [])
 
     # ── Dynamic sizing — only when the runner shipped the per-trade engine export ──
     # A reshaped strategy (ORB) runs at unit size and emits the runner→engine contract
@@ -501,16 +539,21 @@ async def _handle_complete(
             # Manual with no % is a broken row, not a reason to crash the run: fall back to the
             # automatic mode rather than raise out of the completion path.
             if mode == sizing_pipeline.MODE_MANUAL and not manual_pct:
-                log.warning("run %s: sizing_mode=manual with no manual_risk_pct — using consistent",
-                            run_id)
+                log.warning(
+                    "run %s: sizing_mode=manual with no manual_risk_pct — using consistent", run_id
+                )
                 mode = sizing_pipeline.MODE_CONSISTENT
             sized_by_ruleset = sizing_pipeline.size_run_for_rulesets(
-                run_id, engine_trades, rulesets, mode=mode,
-                instrument=instrument, strategy=strategy_id,
+                run_id,
+                engine_trades,
+                rulesets,
+                mode=mode,
+                instrument=instrument,
+                strategy=strategy_id,
                 manual_risk_pct=manual_pct,
             )
             primary = rulesets[0]["id"]
-            kpis      = dict(sized_by_ruleset[primary]["kpis"])
+            kpis = dict(sized_by_ruleset[primary]["kpis"])
             daily_pnl = sized_by_ruleset[primary]["daily_pnl"]
             # equity_curve stays the agent's unit-size reference (contract-cap is informational;
             # the engine already enforces the real ladder). A sized equity curve is a later UI item.
@@ -518,7 +561,7 @@ async def _handle_complete(
     # persist JSON files
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    equity_path    = run_dir / "equity_curve.json"
+    equity_path = run_dir / "equity_curve.json"
     daily_pnl_path = run_dir / "daily_pnl.json"
     equity_path.write_text(json.dumps(equity_curve, default=str))
     daily_pnl_path.write_text(json.dumps(daily_pnl, default=str))
@@ -542,19 +585,21 @@ async def _handle_complete(
     # letting the frontend show the Tagging milestone step in the progress bar.
     if daily_pnl:
         run_row = lab_db.get_run(run_id)
-        _write_progress({
-            "job_id":               job_id,
-            "job_type":             "backtest",
-            "status":               "running",
-            "strategy_id":          strategy_id,
-            "instrument":           instrument,
-            "pct":                  96,
-            "message":              "Tagging regimes…",
-            "started_at":           str(started_at) if started_at else None,
-            "updated_at":           str(time.time()),
-            "heartbeat_age_seconds": 0.0,
-            "error_message":        None,
-        })
+        _write_progress(
+            {
+                "job_id": job_id,
+                "job_type": "backtest",
+                "status": "running",
+                "strategy_id": strategy_id,
+                "instrument": instrument,
+                "pct": 96,
+                "message": "Tagging regimes…",
+                "started_at": str(started_at) if started_at else None,
+                "updated_at": str(time.time()),
+                "heartbeat_age_seconds": 0.0,
+                "error_message": None,
+            }
+        )
         regime_timeline, tagged_pnl = await asyncio.to_thread(
             build_regime_timeline_and_tag,
             instrument,
@@ -574,8 +619,9 @@ async def _handle_complete(
     # Profit concentration (overfit detector) — null on runs with no positive profit. The equity
     # curve is what tells it whether this run COMPOUNDED; without it the figure measures account
     # growth instead of clustering. The basis is stored beside the number so the row says which.
-    kpis["profit_concentration_pct"], kpis["profit_concentration_basis"] = \
-        profit_concentration_pct(daily_pnl, equity_curve)
+    kpis["profit_concentration_pct"], kpis["profit_concentration_basis"] = profit_concentration_pct(
+        daily_pnl, equity_curve
+    )
     # The three companions to numbers that are true and get misread (2026-08-01) — the drawdown
     # as a percent of the PEAK it fell from (the list page had dollars only, and $1.7M against
     # $14M of profit reads as 12% where the honest figure is 56%), how many "wins" were really
@@ -585,11 +631,15 @@ async def _handle_complete(
     kpis["max_drawdown_pct"] = max_drawdown_pct(equity_curve)
     kpis["scratch_count"] = scratch_count(equity_curve)
     kpis["trade_concentration_pct"] = trade_concentration_pct(equity_curve)
-    lab_db.update_run_complete(run_id, kpis, {
-        "equity_curve": str(equity_path),
-        "trades":       None,
-        "daily_pnl":    str(daily_pnl_path),
-    })
+    lab_db.update_run_complete(
+        run_id,
+        kpis,
+        {
+            "equity_curve": str(equity_path),
+            "trades": None,
+            "daily_pnl": str(daily_pnl_path),
+        },
+    )
 
     if sized_by_ruleset:
         # Grade each ruleset against its OWN sized run (different ladder → different P&L).
@@ -601,8 +651,11 @@ async def _handle_complete(
         evaluator.evaluate_run(run_id, firm_ids, kpis, equity_curve, daily_pnl)
 
     w = worthiness.score_run_after_evals(
-        run_id, firm_ids,
-        kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+        run_id,
+        firm_ids,
+        kpis.get("profit_factor"),
+        kpis.get("max_drawdown"),
+        kpis.get("trade_count"),
     )
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
@@ -610,51 +663,57 @@ async def _handle_complete(
     # Auto-trigger Monte Carlo stress test on Tier 1 results
     if w and w[0] == "TIER_1_STRESS_TEST":
         from services import stress_tester
+
         asyncio.create_task(stress_tester.trigger_auto_stress_test(run_id, firm_ids))
 
-    _write_progress({
-        "job_id":               job_id,
-        "job_type":             "backtest",
-        "status":               "complete",
-        "strategy_id":          strategy_id,
-        "instrument":           instrument,
-        "pct":                  100,
-        "message":              "Complete",
-        "started_at":           None,
-        "updated_at":           str(time.time()),
-        "heartbeat_age_seconds": 0.0,
-        "error_message":        None,
-    })
+    _write_progress(
+        {
+            "job_id": job_id,
+            "job_type": "backtest",
+            "status": "complete",
+            "strategy_id": strategy_id,
+            "instrument": instrument,
+            "pct": 100,
+            "message": "Complete",
+            "started_at": None,
+            "updated_at": str(time.time()),
+            "heartbeat_age_seconds": 0.0,
+            "error_message": None,
+        }
+    )
 
 
 # ── Main poller ────────────────────────────────────────────────────────────────
 
+
 async def run_backtest_job(
-    run_id:      str,
-    job_id:      str,
+    run_id: str,
+    job_id: str,
     strategy_id: str,
-    instrument:  str,
-    firm_ids:    list[str],
-    runner:      str = "ninjatrader",
+    instrument: str,
+    firm_ids: list[str],
+    runner: str = "ninjatrader",
 ) -> None:
     started_at = time.time()
     stall_warned = False
 
-    _write_progress({
-        "job_id":               job_id,
-        "job_type":             "backtest",
-        "runner":               runner,
-        "status":               "running",
-        "strategy_id":          strategy_id,
-        "instrument":           instrument,
-        "pct":                  0,
-        # Python runs in this process — there is no VPS to wait for.
-        "message":              "Starting…" if runner == "python" else "Waiting for VPS…",
-        "started_at":           str(started_at),
-        "updated_at":           str(started_at),
-        "heartbeat_age_seconds": 0.0,
-        "error_message":        None,
-    })
+    _write_progress(
+        {
+            "job_id": job_id,
+            "job_type": "backtest",
+            "runner": runner,
+            "status": "running",
+            "strategy_id": strategy_id,
+            "instrument": instrument,
+            "pct": 0,
+            # Python runs in this process — there is no VPS to wait for.
+            "message": "Starting…" if runner == "python" else "Waiting for VPS…",
+            "started_at": str(started_at),
+            "updated_at": str(started_at),
+            "heartbeat_age_seconds": 0.0,
+            "error_message": None,
+        }
+    )
 
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
@@ -671,15 +730,19 @@ async def run_backtest_job(
         except Exception as exc:
             elapsed = time.time() - started_at
             if elapsed > _STALL_KILL_SEC:
-                _fail(run_id, job_id, "failed_timeout",
-                      f"Lost contact with VPS agent after {elapsed:.0f}s: {exc}")
+                _fail(
+                    run_id,
+                    job_id,
+                    "failed_timeout",
+                    f"Lost contact with VPS agent after {elapsed:.0f}s: {exc}",
+                )
                 return
             # transient network error — keep trying
             continue
 
-        status     = status_data.get("status", "running")
-        pct        = status_data.get("pct", 0)
-        message    = status_data.get("message", "")
+        status = status_data.get("status", "running")
+        pct = status_data.get("pct", 0)
+        message = status_data.get("message", "")
         updated_at = status_data.get("updated_at", time.time())
 
         now = time.time()
@@ -692,19 +755,21 @@ async def run_backtest_job(
             stall_warned = True
             message = f"[STALL] No agent heartbeat for {int(heartbeat_age)}s"
 
-        _write_progress({
-            "job_id":               job_id,
-            "job_type":             "backtest",
-            "status":               "running" if not status.startswith("failed") else status,
-            "strategy_id":          strategy_id,
-            "instrument":           instrument,
-            "pct":                  pct,
-            "message":              message,
-            "started_at":           str(started_at),
-            "updated_at":           str(now),
-            "heartbeat_age_seconds": heartbeat_age,
-            "error_message":        None,
-        })
+        _write_progress(
+            {
+                "job_id": job_id,
+                "job_type": "backtest",
+                "status": "running" if not status.startswith("failed") else status,
+                "strategy_id": strategy_id,
+                "instrument": instrument,
+                "pct": pct,
+                "message": message,
+                "started_at": str(started_at),
+                "updated_at": str(now),
+                "heartbeat_age_seconds": heartbeat_age,
+                "error_message": None,
+            }
+        )
 
         if status == "complete":
             await _handle_complete(run_id, job_id, strategy_id, instrument, firm_ids, started_at)
@@ -728,8 +793,9 @@ async def run_backtest_job(
             except Exception:
                 pass
             reason = (
-                f"No heartbeat for {int(heartbeat_age)}s — job cancelled" if stalled else
-                f"Still running after {elapsed / 3600:.1f}h (ceiling {_MAX_RUNTIME_SEC // 3600}h)"
+                f"No heartbeat for {int(heartbeat_age)}s — job cancelled"
+                if stalled
+                else f"Still running after {elapsed / 3600:.1f}h (ceiling {_MAX_RUNTIME_SEC // 3600}h)"
                 f" — job cancelled. The agent was alive throughout; this window is too large for"
                 f" the runtime ceiling."
             )

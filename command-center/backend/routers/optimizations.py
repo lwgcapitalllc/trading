@@ -6,24 +6,29 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import time
 import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import PlainTextResponse
-
 from models import (
-    OptimizationRequest, OptimizationSummary, OptimizationDetail,
+    OptimizationDetail,
+    OptimizationRequest,
+    OptimizationSummary,
 )
-from services import lab_db, runner_dispatch, history_limits
+from services import history_limits, lab_db, runner_dispatch
 from services.optimization_runner import (
-    expand_grid, pick_search_method, sample_combinations, run_optimization,
-    retry_failed_runs, validate_param_grid,
+    expand_grid,
+    pick_search_method,
+    retry_failed_runs,
+    run_optimization,
+    sample_combinations,
+    validate_param_grid,
 )
-from routers.backtests import _row_to_summary
+
 from routers._locks import ensure_platform_idle
+from routers.backtests import _row_to_summary
 
 router = APIRouter(prefix="/optimizations", tags=["optimizations"])
 
@@ -54,7 +59,8 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         raise HTTPException(
             400,
             f"{runner} sweeps numeric ranges only — {', '.join(listed)} "
-            "cannot be swept as a list of values.")
+            "cannot be swept as a list of values.",
+        )
 
     # Check the grid BEFORE anything expands it. A step of 0 used to reach the expander's
     # `while v <= hi: v += step` loop and never come back — on the event loop, so it took the
@@ -66,8 +72,8 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
 
     try:
         history_limits.validate_window(
-            req.instrument, req.start_date, req.end_date,
-            req.bar_type, req.bar_value, runner)
+            req.instrument, req.start_date, req.end_date, req.bar_type, req.bar_value, runner
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
@@ -77,40 +83,42 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     # Off the event loop — a big grid is a real amount of work and this handler is async, so
     # expanding it inline stalls every other request for the duration.
     all_combos = await asyncio.to_thread(expand_grid, req.param_grid)
-    sampled    = sample_combinations(all_combos, method)
-    estimated  = len(sampled)
+    sampled = sample_combinations(all_combos, method)
+    estimated = len(sampled)
 
     opt_id = "opt_" + uuid.uuid4().hex[:10]
 
-    lab_db.insert_optimization({
-        "optimization_id":    opt_id,
-        "strategy_id":        req.strategy_id,
-        "instrument":         req.instrument,
-        "start_date":         req.start_date,
-        "end_date":           req.end_date,
-        "commission_per_side": req.commission_per_side,
-        "slippage_ticks":     req.slippage_ticks,
-        "ruleset_id":         req.ruleset_id,
-        "mode":               req.mode,
-        "search_method":      method,
-        "param_grid":         req.param_grid,
-        "status":             "running",
-        "estimated_runs":     estimated,
-        "source_run_id":      req.source_run_id,
-        "regime_filter":      req.regime_filter,
-        "bar_type":           req.bar_type,
-        "bar_value":          req.bar_value,
-        "cost_layers":        req.cost_layers,
-        "broker_profile":     req.broker_profile,
-        "min_trades":         req.min_trades,
-    })
+    lab_db.insert_optimization(
+        {
+            "optimization_id": opt_id,
+            "strategy_id": req.strategy_id,
+            "instrument": req.instrument,
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "commission_per_side": req.commission_per_side,
+            "slippage_ticks": req.slippage_ticks,
+            "ruleset_id": req.ruleset_id,
+            "mode": req.mode,
+            "search_method": method,
+            "param_grid": req.param_grid,
+            "status": "running",
+            "estimated_runs": estimated,
+            "source_run_id": req.source_run_id,
+            "regime_filter": req.regime_filter,
+            "bar_type": req.bar_type,
+            "bar_value": req.bar_value,
+            "cost_layers": req.cost_layers,
+            "broker_profile": req.broker_profile,
+            "min_trades": req.min_trades,
+        }
+    )
 
     asyncio.create_task(run_optimization(opt_id))
 
     return {
         "optimization_id": opt_id,
-        "status":          "started",
-        "estimated_runs":  estimated,
+        "status": "started",
+        "estimated_runs": estimated,
     }
 
 
@@ -130,7 +138,7 @@ async def get_optimization(optimization_id: str) -> OptimizationDetail:
         raise HTTPException(404, "Optimization not found")
 
     strategy = lab_db.get_strategy(opt["strategy_id"])
-    run_rows  = lab_db.list_optimization_runs(optimization_id)
+    run_rows = lab_db.list_optimization_runs(optimization_id)
 
     # Ship only the params the page can draw. A combo row's `params` is fixed_params merged
     # with the swept ones — 50+ keys on a Python strategy — and the page renders exactly the
@@ -147,16 +155,17 @@ async def get_optimization(optimization_id: str) -> OptimizationDetail:
             s.params = {k: v for k, v in s.params.items() if k in grid_keys}
         summaries.append(s)
 
-    live_pct     = None
+    live_pct = None
     live_message = None
     if opt["status"] == "running":
         try:
-            runner_str  = (strategy or {}).get("runner", "ninjatrader")
+            runner_str = (strategy or {}).get("runner", "ninjatrader")
             # Off the event loop — for NT8/MT5 this is an HTTP call over the SSH tunnel, and
             # the page polls it every 3 seconds while the job runs.
             status_data = await asyncio.to_thread(
-                runner_dispatch.job_status, f"nopt_{optimization_id}", runner_str)
-            live_pct     = int(status_data.get("pct") or 0) or None
+                runner_dispatch.job_status, f"nopt_{optimization_id}", runner_str
+            )
+            live_pct = int(status_data.get("pct") or 0) or None
             live_message = status_data.get("message") or None
         except Exception:
             pass
@@ -230,7 +239,11 @@ async def rerun_optimization(optimization_id: str) -> dict:
             shutil.rmtree(run_dir)
 
     asyncio.create_task(run_optimization(optimization_id))
-    return {"optimization_id": optimization_id, "status": "started", "estimated_runs": opt["estimated_runs"]}
+    return {
+        "optimization_id": optimization_id,
+        "status": "started",
+        "estimated_runs": opt["estimated_runs"],
+    }
 
 
 @router.post("/{optimization_id}/cancel", status_code=200)
@@ -251,8 +264,7 @@ async def cancel_optimization(optimization_id: str) -> dict:
     runner = (lab_db.get_strategy(opt["strategy_id"]) or {}).get("runner", "ninjatrader")
     stopped = True
     try:
-        await asyncio.to_thread(
-            runner_dispatch.cancel_job, f"nopt_{optimization_id}", runner)
+        await asyncio.to_thread(runner_dispatch.cancel_job, f"nopt_{optimization_id}", runner)
     except Exception as exc:
         # The row is still marked cancelled — a job we could not reach is one the poller will
         # abandon on its next tick anyway. Report it rather than claiming a clean stop.
@@ -269,9 +281,13 @@ async def cancel_optimization(optimization_id: str) -> dict:
 
 def _log_cancel_failure(optimization_id: str, exc: Exception) -> None:
     import logging
+
     logging.getLogger("optimizations").warning(
         "Could not stop the runner job for %s: %s — the row is marked cancelled and the "
-        "poller will abandon it", optimization_id, exc)
+        "poller will abandon it",
+        optimization_id,
+        exc,
+    )
 
 
 @router.post("/{optimization_id}/retry-failed", status_code=202)

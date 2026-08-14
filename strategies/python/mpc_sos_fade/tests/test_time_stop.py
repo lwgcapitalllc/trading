@@ -28,8 +28,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
-from mpc_sos_fade import SosFadeConfig, Execution  # noqa: E402
-from mpc_sos_fade.tests.test_execution import _cfg, _sig, _seq_long_ready, _seq_flat  # noqa: E402
+from mpc_sos_fade import Execution, SosFadeConfig  # noqa: E402
+from mpc_sos_fade.tests.test_execution import _cfg, _seq_flat, _seq_long_ready, _sig  # noqa: E402
 
 
 def _run_to(ex, bars, seq_after=None):
@@ -39,7 +39,7 @@ def _run_to(ex, bars, seq_after=None):
     price-driven can close the position and the ONLY thing that can is the clock.
     """
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # fill @ 103.82
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @ 103.82
     last = None
     for i in range(2, 2 + bars):
         last = ex.step(_sig(i, 104.2, 104.6, 103.95, 104.3), seq_after or _seq_flat())
@@ -62,7 +62,7 @@ def test_off_never_closes_a_position_however_long_it_runs():
     ex = Execution(_cfg(exec_time_stop_mode="Off"))
     _run_to(ex, 100)
     assert ex.trades == []
-    assert ex._pos_dir != 0          # still holding
+    assert ex._pos_dir != 0  # still holding
 
 
 def test_the_shipped_default_is_the_measured_shape():
@@ -89,7 +89,7 @@ def test_off_ignores_the_hours_field_entirely():
 def test_before_tp1_closes_a_trade_that_never_reached_tp1():
     ex = Execution(_cfg(exec_time_stop_mode="Before TP1 only", exec_time_stop_hrs=1.0))
     # fill on bar 1 (t=900_000); 1.0h later is t=4_500_000, i.e. bar 5 DECIDES and bar 6 FILLS.
-    dec = _run_to(ex, 5)             # bars 2..6
+    dec = _run_to(ex, 5)  # bars 2..6
     assert "L-TIME" in _exit_ids(dec)
     assert len(ex.trades) == 1
     assert ex.trades[0].exit_reason == "L-TIME"
@@ -105,12 +105,12 @@ def test_the_close_fills_at_the_NEXT_bar_open_not_at_the_deciding_bar_close():
     open 3651.23. The whole defect is one bar, and no unit test here could see it, because
     every one of them was written against the same wrong assumption."""
     ex = Execution(_cfg(exec_time_stop_mode="Before TP1 only", exec_time_stop_hrs=1.0))
-    dec5 = _run_to(ex, 4)                                   # bar 5 decides
+    dec5 = _run_to(ex, 4)  # bar 5 decides
     assert _exit_ids(dec5) == set(), "the deciding bar must not fill it"
     assert ex._pos_dir != 0
     dec6 = ex.step(_sig(6, 104.11, 104.6, 103.95, 104.3), _seq_flat())
     assert "L-TIME" in _exit_ids(dec6)
-    assert ex.trades[0].exit_price == 104.11                # bar 6's OPEN, not bar 5's close
+    assert ex.trades[0].exit_price == 104.11  # bar 6's OPEN, not bar 5's close
 
 
 def test_before_tp1_leaves_a_trade_that_reached_tp1_alone_for_ever():
@@ -118,10 +118,10 @@ def test_before_tp1_leaves_a_trade_that_reached_tp1_alone_for_ever():
     no longer the thing the time stop exists to cut — and the clock must stop applying."""
     ex = Execution(_cfg(exec_time_stop_mode="Before TP1 only", exec_time_stop_hrs=1.0))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # fill @ 103.82
-    ex.step(_sig(2, 104.2, 105.4, 104.0, 105.2), _seq_flat())         # tags TP1 -> stage 1
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @ 103.82
+    ex.step(_sig(2, 104.2, 105.4, 104.0, 105.2), _seq_flat())  # tags TP1 -> stage 1
     assert ex._stage >= 1
-    for i in range(3, 40):                                            # ~9 hours past the cutoff
+    for i in range(3, 40):  # ~9 hours past the cutoff
         ex.step(_sig(i, 104.6, 104.9, 104.2, 104.5), _seq_flat())
     assert ex.trades == []
     assert ex._pos_dir != 0
@@ -132,7 +132,7 @@ def test_always_closes_even_after_tp1_was_reached():
     ex = Execution(_cfg(exec_time_stop_mode="Always", exec_time_stop_hrs=1.0))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
-    ex.step(_sig(2, 104.2, 105.4, 104.0, 105.2), _seq_flat())         # stage 1
+    ex.step(_sig(2, 104.2, 105.4, 104.0, 105.2), _seq_flat())  # stage 1
     assert ex._stage >= 1
     seen = set()
     for i in range(3, 8):
@@ -147,7 +147,7 @@ def test_always_and_before_tp1_agree_when_tp1_is_never_reached():
     out = []
     for mode in ("Before TP1 only", "Always"):
         ex = Execution(_cfg(exec_time_stop_mode=mode, exec_time_stop_hrs=1.0))
-        _run_to(ex, 5)   # bar 5 decides, bar 6 fills
+        _run_to(ex, 5)  # bar 5 decides, bar 6 fills
         out.append((len(ex.trades), ex.trades[0].exit_reason, ex.trades[0].exit_ms))
     assert out[0] == out[1]
 
@@ -157,12 +157,12 @@ def test_the_clock_runs_from_the_FILL_not_from_the_bar_the_limit_was_PLACED():
     """A resting limit can wait for days. If the clock started at placement, a trade could
     be closed on the bar after it opened for having 'been open' for hours."""
     ex = Execution(_cfg(exec_time_stop_mode="Before TP1 only", exec_time_stop_hrs=1.0))
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())   # place
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
     # 8 bars (2 hours) where price never reaches the limit — the order just rests.
     for i in range(1, 9):
         ex.step(_sig(i, 104.5, 104.8, 104.1, 104.4), _seq_long_ready())
-    assert ex._pos_dir == 0                                           # nothing filled yet
-    ex.step(_sig(9, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # NOW it fills
+    assert ex._pos_dir == 0  # nothing filled yet
+    ex.step(_sig(9, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # NOW it fills
     assert ex._pos_dir != 0
     # one bar later the trade is 15 minutes old, not 2h15 — the cutoff must not fire.
     ex.step(_sig(10, 104.2, 104.6, 103.95, 104.3), _seq_flat())
@@ -177,9 +177,9 @@ def test_it_fires_on_the_bar_that_REACHES_the_threshold_not_the_one_after():
     about WHEN the clock decides; that one is about when the broker fills. Keeping them
     apart is the point: they were one test, and the merged version hid a one-bar error."""
     ex = Execution(_cfg(exec_time_stop_mode="Before TP1 only", exec_time_stop_hrs=1.0))
-    _run_to(ex, 3)                   # bar 4 -> t=3_600_000, 45 min into the trade
+    _run_to(ex, 3)  # bar 4 -> t=3_600_000, 45 min into the trade
     assert ex.trades == []
-    ex.step(_sig(5, 104.2, 104.6, 103.95, 104.3), _seq_flat())            # exactly 1.0h: decides
+    ex.step(_sig(5, 104.2, 104.6, 103.95, 104.3), _seq_flat())  # exactly 1.0h: decides
     dec_fill = ex.step(_sig(6, 104.2, 104.6, 103.95, 104.3), _seq_flat())
     assert "L-TIME" in _exit_ids(dec_fill)
 
@@ -190,11 +190,11 @@ def test_the_clock_is_CALENDAR_hours_and_counts_a_weekend():
     it is the same basis the swap is charged on, and it is what a reader sees on a chart."""
     ex = Execution(_cfg(exec_time_stop_mode="Before TP1 only", exec_time_stop_hrs=24.0))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # fill, t=900_000
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill, t=900_000
     # the next bar arrives two days later — one bar, 48 hours of clock
     two_days = _sig(2, 104.2, 104.6, 103.95, 104.3)
     two_days.time_ms = 900_000 + 48 * 3_600_000
-    ex.step(two_days, _seq_flat())                                   # decides on the weekend gap
+    ex.step(two_days, _seq_flat())  # decides on the weekend gap
     dec = ex.step(_sig(3, 104.2, 104.6, 103.95, 104.3), _seq_flat())
     assert "L-TIME" in _exit_ids(dec)
 
@@ -215,8 +215,8 @@ def test_the_time_stop_leg_is_tagged_TIME_and_a_force_close_is_still_CLOSE():
     ex2 = Execution(_cfg(exec_close_opp_sos=True))
     ex2.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     ex2.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
-    ex2.step(_sig(2, 104.2, 104.6, 103.95, 104.3, bear_sos=True), _seq_flat())   # decides
-    dec2 = ex2.step(_sig(3, 104.2, 104.6, 103.95, 104.3), _seq_flat())           # fills
+    ex2.step(_sig(2, 104.2, 104.6, 103.95, 104.3, bear_sos=True), _seq_flat())  # decides
+    dec2 = ex2.step(_sig(3, 104.2, 104.6, 103.95, 104.3), _seq_flat())  # fills
     assert "L-CLOSE" in _exit_ids(dec2)
 
 
@@ -230,11 +230,21 @@ def test_a_short_books_its_time_stop_as_S_TIME():
     seq.s_half, seq.s_618 = True, True
     seq.s_arm_src = "DIV"
     # bear leg: the fib ladder flips, so the anchors and levels mirror
-    kw = dict(dir=-1, fibo_p1=103.82, fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.2,
-              fibo_p5=108.0, fibo_p6=108.86, fibo_p7=100.0, fibo_p10=110.0,
-              fibo_ash=110.0, fibo_asl=100.0)
+    kw = dict(
+        dir=-1,
+        fibo_p1=103.82,
+        fibo_p2=105.0,
+        fibo_p3=106.18,
+        fibo_p4=107.2,
+        fibo_p5=108.0,
+        fibo_p6=108.86,
+        fibo_p7=100.0,
+        fibo_p10=110.0,
+        fibo_ash=110.0,
+        fibo_asl=100.0,
+    )
     ex.step(_sig(0, 105.5, 106.1, 105.4, 105.8, **kw), seq)
-    ex.step(_sig(1, 105.8, 106.5, 105.7, 106.0, **kw), seq)           # fill the sell limit
+    ex.step(_sig(1, 105.8, 106.5, 105.7, 106.0, **kw), seq)  # fill the sell limit
     assert ex._pos_dir < 0
     seen = set()
     for i in range(2, 7):
@@ -245,7 +255,7 @@ def test_a_short_books_its_time_stop_as_S_TIME():
 # --------------------------------------------------------- validation ------------
 def test_an_unrecognised_mode_raises_rather_than_falling_through_to_no_time_stop():
     with pytest.raises(ValueError, match="exec_time_stop_mode"):
-        SosFadeConfig(exec_time_stop_mode="before tp1")          # lowercase: not a member
+        SosFadeConfig(exec_time_stop_mode="before tp1")  # lowercase: not a member
 
 
 def test_zero_hours_with_the_mode_on_raises_instead_of_closing_everything():

@@ -29,23 +29,41 @@ from mpc_bos.tools import compare_bos as cb  # noqa: E402
 
 def _row(**over):
     """A cfg-only export row carrying the SHIPPED defaults, encoded the way the Pine does."""
-    bits = (cb._CFG_BITS["exec_longs"] | cb._CFG_BITS["exec_shorts"]
-            | cb._CFG_BITS["exec_req_fvg"] | cb._CFG_BITS["exec_fvg_deep_only"]
-            | cb._CFG_BITS["exec_deep_fib"] | cb._CFG_BITS["exec_conf_sz2"]
-            | cb._CFG_BITS["exec_no_late_day"] | cb._CFG_BITS["fvg_keep_until_broken"]
-            | cb._CFG_BITS["bos_vwap_on"] | cb._CFG_BITS["use_struct_trail"])
+    bits = (
+        cb._CFG_BITS["exec_longs"]
+        | cb._CFG_BITS["exec_shorts"]
+        | cb._CFG_BITS["exec_req_fvg"]
+        | cb._CFG_BITS["exec_fvg_deep_only"]
+        | cb._CFG_BITS["exec_deep_fib"]
+        | cb._CFG_BITS["exec_conf_sz2"]
+        | cb._CFG_BITS["exec_no_late_day"]
+        | cb._CFG_BITS["fvg_keep_until_broken"]
+        | cb._CFG_BITS["bos_vwap_on"]
+        | cb._CFG_BITS["use_struct_trail"]
+    )
     base = {
         "cfg_bits": bits,
         # entryFib 0.786 (4) + which "All" (2*10) + slModel ATR (4*100)
         # + minStop "% of price" (1*1000) + moveStop Off (0*10000)
         "cfg_enum1": 4 + 20 + 400 + 1000,
-        "cfg_enum2": 0,           # tp2Stop "TP1 price", both HTF "Ignore"
-        "cfg_min_disp": 0.0, "cfg_min_leg": 0.0, "cfg_max_days": 3.0,
-        "cfg_max_regime": 10, "cfg_sl_atr": 1.3, "cfg_sl_buf": 0.0,
-        "cfg_min_stop_val": 0.10, "cfg_move_stop_val": 5.0,
-        "cfg_tp1_pct": 0.0, "cfg_tp2_pct": 0.0, "cfg_tp3_pct": 100.0,
-        "cfg_be_buf": 30.0, "cfg_struct_buf": 20.0, "cfg_trail_step": 5.0,
-        "cfg_risk_pct": 10.0, "cfg_fvg_thresh": 0.04, "cfg_fvg_max": 8,
+        "cfg_enum2": 0,  # tp2Stop "TP1 price", both HTF "Ignore"
+        "cfg_min_disp": 0.0,
+        "cfg_min_leg": 0.0,
+        "cfg_max_days": 3.0,
+        "cfg_max_regime": 10,
+        "cfg_sl_atr": 1.3,
+        "cfg_sl_buf": 0.0,
+        "cfg_min_stop_val": 0.10,
+        "cfg_move_stop_val": 5.0,
+        "cfg_tp1_pct": 0.0,
+        "cfg_tp2_pct": 0.0,
+        "cfg_tp3_pct": 100.0,
+        "cfg_be_buf": 30.0,
+        "cfg_struct_buf": 20.0,
+        "cfg_trail_step": 5.0,
+        "cfg_risk_pct": 10.0,
+        "cfg_fvg_thresh": 0.04,
+        "cfg_fvg_max": 8,
     }
     base.update(over)
     return pd.DataFrame([base])
@@ -60,20 +78,39 @@ def test_the_shipped_defaults_round_trip_through_the_export_encoding():
     """
     cfg = cb.config_from_export(_row())
     shipped = BosConfig()
-    for field in ("bos_which", "bos_entry_fib", "bos_sl_model", "bos_fib_anchor",
-                  "bos_entry_top", "bos_vwap_req", "bos_use_fvg", "exec_req_fvg",
-                  "exec_deep_fib", "exec_conf_sz2", "exec_fvg_50", "bos_req_hold",
-                  "exec_min_stop_mode", "bos_move_stop", "exec_tp2_stop_mode",
-                  "exec_htf_weekly", "exec_htf_daily", "exec_runner_trail",
-                  "bos_sl_atr", "bos_max_days", "exec_tp3_pct", "exec_risk_pct"):
+    for field in (
+        "bos_which",
+        "bos_entry_fib",
+        "bos_sl_model",
+        "bos_fib_anchor",
+        "bos_entry_top",
+        "bos_vwap_req",
+        "bos_use_fvg",
+        "exec_req_fvg",
+        "exec_deep_fib",
+        "exec_conf_sz2",
+        "exec_fvg_50",
+        "bos_req_hold",
+        "exec_min_stop_mode",
+        "bos_move_stop",
+        "exec_tp2_stop_mode",
+        "exec_htf_weekly",
+        "exec_htf_daily",
+        "exec_runner_trail",
+        "bos_sl_atr",
+        "bos_max_days",
+        "exec_tp3_pct",
+        "exec_risk_pct",
+    ):
         assert getattr(cfg, field) == getattr(shipped, field), field
 
 
 def test_each_enum_digit_decodes_independently():
     """The decimal-digit packing is only safe while every field stays under 10 — a scheme that
     quietly overflowed would shift every field above it."""
-    cfg = cb.config_from_export(_row(cfg_enum1=5 + 0 * 10 + 2 * 100 + 3 * 1000 + 2 * 10000,
-                                     cfg_enum2=1 + 2 * 10 + 3 * 100))
+    cfg = cb.config_from_export(
+        _row(cfg_enum1=5 + 0 * 10 + 2 * 100 + 3 * 1000 + 2 * 10000, cfg_enum2=1 + 2 * 10 + 3 * 100)
+    )
     assert cfg.bos_entry_fib == "0.886"
     assert cfg.bos_which == "1st only"
     assert cfg.bos_sl_model == "Fib 0.886"
@@ -85,8 +122,9 @@ def test_each_enum_digit_decodes_independently():
 
 
 def test_the_two_enums_wearing_a_bit_decode_to_the_non_default_side():
-    cfg = cb.config_from_export(_row(
-        cfg_bits=cb._CFG_BITS["bos_shallow"] | cb._CFG_BITS["bos_expansion_anchor"]))
+    cfg = cb.config_from_export(
+        _row(cfg_bits=cb._CFG_BITS["bos_shallow"] | cb._CFG_BITS["bos_expansion_anchor"])
+    )
     assert cfg.bos_entry_top == "0.382"
     assert cfg.bos_fib_anchor == "Expansion leg"
     assert cfg.bos_vwap_req == "Off", "the vwap bit is clear here, so the filter must read Off"
@@ -99,11 +137,12 @@ def test_the_engine_pins_come_off_the_export_not_off_the_strategy():
     eng = cb.engine_config_from_export(_row(cfg_fvg_max=5, cfg_fvg_thresh=0.2))
     assert eng.fvg_max_count == 5
     assert eng.fvg_threshold_pct == 0.2
-    assert eng.fvg_require_close is False        # the bit is clear in the shipped row
+    assert eng.fvg_require_close is False  # the bit is clear in the shipped row
     assert eng.eq_exempt_fvg is False
 
-    eng = cb.engine_config_from_export(_row(
-        cfg_bits=cb._CFG_BITS["fvg_require_close"] | cb._CFG_BITS["eq_exempt_fvg"]))
+    eng = cb.engine_config_from_export(
+        _row(cfg_bits=cb._CFG_BITS["fvg_require_close"] | cb._CFG_BITS["eq_exempt_fvg"])
+    )
     assert eng.fvg_require_close is True and eng.eq_exempt_fvg is True
 
 
@@ -121,13 +160,28 @@ def test_a_missing_cfg_column_REFUSES_rather_than_defaulting():
 # vacuous parity test looks like: fill the price columns with 0.0 and the tool must report a
 # divergence against Python's None, which is correct behaviour being called a bug.
 _PX_BITFIELDS = ("px_struct", "px_arm", "px_ready", "px_gate", "px_src")
-_PX_NULLABLE = ("px_edge_l", "px_edge_s", "px_l_ext", "px_l_org", "px_s_ext", "px_s_org",
-                "px_ord_l", "px_ord_s", "px_tier_l", "px_tier_s", "px_blk_l", "px_blk_s",
-                "px_stage", "px_vwap", "px_closed_r")
+_PX_NULLABLE = (
+    "px_edge_l",
+    "px_edge_s",
+    "px_l_ext",
+    "px_l_org",
+    "px_s_ext",
+    "px_s_org",
+    "px_ord_l",
+    "px_ord_s",
+    "px_tier_l",
+    "px_tier_s",
+    "px_blk_l",
+    "px_blk_s",
+    "px_stage",
+    "px_vwap",
+    "px_closed_r",
+)
 
 
-def _write_export(tmp_path: Path, rows: int = 3, *, volume: bool = True,
-                  volume_col: str = "px_volume", **over) -> Path:
+def _write_export(
+    tmp_path: Path, rows: int = 3, *, volume: bool = True, volume_col: str = "px_volume", **over
+) -> Path:
     """A minimal but STRUCTURALLY REAL export CSV — every column `compare()` requires.
 
     ⚠ The volume column defaults to `px_volume` because that is what the export Pine PLOTS.
@@ -137,7 +191,7 @@ def _write_export(tmp_path: Path, rows: int = 3, *, volume: bool = True,
     only to prove the fallbacks work.
     """
     df = pd.concat([_row(**over)] * rows, ignore_index=True)
-    df["time"] = [1_704_067_200 + i * 900 for i in range(rows)]      # unix seconds, as TV ships
+    df["time"] = [1_704_067_200 + i * 900 for i in range(rows)]  # unix seconds, as TV ships
     for i, col in enumerate(("open", "high", "low", "close")):
         df[col] = [2000.0 + i for _ in range(rows)]
     for col in _PX_BITFIELDS:
@@ -160,16 +214,16 @@ def test_an_export_with_the_vwap_filter_on_and_no_volume_is_refused(tmp_path):
     none — the vacuous-check trap this repo has hit three times.
     """
     with pytest.raises(cb.ExportIncomplete, match="volume"):
-        cb.compare(_write_export(tmp_path, volume=False), warmup=0,
-                   price_tol=0.01, r_tol=0.02)
+        cb.compare(_write_export(tmp_path, volume=False), warmup=0, price_tol=0.01, r_tol=0.02)
 
 
 def test_the_same_export_is_accepted_once_the_filter_is_off(tmp_path):
     """The other half of the rule, and it is what proves the refusal above is about VOLUME
     rather than about the file being unreadable."""
-    off = cb._CFG_BITS["exec_longs"] | cb._CFG_BITS["exec_shorts"]      # vwap bit clear
-    rc = cb.compare(_write_export(tmp_path, volume=False, cfg_bits=off),
-                    warmup=0, price_tol=0.01, r_tol=0.02)
+    off = cb._CFG_BITS["exec_longs"] | cb._CFG_BITS["exec_shorts"]  # vwap bit clear
+    rc = cb.compare(
+        _write_export(tmp_path, volume=False, cfg_bits=off), warmup=0, price_tol=0.01, r_tol=0.02
+    )
     assert rc == 0
 
 

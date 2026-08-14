@@ -162,16 +162,16 @@ fact; it draws nothing.** (Follow-up, not built here.)
 from news import NewsEngine, NewsPolicy, NewsEvent, NewsEvents, Impact
 from news import EventStore
 
-events, covered = EventStore().load()                 # the cache: events + fetched date ranges
+events, covered = EventStore().load()  # the cache: events + fetched date ranges
 eng = NewsEngine(events, policy=NewsPolicy.usd(), covered_ranges=covered)
 
-for bar in feed:                                       # closed bars; timestamp = epoch ms, UTC
+for bar in feed:  # closed bars; timestamp = epoch ms, UTC
     out = eng.update(bar.index, bar.timestamp_ms)
-    if out.has_coverage and out.in_blackout:           # bot's gate
-        continue                                       # stand aside around the release
+    if out.has_coverage and out.in_blackout:  # bot's gate
+        continue  # stand aside around the release
     # ...trade. Where has_coverage is False (before the cache begins) the filter is inert.
 
-eng.coverage_start_ms                                  # the backtest "news starts here" boundary
+eng.coverage_start_ms  # the backtest "news starts here" boundary
 eng.set_events(new_events, covered_ranges=new_ranges)  # live refresh without losing edge state
 ```
 

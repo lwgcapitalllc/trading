@@ -32,9 +32,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional, Sequence
 
-__all__ = ["build_results", "build_equity_curve", "build_daily_pnl", "build_kpis",
-           "build_engine_trades", "engine_trades_csv", "build_blocked_setups",
-           "build_missed_setups"]
+__all__ = [
+    "build_results",
+    "build_equity_curve",
+    "build_daily_pnl",
+    "build_kpis",
+    "build_engine_trades",
+    "engine_trades_csv",
+    "build_blocked_setups",
+    "build_missed_setups",
+]
 
 
 def _utc(ms: int) -> datetime:
@@ -62,6 +69,7 @@ def _stop_price(t: Any) -> float:
 
 # ── equity curve ──────────────────────────────────────────────────────────────
 
+
 def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -> list[dict]:
     """One point per CLOSED trade, in exit order — the lab's equity-curve contract.
 
@@ -79,68 +87,80 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
     for i, t in enumerate(sorted(trades, key=lambda x: (x.exit_ms, x.entry_ms)), start=1):
         equity += t.pnl_usd
         fib = _trade_fib(t)
-        curve.append({
-            "index":     i,
-            "equity":    _round(equity),
-            "date":      _date(t.exit_ms),
-            "entry_ms":  int(t.entry_ms),
-            "direction": "Long" if t.dir > 0 else "Short",
-            "profit":    _round(t.pnl_usd),
-            "exit_name": t.exit_reason or None,
-            "size":      t.qty,
-            "favorable": _round(getattr(t, "mfe_usd", 0.0)),
-            "adverse":   _round(getattr(t, "mae_usd", 0.0)),
-            # Commission + swap + slippage charged to THIS trade, negative. `profit` is already
-            # net of it — this carries what the costs actually WERE, which is otherwise
-            # uninspectable: a run can now be priced (2026-08-01) and a reader had no way to see
-            # how much of a shortfall was friction. 0.0 on a run that stated no costs, which is an
-            # honest "nothing was priced" rather than a claim that trading was free.
-            "costs_usd": _round(getattr(t, "costs_usd", 0.0)),
-            # The trade's R, COPIED from the strategy rather than re-derived downstream. `profit`
-            # is rounded to cents and `stop_price` to 5dp, so a consumer recovering R as
-            # profit / (entry-stop) / size lands ~4e-6 out per trade — invisible on one row, and it
-            # compounds to ~0.06% of final equity once `backtest/reprice.py` re-walks a curve with
-            # it. Carrying the number the strategy already had removes the derivation entirely.
-            # Reporting-only, and optional: a trade duck-type without `r` simply omits it.
-            **({"r": _round(t.r, 6)} if isinstance(getattr(t, "r", None), (int, float)) else {}),
-            # The DOLLARS this trade put at risk — its own 1R. With `r` above it describes the
-            # trade completely and exactly (`profit == r * risk_usd`), which is what lets a
-            # re-price re-walk the balance without recovering the risk from a 5dp stop price and a
-            # size. Also the honest source for "what fraction of the account did this risk?": it is
-            # NOT the configured risk %, because a resting limit is SIZED WHEN PLACED and the
-            # balance moves before it fills. Reporting-only, optional.
-            **({"risk_usd": _round(t.stop_distance * t.qty, 4)}
-               if getattr(t, "stop_distance", 0.0) and t.qty else {}),
-            # Real fills + which layer traded — the price chart draws the trade box at the exact
-            # entry/exit price (not a candle-close guess) and tells primary from secondary. Optional
-            # for consumers that don't read them; every other equity-curve reader ignores extra keys.
-            "exit_ms":     int(t.exit_ms),
-            "entry_price": _round(getattr(t, "entry_price", 0.0), 5),
-            "exit_price":  _round(getattr(t, "exit_price", 0.0), 5),
-            "kind":        getattr(t, "kind", "primary"),
-            # Profit-depth trade view (price chart): how far price ran (mfe/mae PRICES), where each
-            # rung actually banked (`legs`), and the initial 1R stop. All optional — a runner/trade
-            # that doesn't carry them degrades to the plain entry→exit box. Reporting-only.
-            "mfe_price":   _round(getattr(t, "mfe_price", 0.0), 5),
-            "mae_price":   _round(getattr(t, "mae_price", 0.0), 5),
-            "stop_price":  _round(_stop_price(t), 5),
-            "legs":        [
-                {"reason": lg.get("reason", ""), "price": _round(lg.get("price", 0.0), 5),
-                 "ms": int(lg.get("ms", 0)), "qty": lg.get("qty", 0.0)}
-                for lg in getattr(t, "legs", []) or []
-            ],
-            # TP TARGET ladder (the levels the trade aimed at, nearest→furthest) — lets the chart show
-            # an UNHIT next target so a near-miss of the following TP is visible. Empty for a trade
-            # duck-type that carries no targets. Reporting-only.
-            "tp_targets":  [
-                _round(v, 5) for v in (getattr(t, "tp1", 0.0), getattr(t, "tp2", 0.0))
-                if isinstance(v, (int, float)) and v
-            ],
-            # The fib LEG this trade was priced off, exactly as the strategy read it when it
-            # placed the order — `{start_ms, levels: [[ratio, price], ...]}`, or absent. See
-            # `_trade_fib`. Reporting-only, and optional like every other rich field here.
-            **({"fib": fib} if fib else {}),
-        })
+        curve.append(
+            {
+                "index": i,
+                "equity": _round(equity),
+                "date": _date(t.exit_ms),
+                "entry_ms": int(t.entry_ms),
+                "direction": "Long" if t.dir > 0 else "Short",
+                "profit": _round(t.pnl_usd),
+                "exit_name": t.exit_reason or None,
+                "size": t.qty,
+                "favorable": _round(getattr(t, "mfe_usd", 0.0)),
+                "adverse": _round(getattr(t, "mae_usd", 0.0)),
+                # Commission + swap + slippage charged to THIS trade, negative. `profit` is already
+                # net of it — this carries what the costs actually WERE, which is otherwise
+                # uninspectable: a run can now be priced (2026-08-01) and a reader had no way to see
+                # how much of a shortfall was friction. 0.0 on a run that stated no costs, which is an
+                # honest "nothing was priced" rather than a claim that trading was free.
+                "costs_usd": _round(getattr(t, "costs_usd", 0.0)),
+                # The trade's R, COPIED from the strategy rather than re-derived downstream. `profit`
+                # is rounded to cents and `stop_price` to 5dp, so a consumer recovering R as
+                # profit / (entry-stop) / size lands ~4e-6 out per trade — invisible on one row, and it
+                # compounds to ~0.06% of final equity once `backtest/reprice.py` re-walks a curve with
+                # it. Carrying the number the strategy already had removes the derivation entirely.
+                # Reporting-only, and optional: a trade duck-type without `r` simply omits it.
+                **(
+                    {"r": _round(t.r, 6)} if isinstance(getattr(t, "r", None), (int, float)) else {}
+                ),
+                # The DOLLARS this trade put at risk — its own 1R. With `r` above it describes the
+                # trade completely and exactly (`profit == r * risk_usd`), which is what lets a
+                # re-price re-walk the balance without recovering the risk from a 5dp stop price and a
+                # size. Also the honest source for "what fraction of the account did this risk?": it is
+                # NOT the configured risk %, because a resting limit is SIZED WHEN PLACED and the
+                # balance moves before it fills. Reporting-only, optional.
+                **(
+                    {"risk_usd": _round(t.stop_distance * t.qty, 4)}
+                    if getattr(t, "stop_distance", 0.0) and t.qty
+                    else {}
+                ),
+                # Real fills + which layer traded — the price chart draws the trade box at the exact
+                # entry/exit price (not a candle-close guess) and tells primary from secondary. Optional
+                # for consumers that don't read them; every other equity-curve reader ignores extra keys.
+                "exit_ms": int(t.exit_ms),
+                "entry_price": _round(getattr(t, "entry_price", 0.0), 5),
+                "exit_price": _round(getattr(t, "exit_price", 0.0), 5),
+                "kind": getattr(t, "kind", "primary"),
+                # Profit-depth trade view (price chart): how far price ran (mfe/mae PRICES), where each
+                # rung actually banked (`legs`), and the initial 1R stop. All optional — a runner/trade
+                # that doesn't carry them degrades to the plain entry→exit box. Reporting-only.
+                "mfe_price": _round(getattr(t, "mfe_price", 0.0), 5),
+                "mae_price": _round(getattr(t, "mae_price", 0.0), 5),
+                "stop_price": _round(_stop_price(t), 5),
+                "legs": [
+                    {
+                        "reason": lg.get("reason", ""),
+                        "price": _round(lg.get("price", 0.0), 5),
+                        "ms": int(lg.get("ms", 0)),
+                        "qty": lg.get("qty", 0.0),
+                    }
+                    for lg in getattr(t, "legs", []) or []
+                ],
+                # TP TARGET ladder (the levels the trade aimed at, nearest→furthest) — lets the chart show
+                # an UNHIT next target so a near-miss of the following TP is visible. Empty for a trade
+                # duck-type that carries no targets. Reporting-only.
+                "tp_targets": [
+                    _round(v, 5)
+                    for v in (getattr(t, "tp1", 0.0), getattr(t, "tp2", 0.0))
+                    if isinstance(v, (int, float)) and v
+                ],
+                # The fib LEG this trade was priced off, exactly as the strategy read it when it
+                # placed the order — `{start_ms, levels: [[ratio, price], ...]}`, or absent. See
+                # `_trade_fib`. Reporting-only, and optional like every other rich field here.
+                **({"fib": fib} if fib else {}),
+            }
+        )
     return curve
 
 
@@ -159,8 +179,11 @@ def _trade_fib(t: Any) -> Optional[dict]:
     raw = getattr(fib, "levels", None) if fib is not None else None
     if not raw:
         return None
-    levels = [[float(r), _round(p, 5)] for r, p in raw
-              if isinstance(r, (int, float)) and isinstance(p, (int, float))]
+    levels = [
+        [float(r), _round(p, 5)]
+        for r, p in raw
+        if isinstance(r, (int, float)) and isinstance(p, (int, float))
+    ]
     if not levels:
         return None
     start = getattr(fib, "start_ms", None)
@@ -171,6 +194,7 @@ def _trade_fib(t: Any) -> Optional[dict]:
 
 
 # ── daily P&L ─────────────────────────────────────────────────────────────────
+
 
 def build_daily_pnl(trades: Sequence[Any]) -> list[dict]:
     """Net P&L per calendar UTC day, booked on the EXIT day (the lab's convention —
@@ -185,6 +209,7 @@ def build_daily_pnl(trades: Sequence[Any]) -> list[dict]:
 
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
+
 
 def _max_drawdown(curve: Sequence[dict], initial_capital: float) -> float:
     """Largest peak-to-trough drop in the closed-trade equity curve, as a POSITIVE
@@ -209,23 +234,30 @@ def _worst_losing_streak(trades: Sequence[Any]) -> int:
     return worst
 
 
-def build_kpis(trades: Sequence[Any], *, initial_capital: float = 0.0,
-               equity_curve: Optional[Sequence[dict]] = None,
-               daily_pnl: Optional[Sequence[dict]] = None) -> dict:
+def build_kpis(
+    trades: Sequence[Any],
+    *,
+    initial_capital: float = 0.0,
+    equity_curve: Optional[Sequence[dict]] = None,
+    daily_pnl: Optional[Sequence[dict]] = None,
+) -> dict:
     """The KPI dict the lab reads. Keys mirror what the NT8/MT5 paths supply, so
     worthiness/grading/BacktestDetail need no Python-specific branch.
 
     Sharpe/sortino/cagr are deliberately ABSENT — see the module docstring (the lab
     stamps canonical Sharpe from daily_pnl at completion).
     """
-    curve = list(equity_curve if equity_curve is not None
-                 else build_equity_curve(trades, initial_capital=initial_capital))
+    curve = list(
+        equity_curve
+        if equity_curve is not None
+        else build_equity_curve(trades, initial_capital=initial_capital)
+    )
     days = list(daily_pnl if daily_pnl is not None else build_daily_pnl(trades))
 
-    wins   = [t.pnl_usd for t in trades if t.pnl_usd > 0]
+    wins = [t.pnl_usd for t in trades if t.pnl_usd > 0]
     losses = [t.pnl_usd for t in trades if t.pnl_usd < 0]
     gross_profit = sum(wins)
-    gross_loss   = abs(sum(losses))
+    gross_loss = abs(sum(losses))
     n = len(trades)
 
     # PF is undefined with no losses; report it as 0.0 rather than inf so JSON/compare
@@ -237,35 +269,45 @@ def build_kpis(trades: Sequence[Any], *, initial_capital: float = 0.0,
     durations = [(t.exit_ms - t.entry_ms) / 60000.0 for t in trades]
 
     return {
-        "net_pnl":              _round(sum(t.pnl_usd for t in trades)),
-        "gross_profit":         _round(gross_profit),
-        "gross_loss":           _round(gross_loss),
-        "profit_factor":        pf,
-        "trade_count":          n,
-        "win_count":            len(wins),
-        "loss_count":           len(losses),
+        "net_pnl": _round(sum(t.pnl_usd for t in trades)),
+        "gross_profit": _round(gross_profit),
+        "gross_loss": _round(gross_loss),
+        "profit_factor": pf,
+        "trade_count": n,
+        "win_count": len(wins),
+        "loss_count": len(losses),
         # FRACTION (0.0-1.0), not a percent — the lab-wide convention (sizing_pipeline,
         # metrics regime rows) that every consumer and the frontend's pct() assume.
-        "win_rate":             _round(len(wins) / n, 4) if n else 0.0,
-        "avg_win":              _round(gross_profit / len(wins)) if wins else 0.0,
-        "avg_loss":             _round(-gross_loss / len(losses)) if losses else 0.0,
-        "max_drawdown":         _max_drawdown(curve, initial_capital),
-        "worst_day_pnl":        _round(min((d["pnl"] for d in days), default=0.0)),
-        "worst_losing_streak":  _worst_losing_streak(trades),
+        "win_rate": _round(len(wins) / n, 4) if n else 0.0,
+        "avg_win": _round(gross_profit / len(wins)) if wins else 0.0,
+        "avg_loss": _round(-gross_loss / len(losses)) if losses else 0.0,
+        "max_drawdown": _max_drawdown(curve, initial_capital),
+        "worst_day_pnl": _round(min((d["pnl"] for d in days), default=0.0)),
+        "worst_losing_streak": _worst_losing_streak(trades),
         "avg_trade_duration_min": _round(sum(durations) / n, 1) if n else 0.0,
-        "total_r":              _round(sum(getattr(t, "r", 0.0) for t in trades), 2),
+        "total_r": _round(sum(getattr(t, "r", 0.0) for t in trades), 2),
     }
 
 
 # ── engine_trades (the runner→sizing-engine contract) ─────────────────────────
 
-_ENGINE_TRADE_COLS = ("index", "entry_time", "exit_time", "direction", "entry_price",
-                      "exit_price", "stop_distance", "point_value", "commission_per_side",
-                      "exit_reason")
+_ENGINE_TRADE_COLS = (
+    "index",
+    "entry_time",
+    "exit_time",
+    "direction",
+    "entry_price",
+    "exit_price",
+    "stop_distance",
+    "point_value",
+    "commission_per_side",
+    "exit_reason",
+)
 
 
-def build_engine_trades(trades: Sequence[Any], *, point_value: float,
-                        commission_per_side: float = 0.0) -> list[dict]:
+def build_engine_trades(
+    trades: Sequence[Any], *, point_value: float, commission_per_side: float = 0.0
+) -> list[dict]:
     """Unit-size trade records for `sizing_engine.RawTrade` — the contract that lets a
     Python run flow through the dynamic sizing engine exactly like ORB/LondonBreakout.
 
@@ -275,18 +317,20 @@ def build_engine_trades(trades: Sequence[Any], *, point_value: float,
     """
     out: list[dict] = []
     for i, t in enumerate(sorted(trades, key=lambda x: (x.exit_ms, x.entry_ms)), start=1):
-        out.append({
-            "index":               i,
-            "entry_time":          _utc(t.entry_ms).isoformat(),
-            "exit_time":           _utc(t.exit_ms).isoformat(),
-            "direction":           1 if t.dir > 0 else -1,
-            "entry_price":         t.entry_price,
-            "exit_price":          t.exit_price,
-            "stop_distance":       t.stop_distance,
-            "point_value":         point_value,
-            "commission_per_side": commission_per_side,
-            "exit_reason":         t.exit_reason or "",
-        })
+        out.append(
+            {
+                "index": i,
+                "entry_time": _utc(t.entry_ms).isoformat(),
+                "exit_time": _utc(t.exit_ms).isoformat(),
+                "direction": 1 if t.dir > 0 else -1,
+                "entry_price": t.entry_price,
+                "exit_price": t.exit_price,
+                "stop_distance": t.stop_distance,
+                "point_value": point_value,
+                "commission_per_side": commission_per_side,
+                "exit_reason": t.exit_reason or "",
+            }
+        )
     return out
 
 
@@ -305,6 +349,7 @@ def engine_trades_csv(rows: Iterable[dict]) -> str:
 
 
 # ── the one entry point ───────────────────────────────────────────────────────
+
 
 def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
     """A strategy's refused setups → the lab's blocked-setup contract (the price chart's
@@ -329,13 +374,15 @@ def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
             {"label": str(labels[i]), "reason": str(texts[i] if i < len(texts) else "")}
             for i in range(len(labels))
         ]
-        out.append({
-            "time_ms":   int(getattr(b, "time_ms", 0)),
-            "direction": "Long" if getattr(b, "dir", 0) > 0 else "Short",
-            "codes":     [int(c) for c in (getattr(b, "codes", None) or [])],
-            "reasons":   reasons,
-            "edge":      _round(float(getattr(b, "edge", 0.0)), 5),
-        })
+        out.append(
+            {
+                "time_ms": int(getattr(b, "time_ms", 0)),
+                "direction": "Long" if getattr(b, "dir", 0) > 0 else "Short",
+                "codes": [int(c) for c in (getattr(b, "codes", None) or [])],
+                "reasons": reasons,
+                "edge": _round(float(getattr(b, "edge", 0.0)), 5),
+            }
+        )
     out.sort(key=lambda r: r["time_ms"])
     return out
 
@@ -378,29 +425,35 @@ def build_missed_setups(missed: Optional[Sequence[Any]]) -> list[dict]:
         # would read as the epoch, and a fallback to `time_ms` would put the answer back exactly
         # where it was wrong.
         ms = lambda v: int(v) if isinstance(v, (int, float)) else None
-        out.append({
-            "time_ms":   int(getattr(m, "time_ms", 0)),
-            "zone_time_ms": ms(getattr(m, "zone_time_ms", None)),
-            "zone_turn_ms": ms(getattr(m, "zone_turn_ms", None)),
-            "direction": "Long" if getattr(m, "dir", 0) > 0 else "Short",
-            "met":       int(getattr(m, "met", 0)),
-            "of":        _MISS_OF,
-            # The reader's default view. A strategy marks the misses worth looking at; the ones
-            # it doesn't are the ordinary way most setups die, and they are what floods a chart.
-            "near":      bool(getattr(m, "near", True)),
-            "met_lines": [str(s) for s in (getattr(m, "met_lines", None) or [])],
-            "reasons":   reasons,
-            "edge":      _round(float(getattr(m, "edge", 0.0)), 5),
-        })
+        out.append(
+            {
+                "time_ms": int(getattr(m, "time_ms", 0)),
+                "zone_time_ms": ms(getattr(m, "zone_time_ms", None)),
+                "zone_turn_ms": ms(getattr(m, "zone_turn_ms", None)),
+                "direction": "Long" if getattr(m, "dir", 0) > 0 else "Short",
+                "met": int(getattr(m, "met", 0)),
+                "of": _MISS_OF,
+                # The reader's default view. A strategy marks the misses worth looking at; the ones
+                # it doesn't are the ordinary way most setups die, and they are what floods a chart.
+                "near": bool(getattr(m, "near", True)),
+                "met_lines": [str(s) for s in (getattr(m, "met_lines", None) or [])],
+                "reasons": reasons,
+                "edge": _round(float(getattr(m, "edge", 0.0)), 5),
+            }
+        )
     out.sort(key=lambda r: r["time_ms"])
     return out
 
 
-def build_results(trades: Sequence[Any], *, point_value: float,
-                  initial_capital: float = 0.0,
-                  commission_per_side: float = 0.0,
-                  blocked: Optional[Sequence[Any]] = None,
-                  missed: Optional[Sequence[Any]] = None) -> dict:
+def build_results(
+    trades: Sequence[Any],
+    *,
+    point_value: float,
+    initial_capital: float = 0.0,
+    commission_per_side: float = 0.0,
+    blocked: Optional[Sequence[Any]] = None,
+    missed: Optional[Sequence[Any]] = None,
+) -> dict:
     """Everything the lab needs from a finished Python backtest, in one call.
 
     `blocked` and `missed` are optional and reporting-only — a strategy that records neither
@@ -408,14 +461,16 @@ def build_results(trades: Sequence[Any], *, point_value: float,
     """
     trades = list(trades)
     curve = build_equity_curve(trades, initial_capital=initial_capital)
-    days  = build_daily_pnl(trades)
+    days = build_daily_pnl(trades)
     return {
-        "equity_curve":  curve,
-        "daily_pnl":     days,
-        "kpis":          build_kpis(trades, initial_capital=initial_capital,
-                                    equity_curve=curve, daily_pnl=days),
-        "engine_trades": build_engine_trades(trades, point_value=point_value,
-                                             commission_per_side=commission_per_side),
+        "equity_curve": curve,
+        "daily_pnl": days,
+        "kpis": build_kpis(
+            trades, initial_capital=initial_capital, equity_curve=curve, daily_pnl=days
+        ),
+        "engine_trades": build_engine_trades(
+            trades, point_value=point_value, commission_per_side=commission_per_side
+        ),
         "blocked_setups": build_blocked_setups(blocked),
-        "missed_setups":  build_missed_setups(missed),
+        "missed_setups": build_missed_setups(missed),
     }

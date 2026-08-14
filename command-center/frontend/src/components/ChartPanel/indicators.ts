@@ -25,12 +25,12 @@ interface SeriesResult {
  */
 export function mapSeriesToCandles(
   dataList: Array<{ timestamp: number }>,
-  series: ShippedPoint[],
+  series: ShippedPoint[]
 ): SeriesResult[] {
   if (series.length === 0) return dataList.map(() => ({}))
   const out: SeriesResult[] = []
   let si = 0
-  let lastVal: number | undefined  // carry forward so D1 values fill every sub-day bar
+  let lastVal: number | undefined // carry forward so D1 values fill every sub-day bar
   for (let i = 0; i < dataList.length; i++) {
     const nextT = i + 1 < dataList.length ? dataList[i + 1].timestamp : Infinity
     while (si < series.length && series[si].time < nextT) {
@@ -56,9 +56,12 @@ export function ensureSeriesIndicator(name: string): void {
         key: 'value',
         title: `${name}: `,
         type: 'line',
-        styles: (_data, indicator) => ({ color: (indicator.extendData?.color as string) ?? '#888888' }),
+        styles: (_data, indicator) => ({
+          color: (indicator.extendData?.color as string) ?? '#888888',
+        }),
       },
     ],
-    calc: (dataList, indicator) => mapSeriesToCandles(dataList, (indicator.extendData?.series as ShippedPoint[]) ?? []),
+    calc: (dataList, indicator) =>
+      mapSeriesToCandles(dataList, (indicator.extendData?.series as ShippedPoint[]) ?? []),
   })
 }

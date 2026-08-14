@@ -33,8 +33,8 @@ Public API:
 """
 
 from .engine import NewsEngine
+from .sources import CalendarSource, FetchResult, ForexFactoryHistorySource, ForexFactorySource
 from .store import EventStore
-from .sources import CalendarSource, FetchResult, ForexFactorySource, ForexFactoryHistorySource
 from .types import Impact, NewsEvent, NewsEvents, NewsPolicy
 
 __all__ = [

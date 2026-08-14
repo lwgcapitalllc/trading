@@ -11,15 +11,19 @@ Usage in every bot (first two lines after docstring):
     CFG = load_config()
 """
 
-import sys, json, logging, argparse
+import argparse
+import json
+import logging
+import sys
 from pathlib import Path
 
 
 def _inject_shared_path():
-    bots_dir   = Path(__file__).parent        # C:\trading\algos\bots\
-    shared_dir = bots_dir.parent / "shared"   # C:\trading\algos\shared\
+    bots_dir = Path(__file__).parent  # C:\trading\algos\bots\
+    shared_dir = bots_dir.parent / "shared"  # C:\trading\algos\shared\
     if str(shared_dir) not in sys.path:
         sys.path.insert(0, str(shared_dir))
+
 
 _inject_shared_path()
 
@@ -59,11 +63,11 @@ def load_config() -> dict:
     creds_path = cfg_path.parent / "credentials.json"
     if not creds_path.exists():
         example = (
-            f"  {{\n"
-            f"      \"login\":    YOUR_ACCOUNT_NUMBER,\n"
-            f"      \"password\": \"YOUR_PASSWORD\",\n"
-            f"      \"server\":   \"YOUR_BROKER_SERVER\"\n"
-            f"  }}\n"
+            "  {\n"
+            '      "login":    YOUR_ACCOUNT_NUMBER,\n'
+            '      "password": "YOUR_PASSWORD",\n'
+            '      "server":   "YOUR_BROKER_SERVER"\n'
+            "  }\n"
         )
         raise FileNotFoundError(
             f"\n\n  credentials.json not found at: {creds_path}\n"
@@ -78,8 +82,8 @@ def load_config() -> dict:
     # Merge credentials into config under "account" key
     cfg["account"] = creds
 
-    cfg["_instance_dir"]  = str(cfg_path.parent.resolve())
-    cfg["_config_path"]   = str(cfg_path.resolve())
+    cfg["_instance_dir"] = str(cfg_path.parent.resolve())
+    cfg["_config_path"] = str(cfg_path.resolve())
     return cfg
 
 
@@ -97,6 +101,7 @@ def load_weekly_start(bot_key: str, current_week: int, balance: float) -> float:
     bot_state.json is the single source of truth — no separate *_weekly.json files needed.
     """
     from bot_state import read_bot, write_bot
+
     state = read_bot(bot_key)
     if state.get("last_week") == current_week and state.get("weekly_start"):
         return float(state["weekly_start"])
@@ -120,7 +125,7 @@ def setup_logging(bot_name: str, cfg: dict) -> logging.Logger:
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(str(log_file), encoding="utf-8"),
-        ]
+        ],
     )
     logger = logging.getLogger(bot_name)
     logger.info(f"Config: {cfg['_config_path']}")

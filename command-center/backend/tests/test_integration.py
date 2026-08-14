@@ -17,19 +17,21 @@ Unit tests (no VPS) run separately:
 """
 
 import base64
-import time
 import subprocess
-import pytest
+import time
+
 import httpx
+import pytest
 
 pytestmark = pytest.mark.integration
 
 BASE = "http://localhost:8000"
-TIMEOUT = 30       # seconds for single HTTP calls
+TIMEOUT = 30  # seconds for single HTTP calls
 RUN_TIMEOUT = 300  # seconds to wait for a full backtest to complete
 
 
 # ── Fixture: skip if VPS agent unreachable ─────────────────────────────────────
+
 
 @pytest.fixture(scope="module", autouse=True)
 def require_vps():
@@ -51,6 +53,7 @@ def require_backend():
 
 # ── Helper: poll a run until terminal status ───────────────────────────────────
 
+
 def _poll_run(run_id: str, timeout: int = RUN_TIMEOUT) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -65,6 +68,7 @@ def _poll_run(run_id: str, timeout: int = RUN_TIMEOUT) -> dict:
 
 # ── Case 4: full backtest run to completion ───────────────────────────────────
 
+
 def test_full_backtest_run_complete():
     """
     §11 Case 4: trigger ORB on MNQ 06-26, 2024 full year,
@@ -76,29 +80,34 @@ def test_full_backtest_run_complete():
     orb = next((s for s in strategies if "ORB" in s["class_name"]), None)
     assert orb is not None, "ORB strategy not found after scan"
 
-    r = httpx.post(f"{BASE}/backtests/run", json={
-        "strategy_id": orb["id"],
-        "instrument": "MNQ 06-26",
-        "params": orb["default_params"],
-        "bar_type": "Minute",
-        "bar_value": 5,
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "commission_per_side": 0.50,
-        "slippage_ticks": 1,
-        "evaluate_firms": [
-            "lucidflex_50k_eval",
-            "lucidflex_50k_funded",
-            "lucidflex_100k_eval",
-            "lucidflex_100k_funded",
-        ],
-    }, timeout=TIMEOUT)
+    r = httpx.post(
+        f"{BASE}/backtests/run",
+        json={
+            "strategy_id": orb["id"],
+            "instrument": "MNQ 06-26",
+            "params": orb["default_params"],
+            "bar_type": "Minute",
+            "bar_value": 5,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "commission_per_side": 0.50,
+            "slippage_ticks": 1,
+            "evaluate_firms": [
+                "lucidflex_50k_eval",
+                "lucidflex_50k_funded",
+                "lucidflex_100k_eval",
+                "lucidflex_100k_funded",
+            ],
+        },
+        timeout=TIMEOUT,
+    )
     assert r.status_code == 202, f"Trigger failed: {r.text}"
     run_id = r.json()["run_id"]
 
     data = _poll_run(run_id, timeout=RUN_TIMEOUT)
-    assert data["status"] == "complete", \
+    assert data["status"] == "complete", (
         f"Run did not complete — status={data['status']} error={data.get('error_message')}"
+    )
 
     evals = data["evaluations"]
     assert len(evals) == 4, f"Expected 4 evaluations, got {len(evals)}"
@@ -106,22 +115,25 @@ def test_full_backtest_run_complete():
     # Funded firms must NOT have consistency_pass
     funded_evals = [e for e in evals if "funded" in e["firm_id"]]
     for e in funded_evals:
-        assert e["consistency_pass"] is None, \
+        assert e["consistency_pass"] is None, (
             f"Funded firm {e['firm_id']} should have consistency_pass=null"
+        )
 
     # Eval firms: consistency_pass is only computed when net_pnl > 0
     # (no positive profit → nothing to measure consistency against)
     if data.get("net_pnl", 0) > 0:
         eval_evals = [e for e in evals if "eval" in e["firm_id"]]
         for e in eval_evals:
-            assert e["consistency_pass"] is not None, \
+            assert e["consistency_pass"] is not None, (
                 f"Eval firm {e['firm_id']} should have consistency_pass set when profitable"
+            )
 
     # Cleanup
     httpx.delete(f"{BASE}/backtests/runs/{run_id}", timeout=TIMEOUT)
 
 
 # ── Case 5: failed compile path ───────────────────────────────────────────────
+
 
 def test_compile_failure_marks_run_failed():
     """
@@ -146,7 +158,8 @@ sys.stdout.buffer.write(p.read_bytes())
     res = subprocess.run(
         ["ssh", "forexvps", "python -"],
         input=read_script.encode(),
-        capture_output=True, timeout=20,
+        capture_output=True,
+        timeout=20,
     )
     original_bytes = res.stdout
     assert len(original_bytes) > 500, (
@@ -165,7 +178,9 @@ p.write_bytes(bad_line + p.read_bytes())
         subprocess.run(
             ["ssh", "forexvps", "python -"],
             input=corrupt_script.encode(),
-            capture_output=True, timeout=20, check=True,
+            capture_output=True,
+            timeout=20,
+            check=True,
         )
 
         # ── Wait for NT8 file-watcher to detect change and recompile ─────────
@@ -191,15 +206,22 @@ p.write_bytes(bad_line + p.read_bytes())
         strategies = httpx.get(f"{BASE}/strategies", timeout=TIMEOUT).json()
         orb = next((s for s in strategies if "ORB" in s["class_name"]), None)
         if orb:
-            r = httpx.post(f"{BASE}/backtests/run", json={
-                "strategy_id": orb["id"],
-                "instrument":  "MNQ 06-26",
-                "params":      orb["default_params"],
-                "bar_type":    "Minute", "bar_value": 5,
-                "start_date":  "2024-01-01", "end_date": "2024-03-31",
-                "commission_per_side": 0.50, "slippage_ticks": 1,
-                "evaluate_firms": ["lucidflex_50k_eval"],
-            }, timeout=TIMEOUT)
+            r = httpx.post(
+                f"{BASE}/backtests/run",
+                json={
+                    "strategy_id": orb["id"],
+                    "instrument": "MNQ 06-26",
+                    "params": orb["default_params"],
+                    "bar_type": "Minute",
+                    "bar_value": 5,
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-03-31",
+                    "commission_per_side": 0.50,
+                    "slippage_ticks": 1,
+                    "evaluate_firms": ["lucidflex_50k_eval"],
+                },
+                timeout=TIMEOUT,
+            )
             assert r.status_code == 202
             run_id = r.json()["run_id"]
             data = _poll_run(run_id, timeout=180)
@@ -220,13 +242,15 @@ p.write_bytes(base64.b64decode('{b64}'))
         subprocess.run(
             ["ssh", "forexvps", "python -"],
             input=restore_script.encode(),
-            capture_output=True, timeout=20,
+            capture_output=True,
+            timeout=20,
         )
         if run_id:
             httpx.delete(f"{BASE}/backtests/runs/{run_id}", timeout=TIMEOUT)
 
 
 # ── Case 6: agent kill → failed_timeout ───────────────────────────────────────
+
 
 def test_agent_kill_causes_failed_timeout():
     """
@@ -238,15 +262,22 @@ def test_agent_kill_causes_failed_timeout():
     orb = next((s for s in strategies if "ORB" in s["class_name"]), None)
     assert orb is not None
 
-    r = httpx.post(f"{BASE}/backtests/run", json={
-        "strategy_id": orb["id"],
-        "instrument": "MNQ 06-26",
-        "params": orb["default_params"],
-        "bar_type": "Minute", "bar_value": 5,
-        "start_date": "2024-01-01", "end_date": "2024-03-31",  # short range, exits sooner
-        "commission_per_side": 0.50, "slippage_ticks": 1,
-        "evaluate_firms": ["lucidflex_50k_eval"],
-    }, timeout=TIMEOUT)
+    r = httpx.post(
+        f"{BASE}/backtests/run",
+        json={
+            "strategy_id": orb["id"],
+            "instrument": "MNQ 06-26",
+            "params": orb["default_params"],
+            "bar_type": "Minute",
+            "bar_value": 5,
+            "start_date": "2024-01-01",
+            "end_date": "2024-03-31",  # short range, exits sooner
+            "commission_per_side": 0.50,
+            "slippage_ticks": 1,
+            "evaluate_firms": ["lucidflex_50k_eval"],
+        },
+        timeout=TIMEOUT,
+    )
     assert r.status_code == 202
     run_id = r.json()["run_id"]
 
@@ -271,17 +302,20 @@ def test_agent_kill_causes_failed_timeout():
     # command (whose own commandline contains the pattern), and the script name is what
     # picks THIS agent out of the fleet.
     subprocess.run(
-        ["ssh", "forexvps",
-         "wmic process where \"name='python.exe' and commandline like "
-         "'%nt8_agent.py%'\" call terminate"],
-        timeout=15, check=False,
+        [
+            "ssh",
+            "forexvps",
+            "wmic process where \"name='python.exe' and commandline like "
+            "'%nt8_agent.py%'\" call terminate",
+        ],
+        timeout=15,
+        check=False,
     )
 
     # The backend poller has a 10-minute stall timeout.
     # Poll up to 700s for failed_timeout.
     data = _poll_run(run_id, timeout=700)
-    assert data["status"] == "failed_timeout", \
-        f"Expected failed_timeout, got: {data['status']}"
+    assert data["status"] == "failed_timeout", f"Expected failed_timeout, got: {data['status']}"
     assert data["error_message"] is not None
     assert "Lost contact" in data["error_message"] or "timeout" in data["error_message"].lower()
 
@@ -289,6 +323,7 @@ def test_agent_kill_causes_failed_timeout():
 
 
 # ── Case 7: system health strip dots ─────────────────────────────────────────
+
 
 def test_system_health_endpoint_shape():
     """
@@ -298,8 +333,15 @@ def test_system_health_endpoint_shape():
     r = httpx.get(f"{BASE}/system/health", timeout=TIMEOUT)
     assert r.status_code == 200
     h = r.json()
-    required = {"backend", "ssh_tunnel", "nt8_agent", "nt8_running",
-                "nt8_sa_visible", "last_compile_ok", "checked_at"}
+    required = {
+        "backend",
+        "ssh_tunnel",
+        "nt8_agent",
+        "nt8_running",
+        "nt8_sa_visible",
+        "last_compile_ok",
+        "checked_at",
+    }
     assert required.issubset(h.keys()), f"Missing keys: {required - h.keys()}"
     assert isinstance(h["backend"], bool)
     assert isinstance(h["nt8_running"], bool)
@@ -309,6 +351,6 @@ def test_system_health_endpoint_shape():
 def test_system_health_vps_live():
     """With VPS up, backend + ssh_tunnel should be True."""
     h = httpx.get(f"{BASE}/system/health", timeout=TIMEOUT).json()
-    assert h["backend"] is True,     "Backend should report healthy"
-    assert h["ssh_tunnel"] is True,  "SSH tunnel should be up (VPS is live)"
-    assert h["nt8_agent"] is True,   "NT8 agent should respond (agent is running)"
+    assert h["backend"] is True, "Backend should report healthy"
+    assert h["ssh_tunnel"] is True, "SSH tunnel should be up (VPS is live)"
+    assert h["nt8_agent"] is True, "NT8 agent should respond (agent is running)"

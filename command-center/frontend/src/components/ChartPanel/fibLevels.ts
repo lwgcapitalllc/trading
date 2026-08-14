@@ -26,7 +26,9 @@ const MAX_LEVELS = 40
 /** The common ladder an "Add level" pulls its next ratio from, in order. Everything the classic
  *  tool offers, retracements first then extensions — so adding a level lands on a real fib number
  *  instead of an arbitrary one, and repeated adds walk outward rather than piling on one value. */
-const LADDER = [0.236, 0.382, 0.5, 0.618, 0.65, 0.702, 0.786, 0.886, 1, 1.128, 1.272, 1.414, 1.618, 2, 2.618]
+const LADDER = [
+  0.236, 0.382, 0.5, 0.618, 0.65, 0.702, 0.786, 0.886, 1, 1.128, 1.272, 1.414, 1.618, 2, 2.618,
+]
 
 /** Guard every path that reads levels from outside this module (localStorage today, anything
  *  later): each entry needs a finite ratio and a colour string, everything else is dropped. */
@@ -68,8 +70,8 @@ export function saveFibLevels(levels: FibLevel[]): void {
 /** The ratio a new row should start on: the first ladder value not already in use, else one step
  *  beyond the deepest level present (so adding past 2.618 keeps walking out instead of stalling). */
 export function nextFibRatio(levels: FibLevel[]): number {
-  const used = new Set(levels.map(l => l.ratio))
-  const fresh = LADDER.find(r => !used.has(r))
+  const used = new Set(levels.map((l) => l.ratio))
+  const fresh = LADDER.find((r) => !used.has(r))
   if (fresh !== undefined) return fresh
   const max = levels.reduce((m, l) => Math.max(m, l.ratio), 0)
   return Math.round((max + 0.5) * 1000) / 1000
@@ -79,5 +81,10 @@ export function nextFibRatio(levels: FibLevel[]): number {
  *  Drives the "this drawing differs from your default" state in the editor. */
 export function sameFibLevels(a: FibLevel[], b: FibLevel[]): boolean {
   if (a.length !== b.length) return false
-  return a.every((l, i) => l.ratio === b[i].ratio && l.color === b[i].color && (l.visible !== false) === (b[i].visible !== false))
+  return a.every(
+    (l, i) =>
+      l.ratio === b[i].ratio &&
+      l.color === b[i].color &&
+      (l.visible !== false) === (b[i].visible !== false)
+  )
 }

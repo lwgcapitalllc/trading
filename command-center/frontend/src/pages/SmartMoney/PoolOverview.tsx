@@ -1,6 +1,13 @@
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts'
 import type { SmartMoneyRun } from '@/types'
 import { StatCard } from '@/components/StatCard'
@@ -39,7 +46,10 @@ function FunnelChart({ funnel }: { funnel: SmartMoneyRun['funnel'] }) {
 
 const DONUT_COLORS = ['#2dd4bf', '#d9a441']
 
-export function PoolOverview({ run, onNavigate }: {
+export function PoolOverview({
+  run,
+  onNavigate,
+}: {
   run: SmartMoneyRun
   onNavigate?: (tab: string, market?: string) => void
 }) {
@@ -48,7 +58,7 @@ export function PoolOverview({ run, onNavigate }: {
   const total = Object.values(run.by_market).reduce((a, b) => a + b, 0)
 
   const cryptoCount = run.by_market.crypto ?? 0
-  const forexCount  = run.by_market.forex  ?? 0
+  const forexCount = run.by_market.forex ?? 0
   const sourceNames = Object.keys(run.by_source)
 
   return (
@@ -64,7 +74,11 @@ export function PoolOverview({ run, onNavigate }: {
         <StatCard
           label="Qualified"
           value={run.total_qualified.toLocaleString()}
-          sub={total > 0 ? `${((run.total_qualified / run.total_scanned) * 100).toFixed(2)}% pass rate` : '—'}
+          sub={
+            total > 0
+              ? `${((run.total_qualified / run.total_scanned) * 100).toFixed(2)}% pass rate`
+              : '—'
+          }
           subVariant="pos"
           disabled={run.total_qualified === 0}
           onClick={run.total_qualified > 0 && onNavigate ? () => onNavigate('rankings') : undefined}
@@ -72,14 +86,20 @@ export function PoolOverview({ run, onNavigate }: {
         <StatCard
           label="Crypto"
           value={cryptoCount.toLocaleString()}
-          sub={Object.keys(run.by_source).filter(s => !['myfxbook', 'fx_blue'].includes(s)).join(' · ')}
+          sub={Object.keys(run.by_source)
+            .filter((s) => !['myfxbook', 'fx_blue'].includes(s))
+            .join(' · ')}
           disabled={cryptoCount === 0}
-          onClick={cryptoCount > 0 && onNavigate ? () => onNavigate('rankings', 'crypto') : undefined}
+          onClick={
+            cryptoCount > 0 && onNavigate ? () => onNavigate('rankings', 'crypto') : undefined
+          }
         />
         <StatCard
           label="Forex"
           value={forexCount.toLocaleString()}
-          sub={Object.keys(run.by_source).filter(s => ['myfxbook', 'fx_blue'].includes(s)).join(' · ')}
+          sub={Object.keys(run.by_source)
+            .filter((s) => ['myfxbook', 'fx_blue'].includes(s))
+            .join(' · ')}
           disabled={forexCount === 0}
           onClick={forexCount > 0 && onNavigate ? () => onNavigate('rankings', 'forex') : undefined}
         />
@@ -98,11 +118,25 @@ export function PoolOverview({ run, onNavigate }: {
         <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
           <div className="text-[13px] font-semibold mb-[14px]">Candidates by source</div>
           <ResponsiveContainer width="100%" height={120}>
-            <BarChart data={sourceData} layout="vertical" margin={{ left: 0, right: 8, top: 0, bottom: 0 }}>
+            <BarChart
+              data={sourceData}
+              layout="vertical"
+              margin={{ left: 0, right: 8, top: 0, bottom: 0 }}
+            >
               <XAxis type="number" hide />
-              <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: '#9a9eb0' }} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={90}
+                tick={{ fontSize: 11, fill: '#9a9eb0' }}
+              />
               <Tooltip
-                contentStyle={{ background: '#181a20', border: '1px solid #313542', borderRadius: 8, fontSize: 11 }}
+                contentStyle={{
+                  background: '#181a20',
+                  border: '1px solid #313542',
+                  borderRadius: 8,
+                  fontSize: 11,
+                }}
                 cursor={{ fill: '#252833' }}
               />
               <Bar dataKey="value" fill="#2dd4bf" radius={[0, 4, 4, 0]} />
@@ -112,7 +146,15 @@ export function PoolOverview({ run, onNavigate }: {
           <div className="text-[13px] font-semibold mt-[18px] mb-3">Market split</div>
           <div className="flex items-center gap-4">
             <PieChart width={84} height={84}>
-              <Pie data={marketData} cx={42} cy={42} innerRadius={24} outerRadius={38} dataKey="value" stroke="none">
+              <Pie
+                data={marketData}
+                cx={42}
+                cy={42}
+                innerRadius={24}
+                outerRadius={38}
+                dataKey="value"
+                stroke="none"
+              >
                 {marketData.map((_, i) => (
                   <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
                 ))}
@@ -121,10 +163,15 @@ export function PoolOverview({ run, onNavigate }: {
             <div className="text-micro space-y-[6px]">
               {marketData.map((m, i) => (
                 <div key={m.name} className="flex items-center gap-[7px]">
-                  <span className="w-[7px] h-[7px] rounded-full flex-shrink-0" style={{ background: DONUT_COLORS[i] }} />
+                  <span
+                    className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+                    style={{ background: DONUT_COLORS[i] }}
+                  />
                   <span className="capitalize text-text-secondary">{m.name}</span>
                   <b className="text-text-primary">{m.value}</b>
-                  <span className="text-text-tertiary">{total > 0 ? `${Math.round((m.value / total) * 100)}%` : ''}</span>
+                  <span className="text-text-tertiary">
+                    {total > 0 ? `${Math.round((m.value / total) * 100)}%` : ''}
+                  </span>
                 </div>
               ))}
             </div>
@@ -139,7 +186,7 @@ export function PoolOverviewEmpty() {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-4 gap-[10px]">
-        {['Scanned', 'Qualified', 'Crypto', 'Forex'].map(l => (
+        {['Scanned', 'Qualified', 'Crypto', 'Forex'].map((l) => (
           <StatCard key={l} label={l} value="—" sub="No run selected" />
         ))}
       </div>

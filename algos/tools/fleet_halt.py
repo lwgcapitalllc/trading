@@ -49,13 +49,20 @@ def _stamp(reason: str) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--on", metavar="REASON",
-                   help="halt the fleet. The reason is written into the flag and reaches Telegram.")
-    g.add_argument("--off", action="store_true",
-                   help="clear the flag. Does NOT resume trading — restart the bots.")
+    g.add_argument(
+        "--on",
+        metavar="REASON",
+        help="halt the fleet. The reason is written into the flag and reaches Telegram.",
+    )
+    g.add_argument(
+        "--off",
+        action="store_true",
+        help="clear the flag. Does NOT resume trading — restart the bots.",
+    )
     g.add_argument("--status", action="store_true", help="read the switch without changing it")
     args = ap.parse_args(argv)
 
@@ -71,8 +78,10 @@ def main(argv=None) -> int:
                 # The distinction the `readable` field exists for. A human seeing "HALTED" and a
                 # reason they wrote is a different situation from a human seeing "HALTED" because
                 # the box cannot read its own filesystem, and one of those needs a different fix.
-                print("⚠ this is NOT a halt somebody requested — the switch could not be READ, "
-                      "and every bot halts itself when that happens. Fix the filesystem.")
+                print(
+                    "⚠ this is NOT a halt somebody requested — the switch could not be READ, "
+                    "and every bot halts itself when that happens. Fix the filesystem."
+                )
         return 0
 
     if args.on:
@@ -97,8 +106,10 @@ def main(argv=None) -> int:
         print(f"COULD NOT CLEAR {path}: {e}", file=sys.stderr)
         print("The fleet stays halted until this file is gone.", file=sys.stderr)
         return 1
-    print("⚠ This does NOT resume trading. The halt latches inside each bot process — "
-          "restart the bots (schtasks /run /tn SYS_STARTUP).")
+    print(
+        "⚠ This does NOT resume trading. The halt latches inside each bot process — "
+        "restart the bots (schtasks /run /tn SYS_STARTUP)."
+    )
     return 0
 
 

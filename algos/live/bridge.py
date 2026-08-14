@@ -47,8 +47,8 @@ _SHARED = Path(__file__).resolve().parent.parent / "shared"
 if str(_SHARED) not in sys.path:
     sys.path.insert(0, str(_SHARED))
 
-import alerts        # noqa: E402
-import notify        # noqa: E402  (for the TRADE/HEALTH routing kinds only)
+import alerts  # noqa: E402
+import notify  # noqa: E402  (for the TRADE/HEALTH routing kinds only)
 
 # A sibling module, imported the same flat way the runner imports this one — `algos/live/` is put
 # on the path by whoever loads the package, and a test that imports the bridge alone must not have
@@ -60,19 +60,21 @@ if str(_HERE) not in sys.path:
 import position_state  # noqa: E402
 from alert_format import alert, joined  # noqa: E402
 from order_sizing import (  # noqa: E402
-    DEFAULT_MARGIN_SAFETY_PCT, SizedOrder, plan_order,
+    DEFAULT_MARGIN_SAFETY_PCT,
+    plan_order,
 )
 
 
 class BridgeState(str, Enum):
-    WARMING = "warming"   # the emulator opened a position during warmup — wait for it to flatten
+    WARMING = "warming"  # the emulator opened a position during warmup — wait for it to flatten
     LIVE = "live"
-    HALTED = "halted"     # emulator and broker disagree; no further orders
+    HALTED = "halted"  # emulator and broker disagree; no further orders
 
 
 @dataclass
 class _Rest:
     """What we believe is resting at the broker on one side."""
+
     ticket: int
     price: float
     lots: float
@@ -112,11 +114,19 @@ def assert_supported(strategy_config) -> None:
 
 
 class OrderBridge:
-    def __init__(self, bot_mt5, execution, ledger, log, *,
-                 notify=None, dry_run: bool = True,
-                 margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT,
-                 account_risk_cap_pct: Optional[float] = None,
-                 instance_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        bot_mt5,
+        execution,
+        ledger,
+        log,
+        *,
+        notify=None,
+        dry_run: bool = True,
+        margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT,
+        account_risk_cap_pct: Optional[float] = None,
+        instance_dir: Optional[Path] = None,
+    ) -> None:
         self._mt5 = bot_mt5
         # Where `position.json` lives. `None` disables the whole restore path — the bridge then
         # behaves exactly as it did before it existed, which is what every offline test that does
@@ -140,8 +150,7 @@ class OrderBridge:
         # would change a live bot's behaviour with no measurement behind it. The runner SAYS
         # which state it is in at startup, so "no cap" is a reported fact rather than an
         # absence nobody noticed (the `deadman_url` precedent). See G10.
-        self._risk_cap_pct = (None if account_risk_cap_pct is None
-                              else float(account_risk_cap_pct))
+        self._risk_cap_pct = None if account_risk_cap_pct is None else float(account_risk_cap_pct)
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
         self.state = BridgeState.LIVE
@@ -206,8 +215,9 @@ class OrderBridge:
                 "the past, so it will NOT be opened live. Waiting for it to close before "
                 "placing anything."
             )
-            self._ledger.event("warmup_position_skipped", dir=self._ex._pos_dir,
-                               entry=self._ex._entry)
+            self._ledger.event(
+                "warmup_position_skipped", dir=self._ex._pos_dir, entry=self._ex._entry
+            )
         else:
             self.state = BridgeState.LIVE
 
@@ -235,8 +245,9 @@ class OrderBridge:
             # Resting orders from a previous run are stale by construction — the strategy
             # recomputes its limit every bar off state we no longer have.
             self._log.info(f"Cancelling stale pending order T{o.ticket} from a previous run")
-            self._exec(lambda t=o.ticket: self._mt5.cancel_pending(t),
-                       f"cancel stale pending T{o.ticket}")
+            self._exec(
+                lambda t=o.ticket: self._mt5.cancel_pending(t), f"cancel stale pending T{o.ticket}"
+            )
 
     def _stage_restore(self, positions) -> bool:
         """Can this broker position be proved to be the one we wrote down? Halt if not.
@@ -248,16 +259,20 @@ class OrderBridge:
         """
         magic = self._mt5.magic
         if len(positions) > 1:
-            self._halt(f"MT5 holds {len(positions)} positions under magic {magic} at startup; "
-                       f"this strategy takes one at a time, so no record can describe them. "
-                       f"Close them by hand before starting the bot.")
+            self._halt(
+                f"MT5 holds {len(positions)} positions under magic {magic} at startup; "
+                f"this strategy takes one at a time, so no record can describe them. "
+                f"Close them by hand before starting the bot."
+            )
             return False
 
         p = positions[0]
         if self._instance_dir is None:
-            self._halt(f"MT5 already holds a position under magic {magic} at startup and this "
-                       f"bridge was built with no instance directory, so it cannot read the "
-                       f"position record. Close it by hand before starting the bot.")
+            self._halt(
+                f"MT5 already holds a position under magic {magic} at startup and this "
+                f"bridge was built with no instance directory, so it cannot read the "
+                f"position record. Close it by hand before starting the bot."
+            )
             return False
 
         record = position_state.read(self._instance_dir)
@@ -267,7 +282,8 @@ class OrderBridge:
                 f"there is no usable record of it in "
                 f"{position_state.path_for(self._instance_dir)}. The bot will NOT take it over — "
                 f"it would size its next entry with no idea it is already exposed. The position "
-                f"keeps its broker-side stop. Close it by hand, or clear it, before restarting.")
+                f"keeps its broker-side stop. Close it by hand, or clear it, before restarting."
+            )
             return False
 
         symbol = getattr(self._mt5, "symbol", "") or ""
@@ -275,14 +291,16 @@ class OrderBridge:
             self._halt(
                 f"The position record in {position_state.path_for(self._instance_dir)} was "
                 f"written for {record.symbol} magic {record.magic}, and this bot is "
-                f"{symbol or '?'} magic {magic}. It describes a different bot's trade.")
+                f"{symbol or '?'} magic {magic}. It describes a different bot's trade."
+            )
             return False
 
         if int(p.ticket) != record.ticket:
             self._halt(
                 f"MT5 holds position T{p.ticket} under magic {magic}, but the record describes "
                 f"T{record.ticket}. Whatever is open is not the trade this bot wrote down, so it "
-                f"will not be managed. The position keeps its broker-side stop.")
+                f"will not be managed. The position keeps its broker-side stop."
+            )
             return False
 
         diffs = position_state.disagreements(record, p, point=self._point())
@@ -291,9 +309,10 @@ class OrderBridge:
                 f"The recorded position T{record.ticket} and the one MT5 holds do not match: "
                 + "; ".join(diffs)
                 + ". Something changed it outside the bot — a hand edit in the terminal is the "
-                  "usual cause. It will NOT be adopted: every later stop move would be computed "
-                  "off a level the strategy never chose. The position keeps its broker-side "
-                  "stop; fix it by hand, or close it, then restart.")
+                "usual cause. It will NOT be adopted: every later stop move would be computed "
+                "off a level the strategy never chose. The position keeps its broker-side "
+                "stop; fix it by hand, or close it, then restart."
+            )
             return False
 
         # Verified. The bridge's own bookkeeping can be set now; the EMULATOR's cannot, because
@@ -314,8 +333,11 @@ class OrderBridge:
         # No entry alert exists in this process, so the exit posts standalone instead of as a
         # reply. One orphaned exit message beats no exit message.
         self._pos_alert_id = None
-        self._pos_risk_usd = abs(record.broker.entry - record.broker.stop) * \
-            record.broker.lots * self._contract_size()
+        self._pos_risk_usd = (
+            abs(record.broker.entry - record.broker.stop)
+            * record.broker.lots
+            * self._contract_size()
+        )
         return True
 
     def stage_rewarm(self) -> None:
@@ -345,7 +367,8 @@ class OrderBridge:
             self._pending_restore = None
             self._log.error(
                 f"Could not carry the open position across the re-warm: {e}. The bridge will "
-                f"halt on the next bar if the strategy and the broker have parted.")
+                f"halt on the next bar if the strategy and the broker have parted."
+            )
 
     def apply_restore(self, *, announce: bool = True) -> bool:
         """Hand the verified position back to the emulator. Call AFTER the warm-up.
@@ -366,34 +389,52 @@ class OrderBridge:
             # A record that got past every check above and still cannot be applied means the
             # emulator's own state shape moved under a record written by an older build. Halting
             # is the same answer as an unreadable record, for the same reason.
-            self._halt(f"The recorded position T{self._pos_ticket} passed every broker check and "
-                       f"the strategy refused to restore it: {e}. This usually means the record "
-                       f"was written by a different version of the strategy. The position keeps "
-                       f"its broker-side stop; close it by hand, or clear the record, then "
-                       f"restart.")
+            self._halt(
+                f"The recorded position T{self._pos_ticket} passed every broker check and "
+                f"the strategy refused to restore it: {e}. This usually means the record "
+                f"was written by a different version of the strategy. The position keeps "
+                f"its broker-side stop; close it by hand, or clear the record, then "
+                f"restart."
+            )
             return False
         self._restored = True
         self._log.info(
             f"Restored position T{self._pos_ticket} — {self._side(self._pos_dir)} "
             f"{self._pos_lots} lots @ {self._pos_entry}, stop {self._pos_stop}, "
-            f"stage {getattr(self._ex, '_stage', '?')}. It will be managed from the next bar.")
-        self._ledger.event("position_restored", ticket=self._pos_ticket, dir=self._pos_dir,
-                           lots=self._pos_lots, entry=self._pos_entry, stop=self._pos_stop,
-                           stage=getattr(self._ex, "_stage", None),
-                           reason="restart" if announce else "rewarm")
+            f"stage {getattr(self._ex, '_stage', '?')}. It will be managed from the next bar."
+        )
+        self._ledger.event(
+            "position_restored",
+            ticket=self._pos_ticket,
+            dir=self._pos_dir,
+            lots=self._pos_lots,
+            entry=self._pos_entry,
+            stop=self._pos_stop,
+            stage=getattr(self._ex, "_stage", None),
+            reason="restart" if announce else "rewarm",
+        )
         # ⚠ A re-warm passes `announce=False` and the record above still lands. `_recover_link`
         # and the gap branch each already send their own message for the SAME event, and two
         # alerts for one event is how a channel gets muted — but the ledger has to carry it
         # either way, because "the position survived the re-warm" is exactly what a later audit
         # needs and it is invisible from the outside.
         if announce:
-            self._notify(alert(
-                "🔄", "TRADE RESUMED", self._strategy_name,
-                joined([f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
-                        f"stop {self._pos_stop}"]),
-                "The bot restarted and picked its open trade back up. It manages it from the "
-                "next bar. Nothing to do."),
-                notify.HEALTH)
+            self._notify(
+                alert(
+                    "🔄",
+                    "TRADE RESUMED",
+                    self._strategy_name,
+                    joined(
+                        [
+                            f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
+                            f"stop {self._pos_stop}",
+                        ]
+                    ),
+                    "The bot restarted and picked its open trade back up. It manages it from the "
+                    "next bar. Nothing to do.",
+                ),
+                notify.HEALTH,
+            )
         return True
 
     def _save_position(self) -> None:
@@ -418,14 +459,15 @@ class OrderBridge:
             magic=self._mt5.magic,
             ticket=self._pos_ticket,
             broker=position_state.BrokerFacts(
-                dir=self._pos_dir, lots=self._pos_lots,
-                entry=self._pos_entry, stop=self._pos_stop),
+                dir=self._pos_dir, lots=self._pos_lots, entry=self._pos_entry, stop=self._pos_stop
+            ),
             strategy=snap,
         )
         if not ok:
             self._log.warning(
                 "Could not write the position record. The trade is unaffected; a restart before "
-                "it closes would halt rather than resume it.")
+                "it closes would halt rather than resume it."
+            )
 
     # ── the per-bar entry point ──────────────────────────────────────────────
     def sync(self, dec, sig) -> None:
@@ -444,7 +486,9 @@ class OrderBridge:
         if self.state is BridgeState.WARMING:
             if self._ex._pos_dir == 0:
                 self.state = BridgeState.LIVE
-                self._log.info("Warmup position closed — the bot is now LIVE and will place orders.")
+                self._log.info(
+                    "Warmup position closed — the bot is now LIVE and will place orders."
+                )
                 self._ledger.event("went_live")
             else:
                 return
@@ -491,31 +535,50 @@ class OrderBridge:
         if self._pos_opened_bar is not None and getattr(sig, "index", None) is not None:
             held = sig.index - self._pos_opened_bar
         side = "LONG" if self._pos_dir > 0 else "SHORT"
-        self._log.info(f"POSITION CLOSED | T{self._pos_ticket} {side} @ {price} | "
-                       f"P&L ${pnl:,.2f}" + (f" ({r:+.2f}R)" if r is not None else ""))
+        self._log.info(
+            f"POSITION CLOSED | T{self._pos_ticket} {side} @ {price} | "
+            f"P&L ${pnl:,.2f}" + (f" ({r:+.2f}R)" if r is not None else "")
+        )
         self._ledger.trade_closed(
-            ticket=self._pos_ticket, direction=side, symbol=self._mt5.symbol, price=price,
-            pnl_usd=pnl, r_multiple=r, reason=reason, lots=self._pos_lots, held_bars=held,
+            ticket=self._pos_ticket,
+            direction=side,
+            symbol=self._mt5.symbol,
+            price=price,
+            pnl_usd=pnl,
+            r_multiple=r,
+            reason=reason,
+            lots=self._pos_lots,
+            held_bars=held,
             # The measurement this bot was armed to take. `entry_price`/`intended_price` give
             # entry slippage, gross-vs-net gives the real cost of the hold, and both are needed
             # per trade because a single netted figure cannot be taken apart afterwards.
             gross_usd=costs["gross_usd"] if costs else None,
             swap_usd=costs["swap_usd"] if costs else None,
             commission_usd=costs["commission_usd"] if costs else None,
-            entry_price=self._pos_entry, intended_price=self._pos_intended)
-        self._notify(alerts.format_exit(
-            strategy=self._strategy_name, symbol=self._mt5.symbol, exit_price=price,
-            pnl_usd=pnl, r_multiple=r, digits=self._digits(),
-            # Nested getattr on purpose: this package reads the strategy defensively everywhere
-            # else, and a strategy without a `cfg` must not be able to stop an exit alert.
-            scratch_r=getattr(getattr(self._ex, "cfg", None), "exec_scratch_r", 0.15),
-            threaded=self._pos_alert_id is not None,
-            # The SAME reason the ledger records, so the message and the audit trail cannot
-            # disagree. It is what separates a -0.02R scratch from a -1.00R loser on a screen
-            # where both say "exited at a stop", and only one of them is the risk rule working.
-            exit_reason="" if reason == "closed" else reason,
-            when=self._bar_time(sig)),
-            notify.TRADE, reply_to=self._pos_alert_id)
+            entry_price=self._pos_entry,
+            intended_price=self._pos_intended,
+        )
+        self._notify(
+            alerts.format_exit(
+                strategy=self._strategy_name,
+                symbol=self._mt5.symbol,
+                exit_price=price,
+                pnl_usd=pnl,
+                r_multiple=r,
+                digits=self._digits(),
+                # Nested getattr on purpose: this package reads the strategy defensively everywhere
+                # else, and a strategy without a `cfg` must not be able to stop an exit alert.
+                scratch_r=getattr(getattr(self._ex, "cfg", None), "exec_scratch_r", 0.15),
+                threaded=self._pos_alert_id is not None,
+                # The SAME reason the ledger records, so the message and the audit trail cannot
+                # disagree. It is what separates a -0.02R scratch from a -1.00R loser on a screen
+                # where both say "exited at a stop", and only one of them is the risk rule working.
+                exit_reason="" if reason == "closed" else reason,
+                when=self._bar_time(sig),
+            ),
+            notify.TRADE,
+            reply_to=self._pos_alert_id,
+        )
         self._pos_ticket = None
         self._pos_dir = 0
         self._pos_risk_usd = 0.0
@@ -550,30 +613,46 @@ class OrderBridge:
         # stop that was actually attached, not off the strategy's intended price — R has to
         # describe the trade that happened.
         self._pos_risk_usd = abs(p.price_open - p.sl) * p.volume * self._contract_size()
-        self._log.info(f"POSITION OPENED | T{p.ticket} {side} {p.volume}L @ {p.price_open} "
-                       f"| SL={p.sl}")
+        self._log.info(
+            f"POSITION OPENED | T{p.ticket} {side} {p.volume}L @ {p.price_open} | SL={p.sl}"
+        )
         self._ledger.trade_opened(
-            ticket=p.ticket, direction=side, symbol=self._mt5.symbol, lots=p.volume,
-            price=p.price_open, stop=p.sl, intended_price=intended,
-            tp1=getattr(dec, "tp1", 0.0) or 0.0, tp2=getattr(dec, "tp2", 0.0) or 0.0,
+            ticket=p.ticket,
+            direction=side,
+            symbol=self._mt5.symbol,
+            lots=p.volume,
+            price=p.price_open,
+            stop=p.sl,
+            intended_price=intended,
+            tp1=getattr(dec, "tp1", 0.0) or 0.0,
+            tp2=getattr(dec, "tp2", 0.0) or 0.0,
             # Read off the strategy LIVE, not cached at construction — the runner mutates
             # this same config object when a runtime change is applied, so caching it here
             # would record the risk the bot started with rather than the one it sized on.
             # `Execution.cfg` is a real property; the nested getattr is only so a test
             # double without one does not break an alert.
             risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
-            confluences=self._confluences(dec, sig))
-        self._pos_alert_id = self._notify(alerts.format_entry(
-            strategy=self._strategy_name, symbol=self._mt5.symbol, direction=side,
-            entry=p.price_open, stop=p.sl, lots=p.volume,
-            digits=self._digits(), point=self._point(),
-            # The dollars already computed above, and the % that produced them. This is the ONLY
-            # message that states the risk — the exit replies to it, so repeating it there is
-            # repeating what is one tap up the thread.
-            risk_usd=self._pos_risk_usd or None,
-            risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
-            when=self._bar_time(sig)),
-            notify.TRADE)
+            confluences=self._confluences(dec, sig),
+        )
+        self._pos_alert_id = self._notify(
+            alerts.format_entry(
+                strategy=self._strategy_name,
+                symbol=self._mt5.symbol,
+                direction=side,
+                entry=p.price_open,
+                stop=p.sl,
+                lots=p.volume,
+                digits=self._digits(),
+                point=self._point(),
+                # The dollars already computed above, and the % that produced them. This is the ONLY
+                # message that states the risk — the exit replies to it, so repeating it there is
+                # repeating what is one tap up the thread.
+                risk_usd=self._pos_risk_usd or None,
+                risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
+                when=self._bar_time(sig),
+            ),
+            notify.TRADE,
+        )
         # Record it the moment it exists, not at the end of the bar: a process that dies between
         # the fill and the next stop move must still leave a resumable trade behind.
         self._save_position()
@@ -600,19 +679,32 @@ class OrderBridge:
             if held is None or held.ticket in live:
                 continue
             self._rest[d] = None
-            why = (f"The {self._side(d)} limit T{held.ticket} ({held.lots} lots @ {held.price}) "
-                   f"is no longer at the broker and never filled. The broker removed it — the "
-                   f"usual cause is that the account could not afford to activate it.")
+            why = (
+                f"The {self._side(d)} limit T{held.ticket} ({held.lots} lots @ {held.price}) "
+                f"is no longer at the broker and never filled. The broker removed it — the "
+                f"usual cause is that the account could not afford to activate it."
+            )
             self._log.error(why)
-            self._ledger.event("order_vanished", dir=d, ticket=held.ticket, lots=held.lots,
-                               price=held.price, stop=held.sl)
+            self._ledger.event(
+                "order_vanished",
+                dir=d,
+                ticket=held.ticket,
+                lots=held.lots,
+                price=held.price,
+                stop=held.sl,
+            )
             # HEALTH, not TRADE: no trade happened. It is the machinery failing to carry out an
             # instruction, which is the same class of fact as a halt.
-            self._notify(alert(
-                "⚠️", "ORDER GONE", self._mt5.bot_label,
-                why,
-                "The strategy still expects it. Check the account's free margin."),
-                notify.HEALTH)
+            self._notify(
+                alert(
+                    "⚠️",
+                    "ORDER GONE",
+                    self._mt5.bot_label,
+                    why,
+                    "The strategy still expects it. Check the account's free margin.",
+                ),
+                notify.HEALTH,
+            )
 
     def _agrees(self, positions) -> bool:
         """Both ledgers must tell the same story. Anything else halts — see the module
@@ -620,25 +712,33 @@ class OrderBridge:
         emu = self._ex._pos_dir != 0
         broker = bool(positions)
         if len(positions) > 1:
-            self._halt(f"MT5 holds {len(positions)} positions under magic {self._mt5.magic}; "
-                       f"this strategy takes one at a time.")
+            self._halt(
+                f"MT5 holds {len(positions)} positions under magic {self._mt5.magic}; "
+                f"this strategy takes one at a time."
+            )
             return False
         if emu and not broker:
             # Name the refusal if there was one. The generic sentence below is true but useless
             # on its own — it describes the symptom of every cause at once, and on 2026-08-07 it
             # sent the reader looking at the fill logic when the answer was the order size.
-            because = self._refused.get(self._ex._pos_dir, "") or \
-                self._refused.get(1, "") or self._refused.get(-1, "")
+            because = (
+                self._refused.get(self._ex._pos_dir, "")
+                or self._refused.get(1, "")
+                or self._refused.get(-1, "")
+            )
             self._halt(
                 "The strategy believes it is in a position but MT5 has none. Its resting "
                 "limit filled in the emulator and not at the broker (or the position was "
                 "closed outside the bot). Every later decision would be computed against "
                 "a trade that does not exist."
-                + (f"\nThe last order on this side was REFUSED: {because}" if because else ""))
+                + (f"\nThe last order on this side was REFUSED: {because}" if because else "")
+            )
             return False
         if broker and not emu:
-            self._halt("MT5 holds a position the strategy does not know about. It will keep its "
-                       "broker-side stop, but the bot will not manage it.")
+            self._halt(
+                "MT5 holds a position the strategy does not know about. It will keep its "
+                "broker-side stop, but the bot will not manage it."
+            )
             return False
         return True
 
@@ -648,8 +748,10 @@ class OrderBridge:
         held = self._rest[direction]
         if pend is None:
             if held is not None:
-                self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
-                           f"cancel {self._side(direction)} limit T{held.ticket}")
+                self._exec(
+                    lambda t=held.ticket: self._mt5.cancel_pending(t),
+                    f"cancel {self._side(direction)} limit T{held.ticket}",
+                )
                 self._rest[direction] = None
             self._refused[direction] = ""
             self._refusal_alerted[direction] = ""
@@ -662,8 +764,10 @@ class OrderBridge:
                 # The strategy still wants this trade, but we cannot place it at the size it
                 # asked for. Leaving a stale order resting would mean the broker carries a size
                 # nobody currently endorses.
-                self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
-                           f"cancel {self._side(direction)} limit T{held.ticket} (refused)")
+                self._exec(
+                    lambda t=held.ticket: self._mt5.cancel_pending(t),
+                    f"cancel {self._side(direction)} limit T{held.ticket} (refused)",
+                )
                 self._rest[direction] = None
             return
 
@@ -677,8 +781,10 @@ class OrderBridge:
 
         # MODIFY cannot change volume (see mt5_ops) — a size change is a cancel + re-place.
         if abs(lots - held.lots) > 1e-9:
-            self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
-                       f"re-size {self._side(direction)} limit T{held.ticket}")
+            self._exec(
+                lambda t=held.ticket: self._mt5.cancel_pending(t),
+                f"re-size {self._side(direction)} limit T{held.ticket}",
+            )
             self._rest[direction] = None
             self._place(direction, lots, pend, sig, plan)
             return
@@ -686,7 +792,8 @@ class OrderBridge:
         if self._moved(held.price, pend.edge) or self._moved(held.sl, pend.sl):
             ok = self._exec(
                 lambda t=held.ticket: self._mt5.modify_pending(t, pend.edge, pend.sl),
-                f"move {self._side(direction)} limit T{held.ticket} → {pend.edge} SL {pend.sl}")
+                f"move {self._side(direction)} limit T{held.ticket} → {pend.edge} SL {pend.sl}",
+            )
             if ok:
                 self._rest[direction] = _Rest(held.ticket, pend.edge, lots, pend.sl)
 
@@ -702,10 +809,12 @@ class OrderBridge:
         spec = self._mt5.symbol_spec()
         if spec is None:
             from order_sizing import SizingRefusal
+
             return SizingRefusal(
                 "symbol_unreadable",
                 f"the terminal returned no symbol info for {self._mt5.symbol}, so nothing is "
-                f"known about lot size, tick value or the volume band.")
+                f"known about lot size, tick value or the volume band.",
+            )
 
         side = "bullish" if direction > 0 else "bearish"
         cfg = getattr(self._ex, "cfg", None)
@@ -758,6 +867,7 @@ class OrderBridge:
             return plan
 
         from order_sizing import SizingRefusal
+
         items = self._mt5.account_exposure()
         if items is None:
             # The terminal could not be asked. Same call as an uncomputable margin: "cannot ask"
@@ -766,10 +876,10 @@ class OrderBridge:
             return SizingRefusal(
                 "account_risk_unreadable",
                 "the account's open positions and orders could not be read, so the account-level "
-                "risk cap cannot be checked. Refusing rather than assuming the account is empty.")
+                "risk cap cannot be checked. Refusing rather than assuming the account is empty.",
+            )
         try:
-            open_risk = measure_exposure(
-                [it for it in items if it.magic != self._mt5.magic], spec)
+            open_risk = measure_exposure([it for it in items if it.magic != self._mt5.magic], spec)
         except RiskUnmeasurable as e:
             return SizingRefusal("account_risk_unmeasurable", str(e))
 
@@ -779,8 +889,11 @@ class OrderBridge:
         # refusal a reader cannot reproduce from the order that was placed is a refusal nobody
         # can act on.
         verdict = check_account_cap(
-            new_order_risk_ccy=plan.risk_ccy, open_risk=open_risk,
-            balance=self._account_balance(), cap_pct=self._risk_cap_pct)
+            new_order_risk_ccy=plan.risk_ccy,
+            open_risk=open_risk,
+            balance=self._account_balance(),
+            cap_pct=self._risk_cap_pct,
+        )
         if verdict.allowed:
             return plan
         return SizingRefusal(verdict.code, verdict.detail)
@@ -794,6 +907,7 @@ class OrderBridge:
         """
         try:
             import MetaTrader5 as mt5
+
             info = mt5.account_info()
             return float(info.balance) if info else None
         except Exception:
@@ -803,45 +917,65 @@ class OrderBridge:
         """A refused order is loud once, then quiet — but never forgotten."""
         detail = f"[{plan.code}] {plan.detail}"
         self._refused[direction] = detail
-        self._ledger.event("order_refused", dir=direction, code=plan.code, detail=plan.detail,
-                           wanted_units=pend.qty, price=pend.edge, stop=pend.sl,
-                           sos_bar=getattr(pend, "sos_bar", None))
+        self._ledger.event(
+            "order_refused",
+            dir=direction,
+            code=plan.code,
+            detail=plan.detail,
+            wanted_units=pend.qty,
+            price=pend.edge,
+            stop=pend.sl,
+            sos_bar=getattr(pend, "sos_bar", None),
+        )
         self._log.error(f"Order REFUSED ({self._side(direction)}): {detail}")
         if self._refusal_alerted.get(direction) == plan.code:
             return
         self._refusal_alerted[direction] = plan.code
-        self._notify(alert(
-            "⚠️", "ORDER REFUSED", self._mt5.bot_label,
-            f"A {self._side(direction)} setup was ready and no order was placed.\n{plan.detail}",
-            "No position was opened. The strategy will keep re-offering it while the setup "
-            "lives, and this will not alert again for the same reason."),
-            notify.HEALTH)
+        self._notify(
+            alert(
+                "⚠️",
+                "ORDER REFUSED",
+                self._mt5.bot_label,
+                f"A {self._side(direction)} setup was ready and no order was placed.\n{plan.detail}",
+                "No position was opened. The strategy will keep re-offering it while the setup "
+                "lives, and this will not alert again for the same reason.",
+            ),
+            notify.HEALTH,
+        )
 
     def _place(self, direction: int, lots: float, pend, sig, plan=None) -> None:
         side = "bullish" if direction > 0 else "bearish"
         ticket = self._exec(
             lambda: self._mt5.place_pending_limit(side, lots, pend.edge, pend.sl),
-            f"place {self._side(direction)} limit {lots}L @ {pend.edge} SL {pend.sl}")
+            f"place {self._side(direction)} limit {lots}L @ {pend.edge} SL {pend.sl}",
+        )
         if isinstance(ticket, tuple):
             ticket = ticket[0]
         if ticket:
             self._rest[direction] = _Rest(ticket, pend.edge, lots, pend.sl)
-            self._ledger.event("order_placed", dir=direction, ticket=ticket, lots=lots,
-                               price=pend.edge, stop=pend.sl,
-                               sos_bar=getattr(pend, "sos_bar", None),
-                               # The sizing WORKING is now part of the record, not just the
-                               # sizing failing. `risk_ccy` is what this order really puts at
-                               # risk in account currency — the number that was wrong by 221x
-                               # and that no artefact anywhere would have revealed.
-                               risk_ccy=getattr(plan, "risk_ccy", None),
-                               intended_risk_ccy=getattr(plan, "intended_risk_ccy", None),
-                               margin_ccy=getattr(plan, "margin_ccy", None),
-                               units=pend.qty)
+            self._ledger.event(
+                "order_placed",
+                dir=direction,
+                ticket=ticket,
+                lots=lots,
+                price=pend.edge,
+                stop=pend.sl,
+                sos_bar=getattr(pend, "sos_bar", None),
+                # The sizing WORKING is now part of the record, not just the
+                # sizing failing. `risk_ccy` is what this order really puts at
+                # risk in account currency — the number that was wrong by 221x
+                # and that no artefact anywhere would have revealed.
+                risk_ccy=getattr(plan, "risk_ccy", None),
+                intended_risk_ccy=getattr(plan, "intended_risk_ccy", None),
+                margin_ccy=getattr(plan, "margin_ccy", None),
+                units=pend.qty,
+            )
         elif not self.dry_run:
             # place_pending_limit already logged WHY; record it so a refused setup is countable
             # next to the strategy's own blocked setups.
-            self._ledger.event("order_refused", dir=direction, lots=lots,
-                               price=pend.edge, stop=pend.sl)
+            self._ledger.event(
+                "order_refused", dir=direction, lots=lots, price=pend.edge, stop=pend.sl
+            )
 
     def _sync_stop(self, dec) -> None:
         """Keep the broker's stop on the open position equal to the strategy's current stop.
@@ -854,11 +988,12 @@ class OrderBridge:
             return
         if not self._moved(self._pos_stop, want):
             return
-        ok = self._exec(lambda: self._mt5.move_sl(self._pos_ticket, want),
-                        f"move stop T{self._pos_ticket} {self._pos_stop} → {want}")
+        ok = self._exec(
+            lambda: self._mt5.move_sl(self._pos_ticket, want),
+            f"move stop T{self._pos_ticket} {self._pos_stop} → {want}",
+        )
         if ok:
-            self._ledger.event("stop_moved", ticket=self._pos_ticket,
-                               was=self._pos_stop, now=want)
+            self._ledger.event("stop_moved", ticket=self._pos_ticket, was=self._pos_stop, now=want)
             self._pos_stop = want
             # Re-record: the stop is the field that moves, and a record holding the previous
             # stop would be REFUSED at the next start because the broker's real one disagrees.
@@ -867,8 +1002,10 @@ class OrderBridge:
     def _cancel_all_rest(self, why: str) -> None:
         for d, held in list(self._rest.items()):
             if held is not None:
-                self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
-                           f"cancel {self._side(d)} limit T{held.ticket} ({why})")
+                self._exec(
+                    lambda t=held.ticket: self._mt5.cancel_pending(t),
+                    f"cancel {self._side(d)} limit T{held.ticket} ({why})",
+                )
                 self._rest[d] = None
 
     # ── plumbing ─────────────────────────────────────────────────────────────
@@ -910,11 +1047,16 @@ class OrderBridge:
         # message here — which is why it must not sit in a room that is only checked when a fill
         # arrives. `log_review.py` raises it AGAIN as a standing chip on the Bots page precisely
         # because one Telegram line, in any room, is not enough for this one.
-        self._notify(alert(
-            "⛔", "HALTED", self._mt5.bot_label,
-            reason,
-            "Anything open keeps its broker stop. Check the account, then restart it."),
-            notify.HEALTH)
+        self._notify(
+            alert(
+                "⛔",
+                "HALTED",
+                self._mt5.bot_label,
+                reason,
+                "Anything open keeps its broker stop. Check the account, then restart it.",
+            ),
+            notify.HEALTH,
+        )
 
     def _moved(self, a: float, b: float) -> bool:
         """Price comparison at the symbol's own precision — a float that differs in the 9th
@@ -922,6 +1064,7 @@ class OrderBridge:
         bar for nothing."""
         try:
             import MetaTrader5 as mt5
+
             si = mt5.symbol_info(self._mt5.symbol)
             tick = si.point if si and si.point else 0.01
         except Exception:
@@ -931,6 +1074,7 @@ class OrderBridge:
     def _contract_size(self) -> float:
         try:
             import MetaTrader5 as mt5
+
             si = mt5.symbol_info(self._mt5.symbol)
             return float(si.trade_contract_size) if si else 1.0
         except Exception:
@@ -943,6 +1087,7 @@ class OrderBridge:
         every alert wrong in a way nobody would question."""
         try:
             import MetaTrader5 as mt5
+
             si = mt5.symbol_info(self._mt5.symbol)
             return getattr(si, name) if si else fallback
         except Exception:
@@ -959,14 +1104,16 @@ class OrderBridge:
         """The BAR's timestamp, not the wall clock — an alert should be stamped with when the
         trade happened. Falls back to None, which `alerts` reads as "now"."""
         from datetime import datetime, timezone
+
         ms = getattr(sig, "time_ms", None)
         return datetime.fromtimestamp(ms / 1000, tz=timezone.utc) if ms else None
 
     def _infer_exit_reason(self, price: float) -> str:
         if not self._pos_stop or not price:
             return "closed"
-        hit_stop = (self._pos_dir > 0 and price <= self._pos_stop) or \
-                   (self._pos_dir < 0 and price >= self._pos_stop)
+        hit_stop = (self._pos_dir > 0 and price <= self._pos_stop) or (
+            self._pos_dir < 0 and price >= self._pos_stop
+        )
         return "stop" if hit_stop else "closed"
 
     @staticmethod
@@ -976,6 +1123,7 @@ class OrderBridge:
     @staticmethod
     def _stamp(sig) -> str:
         from datetime import datetime, timezone
+
         ms = getattr(sig, "time_ms", None)
         if not ms:
             return ""

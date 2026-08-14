@@ -1,9 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Loader2,
+  XCircle,
+  AlertTriangle,
+  RotateCcw,
+  Square,
+  Trash2,
+} from 'lucide-react'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import StickyHeader from '@/components/StickyHeader'
-import { useSweep, useDeleteSweep, useRetrySweep, useCancelSweep, useRetryBacktest, useRunningVpsJob, useFirms, useReevaluateSweep } from '@/hooks/useLab'
+import {
+  useSweep,
+  useDeleteSweep,
+  useRetrySweep,
+  useCancelSweep,
+  useRetryBacktest,
+  useRunningVpsJob,
+  useFirms,
+  useReevaluateSweep,
+} from '@/hooks/useLab'
 import { runningJobFor } from '@/lib/runner'
 import type { BacktestSummary, SweepDetail as Sweep } from '@/types'
 
@@ -12,11 +30,15 @@ import type { BacktestSummary, SweepDetail as Sweep } from '@/types'
 // Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
 // Greenwich. Same fix in BacktestDetail/OptimizationDetail/StackDetail/StressTestDetail.
 function fmtDate(iso: string) {
-  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function fmtDuration(seconds: number): string {
-  if (seconds < 60)  return `${seconds}s`
+  if (seconds < 60) return `${seconds}s`
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -28,13 +50,13 @@ function firmShortName(firmId: string): string {
   if (parts.length < 3) return firmId
   const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
   const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
-  const size  = (parts[1] ?? '').toUpperCase()
-  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  const size = (parts[1] ?? '').toUpperCase()
+  const tier = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
   return `${brand}${size} ${tier}`
 }
 
 function firmChipCls(firmId: string): string {
-  if (firmId.includes('_eval'))   return 'bg-warn-muted text-warn-text border border-warn-text/20'
+  if (firmId.includes('_eval')) return 'bg-warn-muted text-warn-text border border-warn-text/20'
   if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text border border-pos-text/20'
   return 'bg-bg-surface border border-border-subtle text-text-tertiary'
 }
@@ -60,7 +82,14 @@ function useElapsed(startIso: string | null, endIso: string | null, running: boo
 
 // ── Progress card ─────────────────────────────────────────────────────────────
 
-function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlocked }: {
+function ProgressCard({
+  sweep,
+  onCancel,
+  onRetry,
+  cancelling,
+  retrying,
+  jobBlocked,
+}: {
   sweep: Sweep
   onCancel: () => void
   onRetry: () => void
@@ -68,29 +97,43 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
   retrying: boolean
   jobBlocked: boolean
 }) {
-  const isRunning   = sweep.status === 'running'
+  const isRunning = sweep.status === 'running'
   const isCancelled = sweep.status === 'failed_cancelled'
-  const isComplete  = sweep.status === 'complete'
+  const isComplete = sweep.status === 'complete'
 
-  const total         = sweep.total_instruments
+  const total = sweep.total_instruments
   const completeCount = sweep.completed_instruments
-  const failedCount   = sweep.runs.filter(r => r.status.startsWith('failed')).length
+  const failedCount = sweep.runs.filter((r) => r.status.startsWith('failed')).length
 
   const completePct = total > 0 ? (completeCount / total) * 100 : 0
-  const failedPct   = total > 0 ? (failedCount   / total) * 100 : 0
-  const overallPct  = Math.round(completePct + failedPct)
+  const failedPct = total > 0 ? (failedCount / total) * 100 : 0
+  const overallPct = Math.round(completePct + failedPct)
 
-  const hasFailures  = failedCount > 0
-  const allFailed    = failedCount === total && total > 0
+  const hasFailures = failedCount > 0
+  const allFailed = failedCount === total && total > 0
   const failingBadly = isRunning && failedCount > 0
 
   const elapsed = useElapsed(sweep.created_at, sweep.completed_at, isRunning)
 
-  const statusLabel = isRunning ? 'Running' : isComplete ? 'Complete' : isCancelled ? 'Cancelled' : allFailed ? 'Failed' : hasFailures ? 'Partial' : 'Failed'
-  const borderCls = isComplete && !hasFailures ? 'border-accent/20 bg-accent/5'
-    : allFailed || isCancelled ? 'border-neg-text/20 bg-neg-muted'
-    : hasFailures ? 'border-warn-text/25 bg-warn-muted/20'
-    : 'border-border-default bg-bg-surface'
+  const statusLabel = isRunning
+    ? 'Running'
+    : isComplete
+      ? 'Complete'
+      : isCancelled
+        ? 'Cancelled'
+        : allFailed
+          ? 'Failed'
+          : hasFailures
+            ? 'Partial'
+            : 'Failed'
+  const borderCls =
+    isComplete && !hasFailures
+      ? 'border-accent/20 bg-accent/5'
+      : allFailed || isCancelled
+        ? 'border-neg-text/20 bg-neg-muted'
+        : hasFailures
+          ? 'border-warn-text/25 bg-warn-muted/20'
+          : 'border-border-default bg-bg-surface'
 
   return (
     <div className={`rounded-xl border px-6 py-5 ${borderCls}`}>
@@ -99,24 +142,41 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
         {/* Left: status + progress bar + counts */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            {isRunning   && <Loader2      size={14} className="text-accent animate-spin flex-shrink-0" />}
-            {isComplete  && !hasFailures  && <CheckCircle2  size={14} className="text-accent flex-shrink-0" />}
-            {isComplete  && hasFailures   && <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />}
-            {!isRunning  && !isComplete   && <XCircle       size={14} className="text-neg-text flex-shrink-0" />}
-            <span className={`text-[13px] font-semibold ${
-              isRunning ? 'text-accent'
-              : isComplete && !hasFailures ? 'text-accent'
-              : isComplete && hasFailures  ? 'text-warn-text'
-              : 'text-neg-text'
-            }`}>
+            {isRunning && <Loader2 size={14} className="text-accent animate-spin flex-shrink-0" />}
+            {isComplete && !hasFailures && (
+              <CheckCircle2 size={14} className="text-accent flex-shrink-0" />
+            )}
+            {isComplete && hasFailures && (
+              <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />
+            )}
+            {!isRunning && !isComplete && (
+              <XCircle size={14} className="text-neg-text flex-shrink-0" />
+            )}
+            <span
+              className={`text-[13px] font-semibold ${
+                isRunning
+                  ? 'text-accent'
+                  : isComplete && !hasFailures
+                    ? 'text-accent'
+                    : isComplete && hasFailures
+                      ? 'text-warn-text'
+                      : 'text-neg-text'
+              }`}
+            >
               {statusLabel}
             </span>
             {isRunning && <span className="text-[11px] text-text-tertiary">· auto-refreshing</span>}
           </div>
 
           <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
-            <div className="h-full bg-accent transition-all duration-700" style={{ width: `${completePct}%` }} />
-            <div className="h-full bg-neg-text/70 transition-all duration-700" style={{ width: `${failedPct}%` }} />
+            <div
+              className="h-full bg-accent transition-all duration-700"
+              style={{ width: `${completePct}%` }}
+            />
+            <div
+              className="h-full bg-neg-text/70 transition-all duration-700"
+              style={{ width: `${failedPct}%` }}
+            />
           </div>
 
           <div className="flex items-center justify-between gap-4">
@@ -150,16 +210,24 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
           </div>
           <div className="flex flex-col gap-2 items-end">
             {isRunning && (
-              <button onClick={onCancel} disabled={cancelling}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-neg-text/30 text-neg-text hover:bg-neg-muted disabled:opacity-50 transition-colors">
+              <button
+                onClick={onCancel}
+                disabled={cancelling}
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-neg-text/30 text-neg-text hover:bg-neg-muted disabled:opacity-50 transition-colors"
+              >
                 <Square size={11} />
                 {cancelling ? 'Cancelling…' : 'Cancel'}
               </button>
             )}
             {hasFailures && (
-              <button onClick={onRetry} disabled={retrying || jobBlocked}
-                title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors">
+              <button
+                onClick={onRetry}
+                disabled={retrying || jobBlocked}
+                title={
+                  jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined
+                }
+                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
+              >
                 <RotateCcw size={11} className={retrying ? 'animate-spin' : ''} />
                 {retrying ? (isRunning ? 'Queuing…' : 'Starting…') : `Retry ${failedCount} failed`}
               </button>
@@ -170,21 +238,28 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
 
       {/* Instrument tracker — full width below */}
       <div className="mt-4 pt-4 border-t border-border-subtle flex flex-wrap gap-1.5">
-        {sweep.runs.map(r => {
-          const done   = r.status === 'complete'
+        {sweep.runs.map((r) => {
+          const done = r.status === 'complete'
           const failed = r.status.startsWith('failed')
           return (
             <span
               key={r.run_id}
               className={`inline-flex items-center gap-[5px] px-2 py-[3px] rounded text-[11px] font-mono border ${
-                done   ? 'border-accent/25 bg-accent/10 text-accent' :
-                failed ? 'border-neg-text/25 bg-neg-muted text-neg-text' :
-                         'border-border-subtle text-text-tertiary'
+                done
+                  ? 'border-accent/25 bg-accent/10 text-accent'
+                  : failed
+                    ? 'border-neg-text/25 bg-neg-muted text-neg-text'
+                    : 'border-border-subtle text-text-tertiary'
               }`}
             >
-              {done   && <CheckCircle2 size={9} className="flex-shrink-0" />}
-              {failed && <XCircle      size={9} className="flex-shrink-0" />}
-              {!done && !failed && <Loader2 size={9} className={`flex-shrink-0 ${isRunning ? 'animate-spin text-accent' : ''}`} />}
+              {done && <CheckCircle2 size={9} className="flex-shrink-0" />}
+              {failed && <XCircle size={9} className="flex-shrink-0" />}
+              {!done && !failed && (
+                <Loader2
+                  size={9}
+                  className={`flex-shrink-0 ${isRunning ? 'animate-spin text-accent' : ''}`}
+                />
+              )}
               {r.instrument}
             </span>
           )
@@ -196,14 +271,15 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
         <div className="mt-3 flex items-start gap-2">
           <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
           <p className="text-[12px] text-warn-text">
-            {failedCount} instrument{failedCount !== 1 ? 's are' : ' is'} failing.
-            Check that NT8 is open with the Strategy Analyzer window active on the VPS.
+            {failedCount} instrument{failedCount !== 1 ? 's are' : ' is'} failing. Check that NT8 is
+            open with the Strategy Analyzer window active on the VPS.
           </p>
         </div>
       )}
       {!failingBadly && isRunning && (
         <p className="text-[11px] text-text-tertiary mt-3">
-          Each instrument runs as a separate backtest on the VPS. Safe to close — results are saved as each run completes.
+          Each instrument runs as a separate backtest on the VPS. Safe to close — results are saved
+          as each run completes.
         </p>
       )}
     </div>
@@ -212,7 +288,12 @@ function ProgressCard({ sweep, onCancel, onRetry, cancelling, retrying, jobBlock
 
 // ── Failed runs table ─────────────────────────────────────────────────────────
 
-function FailedRunsTable({ runs, navigate, retryRun, jobBlocked }: {
+function FailedRunsTable({
+  runs,
+  navigate,
+  retryRun,
+  jobBlocked,
+}: {
   runs: BacktestSummary[]
   navigate: ReturnType<typeof useNavigate>
   retryRun: ReturnType<typeof useRetryBacktest>
@@ -235,13 +316,15 @@ function FailedRunsTable({ runs, navigate, retryRun, jobBlocked }: {
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
-            {runs.map(run => (
+            {runs.map((run) => (
               <tr
                 key={run.run_id}
                 onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
                 className="hover:bg-bg-hover cursor-pointer transition-colors"
               >
-                <td className="px-3 py-[9px] font-mono font-semibold text-text-primary">{run.instrument}</td>
+                <td className="px-3 py-[9px] font-mono font-semibold text-text-primary">
+                  {run.instrument}
+                </td>
                 <td className="px-3 py-[9px] font-mono text-neg-text text-[11px]">{run.status}</td>
                 <td className="px-3 py-[9px] text-text-tertiary text-[11px] max-w-[360px] truncate">
                   {run.error_message ?? '—'}
@@ -249,12 +332,26 @@ function FailedRunsTable({ runs, navigate, retryRun, jobBlocked }: {
                 <td className="px-3 py-[9px]">
                   <div className="flex items-center justify-end gap-2">
                     <button
-                      onClick={(e) => { e.stopPropagation(); retryRun.mutate(run.run_id) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        retryRun.mutate(run.run_id)
+                      }}
                       disabled={retryRun.isPending || jobBlocked}
-                      title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : 'Retry this run'}
+                      title={
+                        jobBlocked
+                          ? 'Another NT8 job is running — wait for it to finish'
+                          : 'Retry this run'
+                      }
                       className="p-[4px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
                     >
-                      <RotateCcw size={11} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-spin' : ''} />
+                      <RotateCcw
+                        size={11}
+                        className={
+                          retryRun.isPending && retryRun.variables === run.run_id
+                            ? 'animate-spin'
+                            : ''
+                        }
+                      />
                     </button>
                     <span className="text-[11px] text-accent">View →</span>
                   </div>
@@ -270,12 +367,19 @@ function FailedRunsTable({ runs, navigate, retryRun, jobBlocked }: {
 
 // ── Results table ─────────────────────────────────────────────────────────────
 
-function ResultsTable({ runs, navigate }: {
+function ResultsTable({
+  runs,
+  navigate,
+}: {
   runs: BacktestSummary[]
   navigate: ReturnType<typeof useNavigate>
 }) {
   const sorted = [...runs].sort((a, b) => {
-    const order: Record<string, number> = { TIER_1_STRESS_TEST: 0, TIER_2_OPTIMIZE: 1, TIER_3_DISCARD: 2 }
+    const order: Record<string, number> = {
+      TIER_1_STRESS_TEST: 0,
+      TIER_2_OPTIMIZE: 1,
+      TIER_3_DISCARD: 2,
+    }
     const ao = order[a.worthiness?.tier ?? ''] ?? 3
     const bo = order[b.worthiness?.tier ?? ''] ?? 3
     if (ao !== bo) return ao - bo
@@ -297,7 +401,7 @@ function ResultsTable({ runs, navigate }: {
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
-          {sorted.map(run => {
+          {sorted.map((run) => {
             const pnlCls = (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'
             return (
               <tr
@@ -305,12 +409,18 @@ function ResultsTable({ runs, navigate }: {
                 onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
                 className="hover:bg-bg-hover cursor-pointer transition-colors"
               >
-                <td className="px-3 py-[9px] font-mono font-semibold text-text-primary">{run.instrument}</td>
+                <td className="px-3 py-[9px] font-mono font-semibold text-text-primary">
+                  {run.instrument}
+                </td>
                 <td className={`px-3 py-[9px] font-mono tabular-nums ${pnlCls}`}>
-                  {run.net_pnl != null ? `${run.net_pnl >= 0 ? '+' : ''}$${Math.abs(run.net_pnl).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+                  {run.net_pnl != null
+                    ? `${run.net_pnl >= 0 ? '+' : ''}$${Math.abs(run.net_pnl).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    : '—'}
                 </td>
                 <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
-                  {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+                  {run.max_drawdown != null
+                    ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    : '—'}
                 </td>
                 <td className="px-3 py-[9px] font-mono tabular-nums">
                   {run.profit_factor?.toFixed(2) ?? '—'}
@@ -336,30 +446,30 @@ function ResultsTable({ runs, navigate }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function SweepDetail() {
-  const { sweepId }  = useParams<{ sweepId: string }>()
-  const navigate     = useNavigate()
+  const { sweepId } = useParams<{ sweepId: string }>()
+  const navigate = useNavigate()
   const { data: sweep, isLoading } = useSweep(sweepId ?? null)
-  const deleteSweep    = useDeleteSweep()
-  const retrySweep     = useRetrySweep()
-  const cancelSweep    = useCancelSweep()
-  const retryRun       = useRetryBacktest()
-  const reevalSweep    = useReevaluateSweep()
-  const { data: firms }          = useFirms()
-  const { data: runningJob }     = useRunningVpsJob()
+  const deleteSweep = useDeleteSweep()
+  const retrySweep = useRetrySweep()
+  const cancelSweep = useCancelSweep()
+  const retryRun = useRetryBacktest()
+  const reevalSweep = useReevaluateSweep()
+  const { data: firms } = useFirms()
+  const { data: runningJob } = useRunningVpsJob()
   // SweepDetail carries no runner of its own — every child run of a sweep shares one.
   const jobBlocked = !!runningJobFor(runningJob, sweep?.runs[0]?.runner)?.running
 
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [evalFirmId, setEvalFirmId]       = useState('')
+  const [evalFirmId, setEvalFirmId] = useState('')
 
-  const isRunning    = sweep?.status === 'running'
-  const completeRuns = sweep?.runs.filter(r => r.status === 'complete') ?? []
-  const failedRuns   = sweep?.runs.filter(r => r.status.startsWith('failed')) ?? []
+  const isRunning = sweep?.status === 'running'
+  const completeRuns = sweep?.runs.filter((r) => r.status === 'complete') ?? []
+  const failedRuns = sweep?.runs.filter((r) => r.status.startsWith('failed')) ?? []
 
   return (
     <div>
       <StickyHeader>
-        {scrolled => (
+        {(scrolled) => (
           <div className={`flex items-center justify-between gap-3 ${scrolled ? 'mb-4' : 'mb-5'}`}>
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -371,7 +481,9 @@ export function SweepDetail() {
               {scrolled && sweep && (
                 <>
                   <span className="text-text-tertiary flex-shrink-0">·</span>
-                  <h1 className="text-[14px] font-semibold truncate">{sweep.strategy_name || sweep.strategy_id}</h1>
+                  <h1 className="text-[14px] font-semibold truncate">
+                    {sweep.strategy_name || sweep.strategy_id}
+                  </h1>
                   <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
                     {sweep.total_instruments}-inst Sweep
                   </span>
@@ -392,22 +504,35 @@ export function SweepDetail() {
       </StickyHeader>
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(false) }}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmDelete(false)
+          }}
+        >
           <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[400px] shadow-2xl">
             <div className="px-5 py-4 border-b border-border-subtle">
               <div className="text-[15px] font-semibold">Delete this sweep?</div>
             </div>
             <div className="px-5 py-4">
               <p className="text-[13px] text-text-secondary">
-                All {sweep?.total_instruments} instrument runs, their evaluations, and result files will be permanently removed. This cannot be undone.
+                All {sweep?.total_instruments} instrument runs, their evaluations, and result files
+                will be permanently removed. This cannot be undone.
               </p>
             </div>
             <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle">
-              <button onClick={() => setConfirmDelete(false)} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              >
                 Cancel
               </button>
               <button
-                onClick={() => deleteSweep.mutate(sweepId!, { onSuccess: () => navigate('/backtests?tab=sweeps') })}
+                onClick={() =>
+                  deleteSweep.mutate(sweepId!, {
+                    onSuccess: () => navigate('/backtests?tab=sweeps'),
+                  })
+                }
                 disabled={deleteSweep.isPending}
                 className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
               >
@@ -440,8 +565,11 @@ export function SweepDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {fmtDate(sweep.start_date)} → {fmtDate(sweep.end_date)}
               </span>
-              {sweep.ruleset_ids.map(f => (
-                <span key={f} className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(f)}`}>
+              {sweep.ruleset_ids.map((f) => (
+                <span
+                  key={f}
+                  className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(f)}`}
+                >
                   {firmShortName(f)}
                 </span>
               ))}
@@ -467,11 +595,15 @@ export function SweepDetail() {
               </span>
               <select
                 value={evalFirmId}
-                onChange={e => setEvalFirmId(e.target.value)}
+                onChange={(e) => setEvalFirmId(e.target.value)}
                 className="bg-bg-sunken border border-border-subtle rounded px-2 py-[5px] text-[12px] focus:outline-none focus:border-accent min-w-[140px]"
               >
                 <option value="">Select firm…</option>
-                {firms?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                {firms?.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
               </select>
               <button
                 onClick={() => {
@@ -499,7 +631,12 @@ export function SweepDetail() {
           )}
 
           {/* Failed runs */}
-          <FailedRunsTable runs={failedRuns} navigate={navigate} retryRun={retryRun} jobBlocked={jobBlocked} />
+          <FailedRunsTable
+            runs={failedRuns}
+            navigate={navigate}
+            retryRun={retryRun}
+            jobBlocked={jobBlocked}
+          />
         </div>
       )}
     </div>

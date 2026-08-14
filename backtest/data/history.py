@@ -94,8 +94,9 @@ def _norm(symbol: str) -> str:
 
 def _tf_name(minutes: int) -> str:
     """Minutes → the agent's timeframe token."""
-    return {1: "M1", 5: "M5", 15: "M15", 30: "M30", 60: "H1",
-            240: "H4", 1440: "D1"}.get(minutes, f"M{minutes}")
+    return {1: "M1", 5: "M5", 15: "M15", 30: "M30", 60: "H1", 240: "H4", 1440: "D1"}.get(
+        minutes, f"M{minutes}"
+    )
 
 
 def _expected_per_day(minutes: int) -> int:
@@ -107,6 +108,7 @@ class HistoryFloorError(ValueError):
 
 
 # ── the spacing backstop (pure — no agent, no cache) ────────────────────────────
+
 
 def assert_bar_spacing(df: "pd.DataFrame", timeframe: str | int, symbol: str = "") -> None:
     """Raise `HistoryFloorError` if the returned bars are not the timeframe requested.
@@ -138,6 +140,7 @@ def assert_bar_spacing(df: "pd.DataFrame", timeframe: str | int, symbol: str = "
 
 # ── measured floors ─────────────────────────────────────────────────────────────
 
+
 class HistoryFloors:
     """Discovers and caches each broker's real history start, per symbol + timeframe."""
 
@@ -145,6 +148,7 @@ class HistoryFloors:
         self._agent = agent
         if cache_dir is None:
             from .cache import BarCache
+
             cache_dir = BarCache().dir
         self.path = Path(cache_dir) / "history_floors.json"
         self._server: Optional[str] = None
@@ -155,6 +159,7 @@ class HistoryFloors:
     def agent(self):
         if self._agent is None:
             from .mt5_agent import Mt5Agent
+
             self._agent = Mt5Agent()
         return self._agent
 
@@ -218,7 +223,7 @@ class HistoryFloors:
         """
         for offset in (0, 1, 2, 3, _CLUSTER_SPAN):
             d = day + _dt.timedelta(days=offset)
-            if d.weekday() >= 5:            # skip weekends, never a full session
+            if d.weekday() >= 5:  # skip weekends, never a full session
                 continue
             if self._day_is_real(symbol, minutes, d):
                 return True
@@ -243,10 +248,10 @@ class HistoryFloors:
         today = _dt.date.today()
         hi = today - _dt.timedelta(days=7)
         if not self._first_real(symbol, minutes, hi):
-            return None                     # no recent data at all — agent down or bad symbol
+            return None  # no recent data at all — agent down or bad symbol
         lo = _SEARCH_FROM
         if self._first_real(symbol, minutes, lo):
-            return lo                       # history reaches the search bound
+            return lo  # history reaches the search bound
         while (hi - lo).days > 3:
             mid = lo + (hi - lo) / 2
             if self._first_real(symbol, minutes, mid):
@@ -265,8 +270,7 @@ class HistoryFloors:
         return hi
 
     # -- public ---------------------------------------------------------------
-    def floor(self, symbol: str, timeframe: str | int,
-              refresh: bool = False) -> Optional[_dt.date]:
+    def floor(self, symbol: str, timeframe: str | int, refresh: bool = False) -> Optional[_dt.date]:
         """The earliest date this (broker, symbol, timeframe) has REAL bars for.
 
         None means UNKNOWN — never "unlimited". The spacing backstop still applies.
@@ -282,7 +286,7 @@ class HistoryFloors:
             try:
                 return _dt.date.fromisoformat(data[key]["floor"])
             except Exception:
-                pass                        # corrupt entry — fall through and re-probe
+                pass  # corrupt entry — fall through and re-probe
 
         found = self.probe(symbol, minutes)
         if found is None:
@@ -299,7 +303,7 @@ class HistoryFloors:
         try:
             self._save()
         except Exception:
-            pass                            # a cache we cannot write is slow, not wrong
+            pass  # a cache we cannot write is slow, not wrong
         return found
 
     def _seed(self, symbol: str, minutes: int, server: Optional[str]) -> Optional[_dt.date]:
@@ -316,8 +320,7 @@ class HistoryFloors:
             return None
         return _dt.date.fromisoformat(entry["daily" if minutes >= _DAILY_MIN else "intraday"])
 
-    def describe(self, symbol: str, timeframe: str | int,
-                 refresh: bool = False) -> Optional[dict]:
+    def describe(self, symbol: str, timeframe: str | int, refresh: bool = False) -> Optional[dict]:
         """The whole record for a (symbol, timeframe) — what the API hands the UI, so the
         date picker's minimum and its explanatory text come from ONE measurement."""
         minutes = to_minutes(timeframe)
@@ -325,15 +328,15 @@ class HistoryFloors:
         if fl is None:
             return None
         server = self.server()
-        entry = (self._load().get(self._key(server, symbol, minutes)) or {})
+        entry = self._load().get(self._key(server, symbol, minutes)) or {}
         measured = bool(entry)
         return {
             "symbol": _norm(symbol),
             "timeframe_minutes": minutes,
             "earliest_date": fl.isoformat(),
             "broker": server,
-            "verified": entry.get("probed") or _SEED.get(
-                (server, _norm(symbol)), {}).get("verified", ""),
+            "verified": entry.get("probed")
+            or _SEED.get((server, _norm(symbol)), {}).get("verified", ""),
             "source": "probed" if measured else "seed",
             "note": (
                 f"{_norm(symbol)} has no real {minutes}-minute bars before {fl.isoformat()} on "
@@ -342,8 +345,9 @@ class HistoryFloors:
             ),
         }
 
-    def assert_window(self, symbol: str, timeframe: str | int, start_date: str,
-                      end_date: str | None = None) -> None:
+    def assert_window(
+        self, symbol: str, timeframe: str | int, start_date: str, end_date: str | None = None
+    ) -> None:
         """Raise `HistoryFloorError` if `start_date` precedes the measured floor."""
         try:
             start = _dt.date.fromisoformat(str(start_date)[:10])
@@ -382,6 +386,7 @@ def describe(symbol: str, timeframe: str | int = 15, refresh: bool = False) -> O
     return shared().describe(symbol, timeframe, refresh=refresh)
 
 
-def assert_window(symbol: str, timeframe: str | int, start_date: str,
-                  end_date: str | None = None) -> None:
+def assert_window(
+    symbol: str, timeframe: str | int, start_date: str, end_date: str | None = None
+) -> None:
     shared().assert_window(symbol, timeframe, start_date, end_date)

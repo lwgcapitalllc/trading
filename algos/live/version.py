@@ -70,7 +70,7 @@ def python_source_hash(pkg_dir: Path) -> str:
     """
     h = hashlib.md5()
     for py in sorted(Path(pkg_dir).rglob("*.py")):
-        if "tests" in py.parts:          # test edits don't change what the strategy DOES
+        if "tests" in py.parts:  # test edits don't change what the strategy DOES
             continue
         h.update(py.name.encode("utf-8"))
         h.update(py.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
@@ -122,15 +122,16 @@ def current_commit(repo_root: Path) -> str:
     try:
         out = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return out.stdout.strip()
     except Exception:
         return ""
 
 
-def verify_pin(roots, pinned_hash: Optional[str], *, frozen: bool = True,
-               bot_key: str = "") -> str:
+def verify_pin(roots, pinned_hash: Optional[str], *, frozen: bool = True, bot_key: str = "") -> str:
     """Return the on-disk hash of `roots`, raising `VersionMismatch` if it differs from the pin.
 
     `pinned_hash` of None or "" means UNPINNED — allowed, and the caller should say so loudly in
@@ -152,8 +153,8 @@ def verify_pin(roots, pinned_hash: Optional[str], *, frozen: bool = True,
         remedy = (
             "This bot's own deployed snapshot has been modified in place, which bypasses the "
             "promote step. Re-promote to re-pin it, or restore the snapshot."
-            if frozen else
-            "This bot is NOT FROZEN — it is still importing straight out of the repo working "
+            if frozen
+            else "This bot is NOT FROZEN — it is still importing straight out of the repo working "
             "tree, so ordinary repo work (a pull, a lab experiment, a backtest of a new "
             "version) changes what it trades and stops it starting. Promote it: "
             f"`python algos/tools/promote.py --bot {bot_key or '<bot_key>'}` takes a snapshot "

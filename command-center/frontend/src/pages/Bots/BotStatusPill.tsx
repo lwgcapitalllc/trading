@@ -17,11 +17,13 @@
  */
 export function BotStatusPill({ status }: { status: string }) {
   const isRunning = status === 'RUNNING'
-  const isError   = status === 'ERROR'
-  const cls   = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
+  const isError = status === 'ERROR'
+  const cls = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
   const label = isRunning ? 'Running' : isError ? 'Error' : 'Stopped'
   return (
-    <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
+    <span
+      className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}
+    >
       {label}
     </span>
   )

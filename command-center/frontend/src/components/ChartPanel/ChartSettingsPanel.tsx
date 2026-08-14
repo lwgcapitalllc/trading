@@ -12,8 +12,11 @@ import type { ReactNode } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import InfoTip from '@/components/InfoTip'
 import {
-  DEFAULT_CHART_SETTINGS, SECTIONS,
-  type ChartSettings, type CustomSection, type SettingDef,
+  DEFAULT_CHART_SETTINGS,
+  SECTIONS,
+  type ChartSettings,
+  type CustomSection,
+  type SettingDef,
 } from './chartSettings'
 
 // Feeds the panel's own viewport clamp — it places itself, like FibSettings and the context menu,
@@ -71,10 +74,16 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 }
 
 export default function ChartSettingsPanel({
-  x, y, settings, onChange, onClose, renderCustom,
+  x,
+  y,
+  settings,
+  onChange,
+  onClose,
+  renderCustom,
 }: Props) {
-  const isDefault = (Object.keys(DEFAULT_CHART_SETTINGS) as (keyof ChartSettings)[])
-    .every(k => settings[k] === DEFAULT_CHART_SETTINGS[k])
+  const isDefault = (Object.keys(DEFAULT_CHART_SETTINGS) as (keyof ChartSettings)[]).every(
+    (k) => settings[k] === DEFAULT_CHART_SETTINGS[k]
+  )
 
   const row = (def: SettingDef) => {
     // One branch per widget kind. `kind` is a union, so adding a kind without handling it here is a
@@ -94,8 +103,8 @@ export default function ChartSettingsPanel({
     <div
       // Stop both, like FibSettings: the chart body's click handler drives measure mode, and a
       // click that reaches it from inside a panel would start a measurement behind the panel.
-      onMouseDown={e => e.stopPropagation()}
-      onClick={e => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       className="fixed rounded-md border border-border-subtle bg-bg-surface shadow-xl"
       style={{
         left: Math.max(6, Math.min(x, window.innerWidth - PANEL_W - 6)),
@@ -114,16 +123,19 @@ export default function ChartSettingsPanel({
         >
           <RotateCcw className="h-3 w-3" />
         </button>
-        <button onClick={onClose} className="text-text-tertiary transition-colors hover:text-text-primary">
+        <button
+          onClick={onClose}
+          className="text-text-tertiary transition-colors hover:text-text-primary"
+        >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
 
       <div className="max-h-[470px] overflow-y-auto py-1">
-        {SECTIONS.map(section => {
+        {SECTIONS.map((section) => {
           const body = section.custom
             ? renderCustom?.(section.custom)
-            : section.items!.map(def => (
+            : section.items!.map((def) => (
                 <div
                   key={def.key}
                   className="flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-bg-sunken"

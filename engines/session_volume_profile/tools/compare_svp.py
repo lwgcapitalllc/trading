@@ -63,7 +63,7 @@ PRICE_FIELDS = ["px_svp_poc"]
 FLAG_FIELDS = ["px_svp_formed", "px_svp_swept"]
 ALL_FIELDS = PRICE_FIELDS + FLAG_FIELDS
 
-_SECONDS_CEILING = 10 ** 11
+_SECONDS_CEILING = 10**11
 
 
 def _num(s):
@@ -98,13 +98,19 @@ def _resolve_columns(header):
             raise SystemExit(f"ERROR: column {name!r} not found in export. Header: {header}")
         return col
 
-    cols = {"time": find("time"), "open": find("open"),
-            "high": find("high"), "low": find("low"), "close": find("close")}
+    cols = {
+        "time": find("time"),
+        "open": find("open"),
+        "high": find("high"),
+        "low": find("low"),
+        "close": find("close"),
+    }
     # volume input: prefer the explicit px_volume column, fall back to a native volume column
     cols["volume"] = find("px_volume", False) or find("volume", False)
     if cols["volume"] is None:
-        raise SystemExit("ERROR: no volume column ('px_volume' or 'volume') found in export. "
-                         f"Header: {header}")
+        raise SystemExit(
+            f"ERROR: no volume column ('px_volume' or 'volume') found in export. Header: {header}"
+        )
     for fld in ALL_FIELDS:
         cols[fld] = find(fld)
     return cols
@@ -131,16 +137,28 @@ def _values_match(field, py_val, pine_val, tol):
     if py_val is None or pine_val is None:
         return False
     if field in PRICE_FIELDS:
-        return abs(py_val - pine_val) <= tol      # POC price — deterministic, tight tolerance
-    return int(round(py_val)) == int(round(pine_val))    # formed / swept flags
+        return abs(py_val - pine_val) <= tol  # POC price — deterministic, tight tolerance
+    return int(round(py_val)) == int(round(pine_val))  # formed / swept flags
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("csv", help="CSV exported from TradingView with svp_export.pine on the chart")
-    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for the POC price (default 1e-6)")
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-6,
+        help="abs tolerance for the POC price (default 1e-6)",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -171,9 +189,11 @@ def main(argv=None):
         ts_ms = _to_ms(row[cols["time"]])
 
         ev = engine.update(i, ts_ms, o, h, l, c, vol)
-        py = {"px_svp_poc": ev.poc,
-              "px_svp_formed": 1 if ev.formed else 0,
-              "px_svp_swept": 1 if ev.swept else 0}
+        py = {
+            "px_svp_poc": ev.poc,
+            "px_svp_formed": 1 if ev.formed else 0,
+            "px_svp_swept": 1 if ev.swept else 0,
+        }
         total += 1
 
         if i < args.warmup:
@@ -191,12 +211,16 @@ def main(argv=None):
                 detailed.append((i, row[cols["time"]], bar_mismatches))
 
     mismatched_fields = {f: n for f, n in per_field_mismatch.items() if n}
-    print(f"Compared {total} bars ({args.warmup} warmup skipped) across {len(compared_fields)} fields.")
+    print(
+        f"Compared {total} bars ({args.warmup} warmup skipped) across {len(compared_fields)} fields."
+    )
     if not mismatched_fields:
         print("PARITY OK — every field matches on every warm bar.")
         return 0
 
-    print(f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}.")
+    print(
+        f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}."
+    )
     print("Per-field mismatch counts:")
     for fld, n in sorted(mismatched_fields.items(), key=lambda p: -p[1]):
         print(f"  {fld}: {n}")

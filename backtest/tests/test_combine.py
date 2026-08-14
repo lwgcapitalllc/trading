@@ -14,11 +14,14 @@ from backtest.portfolio.combine import Leg, combine_runs, leg_from_result
 
 def _leg(name: str, days: dict) -> Leg:
     """Leg from a {date: pnl} map (dates are 2026-01-DD)."""
-    return Leg(name=name, daily_pnl=[{"date": f"2026-01-{d:02d}", "pnl": p}
-                                     for d, p in sorted(days.items())])
+    return Leg(
+        name=name,
+        daily_pnl=[{"date": f"2026-01-{d:02d}", "pnl": p} for d, p in sorted(days.items())],
+    )
 
 
 # ── combined P&L / equity ──────────────────────────────────────────────────────
+
 
 def test_combined_net_is_sum_of_leg_nets():
     a = _leg("A", {1: 100.0, 2: -40.0})
@@ -34,7 +37,7 @@ def test_combined_daily_sums_overlapping_days():
     out = combine_runs([a, b])
     by_day = {d["date"]: d["pnl"] for d in out["combined_daily_pnl"]}
     assert by_day["2026-01-01"] == 100.0
-    assert by_day["2026-01-02"] == 10.0   # -40 + 50
+    assert by_day["2026-01-02"] == 10.0  # -40 + 50
     assert by_day["2026-01-03"] == 20.0
 
 
@@ -46,10 +49,11 @@ def test_equity_curve_anchors_on_capital():
 
 # ── diversification drawdown ────────────────────────────────────────────────────
 
+
 def test_offsetting_legs_reduce_drawdown_below_sum():
     # A bleeds on day 2, B pays on day 2 → combined never draws down as deep as A alone.
-    a = _leg("A", {1: 100.0, 2: -80.0})   # own DD = 80
-    b = _leg("B", {1: -80.0, 2: 100.0})   # own DD = 80
+    a = _leg("A", {1: 100.0, 2: -80.0})  # own DD = 80
+    b = _leg("B", {1: -80.0, 2: 100.0})  # own DD = 80
     out = combine_runs([a, b])
     # each day nets +20 → combined cumulative only rises → combined DD = 0
     assert out["diversification_dd"]["combined_max_dd"] == 0.0
@@ -62,7 +66,7 @@ def test_identical_legs_double_drawdown_and_correlate_one():
     b = _leg("B", {1: 50.0, 2: -30.0})
     out = combine_runs([a, b])
     # same series added → combined DD is exactly twice one leg's DD, no diversification
-    assert out["diversification_dd"]["combined_max_dd"] == 60.0   # 2 × 30
+    assert out["diversification_dd"]["combined_max_dd"] == 60.0  # 2 × 30
     assert out["diversification_dd"]["sum_leg_max_dd"] == 60.0
     assert out["diversification_dd"]["ratio"] == 1.0
     # perfectly correlated
@@ -79,13 +83,14 @@ def test_max_dd_uses_offset_invariant_peak_to_trough():
 
 # ── correlation edges ───────────────────────────────────────────────────────────
 
+
 def test_flat_leg_correlation_is_none_not_zero():
-    a = _leg("A", {1: 10.0, 2: 10.0})   # zero variance — flat every day
+    a = _leg("A", {1: 10.0, 2: 10.0})  # zero variance — flat every day
     b = _leg("B", {1: 5.0, 2: -5.0})
     out = combine_runs([a, b])
     m = out["correlation"]["matrix"]
-    assert m[0][0] == 1.0            # diagonal always 1
-    assert m[0][1] is None           # undefined against a flat leg
+    assert m[0][0] == 1.0  # diagonal always 1
+    assert m[0][1] is None  # undefined against a flat leg
     assert m[1][0] is None
 
 
@@ -101,6 +106,7 @@ def test_correlation_union_of_days_fills_missing_with_zero():
 
 
 # ── per-leg contribution ────────────────────────────────────────────────────────
+
 
 def test_per_leg_share_sums_to_one():
     a = _leg("A", {1: 90.0})
@@ -120,6 +126,7 @@ def test_zero_net_share_is_none():
 
 
 # ── the run-result adapter ──────────────────────────────────────────────────────
+
 
 def test_leg_from_result_reads_daily_pnl():
     result = {"daily_pnl": [{"date": "2026-01-01", "pnl": 25.0}], "kpis": {}}

@@ -21,17 +21,16 @@ human-readable and queryable in bulk.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional, Any
-
+from typing import Any, Optional
 
 # ── Outcomes (how a signal resolved) ──────────────────────────────────────────
 
-OUTCOME_TAKEN = "taken"        # a gate let it through and it was sized > 0
-OUTCOME_BLOCKED = "blocked"    # a gate vetoed it (see blocked_by)
-OUTCOME_SKIPPED = "skipped"    # allowed, but sized to 0 (no legal size)
-OUTCOME_OPEN = "open"          # built, not yet resolved (shouldn't persist)
+OUTCOME_TAKEN = "taken"  # a gate let it through and it was sized > 0
+OUTCOME_BLOCKED = "blocked"  # a gate vetoed it (see blocked_by)
+OUTCOME_SKIPPED = "skipped"  # allowed, but sized to 0 (no legal size)
+OUTCOME_OPEN = "open"  # built, not yet resolved (shouldn't persist)
 
 
 # ── Exit reasons (the life-end of a taken trade) ──────────────────────────────
@@ -39,7 +38,7 @@ OUTCOME_OPEN = "open"          # built, not yet resolved (shouldn't persist)
 EXIT_TARGET = "target"
 EXIT_STOP = "stop"
 EXIT_BREAKEVEN = "breakeven"
-EXIT_TIME_FLAT = "time_flat"   # closed by the force-flat / time-of-day rule
+EXIT_TIME_FLAT = "time_flat"  # closed by the force-flat / time-of-day rule
 EXIT_MANUAL = "manual"
 EXIT_OTHER = "other"
 
@@ -66,9 +65,11 @@ def classify_exit(label: Optional[str]) -> str:
 
 # ── Pieces of a record ────────────────────────────────────────────────────────
 
+
 @dataclass
 class GateVerdict:
     """One gate's ruling on a signal. `passed=False` means this gate vetoed the trade."""
+
     gate: str
     passed: bool
     reason: str
@@ -78,16 +79,18 @@ class GateVerdict:
 @dataclass
 class SizingDecision:
     """What the sizing engine decided and what bound it."""
+
     contracts: int
-    bound_by: str                          # which limit set the size
+    bound_by: str  # which limit set the size
     room_to_floor: Optional[float] = None  # $ distance to the drawdown floor at decision
-    ladder_cap: Optional[float] = None     # firm contract cap in force
+    ladder_cap: Optional[float] = None  # firm contract cap in force
     consistency_room: Optional[float] = None  # $ left under today's consistency share
     skipped: bool = False
     note: str = ""
 
 
 # ── The record ────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class TradeDecision:
@@ -98,16 +101,16 @@ class TradeDecision:
     sizing engine, and (if taken) the entry/exit as they happen.
     """
 
-    timestamp: str                       # ISO — when the signal was raised
+    timestamp: str  # ISO — when the signal was raised
     instrument: str
-    direction: int                       # +1 long, -1 short
+    direction: int  # +1 long, -1 short
     strategy: str = ""
-    account_id: str = ""                 # run_id (backtest) or live account id
+    account_id: str = ""  # run_id (backtest) or live account id
     signal_id: str = ""
 
     # The idea — why this is a signal at all.
-    setup_score: Optional[str] = None    # 'A+' | 'A' | … (the confluence grade; future)
-    setup_reason: Optional[str] = None   # human note: "range break + 1 confirm"
+    setup_score: Optional[str] = None  # 'A+' | 'A' | … (the confluence grade; future)
+    setup_reason: Optional[str] = None  # human note: "range break + 1 confirm"
     stop_distance: Optional[float] = None  # risk per contract, price points
     proposed_stop: Optional[float] = None
     proposed_target: Optional[float] = None
@@ -116,8 +119,8 @@ class TradeDecision:
     gates: list[GateVerdict] = field(default_factory=list)
     sizing: Optional[SizingDecision] = None
     account_snapshot: dict = field(default_factory=dict)  # balance, day_pnl, floor_distance…
-    entry: Optional[dict] = None         # {time, price, stop, target}
-    exit: Optional[dict] = None          # {time, price, reason, gross, net, r_multiple}
+    entry: Optional[dict] = None  # {time, price, stop, target}
+    exit: Optional[dict] = None  # {time, price, reason, gross, net, r_multiple}
     outcome: str = OUTCOME_OPEN
 
     # ── Builders (chainable) ──
@@ -134,16 +137,29 @@ class TradeDecision:
         self.account_snapshot.update(fields)
         return self
 
-    def set_entry(self, time: str, price: float, stop: Optional[float] = None,
-                  target: Optional[float] = None) -> "TradeDecision":
+    def set_entry(
+        self, time: str, price: float, stop: Optional[float] = None, target: Optional[float] = None
+    ) -> "TradeDecision":
         self.entry = {"time": time, "price": price, "stop": stop, "target": target}
         return self
 
-    def set_exit(self, time: str, price: float, reason: str,
-                 gross: Optional[float] = None, net: Optional[float] = None,
-                 r_multiple: Optional[float] = None) -> "TradeDecision":
-        self.exit = {"time": time, "price": price, "reason": reason,
-                     "gross": gross, "net": net, "r_multiple": r_multiple}
+    def set_exit(
+        self,
+        time: str,
+        price: float,
+        reason: str,
+        gross: Optional[float] = None,
+        net: Optional[float] = None,
+        r_multiple: Optional[float] = None,
+    ) -> "TradeDecision":
+        self.exit = {
+            "time": time,
+            "price": price,
+            "reason": reason,
+            "gross": gross,
+            "net": net,
+            "r_multiple": r_multiple,
+        }
         return self
 
     # ── Resolution ──
@@ -171,6 +187,7 @@ class TradeDecision:
 
 
 # ── The log file (append-only JSONL) ──────────────────────────────────────────
+
 
 class DecisionLog:
     """Append-only writer/reader for a `.jsonl` decision log. One line per signal.

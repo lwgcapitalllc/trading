@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 PYTHON = sys.executable
-ALGOS  = Path("C:/trading/algos")
-BOTS   = Path("C:/trading/algos/bots")
+ALGOS = Path("C:/trading/algos")
+BOTS = Path("C:/trading/algos/bots")
 
 sys.path.insert(0, str(ALGOS / "shared"))
 from bot_state import set_started, set_status
@@ -149,9 +149,14 @@ def log_baseline(log_path: str) -> Tuple[Path, int]:
     return p, (p.stat().st_size if p.exists() else 0)
 
 
-def wait_for_connection(log_path: str, ready_string: str,
-                        size_before: int, timeout: int, name: str,
-                        baseline_path: Optional[Path] = None) -> bool:
+def wait_for_connection(
+    log_path: str,
+    ready_string: str,
+    size_before: int,
+    timeout: int,
+    name: str,
+    baseline_path: Optional[Path] = None,
+) -> bool:
     start = time.time()
     while time.time() - start < timeout:
         p = live_log(log_path)
@@ -160,10 +165,10 @@ def wait_for_connection(log_path: str, ready_string: str,
                 content = p.read_text(errors="replace")
                 # A file the baseline was never measured against starts at 0 — it is new, so all
                 # of it belongs to this run.
-                offset      = size_before if (baseline_path is None or p == baseline_path) else 0
+                offset = size_before if (baseline_path is None or p == baseline_path) else 0
                 new_content = content[offset:]
                 if ready_string in new_content:
-                    print(f"  ✓ {name} connected in {time.time()-start:.0f}s")
+                    print(f"  ✓ {name} connected in {time.time() - start:.0f}s")
                     return True
                 if "ACCOUNT MISMATCH" in new_content:
                     print(f"  ✗ {name} account mismatch")
@@ -180,9 +185,12 @@ def wait_for_connection(log_path: str, ready_string: str,
 
 def main():
     parser = argparse.ArgumentParser(description="Start bots (all or single)")
-    parser.add_argument("--bot", default=None,
-                        help="Start only this bot key (e.g. <bot_name>). "
-                             "Skips lock clear and connection wait — bot detaches immediately.")
+    parser.add_argument(
+        "--bot",
+        default=None,
+        help="Start only this bot key (e.g. <bot_name>). "
+        "Skips lock clear and connection wait — bot detaches immediately.",
+    )
     args = parser.parse_args()
 
     # ── Single-bot mode ───────────────────────────────────────────────────────
@@ -200,8 +208,10 @@ def main():
         # sequence merely skips: somebody pressed a button and is owed an answer, and the answer
         # is the action that fixes it. Exit 1 so the caller can tell this from a launch.
         if not bot_is_assigned(bot_key):
-            print(f"  REFUSED {name} is not assigned to an account, so it has nothing to "
-                  f"trade. Add it to an account on Bots -> Accounts, then start it.")
+            print(
+                f"  REFUSED {name} is not assigned to an account, so it has nothing to "
+                f"trade. Add it to an account on Bots -> Accounts, then start it."
+            )
             sys.exit(1)
 
         # This is the path the command center's per-bot Start button drives, which makes it the
@@ -257,7 +267,7 @@ def main():
         # has assigned is a deliberate state, so treating it as a failed start would mark the
         # whole boot unhealthy every time and train everyone to ignore that signal.
         if not bot_is_assigned(bot_key):
-            print(f"  - Not assigned to an account — skipped")
+            print("  - Not assigned to an account — skipped")
             continue
 
         # Already up? Leave it alone — the same rule the Telegram launch follows below, and
@@ -266,7 +276,7 @@ def main():
         # off the same setup. Measured 2026-08-04: a SYS_STARTUP run while the bot was up
         # produced exactly that, and nothing anywhere reported it.
         if bot_is_running(bot_key):
-            print(f"  ✓ Already running — left alone")
+            print("  ✓ Already running — left alone")
             continue
 
         # Write started timestamp BEFORE launching
@@ -280,8 +290,9 @@ def main():
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
 
-        connected = wait_for_connection(log_path, ready_str, size_before, timeout, name,
-                                        baseline_path=baseline_path)
+        connected = wait_for_connection(
+            log_path, ready_str, size_before, timeout, name, baseline_path=baseline_path
+        )
         if not connected:
             set_status(bot_key, "offline")
             all_ok = False
@@ -324,13 +335,16 @@ def bot_is_running(bot_key: str) -> bool:
     try:
         r = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except Exception as e:
-        print(f"  ! Could not read the process list ({e}) — assuming {bot_key} is up, not starting it")
+        print(
+            f"  ! Could not read the process list ({e}) — assuming {bot_key} is up, not starting it"
+        )
         return True
-    return any(f"--bot {bot_key}" in line and "runner.py" in line
-               for line in r.stdout.splitlines())
+    return any(f"--bot {bot_key}" in line and "runner.py" in line for line in r.stdout.splitlines())
 
 
 def telegram_is_running() -> bool:
@@ -338,7 +352,9 @@ def telegram_is_running() -> bool:
     try:
         r = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return "telegram_bot.py" in r.stdout
     except Exception as e:

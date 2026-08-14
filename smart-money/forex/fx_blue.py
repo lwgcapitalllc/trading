@@ -19,6 +19,7 @@ FX Blue base URL: https://www.fxblue.com
 from __future__ import annotations
 
 import os
+
 from run_logger import StageLogger
 
 

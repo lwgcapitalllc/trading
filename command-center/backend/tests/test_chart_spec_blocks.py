@@ -30,12 +30,21 @@ def test_no_file_means_no_blocks(tmp_path):
 
 
 def test_current_shape_keeps_every_reason_in_order(tmp_path):
-    d = _write(tmp_path, [{
-        "time_ms": _T0 + 900_000, "direction": "Short", "edge": 123.5,
-        "codes": [1, 3],
-        "reasons": [{"label": "Direction off", "reason": "a"},
-                    {"label": "Final hour", "reason": "b"}],
-    }])
+    d = _write(
+        tmp_path,
+        [
+            {
+                "time_ms": _T0 + 900_000,
+                "direction": "Short",
+                "edge": 123.5,
+                "codes": [1, 3],
+                "reasons": [
+                    {"label": "Direction off", "reason": "a"},
+                    {"label": "Final hour", "reason": "b"},
+                ],
+            }
+        ],
+    )
     out = _build_blocks(d, _CANDLES)
     assert len(out) == 1
     assert out[0]["dir"] == "short" and out[0]["price"] == 123.5
@@ -45,15 +54,23 @@ def test_current_shape_keeps_every_reason_in_order(tmp_path):
 def test_pre_list_shape_still_reads(tmp_path):
     """THE REGRESSION. A file written before `reasons` was a list carries one `label`/`reason`
     pair; it must read as a one-item list, not vanish. Runs already on disk cannot be rewritten."""
-    d = _write(tmp_path, [{
-        "time_ms": _T0 + 900_000, "direction": "Long", "edge": 99.0,
-        "code": 3, "label": "Final hour", "reason": "no new entries 16:00-18:00 NY",
-    }])
+    d = _write(
+        tmp_path,
+        [
+            {
+                "time_ms": _T0 + 900_000,
+                "direction": "Long",
+                "edge": 99.0,
+                "code": 3,
+                "label": "Final hour",
+                "reason": "no new entries 16:00-18:00 NY",
+            }
+        ],
+    )
     out = _build_blocks(d, _CANDLES)
     assert len(out) == 1
     assert out[0]["dir"] == "long"
-    assert out[0]["reasons"] == [
-        {"label": "Final hour", "reason": "no new entries 16:00-18:00 NY"}]
+    assert out[0]["reasons"] == [{"label": "Final hour", "reason": "no new entries 16:00-18:00 NY"}]
 
 
 def test_a_record_naming_no_rule_is_dropped(tmp_path):
@@ -67,10 +84,18 @@ def test_blocks_outside_the_candle_window_are_clipped(tmp_path):
     """klinecharts clamps an out-of-range overlay onto the plot edge, so an unclipped marker
     would pile up in the no-data region instead of sitting on its bar."""
     rows = [
-        {"time_ms": _T0 - 10 * 900_000, "direction": "Long", "edge": 1.0,
-         "reasons": [{"label": "Final hour", "reason": "x"}]},
-        {"time_ms": _T0 + 900_000, "direction": "Long", "edge": 2.0,
-         "reasons": [{"label": "Final hour", "reason": "x"}]},
+        {
+            "time_ms": _T0 - 10 * 900_000,
+            "direction": "Long",
+            "edge": 1.0,
+            "reasons": [{"label": "Final hour", "reason": "x"}],
+        },
+        {
+            "time_ms": _T0 + 900_000,
+            "direction": "Long",
+            "edge": 2.0,
+            "reasons": [{"label": "Final hour", "reason": "x"}],
+        },
     ]
     out = _build_blocks(_write(tmp_path, rows), _CANDLES)
     assert [b["price"] for b in out] == [2.0]

@@ -12,17 +12,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 _ROOT = Path(__file__).resolve().parents[2]
 for _p in (_ROOT, _ROOT / "algos" / "live", _ROOT / "algos" / "shared"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from backtest.setups import (Confluence, DEAD, FILLED, RESTING,  # noqa: E402
-                             SetupSnapshot, WATCHING)
-from setup_alerts import (BLOCKED_MSG, CATEGORIES, ENTRY_ZONE_MSG,  # noqa: E402
-                          RESOLVED_MSG, SetupAlerts, WATCHING_MSG)
+from setup_alerts import (
+    BLOCKED_MSG,
+    CATEGORIES,
+    ENTRY_ZONE_MSG,  # noqa: E402
+    RESOLVED_MSG,
+    WATCHING_MSG,
+    SetupAlerts,
+)
+
+from backtest.setups import (
+    DEAD,
+    FILLED,
+    RESTING,  # noqa: E402
+    WATCHING,
+    Confluence,
+    SetupSnapshot,
+)
 
 
 class Recorder:
@@ -54,11 +65,20 @@ class FakeStrategy:
 
 
 def _snap(**kw):
-    base = dict(key="K1", strategy="Strat", symbol="XAUUSD", side=1, state=WATCHING,
-                confluences=(Confluence("Arm", True, "Day Low"),
-                             Confluence("SOS", True, "confirmed"),
-                             Confluence("Zone", False, "not tagged yet")),
-                zone=(100.0, 90.0), stop=89.5)
+    base = dict(
+        key="K1",
+        strategy="Strat",
+        symbol="XAUUSD",
+        side=1,
+        state=WATCHING,
+        confluences=(
+            Confluence("Arm", True, "Day Low"),
+            Confluence("SOS", True, "confirmed"),
+            Confluence("Zone", False, "not tagged yet"),
+        ),
+        zone=(100.0, 90.0),
+        stop=89.5,
+    )
     base.update(kw)
     return SetupSnapshot(**base)
 
@@ -213,8 +233,13 @@ def test_every_declared_category_is_reachable():
         rec = Recorder()
         a = _alerts(rec)
         a._handle(_snap(state=state, blocked_by=blocked, entry=95.0))
-        icons = {"👀": WATCHING_MSG, "🎯": ENTRY_ZONE_MSG, "🚫": BLOCKED_MSG, "✅": RESOLVED_MSG,
-                 "👋": RESOLVED_MSG}
+        icons = {
+            "👀": WATCHING_MSG,
+            "🎯": ENTRY_ZONE_MSG,
+            "🚫": BLOCKED_MSG,
+            "✅": RESOLVED_MSG,
+            "👋": RESOLVED_MSG,
+        }
         seen |= {icons[m["text"][0]] for m in rec.sent}
     assert seen == set(CATEGORIES), f"unreachable categories: {sorted(set(CATEGORIES) - seen)}"
 
@@ -336,7 +361,7 @@ def test_a_formatter_that_explodes_cannot_take_down_the_bar_loop():
             raise RuntimeError("boom")
 
     a = SetupAlerts(send=Recorder(), log=Log())
-    a.on_bar(Exploding())            # must not raise
+    a.on_bar(Exploding())  # must not raise
     assert warnings and "boom" in warnings[0]
 
 
@@ -345,11 +370,12 @@ def test_a_send_that_fails_does_not_stop_the_remaining_messages():
 
     RED against letting a None message id short-circuit the rest of `_handle`.
     """
+
     def dead_send(text, kind, reply_to=None):
         return None
 
     a = SetupAlerts(send=dead_send, log=None)
-    a._handle(_snap(state=RESTING, entry=95.0, blocked_by=("Veto",)))   # must not raise
+    a._handle(_snap(state=RESTING, entry=95.0, blocked_by=("Veto",)))  # must not raise
     assert a._threads["K1"] is None
 
 

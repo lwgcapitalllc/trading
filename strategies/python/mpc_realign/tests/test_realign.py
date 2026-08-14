@@ -29,6 +29,7 @@ MIN = 60_000
 
 # ── the aggregator: lookahead is the silent failure ──────────────────────────────
 
+
 def _feed(h, bars):
     """bars = [(minute_offset, o,h,l,c)] -> list of (offset, published_or_None)."""
     return [(m, h.update(m * MIN, o, hi, lo, c)) for m, o, hi, lo, c in bars]
@@ -41,7 +42,8 @@ def test_a_15m_bar_is_not_published_until_its_bucket_is_over():
     h = HtfStructure(15)
     out = _feed(h, [(0, 1, 2, 0, 1), (5, 1, 2, 0, 1), (10, 1, 2, 0, 1)])
     assert [p for _, p in out] == [None, None, None], (
-        "a forming 15m bar was published — this is lookahead")
+        "a forming 15m bar was published — this is lookahead"
+    )
     # only now, on the first bar of the NEXT bucket, may it appear
     assert h.update(15 * MIN, 1, 2, 0, 1) is not None
 
@@ -51,7 +53,7 @@ def test_the_published_bar_is_the_ohlc_of_its_whole_bucket():
     _feed(h, [(0, 10, 12, 9, 11), (5, 11, 15, 8, 14), (10, 14, 14, 13, 13)])
     h.update(15 * MIN, 13, 13, 13, 13)
     # the engine consumed it; check the aggregator built the right bar
-    assert (h._o, h._h, h._l, h._c) == (13, 13, 13, 13)   # now filling the NEXT bucket
+    assert (h._o, h._h, h._l, h._c) == (13, 13, 13, 13)  # now filling the NEXT bucket
 
 
 def test_buckets_align_to_the_wall_clock_not_to_bar_arrival():
@@ -78,6 +80,7 @@ def test_a_gap_does_not_publish_the_buckets_it_skipped():
 
 # ── config: the inherited-default trap ───────────────────────────────────────────
 
+
 def test_exec_secondary_is_pinned_off():
     """The parent defaults this True. Inherited, a replay returns a primary-only book
     while reporting itself as having 1m re-entries."""
@@ -86,19 +89,24 @@ def test_exec_secondary_is_pinned_off():
 
 def test_turning_exec_secondary_on_is_refused_rather_than_ignored():
     import dataclasses
+
     with pytest.raises(ValueError, match="secondary"):
         dataclasses.replace(RealignConfig(), exec_secondary=True)
 
 
-@pytest.mark.parametrize("field,bad", [
-    ("realign_pattern", "nonsense"),
-    ("realign_long_source", "fine"),
-    ("realign_short_source", "coarse"),
-])
+@pytest.mark.parametrize(
+    "field,bad",
+    [
+        ("realign_pattern", "nonsense"),
+        ("realign_long_source", "fine"),
+        ("realign_short_source", "coarse"),
+    ],
+)
 def test_a_typo_in_a_choice_field_raises_instead_of_falling_back(field, bad):
     """A silently-defaulted trigger source would replay a whole strategy against a stream
     nobody chose and report it as theirs."""
     import dataclasses
+
     with pytest.raises(ValueError, match=field.split("_")[-1]):
         dataclasses.replace(RealignConfig(), **{field: bad})
 
@@ -111,6 +119,7 @@ def test_both_sides_default_to_the_swing_stream():
 
 
 # ── the engine pin that would silently kill half the strategy ────────────────────
+
 
 def test_internal_structure_is_switched_back_on():
     """The parent pins show_internal=False. Inheriting it blanks the internal stream, and
@@ -125,6 +134,7 @@ def test_run_dual_is_refused_because_this_strategy_is_single_frame():
 
 
 # ── the tracker's arming rule ────────────────────────────────────────────────────
+
 
 class _Ev:
     def __init__(self, **kw):

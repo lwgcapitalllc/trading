@@ -14,13 +14,12 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "live"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "shared"))
 
 import runner as runner_mod  # noqa: E402
+
 from algos.shared.fleet_halt import DEFAULT_FLAG_NAME, FleetHaltReading  # noqa: E402
 
 LiveRunner = runner_mod.LiveRunner
@@ -49,9 +48,11 @@ def _runner(monkeypatch, reading):
     r.ledger = _Ledger()
     r._fleet_halted = False
     r.errors, r.alerts = [], []
-    r.log = SimpleNamespace(info=lambda m, *a, **k: None,
-                            warning=lambda m, *a, **k: None,
-                            error=lambda m, *a, **k: r.errors.append(m))
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: None,
+        warning=lambda m, *a, **k: None,
+        error=lambda m, *a, **k: r.errors.append(m),
+    )
     monkeypatch.setattr(r, "_notify_health", lambda text: r.alerts.append(text))
     monkeypatch.setattr(runner_mod, "read_fleet_halt", lambda *a, **k: reading)
     return r
@@ -74,7 +75,7 @@ def test_pulling_the_switch_HALTS_THE_BRIDGE(monkeypatch):
     assert r._fleet_halted is True
     assert len(r.bridge.halts) == 1
     assert "spread blew out" in r.bridge.halts[0]
-    assert "fleet halt" in r.bridge.halts[0]     # the bridge's own reason names WHO stopped it
+    assert "fleet halt" in r.bridge.halts[0]  # the bridge's own reason names WHO stopped it
 
 
 def test_the_halt_is_recorded_and_alerted_ONCE(monkeypatch):
@@ -97,11 +98,12 @@ def test_it_LATCHES_so_clearing_the_flag_does_not_put_the_bot_back_in_the_market
     """
     r = _runner(monkeypatch, FleetHaltReading(True, "why", readable=True))
     r._check_fleet_halt()
-    monkeypatch.setattr(runner_mod, "read_fleet_halt",
-                        lambda *a, **k: FleetHaltReading(False, "", readable=True))
+    monkeypatch.setattr(
+        runner_mod, "read_fleet_halt", lambda *a, **k: FleetHaltReading(False, "", readable=True)
+    )
     r._check_fleet_halt()
-    assert r._fleet_halted is True               # still halted
-    assert len(r.bridge.halts) == 1              # and it did not un-halt or re-halt
+    assert r._fleet_halted is True  # still halted
+    assert len(r.bridge.halts) == 1  # and it did not un-halt or re-halt
 
 
 def test_an_UNREADABLE_switch_halts_and_the_record_says_which_kind_it_was(monkeypatch):
@@ -132,7 +134,7 @@ def test_a_halt_with_NO_BRIDGE_yet_still_latches_and_reports(monkeypatch):
     None would lose the one trace that the bot saw it."""
     r = _runner(monkeypatch, FleetHaltReading(True, "why", readable=True))
     r.bridge = None
-    r._check_fleet_halt()                        # must not raise
+    r._check_fleet_halt()  # must not raise
     assert r._fleet_halted is True
     assert r.ledger.events and r.alerts
 

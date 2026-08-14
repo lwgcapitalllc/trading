@@ -15,46 +15,78 @@ from typing import Optional
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from services import lab_db
 from services.optimization_runner import (
-    _expand_axis, _pick_best_run, expand_grid, validate_param_grid,
+    _expand_axis,
+    _pick_best_run,
+    expand_grid,
+    validate_param_grid,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _strategy(strategy_id: str = "pybot", runner: str = "python", defaults: Optional[dict] = None) -> dict:
-    lab_db.upsert_strategy({
-        "id": strategy_id, "name": strategy_id.upper(), "class_name": strategy_id,
-        "source_path": f"strategies/{strategy_id}", "scanned_at": int(time.time()),
-        "runner": runner, "default_params": defaults or {"exec_risk_pct": 10.0},
-        "param_schema": [],
-    })
+
+def _strategy(
+    strategy_id: str = "pybot", runner: str = "python", defaults: Optional[dict] = None
+) -> dict:
+    lab_db.upsert_strategy(
+        {
+            "id": strategy_id,
+            "name": strategy_id.upper(),
+            "class_name": strategy_id,
+            "source_path": f"strategies/{strategy_id}",
+            "scanned_at": int(time.time()),
+            "runner": runner,
+            "default_params": defaults or {"exec_risk_pct": 10.0},
+            "param_schema": [],
+        }
+    )
     return lab_db.get_strategy(strategy_id)
 
 
 def _opt(opt_id: str = "opt_test01", **over) -> dict:
-    lab_db.insert_optimization({
-        "optimization_id": opt_id, "strategy_id": over.pop("strategy_id", "pybot"),
-        "instrument": "XAUUSD.s", "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "ruleset_id": over.pop("ruleset_id", None), "mode": over.pop("mode", "raw"),
-        "search_method": "native", "param_grid": {"exec_risk_pct": {"min": 1, "max": 3, "step": 1}},
-        "status": "running", "estimated_runs": 3, **over,
-    })
+    lab_db.insert_optimization(
+        {
+            "optimization_id": opt_id,
+            "strategy_id": over.pop("strategy_id", "pybot"),
+            "instrument": "XAUUSD.s",
+            "start_date": "2025-01-01",
+            "end_date": "2025-06-01",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "ruleset_id": over.pop("ruleset_id", None),
+            "mode": over.pop("mode", "raw"),
+            "search_method": "native",
+            "param_grid": {"exec_risk_pct": {"min": 1, "max": 3, "step": 1}},
+            "status": "running",
+            "estimated_runs": 3,
+            **over,
+        }
+    )
     return lab_db.get_optimization(opt_id)
 
 
 def _combo(run_id: str, opt_id: str, *, pf: float, trades: int, strategy_id: str = "pybot") -> None:
-    lab_db.insert_complete_optimization_runs([{
-        "run_id": run_id, "strategy_id": strategy_id, "instrument": "XAUUSD.s",
-        "params": {"exec_risk_pct": 1.0}, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "created_at": int(time.time()), "optimization_id": opt_id, "runner": "python",
-        "kpis": {"profit_factor": pf, "trade_count": trades, "net_pnl": pf * 100},
-    }])
+    lab_db.insert_complete_optimization_runs(
+        [
+            {
+                "run_id": run_id,
+                "strategy_id": strategy_id,
+                "instrument": "XAUUSD.s",
+                "params": {"exec_risk_pct": 1.0},
+                "bar_type": "Minute",
+                "bar_value": 15,
+                "start_date": "2025-01-01",
+                "end_date": "2025-06-01",
+                "commission_per_side": 0.0,
+                "slippage_ticks": 0,
+                "created_at": int(time.time()),
+                "optimization_id": opt_id,
+                "runner": "python",
+                "kpis": {"profit_factor": pf, "trade_count": trades, "net_pnl": pf * 100},
+            }
+        ]
+    )
 
 
 def _post(client, strategy_id: str, grid: dict, **extra):
@@ -62,17 +94,26 @@ def _post(client, strategy_id: str, grid: dict, **extra):
         patch("routers.optimizations.run_optimization", new_callable=AsyncMock),
         patch("routers.optimizations.history_limits.validate_window", return_value=None),
     ):
-        return client.post("/optimizations/run", json={
-            "strategy_id": strategy_id, "instrument": "XAUUSD.s",
-            "bar_type": "Minute", "bar_value": 15,
-            "start_date": "2025-01-01", "end_date": "2025-06-01",
-            "search_method": "native", "param_grid": grid, **extra,
-        })
+        return client.post(
+            "/optimizations/run",
+            json={
+                "strategy_id": strategy_id,
+                "instrument": "XAUUSD.s",
+                "bar_type": "Minute",
+                "bar_value": 15,
+                "start_date": "2025-01-01",
+                "end_date": "2025-06-01",
+                "search_method": "native",
+                "param_grid": grid,
+                **extra,
+            },
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. A grid that cannot be expanded must be REFUSED, not started
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_a_zero_step_raises_instead_of_looping_forever():
     """The whole-backend hang. `while v <= hi: v += 0` never terminates, and it ran on the
@@ -129,6 +170,7 @@ def test_the_endpoint_turns_a_bad_grid_into_a_400(client):
 # 2. Cancel has to cancel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_cancel_stops_the_runner_job_and_not_only_the_database_row(client):
     """The row status is what the page reads and what releases the per-platform job lock. Until
     2026-08-04 it was the ONLY thing cancel did: the sweep kept every core busy, the lock said
@@ -136,7 +178,9 @@ def test_cancel_stops_the_runner_job_and_not_only_the_database_row(client):
     _strategy()
     _opt("opt_cancel01")
 
-    with patch("services.runner_dispatch.cancel_job", return_value={"status": "cancelling"}) as stop:
+    with patch(
+        "services.runner_dispatch.cancel_job", return_value={"status": "cancelling"}
+    ) as stop:
         resp = client.post("/optimizations/opt_cancel01/cancel")
 
     assert resp.status_code == 200
@@ -166,11 +210,17 @@ def test_cancel_reports_when_the_runner_could_not_be_reached(client):
 # 3. Delete and re-run must survive a foreign key
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _stress_test_on(run_id: str, st_id: str = "st_1") -> None:
-    lab_db.insert_stress_test({
-        "stress_test_id": st_id, "run_id": run_id, "ruleset_id": None,
-        "status": "complete", "created_at": int(time.time()),
-    })
+    lab_db.insert_stress_test(
+        {
+            "stress_test_id": st_id,
+            "run_id": run_id,
+            "ruleset_id": None,
+            "status": "complete",
+            "created_at": int(time.time()),
+        }
+    )
 
 
 def test_deleting_an_optimization_whose_combo_was_stress_tested_does_not_500(client):
@@ -181,7 +231,7 @@ def test_deleting_an_optimization_whose_combo_was_stress_tested_does_not_500(cli
     _opt("opt_del01")
     _combo("comborun001", "opt_del01", pf=2.0, trades=100)
     _stress_test_on("comborun001")
-    lab_db.complete_optimization("opt_del01", "comborun001")   # a running one refuses outright
+    lab_db.complete_optimization("opt_del01", "comborun001")  # a running one refuses outright
 
     resp = client.delete("/optimizations/opt_del01")
 
@@ -222,6 +272,7 @@ def test_rerunning_an_optimization_that_wrote_evaluations_does_not_500(client, m
 # 4. A failure is a finish
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_failing_an_optimization_stamps_a_completion_time(fresh_db):
     """Without it the page had no end to measure against, fell back to now(), and a job that
     died on Tuesday read 'Ran for 74h' and kept counting."""
@@ -240,10 +291,19 @@ def test_failing_an_optimization_stamps_a_completion_time(fresh_db):
 # 5. Picking the winner
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _pick(opt: dict, firm=None):
-    return asyncio.run(_pick_best_run(
-        [r for r in lab_db.list_optimization_runs(opt["optimization_id"]) if r["status"] == "complete"],
-        opt, firm))
+    return asyncio.run(
+        _pick_best_run(
+            [
+                r
+                for r in lab_db.list_optimization_runs(opt["optimization_id"])
+                if r["status"] == "complete"
+            ],
+            opt,
+            firm,
+        )
+    )
 
 
 def test_a_two_trade_fluke_cannot_win_when_a_trade_floor_is_set(fresh_db):
@@ -332,17 +392,19 @@ def test_an_all_ineligible_grid_still_names_a_winner_with_a_note(fresh_db):
     # Every row's max_drawdown is None here, so nothing breaches — force the breach by giving
     # the firm a limit of 1 and the runs a drawdown above it.
     with lab_db._connect() as conn:
-        conn.execute("UPDATE backtest_runs SET max_drawdown = 99999 WHERE optimization_id = ?",
-                     ("opt_none01",))
+        conn.execute(
+            "UPDATE backtest_runs SET max_drawdown = 99999 WHERE optimization_id = ?",
+            ("opt_none01",),
+        )
 
     winner, note = _pick(opt, firm)
 
-    assert winner == "breached0001"          # highest profit factor of a rejected field
+    assert winner == "breached0001"  # highest profit factor of a rejected field
     assert note and "rejected" in note
 
 
 def test_robustness_is_measured_on_the_run_that_actually_won(fresh_db):
-    """"Winner robustness" has to be about the ★. `_compute_grid_sensitivity` anchored itself on
+    """ "Winner robustness" has to be about the ★. `_compute_grid_sensitivity` anchored itself on
     the highest profit factor, which is the same row only under `raw` mode with no trade floor —
     so with a floor set, or under eval/funded mode, the card described a DIFFERENT combination
     than the one starred above it."""
@@ -359,7 +421,7 @@ def test_robustness_is_measured_on_the_run_that_actually_won(fresh_db):
     ]
     ranges = {"exec_risk_pct": {"min": 1, "max": 5, "step": 1}}
 
-    spike, _ = _compute_grid_sensitivity(combos, ranges)                                # old
+    spike, _ = _compute_grid_sensitivity(combos, ranges)  # old
     plateau, summary = _compute_grid_sensitivity(combos, ranges, {"exec_risk_pct": 4.0})  # new
 
     # Anchored on the fluke, the grid looks fragile; anchored on the actual winner it is flat.
@@ -369,17 +431,31 @@ def test_robustness_is_measured_on_the_run_that_actually_won(fresh_db):
     assert summary["exec_risk_pct"]["down"]["value"] == 3.0
 
 
-@pytest.mark.parametrize("combos, winner", [
-    # Winner not in the grid at all (a retried combo, or a rewritten param set).
-    ([{"params": {"exec_risk_pct": 1.0}, "kpis": {"profit_factor": 2.0}}], {"exec_risk_pct": 99.0}),
-    # Winner PF is 0 — there is no denominator to express a degradation as a fraction of.
-    ([{"params": {"exec_risk_pct": 1.0}, "kpis": {"profit_factor": 0.0}},
-      {"params": {"exec_risk_pct": 2.0}, "kpis": {"profit_factor": 0.0}}], {"exec_risk_pct": 1.0}),
-    # One value on every axis — nothing to compare the winner against.
-    ([{"params": {"exec_risk_pct": 1.0}, "kpis": {"profit_factor": 3.0}}], {"exec_risk_pct": 1.0}),
-    # Empty grid.
-    ([], None),
-])
+@pytest.mark.parametrize(
+    "combos, winner",
+    [
+        # Winner not in the grid at all (a retried combo, or a rewritten param set).
+        (
+            [{"params": {"exec_risk_pct": 1.0}, "kpis": {"profit_factor": 2.0}}],
+            {"exec_risk_pct": 99.0},
+        ),
+        # Winner PF is 0 — there is no denominator to express a degradation as a fraction of.
+        (
+            [
+                {"params": {"exec_risk_pct": 1.0}, "kpis": {"profit_factor": 0.0}},
+                {"params": {"exec_risk_pct": 2.0}, "kpis": {"profit_factor": 0.0}},
+            ],
+            {"exec_risk_pct": 1.0},
+        ),
+        # One value on every axis — nothing to compare the winner against.
+        (
+            [{"params": {"exec_risk_pct": 1.0}, "kpis": {"profit_factor": 3.0}}],
+            {"exec_risk_pct": 1.0},
+        ),
+        # Empty grid.
+        ([], None),
+    ],
+)
 def test_unmeasurable_robustness_is_NULL_and_never_zero(combos, winner):
     """0.0 is the PERFECT-PLATEAU score — the strongest "trust this winner" the metric can say.
     Using it for "could not measure" puts the most reassuring number on screen exactly when
@@ -388,7 +464,8 @@ def test_unmeasurable_robustness_is_NULL_and_never_zero(combos, winner):
     from services.optimization_runner import _compute_grid_sensitivity
 
     score, summary = _compute_grid_sensitivity(
-        combos, {"exec_risk_pct": {"min": 1, "max": 5, "step": 1}}, winner)
+        combos, {"exec_risk_pct": {"min": 1, "max": 5, "step": 1}}, winner
+    )
 
     assert score is None
     assert summary == {}
@@ -398,13 +475,19 @@ def test_unmeasurable_robustness_is_NULL_and_never_zero(combos, winner):
 # 6. The costs a grid is ranked under
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_an_optimization_stores_the_cost_layers_it_was_asked_for(client):
     """Until 2026-08-04 the grid was ALWAYS ranked on a free book while the run it was launched
     from had spread and swap charged — two numbers produced under different physics, presented
     as a comparison."""
     _strategy()
-    resp = _post(client, "pybot", {"exec_risk_pct": {"min": 1, "max": 3, "step": 1}},
-                 cost_layers=["spread", "swap"], broker_profile="vantage_demo")
+    resp = _post(
+        client,
+        "pybot",
+        {"exec_risk_pct": {"min": 1, "max": 3, "step": 1}},
+        cost_layers=["spread", "swap"],
+        broker_profile="vantage_demo",
+    )
 
     assert resp.status_code == 202
     row = lab_db.get_optimization(resp.json()["optimization_id"])
@@ -435,6 +518,7 @@ def test_the_layers_reach_the_runner_spec(fresh_db):
         raise RuntimeError("stop here — the spec is all this test needs")
 
     from services import optimization_runner as orun
+
     with patch.object(orun.runner_dispatch, "start_native_optimization", side_effect=_capture):
         asyncio.run(orun.run_native_optimization("opt_cost01"))
 
@@ -445,6 +529,7 @@ def test_the_layers_reach_the_runner_spec(fresh_db):
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. min_trades round-trip
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_min_trades_round_trips_through_the_api(client):
     _strategy()
@@ -468,21 +553,33 @@ def test_min_trades_defaults_to_zero_for_a_caller_that_says_nothing(client):
 # 8. Payload — the detail endpoint ships what the page can draw
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_a_combo_row_ships_only_the_grids_own_params(client):
     """A combo's stored params are fixed_params merged with the swept ones — 50+ keys on a
     Python strategy — and the page renders exactly the grid's keys. Polled every 3 seconds on
     a 1,000-combo grid, the rest was most of the response and nothing displayed it."""
     _strategy()
     _opt("opt_slim01")
-    lab_db.insert_complete_optimization_runs([{
-        "run_id": "fatparams001", "strategy_id": "pybot", "instrument": "XAUUSD.s",
-        "params": {"exec_risk_pct": 1.0, "exec_tp1_pct": 30.0, "exec_sl_level": "0.886"},
-        "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "created_at": int(time.time()), "optimization_id": "opt_slim01", "runner": "python",
-        "kpis": {"profit_factor": 2.0, "trade_count": 50},
-    }])
+    lab_db.insert_complete_optimization_runs(
+        [
+            {
+                "run_id": "fatparams001",
+                "strategy_id": "pybot",
+                "instrument": "XAUUSD.s",
+                "params": {"exec_risk_pct": 1.0, "exec_tp1_pct": 30.0, "exec_sl_level": "0.886"},
+                "bar_type": "Minute",
+                "bar_value": 15,
+                "start_date": "2025-01-01",
+                "end_date": "2025-06-01",
+                "commission_per_side": 0.0,
+                "slippage_ticks": 0,
+                "created_at": int(time.time()),
+                "optimization_id": "opt_slim01",
+                "runner": "python",
+                "kpis": {"profit_factor": 2.0, "trade_count": 50},
+            }
+        ]
+    )
 
     body = client.get("/optimizations/opt_slim01").json()
 
@@ -494,6 +591,7 @@ def test_a_combo_row_ships_only_the_grids_own_params(client):
 # ─────────────────────────────────────────────────────────────────────────────
 # 9. Batched writes produce the same rows the per-combo ones did
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_the_bulk_combo_insert_writes_a_complete_run_with_its_kpis(fresh_db):
     """One statement replaced insert + update per combo (~2 sqlite connections each). The row

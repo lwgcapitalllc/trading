@@ -33,9 +33,15 @@ def compute_contract_cap_status(max_contracts, runner, instrument, trade_sizes):
     if not mc:
         return None, None
     if mc.get("scaling"):
-        return "not_applicable", "Contract cap not applicable (scaling ladder — cap varies with profit)"
+        return (
+            "not_applicable",
+            "Contract cap not applicable (scaling ladder — cap varies with profit)",
+        )
     if runner == "mt5":
-        return "not_applicable", "Contract cap not applicable (forex/lots — no futures-contract cap)"
+        return (
+            "not_applicable",
+            "Contract cap not applicable (forex/lots — no futures-contract cap)",
+        )
     if not trade_sizes:
         return "not_evaluable", "Contract cap not evaluable — position size not recorded"
     largest = max(trade_sizes)
@@ -69,8 +75,7 @@ def _notes_prop(
         )
     else:
         parts.append(
-            f"Trailing MLL BREACHED on day {mll['breach_day']} "
-            f"(floor ${mll['final_floor']:,.0f})"
+            f"Trailing MLL BREACHED on day {mll['breach_day']} (floor ${mll['final_floor']:,.0f})"
         )
 
     if ruleset["ruleset_type"] == "prop_funded":
@@ -186,14 +191,10 @@ def _evaluate_personal(
         if breach is not None:
             drawdown_pass = False
             failures.append(
-                f"drew down {breach[0]:.1f}% from peak on {breach[1]} "
-                f"(limit {dd_limit_pct:.0f}%)"
+                f"drew down {breach[0]:.1f}% from peak on {breach[1]} (limit {dd_limit_pct:.0f}%)"
             )
         else:
-            info.append(
-                f"max drawdown from peak {worst_dd_pct:.1f}% "
-                f"(limit {dd_limit_pct:.0f}%)"
-            )
+            info.append(f"max drawdown from peak {worst_dd_pct:.1f}% (limit {dd_limit_pct:.0f}%)")
 
     # ── 3. Daily profit-target halts — informational only ──────────────────
     if profit_halt:
@@ -293,10 +294,7 @@ def evaluate_run(
             # Consistency first — it may raise the profit target the target check uses.
             consistency_pass = None
             largest_day_share = None
-            if (
-                ruleset.get("consistency_pct") is not None
-                and net_pnl > 0
-            ):
+            if ruleset.get("consistency_pct") is not None and net_pnl > 0:
                 pos_days = [d.get("pnl", 0.0) for d in daily_pnl if d.get("pnl", 0.0) > 0]
                 biggest_day = max(pos_days, default=0.0)
                 largest_day_share = biggest_day / net_pnl * 100
@@ -332,8 +330,16 @@ def evaluate_run(
             else:
                 verdict = "PASS"
 
-            notes = _notes_prop(ruleset, drawdown_pass, target_pass, consistency_pass,
-                                largest_day_share, mll, net_pnl, adjusted_profit_target)
+            notes = _notes_prop(
+                ruleset,
+                drawdown_pass,
+                target_pass,
+                consistency_pass,
+                largest_day_share,
+                mll,
+                net_pnl,
+                adjusted_profit_target,
+            )
 
         elif rtype in ("personal", "demo"):
             # Personal/demo verdict — two DISCARD conditions (consecutive capped-loss

@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import statistics
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -47,7 +46,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-_MIN = 60_000            # ms in a minute
+_MIN = 60_000  # ms in a minute
 # Two entries closer together than this are reading the same structure break rather than two
 # different legs of the move. 16 bars is the window `overlap_audit.py` uses on M15; stated here
 # in MINUTES because the two legs do not share a bar size.
@@ -114,20 +113,29 @@ def _replay(symbol, tf, start, end, capital):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf-a", default="15")
     ap.add_argument("--tf-b", default="30")
     ap.add_argument("--start", default="2020-01-01")
     ap.add_argument("--end", default=None)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--cluster-min", type=int, default=_CLUSTER_MIN,
-                    help="two same-direction entries this many MINUTES apart or less are counted "
-                         "as one structure break read twice")
-    ap.add_argument("--expect-a-trades", type=int, default=None,
-                    help="assert leg A reproduces this trade count — the control that says this "
-                         "is the shipped bot and not a third thing")
+    ap.add_argument(
+        "--cluster-min",
+        type=int,
+        default=_CLUSTER_MIN,
+        help="two same-direction entries this many MINUTES apart or less are counted "
+        "as one structure break read twice",
+    )
+    ap.add_argument(
+        "--expect-a-trades",
+        type=int,
+        default=None,
+        help="assert leg A reproduces this trade count — the control that says this "
+        "is the shipped bot and not a third thing",
+    )
     args = ap.parse_args(argv)
 
     end = args.end or dt.date.today().isoformat()
@@ -179,21 +187,25 @@ def main(argv=None) -> int:
     print(f"{'total R':<26}{sum(h[3] for h in ha):>+14.2f}{sum(h[3] for h in hb):>+14.2f}")
     print(f"{'in-market hours':<26}{ma / 60:>14,.0f}{mb / 60:>14,.0f}")
     print(f"{'trades sharing a moment':<26}{len(paired_a):>14}{len(paired_b):>14}")
-    print(f"{'  as % of its trades':<26}{len(paired_a) / len(ha) * 100:>13.1f}%"
-          f"{len(paired_b) / len(hb) * 100:>13.1f}%")
+    print(
+        f"{'  as % of its trades':<26}{len(paired_a) / len(ha) * 100:>13.1f}%"
+        f"{len(paired_b) / len(hb) * 100:>13.1f}%"
+    )
 
     tot = same + opp
     print()
-    print(f"shared in-market time      {tot / 60:,.0f} hours "
-          f"({tot / ma * 100:.1f}% of A's, {tot / mb * 100:.1f}% of B's)")
-    print(f"  SAME direction           {same / 60:,.0f} hours  "
-          f"— one idea carried at 2x risk")
+    print(
+        f"shared in-market time      {tot / 60:,.0f} hours "
+        f"({tot / ma * 100:.1f}% of A's, {tot / mb * 100:.1f}% of B's)"
+    )
+    print(f"  SAME direction           {same / 60:,.0f} hours  — one idea carried at 2x risk")
     print(f"  opposite direction       {opp / 60:,.0f} hours  — partially hedged")
 
     print()
     print(f"same-direction entry proximity ({len(gaps):,} pairs)")
-    print(f"  within {args.cluster_min} minutes    {len(close):,}"
-          f"   <- the same-structure-break test")
+    print(
+        f"  within {args.cluster_min} minutes    {len(close):,}   <- the same-structure-break test"
+    )
     if close:
         print(f"  closest pair             {min(close):,.0f} minutes apart")
 

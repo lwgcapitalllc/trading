@@ -45,12 +45,19 @@ def repo(tmp_path):
     (work / ".githooks" / "commit-msg").chmod(0o755)
     (work / "CLAUDE.md").write_text("root\n")
 
-    for args in (["init", "-q", "-b", "main"], ["config", "user.email", "t@t"],
-                 ["config", "user.name", "t"], ["config", "core.hooksPath", ".githooks"]):
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "t@t"],
+        ["config", "user.name", "t"],
+        ["config", "core.hooksPath", ".githooks"],
+    ):
         subprocess.run(["git", "-C", str(work), *args], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(work), "add", "-A"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(work), "commit", "-qm", "init", "--no-verify"],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(work), "commit", "-qm", "init", "--no-verify"],
+        check=True,
+        capture_output=True,
+    )
     return work
 
 
@@ -59,10 +66,12 @@ def _commit(repo: Path, rel_paths: list[str], message: str) -> subprocess.Comple
         p = repo / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text('{"kind":"bar"}\n')
-    subprocess.run(["git", "-C", str(repo), "add", "--", *rel_paths],
-                   check=True, capture_output=True)
-    return subprocess.run(["git", "-C", str(repo), "commit", "-m", message],
-                          capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "--", *rel_paths], check=True, capture_output=True
+    )
+    return subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", message], capture_output=True, text=True
+    )
 
 
 @pytest.mark.parametrize("rel", SYNCED)
@@ -81,8 +90,9 @@ def test_the_exemption_is_a_path_and_not_the_extension(repo):
     """⚠ Deliberately narrow. `*.jsonl` and `*.log` are generic — a future file holding a
     CONTRACT under either extension must still demand its doc, the same way `*.meta.json` is
     explicitly not exempt. Only the sync's own shapes are waved through."""
-    out = _commit(repo, ["algos/live/schema-2026-08-05.jsonl"],
-                  "feat: a contract that happens to be jsonl")
+    out = _commit(
+        repo, ["algos/live/schema-2026-08-05.jsonl"], "feat: a contract that happens to be jsonl"
+    )
     assert out.returncode != 0, "a stray .jsonl outside the ledger paths was exempted"
 
 

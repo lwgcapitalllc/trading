@@ -8,8 +8,10 @@ the 2026-07-06 rename.)
 """
 
 LUCIDFLEX_IDS = {
-    "lucidflex_50k_eval", "lucidflex_50k_funded",
-    "lucidflex_100k_eval", "lucidflex_100k_funded",
+    "lucidflex_50k_eval",
+    "lucidflex_50k_funded",
+    "lucidflex_100k_eval",
+    "lucidflex_100k_funded",
 }
 PROP_FIRM_PREFIXES = ("lucidflex", "fundednext", "tradeify", "apex")
 
@@ -34,8 +36,7 @@ def test_cold_start_seeds_all_four_firms(client):
 def test_all_prop_rows_have_docs_url(client):
     rulesets = client.get("/rulesets").json()
     for r in _prop_rows(rulesets):
-        assert r["docs_url"] and r["docs_url"].startswith("http"), \
-            f"{r['id']} is missing docs_url"
+        assert r["docs_url"] and r["docs_url"].startswith("http"), f"{r['id']} is missing docs_url"
 
 
 def test_prop_eval_rows_have_positive_target(client):
@@ -56,8 +57,14 @@ def test_prop_funded_rows_have_no_target(client):
 
 def test_100k_accounts_have_higher_limits(client):
     rulesets = {r["id"]: r for r in client.get("/rulesets").json()}
-    assert rulesets["lucidflex_100k_eval"]["max_loss_eod"] > rulesets["lucidflex_50k_eval"]["max_loss_eod"]
-    assert rulesets["lucidflex_100k_eval"]["profit_target"] > rulesets["lucidflex_50k_eval"]["profit_target"]
+    assert (
+        rulesets["lucidflex_100k_eval"]["max_loss_eod"]
+        > rulesets["lucidflex_50k_eval"]["max_loss_eod"]
+    )
+    assert (
+        rulesets["lucidflex_100k_eval"]["profit_target"]
+        > rulesets["lucidflex_50k_eval"]["profit_target"]
+    )
     assert rulesets["lucidflex_100k_eval"]["account_size"] == 100_000
 
 
@@ -65,6 +72,7 @@ def test_corrected_firm_values(fresh_db):
     """Spot-check the verified corrections at the DB layer (these columns are not in the
     /rulesets API model) so a regression in the seed/migration is caught."""
     from services import lab_db
+
     g = lab_db.get_ruleset
     # LucidFlex eval locks the trailing MLL at start+$100; no daily cap, no min days.
     assert g("lucidflex_50k_eval")["mll_lock_balance"] == 50100
@@ -100,11 +108,16 @@ def test_put_personal_ruleset_allowed(client):
 
 # ── PATCH /rulesets/:id — the personal-rules edit endpoint ────────────────────
 
+
 def test_patch_personal_allowed_fields(client):
     """PATCH updates the allowed personal rule fields and persists them."""
-    r = client.patch("/rulesets/personal_forex_demo", json={
-        "daily_loss_cap": 750, "max_drawdown_from_peak_pct": 20.0,
-    })
+    r = client.patch(
+        "/rulesets/personal_forex_demo",
+        json={
+            "daily_loss_cap": 750,
+            "max_drawdown_from_peak_pct": 20.0,
+        },
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["daily_loss_cap"] == 750
@@ -137,6 +150,7 @@ def test_seeding_is_idempotent(fresh_db):
     """init_db() called twice doesn't duplicate rulesets. The count is a canary against
     losing a row; `before == after` is the property under test."""
     from services import lab_db
+
     before = len(lab_db.list_rulesets())
     lab_db.init_db()
     after = len(lab_db.list_rulesets())
@@ -147,9 +161,11 @@ def test_seeding_is_idempotent(fresh_db):
 # Every grade in services/grading.py is a statement about drawdown vs a limit, so a ruleset that
 # states none cannot produce a letter. This row exists to state one.
 
+
 def test_the_forex_risk_row_states_a_drawdown_limit(client):
     """55%, Aaron's stated tolerance (2026-07-30). Without it the run is 'not graded'."""
     from services.metrics import effective_dd_limit_pct
+
     rs = client.get("/rulesets/personal_forex_risk").json()
     assert rs["max_drawdown_from_peak_pct"] == 55.0
     assert effective_dd_limit_pct(rs) == 55.0
@@ -167,10 +183,10 @@ def test_the_forex_risk_row_carries_no_other_limit(client):
     """Drawdown is the ONLY bar. A daily cap or a loss-streak rule would fire constantly at
     10-12.5% risk per trade and turn the verdict into a statement about that rule instead."""
     rs = client.get("/rulesets/personal_forex_risk").json()
-    assert rs["max_consecutive_loss_days"] is None   # the capped-day DISCARD rule is off
-    assert rs["daily_profit_target"] in (None, 0)    # no halt
-    assert rs["profit_target"] == 0                  # nothing to hit
-    assert rs["max_loss_eod"] == 0                   # sentinel: no trailing EOD floor
+    assert rs["max_consecutive_loss_days"] is None  # the capped-day DISCARD rule is off
+    assert rs["daily_profit_target"] in (None, 0)  # no halt
+    assert rs["profit_target"] == 0  # nothing to hit
+    assert rs["max_loss_eod"] == 0  # sentinel: no trailing EOD floor
 
 
 def test_unconstrained_still_states_no_limit(client):

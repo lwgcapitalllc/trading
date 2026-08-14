@@ -37,17 +37,25 @@ import pytest
 
 # MetaTrader5 is Windows-only and is imported lazily inside `_tf_const`. A stub keeps this file
 # runnable on the Mac, which is where these tests actually get run.
-sys.modules.setdefault("MetaTrader5", types.SimpleNamespace(
-    TIMEFRAME_M1=1, TIMEFRAME_M5=5, TIMEFRAME_M15=15, TIMEFRAME_M30=30,
-    TIMEFRAME_H1=60, TIMEFRAME_H4=240, TIMEFRAME_D1=1440))
+sys.modules.setdefault(
+    "MetaTrader5",
+    types.SimpleNamespace(
+        TIMEFRAME_M1=1,
+        TIMEFRAME_M5=5,
+        TIMEFRAME_M15=15,
+        TIMEFRAME_M30=30,
+        TIMEFRAME_H1=60,
+        TIMEFRAME_H4=240,
+        TIMEFRAME_D1=1440,
+    ),
+)
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 for p in (str(_REPO), str(_REPO / "algos" / "live")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from feed import BarFeed                                              # noqa: E402
-
+from feed import BarFeed  # noqa: E402
 
 _IDX = pd.date_range("2026-08-01", periods=8, freq="15min", tz="UTC")
 
@@ -58,9 +66,15 @@ class _FakeMT5:
     symbol = "XAUUSD.s"
 
     def __init__(self, n_bars: int = 8):
-        self._raw = pd.DataFrame({
-            "time": _IDX[:n_bars], "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5,
-        })
+        self._raw = pd.DataFrame(
+            {
+                "time": _IDX[:n_bars],
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+            }
+        )
 
     def get_candles(self, tf, count, symbol=None):
         return self._raw.tail(count).copy()
@@ -71,6 +85,7 @@ def _feed(n_bars: int = 8) -> BarFeed:
 
 
 # ── the drop itself ──────────────────────────────────────────────────────────────
+
 
 def test_new_bars_advances_its_bookmark_before_the_caller_has_processed_anything():
     """The mechanism, stated plainly. Everything else in this file follows from it."""
@@ -89,7 +104,7 @@ def test_a_bar_the_caller_never_processed_is_NOT_reported_as_a_gap():
     feed = _feed()
     feed.last_bar_time = _IDX[3]
 
-    feed.new_bars()          # handed out; imagine the caller raised on the first row
+    feed.new_bars()  # handed out; imagine the caller raised on the first row
     assert feed.gap_bars() == 0
 
 
@@ -112,9 +127,12 @@ def test_a_genuine_lag_IS_still_reported_as_a_gap():
 
 # ── what the runner must do about it ─────────────────────────────────────────────
 
+
 def _loop_source() -> str:
     import inspect
+
     import runner
+
     return inspect.getsource(runner.LiveRunner._loop)
 
 
@@ -128,7 +146,7 @@ def test_the_bar_loop_catches_per_bar_rather_than_per_poll():
     the row loop, so one bad bar cannot be mistaken for one bad poll.
     """
     src = _loop_source()
-    body = src[src.index("for _, row in self.feed.new_bars()"):]
+    body = src[src.index("for _, row in self.feed.new_bars()") :]
     assert "try:" in body[:200], "the per-bar try must sit immediately inside the row loop"
 
 
@@ -145,7 +163,7 @@ def test_the_loop_BREAKS_rather_than_continuing_to_the_next_row():
     """Continuing would feed the rows after the failure into engines that are already carrying
     a hole — the bug, applied to every remaining bar in the frame."""
     src = _loop_source()
-    body = src[src.index("bar_errors += 1"):]
+    body = src[src.index("bar_errors += 1") :]
     assert "break" in body
 
 
@@ -173,7 +191,7 @@ def test_a_clean_bar_resets_the_counter():
     """Without this, `bar_errors` is a lifetime total: ten unrelated bad bars across six months
     would stop a healthy bot, and the second outage would never alert."""
     src = _loop_source()
-    body = src[src.index("self._on_bar(row)"):]
+    body = src[src.index("self._on_bar(row)") :]
     assert "bar_errors = 0" in body[:120]
 
 
@@ -190,5 +208,6 @@ def test_the_link_probe_is_untouched_by_this_change(name):
     change must not have absorbed or reordered it — a bar error is a defect on our side, a dead
     link is the terminal's, and conflating them would send the wrong recovery to both."""
     import runner
+
     assert hasattr(runner.LiveRunner, name)
     assert "if not link_up:" in _loop_source()

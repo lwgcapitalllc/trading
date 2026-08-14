@@ -105,16 +105,16 @@ Parity export build: `indicators/engines/svp_export.pine`.
 ```python
 from session_volume_profile import SvpEngine, SvpEvents
 
-sv = SvpEngine()   # Pine defaults: Asia 0900-1800 Asia/Tokyo, 50 rows, keep 2 POCs
+sv = SvpEngine()  # Pine defaults: Asia 0900-1800 Asia/Tokyo, 50 rows, keep 2 POCs
 
 # Each closed intraday bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
 ev = sv.update(bar.index, bar.timestamp_ms, bar.open, bar.high, bar.low, bar.close, bar.volume)
 
-ev.poc          # current Asia POC / MV line (None until the first session closes) — Pine-validated
-ev.formed       # did a fresh POC form this bar (Asia just closed, range>0)? (edge)
-ev.swept        # has the current POC been tapped since it formed? (state)
-ev.confirmed    # did price tap the POC for the first time this bar? (edge)
-sv.poc()        # current POC (read)
+ev.poc  # current Asia POC / MV line (None until the first session closes) — Pine-validated
+ev.formed  # did a fresh POC form this bar (Asia just closed, range>0)? (edge)
+ev.swept  # has the current POC been tapped since it formed? (state)
+ev.confirmed  # did price tap the POC for the first time this bar? (edge)
+sv.poc()  # current POC (read)
 ```
 
 `history` (FIFO cap on kept POCs) and an injectable `session_engine` are the two constructor knobs.

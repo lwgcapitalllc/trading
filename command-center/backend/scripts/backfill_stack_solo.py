@@ -69,11 +69,15 @@ def backfill(stack_id: str, *, force: bool = False) -> str:
     # and a stack can legitimately have one and not the other — the solo books were backfilled
     # earlier the same day, the diagnostics were not. An all-or-nothing guard would make the second
     # backfill impossible without `--force`, i.e. without also re-deriving a stored measurement.
-    have_solo = {r["strategy_id"] for r in rows
-                 if portfolio_runner.solo_book(stack_id, r["strategy_id"])[0]}
-    have_diag = {r["strategy_id"] for r in rows
-                 if (_LAB_RESULTS_DIR / r["run_id"] / "blocked_setups.json").exists()
-                 or (_LAB_RESULTS_DIR / r["run_id"] / "missed_setups.json").exists()}
+    have_solo = {
+        r["strategy_id"] for r in rows if portfolio_runner.solo_book(stack_id, r["strategy_id"])[0]
+    }
+    have_diag = {
+        r["strategy_id"]
+        for r in rows
+        if (_LAB_RESULTS_DIR / r["run_id"] / "blocked_setups.json").exists()
+        or (_LAB_RESULTS_DIR / r["run_id"] / "missed_setups.json").exists()
+    }
     if not force and len(have_solo) == len(rows) and len(have_diag) == len(rows):
         return f"{stack_id}: already has everything — skipped (use --force to re-derive)"
 
@@ -100,14 +104,25 @@ def backfill(stack_id: str, *, force: bool = False) -> str:
         params = r.get("params") or {}
         if isinstance(params, str):
             import json as _json
+
             params = _json.loads(params)
         config = _build_config(entry["config"], params, symbol)
-        specs.append(LegSpec(name=r["strategy_id"], strategy_cls=entry["strategy"],
-                             config=config, df=df, cost_profile=profile))
+        specs.append(
+            LegSpec(
+                name=r["strategy_id"],
+                strategy_cls=entry["strategy"],
+                config=config,
+                df=df,
+                cost_profile=profile,
+            )
+        )
 
-    run = run_stack(specs, balance=float(settings["account_size"]),
-                    risk_cap_pct=float(settings["risk_cap_pct"]) / 100.0,
-                    entry_floor_pct=float(settings.get("entry_floor_pct") or 0.0) / 100.0)
+    run = run_stack(
+        specs,
+        balance=float(settings["account_size"]),
+        risk_cap_pct=float(settings["risk_cap_pct"]) / 100.0,
+        entry_floor_pct=float(settings.get("entry_floor_pct") or 0.0) / 100.0,
+    )
 
     sdir = portfolio_runner.stack_dir(stack_id)
     sdir.mkdir(parents=True, exist_ok=True)
@@ -121,26 +136,33 @@ def backfill(stack_id: str, *, force: bool = False) -> str:
             trades = run.solo_per_leg.get(spec.name, [])
             results = build_results(trades, point_value=pv, initial_capital=run.opening_balance)
             portfolio_runner._write_solo(sdir, spec.name, results)
-            parts.append(f"solo {len(trades)} trades, "
-                         f"{sum(getattr(t, 'r', 0.0) for t in trades):+.4f}R, "
-                         f"${run.solo_closing.get(spec.name, 0.0):,.2f}")
+            parts.append(
+                f"solo {len(trades)} trades, "
+                f"{sum(getattr(t, 'r', 0.0) for t in trades):+.4f}R, "
+                f"${run.solo_closing.get(spec.name, 0.0):,.2f}"
+            )
 
         if force or spec.name not in have_diag:
             # The leg's own diagnostic layers, off the SHARED book. `build_results` is called
             # separately from the solo one because these belong to a different replay — reusing it
             # would file the control's refusals against the shared trade list.
-            shared = build_results(run.per_leg.get(spec.name, []), point_value=pv,
-                                   initial_capital=run.opening_balance,
-                                   blocked=run.blocked_per_leg.get(spec.name),
-                                   missed=run.missed_per_leg.get(spec.name))
+            shared = build_results(
+                run.per_leg.get(spec.name, []),
+                point_value=pv,
+                initial_capital=run.opening_balance,
+                blocked=run.blocked_per_leg.get(spec.name),
+                missed=run.missed_per_leg.get(spec.name),
+            )
             portfolio_runner.write_leg_diagnostics(run_id_of[spec.name], shared)
             # ⚠ **The leg's cached `chart_spec.json` has to go with them.** It is built from these
             # files and then cached for ever, so writing the artefacts without dropping the cache
             # leaves the chart serving a spec that predates them — the reader would see the backfill
             # report a number and the layer still be missing, which reads as the backfill failing.
             (_LAB_RESULTS_DIR / run_id_of[spec.name] / "chart_spec.json").unlink(missing_ok=True)
-            parts.append(f"{len(shared.get('blocked_setups') or [])} blocked, "
-                         f"{len(shared.get('missed_setups') or [])} missed")
+            parts.append(
+                f"{len(shared.get('blocked_setups') or [])} blocked, "
+                f"{len(shared.get('missed_setups') or [])} missed"
+            )
 
         written.append(f"{spec.name} ({' · '.join(parts) or 'nothing to do'})")
     return f"{stack_id}: wrote {' · '.join(written)}"

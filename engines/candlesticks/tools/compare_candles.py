@@ -91,7 +91,7 @@ PATTERN_COLUMNS = {
 }
 
 _missing_cols = [k for k in PATTERN_KEYS if k not in PATTERN_COLUMNS]
-if _missing_cols:      # pragma: no cover - import-time guard
+if _missing_cols:  # pragma: no cover - import-time guard
     raise SystemExit(
         f"ERROR: this harness has no export column for {_missing_cols}. A pattern with no column is "
         f"a pattern the gate silently never checks — add the plot to candle_sticks_export.pine and "
@@ -123,8 +123,8 @@ DIAG_LOWER = "px_lower"
 # nudged by ±_TIE_EPS, one at a time, and see whether the answer flips. A decision that a
 # 1e-6 nudge can flip was sitting on the boundary; a real rule difference is robust to it,
 # because prices tick in whole cents and every threshold here is built from them.
-_TIE_EPS = 1e-6            # absolute, on a ~4,000 instrument = 2.5e-10 relative, 1e-4 of a tick
-_TIE_CLASSIFY_CAP = 500    # above this, stop classifying and SAY so (never silently)
+_TIE_EPS = 1e-6  # absolute, on a ~4,000 instrument = 2.5e-10 relative, 1e-4 of a tick
+_TIE_CLASSIFY_CAP = 500  # above this, stop classifying and SAY so (never silently)
 
 
 def _num(s):
@@ -179,15 +179,18 @@ def _load_rows(path, cols):
         rows = list(csv.DictReader(f))
     tcol = cols.get("time")
     if tcol:
+
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
                 return int(raw)
             try:
                 from datetime import datetime
+
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
+
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -219,7 +222,9 @@ def _drop_forming_tail(rows, cols):
             )
     dropped = len(rows) - end
     if dropped:
-        print(f"note: dropped {dropped} trailing blank row(s) — TradingView's still-forming live bar.")
+        print(
+            f"note: dropped {dropped} trailing blank row(s) — TradingView's still-forming live bar."
+        )
     return rows[:end]
 
 
@@ -275,14 +280,24 @@ def _is_boundary_tie(bars, idx, key, trend, doji_size):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("csv", help="CSV exported from TradingView with candle_sticks_export.pine on the chart")
-    ap.add_argument("--warmup", type=int, default=0,
-                    help="skip the first N bars in the report (still fed to the engine)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "csv", help="CSV exported from TradingView with candle_sticks_export.pine on the chart"
+    )
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--strict-ties", action="store_true",
-                    help="fail on boundary ties too (default: report them loudly, do not fail)")
+    ap.add_argument(
+        "--strict-ties",
+        action="store_true",
+        help="fail on boundary ties too (default: report them loudly, do not fail)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -303,7 +318,7 @@ def main(argv=None):
     py_hits = {k: 0 for k in PATTERN_KEYS}
     pine_hits = {k: 0 for k in PATTERN_KEYS}
     bars = []
-    raw_mismatches = []          # (bar index, key, py_on, pine_on)
+    raw_mismatches = []  # (bar index, key, py_on, pine_on)
 
     for i, row in enumerate(rows):
         o = _num(row[cols["open"]])
@@ -331,24 +346,27 @@ def main(argv=None):
 
     # ── Classify every mismatch: boundary tie, or a real rule difference? ──
     classified, ties, real = 0, [], []
-    for (i, key, py_on, pine_on) in raw_mismatches:
+    for i, key, py_on, pine_on in raw_mismatches:
         if classified >= _TIE_CLASSIFY_CAP:
-            real.append((i, key, py_on, pine_on))       # unclassified counts as REAL, never as a tie
+            real.append((i, key, py_on, pine_on))  # unclassified counts as REAL, never as a tie
             continue
         classified += 1
         (ties if _is_boundary_tie(bars, i, key, trend, doji_size) else real).append(
-            (i, key, py_on, pine_on))
+            (i, key, py_on, pine_on)
+        )
 
     per_field_real = {k: 0 for k in PATTERN_KEYS}
-    for (_, key, _, _) in real:
+    for _, key, _, _ in real:
         per_field_real[key] += 1
     per_field_tie = {k: 0 for k in PATTERN_KEYS}
-    for (_, key, _, _) in ties:
+    for _, key, _, _ in ties:
         per_field_tie[key] += 1
 
     compared = max(0, total - args.warmup)
-    print(f"\nCompared {compared} bars from {path.name}  "
-          f"(cfg_trend={trend}, cfg_doji_size={doji_size}, warmup={args.warmup})")
+    print(
+        f"\nCompared {compared} bars from {path.name}  "
+        f"(cfg_trend={trend}, cfg_doji_size={doji_size}, warmup={args.warmup})"
+    )
     print("-" * 78)
 
     # ── Exercise check. Print it on a PASS as well as a fail: the whole point is that a green run
@@ -361,21 +379,25 @@ def main(argv=None):
             never.append(key)
     if never:
         print(f"\n⚠ NEVER FIRED ON EITHER SIDE — this run says NOTHING about: {', '.join(never)}")
-        print("  A pattern that did not occur is not a pattern that was checked. Export a longer or "
-              "different window, or read the gate as covering the rest only.")
+        print(
+            "  A pattern that did not occur is not a pattern that was checked. Export a longer or "
+            "different window, or read the gate as covering the rest only."
+        )
     print("-" * 78)
 
     def _dump(label, items):
         print(f"{label} ({len(items)}):")
-        for idx, key, py_on, pine_on in items[:args.max_report]:
+        for idx, key, py_on, pine_on in items[: args.max_report]:
             tval = rows[idx][cols["time"]] if cols.get("time") else ""
             print(f"  bar {idx:<7} {tval:<14} {key:<20} python={int(py_on)}  pine={int(pine_on)}")
         if len(items) > args.max_report:
             print(f"  … {len(items) - args.max_report} more not shown (raise --max-report)")
 
     if classified >= _TIE_CLASSIFY_CAP:
-        print(f"⚠ Stopped classifying after {_TIE_CLASSIFY_CAP} mismatches; the remaining "
-              f"{len(raw_mismatches) - _TIE_CLASSIFY_CAP} are counted as REAL, not as ties.")
+        print(
+            f"⚠ Stopped classifying after {_TIE_CLASSIFY_CAP} mismatches; the remaining "
+            f"{len(raw_mismatches) - _TIE_CLASSIFY_CAP} are counted as REAL, not as ties."
+        )
         print("-" * 78)
 
     if ties:
@@ -393,9 +415,11 @@ def main(argv=None):
     if not real:
         verdict = "✓ CANDLESTICK PARITY: every pattern column matched on every bar."
         if ties:
-            verdict = (f"✓ CANDLESTICK PARITY: no rule differences. "
-                       f"{len(ties)} boundary tie(s) out of {compared * len(PATTERN_KEYS):,} "
-                       f"comparisons, listed above.")
+            verdict = (
+                f"✓ CANDLESTICK PARITY: no rule differences. "
+                f"{len(ties)} boundary tie(s) out of {compared * len(PATTERN_KEYS):,} "
+                f"comparisons, listed above."
+            )
             if args.strict_ties:
                 print("--strict-ties: failing on the boundary ties above.")
                 return 1
@@ -408,15 +432,19 @@ def main(argv=None):
             print(f"  {key:<20} {per_field_real[key]} bar(s)")
     print("-" * 78)
     last_real = real[-1][0]
-    print(f"Last real mismatching bar: {last_real}  "
-          f"(if all are early, re-run with --warmup {last_real + 1})")
+    print(
+        f"Last real mismatching bar: {last_real}  "
+        f"(if all are early, re-run with --warmup {last_real + 1})"
+    )
     _dump("First real mismatching bar(s)", real)
     print("-" * 78)
-    print("Tip: a `bullish_belt` mismatch is the one worth reading first — check px_lower in the "
-          "CSV, which separates 'the two sides disagree about ta.lowest(10)[1]' from 'they disagree "
-          "about the belt rule'. Mismatches confined to the first ~max(trend, 10) bars are the "
-          "history guard; anything later is a real logic gap to fix against "
-          "indicators/engines/candle_sticks.pine.")
+    print(
+        "Tip: a `bullish_belt` mismatch is the one worth reading first — check px_lower in the "
+        "CSV, which separates 'the two sides disagree about ta.lowest(10)[1]' from 'they disagree "
+        "about the belt rule'. Mismatches confined to the first ~max(trend, 10) bars are the "
+        "history guard; anything later is a real logic gap to fix against "
+        "indicators/engines/candle_sticks.pine."
+    )
     return 1
 
 

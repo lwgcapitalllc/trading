@@ -27,13 +27,17 @@ from types import SimpleNamespace
 import pytest
 
 _REPO = Path(__file__).resolve().parent.parent.parent
-for _p in (str(_REPO), str(_REPO / "algos" / "live"), str(_REPO / "algos" / "shared"),
-           str(_REPO / "algos" / "notifications")):
+for _p in (
+    str(_REPO),
+    str(_REPO / "algos" / "live"),
+    str(_REPO / "algos" / "shared"),
+    str(_REPO / "algos" / "notifications"),
+):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import monitor                                                       # noqa: E402
-from runner import LiveRunner                                        # noqa: E402
+import monitor  # noqa: E402
+from runner import LiveRunner  # noqa: E402
 
 
 # ── the runner's half of the contract ───────────────────────────────────────────
@@ -59,18 +63,26 @@ class _StateModule:
 
 def _runner(monkeypatch, *, balance_raises=False):
     r = LiveRunner.__new__(LiveRunner)
-    r.cfg = SimpleNamespace(bot_key="bot", account=1, symbol="XAUUSD.s",
-                            strategy_version="1.0.0", strategy_package="demo_pkg",
-                            promoted_commit="abc1234", promoted_at="2026-08-03",
-                            is_frozen=True)
+    r.cfg = SimpleNamespace(
+        bot_key="bot",
+        account=1,
+        symbol="XAUUSD.s",
+        strategy_version="1.0.0",
+        strategy_package="demo_pkg",
+        promoted_commit="abc1234",
+        promoted_at="2026-08-03",
+        is_frozen=True,
+    )
     r.bridge = SimpleNamespace(state=SimpleNamespace(value="idle"))
     r.source_hash = "0123456789abcdef"
     r.dry_run = True
     r.feed = SimpleNamespace(last_bar_time=None)
     r.warnings = []
-    r.log = SimpleNamespace(info=lambda *a, **k: None,
-                            warning=lambda m: r.warnings.append(m),
-                            error=lambda *a, **k: None)
+    r.log = SimpleNamespace(
+        info=lambda *a, **k: None,
+        warning=lambda m: r.warnings.append(m),
+        error=lambda *a, **k: None,
+    )
 
     # The runner imports MetaTrader5 INSIDE _heartbeat, so a fake module in sys.modules is
     # enough — no MT5 install, and it works identically on the Mac and the VPS.
@@ -79,8 +91,7 @@ def _runner(monkeypatch, *, balance_raises=False):
             raise RuntimeError("terminal not connected")
         return SimpleNamespace(balance=2000.0)
 
-    monkeypatch.setitem(sys.modules, "MetaTrader5",
-                        SimpleNamespace(account_info=_account_info))
+    monkeypatch.setitem(sys.modules, "MetaTrader5", SimpleNamespace(account_info=_account_info))
     return r
 
 
@@ -124,8 +135,7 @@ def watch(monkeypatch):
     def run(live_state, carried=None):
         monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: live_state)
         state = {"running": True, **(carried or {})}
-        return monitor.check_bot("mpc_sos_fade_demo", {"mpc_sos_fade_demo": state},
-                                 "2026-07-31")
+        return monitor.check_bot("mpc_sos_fade_demo", {"mpc_sos_fade_demo": state}, "2026-07-31")
 
     return SimpleNamespace(run=run, sent=sent)
 
@@ -225,6 +235,7 @@ def down(monkeypatch):
         def _restart(bot_key):
             attempts.append(bot_key)
             return restart_succeeds
+
         monkeypatch.setattr(monitor, "restart_bot", _restart)
         state = {"running": True, **(carried or {})}
         return monitor.check_bot("mpc_sos_fade_demo", {"mpc_sos_fade_demo": state}, "2026-08-03")
@@ -252,7 +263,7 @@ def test_a_deliberate_stop_is_not_fought(down, monkeypatch):
     out = down.run()
     assert down.attempts == []
     assert out["stop_suppressed"] is True
-    assert not any("Offline" in m for m in down.sent)     # asked for, so not an alarm
+    assert not any("Offline" in m for m in down.sent)  # asked for, so not an alarm
 
     steady = down.run(carried={"running": False, "stop_suppressed": True})
     assert down.attempts == []
@@ -268,26 +279,30 @@ def test_a_failed_restart_counts_toward_the_ceiling(down):
 def test_a_bot_that_will_not_start_gives_up_and_says_so_once(down):
     """A bot that dies on startup — a bad version pin, a refused MT5 login — must not be
     relaunched forever. The log fills with identical failures and the real error is buried."""
-    out = down.run(carried={"running": False,
-                            "restart_tries": monitor.MAX_BOT_RESTARTS},
-                   restart_succeeds=False)
+    out = down.run(
+        carried={"running": False, "restart_tries": monitor.MAX_BOT_RESTARTS},
+        restart_succeeds=False,
+    )
     assert down.attempts == []
     assert len(down.sent) == 1
     assert "WILL NOT START" in down.sent[0]
     assert out["max_retry_alerted"]
 
     down.sent.clear()
-    down.run(carried={"running": False,
-                      "restart_tries": monitor.MAX_BOT_RESTARTS,
-                      "max_retry_alerted": True})
+    down.run(
+        carried={
+            "running": False,
+            "restart_tries": monitor.MAX_BOT_RESTARTS,
+            "max_retry_alerted": True,
+        }
+    )
     assert down.sent == []
 
 
 def test_coming_back_clears_the_counter(watch):
     """Otherwise three lifetime restarts is the budget forever, and the fourth crash months
     later goes unattended."""
-    out = watch.run({"heartbeat": time.time()},
-                    carried={"running": False, "restart_tries": 2})
+    out = watch.run({"heartbeat": time.time()}, carried={"running": False, "restart_tries": 2})
     assert out["restart_tries"] == 0
     assert not out["max_retry_alerted"]
 
@@ -302,7 +317,10 @@ def _coordinator_sequence():
     """
     src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
     for node in ast.walk(ast.parse(src)):
-        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "STARTUP_SEQUENCE":
+        if (
+            isinstance(node, ast.Assign)
+            and getattr(node.targets[0], "id", "") == "STARTUP_SEQUENCE"
+        ):
             out = []
             for elt in node.value.elts:
                 bot_key = elt.elts[0].value
@@ -329,7 +347,8 @@ def test_the_monitor_matches_the_commandline_the_launcher_actually_produces():
     for bot_key, argv in _coordinator_sequence():
         needle = monitor.BOTS[bot_key]["script"]
         assert needle in " ".join(argv), (
-            f"{bot_key}: monitor greps for {needle!r}, which never appears in {argv}")
+            f"{bot_key}: monitor greps for {needle!r}, which never appears in {argv}"
+        )
 
 
 def test_no_bot_is_watched_that_nothing_can_start():
@@ -337,7 +356,8 @@ def test_no_bot_is_watched_that_nothing_can_start():
     exist, which is the other way to get the channel muted."""
     started = {k for k, _ in _coordinator_sequence()}
     assert set(monitor.BOTS) <= started, (
-        f"watched but never launched: {set(monitor.BOTS) - started}")
+        f"watched but never launched: {set(monitor.BOTS) - started}"
+    )
 
 
 # ── starting a bot must not take the alert channel down with it ─────────────────
@@ -353,7 +373,9 @@ def _coordinator_telegram_fns(proc_stdout, spawns):
     tree = ast.parse(src)
     wanted = {"telegram_is_running", "start_telegram_if_needed"}
     fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
-    assert {f.name for f in fns} == wanted, f"missing from the launcher: {wanted - {f.name for f in fns}}"
+    assert {f.name for f in fns} == wanted, (
+        f"missing from the launcher: {wanted - {f.name for f in fns}}"
+    )
 
     ns = {
         "subprocess": SimpleNamespace(
@@ -380,8 +402,9 @@ def test_starting_a_bot_leaves_a_healthy_telegram_alone():
     you want to hear from it.
     """
     spawns = []
-    ns = _coordinator_telegram_fns("python.exe  C:\\trading\\algos\\notifications\\telegram_bot.py  123",
-                                   spawns)
+    ns = _coordinator_telegram_fns(
+        "python.exe  C:\\trading\\algos\\notifications\\telegram_bot.py  123", spawns
+    )
     ns["start_telegram_if_needed"]()
     assert spawns == [], "restarted a Telegram bot that was already running"
 
@@ -389,7 +412,9 @@ def test_starting_a_bot_leaves_a_healthy_telegram_alone():
 def test_a_missing_telegram_is_still_started():
     """The other half — the skip must not turn into never starting it at boot."""
     spawns = []
-    ns = _coordinator_telegram_fns("python.exe  C:\\trading\\algos\\live\\runner.py --bot x  456", spawns)
+    ns = _coordinator_telegram_fns(
+        "python.exe  C:\\trading\\algos\\live\\runner.py --bot x  456", spawns
+    )
     ns["start_telegram_if_needed"]()
     assert len(spawns) == 1
     assert "start_telegram.py" in str(spawns[0])
@@ -401,16 +426,22 @@ def test_an_unreadable_process_list_starts_one_rather_than_assuming_it_is_up():
     spawns = []
     src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
     tree = ast.parse(src)
-    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef)
-           and n.name in {"telegram_is_running", "start_telegram_if_needed"}]
+    fns = [
+        n
+        for n in tree.body
+        if isinstance(n, ast.FunctionDef)
+        and n.name in {"telegram_is_running", "start_telegram_if_needed"}
+    ]
 
     def _boom(*a, **k):
         raise OSError("wmic unavailable")
 
     ns = {
-        "subprocess": SimpleNamespace(run=_boom, Popen=lambda *a, **k: spawns.append(a),
-                                      CREATE_NEW_PROCESS_GROUP=0),
-        "PYTHON": "python.exe", "ALGOS": Path("C:/trading/algos"),
+        "subprocess": SimpleNamespace(
+            run=_boom, Popen=lambda *a, **k: spawns.append(a), CREATE_NEW_PROCESS_GROUP=0
+        ),
+        "PYTHON": "python.exe",
+        "ALGOS": Path("C:/trading/algos"),
         "print": lambda *a, **k: None,
     }
     exec(compile(ast.Module(body=fns, type_ignores=[]), "<launcher>", "exec"), ns)
@@ -440,21 +471,26 @@ def test_the_launcher_does_not_start_a_bot_that_is_already_running():
     up produced TWO `runner.py --bot mpc_sos_fade_demo` processes four minutes apart, and
     nothing anywhere reported it. They share an account, a magic number and a strategy, so both
     size a full position off the same setup — double the risk from a state neither can see."""
-    fn = _coordinator_fn("bot_is_running",
-                         "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo 8892")
+    fn = _coordinator_fn(
+        "bot_is_running",
+        "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo 8892",
+    )
     assert fn("mpc_sos_fade_demo") is True
 
 
 def test_a_bot_that_is_genuinely_down_is_started():
-    fn = _coordinator_fn("bot_is_running", "python.exe C:\\trading\\algos\\notifications\\telegram_bot.py 12780")
+    fn = _coordinator_fn(
+        "bot_is_running", "python.exe C:\\trading\\algos\\notifications\\telegram_bot.py 12780"
+    )
     assert fn("mpc_sos_fade_demo") is False
 
 
 def test_a_different_bot_running_does_not_block_this_one():
     """Matched on the KEY, not the script. Every live bot is `runner.py`, so matching the script
     name would stop a second, different bot from ever starting."""
-    fn = _coordinator_fn("bot_is_running",
-                         "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot_demo 4242")
+    fn = _coordinator_fn(
+        "bot_is_running", "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot_demo 4242"
+    )
     assert fn("mpc_sos_fade_demo") is False
 
 
@@ -476,13 +512,16 @@ def test_both_launch_paths_are_guarded():
     launch path is added without a guard.
     """
     src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
-    fn = next(n for n in ast.parse(src).body
-              if isinstance(n, ast.FunctionDef) and n.name == "main")
-    guards = [n for n in ast.walk(fn)
-              if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "bot_is_running"]
+    fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    guards = [
+        n
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "bot_is_running"
+    ]
     assert len(guards) == 2, (
         f"{len(guards)} launch path(s) check whether the bot is already running — full startup "
-        f"and single-bot mode both need it")
+        f"and single-bot mode both need it"
+    )
 
 
 def test_the_runner_refuses_to_be_a_second_copy(monkeypatch):
@@ -493,12 +532,18 @@ def test_the_runner_refuses_to_be_a_second_copy(monkeypatch):
     r = LiveRunner.__new__(LiveRunner)
     r.cfg = SimpleNamespace(bot_key="mpc_sos_fade_demo", display_name="Bot")
     r.errors = []
-    r.log = SimpleNamespace(error=lambda m: r.errors.append(m),
-                            warning=lambda m: None, info=lambda m: None)
+    r.log = SimpleNamespace(
+        error=lambda m: r.errors.append(m), warning=lambda m: None, info=lambda m: None
+    )
 
     other = str(os.getpid() + 1)
-    monkeypatch.setattr(_sp, "run", lambda *a, **k: SimpleNamespace(
-        stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {other}"))
+    monkeypatch.setattr(
+        _sp,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {other}"
+        ),
+    )
     assert r.already_running() is True
     assert any("already running" in e for e in r.errors)
 
@@ -512,8 +557,13 @@ def test_the_runner_does_not_mistake_itself_for_a_duplicate(monkeypatch):
     r.cfg = SimpleNamespace(bot_key="mpc_sos_fade_demo", display_name="Bot")
     r.log = SimpleNamespace(error=lambda m: None, warning=lambda m: None, info=lambda m: None)
 
-    monkeypatch.setattr(_sp, "run", lambda *a, **k: SimpleNamespace(
-        stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {os.getpid()}"))
+    monkeypatch.setattr(
+        _sp,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {os.getpid()}"
+        ),
+    )
     assert r.already_running() is False
 
 
@@ -542,20 +592,25 @@ def test_the_stall_threshold_is_well_clear_of_the_poll_interval():
 # live account up 5% reported dead flat in two places, and neither could say the number was
 # never measured. The runner writes it now, because it is the only process that can.
 
+
 def test_the_runner_reports_overall_pnl_because_nothing_else_can(monkeypatch):
     r = _runner(monkeypatch)
     st = _StateModule()
 
-    r._heartbeat(st)                                   # first poll anchors the start
+    r._heartbeat(st)  # first poll anchors the start
     assert st.written["bot"]["starting_balance"] == 2000.0
     assert st.written["bot"]["total_pnl_pct"] == 0.0
 
-    monkeypatch.setitem(sys.modules, "MetaTrader5",
-                        SimpleNamespace(account_info=lambda: SimpleNamespace(balance=2100.0)))
+    monkeypatch.setitem(
+        sys.modules,
+        "MetaTrader5",
+        SimpleNamespace(account_info=lambda: SimpleNamespace(balance=2100.0)),
+    )
     r._heartbeat(st)
     assert st.written["bot"]["total_pnl_pct"] == 5.0
-    assert st.written["bot"]["starting_balance"] == 2000.0, \
+    assert st.written["bot"]["starting_balance"] == 2000.0, (
         "the anchor must be written ONCE — re-anchoring makes every account read flat forever"
+    )
 
 
 def test_an_unreadable_balance_reports_no_pnl_rather_than_flat(monkeypatch):
@@ -566,5 +621,6 @@ def test_an_unreadable_balance_reports_no_pnl_rather_than_flat(monkeypatch):
     r._heartbeat(st, link_up=False, balance=None)
 
     assert st.written["bot"]["total_pnl_pct"] is None
-    assert "starting_balance" not in st.written["bot"], \
+    assert "starting_balance" not in st.written["bot"], (
         "a None balance must never anchor the account at zero"
+    )

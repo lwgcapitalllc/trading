@@ -19,22 +19,39 @@ import json
 import time
 from unittest.mock import AsyncMock, patch
 
-
 # ── Stop cancels THIS run's job ───────────────────────────────────────────────
 
+
 def _running_run(lab_db, run_id="stoprun12345", runner="python"):
-    lab_db.upsert_strategy({
-        "id": "stop_strategy", "name": "Stop Strategy", "runner": runner,
-        "class_name": "StopStrategy", "source_path": "strategies/python/stop",
-        "scanned_at": int(time.time()), "param_schema": [], "default_params": {},
-    })
-    lab_db.insert_run({
-        "run_id": run_id, "strategy_id": "stop_strategy", "instrument": "XAUUSD",
-        "params": {}, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2024-01-01", "end_date": "2024-06-30",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "status": "running", "created_at": int(time.time()), "runner": runner,
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "stop_strategy",
+            "name": "Stop Strategy",
+            "runner": runner,
+            "class_name": "StopStrategy",
+            "source_path": "strategies/python/stop",
+            "scanned_at": int(time.time()),
+            "param_schema": [],
+            "default_params": {},
+        }
+    )
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": "stop_strategy",
+            "instrument": "XAUUSD",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-06-30",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "status": "running",
+            "created_at": int(time.time()),
+            "runner": runner,
+        }
+    )
     return run_id
 
 
@@ -47,6 +64,7 @@ def test_stop_cancels_this_runs_job_not_the_progress_files(client, fresh_db):
     its platform lock released, and the real job carried on.
     """
     from services import lab_db
+
     run_id = _running_run(lab_db)
 
     seen = {}
@@ -56,7 +74,9 @@ def test_stop_cancels_this_runs_job_not_the_progress_files(client, fresh_db):
         return {"status": "cancelling"}
 
     with (
-        patch("routers.backtests.read_progress", return_value={"job_id": "some-other-platforms-job"}),
+        patch(
+            "routers.backtests.read_progress", return_value={"job_id": "some-other-platforms-job"}
+        ),
         patch("services.runner_dispatch.cancel_job", side_effect=_cancel),
     ):
         r = client.post(f"/backtests/runs/{run_id}/stop")
@@ -68,6 +88,7 @@ def test_stop_cancels_this_runs_job_not_the_progress_files(client, fresh_db):
 def test_stop_does_not_clear_another_platforms_progress(client, fresh_db):
     """`clear_progress()` was unconditional, so stopping one run blanked another's live banner."""
     from services import lab_db
+
     run_id = _running_run(lab_db)
 
     cleared = {"called": False}
@@ -94,13 +115,17 @@ def test_stop_clears_progress_when_the_entry_is_this_run(client, fresh_db):
     in only one direction is the one that gets "simplified" back.
     """
     from services import lab_db
+
     run_id = _running_run(lab_db)
 
     cleared = {"called": False}
 
     with (
         patch("routers.backtests.read_progress", return_value={"job_id": run_id}),
-        patch("routers.backtests.clear_progress", side_effect=lambda: cleared.__setitem__("called", True)),
+        patch(
+            "routers.backtests.clear_progress",
+            side_effect=lambda: cleared.__setitem__("called", True),
+        ),
         patch("services.runner_dispatch.cancel_job", return_value={"status": "cancelling"}),
     ):
         client.post(f"/backtests/runs/{run_id}/stop")
@@ -130,6 +155,7 @@ def test_stop_marks_the_row_before_reaching_for_the_runner(client, fresh_db):
     """The poller reads this row every tick. Cancelling the agent first leaves a window in which
     the job finishes and `_handle_complete` writes `complete` over the cancellation."""
     from services import lab_db
+
     run_id = _running_run(lab_db)
 
     status_at_cancel = {}
@@ -145,6 +171,7 @@ def test_stop_marks_the_row_before_reaching_for_the_runner(client, fresh_db):
 
 
 # ── The poller stands down on a cancelled row ─────────────────────────────────
+
 
 def test_run_was_cancelled_reads_the_row(fresh_db):
     from services import lab_db
@@ -169,22 +196,29 @@ def test_an_unreadable_row_does_not_abandon_a_live_run(fresh_db):
 def test_a_cancelled_run_does_not_come_back_as_complete(fresh_db):
     """`_handle_complete` re-checks AFTER fetching results, because that await is where a Stop
     lands most often and everything below it writes."""
-    from services import lab_db
-    from services import backtest_runner
+    from services import backtest_runner, lab_db
 
     run_id = _running_run(lab_db, "resurrect123")
     lab_db.update_run_status(run_id, "failed_cancelled", "Cancelled by user")
 
     results = {"kpis": {"net_pnl": 999.0}, "equity_curve": [], "daily_pnl": []}
     with patch("services.runner_dispatch.job_results", return_value=results):
-        asyncio.run(backtest_runner._handle_complete(
-            run_id, run_id, "stop_strategy", "XAUUSD", [], 0.0,
-        ))
+        asyncio.run(
+            backtest_runner._handle_complete(
+                run_id,
+                run_id,
+                "stop_strategy",
+                "XAUUSD",
+                [],
+                0.0,
+            )
+        )
 
     assert lab_db.get_run(run_id)["status"] == "failed_cancelled"
 
 
 # ── The stall kill and the runtime ceiling are different diagnoses ────────────
+
 
 def test_a_heartbeating_job_is_not_killed_at_ten_minutes():
     """`(now - started_at) > _STALL_KILL_SEC` killed a perfectly healthy job and wrote
@@ -198,6 +232,7 @@ def test_a_heartbeating_job_is_not_killed_at_ten_minutes():
 
 
 # ── An optional artefact's absence is what removes its chart layer ────────────
+
 
 def test_write_or_clear_removes_a_stale_file(tmp_path):
     """`if blocked:` left the PREVIOUS attempt's refusals on disk, and the chart drew them over
@@ -218,14 +253,15 @@ def test_write_or_clear_removes_a_stale_file(tmp_path):
 
 # ── A rerun starts from an empty run directory ───────────────────────────────
 
+
 def test_retry_clears_every_derived_artefact(client, fresh_db, tmp_path):
     """Only `equity_curve.json` and `daily_pnl.json` were deleted. `chart_spec.json` is CACHED, so
     the Price tab drew the old run's candles and trades; `blocked_setups.json` and
     `missed_setups.json` are written only when non-empty, so the old refusals survived; and
     `engine_timeline.json` kept `sized` true on a run that no longer was.
     """
-    from services import lab_db
     from routers import backtests as bt
+    from services import lab_db
 
     run_id = _running_run(lab_db, "retrywipe123")
     lab_db.update_run_complete(run_id, {"net_pnl": 1.0, "trade_count": 1}, {})
@@ -233,9 +269,14 @@ def test_retry_clears_every_derived_artefact(client, fresh_db, tmp_path):
     run_dir = tmp_path / run_id
     run_dir.mkdir(parents=True)
     artefacts = [
-        "equity_curve.json", "daily_pnl.json", "chart_spec.json",
-        "blocked_setups.json", "missed_setups.json", "regime_timeline.json",
-        "engine_timeline.json", "ruleset_sizing.json",
+        "equity_curve.json",
+        "daily_pnl.json",
+        "chart_spec.json",
+        "blocked_setups.json",
+        "missed_setups.json",
+        "regime_timeline.json",
+        "engine_timeline.json",
+        "ruleset_sizing.json",
     ]
     for name in artefacts:
         (run_dir / name).write_text("[]")

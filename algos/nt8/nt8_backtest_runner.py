@@ -20,13 +20,13 @@ Two modes:
 NOTE: NT8 must already be open. The Strategy Analyzer is opened automatically if not visible.
 """
 
-import sys
-import os
+import argparse
 import csv
 import glob
 import json
+import os
+import sys
 import time
-import argparse
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
@@ -40,16 +40,24 @@ except ImportError:
     sys.exit(1)
 
 
-SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CFG = os.path.join(SCRIPT_DIR, "backtest_config.json")
 RUN_TIMEOUT = 600
 
-NT8_DOCS    = Path.home() / "Documents" / "NinjaTrader 8"
-SA_LOG_DIR  = NT8_DOCS / "strategyanalyzerlogs"
+NT8_DOCS = Path.home() / "Documents" / "NinjaTrader 8"
+SA_LOG_DIR = NT8_DOCS / "strategyanalyzerlogs"
 RESULTS_CSV = NT8_DOCS / "nt8_results.csv"
 
-CSV_FIELDS  = ["id", "strategy", "instrument",
-               "net_pnl", "max_drawdown", "profit_factor", "win_pct", "trades"]
+CSV_FIELDS = [
+    "id",
+    "strategy",
+    "instrument",
+    "net_pnl",
+    "max_drawdown",
+    "profit_factor",
+    "win_pct",
+    "trades",
+]
 
 
 def _safe_float(v) -> float | None:
@@ -77,8 +85,8 @@ def connect_nt8():
     print("Connecting to NinjaTrader 8...")
     attempts = [
         ("process name", {"path": "NinjaTrader.exe"}),
-        ("title NT8",    {"title_re": ".*NinjaTrader.*"}),
-        ("title SA",     {"title_re": ".*Strategy Analyzer.*"}),
+        ("title NT8", {"title_re": ".*NinjaTrader.*"}),
+        ("title SA", {"title_re": ".*Strategy Analyzer.*"}),
     ]
     for label, kwargs in attempts:
         try:
@@ -153,7 +161,9 @@ def _find_strategy_item(sa, strategy_name, timeout=2.5):
         except Exception:
             pass
         try:
-            item = Desktop(backend="uia").window(title=strategy_name, control_type="MenuItem", found_index=0)
+            item = Desktop(backend="uia").window(
+                title=strategy_name, control_type="MenuItem", found_index=0
+            )
             if item.exists(timeout=0):
                 return item
         except Exception:
@@ -190,9 +200,18 @@ def select_strategy(sa, strategy_name):
 
 
 _MONTH_ABR = {
-    "01": "JAN", "02": "FEB", "03": "MAR", "04": "APR",
-    "05": "MAY", "06": "JUN", "07": "JUL", "08": "AUG",
-    "09": "SEP", "10": "OCT", "11": "NOV", "12": "DEC",
+    "01": "JAN",
+    "02": "FEB",
+    "03": "MAR",
+    "04": "APR",
+    "05": "MAY",
+    "06": "JUN",
+    "07": "JUL",
+    "08": "AUG",
+    "09": "SEP",
+    "10": "OCT",
+    "11": "NOV",
+    "12": "DEC",
 }
 
 
@@ -241,7 +260,6 @@ def set_edit(sa, auto_id, value, warn=True):
         if warn:
             print(f"  WARNING: set_edit '{auto_id}' failed: {e}")
         return False
-
 
 
 def set_edit_typed(sa, auto_id, value, warn=True):
@@ -307,7 +325,7 @@ def set_combo(sa, auto_id, value):
     except Exception:
         pass
     try:
-        ctrl.type_keys('{ESC}')  # close any open dropdown
+        ctrl.type_keys("{ESC}")  # close any open dropdown
     except Exception:
         pass
     print(f"  WARNING: set_combo '{auto_id}' = '{value}' failed all attempts")
@@ -317,7 +335,14 @@ def set_combo(sa, auto_id, value):
 _BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
 
 # Known NT8 BacktestType order (verified via /combo-items diagnostic).
-_BT_ORDER = ["Backtest", "Optimize", "WalkForward", "WalkForwardAnchored", "MultiObjective", "AiGenerate"]
+_BT_ORDER = [
+    "Backtest",
+    "Optimize",
+    "WalkForward",
+    "WalkForwardAnchored",
+    "MultiObjective",
+    "AiGenerate",
+]
 
 
 def _set_backtest_type(sa, value: str):
@@ -357,16 +382,16 @@ def _set_backtest_type(sa, value: str):
         print(f"  BacktestType set_focus() failed ({e}) — send_keys may hit wrong control")
     print(f"  BacktestType send_keys: focus_ok={focus_ok}  idx={idx}  value='{value}'")
     time.sleep(0.2)
-    send_keys('{F4}')
+    send_keys("{F4}")
     time.sleep(0.3)
-    send_keys('{HOME}')
+    send_keys("{HOME}")
     time.sleep(0.1)
     for _ in range(idx):
-        send_keys('{DOWN}')
+        send_keys("{DOWN}")
         time.sleep(0.08)
-    send_keys('{ENTER}')
+    send_keys("{ENTER}")
     time.sleep(0.3)
-    print(f"  BacktestType send_keys done — verify SA visually")
+    print("  BacktestType send_keys done — verify SA visually")
 
 
 def _read_opt_combo_progress(sa) -> tuple[int, int] | None:
@@ -381,9 +406,10 @@ def _read_opt_combo_progress(sa) -> tuple[int, int] | None:
             txt = (el.window_text() or "").strip()
             # NT8 shows something like "3 of 9" or "3/9" in the SA status
             import re as _re2
-            m = _re2.search(r'(\d+)\s*(?:of|/)\s*(\d+)', txt, _re2.IGNORECASE)
+
+            m = _re2.search(r"(\d+)\s*(?:of|/)\s*(\d+)", txt, _re2.IGNORECASE)
             if m:
-                n_done  = int(m.group(1))
+                n_done = int(m.group(1))
                 n_total = int(m.group(2))
                 if 0 < n_total <= 10000 and n_done <= n_total:
                     return (n_done, n_total)
@@ -392,8 +418,7 @@ def _read_opt_combo_progress(sa) -> tuple[int, int] | None:
     return None
 
 
-def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False,
-                          progress_fn=None):
+def wait_for_run_complete(sa, timeout=RUN_TIMEOUT, use_abort_btn=False, progress_fn=None):
     """
     Wait for the SA run to finish.
 
@@ -467,10 +492,9 @@ def read_result_from_xml(combo_id, strategy, instrument, written_after: float = 
     written_after: unix timestamp — ignore XML files older than this (avoids stale results).
     Returns a result dict or None on failure.
     """
-    today   = datetime.now().strftime("%Y_%m_%d")
+    today = datetime.now().strftime("%Y_%m_%d")
     pattern = str(SA_LOG_DIR / f"@@@{strategy}_{today}_*.xml")
-    files   = [f for f in sorted(glob.glob(pattern))
-               if os.path.getmtime(f) >= written_after]
+    files = [f for f in sorted(glob.glob(pattern)) if os.path.getmtime(f) >= written_after]
     if not files:
         print(f"  WARNING: No XML log found matching {pattern}")
         return None
@@ -482,37 +506,39 @@ def read_result_from_xml(combo_id, strategy, instrument, written_after: float = 
         # Sanity-check that the XML matches the expected instrument
         xml_instrument = root.findtext(".//Instrument") or ""
         if instrument.split()[0].upper() not in xml_instrument.upper():
-            print(f"  WARNING: XML instrument '{xml_instrument}' doesn't match expected '{instrument}'")
+            print(
+                f"  WARNING: XML instrument '{xml_instrument}' doesn't match expected '{instrument}'"
+            )
         perf_nodes = root.findall(".//SummaryPerformancesSerialize")
         if not perf_nodes:
             print(f"  WARNING: No SummaryPerformancesSerialize in {xml_path}")
             return None
         # First node is Currency/UsDollar — the dollar P&L values we want
-        raw     = perf_nodes[0].text or ""
+        raw = perf_nodes[0].text or ""
         metrics = {}
         for part in raw.split("|"):
             bits = part.split(";")
             if len(bits) >= 2:
                 metrics[bits[0]] = bits[1]  # "All" column (index 1)
 
-        avg_win  = _safe_float(metrics.get("AverageWinningTrade"))
+        avg_win = _safe_float(metrics.get("AverageWinningTrade"))
         avg_loss = _safe_float(metrics.get("AverageLosingTrade"))
         return {
-            "id":                     combo_id,
-            "strategy":               strategy,
-            "instrument":             instrument,
-            "net_pnl":                float(metrics.get("TotalNetProfit",   0)),
-            "max_drawdown":           abs(float(metrics.get("MaxDrawdown",   0))),  # NT8 reports as negative
-            "profit_factor":          float(metrics.get("ProfitFactor",      0)),
-            "win_pct":                round(float(metrics.get("PercentProfitable", 0)) * 100, 2),
-            "trades":                 int(float(metrics.get("TotalNumTrades", 0))),
+            "id": combo_id,
+            "strategy": strategy,
+            "instrument": instrument,
+            "net_pnl": float(metrics.get("TotalNetProfit", 0)),
+            "max_drawdown": abs(float(metrics.get("MaxDrawdown", 0))),  # NT8 reports as negative
+            "profit_factor": float(metrics.get("ProfitFactor", 0)),
+            "win_pct": round(float(metrics.get("PercentProfitable", 0)) * 100, 2),
+            "trades": int(float(metrics.get("TotalNumTrades", 0))),
             # Extended KPIs present in NT8's SummaryPerformancesSerialize
-            "sharpe":                 _safe_float(metrics.get("SharpeRatio")),
-            "sortino":                _safe_float(metrics.get("SortinoRatio")),
-            "avg_win":                avg_win,
-            "avg_loss":               avg_loss,
+            "sharpe": _safe_float(metrics.get("SharpeRatio")),
+            "sortino": _safe_float(metrics.get("SortinoRatio")),
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
             "avg_trade_duration_min": _safe_float(metrics.get("AverageTimeInMarket")),
-            "worst_losing_streak":    _safe_int(metrics.get("MaxConsecLosers")),
+            "worst_losing_streak": _safe_int(metrics.get("MaxConsecLosers")),
         }
     except Exception as e:
         print(f"  WARNING: Could not parse XML {xml_path}: {e}")
@@ -521,9 +547,9 @@ def read_result_from_xml(combo_id, strategy, instrument, written_after: float = 
 
 def configure_combo(sa, combo, global_params):
     """Push all settings for one combo into the Strategy Analyzer panel."""
-    gp       = global_params
+    gp = global_params
     strategy = combo["strategy"]
-    pfx      = f"{strategy}PropertyGridEditorPDEX"
+    pfx = f"{strategy}PropertyGridEditorPDEX"
 
     # Select strategy first — this refreshes the strategy-specific params section.
     # Sleep 3s: switching strategy class causes NT8 to fully rebuild the property grid,
@@ -539,15 +565,15 @@ def configure_combo(sa, combo, global_params):
 
     # Date range
     set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From", _nt8_date(gp["start_date"]))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",   _nt8_date(gp["end_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To", _nt8_date(gp["end_date"]))
 
     # Slippage
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", gp["slippage"])
 
     # Prop firm params — AutomationId prefix matches the strategy class name
-    set_edit(sa, f"{pfx}_AccountSize",       gp["account_size"])
-    set_edit(sa, f"{pfx}_RiskPct",           gp["risk_pct"])
-    set_edit(sa, f"{pfx}_MaxDailyLoss",      gp["max_daily_loss"])
+    set_edit(sa, f"{pfx}_AccountSize", gp["account_size"])
+    set_edit(sa, f"{pfx}_RiskPct", gp["risk_pct"])
+    set_edit(sa, f"{pfx}_MaxDailyLoss", gp["max_daily_loss"])
     set_edit(sa, f"{pfx}_DailyHaltFraction", gp["daily_halt_fraction"])
     set_edit(sa, f"{pfx}_CommissionPerSide", gp["commission_per_side"])
 
@@ -582,7 +608,7 @@ def run_combo(app, combo, global_params, idx, total):
         return None
 
     # Poll for the XML log to appear (NT8 writes it async after re-enabling Run)
-    today   = datetime.now().strftime("%Y_%m_%d")
+    today = datetime.now().strftime("%Y_%m_%d")
     pattern = str(SA_LOG_DIR / f"@@@{combo['strategy']}_{today}_*.xml")
     xml_deadline = time.time() + 60
     while time.time() < xml_deadline:
@@ -590,11 +616,14 @@ def run_combo(app, combo, global_params, idx, total):
             break
         time.sleep(1)
     print("  Backtest complete. Reading results from XML log...")
-    result = read_result_from_xml(combo["id"], combo["strategy"], combo["instrument"],
-                                  written_after=click_time)
+    result = read_result_from_xml(
+        combo["id"], combo["strategy"], combo["instrument"], written_after=click_time
+    )
     if result:
-        print(f"  Trades={result['trades']}  NetPnL={result['net_pnl']:.2f}"
-              f"  PF={result['profit_factor']:.4f}  MaxDD={result['max_drawdown']:.2f}")
+        print(
+            f"  Trades={result['trades']}  NetPnL={result['net_pnl']:.2f}"
+            f"  PF={result['profit_factor']:.4f}  MaxDD={result['max_drawdown']:.2f}"
+        )
     else:
         print("  WARNING: Could not read result from XML.")
     return result
@@ -606,6 +635,7 @@ def _pct(n: int, msg: str = ""):
 
 
 # ── Lab mode (job-keyed) ──────────────────────────────────────────────────────
+
 
 def _nt8_date(iso: str) -> str:
     """Convert ISO YYYY-MM-DD to NT8 date format M/D/YYYY."""
@@ -667,10 +697,10 @@ def _build_opt_grid_map(sa) -> dict:
     except Exception as _e:
         print(f"  [grid-map] narrow failed ({_e}) — using full SA scan")
 
-    result          = {}
+    result = {}
     last_group_text = None
     for el in scope.descendants():
-        ct  = str(el.element_info.control_type)
+        ct = str(el.element_info.control_type)
         aid = el.element_info.automation_id or ""
 
         if ct == "Group":
@@ -687,13 +717,13 @@ def _build_opt_grid_map(sa) -> dict:
 
 import re as _re
 
+
 def _camel_words(name: str) -> list:
     """Split a camelCase/PascalCase identifier into lowercase words."""
-    return [w.lower() for w in _re.findall(r'[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+', name)]
+    return [w.lower() for w in _re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+", name)]
 
 
-def _match_display_name(code_name: str, grid_map: dict,
-                         explicit: dict | None = None) -> str | None:
+def _match_display_name(code_name: str, grid_map: dict, explicit: dict | None = None) -> str | None:
     """
     Find the grid_map key that best matches a NinjaScript property code name.
 
@@ -712,25 +742,25 @@ def _match_display_name(code_name: str, grid_map: dict,
     if not code_words:
         return None
 
-    best_key   = None
+    best_key = None
     best_score = 0.0
 
     for key in grid_map:
-        display_words = _re.sub(r'[^a-z0-9\s]', ' ', key).split()
+        display_words = _re.sub(r"[^a-z0-9\s]", " ", key).split()
         matches = sum(
-            1 for cw in code_words
-            if any(cw in dw or dw.startswith(cw) for dw in display_words)
+            1 for cw in code_words if any(cw in dw or dw.startswith(cw) for dw in display_words)
         )
         score = matches / len(code_words)
         if score > best_score:
             best_score = score
-            best_key   = key
+            best_key = key
 
     return best_key if best_score >= 0.70 else None
 
 
-def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
-                       explicit: dict | None = None) -> bool:
+def _set_range_in_grid(
+    grid_map: dict, code_name: str, lo, hi, step, explicit: dict | None = None
+) -> bool:
     """
     Set a param's optimization range in NT8's Optimize-mode property grid.
 
@@ -760,8 +790,9 @@ def _set_range_in_grid(grid_map: dict, code_name: str, lo, hi, step,
     return True
 
 
-def _set_plain_value_in_grid(grid_map: dict, code_name: str, value,
-                              explicit: dict | None = None) -> bool:
+def _set_plain_value_in_grid(
+    grid_map: dict, code_name: str, value, explicit: dict | None = None
+) -> bool:
     """
     Set a fixed (non-range) param value in NT8 Optimize-mode grid.
     Uses set_focus() instead of click_input() to avoid panel scroll.
@@ -808,22 +839,23 @@ def _nt8_split_param_names(names_concat: str) -> list:
     Split NT8's concatenated parameter-name string into individual names.
     Returns the ordered list of display names (one per slash-separated value).
     """
-    parts = _re.split(r'(?<=\))(?=[A-Z])', names_concat)
+    parts = _re.split(r"(?<=\))(?=[A-Z])", names_concat)
     result = []
     for part in parts:
-        if '(' not in part:
-            sub = _re.split(r'(?<=[a-z%])(?=[A-Z])', part)
+        if "(" not in part:
+            sub = _re.split(r"(?<=[a-z%])(?=[A-Z])", part)
             result.extend(s.strip() for s in sub if s.strip())
         else:
-            paren_start = part.index('(')
+            paren_start = part.index("(")
             prefix = part[:paren_start]
-            sub = _re.split(r'(?<=[a-z])(?=[A-Z])', prefix)
+            sub = _re.split(r"(?<=[a-z])(?=[A-Z])", prefix)
             if len(sub) > 1:
                 result.extend(s.strip() for s in sub[:-1] if s.strip())
                 result.append((sub[-1] + part[paren_start:]).strip())
             else:
                 result.append(part.strip())
     return [t for t in result if t]
+
 
 def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
     """
@@ -841,17 +873,17 @@ def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
 
     # NT8 grid column name → internal KPI name (case-insensitive lookup below)
     _KPI_MAP = {
-        "total net profit":   "net_pnl",
-        "net profit":         "net_pnl",
-        "profit factor":      "profit_factor",
-        "max. drawdown":      "max_drawdown",
-        "max drawdown":       "max_drawdown",
-        "total # of trades":  "trade_count",
-        "# trades":           "trade_count",
-        "num. trades":        "trade_count",
+        "total net profit": "net_pnl",
+        "net profit": "net_pnl",
+        "profit factor": "profit_factor",
+        "max. drawdown": "max_drawdown",
+        "max drawdown": "max_drawdown",
+        "total # of trades": "trade_count",
+        "# trades": "trade_count",
+        "num. trades": "trade_count",
         "percent profitable": "win_rate",
-        "% profitable":       "win_rate",
-        "sharpe ratio":       "sharpe",
+        "% profitable": "win_rate",
+        "sharpe ratio": "sharpe",
     }
 
     def _coerce(val_str: str):
@@ -865,21 +897,21 @@ def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
             return s
 
     combos = []
-    param_pos: dict | None = None   # {code_name: position_in_slash_split}
+    param_pos: dict | None = None  # {code_name: position_in_slash_split}
 
     try:
         with open(csv_path, newline="", encoding="utf-8-sig") as f:
             reader = csv_mod.DictReader(f)
             for row in reader:
                 params: dict = {}
-                kpis:   dict = {}
+                kpis: dict = {}
 
                 # --- Parse Parameters column to extract param values ---
                 params_col = (row.get("Parameters") or "").strip()
                 if params_col and "(" in params_col:
-                    paren_idx   = params_col.index(" (")
-                    values_str  = params_col[:paren_idx]
-                    names_raw   = params_col[paren_idx + 2:].rstrip(")")
+                    paren_idx = params_col.index(" (")
+                    values_str = params_col[:paren_idx]
+                    names_raw = params_col[paren_idx + 2 :].rstrip(")")
                     values_list = values_str.split("/")
 
                     # Build position mapping once from the first populated row
@@ -895,15 +927,19 @@ def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
                                     break
                             if code not in param_pos:
                                 # Fallback: match by camelCase words
-                                cw = [w.lower() for w in _re.findall(
-                                    r'[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+',
-                                    code) if len(w) >= 4]
+                                cw = [
+                                    w.lower()
+                                    for w in _re.findall(
+                                        r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]*|[a-z]+|\d+", code
+                                    )
+                                    if len(w) >= 4
+                                ]
                                 best_i, best_s = None, 0.0
                                 for i, dn in enumerate(display_names):
                                     dw = dn.lower().split()
-                                    matches = sum(1 for c in cw
-                                                  if any(c in d or d.startswith(c)
-                                                         for d in dw))
+                                    matches = sum(
+                                        1 for c in cw if any(c in d or d.startswith(c) for d in dw)
+                                    )
                                     sc = matches / len(cw) if cw else 0
                                     if sc > best_s:
                                         best_s, best_i = sc, i
@@ -919,12 +955,16 @@ def _parse_optimization_csv(csv_path: str, param_names: set) -> list:
                 # --- Extract KPIs from standard columns ---
                 for col, val in row.items():
                     col_key = (col or "").strip().lower()
-                    kpi     = _KPI_MAP.get(col_key)
+                    kpi = _KPI_MAP.get(col_key)
                     if kpi:
                         try:
-                            v = float((val or "").strip()
-                                      .replace("$", "").replace(",", "")
-                                      .replace("%", ""))
+                            v = float(
+                                (val or "")
+                                .strip()
+                                .replace("$", "")
+                                .replace(",", "")
+                                .replace("%", "")
+                            )
                             if kpi == "win_rate":
                                 # NT8 CSV may express as 32.7 (percentage) or 0.327 (fraction)
                                 if v > 1.0:
@@ -956,8 +996,10 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
 
     Returns list of {params: {...}, kpis: {...}} — empty on any failure.
     """
-    from pywinauto import mouse as _mouse, Desktop
     import shutil
+
+    from pywinauto import Desktop
+    from pywinauto import mouse as _mouse
 
     out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -977,13 +1019,13 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
     # y=20% skips the Display dropdown and column headers; y=50%+ lands in the
     # performance summary tab which exports the wrong format.
     sa_rect = sa.rectangle()
-    sa_w    = sa_rect.right  - sa_rect.left
-    sa_h    = sa_rect.bottom - sa_rect.top
-    rc_x    = sa_rect.left + int(sa_w * 0.25)
-    rc_y    = sa_rect.top  + int(sa_h * 0.20)
+    sa_w = sa_rect.right - sa_rect.left
+    sa_h = sa_rect.bottom - sa_rect.top
+    rc_x = sa_rect.left + int(sa_w * 0.25)
+    rc_y = sa_rect.top + int(sa_h * 0.20)
     print(f"  [opt-export] Right-click at ({rc_x}, {rc_y})  sa={sa_w}x{sa_h}")
 
-    nt8           = sa.top_level_parent()
+    nt8 = sa.top_level_parent()
     export_coords = None
 
     # Pass 1: open context menu, scan NT8 UIA tree for Export item screen coordinates.
@@ -993,7 +1035,7 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
     menu_items_found = []
     for el in nt8.descendants():
         txt = (el.window_text() or "").strip()
-        ct  = str(getattr(el.element_info, "control_type", ""))
+        ct = str(getattr(el.element_info, "control_type", ""))
         if ct == "MenuItem" and txt:
             r = el.rectangle()
             menu_items_found.append(f"{txt}@{r.width()}x{r.height()}")
@@ -1022,19 +1064,20 @@ def _export_optimization_results(sa, job_id: str, param_names: set) -> list:
     _dismiss_dialog(dt)
 
     # Find the CSV NT8 just wrote (default name: "NinjaTrader Grid *.csv" in Documents)
-    docs   = Path.home() / "Documents"
+    docs = Path.home() / "Documents"
     cutoff = time.time() - 30
-    csvs   = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
+    csvs = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
     if not csvs:
-        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"),
-                      key=lambda p: p.stat().st_mtime, reverse=True)[:1]
+        csvs = sorted(
+            docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )[:1]
 
     if not csvs:
         print("  [opt-export] No CSV found after optimization export")
         return []
 
     csv_path = max(csvs, key=lambda p: p.stat().st_mtime)
-    dest     = out_dir / "opt_results.csv"
+    dest = out_dir / "opt_results.csv"
     shutil.copy(str(csv_path), str(dest))
     print(f"  [opt-export] CSV saved to {dest.name}")
 
@@ -1064,10 +1107,10 @@ def run_native_optimize_mode(job_id: str, spec: dict):
         param_ranges     dict  {name: {min, max, step} | [val, ...] | scalar}
         fixed_params     dict  {name: value}  (Foundational + non-optimized defaults)
     """
-    strategy           = spec["strategy_class"]
-    instr              = spec["instrument"]
-    param_ranges       = spec.get("param_ranges", {})
-    fixed_params       = spec.get("fixed_params", {})
+    strategy = spec["strategy_class"]
+    instr = spec["instrument"]
+    param_ranges = spec.get("param_ranges", {})
+    fixed_params = spec.get("fixed_params", {})
     param_display_names = spec.get("param_display_names", {})
 
     print(f"JOB {job_id}: native optimize {strategy} on {instr}")
@@ -1075,7 +1118,7 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     _pct(10, "Connecting to NT8")
 
     app = connect_nt8()
-    sa  = find_strategy_analyzer(app)
+    sa = find_strategy_analyzer(app)
     _pct(20, "Selecting strategy")
 
     pfx = f"{strategy}PropertyGridEditorPDEX"
@@ -1106,15 +1149,14 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     # These must be set explicitly; Optimize mode does not inherit them from the last run.
     set_instrument(sa, instr)
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From", _nt8_date(spec["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To", _nt8_date(spec["end_date"]))
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
 
     # Separate fixed_params by type: numeric → PDEX, string → PDEX, bool → CheckBox.
     bool_params = {k: v for k, v in fixed_params.items() if isinstance(v, bool)}
-    str_params  = {k: v for k, v in fixed_params.items() if isinstance(v, str)}
-    num_params  = {k: v for k, v in fixed_params.items()
-                   if not isinstance(v, (bool, str))}
+    str_params = {k: v for k, v in fixed_params.items() if isinstance(v, str)}
+    num_params = {k: v for k, v in fixed_params.items() if not isinstance(v, (bool, str))}
 
     # Build grid_map ONCE for both fixed and range params.
     # Using the txtBox grid path is ~0.1s per field; PDEX fallback is 4-19s per field
@@ -1144,14 +1186,14 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     # Set range params using the same grid_map (already built above).
     for name, range_spec in param_ranges.items():
         if isinstance(range_spec, dict):
-            lo   = range_spec["min"]
-            hi   = range_spec["max"]
+            lo = range_spec["min"]
+            hi = range_spec["max"]
             step = range_spec["step"]
         elif isinstance(range_spec, list):
             if not range_spec:
                 continue
-            lo   = range_spec[0]
-            hi   = range_spec[-1]
+            lo = range_spec[0]
+            hi = range_spec[-1]
             step = round(range_spec[1] - range_spec[0], 8) if len(range_spec) > 1 else 1
         else:
             lo = hi = range_spec
@@ -1202,8 +1244,9 @@ def run_native_optimize_mode(job_id: str, spec: dict):
             _pct(pct, f"Optimizing {total_combos} combinations... {int(elapsed)}s")
 
     # Optimize mode: NT8 shows Abort button during run (Run button disappears)
-    finished = wait_for_run_complete(sa, timeout=_OPT_TIMEOUT, use_abort_btn=True,
-                                     progress_fn=_emit_progress)
+    finished = wait_for_run_complete(
+        sa, timeout=_OPT_TIMEOUT, use_abort_btn=True, progress_fn=_emit_progress
+    )
     if not finished:
         print(f"  ERROR: Optimization timed out after {_OPT_TIMEOUT}s")
         sys.exit(1)
@@ -1222,13 +1265,13 @@ def run_native_optimize_mode(job_id: str, spec: dict):
     out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {
-        "job_id":         job_id,
+        "job_id": job_id,
         "strategy_class": strategy,
-        "instrument":     instr,
-        "combos":         combos,
-        "combo_count":    len(combos),
-        "elapsed_sec":    elapsed,
-        "completed_at":   datetime.now().isoformat(),
+        "instrument": instr,
+        "combos": combos,
+        "combo_count": len(combos),
+        "elapsed_sec": elapsed,
+        "completed_at": datetime.now().isoformat(),
     }
     (out_dir / "native_opt_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"  Native opt result written: {len(combos)} combos in {elapsed}s")
@@ -1254,14 +1297,14 @@ def _parse_walkforward_csv(csv_path: str) -> list[dict]:
 
     _KPI_MAP = {
         "total net profit": "net_pnl",
-        "net profit":       "net_pnl",
-        "profit factor":    "profit_factor",
-        "max. drawdown":    "max_drawdown",
-        "max drawdown":     "max_drawdown",
+        "net profit": "net_pnl",
+        "profit factor": "profit_factor",
+        "max. drawdown": "max_drawdown",
+        "max drawdown": "max_drawdown",
         "total # of trades": "trade_count",
-        "# trades":          "trade_count",
+        "# trades": "trade_count",
         "percent profitable": "win_rate",
-        "% profitable":       "win_rate",
+        "% profitable": "win_rate",
     }
 
     def _coerce(s: str):
@@ -1279,7 +1322,7 @@ def _parse_walkforward_csv(csv_path: str) -> list[dict]:
             for row in reader:
                 # Identify period column — usually first column
                 period_val = ""
-                for col in (reader.fieldnames or []):
+                for col in reader.fieldnames or []:
                     v = row.get(col, "").strip()
                     if re.search(r"(in.?sample|out.?of.?sample|in-sample|out-sample)", v, re.I):
                         period_val = v
@@ -1293,7 +1336,7 @@ def _parse_walkforward_csv(csv_path: str) -> list[dict]:
                 window_num = int(m.group()) if m else 0
 
                 entry: dict = {
-                    "type":   "is" if is_in_sample else "oos",
+                    "type": "is" if is_in_sample else "oos",
                     "window": window_num,
                 }
                 for col_lower, col_orig in headers_lower.items():
@@ -1342,18 +1385,20 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         oos_pct          int   (default 30)
         param_display_names  dict (optional)
     """
-    strategy           = spec["strategy_class"]
-    instr              = spec["instrument"]
-    all_params         = spec.get("params", {})
-    wf_windows         = int(spec.get("wf_windows", 5))
-    oos_pct            = int(spec.get("oos_pct", 30))
+    strategy = spec["strategy_class"]
+    instr = spec["instrument"]
+    all_params = spec.get("params", {})
+    wf_windows = int(spec.get("wf_windows", 5))
+    oos_pct = int(spec.get("oos_pct", 30))
     param_display_names = spec.get("param_display_names", {})
 
-    print(f"JOB {job_id}: native walk-forward {strategy} on {instr}  windows={wf_windows}  oos={oos_pct}%")
+    print(
+        f"JOB {job_id}: native walk-forward {strategy} on {instr}  windows={wf_windows}  oos={oos_pct}%"
+    )
     _pct(10, "Connecting to NT8")
 
     app = connect_nt8()
-    sa  = find_strategy_analyzer(app)
+    sa = find_strategy_analyzer(app)
     _pct(20, "Selecting strategy")
 
     # Set BEFORE and AFTER strategy selection — NT8 resets BacktestType on strategy switch.
@@ -1380,17 +1425,17 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
 
     # Set WF window count and OOS %. These auto_ids follow the SA naming convention but
     # must be verified on VPS — if they don't resolve, NT8 uses its defaults.
-    _WF_ITERATIONS_AID  = "StrategyAnalyzerTabPropertiesPropertyGridEditorOutOfSampleIterations"
-    _WF_OOS_PCT_AID     = "StrategyAnalyzerTabPropertiesPropertyGridEditorOutOfSamplePercentage"
+    _WF_ITERATIONS_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorOutOfSampleIterations"
+    _WF_OOS_PCT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorOutOfSamplePercentage"
     if not set_edit(sa, _WF_ITERATIONS_AID, wf_windows, warn=False):
-        print(f"  WARNING: WF iterations auto_id not found — using NT8 default")
+        print("  WARNING: WF iterations auto_id not found — using NT8 default")
     if not set_edit(sa, _WF_OOS_PCT_AID, oos_pct, warn=False):
-        print(f"  WARNING: WF OOS % auto_id not found — using NT8 default")
+        print("  WARNING: WF OOS % auto_id not found — using NT8 default")
 
     # Separate params by type (same as optimize mode)
     bool_params = {k: v for k, v in all_params.items() if isinstance(v, bool)}
-    str_params  = {k: v for k, v in all_params.items() if isinstance(v, str)}
-    num_params  = {k: v for k, v in all_params.items() if not isinstance(v, (bool, str))}
+    str_params = {k: v for k, v in all_params.items() if isinstance(v, str)}
+    num_params = {k: v for k, v in all_params.items() if not isinstance(v, (bool, str))}
 
     # All numeric params as single-value ranges (value;value;1) — no re-optimization in IS.
     # PDEX fallback: same as optimize mode — collapsed categories may hide txtBox controls.
@@ -1430,8 +1475,10 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
 
     # Export using the same right-click mechanism as optimize mode.
     # Exports from the Walk-Forward Analyzer results grid.
-    from pywinauto import mouse as _mouse, Desktop
     import shutil
+
+    from pywinauto import Desktop
+    from pywinauto import mouse as _mouse
 
     out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1447,12 +1494,12 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         pass
 
     sa_rect = sa.rectangle()
-    sa_w    = sa_rect.right  - sa_rect.left
-    sa_h    = sa_rect.bottom - sa_rect.top
-    rc_x    = sa_rect.left + int(sa_w * 0.25)
-    rc_y    = sa_rect.top  + int(sa_h * 0.05)
+    sa_w = sa_rect.right - sa_rect.left
+    sa_h = sa_rect.bottom - sa_rect.top
+    rc_x = sa_rect.left + int(sa_w * 0.25)
+    rc_y = sa_rect.top + int(sa_h * 0.05)
 
-    nt8           = sa.top_level_parent()
+    nt8 = sa.top_level_parent()
     export_coords = None
 
     _mouse.right_click(coords=(rc_x, rc_y))
@@ -1460,7 +1507,7 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
     menu_items_found = []
     for el in nt8.descendants():
         txt = (el.window_text() or "").strip()
-        ct  = str(getattr(el.element_info, "control_type", ""))
+        ct = str(getattr(el.element_info, "control_type", ""))
         if ct == "MenuItem" and txt:
             r = el.rectangle()
             menu_items_found.append(f"{txt}@{r.width()}x{r.height()}")
@@ -1483,19 +1530,20 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
     time.sleep(1.0)
     _dismiss_dialog(dt)
 
-    docs   = Path.home() / "Documents"
+    docs = Path.home() / "Documents"
     cutoff = time.time() - 30
-    csvs   = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
+    csvs = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
     if not csvs:
-        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"),
-                      key=lambda p: p.stat().st_mtime, reverse=True)[:1]
+        csvs = sorted(
+            docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )[:1]
 
     if not csvs:
         print("  [wf-export] No CSV found after walk-forward export")
         sys.exit(1)
 
     csv_path = max(csvs, key=lambda p: p.stat().st_mtime)
-    dest     = out_dir / "wf_results.csv"
+    dest = out_dir / "wf_results.csv"
     shutil.copy(str(csv_path), str(dest))
     print(f"  [wf-export] CSV saved to {dest.name}")
 
@@ -1505,14 +1553,14 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
         sys.exit(1)
 
     result = {
-        "job_id":         job_id,
+        "job_id": job_id,
         "strategy_class": strategy,
-        "instrument":     instr,
-        "wf_windows":     wf_windows,
-        "oos_pct":        oos_pct,
-        "windows":        windows,
-        "elapsed_sec":    elapsed,
-        "completed_at":   datetime.now().isoformat(),
+        "instrument": instr,
+        "wf_windows": wf_windows,
+        "oos_pct": oos_pct,
+        "windows": windows,
+        "elapsed_sec": elapsed,
+        "completed_at": datetime.now().isoformat(),
     }
     (out_dir / "native_wf_result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"  Native WF result written: {len(windows)} period rows in {elapsed}s")
@@ -1523,7 +1571,7 @@ def run_native_walkforward_mode(job_id: str, spec: dict):
 def configure_from_spec(sa, spec: dict):
     """Configure Strategy Analyzer from a lab job spec (firm-agnostic)."""
     strategy = spec["strategy_class"]
-    pfx      = f"{strategy}PropertyGridEditorPDEX"
+    pfx = f"{strategy}PropertyGridEditorPDEX"
 
     # Set BacktestType BEFORE select_strategy. NT8 rebuilds the property grid on
     # strategy switch, which removes items from the UIA tree. select() only works
@@ -1537,17 +1585,17 @@ def configure_from_spec(sa, spec: dict):
 
     set_instrument(sa, spec["instrument"])
     set_edit(sa, "BarsPeriodPropertyGridEditorPDEX_PDEX_Value", spec.get("bar_value", 5))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From",  _nt8_date(spec["start_date"]))
-    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To",    _nt8_date(spec["end_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_From", _nt8_date(spec["start_date"]))
+    set_edit(sa, "NinjaScriptBasePropertyGridEditorPDEX_To", _nt8_date(spec["end_date"]))
     set_edit(sa, "StrategyBasePropertyGridEditorPDEX_Slippage", spec.get("slippage_ticks", 1))
 
     # Prop-firm SA params: set permissive so strategy trades freely;
     # actual pass/fail is evaluated post-run against firm rules by the backend.
-    set_edit(sa, f"{pfx}_AccountSize",       100000,                              warn=False)
+    set_edit(sa, f"{pfx}_AccountSize", 100000, warn=False)
     set_edit(sa, f"{pfx}_CommissionPerSide", spec.get("commission_per_side", 2.25), warn=False)
-    set_edit(sa, f"{pfx}_MaxDailyLoss",      99999,                               warn=False)
-    set_edit(sa, f"{pfx}_DailyHaltFraction", 1.0,                                 warn=False)
-    set_edit(sa, f"{pfx}_RiskPct",           2.0,                                 warn=False)
+    set_edit(sa, f"{pfx}_MaxDailyLoss", 99999, warn=False)
+    set_edit(sa, f"{pfx}_DailyHaltFraction", 1.0, warn=False)
+    set_edit(sa, f"{pfx}_RiskPct", 2.0, warn=False)
 
     # Strategy-specific params
     for key, value in spec.get("params", {}).items():
@@ -1558,6 +1606,7 @@ def configure_from_spec(sa, spec: dict):
 
 
 # ── Trade export (pywinauto) ──────────────────────────────────────────────────
+
 
 def _dump_controls(win, depth: int = 5) -> None:
     """Print control identifiers for a window — used for debugging NT8 UI structure."""
@@ -1573,9 +1622,12 @@ def _parse_nt8_date(raw: str):
     if not raw:
         return None
     for fmt in [
-        "%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S",
-        "%m/%d/%Y %H:%M",       "%m/%d/%Y",
-        "%Y-%m-%d %H:%M:%S",    "%Y-%m-%d",
+        "%m/%d/%Y %I:%M:%S %p",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y %H:%M",
+        "%m/%d/%Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
     ]:
         try:
             return datetime.strptime(raw.strip(), fmt).strftime("%Y-%m-%d")
@@ -1615,26 +1667,26 @@ def _parse_trades_csv(csv_path: str) -> tuple:
     """
     import csv as csv_mod
 
-    CUM_COLS  = ["Cum. net profit", "Cumulative Net Profit"]
-    PNL_COLS  = ["Profit", "Net Profit", "P&L", "Net P&L"]
+    CUM_COLS = ["Cum. net profit", "Cumulative Net Profit"]
+    PNL_COLS = ["Profit", "Net Profit", "P&L", "Net P&L"]
     DATE_COLS = ["Exit time", "Exit Time", "ExitTime", "Close Time", "Exit Date"]
-    DIR_COLS  = ["Market pos.", "Market Pos", "Direction", "Side"]
+    DIR_COLS = ["Market pos.", "Market Pos", "Direction", "Side"]
     NAME_COLS = ["Exit name", "Exit Name", "ExitName"]
-    QTY_COLS  = ["Quantity", "Qty", "Contracts"]   # per-trade size (contracts); null if absent
+    QTY_COLS = ["Quantity", "Qty", "Contracts"]  # per-trade size (contracts); null if absent
 
     equity_curve: list = []
-    daily_map: dict    = {}
+    daily_map: dict = {}
 
     try:
         with open(csv_path, newline="", encoding="utf-8-sig") as f:
-            reader   = csv_mod.DictReader(f)
-            fields   = reader.fieldnames or []
-            cum_col  = next((c for c in CUM_COLS  if c in fields), None)
-            pnl_col  = next((c for c in PNL_COLS  if c in fields), None)
+            reader = csv_mod.DictReader(f)
+            fields = reader.fieldnames or []
+            cum_col = next((c for c in CUM_COLS if c in fields), None)
+            pnl_col = next((c for c in PNL_COLS if c in fields), None)
             date_col = next((c for c in DATE_COLS if c in fields), None)
-            dir_col  = next((c for c in DIR_COLS  if c in fields), None)
+            dir_col = next((c for c in DIR_COLS if c in fields), None)
             name_col = next((c for c in NAME_COLS if c in fields), None)
-            qty_col  = next((c for c in QTY_COLS  if c in fields), None)
+            qty_col = next((c for c in QTY_COLS if c in fields), None)
 
             # One-shot visibility: log the actual export headers + which size column matched,
             # so the inferred Quantity/Qty/Contracts header can be confirmed against live data.
@@ -1648,15 +1700,15 @@ def _parse_trades_csv(csv_path: str) -> tuple:
             running = 0.0
             for i, row in enumerate(reader):
                 trade_num = i + 1
-                pnl   = _parse_dollar(row.get(pnl_col,  "0")) if pnl_col  else 0.0
-                cum   = _parse_dollar(row.get(cum_col,  "0")) if cum_col  else None
+                pnl = _parse_dollar(row.get(pnl_col, "0")) if pnl_col else 0.0
+                cum = _parse_dollar(row.get(cum_col, "0")) if cum_col else None
                 equity = round(cum, 2) if cum is not None else round(running + pnl, 2)
                 if cum is None:
                     running += pnl
 
-                direction = (row.get(dir_col,  "") or "").strip() if dir_col  else None
+                direction = (row.get(dir_col, "") or "").strip() if dir_col else None
                 exit_name = (row.get(name_col, "") or "").strip() if name_col else None
-                date_str  = _parse_nt8_date(row.get(date_col, "") if date_col else "")
+                date_str = _parse_nt8_date(row.get(date_col, "") if date_col else "")
 
                 # Per-trade size (contracts) — tolerant of header naming; null if not exported.
                 size = None
@@ -1668,15 +1720,17 @@ def _parse_trades_csv(csv_path: str) -> tuple:
                         except ValueError:
                             size = None
 
-                equity_curve.append({
-                    "index":     trade_num,
-                    "equity":    equity,
-                    "date":      date_str,
-                    "direction": direction or None,
-                    "profit":    round(pnl, 2),
-                    "exit_name": exit_name or None,
-                    "size":      size,
-                })
+                equity_curve.append(
+                    {
+                        "index": trade_num,
+                        "equity": equity,
+                        "date": date_str,
+                        "direction": direction or None,
+                        "profit": round(pnl, 2),
+                        "exit_name": exit_name or None,
+                        "size": size,
+                    }
+                )
 
                 if date_str:
                     daily_map[date_str] = round(daily_map.get(date_str, 0.0) + pnl, 2)
@@ -1702,8 +1756,10 @@ def _try_export_trades(sa, job_id: str) -> tuple:
 
     Returns (equity_curve, daily_pnl) — both [] on any failure.
     """
-    from pywinauto import mouse as _mouse, Desktop
     import shutil
+
+    from pywinauto import Desktop
+    from pywinauto import mouse as _mouse
 
     out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1759,7 +1815,7 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     time.sleep(0.3)
     for el in nt8.descendants():
         txt = (el.window_text() or "").strip()
-        ct  = str(getattr(el.element_info, "control_type", ""))
+        ct = str(getattr(el.element_info, "control_type", ""))
         if ct == "MenuItem" and txt.startswith("Export"):
             r = el.rectangle()
             if r.width() > 5:
@@ -1791,7 +1847,9 @@ def _try_export_trades(sa, job_id: str) -> tuple:
     csvs = [p for p in docs.glob("NinjaTrader Grid*.csv") if p.stat().st_mtime >= cutoff]
     if not csvs:
         # Fallback: newest regardless of age
-        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)[:1]
+        csvs = sorted(
+            docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )[:1]
 
     if not csvs:
         print("  [trades] No CSV found after export")
@@ -1837,34 +1895,38 @@ def _read_engine_trades() -> list:
         return []
 
 
-def write_job_result(job_id: str, spec: dict, kpis: dict,
-                     equity_curve: list | None = None,
-                     daily_pnl: list | None = None,
-                     engine_trades: list | None = None):
+def write_job_result(
+    job_id: str,
+    spec: dict,
+    kpis: dict,
+    equity_curve: list | None = None,
+    daily_pnl: list | None = None,
+    engine_trades: list | None = None,
+):
     out_dir = NT8_DOCS / "lab_results" / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {
-        "job_id":         job_id,
+        "job_id": job_id,
         "strategy_class": spec["strategy_class"],
-        "instrument":     spec["instrument"],
+        "instrument": spec["instrument"],
         "kpis": {
-            "net_pnl":                kpis.get("net_pnl"),
-            "max_drawdown":           kpis.get("max_drawdown"),
-            "profit_factor":          kpis.get("profit_factor"),
-            "win_rate":               kpis.get("win_rate"),
-            "win_count":              kpis.get("win_count"),
-            "trade_count":            kpis.get("trade_count"),
-            "sharpe":                 kpis.get("sharpe"),
-            "sortino":                kpis.get("sortino"),
-            "cagr":                   None,
-            "avg_win":                kpis.get("avg_win"),
-            "avg_loss":               kpis.get("avg_loss"),
+            "net_pnl": kpis.get("net_pnl"),
+            "max_drawdown": kpis.get("max_drawdown"),
+            "profit_factor": kpis.get("profit_factor"),
+            "win_rate": kpis.get("win_rate"),
+            "win_count": kpis.get("win_count"),
+            "trade_count": kpis.get("trade_count"),
+            "sharpe": kpis.get("sharpe"),
+            "sortino": kpis.get("sortino"),
+            "cagr": None,
+            "avg_win": kpis.get("avg_win"),
+            "avg_loss": kpis.get("avg_loss"),
             "avg_trade_duration_min": kpis.get("avg_trade_duration_min"),
-            "worst_day_pnl":          None,
-            "worst_losing_streak":    kpis.get("worst_losing_streak"),
+            "worst_day_pnl": None,
+            "worst_losing_streak": kpis.get("worst_losing_streak"),
         },
         "equity_curve": equity_curve or [],
-        "daily_pnl":    daily_pnl    or [],
+        "daily_pnl": daily_pnl or [],
         "engine_trades": engine_trades or [],
         "completed_at": datetime.now().isoformat(),
     }
@@ -1878,12 +1940,12 @@ def run_job_mode(job_id: str, spec_path: str):
         spec = json.load(f)
 
     strategy = spec["strategy_class"]
-    instr    = spec["instrument"]
+    instr = spec["instrument"]
     print(f"JOB {job_id}: {strategy} on {instr}")
     _pct(10, "Connecting to NT8")
 
     app = connect_nt8()
-    sa  = find_strategy_analyzer(app)
+    sa = find_strategy_analyzer(app)
     _pct(20, "Configuring Strategy Analyzer")
 
     try:
@@ -1914,13 +1976,13 @@ def run_job_mode(job_id: str, spec_path: str):
     _pct(70, "Exporting Trade Data")
     equity_curve, daily_pnl = _try_export_trades(sa, job_id)
     if equity_curve:
-        print(f"  Trade export OK: {len(equity_curve)-1} trades, {len(daily_pnl)} days")
+        print(f"  Trade export OK: {len(equity_curve) - 1} trades, {len(daily_pnl)} days")
     else:
         print("  Trade export unavailable — equity curve will be empty")
 
     _pct(80, "Reading results")
     # Poll for XML written after this run's click (avoid stale files from earlier today)
-    today   = datetime.now().strftime("%Y_%m_%d")
+    today = datetime.now().strftime("%Y_%m_%d")
     pattern = str(SA_LOG_DIR / f"@@@{strategy}_{today}_*.xml")
     xml_deadline = time.time() + 60
     while time.time() < xml_deadline:
@@ -1934,21 +1996,23 @@ def run_job_mode(job_id: str, spec_path: str):
         sys.exit(1)
 
     kpis = {
-        "net_pnl":                result["net_pnl"],
-        "max_drawdown":           abs(result["max_drawdown"]),  # ensure positive
-        "profit_factor":          result["profit_factor"],
-        "win_rate":               result["win_pct"] / 100.0,
-        "trade_count":            result["trades"],
-        "win_count":              round(result["win_pct"] / 100.0 * result["trades"]),
-        "sharpe":                 result.get("sharpe"),
-        "sortino":                result.get("sortino"),
-        "avg_win":                result.get("avg_win"),
-        "avg_loss":               result.get("avg_loss"),
+        "net_pnl": result["net_pnl"],
+        "max_drawdown": abs(result["max_drawdown"]),  # ensure positive
+        "profit_factor": result["profit_factor"],
+        "win_rate": result["win_pct"] / 100.0,
+        "trade_count": result["trades"],
+        "win_count": round(result["win_pct"] / 100.0 * result["trades"]),
+        "sharpe": result.get("sharpe"),
+        "sortino": result.get("sortino"),
+        "avg_win": result.get("avg_win"),
+        "avg_loss": result.get("avg_loss"),
         "avg_trade_duration_min": result.get("avg_trade_duration_min"),
-        "worst_losing_streak":    result.get("worst_losing_streak"),
+        "worst_losing_streak": result.get("worst_losing_streak"),
     }
-    print(f"  Trades={kpis['trade_count']}  NetPnL={kpis['net_pnl']:.2f}"
-          f"  PF={kpis['profit_factor']:.4f}  MaxDD={kpis['max_drawdown']:.2f}")
+    print(
+        f"  Trades={kpis['trade_count']}  NetPnL={kpis['net_pnl']:.2f}"
+        f"  PF={kpis['profit_factor']:.4f}  MaxDD={kpis['max_drawdown']:.2f}"
+    )
 
     # Per-trade engine export (empty for unreshaped strategies → backend keeps the unit-size path).
     engine_trades = _read_engine_trades()
@@ -1959,15 +2023,20 @@ def run_job_mode(job_id: str, spec_path: str):
 
 # ── Legacy mode ───────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config",   default=DEFAULT_CFG)
-    parser.add_argument("--combo",    default=None,
-                        help="Run only this combo ID (e.g. ORB_MNQ). Omit to run all.")
-    parser.add_argument("--job-id",   default=None, help="Lab mode: job ID")
+    parser.add_argument("--config", default=DEFAULT_CFG)
+    parser.add_argument(
+        "--combo", default=None, help="Run only this combo ID (e.g. ORB_MNQ). Omit to run all."
+    )
+    parser.add_argument("--job-id", default=None, help="Lab mode: job ID")
     parser.add_argument("--job-spec", default=None, help="Lab mode: path to job_spec.json")
-    parser.add_argument("--mode",     default=None,
-                        help="Runner mode: omit for single-run, 'native-optimize', 'native-walkforward'")
+    parser.add_argument(
+        "--mode",
+        default=None,
+        help="Runner mode: omit for single-run, 'native-optimize', 'native-walkforward'",
+    )
     args = parser.parse_args()
 
     if args.job_id and args.job_spec:
@@ -1982,9 +2051,9 @@ def main():
         return
 
     # Legacy config-driven mode
-    cfg    = load_config(args.config)
+    cfg = load_config(args.config)
     combos = cfg["combos"]
-    gp     = cfg["global_params"]
+    gp = cfg["global_params"]
 
     if args.combo:
         combos = [c for c in combos if c["id"] == args.combo]
@@ -1996,7 +2065,7 @@ def main():
 
     app = connect_nt8()
 
-    total   = len(combos)
+    total = len(combos)
     results = []
     for i, combo in enumerate(combos, 1):
         try:

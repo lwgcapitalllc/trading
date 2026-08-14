@@ -4,10 +4,23 @@ import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, stacks, optimizations, strategy_files, calendar
-from services import lab_db, agent_supervisor, readiness
-from services.backtest_runner import read_progress, clear_progress
+from routers import (
+    backtests,
+    bots,
+    calendar,
+    optimizations,
+    rulesets,
+    settings,
+    smart_money,
+    stacks,
+    strategies,
+    strategy_files,
+    stress_tests,
+    sweeps,
+    system,
+)
+from services import agent_supervisor, lab_db, readiness
+from services.backtest_runner import clear_progress, read_progress
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
 
@@ -70,13 +83,17 @@ async def startup():
     n = lab_db.reset_stale_stress_tests()
     if n:
         import logging
+
         logging.getLogger(__name__).warning("Reset %d stale stress test(s) from previous run", n)
     # Orphaned 'running' backtest/optimization rows from a crashed run would otherwise
     # hold the per-platform job lock forever — the DB is now the sole lock source.
     m = lab_db.reset_stale_runs()
     if m:
         import logging
-        logging.getLogger(__name__).warning("Reset %d stale backtest/optimization run(s) from previous run", m)
+
+        logging.getLogger(__name__).warning(
+            "Reset %d stale backtest/optimization run(s) from previous run", m
+        )
     # Dependencies that fail SILENTLY — an un-backfilled news calendar, missing
     # Telegram credentials. Reported, never repaired: neither can be fixed from
     # here, and neither is worth refusing to boot over.

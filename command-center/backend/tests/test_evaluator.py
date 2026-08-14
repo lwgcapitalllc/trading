@@ -20,6 +20,7 @@ import pytest
 def _eval(seeded_run, ruleset_id, net_pnl, daily_pnl=None, equity_curve=None):
     """Call evaluate_run for one ruleset and return its single result dict."""
     from services.evaluator import evaluate_run
+
     results = evaluate_run(
         run_id=seeded_run,
         ruleset_ids=[ruleset_id],
@@ -33,6 +34,7 @@ def _eval(seeded_run, ruleset_id, net_pnl, daily_pnl=None, equity_curve=None):
 
 # ── prop_eval verdict paths ───────────────────────────────────────────────────
 
+
 def test_eval_pass(seeded_run):
     """No floor breach, target reached, no single day dominates → PASS."""
     daily = [
@@ -45,7 +47,7 @@ def test_eval_pass(seeded_run):
     assert r["verdict"] == "PASS"
     assert r["drawdown_pass"] is True
     assert r["target_pass"] is True
-    assert r["consistency_pass"] is True   # biggest day 1000/4000 = 25% < 50%
+    assert r["consistency_pass"] is True  # biggest day 1000/4000 = 25% < 50%
 
 
 def test_eval_warn_target_miss(seeded_run):
@@ -88,6 +90,7 @@ def test_eval_no_breach_when_floor_held(seeded_run):
 
 # ── prop_funded verdict paths ─────────────────────────────────────────────────
 
+
 def test_funded_pass_drawdown_only(seeded_run):
     """Funded: surviving drawdown is sufficient — no consistency, no target."""
     daily = [{"date": "2024-01-02", "pnl": 500}]
@@ -115,6 +118,7 @@ def test_funded_never_warns(seeded_run):
 
 # ── FundedNext raise_target: consistency breach raises the bar, doesn't fail ──
 
+
 def test_fundednext_raise_target_binds(seeded_run):
     """FundedNext: a consistency breach raises the effective target; net below it → WARN."""
     # biggest day 1500 of net 2600 = 57.7% > 40% limit → target raised to 1500/0.40 = 3750.
@@ -126,9 +130,9 @@ def test_fundednext_raise_target_binds(seeded_run):
         {"date": "2024-01-06", "pnl": 200},
     ]
     r = _eval(seeded_run, "fundednext_flex_50k_eval", net_pnl=2600, daily_pnl=daily)
-    assert r["consistency_pass"] is True            # passed-with-adjustment
+    assert r["consistency_pass"] is True  # passed-with-adjustment
     assert r["adjusted_profit_target"] == 3750.0
-    assert r["target_pass"] is False                # 2600 < 3750 raised bar
+    assert r["target_pass"] is False  # 2600 < 3750 raised bar
     assert r["verdict"] == "WARN"
 
 
@@ -136,12 +140,13 @@ def test_fundednext_raise_target_binds(seeded_run):
 # Rules on the $10k demos: $500 daily cap, $1,000 daily profit target (halt, info
 # only), DISCARD on 3 consecutive capped days or 15% drawdown from peak.
 
+
 def test_personal_passes_with_small_losses(seeded_run):
     daily = [{"date": "2024-01-02", "pnl": -200}, {"date": "2024-01-03", "pnl": 300}]
     r = _eval(seeded_run, "personal_forex_demo", net_pnl=100, daily_pnl=daily)
     assert r["verdict"] == "PASS"
     assert r["drawdown_pass"] is True
-    assert r["mll_final_floor"] is None             # still no trailing MLL for personal
+    assert r["mll_final_floor"] is None  # still no trailing MLL for personal
 
 
 def test_personal_discards_on_drawdown_from_peak(seeded_run):
@@ -151,20 +156,20 @@ def test_personal_discards_on_drawdown_from_peak(seeded_run):
     assert r["verdict"] == "DISCARD"
     assert r["drawdown_pass"] is False
     assert "drew down" in r["notes"]
-    assert r["mll_final_floor"] is None             # no reference line for personal
+    assert r["mll_final_floor"] is None  # no reference line for personal
 
 
 def test_personal_discards_on_consecutive_capped_days(seeded_run):
     """3 capped days in a row fails — peak raised first so only the streak fires."""
     daily = [
-        {"date": "2024-01-02", "pnl": 2000},   # peak 12,000 → 3×500 is 12.5% < 15%
+        {"date": "2024-01-02", "pnl": 2000},  # peak 12,000 → 3×500 is 12.5% < 15%
         {"date": "2024-01-03", "pnl": -500},
         {"date": "2024-01-04", "pnl": -500},
         {"date": "2024-01-05", "pnl": -500},
     ]
     r = _eval(seeded_run, "personal_futures_demo", net_pnl=500, daily_pnl=daily)
     assert r["verdict"] == "DISCARD"
-    assert r["drawdown_pass"] is True               # drawdown rule did NOT fire
+    assert r["drawdown_pass"] is True  # drawdown rule did NOT fire
     assert "consecutive days hit the $500 daily cap" in r["notes"]
 
 
@@ -194,6 +199,7 @@ def test_personal_profit_halt_is_informational(seeded_run):
 # skipped and `failures` is empty no matter what the run did. It used to return PASS,
 # which claimed a verdict lab_db.py's own seed note says cannot be given.
 
+
 def test_unconstrained_is_not_graded(seeded_run):
     """A run that loses 95% of the account still cannot FAIL a ruleset with no limits —
     but it must not PASS one either."""
@@ -221,8 +227,10 @@ def test_stated_limit_still_grades(seeded_run):
 
 # ── Multiple rulesets in one call ─────────────────────────────────────────────
 
+
 def test_evaluate_multiple_rulesets(seeded_run):
     from services.evaluator import evaluate_run
+
     daily = [{"date": "2024-01-02", "pnl": 4000}]
     results = evaluate_run(
         run_id=seeded_run,
@@ -239,6 +247,7 @@ def test_evaluate_multiple_rulesets(seeded_run):
 
 
 # ── Contract-cap status (informational, never moves the verdict) ──────────────
+
 
 def test_contract_cap_not_evaluable_without_size(seeded_run):
     """NT8 run with no per-trade size → not_evaluable; verdict unaffected."""

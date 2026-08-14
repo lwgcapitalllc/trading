@@ -2,8 +2,19 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  LayoutDashboard, Radar, Bot, CalendarDays, BookOpen, ClipboardList, BarChart2, Sliders,
-  Activity, Settings, ChevronsLeft, ChevronsRight, RefreshCw,
+  LayoutDashboard,
+  Radar,
+  Bot,
+  CalendarDays,
+  BookOpen,
+  ClipboardList,
+  BarChart2,
+  Sliders,
+  Activity,
+  Settings,
+  ChevronsLeft,
+  ChevronsRight,
+  RefreshCw,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
@@ -22,23 +33,21 @@ type NavEntry = { to: string; label: string; icon: LucideIcon; live: boolean; fe
 // ungrouped, as the dashboard.
 const SECTIONS: { label?: string; items: NavEntry[] }[] = [
   {
-    items: [
-      { to: '/',            label: 'Overview',    icon: LayoutDashboard, live: true },
-    ],
+    items: [{ to: '/', label: 'Overview', icon: LayoutDashboard, live: true }],
   },
   {
     label: 'Lab',
     items: [
-      { to: '/strategies',    label: 'Strategies',    icon: BookOpen,   live: true },
-      { to: '/backtests',     label: 'Backtests',     icon: BarChart2,  live: true },
-      { to: '/optimizations', label: 'Optimizations', icon: Sliders,    live: true },
-      { to: '/stress-tests',  label: 'Stress Tests',  icon: Activity,   live: true },
+      { to: '/strategies', label: 'Strategies', icon: BookOpen, live: true },
+      { to: '/backtests', label: 'Backtests', icon: BarChart2, live: true },
+      { to: '/optimizations', label: 'Optimizations', icon: Sliders, live: true },
+      { to: '/stress-tests', label: 'Stress Tests', icon: Activity, live: true },
     ],
   },
   {
     label: 'Live',
     items: [
-      { to: '/bots',        label: 'Bots',        icon: Bot,   live: true },
+      { to: '/bots', label: 'Bots', icon: Bot, live: true },
       { to: '/smart-money', label: 'Smart Money', icon: Radar, live: true, feature: 'smartMoney' },
     ],
   },
@@ -46,16 +55,17 @@ const SECTIONS: { label?: string; items: NavEntry[] }[] = [
     label: 'Reference',
     items: [
       { to: '/rulesets', label: 'Rulesets', icon: ClipboardList, live: true },
-      { to: '/calendar', label: 'Calendar', icon: CalendarDays,  live: true },
+      { to: '/calendar', label: 'Calendar', icon: CalendarDays, live: true },
     ],
   },
 ]
 
 // A row behind an OFF flag is dropped, and a section left with nothing goes with
 // it — a section header over no rows is a heading for nothing.
-const VISIBLE_SECTIONS = SECTIONS
-  .map(section => ({ ...section, items: section.items.filter(i => !i.feature || FEATURES[i.feature]) }))
-  .filter(section => section.items.length > 0)
+const VISIBLE_SECTIONS = SECTIONS.map((section) => ({
+  ...section,
+  items: section.items.filter((i) => !i.feature || FEATURES[i.feature]),
+})).filter((section) => section.items.length > 0)
 
 // Pulsing dot meaning "a job is running under this item". Anchored to the icon's top-right
 // corner so it reads identically whether the sidebar is expanded or collapsed.
@@ -97,14 +107,29 @@ function RefreshAll({ collapsed }: { collapsed: boolean }) {
         (collapsed ? 'justify-center ' : '')
       }
     >
-      <RefreshCw size={16} className={`flex-shrink-0 opacity-85 ${refreshing ? 'animate-spin' : ''}`} />
+      <RefreshCw
+        size={16}
+        className={`flex-shrink-0 opacity-85 ${refreshing ? 'animate-spin' : ''}`}
+      />
       {!collapsed && 'Refresh data'}
     </button>
   )
 }
 
-function NavItem({ to, label, icon: Icon, live, collapsed, active = false }: {
-  to: string; label: string; icon: LucideIcon; live: boolean; collapsed: boolean; active?: boolean
+function NavItem({
+  to,
+  label,
+  icon: Icon,
+  live,
+  collapsed,
+  active = false,
+}: {
+  to: string
+  label: string
+  icon: LucideIcon
+  live: boolean
+  collapsed: boolean
+  active?: boolean
 }) {
   return (
     <NavLink
@@ -117,8 +142,8 @@ function NavItem({ to, label, icon: Icon, live, collapsed, active = false }: {
         (isActive
           ? 'bg-accent-muted text-text-primary'
           : live
-          ? 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-          : 'text-text-tertiary hover:bg-bg-hover hover:text-text-secondary')
+            ? 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+            : 'text-text-tertiary hover:bg-bg-hover hover:text-text-secondary')
       }
     >
       {({ isActive }) => (
@@ -130,9 +155,7 @@ function NavItem({ to, label, icon: Icon, live, collapsed, active = false }: {
             <Icon
               size={16}
               className={`transition-all duration-[120ms] ${
-                isActive
-                  ? 'text-accent drop-shadow-glow-accent'
-                  : 'opacity-85'
+                isActive ? 'text-accent drop-shadow-glow-accent' : 'opacity-85'
               }`}
             />
             {active && <ActivityDot />}
@@ -156,7 +179,11 @@ function NavItem({ to, label, icon: Icon, live, collapsed, active = false }: {
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem('sidebar_collapsed') === '1' } catch { return false }
+    try {
+      return localStorage.getItem('sidebar_collapsed') === '1'
+    } catch {
+      return false
+    }
   })
 
   // Running-job indicators, mapped per nav route: a backtest/sweep run in progress (excluding
@@ -171,21 +198,29 @@ export function Sidebar() {
   // pinned there by `tests/test_nav_activity.py`; do not re-derive them here from a list.
   const { data: activity } = useNavActivity()
   const activeByRoute: Record<string, boolean> = {
-    '/backtests':     activity?.backtests ?? false,
+    '/backtests': activity?.backtests ?? false,
     '/optimizations': activity?.optimizations ?? false,
-    '/stress-tests':  activity?.stress_tests ?? false,
+    '/stress-tests': activity?.stress_tests ?? false,
   }
-  const toggle = () => setCollapsed(c => {
-    const next = !c
-    try { localStorage.setItem('sidebar_collapsed', next ? '1' : '0') } catch { /* quota */ }
-    return next
-  })
+  const toggle = () =>
+    setCollapsed((c) => {
+      const next = !c
+      try {
+        localStorage.setItem('sidebar_collapsed', next ? '1' : '0')
+      } catch {
+        /* quota */
+      }
+      return next
+    })
 
   return (
-    <aside className={`flex-shrink-0 bg-bg-sunken border-r border-border-subtle flex flex-col transition-[width] duration-200 ${collapsed ? 'w-[64px]' : 'w-[212px]'}`}>
-
+    <aside
+      className={`flex-shrink-0 bg-bg-sunken border-r border-border-subtle flex flex-col transition-[width] duration-200 ${collapsed ? 'w-[64px]' : 'w-[212px]'}`}
+    >
       {/* ── Logo ──────────────────────────────────────────────────── */}
-      <div className={`flex items-center justify-center py-5 border-b border-border-subtle ${collapsed ? 'px-2' : 'px-4'}`}>
+      <div
+        className={`flex items-center justify-center py-5 border-b border-border-subtle ${collapsed ? 'px-2' : 'px-4'}`}
+      >
         <NavLink to="/">
           <img
             src="/logo.png"
@@ -198,68 +233,71 @@ export function Sidebar() {
 
       {/* ── Nav ───────────────────────────────────────────────────── */}
       <div className="flex flex-col flex-1 py-[14px] px-3">
-
-      {/* ── Grouped nav sections ──────────────────────────────────── */}
-      {VISIBLE_SECTIONS.map((section, i) => (
-        <div key={section.label ?? 'top'}>
-          {/* Section header: a label when expanded, a thin divider when collapsed.
+        {/* ── Grouped nav sections ──────────────────────────────────── */}
+        {VISIBLE_SECTIONS.map((section, i) => (
+          <div key={section.label ?? 'top'}>
+            {/* Section header: a label when expanded, a thin divider when collapsed.
               The first (Overview) section has no header — it sits flush at the top. */}
-          {i > 0 && (
-            collapsed ? (
-              <div className="my-[12px] mx-1 border-t border-border-subtle/60" />
-            ) : (
-              <div className="text-[10px] uppercase tracking-[1px] text-text-tertiary px-2 pt-[14px] pb-[6px] font-semibold">
-                {section.label}
-              </div>
-            )
-          )}
-          {section.items.map(item => (
-            <NavItem key={item.to} {...item} collapsed={collapsed} active={activeByRoute[item.to]} />
-          ))}
-        </div>
-      ))}
+            {i > 0 &&
+              (collapsed ? (
+                <div className="my-[12px] mx-1 border-t border-border-subtle/60" />
+              ) : (
+                <div className="text-[10px] uppercase tracking-[1px] text-text-tertiary px-2 pt-[14px] pb-[6px] font-semibold">
+                  {section.label}
+                </div>
+              ))}
+            {section.items.map((item) => (
+              <NavItem
+                key={item.to}
+                {...item}
+                collapsed={collapsed}
+                active={activeByRoute[item.to]}
+              />
+            ))}
+          </div>
+        ))}
 
-      {/* ── Footer ────────────────────────────────────────────────── */}
-      <div className="mt-auto pt-[10px] border-t border-border-subtle">
-        <SystemHealthStrip collapsed={collapsed} />
+        {/* ── Footer ────────────────────────────────────────────────── */}
+        <div className="mt-auto pt-[10px] border-t border-border-subtle">
+          <SystemHealthStrip collapsed={collapsed} />
 
-        {/* Refresh all data — moved out of the top bar 2026-08-03 */}
-        <RefreshAll collapsed={collapsed} />
+          {/* Refresh all data — moved out of the top bar 2026-08-03 */}
+          <RefreshAll collapsed={collapsed} />
 
-        {/* Settings — last nav item */}
-        <NavLink
-          to="/settings"
-          title={collapsed ? 'Settings' : undefined}
-          className={({ isActive }) =>
-            'flex items-center gap-[10px] px-[9px] py-[7px] mt-[8px] rounded-md text-[13px] cursor-pointer select-none relative transition-colors duration-[120ms] ' +
-            (collapsed ? 'justify-center ' : '') +
-            (isActive
-              ? 'bg-accent-muted text-text-primary'
-              : 'text-text-tertiary hover:bg-bg-hover hover:text-text-secondary')
-          }
-        >
-          {({ isActive }) => (
-            <>
-              {isActive && (
-                <span className="absolute left-[-12px] top-[6px] bottom-[6px] w-[3px] bg-accent rounded-r-[3px]" />
-              )}
-              <Settings size={16} className="flex-shrink-0 opacity-85" />
-              {!collapsed && 'Settings'}
-            </>
-          )}
-        </NavLink>
-
-        {/* Collapse / expand toggle — discrete icon tucked in the corner */}
-        <div className={`mt-[6px] flex ${collapsed ? 'justify-center' : 'justify-end'}`}>
-          <button
-            onClick={toggle}
-            title={collapsed ? 'Expand menu' : 'Collapse menu'}
-            className="p-1.5 rounded text-text-tertiary/50 hover:text-text-secondary hover:bg-bg-hover transition-colors duration-[120ms]"
+          {/* Settings — last nav item */}
+          <NavLink
+            to="/settings"
+            title={collapsed ? 'Settings' : undefined}
+            className={({ isActive }) =>
+              'flex items-center gap-[10px] px-[9px] py-[7px] mt-[8px] rounded-md text-[13px] cursor-pointer select-none relative transition-colors duration-[120ms] ' +
+              (collapsed ? 'justify-center ' : '') +
+              (isActive
+                ? 'bg-accent-muted text-text-primary'
+                : 'text-text-tertiary hover:bg-bg-hover hover:text-text-secondary')
+            }
           >
-            {collapsed ? <ChevronsRight size={15} /> : <ChevronsLeft size={15} />}
-          </button>
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <span className="absolute left-[-12px] top-[6px] bottom-[6px] w-[3px] bg-accent rounded-r-[3px]" />
+                )}
+                <Settings size={16} className="flex-shrink-0 opacity-85" />
+                {!collapsed && 'Settings'}
+              </>
+            )}
+          </NavLink>
+
+          {/* Collapse / expand toggle — discrete icon tucked in the corner */}
+          <div className={`mt-[6px] flex ${collapsed ? 'justify-center' : 'justify-end'}`}>
+            <button
+              onClick={toggle}
+              title={collapsed ? 'Expand menu' : 'Collapse menu'}
+              className="p-1.5 rounded text-text-tertiary/50 hover:text-text-secondary hover:bg-bg-hover transition-colors duration-[120ms]"
+            >
+              {collapsed ? <ChevronsRight size={15} /> : <ChevronsLeft size={15} />}
+            </button>
+          </div>
         </div>
-      </div>
       </div>
     </aside>
   )

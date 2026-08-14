@@ -6,13 +6,15 @@ import type { XMode } from '@/lib/chartAxis'
 export function XModeToggle({ value, onChange }: { value: XMode; onChange: (v: XMode) => void }) {
   return (
     <div className="inline-flex items-center rounded border border-border-subtle overflow-hidden">
-      {(['date', 'trade'] as const).map(m => (
+      {(['date', 'trade'] as const).map((m) => (
         <button
           key={m}
           onClick={() => onChange(m)}
           title={m === 'date' ? 'Plot against the calendar' : 'Plot against trade number'}
           className={`px-2 py-[4px] text-[11px] transition-colors ${
-            value === m ? 'text-accent bg-accent/10' : 'text-text-tertiary hover:text-text-secondary'
+            value === m
+              ? 'text-accent bg-accent/10'
+              : 'text-text-tertiary hover:text-text-secondary'
           }`}
         >
           {m === 'date' ? 'Date' : 'Trade #'}

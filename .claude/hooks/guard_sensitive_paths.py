@@ -36,7 +36,7 @@ CLAUDE_MD_CEILING_BYTES = 40_000
 def relative(path: str) -> str:
     marker = "/trading/"
     i = path.find(marker)
-    return path[i + len(marker):] if i != -1 else path
+    return path[i + len(marker) :] if i != -1 else path
 
 
 def edit_delta(tool_input: dict) -> int:
@@ -46,13 +46,13 @@ def edit_delta(tool_input: dict) -> int:
     the guard's job is to catch growth, and guessing on an unfamiliar tool shape would
     reintroduce exactly the nagging this replaced.
     """
-    if "content" in tool_input:                      # Write — full replacement
+    if "content" in tool_input:  # Write — full replacement
         try:
             old = os.path.getsize(tool_input.get("file_path", ""))
         except OSError:
             old = 0
         return len(str(tool_input["content"]).encode("utf-8")) - old
-    if "new_string" in tool_input:                   # Edit
+    if "new_string" in tool_input:  # Edit
         new = len(str(tool_input.get("new_string", "")).encode("utf-8"))
         old = len(str(tool_input.get("old_string", "")).encode("utf-8"))
         n = 1
@@ -193,19 +193,23 @@ def main() -> None:
 
     # The one path that asks first. A frozen snapshot is a running bot's source of truth.
     if "/deployed/" in path:
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "escalate",
-                "permissionDecisionReason": (
-                    f"{rel} is a FROZEN DEPLOYMENT SNAPSHOT — a live bot imports from it. "
-                    "Editing it changes what a running bot trades immediately, with no promote "
-                    "and no restart, and it defeats the isolation that makes `git pull` safe. "
-                    "The deliberate path is: edit the repo, then run algos/tools/promote.py. "
-                    "Only allow this if you genuinely mean to hand-patch a live bot."
-                ),
-            }
-        }))
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "escalate",
+                        "permissionDecisionReason": (
+                            f"{rel} is a FROZEN DEPLOYMENT SNAPSHOT — a live bot imports from it. "
+                            "Editing it changes what a running bot trades immediately, with no promote "
+                            "and no restart, and it defeats the isolation that makes `git pull` safe. "
+                            "The deliberate path is: edit the repo, then run algos/tools/promote.py. "
+                            "Only allow this if you genuinely mean to hand-patch a live bot."
+                        ),
+                    }
+                }
+            )
+        )
         return
 
     notes = [note for fragment, note in REMINDERS if subsystem_matches(fragment, rel)]
@@ -217,16 +221,20 @@ def main() -> None:
     if not notes:
         return
 
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "permissionDecisionReason": "sensitive path — reminder attached",
-            "additionalContext": (
-                f"Editing {rel}. Before you call this done:\n\n- " + "\n- ".join(notes)
-            ),
-        }
-    }))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "permissionDecisionReason": "sensitive path — reminder attached",
+                    "additionalContext": (
+                        f"Editing {rel}. Before you call this done:\n\n- " + "\n- ".join(notes)
+                    ),
+                }
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

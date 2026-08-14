@@ -52,8 +52,9 @@ def test_the_labs_scanner_survives_it_too():
     """Both implementations must normalise, or they agree on the Mac (where every test runs)
     and disagree on the VPS — a green suite hiding a bot that cannot start."""
     sys.path.insert(0, str(_REPO / "command-center" / "backend"))
-    from services.strategy_scanner import _python_source_hash
     import tempfile
+
+    from services.strategy_scanner import _python_source_hash
 
     with tempfile.TemporaryDirectory() as d:
         lf, crlf = Path(d) / "lf", Path(d) / "crlf"
@@ -115,7 +116,7 @@ def test_verify_pin_refuses_when_the_code_moved_underneath(tmp_path):
     (pkg / "__init__.py").write_text("A = 2")
     with pytest.raises(live_version.VersionMismatch) as e:
         live_version.verify_pin([pkg], pinned)
-    assert pinned in str(e.value)          # the message names both hashes, so it is diagnosable
+    assert pinned in str(e.value)  # the message names both hashes, so it is diagnosable
 
 
 def test_the_remedy_depends_on_whether_the_bot_was_frozen(tmp_path):
@@ -168,7 +169,7 @@ def test_the_pin_notices_an_engine_change(tmp_path):
 
     roots = [strategy, engines]
     pinned = live_version.deployment_hash(roots)
-    (engines / "structure.py").write_text("SWING = 9")     # the strategy package is untouched
+    (engines / "structure.py").write_text("SWING = 9")  # the strategy package is untouched
 
     assert live_version.deployment_hash([strategy]) == live_version.deployment_hash([strategy])
     with pytest.raises(live_version.VersionMismatch):

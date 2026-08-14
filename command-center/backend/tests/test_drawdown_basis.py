@@ -10,17 +10,33 @@ So the run itself decides: percent once it compounds, dollars otherwise, recorde
 
 import numpy as np
 import pytest
-
 from services.grading import compute_grade
 from services.metrics import effective_dd_limit_pct, effective_dd_limit_usd
 from services.stress_tester import run_monte_carlo
 
-PROP = {"id": "prop", "name": "Prop $50k", "ruleset_type": "prop_funded",
-        "max_loss_eod": 5000, "account_size": 50000}
-DEMO = {"id": "demo", "name": "Demo", "ruleset_type": "personal",
-        "max_drawdown_from_peak_pct": 15.0, "account_size": 10000, "max_loss_eod": 0}
-NO_LIMIT = {"id": "unconstrained", "name": "Unconstrained (No Limits)", "ruleset_type": "personal",
-            "max_loss_eod": 0, "max_drawdown_from_peak_pct": None, "account_size": 10000}
+PROP = {
+    "id": "prop",
+    "name": "Prop $50k",
+    "ruleset_type": "prop_funded",
+    "max_loss_eod": 5000,
+    "account_size": 50000,
+}
+DEMO = {
+    "id": "demo",
+    "name": "Demo",
+    "ruleset_type": "personal",
+    "max_drawdown_from_peak_pct": 15.0,
+    "account_size": 10000,
+    "max_loss_eod": 0,
+}
+NO_LIMIT = {
+    "id": "unconstrained",
+    "name": "Unconstrained (No Limits)",
+    "ruleset_type": "personal",
+    "max_loss_eod": 0,
+    "max_drawdown_from_peak_pct": None,
+    "account_size": 10000,
+}
 
 
 def _compounding_run(n=120, start=10_000.0, risk=0.10, seed=2):
@@ -46,6 +62,7 @@ def _fixed_size_run(n=120, start=50_000.0):
 
 # ── the percent limit ─────────────────────────────────────────────────────────
 
+
 def test_a_prop_dollar_limit_converts_to_its_percent():
     """$5,000 on a $50,000 account is 10%. Nothing new to define — it was always the same rule."""
     assert effective_dd_limit_pct(PROP) == pytest.approx(10.0)
@@ -63,6 +80,7 @@ def test_a_ruleset_with_no_limit_states_none():
 
 
 # ── which basis a run gets ────────────────────────────────────────────────────
+
 
 def test_a_compounding_run_is_measured_in_percent():
     pnls, balances = _compounding_run()
@@ -103,11 +121,21 @@ def test_no_stated_limit_reports_no_breach_probability():
 
 # ── how grading reads it ──────────────────────────────────────────────────────
 
+
 def _st(**over):
-    base = {"median_final_pnl": 20000.0, "prob_breach": 0.0, "dd_basis": "percent",
-            "median_max_dd_pct": 30.0, "pct5_max_dd_pct": 50.0, "pct1_max_dd_pct": 60.0,
-            "median_max_dd": 84000.0, "pct5_max_dd": 237000.0, "pct1_max_dd": 359000.0,
-            "walk_forward_degradation": 0.05, "sensitivity_max_degradation": 0.05}
+    base = {
+        "median_final_pnl": 20000.0,
+        "prob_breach": 0.0,
+        "dd_basis": "percent",
+        "median_max_dd_pct": 30.0,
+        "pct5_max_dd_pct": 50.0,
+        "pct1_max_dd_pct": 60.0,
+        "median_max_dd": 84000.0,
+        "pct5_max_dd": 237000.0,
+        "pct1_max_dd": 359000.0,
+        "walk_forward_degradation": 0.05,
+        "sensitivity_max_degradation": 0.05,
+    }
     base.update(over)
     return base
 
@@ -129,25 +157,39 @@ def test_the_percent_limit_is_enforced_when_the_ruleset_states_one():
 
 
 def test_reasons_are_written_in_the_unit_being_judged():
-    grade, reasons = compute_grade(_st(median_max_dd_pct=10.0, pct5_max_dd_pct=20.0,
-                                       pct1_max_dd_pct=25.0), None, None, DEMO)
+    grade, reasons = compute_grade(
+        _st(median_max_dd_pct=10.0, pct5_max_dd_pct=20.0, pct1_max_dd_pct=25.0), None, None, DEMO
+    )
     assert grade == "C"
     assert any("%" in r and "$" not in r for r in reasons)
 
 
 def test_rows_written_before_the_percent_columns_still_grade_in_dollars():
     """No dd_basis and no percent values — an old record must keep reproducing its stored grade."""
-    old = {"median_final_pnl": 20000.0, "prob_breach": 0.0,
-           "median_max_dd": 500.0, "pct5_max_dd": 800.0, "pct1_max_dd": 1000.0,
-           "walk_forward_degradation": None, "sensitivity_max_degradation": None}
+    old = {
+        "median_final_pnl": 20000.0,
+        "prob_breach": 0.0,
+        "median_max_dd": 500.0,
+        "pct5_max_dd": 800.0,
+        "pct1_max_dd": 1000.0,
+        "walk_forward_degradation": None,
+        "sensitivity_max_degradation": None,
+    }
     assert compute_grade(old, None, None, PROP)[0] == "A"
 
 
 def test_a_fixed_size_run_against_no_limit_is_still_ungraded():
     """Honest edge case: dollars basis, no dollar limit, and no percent to fall back on."""
-    old = {"median_final_pnl": 20000.0, "prob_breach": 0.0, "dd_basis": "dollars",
-           "median_max_dd": 500.0, "pct5_max_dd": 800.0, "pct1_max_dd": 1000.0,
-           "walk_forward_degradation": None, "sensitivity_max_degradation": None}
+    old = {
+        "median_final_pnl": 20000.0,
+        "prob_breach": 0.0,
+        "dd_basis": "dollars",
+        "median_max_dd": 500.0,
+        "pct5_max_dd": 800.0,
+        "pct1_max_dd": 1000.0,
+        "walk_forward_degradation": None,
+        "sensitivity_max_degradation": None,
+    }
     grade, reasons = compute_grade(old, None, None, NO_LIMIT)
     assert grade is None
     assert any("no drawdown limit" in r for r in reasons)

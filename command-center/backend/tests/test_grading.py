@@ -8,13 +8,16 @@ error, which is the only kind a user cannot catch:
 
 from services.grading import compute_grade
 
-
 # A prop-style ruleset with a real $5,000 drawdown limit.
 LIMITED = {"id": "prop", "name": "Prop $50k", "ruleset_type": "prop_funded", "max_loss_eod": 5000}
 # The "Unconstrained (No Limits)" row: personal type, no trailing EOD rule, no drawdown-from-peak.
 UNLIMITED = {
-    "id": "unconstrained", "name": "Unconstrained (No Limits)", "ruleset_type": "personal",
-    "max_loss_eod": 0, "max_drawdown_from_peak_pct": None, "account_size": 10000,
+    "id": "unconstrained",
+    "name": "Unconstrained (No Limits)",
+    "ruleset_type": "personal",
+    "max_loss_eod": 0,
+    "max_drawdown_from_peak_pct": None,
+    "account_size": 10000,
 }
 
 
@@ -23,9 +26,13 @@ def _st(**over) -> dict:
     # worst-5%, which is always at least the median. A fixture that breaks that ordering tests a
     # state Monte Carlo cannot produce.
     base = {
-        "pct1_max_dd": 1000.0, "pct5_max_dd": 800.0, "median_max_dd": 500.0,
-        "median_final_pnl": 20000.0, "prob_breach": 0.0,
-        "walk_forward_degradation": None, "sensitivity_max_degradation": None,
+        "pct1_max_dd": 1000.0,
+        "pct5_max_dd": 800.0,
+        "median_max_dd": 500.0,
+        "median_final_pnl": 20000.0,
+        "prob_breach": 0.0,
+        "walk_forward_degradation": None,
+        "sensitivity_max_degradation": None,
     }
     base.update(over)
     return base
@@ -33,11 +40,17 @@ def _st(**over) -> dict:
 
 # ── falsy-vs-None ─────────────────────────────────────────────────────────────
 
+
 def test_zero_prob_breach_is_reported_as_zero_not_one():
     """`prob_breach or 1.0` turned a perfect 0.0 into 1.0 and told the user '100% probability of
     breaching' about a strategy that breached in none of 11,000 simulations."""
     # Force the D branch (median profitable, drawdown over the limit) so prob_breach is printed.
-    grade, reasons = compute_grade(_st(pct1_max_dd=9000.0, pct5_max_dd=8000.0, median_max_dd=7000.0, prob_breach=0.0), None, None, LIMITED)
+    grade, reasons = compute_grade(
+        _st(pct1_max_dd=9000.0, pct5_max_dd=8000.0, median_max_dd=7000.0, prob_breach=0.0),
+        None,
+        None,
+        LIMITED,
+    )
     assert grade == "D"
     assert any("0% probability" in r for r in reasons)
     assert not any("100% probability" in r for r in reasons)
@@ -45,17 +58,22 @@ def test_zero_prob_breach_is_reported_as_zero_not_one():
 
 def test_zero_drawdown_passes_every_limit_check():
     """`pct1_max_dd or inf` turned a real 0.0 drawdown into infinity, failing every check."""
-    grade, _ = compute_grade(_st(pct1_max_dd=0.0, pct5_max_dd=0.0, median_max_dd=0.0), None, None, LIMITED)
+    grade, _ = compute_grade(
+        _st(pct1_max_dd=0.0, pct5_max_dd=0.0, median_max_dd=0.0), None, None, LIMITED
+    )
     assert grade == "A"
 
 
 def test_missing_metric_still_falls_back():
     """The None fallback must survive: an absent drawdown is unknown, so it cannot pass a limit."""
-    grade, _ = compute_grade(_st(pct1_max_dd=None, pct5_max_dd=None, median_max_dd=None), None, None, LIMITED)
+    grade, _ = compute_grade(
+        _st(pct1_max_dd=None, pct5_max_dd=None, median_max_dd=None), None, None, LIMITED
+    )
     assert grade == "D"  # median profitable, no assessable drawdown
 
 
 # ── no drawdown limit ─────────────────────────────────────────────────────────
+
 
 def test_no_drawdown_limit_is_not_graded():
     """A ruleset with no limit has nothing for the drawdown grade to measure against. It used to
@@ -85,11 +103,14 @@ def test_a_perfect_strategy_could_never_beat_d_before_this():
 
 # ── the limited path is unchanged ─────────────────────────────────────────────
 
+
 def test_unassessable_sensitivity_is_treated_as_not_run():
     """Sensitivity that RAN but measured nothing (no tunable params, or an unusable baseline profit
     factor) used to silently block A and B — a penalty for a measurement that never happened."""
     st = _st(walk_forward_degradation=0.10, sensitivity_max_degradation=None)
-    grade, reasons = compute_grade(st, [{"window": 1, "is_trades": 60, "oos_trades": 40}], {}, LIMITED)
+    grade, reasons = compute_grade(
+        st, [{"window": 1, "is_trades": 60, "oos_trades": 40}], {}, LIMITED
+    )
     assert grade == "A"
     assert any("no measurable result" in r for r in reasons)
 
@@ -99,6 +120,31 @@ def test_limited_ruleset_grades_are_untouched():
     wf, sens = [{"window": 1}], {"p": {}}
     assert compute_grade(_st(**solid), wf, sens, LIMITED)[0] == "A"
     assert compute_grade(_st(pct1_max_dd=6000.0, **solid), wf, sens, LIMITED)[0] == "B"
-    assert compute_grade(_st(pct1_max_dd=6000.0, pct5_max_dd=6000.0, **solid), wf, sens, LIMITED)[0] == "C"
-    assert compute_grade(_st(pct1_max_dd=9000.0, pct5_max_dd=8000.0, median_max_dd=7000.0, **solid), wf, sens, LIMITED)[0] == "D"
-    assert compute_grade(_st(pct1_max_dd=9000.0, pct5_max_dd=8000.0, median_max_dd=7000.0, median_final_pnl=-500.0, **solid), wf, sens, LIMITED)[0] == "F"
+    assert (
+        compute_grade(_st(pct1_max_dd=6000.0, pct5_max_dd=6000.0, **solid), wf, sens, LIMITED)[0]
+        == "C"
+    )
+    assert (
+        compute_grade(
+            _st(pct1_max_dd=9000.0, pct5_max_dd=8000.0, median_max_dd=7000.0, **solid),
+            wf,
+            sens,
+            LIMITED,
+        )[0]
+        == "D"
+    )
+    assert (
+        compute_grade(
+            _st(
+                pct1_max_dd=9000.0,
+                pct5_max_dd=8000.0,
+                median_max_dd=7000.0,
+                median_final_pnl=-500.0,
+                **solid,
+            ),
+            wf,
+            sens,
+            LIMITED,
+        )[0]
+        == "F"
+    )

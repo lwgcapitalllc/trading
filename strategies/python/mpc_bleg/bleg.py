@@ -99,8 +99,8 @@ class BLegTracker:
         self._l_on = False
         self._l_tap = False
         self._l_bar: Optional[int] = None
-        self._l_ext: Optional[float] = None      # fib 0.0 of the frozen leg (reporting only)
-        self._l_leg_ms: Optional[int] = None     # the bar the frozen leg started on
+        self._l_ext: Optional[float] = None  # fib 0.0 of the frozen leg (reporting only)
+        self._l_leg_ms: Optional[int] = None  # the bar the frozen leg started on
         # short leg (Pine bLegS_*)
         self._s_top: Optional[float] = None
         self._s_bot: Optional[float] = None
@@ -120,8 +120,12 @@ class BLegTracker:
         idx, close, high, low = sig.index, sig.close, sig.high, sig.low
 
         # ── 1. Freeze the SZ band on every SOS (Pine 3697-3724) ──
-        if sig.bull_sos and sig.bull_bos_high is not None and sig.bull_bos_low is not None \
-                and sig.bull_bos_high > sig.bull_bos_low:
+        if (
+            sig.bull_sos
+            and sig.bull_bos_high is not None
+            and sig.bull_bos_low is not None
+            and sig.bull_bos_high > sig.bull_bos_low
+        ):
             rng = sig.bull_bos_high - sig.bull_bos_low
             new = sig.bull_bos_low + rng * 0.5
             was = self._l_on and not self._l_tap
@@ -130,7 +134,9 @@ class BLegTracker:
                 self._l_bot = sig.bull_bos_low + rng * 0.382
                 self._l_top = new
                 self._l_inv = sig.bull_bos_low
-                self._l_tgt = max(self._l_tgt if self._l_tgt is not None else high, high) if was else high
+                self._l_tgt = (
+                    max(self._l_tgt if self._l_tgt is not None else high, high) if was else high
+                )
                 self._l_tap = False
                 self._l_on = was
                 self._l_bar = idx if was else None
@@ -138,8 +144,12 @@ class BLegTracker:
                 # the band so a migration re-takes both and they can never describe two legs.
                 self._l_ext = sig.bull_bos_high
                 self._l_leg_ms = _leg_start(sig.bull_bos_low_ms, sig.bull_bos_high_ms)
-        if sig.bear_sos and sig.bear_bos_high is not None and sig.bear_bos_low is not None \
-                and sig.bear_bos_high > sig.bear_bos_low:
+        if (
+            sig.bear_sos
+            and sig.bear_bos_high is not None
+            and sig.bear_bos_low is not None
+            and sig.bear_bos_high > sig.bear_bos_low
+        ):
             rng = sig.bear_bos_high - sig.bear_bos_low
             new = sig.bear_bos_high - rng * 0.5
             was = self._s_on and not self._s_tap
@@ -148,7 +158,9 @@ class BLegTracker:
                 self._s_top = sig.bear_bos_high - rng * 0.382
                 self._s_bot = new
                 self._s_inv = sig.bear_bos_high
-                self._s_tgt = min(self._s_tgt if self._s_tgt is not None else low, low) if was else low
+                self._s_tgt = (
+                    min(self._s_tgt if self._s_tgt is not None else low, low) if was else low
+                )
                 self._s_tap = False
                 self._s_on = was
                 self._s_bar = idx if was else None
@@ -173,19 +185,35 @@ class BLegTracker:
         if self._l_on:
             if low <= self._l_top:
                 self._l_tap = True
-            if close < self._l_inv or (self._l_bar is not None and idx - self._l_bar > self._bleg_max):
+            if close < self._l_inv or (
+                self._l_bar is not None and idx - self._l_bar > self._bleg_max
+            ):
                 self._l_on = False
         if self._s_on:
             if high >= self._s_bot:
                 self._s_tap = True
-            if close > self._s_inv or (self._s_bar is not None and idx - self._s_bar > self._bleg_max):
+            if close > self._s_inv or (
+                self._s_bar is not None and idx - self._s_bar > self._bleg_max
+            ):
                 self._s_on = False
 
         return BLegState(
-            l_top=self._l_top, l_bot=self._l_bot, l_inv=self._l_inv, l_tgt=self._l_tgt,
-            l_on=self._l_on, l_tap=self._l_tap, l_bar=self._l_bar,
-            s_top=self._s_top, s_bot=self._s_bot, s_inv=self._s_inv, s_tgt=self._s_tgt,
-            s_on=self._s_on, s_tap=self._s_tap, s_bar=self._s_bar,
-            l_ext=self._l_ext, l_leg_ms=self._l_leg_ms,
-            s_ext=self._s_ext, s_leg_ms=self._s_leg_ms,
+            l_top=self._l_top,
+            l_bot=self._l_bot,
+            l_inv=self._l_inv,
+            l_tgt=self._l_tgt,
+            l_on=self._l_on,
+            l_tap=self._l_tap,
+            l_bar=self._l_bar,
+            s_top=self._s_top,
+            s_bot=self._s_bot,
+            s_inv=self._s_inv,
+            s_tgt=self._s_tgt,
+            s_on=self._s_on,
+            s_tap=self._s_tap,
+            s_bar=self._s_bar,
+            l_ext=self._l_ext,
+            l_leg_ms=self._l_leg_ms,
+            s_ext=self._s_ext,
+            s_leg_ms=self._s_leg_ms,
         )

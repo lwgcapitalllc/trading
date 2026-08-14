@@ -61,8 +61,8 @@ SUFFIX_CANDIDATES = ["", ".s", ".m", ".raw", "#", "."]
 
 # Low-timeframe bars are where the data quality question actually bites.
 BAR_TIMEFRAMES = {
-    "M1":  mt5.TIMEFRAME_M1,
-    "M5":  mt5.TIMEFRAME_M5,
+    "M1": mt5.TIMEFRAME_M1,
+    "M5": mt5.TIMEFRAME_M5,
     "M15": mt5.TIMEFRAME_M15,
 }
 
@@ -74,13 +74,13 @@ DEFAULT_TICK_PROBE_CHECKPOINTS = [7, 30, 90, 180, 365, 730]
 # express spread as a fraction of a trade's target. Conservative round numbers.
 # (Spread / target) is the honest "how much of my edge does spread eat" number.
 TYPICAL_TARGET = {
-    "XAUUSD": 2.0,     # ~$2 move
+    "XAUUSD": 2.0,  # ~$2 move
     "XAGUSD": 0.05,
     "EURUSD": 0.0010,  # 10 pips
     "GBPUSD": 0.0010,
-    "GBPJPY": 0.10,    # 10 pips (JPY pair)
+    "GBPJPY": 0.10,  # 10 pips (JPY pair)
     "USDJPY": 0.10,
-    "NAS100": 10.0,    # 10 index points
+    "NAS100": 10.0,  # 10 index points
 }
 
 
@@ -168,8 +168,7 @@ def audit_bar_depth(symbol):
     now = datetime.now()
     for tf_name, tf_const in BAR_TIMEFRAMES.items():
         # Ask for a very wide window; broker returns only what it has.
-        rates = mt5.copy_rates_range(symbol, tf_const,
-                                     now - timedelta(days=1100), now)
+        rates = mt5.copy_rates_range(symbol, tf_const, now - timedelta(days=1100), now)
         if rates is None or len(rates) == 0:
             rows.append((tf_name, 0, None))
             continue
@@ -221,8 +220,7 @@ def audit_gaps(symbol):
     a normal weekend/session break. Crude but catches missing-session holes.
     """
     now = datetime.now()
-    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M5,
-                                 now - timedelta(days=7), now)
+    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M5, now - timedelta(days=7), now)
     if rates is None or len(rates) < 10:
         return None
     times = [r["time"] for r in rates]
@@ -246,14 +244,21 @@ def audit_gaps(symbol):
 
 def main():
     parser = argparse.ArgumentParser(description="Audit MT5 data quality for low-timeframe testing")
-    parser.add_argument("--symbols", type=str, default=None,
-                        help="Comma-separated symbol list (default: a representative set)")
-    parser.add_argument("--tick-probe-days", type=int, default=None,
-                        help="Deepest tick checkpoint to test, in days (default up to 730)")
+    parser.add_argument(
+        "--symbols",
+        type=str,
+        default=None,
+        help="Comma-separated symbol list (default: a representative set)",
+    )
+    parser.add_argument(
+        "--tick-probe-days",
+        type=int,
+        default=None,
+        help="Deepest tick checkpoint to test, in days (default up to 730)",
+    )
     args = parser.parse_args()
 
-    target_symbols = ([s.strip() for s in args.symbols.split(",")]
-                      if args.symbols else SYMBOLS)
+    target_symbols = [s.strip() for s in args.symbols.split(",")] if args.symbols else SYMBOLS
 
     checkpoints = list(DEFAULT_TICK_PROBE_CHECKPOINTS)
     if args.tick_probe_days:
@@ -299,14 +304,20 @@ def main():
             mark = "yes" if has else "NO"
             print(f"      {days:>4}d ago: {count:>8} ticks in a 1-day probe   [{mark}]")
         if deepest == 0:
-            print("      VERDICT: no real ticks served -> M5/M15 fills would be "
-                  "INVENTED from bars. Dukascopy strongly advised.")
+            print(
+                "      VERDICT: no real ticks served -> M5/M15 fills would be "
+                "INVENTED from bars. Dukascopy strongly advised."
+            )
         elif deepest < 90:
-            print(f"      VERDICT: ticks only ~{deepest}d back -> too shallow for "
-                  "robust low-tf testing. Dukascopy advised for depth.")
+            print(
+                f"      VERDICT: ticks only ~{deepest}d back -> too shallow for "
+                "robust low-tf testing. Dukascopy advised for depth."
+            )
         else:
-            print(f"      VERDICT: real ticks at least ~{deepest}d back -> usable "
-                  "for low-tf testing; validate spread below.")
+            print(
+                f"      VERDICT: real ticks at least ~{deepest}d back -> usable "
+                "for low-tf testing; validate spread below."
+            )
         print()
 
         # 2. BARS
@@ -324,13 +335,17 @@ def main():
         if sp is None:
             print("      could not read a live tick (market closed?) - re-run during session")
         else:
-            print(f"      bid {sp['bid']}  ask {sp['ask']}  "
-                  f"spread {sp['spread_price']:.5f} ({sp['spread_points']:.0f} points)")
+            print(
+                f"      bid {sp['bid']}  ask {sp['ask']}  "
+                f"spread {sp['spread_price']:.5f} ({sp['spread_points']:.0f} points)"
+            )
             if sp["frac_of_target"] is not None:
                 pct = sp["frac_of_target"] * 100
                 flag = "  <- heavy: spread eats a big slice of each scalp" if pct > 25 else ""
-                print(f"      vs a ~{sp['target']} typical target: "
-                      f"spread = {pct:.0f}% of target{flag}")
+                print(
+                    f"      vs a ~{sp['target']} typical target: "
+                    f"spread = {pct:.0f}% of target{flag}"
+                )
         print()
 
         # 4. GAPS
@@ -340,8 +355,10 @@ def main():
             print("      not enough recent M5 data to check")
         else:
             note = "  clean" if gaps["suspicious_gaps"] == 0 else "  <- holes present"
-            print(f"      {gaps['bars']} bars, {gaps['suspicious_gaps']} "
-                  f"suspicious midweek gaps{note}")
+            print(
+                f"      {gaps['bars']} bars, {gaps['suspicious_gaps']} "
+                f"suspicious midweek gaps{note}"
+            )
         print()
 
     print("=" * 72)

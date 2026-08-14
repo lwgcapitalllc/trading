@@ -20,19 +20,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ValidationError
-
 import config as cfg
+from fastapi import APIRouter, HTTPException
 from models import (
-    SmartMoneyRun,
-    SmartMoneyRunSummary,
-    SmartMoneyConfig,
-    ConfigGitStatus,
     Candidate,
+    ConfigGitStatus,
     DisqualifiedCandidate,
     RunProgress,
+    SmartMoneyConfig,
+    SmartMoneyRun,
+    SmartMoneyRunSummary,
 )
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/smart-money", tags=["smart-money"])
 
@@ -40,6 +39,7 @@ _SM_DB_PATH = cfg.SMART_MONEY_ROOT / "data" / "smart_money.db"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _pipeline_cfg_to_api(raw: dict) -> SmartMoneyConfig:
     """Map the pipeline's config.json structure to the API model (fractional → pct)."""
@@ -75,21 +75,25 @@ def _api_cfg_to_pipeline(api_cfg: SmartMoneyConfig, existing_raw: dict) -> dict:
     """Merge API model back into the pipeline config dict (pct → fractional)."""
     raw = dict(existing_raw)
     raw["qualification"] = dict(raw.get("qualification", {}))
-    raw["qualification"].update({
-        "min_trades": api_cfg.min_trades,
-        "min_win_rate": round(api_cfg.min_win_rate_pct / 100, 6),
-        "max_drawdown": round(api_cfg.max_drawdown_pct / 100, 6),
-        "min_active_weeks_per_month": api_cfg.min_active_weeks_per_month,
-        "max_single_trade_pnl_share": round(api_cfg.max_single_trade_pnl_share_pct / 100, 6),
-        "max_avg_hold_hours": api_cfg.max_avg_hold_hours,
-        "min_wallet_age_days": api_cfg.min_account_age_days,
-    })
+    raw["qualification"].update(
+        {
+            "min_trades": api_cfg.min_trades,
+            "min_win_rate": round(api_cfg.min_win_rate_pct / 100, 6),
+            "max_drawdown": round(api_cfg.max_drawdown_pct / 100, 6),
+            "min_active_weeks_per_month": api_cfg.min_active_weeks_per_month,
+            "max_single_trade_pnl_share": round(api_cfg.max_single_trade_pnl_share_pct / 100, 6),
+            "max_avg_hold_hours": api_cfg.max_avg_hold_hours,
+            "min_wallet_age_days": api_cfg.min_account_age_days,
+        }
+    )
     raw["lookback"] = dict(raw.get("lookback", {}))
-    raw["lookback"].update({
-        "minimum_days": api_cfg.lookback_min_days,
-        "preferred_days": api_cfg.lookback_preferred_days,
-        "elite_days": api_cfg.lookback_elite_days,
-    })
+    raw["lookback"].update(
+        {
+            "minimum_days": api_cfg.lookback_min_days,
+            "preferred_days": api_cfg.lookback_preferred_days,
+            "elite_days": api_cfg.lookback_elite_days,
+        }
+    )
     raw["scoring"] = dict(raw.get("scoring", {}))
     raw["scoring"]["weights"] = {
         "win_rate_consistency": round(api_cfg.weight_winrate_consistency / 100, 6),
@@ -99,29 +103,32 @@ def _api_cfg_to_pipeline(api_cfg: SmartMoneyConfig, existing_raw: dict) -> dict:
         "instrument_day_consistency": round(api_cfg.weight_instrument_consistency / 100, 6),
     }
     raw["strike_system"] = dict(raw.get("strike_system", {}))
-    raw["strike_system"].update({
-        "yellow_flag_threshold": api_cfg.strike_months_to_yellow,
-        "disqualify_consecutive_months": api_cfg.strike_months_to_disqualify,
-        "reinstate_consecutive_months": api_cfg.strike_months_to_reinstate,
-    })
+    raw["strike_system"].update(
+        {
+            "yellow_flag_threshold": api_cfg.strike_months_to_yellow,
+            "disqualify_consecutive_months": api_cfg.strike_months_to_disqualify,
+            "reinstate_consecutive_months": api_cfg.strike_months_to_reinstate,
+        }
+    )
     return raw
 
 
 def _validate_config_logic(c: SmartMoneyConfig) -> None:
     """Business-rule validation beyond field-level checks."""
     weight_sum = (
-        c.weight_winrate_consistency + c.weight_risk_adjusted_return +
-        c.weight_exit_efficiency + c.weight_trade_frequency + c.weight_instrument_consistency
+        c.weight_winrate_consistency
+        + c.weight_risk_adjusted_return
+        + c.weight_exit_efficiency
+        + c.weight_trade_frequency
+        + c.weight_instrument_consistency
     )
     if abs(weight_sum - 100.0) > 0.01:
         raise HTTPException(
-            status_code=422,
-            detail=f"Scoring weights must sum to 100 (got {weight_sum:.2f})"
+            status_code=422, detail=f"Scoring weights must sum to 100 (got {weight_sum:.2f})"
         )
     if not (c.lookback_min_days <= c.lookback_preferred_days <= c.lookback_elite_days):
         raise HTTPException(
-            status_code=422,
-            detail="Lookback tiers must be ordered: min ≤ preferred ≤ elite"
+            status_code=422, detail="Lookback tiers must be ordered: min ≤ preferred ≤ elite"
         )
 
 
@@ -145,6 +152,7 @@ def _load_meta(run_id: str) -> dict:
 
 # ── Runs ──────────────────────────────────────────────────────────────────────
 
+
 @router.get("/runs", response_model=list[SmartMoneyRunSummary])
 def list_runs():
     summaries: list[SmartMoneyRunSummary] = []
@@ -152,11 +160,13 @@ def list_runs():
         try:
             with open(d / "meta.json") as f:
                 meta = json.load(f)
-            summaries.append(SmartMoneyRunSummary(
-                run_id=d.name,
-                generated_at=meta.get("generated_at", d.name),
-                total_qualified=meta.get("total_qualified", 0),
-            ))
+            summaries.append(
+                SmartMoneyRunSummary(
+                    run_id=d.name,
+                    generated_at=meta.get("generated_at", d.name),
+                    total_qualified=meta.get("total_qualified", 0),
+                )
+            )
         except Exception:
             pass
     return summaries
@@ -196,7 +206,9 @@ def get_candidate(run_id: str, candidate_id: str):
     for c in data:
         if c.get("id") == candidate_id:
             return Candidate(**c)
-    raise HTTPException(status_code=404, detail=f"Candidate '{candidate_id}' not found in run '{run_id}'")
+    raise HTTPException(
+        status_code=404, detail=f"Candidate '{candidate_id}' not found in run '{run_id}'"
+    )
 
 
 @router.get("/runs/{run_id}/disqualified", response_model=list[DisqualifiedCandidate])
@@ -214,6 +226,7 @@ def list_disqualified(run_id: str):
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
+
 
 @router.get("/config", response_model=SmartMoneyConfig)
 def get_config():
@@ -247,7 +260,8 @@ def config_git_status():
     # Check if file has uncommitted changes
     result = subprocess.run(
         ["git", "status", "--porcelain", str(path)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         cwd=cfg.MONOREPO_ROOT,
     )
     is_dirty = bool(result.stdout.strip())
@@ -255,7 +269,8 @@ def config_git_status():
     # Get last commit info for this file
     log_result = subprocess.run(
         ["git", "log", "-1", "--format=%H%n%s%n%ai", "--", str(path)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         cwd=cfg.MONOREPO_ROOT,
     )
     lines = log_result.stdout.strip().splitlines()
@@ -279,15 +294,24 @@ def config_git_status():
 
 # ── Live run progress ─────────────────────────────────────────────────────────
 
+
 @router.get("/progress", response_model=RunProgress)
 def get_progress():
     progress_path = cfg.SMART_MONEY_REPORTS_DIR / "progress.json"
     if not progress_path.exists():
         return RunProgress(
-            run_id="", status="idle", stage=0, stage_name="",
-            phase="", pct=0, wallets_scanned=0, wallets_total=0,
-            qualified_so_far=0, disqualified_so_far=0,
-            message="No pipeline run in progress", elapsed_seconds=0.0,
+            run_id="",
+            status="idle",
+            stage=0,
+            stage_name="",
+            phase="",
+            pct=0,
+            wallets_scanned=0,
+            wallets_total=0,
+            qualified_so_far=0,
+            disqualified_so_far=0,
+            message="No pipeline run in progress",
+            elapsed_seconds=0.0,
         )
     with open(progress_path) as f:
         data = json.load(f)
@@ -309,7 +333,9 @@ def run_pipeline(body: _RunRequest = None):
         body = _RunRequest()
 
     if body.profile is not None and body.profile not in ("bot", "human"):
-        raise HTTPException(status_code=422, detail=f"Invalid profile '{body.profile}'. Use 'bot' or 'human'.")
+        raise HTTPException(
+            status_code=422, detail=f"Invalid profile '{body.profile}'. Use 'bot' or 'human'."
+        )
 
     progress_path = cfg.SMART_MONEY_REPORTS_DIR / "progress.json"
     if progress_path.exists():
@@ -365,10 +391,20 @@ def stop_pipeline():
 
     # Reset progress to idle so the UI clears immediately
     idle = {
-        "run_id": "", "status": "idle", "stage": 0, "stage_name": "",
-        "phase": "", "pct": 0, "wallets_scanned": 0, "wallets_total": 0,
-        "qualified_so_far": 0, "disqualified_so_far": 0, "message": "",
-        "started_at": None, "updated_at": None, "elapsed_seconds": 0.0,
+        "run_id": "",
+        "status": "idle",
+        "stage": 0,
+        "stage_name": "",
+        "phase": "",
+        "pct": 0,
+        "wallets_scanned": 0,
+        "wallets_total": 0,
+        "qualified_so_far": 0,
+        "disqualified_so_far": 0,
+        "message": "",
+        "started_at": None,
+        "updated_at": None,
+        "elapsed_seconds": 0.0,
     }
     tmp = progress_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(idle))
@@ -378,6 +414,7 @@ def stop_pipeline():
 
 
 # ── Fills cache ───────────────────────────────────────────────────────────────
+
 
 class _CacheStats(BaseModel):
     wallets_cached: int

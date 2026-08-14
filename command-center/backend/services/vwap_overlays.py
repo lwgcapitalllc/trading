@@ -94,8 +94,10 @@ def build_vwap_indicator(candles: list[dict]) -> Optional[dict]:
         return None
     try:
         from vwap import VwapEngine  # canonical engine, bare-name import
-    except Exception:                                     # noqa: BLE001 — layer is optional
-        log.warning("vwap_overlays: canonical VWAP engine unavailable; layer skipped", exc_info=True)
+    except Exception:  # noqa: BLE001 — layer is optional
+        log.warning(
+            "vwap_overlays: canonical VWAP engine unavailable; layer skipped", exc_info=True
+        )
         return None
 
     volumes = _volumes_or_none(candles)
@@ -109,20 +111,25 @@ def build_vwap_indicator(candles: list[dict]) -> Optional[dict]:
             ev = engine.update(i, c["time"], c["high"], c["low"], c["close"], vol)
             if ev.value is not None:
                 series.append({"time": c["time"], "value": round(ev.value, _PRICE_DP)})
-    except Exception:                                     # noqa: BLE001 — layer is optional
+    except Exception:  # noqa: BLE001 — layer is optional
         log.warning("vwap_overlays: VWAP replay failed; layer skipped", exc_info=True)
         return None
 
     if not series:
         # Every bar in the run had zero volume. Real (a symbol whose feed reports none) rather than
         # a bug, and there is no line to draw — so no toggle, rather than an empty one.
-        log.info("vwap_overlays: no VWAP value on any of %d candles (all zero volume)", len(candles))
+        log.info(
+            "vwap_overlays: no VWAP value on any of %d candles (all zero volume)", len(candles)
+        )
         return None
 
     log.info("vwap_overlays: %d VWAP points over %d candles", len(series), len(candles))
     return {
         "name": INDICATOR_VWAP,
-        "params": {"anchor": "trading day (18:00 America/New_York)", "source": "hlc3 × tick volume"},
+        "params": {
+            "anchor": "trading day (18:00 America/New_York)",
+            "source": "hlc3 × tick volume",
+        },
         "pane": "main",
         # OFF on arrival, like every analysis layer added since the fair value gaps. A chart should
         # open on the run, and each extra reading is something the reader asks for.
@@ -148,7 +155,8 @@ def _volumes_or_none(candles: list[dict]) -> Optional[list[float]]:
                 "bump and BEFORE the VPS agent was deployed is stamped current while holding no "
                 "volume, and will not re-pull. Check BarCache.has_volume(); if it is False, delete "
                 "that pair's .csv and .meta.json.",
-                i, len(candles),
+                i,
+                len(candles),
             )
             return None
         try:

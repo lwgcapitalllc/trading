@@ -72,25 +72,33 @@ test('a six-year jump lands on the requested date in seconds, not minutes', asyn
   const t0 = Date.now()
   await jumpTo(page, TARGET)
   await expect
-    .poll(async () => {
-      const w = await appliedWindow(page)
-      return dayMs(TARGET) >= w.lo && dayMs(TARGET) <= w.hi
-    }, { timeout: JUMP_BUDGET_MS, intervals: [200] })
+    .poll(
+      async () => {
+        const w = await appliedWindow(page)
+        return dayMs(TARGET) >= w.lo && dayMs(TARGET) <= w.hi
+      },
+      { timeout: JUMP_BUDGET_MS, intervals: [200] }
+    )
     .toBe(true)
 
   expect(Date.now() - t0).toBeLessThan(JUMP_BUDGET_MS)
 })
 
-test('a jump applies a BOUNDED window, not everything from the target to the present', async ({ page }) => {
+test('a jump applies a BOUNDED window, not everything from the target to the present', async ({
+  page,
+}) => {
   test.setTimeout(120_000)
   await openPriceTab(page)
   await jumpTo(page, TARGET)
 
   await expect
-    .poll(async () => {
-      const w = await appliedWindow(page)
-      return dayMs(TARGET) >= w.lo && dayMs(TARGET) <= w.hi
-    }, { timeout: JUMP_BUDGET_MS, intervals: [200] })
+    .poll(
+      async () => {
+        const w = await appliedWindow(page)
+        return dayMs(TARGET) >= w.lo && dayMs(TARGET) <= w.hi
+      },
+      { timeout: JUMP_BUDGET_MS, intervals: [200] }
+    )
     .toBe(true)
 
   // 🔴 This is the structural half of the check above, and it is the one that says WHY the jump is

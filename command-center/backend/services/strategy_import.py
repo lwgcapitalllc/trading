@@ -44,8 +44,7 @@ def purge_strategy_modules() -> int:
 
     Call ONCE before a loop that imports several packages — see the namespace warning above.
     """
-    stale = [name for name in sys.modules
-             if name == _PKG_ROOT or name.startswith(_PKG_ROOT + ".")]
+    stale = [name for name in sys.modules if name == _PKG_ROOT or name.startswith(_PKG_ROOT + ".")]
     for name in stale:
         del sys.modules[name]
     return len(stale)

@@ -34,9 +34,9 @@ See `docs/LIVE_SETUP_ALERTS.md` for the message wording, the measured volume and
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Callable, Dict, Optional, Sequence, Set
+
+import alerts  # noqa: E402  (same package; `runner` puts this dir on the path)
 
 # ⚠ **This module inserts NOTHING onto `sys.path`, deliberately.** It is imported from
 # `runner._start_setup_alerts`, which runs AFTER `_bind_code()` has put the frozen `deployed/`
@@ -48,8 +48,6 @@ from typing import Callable, Dict, Optional, Sequence, Set
 # module level at all, because `bridge.py` pulls it in before the snapshot is bound. See the
 # block at the top of that file — it took the live bot down on 2026-08-13.
 from backtest.setups import RESTING, SetupSnapshot, implements_contract  # noqa: E402
-
-import alerts  # noqa: E402  (same package; `runner` puts this dir on the path)
 
 #: The four message categories, switchable per bot. Names are a WIRE FORMAT — they appear in
 #: instance configs, so renaming one silently turns that category off on every bot already
@@ -73,9 +71,14 @@ class SetupAlerts:
     the runner passes its own `_notify`, which already carries per-bot chat and token routing.
     """
 
-    def __init__(self, send: Callable[..., Optional[int]], log=None,
-                 categories: Sequence[str] = DEFAULT_CATEGORIES,
-                 digits: int = 2, display: str = "") -> None:
+    def __init__(
+        self,
+        send: Callable[..., Optional[int]],
+        log=None,
+        categories: Sequence[str] = DEFAULT_CATEGORIES,
+        digits: int = 2,
+        display: str = "",
+    ) -> None:
         self._send = send
         self._log = log
         self._digits = digits
@@ -101,7 +104,7 @@ class SetupAlerts:
                 return
             for snap in snaps:
                 self._handle(snap)
-        except Exception as e:                       # noqa: BLE001 — see the module docstring
+        except Exception as e:  # noqa: BLE001 — see the module docstring
             self._warn(f"setup alerts failed on this bar: {e}")
 
     def supported(self, strategy) -> bool:
@@ -121,8 +124,10 @@ class SetupAlerts:
         if not implements_contract(ex):
             if not self._unsupported_reported:
                 self._unsupported_reported = True
-                self._warn(f"{type(ex).__name__} does not implement live_setups() — the signals "
-                           f"channel is OFF for this bot. It is not quiet; it cannot report.")
+                self._warn(
+                    f"{type(ex).__name__} does not implement live_setups() — the signals "
+                    f"channel is OFF for this bot. It is not quiet; it cannot report."
+                )
             return None
         # `drain_setups` clears the resolved ones so they are not re-sent every bar. A strategy
         # offering only `live_setups` is read without draining and WARNED about, because the
@@ -130,8 +135,10 @@ class SetupAlerts:
         drain = getattr(ex, "drain_setups", None)
         if callable(drain):
             return drain()
-        self._warn(f"{type(ex).__name__} has live_setups() but no drain_setups() — resolved "
-                   f"setups may repeat.")
+        self._warn(
+            f"{type(ex).__name__} has live_setups() but no drain_setups() — resolved "
+            f"setups may repeat."
+        )
         return ex.live_setups()
 
     def _handle(self, snap: SetupSnapshot) -> None:
@@ -163,7 +170,8 @@ class SetupAlerts:
             sent.add(WATCHING_MSG)
             if self._on(WATCHING_MSG):
                 self._threads[snap.key] = self._post(
-                    alerts.format_watching(snap, self._digits, self._display))
+                    alerts.format_watching(snap, self._digits, self._display)
+                )
 
         root = self._threads.get(snap.key)
 
@@ -199,10 +207,11 @@ class SetupAlerts:
 
     def _post(self, text: str, reply_to: Optional[int] = None) -> Optional[int]:
         from notify import SIGNAL
+
         return self._send(text, SIGNAL, reply_to=reply_to)
 
     def _warn(self, msg: str) -> None:
         if self._log is not None:
             self._log.warning(msg)
-        else:                                        # pragma: no cover - a bot always has a log
+        else:  # pragma: no cover - a bot always has a log
             print(f"setup_alerts: {msg}")

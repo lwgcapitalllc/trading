@@ -78,11 +78,11 @@ def _key_day(dt: datetime):
 
 def _key_week(dt: datetime):
     iso = dt.isocalendar()
-    return (iso[0], iso[1])           # (ISO year, ISO week) — week starts Monday
+    return (iso[0], iso[1])  # (ISO year, ISO week) — week starts Monday
 
 
 def _key_h4(dt: datetime):
-    return (dt.year, dt.month, dt.day, dt.hour // 4)   # 4-hour bucket from local midnight
+    return (dt.year, dt.month, dt.day, dt.hour // 4)  # 4-hour bucket from local midnight
 
 
 class _PeriodTracker:
@@ -112,12 +112,16 @@ class _PeriodTracker:
             return False
         if key != self.cur_key:
             # the period we were accumulating just ended — freeze it as the "previous" period
-            self.prev_high, self.prev_low, self.prev_close = self.cur_high, self.cur_low, self.cur_close
+            self.prev_high, self.prev_low, self.prev_close = (
+                self.cur_high,
+                self.cur_low,
+                self.cur_close,
+            )
             self.cur_key = key
             self.cur_high, self.cur_low, self.cur_close = high, low, close
             return True
-        self.cur_high = max(self.cur_high, high)   # type: ignore[type-var]
-        self.cur_low = min(self.cur_low, low)      # type: ignore[type-var]
+        self.cur_high = max(self.cur_high, high)  # type: ignore[type-var]
+        self.cur_low = min(self.cur_low, low)  # type: ignore[type-var]
         self.cur_close = close
         return False
 
@@ -137,7 +141,7 @@ class LiquidityEngine:
     def __init__(
         self,
         htf_timezone: str = _DEFAULT_HTF_TZ,
-        htf_rollover_hours: int = 18,   # XAUUSD session opens 18:00 NY — validated at 100% Pine parity
+        htf_rollover_hours: int = 18,  # XAUUSD session opens 18:00 NY — validated at 100% Pine parity
         hide_mitigated_on_new_day: bool = True,
         enable_daily: bool = True,
         enable_weekly: bool = True,
@@ -175,7 +179,9 @@ class LiquidityEngine:
         self._next_id = 0
 
     # ------------------------------------------------------------------
-    def update(self, index: int, timestamp_ms: int, high: float, low: float, close: float) -> LiquidityEvents:
+    def update(
+        self, index: int, timestamp_ms: int, high: float, low: float, close: float
+    ) -> LiquidityEvents:
         """Feed one closed bar: its index, UTC open time (epoch milliseconds, == Pine `time`), and
         the bar's high/low/close. Returns this bar's LiquidityEvents."""
         ev = LiquidityEvents()
@@ -186,8 +192,10 @@ class LiquidityEngine:
 
         # HTF period clock: convert to the boundary timezone, then shift forward so a non-midnight
         # session open (e.g. 18:00 NY for gold) cuts the day/week/H4 buckets correctly.
-        local = (datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc)
-                 .astimezone(self._htf_tz) + self._htf_shift)
+        local = (
+            datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc).astimezone(self._htf_tz)
+            + self._htf_shift
+        )
 
         # 1. Hide-mitigated-on-new-day tidy (Pine newDay block, top of each liquidity block).
         if self._hide_on_new_day and sess.is_new_day:
@@ -221,40 +229,112 @@ class LiquidityEngine:
         self._active[slot] = lvl
         ev.created.append(lvl)
 
-    def _roll_calendar(self, index: int, local: datetime, high: float, low: float, close: float,
-                       ev: LiquidityEvents) -> None:
+    def _roll_calendar(
+        self,
+        index: int,
+        local: datetime,
+        high: float,
+        low: float,
+        close: float,
+        ev: LiquidityEvents,
+    ) -> None:
         """Daily / weekly previous-period H/L + PWC. On a period roll the just-completed period's
         extremes become the new PDH/PDL (etc.); PWC takes the completed week's final close. Daily
         uses the sweep rule; weekly uses the close-through (break) rule (Pine 1427).
         """
         if self._daily.update(local, high, low, close) and self._enable["daily"]:
-            self._new_level(index, ev, "daily_high", kind="daily", side="high", name="PDH",
-                            price=self._daily.prev_high, rule=SWEEP_HIGH)   # type: ignore[arg-type]
-            self._new_level(index, ev, "daily_low", kind="daily", side="low", name="PDL",
-                            price=self._daily.prev_low, rule=SWEEP_LOW)     # type: ignore[arg-type]
+            self._new_level(
+                index,
+                ev,
+                "daily_high",
+                kind="daily",
+                side="high",
+                name="PDH",
+                price=self._daily.prev_high,
+                rule=SWEEP_HIGH,
+            )  # type: ignore[arg-type]
+            self._new_level(
+                index,
+                ev,
+                "daily_low",
+                kind="daily",
+                side="low",
+                name="PDL",
+                price=self._daily.prev_low,
+                rule=SWEEP_LOW,
+            )  # type: ignore[arg-type]
 
         if self._weekly.update(local, high, low, close):
             if self._enable["weekly"]:
-                self._new_level(index, ev, "weekly_high", kind="weekly", side="high", name="PWH",
-                                price=self._weekly.prev_high, rule=BREAK_HIGH)  # type: ignore[arg-type]
-                self._new_level(index, ev, "weekly_low", kind="weekly", side="low", name="PWL",
-                                price=self._weekly.prev_low, rule=BREAK_LOW)    # type: ignore[arg-type]
+                self._new_level(
+                    index,
+                    ev,
+                    "weekly_high",
+                    kind="weekly",
+                    side="high",
+                    name="PWH",
+                    price=self._weekly.prev_high,
+                    rule=BREAK_HIGH,
+                )  # type: ignore[arg-type]
+                self._new_level(
+                    index,
+                    ev,
+                    "weekly_low",
+                    kind="weekly",
+                    side="low",
+                    name="PWL",
+                    price=self._weekly.prev_low,
+                    rule=BREAK_LOW,
+                )  # type: ignore[arg-type]
             if self._enable["pwc"]:
                 # PWC — the previous week's final close. A reference line, never "mitigated" (Pine
                 # only recolours it above/below; there is no sweep/break tracking).
-                self._new_level(index, ev, "pwc", kind="pwc", side="close", name="PWC",
-                                price=self._weekly.prev_close, rule=NONE)       # type: ignore[arg-type]
+                self._new_level(
+                    index,
+                    ev,
+                    "pwc",
+                    kind="pwc",
+                    side="close",
+                    name="PWC",
+                    price=self._weekly.prev_close,
+                    rule=NONE,
+                )  # type: ignore[arg-type]
 
-    def _roll_h4(self, index: int, local: datetime, high: float, low: float, close: float,
-                 ev: LiquidityEvents) -> None:
+    def _roll_h4(
+        self,
+        index: int,
+        local: datetime,
+        high: float,
+        low: float,
+        close: float,
+        ev: LiquidityEvents,
+    ) -> None:
         """H4 sweep levels: on an H4 roll the previous H4 candle's high/low become the tracked
         levels (Pine h4PrevHigh/h4PrevLow), and the swept flags reset. Both use the sweep rule; the
         sweep, when it fires, carries the source's SSH/BSL label (Pine 1574/1585)."""
         if self._h4.update(local, high, low, close) and self._enable["h4"]:
-            self._new_level(index, ev, "h4_high", kind="h4", side="high", name="H4 H",
-                            price=self._h4.prev_high, rule=SWEEP_HIGH, sweep_label="BSL")  # type: ignore[arg-type]
-            self._new_level(index, ev, "h4_low", kind="h4", side="low", name="H4 L",
-                            price=self._h4.prev_low, rule=SWEEP_LOW, sweep_label="SSL")    # type: ignore[arg-type]
+            self._new_level(
+                index,
+                ev,
+                "h4_high",
+                kind="h4",
+                side="high",
+                name="H4 H",
+                price=self._h4.prev_high,
+                rule=SWEEP_HIGH,
+                sweep_label="BSL",
+            )  # type: ignore[arg-type]
+            self._new_level(
+                index,
+                ev,
+                "h4_low",
+                kind="h4",
+                side="low",
+                name="H4 L",
+                price=self._h4.prev_low,
+                rule=SWEEP_LOW,
+                sweep_label="SSL",
+            )  # type: ignore[arg-type]
 
     def _create_session_levels(self, index: int, sess, ev: LiquidityEvents) -> None:
         """Turn each finished session (the sessions engine's `closed` SessionRange edges) into a
@@ -263,12 +343,32 @@ class LiquidityEngine:
         if not self._enable["session"]:
             return
         for rng in sess.closed:
-            self._new_level(index, ev, f"session_{rng.name}_high", kind="session", side="high",
-                            name=f"{rng.name} H", price=rng.high, rule=SWEEP_HIGH, session_name=rng.name)
-            self._new_level(index, ev, f"session_{rng.name}_low", kind="session", side="low",
-                            name=f"{rng.name} L", price=rng.low, rule=SWEEP_LOW, session_name=rng.name)
+            self._new_level(
+                index,
+                ev,
+                f"session_{rng.name}_high",
+                kind="session",
+                side="high",
+                name=f"{rng.name} H",
+                price=rng.high,
+                rule=SWEEP_HIGH,
+                session_name=rng.name,
+            )
+            self._new_level(
+                index,
+                ev,
+                f"session_{rng.name}_low",
+                kind="session",
+                side="low",
+                name=f"{rng.name} L",
+                price=rng.low,
+                rule=SWEEP_LOW,
+                session_name=rng.name,
+            )
 
-    def _mitigate(self, index: int, high: float, low: float, close: float, ev: LiquidityEvents) -> None:
+    def _mitigate(
+        self, index: int, high: float, low: float, close: float, ev: LiquidityEvents
+    ) -> None:
         """Run every active level's mitigation rule on this bar; flag and emit the ones price takes.
         A level stays in `active` after mitigation (flagged) until a period roll or the new-day tidy
         removes it — mirroring the Pine dotted 'mitigated' line."""

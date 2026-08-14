@@ -263,12 +263,12 @@ value, so any `trend` works here).
 ```python
 from candlesticks import CandlestickEngine, BULLISH
 
-cs = CandlestickEngine()                       # trend=5, doji_size=0.05 — the Pine defaults
+cs = CandlestickEngine()  # trend=5, doji_size=0.05 — the Pine defaults
 ev = cs.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 
-ev.has("bullish_engulfing")                    # this bar
-ev.matching(keys=cfg.patterns, direction=BULLISH)   # the confluence read
-cs.bars_since("bullish_engulfing")             # 0 = this bar, None = NEVER fired
+ev.has("bullish_engulfing")  # this bar
+ev.matching(keys=cfg.patterns, direction=BULLISH)  # the confluence read
+cs.bars_since("bullish_engulfing")  # 0 = this bar, None = NEVER fired
 ```
 
 A pattern is a property of ONE bar: it fires and it is over. There is no live list, nothing is

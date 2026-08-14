@@ -17,19 +17,22 @@ function firmShortName(firmId: string): string {
   if (parts.length < 3) return firmId
   const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
   const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
-  const size  = (parts[1] ?? '').toUpperCase()
-  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  const size = (parts[1] ?? '').toUpperCase()
+  const tier = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
   return `${brand}${size} ${tier}`
 }
 
 function fmtWhen(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-    ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return (
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+    ' ' +
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  )
 }
 
 export function Optimizations() {
-  const navigate  = useNavigate()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const { data: opts, isLoading } = useOptimizations()
 
@@ -38,16 +41,16 @@ export function Optimizations() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Running optimizations can't be deleted — cancel first. They're not selectable.
-  const selectable = opts?.filter(o => o.status !== 'running') ?? []
+  const selectable = opts?.filter((o) => o.status !== 'running') ?? []
   const toggleSelect = (id: string) =>
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
   const toggleSelectAll = () => {
     if (selectedIds.size === selectable.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(selectable.map(o => o.optimization_id)))
+    else setSelectedIds(new Set(selectable.map((o) => o.optimization_id)))
   }
   const allChecked = selectable.length > 0 && selectedIds.size === selectable.length
 
@@ -55,11 +58,14 @@ export function Optimizations() {
     setBulkDeleting(true)
     const ids = Array.from(selectedIds)
     try {
-      const results = await Promise.allSettled(ids.map(id => api.delete<void>(`/optimizations/${id}`)))
-      const failed = results.filter(r => r.status === 'rejected').length
+      const results = await Promise.allSettled(
+        ids.map((id) => api.delete<void>(`/optimizations/${id}`))
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
-      if (failed === 0) toast.success(`${ids.length} optimization${ids.length !== 1 ? 's' : ''} deleted`)
+      if (failed === 0)
+        toast.success(`${ids.length} optimization${ids.length !== 1 ? 's' : ''} deleted`)
       else toast.error(`${ids.length - failed} deleted, ${failed} failed`)
       setSelectedIds(new Set())
       setShowBulkConfirm(false)
@@ -71,10 +77,16 @@ export function Optimizations() {
   return (
     <div>
       <StickyHeader>
-        {scrolled => (
-          <div className={`flex items-center justify-between gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}>
+        {(scrolled) => (
+          <div
+            className={`flex items-center justify-between gap-3 transition-all duration-200 ${scrolled ? 'mb-2.5' : 'mb-[18px]'}`}
+          >
             <div className="flex items-center gap-2.5">
-              <h1 className={`${scrolled ? 'text-[16px]' : 'text-h1'} font-semibold transition-all duration-200`}>Optimizations</h1>
+              <h1
+                className={`${scrolled ? 'text-[16px]' : 'text-h1'} font-semibold transition-all duration-200`}
+              >
+                Optimizations
+              </h1>
               {opts && opts.length > 0 && (
                 <span className="text-[12px] font-semibold font-mono tabular-nums px-2 py-[2px] rounded-full bg-accent/15 text-accent">
                   {opts.length}
@@ -121,7 +133,12 @@ export function Optimizations() {
             <thead>
               <tr className="border-b border-border-subtle">
                 <th className="px-3 py-3 w-8">
-                  <input type="checkbox" checked={allChecked} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-accent cursor-pointer" />
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={toggleSelectAll}
+                    className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                  />
                 </th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
@@ -136,7 +153,7 @@ export function Optimizations() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {opts.map(opt => {
+              {opts.map((opt) => {
                 const st = fmtOptStatus(opt.status)
                 const isRunning = opt.status === 'running'
                 return (
@@ -145,7 +162,7 @@ export function Optimizations() {
                     onClick={() => navigate(`/optimizations/${opt.optimization_id}`)}
                     className="hover:bg-bg-hover cursor-pointer transition-colors"
                   >
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(opt.optimization_id)}
@@ -155,29 +172,47 @@ export function Optimizations() {
                         className="w-3.5 h-3.5 rounded accent-accent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium">{opt.strategy_name ?? opt.strategy_id}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {opt.strategy_name ?? opt.strategy_id}
+                    </td>
                     <td className="px-4 py-3 font-mono text-text-secondary">{opt.instrument}</td>
-                    <td className="px-4 py-3 text-text-tertiary text-[12px]">{RUNNER_LABEL[runnerScope(opt.runner)]}</td>
+                    <td className="px-4 py-3 text-text-tertiary text-[12px]">
+                      {RUNNER_LABEL[runnerScope(opt.runner)]}
+                    </td>
                     <td className="px-4 py-3 text-text-secondary text-[12px]">
                       {opt.ruleset_id ? firmShortName(opt.ruleset_id) : '—'}
                     </td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{opt.completed_runs}/{opt.estimated_runs}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+                      {opt.completed_runs}/{opt.estimated_runs}
+                    </td>
                     <td className="px-4 py-3 text-[12px]">
                       {/* A finished optimization with no winner is a real outcome (every combo
                           was rejected), not a blank cell — say so. */}
                       {opt.best_run_id ? (
                         <span className="inline-flex items-center gap-1 font-mono text-gold-text">
                           ★ {opt.best_run_id.slice(0, 8)}
-                          {opt.winner_note && <span title={opt.winner_note} className="text-warn-text">⚠</span>}
+                          {opt.winner_note && (
+                            <span title={opt.winner_note} className="text-warn-text">
+                              ⚠
+                            </span>
+                          )}
                         </span>
                       ) : opt.status === 'complete' ? (
                         <span className="text-text-tertiary">none</span>
-                      ) : '—'}
+                      ) : (
+                        '—'
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-text-tertiary text-[12px] whitespace-nowrap">{fmtWhen(opt.created_at)}</td>
+                    <td className="px-4 py-3 text-text-tertiary text-[12px] whitespace-nowrap">
+                      {fmtWhen(opt.created_at)}
+                    </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>{st.label}</span>
+                      <span
+                        className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
+                      >
+                        {st.label}
+                      </span>
                     </td>
                     <td className="px-3 py-3">
                       <ChevronRight size={14} className="text-text-tertiary" />

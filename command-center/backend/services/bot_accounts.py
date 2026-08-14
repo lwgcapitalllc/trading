@@ -54,13 +54,20 @@ from typing import Any, Optional
 # fact the registry records. Imported rather than restated so the two cannot drift.
 from services.bot_account_registry import rebase_symbol
 
-__all__ = ["AccountBot", "AccountGroup", "AssignPlan",
-           "group_by_account", "cap_change_plan", "assign_plan"]
+__all__ = [
+    "AccountBot",
+    "AccountGroup",
+    "AssignPlan",
+    "group_by_account",
+    "cap_change_plan",
+    "assign_plan",
+]
 
 
 @dataclass
 class AccountBot:
     """One bot's place in an account, as far as the account cares."""
+
     key: str
     display: str
     symbol: str
@@ -70,8 +77,8 @@ class AccountBot:
     # by side: a cap at or under a bot's own risk % does not let the bots share, it makes them
     # take turns, and that is invisible from the cap alone.
     risk_pct: Optional[float] = None
-    cap_pct: Optional[float] = None          # what THIS bot states; None = uncapped
-    unreadable: bool = False                 # its config could not be parsed — cap UNKNOWN
+    cap_pct: Optional[float] = None  # what THIS bot states; None = uncapped
+    unreadable: bool = False  # its config could not be parsed — cap UNKNOWN
 
 
 @dataclass
@@ -87,7 +94,7 @@ class AccountGroup:
     # would invent a ceiling nobody configured and hide the fault behind a plausible number.
     risk_cap_pct: Optional[float] = None
     cap_agrees: bool = True
-    cap_unknown: bool = False                # at least one config is unreadable
+    cap_unknown: bool = False  # at least one config is unreadable
 
     @property
     def stacked(self) -> bool:
@@ -158,8 +165,9 @@ def _num(v: Any) -> Optional[float]:
     return None
 
 
-def group_by_account(configs: dict[str, Optional[dict]],
-                     displays: Optional[dict[str, str]] = None) -> list[AccountGroup]:
+def group_by_account(
+    configs: dict[str, Optional[dict]], displays: Optional[dict[str, str]] = None
+) -> list[AccountGroup]:
     """Group registered bots by the account their config names.
 
     `configs` maps bot key → the parsed instance config, or **`None` when it could not be read**.
@@ -175,8 +183,14 @@ def group_by_account(configs: dict[str, Optional[dict]],
     for key in sorted(configs):
         raw = configs[key]
         if raw is None:
-            bot = AccountBot(key=key, display=displays.get(key, key), symbol="", magic=0,
-                             strategy_package="", unreadable=True)
+            bot = AccountBot(
+                key=key,
+                display=displays.get(key, key),
+                symbol="",
+                magic=0,
+                strategy_package="",
+                unreadable=True,
+            )
             account: Optional[int] = None
             kind = "unknown"
             server = ""
@@ -232,7 +246,8 @@ def cap_change_plan(group: AccountGroup, new_cap: Optional[float]) -> list[str]:
         raise ValueError(
             f"cannot set an account cap while {', '.join(unreadable)} cannot be read: the cap has "
             f"to land on EVERY bot on the account or the account is left with two ceilings. Fix "
-            f"the unreadable config first.")
+            f"the unreadable config first."
+        )
     return [b.key for b in group.bots if b.cap_pct != new_cap]
 
 
@@ -254,18 +269,21 @@ class AssignPlan:
     account the bot has left is exactly the 2026-08-12 defect, and it produces a bot that starts
     cleanly, connects cleanly and sees no bars.
     """
+
     fields: dict[str, Any] = field(default_factory=dict)
     param_fields: dict[str, Any] = field(default_factory=dict)
     adopt_terminal_from: str = ""
     notes: list[str] = field(default_factory=list)
 
 
-def assign_plan(bot_key: str,
-                account: Optional[int],
-                *,
-                target: Optional[AccountGroup] = None,
-                registered: Any = None,
-                current_symbol: str = "") -> AssignPlan:
+def assign_plan(
+    bot_key: str,
+    account: Optional[int],
+    *,
+    target: Optional[AccountGroup] = None,
+    registered: Any = None,
+    current_symbol: str = "",
+) -> AssignPlan:
     """The fields to write on `bot_key`'s config to put it on `account` (or on the bench).
 
     **Moving a bot is SIX fields, not one, and getting that wrong produces a bot that cannot
@@ -324,7 +342,8 @@ def assign_plan(bot_key: str,
     if registered is None and target is None:
         raise ValueError(
             f"account {account} is neither registered nor traded by any bot, so nothing here "
-            f"knows its server, its terminal or its symbol suffix. Register it first.")
+            f"knows its server, its terminal or its symbol suffix. Register it first."
+        )
 
     if registered is not None and not registered.assignable:
         raise ValueError(registered.unassignable_reason)
@@ -340,12 +359,14 @@ def assign_plan(bot_key: str,
             raise ValueError(
                 f"cannot add {bot_key} to account {account} while {', '.join(unreadable)} "
                 f"cannot be read: the new bot has to adopt the account's risk cap, and the cap "
-                f"those bots state is unknown. Fix the unreadable config first.")
+                f"those bots state is unknown. Fix the unreadable config first."
+            )
         if not target.cap_agrees:
             raise ValueError(
                 f"cannot add {bot_key} to account {account} while the bots already on it state "
                 f"different risk caps: there is no account cap for it to adopt, and every bot "
-                f"here will refuse to start until they agree. Set the cap on this account first.")
+                f"here will refuse to start until they agree. Set the cap on this account first."
+            )
         fields["account_risk_cap_pct"] = target.risk_cap_pct
         peers = [b for b in target.bots if b.key != bot_key]
         adopt_from = peers[0].key if peers else ""
@@ -354,8 +375,10 @@ def assign_plan(bot_key: str,
         # here — and the bot's existing value describes the account it is leaving, so carrying it
         # would state a ceiling for this account that nobody set.
         fields["account_risk_cap_pct"] = None
-        notes.append(f"account {account} has no other bot on it, so it starts UNCAPPED — set the "
-                     f"account risk cap before a second bot joins.")
+        notes.append(
+            f"account {account} has no other bot on it, so it starts UNCAPPED — set the "
+            f"account risk cap before a second bot joins."
+        )
 
     if registered is not None:
         fields["server"] = registered.server
@@ -363,8 +386,10 @@ def assign_plan(bot_key: str,
         if registered.account_profile:
             param_fields["account_profile"] = registered.account_profile
         else:
-            notes.append(f"account {account} records no cost profile, so the bot keeps the one "
-                         f"it had — it describes the account it came from.")
+            notes.append(
+                f"account {account} records no cost profile, so the bot keeps the one "
+                f"it had — it describes the account it came from."
+            )
 
         moved = rebase_symbol(current_symbol, registered.symbol_suffix)
         if moved:
@@ -375,7 +400,8 @@ def assign_plan(bot_key: str,
             notes.append(
                 f"account {account} records no symbol suffix, so {bot_key} keeps "
                 f"{current_symbol!r}. If this account quotes that instrument under another name, "
-                f"the bot will connect and receive no bars.")
+                f"the bot will connect and receive no bars."
+            )
     else:
         if target is not None and target.server:
             fields["server"] = target.server
@@ -383,7 +409,9 @@ def assign_plan(bot_key: str,
         notes.append(
             f"account {account} is not in the account registry, so its symbol suffix and cost "
             f"profile could not be carried — the bot keeps the ones it had. Register the account "
-            f"to make a move complete.")
+            f"to make a move complete."
+        )
 
-    return AssignPlan(fields=fields, param_fields=param_fields,
-                      adopt_terminal_from=adopt_from, notes=notes)
+    return AssignPlan(
+        fields=fields, param_fields=param_fields, adopt_terminal_from=adopt_from, notes=notes
+    )

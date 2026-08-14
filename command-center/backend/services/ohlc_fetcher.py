@@ -22,8 +22,7 @@ from typing import Optional
 
 import pandas as pd
 
-from services import lab_db
-from services import mt5_agent_client
+from services import lab_db, mt5_agent_client
 
 log = logging.getLogger("OHLC")
 
@@ -33,42 +32,42 @@ _RECENT_DAYS = 5
 # Strip contract month before lookup: 'MNQ 06-26' → 'MNQ'.
 INSTRUMENT_YFINANCE_MAP: dict[str, str] = {
     # CME futures
-    "MES":    "^GSPC",
-    "ES":     "^GSPC",
-    "MNQ":    "^NDX",
-    "NQ":     "^NDX",
-    "MGC":    "GC=F",
-    "GC":     "GC=F",
-    "MCL":    "CL=F",
-    "CL":     "CL=F",
-    "MYM":    "^DJI",
-    "YM":     "^DJI",
-    "M2K":    "^RUT",
-    "RTY":    "^RUT",
-    "M6E":    "EURUSD=X",
-    "M6B":    "GBPUSD=X",
-    "ZN":     "^TNX",
-    "ZB":     "^TYX",
+    "MES": "^GSPC",
+    "ES": "^GSPC",
+    "MNQ": "^NDX",
+    "NQ": "^NDX",
+    "MGC": "GC=F",
+    "GC": "GC=F",
+    "MCL": "CL=F",
+    "CL": "CL=F",
+    "MYM": "^DJI",
+    "YM": "^DJI",
+    "M2K": "^RUT",
+    "RTY": "^RUT",
+    "M6E": "EURUSD=X",
+    "M6B": "GBPUSD=X",
+    "ZN": "^TNX",
+    "ZB": "^TYX",
     # Forex / spot (MT5 broker symbols; broker suffix stripped before lookup)
     "XAUUSD": "GC=F",
-    "EURUSD":  "EURUSD=X",
-    "GBPUSD":  "GBPUSD=X",
-    "AUDUSD":  "AUDUSD=X",
-    "USDCAD":  "CAD=X",
-    "EURGBP":  "EURGBP=X",
-    "USDJPY":  "JPY=X",
-    "GBPJPY":  "GBPJPY=X",
-    "AUDJPY":  "AUDJPY=X",
-    "CADJPY":  "CADJPY=X",
-    "XAGUSD":  "SI=F",
-    "NAS100":  "^NDX",
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "AUDUSD": "AUDUSD=X",
+    "USDCAD": "CAD=X",
+    "EURGBP": "EURGBP=X",
+    "USDJPY": "JPY=X",
+    "GBPJPY": "GBPJPY=X",
+    "AUDJPY": "AUDJPY=X",
+    "CADJPY": "CADJPY=X",
+    "XAGUSD": "SI=F",
+    "NAS100": "^NDX",
 }
 
 
 def _root_symbol(instrument: str) -> str:
     """Strip contract month and broker suffix: 'MNQ 06-26' → 'MNQ', 'XAUUSD.s' → 'XAUUSD'."""
-    base = instrument.split()[0].upper()   # strip contract month
-    return base.split(".")[0]              # strip broker suffix (.s, .r, etc.)
+    base = instrument.split()[0].upper()  # strip contract month
+    return base.split(".")[0]  # strip broker suffix (.s, .r, etc.)
 
 
 def _yfinance_ticker(instrument: str) -> Optional[str]:
@@ -92,6 +91,7 @@ def _resolve_mt5_symbol(instrument: str) -> str:
 def _fetch_yfinance(ticker: str, start: str, end: str) -> pd.DataFrame:
     """Fetch daily OHLC from yfinance for [start, end] inclusive."""
     import yfinance as yf
+
     end_exclusive = (date.fromisoformat(end) + timedelta(days=1)).isoformat()
     try:
         raw = yf.Ticker(ticker).history(
@@ -175,17 +175,22 @@ def _get_ohlc_yfinance(instrument: str, start_date: str, end_date: str) -> pd.Da
             fetch_end = end_date
 
     if fetch_start and fetch_end:
-        log.info("Fetching OHLC for %s [%s, %s] via yfinance (%s)",
-                 instrument, fetch_start, fetch_end, ticker)
+        log.info(
+            "Fetching OHLC for %s [%s, %s] via yfinance (%s)",
+            instrument,
+            fetch_start,
+            fetch_end,
+            ticker,
+        )
         df_new = _fetch_yfinance(ticker, fetch_start, fetch_end)
         if not df_new.empty:
             new_rows = [
                 {
                     "instrument": instrument,
                     "date": idx.date().isoformat(),
-                    "open":  float(row["open"]),
-                    "high":  float(row["high"]),
-                    "low":   float(row["low"]),
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
                     "close": float(row["close"]),
                     "source": "yfinance",
                 }
@@ -204,9 +209,7 @@ def _get_ohlc_yfinance(instrument: str, start_date: str, end_date: str) -> pd.Da
     return df
 
 
-def _get_ohlc_mt5(
-    instrument: str, start_date: str, end_date: str, timeframe: str
-) -> pd.DataFrame:
+def _get_ohlc_mt5(instrument: str, start_date: str, end_date: str, timeframe: str) -> pd.DataFrame:
     """MT5 intraday fetch path with the same cache freshness rules as the yfinance path.
 
     Old bars (timestamp date > _RECENT_DAYS ago) are cached once and never refetched.
@@ -248,38 +251,48 @@ def _get_ohlc_mt5(
             fetch_end = end_date
 
     if fetch_start and fetch_end:
-        log.info("Fetching OHLC for %s %s [%s, %s] via MT5 agent",
-                 instrument, timeframe, fetch_start, fetch_end)
+        log.info(
+            "Fetching OHLC for %s %s [%s, %s] via MT5 agent",
+            instrument,
+            timeframe,
+            fetch_start,
+            fetch_end,
+        )
         try:
             df_new = _fetch_mt5(instrument, timeframe, fetch_start, fetch_end)
             if not df_new.empty:
                 new_rows = [
                     {
                         "instrument": instrument,
-                        "timeframe":  timeframe,
-                        "timestamp":  idx.isoformat(),
-                        "open":   float(row["open"]),
-                        "high":   float(row["high"]),
-                        "low":    float(row["low"]),
-                        "close":  float(row["close"]),
+                        "timeframe": timeframe,
+                        "timestamp": idx.isoformat(),
+                        "open": float(row["open"]),
+                        "high": float(row["high"]),
+                        "low": float(row["low"]),
+                        "close": float(row["close"]),
                         "source": "mt5",
                     }
                     for idx, row in df_new.iterrows()
                 ]
                 lab_db.upsert_intraday_ohlc_rows(new_rows)
-                log.info("Cached %d intraday OHLC rows for %s %s",
-                         len(new_rows), instrument, timeframe)
+                log.info(
+                    "Cached %d intraday OHLC rows for %s %s", len(new_rows), instrument, timeframe
+                )
         except RuntimeError as exc:
             is_daily = timeframe.upper() in ("D1", "DAILY")
             if is_daily:
                 log.warning(
                     "MT5 agent unreachable for %s %s — falling back to yfinance daily: %s",
-                    instrument, timeframe, exc,
+                    instrument,
+                    timeframe,
+                    exc,
                 )
                 return _get_ohlc_yfinance(instrument, start_date, end_date)
             log.warning(
                 "MT5 agent unreachable for %s %s — no yfinance fallback for intraday: %s",
-                instrument, timeframe, exc,
+                instrument,
+                timeframe,
+                exc,
             )
 
     all_rows = lab_db.get_cached_intraday_ohlc(instrument, timeframe, start_date, end_date)
@@ -325,7 +338,10 @@ def get_ohlc(
 
 
 def _get_ohlc_backtest_cache(
-    instrument: str, start_date: str, end_date: str, timeframe: str,
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    timeframe: str,
 ) -> pd.DataFrame:
     """Bars for a Python run, straight from the backtest package's own cache.
 

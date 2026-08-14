@@ -10,7 +10,9 @@ from news import EventStore, Impact, NewsEvent
 
 
 def _ev(ts, title, actual=None):
-    return NewsEvent(timestamp_ms=ts, currency="USD", impact=Impact.HIGH, title=title, actual=actual)
+    return NewsEvent(
+        timestamp_ms=ts, currency="USD", impact=Impact.HIGH, title=title, actual=actual
+    )
 
 
 def test_upsert_roundtrip_and_dedupe(tmp_path):
@@ -19,7 +21,7 @@ def test_upsert_roundtrip_and_dedupe(tmp_path):
     # Re-fetch of A now carries `actual` -> replaces, does not duplicate.
     store.upsert([_ev(1000, "A", actual="5.0%")], covered_ranges=[(1000, 2000)])
     events, ranges = store.load()
-    assert [e.title for e in events] == ["A", "B"]           # no dupe
+    assert [e.title for e in events] == ["A", "B"]  # no dupe
     assert next(e for e in events if e.title == "A").actual == "5.0%"  # updated
     assert ranges == [(1000, 2000)]
 

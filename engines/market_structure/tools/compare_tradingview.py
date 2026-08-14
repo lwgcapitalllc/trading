@@ -53,8 +53,14 @@ PRICE_FIELDS = ["px_ash", "px_asl", "px_lch", "px_lcl", "px_i_sw"]
 INT_FIELDS = ["px_dir", "px_i_mode"]
 # px_ columns that are a 0/1 event pulse (compared exactly).
 PULSE_FIELDS = [
-    "px_bull_bos", "px_bear_bos", "px_bull_sos", "px_bear_sos",
-    "px_new_sh", "px_new_sl", "px_i_bull_break", "px_i_bear_break",
+    "px_bull_bos",
+    "px_bear_bos",
+    "px_bull_sos",
+    "px_bear_sos",
+    "px_new_sh",
+    "px_new_sl",
+    "px_i_bull_break",
+    "px_i_bear_break",
 ]
 ALL_FIELDS = PRICE_FIELDS + INT_FIELDS + PULSE_FIELDS
 
@@ -64,7 +70,12 @@ ALL_FIELDS = PRICE_FIELDS + INT_FIELDS + PULSE_FIELDS
 # how the export makes bar locations comparable across Pine's absolute bar_index vs the engine's
 # 0-based row index. See structure_engine_export.pine for the matching plot() calls.
 LEG_PRICE_FIELDS = ["px_bull_bos_high", "px_bull_bos_low", "px_bear_bos_high", "px_bear_bos_low"]
-LEG_AGO_FIELDS = ["px_bull_bos_h_ago", "px_bull_bos_l_ago", "px_bear_bos_h_ago", "px_bear_bos_l_ago"]
+LEG_AGO_FIELDS = [
+    "px_bull_bos_h_ago",
+    "px_bull_bos_l_ago",
+    "px_bear_bos_h_ago",
+    "px_bear_bos_l_ago",
+]
 OPTIONAL_FIELDS = LEG_PRICE_FIELDS + LEG_AGO_FIELDS
 
 
@@ -186,6 +197,7 @@ def _load_rows(path, cols):
 
     tcol = cols.get("time")
     if tcol:
+
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
@@ -193,9 +205,11 @@ def _load_rows(path, cols):
             try:
                 # tolerate trailing Z / offset
                 from datetime import datetime
+
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
+
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -203,12 +217,30 @@ def _load_rows(path, cols):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("csv", help="CSV exported from TradingView with structure_engine_export.pine on the chart")
-    ap.add_argument("--major-length", type=int, default=15, help="must match the Pine build (default 15)")
-    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
-    ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print in detail")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "csv", help="CSV exported from TradingView with structure_engine_export.pine on the chart"
+    )
+    ap.add_argument(
+        "--major-length", type=int, default=15, help="must match the Pine build (default 15)"
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-6,
+        help="abs tolerance for price fields (default 1e-6)",
+    )
+    ap.add_argument(
+        "--max-report", type=int, default=30, help="how many mismatching bars to print in detail"
+    )
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -255,11 +287,15 @@ def main(argv=None):
             detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})")
+    print(
+        f"\nCompared {total} bars from {path.name}  (major_length={args.major_length}, tol={args.tolerance})"
+    )
     if present_optional:
         print(f"Break-leg columns found and checked: {', '.join(present_optional)}")
     else:
-        print("Break-leg columns not in this CSV (older export) — skipped; all other fields checked.")
+        print(
+            "Break-leg columns not in this CSV (older export) — skipped; all other fields checked."
+        )
     print("-" * 72)
     any_mismatch = any(per_field_mismatch.values())
     if not any_mismatch:
@@ -278,8 +314,10 @@ def main(argv=None):
         for fld, pv, pinev in ms:
             print(f"      {fld:<18} python={pv!r:<12} pine={pinev!r}")
     print("-" * 72)
-    print("Tip: a small cluster of mismatches at ONE bar that then resync is usually a boundary/"
-          "tie-break edge case; persistent divergence after a bar means a real logic gap.")
+    print(
+        "Tip: a small cluster of mismatches at ONE bar that then resync is usually a boundary/"
+        "tie-break edge case; persistent divergence after a bar means a real logic gap."
+    )
     return 1
 
 

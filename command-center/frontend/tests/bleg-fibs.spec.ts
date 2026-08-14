@@ -36,7 +36,11 @@ const EXPECTED_FIBS = 99
  *  panel drawing nothing. */
 async function fibPixels(page: Page) {
   return page.evaluate(() => {
-    const WANT = [[34, 197, 94], [41, 98, 255], [239, 83, 80]]
+    const WANT = [
+      [34, 197, 94],
+      [41, 98, 255],
+      [239, 83, 80],
+    ]
     let n = 0
     for (const c of Array.from(document.querySelectorAll('canvas'))) {
       const g = c.getContext('2d')
@@ -44,7 +48,14 @@ async function fibPixels(page: Page) {
       const d = g.getImageData(0, 0, c.width, c.height).data
       for (let i = 0; i < d.length; i += 4) {
         for (const [r, gr, b] of WANT) {
-          if (Math.abs(d[i] - r) < 12 && Math.abs(d[i + 1] - gr) < 12 && Math.abs(d[i + 2] - b) < 12) { n++; break }
+          if (
+            Math.abs(d[i] - r) < 12 &&
+            Math.abs(d[i + 1] - gr) < 12 &&
+            Math.abs(d[i + 2] - b) < 12
+          ) {
+            n++
+            break
+          }
         }
       }
     }

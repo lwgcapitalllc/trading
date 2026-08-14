@@ -85,8 +85,9 @@ VERSION = 1
 @dataclass(frozen=True)
 class BrokerFacts:
     """The four things the bridge and MT5 both know about one position, independently."""
-    dir: int          # +1 long, -1 short
-    lots: float       # BROKER lots — never instrument units. See the module docstring.
+
+    dir: int  # +1 long, -1 short
+    lots: float  # BROKER lots — never instrument units. See the module docstring.
     entry: float
     stop: float
 
@@ -106,8 +107,16 @@ def path_for(instance_dir) -> Path:
     return Path(instance_dir) / FILENAME
 
 
-def write(instance_dir, *, bot: str, symbol: str, magic: int, ticket: int,
-          broker: BrokerFacts, strategy: Dict[str, Any]) -> bool:
+def write(
+    instance_dir,
+    *,
+    bot: str,
+    symbol: str,
+    magic: int,
+    ticket: int,
+    broker: BrokerFacts,
+    strategy: Dict[str, Any],
+) -> bool:
     """Record the open position. Returns False on failure rather than raising.
 
     A failure here must never stop the trading loop: the position exists either way, and the

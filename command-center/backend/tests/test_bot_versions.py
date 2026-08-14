@@ -8,20 +8,19 @@ the file because it reads as *up to date*.
 
 from __future__ import annotations
 
-import ast
 import re
 import subprocess
 from pathlib import Path
 
-import pytest
-
 import config as cfg
+import pytest
 from services import bot_versions as bv
 
 _REPO = Path(cfg.MONOREPO_ROOT)
 
 
 # ── the agreement with promote.py ───────────────────────────────────────────────
+
 
 def test_the_counted_trees_are_the_trees_promote_actually_copies():
     """`trees_for` mirrors `algos/tools/promote.py::repo_trees`, checked by READING it.
@@ -36,7 +35,9 @@ def test_the_counted_trees_are_the_trees_promote_actually_copies():
     assert body.strip(), "could not find repo_trees in promote.py — the guard is vacuous"
 
     # promote.py names the strategy tree via `cfg.strategy_package` and the rest as literals.
-    literals = set(re.findall(r'Path\("([a-z_]+)"\)', body)) | set(re.findall(r'"([a-z_]+)"\s*/', body))
+    literals = set(re.findall(r'Path\("([a-z_]+)"\)', body)) | set(
+        re.findall(r'"([a-z_]+)"\s*/', body)
+    )
     shared = {t for t in literals if t not in {"strategies", "python"}}
     assert shared, "found no shared tree literals in repo_trees — the parse broke, not the code"
 
@@ -57,11 +58,14 @@ def test_a_bot_with_no_strategy_package_counts_nothing():
 
 # ── versions are real counts, not guesses ───────────────────────────────────────
 
+
 def test_a_version_is_the_count_of_commits_touching_the_trees():
     trees = bv.trees_for("mpc_sos_fade")
     out = subprocess.run(
         ["git", "-C", str(_REPO), "rev-list", "--count", "HEAD", "--", *trees],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     assert bv.version_at("HEAD", trees) == int(out.stdout.strip())
 
@@ -88,6 +92,7 @@ def test_has_commit_is_false_for_a_commit_that_is_not_here():
 
 
 # ── compare() refuses rather than reporting a comparison it cannot make ─────────
+
 
 def test_a_bot_that_has_never_been_promoted_is_not_comparable():
     r = bv.compare("mpc_sos_fade", "", {})
@@ -128,6 +133,7 @@ def test_the_change_list_matches_the_version_gap():
 
 
 # ── the settings diff ───────────────────────────────────────────────────────────
+
 
 def test_a_changed_default_is_reported_with_both_values():
     before = "@dataclass\nclass C:\n    a: str = 'Off'\n"
@@ -181,11 +187,10 @@ def test_a_setting_the_config_pins_is_reported_as_stated():
     """A pinned setting cannot move on a promote. It is still returned, because *your bot is
     holding this still* is the reassuring half of the same question — and filtering it out
     leaves the reader unable to tell 'not affected' from 'not checked'."""
-    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD",
-                                 {"exec_secondary": False})
+    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD", {"exec_secondary": False})
     assert changes is not None
     pinned = [c for c in changes if c["name"] == "exec_secondary"]
-    if pinned:                                   # only if that default actually moved in-range
+    if pinned:  # only if that default actually moved in-range
         assert pinned[0]["stated"] is True
 
 
@@ -218,9 +223,16 @@ def test_an_unknown_package_refuses_instead_of_returning_an_empty_diff():
     assert bv.setting_changes("no_such_package", "HEAD~50", "HEAD", {}) is None
 
 
-@pytest.mark.parametrize("value,expected", [
-    (True, "On"), (False, "Off"), (36.0, "36"), (0.382, "0.382"), ("Off", "Off"),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (True, "On"),
+        (False, "Off"),
+        (36.0, "36"),
+        (0.382, "0.382"),
+        ("Off", "Off"),
+    ],
+)
 def test_values_render_the_way_the_banner_prints_them(value, expected):
     assert bv._render(value) == expected
 
@@ -236,6 +248,7 @@ def test_an_unparsed_value_renders_as_a_question_mark_not_as_a_number():
 # on the VPS, so the remote — not this laptop's HEAD — is the ceiling on what can be deployed.
 # Every number on the banner was correct and nothing on it explained why pressing Deploy again
 # would change nothing.
+
 
 def test_a_bot_with_no_trees_cannot_be_asked_what_is_unpushed():
     """`None`, never `[]`. An empty list is the claim *everything is pushed*, and there is no
@@ -262,10 +275,12 @@ def test_unpushed_commits_are_listed_one_per_line(monkeypatch):
     """The banner renders the COUNT and puts the subjects on the tooltip, so a blank-line artefact
     would inflate the count the reader acts on."""
     log = "6a71a9f feat(signals): announce on the retrace\n\n72405c1 fix(signals): wording\n"
-    monkeypatch.setattr(bv, "_git",
-                        lambda *a: "origin/main\n" if a[0] == "rev-parse" else log)
+    monkeypatch.setattr(bv, "_git", lambda *a: "origin/main\n" if a[0] == "rev-parse" else log)
     got = bv.unpushed_commits(["engines"])
-    assert got == ["6a71a9f feat(signals): announce on the retrace", "72405c1 fix(signals): wording"]
+    assert got == [
+        "6a71a9f feat(signals): announce on the retrace",
+        "72405c1 fix(signals): wording",
+    ]
 
 
 def test_it_asks_only_about_THIS_BOTS_trees(monkeypatch):
@@ -281,7 +296,7 @@ def test_it_asks_only_about_THIS_BOTS_trees(monkeypatch):
     bv.unpushed_commits(["strategies/python/mpc_sos_fade", "engines", "backtest"])
     log = next(a for a in seen if a[0] == "log")
     assert "--" in log
-    assert log[log.index("--") + 1:] == ("strategies/python/mpc_sos_fade", "engines", "backtest")
+    assert log[log.index("--") + 1 :] == ("strategies/python/mpc_sos_fade", "engines", "backtest")
 
 
 def test_compare_carries_the_unpushed_list_so_the_banner_can_explain_a_short_deploy():

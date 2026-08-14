@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 _HERE = Path(__file__).parent
 _CONFIG_PATH = _HERE / "config.json"

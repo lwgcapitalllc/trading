@@ -43,11 +43,15 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
         sys.path.insert(0, _p)
 
 from mpc_bleg import BLegConfig, MpcBLegStrategy  # noqa: E402
-from mpc_sos_fade.tools.compare_strategy import (  # noqa: E402
-    config_from_export as _config_from_export,
-    engine_config_from_export as _engine_config_from_export,
+from mpc_sos_fade.tools.compare_strategy import (
     EqExemptUnknown,
     load_export,
+)
+from mpc_sos_fade.tools.compare_strategy import (  # noqa: E402
+    config_from_export as _config_from_export,
+)
+from mpc_sos_fade.tools.compare_strategy import (
+    engine_config_from_export as _engine_config_from_export,
 )
 
 
@@ -65,10 +69,13 @@ def config_from_export(df: pd.DataFrame, base: Optional[BLegConfig] = None) -> B
     row = df.iloc[0]
     if "cfg_bleg_days" in df.columns and not pd.isna(row["cfg_bleg_days"]):
         from dataclasses import replace
+
         cfg = replace(cfg, bleg_max_days=float(row["cfg_bleg_days"]))
     else:
-        print("WARNING: no cfg_bleg_days column — the B-LEG staleness cap is assumed to be at "
-              "its default. Re-export off the current mpc_b_leg_strategy_export.pine.")
+        print(
+            "WARNING: no cfg_bleg_days column — the B-LEG staleness cap is assumed to be at "
+            "its default. Re-export off the current mpc_b_leg_strategy_export.pine."
+        )
     return cfg
 
 
@@ -149,10 +156,26 @@ def _bar_index_offset(ex: pd.DataFrame, bleg_states) -> Tuple[int, int]:
         return 0, 0
     offset, hits = seen.most_common(1)[0]
     return offset, sum(seen.values()) - hits
-_PRICE = ["px_edge", "px_stop", "px_entry_price", "px_tp1", "px_tp2",
-          "px_exit_tp1", "px_exit_tp2", "px_exit_run",
-          "bl_l_top", "bl_l_bot", "bl_l_inv", "bl_l_tgt",
-          "bl_s_top", "bl_s_bot", "bl_s_inv", "bl_s_tgt"]
+
+
+_PRICE = [
+    "px_edge",
+    "px_stop",
+    "px_entry_price",
+    "px_tp1",
+    "px_tp2",
+    "px_exit_tp1",
+    "px_exit_tp2",
+    "px_exit_run",
+    "bl_l_top",
+    "bl_l_bot",
+    "bl_l_inv",
+    "bl_l_tgt",
+    "bl_s_top",
+    "bl_s_bot",
+    "bl_s_inv",
+    "bl_s_tgt",
+]
 
 
 def _py_row(dec, bleg) -> dict:
@@ -174,22 +197,43 @@ def _py_row(dec, bleg) -> dict:
             exits["px_exit_run"] = f.price
     edge = dec.long_edge if dec.long_armed else (dec.short_edge if dec.short_armed else None)
     return dict(
-        px_long_armed=bool(dec.long_armed), px_short_armed=bool(dec.short_armed),
-        px_entry_dir=entry_dir, px_l_stage=dec.l_stage, px_s_stage=dec.s_stage,
-        px_edge=edge, px_stop=dec.stop,
+        px_long_armed=bool(dec.long_armed),
+        px_short_armed=bool(dec.short_armed),
+        px_entry_dir=entry_dir,
+        px_l_stage=dec.l_stage,
+        px_s_stage=dec.s_stage,
+        px_edge=edge,
+        px_stop=dec.stop,
         px_entry_price=next((f.price for f in dec.fills if f.kind == "entry"), None),
-        px_tp1=dec.tp1, px_tp2=dec.tp2,
+        px_tp1=dec.tp1,
+        px_tp2=dec.tp2,
         px_closed_r=dec.closed_r,
-        bl_l_on=bleg.l_on, bl_l_tap=bleg.l_tap, bl_l_bar=bleg.l_bar,
-        bl_s_on=bleg.s_on, bl_s_tap=bleg.s_tap, bl_s_bar=bleg.s_bar,
-        bl_l_top=bleg.l_top, bl_l_bot=bleg.l_bot, bl_l_inv=bleg.l_inv, bl_l_tgt=bleg.l_tgt,
-        bl_s_top=bleg.s_top, bl_s_bot=bleg.s_bot, bl_s_inv=bleg.s_inv, bl_s_tgt=bleg.s_tgt,
+        bl_l_on=bleg.l_on,
+        bl_l_tap=bleg.l_tap,
+        bl_l_bar=bleg.l_bar,
+        bl_s_on=bleg.s_on,
+        bl_s_tap=bleg.s_tap,
+        bl_s_bar=bleg.s_bar,
+        bl_l_top=bleg.l_top,
+        bl_l_bot=bleg.l_bot,
+        bl_l_inv=bleg.l_inv,
+        bl_l_tgt=bleg.l_tgt,
+        bl_s_top=bleg.s_top,
+        bl_s_bot=bleg.s_bot,
+        bl_s_inv=bleg.s_inv,
+        bl_s_tgt=bleg.s_tgt,
         **exits,
     )
 
 
-def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
-            price_tol: float = 0.01, r_tol: float = 0.02) -> List[str]:
+def compare(
+    df: pd.DataFrame,
+    decisions,
+    bleg_states,
+    warmup: int = 0,
+    price_tol: float = 0.01,
+    r_tol: float = 0.02,
+) -> List[str]:
     """Diff the Pine export against the Python stream. Returns the mismatch list (empty
     = exit 0). Bars are aligned by POSITION — `run(bars, warmup=0)` keeps one decision per
     CSV row, and `warmup` only suppresses REPORTING, so a cold-start engine cannot mask a
@@ -198,11 +242,15 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
     msgs: List[str] = []
     bar_offset, strays = _bar_index_offset(ex, bleg_states)
     if bar_offset:
-        print(f"NOTE: the export starts at Pine bar_index {bar_offset} (a partial chart export), "
-              f"so bl_l_bar/bl_s_bar are compared relative to that origin.")
+        print(
+            f"NOTE: the export starts at Pine bar_index {bar_offset} (a partial chart export), "
+            f"so bl_l_bar/bl_s_bar are compared relative to that origin."
+        )
     if strays:
-        print(f"WARNING: {strays} armed-bar reading(s) do not sit at the measured offset — "
-              f"that is real drift, not the origin, and they are reported below.")
+        print(
+            f"WARNING: {strays} armed-bar reading(s) do not sit at the measured offset — "
+            f"that is real drift, not the origin, and they are reported below."
+        )
     n = min(len(ex), len(decisions), len(bleg_states))
     for i in range(warmup, n):
         row = ex.iloc[i]
@@ -245,13 +293,18 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
             elif a is not None and abs(a - b) > r_tol:
                 msgs.append(f"bar {i} {when} px_closed_r: py={a} pine={b}")
         if msgs:
-            break        # first divergence is the only useful one — everything after it is downstream
+            break  # first divergence is the only useful one — everything after it is downstream
     return msgs
 
 
-def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.02,
-               base_config: Optional[BLegConfig] = None,
-               eq_exempt: Optional[bool] = None) -> List[str]:
+def run_parity(
+    path,
+    warmup: int = 0,
+    price_tol: float = 0.01,
+    r_tol: float = 0.02,
+    base_config: Optional[BLegConfig] = None,
+    eq_exempt: Optional[bool] = None,
+) -> List[str]:
     """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
     df = load_export(path)
     cfg = config_from_export(df, base_config)
@@ -266,15 +319,25 @@ def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="B-LEG strategy logic-parity check (Python vs Pine export)")
+    ap = argparse.ArgumentParser(
+        description="B-LEG strategy logic-parity check (Python vs Pine export)"
+    )
     ap.add_argument("csv", help="mpc_b_leg_strategy_export.pine chart-data CSV")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)")
-    ap.add_argument("--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)")
+    ap.add_argument(
+        "--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)"
+    )
+    ap.add_argument(
+        "--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)"
+    )
     ap.add_argument("--r-tol", type=float, default=0.02, help="R match tolerance")
-    ap.add_argument("--eq-exempt", choices=("on", "off"), default=None,
-                    help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
-                         "surviving the FVG cap). Only needed for an export with no "
-                         "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
+    ap.add_argument(
+        "--eq-exempt",
+        choices=("on", "off"),
+        default=None,
+        help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
+        "surviving the FVG cap). Only needed for an export with no "
+        "cfg_eq_exempt column — i.e. taken before 2026-08-06.",
+    )
     a = ap.parse_args()
     eq = None if a.eq_exempt is None else (a.eq_exempt == "on")
     try:

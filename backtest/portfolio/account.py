@@ -70,8 +70,9 @@ _MIN_GRANT_USD = 0.01
 class Position:
     """One open trade the account is carrying. Reservation is recomputed from `current_stop`
     every time it's asked, so moving the stop to breakeven drops it to zero automatically."""
+
     leg: str
-    dir: int            # +1 long, -1 short
+    dir: int  # +1 long, -1 short
     entry: float
     current_stop: float
     qty: float
@@ -88,8 +89,9 @@ class PortfolioAccount:
     """One shared account. Cap = `risk_cap_pct` of live balance; an entry granted less than
     `entry_floor_pct` of balance in risk is skipped rather than trickled in."""
 
-    def __init__(self, *, balance: float, risk_cap_pct: float,
-                 entry_floor_pct: float = 0.0) -> None:
+    def __init__(
+        self, *, balance: float, risk_cap_pct: float, entry_floor_pct: float = 0.0
+    ) -> None:
         self.balance = float(balance)
         self.risk_cap_pct = float(risk_cap_pct)
         self.entry_floor_pct = float(entry_floor_pct)
@@ -107,9 +109,9 @@ class PortfolioAccount:
         # A reservation falls to zero the moment a stop reaches breakeven, so a book can hold
         # two full positions all day and still log nothing, which reads as "the legs never
         # competed" when what happened is that the budget was released before they could.
-        self.peak_reserved = 0.0            # dollars
-        self.peak_reserved_pct = 0.0        # of the balance AT THAT MOMENT, not of the opening
-        self.peak_concurrent = 0            # most legs holding a position at once
+        self.peak_reserved = 0.0  # dollars
+        self.peak_reserved_pct = 0.0  # of the balance AT THAT MOMENT, not of the opening
+        self.peak_concurrent = 0  # most legs holding a position at once
 
     # ── budget ────────────────────────────────────────────────────────────────
     def reserved(self) -> float:
@@ -130,8 +132,9 @@ class PortfolioAccount:
         return abs(qty) * abs(entry - stop) * point_value
 
     # ── entries ───────────────────────────────────────────────────────────────
-    def request_fill(self, leg: str, dir: int, entry: float, stop: float,
-                     desired_qty: float, point_value: float) -> float:
+    def request_fill(
+        self, leg: str, dir: int, entry: float, stop: float, desired_qty: float, point_value: float
+    ) -> float:
         """A leg fills and asks for `desired_qty` (its own sizing). Returns the granted qty
         (0.0 = blocked). The gate runs at FILL, so a resting order that never fills holds
         nothing. The desired qty is SCALED to the room, never recomputed."""
@@ -145,15 +148,19 @@ class PortfolioAccount:
             return 0.0
         if self._is_shrunk(desired_risk, granted_risk):
             self._log_contention(leg, dir, desired_risk, granted_risk, blocked=False)
-        return self._open(leg, dir, entry, stop, desired_qty, desired_risk, granted_risk, point_value)
+        return self._open(
+            leg, dir, entry, stop, desired_qty, desired_risk, granted_risk, point_value
+        )
 
     def request_fills(self, requests: Sequence[dict]) -> dict[str, float]:
         """Several legs fill on the SAME bar. Split the room in proportion to each leg's
         desired risk (one split, no re-split), then floor-check each. Each request dict:
         {leg, dir, entry, stop, desired_qty, point_value}."""
         room = self.room()
-        risks = [self._risk_of(r["desired_qty"], r["entry"], r["stop"], r["point_value"])
-                 for r in requests]
+        risks = [
+            self._risk_of(r["desired_qty"], r["entry"], r["stop"], r["point_value"])
+            for r in requests
+        ]
         total = sum(risks)
         factor = 1.0 if total <= room else (room / total if total > 0 else 0.0)
 
@@ -166,9 +173,16 @@ class PortfolioAccount:
                 continue
             if self._is_shrunk(desired_risk, granted_risk):
                 self._log_contention(r["leg"], r["dir"], desired_risk, granted_risk, blocked=False)
-            out[r["leg"]] = self._open(r["leg"], r["dir"], r["entry"], r["stop"],
-                                       r["desired_qty"], desired_risk, granted_risk,
-                                       r["point_value"])
+            out[r["leg"]] = self._open(
+                r["leg"],
+                r["dir"],
+                r["entry"],
+                r["stop"],
+                r["desired_qty"],
+                desired_risk,
+                granted_risk,
+                r["point_value"],
+            )
         return out
 
     @staticmethod
@@ -176,19 +190,34 @@ class PortfolioAccount:
         """Did the budget actually take size away? See `_GRANT_EPS` for why this is not `<`."""
         return granted_risk < desired_risk * (1.0 - _GRANT_EPS)
 
-    def _log_contention(self, leg: str, dir: int, desired_risk: float,
-                        granted_risk: float, *, blocked: bool) -> None:
-        self.contention.append({
-            "time": self.now, "leg": leg, "dir": dir,
-            "desired_risk": round(desired_risk, 2), "granted_risk": round(granted_risk, 2),
-            "blocked": blocked,
-        })
+    def _log_contention(
+        self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool
+    ) -> None:
+        self.contention.append(
+            {
+                "time": self.now,
+                "leg": leg,
+                "dir": dir,
+                "desired_risk": round(desired_risk, 2),
+                "granted_risk": round(granted_risk, 2),
+                "blocked": blocked,
+            }
+        )
 
-    def _open(self, leg: str, dir: int, entry: float, stop: float, desired_qty: float,
-              desired_risk: float, granted_risk: float, point_value: float) -> float:
+    def _open(
+        self,
+        leg: str,
+        dir: int,
+        entry: float,
+        stop: float,
+        desired_qty: float,
+        desired_risk: float,
+        granted_risk: float,
+        point_value: float,
+    ) -> float:
         if desired_risk <= 0.0 or desired_qty <= 0.0:
             return 0.0
-        qty = desired_qty * (granted_risk / desired_risk)   # scale the leg's own size to fit
+        qty = desired_qty * (granted_risk / desired_risk)  # scale the leg's own size to fit
         self._positions[leg] = Position(leg, dir, entry, stop, qty, point_value)
         return qty
 
@@ -254,4 +283,4 @@ class SoloAccount(PortfolioAccount):
         super().__init__(balance=balance, risk_cap_pct=float("inf"), entry_floor_pct=0.0)
 
     def room(self) -> float:
-        return float("inf")   # never the bottleneck; desired is always granted in full
+        return float("inf")  # never the bottleneck; desired is always granted in full

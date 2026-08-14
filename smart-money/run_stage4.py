@@ -18,13 +18,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import database as db
-from run_logger import StageLogger
-from forex.myfxbook import MyfxbookScanner
 from forex.fx_blue import FxBlueScanner
+from forex.myfxbook import MyfxbookScanner
 from profiler.filters import QualificationGate
-from profiler.scorer import CompositeScorer
-from profiler.reporter import build_wallet_profile, StageReporter
 from profiler.hyperliquid_profiler import HyperliquidProfiler
+from profiler.reporter import StageReporter, build_wallet_profile
+from profiler.scorer import CompositeScorer
+from run_logger import StageLogger
 
 CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
 
@@ -48,24 +48,30 @@ def _cross_reference_forex(
 
     for acct in myfxbook_accounts:
         dual = acct["address"] in fx_blue_ids
-        all_accounts.append({
-            **acct,
-            "dual_verified": dual,
-            "survivorship_flag": not dual,
-            "source": "myfxbook",
-        })
+        all_accounts.append(
+            {
+                **acct,
+                "dual_verified": dual,
+                "survivorship_flag": not dual,
+                "source": "myfxbook",
+            }
+        )
 
     for acct in fx_blue_accounts:
         if acct["address"] not in myfxbook_ids:
-            all_accounts.append({
-                **acct,
-                "dual_verified": False,
-                "survivorship_flag": True,
-                "source": "fx_blue",
-            })
+            all_accounts.append(
+                {
+                    **acct,
+                    "dual_verified": False,
+                    "survivorship_flag": True,
+                    "source": "fx_blue",
+                }
+            )
 
     dual_count = sum(1 for a in all_accounts if a["dual_verified"])
-    logger.info(f"Cross-reference: {dual_count} dual-verified, {len(all_accounts)-dual_count} single-platform")
+    logger.info(
+        f"Cross-reference: {dual_count} dual-verified, {len(all_accounts) - dual_count} single-platform"
+    )
     return all_accounts
 
 
@@ -167,28 +173,33 @@ def run_stage4(config: dict) -> list[dict]:
         if account.get("survivorship_flag"):
             yellow_flags += 1  # count single-platform as a flag
 
-        qualifying.append({
-            "wallet": {**account, "id": wallet_id},
-            "trades": trades,
-            "windows": windows,
-            "score": score,
-            "yellow_flags": yellow_flags,
-        })
+        qualifying.append(
+            {
+                "wallet": {**account, "id": wallet_id},
+                "trades": trades,
+                "windows": windows,
+                "score": score,
+                "yellow_flags": yellow_flags,
+            }
+        )
 
     # Step 4.6: Rank and export
     qualifying.sort(key=lambda e: e["score"]["composite_score"], reverse=True)
     for i, e in enumerate(qualifying, 1):
         e["score"]["rank"] = i
-        db.upsert_score(e["wallet"]["id"], {
-            "win_rate_consistency": e["score"]["win_rate_consistency"],
-            "risk_adjusted_return": e["score"]["risk_adjusted_return"],
-            "exit_efficiency": e["score"]["exit_efficiency"],
-            "trade_frequency": e["score"]["trade_frequency"],
-            "instrument_day_consistency": e["score"]["instrument_day_consistency"],
-            "composite_score": e["score"]["composite_score"],
-            "rank": e["score"]["rank"],
-            "lookback_tier": e["score"]["lookback_tier"],
-        })
+        db.upsert_score(
+            e["wallet"]["id"],
+            {
+                "win_rate_consistency": e["score"]["win_rate_consistency"],
+                "risk_adjusted_return": e["score"]["risk_adjusted_return"],
+                "exit_efficiency": e["score"]["exit_efficiency"],
+                "trade_frequency": e["score"]["trade_frequency"],
+                "instrument_day_consistency": e["score"]["instrument_day_consistency"],
+                "composite_score": e["score"]["composite_score"],
+                "rank": e["score"]["rank"],
+                "lookback_tier": e["score"]["lookback_tier"],
+            },
+        )
 
     top_n = config["output"]["top_n_profiles"]
     profiles: list[dict] = []
@@ -211,7 +222,9 @@ def run_stage4(config: dict) -> list[dict]:
     reporter.export_csv(profiles, stage="stage4")
     reporter.export_markdown_summary(profiles, stage="stage4", run_counts=run_counts)
 
-    db.finish_run(run_id, counts={"total_scanned": len(all_forex), "total_qualified": len(qualifying)})
+    db.finish_run(
+        run_id, counts={"total_scanned": len(all_forex), "total_qualified": len(qualifying)}
+    )
     logger.print_summary()
     return profiles
 

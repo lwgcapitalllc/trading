@@ -2,9 +2,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  SmartMoneyRunSummary, SmartMoneyRun, Candidate,
-  DisqualifiedCandidate, SmartMoneyConfig, ConfigGitStatus, RunProgress,
-  CacheStats, CacheClearResult,
+  SmartMoneyRunSummary,
+  SmartMoneyRun,
+  Candidate,
+  DisqualifiedCandidate,
+  SmartMoneyConfig,
+  ConfigGitStatus,
+  RunProgress,
+  CacheStats,
+  CacheClearResult,
 } from '@/types'
 
 // Module-level timestamp — shared between useRunProgress and useRunPipeline so
@@ -41,8 +47,7 @@ export function useCandidates(runId: string | null) {
 export function useCandidate(runId: string | null, candidateId: string | null) {
   return useQuery({
     queryKey: ['smart-money', 'candidate', runId, candidateId],
-    queryFn: () =>
-      api.get<Candidate>(`/smart-money/runs/${runId}/candidates/${candidateId}`),
+    queryFn: () => api.get<Candidate>(`/smart-money/runs/${runId}/candidates/${candidateId}`),
     enabled: !!(runId && candidateId),
   })
 }
@@ -50,8 +55,7 @@ export function useCandidate(runId: string | null, candidateId: string | null) {
 export function useDisqualified(runId: string | null) {
   return useQuery({
     queryKey: ['smart-money', 'disqualified', runId],
-    queryFn: () =>
-      api.get<DisqualifiedCandidate[]>(`/smart-money/runs/${runId}/disqualified`),
+    queryFn: () => api.get<DisqualifiedCandidate[]>(`/smart-money/runs/${runId}/disqualified`),
     enabled: !!runId,
   })
 }
@@ -92,10 +96,9 @@ export function useRunPipeline() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (profile: 'bot' | 'human' | null) =>
-      api.post<{ status: string; stage: number; profile: string | null }>(
-        '/smart-money/run',
-        { profile },
-      ),
+      api.post<{ status: string; stage: number; profile: string | null }>('/smart-money/run', {
+        profile,
+      }),
     onSuccess: (_data, profile) => {
       _lastTriggerMs = Date.now()
       toast.success(`Pipeline started${profile ? ` (${profile} profile)` : ''}`)
@@ -120,8 +123,7 @@ export function useStopPipeline() {
 export function useSaveConfig() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (cfg: SmartMoneyConfig) =>
-      api.put<SmartMoneyConfig>('/smart-money/config', cfg),
+    mutationFn: (cfg: SmartMoneyConfig) => api.put<SmartMoneyConfig>('/smart-money/config', cfg),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['smart-money', 'config'] })
     },

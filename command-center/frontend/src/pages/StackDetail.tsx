@@ -1,34 +1,86 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, ChevronDown, Loader2, XCircle, Layers, Trash2, Square, Play } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  XCircle,
+  Layers,
+  Trash2,
+  Square,
+  Play,
+} from 'lucide-react'
 import StickyHeader from '@/components/StickyHeader'
-import { useStack, useDeleteStack, useCancelStack, useStackChartSpec, useRefreshStackChartSpec, useRunCandles, useStackContention, useStackRegimeTimeline } from '@/hooks/useLab'
+import {
+  useStack,
+  useDeleteStack,
+  useCancelStack,
+  useStackChartSpec,
+  useRefreshStackChartSpec,
+  useRunCandles,
+  useStackContention,
+  useStackRegimeTimeline,
+} from '@/hooks/useLab'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverlayToggle'
 import InfoTip from '@/components/InfoTip'
-import { getXMode, setXModePref, regimeBandsFromTimeline, regimeBandsByIndex, type XMode } from '@/lib/chartAxis'
 import {
-  PerformancePanel, computeFallbacks, worstLosingStreakOf, EquityCurveChart, DrawdownChart, DailyPnlChart,
-  DirectionBreakdown, PriceChartView, SeriesToggle, panelCardCls, CardHead, CardHero, PanelRows,
-  usePerfCollapsed, PerfCollapseToggle, type FallbackMetrics, type PanelRow,
+  getXMode,
+  setXModePref,
+  regimeBandsFromTimeline,
+  regimeBandsByIndex,
+  type XMode,
+} from '@/lib/chartAxis'
+import {
+  PerformancePanel,
+  computeFallbacks,
+  worstLosingStreakOf,
+  EquityCurveChart,
+  DrawdownChart,
+  DailyPnlChart,
+  DirectionBreakdown,
+  PriceChartView,
+  SeriesToggle,
+  panelCardCls,
+  CardHead,
+  CardHero,
+  PanelRows,
+  usePerfCollapsed,
+  PerfCollapseToggle,
+  type FallbackMetrics,
+  type PanelRow,
 } from '@/pages/BacktestDetail'
 import { C } from '@/themes/chart'
-import type { StackStrategyLeg, BacktestDetail as RunDetail, EquityPoint, DailyPnlPoint, StackSharedReport, StackMode } from '@/types'
+import type {
+  StackStrategyLeg,
+  BacktestDetail as RunDetail,
+  EquityPoint,
+  DailyPnlPoint,
+  StackSharedReport,
+  StackMode,
+} from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 // Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
 // Greenwich. Same fix in BacktestDetail/SweepDetail/OptimizationDetail/StressTestDetail.
 function fmtDate(iso: string) {
-  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 function fmtMoney(v: number, signed = true): string {
   const sign = v >= 0 ? (signed ? '+' : '') : '-'
   return `${sign}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 }
-function dateMsOf(s?: string): number { return s ? new Date(s).getTime() : 0 }
+function dateMsOf(s?: string): number {
+  return s ? new Date(s).getTime() : 0
+}
 
 // Net P&L of a leg's SOLO CONTROL book — what it made ALONE on its own full account, which is a
 // different question from what its trades are worth inside the shared portfolio. `null` = no
@@ -57,10 +109,10 @@ function soloNetOf(leg: StackStrategyLeg): number | null {
 // ⚠ Keep this an explicit list rather than a filter. A filter over a shared palette is a rule that
 // silently re-breaks the day somebody adds a colour to `C.series`.
 const LEG_COLORS = [
-  '#00e5ff',  // cyan
-  '#ffb300',  // amber
-  '#a78bfa',  // violet
-  '#4da6ff',  // blue
+  '#00e5ff', // cyan
+  '#ffb300', // amber
+  '#a78bfa', // violet
+  '#4da6ff', // blue
 ]
 
 // ── Combined-portfolio payload ─────────────────────────────────────────────────
@@ -86,10 +138,10 @@ type ComboPoint = EquityPoint & { _legOwner?: string } & Partial<Record<`leg_${s
 // dollars.** Composing a subset from shared trades answers "what did this leg contribute to an
 // account the others built", and reads as "what this leg made". Those are different questions.
 type Basis =
-  | 'screen'      // every leg had its own full account, so any subset is honestly additive
-  | 'shared'      // every leg on: the shared book, exactly as replayed
-  | 'solo'        // one leg on: its SOLO CONTROL replay, i.e. genuinely "if the others never existed"
-  | 'unmeasured'  // a subset nobody replayed — refuse rather than compose one
+  | 'screen' // every leg had its own full account, so any subset is honestly additive
+  | 'shared' // every leg on: the shared book, exactly as replayed
+  | 'solo' // one leg on: its SOLO CONTROL replay, i.e. genuinely "if the others never existed"
+  | 'unmeasured' // a subset nobody replayed — refuse rather than compose one
 
 interface Combined {
   run: RunDetail
@@ -108,9 +160,13 @@ interface Combined {
   basis: Basis
 }
 
-function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>, mode: StackMode): Combined {
-  const complete = legs.filter(l => l.status === 'complete')
-  const active = complete.filter(l => enabled.has(l.strategy_id))
+function composeCombined(
+  legs: StackStrategyLeg[],
+  enabled: Set<string>,
+  mode: StackMode
+): Combined {
+  const complete = legs.filter((l) => l.status === 'complete')
+  const active = complete.filter((l) => enabled.has(l.strategy_id))
 
   // A screen replayed each leg on its own full account, so a subset of it is a real experiment —
   // nothing could ever have blocked anything, and removing a leg removes only its own trades. A
@@ -119,22 +175,26 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>, mode: S
   const allOn = active.length === complete.length
   const soloOf = (l: StackStrategyLeg) => (l.solo_equity_curve?.length ? l : null)
   const basis: Basis =
-    mode !== 'shared' ? 'screen'
-      : allOn ? 'shared'
-        : active.length === 1 && soloOf(active[0]) ? 'solo'
+    mode !== 'shared'
+      ? 'screen'
+      : allOn
+        ? 'shared'
+        : active.length === 1 && soloOf(active[0])
+          ? 'solo'
           : 'unmeasured'
 
   // On the solo basis the leg's own control book REPLACES its shared one — same trades, sized off
   // its own account instead of the portfolio's.
-  const books = active.map(l => (
+  const books = active.map((l) =>
     basis === 'solo'
       ? { leg: l, equity_curve: l.solo_equity_curve ?? [], daily_pnl: l.solo_daily_pnl ?? [] }
       : { leg: l, equity_curve: l.equity_curve, daily_pnl: l.daily_pnl }
-  ))
+  )
 
   // Portfolio daily P&L = per-date sum across enabled legs.
   const dailyMap = new Map<string, number>()
-  for (const b of books) for (const d of b.daily_pnl) dailyMap.set(d.date, (dailyMap.get(d.date) ?? 0) + d.pnl)
+  for (const b of books)
+    for (const d of b.daily_pnl) dailyMap.set(d.date, (dailyMap.get(d.date) ?? 0) + d.pnl)
   const dailyPnl: DailyPnlPoint[] = Array.from(dailyMap.entries())
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([date, pnl]) => ({ date, pnl }))
@@ -152,69 +212,88 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>, mode: S
 
   // Union of every leg's trades in time order → one portfolio equity curve. Each point also records
   // EVERY leg's running balance (the overlay lines), so a strategy's line rides the same x-axis.
-  const tagged = books.flatMap(b => b.equity_curve.filter(p => p.direction).map(p => ({ p, legId: b.leg.strategy_id })))
+  const tagged = books.flatMap((b) =>
+    b.equity_curve.filter((p) => p.direction).map((p) => ({ p, legId: b.leg.strategy_id }))
+  )
   tagged.sort((a, b) => (a.p.entry_ms ?? dateMsOf(a.p.date)) - (b.p.entry_ms ?? dateMsOf(b.p.date)))
   // Every strategy line starts on the SAME point as the portfolio line (the combined opening
   // balance) and then rides its own cumulative P&L — "what this leg alone did to the account".
   // Starting each leg at its own 10k slice would draw the lines below the portfolio's start line.
-  const legBal = new Map<string, number>(active.map(l => [l.strategy_id, balance]))
+  const legBal = new Map<string, number>(active.map((l) => [l.strategy_id, balance]))
   let bal = balance
   const equity: ComboPoint[] = tagged.map(({ p, legId }, i) => {
     bal += p.profit ?? 0
     legBal.set(legId, legBal.get(legId)! + (p.profit ?? 0))
     const pt: ComboPoint = {
-      index: i + 1, equity: Number(bal.toFixed(2)), date: p.date, entry_ms: p.entry_ms,
-      direction: p.direction, profit: p.profit, favorable: p.favorable, adverse: p.adverse, exit_name: p.exit_name,
+      index: i + 1,
+      equity: Number(bal.toFixed(2)),
+      date: p.date,
+      entry_ms: p.entry_ms,
+      direction: p.direction,
+      profit: p.profit,
+      favorable: p.favorable,
+      adverse: p.adverse,
+      exit_name: p.exit_name,
       _legOwner: `leg_${legId}`,
     }
-    for (const leg of active) pt[`leg_${leg.strategy_id}`] = Number(legBal.get(leg.strategy_id)!.toFixed(2))
+    for (const leg of active)
+      pt[`leg_${leg.strategy_id}`] = Number(legBal.get(leg.strategy_id)!.toFixed(2))
     return pt
   })
 
   // ⚠ Both maps cover every COMPLETE leg, not only the switched-on ones. A leg's trade count and
   // its R are facts about that leg, so a row must not fall back to a different unit the moment the
   // reader switches it off — that made one row read `+17.87R` and the other `160` on the same card.
-  const legTrades = new Map(complete.map(l => [l.strategy_id, l.equity_curve.filter(p => p.direction).length]))
+  const legTrades = new Map(
+    complete.map((l) => [l.strategy_id, l.equity_curve.filter((p) => p.direction).length])
+  )
 
   // R per leg — the Verdict card's row value. It is the ONE figure that does not move between the
   // shared book and the solo control (R is normalised to each trade's own risk, so re-sizing a
   // position cannot touch it), which is exactly why the row leads with it rather than with dollars.
   // `shared_summary.json` stores the same number per leg and the two agree to 4dp; deriving it here
   // means the row still has an answer on a screen, which has no summary at all.
-  const legR = new Map(complete.map(l => [
-    l.strategy_id,
-    l.equity_curve.reduce((a, p) => a + (p.direction ? (p.r ?? 0) : 0), 0),
-  ]))
+  const legR = new Map(
+    complete.map((l) => [
+      l.strategy_id,
+      l.equity_curve.reduce((a, p) => a + (p.direction ? (p.r ?? 0) : 0), 0),
+    ])
+  )
 
   // KPIs from the union of trades.
-  const trades = tagged.map(t => t.p)
-  const profits = trades.map(t => t.profit ?? 0)
-  const wins = profits.filter(p => p > 0)
-  const losses = profits.filter(p => p < 0)
+  const trades = tagged.map((t) => t.p)
+  const profits = trades.map((t) => t.profit ?? 0)
+  const wins = profits.filter((p) => p > 0)
+  const losses = profits.filter((p) => p < 0)
   const grossWin = wins.reduce((a, b) => a + b, 0)
   const grossLoss = Math.abs(losses.reduce((a, b) => a + b, 0))
   const net = profits.reduce((a, b) => a + b, 0)
   const winRate = trades.length ? wins.length / trades.length : null
   // No losing trade = no denominator, not unknown: report ∞ so the card matches a single backtest.
-  const pf = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? Infinity : null)
+  const pf = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : null
   const avgWin = wins.length ? grossWin / wins.length : null
   const avgLoss = losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : null
 
   // Portfolio dollar drawdown (peak-to-trough of the combined equity).
-  let peak = -Infinity, maxDd = 0
-  for (const e of equity) { peak = Math.max(peak, e.equity); maxDd = Math.max(maxDd, peak - e.equity) }
+  let peak = -Infinity,
+    maxDd = 0
+  for (const e of equity) {
+    peak = Math.max(peak, e.equity)
+    maxDd = Math.max(maxDd, peak - e.equity)
+  }
 
   // Portfolio avg trade duration = each leg's own average weighted by how many trades it contributed
   // (legs that never reported a duration sit out of both sums rather than dragging it to zero).
   // Weighted by the trades in the book actually on screen, NOT by `legTrades` — that map covers
   // every complete leg so the rows stay in one unit, and weighting an average by legs that are
   // switched off would describe a portfolio nobody is looking at.
-  const durLegs = books.filter(b => b.leg.avg_trade_duration_min != null)
-  const durCount = (b: typeof books[number]) => b.equity_curve.filter(p => p.direction).length
+  const durLegs = books.filter((b) => b.leg.avg_trade_duration_min != null)
+  const durCount = (b: (typeof books)[number]) => b.equity_curve.filter((p) => p.direction).length
   const durTrades = durLegs.reduce((a, b) => a + durCount(b), 0)
-  const avgDuration = durTrades > 0
-    ? durLegs.reduce((a, b) => a + b.leg.avg_trade_duration_min! * durCount(b), 0) / durTrades
-    : null
+  const avgDuration =
+    durTrades > 0
+      ? durLegs.reduce((a, b) => a + b.leg.avg_trade_duration_min! * durCount(b), 0) / durTrades
+      : null
 
   // Sharpe comes from computeFallbacks — this was a third private copy of the formula, and like
   // the one in computeFallbacks it scored only the days that traded, so a stack printed 13.06.
@@ -243,12 +322,18 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>, mode: S
   } as unknown as RunDetail
 
   return {
-    run, equity, dailyPnl, legTrades, legR, balance, fallback,
+    run,
+    equity,
+    dailyPnl,
+    legTrades,
+    legR,
+    balance,
+    fallback,
     // `unmeasured` has no book, so it has no results — the page renders the refusal instead of a
     // composed answer. Everything above still runs (it is cheap and the leg rows read `legR`), it
     // simply must not be shown as a portfolio.
     hasResults: basis !== 'unmeasured' && dailyPnl.length > 0,
-    hasDirection: trades.some(t => t.direction),
+    hasDirection: trades.some((t) => t.direction),
     activeCount: active.length,
     completeCount: complete.length,
     basis,
@@ -256,14 +341,23 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>, mode: S
 }
 
 // Equity-chart legend — the combined curve + a swatch per enabled strategy line.
-function StackEquityLegend({ activeLegs, colorFor }: { activeLegs: StackStrategyLeg[]; colorFor: (id: string) => string }) {
+function StackEquityLegend({
+  activeLegs,
+  colorFor,
+}: {
+  activeLegs: StackStrategyLeg[]
+  colorFor: (id: string) => string
+}) {
   return (
     <div className="flex items-center gap-4 mb-1 flex-wrap">
       <span className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
         <span className="w-4 h-[2.5px] rounded" style={{ background: C.pos }} /> Portfolio
       </span>
-      {activeLegs.map(leg => (
-        <span key={leg.strategy_id} className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+      {activeLegs.map((leg) => (
+        <span
+          key={leg.strategy_id}
+          className="flex items-center gap-1.5 text-[11px] text-text-tertiary"
+        >
           <span className="w-4 h-[2px] rounded" style={{ background: colorFor(leg.strategy_id) }} />
           {leg.strategy_name}
         </span>
@@ -281,11 +375,18 @@ function StackEquityLegend({ activeLegs, colorFor }: { activeLegs: StackStrategy
 function BasisChip({ basis }: { basis: Basis }) {
   if (basis === 'screen' || basis === 'shared') {
     return (
-      <span className="text-[10px] text-text-tertiary flex items-center gap-1" data-testid="basis-chip">
+      <span
+        className="text-[10px] text-text-tertiary flex items-center gap-1"
+        data-testid="basis-chip"
+      >
         {basis === 'shared' ? 'the shared account, as it ran' : 'every strategy on its own account'}
-        <InfoTip text={basis === 'shared'
-          ? 'Every strategy is on, so these are the numbers the shared replay actually produced — one balance, one risk budget they competed for.'
-          : 'This is a screen: each strategy was replayed on its own full account and the results added up. Nothing could block anything, so any combination of them is a real reading.'} />
+        <InfoTip
+          text={
+            basis === 'shared'
+              ? 'Every strategy is on, so these are the numbers the shared replay actually produced — one balance, one risk budget they competed for.'
+              : 'This is a screen: each strategy was replayed on its own full account and the results added up. Nothing could block anything, so any combination of them is a real reading.'
+          }
+        />
       </span>
     )
   }
@@ -318,15 +419,15 @@ function UnmeasuredCard({ onAllOn }: { onAllOn: () => void }) {
     <div className={`${panelCardCls(false, false, 'flex-1')}`} data-testid="unmeasured-card">
       <CardHead title="No numbers for this combination" />
       <div className="text-[12px] text-text-secondary leading-[1.5] mt-1">
-        A shared account was replayed <strong className="text-text-primary">twice</strong>: once with every
-        strategy competing for one balance, and once per strategy running alone. Any other subset is a
-        different experiment that nobody has run.
+        A shared account was replayed <strong className="text-text-primary">twice</strong>: once
+        with every strategy competing for one balance, and once per strategy running alone. Any
+        other subset is a different experiment that nobody has run.
       </div>
       <div className="text-[11px] text-text-tertiary leading-[1.45] mt-2">
-        Composing one from the stored trades would be misleading rather than approximate — inside the shared
-        book each strategy sizes off a balance <em>all</em> of them grew, so its dollars there are not what it
-        would have made without the others. Leave one strategy on to see its solo replay, or switch them all
-        back on for the portfolio.
+        Composing one from the stored trades would be misleading rather than approximate — inside
+        the shared book each strategy sizes off a balance <em>all</em> of them grew, so its dollars
+        there are not what it would have made without the others. Leave one strategy on to see its
+        solo replay, or switch them all back on for the portfolio.
       </div>
       <button
         type="button"
@@ -351,7 +452,17 @@ function UnmeasuredCard({ onAllOn }: { onAllOn: () => void }) {
 // decides what every KPI counts was nowhere near the KPIs, and nothing on the panel said which
 // strategies were in it. A row is 24px whatever it says (see PanelRows), so the card stays in
 // line with the three beside it however long a strategy name is.
-function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, total, spanDays, mode }: {
+function StackVerdictCard({
+  legs,
+  enabled,
+  colorFor,
+  onToggle,
+  counts,
+  legR,
+  total,
+  spanDays,
+  mode,
+}: {
   legs: StackStrategyLeg[]
   enabled: Set<string>
   colorFor: (id: string) => string
@@ -362,18 +473,26 @@ function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, tot
   spanDays: number | null
   mode: StackMode
 }) {
-  const activeCount = legs.filter(l => enabled.has(l.strategy_id) && l.status === 'complete').length
+  const activeCount = legs.filter(
+    (l) => enabled.has(l.strategy_id) && l.status === 'complete'
+  ).length
 
   // Same cadence line a backtest's verdict card carries, off the stack's own window.
   const months = spanDays != null && spanDays > 0 ? spanDays / 30.44 : null
   const years = months != null ? months / 12 : null
   const perMonth = months != null && months >= 1 ? total / months : null
   const cadence = [
-    years != null && years >= 1 ? `${years.toFixed(1)} yrs` : months != null ? `${months.toFixed(0)} mo` : null,
+    years != null && years >= 1
+      ? `${years.toFixed(1)} yrs`
+      : months != null
+        ? `${months.toFixed(0)} mo`
+        : null,
     perMonth != null ? `≈${perMonth < 1 ? perMonth.toFixed(1) : perMonth.toFixed(0)}/month` : null,
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
-  const rows: PanelRow[] = legs.map(leg => {
+  const rows: PanelRow[] = legs.map((leg) => {
     const on = enabled.has(leg.strategy_id)
     const done = leg.status === 'complete'
     const failed = leg.status.startsWith('failed')
@@ -389,11 +508,16 @@ function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, tot
     // inside the portfolio, sized off a balance every leg compounded onto, so that sentence was
     // false by 2,266x on the measured stack. R is the same number either way.
     const soloNet = soloNetOf(leg)
-    const made = mode === 'shared'
-      ? (soloNet != null
+    const made =
+      mode === 'shared'
+        ? soloNet != null
           ? ` Alone on its own account it makes ${fmtMoney(soloNet)}; inside this stack the same trades are worth ${fmtMoney(leg.net_pnl ?? 0)}, because here it sizes off a balance every strategy grew.`
-          : (leg.net_pnl != null ? ` It is worth ${fmtMoney(leg.net_pnl)} inside this shared account — not what it would make alone, because here it sizes off a balance every strategy grew.` : ''))
-      : (leg.net_pnl != null ? ` It made ${fmtMoney(leg.net_pnl)} on its own full account.` : '')
+          : leg.net_pnl != null
+            ? ` It is worth ${fmtMoney(leg.net_pnl)} inside this shared account — not what it would make alone, because here it sizes off a balance every strategy grew.`
+            : ''
+        : leg.net_pnl != null
+          ? ` It made ${fmtMoney(leg.net_pnl)} on its own full account.`
+          : ''
 
     return {
       key: leg.strategy_id,
@@ -407,18 +531,24 @@ function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, tot
           }}
         />
       ),
-      value: done
-        ? (r != null && r !== 0 ? `${r > 0 ? '+' : ''}${r.toFixed(2)}R` : trades)
-        : failed
-          ? <XCircle size={12} className="inline text-neg-text" />
-          : <Loader2 size={12} className="inline animate-spin text-accent" />,
+      value: done ? (
+        r != null && r !== 0 ? (
+          `${r > 0 ? '+' : ''}${r.toFixed(2)}R`
+        ) : (
+          trades
+        )
+      ) : failed ? (
+        <XCircle size={12} className="inline text-neg-text" />
+      ) : (
+        <Loader2 size={12} className="inline animate-spin text-accent" />
+      ),
       cls: failed ? 'text-neg-text' : undefined,
       muted: !on || !done,
       onClick: clickable ? () => onToggle(leg.strategy_id) : undefined,
       tip: !done
-        ? (failed
-            ? `This leg failed, so none of its trades are in the numbers beside this card. ${leg.error_message ?? 'No error was recorded.'}`
-            : 'This leg is still replaying. It joins the portfolio numbers the moment it finishes.')
+        ? failed
+          ? `This leg failed, so none of its trades are in the numbers beside this card. ${leg.error_message ?? 'No error was recorded.'}`
+          : 'This leg is still replaying. It joins the portfolio numbers the moment it finishes.'
         : `${trades} trades${r != null ? `, ${r > 0 ? '+' : ''}${r.toFixed(2)}R` : ''}. R is its result over the risk it was sized to, so it is the same number here as it is alone — the dollars are not.${made} ${
             isLastOn
               ? 'At least one strategy has to stay on — a portfolio of none has nothing to measure.'
@@ -434,10 +564,17 @@ function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, tot
        card's rows are a CONTROL, and the panel's collapse means "hero numbers only", not "hide the
        switch that decides what the heroes count". Hiding it would put the toggles a click behind a
        preference the reader set on a different page. It costs ~24px per leg. */
-    <div data-testid="stack-verdict-card" className={panelCardCls(false, false, 'border-t-2 border-t-accent/45')}>
+    <div
+      data-testid="stack-verdict-card"
+      className={panelCardCls(false, false, 'border-t-2 border-t-accent/45')}
+    >
       <CardHead
         title="Verdict"
-        aside={<span className="text-[10px] text-text-tertiary shrink-0">{activeCount} of {legs.length} on</span>}
+        aside={
+          <span className="text-[10px] text-text-tertiary shrink-0">
+            {activeCount} of {legs.length} on
+          </span>
+        }
       />
       <CardHero
         value={total}
@@ -456,10 +593,15 @@ function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, tot
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const CHART_TABS = [['equity', 'Equity'], ['price', 'Price'], ['breakdown', 'Breakdown']] as const
+const CHART_TABS = [
+  ['equity', 'Equity'],
+  ['price', 'Price'],
+  ['breakdown', 'Breakdown'],
+] as const
 const CHART_SUBS: Record<string, string> = {
   equity: 'Steadily rising = good. Big peak then long decline = giving back gains.',
-  price: 'Candles with each enabled strategy\'s trades layered in its colour. Structure, fib + measurement tools included.',
+  price:
+    "Candles with each enabled strategy's trades layered in its colour. Structure, fib + measurement tools included.",
   breakdown: 'Drawdown from peak, daily P&L, and long vs short — for the combined portfolio.',
 }
 
@@ -480,7 +622,12 @@ const CHART_SUBS: Record<string, string> = {
 // ⚠ The two facts that must never be dropped: the peak open risk has to be stated WITH the cap
 // (10% is either the ceiling or a third of it, and the number alone cannot say which), and an
 // empty contention log has to be stated in WORDS as a measurement.
-function SharedAccountPanel({ report, colorFor, nameFor, running }: {
+function SharedAccountPanel({
+  report,
+  colorFor,
+  nameFor,
+  running,
+}: {
   report: StackSharedReport
   colorFor: (id: string) => string
   nameFor: (id: string) => string
@@ -496,9 +643,13 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
     const p = report.progress
     if (p && p.phase === 'failed') {
       return (
-        <div data-testid="shared-account-panel"
-             className="rounded-lg border border-neg-text/25 bg-neg-muted/20 px-4 py-3">
-          <div className="text-[13px] font-semibold text-neg-text mb-1">The shared replay failed</div>
+        <div
+          data-testid="shared-account-panel"
+          className="rounded-lg border border-neg-text/25 bg-neg-muted/20 px-4 py-3"
+        >
+          <div className="text-[13px] font-semibold text-neg-text mb-1">
+            The shared replay failed
+          </div>
           <div className="text-[12px] text-text-secondary font-mono break-words">{p.message}</div>
         </div>
       )
@@ -511,23 +662,29 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
     // sentence: this will not arrive on its own, rerun it.
     if (!running && (!p || p.phase === 'cancelled')) {
       return (
-        <div data-testid="shared-account-panel"
-             className="rounded-lg border border-border-default bg-bg-surface px-4 py-3">
+        <div
+          data-testid="shared-account-panel"
+          className="rounded-lg border border-border-default bg-bg-surface px-4 py-3"
+        >
           <div className="text-[13px] font-semibold text-text-primary mb-1">
-            {p?.phase === 'cancelled' ? 'The shared replay was cancelled' : 'The shared replay did not finish'}
+            {p?.phase === 'cancelled'
+              ? 'The shared replay was cancelled'
+              : 'The shared replay did not finish'}
           </div>
           <div className="text-[12.5px] text-text-secondary leading-[1.5]">
             {p?.phase === 'cancelled'
               ? 'It was stopped part-way, so no shared-account result was written — a partial book would be indistinguishable from a complete short one.'
-              : 'No result was written and nothing is replaying now, so this will not appear on its own. The backend was most likely restarted mid-run.'}
-            {' '}Rerun the stack to produce it.
+              : 'No result was written and nothing is replaying now, so this will not appear on its own. The backend was most likely restarted mid-run.'}{' '}
+            Rerun the stack to produce it.
           </div>
         </div>
       )
     }
     return (
-      <div data-testid="shared-account-panel"
-           className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3 text-[13px] text-accent">
+      <div
+        data-testid="shared-account-panel"
+        className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3 text-[13px] text-accent"
+      >
         <Loader2 size={14} className="animate-spin" />
         {p ? `${p.message} · ${p.pct}%` : 'Replaying the strategies on one account…'}
       </div>
@@ -538,7 +695,10 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
   // exactly what a screen-mode stack would have produced. So this is a like-for-like comparison
   // against a run that really happened, not against an estimate.
   const opening = report.opening_balance ?? 0
-  const screenClosing = report.legs.reduce((a, l) => a + (l.solo_closing_balance - opening), opening)
+  const screenClosing = report.legs.reduce(
+    (a, l) => a + (l.solo_closing_balance - opening),
+    opening
+  )
   const sharedClosing = report.closing_balance ?? 0
   const delta = sharedClosing - screenClosing
   const anyContention = (report.contention_events ?? 0) > 0
@@ -549,9 +709,10 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
   const seamFailed = !!report.neutral?.checkable && report.neutral?.ok === false
 
   return (
-    <div data-testid="shared-account-panel"
-         className="rounded-xl border border-border-default bg-bg-surface px-4 py-3.5 space-y-3">
-
+    <div
+      data-testid="shared-account-panel"
+      className="rounded-xl border border-border-default bg-bg-surface px-4 py-3.5 space-y-3"
+    >
       {/* ── How full the budget ever got, and whether it ever had to say no ──
           ⚠ Every FACT here was already on screen before 2026-08-10; what changed is that the prose
           explaining each one moved onto its ⓘ. Aaron: "does this section need to be so verbose?
@@ -561,24 +722,36 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
           four lines of body text nobody re-reads. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className="flex items-baseline text-[12.5px] text-text-secondary">
-          <span className="font-mono tabular-nums text-[15px] font-semibold text-text-primary">{peakPct.toFixed(2)}%</span>
+          <span className="font-mono tabular-nums text-[15px] font-semibold text-text-primary">
+            {peakPct.toFixed(2)}%
+          </span>
           <span className="ml-1.5">peak open risk</span>
-          <InfoTip text={`The most open risk the account ever carried at once, as a share of its balance, measured to each trade's CURRENT stop. Against a ${capPct.toFixed(2)}% cap, with ${report.peak_concurrent_legs} of ${report.leg_count} strategies holding at the peak.`} />
+          <InfoTip
+            text={`The most open risk the account ever carried at once, as a share of its balance, measured to each trade's CURRENT stop. Against a ${capPct.toFixed(2)}% cap, with ${report.peak_concurrent_legs} of ${report.leg_count} strategies holding at the peak.`}
+          />
         </span>
-        <span data-testid="contention-chip" className={`inline-flex items-center rounded-full pl-2.5 pr-1.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.4px] shrink-0 ${
-          anyContention ? 'bg-warn-muted text-warn-text' : 'bg-bg-sunken text-text-secondary'
-        }`}>
+        <span
+          data-testid="contention-chip"
+          className={`inline-flex items-center rounded-full pl-2.5 pr-1.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.4px] shrink-0 ${
+            anyContention ? 'bg-warn-muted text-warn-text' : 'bg-bg-sunken text-text-secondary'
+          }`}
+        >
           {anyContention ? `${report.contention_events} refused` : 'Nothing refused'}
-          <InfoTip text={anyContention
-            ? `The budget was full ${report.contention_events} times when a strategy asked, so its entry was shrunk to fit or refused outright. Every difference between this and the same strategies run apart traces to one of these — the per-strategy rows below say which strategy wore them.`
-            : 'Nothing was ever refused. That is a measurement, not a missing one — open risk is measured to each trade’s current stop, so a stop moved to breakeven releases its room before the other strategy asks. Read it as “the budget would rarely have had anything to arbitrate”, never as “a cap is unnecessary”.'} />
+          <InfoTip
+            text={
+              anyContention
+                ? `The budget was full ${report.contention_events} times when a strategy asked, so its entry was shrunk to fit or refused outright. Every difference between this and the same strategies run apart traces to one of these — the per-strategy rows below say which strategy wore them.`
+                : 'Nothing was ever refused. That is a measurement, not a missing one — open risk is measured to each trade’s current stop, so a stop moved to breakeven releases its room before the other strategy asks. Read it as “the budget would rarely have had anything to arbitrate”, never as “a cap is unnecessary”.'
+            }
+          />
         </span>
       </div>
       <div className="h-[5px] rounded-full bg-bg-sunken overflow-hidden">
         <div className="h-full rounded-full bg-accent" style={{ width: `${fill}%` }} />
       </div>
       <div className="text-[11px] text-text-tertiary">
-        of a {capPct.toFixed(2)}% cap · {report.peak_concurrent_legs} of {report.leg_count} holding at once
+        of a {capPct.toFixed(2)}% cap · {report.peak_concurrent_legs} of {report.leg_count} holding
+        at once
       </div>
 
       {/* The one thing this panel can CHECK rather than report. R is normalised to the trade's own
@@ -587,7 +760,8 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
           and not a portfolio effect. A FAILURE is never folded into the disclosure below. */}
       {seamFailed && (
         <div className="text-[11px] px-3 py-2 rounded-lg border border-neg-text/25 bg-neg-muted/20 text-neg-text">
-          <strong>Seam check failed — </strong>{report.neutral!.reason}
+          <strong>Seam check failed — </strong>
+          {report.neutral!.reason}
         </div>
       )}
 
@@ -599,24 +773,40 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
       <div className="border-t border-border-subtle pt-2">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <button
-            onClick={() => setShowLegs(v => !v)}
+            onClick={() => setShowLegs((v) => !v)}
             className="flex items-center gap-1.5 text-[11px] font-medium text-text-tertiary hover:text-text-secondary transition-colors"
           >
-            <ChevronDown size={12} className={`transition-transform ${showLegs || anyContention ? '' : '-rotate-90'}`} />
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${showLegs || anyContention ? '' : '-rotate-90'}`}
+            />
             Per-strategy detail
           </button>
           {/* What sharing one balance changed, as three figures on one line with the reasoning on
               the ⓘ. ⚠ The tooltip's job is to stop the gap being read as risk: it is mostly
               COMPOUNDING, and `docs/SHARED_RISK_STACK.md` predicted the opposite sign from exactly
               that misreading before the first real run disproved it. */}
-          <span data-testid="together-apart" className="flex items-baseline text-[11px] text-text-tertiary">
+          <span
+            data-testid="together-apart"
+            className="flex items-baseline text-[11px] text-text-tertiary"
+          >
             together
-            <span className="ml-1 font-mono tabular-nums text-text-primary">{fmtMoney(sharedClosing, false)}</span>
+            <span className="ml-1 font-mono tabular-nums text-text-primary">
+              {fmtMoney(sharedClosing, false)}
+            </span>
             <span className="mx-1.5">·</span>
             apart
-            <span className="ml-1 font-mono tabular-nums text-text-secondary">{fmtMoney(screenClosing, false)}</span>
-            <span className={`ml-1.5 font-mono tabular-nums ${delta >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{fmtMoney(delta)}</span>
-            <InfoTip text={`One balance took ${fmtMoney(opening, false)} to ${fmtMoney(sharedClosing, false)}. Run apart on their own full accounts these same strategies closed ${fmtMoney(screenClosing, false)} between them. ⚠ That gap is mostly COMPOUNDING, not risk — on one account the second strategy sizes off a balance the first has already grown — so judge the sharing on the R columns below, never on these dollars.`} />
+            <span className="ml-1 font-mono tabular-nums text-text-secondary">
+              {fmtMoney(screenClosing, false)}
+            </span>
+            <span
+              className={`ml-1.5 font-mono tabular-nums ${delta >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+            >
+              {fmtMoney(delta)}
+            </span>
+            <InfoTip
+              text={`One balance took ${fmtMoney(opening, false)} to ${fmtMoney(sharedClosing, false)}. Run apart on their own full accounts these same strategies closed ${fmtMoney(screenClosing, false)} between them. ⚠ That gap is mostly COMPOUNDING, not risk — on one account the second strategy sizes off a balance the first has already grown — so judge the sharing on the R columns below, never on these dollars.`}
+            />
           </span>
         </div>
         {(showLegs || anyContention) && (
@@ -634,24 +824,35 @@ function SharedAccountPanel({ report, colorFor, nameFor, running }: {
                 </tr>
               </thead>
               <tbody>
-                {report.legs.map(l => (
+                {report.legs.map((l) => (
                   <tr key={l.strategy_id} className="border-t border-border-subtle">
                     <td className="px-2 py-1.5">
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full" style={{ background: colorFor(l.strategy_id) }} />
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: colorFor(l.strategy_id) }}
+                        />
                         {nameFor(l.strategy_id)}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">{l.shared_r.toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-text-secondary">{l.solo_r.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                      {l.shared_r.toFixed(2)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-text-secondary">
+                      {l.solo_r.toFixed(2)}
+                    </td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums">
                       {l.shared_trades}
                       {l.shared_trades !== l.solo_trades && (
                         <span className="text-text-tertiary"> / {l.solo_trades} alone</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">{l.shrunk || '—'}</td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">{l.blocked || '—'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                      {l.shrunk || '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                      {l.blocked || '—'}
+                    </td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums">
                       {l.risk_refused ? fmtMoney(l.risk_refused, false) : '—'}
                     </td>
@@ -689,7 +890,7 @@ export function StackDetail() {
 
   const isRunning = stackRunning
   const legs = useMemo(() => stack?.strategies ?? [], [stack])
-  const stackTitle = legs.map(l => l.strategy_name).join(' + ')
+  const stackTitle = legs.map((l) => l.strategy_name).join(' + ')
 
   // Enabled set — a completed leg starts ON, and an answer the reader has already given is KEPT.
   //
@@ -699,8 +900,12 @@ export function StackDetail() {
   // is the page undoing your click while you are looking at it. Same rule the price chart's
   // `reconcileToggles` follows: a roster DERIVED from data must be reconciled, never re-seeded.
   const completeIds = useMemo(
-    () => legs.filter(l => l.status === 'complete').map(l => l.strategy_id).join(','),
-    [legs],
+    () =>
+      legs
+        .filter((l) => l.status === 'complete')
+        .map((l) => l.strategy_id)
+        .join(','),
+    [legs]
   )
   const [enabled, setEnabled] = useState<Set<string>>(new Set())
   // The legs we have already offered a toggle for. It is what separates "switched off" from "only
@@ -711,7 +916,7 @@ export function StackDetail() {
     const ids = completeIds ? completeIds.split(',') : []
     const seen = seenLegsRef.current
     seenLegsRef.current = new Set(ids)
-    setEnabled(prev => {
+    setEnabled((prev) => {
       const next = new Set<string>()
       for (const id of ids) {
         if (!seen.has(id) || prev.has(id)) next.add(id)
@@ -719,7 +924,7 @@ export function StackDetail() {
       // Never leave the page with nothing on: every KPI below is composed off this set, and the
       // toggle itself refuses to remove the last leg — so an empty set here can only ever be an
       // artefact of legs disappearing, not something the reader asked for.
-      if (next.size === 0) ids.forEach(id => next.add(id))
+      if (next.size === 0) ids.forEach((id) => next.add(id))
       return next
     })
   }, [completeIds])
@@ -732,13 +937,16 @@ export function StackDetail() {
   const combined = useMemo(() => composeCombined(legs, enabled, mode), [legs, enabled, mode])
   const hasResults = combined.hasResults
 
-  const toggle = (id: string) => setEnabled(prev => {
-    const next = new Set(prev)
-    if (next.has(id)) { if (next.size > 1) next.delete(id) } else next.add(id)
-    return next
-  })
+  const toggle = (id: string) =>
+    setEnabled((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        if (next.size > 1) next.delete(id)
+      } else next.add(id)
+      return next
+    })
 
-  const activeLegs = legs.filter(l => enabled.has(l.strategy_id) && l.status === 'complete')
+  const activeLegs = legs.filter((l) => enabled.has(l.strategy_id) && l.status === 'complete')
 
   // Calendar span of the stack's window, for the Verdict card's trades-per-month cadence — the
   // same reading a single backtest prints there.
@@ -772,14 +980,22 @@ export function StackDetail() {
   const [rudOn, setRudOn] = useState(false)
   const [overlayOn, setOverlayOn] = useRegimeOverlay()
   const [xMode, setXMode] = useState<XMode>(getXMode)
-  const toggleXMode = useCallback((v: XMode) => { setXMode(v); setXModePref(v) }, [])
+  const toggleXMode = useCallback((v: XMode) => {
+    setXMode(v)
+    setXModePref(v)
+  }, [])
 
   // Per-strategy overlay lines on the equity chart (fields tagged onto each point by composeCombined).
   const overlayLines = useMemo(
-    () => activeLegs.map(l => ({ id: `leg_${l.strategy_id}`, color: colorFor(l.strategy_id), name: l.strategy_name })),
-    [activeLegs, colorFor],
+    () =>
+      activeLegs.map((l) => ({
+        id: `leg_${l.strategy_id}`,
+        color: colorFor(l.strategy_id),
+        name: l.strategy_name,
+      })),
+    [activeLegs, colorFor]
   )
-  const hasExcursion = combined.equity.some(d => d.favorable != null || d.adverse != null)
+  const hasExcursion = combined.equity.some((d) => d.favorable != null || d.adverse != null)
 
   // Regime bands from the stack's full-calendar timeline (a market property, same as a backtest).
   //
@@ -794,12 +1010,16 @@ export function StackDetail() {
   const regimeBands = useMemo(() => {
     if (!overlayOn || !regimeTimeline?.length) return []
     return xMode === 'trade'
-      ? regimeBandsByIndex(combined.equity, new Map(regimeTimeline.map(d => [d.date, d.regime])))
+      ? regimeBandsByIndex(combined.equity, new Map(regimeTimeline.map((d) => [d.date, d.regime])))
       : regimeBandsFromTimeline(regimeTimeline)
   }, [overlayOn, xMode, regimeTimeline, combined.equity])
 
   // Merged price-chart spec — loads once results exist (candles come from the base leg's cached spec).
-  const { data: rawSpec, isLoading: specLoading, isError: specError } = useStackChartSpec(stackId ?? null, completeIds, hasResults)
+  const {
+    data: rawSpec,
+    isLoading: specLoading,
+    isError: specError,
+  } = useStackChartSpec(stackId ?? null, completeIds, hasResults)
   const requestCandles = useRunCandles(rawSpec?.base_run_id ?? null)
   // Rebuild chart — the same control a run page carries, on the panel's own tool strip. It rebuilds
   // EVERY leg's cached spec, because the layers on this chart come from all of them.
@@ -808,10 +1028,14 @@ export function StackDetail() {
     if (!rawSpec) return undefined
     // Each trade carries its strategy's colour AND name — the chart prints the name in the trade's
     // outcome chip ("SOS Fade · Won") and derives its Strategies dropdown from these same fields.
-    const nameOf = new Map(rawSpec.layers.map(l => [l.strategy_id, l.strategy_name]))
+    const nameOf = new Map(rawSpec.layers.map((l) => [l.strategy_id, l.strategy_name]))
     const trades = rawSpec.trades
-      .filter(t => t.layer && enabled.has(t.layer))
-      .map(t => ({ ...t, layerColor: colorFor(t.layer!), layerName: nameOf.get(t.layer!) ?? t.layer }))
+      .filter((t) => t.layer && enabled.has(t.layer))
+      .map((t) => ({
+        ...t,
+        layerColor: colorFor(t.layer!),
+        layerName: nameOf.get(t.layer!) ?? t.layer,
+      }))
     // 🔴 **The analysis layers follow the SAME leg toggles as the trades (2026-08-10).** They were
     // absent from the merged spec entirely until then, so switching a stack down to one strategy
     // left the reader with winners, losers and fibs while that strategy's own backtest page carried
@@ -821,22 +1045,27 @@ export function StackDetail() {
     // `layers` and survives while ANY of them is on**, because a gap or a liquidity level is a fact
     // about the market that several strategies can have fired into — removing it with one leg would
     // delete a zone the other leg still traded.
-    const blocks = (rawSpec.blocks ?? []).filter(b => !b.layer || enabled.has(b.layer))
-    const misses = (rawSpec.misses ?? []).filter(m => !m.layer || enabled.has(m.layer))
+    const blocks = (rawSpec.blocks ?? []).filter((b) => !b.layer || enabled.has(b.layer))
+    const misses = (rawSpec.misses ?? []).filter((m) => !m.layer || enabled.has(m.layer))
     const overlays = rawSpec.overlays.filter(
-      o => !o.layers?.length || o.layers.some(l => enabled.has(l)),
+      (o) => !o.layers?.length || o.layers.some((l) => enabled.has(l))
     )
     return { ...rawSpec, trades, blocks, misses, overlays }
   }, [rawSpec, enabled, colorFor])
 
-  const chartControls = (key: string) => key === 'equity' ? (
-    <>
-      <SeriesToggle label={hasExcursion ? 'Trade excursions' : 'Histogram'} on={histOn} onChange={setHistOn} />
-      <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={setRudOn} />
-      <XModeToggle value={xMode} onChange={toggleXMode} />
-      {hasRegimes && <RegimeOverlayToggle on={overlayOn} onChange={setOverlayOn} />}
-    </>
-  ) : null
+  const chartControls = (key: string) =>
+    key === 'equity' ? (
+      <>
+        <SeriesToggle
+          label={hasExcursion ? 'Trade excursions' : 'Histogram'}
+          on={histOn}
+          onChange={setHistOn}
+        />
+        <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={setRudOn} />
+        <XModeToggle value={xMode} onChange={toggleXMode} />
+        {hasRegimes && <RegimeOverlayToggle on={overlayOn} onChange={setOverlayOn} />}
+      </>
+    ) : null
 
   const renderChart = (key: string, h: number, isModal = false) => {
     switch (key) {
@@ -859,7 +1088,7 @@ export function StackDetail() {
           </>
         )
       case 'price': {
-        if (isModal) return null   // price manages its own fullscreen (position:fixed)
+        if (isModal) return null // price manages its own fullscreen (position:fixed)
         return (
           <PriceChartView
             spec={priceSpec}
@@ -869,7 +1098,9 @@ export function StackDetail() {
             height={h}
             isFullscreen={fullscreen === 'price'}
             onFullscreenClose={() => setFullscreen(null)}
-            onRebuild={stackId ? () => rebuild.mutate({ stackId, readyKey: completeIds }) : undefined}
+            onRebuild={
+              stackId ? () => rebuild.mutate({ stackId, readyKey: completeIds }) : undefined
+            }
             rebuilding={rebuild.isPending}
           />
         )
@@ -880,17 +1111,27 @@ export function StackDetail() {
         return (
           <div className="space-y-8">
             <div>
-              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-2">Drawdown from peak</div>
+              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-2">
+                Drawdown from peak
+              </div>
               <DrawdownChart equity={combined.equity} height={hDraw} />
             </div>
             <div className={combined.hasDirection ? 'grid gap-6 lg:grid-cols-2' : ''}>
               <div>
-                <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-2">Daily P&L</div>
-                <DailyPnlChart data={combined.dailyPnl} netPnl={combined.run.net_pnl} height={hRow} />
+                <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-2">
+                  Daily P&L
+                </div>
+                <DailyPnlChart
+                  data={combined.dailyPnl}
+                  netPnl={combined.run.net_pnl}
+                  height={hRow}
+                />
               </div>
               {combined.hasDirection && (
                 <div>
-                  <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-2">Long vs Short</div>
+                  <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-2">
+                    Long vs Short
+                  </div>
                   <DirectionBreakdown equity={combined.equity} />
                 </div>
               )}
@@ -906,7 +1147,7 @@ export function StackDetail() {
   return (
     <div>
       <StickyHeader>
-        {scrolled => (
+        {(scrolled) => (
           <div className={`flex items-center justify-between gap-3 ${scrolled ? 'mb-4' : 'mb-5'}`}>
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -943,18 +1184,35 @@ export function StackDetail() {
       </StickyHeader>
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(false) }}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmDelete(false)
+          }}
+        >
           <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[400px] shadow-2xl">
-            <div className="px-5 py-4 border-b border-border-subtle"><div className="text-[15px] font-semibold">Delete this stack?</div></div>
+            <div className="px-5 py-4 border-b border-border-subtle">
+              <div className="text-[15px] font-semibold">Delete this stack?</div>
+            </div>
             <div className="px-5 py-4">
               <p className="text-[13px] text-text-secondary">
-                The stack and any runs it created will be removed. Reused standalone runs stay in your Runs tab. This cannot be undone.
+                The stack and any runs it created will be removed. Reused standalone runs stay in
+                your Runs tab. This cannot be undone.
               </p>
             </div>
             <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle">
-              <button onClick={() => setConfirmDelete(false)} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">Cancel</button>
               <button
-                onClick={() => deleteStack.mutate(stackId!, { onSuccess: () => navigate('/backtests?tab=stacks') })}
+                onClick={() => setConfirmDelete(false)}
+                className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  deleteStack.mutate(stackId!, {
+                    onSuccess: () => navigate('/backtests?tab=stacks'),
+                  })
+                }
                 disabled={deleteStack.isPending}
                 className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
               >
@@ -970,7 +1228,7 @@ export function StackDetail() {
           title="Rerun stack"
           submitLabel="Rerun stack"
           initial={{
-            strategyIds: legs.map(l => l.strategy_id),
+            strategyIds: legs.map((l) => l.strategy_id),
             instrument: stack.instrument,
             barValue: stack.bar_value,
             commPerSide: stack.commission_per_side,
@@ -990,8 +1248,9 @@ export function StackDetail() {
             // what it is measured on. A leg served before the backend sent params contributes
             // nothing, which correctly falls back to the defaults it would have used anyway.
             paramsByStrategy: Object.fromEntries(
-              legs.filter(l => l.params && Object.keys(l.params).length)
-                  .map(l => [l.strategy_id, l.params as Record<string, unknown>]),
+              legs
+                .filter((l) => l.params && Object.keys(l.params).length)
+                .map((l) => [l.strategy_id, l.params as Record<string, unknown>])
             ),
           }}
           onClose={() => setShowRerun(false)}
@@ -1011,9 +1270,13 @@ export function StackDetail() {
           an empty page. A blank page is indistinguishable from one still loading, and it is the
           one state where the reader needs to be told to go back rather than left waiting. */}
       {isError && !stack && (
-        <div data-testid="stack-not-found"
-             className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center">
-          <div className="text-[14px] font-semibold text-text-primary mb-1">This stack could not be loaded</div>
+        <div
+          data-testid="stack-not-found"
+          className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center"
+        >
+          <div className="text-[14px] font-semibold text-text-primary mb-1">
+            This stack could not be loaded
+          </div>
           <div className="text-[12.5px] text-text-secondary">
             It may have been deleted, or the id in the address bar is wrong.
           </div>
@@ -1038,7 +1301,9 @@ export function StackDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-gold-muted text-gold-text border border-gold-text/20">
                 {stack.total_strategies}-strategy Stack
               </span>
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">{stack.instrument}</span>
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
+                {stack.instrument}
+              </span>
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {fmtDate(stack.start_date)} → {fmtDate(stack.end_date)}
               </span>
@@ -1070,7 +1335,8 @@ export function StackDetail() {
             <div className="flex items-center justify-between gap-4 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3">
               <div className="flex items-center gap-2 text-[13px] text-accent">
                 <Loader2 size={14} className="animate-spin" />
-                Running — {stack.completed_strategies} of {stack.total_strategies} strategies complete
+                Running — {stack.completed_strategies} of {stack.total_strategies} strategies
+                complete
                 <span className="text-text-tertiary text-[11px]">· auto-refreshing</span>
               </div>
               <button
@@ -1106,14 +1372,14 @@ export function StackDetail() {
                   because there is no book to compute them from. */}
               {combined.basis === 'unmeasured' ? (
                 <div className="flex flex-col lg:flex-row gap-2.5 items-stretch">
-                  <div className="lg:w-[285px] shrink-0">
-                    {verdictCard}
-                  </div>
+                  <div className="lg:w-[285px] shrink-0">{verdictCard}</div>
                   <UnmeasuredCard onAllOn={() => setEnabled(new Set(completeIds.split(',')))} />
                 </div>
               ) : (
                 <PerformancePanel
-                  run={combined.run} fallback={combined.fallback} equity={combined.equity}
+                  run={combined.run}
+                  fallback={combined.fallback}
+                  equity={combined.equity}
                   balance={combined.balance}
                   collapsed={perfCollapsed}
                   verdict={verdictCard}
@@ -1134,7 +1400,7 @@ export function StackDetail() {
               <SharedAccountPanel
                 report={shared}
                 colorFor={colorFor}
-                nameFor={(id) => legs.find(l => l.strategy_id === id)?.strategy_name ?? id}
+                nameFor={(id) => legs.find((l) => l.strategy_id === id)?.strategy_name ?? id}
                 running={stackRunning}
               />
             </div>
@@ -1143,7 +1409,9 @@ export function StackDetail() {
           {/* Charts — Equity / Price / Breakdown, exactly like a single backtest */}
           {hasResults ? (
             <div className="space-y-4">
-              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Charts</div>
+              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
+                Charts
+              </div>
               <ChartTabPanel
                 tabs={CHART_TABS}
                 active={chartTab}
@@ -1158,22 +1426,22 @@ export function StackDetail() {
                 <ChartModal
                   title={fullscreen === 'equity' ? 'Equity Curve' : 'Breakdown'}
                   onClose={() => setFullscreen(null)}
-                  render={h => renderChart(fullscreen, h, true)}
+                  render={(h) => renderChart(fullscreen, h, true)}
                   controls={chartControls(fullscreen)}
                 />
               )}
             </div>
-          ) : combined.basis === 'unmeasured' ? (
-            /* 🔴 Nothing here, deliberately (fixed 2026-08-10). `hasResults` is false on the
+          ) : combined.basis ===
+            'unmeasured' /* 🔴 Nothing here, deliberately (fixed 2026-08-10). `hasResults` is false on the
                `unmeasured` basis, so this slot used to render "No completed strategy runs to
                compose" — a sentence that is FLATLY FALSE while the Verdict card two feet above is
                listing the completed runs and explaining, correctly, why this particular COMBINATION
                has no book. Two answers to one question, on one screen, and the wrong one is the
-               larger. The `UnmeasuredCard` already carries the reason and the way back. */
-            null
-          ) : !isRunning ? (
+               larger. The `UnmeasuredCard` already carries the reason and the way back. */ ? null : !isRunning ? (
             <div className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center text-[13px] text-text-tertiary">
-              No completed strategy runs to compose. {legs.some(l => l.status.startsWith('failed')) && 'Some runs failed — check the chips above.'}
+              No completed strategy runs to compose.{' '}
+              {legs.some((l) => l.status.startsWith('failed')) &&
+                'Some runs failed — check the chips above.'}
             </div>
           ) : (
             <div className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center text-[13px] text-text-tertiary">
@@ -1198,18 +1466,24 @@ export function StackDetail() {
               CONTROL sits beside them rather than replacing them: what a leg contributed to this
               portfolio and what it makes alone are both real, and the defect was never that one of
               them was wrong — it was that only one was shown, under a name that fits the other. */}
-          {legs.some(l => l.status === 'complete') && (
+          {legs.some((l) => l.status === 'complete') && (
             <div>
-              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Per-strategy results</h2>
+              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
+                Per-strategy results
+              </h2>
               {/* ⚠ A test seam, and this folder has recorded four vacuous passes from unscoped
                   locators. The shared-account panel carries its own seven-column table behind a
                   disclosure, so a page-wide `locator('table')` matches whichever renders first. */}
-              <div data-testid="per-strategy-table"
-                   className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto">
+              <div
+                data-testid="per-strategy-table"
+                className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto"
+              >
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="border-b border-border-subtle bg-bg-sunken">
-                      <th className="text-left px-3 py-2 text-text-tertiary font-medium">Strategy</th>
+                      <th className="text-left px-3 py-2 text-text-tertiary font-medium">
+                        Strategy
+                      </th>
                       <th className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
                         R
                         <InfoTip text="Its result over the risk it was sized to. This is the one figure that is the same inside this stack as it is alone — R is normalised to each trade's own risk, so re-sizing a position cannot move it. Rank the strategies on this column, never on the dollars." />
@@ -1244,7 +1518,7 @@ export function StackDetail() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
-                    {legs.map(leg => {
+                    {legs.map((leg) => {
                       const done = leg.status === 'complete'
                       const failed = leg.status.startsWith('failed')
                       const r = combined.legR.get(leg.strategy_id)
@@ -1252,43 +1526,86 @@ export function StackDetail() {
                       return (
                         <tr
                           key={leg.run_id}
-                          onClick={() => done && navigate(`/backtests/runs/${leg.run_id}`, { state: { fromStack: stackId, fromStackTitle: stackTitle } })}
+                          onClick={() =>
+                            done &&
+                            navigate(`/backtests/runs/${leg.run_id}`, {
+                              state: { fromStack: stackId, fromStackTitle: stackTitle },
+                            })
+                          }
                           className={`transition-colors ${done ? 'hover:bg-bg-hover cursor-pointer' : ''}`}
                         >
                           <td className="px-3 py-[9px] font-semibold text-text-primary">
                             <span className="inline-flex items-center gap-2">
-                              <span className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ backgroundColor: colorFor(leg.strategy_id) }} />
+                              <span
+                                className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0"
+                                style={{ backgroundColor: colorFor(leg.strategy_id) }}
+                              />
                               {leg.strategy_name}
                             </span>
                           </td>
-                          <td className={`px-3 py-[9px] font-mono tabular-nums font-semibold ${
-                            r == null ? 'text-text-tertiary' : r >= 0 ? 'text-pos-text' : 'text-neg-text'
-                          }`}>
+                          <td
+                            className={`px-3 py-[9px] font-mono tabular-nums font-semibold ${
+                              r == null
+                                ? 'text-text-tertiary'
+                                : r >= 0
+                                  ? 'text-pos-text'
+                                  : 'text-neg-text'
+                            }`}
+                          >
                             {r != null && done ? `${r > 0 ? '+' : ''}${r.toFixed(2)}R` : '—'}
                           </td>
-                          <td className={`px-3 py-[9px] font-mono tabular-nums ${(leg.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+                          <td
+                            className={`px-3 py-[9px] font-mono tabular-nums ${(leg.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+                          >
                             {leg.net_pnl != null ? fmtMoney(leg.net_pnl) : '—'}
                           </td>
                           {isShared && (
-                            <td className={`px-3 py-[9px] font-mono tabular-nums ${
-                              soloNet == null ? 'text-text-tertiary' : soloNet >= 0 ? 'text-pos-text/80' : 'text-neg-text/80'
-                            }`}>
+                            <td
+                              className={`px-3 py-[9px] font-mono tabular-nums ${
+                                soloNet == null
+                                  ? 'text-text-tertiary'
+                                  : soloNet >= 0
+                                    ? 'text-pos-text/80'
+                                    : 'text-neg-text/80'
+                              }`}
+                            >
                               {soloNet != null ? fmtMoney(soloNet) : '—'}
                             </td>
                           )}
                           <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
-                            {leg.max_drawdown != null ? fmtMoney(-Math.abs(leg.max_drawdown), false) : '—'}
+                            {leg.max_drawdown != null
+                              ? fmtMoney(-Math.abs(leg.max_drawdown), false)
+                              : '—'}
                           </td>
                           <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                             {leg.sharpe != null ? leg.sharpe.toFixed(2) : '—'}
                           </td>
-                          <td className="px-3 py-[9px] tabular-nums text-text-secondary">{leg.trade_count ?? '—'}</td>
-                          <td className="px-3 py-[9px]">
-                            {done && <span className="inline-flex items-center gap-1.5 text-[11px] text-accent"><CheckCircle2 size={11} /> complete</span>}
-                            {failed && <span className="inline-flex items-center gap-1.5 text-[11px] text-neg-text" title={leg.error_message ?? ''}><XCircle size={11} /> failed</span>}
-                            {!done && !failed && <span className="inline-flex items-center gap-1.5 text-[11px] text-text-tertiary"><Loader2 size={11} className="animate-spin" /> running</span>}
+                          <td className="px-3 py-[9px] tabular-nums text-text-secondary">
+                            {leg.trade_count ?? '—'}
                           </td>
-                          <td className="px-3 py-[9px] text-right">{done && <span className="text-[11px] text-accent">View →</span>}</td>
+                          <td className="px-3 py-[9px]">
+                            {done && (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] text-accent">
+                                <CheckCircle2 size={11} /> complete
+                              </span>
+                            )}
+                            {failed && (
+                              <span
+                                className="inline-flex items-center gap-1.5 text-[11px] text-neg-text"
+                                title={leg.error_message ?? ''}
+                              >
+                                <XCircle size={11} /> failed
+                              </span>
+                            )}
+                            {!done && !failed && (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] text-text-tertiary">
+                                <Loader2 size={11} className="animate-spin" /> running
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-[9px] text-right">
+                            {done && <span className="text-[11px] text-accent">View →</span>}
+                          </td>
                         </tr>
                       )
                     })}
@@ -1308,37 +1625,54 @@ export function StackDetail() {
 
               ⚠ It is per LEG rather than one merged list: two strategies can hold the same key at
               different values, and a merged view would have to pick one. */}
-          {legs.some(l => l.params && Object.keys(l.params).length > 0) && (
+          {legs.some((l) => l.params && Object.keys(l.params).length > 0) && (
             <div>
-              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Settings</h2>
+              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
+                Settings
+              </h2>
               <div className="space-y-2" data-testid="stack-settings">
-                {legs.filter(l => l.params && Object.keys(l.params).length > 0).map(leg => (
-                  <details key={leg.strategy_id}
-                           className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
-                    <summary className="px-4 py-2.5 cursor-pointer select-none flex items-center gap-2 text-[12px]">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ background: colorFor(leg.strategy_id) }} />
-                      <span className="font-medium text-text-primary">{leg.strategy_name}</span>
-                      <span className="text-text-tertiary">
-                        {Object.keys(leg.params!).length} settings
-                      </span>
-                    </summary>
-                    <div className="border-t border-border-subtle px-4 py-3 grid gap-x-6 gap-y-1
-                                    grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                      {Object.entries(leg.params!).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => (
-                        <div key={k} className="flex items-baseline justify-between gap-3 text-[11px] py-[2px]">
-                          <span className="text-text-tertiary truncate" title={k}>{k}</span>
-                          <span className="font-mono tabular-nums text-text-secondary whitespace-nowrap">
-                            {/* Rendered as written. A `false` printed as an em-dash, or a 0 dropped
+                {legs
+                  .filter((l) => l.params && Object.keys(l.params).length > 0)
+                  .map((leg) => (
+                    <details
+                      key={leg.strategy_id}
+                      className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden"
+                    >
+                      <summary className="px-4 py-2.5 cursor-pointer select-none flex items-center gap-2 text-[12px]">
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: colorFor(leg.strategy_id) }}
+                        />
+                        <span className="font-medium text-text-primary">{leg.strategy_name}</span>
+                        <span className="text-text-tertiary">
+                          {Object.keys(leg.params!).length} settings
+                        </span>
+                      </summary>
+                      <div
+                        className="border-t border-border-subtle px-4 py-3 grid gap-x-6 gap-y-1
+                                    grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+                      >
+                        {Object.entries(leg.params!)
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([k, v]) => (
+                            <div
+                              key={k}
+                              className="flex items-baseline justify-between gap-3 text-[11px] py-[2px]"
+                            >
+                              <span className="text-text-tertiary truncate" title={k}>
+                                {k}
+                              </span>
+                              <span className="font-mono tabular-nums text-text-secondary whitespace-nowrap">
+                                {/* Rendered as written. A `false` printed as an em-dash, or a 0 dropped
                                 as falsy, would hide exactly the pinned value this section exists
                                 to show. */}
-                            {typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                ))}
+                                {typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v)}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </details>
+                  ))}
               </div>
             </div>
           )}

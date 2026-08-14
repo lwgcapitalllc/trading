@@ -18,22 +18,19 @@ To use from Mac:
     curl http://localhost:8765/health
 """
 
-import subprocess
-import sys
 import json
 import os
+import subprocess
+import sys
 
 CFG_PATH = os.path.join(os.path.dirname(__file__), "backtest_config.json")
-AGENT_WIN  = r"C:\trading\algos\nt8\nt8_agent.py"
+AGENT_WIN = r"C:\trading\algos\nt8\nt8_agent.py"
 PYTHON_WIN = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
-TASK_NAME  = "NT8Agent"
+TASK_NAME = "NT8Agent"
 
 
 def ssh(host, cmd, check=True):
-    result = subprocess.run(
-        ["ssh", host, cmd],
-        capture_output=True, text=True
-    )
+    result = subprocess.run(["ssh", host, cmd], capture_output=True, text=True)
     if check and result.returncode != 0:
         print(f"  SSH ERROR: {result.stderr.strip() or result.stdout.strip()}")
         sys.exit(1)
@@ -47,7 +44,7 @@ def main():
 
     # Step 1: ensure flask is installed on VPS
     print("Checking flask on VPS...")
-    out = ssh(host, "python -c \"import flask; print(flask.__version__)\"", check=False)
+    out = ssh(host, 'python -c "import flask; print(flask.__version__)"', check=False)
     if out:
         print(f"  flask {out} already installed.")
     else:
@@ -63,7 +60,7 @@ def main():
     print(f"\nRegistering Task Scheduler task '{TASK_NAME}'...")
     task_cmd = (
         f"schtasks /create /tn {TASK_NAME} "
-        f"/tr \"\\\"{PYTHON_WIN}\\\" {AGENT_WIN}\" "
+        f'/tr "\\"{PYTHON_WIN}\\" {AGENT_WIN}" '
         f"/sc onlogon /rl HIGHEST /f"
     )
     out = ssh(host, task_cmd, check=False)
@@ -73,10 +70,10 @@ def main():
     # Verify it registered
     verify = ssh(host, f"schtasks /query /tn {TASK_NAME} /fo LIST", check=False)
     if TASK_NAME in verify:
-        print(f"  Task registered successfully.")
+        print("  Task registered successfully.")
     else:
         print("  WARNING: could not verify task. Check Task Scheduler on VPS manually.")
-        print(f"  Command to register manually:")
+        print("  Command to register manually:")
         print(f"    {task_cmd}")
 
     print()

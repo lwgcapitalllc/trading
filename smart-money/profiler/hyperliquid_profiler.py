@@ -17,10 +17,10 @@ from collections import defaultdict, deque
 
 from run_logger import StageLogger
 
-
 # ---------------------------------------------------------------------------
 # Trade matcher
 # ---------------------------------------------------------------------------
+
 
 class _OpenPosition:
     """Represents one open fill or partial open fill awaiting a close."""
@@ -29,7 +29,7 @@ class _OpenPosition:
         self.coin = coin
         self.side = side
         self.px = px
-        self.sz = sz          # remaining unmatched size
+        self.sz = sz  # remaining unmatched size
         self.ts_ms = ts_ms
 
 
@@ -137,6 +137,7 @@ def match_fills_to_trades(fills: list[dict]) -> list[dict]:
 # Profiler
 # ---------------------------------------------------------------------------
 
+
 class HyperliquidProfiler:
     """
     Step 1.3: Converts scanner output (wallets with fills) into matched trade
@@ -160,9 +161,7 @@ class HyperliquidProfiler:
             return []
 
         trades = match_fills_to_trades(fills)
-        self._log.debug(
-            f"{address[:10]}… — {len(fills)} fills → {len(trades)} matched trades"
-        )
+        self._log.debug(f"{address[:10]}… — {len(fills)} fills → {len(trades)} matched trades")
         return trades
 
     def reconstruct_balance_series(
@@ -183,17 +182,17 @@ class HyperliquidProfiler:
         for t in sorted_trades:
             cum_pnl += t["pnl"]
             balance = initial_balance + cum_pnl
-            series.append({
-                "ts_ms": t["close_ts"],
-                "balance": round(balance, 4),
-                "cum_pnl": round(cum_pnl, 4),
-            })
+            series.append(
+                {
+                    "ts_ms": t["close_ts"],
+                    "balance": round(balance, 4),
+                    "cum_pnl": round(cum_pnl, 4),
+                }
+            )
 
         return series
 
-    def compute_balance_stats(
-        self, balance_series: list[dict]
-    ) -> dict[str, float]:
+    def compute_balance_stats(self, balance_series: list[dict]) -> dict[str, float]:
         """
         From the balance series, compute:
           - starting_balance, ending_balance, net_growth_pct

@@ -14,14 +14,19 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
+from models import (
+    SweepDetail,
+    SweepRequest,
+    SweepResponse,
+    SweepSummary,
+)
 from pydantic import BaseModel
-
-from models import SweepRequest, SweepResponse, SweepDetail, SweepSummary, BacktestSummary, WorthinessScore
-from services import lab_db, runner_dispatch, worthiness, history_limits
+from services import history_limits, lab_db, runner_dispatch, worthiness
 from services.evaluator import evaluate_run
-from services.sweep_runner import run_sweep, retry_failed_sweep_runs
-from routers.backtests import _row_to_summary
+from services.sweep_runner import retry_failed_sweep_runs, run_sweep
+
 from routers._locks import ensure_platform_idle
+from routers.backtests import _row_to_summary
 
 
 def _load_json(path: Optional[str]) -> list:
@@ -31,6 +36,7 @@ def _load_json(path: Optional[str]) -> list:
         return json.loads(Path(path).read_text())
     except Exception:
         return []
+
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 
@@ -64,17 +70,18 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     for _inst in req.instruments:
         try:
             history_limits.validate_window(
-                _inst, req.start_date, req.end_date, req.bar_type, req.bar_value, runner)
+                _inst, req.start_date, req.end_date, req.bar_type, req.bar_value, runner
+            )
         except ValueError as exc:
             raise HTTPException(400, str(exc))
 
     ensure_platform_idle(runner)
 
     sweep_id = "sw_" + uuid.uuid4().hex[:10]
-    now      = int(time.time())
+    now = int(time.time())
     run_specs: list[dict] = []
     job_specs: list[dict] = []
-    run_ids:   list[str]  = []
+    run_ids: list[str] = []
 
     # Inject foundational config from primary ruleset once for all sweep instruments.
     primary_ruleset = lab_db.get_ruleset(ruleset_ids[0]) if ruleset_ids else None
@@ -84,45 +91,51 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
 
-        lab_db.insert_run_sweep({
-            "run_id":             run_id,
-            "strategy_id":        req.strategy_id,
-            "instrument":         instrument,
-            "params":             merged_params,
-            "bar_type":           req.bar_type,
-            "bar_value":          req.bar_value,
-            "start_date":         req.start_date,
-            "end_date":           req.end_date,
-            "commission_per_side": req.commission_per_side,
-            "slippage_ticks":     req.slippage_ticks,
-            "status":             "running",
-            "created_at":         now,
-            "sweep_id":           sweep_id,
-            "source_run_id":      req.source_run_id,
-            "runner":             runner,
-        })
+        lab_db.insert_run_sweep(
+            {
+                "run_id": run_id,
+                "strategy_id": req.strategy_id,
+                "instrument": instrument,
+                "params": merged_params,
+                "bar_type": req.bar_type,
+                "bar_value": req.bar_value,
+                "start_date": req.start_date,
+                "end_date": req.end_date,
+                "commission_per_side": req.commission_per_side,
+                "slippage_ticks": req.slippage_ticks,
+                "status": "running",
+                "created_at": now,
+                "sweep_id": sweep_id,
+                "source_run_id": req.source_run_id,
+                "runner": runner,
+            }
+        )
 
-        run_specs.append({
-            "run_id":       run_id,
-            "job_id":       run_id,
-            "strategy_id":  req.strategy_id,
-            "instrument":   instrument,
-            "ruleset_ids":  ruleset_ids,
-            "runner":       strategy.get("runner", "ninjatrader"),
-        })
+        run_specs.append(
+            {
+                "run_id": run_id,
+                "job_id": run_id,
+                "strategy_id": req.strategy_id,
+                "instrument": instrument,
+                "ruleset_ids": ruleset_ids,
+                "runner": strategy.get("runner", "ninjatrader"),
+            }
+        )
 
-        job_specs.append({
-            "job_id":            run_id,
-            "strategy_class":    strategy["class_name"],
-            "instrument":        instrument,
-            "params":            merged_params,
-            "bar_type":          req.bar_type,
-            "bar_value":         req.bar_value,
-            "start_date":        req.start_date,
-            "end_date":          req.end_date,
-            "commission_per_side": req.commission_per_side,
-            "slippage_ticks":    req.slippage_ticks,
-        })
+        job_specs.append(
+            {
+                "job_id": run_id,
+                "strategy_class": strategy["class_name"],
+                "instrument": instrument,
+                "params": merged_params,
+                "bar_type": req.bar_type,
+                "bar_value": req.bar_value,
+                "start_date": req.start_date,
+                "end_date": req.end_date,
+                "commission_per_side": req.commission_per_side,
+                "slippage_ticks": req.slippage_ticks,
+            }
+        )
 
     asyncio.create_task(run_sweep(sweep_id, run_specs, job_specs))
 
@@ -178,18 +191,30 @@ def reevaluate_sweep(sweep_id: str, req: _SweepReevalRequest) -> dict:
 
     for row in complete_rows:
         run_id = row["run_id"]
-        kpis = {k: row.get(k) for k in (
-            "net_pnl", "max_drawdown", "profit_factor",
-            "win_rate", "win_count", "trade_count", "sharpe", "sortino",
-        )}
+        kpis = {
+            k: row.get(k)
+            for k in (
+                "net_pnl",
+                "max_drawdown",
+                "profit_factor",
+                "win_rate",
+                "win_count",
+                "trade_count",
+                "sharpe",
+                "sortino",
+            )
+        }
         equity_curve = _load_json(row.get("equity_curve_path"))
-        daily_pnl    = _load_json(row.get("daily_pnl_path"))
+        daily_pnl = _load_json(row.get("daily_pnl_path"))
 
         evaluate_run(run_id, ids, kpis, equity_curve, daily_pnl)
 
         w = worthiness.score_run_after_evals(
-            run_id, ids,
-            row.get("profit_factor"), row.get("max_drawdown"), row.get("trade_count"),
+            run_id,
+            ids,
+            row.get("profit_factor"),
+            row.get("max_drawdown"),
+            row.get("trade_count"),
         )
         if w:
             lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
@@ -220,31 +245,33 @@ def get_sweep(sweep_id: str) -> SweepDetail:
     if not rows:
         raise HTTPException(404, f"Sweep '{sweep_id}' not found")
 
-    first     = rows[0]
+    first = rows[0]
     # One verdict query for the whole sweep — it was two per child run (once for the summary,
     # once for the ruleset roster below), each opening its own sqlite connection.
-    verdicts  = lab_db.get_run_verdict_summaries([r["run_id"] for r in rows])
+    verdicts = lab_db.get_run_verdict_summaries([r["run_id"] for r in rows])
     summaries = [_row_to_summary(r, verdicts.get(r["run_id"], [])) for r in rows]
     completed = sum(1 for r in rows if r["status"] == "complete")
 
-    seen_ruleset_ids = list({
-        e["ruleset_id"]
-        for evs in verdicts.values()
-        for e in evs
-    })
+    seen_ruleset_ids = list({e["ruleset_id"] for evs in verdicts.values() for e in evs})
 
     if any(r["status"] == "running" for r in rows):
         status = "running"
     elif all(r["status"] == "complete" for r in rows):
         status = "complete"
     elif all(r["status"].startswith("failed") for r in rows):
-        status = "failed_cancelled" if any(r["status"] == "failed_cancelled" for r in rows) else "failed"
+        status = (
+            "failed_cancelled" if any(r["status"] == "failed_cancelled" for r in rows) else "failed"
+        )
     else:
         status = "partial"
 
     created_at = datetime.fromtimestamp(min(r["created_at"] for r in rows), tz=timezone.utc)
-    done_ats   = [r["completed_at"] for r in rows if r.get("completed_at")]
-    completed_at = datetime.fromtimestamp(max(done_ats), tz=timezone.utc) if done_ats and status not in ("running", "partial") else None
+    done_ats = [r["completed_at"] for r in rows if r.get("completed_at")]
+    completed_at = (
+        datetime.fromtimestamp(max(done_ats), tz=timezone.utc)
+        if done_ats and status not in ("running", "partial")
+        else None
+    )
 
     return SweepDetail(
         sweep_id=sweep_id,

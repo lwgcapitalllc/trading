@@ -71,7 +71,9 @@ class NewsEvent:
     forecast: Optional[str] = None
     previous: Optional[str] = None
     actual: Optional[str] = None
-    is_holiday: bool = False  # a bank holiday (all-day, market thin/closed) — gated whole-day, not ±window
+    is_holiday: bool = (
+        False  # a bank holiday (all-day, market thin/closed) — gated whole-day, not ±window
+    )
     category: Optional[str] = None  # display-only grouping label (e.g. "Labor", "Prices"); a source
     #                                 sets it if it has one, else None. The engine never reads it.
 
@@ -125,7 +127,9 @@ class NewsPolicy:
     min_impact: Impact = Impact.HIGH
     pre_minutes: int = 30
     post_minutes: int = 30
-    block_holidays: bool = False  # opt-in: also fold a matching bank holiday's whole day into in_blackout
+    block_holidays: bool = (
+        False  # opt-in: also fold a matching bank holiday's whole day into in_blackout
+    )
 
     def _currency_ok(self, ev: NewsEvent) -> bool:
         return (not self.currencies) or ev.currency in self.currencies
@@ -146,8 +150,9 @@ class NewsPolicy:
         return ev.is_holiday and self._currency_ok(ev)
 
     @classmethod
-    def usd(cls, pre_minutes: int = 30, post_minutes: int = 30,
-            block_holidays: bool = False) -> "NewsPolicy":
+    def usd(
+        cls, pre_minutes: int = 30, post_minutes: int = 30, block_holidays: bool = False
+    ) -> "NewsPolicy":
         """High-impact USD events, ±`pre`/`post` minutes. The right default for anything the US macro
         calendar whips around the NY session — gold (XAUUSD/GC), US index futures (ES/NQ), crude
         (CL), treasuries — since Forex Factory is a macro calendar, not an FX-only one. Bank holidays

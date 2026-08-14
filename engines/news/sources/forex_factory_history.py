@@ -83,7 +83,7 @@ def _extract_days_array(html: str) -> Optional[str]:
             elif c == "]":
                 depth -= 1
                 if depth == 0:
-                    return html[start:i + 1]
+                    return html[start : i + 1]
         i += 1
     return None
 
@@ -96,12 +96,13 @@ class ForexFactoryHistorySource(CalendarSource):
     profile — leave it None to walk `_PROFILES` until one gets through (the normal path).
     """
 
-    def __init__(self, sleep_s: float = 1.0, timeout: float = 30.0,
-                 impersonate: Optional[str] = None):
+    def __init__(
+        self, sleep_s: float = 1.0, timeout: float = 30.0, impersonate: Optional[str] = None
+    ):
         self._sleep_s = sleep_s
         self._timeout = timeout
         self._impersonate = impersonate
-        self._working: Optional[str] = impersonate   # first profile that got a 200, reused after
+        self._working: Optional[str] = impersonate  # first profile that got a 200, reused after
 
     def fetch(self) -> FetchResult:
         now = datetime.now(tz=timezone.utc)
@@ -141,9 +142,11 @@ class ForexFactoryHistorySource(CalendarSource):
         # CHAIN rather than trusting a single hardcoded profile, and remember the one that worked so
         # a 66-month backfill pays for the search once instead of on every request.
         candidates = list(_PROFILES)
-        if self._working:                           # known-good (or user-pinned) goes first, but the
-            candidates = [self._working] + [p for p in _PROFILES if p != self._working]  # rest still
-        last = ""                                                                        # rescue us
+        if self._working:  # known-good (or user-pinned) goes first, but the
+            candidates = [self._working] + [
+                p for p in _PROFILES if p != self._working
+            ]  # rest still
+        last = ""  # rescue us
         for profile in candidates:
             resp = cffi_requests.get(url, impersonate=profile, timeout=self._timeout)
             if resp.status_code == 200:
@@ -169,7 +172,7 @@ class ForexFactoryHistorySource(CalendarSource):
         days = json.loads(raw)
         out: List[NewsEvent] = []
         for day in days:
-            for e in (day.get("events") or []):
+            for e in day.get("events") or []:
                 dateline = e.get("dateline")
                 if dateline is None:
                     continue

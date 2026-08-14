@@ -32,11 +32,11 @@ if str(_REPO_ROOT) not in sys.path:
 
 from rsi_divergence import RsiDivergenceEngine
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Independent reference implementation (array-based, structurally different from
 # the streaming engine) — standard Wilder RSI + pivot scan + divergence rule.
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _rsi_from(avg_gain, avg_loss):
     if avg_loss == 0.0:
@@ -57,8 +57,8 @@ def ref_wilder_rsi(closes, length):
         gains[i] = chg if chg > 0 else 0.0
         losses[i] = -chg if chg < 0 else 0.0
     if n > length:
-        ag = sum(gains[1:length + 1]) / length
-        al = sum(losses[1:length + 1]) / length
+        ag = sum(gains[1 : length + 1]) / length
+        al = sum(losses[1 : length + 1]) / length
         rsi[length] = _rsi_from(ag, al)
         for i in range(length + 1, n):
             ag = (ag * (length - 1) + gains[i]) / length
@@ -73,7 +73,7 @@ def ref_pivots(vals, L):
     pl = [None] * n
     ph = [None] * n
     for i in range(2 * L, n):
-        window = vals[i - 2 * L:i + 1]          # 2L+1 wide; candidate is window[L] == vals[i-L]
+        window = vals[i - 2 * L : i + 1]  # 2L+1 wide; candidate is window[L] == vals[i-L]
         if any(v is None for v in window):
             continue
         cand = window[L]
@@ -106,7 +106,11 @@ def ref_run(highs, lows, rsi, pivot_len=5, os_=25.0, ob=75.0, valid=100):
             p_low = lows[i - pivot_len]
             p_bar = i - pivot_len
             if prev_low_rsi is not None:
-                if p_low < prev_low_price and pl[i] > prev_low_rsi and min(pl[i], prev_low_rsi) <= os_:
+                if (
+                    p_low < prev_low_price
+                    and pl[i] > prev_low_rsi
+                    and min(pl[i], prev_low_rsi) <= os_
+                ):
                     last_bull = p_bar
                     bull_pulse = True
             prev_low_rsi, prev_low_price, prev_low_bar = pl[i], p_low, p_bar
@@ -114,23 +118,34 @@ def ref_run(highs, lows, rsi, pivot_len=5, os_=25.0, ob=75.0, valid=100):
             p_high = highs[i - pivot_len]
             p_bar = i - pivot_len
             if prev_high_rsi is not None:
-                if p_high > prev_high_price and ph[i] < prev_high_rsi and max(ph[i], prev_high_rsi) >= ob:
+                if (
+                    p_high > prev_high_price
+                    and ph[i] < prev_high_rsi
+                    and max(ph[i], prev_high_rsi) >= ob
+                ):
                     last_bear = p_bar
                     bear_pulse = True
             prev_high_rsi, prev_high_price, prev_high_bar = ph[i], p_high, p_bar
         bull_active = last_bull is not None and i - last_bull <= valid
         bear_active = last_bear is not None and i - last_bear <= valid
-        out.append({
-            "rsi": rsi[i], "pl": pl[i], "ph": ph[i],
-            "bull": bull_pulse, "bear": bear_pulse,
-            "bull_active": bull_active, "bear_active": bear_active,
-            "bull_age": None if last_bull is None else i - last_bull,
-            "bear_age": None if last_bear is None else i - last_bear,
-        })
+        out.append(
+            {
+                "rsi": rsi[i],
+                "pl": pl[i],
+                "ph": ph[i],
+                "bull": bull_pulse,
+                "bear": bear_pulse,
+                "bull_active": bull_active,
+                "bear_active": bear_active,
+                "bull_age": None if last_bull is None else i - last_bull,
+                "bear_age": None if last_bear is None else i - last_bear,
+            }
+        )
     return out
 
 
 # ── deterministic multi-swing series (drives RSI to both extremes; makes divergences) ──
+
 
 def _swing_series():
     """A deterministic path: an oscillation (sine) that drives the RSI to both extremes, on a
@@ -138,10 +153,10 @@ def _swing_series():
     a HIGHER RSI low => bullish divergences), then an uptrend that starts steep then goes gentle
     (higher price highs on a LOWER RSI high => bearish divergences). Produces several of each."""
     closes = []
-    for k in range(220):                     # downtrend phase
+    for k in range(220):  # downtrend phase
         drift = -0.9 * k if k < 90 else -0.9 * 90 - 0.35 * (k - 90)
         closes.append(round(1000.0 + drift + 22.0 * math.sin(k / 6.0), 2))
-    for k in range(220):                     # uptrend phase
+    for k in range(220):  # uptrend phase
         drift = 0.9 * k if k < 90 else 0.9 * 90 + 0.35 * (k - 90)
         closes.append(round(700.0 + drift + 22.0 * math.sin(k / 6.0), 2))
     highs = [c + 0.7 for c in closes]
@@ -162,14 +177,19 @@ def _feed_all(eng, highs, lows, closes):
                 last_bull = d.pivot_bar
             else:
                 last_bear = d.pivot_bar
-        out.append({
-            "rsi": ev.rsi, "pl": ev.pivot_low_rsi, "ph": ev.pivot_high_rsi,
-            "bull": any(d.is_bullish for d in ev.detected),
-            "bear": any(not d.is_bullish for d in ev.detected),
-            "bull_active": ev.bull_active, "bear_active": ev.bear_active,
-            "bull_age": None if last_bull is None else i - last_bull,
-            "bear_age": None if last_bear is None else i - last_bear,
-        })
+        out.append(
+            {
+                "rsi": ev.rsi,
+                "pl": ev.pivot_low_rsi,
+                "ph": ev.pivot_high_rsi,
+                "bull": any(d.is_bullish for d in ev.detected),
+                "bear": any(not d.is_bullish for d in ev.detected),
+                "bull_active": ev.bull_active,
+                "bear_active": ev.bear_active,
+                "bull_age": None if last_bull is None else i - last_bull,
+                "bear_age": None if last_bear is None else i - last_bear,
+            }
+        )
     return out, rsi
 
 
@@ -183,12 +203,13 @@ def _approx(a, b, tol=1e-9):
 
 # ── RSI warm-up + value ──
 
+
 def test_rsi_is_none_until_length_then_defined():
     eng = RsiDivergenceEngine(rsi_len=14)
     closes = [1000.0 + i for i in range(20)]
     rsis = [eng.update(i, c + 1, c - 1, c).rsi for i, c in enumerate(closes)]
-    assert all(r is None for r in rsis[:14])     # na warm-up: bars 0..13
-    assert rsis[14] is not None                  # first defined at bar == rsi_len
+    assert all(r is None for r in rsis[:14])  # na warm-up: bars 0..13
+    assert rsis[14] is not None  # first defined at bar == rsi_len
 
 
 def test_rsi_matches_standard_wilder():
@@ -201,6 +222,7 @@ def test_rsi_matches_standard_wilder():
 
 
 # ── pivot detection ──
+
 
 def test_pivot_low_confirms_late_at_the_trough():
     # For every pivot low the engine confirms on the swing series, prove the timing/offset: the
@@ -225,9 +247,10 @@ def test_pivot_low_confirms_late_at_the_trough():
 
 # ── full reference cross-check (the centrepiece) ──
 
+
 def test_engine_matches_reference_and_fires_both_divergences():
     highs, lows, closes = _swing_series()
-    eng = RsiDivergenceEngine()          # defaults: 14 / 5 / 25 / 75 / 100
+    eng = RsiDivergenceEngine()  # defaults: 14 / 5 / 25 / 75 / 100
     got, rsi = _feed_all(eng, highs, lows, closes)
     ref = ref_run(highs, lows, rsi)
 
@@ -270,6 +293,7 @@ def test_detected_divergence_carries_correct_anchors():
 
 # ── live-confluence flag window ──
 
+
 def test_bull_active_expires_after_valid_bars():
     # Force one bullish divergence, then feed flat bars and watch the flag switch off exactly
     # valid_bars after the divergence's PIVOT bar (pivot is pivot_len bars behind confirmation).
@@ -297,11 +321,12 @@ def test_bull_active_expires_after_valid_bars():
 
 # ── negative conditions ──
 
+
 def test_no_divergence_before_any_pivot_pair():
     # Fewer bars than a full pivot window can never confirm a divergence.
     eng = RsiDivergenceEngine(rsi_len=5, pivot_len=3)
     fired = False
-    for i in range(6):                    # < 2*pivot_len+1 windows possible
+    for i in range(6):  # < 2*pivot_len+1 windows possible
         ev = eng.update(i, 1000 + i, 999 + i, 1000 + i)
         fired = fired or bool(ev.detected)
     assert not fired

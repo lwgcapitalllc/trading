@@ -53,9 +53,11 @@ def test_closed_days_are_collected_oldest_first(tmp_path):
     for day in ("2026-08-14", "2026-08-12", "2026-08-13"):
         _ledger(tmp_path, "bot", day)
     closed, _ = log_backup.ledger_files(tmp_path, TODAY)
-    assert [p.name for p in closed] == ["decisions-2026-08-12.jsonl",
-                                        "decisions-2026-08-13.jsonl",
-                                        "decisions-2026-08-14.jsonl"]
+    assert [p.name for p in closed] == [
+        "decisions-2026-08-12.jsonl",
+        "decisions-2026-08-13.jsonl",
+        "decisions-2026-08-14.jsonl",
+    ]
 
 
 def test_every_bot_is_swept_not_just_the_first(tmp_path):
@@ -88,8 +90,10 @@ def test_the_health_stream_is_collected_too(tmp_path):
     (d / "health-2026-08-14.jsonl").write_text("{}\n")
     closed, skipped = log_backup.ledger_files(tmp_path, TODAY)
 
-    assert sorted(p.name for p in closed) == ["decisions-2026-08-14.jsonl",
-                                              "health-2026-08-14.jsonl"]
+    assert sorted(p.name for p in closed) == [
+        "decisions-2026-08-14.jsonl",
+        "health-2026-08-14.jsonl",
+    ]
     assert skipped == []
 
 
@@ -115,8 +119,9 @@ def test_todays_files_are_reported_as_OPEN_not_as_closed(tmp_path):
 
     closed, _ = log_backup.ledger_files(tmp_path, TODAY)
     assert [p.name for p in closed] == ["decisions-2026-08-14.jsonl"]
-    assert [p.name for p in log_backup.open_files(tmp_path, TODAY)] == \
-        ["decisions-2026-08-15.jsonl"]
+    assert [p.name for p in log_backup.open_files(tmp_path, TODAY)] == [
+        "decisions-2026-08-15.jsonl"
+    ]
 
 
 def test_the_backup_reads_the_writers_own_filename_pattern():
@@ -164,14 +169,22 @@ def test_the_sync_accepts_both_stream_names_and_the_text_log(monkeypatch):
     """The path anchor was WIDENED to two shapes, not loosened. Traversal must still be
     impossible — a filename-only check passes `../../../health-2026-08-14.jsonl`, which is a
     perfectly valid name landing outside the repo."""
-    monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
-        a, 0, stdout="bot/ledger/decisions-2026-08-15.jsonl\n"
-                     "bot/ledger/health-2026-08-15.jsonl\n"
-                     "bot/bot-2026-08-15.log\n"
-                     "../../../../tmp/health-2026-08-15.jsonl\n"
-                     "bot/ledger/../../../etc/health-2026-08-15.jsonl\n"
-                     "bot/../../etc/bot-2026-08-15.log\n"
-                     "/etc/health-2026-08-15.jsonl\n", stderr=""))
+    monkeypatch.setattr(
+        ledger_sync,
+        "_run",
+        lambda *a: subprocess.CompletedProcess(
+            a,
+            0,
+            stdout="bot/ledger/decisions-2026-08-15.jsonl\n"
+            "bot/ledger/health-2026-08-15.jsonl\n"
+            "bot/bot-2026-08-15.log\n"
+            "../../../../tmp/health-2026-08-15.jsonl\n"
+            "bot/ledger/../../../etc/health-2026-08-15.jsonl\n"
+            "bot/../../etc/bot-2026-08-15.log\n"
+            "/etc/health-2026-08-15.jsonl\n",
+            stderr="",
+        ),
+    )
 
     assert ledger_sync.remote_files("host", "open") == [
         "bot/ledger/decisions-2026-08-15.jsonl",
@@ -256,8 +269,11 @@ def repo(tmp_path, monkeypatch):
     work = tmp_path / "work"
     work.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
-    for a in (("config", "user.email", "t@t.t"), ("config", "user.name", "t"),
-              ("remote", "add", "origin", str(origin))):
+    for a in (
+        ("config", "user.email", "t@t.t"),
+        ("config", "user.name", "t"),
+        ("remote", "add", "origin", str(origin)),
+    ):
         subprocess.run(["git", "-C", str(work), *a], check=True)
     (work / "README.md").write_text("x")
     subprocess.run(["git", "-C", str(work), "add", "README.md"], check=True)
@@ -282,8 +298,9 @@ def test_a_ledger_file_reaches_origin(repo):
     p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
     assert ledger_sync.commit([p], push=True) is True
 
-    out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        ["git", "-C", str(repo), "log", "--oneline", "origin/main"], capture_output=True, text=True
+    )
     assert "bot record" in out.stdout
 
 
@@ -337,8 +354,9 @@ def test_no_push_commits_locally_and_says_it_did_not_push(repo):
     assert ledger_sync.commit([p], push=False) is False
     assert any("decisions-2026-08-14" in t for t in _tracked(repo))
 
-    out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        ["git", "-C", str(repo), "log", "--oneline", "origin/main"], capture_output=True, text=True
+    )
     assert "bot record" not in out.stdout
 
 
@@ -351,19 +369,32 @@ def test_the_sync_only_accepts_ledger_shaped_paths(repo, monkeypatch):
     only check passes `../../../decisions-2026-08-14.jsonl` — a perfectly valid ledger name
     that lands outside the repo — so the whole path shape is anchored instead.
     """
-    monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
-        a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n"
-                     "../../../../../tmp/decisions-2026-08-14.jsonl\n"
-                     "bot/ledger/../../../etc/decisions-2026-08-14.jsonl\n"
-                     "bot/ledger/notes.txt\n"
-                     "/etc/decisions-2026-08-14.jsonl\n", stderr=""))
+    monkeypatch.setattr(
+        ledger_sync,
+        "_run",
+        lambda *a: subprocess.CompletedProcess(
+            a,
+            0,
+            stdout="bot/ledger/decisions-2026-08-14.jsonl\n"
+            "../../../../../tmp/decisions-2026-08-14.jsonl\n"
+            "bot/ledger/../../../etc/decisions-2026-08-14.jsonl\n"
+            "bot/ledger/notes.txt\n"
+            "/etc/decisions-2026-08-14.jsonl\n",
+            stderr="",
+        ),
+    )
     assert ledger_sync.remote_files("host", "closed") == ["bot/ledger/decisions-2026-08-14.jsonl"]
 
 
 def test_a_fetched_path_always_lands_inside_the_repo(repo, monkeypatch):
     """The property the shape check buys, stated directly against the write target."""
-    monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
-        a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n", stderr=""))
+    monkeypatch.setattr(
+        ledger_sync,
+        "_run",
+        lambda *a: subprocess.CompletedProcess(
+            a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n", stderr=""
+        ),
+    )
     for rel in ledger_sync.remote_files("host", "closed"):
         target = (ledger_sync.LOCAL_ARCHIVE / rel).resolve()
         assert target.is_relative_to(repo.resolve())

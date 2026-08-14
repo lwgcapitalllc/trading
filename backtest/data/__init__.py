@@ -12,12 +12,12 @@ Public surface:
     resample_up   — aggregate OHLC bars to a higher timeframe (pure).
 """
 
-from .timeframes import SERVED_TF, resolve_base_tf, to_minutes
-from .resample import resample_up
 from .cache import FEED_VERSION, BarCache
 from .mt5_agent import Mt5Agent, Mt5AgentError
+from .resample import resample_up
 from .source import BarSource
 from .ticks import Tick, TickCache, TickSource, TickWindowUnavailable
+from .timeframes import SERVED_TF, resolve_base_tf, to_minutes
 
 __all__ = [
     "SERVED_TF",

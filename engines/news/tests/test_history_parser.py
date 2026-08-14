@@ -33,15 +33,15 @@ def test_parse_page_extracts_events_with_utc_ms():
     ism = next(e for e in events if e.title == "ISM Manufacturing PMI")
     assert ism.currency == "USD"
     assert ism.impact == Impact.HIGH
-    assert ism.timestamp_ms == 1738594800 * 1000       # dateline seconds -> ms
+    assert ism.timestamp_ms == 1738594800 * 1000  # dateline seconds -> ms
     assert ism.actual == "50.9" and ism.forecast == "49.3"
 
 
 def test_parse_page_impact_and_empty_fields():
     events = ForexFactoryHistorySource.parse_page(SAMPLE_HTML)
     hol = next(e for e in events if e.title == "Bank Holiday")
-    assert hol.impact == Impact.NONE                    # holiday -> NONE magnitude
-    assert hol.is_holiday is True                        # ...but flagged as a bank holiday
+    assert hol.impact == Impact.NONE  # holiday -> NONE magnitude
+    assert hol.is_holiday is True  # ...but flagged as a bank holiday
     assert hol.actual is None and hol.forecast is None and hol.previous is None
 
 
@@ -51,6 +51,14 @@ def test_parse_page_returns_empty_on_junk():
 
 def test_months_between_spans_inclusive():
     import datetime as _dt
-    def ms(y, m): return int(_dt.datetime(y, m, 15, tzinfo=_dt.timezone.utc).timestamp() * 1000)
-    assert _months_between(ms(2024, 11), ms(2025, 2)) == [(2024, 11), (2024, 12), (2025, 1), (2025, 2)]
+
+    def ms(y, m):
+        return int(_dt.datetime(y, m, 15, tzinfo=_dt.timezone.utc).timestamp() * 1000)
+
+    assert _months_between(ms(2024, 11), ms(2025, 2)) == [
+        (2024, 11),
+        (2024, 12),
+        (2025, 1),
+        (2025, 2),
+    ]
     assert _months_between(ms(2025, 3), ms(2025, 3)) == [(2025, 3)]

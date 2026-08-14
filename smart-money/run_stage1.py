@@ -14,26 +14,24 @@ Database is updated on every run (idempotent — reruns overwrite prior results)
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
 # Ensure project root is on sys.path so all imports resolve
 sys.path.insert(0, str(Path(__file__).parent))
 
 import database as db
+from profiler.filters import QualificationGate
+from profiler.hyperliquid_profiler import HyperliquidProfiler
+from profiler.reporter import StageReporter, build_wallet_profile
+from profiler.scorer import CompositeScorer
 from run_logger import StageLogger
 from run_progress import ProgressWriter
 from scanner.hyperliquid import HyperliquidClient, HyperliquidScanner
-from profiler.hyperliquid_profiler import HyperliquidProfiler
-from profiler.filters import QualificationGate
-from profiler.scorer import CompositeScorer
-from profiler.reporter import build_wallet_profile, StageReporter
 
-
-CONFIG_PATH     = Path(__file__).parent / "config" / "config.json"
-TEMPLATES_DIR   = Path(__file__).parent / "config" / "templates"
-VALID_PROFILES  = ["bot", "human"]
-ALL_PROFILES    = [None, "bot"]   # default + bot — used by --all-profiles
+CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
+TEMPLATES_DIR = Path(__file__).parent / "config" / "templates"
+VALID_PROFILES = ["bot", "human"]
+ALL_PROFILES = [None, "bot"]  # default + bot — used by --all-profiles
 
 
 def load_config(profile: str = None, win_rate_override: float = None) -> dict:
@@ -59,15 +57,18 @@ def load_config(profile: str = None, win_rate_override: float = None) -> dict:
     return config
 
 
-def _build_watchlist_entry(
-    address: str, trades: list[dict], disq_reason: str, profiler
-) -> dict:
+def _build_watchlist_entry(address: str, trades: list[dict], disq_reason: str, profiler) -> dict:
     from collections import defaultdict
+
     wins = [t for t in trades if t["is_win"]]
     losses = [t for t in trades if not t["is_win"]]
     span_days = (
-        int((max(t["close_ts"] for t in trades) - min(t["close_ts"] for t in trades)) / (86_400 * 1_000))
-        if len(trades) > 1 else 0
+        int(
+            (max(t["close_ts"] for t in trades) - min(t["close_ts"] for t in trades))
+            / (86_400 * 1_000)
+        )
+        if len(trades) > 1
+        else 0
     )
     inst_counts: dict[str, int] = defaultdict(int)
     inst_pnl: dict[str, float] = defaultdict(float)
@@ -107,9 +108,11 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
     db_run_id = db.start_run("stage1")
     logger.info("=" * 60)
     logger.info("Stage 1 — Hyperliquid Scanner & Profiler starting")
-    logger.info(f"Config: min_trades={config['qualification']['min_trades']}, "
-                f"min_win_rate={config['qualification']['min_win_rate']:.0%}, "
-                f"max_drawdown={config['qualification']['max_drawdown']:.0%}")
+    logger.info(
+        f"Config: min_trades={config['qualification']['min_trades']}, "
+        f"min_win_rate={config['qualification']['min_win_rate']:.0%}, "
+        f"max_drawdown={config['qualification']['max_drawdown']:.0%}"
+    )
     logger.info("=" * 60)
 
     # ------------------------------------------------------------------
@@ -132,13 +135,15 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         logger.info("DRY RUN: loading wallets from database instead of API")
         passed_initial = []
         for row in db.get_ranked_wallets(source="hyperliquid"):
-            passed_initial.append({
-                "address": row["address"],
-                "source": "hyperliquid",
-                "trade_count": row["trade_count"],
-                "account_age_days": row["account_age_days"],
-                "fills": [],  # no fills in dry run
-            })
+            passed_initial.append(
+                {
+                    "address": row["address"],
+                    "source": "hyperliquid",
+                    "trade_count": row["trade_count"],
+                    "account_age_days": row["account_age_days"],
+                    "fills": [],  # no fills in dry run
+                }
+            )
         failed_initial = []
     else:
         progress.update(pct=0, phase="fetching leaderboard", message="Fetching leaderboard…")
@@ -168,14 +173,18 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
         passed_initial, failed_initial = scanner.run(on_progress=_scan_progress)
 
-    logger.set("total_scanned", logger.get("total_scanned") or len(passed_initial) + len(failed_initial))
+    logger.set(
+        "total_scanned", logger.get("total_scanned") or len(passed_initial) + len(failed_initial)
+    )
 
     # Persist disqualified from initial filter and collect for this run's report
     current_disqualified: list[dict] = []
     for w in failed_initial:
         reason = w.get("reason", "initial filter")
         db.log_disqualified(w["address"], "hyperliquid", reason)
-        current_disqualified.append({"address": w["address"], "source": "hyperliquid", "reason": reason})
+        current_disqualified.append(
+            {"address": w["address"], "source": "hyperliquid", "reason": reason}
+        )
 
     logger.info(f"Step 1.2 complete — {len(passed_initial)} wallets pass initial filters")
 
@@ -213,7 +222,9 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
             reason = "No matched trades after fill parsing"
             db.log_disqualified(address, "hyperliquid", reason)
             logger.log_disqualified(address, reason)
-            current_disqualified.append({"address": address, "source": "hyperliquid", "reason": reason})
+            current_disqualified.append(
+                {"address": address, "source": "hyperliquid", "reason": reason}
+            )
             continue
 
         # Enforce min_trades on matched trade count, not raw closing fills.
@@ -229,7 +240,9 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
             )
             db.log_disqualified(address, "hyperliquid", reason)
             logger.log_disqualified(address, reason)
-            current_disqualified.append({"address": address, "source": "hyperliquid", "reason": reason})
+            current_disqualified.append(
+                {"address": address, "source": "hyperliquid", "reason": reason}
+            )
             continue
 
         # Data coverage check — compare captured PnL to leaderboard all-time PnL.
@@ -269,7 +282,9 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 
         if not qualifies:
             db.log_disqualified(address, "hyperliquid", disq_reason)
-            current_disqualified.append({"address": address, "source": "hyperliquid", "reason": disq_reason})
+            current_disqualified.append(
+                {"address": address, "source": "hyperliquid", "reason": disq_reason}
+            )
             # Preserve short-history wallets with notable performance for manual review
             if disq_reason and disq_reason.startswith("Trading span"):
                 _watchlist_entry = _build_watchlist_entry(address, trades, disq_reason, profiler)
@@ -286,12 +301,14 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
         yellow_flags = sum(1 for w in windows if w["strike_level"] == 1)
         if wallet.get("data_coverage_low"):
             yellow_flags += 1
-        qualifying.append({
-            "wallet": {**wallet, "id": wallet_id, "source": "hyperliquid"},
-            "trades": trades,
-            "windows": windows,
-            "yellow_flags": yellow_flags,
-        })
+        qualifying.append(
+            {
+                "wallet": {**wallet, "id": wallet_id, "source": "hyperliquid"},
+                "trades": trades,
+                "windows": windows,
+                "yellow_flags": yellow_flags,
+            }
+        )
 
     logger.info(f"Step 1.5 complete — {len(qualifying)} wallets pass all qualification filters")
     logger.set("passed_win_rate_filter", len(qualifying))
@@ -338,24 +355,30 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
     for entry in final_scored:
         wallet_id = entry["wallet"]["id"]
         score = entry["score"]
-        db.upsert_score(wallet_id, {
-            "win_rate_consistency": score["win_rate_consistency"],
-            "risk_adjusted_return": score["risk_adjusted_return"],
-            "exit_efficiency": score["exit_efficiency"],
-            "trade_frequency": score["trade_frequency"],
-            "instrument_day_consistency": score["instrument_day_consistency"],
-            "composite_score": score["composite_score"],
-            "rank": score["rank"],
-            "lookback_tier": score["lookback_tier"],
-        })
+        db.upsert_score(
+            wallet_id,
+            {
+                "win_rate_consistency": score["win_rate_consistency"],
+                "risk_adjusted_return": score["risk_adjusted_return"],
+                "exit_efficiency": score["exit_efficiency"],
+                "trade_frequency": score["trade_frequency"],
+                "instrument_day_consistency": score["instrument_day_consistency"],
+                "composite_score": score["composite_score"],
+                "rank": score["rank"],
+                "lookback_tier": score["lookback_tier"],
+            },
+        )
 
     logger.info(f"Step 1.6 complete — all {len(final_scored)} wallets scored and ranked")
-    progress.update(pct=88, phase="building profiles", message=f"Building {len(final_scored)} wallet profiles")
+    progress.update(
+        pct=88, phase="building profiles", message=f"Building {len(final_scored)} wallet profiles"
+    )
 
     # ------------------------------------------------------------------
     # Step 1.7: Build wallet intelligence reports
     # ------------------------------------------------------------------
     from profiler.hyperliquid_profiler import HyperliquidProfiler as _P
+
     _profiler = _P(config, logger)
 
     top_n = config["output"]["top_n_profiles"]
@@ -440,27 +463,36 @@ def run_stage1(config: dict, dry_run: bool = False) -> list[dict]:
 def main():
     parser = argparse.ArgumentParser(description="Run Stage 1 — Hyperliquid scanner and profiler")
     parser.add_argument(
-        "--profile", choices=VALID_PROFILES, default=None,
+        "--profile",
+        choices=VALID_PROFILES,
+        default=None,
         help="Config profile to use: 'bot' (rapid growth, algo) or 'human' (conservative). "
-             "Omit to use config/config.json.",
+        "Omit to use config/config.json.",
     )
     parser.add_argument(
-        "--all-profiles", action="store_true",
+        "--all-profiles",
+        action="store_true",
         help="Run Stage 1 twice: once with config/config.json (default), once with the bot "
-             "profile. Both write to the same DB. Catches both consistent long-term traders "
-             "AND short-burst high-ROI bots in a single command.",
+        "profile. Both write to the same DB. Catches both consistent long-term traders "
+        "AND short-burst high-ROI bots in a single command.",
     )
-    parser.add_argument("--win-rate", type=float, default=None,
-                        help="Override min_win_rate threshold (e.g. 0.75)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Skip API calls and use wallets already in the database")
+    parser.add_argument(
+        "--win-rate", type=float, default=None, help="Override min_win_rate threshold (e.g. 0.75)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip API calls and use wallets already in the database",
+    )
     args = parser.parse_args()
 
     if args.all_profiles:
         print("\n=== Stage 1 — Pass 1/2: Default profile (consistent traders) ===")
         run_stage1(load_config(profile=None, win_rate_override=args.win_rate), dry_run=args.dry_run)
         print("\n=== Stage 1 — Pass 2/2: Bot profile (short-burst high-ROI bots) ===")
-        run_stage1(load_config(profile="bot", win_rate_override=args.win_rate), dry_run=args.dry_run)
+        run_stage1(
+            load_config(profile="bot", win_rate_override=args.win_rate), dry_run=args.dry_run
+        )
     else:
         config = load_config(profile=args.profile, win_rate_override=args.win_rate)
         run_stage1(config, dry_run=args.dry_run)

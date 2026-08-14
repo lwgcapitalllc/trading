@@ -49,13 +49,13 @@ _INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 # Instance directory for each bot key
 BOT_INSTANCES = {
     "mpc_sos_fade_demo": _INSTANCES / "mpc_sos_fade_demo",
-    "mpc_bleg_demo":     _INSTANCES / "mpc_bleg_demo",
+    "mpc_bleg_demo": _INSTANCES / "mpc_bleg_demo",
 }
 
 # Display names
 BOT_NAMES = {
     "mpc_sos_fade_demo": "MPC SOS Fade",
-    "mpc_bleg_demo":     "MPC B-LEG",
+    "mpc_bleg_demo": "MPC B-LEG",
 }
 
 
@@ -85,8 +85,7 @@ def _instance_config(bot_key: str):
     is a fault to be loud about rather than a bot to quietly ignore.
     """
     try:
-        return json.loads(
-            (BOT_INSTANCES[bot_key] / "config.json").read_text(encoding="utf-8"))
+        return json.loads((BOT_INSTANCES[bot_key] / "config.json").read_text(encoding="utf-8"))
     except (KeyError, OSError, ValueError):
         return None
 
@@ -116,7 +115,7 @@ def is_assigned(bot_key: str) -> bool:
     """
     raw = _instance_config(bot_key)
     if raw is None:
-        return True                      # could not ask — keep watching, and be noisy about it
+        return True  # could not ask — keep watching, and be noisy about it
     return raw.get("account") is not None
 
 
@@ -176,11 +175,14 @@ def write_bot(bot_key: str, updates: dict):
 
 def set_started(bot_key: str):
     """Mark bot as started — called by coordinator."""
-    write_bot(bot_key, {
-        "status":  "running",
-        "started": time.time(),
-        "account": read_account(bot_key),
-    })
+    write_bot(
+        bot_key,
+        {
+            "status": "running",
+            "started": time.time(),
+            "account": read_account(bot_key),
+        },
+    )
 
 
 def set_status(bot_key: str, status: str):
@@ -194,11 +196,11 @@ def get_uptime_str(bot_key: str) -> str:
     started = state.get("started", 0)
     if not started:
         return ""
-    delta   = time.time() - started
-    hours   = int(delta // 3600)
+    delta = time.time() - started
+    hours = int(delta // 3600)
     minutes = int((delta % 3600) // 60)
     if hours >= 24:
-        days  = hours // 24
+        days = hours // 24
         hours = hours % 24
         return f"{days}d {hours}h {minutes}m"
     elif hours > 0:
@@ -238,33 +240,35 @@ def ensure_starting_balance(bot_key: str, balance: float, account=None) -> None:
     state = read_bot(bot_key)
     have = state.get("starting_balance")
     if not have:
-        write_bot(bot_key, {"starting_balance": round(balance, 2),
-                            "starting_balance_account": account})
+        write_bot(
+            bot_key, {"starting_balance": round(balance, 2), "starting_balance_account": account}
+        )
         return
     if account is None:
         return
     if "starting_balance_account" not in state:
-        write_bot(bot_key, {"starting_balance_account": account})   # adopt, do not reset
+        write_bot(bot_key, {"starting_balance_account": account})  # adopt, do not reset
         return
     if state.get("starting_balance_account") != account:
-        write_bot(bot_key, {"starting_balance": round(balance, 2),
-                            "starting_balance_account": account})
+        write_bot(
+            bot_key, {"starting_balance": round(balance, 2), "starting_balance_account": account}
+        )
 
 
 def _default_state(bot_key: str) -> dict:
     """Default state for a bot with no existing data."""
     return {
-        "name":           BOT_NAMES.get(bot_key, bot_key),
-        "status":         "stopped",
-        "started":        0,
-        "account":        read_account(bot_key),
+        "name": BOT_NAMES.get(bot_key, bot_key),
+        "status": "stopped",
+        "started": 0,
+        "account": read_account(bot_key),
         # None, not 0.0 — a bot that has never run has NO balance and NO P&L, and a zero
         # here is the claim "flat account". `live/runner.py` writes both on every poll.
-        "balance":        None,
-        "total_pnl_pct":  None,
-        "day_locked":     False,
-        "lock_reason":    "",
-        "lock_alerted":   False,
+        "balance": None,
+        "total_pnl_pct": None,
+        "day_locked": False,
+        "lock_reason": "",
+        "lock_alerted": False,
         "resume_trading": False,
-        "last_updated":   "",
+        "last_updated": "",
     }

@@ -41,7 +41,7 @@ class SeqState:
     s_618: bool
     l_poi: bool
     s_poi: bool
-    l_fvg: bool            # a live FVG overlaps the long entry band (confluence flag)
+    l_fvg: bool  # a live FVG overlaps the long entry band (confluence flag)
     s_fvg: bool
     # arm sources live at the SOS (raw, before the enable-toggles are applied)
     sos_l_swp: bool
@@ -140,27 +140,41 @@ class SosFadeSequence:
             self._last_bear_sos_time = sig.time_ms
 
         # ── Stage-1 edge triggers (Pine 3730-3740) ──
-        new_sweep_l = (sig.recent_ssl != "" and sig.recent_ssl_bar != self._prev_recent_ssl_bar
-                       and not gap)
+        new_sweep_l = (
+            sig.recent_ssl != "" and sig.recent_ssl_bar != self._prev_recent_ssl_bar and not gap
+        )
         # Pine `newDivL = not na(lastBullDivBar) and lastBullDivBar != lastBullDivBar[1]`.
         # The `!= [1]` is `na`-poisoned: on the FIRST-ever divergence the prior value is
         # `na`, and Pine returns `na` (falsy) for any comparison with `na` — so the first
         # divergence is NEVER seen as "new" and never arms. Python's `X != None` is True,
         # which would arm it, so require the previous bar be non-None to match Pine exactly.
-        new_div_l = (sig.last_bull_div_bar is not None
-                     and self._prev_last_bull_div_bar is not None
-                     and sig.last_bull_div_bar != self._prev_last_bull_div_bar)
-        if new_sweep_l and sig.recent_ssl == "Day Low" and sig.recent_ssl_time is not None \
-                and (sig.time_ms - sig.recent_ssl_time) > _DAY_MS:
+        new_div_l = (
+            sig.last_bull_div_bar is not None
+            and self._prev_last_bull_div_bar is not None
+            and sig.last_bull_div_bar != self._prev_last_bull_div_bar
+        )
+        if (
+            new_sweep_l
+            and sig.recent_ssl == "Day Low"
+            and sig.recent_ssl_time is not None
+            and (sig.time_ms - sig.recent_ssl_time) > _DAY_MS
+        ):
             new_sweep_l = False  # daily sweep older than a day is stale fuel
 
-        new_sweep_s = (sig.recent_bsl != "" and sig.recent_bsl_bar != self._prev_recent_bsl_bar
-                       and not gap)
-        new_div_s = (sig.last_bear_div_bar is not None
-                     and self._prev_last_bear_div_bar is not None
-                     and sig.last_bear_div_bar != self._prev_last_bear_div_bar)
-        if new_sweep_s and sig.recent_bsl == "Day High" and sig.recent_bsl_time is not None \
-                and (sig.time_ms - sig.recent_bsl_time) > _DAY_MS:
+        new_sweep_s = (
+            sig.recent_bsl != "" and sig.recent_bsl_bar != self._prev_recent_bsl_bar and not gap
+        )
+        new_div_s = (
+            sig.last_bear_div_bar is not None
+            and self._prev_last_bear_div_bar is not None
+            and sig.last_bear_div_bar != self._prev_last_bear_div_bar
+        )
+        if (
+            new_sweep_s
+            and sig.recent_bsl == "Day High"
+            and sig.recent_bsl_time is not None
+            and (sig.time_ms - sig.recent_bsl_time) > _DAY_MS
+        ):
             new_sweep_s = False
 
         # ── Stage-1 arm (Pine 3752-3761) ──
@@ -176,10 +190,14 @@ class SosFadeSequence:
             self._arm_holder_l = "DIV"
 
         # ── retro-link: adopt an SOS that already fired at/after the div pivot (3771-3773) ──
-        retro_link_l = (new_div_l and self._l_sweep_bar is not None and self._l_sos_bar is None
-                        and self._last_bull_sos_bar is not None
-                        and self._last_bull_sos_bar >= sig.last_bull_div_bar
-                        and sig.time_ms - self._last_bull_sos_time <= self._window_ms)
+        retro_link_l = (
+            new_div_l
+            and self._l_sweep_bar is not None
+            and self._l_sos_bar is None
+            and self._last_bull_sos_bar is not None
+            and self._last_bull_sos_bar >= sig.last_bull_div_bar
+            and sig.time_ms - self._last_bull_sos_time <= self._window_ms
+        )
         if retro_link_l:
             self._l_sos_bar = self._last_bull_sos_bar
 
@@ -194,10 +212,14 @@ class SosFadeSequence:
             self._s_sweep_bar = sig.last_bear_div_bar
             self._s_arm_time = sig.time_ms
             self._arm_holder_s = "DIV"
-        retro_link_s = (new_div_s and self._s_sweep_bar is not None and self._s_sos_bar is None
-                        and self._last_bear_sos_bar is not None
-                        and self._last_bear_sos_bar >= sig.last_bear_div_bar
-                        and sig.time_ms - self._last_bear_sos_time <= self._window_ms)
+        retro_link_s = (
+            new_div_s
+            and self._s_sweep_bar is not None
+            and self._s_sos_bar is None
+            and self._last_bear_sos_bar is not None
+            and self._last_bear_sos_bar >= sig.last_bear_div_bar
+            and sig.time_ms - self._last_bear_sos_time <= self._window_ms
+        )
         if retro_link_s:
             self._s_sos_bar = self._last_bear_sos_bar
 
@@ -208,21 +230,37 @@ class SosFadeSequence:
             self._s_poi = self._s_poi or sig.poi_short_now
 
         # ── Stage 2 — SOS within the staleness window (Pine 3806-3810) ──
-        if sig.bull_sos and self._l_arm_time is not None \
-                and sig.time_ms - self._l_arm_time <= self._window_ms:
+        if (
+            sig.bull_sos
+            and self._l_arm_time is not None
+            and sig.time_ms - self._l_arm_time <= self._window_ms
+        ):
             self._l_sos_bar = sig.index
-        if sig.bear_sos and self._s_arm_time is not None \
-                and sig.time_ms - self._s_arm_time <= self._window_ms:
+        if (
+            sig.bear_sos
+            and self._s_arm_time is not None
+            and sig.time_ms - self._s_arm_time <= self._window_ms
+        ):
             self._s_sos_bar = sig.index
 
         # ── stale-arm clear (Pine 3819-3826) ──
-        if not gap and self._l_sweep_bar is not None and self._l_sos_bar is None \
-                and self._l_arm_time is not None and sig.time_ms - self._l_arm_time > self._window_ms:
+        if (
+            not gap
+            and self._l_sweep_bar is not None
+            and self._l_sos_bar is None
+            and self._l_arm_time is not None
+            and sig.time_ms - self._l_arm_time > self._window_ms
+        ):
             self._l_sweep_bar = None
             self._l_arm_time = None
             self._arm_holder_l = ""
-        if not gap and self._s_sweep_bar is not None and self._s_sos_bar is None \
-                and self._s_arm_time is not None and sig.time_ms - self._s_arm_time > self._window_ms:
+        if (
+            not gap
+            and self._s_sweep_bar is not None
+            and self._s_sos_bar is None
+            and self._s_arm_time is not None
+            and sig.time_ms - self._s_arm_time > self._window_ms
+        ):
             self._s_sweep_bar = None
             self._s_arm_time = None
             self._arm_holder_s = ""
@@ -241,25 +279,43 @@ class SosFadeSequence:
         #    update (both happen later this bar). The B LEG owns exactly this death: a live
         #    stage-2 REV breaking structure again in-trend while still at 2/3 (neither latch
         #    set), fib pointing the trade's way, TP3 not yet hit. ──
-        bleg_arm_l = (self._l_sos_bar is not None and not gap
-                      and sig.bull_bos and not sig.bull_sos
-                      and not self._l_half and not self._l_618
-                      and sig.fibo_dir == 1 and not sig.fibo7_touched)
-        bleg_arm_s = (self._s_sos_bar is not None and not gap
-                      and sig.bear_bos and not sig.bear_sos
-                      and not self._s_half and not self._s_618
-                      and sig.fibo_dir == -1 and not sig.fibo7_touched)
+        bleg_arm_l = (
+            self._l_sos_bar is not None
+            and not gap
+            and sig.bull_bos
+            and not sig.bull_sos
+            and not self._l_half
+            and not self._l_618
+            and sig.fibo_dir == 1
+            and not sig.fibo7_touched
+        )
+        bleg_arm_s = (
+            self._s_sos_bar is not None
+            and not gap
+            and sig.bear_bos
+            and not sig.bear_sos
+            and not self._s_half
+            and not self._s_618
+            and sig.fibo_dir == -1
+            and not sig.fibo7_touched
+        )
 
         # ── A+ leg resolution: TP3 / invalidation / continuation-BOS (Pine 3854-3861) ──
         if self._l_sos_bar is not None and not gap:
-            if (sig.fibo_dir == 1 and sig.fibo7_touched) or sig.fibo_dir == -1 \
-                    or (sig.fibo_dir == 1 and sig.fibo_p10 is not None and sig.close < sig.fibo_p10) \
-                    or (sig.bull_bos and not sig.bull_sos):
+            if (
+                (sig.fibo_dir == 1 and sig.fibo7_touched)
+                or sig.fibo_dir == -1
+                or (sig.fibo_dir == 1 and sig.fibo_p10 is not None and sig.close < sig.fibo_p10)
+                or (sig.bull_bos and not sig.bull_sos)
+            ):
                 self._clear_long()
         if self._s_sos_bar is not None and not gap:
-            if (sig.fibo_dir == -1 and sig.fibo7_touched) or sig.fibo_dir == 1 \
-                    or (sig.fibo_dir == -1 and sig.fibo_p10 is not None and sig.close > sig.fibo_p10) \
-                    or (sig.bear_bos and not sig.bear_sos):
+            if (
+                (sig.fibo_dir == -1 and sig.fibo7_touched)
+                or sig.fibo_dir == 1
+                or (sig.fibo_dir == -1 and sig.fibo_p10 is not None and sig.close > sig.fibo_p10)
+                or (sig.bear_bos and not sig.bear_sos)
+            ):
                 self._clear_short()
 
         # ── CONT trigger + resolution (Pine 3869-3883) — tracked, not traded ──
@@ -268,12 +324,18 @@ class SosFadeSequence:
         if sig.bear_bos and self._s_sweep_bar is None:
             self._cont_s_bos = sig.index
         if self._cont_l_bos is not None:
-            if (sig.fibo_dir == 1 and sig.fibo7_touched) or sig.fibo_dir == -1 \
-                    or (sig.fibo_dir == 1 and sig.fibo_p10 is not None and sig.close < sig.fibo_p10):
+            if (
+                (sig.fibo_dir == 1 and sig.fibo7_touched)
+                or sig.fibo_dir == -1
+                or (sig.fibo_dir == 1 and sig.fibo_p10 is not None and sig.close < sig.fibo_p10)
+            ):
                 self._cont_l_bos = None
         if self._cont_s_bos is not None:
-            if (sig.fibo_dir == -1 and sig.fibo7_touched) or sig.fibo_dir == 1 \
-                    or (sig.fibo_dir == -1 and sig.fibo_p10 is not None and sig.close > sig.fibo_p10):
+            if (
+                (sig.fibo_dir == -1 and sig.fibo7_touched)
+                or sig.fibo_dir == 1
+                or (sig.fibo_dir == -1 and sig.fibo_p10 is not None and sig.close > sig.fibo_p10)
+            ):
                 self._cont_s_bos = None
 
         # ── Stage-3 latch: A+-owned 0.5 / 0.618 progress (Pine 3890-3899) ──
@@ -313,9 +375,11 @@ class SosFadeSequence:
             # block is one the entry really will trade off that block. Ranking the flag would
             # report no confluence on a setup that is about to fire.
             for top, bot, is_bull, born, _rank in pois_for(self._cfg, sig):
-                gap_ok = (not self._cfg.exec_fvg_pre_zone
-                          or sig.fibo_half_bar is None
-                          or born < sig.fibo_half_bar)
+                gap_ok = (
+                    not self._cfg.exec_fvg_pre_zone
+                    or sig.fibo_half_bar is None
+                    or born < sig.fibo_half_bar
+                )
                 if is_bull:
                     if sig.fibo_dir == 1 and bot <= sig.fibo_p2 and top >= sig.fibo_p6 and gap_ok:
                         l_fvg = True
@@ -342,14 +406,18 @@ class SosFadeSequence:
             self._sos_s_div = self._arm_div_st is not None and sig.time_ms - self._arm_div_st <= w
         if retro_link_l:
             self._sos_l_div = True
-            self._sos_l_swp = self._arm_swp_lt is not None \
-                and self._arm_swp_lt <= self._last_bull_sos_time \
+            self._sos_l_swp = (
+                self._arm_swp_lt is not None
+                and self._arm_swp_lt <= self._last_bull_sos_time
                 and self._last_bull_sos_time - self._arm_swp_lt <= w
+            )
         if retro_link_s:
             self._sos_s_div = True
-            self._sos_s_swp = self._arm_swp_st is not None \
-                and self._arm_swp_st <= self._last_bear_sos_time \
+            self._sos_s_swp = (
+                self._arm_swp_st is not None
+                and self._arm_swp_st <= self._last_bear_sos_time
                 and self._last_bear_sos_time - self._arm_swp_st <= w
+            )
 
         # advance the edge-detector history
         self._prev_recent_ssl_bar = sig.recent_ssl_bar
@@ -358,17 +426,32 @@ class SosFadeSequence:
         self._prev_last_bear_div_bar = sig.last_bear_div_bar
 
         return SeqState(
-            l_stage=l_stage, s_stage=s_stage,
-            l_sos_bar=self._l_sos_bar, s_sos_bar=self._s_sos_bar,
-            l_half=self._l_half, l_618=self._l_618, s_half=self._s_half, s_618=self._s_618,
-            l_poi=self._l_poi, s_poi=self._s_poi, l_fvg=l_fvg, s_fvg=s_fvg,
-            sos_l_swp=self._sos_l_swp, sos_l_div=self._sos_l_div,
-            sos_s_swp=self._sos_s_swp, sos_s_div=self._sos_s_div,
-            new_sweep_l=new_sweep_l, new_div_l=new_div_l,
-            new_sweep_s=new_sweep_s, new_div_s=new_div_s,
-            retro_link_l=retro_link_l, retro_link_s=retro_link_s,
-            bleg_arm_l=bleg_arm_l, bleg_arm_s=bleg_arm_s,
-            l_arm_src=self._arm_holder_l, s_arm_src=self._arm_holder_s,
+            l_stage=l_stage,
+            s_stage=s_stage,
+            l_sos_bar=self._l_sos_bar,
+            s_sos_bar=self._s_sos_bar,
+            l_half=self._l_half,
+            l_618=self._l_618,
+            s_half=self._s_half,
+            s_618=self._s_618,
+            l_poi=self._l_poi,
+            s_poi=self._s_poi,
+            l_fvg=l_fvg,
+            s_fvg=s_fvg,
+            sos_l_swp=self._sos_l_swp,
+            sos_l_div=self._sos_l_div,
+            sos_s_swp=self._sos_s_swp,
+            sos_s_div=self._sos_s_div,
+            new_sweep_l=new_sweep_l,
+            new_div_l=new_div_l,
+            new_sweep_s=new_sweep_s,
+            new_div_s=new_div_s,
+            retro_link_l=retro_link_l,
+            retro_link_s=retro_link_s,
+            bleg_arm_l=bleg_arm_l,
+            bleg_arm_s=bleg_arm_s,
+            l_arm_src=self._arm_holder_l,
+            s_arm_src=self._arm_holder_s,
         )
 
     def _clear_long(self) -> None:

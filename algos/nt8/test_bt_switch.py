@@ -12,6 +12,7 @@ Run on VPS:
 Or via agent endpoint:
     curl "http://localhost:8765/test-bt-switch?value=Optimize"
 """
+
 import sys
 import time
 
@@ -22,15 +23,22 @@ except ImportError:
     print("ERROR: pip install pywinauto comtypes")
     sys.exit(1)
 
-BT_AID   = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-BT_ORDER = ["Backtest", "Optimize", "WalkForward", "WalkForwardAnchored", "MultiObjective", "AiGenerate"]
+BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+BT_ORDER = [
+    "Backtest",
+    "Optimize",
+    "WalkForward",
+    "WalkForwardAnchored",
+    "MultiObjective",
+    "AiGenerate",
+]
 
 # The three scenarios the runner needs to cover.
 # UIA name  →  NT8 display name
 SCENARIOS = [
-    ("Backtest",     "Backtest"),
-    ("Optimize",     "Optimization"),
-    ("WalkForward",  "Walk Forward Optimization"),
+    ("Backtest", "Backtest"),
+    ("Optimize", "Optimization"),
+    ("WalkForward", "Walk Forward Optimization"),
 ]
 
 
@@ -73,14 +81,14 @@ def switch_to(ctrl, uia_name):
     try:
         ctrl.set_focus()
         time.sleep(0.2)
-        send_keys('{F4}')
+        send_keys("{F4}")
         time.sleep(0.3)
-        send_keys('{HOME}')
+        send_keys("{HOME}")
         time.sleep(0.1)
         for _ in range(idx):
-            send_keys('{DOWN}')
+            send_keys("{DOWN}")
             time.sleep(0.08)
-        send_keys('{ENTER}')
+        send_keys("{ENTER}")
         time.sleep(0.3)
         return True, "send_keys", ""
     except Exception as e:
@@ -92,14 +100,14 @@ def main():
     print("NT8 BacktestType switch test — 3 scenarios")
     print("=" * 60)
 
-    sa   = find_sa()
+    sa = find_sa()
     ctrl = sa.child_window(auto_id=BT_AID, control_type="ComboBox")
 
     if not ctrl.exists(timeout=2.0):
         print("FATAL: BacktestType combo not found")
         sys.exit(1)
 
-    print(f"\nItem discovery (via ctrl.expand + descendants):")
+    print("\nItem discovery (via ctrl.expand + descendants):")
     items = discover_items(ctrl)
     print(f"  {items}")
     print()

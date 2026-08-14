@@ -16,8 +16,15 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backtest.setups import (Confluence, DEAD, FILLED, RESTING,  # noqa: E402
-                             SetupSnapshot, WATCHING, implements_contract)
+from backtest.setups import (
+    DEAD,
+    FILLED,
+    RESTING,  # noqa: E402
+    WATCHING,
+    Confluence,
+    SetupSnapshot,
+    implements_contract,
+)
 
 
 def _snap(**kw) -> SetupSnapshot:
@@ -33,8 +40,14 @@ def test_met_and_of_come_from_the_confluence_list_not_from_a_constant():
     RED against storing `of` as a field: any test would then pass while the stored total drifted
     from the list beside it.
     """
-    s = _snap(confluences=(Confluence("A", True), Confluence("B", True),
-                           Confluence("C", False), Confluence("D", True)))
+    s = _snap(
+        confluences=(
+            Confluence("A", True),
+            Confluence("B", True),
+            Confluence("C", False),
+            Confluence("D", True),
+        )
+    )
     assert (s.met, s.of) == (3, 4)
 
 
@@ -80,8 +93,9 @@ def test_a_zone_that_is_not_a_pair_is_refused():
 
 
 # ── terminal states, which drive the alert layer's cleanup ───────────────────────────────────
-@pytest.mark.parametrize("state,terminal", [(WATCHING, False), (RESTING, False),
-                                            (FILLED, True), (DEAD, True)])
+@pytest.mark.parametrize(
+    "state,terminal", [(WATCHING, False), (RESTING, False), (FILLED, True), (DEAD, True)]
+)
 def test_only_filled_and_dead_are_terminal(state, terminal):
     """RED against adding RESTING to `TERMINAL`: a resting setup's thread would be dropped and
     its own fill message would then arrive with nothing to reply to."""

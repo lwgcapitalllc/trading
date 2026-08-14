@@ -95,9 +95,9 @@ _KIND_GROUP = {
 # each. They are picked away from every colour already on this chart — structure teal (#26a69a),
 # fair-value-gap slate (#94a3b8) and order-block orange (#E65100).
 _COLOR = {
-    GROUP_LIQ_HTF: "#38bdf8",      # sky — the daily/weekly pools
+    GROUP_LIQ_HTF: "#38bdf8",  # sky — the daily/weekly pools
     GROUP_LIQ_SESSION: "#a78bfa",  # violet — Asia / London / NY
-    GROUP_LIQ_H4: "#FF6B35",       # mpc's own H4_ACTIVE_COLOR, reproduced
+    GROUP_LIQ_H4: "#FF6B35",  # mpc's own H4_ACTIVE_COLOR, reproduced
 }
 # mpc's H4_SWEPT_COLOR hue. One grey for every taken level, whatever tier it came from: once a pool
 # is gone, which tier it belonged to is on the label, and colouring spent levels by tier would give
@@ -144,7 +144,7 @@ def sweep_label_for(side: str, engine_label: Optional[str]) -> Optional[str]:
         return "BSL"
     if side == "low":
         return "SSL"
-    return None   # PWC — a reference close, never swept, so it has no side and no tag
+    return None  # PWC — a reference close, never swept, so it has no side and no tag
 
 
 def _anchor_bars(times: list[int], anchors_ms: Iterable[int]) -> set[int]:
@@ -223,7 +223,7 @@ def build_liquidity_overlays(
     times = [c["time"] for c in candles]
     bars = _anchor_bars(times, anchors_ms)
     if not bars:
-        return []      # no trade, block or miss on screen ⇒ nothing to explain ⇒ nothing to draw
+        return []  # no trade, block or miss on screen ⇒ nothing to explain ⇒ nothing to draw
 
     try:
         from liquidity import LiquidityEngine
@@ -243,9 +243,15 @@ def build_liquidity_overlays(
             ev = liq.update(i, c["time"], c["high"], c["low"], c["close"])
             for lv in ev.created:
                 lives[lv.id] = {
-                    "name": lv.name, "kind": lv.kind, "side": lv.side, "price": lv.price,
-                    "born": lv.created_index, "swept": None, "sweep_label": None,
-                    "gone": None, "seen": False,
+                    "name": lv.name,
+                    "kind": lv.kind,
+                    "side": lv.side,
+                    "price": lv.price,
+                    "born": lv.created_index,
+                    "swept": None,
+                    "sweep_label": None,
+                    "gone": None,
+                    "seen": False,
                 }
             for lv in ev.mitigated:
                 rec = lives.get(lv.id)
@@ -295,17 +301,21 @@ def build_liquidity_overlays(
         # round trip, and simply never draws: the levels would render as unlabelled lines, which on
         # a layer whose entire job is naming which pool was taken is the whole feature missing with
         # nothing raising. Same shape as `HLineOverlay` in the frontend's `types.ts`.
-        by_group[group].append({
-            "type": "hline", "group": group,
-            "t0": times[left], "t1": times[right],
-            "price": round(rec["price"], 5),
-            "label": label,
-            "style": {
-                "color": _SWEPT_COLOR if swept is not None else _COLOR[group],
-                "lineStyle": "dashed" if swept is not None else "solid",
-                "lineWidth": 1,
-            },
-        })
+        by_group[group].append(
+            {
+                "type": "hline",
+                "group": group,
+                "t0": times[left],
+                "t1": times[right],
+                "price": round(rec["price"], 5),
+                "label": label,
+                "style": {
+                    "color": _SWEPT_COLOR if swept is not None else _COLOR[group],
+                    "lineStyle": "dashed" if swept is not None else "solid",
+                    "lineWidth": 1,
+                },
+            }
+        )
 
     overlays: list[dict] = []
     for group in GROUPS:
@@ -313,12 +323,21 @@ def build_liquidity_overlays(
         if len(rows) > _MAX_PER_GROUP:
             dropped = len(rows) - _MAX_PER_GROUP
             rows = rows[-_MAX_PER_GROUP:]
-            log.info("liquidity overlays: %s capped at %d — dropped the %d oldest",
-                     group, _MAX_PER_GROUP, dropped)
+            log.info(
+                "liquidity overlays: %s capped at %d — dropped the %d oldest",
+                group,
+                _MAX_PER_GROUP,
+                dropped,
+            )
         overlays.extend(rows)
 
     swept_n = sum(1 for ov in overlays if ov["style"]["lineStyle"] == "dashed")
-    log.info("liquidity overlays: %d bars, %d anchor bar(s) -> %d levels (%d swept) across %s",
-             n, len(bars), len(overlays), swept_n,
-             {g: sum(1 for ov in overlays if ov["group"] == g) for g in GROUPS})
+    log.info(
+        "liquidity overlays: %d bars, %d anchor bar(s) -> %d levels (%d swept) across %s",
+        n,
+        len(bars),
+        len(overlays),
+        swept_n,
+        {g: sum(1 for ov in overlays if ov["group"] == g) for g in GROUPS},
+    )
     return overlays

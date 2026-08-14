@@ -129,8 +129,9 @@ class RealignConfig(SosFadeConfig):
         if parent is not None:
             parent()
         if self.realign_pattern not in ("any", "opposing", "strict"):
-            raise ValueError(f"realign_pattern must be any|opposing|strict, "
-                             f"got {self.realign_pattern!r}")
+            raise ValueError(
+                f"realign_pattern must be any|opposing|strict, got {self.realign_pattern!r}"
+            )
         for name in ("realign_long_source", "realign_short_source"):
             val = getattr(self, name)
             if val not in ("swing", "internal"):
@@ -141,6 +142,7 @@ class RealignConfig(SosFadeConfig):
             # Refuse rather than silently produce a primary-only book — the distinction
             # this repo has been bitten by twice.
             raise ValueError(
-                "mpc_realign has no 1m secondary re-entry; exec_secondary must stay False")
+                "mpc_realign has no 1m secondary re-entry; exec_secondary must stay False"
+            )
         if 60 % self.realign_htf_minutes and self.realign_htf_minutes % 60:
             raise ValueError("realign_htf_minutes must divide or be a multiple of an hour")

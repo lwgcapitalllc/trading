@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from backtest.portfolio.clock import Tick, merge_streams
+from backtest.portfolio.clock import merge_streams
 
 
 @dataclass(frozen=True)

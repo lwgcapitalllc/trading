@@ -55,12 +55,15 @@ def _patch(monkeypatch, side_effects):
 def test_a_dropped_connection_is_retried_and_succeeds(monkeypatch):
     """The exact failure that killed the year run: RemoteDisconnected on one call."""
     import http.client
+
     drop = urllib.error.URLError(http.client.RemoteDisconnected("closed"))
-    calls = _patch(monkeypatch, [drop, drop, {"ticks": [{"time": "2026-01-01T00:00:00",
-                                                         "bid": 1.0, "ask": 1.1}]}])
+    calls = _patch(
+        monkeypatch,
+        [drop, drop, {"ticks": [{"time": "2026-01-01T00:00:00", "bid": 1.0, "ask": 1.1}]}],
+    )
     ticks = Mt5Agent().ticks("XAUUSD.s", "2026-01-01T00:00:00", "2026-01-01T01:00:00")
     assert len(ticks) == 1
-    assert calls["n"] == 3          # failed twice, third answered
+    assert calls["n"] == 3  # failed twice, third answered
 
 
 def test_it_gives_up_after_the_retry_budget(monkeypatch):
@@ -79,7 +82,7 @@ def test_an_http_error_is_NOT_retried(monkeypatch):
     calls = _patch(monkeypatch, [err])
     with pytest.raises(Mt5AgentError, match="413"):
         Mt5Agent().ticks("XAUUSD.s", "2026-01-01T00:00:00", "2026-01-01T01:00:00")
-    assert calls["n"] == 1          # asked exactly once
+    assert calls["n"] == 1  # asked exactly once
 
 
 def test_bars_retry_too(monkeypatch):

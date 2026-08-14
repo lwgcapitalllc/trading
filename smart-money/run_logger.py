@@ -5,9 +5,8 @@ Every pipeline run appends to smart-money.log and prints to stdout.
 
 import logging
 import sys
-from pathlib import Path
 from datetime import datetime
-
+from pathlib import Path
 
 _LOG_FILE = Path(__file__).parent / "data" / "smart_money.log"
 _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -99,9 +98,9 @@ class StageLogger:
 
     def print_summary(self):
         s = self.summary()
-        lines = [f"\n{'='*60}", f"  Stage {self.stage} — Run Summary", f"{'='*60}"]
+        lines = [f"\n{'=' * 60}", f"  Stage {self.stage} — Run Summary", f"{'=' * 60}"]
         for k, v in s.items():
             if k not in ("stage",):
                 lines.append(f"  {k:<40} {v}")
-        lines.append(f"{'='*60}\n")
+        lines.append(f"{'=' * 60}\n")
         self._logger.info("\n".join(lines))

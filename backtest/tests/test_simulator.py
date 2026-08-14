@@ -16,15 +16,16 @@ from backtest.portfolio.simulator import simulate
 @dataclass
 class _Bar:
     timestamp_ms: int
-    act: str = ""          # "open" | "close" | ""
+    act: str = ""  # "open" | "close" | ""
 
 
 class FakeLeg:
     """A leg scripted by (timestamp, action). It routes fills through the shared account and
     frees its reservation on close (no P&L, so the room math stays easy to hand-check)."""
 
-    def __init__(self, name, script, account, *, desired_qty=200.0, entry=100.0,
-                 stop=95.0, pv=1.0, dir=1):
+    def __init__(
+        self, name, script, account, *, desired_qty=200.0, entry=100.0, stop=95.0, pv=1.0, dir=1
+    ):
         self.name = name
         self._script = script
         self._acct = account
@@ -43,14 +44,15 @@ class FakeLeg:
     def step(self, bar):
         p = self._p
         if bar.act == "open" and not self._open:
-            g = self._acct.request_fill(self.name, p["dir"], p["entry"], p["stop"],
-                                        p["desired_qty"], p["pv"])
+            g = self._acct.request_fill(
+                self.name, p["dir"], p["entry"], p["stop"], p["desired_qty"], p["pv"]
+            )
             if g > 0.0:
                 self._open = True
                 self._granted = g
                 self.trades.append({"leg": self.name, "qty": g})
         elif bar.act == "close" and self._open:
-            self._acct.close_position(self.name)   # free reservation, no P&L
+            self._acct.close_position(self.name)  # free reservation, no P&L
             self._open = False
             self._granted = 0.0
 
@@ -64,21 +66,21 @@ def test_non_overlapping_legs_never_contend():
     A = FakeLeg("A", [(0, "open"), (10, "close")], a)
     B = FakeLeg("B", [(20, "open"), (30, "close")], a)
     res = simulate([A, B], a)
-    assert res.contention == []                       # they never collided
-    assert len(res.trades) == 2                        # both filled
-    assert res.per_leg["A"][0]["qty"] == 200.0         # full size
+    assert res.contention == []  # they never collided
+    assert len(res.trades) == 2  # both filled
+    assert res.per_leg["A"][0]["qty"] == 200.0  # full size
     assert res.per_leg["B"][0]["qty"] == 200.0
 
 
 def test_release_before_entry_lets_next_leg_fill_full():
     # tight cap: one leg's trade fills the whole budget. A holds, then at t=20 A CLOSES and
     # B OPENS on the same tick. Holders step first, so A frees the room before B is sized.
-    a = _acct()                                        # room 1000; each leg's risk = 1000
+    a = _acct()  # room 1000; each leg's risk = 1000
     A = FakeLeg("A", [(0, "open"), (20, "close")], a)
     B = FakeLeg("B", [(20, "open"), (40, "close")], a)
     res = simulate([A, B], a)
-    assert res.contention == []                        # B was NOT shrunk — A released first
-    assert res.per_leg["B"][0]["qty"] == 200.0         # full size
+    assert res.contention == []  # B was NOT shrunk — A released first
+    assert res.per_leg["B"][0]["qty"] == 200.0  # full size
 
 
 def test_forced_overlap_blocks_second_and_logs_it():
@@ -87,7 +89,7 @@ def test_forced_overlap_blocks_second_and_logs_it():
     A = FakeLeg("A", [(0, "open"), (99, "close")], a)
     B = FakeLeg("B", [(10, "open")], a)
     res = simulate([A, B], a)
-    assert res.per_leg["B"] == []                       # B never got in
+    assert res.per_leg["B"] == []  # B never got in
     assert len(res.contention) == 1
     c = res.contention[0]
     assert c["leg"] == "B" and c["blocked"] is True and c["time"] == 10
@@ -97,9 +99,9 @@ def test_forced_overlap_shrinks_second_and_logs_it():
     # A reserves 800 (dist 4), leaving 200 room. B wants 1000 → shrunk to 200, floor 0.
     a = _acct(floor=0.0)
     A = FakeLeg("A", [(0, "open"), (99, "close")], a, entry=100.0, stop=96.0)  # risk 800
-    B = FakeLeg("B", [(10, "open")], a, entry=100.0, stop=95.0)                 # wants 1000
+    B = FakeLeg("B", [(10, "open")], a, entry=100.0, stop=95.0)  # wants 1000
     res = simulate([A, B], a)
-    assert res.per_leg["B"][0]["qty"] == 40.0          # 200 granted / (1 × 5)
+    assert res.per_leg["B"][0]["qty"] == 40.0  # 200 granted / (1 × 5)
     assert len(res.contention) == 1
     c = res.contention[0]
     assert c["leg"] == "B" and c["blocked"] is False
@@ -128,7 +130,7 @@ def test_a_cancelled_run_says_so_and_stops_stepping():
 
     def _cancel():
         seen["ticks"] += 1
-        return seen["ticks"] > 1        # clear on the first poll, cancelled on the second
+        return seen["ticks"] > 1  # clear on the first poll, cancelled on the second
 
     res = simulate([leg], acct, should_cancel=_cancel)
     assert res.cancelled is True

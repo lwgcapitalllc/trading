@@ -17,8 +17,8 @@ Output:
 import argparse
 import json
 import sys
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -70,18 +70,28 @@ def spot_check_wallet(wallet_id: int, address: str, logger: StageLogger):
     losses = [t for t in trades if not t["is_win"]]
     overall_wr = len(wins) / len(trades) if trades else 0
 
-    logger.info(f"\n{'─'*60}")
+    logger.info(f"\n{'─' * 60}")
     logger.info(f"SPOT CHECK: {address}")
-    logger.info(f"{'─'*60}")
+    logger.info(f"{'─' * 60}")
     logger.info(f"  Total trades:      {len(trades)}")
     logger.info(f"  Wins / Losses:     {len(wins)} / {len(losses)}")
     logger.info(f"  Overall win rate:  {overall_wr:.1%}")
     logger.info(f"  Total PnL:         {sum(t['pnl'] for t in trades):.2f}")
-    logger.info(f"  Avg win:           {sum(t['pnl'] for t in wins)/len(wins):.2f}" if wins else "  Avg win:           N/A")
-    logger.info(f"  Avg loss:          {sum(t['pnl'] for t in losses)/len(losses):.2f}" if losses else "  Avg loss:          N/A")
+    logger.info(
+        f"  Avg win:           {sum(t['pnl'] for t in wins) / len(wins):.2f}"
+        if wins
+        else "  Avg win:           N/A"
+    )
+    logger.info(
+        f"  Avg loss:          {sum(t['pnl'] for t in losses) / len(losses):.2f}"
+        if losses
+        else "  Avg loss:          N/A"
+    )
 
     logger.info(f"\n  Monthly Windows ({len(windows)} windows):")
-    logger.info(f"  {'Month':<10} {'Trades':>8} {'Wins':>6} {'Win Rate':>10} {'PnL':>10} {'Strike':>8}")
+    logger.info(
+        f"  {'Month':<10} {'Trades':>8} {'Wins':>6} {'Win Rate':>10} {'PnL':>10} {'Strike':>8}"
+    )
     for w in windows:
         dt = datetime.fromtimestamp(w["window_start"] / 1000, tz=timezone.utc)
         strike_label = {0: "clean", 1: "yellow", 2: "RED"}.get(w["strike_level"], "?")
@@ -99,15 +109,17 @@ def spot_check_wallet(wallet_id: int, address: str, logger: StageLogger):
     oldest = datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
     newest = datetime.fromtimestamp(newest_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
     logger.info(f"\n  Data range:  {oldest} → {newest}")
-    logger.info(f"  Data gaps:   (check monthly windows for empty months)")
+    logger.info("  Data gaps:   (check monthly windows for empty months)")
 
 
 def check_score_calibration(ranked: list[dict], logger: StageLogger):
     """Step 2.3: Review if scoring weights are producing sensible rankings."""
-    logger.info(f"\n{'─'*60}")
+    logger.info(f"\n{'─' * 60}")
     logger.info("SCORE CALIBRATION CHECK")
-    logger.info(f"{'─'*60}")
-    logger.info(f"{'Rank':>5} {'Score':>7} {'WR Cons':>8} {'Risk Adj':>9} {'Exit Eff':>9} {'Freq':>6} {'Pattern':>8} Address")
+    logger.info(f"{'─' * 60}")
+    logger.info(
+        f"{'Rank':>5} {'Score':>7} {'WR Cons':>8} {'Risk Adj':>9} {'Exit Eff':>9} {'Freq':>6} {'Pattern':>8} Address"
+    )
 
     for w in ranked[:10]:
         logger.info(
@@ -127,7 +139,9 @@ def check_score_calibration(ranked: list[dict], logger: StageLogger):
         spread = top - bottom
         logger.info(f"\nScore spread: {spread:.1f} points (top={top:.1f}, bottom={bottom:.1f})")
         if spread < 10:
-            logger.warning("Score spread is very tight — scoring weights may not be differentiating well")
+            logger.warning(
+                "Score spread is very tight — scoring weights may not be differentiating well"
+            )
         elif spread > 60:
             logger.warning("Score spread is very wide — check for outliers in the data")
         else:
@@ -161,7 +175,7 @@ def run_stage2(config: dict, target_address: str = None, check_pool_only: bool =
             spot_check_wallet(wallet_id, target_address, logger)
     else:
         # Default: spot-check top 5 (Step 2.2)
-        logger.info(f"\nSpot checking top 5 wallets (Step 2.2)…")
+        logger.info("\nSpot checking top 5 wallets (Step 2.2)…")
         top5 = ranked[:5]
         for w in top5:
             spot_check_wallet(w["wallet_id"], w["address"], logger)
@@ -181,10 +195,14 @@ def run_stage2(config: dict, target_address: str = None, check_pool_only: bool =
 
 def main():
     parser = argparse.ArgumentParser(description="Stage 2 — Manual validation helper")
-    parser.add_argument("--address", type=str, default=None,
-                        help="Spot-check a specific wallet address")
-    parser.add_argument("--check-pool", action="store_true",
-                        help="Only check pool size and threshold recommendations")
+    parser.add_argument(
+        "--address", type=str, default=None, help="Spot-check a specific wallet address"
+    )
+    parser.add_argument(
+        "--check-pool",
+        action="store_true",
+        help="Only check pool size and threshold recommendations",
+    )
     args = parser.parse_args()
 
     with open(CONFIG_PATH, encoding="utf-8") as f:

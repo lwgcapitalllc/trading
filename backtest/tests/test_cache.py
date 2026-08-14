@@ -23,10 +23,12 @@ def _bars(rows):
 
 def test_save_then_load_round_trips(tmp_path):
     cache = BarCache(tmp_path)
-    bars = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11),
-        ("2026-01-05 09:05", 11, 13, 10, 12),
-    ])
+    bars = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11),
+            ("2026-01-05 09:05", 11, 13, 10, 12),
+        ]
+    )
     cache.save("XAUUSD.s", "M5", bars)
     loaded = cache.load("XAUUSD.s", "M5")
     pd.testing.assert_frame_equal(loaded, bars)
@@ -42,16 +44,20 @@ def test_missing_returns_empty(tmp_path):
 
 def test_merge_unions_and_incoming_wins_on_collision(tmp_path):
     cache = BarCache(tmp_path)
-    first = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11),
-        ("2026-01-05 09:05", 11, 13, 10, 12),
-    ])
+    first = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11),
+            ("2026-01-05 09:05", 11, 13, 10, 12),
+        ]
+    )
     cache.save("XAUUSD.s", "M5", first)
     # 09:05 corrected + a new 09:10 bar.
-    second = _bars([
-        ("2026-01-05 09:05", 11, 99, 10, 50),
-        ("2026-01-05 09:10", 12, 14, 11, 13),
-    ])
+    second = _bars(
+        [
+            ("2026-01-05 09:05", 11, 99, 10, 50),
+            ("2026-01-05 09:10", 12, 14, 11, 13),
+        ]
+    )
     cache.save("XAUUSD.s", "M5", second)
 
     loaded = cache.load("XAUUSD.s", "M5")
@@ -87,6 +93,7 @@ def test_bars_sorted_after_out_of_order_save(tmp_path):
 # Regression cover for the 2026-07-16 trap: the agent was fixed to return true UTC, but the cache
 # still held broker-local bars, so compare_feeds.py reported the bug as unfixed against a correct
 # agent. A stale HIT is silent; a miss is loud. These lock "stale reads as a miss".
+
 
 def test_save_writes_the_current_feed_version(tmp_path):
     cache = BarCache(tmp_path)
@@ -127,10 +134,10 @@ def test_a_corrupt_sidecar_is_treated_as_stale_not_as_current(tmp_path):
 def test_saving_over_a_stale_cache_discards_the_old_rows(tmp_path):
     """The laundering guard: stale rows must not be merged into a file we then stamp current."""
     cache = BarCache(tmp_path)
-    cache.save("XAUUSD.s", "M5", _bars([("2026-01-05 09:00", 10, 12, 9, 11)]))   # "broker-local"
+    cache.save("XAUUSD.s", "M5", _bars([("2026-01-05 09:00", 10, 12, 9, 11)]))  # "broker-local"
     cache.meta_path("XAUUSD.s", "M5").write_text(json.dumps({"feed_version": FEED_VERSION - 1}))
 
-    fresh = _bars([("2026-01-05 07:00", 20, 22, 19, 21)])                        # "true UTC"
+    fresh = _bars([("2026-01-05 07:00", 20, 22, 19, 21)])  # "true UTC"
     cache.save("XAUUSD.s", "M5", fresh)
 
     loaded = cache.load("XAUUSD.s", "M5")

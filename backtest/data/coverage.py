@@ -75,9 +75,9 @@ class RangeCoverage:
         cursor = start_date
         for lo, hi in _merge_intervals(self._load(symbol, tf_name)):
             if hi < cursor:
-                continue            # entirely before what we still need
+                continue  # entirely before what we still need
             if lo > end_date:
-                break               # intervals are sorted; nothing later can help
+                break  # intervals are sorted; nothing later can help
             if lo > cursor:
                 gaps.append((cursor, _day_before(lo)))
             cursor = max(cursor, _day_after(hi))

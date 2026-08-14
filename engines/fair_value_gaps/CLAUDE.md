@@ -150,7 +150,9 @@ with its `is_bullish` flag; a consumer (e.g. the A+ setup) decides alignment aga
 ```python
 from fair_value_gaps import FairValueGapEngine
 
-fvg = FairValueGapEngine()   # max_count=8, threshold_pct=0.0, require_close=False — the Pine defaults
+fvg = (
+    FairValueGapEngine()
+)  # max_count=8, threshold_pct=0.0, require_close=False — the Pine defaults
 
 # Each closed bar, in order:
 ev = fvg.update(bar.index, bar.open, bar.high, bar.low, bar.close)
@@ -160,15 +162,17 @@ ev = fvg.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 #   ev = fvg.update(i, o, h, l, c, eq_levels=eq_ev.active_eqh + eq_ev.active_eql, eq_tol=eq_ev.tolerance)
 # Omit eq_levels for the standalone, exemption-off behaviour (plain FIFO) — nothing else changes.
 
-for g in ev.formed:      # gaps formed THIS bar (event)
+for g in ev.formed:  # gaps formed THIS bar (event)
     g.top, g.bottom, g.is_bullish
-    g.born_index         # the bar it formed on
-    g.id                 # stable id: match a formed gap to its later mitigation
-for g in ev.mitigated:   # gaps closed fully past THIS bar — a candle closed through the far edge (event)
+    g.born_index  # the bar it formed on
+    g.id  # stable id: match a formed gap to its later mitigation
+for (
+    g
+) in ev.mitigated:  # gaps closed fully past THIS bar — a candle closed through the far edge (event)
     ...
-for g in ev.evicted:     # gaps aged out past the cap THIS bar — NOT a signal
+for g in ev.evicted:  # gaps aged out past the cap THIS bar — NOT a signal
     ...
-ev.active                # live gaps, oldest-first (state) — mirrors the Pine fvg* arrays
+ev.active  # live gaps, oldest-first (state) — mirrors the Pine fvg* arrays
 ```
 
 ---

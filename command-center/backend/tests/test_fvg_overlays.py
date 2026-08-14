@@ -26,7 +26,6 @@ import csv
 from pathlib import Path
 
 import pytest
-
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays, mpc_threshold_pct
 
 BAR_MS = 5 * 60 * 1000
@@ -49,19 +48,22 @@ def _candles(rows):
 #
 # So bar 7 is the only bar where BOTH are open — the cluster case. No other bar in the series meets
 # either imbalance condition (checked by hand in both directions).
-_FIXTURE = _candles([
-    (100.0, 100.5,  99.5, 100.0),   # 0
-    (100.0, 100.5,  99.5, 100.0),   # 1
-    (100.0, 100.5,  99.5, 100.0),   # 2
-    (100.0, 103.0,  99.8, 102.8),   # 3  displacement
-    (102.8, 103.5, 101.0, 103.0),   # 4  → GAP A
-    (103.0, 106.0, 102.8, 105.8),   # 5  displacement
-    (105.8, 107.0, 104.0, 106.5),   # 6  → GAP B
-    (106.5, 107.0, 105.5, 106.0),   # 7  both live
-    (106.0, 107.0, 103.0, 103.4),   # 8  closes past GAP B
-    (103.4, 106.0, 100.0, 100.2),   # 9  closes past GAP A
-    (100.2, 103.5,  99.8, 100.5),   # 10
-] + [(100.5, 103.5, 99.8, 100.5)] * 20)   # 11…30 — flat tail, forms nothing
+_FIXTURE = _candles(
+    [
+        (100.0, 100.5, 99.5, 100.0),  # 0
+        (100.0, 100.5, 99.5, 100.0),  # 1
+        (100.0, 100.5, 99.5, 100.0),  # 2
+        (100.0, 103.0, 99.8, 102.8),  # 3  displacement
+        (102.8, 103.5, 101.0, 103.0),  # 4  → GAP A
+        (103.0, 106.0, 102.8, 105.8),  # 5  displacement
+        (105.8, 107.0, 104.0, 106.5),  # 6  → GAP B
+        (106.5, 107.0, 105.5, 106.0),  # 7  both live
+        (106.0, 107.0, 103.0, 103.4),  # 8  closes past GAP B
+        (103.4, 106.0, 100.0, 100.2),  # 9  closes past GAP A
+        (100.2, 103.5, 99.8, 100.5),  # 10
+    ]
+    + [(100.5, 103.5, 99.8, 100.5)] * 20
+)  # 11…30 — flat tail, forms nothing
 
 _A = (101.0, 100.5)
 _B = (104.0, 103.5)
@@ -69,13 +71,11 @@ _B = (104.0, 103.5)
 
 def _spans(overlays):
     """{(top, bottom): (first_bar_drawn, last_bar_drawn)} for readable assertions."""
-    return {
-        (ov["top"], ov["bottom"]): (ov["t0"] // BAR_MS, ov["t1"] // BAR_MS)
-        for ov in overlays
-    }
+    return {(ov["top"], ov["bottom"]): (ov["t0"] // BAR_MS, ov["t1"] // BAR_MS) for ov in overlays}
 
 
 # ── What gets drawn ───────────────────────────────────────────────────────────
+
 
 def test_no_trade_block_or_miss_means_no_gaps_at_all():
     """The layer exists to explain a signal. With nothing to explain it draws nothing — not every
@@ -127,6 +127,7 @@ def test_every_box_carries_the_one_group_so_one_toggle_hides_the_layer():
 
 # ── Box geometry — the Pine box's real span ───────────────────────────────────
 
+
 def test_box_runs_from_the_bar_before_birth_to_the_last_bar_the_gap_was_alive():
     """Pine creates the box at `bar_index - 1` and extends it every surviving bar, then DELETES it on
     the bar the gap dies — so the box never covers its own death bar. GAP A: born 4, closed past on
@@ -145,6 +146,7 @@ def test_a_gap_still_open_at_the_end_runs_to_the_last_candle():
 
 
 # ── The settings are mpc_assistant.pine's ─────────────────────────────────────
+
 
 def test_gap_floor_follows_mpcs_timeframe_split():
     """`fvgThreshPct = timeframe.in_seconds() < 900 ? 0.0 : 0.04` (mpc_assistant.pine:410-412). Get
@@ -172,15 +174,26 @@ def test_the_floor_actually_reaches_the_engine():
 
 def test_defaults_match_the_locked_mpc_constants():
     from services import fvg_overlays as f
+
     assert (f.MPC_MAX_COUNT, f.MPC_REQUIRE_CLOSE) == (8, False)
     assert (f.MPC_THRESH_LTF, f.MPC_THRESH_HTF, f.MPC_TF_SPLIT_SECONDS) == (0.0, 0.04, 900)
-    assert (f.MPC_EQ_PIVOT_LEN, f.MPC_EQ_ATR_MULT, f.MPC_EQ_MAX, f.MPC_EQ_EXEMPT) == (2, 0.1, 6, True)
+    assert (f.MPC_EQ_PIVOT_LEN, f.MPC_EQ_ATR_MULT, f.MPC_EQ_MAX, f.MPC_EQ_EXEMPT) == (
+        2,
+        0.1,
+        6,
+        True,
+    )
 
 
 # ── Pine parity: the boxes ARE the gaps the Pine had open ─────────────────────
 
-_EXPORT = (Path(__file__).resolve().parents[3]
-           / "engines" / "fair_value_gaps" / "exports" / "VANTAGE_XAUUSD, 5_5ead0.csv")
+_EXPORT = (
+    Path(__file__).resolve().parents[3]
+    / "engines"
+    / "fair_value_gaps"
+    / "exports"
+    / "VANTAGE_XAUUSD, 5_5ead0.csv"
+)
 
 # The Pine build behind that export (2026-07-14): 6 plotted slots, cap 6, the 0.1% floor, the
 # middle-bar close check hardcoded on, no EQ exemption. Confirmed by replaying it — the engine
@@ -218,8 +231,13 @@ def test_boxes_match_the_pines_own_live_gap_arrays(export_rows):
     drift that only shows up after a few thousand bars still fails this.
     """
     candles = [
-        {"time": i * BAR_MS, "open": _num(r["open"]), "high": _num(r["high"]),
-         "low": _num(r["low"]), "close": _num(r["close"])}
+        {
+            "time": i * BAR_MS,
+            "open": _num(r["open"]),
+            "high": _num(r["high"]),
+            "low": _num(r["low"]),
+            "close": _num(r["close"]),
+        }
         for i, r in enumerate(export_rows)
     ]
     assert all(None not in (c["open"], c["high"], c["low"], c["close"]) for c in candles)
@@ -230,7 +248,9 @@ def test_boxes_match_the_pines_own_live_gap_arrays(export_rows):
     overlays = build_fvg_overlays(candles, [i * BAR_MS for i in anchors], "M5", **_EXPORT_CFG)
     assert overlays, "the export should produce gaps at these anchors"
 
-    boxes = [(ov["t0"] // BAR_MS + 1, ov["t1"] // BAR_MS, ov["top"], ov["bottom"]) for ov in overlays]
+    boxes = [
+        (ov["t0"] // BAR_MS + 1, ov["t1"] // BAR_MS, ov["top"], ov["bottom"]) for ov in overlays
+    ]
 
     checked = 0
     for i in anchors:
@@ -254,8 +274,13 @@ def test_a_bar_with_no_anchor_gets_no_box_even_mid_export(export_rows):
     anchor must carry no box unless a gap genuinely spans both — proven by comparing against the
     Pine's own count for that bar, which is non-zero there."""
     candles = [
-        {"time": i * BAR_MS, "open": _num(r["open"]), "high": _num(r["high"]),
-         "low": _num(r["low"]), "close": _num(r["close"])}
+        {
+            "time": i * BAR_MS,
+            "open": _num(r["open"]),
+            "high": _num(r["high"]),
+            "low": _num(r["low"]),
+            "close": _num(r["close"]),
+        }
         for i, r in enumerate(export_rows)
     ]
     anchor = _EXPORT_WARMUP + 500

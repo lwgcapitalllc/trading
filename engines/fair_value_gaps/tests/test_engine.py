@@ -51,12 +51,13 @@ _BEAR = [
 
 def _run(eng, bars):
     ev = None
-    for (i, o, h, l, c) in bars:
+    for i, o, h, l, c in bars:
         ev = _feed(eng, i, o, h, l, c)
     return ev
 
 
 # ── formation ──
+
 
 def test_bull_gap_forms_on_imbalance():
     eng = FairValueGapEngine()
@@ -64,9 +65,9 @@ def test_bull_gap_forms_on_imbalance():
     assert len(ev.formed) == 1
     g = ev.formed[0]
     assert g.is_bullish is True
-    assert g.top == 105.5 and g.bottom == 101.0     # C's low over A's high
+    assert g.top == 105.5 and g.bottom == 101.0  # C's low over A's high
     assert g.born_index == 2
-    assert len(ev.active) == 1                        # not mitigated on its own creation bar
+    assert len(ev.active) == 1  # not mitigated on its own creation bar
 
 
 def test_bear_gap_forms_on_imbalance():
@@ -75,7 +76,7 @@ def test_bear_gap_forms_on_imbalance():
     assert len(ev.formed) == 1
     g = ev.formed[0]
     assert g.is_bullish is False
-    assert g.top == 105.5 and g.bottom == 101.5     # A's low over C's high
+    assert g.top == 105.5 and g.bottom == 101.5  # A's low over C's high
     assert g.born_index == 2
     assert len(ev.active) == 1
 
@@ -99,7 +100,7 @@ def test_gap_forms_even_when_displacement_not_clean():
     eng = FairValueGapEngine()
     bars = [
         (0, 100.0, 101.0, 99.0, 100.5),
-        (1, 104.0, 104.0, 101.5, 102.0),   # bearish bar, but close 102 > bar0 high 101
+        (1, 104.0, 104.0, 101.5, 102.0),  # bearish bar, but close 102 > bar0 high 101
         (2, 105.0, 107.0, 105.5, 106.5),
     ]
     ev = _run(eng, bars)
@@ -113,8 +114,8 @@ def test_gap_forms_even_when_closes_not_progressive():
     eng = FairValueGapEngine()
     bars = [
         (0, 100.0, 101.0, 99.0, 100.5),
-        (1, 102.0, 108.0, 101.5, 107.0),   # middle close 107 > bar0 high 101
-        (2, 105.0, 107.5, 105.5, 106.0),   # close 106 < previous close 107
+        (1, 102.0, 108.0, 101.5, 107.0),  # middle close 107 > bar0 high 101
+        (2, 105.0, 107.5, 105.5, 106.0),  # close 106 < previous close 107
     ]
     ev = _run(eng, bars)
     assert len(ev.formed) == 1
@@ -122,8 +123,8 @@ def test_gap_forms_even_when_closes_not_progressive():
 
 _MIDDLE_NO_CLEAR = [
     (0, 100.0, 105.0, 99.0, 100.0),
-    (1, 101.0, 106.0, 100.0, 104.0),   # close 104 <= bar0 high 105 -> middle didn't clear the gap
-    (2, 106.0, 108.0, 105.5, 107.0),   # void: bar2 low 105.5 > bar0 high 105
+    (1, 101.0, 106.0, 100.0, 104.0),  # close 104 <= bar0 high 105 -> middle didn't clear the gap
+    (2, 106.0, 108.0, 105.5, 107.0),  # void: bar2 low 105.5 > bar0 high 105
 ]
 
 
@@ -153,9 +154,10 @@ def test_no_detection_before_two_bars_of_history():
 
 # ── mitigation (close past the FAR edge) ──
 
+
 def test_bull_gap_mitigated_when_close_past_far_edge():
     eng = FairValueGapEngine()
-    _run(eng, _BULL)                                  # gap: top=105.5, bottom=101, born=2
+    _run(eng, _BULL)  # gap: top=105.5, bottom=101, born=2
     # bar 3 closes at 100, below the gap's bottom (far edge) -> mitigated. Forms no new gap.
     ev = _feed(eng, 3, 106.0, 106.5, 99.0, 100.0)
     assert len(ev.mitigated) == 1
@@ -165,7 +167,7 @@ def test_bull_gap_mitigated_when_close_past_far_edge():
 
 def test_bear_gap_mitigated_when_close_past_far_edge():
     eng = FairValueGapEngine()
-    _run(eng, _BEAR)                                  # gap: top=105.5, bottom=101.5, born=2
+    _run(eng, _BEAR)  # gap: top=105.5, bottom=101.5, born=2
     # bar 3 closes at 106, above the gap's top (far edge) -> mitigated.
     ev = _feed(eng, 3, 101.0, 106.5, 100.5, 106.0)
     assert len(ev.mitigated) == 1
@@ -176,7 +178,7 @@ def test_wick_into_gap_does_not_mitigate():
     # bar 3 wicks all the way through the bull gap (low 100.5 < bottom 101) but CLOSES at 104,
     # inside/above the bottom — a wick no longer mitigates; the gap survives.
     eng = FairValueGapEngine()
-    _run(eng, _BULL)                                  # gap: top=105.5, bottom=101, born=2
+    _run(eng, _BULL)  # gap: top=105.5, bottom=101, born=2
     ev = _feed(eng, 3, 105.0, 106.0, 100.5, 104.0)
     assert ev.mitigated == []
     assert len(ev.active) == 1
@@ -192,6 +194,7 @@ def test_gap_not_mitigated_on_its_own_creation_bar():
 
 # ── FIFO eviction ──
 
+
 def test_oldest_gap_evicted_past_max_count():
     # Ascending staircase: every bar from index 2 forms a gap, none close past the earlier (lower)
     # gaps' bottoms.
@@ -199,7 +202,7 @@ def test_oldest_gap_evicted_past_max_count():
     ev = None
     for k in range(5):
         o = 100.0 + 10 * k
-        ev = _feed(eng, k, o, o + 6.0, o, o + 5.0)   # bullish, low=o, high=o+6, close=o+5
+        ev = _feed(eng, k, o, o + 6.0, o, o + 5.0)  # bullish, low=o, high=o+6, close=o+5
     # Gaps formed at bars 2,3,4. With cap 2, bar 4's formation evicts the bar-2 gap.
     assert len(ev.active) == 2
     assert [g.born_index for g in ev.active] == [3, 4]
@@ -209,14 +212,15 @@ def test_oldest_gap_evicted_past_max_count():
 
 # ── size threshold (% of price) ──
 
+
 def test_threshold_rejects_small_gap():
     # A tiny 0.04-wide gap on ~100 price = 0.04% < a 0.1% floor -> rejected. (Default threshold is now
     # 0.0 = no floor, so this passes an explicit 0.1 like the Pine's 15m+ setting.)
     eng = FairValueGapEngine(threshold_pct=0.1)
     bars = [
         (0, 99.90, 100.00, 99.80, 99.95),
-        (1, 100.05, 100.10, 100.02, 100.08),   # middle close 100.08 > bar0 high 100.00
-        (2, 100.06, 100.12, 100.04, 100.10),   # low 100.04 > bar0 high 100.00, gap = 0.04
+        (1, 100.05, 100.10, 100.02, 100.08),  # middle close 100.08 > bar0 high 100.00
+        (2, 100.06, 100.12, 100.04, 100.10),  # low 100.04 > bar0 high 100.00, gap = 0.04
     ]
     ev = _run(eng, bars)
     assert ev.formed == []
@@ -230,6 +234,7 @@ def test_custom_threshold_rejects_and_allows():
 
 
 # ── EQ-exemption coupling (Pine eqExemptFvg) ──
+
 
 def _staircase(eng, n=5, eq_levels=None, eq_tol=0.0):
     """Ascending staircase (o=100,110,120,…) — bars 2..n-1 each form a bull gap."""

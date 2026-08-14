@@ -16,7 +16,6 @@ import subprocess
 
 import pytest
 from fastapi import HTTPException
-
 from routers import bots
 
 
@@ -33,6 +32,7 @@ def _run(monkeypatch, result: _Result):
 
 # ── The distinction ───────────────────────────────────────────────────────────
 
+
 def test_empty_output_from_a_working_ssh_is_a_real_answer(monkeypatch):
     """No bot running ⇒ wmic prints nothing ⇒ empty string, exit 0. Not an error."""
     _run(monkeypatch, _Result(0, b""))
@@ -40,8 +40,10 @@ def test_empty_output_from_a_working_ssh_is_a_real_answer(monkeypatch):
 
 
 def test_ssh_that_could_not_connect_raises_instead_of_returning_empty(monkeypatch):
-    _run(monkeypatch, _Result(255, b"", b"ssh: connect to host forexvps port 22: "
-                                        b"Operation timed out"))
+    _run(
+        monkeypatch,
+        _Result(255, b"", b"ssh: connect to host forexvps port 22: Operation timed out"),
+    )
     with pytest.raises(bots.VpsUnreachable) as e:
         bots._ssh("wmic ...")
     assert "connect to host" in str(e.value)
@@ -65,6 +67,7 @@ def test_a_silent_255_still_raises_with_something_to_read(monkeypatch):
 
 # ── The codes that are NOT a connection failure ───────────────────────────────
 
+
 def test_a_remote_command_failing_is_ordinary_and_must_not_raise(monkeypatch):
     """`type` on a missing state file exits 1, and `wmic … call terminate` that matched
     nothing exits non-zero too. Half the commands in this module end in `2>nul` precisely
@@ -82,6 +85,7 @@ def test_a_255_that_printed_something_is_believed(monkeypatch):
 
 
 # ── What the page sees ────────────────────────────────────────────────────────
+
 
 def test_the_snapshot_endpoint_errors_rather_than_reporting_every_bot_stopped(monkeypatch):
     _run(monkeypatch, _Result(255, b"", b"ssh: Could not resolve hostname forexvps"))

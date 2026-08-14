@@ -4,19 +4,15 @@ System router — /system/health, /lab/progress, /lab/stop, /nt8/* log proxies.
 
 from __future__ import annotations
 
-import subprocess
 import time
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
-
-from models import SystemHealth, LabProgress
-from services import runner_dispatch, mt5_agent_client, agent_supervisor
-from services.backtest_runner import read_progress, clear_progress
-
-import config as cfg
+from models import LabProgress, SystemHealth
+from services import agent_supervisor, mt5_agent_client, runner_dispatch
+from services.backtest_runner import clear_progress, read_progress
 
 router = APIRouter(tags=["system"])
 
@@ -36,6 +32,7 @@ def _now_iso() -> str:
 
 
 # ── VPS reachability (NOT the tunnel — see below) ──────────────────────────────
+
 
 def _check_vps() -> bool:
     """Cached `ssh forexvps echo ok`.
@@ -58,6 +55,7 @@ def _check_vps() -> bool:
 
 
 # ── Health aggregation ─────────────────────────────────────────────────────────
+
 
 def _build_health() -> dict:
     tunnel_ok = agent_supervisor.tunnel_up()
@@ -107,7 +105,7 @@ def _build_health() -> dict:
     if vps_ok:
         try:
             nth = runner_dispatch.nt_health()
-            nt8_running    = bool(nth.get("nt8_running") or nth.get("nt_running"))
+            nt8_running = bool(nth.get("nt8_running") or nth.get("nt_running"))
             nt8_sa_visible = bool(nth.get("sa_visible"))
         except Exception:
             pass
@@ -126,24 +124,25 @@ def _build_health() -> dict:
             pass
 
     return {
-        "backend":              True,
-        "ssh_tunnel":           tunnel_ok,
-        "vps_reachable":        vps_ok_host,
-        "nt8_agent":            vps_ok,
-        "mt5_agent":            mt5_ok,
-        "mt5_connected":        mt5_connected,
-        "mt5_server":           mt5_server,
-        "mt5_account":          mt5_account,
-        "nt8_running":          nt8_running,
-        "nt8_sa_visible":       nt8_sa_visible,
-        "last_compile_ok":      last_compile_ok,
-        "last_compile_at":      last_compile_at,
-        "last_compile_errors":  last_compile_errors,
-        "checked_at":           _now_iso(),
+        "backend": True,
+        "ssh_tunnel": tunnel_ok,
+        "vps_reachable": vps_ok_host,
+        "nt8_agent": vps_ok,
+        "mt5_agent": mt5_ok,
+        "mt5_connected": mt5_connected,
+        "mt5_server": mt5_server,
+        "mt5_account": mt5_account,
+        "nt8_running": nt8_running,
+        "nt8_sa_visible": nt8_sa_visible,
+        "last_compile_ok": last_compile_ok,
+        "last_compile_at": last_compile_at,
+        "last_compile_errors": last_compile_errors,
+        "checked_at": _now_iso(),
     }
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/system/health", response_model=SystemHealth)
 def system_health() -> SystemHealth:
@@ -166,10 +165,7 @@ def lab_progress() -> LabProgress:
         raw["heartbeat_age_seconds"] = time.time() - updated_at if updated_at else 0.0
     except Exception:
         raw["heartbeat_age_seconds"] = 0.0
-    return LabProgress(**{
-        k: raw.get(k)
-        for k in LabProgress.model_fields
-    })
+    return LabProgress(**{k: raw.get(k) for k in LabProgress.model_fields})
 
 
 @router.post("/lab/stop")
@@ -238,6 +234,7 @@ def system_activity() -> dict:
     thirds of it strategy params, to decide whether to draw three dots.
     """
     from services import lab_db
+
     return lab_db.get_nav_activity()
 
 
@@ -249,6 +246,7 @@ def system_readiness() -> dict:
     without going back through the log.
     """
     from services import readiness
+
     return {"warnings": readiness.check(), "checked_at": _now_iso()}
 
 

@@ -16,7 +16,15 @@ export function yearsAgo(n: number): string {
 }
 
 /** Small pill toggle — also used for the bar-size presets, hence exported. */
-export function PresetBtn({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
+export function PresetBtn({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active?: boolean
+  onClick: () => void
+}) {
   return (
     <button
       type="button"
@@ -32,10 +40,16 @@ export function PresetBtn({ label, active, onClick }: { label: string; active?: 
   )
 }
 
-const INPUT_CLS = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
-const DATE_CLS  = `${INPUT_CLS} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
+const INPUT_CLS =
+  'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
+const DATE_CLS = `${INPUT_CLS} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
 
-export function PeriodPicker({ start, end, onChange, limit }: {
+export function PeriodPicker({
+  start,
+  end,
+  onChange,
+  limit,
+}: {
   start: string
   end: string
   /** Fired for either input and for a preset (which sets both at once). */
@@ -55,14 +69,14 @@ export function PeriodPicker({ start, end, onChange, limit }: {
   const presets = useMemo(() => {
     const clamp = (d: string) => (floor && d < floor ? floor : d)
     return [
-      { label: '1Y',  start: clamp(yearsAgo(1)), end: todayStr },
-      { label: '3Y',  start: clamp(yearsAgo(3)), end: todayStr },
-      { label: '5Y',  start: clamp(yearsAgo(5)), end: todayStr },
+      { label: '1Y', start: clamp(yearsAgo(1)), end: todayStr },
+      { label: '3Y', start: clamp(yearsAgo(3)), end: todayStr },
+      { label: '5Y', start: clamp(yearsAgo(5)), end: todayStr },
       { label: 'All', start: floor ?? '2019-01-01', end: todayStr },
     ]
   }, [todayStr, floor])
 
-  const activePreset = presets.find(p => p.start === start && p.end === end)?.label ?? null
+  const activePreset = presets.find((p) => p.start === start && p.end === end)?.label ?? null
   const beforeFloor = !!(floor && start && start < floor)
 
   return (
@@ -73,7 +87,7 @@ export function PeriodPicker({ start, end, onChange, limit }: {
           value={start}
           min={floor ?? undefined}
           max={todayStr}
-          onChange={e => onChange(e.target.value, end)}
+          onChange={(e) => onChange(e.target.value, end)}
           className={`${DATE_CLS} ${beforeFloor ? 'border-neg-text/60' : ''}`}
         />
         <span className="text-text-tertiary text-center text-[12px]">→</span>
@@ -82,7 +96,7 @@ export function PeriodPicker({ start, end, onChange, limit }: {
           value={end}
           min={floor ?? undefined}
           max={todayStr}
-          onChange={e => onChange(start, e.target.value)}
+          onChange={(e) => onChange(start, e.target.value)}
           className={DATE_CLS}
         />
       </div>
@@ -111,7 +125,7 @@ export function PeriodPicker({ start, end, onChange, limit }: {
         </p>
       )}
       <div className="flex gap-2">
-        {presets.map(p => (
+        {presets.map((p) => (
           <PresetBtn
             key={p.label}
             label={p.label}

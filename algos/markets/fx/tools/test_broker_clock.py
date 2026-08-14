@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from broker_clock import STD_OFFSET, DST_OFFSET, to_utc, utc_offset_hours  # noqa: E402
+from broker_clock import DST_OFFSET, STD_OFFSET, to_utc, utc_offset_hours  # noqa: E402
 
 
 def _dt(y, mo, d, h=0, mi=0) -> datetime.datetime:
@@ -23,6 +23,7 @@ def _dt(y, mo, d, h=0, mi=0) -> datetime.datetime:
 
 
 # ── the offset rule, on UTC instants ──────────────────────────────────────────
+
 
 def test_winter_is_standard_offset():
     assert utc_offset_hours(_dt(2026, 1, 15, 12)) == STD_OFFSET == 2
@@ -51,8 +52,8 @@ def test_the_rule_is_us_not_eu():
     """The measured evidence, pinned (compare_feeds.py, 2026-07-16): the broker was on +2h at
     2026-02-17 and +3h at 2026-03-13. EU summer time starts 2026-03-29 — it cannot produce +3h on
     2026-03-13, which is what rules EU out. Reverting this file to EU rules fails HERE."""
-    assert utc_offset_hours(_dt(2026, 2, 17, 12)) == STD_OFFSET     # +2h, measured
-    assert utc_offset_hours(_dt(2026, 3, 13, 12)) == DST_OFFSET     # +3h, measured
+    assert utc_offset_hours(_dt(2026, 2, 17, 12)) == STD_OFFSET  # +2h, measured
+    assert utc_offset_hours(_dt(2026, 3, 13, 12)) == DST_OFFSET  # +3h, measured
     # ...and the EU transition date must still be inside summer, not the start of it.
     assert utc_offset_hours(_dt(2026, 3, 29, 12)) == DST_OFFSET
 
@@ -66,6 +67,7 @@ def test_march_1st_sunday_is_not_the_transition():
 
 
 # ── the conversion ────────────────────────────────────────────────────────────
+
 
 def test_winter_bar_shifts_back_two_hours():
     assert to_utc(_dt(2026, 1, 15, 14, 0)) == _dt(2026, 1, 15, 12, 0)
@@ -97,7 +99,7 @@ def test_november_fold_returns_the_earlier_instant():
     """08:30 broker time happens twice on the November transition day (09:00 EEST-equivalent rolls
     back to 08:00). We return the first (DST) reading — the same convention as fold=0."""
     got = to_utc(_dt(2026, 11, 1, 8, 30))
-    assert got == _dt(2026, 11, 1, 5, 30)      # DST reading, not 06:30
+    assert got == _dt(2026, 11, 1, 5, 30)  # DST reading, not 06:30
     assert utc_offset_hours(got) == DST_OFFSET
 
 
@@ -136,5 +138,6 @@ def test_epoch_reader_recovers_broker_wall_clock_fields():
     from broker_clock import broker_naive_from_epoch
 
     # 1_700_000_000 == 2023-11-14 22:13:20 UTC as wall-clock fields.
-    assert broker_naive_from_epoch(1_700_000_000) == _dt(2023, 11, 14, 22, 13) + \
-        datetime.timedelta(seconds=20)
+    assert broker_naive_from_epoch(1_700_000_000) == _dt(2023, 11, 14, 22, 13) + datetime.timedelta(
+        seconds=20
+    )

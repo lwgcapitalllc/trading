@@ -28,8 +28,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 _REPO = Path(__file__).resolve().parent.parent.parent
 # `bots/` for the module itself, `shared/` for the `bot_state` it imports bare — the coordinator
 # runs from `C:\trading\algos\bots` on the VPS, where both are already on the path.
@@ -48,9 +46,14 @@ def test_the_coordinator_does_not_mistake_itself_for_the_bot(monkeypatch):
     """🔴 THE regression. In single-bot mode the coordinator's OWN commandline carries the very
     key it is searching for, so a bare substring match makes every bot permanently "running" and
     the Start button a no-op that reports success."""
-    monkeypatch.setattr(sc.subprocess, "run", _wmic(
-        "CommandLine\n"
-        "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"))
+    monkeypatch.setattr(
+        sc.subprocess,
+        "run",
+        _wmic(
+            "CommandLine\n"
+            "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"
+        ),
+    )
 
     assert sc.bot_is_running("mpc_sos_fade_demo") is False
 
@@ -58,9 +61,14 @@ def test_the_coordinator_does_not_mistake_itself_for_the_bot(monkeypatch):
 def test_a_real_runner_process_is_still_detected(monkeypatch):
     """The other direction, and the one that matters more: a second copy of a live bot is two
     positions on one account, sized off the same setup, from a state neither can see."""
-    monkeypatch.setattr(sc.subprocess, "run", _wmic(
-        "CommandLine\n"
-        "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo --live\n"))
+    monkeypatch.setattr(
+        sc.subprocess,
+        "run",
+        _wmic(
+            "CommandLine\n"
+            "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo --live\n"
+        ),
+    )
 
     assert sc.bot_is_running("mpc_sos_fade_demo") is True
 
@@ -68,9 +76,14 @@ def test_a_real_runner_process_is_still_detected(monkeypatch):
 def test_another_bots_runner_is_not_this_bot(monkeypatch):
     """Every live bot IS `runner.py`, so the script names the fleet and only the key names the
     bot. Requiring both must not have collapsed that into "any runner will do"."""
-    monkeypatch.setattr(sc.subprocess, "run", _wmic(
-        "CommandLine\n"
-        "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_bleg_demo --live\n"))
+    monkeypatch.setattr(
+        sc.subprocess,
+        "run",
+        _wmic(
+            "CommandLine\n"
+            "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_bleg_demo --live\n"
+        ),
+    )
 
     assert sc.bot_is_running("mpc_sos_fade_demo") is False
 
@@ -78,16 +91,22 @@ def test_another_bots_runner_is_not_this_bot(monkeypatch):
 def test_the_pair_is_required_not_either_half(monkeypatch):
     """A line holding the right script and a line holding the right key are not, between them, a
     running bot. The match is per LINE."""
-    monkeypatch.setattr(sc.subprocess, "run", _wmic(
-        "CommandLine\n"
-        "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot\n"
-        "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"))
+    monkeypatch.setattr(
+        sc.subprocess,
+        "run",
+        _wmic(
+            "CommandLine\n"
+            "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot\n"
+            "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"
+        ),
+    )
 
     assert sc.bot_is_running("mpc_sos_fade_demo") is False
 
 
-def test_the_runners_own_guard_does_not_match_the_coordinator_that_launched_it(monkeypatch,
-                                                                              tmp_path):
+def test_the_runners_own_guard_does_not_match_the_coordinator_that_launched_it(
+    monkeypatch, tmp_path
+):
     """🔴 The SAME defect one level down, found by reading rather than by it biting.
 
     `runner.already_running()` excluded its own PID but matched on `--bot <key>` alone — and
@@ -99,26 +118,39 @@ def test_the_runners_own_guard_does_not_match_the_coordinator_that_launched_it(m
     so both stay.
     """
     import json
-    import runner as rn
-    import live_config
 
-    body = {"bot_key": "smoke", "mt5_path": "C:/MT5/x.exe", "account": 1,
-            "server": "Demo", "symbol": "XAUUSD", "magic": 1}
+    import live_config
+    import runner as rn
+
+    body = {
+        "bot_key": "smoke",
+        "mt5_path": "C:/MT5/x.exe",
+        "account": 1,
+        "server": "Demo",
+        "symbol": "XAUUSD",
+        "magic": 1,
+    }
     (tmp_path / "smoke").mkdir(parents=True)
     (tmp_path / "smoke" / "config.json").write_text(json.dumps(body))
     monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
     r = rn.LiveRunner.__new__(rn.LiveRunner)
     r.cfg = live_config.load("smoke")
-    r.log = type("L", (), {"warning": staticmethod(lambda *a: None),
-                           "error": staticmethod(lambda *a: None)})()
+    r.log = type(
+        "L", (), {"warning": staticmethod(lambda *a: None), "error": staticmethod(lambda *a: None)}
+    )()
 
     # `already_running` imports subprocess inside the method, so the module itself is the seam.
     monkeypatch.setattr(
-        subprocess, "run",
+        subprocess,
+        "run",
         lambda *a, **k: subprocess.CompletedProcess(
-            a, 0, stdout="CommandLine  ProcessId\n"
-                         "python.exe C:\\t\\algos\\bots\\startup_coordinator.py --bot smoke  4242\n",
-            stderr=""))
+            a,
+            0,
+            stdout="CommandLine  ProcessId\n"
+            "python.exe C:\\t\\algos\\bots\\startup_coordinator.py --bot smoke  4242\n",
+            stderr="",
+        ),
+    )
 
     assert r.already_running() is False, "the runner refused to start because of its own launcher"
 
@@ -127,6 +159,7 @@ def test_an_unreadable_process_list_is_treated_as_running(monkeypatch):
     """⚠ Deliberately the opposite default from `telegram_is_running`, and the asymmetry is the
     design: neither answer is safe in the abstract, each is safe against the failure ITS path
     causes. A duplicate bot is two positions; an unstarted Telegram is silence."""
+
     def _boom(*a, **k):
         raise OSError("wmic missing")
 
@@ -173,9 +206,17 @@ def test_a_new_days_log_is_read_from_the_start_not_from_yesterdays_size(tmp_path
     # The bot starts and opens today's file.
     (tmp_path / "bot-2026-08-05.log").write_text("Connected | #700107749\n")
 
-    assert sc.wait_for_connection(str(tmp_path / "bot.log"), "Connected | #",
-                                  size_before, 5, "bot",
-                                  baseline_path=baseline_path) is True
+    assert (
+        sc.wait_for_connection(
+            str(tmp_path / "bot.log"),
+            "Connected | #",
+            size_before,
+            5,
+            "bot",
+            baseline_path=baseline_path,
+        )
+        is True
+    )
 
 
 def test_the_baseline_still_suppresses_a_previous_runs_line_in_the_same_file(tmp_path):
@@ -185,9 +226,17 @@ def test_the_baseline_still_suppresses_a_previous_runs_line_in_the_same_file(tmp
     p.write_text("Connected | #700107749\n")
     baseline_path, size_before = sc.log_baseline(str(tmp_path / "bot.log"))
 
-    assert sc.wait_for_connection(str(tmp_path / "bot.log"), "Connected | #",
-                                  size_before, 1, "bot",
-                                  baseline_path=baseline_path) is False
+    assert (
+        sc.wait_for_connection(
+            str(tmp_path / "bot.log"),
+            "Connected | #",
+            size_before,
+            1,
+            "bot",
+            baseline_path=baseline_path,
+        )
+        is False
+    )
 
 
 # ── the bench: a bot with no account must not be launched ─────────────────────
@@ -199,6 +248,7 @@ def test_the_baseline_still_suppresses_a_previous_runs_line_in_the_same_file(tmp
 
 def _instance(tmp_path, monkeypatch, key, body):
     import json
+
     d = tmp_path / "markets" / "fx" / "instances" / key
     d.mkdir(parents=True, exist_ok=True)
     (d / "config.json").write_text(json.dumps(body))
@@ -245,6 +295,7 @@ def test_every_bot_in_the_startup_sequence_has_an_instance_config():
     """The two lists are edited separately and a bot listed here with no config would be
     launched, fail on the missing file, and be reported `offline` by the boot task."""
     from pathlib import Path
+
     algos = Path(__file__).resolve().parent.parent
     for entry in sc.STARTUP_SEQUENCE:
         key = entry[0]

@@ -28,8 +28,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import database as db
 from run_logger import get_logger
 
-CONFIG_PATH    = Path(__file__).parent / "config" / "config.json"
-TEMPLATES_DIR  = Path(__file__).parent / "config" / "templates"
+CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
+TEMPLATES_DIR = Path(__file__).parent / "config" / "templates"
 VALID_PROFILES = ["bot", "human"]
 
 _log = get_logger("main")
@@ -71,7 +71,9 @@ def run_full_pipeline(
 
     # ── Stage 1: Hyperliquid ─────────────────────────────────────────────────
     if 1 in stages:
-        from run_stage1 import run_stage1, load_config as load_stage1_config
+        from run_stage1 import load_config as load_stage1_config
+        from run_stage1 import run_stage1
+
         if all_profiles:
             _banner("Stage 1 — Pass 1/2: Default profile (consistent traders)")
             results[1] = run_stage1(config)
@@ -89,6 +91,7 @@ def run_full_pipeline(
     if 2 in stages:
         _banner("Stage 2 — Validate & Calibrate")
         from run_stage2 import run_stage2
+
         run_stage2(config)
 
         if not skip_stage2:
@@ -106,6 +109,7 @@ def run_full_pipeline(
     if 3 in stages:
         _banner("Stage 3 — Solana & Ethereum On-Chain")
         from run_stage3 import run_stage3
+
         results[3] = run_stage3(config)
         _log.info(f"Stage 3 complete — {len(results[3])} on-chain profiles built")
 
@@ -113,6 +117,7 @@ def run_full_pipeline(
     if 4 in stages:
         _banner("Stage 4 — Forex (Myfxbook & FX Blue)")
         from run_stage4 import run_stage4
+
         results[4] = run_stage4(config)
         _log.info(f"Stage 4 complete — {len(results[4])} forex profiles built")
 
@@ -120,6 +125,7 @@ def run_full_pipeline(
     if 5 in stages:
         _banner("Stage 5 — Unified Candidate Pool & Final Report")
         from run_stage5 import run_stage5
+
         results[5] = run_stage5(config)
         _log.info("Stage 5 complete — final report generated")
 
@@ -132,38 +138,39 @@ def run_full_pipeline(
     for run in run_log[:5]:
         duration = (run["completed_at"] or 0) - run["started_at"]
         _log.info(
-            f"  {run['stage']:20s} | qualified={run['total_qualified']:>4} | "
-            f"elapsed={duration}s"
+            f"  {run['stage']:20s} | qualified={run['total_qualified']:>4} | elapsed={duration}s"
         )
 
     return results
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Smart Money Replication System — Full Pipeline"
+    parser = argparse.ArgumentParser(description="Smart Money Replication System — Full Pipeline")
+    parser.add_argument(
+        "--stages",
+        nargs="+",
+        type=int,
+        default=[1, 2, 3, 4, 5],
+        help="Which stages to run (e.g. --stages 1 2 3)",
     )
     parser.add_argument(
-        "--stages", nargs="+", type=int, default=[1, 2, 3, 4, 5],
-        help="Which stages to run (e.g. --stages 1 2 3)"
-    )
-    parser.add_argument(
-        "--profile", choices=VALID_PROFILES, default=None,
+        "--profile",
+        choices=VALID_PROFILES,
+        default=None,
         help="Config profile: 'bot' (rapid growth, algo) or 'human' (conservative). "
-             "Omit to use config/config.json.",
+        "Omit to use config/config.json.",
     )
     parser.add_argument(
-        "--skip-stage2", action="store_true",
-        help="Skip manual validation pause after Stage 2"
+        "--skip-stage2", action="store_true", help="Skip manual validation pause after Stage 2"
     )
     parser.add_argument(
-        "--all-profiles", action="store_true",
+        "--all-profiles",
+        action="store_true",
         help="Run Stage 1 twice: default config + bot profile. Catches both consistent "
-             "long-term traders AND short-burst high-ROI bots. Both write to the same DB.",
+        "long-term traders AND short-burst high-ROI bots. Both write to the same DB.",
     )
     parser.add_argument(
-        "--win-rate", type=float, default=None,
-        help="Override min_win_rate in config (e.g. 0.75)"
+        "--win-rate", type=float, default=None, help="Override min_win_rate in config (e.g. 0.75)"
     )
     args = parser.parse_args()
 

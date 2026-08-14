@@ -41,8 +41,13 @@ def _tf_minutes(bar_type: str | None, bar_value: int | None) -> int:
     return max(1, bv)
 
 
-def limits_for(instrument: str, bar_type: str = "Minute", bar_value: int = 15,
-               runner: str = "python", refresh: bool = False) -> Optional[dict]:
+def limits_for(
+    instrument: str,
+    bar_type: str = "Minute",
+    bar_value: int = 15,
+    runner: str = "python",
+    refresh: bool = False,
+) -> Optional[dict]:
     """The MEASURED history limit for this run shape, or None when unbounded/unknown.
 
     The floor is probed off the live terminal and cached per broker, so switching the
@@ -72,9 +77,14 @@ def limits_for(instrument: str, bar_type: str = "Minute", bar_value: int = 15,
     }
 
 
-def validate_window(instrument: str, start_date: str, end_date: str,
-                    bar_type: str = "Minute", bar_value: int = 15,
-                    runner: str = "python") -> None:
+def validate_window(
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    bar_type: str = "Minute",
+    bar_value: int = 15,
+    runner: str = "python",
+) -> None:
     """Raise `ValueError` if the window starts before the broker's real history.
 
     Routers turn this into a 400. Deliberately a plain `ValueError` so this module stays

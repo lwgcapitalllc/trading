@@ -4,7 +4,6 @@ from datetime import date, timedelta
 
 import numpy as np
 import pytest
-
 from services.metrics import (
     SHARPE_LOW_SAMPLE_DAYS,
     active_day_count,
@@ -27,6 +26,7 @@ def _weekdays(start: str, n: int) -> list[date]:
 
 # ── zero_filled_daily_values ──────────────────────────────────────────────────
 
+
 def test_zero_fill_inserts_flat_weekdays_between_active_days():
     # Mon 2026-01-05 and Fri 2026-01-09 traded; Tue/Wed/Thu were flat but real.
     pnl = [{"date": "2026-01-05", "pnl": 100.0}, {"date": "2026-01-09", "pnl": 50.0}]
@@ -41,9 +41,11 @@ def test_zero_fill_skips_weekends():
 
 def test_zero_fill_keeps_a_weekend_day_that_actually_traded():
     # A Sunday-open forex fill is a real observation — never silently dropped.
-    pnl = [{"date": "2026-01-09", "pnl": 10.0},   # Fri
-           {"date": "2026-01-11", "pnl": 5.0},    # Sun
-           {"date": "2026-01-12", "pnl": 20.0}]   # Mon
+    pnl = [
+        {"date": "2026-01-09", "pnl": 10.0},  # Fri
+        {"date": "2026-01-11", "pnl": 5.0},  # Sun
+        {"date": "2026-01-12", "pnl": 20.0},
+    ]  # Mon
     assert zero_filled_daily_values(pnl) == [10.0, 5.0, 20.0]
 
 
@@ -62,12 +64,16 @@ def test_zero_fill_is_idempotent():
 
 
 def test_zero_fill_sums_duplicate_dates():
-    pnl = [{"date": "2026-01-05", "pnl": 10.0}, {"date": "2026-01-05", "pnl": 5.0},
-           {"date": "2026-01-06", "pnl": 1.0}]
+    pnl = [
+        {"date": "2026-01-05", "pnl": 10.0},
+        {"date": "2026-01-05", "pnl": 5.0},
+        {"date": "2026-01-06", "pnl": 1.0},
+    ]
     assert zero_filled_daily_values(pnl) == [15.0, 1.0]
 
 
 # ── the actual bug ────────────────────────────────────────────────────────────
+
 
 def test_sharpe_counts_flat_days_and_is_far_below_the_active_only_value():
     """A strategy flat ~90% of the time must not be scored on its active days alone.
@@ -76,7 +82,7 @@ def test_sharpe_counts_flat_days_and_is_far_below_the_active_only_value():
     when only active days were counted; the honest value is ~2.
     """
     span = _weekdays("2025-09-01", 225)
-    active = span[::10]           # 23 active days, evenly spread
+    active = span[::10]  # 23 active days, evenly spread
     pnl = [{"date": d.isoformat(), "pnl": 500.0} for d in active]
 
     active_only = daily_sharpe_from_values([p["pnl"] for p in pnl])
@@ -102,10 +108,13 @@ def test_sharpe_of_a_single_flat_span_is_zero_not_a_divide_error():
 
 # ── active_day_count / the low-sample guard ───────────────────────────────────
 
+
 def test_active_day_count_ignores_flat_days():
-    pnl = [{"date": "2026-01-05", "pnl": 100.0},
-           {"date": "2026-01-06", "pnl": 0.0},
-           {"date": "2026-01-07", "pnl": -20.0}]
+    pnl = [
+        {"date": "2026-01-05", "pnl": 100.0},
+        {"date": "2026-01-06", "pnl": 0.0},
+        {"date": "2026-01-07", "pnl": -20.0},
+    ]
     assert active_day_count(pnl) == 2
 
 
@@ -121,7 +130,7 @@ def test_low_sample_flag_reads_active_days_not_the_zero_filled_span():
     kpis = apply_canonical_sharpe({"sharpe": 9.9}, pnl)
 
     assert active_day_count(pnl) == 3
-    assert len(zero_filled_daily_values(pnl)) > SHARPE_LOW_SAMPLE_DAYS   # the trap
+    assert len(zero_filled_daily_values(pnl)) > SHARPE_LOW_SAMPLE_DAYS  # the trap
     assert kpis["sharpe_low_sample"] is True
 
 
@@ -134,6 +143,7 @@ def test_low_sample_flag_clear_when_enough_active_days():
 
 # ── apply_canonical_sharpe contract ───────────────────────────────────────────
 
+
 def test_apply_canonical_sharpe_moves_platform_value_and_replaces_sharpe():
     pnl = [{"date": "2026-01-05", "pnl": 100.0}, {"date": "2026-01-09", "pnl": 50.0}]
     kpis = apply_canonical_sharpe({"sharpe": 1.23}, pnl)
@@ -144,6 +154,7 @@ def test_apply_canonical_sharpe_moves_platform_value_and_replaces_sharpe():
 
 # ── backfill: platform_sharpe honesty ─────────────────────────────────────────
 
+
 def test_backfill_never_invents_a_platform_sharpe_for_python_runs(fresh_db, tmp_path):
     """A python run has no platform, so platform_sharpe must stay NULL.
 
@@ -153,15 +164,18 @@ def test_backfill_never_invents_a_platform_sharpe_for_python_runs(fresh_db, tmp_
     would stamp our value as the platform's, inventing a reference point that never existed.
     """
     import json
+
     import scripts.backfill_metrics as bf
     from services import lab_db
+
     from tests.conftest import _insert_strategy
 
     strategy_id = _insert_strategy(lab_db)
 
     daily = tmp_path / "daily.json"
-    daily.write_text(json.dumps([{"date": "2026-01-05", "pnl": 100.0},
-                                 {"date": "2026-01-09", "pnl": 50.0}]))
+    daily.write_text(
+        json.dumps([{"date": "2026-01-05", "pnl": 100.0}, {"date": "2026-01-09", "pnl": 50.0}])
+    )
 
     conn = lab_db._connect()
     for run_id, runner in (("py_run", "python"), ("mt5_run", "mt5")):
@@ -177,8 +191,12 @@ def test_backfill_never_invents_a_platform_sharpe_for_python_runs(fresh_db, tmp_
 
     bf.backfill(dry_run=False)
 
-    rows = {r["run_id"]: dict(r) for r in
-            conn.execute("SELECT run_id, sharpe, platform_sharpe FROM backtest_runs").fetchall()}
+    rows = {
+        r["run_id"]: dict(r)
+        for r in conn.execute(
+            "SELECT run_id, sharpe, platform_sharpe FROM backtest_runs"
+        ).fetchall()
+    }
 
     # python: our 7.8 is discarded, never relabelled as a platform value
     assert rows["py_run"]["platform_sharpe"] is None
@@ -187,8 +205,9 @@ def test_backfill_never_invents_a_platform_sharpe_for_python_runs(fresh_db, tmp_
     # both get the canonical zero-filled value
     for run_id in ("py_run", "mt5_run"):
         assert rows[run_id]["sharpe"] == pytest.approx(
-            daily_sharpe([{"date": "2026-01-05", "pnl": 100.0},
-                          {"date": "2026-01-09", "pnl": 50.0}])
+            daily_sharpe(
+                [{"date": "2026-01-05", "pnl": 100.0}, {"date": "2026-01-09", "pnl": 50.0}]
+            )
         )
 
 
@@ -241,8 +260,12 @@ def test_compounding_run_is_measured_in_returns_not_dollars():
 def test_unit_size_run_keeps_the_dollar_basis():
     # An NT8-shaped curve accumulates from 0, so there is no balance to compound against — its
     # dollars are already comparable across periods and must not be divided by a fiction.
-    rows = [("2021-01-15", 100.0), ("2021-07-15", 100.0),
-            ("2022-01-15", 100.0), ("2022-07-15", 100.0)]
+    rows = [
+        ("2021-01-15", 100.0),
+        ("2021-07-15", 100.0),
+        ("2022-01-15", 100.0),
+        ("2022-07-15", 100.0),
+    ]
     daily = [{"date": d, "pnl": p} for d, p in rows]
     pct, basis = profit_concentration_pct(daily, _curve(rows, base=0.0))
     assert basis == "dollars"
@@ -252,8 +275,7 @@ def test_unit_size_run_keeps_the_dollar_basis():
 def test_clustered_edge_still_reports_clustered():
     # The fix must not blunt the detector: profit earned only in the final quarter reads ~100%
     # on the return basis too.
-    rows = [("2021-02-15", 0.0), ("2021-08-15", 0.0), ("2022-02-15", 0.0),
-            ("2022-11-15", 4000.0)]
+    rows = [("2021-02-15", 0.0), ("2021-08-15", 0.0), ("2022-02-15", 0.0), ("2022-11-15", 4000.0)]
     daily = [{"date": d, "pnl": p} for d, p in rows]
     pct, basis = profit_concentration_pct(daily, _curve(rows, base=10_000.0))
     assert basis == "return"
@@ -272,7 +294,7 @@ def test_no_positive_profit_is_none_never_zero():
 # Each exists because a TRUE number was letting a reader conclude something false. The tests
 # below pin the conclusion each one restores, not just the arithmetic.
 
-from services.metrics import (                                    # noqa: E402
+from services.metrics import (  # noqa: E402
     max_drawdown_pct,
     scratch_count,
     trade_concentration_pct,
@@ -360,7 +382,9 @@ def test_all_three_weight_by_return_on_a_compounding_run():
     $1,000 on $10k, the second $10,000 on $100k. In dollars the second looks 10x the edge; as
     returns they are equal, so neither dominates the concentration. Same basis rule as
     profit_concentration_pct, and the same reason: dollars measure the compounding."""
-    curve = [{"equity": 11_000.0, "profit": 1_000.0},
-             {"equity": 100_000.0, "profit": 0.0},        # a deposit-shaped jump, no P&L
-             {"equity": 110_000.0, "profit": 10_000.0}]
+    curve = [
+        {"equity": 11_000.0, "profit": 1_000.0},
+        {"equity": 100_000.0, "profit": 0.0},  # a deposit-shaped jump, no P&L
+        {"equity": 110_000.0, "profit": 10_000.0},
+    ]
     assert trade_concentration_pct(curve, top_n=1) == pytest.approx(50.0)

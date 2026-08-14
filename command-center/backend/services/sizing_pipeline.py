@@ -21,8 +21,24 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from services.sizing_engine import (RawTrade, run_engine, EngineResult, MODE_CONSISTENT,
-                                    MODE_BULLET, MODE_MANUAL, MODES)
+from services.sizing_engine import (  # noqa: F401  -- see the re-export note below
+    MODE_BULLET,
+    MODE_CONSISTENT,
+    MODE_MANUAL,
+    MODES,
+    EngineResult,
+    RawTrade,
+    run_engine,
+)
+
+# ⚠ MODES / MODE_BULLET / MODE_MANUAL are UNUSED HERE ON PURPOSE — they are a RE-EXPORT.
+# `backtest_runner.py` reads them off this module (`sizing_pipeline.MODES`, `.MODE_MANUAL`,
+# `.MODE_CONSISTENT`) rather than importing sizing_engine itself, so deleting them here breaks
+# the sizing branch of `_handle_complete` with an AttributeError at RUN time, not import time.
+# 🔴 `ruff check --fix` DID exactly that on 2026-08-14 and only `test_sizing_pipeline.py` caught
+# it. F401's "unused" is per-MODULE and cannot see a `module.NAME` read in another file — the
+# `__all__`/`__init__.py` reasoning that covers a package's public API does not reach a plain
+# module like this one. Hence the noqa: it is load-bearing, not a lint silencer.
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 
@@ -49,7 +65,9 @@ def engine_result_to_kpis(result: EngineResult) -> dict:
     gross_loss = abs(sum(losses))
     # PF: undefined with no losses → use gross_win as a finite stand-in (0.0 if no wins either),
     # matching how a no-loss native run reports rather than emitting inf.
-    profit_factor = (gross_win / gross_loss) if gross_loss > 0 else (gross_win if gross_win else 0.0)
+    profit_factor = (
+        (gross_win / gross_loss) if gross_loss > 0 else (gross_win if gross_win else 0.0)
+    )
 
     # Max drawdown over the closed-trade equity walk (sized trades in index order).
     equity = 0.0
@@ -91,13 +109,15 @@ def engine_result_to_equity_curve(result: EngineResult) -> list[dict]:
     equity = 0.0
     for i, t in enumerate(taken, start=1):
         equity += t.net_pnl
-        curve.append({
-            "index": i,
-            "equity": round(equity, 2),
-            "date": t.day,
-            "direction": "Long" if t.direction > 0 else "Short",
-            "profit": round(t.net_pnl, 2),
-        })
+        curve.append(
+            {
+                "index": i,
+                "equity": round(equity, 2),
+                "date": t.day,
+                "direction": "Long" if t.direction > 0 else "Short",
+                "profit": round(t.net_pnl, 2),
+            }
+        )
     return curve
 
 
@@ -106,35 +126,70 @@ def is_micro_instrument(instrument: str) -> bool:
     return (instrument or "").upper().startswith("M")
 
 
-def _size(run_id: str, trade_records: list[dict], ruleset: dict, *,
-          mode: str, instrument: str, strategy: str,
-          manual_risk_pct: Optional[float] = None) -> EngineResult:
+def _size(
+    run_id: str,
+    trade_records: list[dict],
+    ruleset: dict,
+    *,
+    mode: str,
+    instrument: str,
+    strategy: str,
+    manual_risk_pct: Optional[float] = None,
+) -> EngineResult:
     """Build RawTrades from the export and run the pure engine — no persistence."""
     trades = [RawTrade.from_record(r) for r in trade_records]
     return run_engine(
-        trades, ruleset, is_micro=is_micro_instrument(instrument), mode=mode,
-        instrument=instrument, account_id=run_id, strategy=strategy,
-        ruleset_id=ruleset.get("id"), manual_risk_pct=manual_risk_pct)
+        trades,
+        ruleset,
+        is_micro=is_micro_instrument(instrument),
+        mode=mode,
+        instrument=instrument,
+        account_id=run_id,
+        strategy=strategy,
+        ruleset_id=ruleset.get("id"),
+        manual_risk_pct=manual_risk_pct,
+    )
 
 
-def run_sizing_engine(run_id: str, trade_records: list[dict], ruleset: dict, *,
-                      mode: str = MODE_CONSISTENT, instrument: str = "", strategy: str = "",
-                      results_dir: Optional[str | Path] = None,
-                      manual_risk_pct: Optional[float] = None) -> EngineResult:
+def run_sizing_engine(
+    run_id: str,
+    trade_records: list[dict],
+    ruleset: dict,
+    *,
+    mode: str = MODE_CONSISTENT,
+    instrument: str = "",
+    strategy: str = "",
+    results_dir: Optional[str | Path] = None,
+    manual_risk_pct: Optional[float] = None,
+) -> EngineResult:
     """Build RawTrades from the export, run the engine, persist artifacts, return the result.
 
     The caller then feeds ``result.daily_pnl`` to ``evaluator.evaluate_run`` for the verdict.
     """
-    result = _size(run_id, trade_records, ruleset, mode=mode,
-                   instrument=instrument, strategy=strategy, manual_risk_pct=manual_risk_pct)
+    result = _size(
+        run_id,
+        trade_records,
+        ruleset,
+        mode=mode,
+        instrument=instrument,
+        strategy=strategy,
+        manual_risk_pct=manual_risk_pct,
+    )
     _persist(run_id, result, results_dir)
     return result
 
 
-def size_run_for_rulesets(run_id: str, trade_records: list[dict], rulesets: list[dict], *,
-                          mode: str = MODE_CONSISTENT, instrument: str = "", strategy: str = "",
-                          results_dir: Optional[str | Path] = None,
-                          manual_risk_pct: Optional[float] = None) -> dict:
+def size_run_for_rulesets(
+    run_id: str,
+    trade_records: list[dict],
+    rulesets: list[dict],
+    *,
+    mode: str = MODE_CONSISTENT,
+    instrument: str = "",
+    strategy: str = "",
+    results_dir: Optional[str | Path] = None,
+    manual_risk_pct: Optional[float] = None,
+) -> dict:
     """Size the run once PER ruleset and return grade-ready outputs for each.
 
     Each prop firm has its own contract ladder and drawdown floor, so the correct
@@ -153,12 +208,26 @@ def size_run_for_rulesets(run_id: str, trade_records: list[dict], rulesets: list
     for i, ruleset in enumerate(rulesets):
         rid = ruleset.get("id")
         if i == 0:
-            res = run_sizing_engine(run_id, trade_records, ruleset, mode=mode,
-                                    instrument=instrument, strategy=strategy,
-                                    results_dir=results_dir, manual_risk_pct=manual_risk_pct)
+            res = run_sizing_engine(
+                run_id,
+                trade_records,
+                ruleset,
+                mode=mode,
+                instrument=instrument,
+                strategy=strategy,
+                results_dir=results_dir,
+                manual_risk_pct=manual_risk_pct,
+            )
         else:
-            res = _size(run_id, trade_records, ruleset, mode=mode, manual_risk_pct=manual_risk_pct,
-                        instrument=instrument, strategy=strategy)
+            res = _size(
+                run_id,
+                trade_records,
+                ruleset,
+                mode=mode,
+                manual_risk_pct=manual_risk_pct,
+                instrument=instrument,
+                strategy=strategy,
+            )
         out[rid] = {"kpis": engine_result_to_kpis(res), "daily_pnl": res.daily_pnl, "result": res}
 
     _persist_ruleset_sizing(run_id, out, results_dir)
@@ -196,6 +265,6 @@ def _persist(run_id: str, result: EngineResult, results_dir: Optional[str | Path
     (run_dir / "decisions.jsonl").write_text(lines)
 
     (run_dir / "engine_timeline.json").write_text(
-        json.dumps([asdict(d) for d in result.timeline], default=str))
-    (run_dir / "engine_daily_pnl.json").write_text(
-        json.dumps(result.daily_pnl, default=str))
+        json.dumps([asdict(d) for d in result.timeline], default=str)
+    )
+    (run_dir / "engine_daily_pnl.json").write_text(json.dumps(result.daily_pnl, default=str))

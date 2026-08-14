@@ -38,6 +38,7 @@ docs/MPC_BOS_SPEC.md §4b and indicators/CLAUDE.md:
 
     usage:  python3 backtest/tools/trigger_edge.py
 """
+
 from __future__ import annotations
 
 import csv
@@ -66,7 +67,13 @@ HORIZON = 400
 
 @dataclass
 class Row:
-    i: int; ts: int; o: float; h: float; l: float; c: float; v: float
+    i: int
+    ts: int
+    o: float
+    h: float
+    l: float
+    c: float
+    v: float
 
 
 @dataclass
@@ -89,8 +96,17 @@ def load() -> list[Row]:
     with CACHE.open() as f:
         for rec in csv.DictReader(f):
             t = datetime.strptime(rec["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            rows.append(Row(0, int(t.timestamp() * 1000), float(rec["open"]), float(rec["high"]),
-                            float(rec["low"]), float(rec["close"]), float(rec["volume"] or 0)))
+            rows.append(
+                Row(
+                    0,
+                    int(t.timestamp() * 1000),
+                    float(rec["open"]),
+                    float(rec["high"]),
+                    float(rec["low"]),
+                    float(rec["close"]),
+                    float(rec["volume"] or 0),
+                )
+            )
     return rows
 
 
@@ -98,7 +114,7 @@ def drop_coarse(rows):
     start = 0
     for k in range(len(rows) - 1, 0, -1):
         if (rows[k].ts - rows[k - 1].ts) // 60000 > 15:
-            w = rows[max(0, k - 200):k]
+            w = rows[max(0, k - 200) : k]
             g = [(w[j].ts - w[j - 1].ts) // 60000 for j in range(1, len(w))]
             if g and statistics.median(g) > 15:
                 start = k
@@ -114,7 +130,8 @@ def atr(rows, length=14):
     for r in rows:
         tr = max(r.h - r.l, abs(r.h - prev), abs(r.l - prev))
         a = tr if not out else (a * (length - 1) + tr) / length
-        out.append(a); prev = r.c
+        out.append(a)
+        prev = r.c
     return out
 
 
@@ -135,10 +152,10 @@ def resolve(rows, entry_i, direction, entry, stop):
 def collect(rows):
     st, vw, a = StructureEngine(), VwapEngine(), atr(rows)
     evs = []
-    prev_side = 0        # sign of the PREVIOUS closed bar's close vs its VWAP
+    prev_side = 0  # sign of the PREVIOUS closed bar's close vs its VWAP
     trend = bos_count = 0
     cont_p = None
-    d_p = None          # (dir, sos_bar, extreme, maturity, ctr_bos, lost_vwap, side_taken)
+    d_p = None  # (dir, sos_bar, extreme, maturity, ctr_bos, lost_vwap, side_taken)
 
     for r in rows:
         e = st.update(Bar(r.i, r.o, r.h, r.l, r.c)).external
@@ -161,13 +178,37 @@ def collect(rows):
                         risk = abs(r.c - ext)
                         # variant A: no reclaim required — first pro-trend-side bar
                         if not side_done and risk > 1e-9:
-                            evs.append(Event("D_side", r.i, d, r.c, ext, mat,
-                                             risk / a[r.i], True, cbos, r.i - sos_b))
+                            evs.append(
+                                Event(
+                                    "D_side",
+                                    r.i,
+                                    d,
+                                    r.c,
+                                    ext,
+                                    mat,
+                                    risk / a[r.i],
+                                    True,
+                                    cbos,
+                                    r.i - sos_b,
+                                )
+                            )
                             side_done = True
                         # variant B: the shipped reclaim — must have LOST the line first
                         if lost and risk > 1e-9:
-                            evs.append(Event("D", r.i, d, r.c, ext, mat,
-                                             risk / a[r.i], True, cbos, r.i - sos_b))
+                            evs.append(
+                                Event(
+                                    "D",
+                                    r.i,
+                                    d,
+                                    r.c,
+                                    ext,
+                                    mat,
+                                    risk / a[r.i],
+                                    True,
+                                    cbos,
+                                    r.i - sos_b,
+                                )
+                            )
                             d_p = None
                 if d_p is not None:
                     d_p = (d, sos_b, ext, mat, cbos, lost, side_done)
@@ -183,9 +224,21 @@ def collect(rows):
                 if (r.c < stop) if c == 1 else (r.c > stop):
                     cont_p = None
                 elif ((r.l <= zone) if c == 1 else (r.h >= zone)) and abs(zone - stop) > 1e-9:
-                    ok = prev_side == c      # known BEFORE this bar opened — no look-ahead
-                    evs.append(Event("CONT", r.i, c, zone, stop, mat, abs(zone - stop) / a[r.i],
-                                     ok, 0, r.i - armed))
+                    ok = prev_side == c  # known BEFORE this bar opened — no look-ahead
+                    evs.append(
+                        Event(
+                            "CONT",
+                            r.i,
+                            c,
+                            zone,
+                            stop,
+                            mat,
+                            abs(zone - stop) / a[r.i],
+                            ok,
+                            0,
+                            r.i - armed,
+                        )
+                    )
                     cont_p = None
 
         if e.bull_sos or e.bear_sos:
@@ -223,8 +276,18 @@ def control(rows, direction, risk_atr, n=12000, seed=7):
         i = rnd.randrange(200, len(rows) - HORIZON - 1)
         entry = rows[i].c
         stop = entry - direction * risk_atr * a[i]
-        out.append(Event("CTRL", i, direction, entry, stop, 0, risk_atr,
-                         outcome=resolve(rows, i, direction, entry, stop)))
+        out.append(
+            Event(
+                "CTRL",
+                i,
+                direction,
+                entry,
+                stop,
+                0,
+                risk_atr,
+                outcome=resolve(rows, i, direction, entry, stop),
+            )
+        )
     _CTRL_CACHE[key] = out
     return out
 
@@ -232,7 +295,8 @@ def control(rows, direction, risk_atr, n=12000, seed=7):
 def line(label, evs, rows=None):
     n = len(evs)
     if not n:
-        print(f"{label:<40} n=0"); return
+        print(f"{label:<40} n=0")
+        return
     w = sum(1 for e in evs if e.outcome == "win")
     l = sum(1 for e in evs if e.outcome == "loss")
     dec = w + l
@@ -244,22 +308,28 @@ def line(label, evs, rows=None):
     if rows is not None and dec:
         # matched control: same direction mix, same median stop distance
         longs = sum(1 for e in evs if e.direction == 1) / n
-        cl = control(rows, 1, med); cs = control(rows, -1, med)
-        cwr = (longs * (sum(1 for e in cl if e.outcome == "win") /
-                        max(1, sum(1 for e in cl if e.outcome in ("win", "loss"))))
-               + (1 - longs) * (sum(1 for e in cs if e.outcome == "win") /
-                                max(1, sum(1 for e in cs if e.outcome in ("win", "loss")))))
+        cl = control(rows, 1, med)
+        cs = control(rows, -1, med)
+        cwr = longs * (
+            sum(1 for e in cl if e.outcome == "win")
+            / max(1, sum(1 for e in cl if e.outcome in ("win", "loss")))
+        ) + (1 - longs) * (
+            sum(1 for e in cs if e.outcome == "win")
+            / max(1, sum(1 for e in cs if e.outcome in ("win", "loss")))
+        )
         z = (wr - cwr) / se if se else 0.0
-        edge = f"  ctrl={cwr:>5.1%}  edge={wr-cwr:>+6.1%} ({z:>+4.1f}σ)"
+        edge = f"  ctrl={cwr:>5.1%}  edge={wr - cwr:>+6.1%} ({z:>+4.1f}σ)"
     print(f"{label:<40} n={n:>5}  WR={wr:>6.1%}  expR={exp:>+6.3f}  risk={med:>4.2f}ATR{edge}")
 
 
 if __name__ == "__main__":
     rows = drop_coarse(load())
-    print(f"{len(rows)} true-M15 bars, "
-          f"{datetime.fromtimestamp(rows[0].ts/1000, timezone.utc):%Y-%m-%d} -> "
-          f"{datetime.fromtimestamp(rows[-1].ts/1000, timezone.utc):%Y-%m-%d}")
-    print(f"scored at +{RR_TARGET}R before -1R; breakeven WR = {1/(1+RR_TARGET):.1%}\n")
+    print(
+        f"{len(rows)} true-M15 bars, "
+        f"{datetime.fromtimestamp(rows[0].ts / 1000, timezone.utc):%Y-%m-%d} -> "
+        f"{datetime.fromtimestamp(rows[-1].ts / 1000, timezone.utc):%Y-%m-%d}"
+    )
+    print(f"scored at +{RR_TARGET}R before -1R; breakeven WR = {1 / (1 + RR_TARGET):.1%}\n")
 
     evs = collect(rows)
     cont = [e for e in evs if e.kind == "CONT"]
@@ -297,12 +367,16 @@ if __name__ == "__main__":
 
     print("\n── CONT: VWAP filter AND maturity together ──")
     for lo, hi in ((1, 2), (3, 99)):
-        line(f"CONT  {lo}-{hi} BOS + VWAP ok",
-             [e for e in cont if lo <= e.maturity <= hi and e.vwap_ok], rows)
+        line(
+            f"CONT  {lo}-{hi} BOS + VWAP ok",
+            [e for e in cont if lo <= e.maturity <= hi and e.vwap_ok],
+            rows,
+        )
 
     # ---------------- robustness: is the edge spread across time, or one lucky year?
     print("\n── CONT+VWAP by period (an edge living in one year is a curve fit) ──")
     import collections
+
     yrs = collections.defaultdict(list)
     for e in [x for x in cont if x.vwap_ok]:
         yrs[datetime.fromtimestamp(rows[e.entry_i].ts / 1000, timezone.utc).year].append(e)
@@ -314,14 +388,40 @@ if __name__ == "__main__":
     for rr in (1.0, 1.5, 2.0, 3.0, 4.0):
         g["RR_TARGET"] = rr
         _CTRL_CACHE.clear()
-        sub = [Event(e.kind, e.entry_i, e.direction, e.entry, e.stop, e.maturity,
-                     e.risk_atr, e.vwap_ok, e.ctr_bos, e.bars_wait,
-                     resolve(rows, e.entry_i, e.direction, e.entry, e.stop))
-               for e in cont if e.vwap_ok]
-        dd = [Event(e.kind, e.entry_i, e.direction, e.entry, e.stop, e.maturity,
-                    e.risk_atr, e.vwap_ok, e.ctr_bos, e.bars_wait,
-                    resolve(rows, e.entry_i, e.direction, e.entry, e.stop)) for e in d]
-        print(f"  target +{rr}R  (breakeven WR {1/(1+rr):.1%})")
+        sub = [
+            Event(
+                e.kind,
+                e.entry_i,
+                e.direction,
+                e.entry,
+                e.stop,
+                e.maturity,
+                e.risk_atr,
+                e.vwap_ok,
+                e.ctr_bos,
+                e.bars_wait,
+                resolve(rows, e.entry_i, e.direction, e.entry, e.stop),
+            )
+            for e in cont
+            if e.vwap_ok
+        ]
+        dd = [
+            Event(
+                e.kind,
+                e.entry_i,
+                e.direction,
+                e.entry,
+                e.stop,
+                e.maturity,
+                e.risk_atr,
+                e.vwap_ok,
+                e.ctr_bos,
+                e.bars_wait,
+                resolve(rows, e.entry_i, e.direction, e.entry, e.stop),
+            )
+            for e in d
+        ]
+        print(f"  target +{rr}R  (breakeven WR {1 / (1 + rr):.1%})")
         line("    CONT+VWAP", sub, rows)
         line("    D", dd, rows)
     g["RR_TARGET"] = 2.0

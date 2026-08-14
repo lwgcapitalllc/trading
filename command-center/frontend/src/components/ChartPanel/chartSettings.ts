@@ -68,8 +68,7 @@ export interface SettingDef {
  *  next setting cannot reuse — the opposite of the point of this file. A control that fits a widget
  *  kind should be a widget kind, and adding a kind is cheaper than adding a block. */
 export type SectionBody =
-  | { items: SettingDef[]; custom?: never }
-  | { custom: CustomSection; items?: never }
+  { items: SettingDef[]; custom?: never } | { custom: CustomSection; items?: never }
 
 export type CustomSection = 'fibLevels'
 
@@ -95,16 +94,18 @@ export const SECTIONS: SettingSection[] = [
         key: 'candleMarkLabels',
         label: 'Name the pattern',
         kind: 'toggle',
-        help: 'Off = the candle is painted navy with no tag. A bar can carry more than one pattern'
-          + ' — one candle can satisfy several definitions at once — and the tag names all of them.',
+        help:
+          'Off = the candle is painted navy with no tag. A bar can carry more than one pattern' +
+          ' — one candle can satisfy several definitions at once — and the tag names all of them.',
       },
       {
         key: 'candleMarkDeepestOnly',
         label: 'Only the deepest',
         kind: 'toggle',
-        help: 'On = one candle per setup, the reversal at the furthest price went against it. Off ='
-          + ' every reversal candle from the entry to that turn, so you can see which levels'
-          + ' offered a better entry.',
+        help:
+          'On = one candle per setup, the reversal at the furthest price went against it. Off =' +
+          ' every reversal candle from the entry to that turn, so you can see which levels' +
+          ' offered a better entry.',
       },
     ],
   },

@@ -127,21 +127,21 @@ the value the parity harness uses.
 ```python
 from rsi_divergence import RsiDivergenceEngine
 
-div = RsiDivergenceEngine()   # rsi_len=14, pivot_len=5, oversold=25, overbought=75, valid_bars=100
+div = RsiDivergenceEngine()  # rsi_len=14, pivot_len=5, oversold=25, overbought=75, valid_bars=100
 
 # Each closed bar, in order:
 ev = div.update(bar.index, bar.high, bar.low, bar.close)
 
-for d in ev.detected:      # divergences confirmed THIS bar (event)
+for d in ev.detected:  # divergences confirmed THIS bar (event)
     d.is_bullish
-    d.pivot_bar, d.pivot_price, d.pivot_rsi    # the newly confirmed pivot (line's "now" end)
-    d.prev_bar,  d.prev_price,  d.prev_rsi     # the previous same-side pivot (other end)
-    d.id                                        # stable id
-ev.bull_active            # live bullish confluence (state) — mirrors Pine bullDivActive
-ev.bear_active            # live bearish confluence (state) — mirrors Pine bearDivActive
-ev.rsi                    # current RSI value (diagnostic; None during warm-up)
-ev.pivot_low_rsi          # RSI pivot low confirmed THIS bar (Pine divPlRsi), else None
-ev.pivot_high_rsi         # RSI pivot high confirmed THIS bar (Pine divPhRsi), else None
+    d.pivot_bar, d.pivot_price, d.pivot_rsi  # the newly confirmed pivot (line's "now" end)
+    d.prev_bar, d.prev_price, d.prev_rsi  # the previous same-side pivot (other end)
+    d.id  # stable id
+ev.bull_active  # live bullish confluence (state) — mirrors Pine bullDivActive
+ev.bear_active  # live bearish confluence (state) — mirrors Pine bearDivActive
+ev.rsi  # current RSI value (diagnostic; None during warm-up)
+ev.pivot_low_rsi  # RSI pivot low confirmed THIS bar (Pine divPlRsi), else None
+ev.pivot_high_rsi  # RSI pivot high confirmed THIS bar (Pine divPhRsi), else None
 ```
 
 ---

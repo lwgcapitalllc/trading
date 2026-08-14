@@ -77,8 +77,9 @@ def _replay(key: str, df, warmup: int, capital: float, profile):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
@@ -87,9 +88,14 @@ def main(argv=None) -> int:
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
     ap.add_argument("--tier", action="append", default=None)
-    ap.add_argument("--spread", action="append", default=None, metavar="TIER=VALUE",
-                    help="WHAT-IF spread for one tier, repeatable. Labelled 'stated'. Does not "
-                         "touch PROFILES — see cost_tiers.py for the same flag and why.")
+    ap.add_argument(
+        "--spread",
+        action="append",
+        default=None,
+        metavar="TIER=VALUE",
+        help="WHAT-IF spread for one tier, repeatable. Labelled 'stated'. Does not "
+        "touch PROFILES — see cost_tiers.py for the same flag and why.",
+    )
     args = ap.parse_args(argv)
 
     overrides: dict[str, float] = {}
@@ -104,8 +110,10 @@ def main(argv=None) -> int:
     tiers = args.tier or ["puprime_standard", "puprime_prime", "puprime_ecn"]
     refuses = [t for t in tiers if t not in overrides and not PROFILES[t].spread_measured]
     if refuses:
-        raise SystemExit(f"no measured spread for {refuses} — state one with --spread "
-                         f"{refuses[0]}=0.12, or measure it. See backtest/fills.py.")
+        raise SystemExit(
+            f"no measured spread for {refuses} — state one with --spread "
+            f"{refuses[0]}=0.12, or measure it. See backtest/fills.py."
+        )
 
     print(f"loading {args.symbol} {args.tf}m  {args.start} -> {args.end} ...", flush=True)
     df = BarSource().load(args.symbol, args.tf, args.start, args.end)
@@ -116,11 +124,16 @@ def main(argv=None) -> int:
 
     for label, profile in rows:
         trades, cfg = _replay(args.strategy, df, args.warmup, args.capital, profile)
-        be_buf = cfg.exec_be_buf_tk * 0.01          # ticks -> price on a 2-digit instrument
+        be_buf = cfg.exec_be_buf_tk * 0.01  # ticks -> price on a 2-digit instrument
 
-        spread = "-" if label == "free" else (
-            f"${overrides.get(label, PROFILES[label].spread):.2f}"
-            + ("*" if label in overrides else ""))
+        spread = (
+            "-"
+            if label == "free"
+            else (
+                f"${overrides.get(label, PROFILES[label].spread):.2f}"
+                + ("*" if label in overrides else "")
+            )
+        )
         comm = "-" if label == "free" else f"${PROFILES[label].commission_per_side_per_lot:.2f}"
         print(f"=== {label}   spread {spread}   commission {comm}/side/lot ===")
 
@@ -128,15 +141,19 @@ def main(argv=None) -> int:
         for t in trades:
             buckets[_classify(t, be_buf)].append(t)
 
-        print(f"  {'bucket':10s} {'n':>4s} {'mean R':>9s} {'total R':>9s} {'mean $':>10s}"
-              f" {'mean costs$':>12s}")
+        print(
+            f"  {'bucket':10s} {'n':>4s} {'mean R':>9s} {'total R':>9s} {'mean $':>10s}"
+            f" {'mean costs$':>12s}"
+        )
         for name in ("win", "scratch", "loss"):
             b = buckets[name]
             if not b:
                 continue
-            print(f"  {name:10s} {len(b):>4d} {sum(t.r for t in b)/len(b):>+9.3f} "
-                  f"{sum(t.r for t in b):>+9.2f} {sum(t.pnl_usd for t in b)/len(b):>+10.2f} "
-                  f"{sum(t.costs_usd for t in b)/len(b):>+12.2f}")
+            print(
+                f"  {name:10s} {len(b):>4d} {sum(t.r for t in b) / len(b):>+9.3f} "
+                f"{sum(t.r for t in b):>+9.2f} {sum(t.pnl_usd for t in b) / len(b):>+10.2f} "
+                f"{sum(t.costs_usd for t in b) / len(b):>+12.2f}"
+            )
 
         # The OTHER half of the same question: a full loss is supposed to be exactly -1.000R.
         # Anything past that is risk the account took that nobody authorised, and there are only
@@ -151,32 +168,42 @@ def main(argv=None) -> int:
             if over:
                 worst = min(over, key=lambda t: t.r)
                 excess = sum(-1.0 - t.r for t in over)
-                print(f"     worst {worst.r:+.4f}R  costs ${worst.costs_usd:+.2f} on "
-                      f"${worst.risk_usd:,.0f} risked   total excess {excess:+.3f}R")
+                print(
+                    f"     worst {worst.r:+.4f}R  costs ${worst.costs_usd:+.2f} on "
+                    f"${worst.risk_usd:,.0f} risked   total excess {excess:+.3f}R"
+                )
 
         # The whole question, and the direction split under it.
         s = buckets["scratch"]
         if s:
             neg = [t for t in s if t.pnl_usd < 0]
-            print(f"  -> of {len(s)} scratches, {len(neg)} are NET NEGATIVE "
-                  f"({100*len(neg)/len(s):.0f}%)")
+            print(
+                f"  -> of {len(s)} scratches, {len(neg)} are NET NEGATIVE "
+                f"({100 * len(neg) / len(s):.0f}%)"
+            )
             for d, name in ((1, "long"), (-1, "short")):
                 side = [t for t in s if t.dir == d]
                 if not side:
                     continue
                 sneg = sum(1 for t in side if t.pnl_usd < 0)
                 gross = sum(t.dir * (t.exit_price - t.entry_price) for t in side) / len(side)
-                print(f"     {name:6s} n={len(side):<3d} gross/unit {gross:+.3f}  "
-                      f"mean R {sum(t.r for t in side)/len(side):+.4f}  "
-                      f"mean $ {sum(t.pnl_usd for t in side)/len(side):+.2f}  "
-                      f"net negative {sneg}/{len(side)}")
+                print(
+                    f"     {name:6s} n={len(side):<3d} gross/unit {gross:+.3f}  "
+                    f"mean R {sum(t.r for t in side) / len(side):+.4f}  "
+                    f"mean $ {sum(t.pnl_usd for t in side) / len(side):+.2f}  "
+                    f"net negative {sneg}/{len(side)}"
+                )
         print()
 
     if overrides:
-        print("  * spread STATED on the command line, not measured off that tier. See "
-              "backtest/fills.py.")
-    print("  Note: under bid_ask_fills the spread is in the FILL PRICES, not in `mean costs$` —\n"
-          "  that column is commission + swap + slippage only.")
+        print(
+            "  * spread STATED on the command line, not measured off that tier. See "
+            "backtest/fills.py."
+        )
+    print(
+        "  Note: under bid_ask_fills the spread is in the FILL PRICES, not in `mean costs$` —\n"
+        "  that column is commission + swap + slippage only."
+    )
     return 0
 
 

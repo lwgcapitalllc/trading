@@ -41,7 +41,9 @@ export function useStickyBanner(condenseAt = 72, expandAt = 8) {
     const scroller = el?.closest('main')
     if (!el || !scroller) return
     const onScroll = () =>
-      setScrolled(prev => (prev ? scroller.scrollTop > expandAt : scroller.scrollTop > condenseAt))
+      setScrolled((prev) =>
+        prev ? scroller.scrollTop > expandAt : scroller.scrollTop > condenseAt
+      )
     onScroll()
     scroller.addEventListener('scroll', onScroll, { passive: true })
     const ro = new ResizeObserver(() => setHeight(el.offsetHeight))

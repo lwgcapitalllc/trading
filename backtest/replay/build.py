@@ -20,13 +20,20 @@ from typing import Any
 __all__ = ["build_strategy"]
 
 
-def build_strategy(strategy_cls, config, *, initial_capital: float, cost_profile=None,
-                   account=None, leg: str | None = None) -> Any:
+def build_strategy(
+    strategy_cls,
+    config,
+    *,
+    initial_capital: float,
+    cost_profile=None,
+    account=None,
+    leg: str | None = None,
+) -> Any:
     if cost_profile is None and account is None:
         return strategy_cls(config, initial_capital=initial_capital)
     try:
         params = inspect.signature(strategy_cls).parameters
-    except (TypeError, ValueError):                # a C-level or otherwise unintrospectable class
+    except (TypeError, ValueError):  # a C-level or otherwise unintrospectable class
         params = {}
 
     kwargs: dict = {"initial_capital": initial_capital}

@@ -23,8 +23,15 @@ _SHARED = Path(__file__).resolve().parent.parent / "shared"
 
 # ── the fake terminal ─────────────────────────────────────────────────────────
 class _SymbolInfo:
-    def __init__(self, digits=2, point=0.01, stops_level=0,
-                 volume_min=0.01, volume_max=100.0, volume_step=0.01):
+    def __init__(
+        self,
+        digits=2,
+        point=0.01,
+        stops_level=0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+    ):
         self.digits = digits
         self.point = point
         self.trade_stops_level = stops_level
@@ -50,10 +57,19 @@ class _Deal:
     """One MT5 deal. `time` is EPOCH SECONDS IN THE BROKER SERVER'S CLOCK — which is the whole
     subject of the deal-history tests below."""
 
-    def __init__(self, position_id, entry, price=0.0, profit=0.0, swap=0.0,
-                 commission=0.0, volume=0.01, when=None):
+    def __init__(
+        self,
+        position_id,
+        entry,
+        price=0.0,
+        profit=0.0,
+        swap=0.0,
+        commission=0.0,
+        volume=0.01,
+        when=None,
+    ):
         self.position_id = position_id
-        self.entry = entry              # 0 = entry deal, 1 = exit deal
+        self.entry = entry  # 0 = entry deal, 1 = exit deal
         self.price = price
         self.profit = profit
         self.swap = swap
@@ -100,6 +116,7 @@ def _fake_mt5():
         if "ticket" in kw:
             return tuple(o for o in m._orders if o.ticket == kw["ticket"])
         return tuple(m._orders)
+
     m.orders_get = orders_get
     m.positions_get = lambda **kw: tuple(m._positions)
 
@@ -109,8 +126,9 @@ def _fake_mt5():
             return m._refuse_with
         m._next_ticket += 1
         return _Result(m.TRADE_RETCODE_DONE, order=m._next_ticket, price=req.get("price", 0.0))
+
     m.order_send = order_send
-    m._refuse_with = None                     # set to a _Result (or leave None) to refuse
+    m._refuse_with = None  # set to a _Result (or leave None) to refuse
 
     m._deals = []
 
@@ -128,6 +146,7 @@ def _fake_mt5():
                 continue
             out.append(d)
         return tuple(out)
+
     m.history_deals_get = history_deals_get
     return m
 
@@ -154,6 +173,7 @@ def mt5ops(monkeypatch):
     for mod in ("mt5_ops", "bot_state", "broker_clock"):
         sys.modules.pop(mod, None)
     import mt5_ops
+
     return mt5_ops, fake
 
 
@@ -178,8 +198,15 @@ def test_get_candles_follows_the_dst_switch(mt5ops):
     """July is UTC+3, January UTC+2. A single constant offset would be wrong for half the year
     — and wrong in the direction that smears session boundaries rather than failing loudly."""
     mt5_ops, fake = mt5ops
-    fake._rates = [{"time": pd.Timestamp("2026-07-15 12:00:00").value // 10**9,
-                    "open": 1, "high": 2, "low": 0, "close": 1}]
+    fake._rates = [
+        {
+            "time": pd.Timestamp("2026-07-15 12:00:00").value // 10**9,
+            "open": 1,
+            "high": 2,
+            "low": 0,
+            "close": 1,
+        }
+    ]
     df = _bot(mt5_ops).get_candles(15, 1)
     assert df["time"].iloc[0] == pd.Timestamp("2026-07-15 09:00:00", tz="UTC")
 
@@ -242,7 +269,7 @@ def test_a_limit_on_the_wrong_side_of_market_is_refused(mt5ops):
 
 def test_a_limit_inside_the_brokers_stops_level_is_refused(mt5ops):
     mt5_ops, fake = mt5ops
-    fake._symbol.trade_stops_level = 500          # 500 points × 0.01 = $5.00
+    fake._symbol.trade_stops_level = 500  # 500 points × 0.01 = $5.00
     log = _Log()
     ticket, _ = _bot(mt5_ops, log).place_pending_limit("bullish", 0.42, 3298.00, 3280.00)
     assert ticket is None and fake.sent == []
@@ -283,8 +310,8 @@ def test_cancelling_an_already_gone_ticket_counts_as_success(mt5ops):
     """It filled, or someone cancelled it. The caller's intent — "there should be no order
     here" — is satisfied either way, and returning False would make the bridge retry forever."""
     mt5_ops, fake = mt5ops
-    fake.order_send = lambda req: _Result(99999)      # a refusal
-    fake._orders = []                                  # ...and the ticket is gone
+    fake.order_send = lambda req: _Result(99999)  # a refusal
+    fake._orders = []  # ...and the ticket is gone
     assert _bot(mt5_ops).cancel_pending(5001) is True
 
 
@@ -436,7 +463,7 @@ def test_the_wider_window_still_refuses_another_positions_deals(mt5ops):
     fake._deals = [
         _Deal(404, entry=0, commission=-0.10, when=when),
         _Deal(404, entry=1, profit=5.0, commission=-0.10, when=when),
-        _Deal(999, entry=1, profit=1000.0, commission=-99.0, when=when),   # somebody else's
+        _Deal(999, entry=1, profit=1000.0, commission=-99.0, when=when),  # somebody else's
     ]
     bd = _bot(mt5_ops).get_deal_breakdown(404)
     assert bd["deals"] == 2

@@ -15,24 +15,42 @@ from unittest.mock import patch
 
 
 def _strategy(lab_db, sid="q_strategy", runner="python"):
-    lab_db.upsert_strategy({
-        "id": sid, "name": "Query Strategy", "runner": runner,
-        "class_name": "QueryStrategy", "source_path": f"strategies/python/{sid}",
-        "scanned_at": int(time.time()), "param_schema": [], "default_params": {},
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": sid,
+            "name": "Query Strategy",
+            "runner": runner,
+            "class_name": "QueryStrategy",
+            "source_path": f"strategies/python/{sid}",
+            "scanned_at": int(time.time()),
+            "param_schema": [],
+            "default_params": {},
+        }
+    )
     return sid
 
 
-def _run(lab_db, run_id, *, sid="q_strategy", source_run_id=None, sweep_id=None,
-         optimization_id=None):
-    lab_db.insert_run({
-        "run_id": run_id, "strategy_id": sid, "instrument": "XAUUSD",
-        "params": {}, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2024-01-01", "end_date": "2024-06-30",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "status": "complete", "created_at": int(time.time()),
-        "runner": "python", "source_run_id": source_run_id,
-    })
+def _run(
+    lab_db, run_id, *, sid="q_strategy", source_run_id=None, sweep_id=None, optimization_id=None
+):
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": sid,
+            "instrument": "XAUUSD",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-06-30",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "status": "complete",
+            "created_at": int(time.time()),
+            "runner": "python",
+            "source_run_id": source_run_id,
+        }
+    )
     if sweep_id or optimization_id:
         # `insert_run` has no column for these; set them directly, which is what the sweep and
         # optimization insert paths do through their own inserts.
@@ -45,6 +63,7 @@ def _run(lab_db, run_id, *, sid="q_strategy", source_run_id=None, sweep_id=None,
 
 
 # ── One query for every row's verdicts ────────────────────────────────────────
+
 
 def test_verdict_summaries_key_every_requested_id(fresh_db):
     """A missing key and an empty list are different answers — the caller renders the second as
@@ -67,14 +86,23 @@ def test_verdict_summaries_agree_with_the_per_run_query(fresh_db):
 
     _strategy(lab_db)
     run_id = _run(lab_db, "vsum00000003")
-    lab_db.insert_evaluation({
-        "eval_id": "ev1", "run_id": run_id, "ruleset_id": "unconstrained",
-        "verdict": "INFO", "drawdown_pass": True, "target_pass": True,
-        "consistency_pass": None, "breach_count": 0, "notes": "Not graded",
-    })
+    lab_db.insert_evaluation(
+        {
+            "eval_id": "ev1",
+            "run_id": run_id,
+            "ruleset_id": "unconstrained",
+            "verdict": "INFO",
+            "drawdown_pass": True,
+            "target_pass": True,
+            "consistency_pass": None,
+            "breach_count": 0,
+            "notes": "Not graded",
+        }
+    )
 
-    assert lab_db.get_run_verdict_summaries([run_id])[run_id] == \
-        lab_db.get_run_verdict_summary(run_id)
+    assert lab_db.get_run_verdict_summaries([run_id])[run_id] == lab_db.get_run_verdict_summary(
+        run_id
+    )
 
 
 def test_the_runs_list_opens_one_connection_per_call_not_one_per_row(client, fresh_db):
@@ -102,6 +130,7 @@ def test_the_runs_list_opens_one_connection_per_call_not_one_per_row(client, fre
 
 
 # ── The derived-runs filter ───────────────────────────────────────────────────
+
 
 def test_source_run_id_filters_to_the_runs_derived_from_one_run(client, fresh_db):
     from services import lab_db
@@ -147,6 +176,7 @@ def test_no_source_run_id_still_lists_everything(client, fresh_db):
 
 # ── cost_layers: null is a different answer from [] ───────────────────────────
 
+
 def test_a_run_can_be_created_with_no_layered_cost_contract(client, fresh_db):
     """`null` = this runner has no layer contract (NT8/MT5). `[]` = charge nothing.
 
@@ -162,17 +192,20 @@ def test_a_run_can_be_created_with_no_layered_cost_contract(client, fresh_db):
         patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}),
         patch("services.runner_dispatch.inject_foundational", side_effect=lambda p, f: p),
     ):
-        r = client.post("/backtests/run", json={
-            "strategy_id": "nt8_strategy",
-            "instrument": "MNQ 06-26",
-            "params": {},
-            "start_date": "2024-01-01",
-            "end_date": "2024-06-30",
-            "commission_per_side": 2.25,
-            "slippage_ticks": 1,
-            "cost_layers": None,
-            "evaluate_rulesets": [],
-        })
+        r = client.post(
+            "/backtests/run",
+            json={
+                "strategy_id": "nt8_strategy",
+                "instrument": "MNQ 06-26",
+                "params": {},
+                "start_date": "2024-01-01",
+                "end_date": "2024-06-30",
+                "commission_per_side": 2.25,
+                "slippage_ticks": 1,
+                "cost_layers": None,
+                "evaluate_rulesets": [],
+            },
+        )
 
     assert r.status_code in (200, 202), r.text
     row = lab_db.get_run(r.json()["run_id"])
@@ -186,26 +219,30 @@ def test_omitting_cost_layers_still_means_charge_nothing(client, fresh_db):
     change: `insert_run` coerces an absent key to `[]` so a new python run can never fall into
     the legacy commission/slippage branch by omission, and only an EXPLICIT null writes NULL.
     """
-    from services import lab_db
     from routers.backtests import _json_list
+    from services import lab_db
 
     _strategy(lab_db, "py_strategy", runner="python")
 
     with patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}):
-        r = client.post("/backtests/run", json={
-            "strategy_id": "py_strategy",
-            "instrument": "XAUUSD",
-            "params": {},
-            "start_date": "2024-01-01",
-            "end_date": "2024-06-30",
-            "evaluate_rulesets": [],
-        })
+        r = client.post(
+            "/backtests/run",
+            json={
+                "strategy_id": "py_strategy",
+                "instrument": "XAUUSD",
+                "params": {},
+                "start_date": "2024-01-01",
+                "end_date": "2024-06-30",
+                "evaluate_rulesets": [],
+            },
+        )
 
     assert r.status_code in (200, 202), r.text
     assert _json_list(lab_db.get_run(r.json()["run_id"])["cost_layers"]) == []
 
 
 # ── The running-job endpoint must carry every lock scope ──────────────────────
+
 
 def test_the_running_job_endpoint_reports_the_python_scope(client, fresh_db):
     """🔴 The endpoint named `nt8` and `mt5` and dropped `python` on the floor.
@@ -220,13 +257,23 @@ def test_the_running_job_endpoint_reports_the_python_scope(client, fresh_db):
     from services import lab_db
 
     _strategy(lab_db, "py_lock_strategy", runner="python")
-    lab_db.insert_run({
-        "run_id": "pylock000001", "strategy_id": "py_lock_strategy", "instrument": "XAUUSD",
-        "params": {}, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2024-01-01", "end_date": "2024-06-30",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "status": "running", "created_at": int(time.time()), "runner": "python",
-    })
+    lab_db.insert_run(
+        {
+            "run_id": "pylock000001",
+            "strategy_id": "py_lock_strategy",
+            "instrument": "XAUUSD",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-06-30",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "status": "running",
+            "created_at": int(time.time()),
+            "runner": "python",
+        }
+    )
 
     body = client.get("/backtests/running-job").json()
     assert body["python"]["running"] is True

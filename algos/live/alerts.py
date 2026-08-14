@@ -62,16 +62,11 @@ _VERDICT_MARK = {WIN: "✅", LOSE: "❌", BREAKEVEN: "➖"}
 _VERDICT_LABEL = {WIN: "WIN", LOSE: "LOSS", BREAKEVEN: "BREAKEVEN"}
 
 
-
-
 def _price(value: float, digits: int) -> str:
     return f"{value:,.{digits}f}"
 
 
-
-
-def verdict(pnl_usd: float, r_multiple: Optional[float] = None,
-            scratch_r: float = 0.15) -> str:
+def verdict(pnl_usd: float, r_multiple: Optional[float] = None, scratch_r: float = 0.15) -> str:
     """WIN / LOSE / BREAKEVEN for a closed trade.
 
     **BREAKEVEN is decided on R, not on dollars, and that is the point.** A trade whose stop was
@@ -210,8 +205,9 @@ def format_entry_zone(snap, digits: int = 2) -> str:
         order.append(f"stop {_price(snap.stop, digits)}")
     lines = [f"{snap.met} of {snap.of}", " · ".join(order)]
     if snap.targets:
-        lines.append(" · ".join(f"TP{i} {_price(t, digits)}"
-                                for i, t in enumerate(snap.targets, 1) if t))
+        lines.append(
+            " · ".join(f"TP{i} {_price(t, digits)}" for i, t in enumerate(snap.targets, 1) if t)
+        )
     # ⚠ This line IS the safety property above. The full confluence dump it replaces said the same
     # thing in three lines and buried it among two that were fine.
     lines.append(_outstanding(snap))
@@ -249,10 +245,20 @@ def format_resolved(snap, digits: int = 2) -> str:
     return alert("👋", "NO TRADE", snap.direction, snap.reason)
 
 
-def format_entry(*, strategy: str, symbol: str, direction: str, entry: float, stop: float,
-                 lots: float, digits: int = 2, point: float = 0.01,
-                 risk_usd: Optional[float] = None, risk_pct: Optional[float] = None,
-                 when: Optional[datetime] = None) -> str:
+def format_entry(
+    *,
+    strategy: str,
+    symbol: str,
+    direction: str,
+    entry: float,
+    stop: float,
+    lots: float,
+    digits: int = 2,
+    point: float = 0.01,
+    risk_usd: Optional[float] = None,
+    risk_pct: Optional[float] = None,
+    when: Optional[datetime] = None,
+) -> str:
     """The message that opens a trade's thread.
 
     Three groups, in the order the questions get asked: what it is and which way, the two prices
@@ -273,17 +279,30 @@ def format_entry(*, strategy: str, symbol: str, direction: str, entry: float, st
         pct = f" ({risk_pct:g}%)" if risk_pct is not None else ""
         size += f" · Risking ${risk_usd:,.2f}{pct}"
 
-    return alert("📈" if is_long else "📉", "ENTRY", f"{side} {symbol}",
-                 f"Entry {_price(entry, digits)} · Stop {_price(stop, digits)}",
-                 size,
-                 strategy)
+    return alert(
+        "📈" if is_long else "📉",
+        "ENTRY",
+        f"{side} {symbol}",
+        f"Entry {_price(entry, digits)} · Stop {_price(stop, digits)}",
+        size,
+        strategy,
+    )
 
 
-def format_exit(*, strategy: str, symbol: str, exit_price: float, pnl_usd: float,
-                r_multiple: Optional[float] = None, digits: int = 2,
-                currency: str = "USD", scratch_r: float = 0.15,
-                threaded: bool = True, exit_reason: str = "",
-                when: Optional[datetime] = None) -> str:
+def format_exit(
+    *,
+    strategy: str,
+    symbol: str,
+    exit_price: float,
+    pnl_usd: float,
+    r_multiple: Optional[float] = None,
+    digits: int = 2,
+    currency: str = "USD",
+    scratch_r: float = 0.15,
+    threaded: bool = True,
+    exit_reason: str = "",
+    when: Optional[datetime] = None,
+) -> str:
     """The reply that closes a trade's thread.
 
     Outcome, money, price — and nothing about what was risked, because this message hangs under
@@ -307,6 +326,4 @@ def format_exit(*, strategy: str, symbol: str, exit_price: float, pnl_usd: float
     if exit_reason:
         price += f" ({exit_reason})"
 
-    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol,
-                 amount + r,
-                 price)
+    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol, amount + r, price)

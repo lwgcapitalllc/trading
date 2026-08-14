@@ -8,7 +8,7 @@ legs overwriting each other's reservation, and the solo control not actually bei
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -36,7 +36,7 @@ class _FakeExecution:
         self.bar_ms = 0
         self.is_flat = True
         self.granted = None
-        self.balance_at_entry = None    # what this leg would have SIZED against
+        self.balance_at_entry = None  # what this leg would have SIZED against
 
     def step(self, bar_index: int) -> None:
         if bar_index == self._entry_bar and self.is_flat:
@@ -46,7 +46,7 @@ class _FakeExecution:
             if self.granted > 0.0:
                 self.is_flat = False
         elif bar_index == self._entry_bar + 2 and not self.is_flat:
-            self._account.on_close(self._leg, 500.0)      # +$500 onto the shared balance
+            self._account.on_close(self._leg, 500.0)  # +$500 onto the shared balance
             self.is_flat = True
             self.trades.append(_Trade(r=1.0))
 
@@ -89,13 +89,13 @@ class _Bar:
 
 def _leg(name, account, entry_bar, n_bars=10, offset_ms=0):
     strategy = _FakeStrategy(config={"entry_bar": entry_bar}, account=account, leg=name)
-    leg = StrategyLeg.__new__(StrategyLeg)          # bypass the EngineStack build
+    leg = StrategyLeg.__new__(StrategyLeg)  # bypass the EngineStack build
     leg.name = name
     leg.strategy = strategy
     leg._df = None
     leg._stack = _CountingStack()
     leg._bars = [_Bar(i, offset_ms + i * 900_000) for i in range(n_bars)]
-    leg.bars = lambda: iter(leg._bars)              # type: ignore[method-assign]
+    leg.bars = lambda: iter(leg._bars)  # type: ignore[method-assign]
     return leg
 
 
@@ -119,9 +119,11 @@ def test_the_leg_name_reaches_the_strategy_as_its_account_key():
     """`leg` is the account's key for this leg's open position. If it did not travel, both
     legs would be keyed 'strat' and the second fill would overwrite the first's reservation."""
     from backtest.portfolio.account import SoloAccount
+
     acct = SoloAccount(balance=1000.0)
-    built = build_strategy(_FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0,
-                           account=acct, leg="bleg")
+    built = build_strategy(
+        _FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0, account=acct, leg="bleg"
+    )
     assert built.execution._leg == "bleg"
 
 
@@ -144,14 +146,22 @@ def test_a_zero_risk_cap_is_refused():
 def test_a_leg_needing_a_second_bar_stream_is_refused_not_replayed_primary_only():
     """`exec_secondary` needs `run_dual`; a leg is one frame. Replaying it single-stream
     returns a primary-only book that is then compared against controls that have re-entries."""
+
     @dataclass
     class _Cfg:
         exec_secondary: bool = True
 
     from backtest.portfolio.account import SoloAccount
+
     with pytest.raises(ValueError) as e:
-        build_leg("a", _FakeStrategy, _Cfg(), pd.DataFrame(),
-                  account=SoloAccount(balance=1.0), initial_capital=1.0)
+        build_leg(
+            "a",
+            _FakeStrategy,
+            _Cfg(),
+            pd.DataFrame(),
+            account=SoloAccount(balance=1.0),
+            initial_capital=1.0,
+        )
     assert "exec_secondary" in str(e.value)
     assert "primary-only" in str(e.value)
 
@@ -171,9 +181,9 @@ def test_the_legs_size_off_ONE_balance_that_both_of_them_move():
 
     assert a.strategy.execution.balance_at_entry == 10_000.0
     assert b.strategy.execution.balance_at_entry == 10_500.0
-    assert acct.balance == 11_000.0                  # both legs booked onto ONE balance
+    assert acct.balance == 11_000.0  # both legs booked onto ONE balance
     assert a.strategy.execution.granted == 100.0
-    assert b.strategy.execution.granted == 100.0     # full size — the cap never bound
+    assert b.strategy.execution.granted == 100.0  # full size — the cap never bound
 
 
 def test_the_cap_shrinks_the_second_leg_when_the_first_is_still_holding():
@@ -184,7 +194,7 @@ def test_the_cap_shrinks_the_second_leg_when_the_first_is_still_holding():
 
     acct = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.15)
     a = _leg("a", acct, entry_bar=2)
-    b = _leg("b", acct, entry_bar=3)                 # a is still open (it closes on bar 4)
+    b = _leg("b", acct, entry_bar=3)  # a is still open (it closes on bar 4)
     simulate([a, b], acct)
 
     assert a.strategy.execution.granted == 100.0
@@ -198,7 +208,7 @@ def test_a_leg_with_no_room_at_all_is_BLOCKED_and_takes_no_trade():
     from backtest.portfolio.account import PortfolioAccount
     from backtest.portfolio.simulator import simulate
 
-    acct = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10)   # exactly one leg's worth
+    acct = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10)  # exactly one leg's worth
     a = _leg("a", acct, entry_bar=2)
     b = _leg("b", acct, entry_bar=3)
     simulate([a, b], acct)
@@ -210,8 +220,8 @@ def test_a_leg_with_no_room_at_all_is_BLOCKED_and_takes_no_trade():
 
 def test_contention_summary_counts_shrinks_and_blocks_separately():
     from backtest.portfolio.runner import StackRun
-    run = StackRun(opening_balance=1.0, risk_cap_pct=0.1, entry_floor_pct=0.0,
-                   closing_balance=1.0)
+
+    run = StackRun(opening_balance=1.0, risk_cap_pct=0.1, entry_floor_pct=0.0, closing_balance=1.0)
     run.contention = [
         {"leg": "a", "blocked": True, "desired_risk": 100.0, "granted_risk": 0.0},
         {"leg": "a", "blocked": False, "desired_risk": 100.0, "granted_risk": 40.0},
@@ -232,8 +242,9 @@ def test_a_grant_one_ULP_short_of_the_desired_risk_is_not_a_shrink():
     cap disagree in the last bit. Downstream that marks trades as shrunk that were granted in
     full. Tested at the seam rather than by synthesising a balance, because which arithmetic
     happens to round is not the rule — the rule is that one ULP is not contention."""
-    from backtest.portfolio.account import PortfolioAccount
     import math
+
+    from backtest.portfolio.account import PortfolioAccount
 
     desired = 1234.5678
     assert PortfolioAccount._is_shrunk(desired, math.nextafter(desired, 0.0)) is False
@@ -253,13 +264,14 @@ def test_a_real_shrink_is_logged_end_to_end():
     from backtest.portfolio.account import PortfolioAccount
 
     acct = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10)
-    acct.request_fill("a", 1, 100.0, 99.0, 999.0, 1.0)             # takes $999 of the $1,000 cap
-    granted = acct.request_fill("b", 1, 100.0, 99.0, 100.0, 1.0)   # wants $100, $1 is left
+    acct.request_fill("a", 1, 100.0, 99.0, 999.0, 1.0)  # takes $999 of the $1,000 cap
+    granted = acct.request_fill("b", 1, 100.0, 99.0, 100.0, 1.0)  # wants $100, $1 is left
     assert granted == pytest.approx(1.0)
     assert [(r["leg"], r["blocked"]) for r in acct.contention] == [("b", False)]
 
 
 # ── Cancel (2026-08-09) ───────────────────────────────────────────────────────
+
 
 def _stub_build_leg(monkeypatch, n_bars=4_000, built=None):
     """Point `run_stack` at the scripted leg the rest of this file uses.
@@ -289,13 +301,15 @@ def test_a_cancelled_shared_run_skips_the_solo_CONTROLS(monkeypatch):
     """
     built: list = []
     _stub_build_leg(monkeypatch, built=built)
-    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
-             LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame())]
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+    ]
     calls = {"n": 0}
 
     def _cancel():
         calls["n"] += 1
-        return calls["n"] > 1        # clear on the first poll, cancelled on the second
+        return calls["n"] > 1  # clear on the first poll, cancelled on the second
 
     run = run_stack(specs, balance=10_000.0, risk_cap_pct=1.0, should_cancel=_cancel)
     assert run.cancelled is True
@@ -312,8 +326,10 @@ def test_an_uncancelled_run_still_produces_a_control_per_leg(monkeypatch):
     """The direction that would go unnoticed if the skip were made unconditional — a run with no
     controls reports a shared book nothing can be compared against."""
     _stub_build_leg(monkeypatch, n_bars=10)
-    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
-             LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame())]
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+    ]
     run = run_stack(specs, balance=10_000.0, risk_cap_pct=1.0, should_cancel=lambda: False)
     assert run.cancelled is False
     assert set(run.solo_per_leg) == {"a", "b"}
@@ -324,10 +340,13 @@ def test_progress_names_the_PHASE_so_a_reader_can_tell_control_from_book(monkeyp
     23,712" three times over says nothing about how far through the run is. The phase is what
     turns the tick index into progress."""
     _stub_build_leg(monkeypatch, n_bars=10)
-    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
-             LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame())]
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+    ]
     phases: list = []
-    run_stack(specs, balance=10_000.0, risk_cap_pct=1.0,
-              progress=lambda phase, i: phases.append(phase))
+    run_stack(
+        specs, balance=10_000.0, risk_cap_pct=1.0, progress=lambda phase, i: phases.append(phase)
+    )
     assert phases[0] == "shared"
     assert set(phases) == {"shared", "solo:a", "solo:b"}

@@ -69,7 +69,7 @@ ALL_FIELDS = PRICE_FIELDS + FLAG_FIELDS
 # relative, not the exact-price match the frozen-level engines can use.
 _REL_TOL = 1e-6
 
-_SECONDS_CEILING = 10 ** 11
+_SECONDS_CEILING = 10**11
 
 
 def _num(s):
@@ -104,13 +104,13 @@ def _resolve_columns(header):
             raise SystemExit(f"ERROR: column {name!r} not found in export. Header: {header}")
         return col
 
-    cols = {"time": find("time"),
-            "high": find("high"), "low": find("low"), "close": find("close")}
+    cols = {"time": find("time"), "high": find("high"), "low": find("low"), "close": find("close")}
     # volume input: prefer the explicit px_volume column, fall back to a native volume column
     cols["volume"] = find("px_volume", False) or find("volume", False)
     if cols["volume"] is None:
-        raise SystemExit("ERROR: no volume column ('px_volume' or 'volume') found in export. "
-                         f"Header: {header}")
+        raise SystemExit(
+            f"ERROR: no volume column ('px_volume' or 'volume') found in export. Header: {header}"
+        )
     for fld in ALL_FIELDS:
         cols[fld] = find(fld)
     return cols
@@ -142,17 +142,38 @@ def _values_match(field, py_val, pine_val, tol):
         # rounding level (~1 part per million: ~1e-4 on a ~4000 gold price, 100x under a 1-cent tick).
         # So use a RELATIVE tolerance, not the exact-price tolerance the frozen-level engines use.
         return math.isclose(py_val, pine_val, rel_tol=_REL_TOL, abs_tol=tol)
-    return int(round(py_val)) == int(round(pine_val))    # flag fields (anchor pulse)
+    return int(round(py_val)) == int(round(pine_val))  # flag fields (anchor pulse)
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("csv", help="CSV exported from TradingView with vwap_export.pine on the chart")
-    ap.add_argument("--htf-tz", default="America/New_York", help="timezone the trading-day anchor is cut in (default America/New_York)")
-    ap.add_argument("--htf-rollover", type=int, default=18, help="local hour the trading day OPENS (XAUUSD = 18:00 NY, the validated default)")
-    ap.add_argument("--tolerance", type=float, default=1e-4, help="ABSOLUTE floor for the VWAP price; the primary check is relative (1e-6). Default 1e-4")
+    ap.add_argument(
+        "--htf-tz",
+        default="America/New_York",
+        help="timezone the trading-day anchor is cut in (default America/New_York)",
+    )
+    ap.add_argument(
+        "--htf-rollover",
+        type=int,
+        default=18,
+        help="local hour the trading day OPENS (XAUUSD = 18:00 NY, the validated default)",
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-4,
+        help="ABSOLUTE floor for the VWAP price; the primary check is relative (1e-6). Default 1e-4",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -200,13 +221,17 @@ def main(argv=None):
                 detailed.append((i, row[cols["time"]], bar_mismatches))
 
     mismatched_fields = {f: n for f, n in per_field_mismatch.items() if n}
-    print(f"Compared {total} bars ({args.warmup} warmup skipped) across {len(compared_fields)} fields "
-          f"[htf-tz={args.htf_tz} rollover={args.htf_rollover}h].")
+    print(
+        f"Compared {total} bars ({args.warmup} warmup skipped) across {len(compared_fields)} fields "
+        f"[htf-tz={args.htf_tz} rollover={args.htf_rollover}h]."
+    )
     if not mismatched_fields:
         print("PARITY OK — every field matches on every warm bar.")
         return 0
 
-    print(f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}.")
+    print(
+        f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}."
+    )
     print("Per-field mismatch counts:")
     for fld, n in sorted(mismatched_fields.items(), key=lambda p: -p[1]):
         print(f"  {fld}: {n}")

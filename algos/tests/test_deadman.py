@@ -28,7 +28,8 @@ _REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_REPO / "algos" / "shared"))
 
 _spec = importlib.util.spec_from_file_location(
-    "deadman", _REPO / "algos" / "notifications" / "deadman.py")
+    "deadman", _REPO / "algos" / "notifications" / "deadman.py"
+)
 dm = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(dm)
 
@@ -96,6 +97,7 @@ def test_a_bot_whose_config_CANNOT_BE_READ_is_still_watched(monkeypatch):
 
 # ── what counts as healthy ───────────────────────────────────────────────────────
 
+
 def test_a_running_bot_with_a_fresh_heartbeat_and_a_live_link_is_healthy(wired):
     assert dm.check_health() == []
 
@@ -125,19 +127,22 @@ def test_a_heartbeat_one_second_inside_the_window_is_not_stale(wired):
     # The boundary itself, pinned against a FIXED now so the margin cannot be eaten by how
     # long the test takes to run.
     base = 1_700_000_000.0
-    wired.setattr(dm, "_bot_state",
-                  lambda: _healthy_state(heartbeat=base - dm.HEARTBEAT_STALE_SECS + 1))
+    wired.setattr(
+        dm, "_bot_state", lambda: _healthy_state(heartbeat=base - dm.HEARTBEAT_STALE_SECS + 1)
+    )
     assert dm.check_health(now=base) == []
 
 
 def test_a_heartbeat_one_second_past_the_window_IS_stale(wired):
     base = 1_700_000_000.0
-    wired.setattr(dm, "_bot_state",
-                  lambda: _healthy_state(heartbeat=base - dm.HEARTBEAT_STALE_SECS - 1))
+    wired.setattr(
+        dm, "_bot_state", lambda: _healthy_state(heartbeat=base - dm.HEARTBEAT_STALE_SECS - 1)
+    )
     assert any("stalled" in p for p in dm.check_health(now=base))
 
 
 # ── absence must never score as health ───────────────────────────────────────────
+
 
 def test_an_unreadable_process_list_is_a_FAILURE_not_an_empty_result(wired):
     # "wmic did not answer" and "no bots are running" are different facts, and treating the
@@ -183,6 +188,7 @@ def test_an_mt5_link_key_that_is_absent_entirely_is_NOT_a_failure(wired):
 
 # ── what actually gets sent ──────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def sent(monkeypatch):
     calls: list[tuple[str, str]] = []
@@ -209,8 +215,9 @@ def test_a_problem_pings_the_FAIL_url_and_names_the_reason(wired, sent):
 
 def test_every_problem_reaches_the_body_not_just_the_first(wired, sent):
     wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
-    wired.setattr(dm, "_bot_state",
-                  lambda: _healthy_state(heartbeat=time.time() - 99_999, mt5_link=False))
+    wired.setattr(
+        dm, "_bot_state", lambda: _healthy_state(heartbeat=time.time() - 99_999, mt5_link=False)
+    )
     dm.main([])
     body = sent[0][1]
     assert "stalled" in body and "MT5 link" in body
@@ -247,7 +254,7 @@ def test_a_failed_ping_does_not_raise(wired, monkeypatch):
 
     monkeypatch.setattr(dm, "_send", boom)
     with pytest.raises(RuntimeError):
-        dm.main([])          # documents that _send itself is what must swallow, not main
+        dm.main([])  # documents that _send itself is what must swallow, not main
 
 
 def test_the_real_send_swallows_network_errors(monkeypatch):
@@ -262,6 +269,7 @@ def test_the_real_send_swallows_network_errors(monkeypatch):
 
 
 # ── registry drift ───────────────────────────────────────────────────────────────
+
 
 def test_the_bot_registry_matches_the_startup_coordinators():
     # Three files key bots by `--bot <key>`: this one, monitor.py, and startup_coordinator.py.

@@ -130,8 +130,13 @@ def load_days(symbol: str, tf: str, start: dt.date | None, end: dt.date | None):
             if end and date > end:
                 continue
             days[date].append(
-                Bar(ny.timetz().replace(tzinfo=None), float(row["open"]),
-                    float(row["high"]), float(row["low"]), float(row["close"]))
+                Bar(
+                    ny.timetz().replace(tzinfo=None),
+                    float(row["open"]),
+                    float(row["high"]),
+                    float(row["low"]),
+                    float(row["close"]),
+                )
             )
     for bars in days.values():
         bars.sort(key=lambda b: b.t)
@@ -141,8 +146,10 @@ def load_days(symbol: str, tf: str, start: dt.date | None, end: dt.date | None):
 def parse_window(spec: str) -> tuple[dt.time, dt.time]:
     start, _, end = spec.partition("-")
     fmt = "%H:%M"
-    return (dt.datetime.strptime(start.strip(), fmt).time(),
-            dt.datetime.strptime(end.strip(), fmt).time())
+    return (
+        dt.datetime.strptime(start.strip(), fmt).time(),
+        dt.datetime.strptime(end.strip(), fmt).time(),
+    )
 
 
 def _slice(bars: list[Bar], start: dt.time, end: dt.time) -> list[Bar]:
@@ -160,8 +167,7 @@ def _add_hours(t: dt.time, hours: int) -> dt.time:
 # per-day measurement
 
 
-def profile_days(days: dict, win_start: dt.time, win_end: dt.time,
-                 target_r: float) -> list[dict]:
+def profile_days(days: dict, win_start: dt.time, win_end: dt.time, target_r: float) -> list[dict]:
     """One row per trading day: the window's shape, the leg into it, what came after."""
     rows: list[dict] = []
     adr_hist: list[float] = []
@@ -236,8 +242,9 @@ def profile_days(days: dict, win_start: dt.time, win_end: dt.time,
         low_bar = min(core, key=lambda b: b.low)
         row["day_high_hour"] = high_bar.t.hour
         row["day_low_hour"] = low_bar.t.hour
-        row["extreme_in_win"] = (win_start <= high_bar.t < win_end
-                                 or win_start <= low_bar.t < win_end)
+        row["extreme_in_win"] = (
+            win_start <= high_bar.t < win_end or win_start <= low_bar.t < win_end
+        )
 
         row.update(_fade_trade(bars, win_end, ref, win_high, win_low, pre_dir, target_r))
         rows.append(row)
@@ -245,8 +252,15 @@ def profile_days(days: dict, win_start: dt.time, win_end: dt.time,
     return rows
 
 
-def _fade_trade(bars: list[Bar], entry_t: dt.time, entry: float, win_high: float,
-                win_low: float, pre_dir: int, target_r: float) -> dict:
+def _fade_trade(
+    bars: list[Bar],
+    entry_t: dt.time,
+    entry: float,
+    win_high: float,
+    win_low: float,
+    pre_dir: int,
+    target_r: float,
+) -> dict:
     """Crude fade of the pre-leg: stop at the window extreme, flat by 16:00 NY.
 
     Bar-level fills. When one bar holds both the stop and the target we book the STOP —
@@ -275,8 +289,11 @@ def _fade_trade(bars: list[Bar], entry_t: dt.time, entry: float, win_high: float
         if hit_target:
             return {"fade_dir": side, "fade_r": target_r, "fade_outcome": "target"}
 
-    return {"fade_dir": side, "fade_r": side * (fwd[-1].close - entry) / risk,
-            "fade_outcome": "timed_out"}
+    return {
+        "fade_dir": side,
+        "fade_r": side * (fwd[-1].close - entry) / risk,
+        "fade_outcome": "timed_out",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -315,16 +332,18 @@ def hour_baseline(days: dict, target_r: float, step_minutes: int) -> list[dict]:
         if not rows:
             continue
         fades = [r for r in rows if r["fade_r"] is not None]
-        out.append({
-            "window": f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}",
-            "days": len(rows),
-            "extreme_pct": _pct(rows, "extreme_in_win"),
-            "rev_2h_pct": _pct(rows, "reversed_2h"),
-            "sweep_pct": _pct(rows, "swept"),
-            "range_adr": _mean(rows, "win_range_adr"),
-            "fade_exp_r": _mean(fades, "fade_r"),
-            "fade_total_r": sum(r["fade_r"] for r in fades),
-        })
+        out.append(
+            {
+                "window": f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}",
+                "days": len(rows),
+                "extreme_pct": _pct(rows, "extreme_in_win"),
+                "rev_2h_pct": _pct(rows, "reversed_2h"),
+                "sweep_pct": _pct(rows, "swept"),
+                "range_adr": _mean(rows, "win_range_adr"),
+                "fade_exp_r": _mean(fades, "fade_r"),
+                "fade_total_r": sum(r["fade_r"] for r in fades),
+            }
+        )
     return out
 
 
@@ -332,8 +351,7 @@ def _quartile_cuts(rows: list[dict], key: str, label: str, absolute: bool = Fals
     """Split rows into quartiles of `key` and yield (label, subset) for the top and
     bottom quarter. A flat average over all days can hide an edge that only lives in the
     extremes, and this is the cheapest way to see it."""
-    vals = sorted(abs(r[key]) if absolute else r[key]
-                  for r in rows if r.get(key) is not None)
+    vals = sorted(abs(r[key]) if absolute else r[key] for r in rows if r.get(key) is not None)
     if len(vals) < 40:
         return
     lo, hi = vals[len(vals) // 4], vals[3 * len(vals) // 4]
@@ -352,37 +370,52 @@ def _cuts(fades: list[dict]):
     yield from _quartile_cuts(fades, "pre_leg_adr", "leg into window", absolute=True)
     yield from _quartile_cuts(fades, "win_range_adr", "window range")
     swept = [r for r in fades if r["swept"]]
-    yield "swept + big leg", [
-        r for r in swept
-        if abs(r["pre_leg_adr"]) >= statistics.median(abs(x["pre_leg_adr"]) for x in fades)
-    ]
+    yield (
+        "swept + big leg",
+        [
+            r
+            for r in swept
+            if abs(r["pre_leg_adr"]) >= statistics.median(abs(x["pre_leg_adr"]) for x in fades)
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
 # reporting
 
 
-def report(rows: list[dict], base: list[dict], win: str, target_r: float,
-           symbol: str, tf: str) -> None:
+def report(
+    rows: list[dict], base: list[dict], win: str, target_r: float, symbol: str, tf: str
+) -> None:
     print(f"\n{'=' * 82}")
-    print(f"  {symbol} {tf} — WINDOW {win} New York — {len(rows)} trading days, "
-          f"{rows[0]['date']} → {rows[-1]['date']}")
+    print(
+        f"  {symbol} {tf} — WINDOW {win} New York — {len(rows)} trading days, "
+        f"{rows[0]['date']} → {rows[-1]['date']}"
+    )
     print(f"{'=' * 82}\n")
 
     print("SHAPE OF THE WINDOW")
-    print(f"  window range        {_mean(rows, 'win_range_adr'):.1%} of ADR20 "
-          f"(median {_median(rows, 'win_range_adr'):.1%})")
-    print(f"  day's high or low   {_pct(rows, 'extreme_in_win'):.1f}% of days print it "
-          f"inside this window")
-    print(f"  swept + closed back {_pct(rows, 'swept'):.1f}% of days "
-          f"(high {_pct(rows, 'swept_high'):.1f}%, low {_pct(rows, 'swept_low'):.1f}%)")
+    print(
+        f"  window range        {_mean(rows, 'win_range_adr'):.1%} of ADR20 "
+        f"(median {_median(rows, 'win_range_adr'):.1%})"
+    )
+    print(
+        f"  day's high or low   {_pct(rows, 'extreme_in_win'):.1f}% of days print it "
+        f"inside this window"
+    )
+    print(
+        f"  swept + closed back {_pct(rows, 'swept'):.1f}% of days "
+        f"(high {_pct(rows, 'swept_high'):.1f}%, low {_pct(rows, 'swept_low'):.1f}%)"
+    )
 
     print("\nDOES IT REVERSE THE LEG INTO IT")
     for h in (1, 2, 4):
-        print(f"  +{h}h  reversed {_pct(rows, f'reversed_{h}h'):5.1f}%   "
-              f"fade MFE {_mean(rows, f'mfe_{h}h_adr'):6.1%} ADR   "
-              f"fade MAE {_mean(rows, f'mae_{h}h_adr'):6.1%} ADR   "
-              f"net move {_mean(rows, f'move_{h}h_adr'):+.1%} ADR")
+        print(
+            f"  +{h}h  reversed {_pct(rows, f'reversed_{h}h'):5.1f}%   "
+            f"fade MFE {_mean(rows, f'mfe_{h}h_adr'):6.1%} ADR   "
+            f"fade MAE {_mean(rows, f'mae_{h}h_adr'):6.1%} ADR   "
+            f"net move {_mean(rows, f'move_{h}h_adr'):+.1%} ADR"
+        )
 
     fades = [r for r in rows if r["fade_r"] is not None]
     if fades:
@@ -390,61 +423,78 @@ def report(rows: list[dict], base: list[dict], win: str, target_r: float,
         outcomes = defaultdict(int)
         for r in fades:
             outcomes[r["fade_outcome"]] += 1
-        print(f"\nNAIVE FADE BASELINE  (enter at window close, stop at window extreme, "
-              f"target {target_r:g}R, flat {FADE_EXIT:%H:%M})")
-        print(f"  trades {len(fades)}   win rate {100 * len(wins) / len(fades):.1f}%   "
-              f"expectancy {_mean(fades, 'fade_r'):+.3f}R   "
-              f"total {sum(r['fade_r'] for r in fades):+.1f}R")
+        print(
+            f"\nNAIVE FADE BASELINE  (enter at window close, stop at window extreme, "
+            f"target {target_r:g}R, flat {FADE_EXIT:%H:%M})"
+        )
+        print(
+            f"  trades {len(fades)}   win rate {100 * len(wins) / len(fades):.1f}%   "
+            f"expectancy {_mean(fades, 'fade_r'):+.3f}R   "
+            f"total {sum(r['fade_r'] for r in fades):+.1f}R"
+        )
         print("  outcomes  " + "   ".join(f"{k} {v}" for k, v in sorted(outcomes.items())))
 
     if fades:
-        print("\nCONDITIONAL CUTS  (same days, same fade, split by what the window looked "
-              "like)")
+        print("\nCONDITIONAL CUTS  (same days, same fade, split by what the window looked like)")
         print(f"  {'cut':<26}{'trades':>8}{'win%':>8}{'expR':>9}{'totR':>9}")
         for label, subset in _cuts(fades):
             if len(subset) < 30:
                 continue
             w = [r for r in subset if r["fade_r"] > 0]
-            print(f"  {label:<26}{len(subset):>8}{100 * len(w) / len(subset):>7.1f}%"
-                  f"{_mean(subset, 'fade_r'):>9.3f}{sum(r['fade_r'] for r in subset):>9.1f}")
+            print(
+                f"  {label:<26}{len(subset):>8}{100 * len(w) / len(subset):>7.1f}%"
+                f"{_mean(subset, 'fade_r'):>9.3f}{sum(r['fade_r'] for r in subset):>9.1f}"
+            )
 
     print("\nBY YEAR")
-    print(f"  {'year':<6}{'days':>6}{'extreme%':>10}{'rev2h%':>9}{'sweep%':>9}"
-          f"{'fadeR':>9}{'expR':>8}")
+    print(
+        f"  {'year':<6}{'days':>6}{'extreme%':>10}{'rev2h%':>9}{'sweep%':>9}{'fadeR':>9}{'expR':>8}"
+    )
     years = defaultdict(list)
     for r in rows:
         years[r["year"]].append(r)
     for year in sorted(years):
         grp = years[year]
         f = [r for r in grp if r["fade_r"] is not None]
-        print(f"  {year:<6}{len(grp):>6}{_pct(grp, 'extreme_in_win'):>9.1f}%"
-              f"{_pct(grp, 'reversed_2h'):>8.1f}%{_pct(grp, 'swept'):>8.1f}%"
-              f"{sum(r['fade_r'] for r in f):>9.1f}{_mean(f, 'fade_r'):>8.3f}")
+        print(
+            f"  {year:<6}{len(grp):>6}{_pct(grp, 'extreme_in_win'):>9.1f}%"
+            f"{_pct(grp, 'reversed_2h'):>8.1f}%{_pct(grp, 'swept'):>8.1f}%"
+            f"{sum(r['fade_r'] for r in f):>9.1f}{_mean(f, 'fade_r'):>8.3f}"
+        )
 
     if base:
         print("\nEVERY WINDOW OF THE DAY — the baseline this one has to beat")
-        print(f"  {'window':<14}{'days':>6}{'extreme%':>10}{'rev2h%':>9}{'sweep%':>9}"
-              f"{'rangeADR':>10}{'fadeExpR':>10}{'fadeTotR':>10}")
+        print(
+            f"  {'window':<14}{'days':>6}{'extreme%':>10}{'rev2h%':>9}{'sweep%':>9}"
+            f"{'rangeADR':>10}{'fadeExpR':>10}{'fadeTotR':>10}"
+        )
         for r in base:
             mark = "  <<<" if r["window"] == win else ""
-            print(f"  {r['window']:<14}{r['days']:>6}{r['extreme_pct']:>9.1f}%"
-                  f"{r['rev_2h_pct']:>8.1f}%{r['sweep_pct']:>8.1f}%"
-                  f"{r['range_adr']:>9.1%}{r['fade_exp_r']:>10.3f}"
-                  f"{r['fade_total_r']:>10.1f}{mark}")
+            print(
+                f"  {r['window']:<14}{r['days']:>6}{r['extreme_pct']:>9.1f}%"
+                f"{r['rev_2h_pct']:>8.1f}%{r['sweep_pct']:>8.1f}%"
+                f"{r['range_adr']:>9.1%}{r['fade_exp_r']:>10.3f}"
+                f"{r['fade_total_r']:>10.1f}{mark}"
+            )
     print()
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="M15")
     ap.add_argument("--window", default="10:00-11:00", help="NY window under test")
     ap.add_argument("--start", help="YYYY-MM-DD, default = all cached history")
     ap.add_argument("--end", help="YYYY-MM-DD")
     ap.add_argument("--target-r", type=float, default=2.0)
-    ap.add_argument("--baseline-step", type=int, default=60,
-                    help="minutes between the comparison windows (default 60)")
+    ap.add_argument(
+        "--baseline-step",
+        type=int,
+        default=60,
+        help="minutes between the comparison windows (default 60)",
+    )
     ap.add_argument("--out", help="directory for the per-day CSV")
     ap.add_argument("--no-baseline", action="store_true")
     args = ap.parse_args()
@@ -458,8 +508,7 @@ def main() -> int:
     if not rows:
         raise SystemExit("no days survived the filters — check the window and date range")
 
-    base = [] if args.no_baseline else hour_baseline(days, args.target_r,
-                                                     args.baseline_step)
+    base = [] if args.no_baseline else hour_baseline(days, args.target_r, args.baseline_step)
     report(rows, base, args.window, args.target_r, args.symbol, args.tf)
 
     if args.out:

@@ -49,8 +49,8 @@ class M1State:
     bull_leg_lo: Optional[float]
     bear_leg_hi: Optional[float]
     bear_leg_lo: Optional[float]
-    direction: int          # engine dir (Pine st1.dir): 1 up / -1 down / 0 undetermined
-    new_bull_sos: bool      # a bull SOS fired on THIS 1m bar (the latched bar advanced)
+    direction: int  # engine dir (Pine st1.dir): 1 up / -1 down / 0 undetermined
+    new_bull_sos: bool  # a bull SOS fired on THIS 1m bar (the latched bar advanced)
     new_bear_sos: bool
 
 
@@ -89,10 +89,15 @@ class Structure1m:
             self.bear_leg_lo = ext.bear_bos_low
 
         return M1State(
-            bull_sos_bar=self.bull_sos_bar, bear_sos_bar=self.bear_sos_bar,
-            bull_leg_hi=self.bull_leg_hi, bull_leg_lo=self.bull_leg_lo,
-            bear_leg_hi=self.bear_leg_hi, bear_leg_lo=self.bear_leg_lo,
-            direction=self._engine.dir, new_bull_sos=new_bull, new_bear_sos=new_bear,
+            bull_sos_bar=self.bull_sos_bar,
+            bear_sos_bar=self.bear_sos_bar,
+            bull_leg_hi=self.bull_leg_hi,
+            bull_leg_lo=self.bull_leg_lo,
+            bear_leg_hi=self.bear_leg_hi,
+            bear_leg_lo=self.bear_leg_lo,
+            direction=self._engine.dir,
+            new_bull_sos=new_bull,
+            new_bear_sos=new_bear,
         )
 
 
@@ -103,10 +108,10 @@ class SecArm:
     execution can retire that leg on a fill (each 1m leg re-enters at most once)."""
 
     l_armed: bool = False
-    l_edge: Optional[float] = None      # resting BUY limit — 38.2% retrace of the 1m leg
-    l_sl: Optional[float] = None        # stop = 1m leg origin (1.0) − buffer
-    l_tp1: Optional[float] = None       # 15m fib 0.5
-    l_tp2: Optional[float] = None       # 15m fib 0.382 (TP3 = runner)
+    l_edge: Optional[float] = None  # resting BUY limit — 38.2% retrace of the 1m leg
+    l_sl: Optional[float] = None  # stop = 1m leg origin (1.0) − buffer
+    l_tp1: Optional[float] = None  # 15m fib 0.5
+    l_tp2: Optional[float] = None  # 15m fib 0.382 (TP3 = runner)
     l_leg: Optional[int] = None
     s_armed: bool = False
     s_edge: Optional[float] = None
@@ -159,8 +164,8 @@ class SecondaryArm:
         self._l_hi: Optional[float] = None
         self._l_lo: Optional[float] = None
         self._l_traded: Optional[int] = None
-        self._l_dead: Optional[int] = None      # 15m leg killed by a stopped re-entry (no more)
-        self._l_used: Optional[int] = None      # 15m leg that has had its one re-entry (the cap)
+        self._l_dead: Optional[int] = None  # 15m leg killed by a stopped re-entry (no more)
+        self._l_used: Optional[int] = None  # 15m leg that has had its one re-entry (the cap)
         self._s_leg: Optional[int] = None
         self._s_hi: Optional[float] = None
         self._s_lo: Optional[float] = None
@@ -172,9 +177,17 @@ class SecondaryArm:
         self._l_sos: Optional[int] = None
         self._s_sos: Optional[int] = None
 
-    def update(self, m1: M1State, sig, seq, zone_close: float, ny_hour: int,
-               flat: bool, be_sos_l: Optional[int],
-               be_sos_s: Optional[int]) -> SecArm:
+    def update(
+        self,
+        m1: M1State,
+        sig,
+        seq,
+        zone_close: float,
+        ny_hour: int,
+        flat: bool,
+        be_sos_l: Optional[int],
+        be_sos_s: Optional[int],
+    ) -> SecArm:
         cfg = self._cfg
 
         # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
@@ -197,21 +210,43 @@ class SecondaryArm:
         #    `close`, so `zone_close` is that bar's close (NOT the live 1m close, which the 1m SOS
         #    has usually left by the time it confirms). See the class docstring.
         p3, p6 = sig.fibo_p3, sig.fibo_p6
-        zone_l = (sig.fibo_dir == 1 and p3 is not None and p6 is not None
-                  and zone_close <= p3 and zone_close >= p6)
-        zone_s = (sig.fibo_dir == -1 and p3 is not None and p6 is not None
-                  and zone_close >= p3 and zone_close <= p6)
+        zone_l = (
+            sig.fibo_dir == 1
+            and p3 is not None
+            and p6 is not None
+            and zone_close <= p3
+            and zone_close >= p6
+        )
+        zone_s = (
+            sig.fibo_dir == -1
+            and p3 is not None
+            and p6 is not None
+            and zone_close >= p3
+            and zone_close <= p6
+        )
 
         # 3. Latch a fresh 1m leg on a new same-side 1m SOS while the 15m setup + div are live.
-        if (cfg.exec_secondary and m1.new_bull_sos and seq.l_sos_bar is not None
-                and sig.bull_div_active and zone_l
-                and m1.bull_leg_hi is not None and m1.bull_leg_lo is not None
-                and m1.bull_leg_hi > m1.bull_leg_lo):
+        if (
+            cfg.exec_secondary
+            and m1.new_bull_sos
+            and seq.l_sos_bar is not None
+            and sig.bull_div_active
+            and zone_l
+            and m1.bull_leg_hi is not None
+            and m1.bull_leg_lo is not None
+            and m1.bull_leg_hi > m1.bull_leg_lo
+        ):
             self._l_leg, self._l_hi, self._l_lo = m1.bull_sos_bar, m1.bull_leg_hi, m1.bull_leg_lo
-        if (cfg.exec_secondary and m1.new_bear_sos and seq.s_sos_bar is not None
-                and sig.bear_div_active and zone_s
-                and m1.bear_leg_hi is not None and m1.bear_leg_lo is not None
-                and m1.bear_leg_hi > m1.bear_leg_lo):
+        if (
+            cfg.exec_secondary
+            and m1.new_bear_sos
+            and seq.s_sos_bar is not None
+            and sig.bear_div_active
+            and zone_s
+            and m1.bear_leg_hi is not None
+            and m1.bear_leg_lo is not None
+            and m1.bear_leg_hi > m1.bear_leg_lo
+        ):
             self._s_leg, self._s_hi, self._s_lo = m1.bear_sos_bar, m1.bear_leg_hi, m1.bear_leg_lo
 
         # 4. Arm — flat, the PRIMARY on this 15m leg reached breakeven (be_sos == l_sos_bar; a
@@ -228,20 +263,42 @@ class SecondaryArm:
         l_capped = cap and self._l_used is not None and seq.l_sos_bar == self._l_used
         s_capped = cap and self._s_used is not None and seq.s_sos_bar == self._s_used
 
-        l_armed = (cfg.exec_secondary and cfg.exec_longs and flat
-                   and seq.l_sos_bar is not None and be_sos_l == seq.l_sos_bar
-                   and seq.l_sos_bar != self._l_dead and not l_capped
-                   and sig.bull_div_active and sig.fibo_dir == 1 and fibs_ready
-                   and self._l_hi is not None and self._l_lo is not None and self._l_hi > self._l_lo
-                   and (self._l_traded is None or self._l_leg != self._l_traded)
-                   and not late and (not long_veto or not respect_veto))
-        s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat
-                   and seq.s_sos_bar is not None and be_sos_s == seq.s_sos_bar
-                   and seq.s_sos_bar != self._s_dead and not s_capped
-                   and sig.bear_div_active and sig.fibo_dir == -1 and fibs_ready
-                   and self._s_hi is not None and self._s_lo is not None and self._s_hi > self._s_lo
-                   and (self._s_traded is None or self._s_leg != self._s_traded)
-                   and not late and (not short_veto or not respect_veto))
+        l_armed = (
+            cfg.exec_secondary
+            and cfg.exec_longs
+            and flat
+            and seq.l_sos_bar is not None
+            and be_sos_l == seq.l_sos_bar
+            and seq.l_sos_bar != self._l_dead
+            and not l_capped
+            and sig.bull_div_active
+            and sig.fibo_dir == 1
+            and fibs_ready
+            and self._l_hi is not None
+            and self._l_lo is not None
+            and self._l_hi > self._l_lo
+            and (self._l_traded is None or self._l_leg != self._l_traded)
+            and not late
+            and (not long_veto or not respect_veto)
+        )
+        s_armed = (
+            cfg.exec_secondary
+            and cfg.exec_shorts
+            and flat
+            and seq.s_sos_bar is not None
+            and be_sos_s == seq.s_sos_bar
+            and seq.s_sos_bar != self._s_dead
+            and not s_capped
+            and sig.bear_div_active
+            and sig.fibo_dir == -1
+            and fibs_ready
+            and self._s_hi is not None
+            and self._s_lo is not None
+            and self._s_hi > self._s_lo
+            and (self._s_traded is None or self._s_leg != self._s_traded)
+            and not late
+            and (not short_veto or not respect_veto)
+        )
 
         buf = cfg.exec_sl_buf_tk * cfg.mintick
         # `exec_sec_retrace` (default 0.382 — the constant this replaced, so the shipped path is
@@ -251,12 +308,18 @@ class SecondaryArm:
         l_edge = (self._l_hi - (self._l_hi - self._l_lo) * ratio) if l_armed else None
         s_edge = (self._s_lo + (self._s_hi - self._s_lo) * ratio) if s_armed else None
         return SecArm(
-            l_armed=l_armed, l_edge=l_edge,
+            l_armed=l_armed,
+            l_edge=l_edge,
             l_sl=(self._l_lo - buf) if l_armed else None,
-            l_tp1=sig.fibo_p2, l_tp2=sig.fibo_p1, l_leg=self._l_leg,
-            s_armed=s_armed, s_edge=s_edge,
+            l_tp1=sig.fibo_p2,
+            l_tp2=sig.fibo_p1,
+            l_leg=self._l_leg,
+            s_armed=s_armed,
+            s_edge=s_edge,
             s_sl=(self._s_hi + buf) if s_armed else None,
-            s_tp1=sig.fibo_p2, s_tp2=sig.fibo_p1, s_leg=self._s_leg,
+            s_tp1=sig.fibo_p2,
+            s_tp2=sig.fibo_p1,
+            s_leg=self._s_leg,
         )
 
     def mark_traded(self, direction: int) -> None:

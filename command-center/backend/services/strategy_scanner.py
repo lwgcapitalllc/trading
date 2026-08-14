@@ -13,12 +13,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 import config as cfg
+
 from services import lab_db, runner_dispatch, strategy_import
 
 _CATEGORY_MAP = {
@@ -62,10 +62,7 @@ def _infer_name(source: str) -> str:
 
 
 def _infer_suggested_instrument(class_name: str) -> Optional[str]:
-    cfg_path = (
-        Path(cfg.MONOREPO_ROOT)
-        / "algos" / "nt8" / "backtest_config.json"
-    )
+    cfg_path = Path(cfg.MONOREPO_ROOT) / "algos" / "nt8" / "backtest_config.json"
     if not cfg_path.exists():
         return None
     try:
@@ -98,7 +95,7 @@ def _parse_params(source: str) -> list[dict]:
         if lines[i].strip() == "[NinjaScriptProperty]":
             range_str: Optional[str] = None
             display_str: Optional[str] = None
-            category_attr: Optional[str] = None   # value from [Category("...")] if present
+            category_attr: Optional[str] = None  # value from [Category("...")] if present
             cs_type: Optional[str] = None
             prop_name: Optional[str] = None
 
@@ -128,7 +125,9 @@ def _parse_params(source: str) -> list[dict]:
 
             # Determine category — [Category] wins; fall back to GroupName heuristic
             if category_attr is not None:
-                param_category = "foundational" if category_attr == "Foundational" else "strategy_logic"
+                param_category = (
+                    "foundational" if category_attr == "Foundational" else "strategy_logic"
+                )
                 group = category_attr
             elif display_str:
                 group_m = re.search(r'GroupName\s*=\s*"([^"]*)"', display_str)
@@ -145,7 +144,7 @@ def _parse_params(source: str) -> list[dict]:
                 name_m = re.search(r'(?:^|,\s*)Name\s*=\s*"([^"]*)"', display_str)
                 if name_m:
                     display_name = name_m.group(1)
-                order_m = re.search(r'Order\s*=\s*(\d+)', display_str)
+                order_m = re.search(r"Order\s*=\s*(\d+)", display_str)
                 if order_m:
                     order = int(order_m.group(1))
 
@@ -194,7 +193,7 @@ def _cs_type(cs_type: str) -> str:
 def _parse_defaults(source: str, params: list[dict]) -> dict:
     """Pull default values from State.SetDefaults body."""
     m = re.search(
-        r'State == State\.SetDefaults\s*\)(.*?)(?:else\s+if|protected\s+override)',
+        r"State == State\.SetDefaults\s*\)(.*?)(?:else\s+if|protected\s+override)",
         source,
         re.DOTALL,
     )
@@ -205,7 +204,7 @@ def _parse_defaults(source: str, params: list[dict]) -> dict:
     defaults: dict = {}
     for param in params:
         name = param["name"]
-        dm = re.search(rf'\b{re.escape(name)}\s*=\s*([^;]+);', block)
+        dm = re.search(rf"\b{re.escape(name)}\s*=\s*([^;]+);", block)
         if not dm:
             continue
         val_str = dm.group(1).strip()
@@ -226,7 +225,7 @@ def _parse_defaults(source: str, params: list[dict]) -> dict:
 
 
 def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dict]:
-    class_m = re.search(r'public\s+class\s+(\w+)\s*:\s*Strategy\b', source)
+    class_m = re.search(r"public\s+class\s+(\w+)\s*:\s*Strategy\b", source)
     if not class_m:
         return None
 
@@ -268,14 +267,14 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
 # Group 4: trailing comment text (optional)
 # Skips extern declarations (legacy MQL4 style) since only `input` is matched.
 _MQL5_INPUT_RE = re.compile(
-    r'^\s*input\s+(\w+)\s+(\w+)\s*=\s*(.+?)\s*;(?:\s*//(.*))?$',
+    r"^\s*input\s+(\w+)\s+(\w+)\s*=\s*(.+?)\s*;(?:\s*//(.*))?$",
     re.MULTILINE,
 )
 
 # Optional explicit UI group tag in a trailing comment, e.g.
 # `// [group: Session Windows] Asian range window start (GMT)`. Parity with
 # NinjaScript's [Category("...")] — lets an .mq5 declare its own param sections.
-_MQL5_GROUP_RE = re.compile(r'\[group:\s*([^\]]+)\]', re.IGNORECASE)
+_MQL5_GROUP_RE = re.compile(r"\[group:\s*([^\]]+)\]", re.IGNORECASE)
 
 
 def _mql5_type(type_str: str) -> str:
@@ -301,9 +300,9 @@ def _parse_mql5_params(source: str) -> list[dict]:
     params: list[dict] = []
     for order, m in enumerate(_MQL5_INPUT_RE.finditer(source)):
         mql5_type = m.group(1)
-        name      = m.group(2)
-        raw_val   = m.group(3).strip()
-        comment   = (m.group(4) or "").strip()
+        name = m.group(2)
+        raw_val = m.group(3).strip()
+        comment = (m.group(4) or "").strip()
 
         # Pull an explicit "[group: ...]" tag out of the comment before anything
         # else reads it, so the tag never leaks into the display_name.
@@ -343,12 +342,13 @@ def _parse_mql5_params(source: str) -> list[dict]:
         display_name = name if (not comment or is_category_marker) else comment
 
         param: dict = {
-            "name":         name,
-            "type":         param_type,
+            "name": name,
+            "type": param_type,
             "display_name": display_name,
-            "category":     category,
-            "group":        custom_group or ("Foundational" if category == "foundational" else "Strategy Logic"),
-            "order":        order,
+            "category": category,
+            "group": custom_group
+            or ("Foundational" if category == "foundational" else "Strategy Logic"),
+            "order": order,
         }
         if default is not None:
             param["default"] = default
@@ -375,12 +375,24 @@ def _mql5_display_name(stem: str, source: str) -> str:
 
 # UI metadata keys overlaid from a companion <Strategy>.meta.json onto each param.
 # These drive the editor UI only — never the compiled strategy or the source hash.
-_PARAM_META_KEYS = ("label", "desc", "unit", "core", "widget",
-                    "options", "show_if", "guide", "group", "step", "min", "max",
-                    # Closed set of legal values for a string param → the editor renders a
-                    # dropdown. Strategies match enums exactly and no-op on anything else,
-                    # so a free-text typo silently disables the setting.
-                    "choices")
+_PARAM_META_KEYS = (
+    "label",
+    "desc",
+    "unit",
+    "core",
+    "widget",
+    "options",
+    "show_if",
+    "guide",
+    "group",
+    "step",
+    "min",
+    "max",
+    # Closed set of legal values for a string param → the editor renders a
+    # dropdown. Strategies match enums exactly and no-op on anything else,
+    # so a free-text typo silently disables the setting.
+    "choices",
+)
 
 
 def meta_path_for(source_path: Path) -> Path:
@@ -516,30 +528,30 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
     params = _parse_mql5_params(source)
     if not params:
         return None
-    meta_path   = meta_path_for(mq5_path)
-    params      = _apply_param_meta(params, meta_path)
-    overview    = _read_strategy_overview(meta_path)
+    meta_path = meta_path_for(mq5_path)
+    params = _apply_param_meta(params, meta_path)
+    overview = _read_strategy_overview(meta_path)
 
-    stem        = mq5_path.stem          # "MeanReversion"
-    strategy_id = stem.lower()           # "meanreversion"
-    rel_path    = str(mq5_path.relative_to(monorepo_root)).replace("\\", "/")
-    defaults    = {p["name"]: p["default"] for p in params if "default" in p}
+    stem = mq5_path.stem  # "MeanReversion"
+    strategy_id = stem.lower()  # "meanreversion"
+    rel_path = str(mq5_path.relative_to(monorepo_root)).replace("\\", "/")
+    defaults = {p["name"]: p["default"] for p in params if "default" in p}
 
     return {
-        "id":                   strategy_id,
-        "name":                 _mql5_display_name(stem, source),
-        "class_name":           stem,
-        "source_path":          rel_path,
-        "category":             _infer_category(strategy_id),
+        "id": strategy_id,
+        "name": _mql5_display_name(stem, source),
+        "class_name": stem,
+        "source_path": rel_path,
+        "category": _infer_category(strategy_id),
         "suggested_instrument": None,
-        "default_params":       defaults,
-        "param_schema":         params,
-        "scanned_at":           int(time.time()),
-        "source_hash":          _md5_text(source),
-        "runner":               "mt5",
-        "edge":                 overview.get("edge"),
-        "steps":                overview.get("steps", []),
-        "avoid_news":           overview.get("avoid_news", False),
+        "default_params": defaults,
+        "param_schema": params,
+        "scanned_at": int(time.time()),
+        "source_hash": _md5_text(source),
+        "runner": "mt5",
+        "edge": overview.get("edge"),
+        "steps": overview.get("steps", []),
+        "avoid_news": overview.get("avoid_news", False),
     }
 
 
@@ -551,8 +563,14 @@ _PY_TYPES = {bool: "bool", int: "int", float: "double", str: "string"}
 # Fields that are instrument/plumbing facts rather than strategy choices. They are real inputs
 # (the bot reads them), so they are exposed — but as "foundational", which keeps them out of the
 # Essentials card and out of the optimizer's tuning surface, the same split the .cs/.mq5 paths use.
-_PY_FOUNDATIONAL = {"mintick", "point_value", "daily_close_hour_ny",
-                    "fill_model", "account_profile", "symbol"}
+_PY_FOUNDATIONAL = {
+    "mintick",
+    "point_value",
+    "daily_close_hour_ny",
+    "fill_model",
+    "account_profile",
+    "symbol",
+}
 
 
 def _py_param_schema(config_cls) -> list[dict]:
@@ -571,12 +589,12 @@ def _py_param_schema(config_cls) -> list[dict]:
             ptype = "string"
         category = "foundational" if f.name in _PY_FOUNDATIONAL else "strategy_logic"
         param = {
-            "name":         f.name,
-            "type":         ptype,
+            "name": f.name,
+            "type": ptype,
             "display_name": f.name.replace("_", " "),
-            "category":     category,
-            "group":        "Foundational" if category == "foundational" else "Strategy Logic",
-            "order":        order,
+            "category": category,
+            "group": "Foundational" if category == "foundational" else "Strategy Logic",
+            "order": order,
         }
         default = f.default if f.default is not dataclasses.MISSING else None
         if default is not None:
@@ -591,7 +609,9 @@ def _resolve_hint(hint: str):
     return {"bool": bool, "int": int, "float": float, "str": str}.get(hint.strip())
 
 
-def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> tuple[Optional[dict], Optional[str]]:
+def _parse_python_package(
+    pkg_dir: Path, monorepo_root: Path
+) -> tuple[Optional[dict], Optional[str]]:
     """Import a Python strategy package → `(row, error)`.
 
     Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_sos_fade/__init__.py).
@@ -630,24 +650,24 @@ def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> tuple[Optional[
     strategy_id = pkg_dir.name.lower()
     rel_path = str(pkg_dir.relative_to(monorepo_root)).replace("\\", "/")
     return {
-        "id":                   strategy_id,
-        "name":                 spec.get("name", pkg_dir.name),
-        "class_name":           spec["strategy"].__name__,
-        "source_path":          rel_path,
-        "category":             spec.get("category") or _infer_category(strategy_id),
+        "id": strategy_id,
+        "name": spec.get("name", pkg_dir.name),
+        "class_name": spec["strategy"].__name__,
+        "source_path": rel_path,
+        "category": spec.get("category") or _infer_category(strategy_id),
         "suggested_instrument": spec.get("suggested_instrument"),
-        "default_params":       {p["name"]: p["default"] for p in params if "default" in p},
-        "param_schema":         params,
-        "scanned_at":           int(time.time()),
-        "source_hash":          _python_source_hash(pkg_dir),
-        "runner":               "python",
-        "edge":                 overview.get("edge"),
-        "steps":                overview.get("steps", []),
-        "avoid_news":           overview.get("avoid_news", False),
+        "default_params": {p["name"]: p["default"] for p in params if "default" in p},
+        "param_schema": params,
+        "scanned_at": int(time.time()),
+        "source_hash": _python_source_hash(pkg_dir),
+        "runner": "python",
+        "edge": overview.get("edge"),
+        "steps": overview.get("steps", []),
+        "avoid_news": overview.get("avoid_news", False),
         # Only a python package may declare this. NT8/MT5 strategies are unit-size BY RULE —
         # the gated-layer rule forbids them from baking risk management in — so they are always
         # sized by the engine and there is deliberately no meta.json escape hatch for it.
-        "self_sizing":          bool(spec.get("self_sizing", False)),
+        "self_sizing": bool(spec.get("self_sizing", False)),
     }, None
 
 
@@ -667,7 +687,7 @@ def _python_source_hash(pkg_dir: Path) -> str:
     """
     h = hashlib.md5()
     for py in sorted(pkg_dir.rglob("*.py")):
-        if "tests" in py.parts:          # test edits don't change what the strategy DOES
+        if "tests" in py.parts:  # test edits don't change what the strategy DOES
             continue
         h.update(py.name.encode("utf-8"))
         h.update(py.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
@@ -676,12 +696,18 @@ def _python_source_hash(pkg_dir: Path) -> str:
 
 def scan_strategies() -> dict:
     """Scan strategies/**/*.cs, **/*.mq5, and python/*/; upsert changed strategies."""
-    monorepo_root  = Path(cfg.MONOREPO_ROOT)
+    monorepo_root = Path(cfg.MONOREPO_ROOT)
     strategies_dir = monorepo_root / "strategies"
 
     if not strategies_dir.exists():
-        return {"scanned": 0, "added": 0, "updated": 0, "skipped": 0,
-                "orphans": [], "warnings": [f"strategies/ not found under {monorepo_root}"]}
+        return {
+            "scanned": 0,
+            "added": 0,
+            "updated": 0,
+            "skipped": 0,
+            "orphans": [],
+            "warnings": [f"strategies/ not found under {monorepo_root}"],
+        }
 
     added = updated = skipped = strategy_count = 0
     warnings: list[str] = []
@@ -690,15 +716,17 @@ def scan_strategies() -> dict:
     for cs_path in strategies_dir.rglob("*.cs"):
         source = cs_path.read_text(encoding="utf-8", errors="replace")
 
-        class_m = re.search(r'public\s+class\s+(\w+)\s*:\s*Strategy\b', source)
+        class_m = re.search(r"public\s+class\s+(\w+)\s*:\s*Strategy\b", source)
         if not class_m:
             continue
 
         strategy_count += 1
-        class_name  = class_m.group(1)
+        class_name = class_m.group(1)
         strategy_id = class_name.lower()
         current_hash = _md5_text(source)
-        lab_db.ensure_strategy_version(strategy_id, current_hash, len(source.encode("utf-8", errors="replace")))
+        lab_db.ensure_strategy_version(
+            strategy_id, current_hash, len(source.encode("utf-8", errors="replace"))
+        )
 
         # Re-scan when the source OR the companion meta.json changed. The meta file carries no
         # source hash (it must not trigger needs-deploy), so detect its edits by mtime vs the last
@@ -707,8 +735,11 @@ def scan_strategies() -> dict:
         meta_p = meta_path_for(cs_path)
         meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
         existing = lab_db.get_strategy(strategy_id)
-        if (existing and lab_db.get_strategy_hash(strategy_id) == current_hash
-                and meta_mtime <= (existing.get("scanned_at") or 0)):
+        if (
+            existing
+            and lab_db.get_strategy_hash(strategy_id) == current_hash
+            and meta_mtime <= (existing.get("scanned_at") or 0)
+        ):
             skipped += 1
             continue
 
@@ -727,7 +758,7 @@ def scan_strategies() -> dict:
     for mq5_path in strategies_dir.rglob("*.mq5"):
         source = mq5_path.read_text(encoding="utf-8", errors="replace")
 
-        strategy_id  = mq5_path.stem.lower()
+        strategy_id = mq5_path.stem.lower()
         current_hash = _md5_text(source)
 
         data = _parse_mql5_file(mq5_path, monorepo_root, source)
@@ -735,7 +766,9 @@ def scan_strategies() -> dict:
             continue  # no input declarations — skip silently
 
         strategy_count += 1
-        lab_db.ensure_strategy_version(strategy_id, current_hash, len(source.encode("utf-8", errors="replace")))
+        lab_db.ensure_strategy_version(
+            strategy_id, current_hash, len(source.encode("utf-8", errors="replace"))
+        )
 
         # Re-scan when the source OR the companion meta.json changed. The meta file
         # carries no source hash (it must not trigger needs-deploy), so detect its
@@ -743,8 +776,11 @@ def scan_strategies() -> dict:
         meta_p = meta_path_for(mq5_path)
         meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
         existing = lab_db.get_strategy(strategy_id)
-        if (existing and existing.get("source_hash") == current_hash
-                and meta_mtime <= (existing.get("scanned_at") or 0)):
+        if (
+            existing
+            and existing.get("source_hash") == current_hash
+            and meta_mtime <= (existing.get("scanned_at") or 0)
+        ):
             skipped += 1
             continue
 
@@ -763,7 +799,9 @@ def scan_strategies() -> dict:
     # mpc_bleg imports mpc_sos_fade and sorts before it, so it would re-import against a still-stale
     # dependency. See services/strategy_import.py.
     strategy_import.purge_strategy_modules()
-    for pkg_dir in sorted(p for p in python_dir.glob("*") if p.is_dir()) if python_dir.exists() else []:
+    for pkg_dir in (
+        sorted(p for p in python_dir.glob("*") if p.is_dir()) if python_dir.exists() else []
+    ):
         if not (pkg_dir / "__init__.py").exists():
             continue
 
@@ -781,8 +819,11 @@ def scan_strategies() -> dict:
         meta_p = pkg_dir / f"{pkg_dir.name}.meta.json"
         meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
         existing = lab_db.get_strategy(strategy_id)
-        if (existing and existing.get("source_hash") == current_hash
-                and meta_mtime <= (existing.get("scanned_at") or 0)):
+        if (
+            existing
+            and existing.get("source_hash") == current_hash
+            and meta_mtime <= (existing.get("scanned_at") or 0)
+        ):
             skipped += 1
             continue
 
@@ -801,8 +842,14 @@ def scan_strategies() -> dict:
     # silently wipe every deployed file. So scan only REPORTS the orphans.
     orphans = _detect_orphans(monorepo_root)
 
-    return {"scanned": strategy_count, "added": added, "updated": updated,
-            "skipped": skipped, "orphans": orphans, "warnings": warnings}
+    return {
+        "scanned": strategy_count,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "orphans": orphans,
+        "warnings": warnings,
+    }
 
 
 def _detect_orphans(monorepo_root: Optional[Path] = None) -> list[str]:

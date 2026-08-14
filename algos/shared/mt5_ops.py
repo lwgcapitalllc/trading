@@ -70,14 +70,13 @@ Usage in a bot:
 
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 import MetaTrader5 as mt5
 import pandas as pd
-
 from bot_state import write_bot
 
 # The broker-server-clock → true-UTC rule. It lives under markets/fx/tools/ because the MT5 lab
@@ -87,15 +86,16 @@ from bot_state import write_bot
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "markets" / "fx" / "tools"))
 import broker_clock as _broker_clock  # noqa: E402
 
-_LOCK_FILE    = Path(r"C:\trading\algos\mt5_connect.lock")
-_LOCK_TIMEOUT = 90   # seconds to wait for the file lock
-_LOCK_TTL     = 45   # seconds after which a stale lock is removed
-_TEXAS        = ZoneInfo("America/Chicago")
+_LOCK_FILE = Path(r"C:\trading\algos\mt5_connect.lock")
+_LOCK_TIMEOUT = 90  # seconds to wait for the file lock
+_LOCK_TTL = 45  # seconds after which a stale lock is removed
+_TEXAS = ZoneInfo("America/Chicago")
 
 
 # =============================================================================
 # FREE FUNCTIONS — stateless, no symbol/magic context required
 # =============================================================================
+
 
 def now_utc() -> datetime:
     """Current UTC time, timezone-aware."""
@@ -146,8 +146,8 @@ def get_ema(df: pd.DataFrame, period: int) -> float:
 def get_rsi(df: pd.DataFrame, period: int = 14) -> float:
     """Wilder RSI, last value only."""
     delta = df["close"].diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
     return float((100 - (100 / (1 + gain / (loss + 1e-9)))).iloc[-1])
 
 
@@ -213,6 +213,7 @@ _HISTORY_FORWARD_MARGIN = timedelta(days=2)
 # BotMT5 — per-bot MT5 context and operations
 # =============================================================================
 
+
 class BotMT5:
     """
     MT5 context for a single bot instance.
@@ -225,14 +226,13 @@ class BotMT5:
     messages so positions can be identified in the broker terminal.
     """
 
-    def __init__(self, symbol: str, magic: int, bot_label: str,
-                 config: dict, account: dict, log):
-        self.symbol    = symbol
-        self.magic     = magic
+    def __init__(self, symbol: str, magic: int, bot_label: str, config: dict, account: dict, log):
+        self.symbol = symbol
+        self.magic = magic
         self.bot_label = bot_label
-        self._cfg      = config
-        self._account  = account
-        self.log       = log
+        self._cfg = config
+        self._account = account
+        self.log = log
 
     # ── Connection ────────────────────────────────────────────────────────────
 
@@ -253,7 +253,7 @@ class BotMT5:
             while waited < _LOCK_TIMEOUT:
                 if _LOCK_FILE.exists():
                     try:
-                        age    = time.time() - _LOCK_FILE.stat().st_mtime
+                        age = time.time() - _LOCK_FILE.stat().st_mtime
                         holder = _LOCK_FILE.read_text().strip()
                         if age > _LOCK_TTL:
                             log.warning(f"Stale lock ({age:.0f}s, held by {holder}) — removing")
@@ -282,9 +282,9 @@ class BotMT5:
             log.info(f"Startup delay {startup_delay}s")
             time.sleep(startup_delay)
 
-        mt5_path    = self._cfg.get("mt5_path", "")
+        mt5_path = self._cfg.get("mt5_path", "")
         expected_id = self._account.get("login")
-        bot_id      = f"{self.bot_label}_{expected_id}"
+        bot_id = f"{self.bot_label}_{expected_id}"
 
         if not _acquire_lock(bot_id):
             return False
@@ -303,7 +303,9 @@ class BotMT5:
                     if not mt5.initialize(path=mt5_path):
                         err = mt5.last_error()
                         if err[0] == -10005:
-                            log.info(f"IPC timeout (attempt {attempt}) — terminal running, retrying")
+                            log.info(
+                                f"IPC timeout (attempt {attempt}) — terminal running, retrying"
+                            )
                         else:
                             log.warning(f"MT5 init failed (attempt {attempt}): {err}")
                         continue
@@ -312,9 +314,11 @@ class BotMT5:
                         log.warning(f"MT5 init failed (attempt {attempt}): {mt5.last_error()}")
                         continue
 
-                if not mt5.login(self._account["login"],
-                                 password=self._account["password"],
-                                 server=self._account["server"]):
+                if not mt5.login(
+                    self._account["login"],
+                    password=self._account["password"],
+                    server=self._account["server"],
+                ):
                     log.warning(f"Login failed (attempt {attempt}): {mt5.last_error()}")
                     mt5.shutdown()
                     continue
@@ -348,8 +352,7 @@ class BotMT5:
 
     # ── Market data ───────────────────────────────────────────────────────────
 
-    def get_candles(self, tf: int, count: int,
-                    symbol: str = None) -> pd.DataFrame:
+    def get_candles(self, tf: int, count: int, symbol: str = None) -> pd.DataFrame:
         """Fetch OHLCV bars from MT5, timestamped in TRUE UTC.
 
         **The bug this signature hides, and why the conversion is not optional.** MT5's `time`
@@ -372,7 +375,7 @@ class BotMT5:
 
         Returns an empty DataFrame on failure, never None.
         """
-        sym   = symbol or self.symbol
+        sym = symbol or self.symbol
         rates = mt5.copy_rates_from_pos(sym, tf, 0, count)
         if rates is None or len(rates) == 0:
             return pd.DataFrame()
@@ -385,14 +388,21 @@ class BotMT5:
 
     def get_tick(self, symbol: str = None) -> tuple[float, float]:
         """Return (bid, ask) for the symbol. Returns (0.0, 0.0) on failure."""
-        sym  = symbol or self.symbol
+        sym = symbol or self.symbol
         tick = mt5.symbol_info_tick(sym)
         return (tick.bid, tick.ask) if tick else (0.0, 0.0)
 
     # ── Order execution ───────────────────────────────────────────────────────
 
-    def place_order(self, direction: str, lots: float, sl: float, tp: float,
-                    comment: str = "", symbol: str = None) -> tuple:
+    def place_order(
+        self,
+        direction: str,
+        lots: float,
+        sl: float,
+        tp: float,
+        comment: str = "",
+        symbol: str = None,
+    ) -> tuple:
         """
         Send a market order.
 
@@ -401,12 +411,12 @@ class BotMT5:
         comment: optional override for the MT5 order comment field
         Returns (ticket, filled_price) or (None, None) on failure.
         """
-        sym        = symbol or self.symbol
-        si         = mt5.symbol_info(sym)
-        digits     = si.digits if si else 2
-        bid, ask   = self.get_tick(sym)
+        sym = symbol or self.symbol
+        si = mt5.symbol_info(sym)
+        digits = si.digits if si else 2
+        bid, ask = self.get_tick(sym)
         order_type = mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL
-        price      = ask if direction == "bullish" else bid
+        price = ask if direction == "bullish" else bid
 
         # Broker minimum stop-distance guard
         if si and si.trade_stops_level > 0:
@@ -414,24 +424,26 @@ class BotMT5:
             if abs(price - sl) < min_dist:
                 self.log.warning(
                     f"SL too close: |{price:.{digits}f} - {sl:.{digits}f}| = "
-                    f"{abs(price-sl):.{digits}f} < stops_level {min_dist:.{digits}f} ({sym}). Skip."
+                    f"{abs(price - sl):.{digits}f} < stops_level {min_dist:.{digits}f} ({sym}). Skip."
                 )
                 return None, None
 
-        result = mt5.order_send({
-            "action":       mt5.TRADE_ACTION_DEAL,
-            "symbol":       sym,
-            "volume":       lots,
-            "type":         order_type,
-            "price":        price,
-            "sl":           round(sl, digits),
-            "tp":           round(tp, digits),
-            "deviation":    20,
-            "magic":        self.magic,
-            "comment":      comment or f"{self.bot_label}-ENTRY",
-            "type_time":    mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        })
+        result = mt5.order_send(
+            {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": sym,
+                "volume": lots,
+                "type": order_type,
+                "price": price,
+                "sl": round(sl, digits),
+                "tp": round(tp, digits),
+                "deviation": 20,
+                "magic": self.magic,
+                "comment": comment or f"{self.bot_label}-ENTRY",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+        )
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(
                 f"ORDER FILLED | ticket={result.order} | "
@@ -439,8 +451,9 @@ class BotMT5:
                 f"SL={sl:.{digits}f} TP={tp:.{digits}f}"
             )
             return result.order, result.price
-        self.log.error(f"Order failed ({sym} {direction} {lots}L @ {price}): "
-                       f"{refusal_detail(result)}")
+        self.log.error(
+            f"Order failed ({sym} {direction} {lots}L @ {price}): {refusal_detail(result)}"
+        )
         return None, None
 
     # ── Pending (resting limit) orders ────────────────────────────────────────
@@ -522,23 +535,25 @@ class BotMT5:
             digits=int(si.digits),
         )
 
-    def margin_for(self, direction: str, lots: float, price: float,
-                   symbol: str = None) -> Optional[float]:
+    def margin_for(
+        self, direction: str, lots: float, price: float, symbol: str = None
+    ) -> Optional[float]:
         """Margin the broker would require for this order, in the account's currency.
 
         `None` = the terminal declined to compute it. The caller must treat that as a REFUSAL,
         never as "affordable" — this is the `mt5_link` three-state rule applied to money.
         """
         sym = symbol or self.symbol
-        order_type = (mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL)
+        order_type = mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL
         try:
             m = mt5.order_calc_margin(order_type, sym, float(lots), float(price))
         except Exception as e:
             self.log.error(f"order_calc_margin failed for {sym} {lots}L @ {price}: {e}")
             return None
         if m is None:
-            self.log.error(f"order_calc_margin returned None for {sym} {lots}L @ {price}: "
-                           f"{mt5.last_error()}")
+            self.log.error(
+                f"order_calc_margin returned None for {sym} {lots}L @ {price}: {mt5.last_error()}"
+            )
             return None
         return float(m)
 
@@ -624,42 +639,66 @@ class BotMT5:
 
         out = []
         for p in pos:
-            out.append(Exposure(
-                ticket=int(p.ticket), symbol=sym, magic=int(p.magic),
-                # POSITION_TYPE_BUY is 0 and SELL is 1 — not +1/-1, and reading `p.type` as a
-                # sign would make every long a short and every short a flat position.
-                direction=1 if int(p.type) == mt5.POSITION_TYPE_BUY else -1,
-                volume=float(p.volume), entry=float(p.price_open), stop=float(p.sl),
-                resting=False))
+            out.append(
+                Exposure(
+                    ticket=int(p.ticket),
+                    symbol=sym,
+                    magic=int(p.magic),
+                    # POSITION_TYPE_BUY is 0 and SELL is 1 — not +1/-1, and reading `p.type` as a
+                    # sign would make every long a short and every short a flat position.
+                    direction=1 if int(p.type) == mt5.POSITION_TYPE_BUY else -1,
+                    volume=float(p.volume),
+                    entry=float(p.price_open),
+                    stop=float(p.sl),
+                    resting=False,
+                )
+            )
         for o in orders:
-            buy = int(o.type) in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP,
-                                  mt5.ORDER_TYPE_BUY_STOP_LIMIT)
-            out.append(Exposure(
-                ticket=int(o.ticket), symbol=sym, magic=int(o.magic),
-                direction=1 if buy else -1,
-                # `volume_current` is what is LEFT on a partially-filled order; `volume_initial`
-                # would double-count the filled part, which is already in `positions_get` above.
-                volume=float(o.volume_current), entry=float(o.price_open), stop=float(o.sl),
-                resting=True))
+            buy = int(o.type) in (
+                mt5.ORDER_TYPE_BUY_LIMIT,
+                mt5.ORDER_TYPE_BUY_STOP,
+                mt5.ORDER_TYPE_BUY_STOP_LIMIT,
+            )
+            out.append(
+                Exposure(
+                    ticket=int(o.ticket),
+                    symbol=sym,
+                    magic=int(o.magic),
+                    direction=1 if buy else -1,
+                    # `volume_current` is what is LEFT on a partially-filled order; `volume_initial`
+                    # would double-count the filled part, which is already in `positions_get` above.
+                    volume=float(o.volume_current),
+                    entry=float(o.price_open),
+                    stop=float(o.sl),
+                    resting=True,
+                )
+            )
         return out
 
-    def place_pending_limit(self, direction: str, lots: float, price: float,
-                            sl: float, tp: float = 0.0, comment: str = "",
-                            symbol: str = None) -> tuple:
+    def place_pending_limit(
+        self,
+        direction: str,
+        lots: float,
+        price: float,
+        sl: float,
+        tp: float = 0.0,
+        comment: str = "",
+        symbol: str = None,
+    ) -> tuple:
         """Rest a buy-limit (below market) or sell-limit (above market).
 
         direction: 'bullish' → BUY LIMIT, 'bearish' → SELL LIMIT
         Returns (ticket, price) or (None, None) — every refusal is logged with its reason.
         """
         sym = symbol or self.symbol
-        si  = mt5.symbol_info(sym)
+        si = mt5.symbol_info(sym)
         if not si:
             self.log.error(f"Pending refused: no symbol info for {sym}")
             return None, None
         digits = si.digits
-        price  = round(price, digits)
-        sl     = round(sl, digits)
-        tp     = round(tp, digits) if tp else 0.0
+        price = round(price, digits)
+        sl = round(sl, digits)
+        tp = round(tp, digits) if tp else 0.0
 
         vol = self.normalize_volume(lots, sym)
         if vol <= 0:
@@ -692,56 +731,62 @@ class BotMT5:
         if min_dist > 0:
             if abs(market - price) < min_dist:
                 self.log.warning(
-                    f"Pending refused: limit {price:.{digits}f} is {abs(market-price):.{digits}f} "
+                    f"Pending refused: limit {price:.{digits}f} is {abs(market - price):.{digits}f} "
                     f"from market {market:.{digits}f}, inside the broker stops_level "
                     f"{min_dist:.{digits}f} ({sym})."
                 )
                 return None, None
             if abs(price - sl) < min_dist:
                 self.log.warning(
-                    f"Pending refused: SL {sl:.{digits}f} is {abs(price-sl):.{digits}f} from the "
+                    f"Pending refused: SL {sl:.{digits}f} is {abs(price - sl):.{digits}f} from the "
                     f"limit {price:.{digits}f}, inside the broker stops_level "
                     f"{min_dist:.{digits}f} ({sym})."
                 )
                 return None, None
 
-        result = mt5.order_send({
-            "action":       mt5.TRADE_ACTION_PENDING,
-            "symbol":       sym,
-            "volume":       vol,
-            "type":         order_type,
-            "price":        price,
-            "sl":           sl,
-            "tp":           tp,
-            "magic":        self.magic,
-            "comment":      comment or f"{self.bot_label}-LIMIT",
-            "type_time":    mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
-        })
+        result = mt5.order_send(
+            {
+                "action": mt5.TRADE_ACTION_PENDING,
+                "symbol": sym,
+                "volume": vol,
+                "type": order_type,
+                "price": price,
+                "sl": sl,
+                "tp": tp,
+                "magic": self.magic,
+                "comment": comment or f"{self.bot_label}-LIMIT",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_RETURN,
+            }
+        )
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(
                 f"PENDING PLACED | ticket={result.order} | {direction} {vol}L "
                 f"@ {price:.{digits}f} | SL={sl:.{digits}f}"
             )
             return result.order, price
-        self.log.error(f"Pending failed ({sym} {direction} {vol}L @ {price}): "
-                       f"{refusal_detail(result)}")
+        self.log.error(
+            f"Pending failed ({sym} {direction} {vol}L @ {price}): {refusal_detail(result)}"
+        )
         return None, None
 
-    def modify_pending(self, ticket: int, price: float, sl: float,
-                       tp: float = 0.0, symbol: str = None) -> bool:
+    def modify_pending(
+        self, ticket: int, price: float, sl: float, tp: float = 0.0, symbol: str = None
+    ) -> bool:
         """Move a resting order's price / SL / TP. **Cannot change volume** — see the block
         comment above. Returns True if MT5 accepted it."""
         sym = symbol or self.symbol
-        si  = mt5.symbol_info(sym)
+        si = mt5.symbol_info(sym)
         digits = si.digits if si else 2
-        result = mt5.order_send({
-            "action": mt5.TRADE_ACTION_MODIFY,
-            "order":  ticket,
-            "price":  round(price, digits),
-            "sl":     round(sl, digits),
-            "tp":     round(tp, digits) if tp else 0.0,
-        })
+        result = mt5.order_send(
+            {
+                "action": mt5.TRADE_ACTION_MODIFY,
+                "order": ticket,
+                "price": round(price, digits),
+                "sl": round(sl, digits),
+                "tp": round(tp, digits) if tp else 0.0,
+            }
+        )
         ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
         if ok:
             self.log.info(f"PENDING MOVED | T{ticket} → {price:.{digits}f} SL={sl:.{digits}f}")
@@ -758,7 +803,7 @@ class BotMT5:
             self.log.info(f"PENDING CANCELLED | T{ticket}")
             return True
         if not mt5.orders_get(ticket=ticket):
-            return True     # already gone
+            return True  # already gone
         self.log.error(f"Pending cancel failed T{ticket}: {refusal_detail(result)}")
         return False
 
@@ -779,13 +824,15 @@ class BotMT5:
         if not pos:
             return False
         sym = pos[0].symbol
-        result = mt5.order_send({
-            "action":   mt5.TRADE_ACTION_SLTP,
-            "symbol":   sym,
-            "position": ticket,
-            "sl":       round(new_sl, 2),
-            "tp":       tp if tp is not None else pos[0].tp,
-        })
+        result = mt5.order_send(
+            {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": sym,
+                "position": ticket,
+                "sl": round(new_sl, 2),
+                "tp": tp if tp is not None else pos[0].tp,
+            }
+        )
         ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
         # This one logged NOTHING on failure until 2026-08-10, and it is the worst place in the
         # file for that: `move_sl` is how the stop gets staged to breakeven, which this strategy
@@ -809,32 +856,33 @@ class BotMT5:
         if not pos:
             return False
         sym = pos[0].symbol
-        si  = mt5.symbol_info(sym)
+        si = mt5.symbol_info(sym)
         if not si:
             return False
-        bid, ask   = self.get_tick(sym)
-        price      = bid if direction == "bullish" else ask
+        bid, ask = self.get_tick(sym)
+        price = bid if direction == "bullish" else ask
         close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
         close_lots = round(round(close_lots / si.volume_step) * si.volume_step, 2)
         close_lots = max(si.volume_min, min(close_lots, pos[0].volume))
-        result = mt5.order_send({
-            "action":       mt5.TRADE_ACTION_DEAL,
-            "symbol":       sym,
-            "volume":       close_lots,
-            "type":         close_type,
-            "position":     ticket,
-            "price":        price,
-            "deviation":    20,
-            "magic":        self.magic,
-            "comment":      f"{self.bot_label}-PARTIAL",
-            "type_time":    mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        })
+        result = mt5.order_send(
+            {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": sym,
+                "volume": close_lots,
+                "type": close_type,
+                "position": ticket,
+                "price": price,
+                "deviation": 20,
+                "magic": self.magic,
+                "comment": f"{self.bot_label}-PARTIAL",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+        )
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(f"PARTIAL CLOSE | T{ticket} | {close_lots}L @ {price:.2f}")
             return True
-        self.log.error(f"Partial close failed T{ticket} ({close_lots}L): "
-                       f"{refusal_detail(result)}")
+        self.log.error(f"Partial close failed T{ticket} ({close_lots}L): {refusal_detail(result)}")
         return False
 
     # ── Position lifecycle ────────────────────────────────────────────────────
@@ -863,7 +911,7 @@ class BotMT5:
         # `+ _HISTORY_FORWARD_MARGIN` because MT5 stamps deals in SERVER time — see that
         # constant. Without it this returned (0.0, 0.0) on every real fill against a broker whose
         # clock runs ahead of UTC, and the caller fell back to floating P&L, which looks fine.
-        to    = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
+        to = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
         from_ = datetime.utcnow() - timedelta(days=7)
         deals = mt5.history_deals_get(from_, to, position=ticket)
         if deals:
@@ -903,13 +951,19 @@ class BotMT5:
         this repo's standing rule is that "no data" and "cannot ask" must never be the same
         value, and a dict of zeros is what an unreachable terminal returns too.
         """
-        empty = {"close_price": 0.0, "gross_usd": 0.0, "swap_usd": 0.0,
-                 "commission_usd": 0.0, "net_usd": 0.0, "deals": 0}
+        empty = {
+            "close_price": 0.0,
+            "gross_usd": 0.0,
+            "swap_usd": 0.0,
+            "commission_usd": 0.0,
+            "net_usd": 0.0,
+            "deals": 0,
+        }
         # `+ _HISTORY_FORWARD_MARGIN` because MT5 stamps deals in SERVER time — see that
         # constant. This function returned `deals: 0` on EVERY closed position against PU Prime
         # (server +3h) until 2026-08-10, so the cost measurement it was written for had never
         # produced a reading and never would have.
-        to    = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
+        to = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
         from_ = datetime.utcnow() - timedelta(days=7)
         deals = mt5.history_deals_get(from_, to, position=ticket)
         if not deals:
@@ -925,12 +979,18 @@ class BotMT5:
         closing = [d for d in mine if d.entry == 1]
         price = float(closing[-1].price) if closing else 0.0
 
-        return {"close_price": price, "gross_usd": gross, "swap_usd": swap,
-                "commission_usd": comm, "net_usd": gross + swap + comm,
-                "deals": len(mine)}
+        return {
+            "close_price": price,
+            "gross_usd": gross,
+            "swap_usd": swap,
+            "commission_usd": comm,
+            "net_usd": gross + swap + comm,
+            "deals": len(mine),
+        }
 
-    def close_position(self, ticket: int, direction: str,
-                       reason: str = "") -> tuple[bool, float, float]:
+    def close_position(
+        self, ticket: int, direction: str, reason: str = ""
+    ) -> tuple[bool, float, float]:
         """
         Close an open position at market price.
 
@@ -944,24 +1004,26 @@ class BotMT5:
         pos = mt5.positions_get(ticket=ticket)
         if not pos:
             return False, 0.0, 0.0
-        p          = pos[0]
-        sym        = p.symbol
-        bid, ask   = self.get_tick(sym)
+        p = pos[0]
+        sym = p.symbol
+        bid, ask = self.get_tick(sym)
         close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
-        price      = bid if direction == "bullish" else ask
-        result = mt5.order_send({
-            "action":       mt5.TRADE_ACTION_DEAL,
-            "symbol":       sym,
-            "volume":       p.volume,
-            "type":         close_type,
-            "position":     ticket,
-            "price":        price,
-            "deviation":    20,
-            "magic":        self.magic,
-            "comment":      f"{self.bot_label}-CLOSE-{reason}",
-            "type_time":    mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        })
+        price = bid if direction == "bullish" else ask
+        result = mt5.order_send(
+            {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": sym,
+                "volume": p.volume,
+                "type": close_type,
+                "position": ticket,
+                "price": price,
+                "deviation": 20,
+                "magic": self.magic,
+                "comment": f"{self.bot_label}-CLOSE-{reason}",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+        )
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(f"CLOSED T{ticket} | reason={reason} @ {price:.2f}")
             time.sleep(0.3)
@@ -976,8 +1038,7 @@ class BotMT5:
         self.log.error(f"Close failed T{ticket} (reason={reason}): {refusal_detail(result)}")
         return False, 0.0, 0.0
 
-    def close_all_positions(self, reason: str = "",
-                            symbols: list = None) -> list:
+    def close_all_positions(self, reason: str = "", symbols: list = None) -> list:
         """
         Force-close all open positions belonging to this bot (filtered by magic number).
 
@@ -999,22 +1060,24 @@ class BotMT5:
         self.log.warning(f"CLOSE ALL — {reason} | {len(all_own)} position(s)")
         results = []
         for p in all_own:
-            bid, ask   = self.get_tick(p.symbol)
-            price      = bid if p.type == mt5.ORDER_TYPE_BUY else ask
+            bid, ask = self.get_tick(p.symbol)
+            price = bid if p.type == mt5.ORDER_TYPE_BUY else ask
             close_type = mt5.ORDER_TYPE_SELL if p.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
-            result = mt5.order_send({
-                "action":       mt5.TRADE_ACTION_DEAL,
-                "symbol":       p.symbol,
-                "volume":       p.volume,
-                "type":         close_type,
-                "position":     p.ticket,
-                "price":        price,
-                "deviation":    30,
-                "magic":        self.magic,
-                "comment":      f"{self.bot_label}-{reason}",
-                "type_time":    mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
-            })
+            result = mt5.order_send(
+                {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": p.symbol,
+                    "volume": p.volume,
+                    "type": close_type,
+                    "position": p.ticket,
+                    "price": price,
+                    "deviation": 30,
+                    "magic": self.magic,
+                    "comment": f"{self.bot_label}-{reason}",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": mt5.ORDER_FILLING_IOC,
+                }
+            )
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                 self.log.warning(f"  Closed T{p.ticket} {p.symbol} @ {price:.2f}")
                 time.sleep(0.3)
@@ -1026,8 +1089,14 @@ class BotMT5:
                 self.log.error(f"  Failed T{p.ticket} {p.symbol}: {refusal_detail(result)}")
         return results
 
-    def lot_size(self, balance: float, sl_dist: float, risk_pct: float,
-                 risk_mult: float = 1.0, symbol: str = None) -> float:
+    def lot_size(
+        self,
+        balance: float,
+        sl_dist: float,
+        risk_pct: float,
+        risk_mult: float = 1.0,
+        symbol: str = None,
+    ) -> float:
         """
         Calculate MT5 lot size for the given risk parameters.
 
@@ -1037,15 +1106,15 @@ class BotMT5:
         Rounds to the symbol's volume step and clamps to min/max lot.
         """
         sym = symbol or self.symbol
-        si  = mt5.symbol_info(sym)
+        si = mt5.symbol_info(sym)
         if not si or si.trade_tick_size == 0 or sl_dist == 0:
             return si.volume_min if si else 0.01
         actual_sl = sl_dist * risk_mult
-        risk      = balance * (risk_pct / 100)
-        ticks     = actual_sl / si.trade_tick_size
-        lots      = risk / (ticks * si.trade_tick_value)
-        lots      = max(si.volume_min, min(si.volume_max, lots))
-        lots      = round(round(lots / si.volume_step) * si.volume_step, 2)
+        risk = balance * (risk_pct / 100)
+        ticks = actual_sl / si.trade_tick_size
+        lots = risk / (ticks * si.trade_tick_value)
+        lots = max(si.volume_min, min(si.volume_max, lots))
+        lots = round(round(lots / si.volume_step) * si.volume_step, 2)
         digits = si.digits if si else 5
         self.log.info(
             f"Lot size: {lots}L | risk={risk_pct:.2f}% (${risk:.2f}) | "
@@ -1053,8 +1122,7 @@ class BotMT5:
         )
         return lots
 
-    def write_live_state(self, state_key: str, weekly_start: float,
-                         daily_start: float):
+    def write_live_state(self, state_key: str, weekly_start: float, daily_start: float):
         """
         Fetch account balance from MT5, guard against bad readings, and write
         the live state fields (balance, last_write, weekly_start, daily_start)
@@ -1070,13 +1138,16 @@ class BotMT5:
         if not acct or acct.balance <= 0:
             self.log.warning("MT5 returned zero balance — skipping iteration (bad reading).")
             return None
-        write_bot(state_key, {
-            "balance":      acct.balance,
-            "status":       "running",
-            "weekly_start": weekly_start,
-            "daily_start":  daily_start,
-            "last_write":   datetime.now(timezone.utc).isoformat(),
-        })
+        write_bot(
+            state_key,
+            {
+                "balance": acct.balance,
+                "status": "running",
+                "weekly_start": weekly_start,
+                "daily_start": daily_start,
+                "last_write": datetime.now(timezone.utc).isoformat(),
+            },
+        )
         return acct
 
     def recover_open_positions(self, symbols: list = None) -> list:
@@ -1089,7 +1160,7 @@ class BotMT5:
         Returns list of dicts with keys: ticket, entry, sl, dir, lots, symbol.
         Bot-specific fields (tp, be_done, etc.) should be set by the caller.
         """
-        syms      = symbols if symbols else [self.symbol]
+        syms = symbols if symbols else [self.symbol]
         recovered = []
         for sym in syms:
             positions = mt5.positions_get(symbol=sym)
@@ -1099,14 +1170,16 @@ class BotMT5:
                 if p.magic != self.magic:
                     continue
                 direction = "bullish" if p.type == mt5.ORDER_TYPE_BUY else "bearish"
-                recovered.append({
-                    "ticket": p.ticket,
-                    "entry":  p.price_open,
-                    "sl":     p.sl,
-                    "dir":    direction,
-                    "lots":   p.volume,
-                    "symbol": sym,
-                })
+                recovered.append(
+                    {
+                        "ticket": p.ticket,
+                        "entry": p.price_open,
+                        "sl": p.sl,
+                        "dir": direction,
+                        "lots": p.volume,
+                        "symbol": sym,
+                    }
+                )
                 self.log.info(
                     f"RECOVERED T{p.ticket} {sym} | {direction} {p.volume}L "
                     f"@ {p.price_open:.2f} | P&L=${p.profit:.2f} | SL={p.sl:.2f}"
@@ -1130,7 +1203,7 @@ class BotMT5:
             trades.json was wiped. Creates a stub entry so the position is managed.
         """
         pending = {t["ticket"] for t in logger.trades if t.get("outcome") is None}
-        live    = {t["ticket"] for t in open_trades}
+        live = {t["ticket"] for t in open_trades}
 
         missed = pending - live
         if missed:
@@ -1151,15 +1224,15 @@ class BotMT5:
         for t in open_trades:
             if t["ticket"] in phantom:
                 logger.log_entry(
-                    ticket    = t["ticket"],
-                    features  = {},
-                    direction = t["dir"],
-                    entry     = t["entry"],
-                    sl        = t["sl"],
-                    tp1       = t.get("tp", 0.0),
-                    tp2       = 0.0,
-                    is_reentry= True,
-                    risk_usd  = 0.0,
+                    ticket=t["ticket"],
+                    features={},
+                    direction=t["dir"],
+                    entry=t["entry"],
+                    sl=t["sl"],
+                    tp1=t.get("tp", 0.0),
+                    tp2=0.0,
+                    is_reentry=True,
+                    risk_usd=0.0,
                 )
                 self.log.warning(
                     f"RECONCILE: Stub entry created | T{t['ticket']} | "
@@ -1189,7 +1262,7 @@ class BotMT5:
         3. Individually profitable trades → move to breakeven.
         """
         try:
-            now_tx   = now_utc().astimezone(_TEXAS)
+            now_tx = now_utc().astimezone(_TEXAS)
             hard_cut = now_tx.hour > 15 or (now_tx.hour == 15 and now_tx.minute >= 45)
         except Exception:
             hard_cut = False
@@ -1245,13 +1318,14 @@ class BotMT5:
             return
 
         for t, p in live_trades:
-            sl_dist   = abs(t["entry"] - t["sl"])
+            sl_dist = abs(t["entry"] - t["sl"])
             direction = t["dir"]
             if sl_dist == 0:
                 continue
 
             profit_r = (
-                (p.price_current - t["entry"]) / sl_dist if direction == "bullish"
+                (p.price_current - t["entry"]) / sl_dist
+                if direction == "bullish"
                 else (t["entry"] - p.price_current) / sl_dist
             )
 
@@ -1259,23 +1333,20 @@ class BotMT5:
                 if not t.get("be_done"):
                     if self.move_sl(t["ticket"], t["entry"]):
                         t["be_done"] = True
-                        t["sl"]      = t["entry"]
+                        t["sl"] = t["entry"]
                         self.log.info(
                             f"DEAD ZONE BE | T{t['ticket']} -> breakeven @ {t['entry']:.2f}"
                         )
             else:
-                prev_r    = t.get("_dz_prev_r", profit_r)
+                prev_r = t.get("_dz_prev_r", profit_r)
                 worsening = profit_r < prev_r
                 t["_dz_prev_r"] = profit_r
 
                 if hard_cut:
                     self.log.warning(
-                        f"DEAD ZONE 3:45 CUT | T{t['ticket']} | "
-                        f"P&L={profit_r:.2f}R | closing now."
+                        f"DEAD ZONE 3:45 CUT | T{t['ticket']} | P&L={profit_r:.2f}R | closing now."
                     )
-                    ok, cp, pnl = self.close_position(
-                        t["ticket"], direction, "dead-zone-3:45-cut"
-                    )
+                    ok, cp, pnl = self.close_position(t["ticket"], direction, "dead-zone-3:45-cut")
                     if ok:
                         logger.log_close(t["ticket"], cp, pnl)
                         ai.on_trade_closed(t["ticket"], cp, pnl)
@@ -1287,9 +1358,7 @@ class BotMT5:
                         f"DEAD ZONE WORSENING | T{t['ticket']} | "
                         f"P&L={profit_r:.2f}R | closing to limit loss."
                     )
-                    ok, cp, pnl = self.close_position(
-                        t["ticket"], direction, "dead-zone-worsening"
-                    )
+                    ok, cp, pnl = self.close_position(t["ticket"], direction, "dead-zone-worsening")
                     if ok:
                         logger.log_close(t["ticket"], cp, pnl)
                         ai.on_trade_closed(t["ticket"], cp, pnl)

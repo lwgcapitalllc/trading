@@ -46,7 +46,7 @@ from typing import Iterable, List, Optional, Sequence
 from urllib.error import HTTPError, URLError
 
 from ..types import Impact, NewsEvent
-from .base import CalendarSource, FetchResult, Interval
+from .base import CalendarSource, FetchResult
 
 _ENDPOINT = "https://economic-calendar.tradingview.com/events"
 # The nine major FX blocs — USD dominates for gold; the rest give context (Aaron's call 2026-07-17).

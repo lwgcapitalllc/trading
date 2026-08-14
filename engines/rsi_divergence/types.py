@@ -36,14 +36,15 @@ class RsiDivergence:
     confirmation bar); `prev_*` is the immediately preceding pivot of the same side (the other end).
     `*_bar` are absolute bar indices; `*_price` is the bar's price extreme; `*_rsi` is the RSI value.
     """
+
     is_bullish: bool
-    pivot_bar: int         # the confirmed pivot bar (Pine _pBar / lastBull|BearDivBar)
-    pivot_price: float     # low[divPivotLen] (bull) / high[divPivotLen] (bear) at that bar
-    pivot_rsi: float       # divPlRsi (bull) / divPhRsi (bear)
-    prev_bar: int          # the previous same-side pivot bar (line's other end)
-    prev_price: float      # divPrevPriceLow / divPrevPriceHigh
-    prev_rsi: float        # divPrevRsiLow / divPrevRsiHigh
-    id: int                # stable id so a consumer can track a specific divergence
+    pivot_bar: int  # the confirmed pivot bar (Pine _pBar / lastBull|BearDivBar)
+    pivot_price: float  # low[divPivotLen] (bull) / high[divPivotLen] (bear) at that bar
+    pivot_rsi: float  # divPlRsi (bull) / divPhRsi (bear)
+    prev_bar: int  # the previous same-side pivot bar (line's other end)
+    prev_price: float  # divPrevPriceLow / divPrevPriceHigh
+    prev_rsi: float  # divPrevRsiLow / divPrevRsiHigh
+    id: int  # stable id so a consumer can track a specific divergence
 
 
 @dataclass
@@ -57,9 +58,13 @@ class RsiDivEvents:
     warm-up) — diagnostic, not a signal.
     """
 
-    detected: List[RsiDivergence] = field(default_factory=list)   # divergences confirmed THIS bar
-    bull_active: bool = False                                      # live bull confluence (state)
-    bear_active: bool = False                                      # live bear confluence (state)
-    rsi: Optional[float] = None                                    # current RSI value (diagnostic)
-    pivot_low_rsi: Optional[float] = None    # RSI pivot LOW confirmed THIS bar (Pine divPlRsi), else None
-    pivot_high_rsi: Optional[float] = None   # RSI pivot HIGH confirmed THIS bar (Pine divPhRsi), else None
+    detected: List[RsiDivergence] = field(default_factory=list)  # divergences confirmed THIS bar
+    bull_active: bool = False  # live bull confluence (state)
+    bear_active: bool = False  # live bear confluence (state)
+    rsi: Optional[float] = None  # current RSI value (diagnostic)
+    pivot_low_rsi: Optional[float] = (
+        None  # RSI pivot LOW confirmed THIS bar (Pine divPlRsi), else None
+    )
+    pivot_high_rsi: Optional[float] = (
+        None  # RSI pivot HIGH confirmed THIS bar (Pine divPhRsi), else None
+    )

@@ -9,9 +9,9 @@ Each bot owns its own REGIME_RISK_TABLE mapping these labels to (risk_multiplier
 The shim returns risk_multiplier=1.0 and trade_allowed=True as defaults — bots override from their table.
 """
 
-import sys
 import json
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -22,7 +22,8 @@ _ENGINES = Path(__file__).resolve().parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
-from regime import classify_regime as _classify_regime, compute_signals as _compute_signals
+from regime import classify_regime as _classify_regime
+from regime import compute_signals as _compute_signals
 
 log = logging.getLogger("REGIME")
 
@@ -41,12 +42,12 @@ _UPDATE_MINUTES = _load_update_interval()
 
 class RegimeClassifier:
     def __init__(self, bot_name="BOT", update_minutes=None):
-        self.bot_name       = bot_name
+        self.bot_name = bot_name
         self.update_minutes = update_minutes or _UPDATE_MINUTES
         self.current_regime = "TRENDING"
-        self.regime_score   = 3
-        self.last_updated   = None
-        self._file          = f"regime_state_{bot_name}.json"
+        self.regime_score = 3
+        self.last_updated = None
+        self._file = f"regime_state_{bot_name}.json"
         self._load()
 
     def _load(self):
@@ -54,18 +55,24 @@ class RegimeClassifier:
             with open(self._file) as f:
                 s = json.load(f)
             self.current_regime = s.get("regime", "TRENDING")
-            self.regime_score   = s.get("score", 3)
-            log.info(f"[{self.bot_name}] Loaded regime: {self.current_regime} "
-                     f"(score={self.regime_score})")
+            self.regime_score = s.get("score", 3)
+            log.info(
+                f"[{self.bot_name}] Loaded regime: {self.current_regime} "
+                f"(score={self.regime_score})"
+            )
 
     def _save(self):
         with open(self._file, "w") as f:
-            json.dump({
-                "regime":  self.current_regime,
-                "score":   self.regime_score,
-                "updated": datetime.utcnow().isoformat(),
-                "bot":     self.bot_name,
-            }, f, indent=2)
+            json.dump(
+                {
+                    "regime": self.current_regime,
+                    "score": self.regime_score,
+                    "updated": datetime.utcnow().isoformat(),
+                    "bot": self.bot_name,
+                },
+                f,
+                indent=2,
+            )
 
     def needs_update(self) -> bool:
         if self.last_updated is None:
@@ -75,38 +82,42 @@ class RegimeClassifier:
 
     def classify(self, df_h1: pd.DataFrame, df_h4: pd.DataFrame) -> dict:
         """Run all three signals and return classification dict."""
-        sigs  = _compute_signals(df_h1, df_h4)
+        sigs = _compute_signals(df_h1, df_h4)
         label = _classify_regime(df_h1, df_h4)
 
         if label == "UNKNOWN":
-            log.warning(f"[{self.bot_name}] Insufficient data for regime classification "
-                        f"— keeping cached state {self.current_regime}")
+            log.warning(
+                f"[{self.bot_name}] Insufficient data for regime classification "
+                f"— keeping cached state {self.current_regime}"
+            )
             return {
-                "regime":          self.current_regime,
-                "score":           self.regime_score,
-                "trade_allowed":   True,
+                "regime": self.current_regime,
+                "score": self.regime_score,
+                "trade_allowed": True,
                 "risk_multiplier": 1.0,
-                "adx":             0.0,
-                "atr_ratio":       0.0,
-                "rsi_range":       0.0,
+                "adx": 0.0,
+                "atr_ratio": 0.0,
+                "rsi_range": 0.0,
             }
 
         self.current_regime = label
-        self.regime_score   = sigs["score_norm"]
-        self.last_updated   = datetime.utcnow()
+        self.regime_score = sigs["score_norm"]
+        self.last_updated = datetime.utcnow()
         self._save()
 
-        log.info(f"[{self.bot_name}] Regime={label} score={sigs['score_norm']}/5 | "
-                 f"ADX={sigs['adx']} ATR_ratio={sigs['atr_ratio']} RSI_range={sigs['rsi_range']}")
+        log.info(
+            f"[{self.bot_name}] Regime={label} score={sigs['score_norm']}/5 | "
+            f"ADX={sigs['adx']} ATR_ratio={sigs['atr_ratio']} RSI_range={sigs['rsi_range']}"
+        )
 
         return {
-            "regime":          label,
-            "score":           sigs["score_norm"],
-            "trade_allowed":   True,
+            "regime": label,
+            "score": sigs["score_norm"],
+            "trade_allowed": True,
             "risk_multiplier": 1.0,
-            "adx":             sigs["adx"],
-            "atr_ratio":       sigs["atr_ratio"],
-            "rsi_range":       sigs["rsi_range"],
+            "adx": sigs["adx"],
+            "atr_ratio": sigs["atr_ratio"],
+            "rsi_range": sigs["rsi_range"],
         }
 
     def is_trade_allowed(self) -> tuple:

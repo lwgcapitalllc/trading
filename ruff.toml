@@ -71,6 +71,41 @@ ignore = [
     # fires 78 times on correct code is how a hook gets bypassed — see the root CLAUDE.md on
     # guards that criticise work they should not.
     "B904",
+
+    # ── 🔴 The NON-AUTOFIXABLE remainder, measured on the 2026-08-14 bulk pass ─────────────
+    # These six were selected by taking `B` and `F` WHOLESALE and never measuring what they do
+    # to THIS codebase — which is the mistake the repo's own rule 4 is about. Measured after the
+    # reformat: 46 findings survive `--fix`, and every one is on code that ships and works.
+    # 🔴 **They matter more than the ignores above because they BLOCK THE RATCHET.** The
+    # pre-commit hook runs `ruff check --fix`, which exits non-zero while ANY finding remains —
+    # so a rule nothing can auto-fix turns every legacy file into a file you cannot commit a
+    # one-line change to. That is not a linter, it is a wall, and a wall gets `--no-verify`d.
+    #
+    # ⚠ Each was READ before being switched off, not counted and waved through:
+    #
+    # B023 (24) — a closure over a loop variable. A REAL bug class, and all 24 here are the
+    #   benign shape: the closure is defined and CALLED inside the same iteration, so the
+    #   binding is correct. All 24 sit in two hand-run analysis scripts
+    #   (`backtest/tools/intraday_edge.py`, `backtest/tools/bos_sweep.py`). ⚠ B023 cannot tell
+    #   an immediately-called closure from a stored one, so it can only ever be all-or-nothing
+    #   here. **If a future closure is STORED and fired later, this rule will not warn you.**
+    "B023",
+    # F841 (11) — assigned and never read. ⚠ Its fix is UNSAFE for a reason: deleting
+    #   `cur = conn.cursor()` or `before = store.count()` removes the side effect too. Eleven
+    #   sites across eight files, each needing its own judgement — which is behaviour work, not
+    #   formatting.
+    "F841",
+    # B007 (7) — an unused loop control variable. The only fix is a rename to `_symbol`, which
+    #   is cosmetic, and ruff classes it unsafe because it changes a name a reader may rely on.
+    "B007",
+    # B008 (1) — a function call in an argument default. This is FastAPI's OWN idiom
+    #   (`file: UploadFile = File(...)`) and a documented false positive for FastAPI/Depends.
+    "B008",
+    # B017 (1) — `pytest.raises(Exception)`. One site, and it is deliberate: the VPS interlock
+    #   test pins that `LiveVpsCall` is NOT an ordinary Exception, which is the whole guard.
+    "B017",
+    # E731 (2) — a lambda bound to a name. Pure style, two sites.
+    "E731",
 ]
 
 [lint.per-file-ignores]

@@ -16,22 +16,33 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel
-
 from models import (
-    BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
-    WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest, RunNewsReport,
-    BrokerProfile, RepricedPoint, RunRepriceReport,
+    BacktestDetail,
+    BacktestRunRequest,
+    BacktestSummary,
+    BrokerProfile,
+    EvaluationDetail,
     HistoryLimit,
+    RepricedPoint,
+    RetryRunRequest,
+    RunNewsReport,
+    RunningJobInfo,
+    RunningJobStatus,
+    RunRepriceReport,
+    WorthinessScore,
 )
-from services import lab_db, runner_dispatch, chart_spec, news_filter, history_limits
+from services import chart_spec, history_limits, lab_db, news_filter, runner_dispatch
 from services.backtest_runner import (
-    run_backtest_job, read_progress, clear_progress, LAB_RESULTS_DIR, parse_trades_csv,
+    LAB_RESULTS_DIR,
+    clear_progress,
+    parse_trades_csv,
+    read_progress,
+    run_backtest_job,
 )
-from services.evaluator import evaluate_run
 from services.metrics import compute_regime_breakdown
+from services.optimization_runner import resolve_opt_eval_rulesets, retry_single_optimization_run
 from services.sweep_runner import retry_single_sweep_run
-from services.optimization_runner import retry_single_optimization_run, resolve_opt_eval_rulesets
+
 from routers._locks import ensure_platform_idle
 
 log = logging.getLogger(__name__)
@@ -43,6 +54,7 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _load_json(path: Optional[str]) -> list:
     if not path:
@@ -139,10 +151,16 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
             ruleset_id=e["ruleset_id"],
             ruleset_name=e["ruleset_name"],
             net_pnl=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("net_pnl"),
-            max_drawdown=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("max_drawdown"),
-            profit_factor=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("profit_factor"),
+            max_drawdown=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get(
+                "max_drawdown"
+            ),
+            profit_factor=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get(
+                "profit_factor"
+            ),
             win_rate=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("win_rate"),
-            trade_count=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("trade_count"),
+            trade_count=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get(
+                "trade_count"
+            ),
             avg_win=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("avg_win"),
             avg_loss=(ruleset_sizing.get(e["ruleset_id"], {}).get("kpis") or {}).get("avg_loss"),
             daily_pnl=ruleset_sizing.get(e["ruleset_id"], {}).get("daily_pnl") or [],
@@ -152,9 +170,7 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
             drawdown_pass=bool(e["drawdown_pass"]),
             target_pass=bool(e["target_pass"]),
             consistency_pass=(
-                bool(e["consistency_pass"])
-                if e.get("consistency_pass") is not None
-                else None
+                bool(e["consistency_pass"]) if e.get("consistency_pass") is not None else None
             ),
             simulated_eval_days=e.get("simulated_eval_days"),
             breach_count=e["breach_count"],
@@ -196,7 +212,8 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
     # default it to False, and do NOT cache a slimmed response under the same key as a full one.
     regime_timeline = (
         _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "regime_timeline.json")) or []
-        if include_timeline else []
+        if include_timeline
+        else []
     )
 
     return BacktestDetail(
@@ -257,6 +274,7 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/running-job", response_model=RunningJobStatus)
 def get_running_job() -> RunningJobStatus:
     """Which of the three independent lock scopes is busy, and with what.
@@ -280,9 +298,7 @@ def get_running_job() -> RunningJobStatus:
     now reaches the API by construction.
     """
     jobs = lab_db.get_running_job()
-    return RunningJobStatus(**{
-        scope: RunningJobInfo(**info) for scope, info in jobs.items()
-    })
+    return RunningJobStatus(**{scope: RunningJobInfo(**info) for scope, info in jobs.items()})
 
 
 @router.get("/broker-profiles", response_model=list[BrokerProfile])
@@ -336,14 +352,18 @@ def get_history_limit(
 @router.get("/runs")
 def list_backtest_runs(
     strategy_id: Optional[str] = None,
-    ruleset_id:  Optional[str] = None,
-    firm_id:     Optional[str] = None,  # backward-compat alias
-    status:      Optional[str] = None,
+    ruleset_id: Optional[str] = None,
+    firm_id: Optional[str] = None,  # backward-compat alias
+    status: Optional[str] = None,
     source_run_id: Optional[str] = None,
 ) -> list[BacktestSummary]:
     effective_ruleset_id = ruleset_id or firm_id
-    rows = lab_db.list_runs(strategy_id=strategy_id, ruleset_id=effective_ruleset_id,
-                            status=status, source_run_id=source_run_id)
+    rows = lab_db.list_runs(
+        strategy_id=strategy_id,
+        ruleset_id=effective_ruleset_id,
+        status=status,
+        source_run_id=source_run_id,
+    )
     # ONE query for every row's verdicts, not one per row — see get_run_verdict_summaries.
     verdicts = lab_db.get_run_verdict_summaries([r["run_id"] for r in rows])
     return [_row_to_summary(r, verdicts.get(r["run_id"], [])) for r in rows]
@@ -444,26 +464,44 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
         # the honest answer to "what does turning this on cost from here" is nothing, because it
         # is already on. Quoting its price would invite exactly the double charge refused above.
         per_layer = {
-            l: (0.0 if l in already else
-                reprice_curve(curve, profile=profile, layers=[l],
-                              initial_capital=initial).total_cost_r)
+            l: (
+                0.0
+                if l in already
+                else reprice_curve(
+                    curve, profile=profile, layers=[l], initial_capital=initial
+                ).total_cost_r
+            )
             for l in REPRICEABLE_LAYERS
         }
     except RepriceError as exc:
         raise HTTPException(400, str(exc))
 
     return RunRepriceReport(
-        layers=list(out.layers), broker_profile=broker_id,
-        is_exact=out.is_exact, derived_basis=out.derived_basis,
-        approximate_layers=list(out.approximate_layers), needs_rerun=needs_rerun,
+        layers=list(out.layers),
+        broker_profile=broker_id,
+        is_exact=out.is_exact,
+        derived_basis=out.derived_basis,
+        approximate_layers=list(out.approximate_layers),
+        needs_rerun=needs_rerun,
         already_charged=already_charged,
-        initial_capital=out.initial_capital, final_equity=out.final_equity,
-        sum_r=out.sum_r, total_cost_usd=out.total_cost_usd,
-        total_cost_r=out.total_cost_r, layer_cost_r=per_layer,
-        trades=[RepricedPoint(index=t.index, equity=round(t.equity, 2),
-                              profit=round(t.profit, 2), r=round(t.r, 6),
-                              r_before=round(t.r_before, 6), cost_usd=round(t.cost_usd, 2))
-                for t in out.trades])
+        initial_capital=out.initial_capital,
+        final_equity=out.final_equity,
+        sum_r=out.sum_r,
+        total_cost_usd=out.total_cost_usd,
+        total_cost_r=out.total_cost_r,
+        layer_cost_r=per_layer,
+        trades=[
+            RepricedPoint(
+                index=t.index,
+                equity=round(t.equity, 2),
+                profit=round(t.profit, 2),
+                r=round(t.r, 6),
+                r_before=round(t.r_before, 6),
+                cost_usd=round(t.cost_usd, 2),
+            )
+            for t in out.trades
+        ],
+    )
 
 
 @router.get("/runs/{run_id}/log", response_class=PlainTextResponse)
@@ -491,8 +529,12 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     # timeframe asked for, so this would otherwise complete as a plausible fiction.
     try:
         history_limits.validate_window(
-            req.instrument, req.start_date, req.end_date,
-            req.bar_type, req.bar_value, runner,
+            req.instrument,
+            req.start_date,
+            req.end_date,
+            req.bar_type,
+            req.bar_value,
+            runner,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -517,41 +559,43 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     )
     merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)
 
-    lab_db.insert_run({
-        "run_id":             run_id,
-        "strategy_id":        req.strategy_id,
-        "instrument":         req.instrument,
-        "params":             merged_params,
-        "bar_type":           req.bar_type,
-        "bar_value":          req.bar_value,
-        "start_date":         req.start_date,
-        "end_date":           req.end_date,
-        "commission_per_side": req.commission_per_side,
-        "slippage_ticks":     req.slippage_ticks,
-        "status":             "running",
-        "created_at":         int(time.time()),
-        "evaluate_rulesets":  ruleset_ids,
-        "runner":             runner,
-        "source_run_id":      req.source_run_id,
-        "sizing_mode":        req.sizing_mode,
-        "manual_risk_pct":    req.manual_risk_pct,
-        "cost_layers":        req.cost_layers,
-        "broker_profile":     req.broker_profile,
-    })
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": req.strategy_id,
+            "instrument": req.instrument,
+            "params": merged_params,
+            "bar_type": req.bar_type,
+            "bar_value": req.bar_value,
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "commission_per_side": req.commission_per_side,
+            "slippage_ticks": req.slippage_ticks,
+            "status": "running",
+            "created_at": int(time.time()),
+            "evaluate_rulesets": ruleset_ids,
+            "runner": runner,
+            "source_run_id": req.source_run_id,
+            "sizing_mode": req.sizing_mode,
+            "manual_risk_pct": req.manual_risk_pct,
+            "cost_layers": req.cost_layers,
+            "broker_profile": req.broker_profile,
+        }
+    )
 
     job_spec = {
-        "job_id":            job_id,
-        "strategy_class":    strategy["class_name"],
-        "instrument":        req.instrument,
-        "params":            merged_params,
-        "bar_type":          req.bar_type,
-        "bar_value":         req.bar_value,
-        "start_date":        req.start_date,
-        "end_date":          req.end_date,
+        "job_id": job_id,
+        "strategy_class": strategy["class_name"],
+        "instrument": req.instrument,
+        "params": merged_params,
+        "bar_type": req.bar_type,
+        "bar_value": req.bar_value,
+        "start_date": req.start_date,
+        "end_date": req.end_date,
         "commission_per_side": req.commission_per_side,
-        "slippage_ticks":    req.slippage_ticks,
-        "cost_layers":       req.cost_layers,
-        "broker_profile":    req.broker_profile,
+        "slippage_ticks": req.slippage_ticks,
+        "cost_layers": req.cost_layers,
+        "broker_profile": req.broker_profile,
     }
 
     try:
@@ -592,7 +636,7 @@ async def stop_backtest_run(run_id: str) -> dict:
     job_stopped = True
     try:
         await asyncio.to_thread(runner_dispatch.cancel_job, job_id, runner)
-    except Exception as exc:                        # noqa: BLE001 — the row is cancelled regardless
+    except Exception as exc:  # noqa: BLE001 — the row is cancelled regardless
         job_stopped = False
         log.warning("stop %s: could not reach the %s runner to cancel: %s", run_id, runner, exc)
 
@@ -625,7 +669,9 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
     period_override = bool(new_start or new_end)
     if period_override:
         if not (new_start and new_end):
-            raise HTTPException(400, "Both start_date and end_date are required to change the period")
+            raise HTTPException(
+                400, "Both start_date and end_date are required to change the period"
+            )
         if not (_DATE_RE.match(new_start) and _DATE_RE.match(new_end)):
             raise HTTPException(400, "Dates must be YYYY-MM-DD")
         if new_start >= new_end:
@@ -637,8 +683,12 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         # Same broker-history floor the initial trigger enforces — a rerun is a new window.
         try:
             history_limits.validate_window(
-                row["instrument"], new_start, new_end,
-                row.get("bar_type", "Minute"), row.get("bar_value", 15), runner,
+                row["instrument"],
+                new_start,
+                new_end,
+                row.get("bar_type", "Minute"),
+                row.get("bar_value", 15),
+                runner,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc))
@@ -711,20 +761,20 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
     _clear_run_dir(run_id)
 
     job_spec = {
-        "job_id":            run_id,
-        "strategy_class":    strategy["class_name"],
-        "instrument":        row["instrument"],
-        "params":            row["params"],
-        "bar_type":          row["bar_type"],
-        "bar_value":         row["bar_value"],
-        "start_date":        row["start_date"],
-        "end_date":          row["end_date"],
+        "job_id": run_id,
+        "strategy_class": strategy["class_name"],
+        "instrument": row["instrument"],
+        "params": row["params"],
+        "bar_type": row["bar_type"],
+        "bar_value": row["bar_value"],
+        "start_date": row["start_date"],
+        "end_date": row["end_date"],
         "commission_per_side": row["commission_per_side"],
-        "slippage_ticks":    row["slippage_ticks"],
+        "slippage_ticks": row["slippage_ticks"],
         # Read back off the ROW, so a retry re-prices exactly as the original run did. NULL stays
         # NULL here on purpose — a pre-layer run must retry on the pre-layer contract.
-        "cost_layers":       _json_list(row.get("cost_layers")),
-        "broker_profile":    row.get("broker_profile"),
+        "cost_layers": _json_list(row.get("cost_layers")),
+        "broker_profile": row.get("broker_profile"),
     }
 
     try:
@@ -734,7 +784,9 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
 
     asyncio.create_task(
-        run_backtest_job(run_id, run_id, row["strategy_id"], row["instrument"], evaluate_rulesets, runner)
+        run_backtest_job(
+            run_id, run_id, row["strategy_id"], row["instrument"], evaluate_rulesets, runner
+        )
     )
 
     return {"run_id": run_id, "status": "running"}
@@ -761,7 +813,9 @@ async def reload_charts(run_id: str) -> dict:
     if not row:
         raise HTTPException(404, "Run not found")
     if row["status"] != "complete":
-        raise HTTPException(409, f"Run status is '{row['status']}' — can only reload charts for completed runs")
+        raise HTTPException(
+            409, f"Run status is '{row['status']}' — can only reload charts for completed runs"
+        )
 
     try:
         export = await asyncio.to_thread(runner_dispatch.export_trades)
@@ -776,15 +830,18 @@ async def reload_charts(run_id: str) -> dict:
 
     run_dir = LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    eq_path  = run_dir / "equity_curve.json"
+    eq_path = run_dir / "equity_curve.json"
     dpnl_path = run_dir / "daily_pnl.json"
     eq_path.write_text(json.dumps(equity_curve))
     dpnl_path.write_text(json.dumps(daily_pnl))
 
-    lab_db.update_run_chart_paths(run_id, {
-        "equity_curve": str(eq_path),
-        "daily_pnl":    str(dpnl_path),
-    })
+    lab_db.update_run_chart_paths(
+        run_id,
+        {
+            "equity_curve": str(eq_path),
+            "daily_pnl": str(dpnl_path),
+        },
+    )
 
     return {"equity_points": len(equity_curve), "daily_bars": len(daily_pnl)}
 

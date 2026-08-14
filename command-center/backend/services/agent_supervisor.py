@@ -83,9 +83,9 @@ MT5_TASK = "MT5AgentRDP"
 NT8_SCRIPT = "nt8_agent.py"
 MT5_SCRIPT = "mt5_agent.py"
 
-INTERVAL_SECONDS = 60      # one pass per minute — cheap, and sleep recovery is a minute at worst
-AGENT_GRACE_SECONDS = 20   # how long an agent gets to answer after its task is fired
-TUNNEL_GRACE_SECONDS = 3   # port-forward establishment after a tunnel restart
+INTERVAL_SECONDS = 60  # one pass per minute — cheap, and sleep recovery is a minute at worst
+AGENT_GRACE_SECONDS = 20  # how long an agent gets to answer after its task is fired
+TUNNEL_GRACE_SECONDS = 3  # port-forward establishment after a tunnel restart
 
 _stop = threading.Event()
 
@@ -103,6 +103,7 @@ class SchtaskError(RuntimeError):
 # router used to own them and main.py reached across into the router to call
 # one. One definition, in the layer that is allowed to have it.
 
+
 def restart_tunnel() -> None:
     """Kill any stale `ssh -N` tunnel and spawn a fresh one with both forwards.
 
@@ -112,12 +113,19 @@ def restart_tunnel() -> None:
     """
     subprocess.run(["pkill", "-f", r"ssh -N.*forexvps"], capture_output=True)
     subprocess.Popen(
-        ["ssh", "-N",
-         "-L", f"{NT8_PORT}:127.0.0.1:{NT8_PORT}",
-         "-L", f"{MT5_PORT}:127.0.0.1:{MT5_PORT}",
-         "-o", "ServerAliveInterval=30",
-         "-o", "ServerAliveCountMax=3",
-         cfg.SSH_ALIAS],
+        [
+            "ssh",
+            "-N",
+            "-L",
+            f"{NT8_PORT}:127.0.0.1:{NT8_PORT}",
+            "-L",
+            f"{MT5_PORT}:127.0.0.1:{MT5_PORT}",
+            "-o",
+            "ServerAliveInterval=30",
+            "-o",
+            "ServerAliveCountMax=3",
+            cfg.SSH_ALIAS,
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -132,9 +140,18 @@ def schtasks_run(task_name: str) -> dict:
     """
     try:
         result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
-             cfg.SSH_ALIAS, f"schtasks /run /tn {task_name}"],
-            capture_output=True, text=True, timeout=15,
+            [
+                "ssh",
+                "-o",
+                "ConnectTimeout=5",
+                "-o",
+                "BatchMode=yes",
+                cfg.SSH_ALIAS,
+                f"schtasks /run /tn {task_name}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
     except subprocess.TimeoutExpired:
         raise SchtaskError("SSH timed out", status=504)
@@ -163,12 +180,16 @@ def kill_agent_process(script_name: str) -> bool:
     against the live box on 2026-08-06: the match resolved to one PID while the
     live bot, the MT5 agent and both Telegram processes were untouched.
     """
-    query = (f"wmic process where \"name='python.exe' and commandline like "
-             f"'%{script_name}%'\" call terminate")
+    query = (
+        f"wmic process where \"name='python.exe' and commandline like "
+        f"'%{script_name}%'\" call terminate"
+    )
     try:
         result = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", cfg.SSH_ALIAS, query],
-            capture_output=True, text=True, timeout=20,
+            capture_output=True,
+            text=True,
+            timeout=20,
         )
     except Exception:
         return False
@@ -179,6 +200,7 @@ def kill_agent_process(script_name: str) -> bool:
 
 
 # ── Probes ────────────────────────────────────────────────────────────────────
+
 
 def port_bound(port: int, timeout: float = 1.0) -> bool:
     """Is something listening on 127.0.0.1:<port> — i.e. is ssh holding the forward?
@@ -206,9 +228,10 @@ def vps_reachable() -> bool:
     """
     try:
         result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes",
-             cfg.SSH_ALIAS, "echo ok"],
-            capture_output=True, text=True, timeout=5,
+            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", cfg.SSH_ALIAS, "echo ok"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.returncode == 0 and "ok" in result.stdout
     except Exception:
@@ -224,11 +247,13 @@ def _agent_ok(client) -> bool:
 
 def nt8_agent_ok() -> bool:
     from services import runner_dispatch
+
     return _agent_ok(runner_dispatch)
 
 
 def mt5_agent_ok() -> bool:
     from services import mt5_agent_client
+
     return _agent_ok(mt5_agent_client)
 
 
@@ -239,6 +264,7 @@ def mt5_terminal_status() -> Optional[dict]:
     reporting that as a disconnected terminal would be inventing a measurement.
     """
     from services import mt5_agent_client
+
     try:
         raw = mt5_agent_client.status()
     except Exception:
@@ -259,6 +285,7 @@ def busy_scopes() -> set[str]:
     the fetch mid-run.
     """
     from services import lab_db
+
     try:
         running = lab_db.get_running_job()
     except Exception:
@@ -269,6 +296,7 @@ def busy_scopes() -> set[str]:
 
 
 # ── One pass ──────────────────────────────────────────────────────────────────
+
 
 def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
     """Probe, repair what is safe to repair, and return what happened.
@@ -301,7 +329,9 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
             actions.append("tunnel-skipped (VPS unreachable)")
         else:
             restart_tunnel()
-            actions.append("tunnel-reopened" + (f" (job running: {','.join(sorted(busy))})" if busy else ""))
+            actions.append(
+                "tunnel-reopened" + (f" (job running: {','.join(sorted(busy))})" if busy else "")
+            )
             nt8 = nt8_agent_ok()
             mt5 = mt5_agent_ok()
     elif stale:
@@ -329,8 +359,10 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
             # wrong guess kills a live run. It is stated rather than repaired:
             # clear the lock (Stop, or restart the backend, which resets stale
             # rows on boot) and the next pass restarts the agent by itself.
-            actions.append(f"{name}-DOWN-with-a-job-running (lock held by "
-                           f"{','.join(sorted(busy & scopes))} — Stop it or restart the backend)")
+            actions.append(
+                f"{name}-DOWN-with-a-job-running (lock held by "
+                f"{','.join(sorted(busy & scopes))} — Stop it or restart the backend)"
+            )
             continue
         if not port_bound(NT8_PORT if name == "nt8" else MT5_PORT):
             # No forward to reach the agent through — firing its task would
@@ -384,8 +416,11 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
                 else:
                     sleeper(AGENT_GRACE_SECONDS)
                     came_up = probe()
-                    actions.append(f"{name}-restarted-after-kill" if came_up
-                                   else f"{name}-still-down-after-kill")
+                    actions.append(
+                        f"{name}-restarted-after-kill"
+                        if came_up
+                        else f"{name}-still-down-after-kill"
+                    )
 
         if name == "nt8":
             nt8 = came_up
@@ -396,6 +431,7 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
 
 
 # ── The loop ──────────────────────────────────────────────────────────────────
+
 
 def run_forever(interval: int = INTERVAL_SECONDS) -> None:
     while not _stop.is_set():
@@ -412,8 +448,9 @@ def run_forever(interval: int = INTERVAL_SECONDS) -> None:
 
 def start(interval: int = INTERVAL_SECONDS) -> threading.Thread:
     _stop.clear()
-    thread = threading.Thread(target=run_forever, args=(interval,), daemon=True,
-                              name="agent-supervisor")
+    thread = threading.Thread(
+        target=run_forever, args=(interval,), daemon=True, name="agent-supervisor"
+    )
     thread.start()
     return thread
 

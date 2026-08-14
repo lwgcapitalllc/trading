@@ -81,7 +81,9 @@ def _git(*args: str) -> str | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(cfg.MONOREPO_ROOT), *args],
-            capture_output=True, text=True, timeout=_GIT_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -182,20 +184,26 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
             continue
         sha, subject, date = parts
         files = _git("show", "--name-only", "--format=", sha) or ""
-        areas = sorted({
-            tree for tree in trees
-            if any(f.strip().startswith(tree + "/") for f in files.splitlines())
-        })
-        changes.append({
-            "commit": sha,
-            "subject": subject,
-            "date": date,
-            "areas": areas,
-        })
+        areas = sorted(
+            {
+                tree
+                for tree in trees
+                if any(f.strip().startswith(tree + "/") for f in files.splitlines())
+            }
+        )
+        changes.append(
+            {
+                "commit": sha,
+                "subject": subject,
+                "date": date,
+                "areas": areas,
+            }
+        )
     return changes
 
 
 # ── settings that would change WITHOUT anyone asking ────────────────────────────
+
 
 def _dataclass_defaults(source: str) -> dict[str, object]:
     """Every dataclass field's literal default in a config module, by field name.
@@ -260,7 +268,8 @@ def _param_meta(package: str) -> dict[str, dict]:
             "group": entry.get("group") or "",
             "desc": entry.get("desc") or "",
         }
-        for entry in params if isinstance(entry, dict) and entry.get("name")
+        for entry in params
+        if isinstance(entry, dict) and entry.get("name")
     }
 
 
@@ -274,8 +283,9 @@ def _render(value: object) -> str:
     return str(value)
 
 
-def setting_changes(package: str, from_commit: str, to_commit: str,
-                    stated_params: dict) -> list[dict] | None:
+def setting_changes(
+    package: str, from_commit: str, to_commit: str, stated_params: dict
+) -> list[dict] | None:
     """Settings whose DEFAULT moved between the two commits.
 
     This is the part of a promote nobody asks for and everybody gets. The bot's instance
@@ -308,20 +318,22 @@ def setting_changes(package: str, from_commit: str, to_commit: str,
             continue
         info = meta.get(name, {})
         is_new = name not in before
-        changes.append({
-            "name": name,
-            "label": info.get("label") or name,
-            "group": info.get("group") or "",
-            "desc": info.get("desc") or "",
-            # `was` is "" for a setting the deployed version did not HAVE, and `is_new` says
-            # which. Rendering "(new)" here would put the page's wording in the service, and
-            # "Off" would be a lie in the safe-looking direction — the old code had no such
-            # lever at all, which is not the same as having it switched off.
-            "is_new": is_new,
-            "was": "" if is_new else _render(was),
-            "now": _render(now),
-            "stated": name in (stated_params or {}),
-        })
+        changes.append(
+            {
+                "name": name,
+                "label": info.get("label") or name,
+                "group": info.get("group") or "",
+                "desc": info.get("desc") or "",
+                # `was` is "" for a setting the deployed version did not HAVE, and `is_new` says
+                # which. Rendering "(new)" here would put the page's wording in the service, and
+                # "Off" would be a lie in the safe-looking direction — the old code had no such
+                # lever at all, which is not the same as having it switched off.
+                "is_new": is_new,
+                "was": "" if is_new else _render(was),
+                "now": _render(now),
+                "stated": name in (stated_params or {}),
+            }
+        )
     changes.sort(key=lambda c: (c["stated"], c["label"]))
     return changes
 
@@ -350,7 +362,9 @@ def compare(strategy_package: str, deployed_commit: str, stated_params: dict) ->
     }
 
     if not trees:
-        base["reason"] = "This bot has no strategy package recorded, so there is nothing to compare."
+        base["reason"] = (
+            "This bot has no strategy package recorded, so there is nothing to compare."
+        )
         return base
     if local_version is None:
         base["reason"] = "Could not read this repo's history."
@@ -373,11 +387,13 @@ def compare(strategy_package: str, deployed_commit: str, stated_params: dict) ->
     changes = changes_between(deployed_commit, "HEAD", trees) or []
     settings = setting_changes(strategy_package, deployed_commit, "HEAD", stated_params) or []
 
-    base.update({
-        "deployed_version": deployed_version,
-        "versions_behind": max(0, local_version - deployed_version),
-        "comparable": True,
-        "changes": changes,
-        "setting_changes": settings,
-    })
+    base.update(
+        {
+            "deployed_version": deployed_version,
+            "versions_behind": max(0, local_version - deployed_version),
+            "comparable": True,
+            "changes": changes,
+            "setting_changes": settings,
+        }
+    )
     return base

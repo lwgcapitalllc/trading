@@ -61,7 +61,10 @@ function atrSeries(candles: ChartCandle[], period: number) {
   let prevClose = candles[0].close
   let atr: number | null = null
   return candles.map((c, i) => {
-    const tr = i === 0 ? c.high - c.low : Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose))
+    const tr =
+      i === 0
+        ? c.high - c.low
+        : Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose))
     atr = atr === null ? tr : (atr * (period - 1) + tr) / period
     prevClose = c.close
     return { time: c.time, value: +atr.toFixed(4) }
@@ -84,9 +87,15 @@ function tradeAt(i0: number, i1: number, dir: 'long' | 'short', id: string, exit
   const isLong = dir === 'long'
   const won = exitReason !== 'stop'
   const r3 = (v: number) => +v.toFixed(3)
-  const mfePrice = r3(isLong ? Math.max(...slice.map(c => c.high)) : Math.min(...slice.map(c => c.low)))
-  const maePrice = r3(isLong ? Math.min(...slice.map(c => c.low)) : Math.max(...slice.map(c => c.high)))
-  const stopPrice = r3(entryPrice - (isLong ? 1 : -1) * Math.max(Math.abs(exitPrice - entryPrice), 0.05))
+  const mfePrice = r3(
+    isLong ? Math.max(...slice.map((c) => c.high)) : Math.min(...slice.map((c) => c.low))
+  )
+  const maePrice = r3(
+    isLong ? Math.min(...slice.map((c) => c.low)) : Math.max(...slice.map((c) => c.high))
+  )
+  const stopPrice = r3(
+    entryPrice - (isLong ? 1 : -1) * Math.max(Math.abs(exitPrice - entryPrice), 0.05)
+  )
   // Winner banks two rungs partway to the favourable extreme; loser banks nothing.
   const profitLegs = won
     ? [
@@ -101,14 +110,19 @@ function tradeAt(i0: number, i1: number, dir: 'long' | 'short', id: string, exit
     r3(entryPrice + (mfePrice - entryPrice) * 1.15),
   ]
   return {
-    id, dir,
+    id,
+    dir,
     entryTime: CANDLES[i0].time,
     entryPrice,
     exitTime: CANDLES[i1].time,
     exitPrice,
-    pnl: won ? 1 : -1,   // sign drives the win/loss colour in the fixture
+    pnl: won ? 1 : -1, // sign drives the win/loss colour in the fixture
     exitReason,
-    mfePrice, maePrice, stopPrice, profitLegs, tpTargets,
+    mfePrice,
+    maePrice,
+    stopPrice,
+    profitLegs,
+    tpTargets,
   }
 }
 
@@ -118,8 +132,8 @@ const RANGE_END = 84 // 07:00
 const BREAKOUT = 96 // 08:00
 const LAST = CANDLES.length - 1
 const rangeSlice = CANDLES.slice(RANGE_START, RANGE_END + 1)
-const rangeTop = Math.max(...rangeSlice.map(c => c.high))
-const rangeBottom = Math.min(...rangeSlice.map(c => c.low))
+const rangeTop = Math.max(...rangeSlice.map((c) => c.high))
+const rangeBottom = Math.min(...rangeSlice.map((c) => c.low))
 
 const OVERLAYS: ChartOverlay[] = [
   {
@@ -169,8 +183,8 @@ export const AUDJPY_FIXTURE: ChartSpec = {
     { name: 'London', tz: 'Europe/London', start: '08:00', end: '16:00', color: '#00e5ff' },
   ],
   trades: [
-    tradeAt(38, 66, 'long', 'T1', 'target'),   // ~03:10 → ~05:30 (Tokyo)
-    tradeAt(124, 144, 'short', 'T2', 'stop'),  // ~10:20 → ~12:00 (London)
+    tradeAt(38, 66, 'long', 'T1', 'target'), // ~03:10 → ~05:30 (Tokyo)
+    tradeAt(124, 144, 'short', 'T2', 'stop'), // ~10:20 → ~12:00 (London)
     tradeAt(168, 198, 'long', 'T3', 'target'), // ~14:00 → ~16:30
   ],
   overlays: OVERLAYS,

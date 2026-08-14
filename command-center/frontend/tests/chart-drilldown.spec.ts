@@ -45,9 +45,17 @@ async function jumpTo(page: Page, iso: string) {
  *  used; the page itself is responsive (proved with an in-page 50ms timer: 2,407 samples over
  *  120s). `dispatchEvent` still runs React's onClick, which is the thing under test. */
 async function pickTf(page: Page, tf: string) {
-  await page.locator('button').filter({ hasText: /^(M1|M5|M15|M30|H1|H4|D1)$/ }).first().click()
+  await page
+    .locator('button')
+    .filter({ hasText: /^(M1|M5|M15|M30|H1|H4|D1)$/ })
+    .first()
+    .click()
   await page.waitForTimeout(250)
-  await page.locator('button').filter({ hasText: new RegExp(`^${tf}$`) }).last().dispatchEvent('click')
+  await page
+    .locator('button')
+    .filter({ hasText: new RegExp(`^${tf}$`) })
+    .last()
+    .dispatchEvent('click')
 }
 
 async function settleDrill(page: Page) {
@@ -108,7 +116,7 @@ test.describe('price chart — drill-down', () => {
     // with the exact payload the backend produces, measured against the live one:
     //   available:false + feed_error "HistoryFloorError: XAUUSD has no real 1-minute history
     //   before 2018-09-14 on VantageMarkets-Demo (measured, not assumed). You asked for ..."
-    await page.route('**/backtests/runs/*/candles*', route =>
+    await page.route('**/backtests/runs/*/candles*', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -118,18 +126,20 @@ test.describe('price chart — drill-down', () => {
           candles: [],
           available: false,
           feed_error:
-            'HistoryFloorError: XAUUSD has no real 1-minute history before 2018-09-14 on '
-            + 'VantageMarkets-Demo (measured, not assumed). You asked for 2010-03-01.',
+            'HistoryFloorError: XAUUSD has no real 1-minute history before 2018-09-14 on ' +
+            'VantageMarkets-Demo (measured, not assumed). You asked for 2010-03-01.',
           data_start_ms: null,
           hard_edge: false,
         }),
-      }),
+      })
     )
     await openPriceTab(page)
     await pickTf(page, 'M1')
     // The old message asked the reader the question the fetch had already answered. The date is the
     // whole point of the sentence, so it has to survive to the screen.
-    await expect(page.getByText(/no real 1-minute history before 2018-09-14/)).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByText(/no real 1-minute history before 2018-09-14/)).toBeVisible({
+      timeout: 60_000,
+    })
     // The exception CLASS is our plumbing and must NOT be shown.
     await expect(page.getByText(/HistoryFloorError/)).toHaveCount(0)
     // And it still says which bars are actually on screen underneath.
@@ -178,7 +188,7 @@ test.describe('price chart — drill-down, the paths that were not driven', () =
   test('the broker’s data edge stops the pager instead of asking for ever', async ({ page }) => {
     test.setTimeout(360_000)
     let start = 0
-    await page.route('**/backtests/runs/*/candles*', async route => {
+    await page.route('**/backtests/runs/*/candles*', async (route) => {
       const url = new URL(route.request().url())
       const to = Number(url.searchParams.get('to_ms'))
       // A feed with EXACTLY one window and nothing behind it: every request is answered from the
@@ -189,10 +199,16 @@ test.describe('price chart — drill-down, the paths that were not driven', () =
         candles.push({ time: t, open: 1800, high: 1801, low: 1799, close: 1800, volume: 10 })
       }
       await route.fulfill({
-        status: 200, contentType: 'application/json',
+        status: 200,
+        contentType: 'application/json',
         body: JSON.stringify({
-          instrument: 'XAUUSD', timeframe: 'M5', candles,
-          available: true, feed_error: null, data_start_ms: start, hard_edge: true,
+          instrument: 'XAUUSD',
+          timeframe: 'M5',
+          candles,
+          available: true,
+          feed_error: null,
+          data_start_ms: start,
+          hard_edge: true,
         }),
       })
     })
@@ -218,13 +234,19 @@ test.describe('price chart — drill-down, the paths that were not driven', () =
     // not release it, the chart refuses EVERY later jump and every page for the rest of the session
     // — silently, with a perfectly healthy-looking chart.
     let blockAll = true
-    await page.route('**/backtests/runs/*/candles*', async route => {
+    await page.route('**/backtests/runs/*/candles*', async (route) => {
       if (!blockAll) return route.continue()
       await route.fulfill({
-        status: 200, contentType: 'application/json',
+        status: 200,
+        contentType: 'application/json',
         body: JSON.stringify({
-          instrument: 'XAUUSD', timeframe: 'M5', candles: [],
-          available: true, feed_error: null, data_start_ms: null, hard_edge: false,
+          instrument: 'XAUUSD',
+          timeframe: 'M5',
+          candles: [],
+          available: true,
+          feed_error: null,
+          data_start_ms: null,
+          hard_edge: false,
         }),
       })
     })

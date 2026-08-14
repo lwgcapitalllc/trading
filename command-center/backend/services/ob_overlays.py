@@ -69,7 +69,7 @@ if str(_ENGINES) not in sys.path:
 GROUP_OB = "Order Blocks"
 
 # ── mpc_assistant.pine's locked OB drawing constants (mpc_assistant.pine:140-183) ──
-MPC_OB_STUB = 30             # OB_STUB — the box's minimum width in bars
+MPC_OB_STUB = 30  # OB_STUB — the box's minimum width in bars
 
 # One deep orange for BOTH directions — `OB_ACCENT #E65100`, drawn as an OUTLINE with a whisper of
 # fill (`colBullOB`/`colBearOB` = 94% transparent, `OB_EDGE` = 25%). The blue/red directional
@@ -131,7 +131,7 @@ def build_ob_overlays(
         return []
     bars = _anchor_bars([c["time"] for c in candles], anchors_ms)
     if not bars:
-        return []      # no trade, block or miss on screen ⇒ nothing to explain ⇒ nothing to draw
+        return []  # no trade, block or miss on screen ⇒ nothing to explain ⇒ nothing to draw
 
     try:
         from order_blocks import OrderBlockEngine
@@ -150,7 +150,8 @@ def build_ob_overlays(
         lives[o.id] = {
             # Direction is deliberately NOT kept: mpc paints bull and bear identically, so there is
             # nothing here for it to change.
-            "top": o.top, "bottom": o.bottom,
+            "top": o.top,
+            "bottom": o.bottom,
             "left": o.origin_index,
             # Pine's own `box.new(bar_index - off, …, bar_index, …)` — born spanning origin → the
             # bar it was added on. `_extend` overwrites this from the next bar onward.
@@ -193,19 +194,29 @@ def build_ob_overlays(
         # anchored to candle timestamps has no such space, so it clamps to the last candle.
         left = max(0, min(rec["left"], n - 1))
         right = max(left, min(rec["right"], n - 1))
-        overlays.append({
-            "type": "box", "group": GROUP_OB,
-            "t0": times[left], "t1": times[right],
-            "top": round(rec["top"], 5), "bottom": round(rec["bottom"], 5),
-            "label": _LABEL, "labelAlign": "right",
-            "style": {"color": _EDGE, "fillColor": _FILL, "lineWidth": 1},
-        })
+        overlays.append(
+            {
+                "type": "box",
+                "group": GROUP_OB,
+                "t0": times[left],
+                "t1": times[right],
+                "top": round(rec["top"], 5),
+                "bottom": round(rec["bottom"], 5),
+                "label": _LABEL,
+                "labelAlign": "right",
+                "style": {"color": _EDGE, "fillColor": _FILL, "lineWidth": 1},
+            }
+        )
 
     overlays.sort(key=lambda ov: ov["t0"])
     if len(overlays) > _MAX_BOXES:
         dropped = len(overlays) - _MAX_BOXES
         overlays = overlays[-_MAX_BOXES:]
         log.info("ob overlays: capped at %d boxes — dropped the %d oldest", _MAX_BOXES, dropped)
-    log.info("ob overlays: %d bars, %d anchor bar(s) -> %d order-block boxes",
-             n, len(bars), len(overlays))
+    log.info(
+        "ob overlays: %d bars, %d anchor bar(s) -> %d order-block boxes",
+        n,
+        len(bars),
+        len(overlays),
+    )
     return overlays

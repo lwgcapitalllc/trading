@@ -27,8 +27,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 _REPO = Path(__file__).resolve().parent.parent.parent
 for _p in (str(_REPO), str(_REPO / "algos" / "live"), str(_REPO / "algos" / "shared")):
     if _p not in sys.path:
@@ -37,16 +35,15 @@ for _p in (str(_REPO), str(_REPO / "algos" / "live"), str(_REPO / "algos" / "sha
 from runner import LiveRunner  # noqa: E402
 
 
-
-
-
 def _stop_runner(tmp_path):
     r = LiveRunner.__new__(LiveRunner)
     r.cfg = SimpleNamespace(bot_key="bot", instance_dir=tmp_path)
     r.notes, r.warns = [], []
-    r.log = SimpleNamespace(info=lambda m, *a, **k: r.notes.append(m),
-                            warning=lambda m, *a, **k: r.warns.append(m),
-                            error=lambda m, *a, **k: r.warns.append(m))
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: r.notes.append(m),
+        warning=lambda m, *a, **k: r.warns.append(m),
+        error=lambda m, *a, **k: r.warns.append(m),
+    )
     return r
 
 
@@ -103,5 +100,5 @@ def test_a_clear_that_fails_does_not_stop_the_bot_starting(tmp_path, monkeypatch
         raise OSError("locked")
 
     monkeypatch.setattr(Path, "unlink", _boom)
-    r.clear_stop_request()                        # must not raise
+    r.clear_stop_request()  # must not raise
     assert any("Could not clear" in w for w in r.warns)

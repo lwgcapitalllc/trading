@@ -4,6 +4,7 @@ compute_grade() is called after Monte Carlo (and optionally walk-forward + sensi
 """
 
 from __future__ import annotations
+
 from typing import Optional
 
 from services.metrics import effective_dd_limit_pct, effective_dd_limit_usd
@@ -95,7 +96,7 @@ def compute_grade(
 
     wf_degradation = st.get("walk_forward_degradation")
     wf_solid = wf_degradation is not None and wf_degradation < 0.20
-    wf_ok    = wf_degradation is not None and wf_degradation < 0.30
+    wf_ok = wf_degradation is not None and wf_degradation < 0.30
     # WF ran but degradation is None = not assessable (1 - OOS/IS is a meaningless signed ratio
     # when the in-sample metric is ≤ 0). Treat it like not-run: don't read the absent number as
     # "solid" and don't penalise on it either. The metric depends on the WF path: the serial path
@@ -108,7 +109,7 @@ def compute_grade(
     # the optimizer-grid injection (they used to disagree; see stress_tester.run_sensitivity_task).
     sens_degradation = st.get("sensitivity_max_degradation")
     sens_solid = sens_degradation is not None and sens_degradation < 0.25
-    sens_ok    = sens_degradation is not None and sens_degradation < 0.40
+    sens_ok = sens_degradation is not None and sens_degradation < 0.40
     # Ran but produced no measurable number (no tunable params, or an unusable baseline profit
     # factor). Same rule as the walk-forward above: treat it as not-run — neither credit nor
     # penalty. Without this an unassessable sensitivity silently BLOCKED A and B, punishing a
@@ -119,17 +120,23 @@ def compute_grade(
     # "Not run" must mean NOT RUN. A phase that was requested and failed, or ran and could not be
     # assessed, already has its own reason above — appending "not run — grade may improve with full
     # analysis" beside it puts two contradictory explanations in one list.
-    genuinely_not_run = (walk_forward is None and not wf_failed) or (sensitivity is None and not sens_failed)
+    genuinely_not_run = (walk_forward is None and not wf_failed) or (
+        sensitivity is None and not sens_failed
+    )
 
     if sens_failed:
-        reasons.append("Parameter sensitivity was requested and FAILED — it is not evidence "
-                       "either way, and the grade does not include it")
+        reasons.append(
+            "Parameter sensitivity was requested and FAILED — it is not evidence "
+            "either way, and the grade does not include it"
+        )
     elif sens_not_assessable:
         reasons.append("Parameter sensitivity ran but produced no measurable result")
 
     if wf_failed:
-        reasons.append("Walk-forward was requested and FAILED — it is not evidence either way, "
-                       "and the grade does not include it")
+        reasons.append(
+            "Walk-forward was requested and FAILED — it is not evidence either way, "
+            "and the grade does not include it"
+        )
     elif wf_not_assessable:
         # Name the metric the path actually used: native WF rows carry per-window profit factor
         # (is_pf), the serial path carries Sharpe. Detect by the summary shape so the reason
@@ -177,9 +184,9 @@ def compute_grade(
             f"median drawdown {_fmt(median_max_dd)}, worst-1% drawdown {_fmt(pct1_max_dd)}"
         )
         if not wf_not_run:
-            reasons.append(f"Walk-forward IS→OOS degradation {wf_degradation*100:.0f}%")
+            reasons.append(f"Walk-forward IS→OOS degradation {wf_degradation * 100:.0f}%")
         if not sens_not_run:
-            reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
+            reasons.append(f"Parameter sensitivity worst case {sens_degradation * 100:.0f}% drop")
         reasons.append(
             "Set the drawdown percent you are willing to accept on a ruleset and re-run — "
             "total ruin was tested as a default bar and cleared by strategies at 70% drawdown, "
@@ -198,28 +205,39 @@ def compute_grade(
     a_blocked_no_evidence = wf_not_assessable
 
     # ── A: worst-1% passes, WF solid (or not run), sensitivity solid (or not run)
-    if pct1_passes and not a_blocked_no_evidence and (wf_solid or wf_not_run) and (sens_solid or sens_not_run):
+    if (
+        pct1_passes
+        and not a_blocked_no_evidence
+        and (wf_solid or wf_not_run)
+        and (sens_solid or sens_not_run)
+    ):
         reasons.append("Worst 1% of Monte Carlo simulations stays under ruleset limit")
         if not wf_not_run:
-            reasons.append(f"Walk-forward IS→OOS degradation only {wf_degradation*100:.0f}%")
+            reasons.append(f"Walk-forward IS→OOS degradation only {wf_degradation * 100:.0f}%")
         if not sens_not_run:
-            reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
+            reasons.append(f"Parameter sensitivity worst case {sens_degradation * 100:.0f}% drop")
         if genuinely_not_run:
-            reasons.append("Walk-forward / sensitivity not run — grade may improve with full analysis")
+            reasons.append(
+                "Walk-forward / sensitivity not run — grade may improve with full analysis"
+            )
         return ("A", reasons)
 
     # ── B: worst-5% passes, WF ok (or not run), sensitivity ok (or not run)
     if pct5_passes and (wf_ok or wf_not_run) and (sens_ok or sens_not_run):
         reasons.append("Worst 5% of Monte Carlo simulations stays under ruleset limit")
         if a_blocked_no_evidence and pct1_passes:
-            reasons.append("Capped at B — the worst 1% passes too, but an A needs walk-forward "
-                           "evidence and this run produced none")
+            reasons.append(
+                "Capped at B — the worst 1% passes too, but an A needs walk-forward "
+                "evidence and this run produced none"
+            )
         if not wf_not_run:
-            reasons.append(f"Walk-forward degradation {wf_degradation*100:.0f}%")
+            reasons.append(f"Walk-forward degradation {wf_degradation * 100:.0f}%")
         if not sens_not_run:
-            reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
+            reasons.append(f"Parameter sensitivity worst case {sens_degradation * 100:.0f}% drop")
         if genuinely_not_run:
-            reasons.append("Walk-forward / sensitivity not run — grade may improve with full analysis")
+            reasons.append(
+                "Walk-forward / sensitivity not run — grade may improve with full analysis"
+            )
         return ("B", reasons)
 
     # ── C: median passes but worst-5% doesn't
@@ -227,9 +245,9 @@ def compute_grade(
         if not pct5_passes and limit > 0:
             reasons.append(f"Worst 5% breaches limit by {_fmt(pct5_max_dd - limit)}")
         if wf_degradation is not None and wf_degradation >= 0.30:
-            reasons.append(f"Walk-forward shows {wf_degradation*100:.0f}% IS→OOS degradation")
+            reasons.append(f"Walk-forward shows {wf_degradation * 100:.0f}% IS→OOS degradation")
         if sens_degradation is not None and sens_degradation >= 0.40:
-            reasons.append(f"Parameter sensitivity worst case is {sens_degradation*100:.0f}%")
+            reasons.append(f"Parameter sensitivity worst case is {sens_degradation * 100:.0f}%")
         if not reasons:
             reasons.append("Median simulation passes but tail risk is elevated")
         return ("C", reasons)
@@ -237,10 +255,12 @@ def compute_grade(
     # ── D: median profitable but drawdown fails
     if median_final_pnl > 0:
         reasons.append("Median simulation is profitable but median drawdown breaches the limit")
-        reasons.append(f"{prob_breach*100:.0f}% probability of breaching ruleset limit at some point")
+        reasons.append(
+            f"{prob_breach * 100:.0f}% probability of breaching ruleset limit at some point"
+        )
         return ("D", reasons)
 
     # ── F: median simulation loses money
     reasons.append(f"Median simulation ends with loss of ${abs(median_final_pnl):.0f}")
-    reasons.append(f"{prob_breach*100:.0f}% probability of breaching ruleset limit")
+    reasons.append(f"{prob_breach * 100:.0f}% probability of breaching ruleset limit")
     return ("F", reasons)

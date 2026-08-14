@@ -10,6 +10,7 @@ Usage (from anywhere):
 
 Read-only. Touches nothing. The SQL below is the saved query — keep it and the doc in sync.
 """
+
 import argparse
 import json
 import sqlite3
@@ -46,9 +47,18 @@ ORDER BY id;
 """
 
 CORE_COLS = [
-    "id", "account_tier", "account_size", "profit_target", "max_loss_eod",
-    "mll_lock_balance", "consistency_pct", "consistency_breach_action",
-    "min_trading_days", "daily_loss_cap", "profit_split_pct", "force_flat_time_et",
+    "id",
+    "account_tier",
+    "account_size",
+    "profit_target",
+    "max_loss_eod",
+    "mll_lock_balance",
+    "consistency_pct",
+    "consistency_breach_action",
+    "min_trading_days",
+    "daily_loss_cap",
+    "profit_split_pct",
+    "force_flat_time_et",
 ]
 
 

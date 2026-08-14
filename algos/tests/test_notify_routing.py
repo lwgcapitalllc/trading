@@ -39,23 +39,30 @@ def _isolated(monkeypatch):
     yield
 
 
-_ENV_VARS = ("LWG_TELEGRAM_TOKEN", "LWG_TELEGRAM_CHAT_ID", "LWG_TELEGRAM_ADMIN_CHAT_ID",
-             "LWG_TELEGRAM_TOKEN_BLEG")
+_ENV_VARS = (
+    "LWG_TELEGRAM_TOKEN",
+    "LWG_TELEGRAM_CHAT_ID",
+    "LWG_TELEGRAM_ADMIN_CHAT_ID",
+    "LWG_TELEGRAM_TOKEN_BLEG",
+)
 
 
 def _ok(message_id=1):
     """Telegram's success shape. `message_id` matters — it is what an exit replies to."""
-    return type("R", (), {
-        "status_code": 200,
-        "text": "ok",
-        "json": lambda self: {"ok": True, "result": {"message_id": message_id}},
-    })()
+    return type(
+        "R",
+        (),
+        {
+            "status_code": 200,
+            "text": "ok",
+            "json": lambda self: {"ok": True, "result": {"message_id": message_id}},
+        },
+    )()
 
 
 def _rejected(description):
     body = '{"ok":false,"error_code":400,"description":"%s"}' % description
-    return type("R", (), {"status_code": 400, "text": body,
-                          "json": lambda self: {"ok": False}})()
+    return type("R", (), {"status_code": 400, "text": body, "json": lambda self: {"ok": False}})()
 
 
 class _Sent:
@@ -65,8 +72,14 @@ class _Sent:
         self.calls = []
 
     def post(self, url, json=None, timeout=None):
-        self.calls.append({"url": url, "chat_id": json["chat_id"], "text": json["text"],
-                           "reply_to": json.get("reply_to_message_id")})
+        self.calls.append(
+            {
+                "url": url,
+                "chat_id": json["chat_id"],
+                "text": json["text"],
+                "reply_to": json.get("reply_to_message_id"),
+            }
+        )
         return _ok(100 + len(self.calls))
 
     @property
@@ -114,24 +127,32 @@ def test_the_canonical_keys_keep_their_historical_env_names():
 
 # ── per-bot routing ─────────────────────────────────────────────────────────────
 def test_default_routing_goes_to_the_shared_group(monkeypatch, sent):
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     assert notify.send_telegram("hi", notify.TRADE) is True
     assert sent.calls[-1]["chat_id"] == "-100shared"
 
 
 def test_a_bot_can_send_to_its_own_chat(monkeypatch, sent):
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     notify.send_telegram("hi", notify.TRADE, chat_id="-100mine")
     assert sent.calls[-1]["chat_id"] == "-100mine"
 
 
 def test_a_bot_can_send_as_its_own_telegram_identity(monkeypatch, sent):
     """Two bots, two tokens, two groups — the whole point of the per-bot fields."""
-    monkeypatch.setattr(credentials, "_cache", {
-        "telegram_token": "DEFAULT", "telegram_chat_id": "-100shared",
-        "telegram_token_bleg": "SECOND"})
+    monkeypatch.setattr(
+        credentials,
+        "_cache",
+        {
+            "telegram_token": "DEFAULT",
+            "telegram_chat_id": "-100shared",
+            "telegram_token_bleg": "SECOND",
+        },
+    )
     notify.send_telegram("hi", notify.TRADE, chat_id="-100bleg", token_key="telegram_token_bleg")
     assert sent.last_token == "SECOND"
     assert sent.calls[-1]["chat_id"] == "-100bleg"
@@ -140,8 +161,9 @@ def test_a_bot_can_send_as_its_own_telegram_identity(monkeypatch, sent):
 def test_a_named_token_that_is_missing_falls_back_and_says_so(monkeypatch, sent, capsys):
     """The wrong sender identity is recoverable. A silently dropped trade alert is not — so it
     falls back rather than going mute, and prints the key that needs adding."""
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "DEFAULT", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "DEFAULT", "telegram_chat_id": "-100shared"}
+    )
     assert notify.send_telegram("hi", notify.TRADE, token_key="telegram_token_bleg") is True
     assert sent.last_token == "DEFAULT"
     assert "telegram_token_bleg" in capsys.readouterr().out
@@ -149,8 +171,9 @@ def test_a_named_token_that_is_missing_falls_back_and_says_so(monkeypatch, sent,
 
 def test_the_fallback_warning_is_printed_once_per_key(monkeypatch, sent, capsys):
     """A message per bar would bury the log it is trying to draw attention to."""
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     for _ in range(3):
         notify.send_telegram("hi", notify.TRADE, token_key="telegram_token_bleg")
     assert capsys.readouterr().out.count("telegram_token_bleg") == 1
@@ -161,6 +184,7 @@ def test_the_fallback_warning_is_printed_once_per_key(monkeypatch, sent, capsys)
 # enough. Bot keys, symbols and file paths are made of underscores — `mpc_sos_fade_demo`,
 # `MT5_FFT`, `live_config.py` — so the alert most likely to be refused is the one carrying an
 # exception, whose text is full of paths. Found on the first real send, 2026-07-31.
+
 
 class _RejectsMarkdown:
     """Telegram's actual behaviour: 400 with a parse error while parse_mode is set."""
@@ -176,24 +200,26 @@ class _RejectsMarkdown:
 
 
 def test_a_message_telegram_cannot_parse_is_resent_unformatted(monkeypatch, capsys):
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     fake = _RejectsMarkdown()
     monkeypatch.setattr(notify, "_requests", fake)
 
     assert notify.send_telegram("MPC SOS Fade on MT5_FFT", notify.TRADE) is True
     assert len(fake.calls) == 2
-    assert "parse_mode" in fake.calls[0]          # tried formatted first
-    assert "parse_mode" not in fake.calls[1]      # then plain
-    assert fake.calls[1]["text"] == "MPC SOS Fade on MT5_FFT"   # text itself is never mangled
+    assert "parse_mode" in fake.calls[0]  # tried formatted first
+    assert "parse_mode" not in fake.calls[1]  # then plain
+    assert fake.calls[1]["text"] == "MPC SOS Fade on MT5_FFT"  # text itself is never mangled
     assert "plain text" in capsys.readouterr().out
 
 
 def test_a_400_that_is_not_a_parse_error_is_not_retried(monkeypatch):
     """A bot that is not in the chat also 400s. Retrying that unformatted just fails twice and
     hides the real reason, which is the one worth reading."""
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     calls = []
 
     class _NotAMember:
@@ -209,14 +235,16 @@ def test_a_400_that_is_not_a_parse_error_is_not_retried(monkeypatch):
 # ── the exit replies to the entry ───────────────────────────────────────────────
 def test_the_message_id_comes_back_so_a_later_message_can_reply(monkeypatch, sent):
     """Without the id there is no thread, and a trade's outcome floats loose in the feed."""
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     assert notify.send_telegram_id("ENTRY", notify.TRADE) == 101
 
 
 def test_a_reply_carries_the_target_message_id(monkeypatch, sent):
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     entry_id = notify.send_telegram_id("ENTRY", notify.TRADE)
     notify.send_telegram_id("EXIT", notify.TRADE, reply_to=entry_id)
     assert sent.calls[-1]["reply_to"] == entry_id
@@ -225,8 +253,9 @@ def test_a_reply_carries_the_target_message_id(monkeypatch, sent):
 def test_a_deleted_entry_does_not_take_the_exit_alert_with_it(monkeypatch, capsys):
     """If the entry message was deleted, Telegram refuses the whole send. A missing thread link
     is cosmetic; a missing exit alert means a closed trade nobody was told about."""
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
     calls = []
 
     class _GoneTarget:
@@ -256,8 +285,9 @@ def test_an_unconfigured_notifier_is_a_no_op_not_a_crash(sent):
 
 
 def test_a_dead_network_is_a_no_op_not_a_crash(monkeypatch):
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
 
     class _Boom:
         def post(self, *a, **k):
@@ -268,8 +298,9 @@ def test_a_dead_network_is_a_no_op_not_a_crash(monkeypatch):
 
 
 def test_a_rejection_from_telegram_is_reported_not_raised(monkeypatch, capsys):
-    monkeypatch.setattr(credentials, "_cache",
-                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
 
     class _Refuses:
         def post(self, *a, **k):

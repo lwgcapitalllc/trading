@@ -40,7 +40,6 @@ DIFFERENT setup take the slot: the trade list reshuffles rather than shrinking. 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import importlib
 import sys
 from pathlib import Path
@@ -106,8 +105,9 @@ def _profile_for(tier: str, layers: set[str], spread_override: float | None):
     return dataclasses.replace(
         base,
         name=f"tier:{tier}",
-        commission_per_side_per_lot=(base.commission_per_side_per_lot
-                                     if "commission" in layers else 0.0),
+        commission_per_side_per_lot=(
+            base.commission_per_side_per_lot if "commission" in layers else 0.0
+        ),
         swap=base.swap if "swap" in layers else None,
         slippage_ticks=0,
         spread=spread,
@@ -116,24 +116,37 @@ def _profile_for(tier: str, layers: set[str], spread_override: float | None):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--start", default="2020-01-01",
-                    help="YYYY-MM-DD. The G5a table's window starts here; keep it to compare.")
+    ap.add_argument(
+        "--start",
+        default="2020-01-01",
+        help="YYYY-MM-DD. The G5a table's window starts here; keep it to compare.",
+    )
     ap.add_argument("--end", default="2026-08-03")
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--tier", action="append", default=None,
-                    help="a broker profile name, repeatable (default: the three PU Prime tiers)")
+    ap.add_argument(
+        "--tier",
+        action="append",
+        default=None,
+        help="a broker profile name, repeatable (default: the three PU Prime tiers)",
+    )
     # Per-TIER and not one global number, because the tiers differ by exactly this figure — a
     # single --spread applied to every row would quietly hand Standard the raw tiers' quote and
     # produce a table whose whole subject had been flattened out of it.
-    ap.add_argument("--spread", action="append", default=None, metavar="TIER=VALUE",
-                    help="WHAT-IF spread for one tier, repeatable (e.g. puprime_ecn=0.12). "
-                         "Labelled 'stated', never 'measured'. Does not touch PROFILES.")
+    ap.add_argument(
+        "--spread",
+        action="append",
+        default=None,
+        metavar="TIER=VALUE",
+        help="WHAT-IF spread for one tier, repeatable (e.g. puprime_ecn=0.12). "
+        "Labelled 'stated', never 'measured'. Does not touch PROFILES.",
+    )
     args = ap.parse_args(argv)
 
     overrides: dict[str, float] = {}
@@ -156,14 +169,14 @@ def main(argv=None) -> int:
     # full 155k-bar replay, so the same correct refusal arrives minutes later having burned the
     # work it was meant to prevent. Same reasoning as the optimizer's grid-size guard: check from
     # the cheap fact, not from the expensive one.
-    refuses = [t for t in tiers
-               if t not in overrides and not PROFILES[t].spread_measured]
+    refuses = [t for t in tiers if t not in overrides and not PROFILES[t].spread_measured]
     if refuses:
         raise SystemExit(
             f"no measured spread for {refuses} — this table charges the spread on every tier, and "
             f"a tier's spread is deliberately NOT defaulted to a sibling's (see fills.py). Either "
             f"state one for this run (e.g. --spread {refuses[0]}=0.12, labelled 'stated' in the "
-            f"output) or measure it with algos/tools/broker_facts.py --history-days 1.")
+            f"output) or measure it with algos/tools/broker_facts.py --history-days 1."
+        )
 
     print(f"loading {args.symbol} {args.tf}m  {args.start} -> {args.end} ...", flush=True)
     df = BarSource().load(args.symbol, args.tf, args.start, args.end)
@@ -179,18 +192,19 @@ def main(argv=None) -> int:
 
     results = []
     for tier, _, _, layers in rows:
-        profile = _profile_for(tier if tier != "free" else tiers[0], layers,
-                               overrides.get(tier))
+        profile = _profile_for(tier if tier != "free" else tiers[0], layers, overrides.get(tier))
         label = tier
         if layers:
             base = PROFILES[tier]
             stated = tier in overrides
             spread = overrides[tier] if stated else base.spread
-            src = "stated" if stated else (
-                "measured" if spread != SPREAD_UNMEASURED else "REFUSED")
+            src = "stated" if stated else ("measured" if spread != SPREAD_UNMEASURED else "REFUSED")
             comm = base.commission_per_side_per_lot
-            print(f"replaying {label:18s} spread ${spread:.2f} ({src})  "
-                  f"commission ${comm:.2f}/side/lot ...", flush=True)
+            print(
+                f"replaying {label:18s} spread ${spread:.2f} ({src})  "
+                f"commission ${comm:.2f}/side/lot ...",
+                flush=True,
+            )
         else:
             print(f"replaying {label:18s} no costs ...", flush=True)
         trades = _replay(args.strategy, df, args.warmup, args.capital, profile)
@@ -207,12 +221,16 @@ def main(argv=None) -> int:
 
     if overrides:
         for k, v in overrides.items():
-            print(f"\n  ⚠ {k} spread ${v:.2f} was STATED on the command line, not measured off "
-                  f"that tier's\n    own tick stream. It is not in `backtest/fills.py` and this "
-                  f"run does not put it there.")
-    print("\n  ⚠ Read the R column, not a balance. Costs are size-independent in R; dollars "
-          "compound.\n  ⚠ This strategy's run-to-run spread is sd 15.06R (jitter_audit.py), so a "
-          "gap smaller\n    than that is not an edge — it is noise wearing a decimal point.")
+            print(
+                f"\n  ⚠ {k} spread ${v:.2f} was STATED on the command line, not measured off "
+                f"that tier's\n    own tick stream. It is not in `backtest/fills.py` and this "
+                f"run does not put it there."
+            )
+    print(
+        "\n  ⚠ Read the R column, not a balance. Costs are size-independent in R; dollars "
+        "compound.\n  ⚠ This strategy's run-to-run spread is sd 15.06R (jitter_audit.py), so a "
+        "gap smaller\n    than that is not an edge — it is noise wearing a decimal point."
+    )
     return 0
 
 

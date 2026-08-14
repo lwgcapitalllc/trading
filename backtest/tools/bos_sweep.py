@@ -76,6 +76,7 @@ bars that recovered and was worth a fake +9%), and the FILL BAR MAY NOT STAGE TH
 limit is reached by price coming to it from the wrong side, so the fill bar's favourable extreme is
 the approach to the order, not a move the trade made. That is BUG_exit_fill_price_mismatch.
 """
+
 from __future__ import annotations
 
 import csv
@@ -94,25 +95,38 @@ from market_structure import Bar, StructureEngine  # noqa: E402
 from vwap import VwapEngine  # noqa: E402
 
 CACHE = ROOT / "backtest" / "cache" / "XAUUSD__M15.csv"
-HORIZON = 1200          # bars a trade may stay open before it is marked to market
+HORIZON = 1200  # bars a trade may stay open before it is marked to market
 MINTICK = 0.01
 BE_BUF = 30 * MINTICK
 STRUCT_BUF = 20 * MINTICK
 
-SPREAD = 0.22           # Vantage XAUUSD, repo-measured on 1,494,459 ticks
+SPREAD = 0.22  # Vantage XAUUSD, repo-measured on 1,494,459 ticks
 SWAP_LONG_PTS = -74.84  # Vantage demo, read off the live terminal 2026-07-22
 SWAP_SHORT_PTS = 26.98
-TRIPLE_WEEKDAY = 2      # Wednesday, Monday-based
+TRIPLE_WEEKDAY = 2  # Wednesday, Monday-based
 
 SPLIT_TS = int(datetime(2022, 8, 1, tzinfo=timezone.utc).timestamp() * 1000)
 
-FIBS = {"0.382": 0.382, "0.5": 0.5, "0.618": 0.618, "0.702": 0.702,
-        "0.786": 0.786, "0.886": 0.886, "1.0": 1.0}
+FIBS = {
+    "0.382": 0.382,
+    "0.5": 0.5,
+    "0.618": 0.618,
+    "0.702": 0.702,
+    "0.786": 0.786,
+    "0.886": 0.886,
+    "1.0": 1.0,
+}
 
 
 @dataclass
 class Row:
-    i: int; ts: int; o: float; h: float; l: float; c: float; v: float
+    i: int
+    ts: int
+    o: float
+    h: float
+    l: float
+    c: float
+    v: float
 
 
 def load():
@@ -120,13 +134,22 @@ def load():
     with CACHE.open() as f:
         for r in csv.DictReader(f):
             t = datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            rows.append(Row(0, int(t.timestamp() * 1000), float(r["open"]), float(r["high"]),
-                            float(r["low"]), float(r["close"]), float(r["volume"] or 0)))
+            rows.append(
+                Row(
+                    0,
+                    int(t.timestamp() * 1000),
+                    float(r["open"]),
+                    float(r["high"]),
+                    float(r["low"]),
+                    float(r["close"]),
+                    float(r["volume"] or 0),
+                )
+            )
     # drop the coarser-than-M15 prefix the broker serves where it has no real M15 history
     start = 0
     for k in range(len(rows) - 1, 0, -1):
         if (rows[k].ts - rows[k - 1].ts) // 60000 > 15:
-            w = rows[max(0, k - 200):k]
+            w = rows[max(0, k - 200) : k]
             g = [(w[j].ts - w[j - 1].ts) // 60000 for j in range(1, len(w))]
             if g and statistics.median(g) > 15:
                 start = k
@@ -163,13 +186,13 @@ def prescan(rows):
 
         e = st.update(Bar(r.i, r.o, r.h, r.l, r.c)).external
         vwap = vw.update(r.i, r.ts, r.h, r.l, r.c, r.v).value
-        vside[r.i] = prevside                       # PREVIOUS closed bar — no look-ahead
+        vside[r.i] = prevside  # PREVIOUS closed bar — no look-ahead
         lo, hi = st.last_confirmed_low, st.last_confirmed_high
         swlo[r.i] = lo.price if lo else None
         swhi[r.i] = hi.price if hi else None
 
         dt = datetime.fromtimestamp(r.ts / 1000, timezone.utc)
-        nyhour[r.i] = (dt.hour - 4) % 24            # NY = UTC-4 (EDT); good enough for a late-day gate
+        nyhour[r.i] = (dt.hour - 4) % 24  # NY = UTC-4 (EDT); good enough for a late-day gate
 
         if e.bull_sos or e.bear_sos:
             trend, ordinal, since_shift = (1 if e.bull_sos else -1), 0, 0
@@ -200,23 +223,29 @@ def nights(ts_in: int, ts_out: int) -> float:
 
 def run(rows, pre, cfg):
     """One configuration, one pass. Returns a list of (entry_bar, R_net, stop_dist, dir)."""
-    legs, vside, swlo, swhi, atr, nyhour = (pre["legs"], pre["vside"], pre["swlo"],
-                                            pre["swhi"], pre["atr"], pre["nyhour"])
+    legs, vside, swlo, swhi, atr, nyhour = (
+        pre["legs"],
+        pre["vside"],
+        pre["swlo"],
+        pre["swhi"],
+        pre["atr"],
+        pre["nyhour"],
+    )
     ef = FIBS[cfg["entry"]]
-    sf = cfg["stop"]                       # "1.0" | "0.886" | "swing" | ("atr", mult)
+    sf = cfg["stop"]  # "1.0" | "0.886" | "swing" | ("atr", mult)
     t1f, t2f = cfg["tp1f"], cfg["tp2f"]
     sizes = cfg["sizes"]
     max_bars = int(cfg["max_days"] * 96)
-    which = cfg["which"]                   # max ordinal accepted
+    which = cfg["which"]  # max ordinal accepted
     use_vwap = cfg["vwap"]
-    min_disp = cfg["min_disp"]             # x ATR the break close must clear the level by
-    min_leg = cfg["min_leg"]               # x ATR the leg must span
-    late = cfg["late"]                     # block new entries 16:00-18:00 NY
+    min_disp = cfg["min_disp"]  # x ATR the break close must clear the level by
+    min_leg = cfg["min_leg"]  # x ATR the leg must span
+    late = cfg["late"]  # block new entries 16:00-18:00 NY
     per_regime = cfg["per_regime"]
     trail = cfg["trail"]
-    tp2mode = cfg["tp2mode"]               # "tp1" | "be"
-    dirs = cfg["dirs"]                     # 1 longs only, -1 shorts only, 0 both
-    min_stop_pct = cfg["min_stop_pct"]     # refuse a setup whose stop is under this % of price
+    tp2mode = cfg["tp2mode"]  # "tp1" | "be"
+    dirs = cfg["dirs"]  # 1 longs only, -1 shorts only, 0 both
+    min_stop_pct = cfg["min_stop_pct"]  # refuse a setup whose stop is under this % of price
 
     out = []
     pend = None
@@ -267,8 +296,16 @@ def run(rows, pre, cfg):
                 # swap in R: (pts * $1/pt/lot * lots) / (risk * lots * 100)
                 sw_r = (pts * nights(rows[ib].ts, r.ts)) / (risk * 100.0)
                 # target DISTANCES travel with the trade so a control can reproduce its geometry
-                out.append((ib, gross - sp + sw_r, risk, d, gross,
-                            (abs(t1 - entry), abs(t2 - entry), abs(t3 - entry))))
+                out.append(
+                    (
+                        ib,
+                        gross - sp + sw_r,
+                        risk,
+                        d,
+                        gross,
+                        (abs(t1 - entry), abs(t2 - entry), abs(t3 - entry)),
+                    )
+                )
                 open_tr = None
 
         # ---- a resting limit, only while the slot is free ----
@@ -279,7 +316,7 @@ def run(rows, pre, cfg):
                 pend = None
             else:
                 ext, org = (hi, lo) if d == 1 else (lo, hi)
-                lvl = lambda v: ext + (org - ext) * v          # noqa: E731
+                lvl = lambda v: ext + (org - ext) * v  # noqa: E731
                 zone = lvl(ef)
                 dead = (r.c < org) if d == 1 else (r.c > org)
                 touched = (r.l <= zone) if d == 1 else (r.h >= zone)
@@ -333,8 +370,11 @@ def run(rows, pre, cfg):
 
 
 def score(evs, rows, lo_ts=None, hi_ts=None):
-    sel = [e for e in evs
-           if (lo_ts is None or rows[e[0]].ts >= lo_ts) and (hi_ts is None or rows[e[0]].ts < hi_ts)]
+    sel = [
+        e
+        for e in evs
+        if (lo_ts is None or rows[e[0]].ts >= lo_ts) and (hi_ts is None or rows[e[0]].ts < hi_ts)
+    ]
     if len(sel) < 2:
         return None
     rs = [e[1] for e in sel]
@@ -348,22 +388,44 @@ def score(evs, rows, lo_ts=None, hi_ts=None):
         dd = max(dd, peak - cum)
     mean = sum(rs) / n
     sd = (sum((x - mean) ** 2 for x in rs) / (n - 1)) ** 0.5 if n > 1 else 0.0
-    t = mean / (sd / n ** 0.5) if sd > 0 else 0.0
+    t = mean / (sd / n**0.5) if sd > 0 else 0.0
     stops = sorted(e[2] for e in sel)
-    return dict(n=n, sum=sum(rs), exp=mean, pf=(gp / gl if gl else 99.0), dd=dd, t=t,
-                med_stop=statistics.median(stops),
-                p10_stop=stops[max(0, int(0.10 * len(stops)) - 1)],
-                # what the spread costs on the TIGHTEST tenth, which is where a stop model breaks
-                worst_sprd=100.0 * 0.22 / stops[max(0, int(0.10 * len(stops)) - 1)])
+    return dict(
+        n=n,
+        sum=sum(rs),
+        exp=mean,
+        pf=(gp / gl if gl else 99.0),
+        dd=dd,
+        t=t,
+        med_stop=statistics.median(stops),
+        p10_stop=stops[max(0, int(0.10 * len(stops)) - 1)],
+        # what the spread costs on the TIGHTEST tenth, which is where a stop model breaks
+        worst_sprd=100.0 * 0.22 / stops[max(0, int(0.10 * len(stops)) - 1)],
+    )
 
 
 # ---------------------------------------------------------------------------------------------
 # Ranking modes. Everything above is measurement; everything below is how a measurement is READ.
 # ---------------------------------------------------------------------------------------------
 
-SHIPPED = dict(entry="0.786", stop=("atr", 1.3), tp1f=0.5, tp2f=0.382, sizes=(0.0, 0.0, 1.0),
-               max_days=3.0, which=99, vwap=True, min_disp=0.0, min_leg=0.0, late=True,
-               per_regime=0, trail=True, tp2mode="tp1", dirs=0, min_stop_pct=0.10)
+SHIPPED = dict(
+    entry="0.786",
+    stop=("atr", 1.3),
+    tp1f=0.5,
+    tp2f=0.382,
+    sizes=(0.0, 0.0, 1.0),
+    max_days=3.0,
+    which=99,
+    vwap=True,
+    min_disp=0.0,
+    min_leg=0.0,
+    late=True,
+    per_regime=0,
+    trail=True,
+    tp2mode="tp1",
+    dirs=0,
+    min_stop_pct=0.10,
+)
 
 # what `mpc_bos_strategy.pine` shipped before Run 7, kept so the improvement stays checkable
 PRE_RUN7 = dict(SHIPPED, stop="1.0", min_stop_pct=0.0)
@@ -385,7 +447,7 @@ def compound(evs, risk=RISK):
     bal = peak = 1.0
     dd = 0.0
     for e in sorted(evs, key=lambda x: x[0]):
-        bal *= (1.0 + risk * e[1])
+        bal *= 1.0 + risk * e[1]
         if bal <= 0:
             return 0.0, 1.0
         peak = max(peak, bal)
@@ -409,8 +471,10 @@ def risk_for_dd(evs, target=0.25):
 
 
 def halves(rows, evs):
-    return ([e for e in evs if rows[e[0]].ts < SPLIT_TS],
-            [e for e in evs if rows[e[0]].ts >= SPLIT_TS])
+    return (
+        [e for e in evs if rows[e[0]].ts < SPLIT_TS],
+        [e for e in evs if rows[e[0]].ts >= SPLIT_TS],
+    )
 
 
 def jitter_rows(seed):
@@ -421,7 +485,10 @@ def jitter_rows(seed):
     rows = load()
     for r in rows:
         off = rng.uniform(-0.05, 0.05)
-        r.o += off; r.h += off; r.l += off; r.c += off
+        r.o += off
+        r.h += off
+        r.l += off
+        r.c += off
     return rows
 
 
@@ -434,16 +501,20 @@ def _line(tag, rows, evs, budget=0.25):
     _, m = risk_for_dd(evs, budget)
     mA = risk_for_dd(A, budget)[1] if len(A) > 3 else 0.0
     mB = risk_for_dd(B, budget)[1] if len(B) > 3 else 0.0
-    print(f"{tag:<46}n={a['n']:>4} {a['sum']:>+7.1f}R exp{a['exp']:>+6.3f} PF{a['pf']:>5.2f} "
-          f"t{a['t']:>5.2f} | {m:>7.1f}x  A{mA:>6.1f}x B{mB:>6.1f}x | "
-          f"stop ${a['med_stop']:>6.2f} p10 ${a['p10_stop']:>5.2f} sprd{a['worst_sprd']:>5.1f}%")
+    print(
+        f"{tag:<46}n={a['n']:>4} {a['sum']:>+7.1f}R exp{a['exp']:>+6.3f} PF{a['pf']:>5.2f} "
+        f"t{a['t']:>5.2f} | {m:>7.1f}x  A{mA:>6.1f}x B{mB:>6.1f}x | "
+        f"stop ${a['med_stop']:>6.2f} p10 ${a['p10_stop']:>5.2f} sprd{a['worst_sprd']:>5.1f}%"
+    )
 
 
 def cmd_sensitivity():
     _init()
-    print(f"{len(_R)} true-M15 bars  "
-          f"{datetime.fromtimestamp(_R[0].ts/1000, timezone.utc):%Y-%m-%d} -> "
-          f"{datetime.fromtimestamp(_R[-1].ts/1000, timezone.utc):%Y-%m-%d}")
+    print(
+        f"{len(_R)} true-M15 bars  "
+        f"{datetime.fromtimestamp(_R[0].ts / 1000, timezone.utc):%Y-%m-%d} -> "
+        f"{datetime.fromtimestamp(_R[-1].ts / 1000, timezone.utc):%Y-%m-%d}"
+    )
     print("multiples are at whatever risk % produces a 25% peak-to-trough drawdown\n")
     _line("BEFORE Run 7 (fib 1.0, no stop floor)", _R, run(_R, _P, PRE_RUN7))
     _line("SHIPPED TODAY (ATR 1.3 + 0.10% floor)", _R, run(_R, _P, SHIPPED))
@@ -454,20 +525,31 @@ def cmd_sensitivity():
         "which": [1, 2, 3, 99],
         "vwap": [True, False],
         "min_stop_pct": [0.0, 0.05, 0.08, 0.10, 0.15],
-        "sizes": [(0.0, 0.0, 1.0), (0.3, 0.3, 0.2), (0.5, 0.5, 0.0), (1.0, 0.0, 0.0),
-                  (0.0, 0.0, 0.0), (0.0, 0.5, 0.5)],
-        "min_disp": [0.0, 0.25, 0.5], "max_days": [0.5, 1.0, 3.0, 10.0],
-        "late": [True, False], "tp2mode": ["tp1", "be"], "dirs": [0, 1, -1],
+        "sizes": [
+            (0.0, 0.0, 1.0),
+            (0.3, 0.3, 0.2),
+            (0.5, 0.5, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (0.0, 0.5, 0.5),
+        ],
+        "min_disp": [0.0, 0.25, 0.5],
+        "max_days": [0.5, 1.0, 3.0, 10.0],
+        "late": [True, False],
+        "tp2mode": ["tp1", "be"],
+        "dirs": [0, 1, -1],
     }
     for k, vals in SW.items():
         print(f"\n  {k}:")
         for v in vals:
-            c = dict(SHIPPED); c[k] = v
+            c = dict(SHIPPED)
+            c[k] = v
             _line(f"   {v}{' *' if v == SHIPPED[k] else '  '}", _R, run(_R, _P, c))
 
 
 def _grid_one(combo):
-    cfg = dict(SHIPPED); cfg.update(combo)
+    cfg = dict(SHIPPED)
+    cfg.update(combo)
     evs = run(_R, _P, cfg)
     a = score(evs, _R)
     if a is None or a["n"] < 40 or a["worst_sprd"] > 15.0:
@@ -475,41 +557,54 @@ def _grid_one(combo):
     A, B = halves(_R, evs)
     if len(A) < 12 or len(B) < 12 or sum(e[1] for e in A) <= 0 or sum(e[1] for e in B) <= 0:
         return None
-    return dict(cfg=combo, a=a, mult=risk_for_dd(evs)[1],
-                mA=risk_for_dd(A)[1], mB=risk_for_dd(B)[1])
+    return dict(
+        cfg=combo, a=a, mult=risk_for_dd(evs)[1], mA=risk_for_dd(A)[1], mB=risk_for_dd(B)[1]
+    )
 
 
-GRID = dict(entry=["0.618", "0.702", "0.786", "0.886"],
-            stop=["1.0", "0.886", ("atr", 1.0), ("atr", 1.3), ("atr", 1.5), ("atr", 2.0)],
-            sizes=[(0.0, 0.0, 1.0), (0.0, 0.5, 0.5), (0.0, 0.0, 0.0)],
-            vwap=[True, False], tp1f=[0.5, 0.382],
-            min_stop_pct=[0.0, 0.05, 0.08, 0.10, 0.12, 0.15], which=[2, 3, 99])
+GRID = dict(
+    entry=["0.618", "0.702", "0.786", "0.886"],
+    stop=["1.0", "0.886", ("atr", 1.0), ("atr", 1.3), ("atr", 1.5), ("atr", 2.0)],
+    sizes=[(0.0, 0.0, 1.0), (0.0, 0.5, 0.5), (0.0, 0.0, 0.0)],
+    vwap=[True, False],
+    tp1f=[0.5, 0.382],
+    min_stop_pct=[0.0, 0.05, 0.08, 0.10, 0.12, 0.15],
+    which=[2, 3, 99],
+)
 
 
 def _tag(c):
     s = c.get("stop", SHIPPED["stop"])
     s = s if not isinstance(s, tuple) else "atr%.2f" % s[1]
     z = c.get("sizes", SHIPPED["sizes"])
-    return (f"e{c.get('entry',''):<6}s{s:<8}{'/'.join(str(int(x*100)) for x in z):<9}"
-            f"{'vwap' if c.get('vwap', True) else '----'} "
-            f"min{c.get('min_stop_pct',0):<5}w{c.get('which',99)}")
+    return (
+        f"e{c.get('entry', ''):<6}s{s:<8}{'/'.join(str(int(x * 100)) for x in z):<9}"
+        f"{'vwap' if c.get('vwap', True) else '----'} "
+        f"min{c.get('min_stop_pct', 0):<5}w{c.get('which', 99)}"
+    )
 
 
 def cmd_frontier():
     keys = list(GRID)
     combos = [dict(zip(keys, v)) for v in itertools.product(*(GRID[k] for k in keys))]
-    print(f"{len(combos)} configurations; keeping resolvable stops, both halves positive\n",
-          flush=True)
+    print(
+        f"{len(combos)} configurations; keeping resolvable stops, both halves positive\n",
+        flush=True,
+    )
     with mp.Pool(processes=max(1, mp.cpu_count() - 2), initializer=_init) as pool:
         res = [r for r in pool.map(_grid_one, combos, chunksize=8) if r]
     print(f"{len(res)} survive\n")
     print("RANKED BY TERMINAL MULTIPLE AT A 25% DRAWDOWN BUDGET over the full history")
-    print(f"{'configuration':<52}{'n':>5}{'MULT':>9}{'halfA':>8}{'halfB':>8}"
-          f"{'expR':>8}{'PF':>6}{'t':>6}")
+    print(
+        f"{'configuration':<52}{'n':>5}{'MULT':>9}{'halfA':>8}{'halfB':>8}"
+        f"{'expR':>8}{'PF':>6}{'t':>6}"
+    )
     print("-" * 102)
     for r in sorted(res, key=lambda x: -min(x["mA"], x["mB"]))[:25]:
-        print(f"{_tag(r['cfg']):<52}{r['a']['n']:>5}{r['mult']:>8.1f}x{r['mA']:>7.1f}x"
-              f"{r['mB']:>7.1f}x{r['a']['exp']:>+8.3f}{r['a']['pf']:>6.2f}{r['a']['t']:>6.2f}")
+        print(
+            f"{_tag(r['cfg']):<52}{r['a']['n']:>5}{r['mult']:>8.1f}x{r['mA']:>7.1f}x"
+            f"{r['mB']:>7.1f}x{r['a']['exp']:>+8.3f}{r['a']['pf']:>6.2f}{r['a']['t']:>6.2f}"
+        )
     print("\nranked by the WEAKER HALF, which is the number one lucky year cannot buy")
 
 
@@ -523,9 +618,14 @@ def _settle_seed(seed):
         if a is None:
             return None
         A, B = halves(rows, evs)
-        out[name] = dict(n=a["n"], sum=a["sum"], pf=a["pf"], m=risk_for_dd(evs)[1],
-                         mA=risk_for_dd(A)[1] if len(A) > 3 else 0.0,
-                         mB=risk_for_dd(B)[1] if len(B) > 3 else 0.0)
+        out[name] = dict(
+            n=a["n"],
+            sum=a["sum"],
+            pf=a["pf"],
+            m=risk_for_dd(evs)[1],
+            mA=risk_for_dd(A)[1] if len(A) > 3 else 0.0,
+            mB=risk_for_dd(B)[1] if len(B) > 3 else 0.0,
+        )
     return out
 
 
@@ -536,19 +636,23 @@ def cmd_settle(nseed=40):
         res = [r for r in pool.map(_settle_seed, range(9000, 9000 + nseed), chunksize=1) if r]
     print(f"{len(res)} jittered replays, each scored by both configurations\n")
     names = ["before Run 7", "shipped today"]
-    print(f"{'configuration':<24}{'trades':>8}{'sumR':>9}{'PF':>7}{'MULT@25%dd':>12}"
-          f"{'10th':>8}{'90th':>8}{'halfA':>8}{'halfB':>8}")
+    print(
+        f"{'configuration':<24}{'trades':>8}{'sumR':>9}{'PF':>7}{'MULT@25%dd':>12}"
+        f"{'10th':>8}{'90th':>8}{'halfA':>8}{'halfB':>8}"
+    )
     print("-" * 92)
     for n in names:
         v = [r[n] for r in res]
         ms = sorted(x["m"] for x in v)
-        q = lambda a, p: a[max(0, min(len(a) - 1, int(p * len(a))))]      # noqa: E731
-        print(f"{n:<24}{statistics.median(x['n'] for x in v):>8.0f}"
-              f"{statistics.median(x['sum'] for x in v):>+9.1f}"
-              f"{statistics.median(x['pf'] for x in v):>7.2f}"
-              f"{statistics.median(ms):>11.1f}x{q(ms,.1):>7.1f}x{q(ms,.9):>7.1f}x"
-              f"{statistics.median(x['mA'] for x in v):>7.1f}x"
-              f"{statistics.median(x['mB'] for x in v):>7.1f}x")
+        q = lambda a, p: a[max(0, min(len(a) - 1, int(p * len(a))))]  # noqa: E731
+        print(
+            f"{n:<24}{statistics.median(x['n'] for x in v):>8.0f}"
+            f"{statistics.median(x['sum'] for x in v):>+9.1f}"
+            f"{statistics.median(x['pf'] for x in v):>7.2f}"
+            f"{statistics.median(ms):>11.1f}x{q(ms, 0.1):>7.1f}x{q(ms, 0.9):>7.1f}x"
+            f"{statistics.median(x['mA'] for x in v):>7.1f}x"
+            f"{statistics.median(x['mB'] for x in v):>7.1f}x"
+        )
     w = sum(1 for r in res if r["shipped today"]["m"] > r["before Run 7"]["m"])
     okn = sum(1 for r in res if r["shipped today"]["mA"] > 4 and r["shipped today"]["mB"] > 4)
     oko = sum(1 for r in res if r["before Run 7"]["mA"] > 4 and r["before Run 7"]["mB"] > 4)

@@ -4,8 +4,16 @@ import { CalendarDays, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-rea
 import { EmptyState } from '@/components/EmptyState'
 import { useCalendar, useCalendarCurrencies, useServerClock } from '@/hooks/useCalendar'
 import {
-  flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtDay, fmtWeekRange, fmtCountdown,
-  localWeekStart, localWeekEnd, dayIndexOf as weekDayIndex,
+  flagOf,
+  IMPACT_DOT,
+  IMPACT_LABEL,
+  fmtTime,
+  fmtDay,
+  fmtWeekRange,
+  fmtCountdown,
+  localWeekStart,
+  localWeekEnd,
+  dayIndexOf as weekDayIndex,
 } from '@/lib/calendar'
 import type { CalendarEvent, Impact, Surprise } from '@/types'
 
@@ -54,7 +62,9 @@ function NowLine({ nowMs, nextHigh }: { nowMs: number; nextHigh: CalendarEvent |
       {nextHigh && (
         <span className="text-[11px] text-text-secondary font-mono tabular-nums">
           <span title={nextHigh.currency}>{flagOf(nextHigh.currency)}</span> {nextHigh.title} in{' '}
-          <span className="text-accent font-semibold">{fmtCountdown(nextHigh.timestamp_ms - nowMs)}</span>
+          <span className="text-accent font-semibold">
+            {fmtCountdown(nextHigh.timestamp_ms - nowMs)}
+          </span>
         </span>
       )}
     </div>
@@ -65,18 +75,40 @@ function NowLine({ nowMs, nextHigh }: { nowMs: number; nextHigh: CalendarEvent |
 // page once a second so the countdown stays honest, and a week is ~200 events — so without this
 // every row rebuilt every second to render text that changes when a single row crosses `now`.
 // Both props are primitives, so the memo holds for every row but that one.
-const EventRow = memo(function EventRow({ event, passed }: { event: CalendarEvent; passed: boolean }) {
+const EventRow = memo(function EventRow({
+  event,
+  passed,
+}: {
+  event: CalendarEvent
+  passed: boolean
+}) {
   return (
-    <div data-testid="calendar-row" className={`grid grid-cols-[64px_44px_16px_1fr_90px_90px_90px] items-center gap-2 py-2 px-3 border-b border-border-subtle/40 text-sm ${passed ? 'opacity-55' : ''}`}>
-      <span className="font-mono tabular-nums text-text-secondary text-xs">{fmtTime(event.timestamp_ms)}</span>
-      <span className="text-base leading-none" title={event.currency}>{flagOf(event.currency)}</span>
+    <div
+      data-testid="calendar-row"
+      className={`grid grid-cols-[64px_44px_16px_1fr_90px_90px_90px] items-center gap-2 py-2 px-3 border-b border-border-subtle/40 text-sm ${passed ? 'opacity-55' : ''}`}
+    >
+      <span className="font-mono tabular-nums text-text-secondary text-xs">
+        {fmtTime(event.timestamp_ms)}
+      </span>
+      <span className="text-base leading-none" title={event.currency}>
+        {flagOf(event.currency)}
+      </span>
       <ImpactDot impact={event.impact} />
-      <span className="truncate text-text-primary" title={event.category ? `${event.title} · ${event.category}` : event.title}>
+      <span
+        className="truncate text-text-primary"
+        title={event.category ? `${event.title} · ${event.category}` : event.title}
+      >
         {event.title}
       </span>
-      <span className={`font-mono tabular-nums text-xs text-right ${actualCls(event.surprise)}`}>{event.actual ?? '—'}</span>
-      <span className="font-mono tabular-nums text-xs text-right text-text-secondary">{event.forecast ?? '—'}</span>
-      <span className="font-mono tabular-nums text-xs text-right text-text-tertiary">{event.previous ?? '—'}</span>
+      <span className={`font-mono tabular-nums text-xs text-right ${actualCls(event.surprise)}`}>
+        {event.actual ?? '—'}
+      </span>
+      <span className="font-mono tabular-nums text-xs text-right text-text-secondary">
+        {event.forecast ?? '—'}
+      </span>
+      <span className="font-mono tabular-nums text-xs text-right text-text-tertiary">
+        {event.previous ?? '—'}
+      </span>
     </div>
   )
 })
@@ -98,7 +130,7 @@ export function Calendar() {
   const selectedCurrencies = (sp.get('cur') ?? '').split(',').filter(Boolean)
   const impRaw = sp.get('imp') // null = all, '' = none, else CSV of levels
   const enabledImpacts = new Set<Impact>(
-    impRaw === null ? IMPACTS : (impRaw.split(',').filter(Boolean) as Impact[]),
+    impRaw === null ? IMPACTS : (impRaw.split(',').filter(Boolean) as Impact[])
   )
   const category = sp.get('cat') ?? ''
 
@@ -149,8 +181,11 @@ export function Calendar() {
 
   // The visible list additionally honours the selected day.
   const visible = useMemo(
-    () => (selectedDay === null ? filtered : filtered.filter((e) => dayIndexOf(e.timestamp_ms) === selectedDay)),
-    [filtered, selectedDay, fromMs],
+    () =>
+      selectedDay === null
+        ? filtered
+        : filtered.filter((e) => dayIndexOf(e.timestamp_ms) === selectedDay),
+    [filtered, selectedDay, fromMs]
   )
 
   // ⚠ The "now" line belongs to the week that CONTAINS now. It used to render on every week, so
@@ -160,7 +195,7 @@ export function Calendar() {
   const isCurrentWeek = nowMs >= fromMs && nowMs < toMs
   const nowIdx = isCurrentWeek ? visible.findIndex((e) => e.timestamp_ms > nowMs) : -2 // -2 = don't draw
   const nextHigh = isCurrentWeek
-    ? visible.find((e) => e.timestamp_ms > nowMs && e.impact === 'HIGH') ?? null
+    ? (visible.find((e) => e.timestamp_ms > nowMs && e.impact === 'HIGH') ?? null)
     : null
 
   const groups = useMemo(() => {
@@ -177,13 +212,14 @@ export function Calendar() {
   // Category dropdown options come from the whole week (stable regardless of the other filters).
   const categories = useMemo(
     () => Array.from(new Set(allEvents.map((e) => e.category).filter(Boolean))).sort() as string[],
-    [allEvents],
+    [allEvents]
   )
   // ⚠ A category is a property of the LOADED WEEK, and the selection lives in the URL, so paging to
   // a week with no `Labor` rows left the `<select>` matching no option — it rendered BLANK over an
   // empty list, which reads as the page breaking rather than as a filter still being applied. The
   // selection is kept (paging back must restore it) and the empty state names it instead.
-  const categoryMissing = category !== '' && !loadingWeek && allEvents.length > 0 && !categories.includes(category)
+  const categoryMissing =
+    category !== '' && !loadingWeek && allEvents.length > 0 && !categories.includes(category)
 
   // A `NONE` chip only when the week holds one — a control for a state that cannot occur is UI
   // nobody can interpret, and one that appears the moment the state does is the honest version of
@@ -246,23 +282,38 @@ export function Calendar() {
       <div className="flex items-center flex-wrap gap-3 mb-4">
         <h1 className="text-h1 font-semibold">Economic Calendar</h1>
         <div className="flex items-center gap-1">
-          <button onClick={() => patch({ week: String(weekOffset - 1), day: null })}
-            className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" title="Previous week">
+          <button
+            onClick={() => patch({ week: String(weekOffset - 1), day: null })}
+            className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+            title="Previous week"
+          >
             <ChevronLeft size={16} />
           </button>
-          <span data-testid="week-range" className="text-sm font-mono tabular-nums text-text-primary min-w-[130px] text-center">{fmtWeekRange(fromMs)}</span>
-          <button onClick={() => patch({ week: String(weekOffset + 1), day: null })}
-            className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" title="Next week">
+          <span
+            data-testid="week-range"
+            className="text-sm font-mono tabular-nums text-text-primary min-w-[130px] text-center"
+          >
+            {fmtWeekRange(fromMs)}
+          </span>
+          <button
+            onClick={() => patch({ week: String(weekOffset + 1), day: null })}
+            className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+            title="Next week"
+          >
             <ChevronRight size={16} />
           </button>
           {(weekOffset !== 0 || selectedDay !== todayIdx) && (
-            <button onClick={goToday}
-              className="ml-1 text-[11px] px-2 py-1 rounded border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">
+            <button
+              onClick={goToday}
+              className="ml-1 text-[11px] px-2 py-1 rounded border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
               Today
             </button>
           )}
         </div>
-        <span className="text-sm text-text-tertiary">Live macro releases · actual vs forecast vs previous</span>
+        <span className="text-sm text-text-tertiary">
+          Live macro releases · actual vs forecast vs previous
+        </span>
       </div>
 
       {/* ── Day summary strip ── */}
@@ -283,15 +334,26 @@ export function Calendar() {
               }`}
             >
               <div className="flex items-baseline justify-between">
-                <span className={`text-xs font-semibold ${isToday ? 'text-accent' : 'text-text-secondary'}`}>{wd}</span>
-                <span className={`text-sm font-mono tabular-nums ${isToday ? 'text-accent' : 'text-text-primary'}`}>{date.getDate()}</span>
+                <span
+                  className={`text-xs font-semibold ${isToday ? 'text-accent' : 'text-text-secondary'}`}
+                >
+                  {wd}
+                </span>
+                <span
+                  className={`text-sm font-mono tabular-nums ${isToday ? 'text-accent' : 'text-text-primary'}`}
+                >
+                  {date.getDate()}
+                </span>
               </div>
               <div className="mt-1 flex items-center justify-between text-[11px]">
                 <span className="text-text-tertiary">Economic</span>
                 {/* An em-dash while the week loads, never `0`. The counts are computed against the
                     NEW week's `fromMs`, so with the previous week's events still held they were
                     all genuinely zero — a strip confidently reporting an empty week. */}
-                <span data-testid="day-count" className="font-mono tabular-nums text-text-secondary">
+                <span
+                  data-testid="day-count"
+                  className="font-mono tabular-nums text-text-secondary"
+                >
                   {loadingWeek ? '—' : dayCounts[i]}
                 </span>
               </div>
@@ -307,11 +369,19 @@ export function Calendar() {
           {visibleImpacts.map((lvl) => {
             const on = enabledImpacts.has(lvl)
             return (
-              <button key={lvl} data-testid="impact-chip" onClick={() => toggleImpact(lvl)}
+              <button
+                key={lvl}
+                data-testid="impact-chip"
+                onClick={() => toggleImpact(lvl)}
                 className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors ${
-                  on ? 'border-accent/40 bg-accent/10 text-text-primary' : 'border-border-default text-text-tertiary hover:bg-bg-hover'
-                }`}>
-                <span className={`inline-block w-[7px] h-[7px] rounded-full ${on ? IMPACT_DOT[lvl] : 'bg-text-tertiary/40'}`} />
+                  on
+                    ? 'border-accent/40 bg-accent/10 text-text-primary'
+                    : 'border-border-default text-text-tertiary hover:bg-bg-hover'
+                }`}
+              >
+                <span
+                  className={`inline-block w-[7px] h-[7px] rounded-full ${on ? IMPACT_DOT[lvl] : 'bg-text-tertiary/40'}`}
+                />
                 {IMPACT_LABEL[lvl]}
               </button>
             )
@@ -331,7 +401,9 @@ export function Calendar() {
               would match no option and render blank while still filtering. */}
           {categoryMissing && <option value={category}>{category}</option>}
           {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>
+              {c}
+            </option>
           ))}
         </select>
 
@@ -342,17 +414,29 @@ export function Calendar() {
           {currencies.map((c) => {
             const on = selectedCurrencies.includes(c)
             return (
-              <button key={c} data-testid="currency-chip" onClick={() => toggleCurrency(c)} title={c}
+              <button
+                key={c}
+                data-testid="currency-chip"
+                onClick={() => toggleCurrency(c)}
+                title={c}
                 className={`flex items-center gap-1 text-[11px] font-mono px-1.5 py-1 rounded border transition-colors ${
-                  on ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border-default text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
-                }`}>
+                  on
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-border-default text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
+                }`}
+              >
                 <span className="text-sm leading-none">{flagOf(c)}</span>
                 {c}
               </button>
             )
           })}
           {selectedCurrencies.length > 0 && (
-            <button onClick={() => patch({ cur: null })} className="ml-1 text-[11px] text-text-tertiary hover:text-text-secondary underline">clear</button>
+            <button
+              onClick={() => patch({ cur: null })}
+              className="ml-1 text-[11px] text-text-tertiary hover:text-text-secondary underline"
+            >
+              clear
+            </button>
           )}
         </div>
       </div>
@@ -365,8 +449,11 @@ export function Calendar() {
       )}
 
       {fatalError && (
-        <EmptyState icon={<AlertCircle size={22} />} title="Couldn't load the calendar"
-          description="The TradingView feed didn't respond. It will retry automatically on the next poll." />
+        <EmptyState
+          icon={<AlertCircle size={22} />}
+          title="Couldn't load the calendar"
+          description="The TradingView feed didn't respond. It will retry automatically on the next poll."
+        />
       )}
 
       {/* A failed poll over a week already on screen. The rows stay — they were true — and the
@@ -376,26 +463,39 @@ export function Calendar() {
           <AlertCircle size={13} className="flex-shrink-0" />
           <span>
             The feed didn't answer the last refresh — showing the calendar as of{' '}
-            <span className="font-mono tabular-nums">{fmtTime(dataUpdatedAt)}</span>. Retrying automatically.
+            <span className="font-mono tabular-nums">{fmtTime(dataUpdatedAt)}</span>. Retrying
+            automatically.
           </span>
         </div>
       )}
 
-      {!loadingWeek && !fatalError && visible.length === 0 && (
-        categoryMissing ? (
-          <EmptyState icon={<CalendarDays size={22} />} title={`No “${category}” events this week`}
-            description="That category is still selected but nothing in this week is filed under it. Pick another category, or switch back to all." />
+      {!loadingWeek &&
+        !fatalError &&
+        visible.length === 0 &&
+        (categoryMissing ? (
+          <EmptyState
+            icon={<CalendarDays size={22} />}
+            title={`No “${category}” events this week`}
+            description="That category is still selected but nothing in this week is filed under it. Pick another category, or switch back to all."
+          />
         ) : (
-          <EmptyState icon={<CalendarDays size={22} />} title="No events"
-            description="Nothing matches the current filters. Widen the impact, category, currency or day selection." />
-        )
-      )}
+          <EmptyState
+            icon={<CalendarDays size={22} />}
+            title="No events"
+            description="Nothing matches the current filters. Widen the impact, category, currency or day selection."
+          />
+        ))}
 
       {!loadingWeek && !fatalError && visible.length > 0 && (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <div className="grid grid-cols-[64px_44px_16px_1fr_90px_90px_90px] gap-2 py-2 px-3 border-b border-border-subtle text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">
-            <span>Time</span><span>Cur</span><span /><span>Event</span>
-            <span className="text-right">Actual</span><span className="text-right">Forecast</span><span className="text-right">Previous</span>
+            <span>Time</span>
+            <span>Cur</span>
+            <span />
+            <span>Event</span>
+            <span className="text-right">Actual</span>
+            <span className="text-right">Forecast</span>
+            <span className="text-right">Previous</span>
           </div>
 
           {groups.map((dayEvents) => (
@@ -411,7 +511,11 @@ export function Calendar() {
                   // real data — the live feed carries e.g. two `CAD Budget Balance` rows at one
                   // timestamp — and duplicate keys are how React silently drops or mis-reuses a row.
                   <div key={`${e.timestamp_ms}|${e.currency}|${e.title}|${flatIdx}`}>
-                    {showNow && <div className="px-3"><NowLine nowMs={nowMs} nextHigh={nextHigh} /></div>}
+                    {showNow && (
+                      <div className="px-3">
+                        <NowLine nowMs={nowMs} nextHigh={nextHigh} />
+                      </div>
+                    )}
                     <EventRow event={e} passed={e.timestamp_ms <= nowMs} />
                   </div>
                 )
@@ -419,7 +523,11 @@ export function Calendar() {
             </div>
           ))}
 
-          {nowIdx === -1 && <div className="px-3"><NowLine nowMs={nowMs} nextHigh={null} /></div>}
+          {nowIdx === -1 && (
+            <div className="px-3">
+              <NowLine nowMs={nowMs} nextHigh={null} />
+            </div>
+          )}
         </div>
       )}
     </div>

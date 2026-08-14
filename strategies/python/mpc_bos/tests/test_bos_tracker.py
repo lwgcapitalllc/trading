@@ -23,22 +23,51 @@ from mpc_bos.bos import BosTracker, VolumeUnavailable, fib_price  # noqa: E402
 from mpc_bos.config import BosConfig  # noqa: E402
 
 
-def sig(index=0, *, close=100.0, high=None, low=None, bull_sos=False, bear_sos=False,
-        bull_bos=False, bear_bos=False, gap=False, bull_hi=None, bull_lo=None,
-        bear_hi=None, bear_lo=None, atr=1.0, time_ms=0,
-        fibo_dir=0, fibo_ash=None, fibo_asl=None, **kw):
+def sig(
+    index=0,
+    *,
+    close=100.0,
+    high=None,
+    low=None,
+    bull_sos=False,
+    bear_sos=False,
+    bull_bos=False,
+    bear_bos=False,
+    gap=False,
+    bull_hi=None,
+    bull_lo=None,
+    bear_hi=None,
+    bear_lo=None,
+    atr=1.0,
+    time_ms=0,
+    fibo_dir=0,
+    fibo_ash=None,
+    fibo_asl=None,
+    **kw,
+):
     """A minimal `Signals` stand-in. Only the fields the tracker reads."""
     return SimpleNamespace(
-        index=index, time_ms=time_ms or 1_600_000_000_000 + index * 900_000,
-        open=close, close=close,
+        index=index,
+        time_ms=time_ms or 1_600_000_000_000 + index * 900_000,
+        open=close,
+        close=close,
         high=high if high is not None else close,
         low=low if low is not None else close,
-        bull_sos=bull_sos, bear_sos=bear_sos, bull_bos=bull_bos, bear_bos=bear_bos,
+        bull_sos=bull_sos,
+        bear_sos=bear_sos,
+        bull_bos=bull_bos,
+        bear_bos=bear_bos,
         session_gap_bar=gap,
-        bull_bos_high=bull_hi, bull_bos_low=bull_lo,
-        bear_bos_high=bear_hi, bear_bos_low=bear_lo,
-        fibo_dir=fibo_dir, fibo_ash=fibo_ash, fibo_asl=fibo_asl,
-        bos_atr14=atr, **kw)
+        bull_bos_high=bull_hi,
+        bull_bos_low=bull_lo,
+        bear_bos_high=bear_hi,
+        bear_bos_low=bear_lo,
+        fibo_dir=fibo_dir,
+        fibo_ash=fibo_ash,
+        fibo_asl=fibo_asl,
+        bos_atr14=atr,
+        **kw,
+    )
 
 
 def bar(volume=1000.0):
@@ -141,13 +170,15 @@ def test_the_displacement_filter_measures_the_close_past_the_broken_swing():
     cfg = dict(bos_vwap_req="Off", bos_min_disp_atr=1.0)
     t = BosTracker(BosConfig(**cfg))
     t.update(sig(0, bull_sos=True), bar())
-    assert not t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100,
-                            close=110.5, atr=1.0), bar()).long.on
+    assert not t.update(
+        sig(1, bull_bos=True, bull_hi=110, bull_lo=100, close=110.5, atr=1.0), bar()
+    ).long.on
 
     t = BosTracker(BosConfig(**cfg))
     t.update(sig(0, bull_sos=True), bar())
-    assert t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100,
-                        close=111.5, atr=1.0), bar()).long.on
+    assert t.update(
+        sig(1, bull_bos=True, bull_hi=110, bull_lo=100, close=111.5, atr=1.0), bar()
+    ).long.on
 
 
 # ── the anchor ladder ───────────────────────────────────────────────────────────
@@ -173,7 +204,7 @@ def test_the_band_shallow_end_moves_with_the_setting_and_the_deep_end_does_not()
     t = tracker()
     t.update(sig(0, bull_sos=True), bar())
     st = t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
-    assert st.l_top == pytest.approx(105.0)          # fib 0.5 of 100 -> 110
+    assert st.l_top == pytest.approx(105.0)  # fib 0.5 of 100 -> 110
 
     t = BosTracker(BosConfig(bos_vwap_req="Off", bos_entry_top="0.382"))
     t.update(sig(0, bull_sos=True), bar())
@@ -183,8 +214,8 @@ def test_the_band_shallow_end_moves_with_the_setting_and_the_deep_end_does_not()
 
 
 def test_fib_price_is_the_engines_own_arithmetic_in_both_directions():
-    assert fib_price(110, 100, 0.5) == pytest.approx(105.0)     # long: ext high, org low
-    assert fib_price(100, 110, 0.5) == pytest.approx(105.0)     # short: ext low, org high
+    assert fib_price(110, 100, 0.5) == pytest.approx(105.0)  # long: ext high, org low
+    assert fib_price(100, 110, 0.5) == pytest.approx(105.0)  # short: ext low, org high
     assert fib_price(None, 100, 0.5) is None
 
 
@@ -205,7 +236,7 @@ def test_the_cycle_latch_is_per_anchor_not_global():
     t = tracker()
     t.update(sig(0, bull_sos=True), bar())
     t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
-    st = t.update(sig(2, close=104, low=104), bar())          # taps the 0.5 band
+    st = t.update(sig(2, close=104, low=104), bar())  # taps the 0.5 band
     assert st.long.half
 
     st = t.update(sig(3, bull_bos=True, bull_hi=120, bull_lo=110, close=118, low=118), bar())
@@ -238,7 +269,7 @@ def test_the_staleness_cap_is_counted_in_bars_not_clock_time():
     """Pine 3586 — `bosMaxDays` becomes a BAR count at this timeframe, so weekends and the
     daily close do not use the allowance up."""
     t = BosTracker(BosConfig(bos_vwap_req="Off", bos_max_days=1.0), tf_seconds=900)
-    assert t.max_bars == 96                                   # 86400 / 900
+    assert t.max_bars == 96  # 86400 / 900
     t.update(sig(0, bull_sos=True), bar())
     t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
     assert t.update(sig(1 + 96, close=105.5), bar()).long.on
@@ -262,7 +293,7 @@ def test_a_dead_leg_keeps_its_numbers_and_only_the_flag_goes_off():
     t = BosTracker(BosConfig(bos_vwap_req="Off", bos_max_days=1.0), tf_seconds=900)
     t.update(sig(0, bull_sos=True), bar())
     t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
-    st = t.update(sig(1 + 97, close=105.5), bar())            # stale — past the day cap
+    st = t.update(sig(1 + 97, close=105.5), bar())  # stale — past the day cap
     assert not st.long.on
     assert (st.long.high, st.long.low) == (110, 100), "the leg's prices must survive its death"
     assert st.long.bar == 1 and st.long.ordinal == 1
@@ -279,7 +310,7 @@ def test_a_break_the_filters_refuse_leaves_the_previous_leg_standing():
     t = BosTracker(BosConfig(bos_vwap_req="Off", bos_which="1st only"))
     t.update(sig(0, bull_sos=True), bar())
     t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
-    st = t.update(sig(2, bull_bos=True, bull_hi=120, bull_lo=112), bar())   # #2 — refused
+    st = t.update(sig(2, bull_bos=True, bull_hi=120, bull_lo=112), bar())  # #2 — refused
     assert not st.long.on
     assert (st.long.high, st.long.low) == (110, 100), "the refused break must not overwrite"
     assert st.long.ordinal == 1, "bosL_n stays on the last ARMED leg"
@@ -299,8 +330,8 @@ def test_the_ladder_is_still_priced_and_ready_on_the_bar_AFTER_the_death():
     t = BosTracker(BosConfig(bos_vwap_req="Off", bos_max_days=1.0), tf_seconds=900)
     t.update(sig(0, bull_sos=True), bar())
     t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
-    t.update(sig(1 + 97, close=105.5), bar())                 # the leg dies here
-    st = t.update(sig(1 + 98, close=105.5), bar())            # and the levels must survive it
+    t.update(sig(1 + 97, close=105.5), bar())  # the leg dies here
+    st = t.update(sig(1 + 98, close=105.5), bar())  # and the levels must survive it
     assert not st.long.on
     assert st.l_ready, "lFibsReady reads the stale ladder in the Pine, so it must here too"
     assert st.l_levels[0.0] == 110 and st.l_levels[1.0] == 100
@@ -331,7 +362,7 @@ def test_the_vwap_gate_blocks_both_sides_before_any_volume_has_accumulated():
     "Cannot ask" and "no" must not be the same value, and of the two answers available to a
     gate about to place money the safe one is the refusal.
     """
-    t = BosTracker(BosConfig())          # filter ON, the shipped default
+    t = BosTracker(BosConfig())  # filter ON, the shipped default
     st = t.update(sig(0, close=100), bar(volume=0.0))
     assert st.vwap is None
     assert st.vwap_block_l and st.vwap_block_s

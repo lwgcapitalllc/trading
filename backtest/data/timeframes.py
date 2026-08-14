@@ -77,7 +77,6 @@ def resolve_base_tf(target_minutes: int) -> tuple[str, int]:
                 best = (name, minutes)
     if best is None:
         raise ValueError(
-            f"no served timeframe divides {target_minutes}m — "
-            f"served: {sorted(SERVED_TF.values())}"
+            f"no served timeframe divides {target_minutes}m — served: {sorted(SERVED_TF.values())}"
         )
     return best

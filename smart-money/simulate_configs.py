@@ -31,19 +31,21 @@ from datetime import datetime, timezone
 from itertools import product
 from pathlib import Path
 
-DB_PATH      = Path(__file__).parent / "data" / "smart_money.db"
-CONFIG_PATH  = Path(__file__).parent / "config" / "config.json"
+DB_PATH = Path(__file__).parent / "data" / "smart_money.db"
+CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
 BOT_CFG_PATH = Path(__file__).parent / "config" / "templates" / "bot.json"
-REPORTS_DIR  = Path(__file__).parent / "reports"
+REPORTS_DIR = Path(__file__).parent / "reports"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def load_wallet_trades() -> dict[str, list[dict]]:
     """Load all trades from DB, grouped by wallet address."""
     import sqlite3
+
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
@@ -65,6 +67,7 @@ def load_wallet_trades() -> dict[str, list[dict]]:
 # Pre-compute per-wallet stats (done once; grid search reuses these)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _build_monthly_windows(trades: list[dict], window_days: int = 30) -> list[dict]:
     """Non-overlapping windows anchored from oldest trade."""
     window_ms = window_days * 86_400 * 1_000
@@ -76,15 +79,16 @@ def _build_monthly_windows(trades: list[dict], window_days: int = 30) -> list[di
         if bucket:
             wins = sum(1 for t in bucket if t["is_win"])
             week_set = {
-                datetime.fromtimestamp(t["close_ts"] / 1000, tz=timezone.utc)
-                .isocalendar()[:2]
+                datetime.fromtimestamp(t["close_ts"] / 1000, tz=timezone.utc).isocalendar()[:2]
                 for t in bucket
             }
-            windows.append({
-                "wr": wins / len(bucket),
-                "tc": len(bucket),
-                "active_weeks": len(week_set),
-            })
+            windows.append(
+                {
+                    "wr": wins / len(bucket),
+                    "tc": len(bucket),
+                    "active_weeks": len(week_set),
+                }
+            )
         ws = we
     return windows
 
@@ -128,8 +132,7 @@ def precompute(trades: list[dict], now_ms: int) -> dict:
     # Average hold time
     with_hold = [t for t in trades if t.get("hold_time_seconds") is not None]
     avg_hold_hours = (
-        sum(t["hold_time_seconds"] for t in with_hold) / len(with_hold) / 3600
-        if with_hold else 0.0
+        sum(t["hold_time_seconds"] for t in with_hold) / len(with_hold) / 3600 if with_hold else 0.0
     )
 
     # Instrument diversity
@@ -139,8 +142,7 @@ def precompute(trades: list[dict], now_ms: int) -> dict:
     n_instruments = len(pnl_by_inst)
     total_pos_pnl = sum(v for v in pnl_by_inst.values() if v > 0)
     top_inst_conc = (
-        max(pnl_by_inst.values()) / total_pos_pnl
-        if total_pos_pnl > 0 and pnl_by_inst else 0.0
+        max(pnl_by_inst.values()) / total_pos_pnl if total_pos_pnl > 0 and pnl_by_inst else 0.0
     )
 
     return {
@@ -227,6 +229,7 @@ def apply_config(s: dict, cfg: dict) -> tuple[bool, str | None]:
 # Grid definition
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def build_grid(profile: str = "default") -> list[dict]:
     """
     Generate all config combinations to test.
@@ -244,15 +247,15 @@ def build_grid(profile: str = "default") -> list[dict]:
     if profile == "bot":
         return _build_bot_grid()
 
-    min_window_wrs            = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
-    min_overall_wrs           = [0.30, 0.40, 0.50, 0.55, 0.60]
+    min_window_wrs = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+    min_overall_wrs = [0.30, 0.40, 0.50, 0.55, 0.60]
     max_inactive_days_options = [0, 30, 60, 90, 180, 365]
-    min_span_days_options     = [30, 60, 90]
-    min_trades_options        = [50, 100]
-    max_drawdowns             = [0.20, 0.30, 0.50]
+    min_span_days_options = [30, 60, 90]
+    min_trades_options = [50, 100]
+    max_drawdowns = [0.20, 0.30, 0.50]
 
     configs = []
-    for (mwr, mowr, mid, msd, mt, mdd) in product(
+    for mwr, mowr, mid, msd, mt, mdd in product(
         min_window_wrs,
         min_overall_wrs,
         max_inactive_days_options,
@@ -260,18 +263,20 @@ def build_grid(profile: str = "default") -> list[dict]:
         min_trades_options,
         max_drawdowns,
     ):
-        configs.append({
-            "min_window_wr":     mwr,
-            "min_overall_wr":    mowr,
-            "max_inactive_days": mid,
-            "min_span_days":     msd,
-            "min_trades":        mt,
-            "max_drawdown":      mdd,
-            "max_trade_conc":    0.40,
-            "max_hold_hours":    72,
-            "min_instruments":   1,
-            "consec_disq":       2,
-        })
+        configs.append(
+            {
+                "min_window_wr": mwr,
+                "min_overall_wr": mowr,
+                "max_inactive_days": mid,
+                "min_span_days": msd,
+                "min_trades": mt,
+                "max_drawdown": mdd,
+                "max_trade_conc": 0.40,
+                "max_hold_hours": 72,
+                "min_instruments": 1,
+                "consec_disq": 2,
+            }
+        )
     return configs
 
 
@@ -285,17 +290,17 @@ def _build_bot_grid() -> list[dict]:
       - max_drawdown wider range: [0.20, 0.30, 0.40, 0.50]
     Total: 5×3×5×5×2×4×5×2 = 15,000 combos (~10s runtime)
     """
-    min_window_wrs            = [0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
-    min_overall_wrs           = [0.30, 0.40, 0.50]
+    min_window_wrs = [0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+    min_overall_wrs = [0.30, 0.40, 0.50]
     max_inactive_days_options = [0, 14, 21, 30, 45]
-    min_span_days_options     = [14, 21, 30, 45, 60]
-    min_trades_options        = [50, 100]
-    max_drawdowns             = [0.20, 0.30, 0.40, 0.50]
-    max_hold_hours_options    = [4, 12, 24, 48, 72]
-    max_trade_conc_options    = [0.40, 1.0]
+    min_span_days_options = [14, 21, 30, 45, 60]
+    min_trades_options = [50, 100]
+    max_drawdowns = [0.20, 0.30, 0.40, 0.50]
+    max_hold_hours_options = [4, 12, 24, 48, 72]
+    max_trade_conc_options = [0.40, 1.0]
 
     configs = []
-    for (mwr, mowr, mid, msd, mt, mdd, mhh, mtc) in product(
+    for mwr, mowr, mid, msd, mt, mdd, mhh, mtc in product(
         min_window_wrs,
         min_overall_wrs,
         max_inactive_days_options,
@@ -305,24 +310,27 @@ def _build_bot_grid() -> list[dict]:
         max_hold_hours_options,
         max_trade_conc_options,
     ):
-        configs.append({
-            "min_window_wr":     mwr,
-            "min_overall_wr":    mowr,
-            "max_inactive_days": mid,
-            "min_span_days":     msd,
-            "min_trades":        mt,
-            "max_drawdown":      mdd,
-            "max_hold_hours":    mhh,
-            "max_trade_conc":    mtc,
-            "min_instruments":   1,
-            "consec_disq":       2,
-        })
+        configs.append(
+            {
+                "min_window_wr": mwr,
+                "min_overall_wr": mowr,
+                "max_inactive_days": mid,
+                "min_span_days": msd,
+                "min_trades": mt,
+                "max_drawdown": mdd,
+                "max_hold_hours": mhh,
+                "max_trade_conc": mtc,
+                "min_instruments": 1,
+                "consec_disq": 2,
+            }
+        )
     return configs
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Grid runner
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def run_grid(wallet_stats: dict[str, dict], configs: list[dict]) -> list[dict]:
     """
@@ -341,12 +349,14 @@ def run_grid(wallet_stats: dict[str, dict], configs: list[dict]) -> list[dict]:
             else:
                 fail_counts[stage] += 1
 
-        results.append({
-            "qualified": len(qualified),
-            "qualified_addrs": qualified,
-            "fail_counts": dict(fail_counts),
-            "cfg": cfg,
-        })
+        results.append(
+            {
+                "qualified": len(qualified),
+                "qualified_addrs": qualified,
+                "fail_counts": dict(fail_counts),
+                "cfg": cfg,
+            }
+        )
 
     results.sort(key=lambda r: (-r["qualified"], -r["cfg"]["min_window_wr"]))
     return results
@@ -356,6 +366,7 @@ def run_grid(wallet_stats: dict[str, dict], configs: list[dict]) -> list[dict]:
 # Output helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _fmt_pct(v: float) -> str:
     return f"{v * 100:.0f}%"
 
@@ -364,7 +375,9 @@ def _fmt_days(v: int) -> str:
     return "off" if v == 0 else f"{v}d"
 
 
-def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0, profile: str = "default"):
+def print_table(
+    results: list[dict], top_n: int = 40, min_qualify: int = 0, profile: str = "default"
+):
     """Print a ranked table of the top configs."""
     filtered = [r for r in results if r["qualified"] >= min_qualify]
     filtered = filtered[:top_n]
@@ -390,17 +403,21 @@ def print_table(results: list[dict], top_n: int = 40, min_qualify: int = 0, prof
         c = r["cfg"]
         fc = r["fail_counts"]
         fail_str = (
-            f"recency={fc.get('recency',0)}"
-            f" span={fc.get('span',0)}"
-            f" strike={fc.get('strike',0)}"
-            f" wr={fc.get('overall_wr',0)}"
-            f" dd={fc.get('drawdown',0)}"
-            f" hold={fc.get('hold_time',0)}"
-            f" net={fc.get('net_profit',0)}"
-            f" tc={fc.get('trade_count',0)}"
+            f"recency={fc.get('recency', 0)}"
+            f" span={fc.get('span', 0)}"
+            f" strike={fc.get('strike', 0)}"
+            f" wr={fc.get('overall_wr', 0)}"
+            f" dd={fc.get('drawdown', 0)}"
+            f" hold={fc.get('hold_time', 0)}"
+            f" net={fc.get('net_profit', 0)}"
+            f" tc={fc.get('trade_count', 0)}"
         )
         hold_val = f"{c['max_hold_hours']:>3}h   " if is_bot else ""
-        conc_val = f"{'off':>7}  " if c.get('max_trade_conc', 0) >= 1.0 else f"{_fmt_pct(c.get('max_trade_conc', 0.4)):>7}  "
+        conc_val = (
+            f"{'off':>7}  "
+            if c.get("max_trade_conc", 0) >= 1.0
+            else f"{_fmt_pct(c.get('max_trade_conc', 0.4)):>7}  "
+        )
         conc_str = conc_val if is_bot else ""
         print(
             f"{rank:>4}  {r['qualified']:>4}  "
@@ -423,17 +440,21 @@ def print_detail(result: dict, wallet_stats: dict[str, dict]):
         print("\n  No wallets qualified.")
         return
 
-    print(f"\n{'─'*72}")
+    print(f"\n{'─' * 72}")
     print(f"  Detail for best config — {len(addrs)} qualifiers")
-    print(f"  Config: min_window_wr={_fmt_pct(cfg['min_window_wr'])}  "
-          f"min_overall_wr={_fmt_pct(cfg['min_overall_wr'])}  "
-          f"max_inactive={_fmt_days(cfg['max_inactive_days'])}  "
-          f"span>={cfg['min_span_days']}d  "
-          f"trades>={cfg['min_trades']}  "
-          f"max_dd={_fmt_pct(cfg['max_drawdown'])}")
-    print(f"{'─'*72}")
-    print(f"  {'Address':>14}  {'Trades':>6}  {'OvrWR':>6}  "
-          f"{'Span':>6}  {'Inactive':>8}  {'PnL':>10}  {'MaxDD':>6}  Windows")
+    print(
+        f"  Config: min_window_wr={_fmt_pct(cfg['min_window_wr'])}  "
+        f"min_overall_wr={_fmt_pct(cfg['min_overall_wr'])}  "
+        f"max_inactive={_fmt_days(cfg['max_inactive_days'])}  "
+        f"span>={cfg['min_span_days']}d  "
+        f"trades>={cfg['min_trades']}  "
+        f"max_dd={_fmt_pct(cfg['max_drawdown'])}"
+    )
+    print(f"{'─' * 72}")
+    print(
+        f"  {'Address':>14}  {'Trades':>6}  {'OvrWR':>6}  "
+        f"{'Span':>6}  {'Inactive':>8}  {'PnL':>10}  {'MaxDD':>6}  Windows"
+    )
 
     for addr in sorted(addrs, key=lambda a: -wallet_stats[a]["overall_wr"]):
         s = wallet_stats[addr]
@@ -459,48 +480,66 @@ def export_results(results: list[dict], top_n: int = 100):
     json_path = REPORTS_DIR / f"sim_results_{ts}.json"
     export_data = []
     for r in results[:top_n]:
-        export_data.append({
-            "qualified": r["qualified"],
-            "config": r["cfg"],
-            "fail_counts": r["fail_counts"],
-        })
+        export_data.append(
+            {
+                "qualified": r["qualified"],
+                "config": r["cfg"],
+                "fail_counts": r["fail_counts"],
+            }
+        )
     json_path.write_text(json.dumps(export_data, indent=2))
     print(f"\n  JSON → {json_path}")
 
     # CSV
     csv_path = REPORTS_DIR / f"sim_results_{ts}.csv"
     with csv_path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            "rank", "qualified",
-            "min_window_wr", "min_overall_wr", "max_inactive_days",
-            "min_span_days", "min_trades", "max_drawdown",
-            "fail_trade_count", "fail_span", "fail_recency", "fail_net_profit",
-            "fail_overall_wr", "fail_strike", "fail_drawdown",
-            "fail_trade_conc", "fail_hold_time",
-        ])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "rank",
+                "qualified",
+                "min_window_wr",
+                "min_overall_wr",
+                "max_inactive_days",
+                "min_span_days",
+                "min_trades",
+                "max_drawdown",
+                "fail_trade_count",
+                "fail_span",
+                "fail_recency",
+                "fail_net_profit",
+                "fail_overall_wr",
+                "fail_strike",
+                "fail_drawdown",
+                "fail_trade_conc",
+                "fail_hold_time",
+            ],
+        )
         writer.writeheader()
         for rank, r in enumerate(results[:top_n], 1):
             c = r["cfg"]
             fc = r["fail_counts"]
-            writer.writerow({
-                "rank": rank,
-                "qualified": r["qualified"],
-                "min_window_wr": c["min_window_wr"],
-                "min_overall_wr": c["min_overall_wr"],
-                "max_inactive_days": c["max_inactive_days"],
-                "min_span_days": c["min_span_days"],
-                "min_trades": c["min_trades"],
-                "max_drawdown": c["max_drawdown"],
-                "fail_trade_count": fc.get("trade_count", 0),
-                "fail_span": fc.get("span", 0),
-                "fail_recency": fc.get("recency", 0),
-                "fail_net_profit": fc.get("net_profit", 0),
-                "fail_overall_wr": fc.get("overall_wr", 0),
-                "fail_strike": fc.get("strike", 0),
-                "fail_drawdown": fc.get("drawdown", 0),
-                "fail_trade_conc": fc.get("trade_conc", 0),
-                "fail_hold_time": fc.get("hold_time", 0),
-            })
+            writer.writerow(
+                {
+                    "rank": rank,
+                    "qualified": r["qualified"],
+                    "min_window_wr": c["min_window_wr"],
+                    "min_overall_wr": c["min_overall_wr"],
+                    "max_inactive_days": c["max_inactive_days"],
+                    "min_span_days": c["min_span_days"],
+                    "min_trades": c["min_trades"],
+                    "max_drawdown": c["max_drawdown"],
+                    "fail_trade_count": fc.get("trade_count", 0),
+                    "fail_span": fc.get("span", 0),
+                    "fail_recency": fc.get("recency", 0),
+                    "fail_net_profit": fc.get("net_profit", 0),
+                    "fail_overall_wr": fc.get("overall_wr", 0),
+                    "fail_strike": fc.get("strike", 0),
+                    "fail_drawdown": fc.get("drawdown", 0),
+                    "fail_trade_conc": fc.get("trade_conc", 0),
+                    "fail_hold_time": fc.get("hold_time", 0),
+                }
+            )
     print(f"  CSV  → {csv_path}")
 
 
@@ -510,14 +549,14 @@ def patch_config(best_cfg: dict, profile: str = "default"):
     with target.open() as f:
         cfg = json.load(f)
 
-    cfg["qualification"]["min_win_rate"]          = best_cfg["min_window_wr"]
-    cfg["qualification"]["min_overall_win_rate"]  = best_cfg["min_overall_wr"]
-    cfg["qualification"]["max_inactive_days"]     = best_cfg["max_inactive_days"]
-    cfg["qualification"]["min_trades"]            = best_cfg["min_trades"]
-    cfg["qualification"]["max_drawdown"]          = best_cfg["max_drawdown"]
-    cfg["lookback"]["minimum_days"]               = best_cfg["min_span_days"]
+    cfg["qualification"]["min_win_rate"] = best_cfg["min_window_wr"]
+    cfg["qualification"]["min_overall_win_rate"] = best_cfg["min_overall_wr"]
+    cfg["qualification"]["max_inactive_days"] = best_cfg["max_inactive_days"]
+    cfg["qualification"]["min_trades"] = best_cfg["min_trades"]
+    cfg["qualification"]["max_drawdown"] = best_cfg["max_drawdown"]
+    cfg["lookback"]["minimum_days"] = best_cfg["min_span_days"]
     if profile == "bot":
-        cfg["qualification"]["max_avg_hold_hours"]       = best_cfg["max_hold_hours"]
+        cfg["qualification"]["max_avg_hold_hours"] = best_cfg["max_hold_hours"]
         cfg["qualification"]["max_single_trade_pnl_share"] = best_cfg["max_trade_conc"]
 
     with target.open("w") as f:
@@ -529,29 +568,38 @@ def patch_config(best_cfg: dict, profile: str = "default"):
 # Funnel breakdown for a single config
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def print_funnel(cfg: dict, wallet_stats: dict[str, dict]):
     """
     Show a step-by-step funnel for a given config — how many wallets survive
     each filter in sequence.
     """
     filters_seq = [
-        ("min_trades",    lambda s: s["trade_count"] >= cfg["min_trades"]),
-        ("min_span",      lambda s: s["span_days"] >= cfg["min_span_days"]),
-        ("recency",       lambda s: cfg["max_inactive_days"] == 0 or s["days_inactive"] <= cfg["max_inactive_days"]),
-        ("net_profit",    lambda s: s["total_pnl"] > 0),
-        ("overall_wr",    lambda s: s["overall_wr"] >= cfg["min_overall_wr"]),
-        ("strike_sys",    lambda s: not _strike_disq(s["windows"], cfg["min_window_wr"], cfg["consec_disq"])),
-        ("drawdown",      lambda s: s["peak_dd"] <= cfg["max_drawdown"]),
-        ("trade_conc",    lambda s: s["worst_trade_share"] <= cfg["max_trade_conc"]),
-        ("hold_time",     lambda s: s["avg_hold_hours"] <= cfg["max_hold_hours"]),
-        ("instruments",   lambda s: s["n_instruments"] >= cfg["min_instruments"]),
+        ("min_trades", lambda s: s["trade_count"] >= cfg["min_trades"]),
+        ("min_span", lambda s: s["span_days"] >= cfg["min_span_days"]),
+        (
+            "recency",
+            lambda s: (
+                cfg["max_inactive_days"] == 0 or s["days_inactive"] <= cfg["max_inactive_days"]
+            ),
+        ),
+        ("net_profit", lambda s: s["total_pnl"] > 0),
+        ("overall_wr", lambda s: s["overall_wr"] >= cfg["min_overall_wr"]),
+        (
+            "strike_sys",
+            lambda s: not _strike_disq(s["windows"], cfg["min_window_wr"], cfg["consec_disq"]),
+        ),
+        ("drawdown", lambda s: s["peak_dd"] <= cfg["max_drawdown"]),
+        ("trade_conc", lambda s: s["worst_trade_share"] <= cfg["max_trade_conc"]),
+        ("hold_time", lambda s: s["avg_hold_hours"] <= cfg["max_hold_hours"]),
+        ("instruments", lambda s: s["n_instruments"] >= cfg["min_instruments"]),
     ]
 
     pool = list(wallet_stats.values())
     total = len(pool)
     print(f"\n  Funnel for best config (starts: {total} wallets)")
     print(f"  {'Filter':<16}  {'Remaining':>10}  {'Removed':>8}  {'Drop%':>6}")
-    print(f"  {'─'*16}  {'─'*10}  {'─'*8}  {'─'*6}")
+    print(f"  {'─' * 16}  {'─' * 10}  {'─' * 8}  {'─' * 6}")
 
     for label, fn in filters_seq:
         before = len(pool)
@@ -585,22 +633,36 @@ def _strike_disq(windows: list[dict], min_wr: float, consec_disq: int) -> bool:
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="Config grid simulation")
-    parser.add_argument("--profile", choices=["default", "bot"], default="default",
-                        help="Grid profile: 'default' (human/mixed) or 'bot' (algo/sprint traders). "
-                             "Bot grid also varies max_hold_hours and max_trade_conc.")
-    parser.add_argument("--min-qualify", type=int, default=0,
-                        help="Only show configs with ≥N qualified wallets")
-    parser.add_argument("--top-n", type=int, default=40,
-                        help="Number of top configs to display (default 40)")
-    parser.add_argument("--detail", action="store_true",
-                        help="Show individual wallets passing the best config")
-    parser.add_argument("--export", action="store_true",
-                        help="Write top 100 configs to reports/sim_results.{json,csv}")
-    parser.add_argument("--apply-best", action="store_true",
-                        help="Patch the appropriate config file with the best config found "
-                             "(config.json for default, bot.json for --profile bot)")
+    parser.add_argument(
+        "--profile",
+        choices=["default", "bot"],
+        default="default",
+        help="Grid profile: 'default' (human/mixed) or 'bot' (algo/sprint traders). "
+        "Bot grid also varies max_hold_hours and max_trade_conc.",
+    )
+    parser.add_argument(
+        "--min-qualify", type=int, default=0, help="Only show configs with ≥N qualified wallets"
+    )
+    parser.add_argument(
+        "--top-n", type=int, default=40, help="Number of top configs to display (default 40)"
+    )
+    parser.add_argument(
+        "--detail", action="store_true", help="Show individual wallets passing the best config"
+    )
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="Write top 100 configs to reports/sim_results.{json,csv}",
+    )
+    parser.add_argument(
+        "--apply-best",
+        action="store_true",
+        help="Patch the appropriate config file with the best config found "
+        "(config.json for default, bot.json for --profile bot)",
+    )
     args = parser.parse_args()
 
     if not DB_PATH.exists():
@@ -621,7 +683,7 @@ def main():
         trades_sorted = sorted(trades, key=lambda t: t["close_ts"])
         wallet_stats[addr] = precompute(trades_sorted, now_ms)
 
-    print(f"{len(wallet_stats)} wallets loaded in {time.time()-t0:.1f}s")
+    print(f"{len(wallet_stats)} wallets loaded in {time.time() - t0:.1f}s")
 
     # ── Build grid ──────────────────────────────────────────────────────────
     grid = build_grid(profile=args.profile)
@@ -629,23 +691,29 @@ def main():
     print(f"Running {len(grid):,} config combinations… {profile_label}", end=" ", flush=True)
     t1 = time.time()
     results = run_grid(wallet_stats, grid)
-    print(f"done in {time.time()-t1:.1f}s")
+    print(f"done in {time.time() - t1:.1f}s")
 
     # ── Best config summary ─────────────────────────────────────────────────
     best = results[0]
     bc = best["cfg"]
-    print(f"\n{'═'*72}")
+    print(f"\n{'═' * 72}")
     print(f"  BEST CONFIG [{args.profile}] → {best['qualified']} qualified traders")
     hold_str = f"  max_hold={bc['max_hold_hours']}h" if args.profile == "bot" else ""
-    conc_str = f"  max_conc={'off' if bc.get('max_trade_conc',0)>=1 else _fmt_pct(bc.get('max_trade_conc',0.4))}" if args.profile == "bot" else ""
-    print(f"  min_window_wr={_fmt_pct(bc['min_window_wr'])}  "
-          f"min_overall_wr={_fmt_pct(bc['min_overall_wr'])}  "
-          f"max_inactive={_fmt_days(bc['max_inactive_days'])}  "
-          f"span>={bc['min_span_days']}d  "
-          f"trades>={bc['min_trades']}  "
-          f"max_dd={_fmt_pct(bc['max_drawdown'])}"
-          f"{hold_str}{conc_str}")
-    print(f"{'═'*72}")
+    conc_str = (
+        f"  max_conc={'off' if bc.get('max_trade_conc', 0) >= 1 else _fmt_pct(bc.get('max_trade_conc', 0.4))}"
+        if args.profile == "bot"
+        else ""
+    )
+    print(
+        f"  min_window_wr={_fmt_pct(bc['min_window_wr'])}  "
+        f"min_overall_wr={_fmt_pct(bc['min_overall_wr'])}  "
+        f"max_inactive={_fmt_days(bc['max_inactive_days'])}  "
+        f"span>={bc['min_span_days']}d  "
+        f"trades>={bc['min_trades']}  "
+        f"max_dd={_fmt_pct(bc['max_drawdown'])}"
+        f"{hold_str}{conc_str}"
+    )
+    print(f"{'═' * 72}")
 
     # Funnel for best config
     print_funnel(bc, wallet_stats)
@@ -659,16 +727,16 @@ def main():
         current_cfg = json.load(f)
     q = current_cfg["qualification"]
     current = {
-        "min_window_wr":     q["min_win_rate"],
-        "min_overall_wr":    q.get("min_overall_win_rate", 0.0),
+        "min_window_wr": q["min_win_rate"],
+        "min_overall_wr": q.get("min_overall_win_rate", 0.0),
         "max_inactive_days": q.get("max_inactive_days", 0),
-        "min_span_days":     current_cfg["lookback"]["minimum_days"],
-        "min_trades":        q["min_trades"],
-        "max_drawdown":      q["max_drawdown"],
-        "max_trade_conc":    q["max_single_trade_pnl_share"],
-        "max_hold_hours":    q["max_avg_hold_hours"],
-        "min_instruments":   q.get("min_instruments", 1),
-        "consec_disq":       current_cfg["strike_system"]["disqualify_consecutive_months"],
+        "min_span_days": current_cfg["lookback"]["minimum_days"],
+        "min_trades": q["min_trades"],
+        "max_drawdown": q["max_drawdown"],
+        "max_trade_conc": q["max_single_trade_pnl_share"],
+        "max_hold_hours": q["max_avg_hold_hours"],
+        "min_instruments": q.get("min_instruments", 1),
+        "consec_disq": current_cfg["strike_system"]["disqualify_consecutive_months"],
     }
     ok_count = sum(1 for _, s in wallet_stats.items() if apply_config(s, current)[0])
     print(f"\n  Current {ref_path.name} → {ok_count} qualified traders")

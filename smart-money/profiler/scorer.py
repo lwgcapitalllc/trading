@@ -15,15 +15,15 @@ Elite lookback (365d) wallets receive a bonus multiplier defined in config.
 from __future__ import annotations
 
 import math
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 
 from run_logger import StageLogger
 
-
 # ---------------------------------------------------------------------------
 # Sub-score functions
 # ---------------------------------------------------------------------------
+
 
 def _score_win_rate_consistency(windows: list[dict], min_wr: float) -> float:
     """
@@ -106,9 +106,7 @@ def _score_exit_efficiency(trades: list[dict]) -> float:
     return round(efficiency * 100, 2)
 
 
-def _score_trade_frequency(
-    trades: list[dict], target_per_month: int, lookback_days: int
-) -> float:
+def _score_trade_frequency(trades: list[dict], target_per_month: int, lookback_days: int) -> float:
     """
     Scores how close to the target monthly trade frequency the wallet is.
     Below target: linearly up to 50 at target. Above target (up to 2x): up to 100.
@@ -155,8 +153,7 @@ def _score_instrument_day_consistency(trades: list[dict]) -> float:
 
     instrument_counter: Counter = Counter(t["instrument"] for t in trades)
     day_counter: Counter = Counter(
-        datetime.fromtimestamp(t["close_ts"] / 1000, tz=timezone.utc).weekday()
-        for t in trades
+        datetime.fromtimestamp(t["close_ts"] / 1000, tz=timezone.utc).weekday() for t in trades
     )
 
     inst_score = entropy_score(instrument_counter)
@@ -168,6 +165,7 @@ def _score_instrument_day_consistency(trades: list[dict]) -> float:
 # ---------------------------------------------------------------------------
 # Composite scorer
 # ---------------------------------------------------------------------------
+
 
 class CompositeScorer:
     def __init__(self, config: dict, logger: StageLogger):
@@ -194,9 +192,7 @@ class CompositeScorer:
             return "preferred", span_days
         return "minimum", span_days
 
-    def compute(
-        self, trades: list[dict], windows: list[dict]
-    ) -> dict:
+    def compute(self, trades: list[dict], windows: list[dict]) -> dict:
         """
         Returns a dict with all sub-scores, the composite score, and the lookback tier.
         """
@@ -210,14 +206,11 @@ class CompositeScorer:
             "instrument_day_consistency": _score_instrument_day_consistency(trades),
         }
 
-        composite = sum(
-            sub_scores[factor] * weight
-            for factor, weight in self._weights.items()
-        )
+        composite = sum(sub_scores[factor] * weight for factor, weight in self._weights.items())
 
         # Elite tier bonus (additive, capped at 100)
         if tier == "elite":
-            composite *= (1 + self._elite_bonus)
+            composite *= 1 + self._elite_bonus
 
         composite = round(min(100.0, composite), 2)
 
@@ -231,9 +224,7 @@ class CompositeScorer:
 
     def rank_wallets(self, scored_wallets: list[dict]) -> list[dict]:
         """Assigns rank (1 = best) in-place after all wallets are scored."""
-        sorted_wallets = sorted(
-            scored_wallets, key=lambda w: w["composite_score"], reverse=True
-        )
+        sorted_wallets = sorted(scored_wallets, key=lambda w: w["composite_score"], reverse=True)
         for i, wallet in enumerate(sorted_wallets, start=1):
             wallet["rank"] = i
         return sorted_wallets

@@ -9,28 +9,98 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Loader2, RotateCcw, Ruler, Settings, Settings2, Trash2 } from 'lucide-react'
+import {
+  AlignJustify,
+  CalendarSearch,
+  Camera,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  RotateCcw,
+  Ruler,
+  Settings,
+  Settings2,
+  Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
-import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartOverlay, ChartPage, ChartSpec } from './types'
+import {
+  ActionType,
+  DomPosition,
+  IndicatorSeries,
+  LoadDataType,
+  dispose,
+  init,
+  type Chart,
+  type KLineData,
+} from 'klinecharts'
+import type {
+  ChartBlock,
+  ChartBlockReason,
+  ChartCandle,
+  ChartMiss,
+  ChartOverlay,
+  ChartPage,
+  ChartSpec,
+} from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, CANDLE_MARK, DATA_EDGE, DAY_BREAK, FIB, FOCUS, GROUP_CANDLE_MARKS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays, withAlpha } from './overlays'
+import {
+  ANALYSIS_GROUPS,
+  ANALYSIS_GROUP_COLOR,
+  BLOCK,
+  BOX,
+  CANDLE_MARK,
+  DATA_EDGE,
+  DAY_BREAK,
+  FIB,
+  FOCUS,
+  GROUP_CANDLE_MARKS,
+  HLINE,
+  LABEL,
+  type LabelItem,
+  LOADING_EDGE,
+  MISS,
+  SESSION_BOX,
+  STRUCTURE_GROUPS,
+  STRUCTURE_GROUP_COLOR,
+  TRADE,
+  TRADE_FIB,
+  VLINE,
+  registerChartOverlays,
+  withAlpha,
+} from './overlays'
 import FibSettings from './FibSettings'
 import FibLevelEditor from './FibLevelEditor'
 import ChartSettingsPanel from './ChartSettingsPanel'
 import { loadChartSettings, saveChartSettings, type ChartSettings } from './chartSettings'
-import { DEFAULT_FIB_LEVELS, loadFibLevels, sameFibLevels, saveFibLevels, type FibLevel } from './fibLevels'
+import {
+  DEFAULT_FIB_LEVELS,
+  loadFibLevels,
+  sameFibLevels,
+  saveFibLevels,
+  type FibLevel,
+} from './fibLevels'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
 import theme from '@/themes/dark-2026'
 
 interface MeasureRect {
-  x: number; y: number; w: number; h: number
-  startTs: number; endTs: number
-  startVal: number; endVal: number
+  x: number
+  y: number
+  w: number
+  h: number
+  startTs: number
+  endTs: number
+  startVal: number
+  endVal: number
 }
-interface LockedMeasurement extends MeasureRect { id: string }
+interface LockedMeasurement extends MeasureRect {
+  id: string
+}
 
 function fmtDuration(ms: number): string {
   const m = Math.round(ms / 60_000)
@@ -49,8 +119,8 @@ function fmtDiff(v: number): string {
 
 const CHART_HEIGHT = 520
 const DAY_MS = 24 * 60 * 60 * 1000
-const TRADE_WIN_COLOR = theme.pos          // green box — trade reached target (pnl > 0)
-const TRADE_LOSS_COLOR = theme.neg         // red box — trade hit its stop (pnl <= 0)
+const TRADE_WIN_COLOR = theme.pos // green box — trade reached target (pnl > 0)
+const TRADE_LOSS_COLOR = theme.neg // red box — trade hit its stop (pnl <= 0)
 // Profit-fill mint — deliberately LIGHTER than the candle up-colour (theme.pos) so the
 // profit-depth band never blends into the green candles inside it (Aaron 2026-07-20).
 const TRADE_PROFIT_FILL = '#8ef2b8'
@@ -82,8 +152,8 @@ const BLOCK_COLOR = '#ff2e9a'
 // still nowhere near the win/loss green/red. Blocked pink = a rule said no; missed amber = the
 // setup never finished. Two answers to one question, readable apart at a glance.
 const MISS_COLOR = '#ff9800'
-const TIP_W = 260                          // hover-card width; feeds the viewport clamp
-const TIP_H = 220                          // ~its height with a met list + a reason; same clamp
+const TIP_W = 260 // hover-card width; feeds the viewport clamp
+const TIP_H = 220 // ~its height with a met list + a reason; same clamp
 const DEFAULT_OVERLAY_COLOR = theme.textTertiary // fallback when a spec overlay omits a color
 const DAY_BREAK_COLOR = theme.textTertiary // muted vertical line for daily session breaks
 const INDICATOR_PALETTE = [theme.gold, theme.series[4], theme.accent, theme.series[1]] // line colors
@@ -174,16 +244,18 @@ function MarkerTipCard({ tip, precision }: { tip: MarkerTip; precision: number }
       }}
       className="rounded-md border border-border-subtle bg-bg-surface px-2.5 py-2 shadow-lg"
     >
-      <div className="text-[11px] font-semibold" style={{ color: tip.color }}>{tip.title}</div>
-      {tip.strategy && (
-        <div className="text-[10px] text-text-tertiary">{tip.strategy}</div>
-      )}
+      <div className="text-[11px] font-semibold" style={{ color: tip.color }}>
+        {tip.title}
+      </div>
+      {tip.strategy && <div className="text-[10px] text-text-tertiary">{tip.strategy}</div>}
       {/* What it HAD — only a miss carries these; a block had everything by definition. */}
       {tip.met.length > 0 && (
         <div className="mt-1.5">
           <div className="text-[10px] uppercase tracking-wide text-text-tertiary">Met</div>
           {tip.met.map((line, i) => (
-            <div key={i} className="text-[11px] leading-snug text-text-secondary">{line}</div>
+            <div key={i} className="text-[11px] leading-snug text-text-secondary">
+              {line}
+            </div>
           ))}
         </div>
       )}
@@ -212,7 +284,11 @@ function MarkerTipCard({ tip, precision }: { tip: MarkerTip; precision: number }
  *  with different items, so a row can never render three different ways. It owns its own open
  *  state + click-outside close, and deliberately stays OPEN while toggling (these menus are used
  *  to compare combinations, not to make one choice). */
-function ToggleMenu({ title, items, minWidth = 172 }: {
+function ToggleMenu({
+  title,
+  items,
+  minWidth = 172,
+}: {
   title: string
   items: MenuItem[]
   minWidth?: number
@@ -231,16 +307,20 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
   // something drawn — so counting either would make the header's `on/total` stop describing how much
   // is on the chart, which is its whole job.
   const layers = items.filter((it): it is MenuToggle => !it.chips && !it.action)
-  const activeCount = layers.filter(it => it.on).length
+  const activeCount = layers.filter((it) => it.on).length
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
       >
         {title}
-        <span className="font-mono text-text-tertiary">{activeCount}/{layers.length}</span>
-        <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="font-mono text-text-tertiary">
+          {activeCount}/{layers.length}
+        </span>
+        <ChevronDown
+          className={`w-3 h-3 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
       {open && (
         // ⚠ BOUNDED, because this menu grows with the run. Fully expanded on a full-history run it
@@ -257,9 +337,11 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
                   one menu carry both the presets and the layers they set without either reading as
                   a stray row in the other's list. */}
               {it.section && (
-                <div className={`px-3 pb-1 text-[9px] uppercase tracking-wide text-text-tertiary ${
-                  i === 0 ? 'pt-0.5' : 'mt-1 pt-1.5 border-t border-border-subtle'
-                }`}>
+                <div
+                  className={`px-3 pb-1 text-[9px] uppercase tracking-wide text-text-tertiary ${
+                    i === 0 ? 'pt-0.5' : 'mt-1 pt-1.5 border-t border-border-subtle'
+                  }`}
+                >
                   {it.section}
                 </div>
               )}
@@ -268,9 +350,11 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
                 // still read as belonging to the layer above, but they are deliberately NOT rows:
                 // a row is a thing the chart draws, and none of these is.
                 <div className="pl-7 pr-3 pb-1">
-                  <div className="pb-1 text-[9px] uppercase tracking-wide text-text-tertiary">{it.label}</div>
+                  <div className="pb-1 text-[9px] uppercase tracking-wide text-text-tertiary">
+                    {it.label}
+                  </div>
                   <div className="flex flex-wrap gap-1">
-                    {it.chips.map(c => (
+                    {it.chips.map((c) => (
                       <button
                         key={c.key}
                         onClick={c.toggle}
@@ -283,7 +367,9 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
                         }}
                       >
                         {c.label}
-                        {c.count != null && <span className="ml-1 font-mono opacity-70">{c.count}</span>}
+                        {c.count != null && (
+                          <span className="ml-1 font-mono opacity-70">{c.count}</span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -300,10 +386,18 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
                 >
                   <span
                     className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
+                    style={{
+                      background: it.on ? it.color : 'transparent',
+                      boxShadow: `inset 0 0 0 1px ${it.color}`,
+                      opacity: it.on ? 1 : 0.5,
+                    }}
                   />
-                  <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
-                  {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
+                  <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>
+                    {it.label}
+                  </span>
+                  {it.count != null && (
+                    <span className="font-mono text-text-tertiary">{it.count}</span>
+                  )}
                   {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
                 </button>
               )}
@@ -319,16 +413,19 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
  *  chart — winners, losers, blocked setups, missed setups — are all answers to "where did the
  *  strategy act", and stepping should reach whichever of them are on screen. */
 interface NavMarker {
-  id: string          // kind-prefixed, so a trade and a block can never collide on one id
-  ts: number          // the bar the chart parks on (a trade's ENTRY, a block/miss's own bar)
+  id: string // kind-prefixed, so a trade and a block can never collide on one id
+  ts: number // the bar the chart parks on (a trade's ENTRY, a block/miss's own bar)
   kind: 'win' | 'loss' | 'block' | 'miss'
-  label: string       // the word the pill prints — "Win" / "Loss" / "Blocked" / "Missed"
+  label: string // the word the pill prints — "Win" / "Loss" / "Blocked" / "Missed"
   color: string
-  note: string        // the extra line on hover (direction + P&L, or the refusing rule)
+  note: string // the extra line on hover (direction + P&L, or the refusing rule)
 }
 
 const NAV_KIND_LABEL: Record<NavMarker['kind'], string> = {
-  win: 'Win', loss: 'Loss', block: 'Blocked', miss: 'Missed',
+  win: 'Win',
+  loss: 'Loss',
+  block: 'Blocked',
+  miss: 'Missed',
 }
 
 /** Epoch ms → "YYYY-MM-DD HH:MM" in LOCAL time — the axis's own timezone (see `toIsoDay`). */
@@ -347,22 +444,30 @@ function fmtStamp(ms: number): string {
  *
  *  A pure control, like `GoToDate`: it reports a direction and prints where it is. Paging the
  *  history in and centring the bar belong to the host. */
-function MarkerNav({ current, idx, total, onStep }: {
+function MarkerNav({
+  current,
+  idx,
+  total,
+  onStep,
+}: {
   current: NavMarker | null
-  idx: number                 // 0-based position of `current` in the set, or -1 when parked nowhere
+  idx: number // 0-based position of `current` in the set, or -1 when parked nowhere
   total: number
   onStep: (dir: 1 | -1) => void
 }) {
   // At an end the arrow is dead, and it says so by going dim rather than by doing nothing on click.
   const atStart = idx === 0
   const atEnd = idx >= 0 && idx === total - 1
-  const btn = 'flex items-center justify-center w-6 h-[22px] transition-colors disabled:opacity-30 disabled:cursor-default'
+  const btn =
+    'flex items-center justify-center w-6 h-[22px] transition-colors disabled:opacity-30 disabled:cursor-default'
   return (
     <div
       className="inline-flex items-center rounded-md border border-border-subtle bg-bg-sunken overflow-hidden"
-      title={current
-        ? `${current.label} — ${fmtStamp(current.ts)}\n${current.note}\n← / → steps (or hover the chart and use the arrow keys)`
-        : `${total} on the chart — ← / → steps through them, oldest to newest`}
+      title={
+        current
+          ? `${current.label} — ${fmtStamp(current.ts)}\n${current.note}\n← / → steps (or hover the chart and use the arrow keys)`
+          : `${total} on the chart — ← / → steps through them, oldest to newest`
+      }
     >
       <button
         onClick={() => onStep(-1)}
@@ -377,7 +482,10 @@ function MarkerNav({ current, idx, total, onStep }: {
           jump into the dark. */}
       <div className="flex items-center gap-1.5 px-2 h-[22px] border-x border-border-subtle text-[11px] leading-none">
         {current && (
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: current.color }} />
+          <span
+            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style={{ background: current.color }}
+          />
         )}
         <span className={current ? 'text-text-primary' : 'text-text-tertiary'}>
           {current ? current.label : 'Step'}
@@ -411,8 +519,8 @@ function MarkerNav({ current, idx, total, onStep }: {
  *  layer joins it only when it has earned a place in the every-trade reading. That is also why the
  *  indices below are `[0]` and not a spread of the whole list. */
 const DEBUG_ON_GROUPS: readonly string[] = [
-  STRUCTURE_GROUPS[0],   // External Structure — BOS/SOS break lines + the active swing rays
-  ANALYSIS_GROUPS[0],    // Fair Value Gaps
+  STRUCTURE_GROUPS[0], // External Structure — BOS/SOS break lines + the active swing rays
+  ANALYSIS_GROUPS[0], // Fair Value Gaps
 ]
 
 /** **Deep debug** — one row at the top of the Analysis menu, on or off.
@@ -453,11 +561,7 @@ const DEBUG_ON_GROUPS: readonly string[] = [
  *  `lo`/`hi` set the native `min`/`max`, but the clamp is done in code as well: a native bound stops
  *  the calendar widget and nothing else, so a typed or pasted date walks straight past it (the same
  *  lesson `PeriodPicker` learned about the broker's history floor). */
-function GoToDate({ lo, hi, onGo }: {
-  lo: number
-  hi: number
-  onGo: (ts: number) => void
-}) {
+function GoToDate({ lo, hi, onGo }: { lo: number; hi: number; onGo: (ts: number) => void }) {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -475,7 +579,7 @@ function GoToDate({ lo, hi, onGo }: {
   // Open on the newest bar's date and select it, so the box is usable from the keyboard alone.
   useEffect(() => {
     if (!open) return
-    setValue(v => v || toIsoDay(hi))
+    setValue((v) => v || toIsoDay(hi))
     const id = requestAnimationFrame(() => inputRef.current?.focus())
     return () => cancelAnimationFrame(id)
   }, [open, hi])
@@ -491,14 +595,17 @@ function GoToDate({ lo, hi, onGo }: {
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         title="Go to date"
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary transition-colors hover:text-text-primary"
       >
         <CalendarSearch className="w-3.5 h-3.5" />
       </button>
       {open && (
-        <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface p-2.5 shadow-lg" style={{ zIndex: 50, minWidth: 210 }}>
+        <div
+          className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface p-2.5 shadow-lg"
+          style={{ zIndex: 50, minWidth: 210 }}
+        >
           <div className="text-[10px] uppercase tracking-wide text-text-tertiary">Go to date</div>
           <div className="mt-1.5 flex items-center gap-1.5">
             <input
@@ -507,10 +614,16 @@ function GoToDate({ lo, hi, onGo }: {
               value={value}
               min={toIsoDay(lo)}
               max={toIsoDay(hi)}
-              onChange={e => setValue(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') { e.preventDefault(); submit() }
-                if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  submit()
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setOpen(false)
+                }
               }}
               className="flex-1 rounded-md border border-border-subtle bg-bg-sunken px-2 py-1 text-[11px] font-mono text-text-primary focus:border-accent focus:outline-none"
             />
@@ -589,7 +702,13 @@ const FETCH_LEAD_FRAC = 0.25
 /** A drill-down timeframe's loaded bars and the calendar range they were REQUESTED over.
  *  `edge` = the broker's true oldest bar for this timeframe, once a request has actually reached it
  *  (null = not reached, which is not the same as "there is no more"). */
-type DrillWindow = { candles: ChartCandle[]; overlays: ChartOverlay[]; edge: number | null; fromMs: number; toMs: number }
+type DrillWindow = {
+  candles: ChartCandle[]
+  overlays: ChartOverlay[]
+  edge: number | null
+  fromMs: number
+  toMs: number
+}
 
 /** Identity of a structure overlay, for de-duplicating the windows a drill-down pages together.
  *  Two adjacent windows both replay the leg that straddles their boundary, so the same line/label
@@ -607,12 +726,13 @@ function overlayKey(ov: ChartOverlay): string {
 function mergeOverlays(...lists: ChartOverlay[][]): ChartOverlay[] {
   const seen = new Set<string>()
   const out: ChartOverlay[] = []
-  for (const list of lists) for (const ov of list) {
-    const k = overlayKey(ov)
-    if (seen.has(k)) continue
-    seen.add(k)
-    out.push(ov)
-  }
+  for (const list of lists)
+    for (const ov of list) {
+      const k = overlayKey(ov)
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(ov)
+    }
   return out
 }
 
@@ -625,7 +745,10 @@ function mergeOverlays(...lists: ChartOverlay[][]): ChartOverlay[] {
  *  plumbing, not the reader's problem — and the parenthetical asides, which are for whoever reads
  *  the log. The whole sentence stays on the `title`. */
 function shortNote(msg: string): string {
-  let s = msg.replace(/^[A-Za-z_]*Error:\s*/, '').replace(/\s*\([^)]*\)/g, '').trim()
+  let s = msg
+    .replace(/^[A-Za-z_]*Error:\s*/, '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .trim()
   const stop = s.search(/\.\s/)
   if (stop > 0) s = s.slice(0, stop)
   return s.length > 96 ? `${s.slice(0, 95).trimEnd()}…` : s
@@ -682,19 +805,19 @@ function parseTfMinutes(tf: string): number {
  *  nothing moved, so the effect that calls it cannot loop. */
 function reconcileToggles(
   prev: Record<string, boolean>,
-  roster: Array<[string, boolean]>,
+  roster: Array<[string, boolean]>
 ): Record<string, boolean> {
   const next: Record<string, boolean> = {}
   for (const [key, dflt] of roster) next[key] = key in prev ? prev[key] : dflt
-  const same = Object.keys(next).length === Object.keys(prev).length
-    && Object.keys(next).every(k => next[k] === prev[k])
+  const same =
+    Object.keys(next).length === Object.keys(prev).length &&
+    Object.keys(next).every((k) => next[k] === prev[k])
   return same ? prev : next
 }
 
-
 /** Candle `time` (epoch ms) → klinecharts `timestamp`. Pure field map. */
 function candlesToKLine(candles: ChartCandle[]): KLineData[] {
-  return candles.map(c => ({
+  return candles.map((c) => ({
     timestamp: c.time,
     open: c.open,
     high: c.high,
@@ -718,7 +841,14 @@ function resample(candles: ChartCandle[], targetMs: number): ChartCandle[] {
     if (bucket === null || start !== bucketStart) {
       if (bucket) out.push(bucket)
       bucketStart = start
-      bucket = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }
+      bucket = {
+        time: start,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }
     } else {
       bucket.high = Math.max(bucket.high, c.high)
       bucket.low = Math.min(bucket.low, c.low)
@@ -728,7 +858,8 @@ function resample(candles: ChartCandle[], targetMs: number): ChartCandle[] {
       // nothing, and summing it as zero reports a short total under a name that claims a measurement
       // (the readout would print a confident number for a window we only partly know). Same rule as
       // `backtest/data/resample.py::_volume_sum`, which returns NaN for exactly this case.
-      bucket.volume = bucket.volume == null || c.volume == null ? undefined : bucket.volume + c.volume
+      bucket.volume =
+        bucket.volume == null || c.volume == null ? undefined : bucket.volume + c.volume
     }
   }
   if (bucket) out.push(bucket)
@@ -783,11 +914,15 @@ export default function ChartPanel({
 
   const baseMin = useMemo(() => parseTfMinutes(spec.baseTimeframe), [spec.baseTimeframe])
   const options = useMemo<TfOption[]>(() => {
-    const up = DISPLAY_TFS.filter(tf => tf.min >= baseMin && tf.min % baseMin === 0).map(tf => ({ label: tf.label, min: tf.min }))
-    const base: TfOption[] = up.length ? up : [{ label: spec.baseTimeframe.toUpperCase(), min: baseMin }]
+    const up = DISPLAY_TFS.filter((tf) => tf.min >= baseMin && tf.min % baseMin === 0).map(
+      (tf) => ({ label: tf.label, min: tf.min })
+    )
+    const base: TfOption[] = up.length
+      ? up
+      : [{ label: spec.baseTimeframe.toUpperCase(), min: baseMin }]
     // Sub-base TFs (below the run's own bars) are DRILL-DOWN — can't be resampled from the base,
     // so only offered when a fetcher is wired to pull them live.
-    const down: TfOption[] = onRequestCandles ? FETCH_TFS.filter(tf => tf.min < baseMin) : []
+    const down: TfOption[] = onRequestCandles ? FETCH_TFS.filter((tf) => tf.min < baseMin) : []
     return [...down, ...base]
   }, [baseMin, spec.baseTimeframe, onRequestCandles])
 
@@ -798,7 +933,7 @@ export default function ChartPanel({
   // offered — no fetcher wired, or a spec cached before `runTimeframe` existed.
   const openMin = useMemo(() => {
     const want = parseTfMinutes(spec.runTimeframe ?? spec.baseTimeframe)
-    return options.some(o => o.min === want) ? want : baseMin
+    return options.some((o) => o.min === want) ? want : baseMin
   }, [spec.runTimeframe, spec.baseTimeframe, options, baseMin])
 
   // Selected display TF (minutes). Component-local UI state.
@@ -826,7 +961,9 @@ export default function ChartPanel({
   // The drill-down window's OWN structure overlays, computed by the backend on the bars it served.
   // Replaces `spec.overlays` while a finer timeframe is showing — see `allOverlays`.
   const [drillOverlays, setDrillOverlays] = useState<ChartOverlay[]>([])
-  const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'empty' | 'error'>('idle')
+  const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'empty' | 'error'>(
+    'idle'
+  )
   // WHY a drill-down came back with nothing, and it is two completely different facts:
   // `offline` = the feed could not be reached (`available: false` — the MT5 agent or its terminal is
   // down), `no-history` = the feed answered and the broker simply has no bars that far back at that
@@ -853,13 +990,21 @@ export default function ChartPanel({
   // Read by the load-data callback and by `goToDate`, both of which are registered once and would
   // otherwise close over the first render's timeframe for ever.
   const isFetchModeRef = useRef(isFetchMode)
-  useEffect(() => { isFetchModeRef.current = isFetchMode }, [isFetchMode])
+  useEffect(() => {
+    isFetchModeRef.current = isFetchMode
+  }, [isFetchMode])
   const selectedMinRef = useRef(selectedMin)
-  useEffect(() => { selectedMinRef.current = selectedMin }, [selectedMin])
+  useEffect(() => {
+    selectedMinRef.current = selectedMin
+  }, [selectedMin])
   const fetchedRef = useRef(fetched)
-  useEffect(() => { fetchedRef.current = fetched }, [fetched])
+  useEffect(() => {
+    fetchedRef.current = fetched
+  }, [fetched])
   const drillOverlaysRef = useRef(drillOverlays)
-  useEffect(() => { drillOverlaysRef.current = drillOverlays }, [drillOverlays])
+  useEffect(() => {
+    drillOverlaysRef.current = drillOverlays
+  }, [drillOverlays])
 
   // The candles HANDED TO KLINECHARTS: the newest `APPLIED_BARS` of the spec, grown backwards as you
   // scroll left. The spec itself carries the WHOLE run (2026-08-06) — this is the window applied to
@@ -879,12 +1024,18 @@ export default function ChartPanel({
   // What the full spec buys is that growing this window is now a SLICE, not a fetch — see
   // `loadOlder`. So the reader still reaches every bar of the run, and reaching them costs
   // milliseconds instead of a 7-second round trip per page.
-  const [baseCandles, setBaseCandles] = useState<ChartCandle[]>(() => spec.candles.slice(-APPLIED_BARS))
-  useEffect(() => { setBaseCandles(spec.candles.slice(-APPLIED_BARS)) }, [spec.candles])
+  const [baseCandles, setBaseCandles] = useState<ChartCandle[]>(() =>
+    spec.candles.slice(-APPLIED_BARS)
+  )
+  useEffect(() => {
+    setBaseCandles(spec.candles.slice(-APPLIED_BARS))
+  }, [spec.candles])
   // Read by the load callback, which is registered once on mount and would otherwise close over the
   // first render's candles forever.
   const baseCandlesRef = useRef(baseCandles)
-  useEffect(() => { baseCandlesRef.current = baseCandles }, [baseCandles])
+  useEffect(() => {
+    baseCandlesRef.current = baseCandles
+  }, [baseCandles])
 
   // 🟢 **There is no PAGED ANALYSIS any more, and its absence is the point (2026-08-06).**
   // Everything on this chart except the trades used to be emitted per-window — the spec's overlays,
@@ -913,7 +1064,7 @@ export default function ChartPanel({
   // Keyed only on what a resample actually depends on, the second apply cannot happen.
   const resampled = useMemo(
     () => (selectedMin === baseMin ? baseCandles : resample(baseCandles, selectedMin * 60_000)),
-    [baseCandles, selectedMin, baseMin],
+    [baseCandles, selectedMin, baseMin]
   )
 
   const displayCandles = useMemo(() => {
@@ -943,13 +1094,14 @@ export default function ChartPanel({
   // data only goes back to the broker's edge) every older trade/session/day-break piles up in the
   // empty no-data region. Only the red DATA_EDGE line lives out there. Null when no candles loaded.
   const [loadedLoTs, loadedHiTs] = useMemo<[number | null, number | null]>(
-    () => displayCandles.length
-      ? [displayCandles[0].time, displayCandles[displayCandles.length - 1].time]
-      : [null, null],
-    [displayCandles],
+    () =>
+      displayCandles.length
+        ? [displayCandles[0].time, displayCandles[displayCandles.length - 1].time]
+        : [null, null],
+    [displayCandles]
   )
 
-  const drillLabel = (min: number) => FETCH_TFS.find(tf => tf.min === min)?.label ?? `M${min}`
+  const drillLabel = (min: number) => FETCH_TFS.find((tf) => tf.min === min)?.label ?? `M${min}`
 
   // Pull ONE window of a drill-down TF, anchored on `anchorMs` — the moment the reader is actually
   // looking at, never the run's tail. Older bars arrive by PAGING (`drillOlder`), exactly as they do
@@ -957,7 +1109,11 @@ export default function ChartPanel({
   //
   // Returns the candles it applied, or null if the request was superseded, failed, or was answered
   // from cache with the identical array — `goToDate` needs to know whether a redraw is coming.
-  const runFetch = async (min: number, anchorMs: number, force = false): Promise<ChartCandle[] | null> => {
+  const runFetch = async (
+    min: number,
+    anchorMs: number,
+    force = false
+  ): Promise<ChartCandle[] | null> => {
     if (!onRequestCandles) return null
     const cached = fetchCacheRef.current.get(min)
     if (!force && cached && anchorMs >= cached.fromMs && anchorMs <= cached.toMs) {
@@ -980,7 +1136,13 @@ export default function ChartPanel({
       const res = await onRequestCandles(drillLabel(min), from, to)
       if (token !== fetchTokenRef.current) return null // a newer fetch superseded this one
       const edge = res.hardEdge && res.dataStartMs != null ? res.dataStartMs : null
-      fetchCacheRef.current.set(min, { candles: res.candles, overlays: res.overlays ?? [], edge, fromMs: from, toMs: to })
+      fetchCacheRef.current.set(min, {
+        candles: res.candles,
+        overlays: res.overlays ?? [],
+        edge,
+        fromMs: from,
+        toMs: to,
+      })
       setFetched(res.candles)
       setDrillOverlays(res.overlays ?? [])
       setDataEdge(edge != null ? { ts: edge, tf: min } : null)
@@ -1023,7 +1185,7 @@ export default function ChartPanel({
     const from = oldest - span
     const res = await onRequestCandles(drillLabel(min), from, oldest)
     // Strictly older, so a feed answering with an overlapping window cannot duplicate a bar.
-    const bars = res.candles.filter(c => c.time < oldest)
+    const bars = res.candles.filter((c) => c.time < oldest)
     const edge = res.hardEdge && res.dataStartMs != null ? res.dataStartMs : (cached?.edge ?? null)
     if (edge != null) setDataEdge({ ts: edge, tf: min })
     // The older window replays its own structure; merge rather than replace, or scrolling left
@@ -1051,7 +1213,7 @@ export default function ChartPanel({
     }
     const to = Math.min(runEnd, newest + fetchSpanMs(min))
     const res = await onRequestCandles(drillLabel(min), newest, to)
-    const bars = res.candles.filter(c => c.time > newest)
+    const bars = res.candles.filter((c) => c.time > newest)
     const cached = fetchCacheRef.current.get(min)
     const mergedNew = mergeOverlays(drillOverlaysRef.current, res.overlays ?? [])
     setDrillOverlays(mergedNew)
@@ -1097,18 +1259,25 @@ export default function ChartPanel({
     if (oldest == null || !all.length || oldest <= all[0].time) return { bars: [], more: false }
     // Binary search rather than `findIndex`: this runs per page on a 155k-bar array, and a jump
     // runs it once per page in a loop.
-    let lo = 0, hi = all.length - 1, idx = all.length
+    let lo = 0,
+      hi = all.length - 1,
+      idx = all.length
     while (lo <= hi) {
       const mid = (lo + hi) >> 1
       if (all[mid].time < oldest) lo = mid + 1
-      else { idx = mid; hi = mid - 1 }
+      else {
+        idx = mid
+        hi = mid - 1
+      }
     }
     if (idx <= 0) return { bars: [], more: false }
     const from = Math.max(0, idx - PAGE_BARS)
     return { bars: all.slice(from, idx), more: from > 0 }
   }, [spec.candles, isFetchMode, drillOlder])
   const loadOlderRef = useRef(loadOlder)
-  useEffect(() => { loadOlderRef.current = loadOlder }, [loadOlder])
+  useEffect(() => {
+    loadOlderRef.current = loadOlder
+  }, [loadOlder])
 
   // The mirror of `loadOlder`, and it exists BECAUSE a jump re-centres (see `goToDate`). Before the
   // spec carried the whole run, the applied window always ran to the newest bar, so "newer than what
@@ -1120,19 +1289,27 @@ export default function ChartPanel({
     const all = spec.candles
     const loaded = baseCandlesRef.current
     const newest = loaded[loaded.length - 1]?.time
-    if (newest == null || !all.length || newest >= all[all.length - 1].time) return { bars: [], more: false }
-    let lo = 0, hi = all.length - 1, idx = all.length
+    if (newest == null || !all.length || newest >= all[all.length - 1].time)
+      return { bars: [], more: false }
+    let lo = 0,
+      hi = all.length - 1,
+      idx = all.length
     while (lo <= hi) {
       const mid = (lo + hi) >> 1
       if (all[mid].time <= newest) lo = mid + 1
-      else { idx = mid; hi = mid - 1 }
+      else {
+        idx = mid
+        hi = mid - 1
+      }
     }
     if (idx >= all.length) return { bars: [], more: false }
     const to = Math.min(all.length, idx + PAGE_BARS)
     return { bars: all.slice(idx, to), more: to < all.length }
   }, [spec.candles, isFetchMode, drillNewer])
   const loadNewerRef = useRef(loadNewer)
-  useEffect(() => { loadNewerRef.current = loadNewer }, [loadNewer])
+  useEffect(() => {
+    loadNewerRef.current = loadNewer
+  }, [loadNewer])
   // Set when a candle change came from a PAGE rather than a TF/spec switch. klinecharts has already
   // merged those bars and holds the scroll position; re-running `applyNewData` would throw both away
   // and snap the view back — the jump-on-every-page bug.
@@ -1201,29 +1378,34 @@ export default function ChartPanel({
   // the guard is never dropped, and `goToDate` returns immediately on every later call: **the chart
   // silently refuses every jump and every page for the rest of the session, looking perfectly
   // healthy.** Two frames is long enough for a real re-apply to have consumed it.
-  const pickTimeframe = useCallback((min: number) => {
-    const centre = viewCentreRef.current
-    if (centre != null) {
-      jumpingRef.current = true
-      pendingJumpRef.current = centre
-      // ⚠ The hand-off is by SEQUENCE, not by comparing the pending timestamp — and the first
-      // version compared the timestamp, which broke the drill-down that had been working. Entering
-      // a drill-down, `drillTo` runs in an effect (before the frames below) and sets its own pending
-      // jump to the SAME instant, since both anchor on the viewport centre. So the value test could
-      // not tell "nobody handled it" from "the drill owns it now", and this fallback consumed the
-      // drill's landing mid-fetch — leaving the view parked on the applied right edge when the bars
-      // finally arrived.
-      const seq = drillSeqRef.current
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (drillSeqRef.current !== seq) return          // a drill-down took ownership
-        if (pendingJumpRef.current == null) return       // a redraw came and the flush handled it
-        pendingJumpRef.current = null
-        scrollToTs(centre, displayCandlesRef.current)
-        jumpingRef.current = false
-      }))
-    }
-    setSelectedMin(min)
-  }, [scrollToTs])
+  const pickTimeframe = useCallback(
+    (min: number) => {
+      const centre = viewCentreRef.current
+      if (centre != null) {
+        jumpingRef.current = true
+        pendingJumpRef.current = centre
+        // ⚠ The hand-off is by SEQUENCE, not by comparing the pending timestamp — and the first
+        // version compared the timestamp, which broke the drill-down that had been working. Entering
+        // a drill-down, `drillTo` runs in an effect (before the frames below) and sets its own pending
+        // jump to the SAME instant, since both anchor on the viewport centre. So the value test could
+        // not tell "nobody handled it" from "the drill owns it now", and this fallback consumed the
+        // drill's landing mid-fetch — leaving the view parked on the applied right edge when the bars
+        // finally arrived.
+        const seq = drillSeqRef.current
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (drillSeqRef.current !== seq) return // a drill-down took ownership
+            if (pendingJumpRef.current == null) return // a redraw came and the flush handled it
+            pendingJumpRef.current = null
+            scrollToTs(centre, displayCandlesRef.current)
+            jumpingRef.current = false
+          })
+        )
+      }
+      setSelectedMin(min)
+    },
+    [scrollToTs]
+  )
 
   // ⚠ **A suspected runaway-paging freeze on a DISPLAY timeframe switch was investigated on
   // 2026-08-06 and NOT REPRODUCED — recorded here so the next reader does not re-derive it.** A
@@ -1256,7 +1438,7 @@ export default function ChartPanel({
     jumpingRef.current = true
     pendingJumpRef.current = target
     const got = await runFetchRef.current(min, target, force)
-    if (seq !== drillSeqRef.current) return   // a newer drill owns the guard now
+    if (seq !== drillSeqRef.current) return // a newer drill owns the guard now
     // Nothing new applied (superseded, refused, or the feed had nothing back there) ⇒ no redraw is
     // coming, so the flush effect will never run and the guard has to be released here, or every
     // later jump and every page is refused for the rest of the session.
@@ -1264,7 +1446,6 @@ export default function ChartPanel({
       pendingJumpRef.current = null
       jumpingRef.current = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // The reachable span the date box bounds itself to: everything APPLIED, plus everything the pager
@@ -1287,7 +1468,15 @@ export default function ChartPanel({
       lo: start != null ? Math.min(start, loadedLoTs) : loadedLoTs,
       hi: Math.max(loadedHiTs, isFetchMode ? runEnd : loadedHiTs),
     }
-  }, [loadedLoTs, loadedHiTs, isFetchMode, spec.historyStartMs, spec.candles, dataEdge, selectedMin])
+  }, [
+    loadedLoTs,
+    loadedHiTs,
+    isFetchMode,
+    spec.historyStartMs,
+    spec.candles,
+    dataEdge,
+    selectedMin,
+  ])
 
   // 🟢 **A jump RE-CENTRES the applied window; it does not grow it from the right edge.** That is
   // the difference between a jump being instant and a jump being the slowest thing on the page.
@@ -1305,93 +1494,114 @@ export default function ChartPanel({
   //
   // ⚠ **This is why `loadNewer` had to exist.** Landing mid-history puts the window's right edge in
   // the past, so scrolling back toward the present now needs a real answer.
-  const goToDate = useCallback(async (target: number) => {
-    if (!chartRef.current || jumpingRef.current) return
-    // A drill-down holds a fetched WINDOW rather than a slice of the spec, so a date outside it is a
-    // re-anchored request rather than a re-slice. Before 2026-08-06 this branch did not exist and the
-    // jump silently degraded to a scroll inside whatever the one-shot fetch happened to hold.
-    if (isFetchModeRef.current) {
-      const f = fetchedRef.current
-      if (f.length > 0 && target >= f[0].time && target <= f[f.length - 1].time) {
-        scrollToTs(target, f)
+  const goToDate = useCallback(
+    async (target: number) => {
+      if (!chartRef.current || jumpingRef.current) return
+      // A drill-down holds a fetched WINDOW rather than a slice of the spec, so a date outside it is a
+      // re-anchored request rather than a re-slice. Before 2026-08-06 this branch did not exist and the
+      // jump silently degraded to a scroll inside whatever the one-shot fetch happened to hold.
+      if (isFetchModeRef.current) {
+        const f = fetchedRef.current
+        if (f.length > 0 && target >= f[0].time && target <= f[f.length - 1].time) {
+          scrollToTs(target, f)
+          return
+        }
+        await drillTo(selectedMinRef.current, target, true)
         return
       }
-      await drillTo(selectedMinRef.current, target, true)
-      return
-    }
-    const all = spec.candles
-    const loaded = baseCandlesRef.current
-    const inWindow = loaded.length > 0
-      && target >= loaded[0].time && target <= loaded[loaded.length - 1].time
-    // Already applied, or nothing to slice ⇒ this is a plain scroll.
-    if (inWindow || !all.length) {
-      scrollToTs(target, displayCandles)
-      return
-    }
-    // First bar at or after the target. The target may be a weekend or a holiday, which has no bar
-    // of its own — landing on the next trading bar is what "take me to the 5th" means then.
-    let lo = 0, hi = all.length - 1, idx = all.length - 1
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1
-      if (all[mid].time < target) lo = mid + 1
-      else { idx = mid; hi = mid - 1 }
-    }
-    // Weighted back, not centred: the reader asked to see a date, and what LED to it is the context
-    // that explains it. `scrollToTs` then centres the bar itself within this slice.
-    const from = Math.max(0, idx - Math.floor(APPLIED_BARS * 0.75))
-    const slice = all.slice(from, Math.min(all.length, from + APPLIED_BARS))
-    // `jumpingRef` shuts the load callback while the re-apply and its scroll are in flight, so a
-    // page cannot splice into the same array this is replacing. It is cleared by the scroll flush,
-    // one frame after the view has left the edge the re-apply parked it on.
-    //
-    // ⚠ **An earlier version of this comment claimed the guard was load-bearing against the jump
-    // walking FORWARD off its own target — `applyNewData` snapping to the right edge, klinecharts
-    // asking for a Backward page, `loadNewer` answering — and cited a jump to 2020-06-01 landing on
-    // 2021-01-19. That claim is WITHDRAWN: it does not reproduce.** Removing the guard entirely and
-    // probing the applied window once a second for 12s after the same jump gives a dead-stable
-    // `2020-01-10 .. 2020-07-16` (2026-08-06). The reason is this slice: the target is centred with
-    // ~3,000 bars of window to its right, so the viewport never reaches the newest loaded bar and
-    // the Backward request is never made. The guard stays because a re-apply racing a page is a
-    // real hazard and it costs nothing — but it is defence, not a fix for an observed bug, and
-    // `tests/chart-paging.spec.ts` deliberately does not pretend to cover it.
-    jumpingRef.current = true
-    // NOT `skipApplyRef` — klinecharts has never seen this window, so it must re-apply. The scroll
-    // therefore waits for the redraw instead of running now (`pendingJumpRef`, flushed by the
-    // effect declared after the apply effect).
-    pendingJumpRef.current = target
-    baseCandlesRef.current = slice
-    setBaseCandles(slice)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spec.candles, displayCandles, scrollToTs])
+      const all = spec.candles
+      const loaded = baseCandlesRef.current
+      const inWindow =
+        loaded.length > 0 && target >= loaded[0].time && target <= loaded[loaded.length - 1].time
+      // Already applied, or nothing to slice ⇒ this is a plain scroll.
+      if (inWindow || !all.length) {
+        scrollToTs(target, displayCandles)
+        return
+      }
+      // First bar at or after the target. The target may be a weekend or a holiday, which has no bar
+      // of its own — landing on the next trading bar is what "take me to the 5th" means then.
+      let lo = 0,
+        hi = all.length - 1,
+        idx = all.length - 1
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1
+        if (all[mid].time < target) lo = mid + 1
+        else {
+          idx = mid
+          hi = mid - 1
+        }
+      }
+      // Weighted back, not centred: the reader asked to see a date, and what LED to it is the context
+      // that explains it. `scrollToTs` then centres the bar itself within this slice.
+      const from = Math.max(0, idx - Math.floor(APPLIED_BARS * 0.75))
+      const slice = all.slice(from, Math.min(all.length, from + APPLIED_BARS))
+      // `jumpingRef` shuts the load callback while the re-apply and its scroll are in flight, so a
+      // page cannot splice into the same array this is replacing. It is cleared by the scroll flush,
+      // one frame after the view has left the edge the re-apply parked it on.
+      //
+      // ⚠ **An earlier version of this comment claimed the guard was load-bearing against the jump
+      // walking FORWARD off its own target — `applyNewData` snapping to the right edge, klinecharts
+      // asking for a Backward page, `loadNewer` answering — and cited a jump to 2020-06-01 landing on
+      // 2021-01-19. That claim is WITHDRAWN: it does not reproduce.** Removing the guard entirely and
+      // probing the applied window once a second for 12s after the same jump gives a dead-stable
+      // `2020-01-10 .. 2020-07-16` (2026-08-06). The reason is this slice: the target is centred with
+      // ~3,000 bars of window to its right, so the viewport never reaches the newest loaded bar and
+      // the Backward request is never made. The guard stays because a re-apply racing a page is a
+      // real hazard and it costs nothing — but it is defence, not a fix for an observed bug, and
+      // `tests/chart-paging.spec.ts` deliberately does not pretend to cover it.
+      jumpingRef.current = true
+      // NOT `skipApplyRef` — klinecharts has never seen this window, so it must re-apply. The scroll
+      // therefore waits for the redraw instead of running now (`pendingJumpRef`, flushed by the
+      // effect declared after the apply effect).
+      pendingJumpRef.current = target
+      baseCandlesRef.current = slice
+      setBaseCandles(slice)
+    },
+    [spec.candles, displayCandles, scrollToTs]
+  )
 
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
   // anchored by timestamp, so they stay put across timeframe switches. Show on ALL candle days.
   const sessionBoxes = useMemo(
-    () => spec.sessions.map(s => ({
-      name: s.name,
-      color: s.color,
-      windows: sessionWindows(baseCandles, s, spec.brokerGmtOffsetHours),
-    })),
-    [baseCandles, spec.sessions, spec.brokerGmtOffsetHours],
+    () =>
+      spec.sessions.map((s) => ({
+        name: s.name,
+        color: s.color,
+        windows: sessionWindows(baseCandles, s, spec.brokerGmtOffsetHours),
+      })),
+    [baseCandles, spec.sessions, spec.brokerGmtOffsetHours]
   )
 
   // Per-session visibility (component-local UI state). Defaults all OFF — the chart opens on just
   // the trades; sessions are opt-in from the on-chart legend. Resets with the spec.
   const [sessionsOn, setSessionsOn] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(spec.sessions.map(s => [s.name, false] as [string, boolean])) as Record<string, boolean>,
+    () =>
+      Object.fromEntries(spec.sessions.map((s) => [s.name, false] as [string, boolean])) as Record<
+        string,
+        boolean
+      >
   )
   useEffect(() => {
-    setSessionsOn(Object.fromEntries(spec.sessions.map(s => [s.name, false] as [string, boolean])) as Record<string, boolean>)
+    setSessionsOn(
+      Object.fromEntries(spec.sessions.map((s) => [s.name, false] as [string, boolean])) as Record<
+        string,
+        boolean
+      >
+    )
   }, [spec.sessions])
-  const toggleSession = (name: string) => setSessionsOn(v => ({ ...v, [name]: !v[name] }))
-  const setAllSessions = (on: boolean) => setSessionsOn(Object.fromEntries(spec.sessions.map(s => [s.name, on])) as Record<string, boolean>)
+  const toggleSession = (name: string) => setSessionsOn((v) => ({ ...v, [name]: !v[name] }))
+  const setAllSessions = (on: boolean) =>
+    setSessionsOn(
+      Object.fromEntries(spec.sessions.map((s) => [s.name, on])) as Record<string, boolean>
+    )
   // On-chart "Sessions" legend popover (TradingView indicator-legend style) open state + outside-close.
   const [sessionsLegendOpen, setSessionsLegendOpen] = useState(false)
   const sessionsLegendRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!sessionsLegendOpen) return
     const onDown = (e: MouseEvent) => {
-      if (sessionsLegendRef.current && !sessionsLegendRef.current.contains(e.target as Node)) setSessionsLegendOpen(false)
+      if (sessionsLegendRef.current && !sessionsLegendRef.current.contains(e.target as Node))
+        setSessionsLegendOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
@@ -1417,7 +1627,8 @@ export default function ChartPanel({
   const [tradeFibsOn, setTradeFibsOn] = useState(false)
   const tradeFibCount = useMemo(
     () => spec.trades.reduce((n, tr) => n + (tr.fib?.levels?.length ? 1 : 0), 0),
-    [spec.trades])
+    [spec.trades]
+  )
 
   // Blocked setups — the trades that never happened. Default OFF: they are a diagnostic view
   // ("is this rule protecting me or costing me?"), not part of reading the run's result, and on a
@@ -1428,15 +1639,23 @@ export default function ChartPanel({
   // panel down. A stale cache must degrade, never crash.
   // Ids are the record's index in the run's own `blocked_setups.json`, so they are stable across
   // windows and a page that overlaps another cannot double up.
-  const blocks = useMemo<ChartBlock[]>(() => (spec.blocks ?? []).map(b => {
-    const legacy = b as unknown as { label?: string; reason?: string }
-    return {
-      ...b,
-      reasons: b.reasons?.length ? b.reasons
-        : legacy.label ? [{ label: legacy.label, reason: legacy.reason ?? '' }]
-        : [],
-    }
-  }).filter(b => b.reasons.length > 0), [spec.blocks])
+  const blocks = useMemo<ChartBlock[]>(
+    () =>
+      (spec.blocks ?? [])
+        .map((b) => {
+          const legacy = b as unknown as { label?: string; reason?: string }
+          return {
+            ...b,
+            reasons: b.reasons?.length
+              ? b.reasons
+              : legacy.label
+                ? [{ label: legacy.label, reason: legacy.reason ?? '' }]
+                : [],
+          }
+        })
+        .filter((b) => b.reasons.length > 0),
+    [spec.blocks]
+  )
   const [blocksOn, setBlocksOn] = useState(false)
   // The hovered marker's card + where to float it. ONE state and one card for BOTH the Blocked and
   // Missed layers — they carry the same shape of answer, so two cards would drift.
@@ -1464,8 +1683,8 @@ export default function ChartPanel({
    *  strategies — so isolating one leg must not remove a zone the other leg also traded into. An
    *  overlay with no `layers` (a single run, or a stack's structure overlays) always draws. */
   const overlayLayerVisible = useCallback(
-    (ov: ChartOverlay) => !ov.layers?.length || ov.layers.some(l => !hiddenLayers.has(l)),
-    [hiddenLayers],
+    (ov: ChartOverlay) => !ov.layers?.length || ov.layers.some((l) => !hiddenLayers.has(l)),
+    [hiddenLayers]
   )
 
   // Per-reason filters. The roster is DERIVED from the blocks themselves — first-seen order, keyed
@@ -1475,16 +1694,19 @@ export default function ChartPanel({
   // exists to produce ("is this rule protecting me or costing me?").
   const blockReasons = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const b of blocks) for (const r of b.reasons) counts.set(r.label, (counts.get(r.label) ?? 0) + 1)
+    for (const b of blocks)
+      for (const r of b.reasons) counts.set(r.label, (counts.get(r.label) ?? 0) + 1)
     return Array.from(counts, ([label, count]) => ({ label, count }))
   }, [blocks])
   // Reasons hidden from the chart. A stale label from a spec change is inert, so no reconciliation.
   const [hiddenReasons, setHiddenReasons] = useState<Set<string>>(new Set())
-  const toggleReason = (label: string) => setHiddenReasons(prev => {
-    const next = new Set(prev)
-    if (next.has(label)) next.delete(label); else next.add(label)
-    return next
-  })
+  const toggleReason = (label: string) =>
+    setHiddenReasons((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
   // A block draws while ANY of its reasons is still on. Requiring ALL would make "show me the veto
   // blocks" hide the ones the final hour was also refusing — which are still veto blocks.
   //
@@ -1492,21 +1714,22 @@ export default function ChartPanel({
   // navigator, the counts on the menu rows and the drawing effect all agree — the navigator must
   // never park on a marker belonging to a strategy the reader has isolated away.
   const blockVisible = useCallback(
-    (b: ChartBlock) => (!b.layer || !hiddenLayers.has(b.layer))
-      && b.reasons.some(r => !hiddenReasons.has(r.label)),
-    [hiddenReasons, hiddenLayers],
+    (b: ChartBlock) =>
+      (!b.layer || !hiddenLayers.has(b.layer)) &&
+      b.reasons.some((r) => !hiddenReasons.has(r.label)),
+    [hiddenReasons, hiddenLayers]
   )
   const shownBlockCount = useMemo(
     () => blocks.reduce((n, b) => n + (blockVisible(b) ? 1 : 0), 0),
-    [blocks, blockVisible],
+    [blocks, blockVisible]
   )
 
   // Missed setups — the other half of "why didn't this trade". A block was a trade the strategy
   // had READY and refused; a miss got partway and died. Default OFF for the same reason Blocked
   // is: a diagnostic view, and there are far more of them than there are trades.
   const misses = useMemo<ChartMiss[]>(
-    () => (spec.misses ?? []).filter(m => m.reasons?.length > 0),
-    [spec.misses],
+    () => (spec.misses ?? []).filter((m) => m.reasons?.length > 0),
+    [spec.misses]
   )
   const [missesOn, setMissesOn] = useState(false)
 
@@ -1526,27 +1749,33 @@ export default function ChartPanel({
   // history, because the shipped window could carry a noise list the rest of the run did not — the
   // spec now covers the whole run, so there is one list and it arrives once.
   const [hiddenMissReasons, setHiddenMissReasons] = useState<Set<string>>(
-    () => new Set(spec.missNoise ?? []),
+    () => new Set(spec.missNoise ?? [])
   )
   useEffect(() => {
     setHiddenMissReasons(new Set(spec.missNoise ?? []))
   }, [spec.missNoise])
-  const toggleMissReason = (label: string) => setHiddenMissReasons(prev => {
-    const next = new Set(prev)
-    if (next.has(label)) next.delete(label); else next.add(label)
-    return next
-  })
+  const toggleMissReason = (label: string) =>
+    setHiddenMissReasons((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
 
   // All scores start SHOWN. The layer's opening view is the emitter's `missNoise` recommendation and
   // this must not quietly narrow it — a second default would be a second answer to "what do I see
   // first", and the reader would have no way to tell which one hid a marker.
   const [hiddenMissScores, setHiddenMissScores] = useState<Set<string>>(() => new Set())
-  useEffect(() => { setHiddenMissScores(new Set()) }, [spec.misses])
-  const toggleMissScore = (key: string) => setHiddenMissScores(prev => {
-    const next = new Set(prev)
-    if (next.has(key)) next.delete(key); else next.add(key)
-    return next
-  })
+  useEffect(() => {
+    setHiddenMissScores(new Set())
+  }, [spec.misses])
+  const toggleMissScore = (key: string) =>
+    setHiddenMissScores((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   // ⚠ **EACH AXIS COUNTS WHAT THE OTHER IS LETTING THROUGH, and the roster is separate from the
   // count.** Both halves are load-bearing, for different reasons.
@@ -1563,7 +1792,8 @@ export default function ChartPanel({
   const missReasons = useMemo(() => {
     const counts = new Map<string, number>()
     // Roster: every label in the run, in first-seen order, seeded at 0.
-    for (const m of misses) for (const r of m.reasons) if (!counts.has(r.label)) counts.set(r.label, 0)
+    for (const m of misses)
+      for (const r of m.reasons) if (!counts.has(r.label)) counts.set(r.label, 0)
     // Count: only the misses the SCORE filter is letting through.
     for (const m of misses) {
       if (hiddenMissScores.has(`${m.met}/${m.of}`)) continue
@@ -1587,32 +1817,36 @@ export default function ChartPanel({
   const missScores = useMemo(() => {
     const counts = new Map<string, number>()
     for (const m of misses) {
-      if (!m.of) continue      // a record that counted nothing cannot be filed under a score
+      if (!m.of) continue // a record that counted nothing cannot be filed under a score
       const k = `${m.met}/${m.of}`
       if (!counts.has(k)) counts.set(k, 0)
-      if (m.reasons.some(r => !hiddenMissReasons.has(r.label))) counts.set(k, (counts.get(k) ?? 0) + 1)
+      if (m.reasons.some((r) => !hiddenMissReasons.has(r.label)))
+        counts.set(k, (counts.get(k) ?? 0) + 1)
     }
     // Best score first — a 3/3 is the one worth opening on, and a descending list puts it at the top
     // whatever the denominator.
-    return Array.from(counts, ([key, count]) => ({ key, count }))
-      .sort((a, b) => Number(b.key.split('/')[0]) - Number(a.key.split('/')[0]))
+    return Array.from(counts, ([key, count]) => ({ key, count })).sort(
+      (a, b) => Number(b.key.split('/')[0]) - Number(a.key.split('/')[0])
+    )
   }, [misses, hiddenMissReasons])
 
   // Score AND reason. Two independent axes, so unticking "2 of 3" must not also decide anything
   // about the reasons — that is the whole point of splitting them.
   const missVisible = useCallback(
-    (m: ChartMiss) => (!m.layer || !hiddenLayers.has(m.layer))
-      && !hiddenMissScores.has(`${m.met}/${m.of}`)
-      && m.reasons.some(r => !hiddenMissReasons.has(r.label)),
-    [hiddenMissReasons, hiddenMissScores, hiddenLayers],
+    (m: ChartMiss) =>
+      (!m.layer || !hiddenLayers.has(m.layer)) &&
+      !hiddenMissScores.has(`${m.met}/${m.of}`) &&
+      m.reasons.some((r) => !hiddenMissReasons.has(r.label)),
+    [hiddenMissReasons, hiddenMissScores, hiddenLayers]
   )
   const shownMissCount = useMemo(
     () => misses.reduce((n, m) => n + (missVisible(m) ? 1 : 0), 0),
-    [misses, missVisible],
+    [misses, missVisible]
   )
 
-  useEffect(() => { setMarkerTip(null) },
-    [blocks, blocksOn, hiddenReasons, misses, missesOn, hiddenMissReasons, hiddenMissScores])
+  useEffect(() => {
+    setMarkerTip(null)
+  }, [blocks, blocksOn, hiddenReasons, misses, missesOn, hiddenMissReasons, hiddenMissScores])
 
   // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
   // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
@@ -1621,7 +1855,11 @@ export default function ChartPanel({
     const seen = new Map<string, { id: string; name: string; color: string }>()
     for (const tr of spec.trades) {
       if (!tr.layer || seen.has(tr.layer)) continue
-      seen.set(tr.layer, { id: tr.layer, name: tr.layerName ?? tr.layer, color: tr.layerColor ?? DEFAULT_OVERLAY_COLOR })
+      seen.set(tr.layer, {
+        id: tr.layer,
+        name: tr.layerName ?? tr.layer,
+        color: tr.layerColor ?? DEFAULT_OVERLAY_COLOR,
+      })
     }
     return Array.from(seen.values())
   }, [spec.trades])
@@ -1629,14 +1867,16 @@ export default function ChartPanel({
   // a raw `mpc_bleg` is worse to read than the name and is still an ANSWER, where a blank line would
   // read as a marker belonging to no strategy.
   const layerName = useCallback(
-    (id: string) => tradeLayers.find(l => l.id === id)?.name ?? id,
-    [tradeLayers],
+    (id: string) => tradeLayers.find((l) => l.id === id)?.name ?? id,
+    [tradeLayers]
   )
-  const toggleLayer = (id: string) => setHiddenLayers(prev => {
-    const next = new Set(prev)
-    if (next.has(id)) next.delete(id); else next.add(id)
-    return next
-  })
+  const toggleLayer = (id: string) =>
+    setHiddenLayers((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   // ── Step navigator ───────────────────────────────────────────────────────────
   // The set the ◀ / ▶ arrows walk: every marker the Analysis dropdown is currently SHOWING, oldest
@@ -1664,8 +1904,9 @@ export default function ChartPanel({
           kind: win ? 'win' : 'loss',
           label: NAV_KIND_LABEL[win ? 'win' : 'loss'],
           color: win ? TRADE_WIN_COLOR : TRADE_LOSS_COLOR,
-          note: `${tr.dir === 'long' ? '▲ Long' : '▼ Short'} · ${tr.pnl >= 0 ? '+' : '−'}${Math.abs(tr.pnl).toFixed(2)}`
-            + (tr.layerName ? ` · ${tr.layerName}` : ''),
+          note:
+            `${tr.dir === 'long' ? '▲ Long' : '▼ Short'} · ${tr.pnl >= 0 ? '+' : '−'}${Math.abs(tr.pnl).toFixed(2)}` +
+            (tr.layerName ? ` · ${tr.layerName}` : ''),
         })
       }
     }
@@ -1673,8 +1914,12 @@ export default function ChartPanel({
       for (const b of blocks) {
         if (!blockVisible(b)) continue
         out.push({
-          id: `b:${b.id}`, ts: b.time, kind: 'block', label: NAV_KIND_LABEL.block, color: BLOCK_COLOR,
-          note: `${b.dir === 'long' ? '▲ Long' : '▼ Short'} · ${b.reasons.map(r => r.label).join(', ')}`,
+          id: `b:${b.id}`,
+          ts: b.time,
+          kind: 'block',
+          label: NAV_KIND_LABEL.block,
+          color: BLOCK_COLOR,
+          note: `${b.dir === 'long' ? '▲ Long' : '▼ Short'} · ${b.reasons.map((r) => r.label).join(', ')}`,
         })
       }
     }
@@ -1682,31 +1927,55 @@ export default function ChartPanel({
       for (const m of misses) {
         if (!missVisible(m)) continue
         out.push({
-          id: `m:${m.id}`, ts: m.time, kind: 'miss', label: NAV_KIND_LABEL.miss, color: MISS_COLOR,
-          note: `${m.dir === 'long' ? '▲ Long' : '▼ Short'} · ${m.met}/${m.of} · ${m.reasons.map(r => r.label).join(', ')}`,
+          id: `m:${m.id}`,
+          ts: m.time,
+          kind: 'miss',
+          label: NAV_KIND_LABEL.miss,
+          color: MISS_COLOR,
+          note: `${m.dir === 'long' ? '▲ Long' : '▼ Short'} · ${m.met}/${m.of} · ${m.reasons.map((r) => r.label).join(', ')}`,
         })
       }
     }
     return out.sort((a, b) => a.ts - b.ts)
-  }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, blocks, blocksOn, blockVisible, misses, missesOn, missVisible])
+  }, [
+    spec.trades,
+    tradesOn,
+    winnersOn,
+    losersOn,
+    hiddenLayers,
+    blocks,
+    blocksOn,
+    blockVisible,
+    misses,
+    missesOn,
+    missVisible,
+  ])
 
   // Where the navigator is parked. The TIMESTAMP is kept beside the id on purpose: a marker can
   // leave the set under you (untick Losers while parked on a loss) and the next press must still
   // continue FROM THERE rather than teleporting back to the viewport.
   const [navAt, setNavAt] = useState<{ id: string; ts: number } | null>(null)
   const navIdx = useMemo(
-    () => (navAt ? navMarkers.findIndex(m => m.id === navAt.id) : -1),
-    [navAt, navMarkers],
+    () => (navAt ? navMarkers.findIndex((m) => m.id === navAt.id) : -1),
+    [navAt, navMarkers]
   )
   // Parked on something the spec no longer has (a new run, a reloaded chart) ⇒ park nowhere.
-  useEffect(() => { setNavAt(null) }, [spec])
+  useEffect(() => {
+    setNavAt(null)
+  }, [spec])
 
   const navMarkersRef = useRef(navMarkers)
-  useEffect(() => { navMarkersRef.current = navMarkers }, [navMarkers])
+  useEffect(() => {
+    navMarkersRef.current = navMarkers
+  }, [navMarkers])
   const navAtRef = useRef(navAt)
-  useEffect(() => { navAtRef.current = navAt }, [navAt])
+  useEffect(() => {
+    navAtRef.current = navAt
+  }, [navAt])
   const displayCandlesRef = useRef(displayCandles)
-  useEffect(() => { displayCandlesRef.current = displayCandles }, [displayCandles])
+  useEffect(() => {
+    displayCandlesRef.current = displayCandles
+  }, [displayCandles])
 
   // The bar under the middle of the plot — the anchor for the FIRST press, so ◀ means "the last one
   // before what I'm looking at" rather than "the last one in the run".
@@ -1719,31 +1988,37 @@ export default function ChartPanel({
     return candles[Math.max(0, Math.min(candles.length - 1, mid))]?.time ?? null
   }, [])
 
-  const stepMarker = useCallback((dir: 1 | -1) => {
-    const list = navMarkersRef.current
-    // A jump that has to page history is a real wait, and `goToDate` refuses to start a second one.
-    // Bailing here keeps the readout honest — otherwise the pill would advance and the chart wouldn't.
-    if (!list.length || jumpingRef.current) return
-    const at = navAtRef.current
-    const idx = at ? list.findIndex(m => m.id === at.id) : -1
-    let target: NavMarker | undefined
-    if (idx >= 0) {
-      target = list[idx + dir]
-    } else {
-      // Not parked on anything in the current set — anchor on where we left off if we have it,
-      // otherwise on the middle of the plot. Strict comparison, so an anchor that IS a marker
-      // steps off it rather than onto itself.
-      const anchor = at?.ts ?? visibleCentreTs() ?? list[list.length - 1].ts
-      target = dir === 1
-        ? list.find(m => m.ts > anchor)
-        : [...list].reverse().find(m => m.ts < anchor)
-    }
-    if (!target) return
-    setNavAt({ id: target.id, ts: target.ts })
-    void goToDate(target.ts)
-  }, [goToDate, visibleCentreTs])
+  const stepMarker = useCallback(
+    (dir: 1 | -1) => {
+      const list = navMarkersRef.current
+      // A jump that has to page history is a real wait, and `goToDate` refuses to start a second one.
+      // Bailing here keeps the readout honest — otherwise the pill would advance and the chart wouldn't.
+      if (!list.length || jumpingRef.current) return
+      const at = navAtRef.current
+      const idx = at ? list.findIndex((m) => m.id === at.id) : -1
+      let target: NavMarker | undefined
+      if (idx >= 0) {
+        target = list[idx + dir]
+      } else {
+        // Not parked on anything in the current set — anchor on where we left off if we have it,
+        // otherwise on the middle of the plot. Strict comparison, so an anchor that IS a marker
+        // steps off it rather than onto itself.
+        const anchor = at?.ts ?? visibleCentreTs() ?? list[list.length - 1].ts
+        target =
+          dir === 1
+            ? list.find((m) => m.ts > anchor)
+            : [...list].reverse().find((m) => m.ts < anchor)
+      }
+      if (!target) return
+      setNavAt({ id: target.id, ts: target.ts })
+      void goToDate(target.ts)
+    },
+    [goToDate, visibleCentreTs]
+  )
   const stepMarkerRef = useRef(stepMarker)
-  useEffect(() => { stepMarkerRef.current = stepMarker }, [stepMarker])
+  useEffect(() => {
+    stepMarkerRef.current = stepMarker
+  }, [stepMarker])
   // Pointer-over-panel gate for the ← / → keys — see the keydown effect for why it is gated.
   const hoveredRef = useRef(false)
 
@@ -1769,7 +2044,7 @@ export default function ChartPanel({
   // is the very defect above. Their toggles go with them rather than showing an empty layer.
   const allOverlays = useMemo(
     () => (isFetchMode && fetched.length ? drillOverlays : spec.overlays),
-    [isFetchMode, fetched.length, drillOverlays, spec.overlays],
+    [isFetchMode, fetched.length, drillOverlays, spec.overlays]
   )
 
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
@@ -1783,16 +2058,19 @@ export default function ChartPanel({
     // they're the Pine's four checkboxes, and a checkbox that vanishes when its layer happens to be
     // empty reads as a missing feature. "Internal Structure" is the one this bites: it holds only the
     // CURRENT external leg, which is legitimately empty on most runs (everything older is Historic).
-    if (STRUCTURE_GROUPS.some(g => seen.has(g))) {
+    if (STRUCTURE_GROUPS.some((g) => seen.has(g))) {
       for (const g of STRUCTURE_GROUPS) if (!seen.has(g)) seen.set(g, STRUCTURE_GROUP_COLOR[g])
     }
     // Non-structure groups first (in first-seen order), then the market-structure groups in their
     // fixed canonical order so the four Layers toggles always read External → Internal → Historic →
     // Swing Labels, regardless of which fired first in the spec.
     const all = Array.from(seen, ([name, color]) => ({ name, color }))
-    const structureOrder = (n: string) => STRUCTURE_GROUPS.indexOf(n as typeof STRUCTURE_GROUPS[number])
-    const nonStruct = all.filter(g => structureOrder(g.name) < 0)
-    const struct = all.filter(g => structureOrder(g.name) >= 0).sort((a, b) => structureOrder(a.name) - structureOrder(b.name))
+    const structureOrder = (n: string) =>
+      STRUCTURE_GROUPS.indexOf(n as (typeof STRUCTURE_GROUPS)[number])
+    const nonStruct = all.filter((g) => structureOrder(g.name) < 0)
+    const struct = all
+      .filter((g) => structureOrder(g.name) >= 0)
+      .sort((a, b) => structureOrder(a.name) - structureOrder(b.name))
     return [...nonStruct, ...struct]
   }, [allOverlays])
 
@@ -1800,8 +2078,12 @@ export default function ChartPanel({
   // ANALYSIS group (fair value gaps, drawn only around trades/blocks/misses) is about the strategy's
   // signals and belongs beside Trades/Blocked/Missed; everything else is market structure. One
   // roster still backs `groupsOn` — only the MENU each row appears in differs.
-  const isAnalysisGroup = (name: string) => ANALYSIS_GROUPS.includes(name as typeof ANALYSIS_GROUPS[number])
-  const structureGroups = useMemo(() => overlayGroups.filter(g => !isAnalysisGroup(g.name)), [overlayGroups])
+  const isAnalysisGroup = (name: string) =>
+    ANALYSIS_GROUPS.includes(name as (typeof ANALYSIS_GROUPS)[number])
+  const structureGroups = useMemo(
+    () => overlayGroups.filter((g) => !isAnalysisGroup(g.name)),
+    [overlayGroups]
+  )
   // Each analysis group carries its BOX COUNT, the way Blocked and Missed carry theirs — a layer
   // that draws 41 gaps and one that draws 4 read very differently before you switch it on.
   //
@@ -1816,16 +2098,20 @@ export default function ChartPanel({
       present.add(ov.group)
       if (overlayLayerVisible(ov)) counts.set(ov.group, (counts.get(ov.group) ?? 0) + 1)
     }
-    return ANALYSIS_GROUPS
-      // ⚠ The candle repaint is DROPPED off the timeframe it was computed on, and the row goes with
-      // it rather than sitting there drawing nothing. A candlestick pattern is a property of ONE
-      // bar size — an M15 hammer is not an H1 hammer — so painting the H1 bar that happens to
-      // CONTAIN it would state something nobody measured, and at M1 there is no single bar that is
-      // the pattern at all. Every other analysis group is a price/time zone and resamples fine.
-      .filter(g => present.has(g) && (g !== GROUP_CANDLE_MARKS || atBaseTf))
-      .map(g => ({
-        name: g as string, color: ANALYSIS_GROUP_COLOR[g], count: counts.get(g) ?? 0,
-      }))
+    return (
+      ANALYSIS_GROUPS
+        // ⚠ The candle repaint is DROPPED off the timeframe it was computed on, and the row goes with
+        // it rather than sitting there drawing nothing. A candlestick pattern is a property of ONE
+        // bar size — an M15 hammer is not an H1 hammer — so painting the H1 bar that happens to
+        // CONTAIN it would state something nobody measured, and at M1 there is no single bar that is
+        // the pattern at all. Every other analysis group is a price/time zone and resamples fine.
+        .filter((g) => present.has(g) && (g !== GROUP_CANDLE_MARKS || atBaseTf))
+        .map((g) => ({
+          name: g as string,
+          color: ANALYSIS_GROUP_COLOR[g],
+          count: counts.get(g) ?? 0,
+        }))
+    )
   }, [allOverlays, atBaseTf, overlayLayerVisible])
 
   // Candlestick reversals — a DIRECTION filter, the same shape as the Missed layer's score rows
@@ -1837,11 +2123,15 @@ export default function ChartPanel({
   // wrong"* — so this is a control the reader reaches for, never a default that quietly decides
   // there was nothing at the turn. `patternDir` is the source Pine's own +1/-1/0, so the panel is
   // filtering on a value it was handed rather than on one it invented.
-  const CANDLE_DIRS = useMemo(() => [
-    { key: 'with', label: 'With the setup' },
-    { key: 'neutral', label: 'Neutral' },
-    { key: 'against', label: 'Against it' },
-  ] as const, [])
+  const CANDLE_DIRS = useMemo(
+    () =>
+      [
+        { key: 'with', label: 'With the setup' },
+        { key: 'neutral', label: 'Neutral' },
+        { key: 'against', label: 'Against it' },
+      ] as const,
+    []
+  )
   const [hiddenCandleDirs, setHiddenCandleDirs] = useState<Set<string>>(() => new Set())
   // Which TRADES had a reversal candle in their span. Aaron, 2026-08-08: *"if there's no candle
   // pattern where I took the trade, put an indicator inside the Won/Lost label that shows whether
@@ -1862,16 +2152,19 @@ export default function ChartPanel({
     }
     return n
   }, [allOverlays])
-  const toggleCandleDir = (key: string) => setHiddenCandleDirs(prev => {
-    const next = new Set(prev)
-    if (next.has(key)) next.delete(key); else next.add(key)
-    return next
-  })
+  const toggleCandleDir = (key: string) =>
+    setHiddenCandleDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   // ⚠ `align` comes from the BACKEND and must not be re-derived from `patternDir`. That is the
   // pattern's OWN direction; whether a bullish candle points the setup's way depends on the setup's
   // side, which a mark does not carry and cannot — one bar can sit inside a long's span and a
   // short's at once, and the anchor that names the bar is the one that answers for it.
-  const candleDirKey = (ov: ChartOverlay) => (ov.type === 'candle' ? ov.align ?? 'against' : 'against')
+  const candleDirKey = (ov: ChartOverlay) =>
+    ov.type === 'candle' ? (ov.align ?? 'against') : 'against'
 
   // ⚠ It NAMES the pattern rather than ticking a box. `Won · ✓` was the first attempt and it is
   // unreadable — a tick beside "Won" says *confirmed win*, not *a candle was there* (Aaron: *"how
@@ -1910,9 +2203,12 @@ export default function ChartPanel({
   // both are opt-in (a chart would be unreadable with all of BOS/SOS/swings/internal drawn by
   // default, and the gap layer is a diagnostic view like Blocked and Missed beside it).
   const groupDefault = (name: string): boolean =>
-    !STRUCTURE_GROUPS.includes(name as typeof STRUCTURE_GROUPS[number]) && !isAnalysisGroup(name)
+    !STRUCTURE_GROUPS.includes(name as (typeof STRUCTURE_GROUPS)[number]) && !isAnalysisGroup(name)
   const [groupsOn, setGroupsOn] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])) as Record<string, boolean>,
+    () =>
+      Object.fromEntries(
+        overlayGroups.map((g) => [g.name, groupDefault(g.name)] as [string, boolean])
+      ) as Record<string, boolean>
   )
   // RECONCILED, never overwritten. The roster is DERIVED from the overlays, so it is rebuilt every
   // time a page of older history lands — and re-seeding it with the defaults on each rebuild
@@ -1923,11 +2219,11 @@ export default function ChartPanel({
   useEffect(() => {
     const freshRun = groupSpecRef.current !== spec
     groupSpecRef.current = spec
-    const roster = overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])
-    setGroupsOn(prev => reconcileToggles(freshRun ? {} : prev, roster))
+    const roster = overlayGroups.map((g) => [g.name, groupDefault(g.name)] as [string, boolean])
+    setGroupsOn((prev) => reconcileToggles(freshRun ? {} : prev, roster))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec, overlayGroups])
-  const toggleGroup = (name: string) => setGroupsOn(v => ({ ...v, [name]: !v[name] }))
+  const toggleGroup = (name: string) => setGroupsOn((v) => ({ ...v, [name]: !v[name] }))
 
   // ── Deep debug ───────────────────────────────────────────────────────────────
   // One toggle for the context layers you want behind any trade you are interrogating. It writes to
@@ -1940,13 +2236,12 @@ export default function ChartPanel({
   // and `debugAvailable` is what hides it instead.
   const debugFibs = tradeFibCount > 0
   const debugGroups = useMemo(
-    () => DEBUG_ON_GROUPS.filter(g => overlayGroups.some(og => og.name === g)),
-    [overlayGroups],
+    () => DEBUG_ON_GROUPS.filter((g) => overlayGroups.some((og) => og.name === g)),
+    [overlayGroups]
   )
   const debugAvailable = debugFibs || debugGroups.length > 0
-  const debugOn = debugAvailable
-    && (!debugFibs || tradeFibsOn)
-    && debugGroups.every(g => groupsOn[g])
+  const debugOn =
+    debugAvailable && (!debugFibs || tradeFibsOn) && debugGroups.every((g) => groupsOn[g])
 
   // Setting a layer the run never emitted is inert — an absent group is dropped by the next
   // `reconcileToggles`, and `tradeFibsOn` with no recorded fib draws nothing — so the write is
@@ -1954,7 +2249,7 @@ export default function ChartPanel({
   const toggleDebug = useCallback(() => {
     const next = !debugOn
     setTradeFibsOn(next)
-    setGroupsOn(v => ({ ...v, ...Object.fromEntries(DEBUG_ON_GROUPS.map(g => [g, next])) }))
+    setGroupsOn((v) => ({ ...v, ...Object.fromEntries(DEBUG_ON_GROUPS.map((g) => [g, next])) }))
   }, [debugOn])
 
   // Daily breaks: one vertical line at the start of each TRADING DAY present in the data — a
@@ -1964,12 +2259,14 @@ export default function ChartPanel({
   // and so no line — separators sit between consecutive trading days). The opening day is skipped.
   const dailyBreaks = useMemo(() => {
     if (baseCandles.length === 0) return []
-    const firstOfDay = new Map<number, number>()   // dayStart(UTC) → first candle time that day
+    const firstOfDay = new Map<number, number>() // dayStart(UTC) → first candle time that day
     for (const c of baseCandles) {
       const day = Math.floor(c.time / DAY_MS) * DAY_MS
       if (!firstOfDay.has(day)) firstOfDay.set(day, c.time)
     }
-    return Array.from(firstOfDay.values()).sort((a, b) => a - b).slice(1)
+    return Array.from(firstOfDay.values())
+      .sort((a, b) => a - b)
+      .slice(1)
   }, [baseCandles])
   const [dayBreaksOn, setDayBreaksOn] = useState(false)
 
@@ -1979,29 +2276,32 @@ export default function ChartPanel({
   const clockLayerCount = useMemo(() => {
     const extra = dailyBreaks.length > 0 ? 1 : 0
     return {
-      on: spec.sessions.filter(s => sessionsOn[s.name]).length + (dayBreaksOn && extra ? 1 : 0),
+      on: spec.sessions.filter((s) => sessionsOn[s.name]).length + (dayBreaksOn && extra ? 1 : 0),
       total: spec.sessions.length + extra,
     }
   }, [spec.sessions, sessionsOn, dayBreaksOn, dailyBreaks.length])
   const anyClockLayerOn = clockLayerCount.on > 0
-  const setAllClockLayers = (on: boolean) => { setAllSessions(on); setDayBreaksOn(on) }
+  const setAllClockLayers = (on: boolean) => {
+    setAllSessions(on)
+    setDayBreaksOn(on)
+  }
 
   // Indicators (shipped series). One on/off per indicator; sub-pane ids tracked for removal.
   // Each carries its OWN default (`defaultOn`, absent ⇒ on) — the ATR pane has always opened on,
   // and an analysis layer like the session VWAP must not.
   const indicatorRoster = useMemo(
-    () => spec.indicators.map(i => [i.name, i.defaultOn !== false] as [string, boolean]),
-    [spec.indicators],
+    () => spec.indicators.map((i) => [i.name, i.defaultOn !== false] as [string, boolean]),
+    [spec.indicators]
   )
   const [indicatorsOn, setIndicatorsOn] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(indicatorRoster) as Record<string, boolean>,
+    () => Object.fromEntries(indicatorRoster) as Record<string, boolean>
   )
   // RECONCILED, never re-seeded — the same rule `groupsOn` follows, and for the same reason: a
   // plain re-seed on a spec swap silently undoes every toggle the reader has set.
   useEffect(() => {
-    setIndicatorsOn(prev => reconcileToggles(prev, indicatorRoster))
+    setIndicatorsOn((prev) => reconcileToggles(prev, indicatorRoster))
   }, [indicatorRoster])
-  const toggleIndicator = (name: string) => setIndicatorsOn(v => ({ ...v, [name]: !v[name] }))
+  const toggleIndicator = (name: string) => setIndicatorsOn((v) => ({ ...v, [name]: !v[name] }))
   const indicatorPanesRef = useRef<Map<string, string>>(new Map()) // indicator name → pane id
   // Test seam. An indicator draws into the candle pane's CANVAS, so whether a layer is on screen
   // has no DOM answer; this publishes the names the create pass actually handed to klinecharts.
@@ -2012,7 +2312,9 @@ export default function ChartPanel({
   // crosshair still draws — no capture layer needed.
   const [measureMode, setMeasureMode] = useState(false)
   const [measurement, setMeasurement] = useState<LockedMeasurement | null>(null)
-  const [anchor, setAnchor] = useState<{ x: number; y: number; ts: number; val: number } | null>(null)
+  const [anchor, setAnchor] = useState<{ x: number; y: number; ts: number; val: number } | null>(
+    null
+  )
   const [liveDrag, setLiveDrag] = useState<MeasureRect | null>(null)
 
   // Fibonacci drawings — the source of truth is React state (each = id + its two anchor points as
@@ -2022,21 +2324,29 @@ export default function ChartPanel({
   // tool default live, so retuning the default retunes every drawing that has not been customised.
   // Snapshotting the default at draw time instead would make "change my levels" silently do nothing
   // to the fibs already on screen.
-  const [fibs, setFibs] = useState<{ id: string; points: { timestamp: number; value: number }[]; levels?: FibLevel[] }[]>([])
-  const selectedFibRef = useRef<string | null>(null)  // fib currently selected (for the Delete key)
-  const ctxFibRef = useRef<string | null>(null)       // fib the right-click landed on (→ "Delete this fib")
+  const [fibs, setFibs] = useState<
+    { id: string; points: { timestamp: number; value: number }[]; levels?: FibLevel[] }[]
+  >([])
+  const selectedFibRef = useRef<string | null>(null) // fib currently selected (for the Delete key)
+  const ctxFibRef = useRef<string | null>(null) // fib the right-click landed on (→ "Delete this fib")
 
   // The tool's DEFAULT ladder — a setting, so it persists across reloads (a drawing does not).
   const [fibLevels, setFibLevels] = useState<FibLevel[]>(() => loadFibLevels())
-  useEffect(() => { saveFibLevels(fibLevels) }, [fibLevels])
+  useEffect(() => {
+    saveFibLevels(fibLevels)
+  }, [fibLevels])
   // How the reader wants the chart DRAWN — persisted per browser, never part of a run. Same
   // load-once / save-on-change shape as the fib ladder above; see `chartSettings.ts`.
   const [chartSettings, setChartSettings] = useState<ChartSettings>(() => loadChartSettings())
-  useEffect(() => { saveChartSettings(chartSettings) }, [chartSettings])
+  useEffect(() => {
+    saveChartSettings(chartSettings)
+  }, [chartSettings])
   const [settingsAt, setSettingsAt] = useState<{ x: number; y: number } | null>(null)
   // The open level editor. `fibId: null` = editing the default ladder (from the tool strip);
   // a fib id = editing that one drawing's override (from its right-click menu).
-  const [fibEditor, setFibEditor] = useState<{ x: number; y: number; fibId: string | null } | null>(null)
+  const [fibEditor, setFibEditor] = useState<{ x: number; y: number; fibId: string | null } | null>(
+    null
+  )
   // Bumped whenever the editor's rows must be re-seeded from state rather than from typing —
   // a reset, or dropping a per-drawing override. See `resetKey` in FibSettings.
   const [fibEditorSeq, setFibEditorSeq] = useState(0)
@@ -2045,7 +2355,9 @@ export default function ChartPanel({
   const defaultOffsetRef = useRef<number | null>(null)
   // Right-click context menu (viewport-fixed at the cursor). null = closed. `fibId` = the fib the
   // cursor was over when it opened (→ "Delete this fib"); null when opened over empty chart.
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; fibId: string | null } | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; fibId: string | null } | null>(
+    null
+  )
 
   // Price decimals for the fib level labels, inferred from the instrument's magnitude
   // (gold/JPY ~2dp, FX majors ~5dp). Good enough for a label; not used for any math.
@@ -2058,7 +2370,12 @@ export default function ChartPanel({
   useEffect(() => {
     if (!measureMode) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setMeasureMode(false); setAnchor(null); setLiveDrag(null); setMeasurement(null) }
+      if (e.key === 'Escape') {
+        setMeasureMode(false)
+        setAnchor(null)
+        setLiveDrag(null)
+        setMeasurement(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -2088,18 +2405,25 @@ export default function ChartPanel({
 
   const makeMeasureRect = (
     a: { x: number; y: number; ts: number; val: number },
-    b: { x: number; y: number; ts: number; val: number },
+    b: { x: number; y: number; ts: number; val: number }
   ): MeasureRect => ({
-    x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
-    w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y),
-    startTs: a.ts, endTs: b.ts,
-    startVal: a.val, endVal: b.val,
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(b.x - a.x),
+    h: Math.abs(b.y - a.y),
+    startTs: a.ts,
+    endTs: b.ts,
+    startVal: a.val,
+    endVal: b.val,
   })
 
   // Click inside the chart wrapper: clear locked measurement → anchor → lock.
   const handleChartClick = (e: React.MouseEvent) => {
     if (!measureMode) return
-    if (!anchor && measurement) { setMeasurement(null); return }
+    if (!anchor && measurement) {
+      setMeasurement(null)
+      return
+    }
     const pt = pixelToChart(e.clientX, e.clientY)
     if (!pt) return
     if (!anchor) {
@@ -2125,13 +2449,18 @@ export default function ChartPanel({
   // HEIGHT of the plot. Used to line the header's Copy button up flush with the y-axis line and to
   // cap the left tool strip at the x-axis line — so the chrome forms clean right angles with the
   // plot rectangle instead of floating over the price scale / past the time axis.
-  const [chartInset, setChartInset] = useState<{ axisW: number; xAxisH: number }>({ axisW: 0, xAxisH: 0 })
+  const [chartInset, setChartInset] = useState<{ axisW: number; xAxisH: number }>({
+    axisW: 0,
+    xAxisH: 0,
+  })
   const measureInset = useCallback(() => {
     const chart = chartRef.current
     if (!chart) return
     const axisW = Math.round(chart.getSize('candle_pane', DomPosition.YAxis)?.width ?? 0)
     const xAxisH = Math.round(chart.getSize('x_axis_pane', DomPosition.Root)?.height ?? 0)
-    setChartInset(prev => (prev.axisW === axisW && prev.xAxisH === xAxisH ? prev : { axisW, xAxisH }))
+    setChartInset((prev) =>
+      prev.axisW === axisW && prev.xAxisH === xAxisH ? prev : { axisW, xAxisH }
+    )
   }, [])
 
   // Init once on mount; dispose on unmount. Data is applied by the effect below.
@@ -2143,7 +2472,7 @@ export default function ChartPanel({
     if (!chart) return
     chartRef.current = chart
     chart.setStyles(chartStyles)
-    defaultBarSpaceRef.current = chart.getBarSpace()          // remembered for "Reset chart view"
+    defaultBarSpaceRef.current = chart.getBarSpace() // remembered for "Reset chart view"
     defaultOffsetRef.current = chart.getOffsetRightDistance()
 
     // Paging, BOTH directions. Registered ONCE (klinecharts keeps one callback) and delegating
@@ -2163,20 +2492,29 @@ export default function ChartPanel({
       const older = type === LoadDataType.Forward
       const load = older ? loadOlderRef.current : loadNewerRef.current
       if (older) setPagingOlder(true)
-      void load().then(({ bars, more }) => {
-        if (bars.length) {
-          skipApplyRef.current = true
-          // The applied list is `fetched` in drill-down and `baseCandles` otherwise, and splicing
-          // base-timeframe bars into a 1-minute chart is exactly what the old blanket paging guard
-          // existed to prevent — so the page goes to whichever list `displayCandles` is reading.
-          if (isFetchModeRef.current) setFetched(prev => (older ? [...bars, ...prev] : [...prev, ...bars]))
-          else setBaseCandles(prev => (older ? [...bars, ...prev] : [...prev, ...bars]))
-        }
-        callback(candlesToKLine(bars), more)
-      }).catch(() => callback([], false)).finally(() => { if (older) setPagingOlder(false) })
+      void load()
+        .then(({ bars, more }) => {
+          if (bars.length) {
+            skipApplyRef.current = true
+            // The applied list is `fetched` in drill-down and `baseCandles` otherwise, and splicing
+            // base-timeframe bars into a 1-minute chart is exactly what the old blanket paging guard
+            // existed to prevent — so the page goes to whichever list `displayCandles` is reading.
+            if (isFetchModeRef.current)
+              setFetched((prev) => (older ? [...bars, ...prev] : [...prev, ...bars]))
+            else setBaseCandles((prev) => (older ? [...bars, ...prev] : [...prev, ...bars]))
+          }
+          callback(candlesToKLine(bars), more)
+        })
+        .catch(() => callback([], false))
+        .finally(() => {
+          if (older) setPagingOlder(false)
+        })
     })
 
-    const ro = new ResizeObserver(() => { chart.resize(); measureInset() })
+    const ro = new ResizeObserver(() => {
+      chart.resize()
+      measureInset()
+    })
     ro.observe(el)
     requestAnimationFrame(measureInset)
     return () => {
@@ -2210,7 +2548,9 @@ export default function ChartPanel({
     // on — see `goToDate`. Clearing it before the scroll lets klinecharts' pending Backward request
     // through and the jump walks forward off its own target. A frame's grace, because the request
     // is queued from the layout the scroll is about to replace.
-    requestAnimationFrame(() => { jumpingRef.current = false })
+    requestAnimationFrame(() => {
+      jumpingRef.current = false
+    })
   }, [displayCandles, scrollToTs])
 
   // ── The DRAW WINDOW — overlay creation follows the VIEWPORT, not the loaded history ─────────
@@ -2255,7 +2595,7 @@ export default function ChartPanel({
       // Written to the DOM imperatively, NOT through state: this runs on every frame of a drag, and
       // a `setState` here would re-render the whole panel at 60fps to publish a test seam.
       rootRef.current?.setAttribute('data-view-centre', String(viewCentreRef.current))
-      setDrawRange(prev => {
+      setDrawRange((prev) => {
         // Already covered? Then do nothing. This is the common case on EVERY FRAME of a drag, and
         // recommitting here would re-create every overlay 60 times a second — i.e. it would turn
         // the fix into a worse version of the problem it exists to solve. The margin below is what
@@ -2271,10 +2611,13 @@ export default function ChartPanel({
     let raf = 0
     const onChange = () => {
       if (raf) return
-      raf = requestAnimationFrame(() => { raf = 0; recompute() })
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        recompute()
+      })
     }
     chart.subscribeAction(ActionType.OnVisibleRangeChange, onChange)
-    recompute()   // the first window: nothing has moved yet, so no action has fired
+    recompute() // the first window: nothing has moved yet, so no action has fired
     return () => {
       if (raf) cancelAnimationFrame(raf)
       chart.unsubscribeAction(ActionType.OnVisibleRangeChange, onChange)
@@ -2302,8 +2645,8 @@ export default function ChartPanel({
       // is a new identity, which is half of the double-apply described on `resampled` above; the
       // memo split is the other half, and both are kept because either alone leaves the hazard live
       // for the next reader who adds a dependency.
-      setFetched(prev => (prev.length ? [] : prev))
-      setDrillOverlays(prev => (prev.length ? [] : prev))
+      setFetched((prev) => (prev.length ? [] : prev))
+      setDrillOverlays((prev) => (prev.length ? [] : prev))
       setFetchStatus('idle')
       setFetchNote(null)
       setDataEdge(null)
@@ -2313,15 +2656,20 @@ export default function ChartPanel({
       // the spec around them is what `goToDate` already does, so ask it.
       const centre = viewCentreRef.current
       const b = baseCandlesRef.current
-      if (wasFetchRef.current && centre != null && b.length
-          && (centre < b[0].time || centre > b[b.length - 1].time)) {
+      if (
+        wasFetchRef.current &&
+        centre != null &&
+        b.length &&
+        (centre < b[0].time || centre > b[b.length - 1].time)
+      ) {
         void goToDate(centre)
       }
       wasFetchRef.current = false
       return
     }
     wasFetchRef.current = true
-    const anchor = viewCentreRef.current ?? spec.candles[spec.candles.length - 1]?.time ?? Date.now()
+    const anchor =
+      viewCentreRef.current ?? spec.candles[spec.candles.length - 1]?.time ?? Date.now()
     void drillTo(selectedMin, anchor, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFetchMode, selectedMin])
@@ -2331,7 +2679,9 @@ export default function ChartPanel({
   // back to those once, and only for the AUTO-chosen TF — a TF the user picked keeps its honest
   // "no data" message instead of silently jumping somewhere they didn't ask for.
   const autoFellBackRef = useRef(false)
-  useEffect(() => { autoFellBackRef.current = false }, [openMin])
+  useEffect(() => {
+    autoFellBackRef.current = false
+  }, [openMin])
   useEffect(() => {
     if (autoFellBackRef.current || selectedMin !== openMin || openMin === baseMin) return
     if (fetchStatus !== 'empty' && fetchStatus !== 'error') return
@@ -2355,7 +2705,8 @@ export default function ChartPanel({
       if (!sessionsOn[s.name]) continue
       for (const w of s.windows) {
         // Skip a session window that falls entirely outside the loaded candles (no-data region).
-        if (loadedLoTs == null || loadedHiTs == null || w.t1 < loadedLoTs || w.t0 > loadedHiTs) continue
+        if (loadedLoTs == null || loadedHiTs == null || w.t1 < loadedLoTs || w.t0 > loadedHiTs)
+          continue
         chart.createOverlay({
           name: SESSION_BOX,
           lock: true,
@@ -2367,7 +2718,7 @@ export default function ChartPanel({
         })
       }
     }
-  }, [sessionBoxes, sessionsOn, displayCandles, loadedLoTs, loadedHiTs])  // sessionBoxes already covers all days
+  }, [sessionBoxes, sessionsOn, displayCandles, loadedLoTs, loadedHiTs]) // sessionBoxes already covers all days
 
   // Rebuild trade overlays after data changes or a toggle (same anchoring rationale as sessions).
   useEffect(() => {
@@ -2380,8 +2731,8 @@ export default function ChartPanel({
       // would otherwise clamp its markers onto the plot's left edge (the no-data region).
       if (loadedLoTs == null || loadedHiTs == null) break
       if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
-      if (tr.layer && hiddenLayers.has(tr.layer)) continue   // isolated via the Strategies dropdown
-      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue     // Winners/Losers filters (Analysis menu)
+      if (tr.layer && hiddenLayers.has(tr.layer)) continue // isolated via the Strategies dropdown
+      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue // Winners/Losers filters (Analysis menu)
       chart.createOverlay({
         name: TRADE,
         lock: true,
@@ -2393,43 +2744,57 @@ export default function ChartPanel({
           dir: tr.dir,
           kind: tr.kind,
           pnl: tr.pnl,
-          color: tr.pnl > 0 ? TRADE_WIN_COLOR : TRADE_LOSS_COLOR,  // outcome (win green / loss red)
-          dirColor: tr.dir === 'long' ? theme.pos : theme.neg,     // entry arrow (buy green / sell red)
+          color: tr.pnl > 0 ? TRADE_WIN_COLOR : TRADE_LOSS_COLOR, // outcome (win green / loss red)
+          dirColor: tr.dir === 'long' ? theme.pos : theme.neg, // entry arrow (buy green / sell red)
           // Profit-depth inputs — prices, converted to pixels in the overlay via the y-axis.
           // Absent fields make the overlay fall back to the plain entry→exit box.
-          precision: pricePrecision,   // every side label prints its own price
-          showPrices: chartSettings.tradeLabelPrices,  // reader preference — Chart settings → Trades
+          precision: pricePrecision, // every side label prints its own price
+          showPrices: chartSettings.tradeLabelPrices, // reader preference — Chart settings → Trades
           entryPrice: tr.entryPrice,
           exitPrice: tr.exitPrice,
           mfePrice: tr.mfePrice,
           maePrice: tr.maePrice,
           profitLegs: tr.profitLegs,
           stopPrice: tr.stopPrice,
-          tpTargets: tr.tpTargets,     // TP ladder — first UNHIT one drawn faintly (near-miss view)
+          tpTargets: tr.tpTargets, // TP ladder — first UNHIT one drawn faintly (near-miss view)
           favColor: TRADE_PROFIT_FILL, // light mint — profit fill + take-profit lines
-          advColor: TRADE_LOSS_COLOR,  // red — adverse side + the stop
+          advColor: TRADE_LOSS_COLOR, // red — adverse side + the stop
           // Portfolio stack: the entry marker takes the strategy's layer colour so overlapping
           // strategies read apart; a single-run trade has no layer → neutral, unchanged.
           entryColor: tr.layerColor ?? theme.textSecondary,
-          layerColor: tr.layerColor,   // outcome-chip border + dot accent (stack only)
-          layerName: tr.layerName,     // named in the outcome chip: "SOS Fade · Won" (stack only)
-          chipBg: theme.bgSurface,     // dark chip behind the side labels (legible over candles)
+          layerColor: tr.layerColor, // outcome-chip border + dot accent (stack only)
+          layerName: tr.layerName, // named in the outcome chip: "SOS Fade · Won" (stack only)
+          chipBg: theme.bgSurface, // dark chip behind the side labels (legible over candles)
           // The reversal candle at this trade's turn, by name — or `no candle` if its span had
           // none. `undefined` while the layer is OFF, and `undefined` must NOT render as "no": the
           // run has not been asked. Only switching the layer on turns the question into an answer.
-          patternName: groupsOn[GROUP_CANDLE_MARKS] && atBaseTf
-            // ⚠ Three states, not two. `no candle` = the span held no pattern at all;
-            // `no matching candle` = it held some and none pointed the way this outcome asks about,
-            // so the marks ARE on the chart and none of them earns the chip. Collapsing the two
-            // would report a setup that plainly had candles in it as having had none.
-            ? (tradePattern.named.get(i) ?? (tradePattern.any.has(i) ? 'no matching candle' : 'no candle'))
-            : undefined,
+          patternName:
+            groupsOn[GROUP_CANDLE_MARKS] && atBaseTf
+              ? // ⚠ Three states, not two. `no candle` = the span held no pattern at all;
+                // `no matching candle` = it held some and none pointed the way this outcome asks about,
+                // so the marks ARE on the chart and none of them earns the chip. Collapsing the two
+                // would report a setup that plainly had candles in it as having had none.
+                (tradePattern.named.get(i) ??
+                (tradePattern.any.has(i) ? 'no matching candle' : 'no candle'))
+              : undefined,
           neutralColor: theme.textTertiary,
         },
       })
     }
-  }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs,
-      chartSettings, tradePattern, groupsOn, atBaseTf])
+  }, [
+    spec.trades,
+    tradesOn,
+    winnersOn,
+    losersOn,
+    hiddenLayers,
+    displayCandles,
+    loadedLoTs,
+    loadedHiTs,
+    chartSettings,
+    tradePattern,
+    groupsOn,
+    atBaseTf,
+  ])
 
   // Trade fibs — the leg each trade was priced off. Rebuilt on data change like every other
   // overlay effect (`applyNewData` clears them).
@@ -2472,8 +2837,16 @@ export default function ChartPanel({
         extendData: { levels: fib.levels, chipBg: theme.bgSurface },
       })
     }
-  }, [spec.trades, tradeFibsOn, winnersOn, losersOn, hiddenLayers,
-      displayCandles, loadedLoTs, loadedHiTs])
+  }, [
+    spec.trades,
+    tradeFibsOn,
+    winnersOn,
+    losersOn,
+    hiddenLayers,
+    displayCandles,
+    loadedLoTs,
+    loadedHiTs,
+  ])
 
   // Blocked setups — same rebuild-on-data-change rationale as the trades effect. Each marker
   // carries its own hover handlers, which is what turns the tag into "why didn't this trade":
@@ -2490,13 +2863,15 @@ export default function ChartPanel({
       // into the no-data region left of the drill-down edge.
       if (loadedLoTs == null || loadedHiTs == null) break
       if (b.time < loadedLoTs || b.time > loadedHiTs) continue
-      if (!blockVisible(b)) continue                       // per-reason filters
+      if (!blockVisible(b)) continue // per-reason filters
       chart.createOverlay({
         name: BLOCK,
         lock: true,
         points: [{ timestamp: b.time, value: b.price }],
         extendData: {
-          dir: b.dir, color: BLOCK_COLOR, textColor: theme.bgBase,
+          dir: b.dir,
+          color: BLOCK_COLOR,
+          textColor: theme.bgBase,
           text: b.reasons.length > 1 ? `Blocked ${b.reasons.length}` : 'Blocked',
         },
         onMouseEnter: (e) => {
@@ -2504,8 +2879,9 @@ export default function ChartPanel({
             x: (e.pageX ?? 0) - window.scrollX,
             y: (e.pageY ?? 0) - window.scrollY,
             color: BLOCK_COLOR,
-            title: `${b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked`
-              + (b.reasons.length > 1 ? ` — ${b.reasons.length} rules` : ''),
+            title:
+              `${b.dir === 'long' ? '▲ Long' : '▼ Short'} blocked` +
+              (b.reasons.length > 1 ? ` — ${b.reasons.length} rules` : ''),
             met: [],
             reasons: b.reasons,
             price: b.price,
@@ -2513,7 +2889,10 @@ export default function ChartPanel({
           })
           return true
         },
-        onMouseLeave: () => { setMarkerTip(null); return true },
+        onMouseLeave: () => {
+          setMarkerTip(null)
+          return true
+        },
       })
     }
   }, [blocks, blocksOn, blockVisible, displayCandles, loadedLoTs, loadedHiTs, layerName])
@@ -2536,7 +2915,10 @@ export default function ChartPanel({
         lock: true,
         points: [{ timestamp: m.time, value: m.price }],
         extendData: {
-          dir: m.dir, color: MISS_COLOR, textColor: theme.bgBase, row: 1,
+          dir: m.dir,
+          color: MISS_COLOR,
+          textColor: theme.bgBase,
+          row: 1,
           text: `${m.met}/${m.of}`,
         },
         onMouseEnter: (e) => {
@@ -2552,7 +2934,10 @@ export default function ChartPanel({
           })
           return true
         },
-        onMouseLeave: () => { setMarkerTip(null); return true },
+        onMouseLeave: () => {
+          setMarkerTip(null)
+          return true
+        },
       })
     }
   }, [misses, missesOn, missVisible, displayCandles, loadedLoTs, loadedHiTs, layerName])
@@ -2589,17 +2974,31 @@ export default function ChartPanel({
         id: f.id,
         points: f.points,
         // No override → the tool default, read live (not snapshotted) — see the `fibs` state note.
-        extendData: { levels: f.levels ?? fibLevels, precision: pricePrecision, chipBg: theme.bgSurface },
-        onSelected: () => { selectedFibRef.current = f.id; return false },
-        onDeselected: () => { if (selectedFibRef.current === f.id) selectedFibRef.current = null; return false },
+        extendData: {
+          levels: f.levels ?? fibLevels,
+          precision: pricePrecision,
+          chipBg: theme.bgSurface,
+        },
+        onSelected: () => {
+          selectedFibRef.current = f.id
+          return false
+        },
+        onDeselected: () => {
+          if (selectedFibRef.current === f.id) selectedFibRef.current = null
+          return false
+        },
         // klinecharts REMOVES an overlay on right-click when onRightClick returns falsy — return true
         // to keep the fib, and stash its id so the React context menu offers "Delete this fib" instead.
-        onRightClick: () => { ctxFibRef.current = f.id; return true },
-        onPressedMoveEnd: e => {
+        onRightClick: () => {
+          ctxFibRef.current = f.id
+          return true
+        },
+        onPressedMoveEnd: (e) => {
           const pts = (e.overlay.points ?? [])
-            .filter(p => typeof p.timestamp === 'number' && typeof p.value === 'number')
-            .map(p => ({ timestamp: p.timestamp as number, value: p.value as number }))
-          if (pts.length >= 2) setFibs(prev => prev.map(x => (x.id === f.id ? { ...x, points: pts } : x)))
+            .filter((p) => typeof p.timestamp === 'number' && typeof p.value === 'number')
+            .map((p) => ({ timestamp: p.timestamp as number, value: p.value as number }))
+          if (pts.length >= 2)
+            setFibs((prev) => prev.map((x) => (x.id === f.id ? { ...x, points: pts } : x)))
           return false
         },
       })
@@ -2626,7 +3025,7 @@ export default function ChartPanel({
       // types.ts). This is what makes the four market-structure toggles nest exactly like the
       // TradingView ones — e.g. swing tags vanish with the structure that owns them, and historic
       // internal content needs "Internal Structure" on as well as its own toggle.
-      if (ov.requires?.some(g => groupsOn[g] === false)) continue
+      if (ov.requires?.some((g) => groupsOn[g] === false)) continue
       // Portfolio stack: an anchored overlay draws while ANY leg that reported it is shown, so
       // isolating one strategy removes only the zones nothing else fired into. Inert on a single
       // run, where nothing carries `layers`.
@@ -2683,7 +3082,7 @@ export default function ChartPanel({
         // Two reader filters, both of which only ever REMOVE marks the backend already decided to
         // draw — neither can invent one, which is what keeps them preferences rather than analysis.
         if (hiddenCandleDirs.has(candleDirKey(ov))) continue
-        if (chartSettings.candleMarkDeepestOnly && !(ov.deepestOf?.length)) continue
+        if (chartSettings.candleMarkDeepestOnly && !ov.deepestOf?.length) continue
         // FOUR points at ONE timestamp — high, low, open, close — so the template gets one x and
         // four y's and can rebuild the bar. klinecharts keeps every point it is handed regardless
         // of `totalStep`, which is what makes a 4-point overlay on a 2-step template legal.
@@ -2707,9 +3106,12 @@ export default function ChartPanel({
             // name?"* — when it is a fact about the BAR: one candle can satisfy several
             // definitions at once, and every Hanging Man is also a Hammer by construction. Two
             // names is a wider tag than one, and a tag nobody can interpret is worse.
-            label: chartSettings.candleMarkLabels && ov.label
-              ? (ov.patterns?.length ? ov.patterns.join(' · ') : ov.label)
-              : undefined,
+            label:
+              chartSettings.candleMarkLabels && ov.label
+                ? ov.patterns?.length
+                  ? ov.patterns.join(' · ')
+                  : ov.label
+                : undefined,
           },
         })
       } else if (ov.type === 'label') {
@@ -2718,11 +3120,26 @@ export default function ChartPanel({
       }
     }
     if (labelPoints.length) {
-      chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
+      chart.createOverlay({
+        name: LABEL,
+        lock: true,
+        points: labelPoints,
+        extendData: { items: labelItems },
+      })
     }
     // `chartSettings` is a dep because the candle-mark tag reads it; toggling it must redraw.
-  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs, atBaseTf, chartSettings,
-      hiddenCandleDirs, overlayLayerVisible])
+  }, [
+    allOverlays,
+    baseCandles,
+    groupsOn,
+    displayCandles,
+    drawLoTs,
+    drawHiTs,
+    atBaseTf,
+    chartSettings,
+    hiddenCandleDirs,
+    overlayLayerVisible,
+  ])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {
@@ -2752,7 +3169,7 @@ export default function ChartPanel({
     chart.removeOverlay({ name: DATA_EDGE })
     if (!dataEdge || dataEdge.tf !== selectedMin) return
     // Named off the ACTIVE drill-down TF, so every rung of the ladder reads correctly.
-    const tfLabel = FETCH_TFS.find(tf => tf.min === selectedMin)?.label
+    const tfLabel = FETCH_TFS.find((tf) => tf.min === selectedMin)?.label
     const label = tfLabel ? `No earlier ${tfLabel} data` : 'No earlier data'
     chart.createOverlay({
       name: DATA_EDGE,
@@ -2813,8 +3230,8 @@ export default function ChartPanel({
     })
     // Test seam only — see `data-indicators-on` on the root. Set from the same pass that creates
     // them, so it cannot claim a layer the chart is not drawing.
-    setDrawnIndicatorNames(prev =>
-      prev.length === drawn.length && prev.every((n, i) => n === drawn[i]) ? prev : drawn,
+    setDrawnIndicatorNames((prev) =>
+      prev.length === drawn.length && prev.every((n, i) => n === drawn[i]) ? prev : drawn
     )
   }, [spec.indicators, indicatorsOn])
 
@@ -2826,7 +3243,7 @@ export default function ChartPanel({
     return {
       priceDiff,
       pctChange: (priceDiff / rect.startVal) * 100,
-      bars: displayCandles.filter(c => c.time >= lo && c.time <= hi).length,
+      bars: displayCandles.filter((c) => c.time >= lo && c.time <= hi).length,
       durMs: Math.abs(rect.endTs - rect.startTs),
       up: priceDiff >= 0,
     }
@@ -2840,14 +3257,47 @@ export default function ChartPanel({
     const stats = measureStats(rect)
     const labelW = 160
     const containerW = containerRef.current?.clientWidth ?? 9999
-    const labelLeft = rect.x + rect.w + 8 + labelW > containerW ? rect.x - labelW - 8 : rect.x + rect.w + 8
+    const labelLeft =
+      rect.x + rect.w + 8 + labelW > containerW ? rect.x - labelW - 8 : rect.x + rect.w + 8
     return (
       <Fragment key={key}>
-        <div style={{ position: 'absolute', left: rect.x, top: rect.y, width: Math.max(rect.w, 1), height: Math.max(rect.h, 1), background: fill, border: `1px solid ${stroke}` }} />
+        <div
+          style={{
+            position: 'absolute',
+            left: rect.x,
+            top: rect.y,
+            width: Math.max(rect.w, 1),
+            height: Math.max(rect.h, 1),
+            background: fill,
+            border: `1px solid ${stroke}`,
+          }}
+        />
         {stats && (
-          <div style={{ position: 'absolute', left: labelLeft, top: rect.y, width: labelW, background: '#1e222d', border: `1px solid ${stroke}`, borderRadius: 5, padding: '5px 9px', fontSize: 11, fontFamily: 'ui-monospace, monospace', lineHeight: 1.7, whiteSpace: 'nowrap', color: '#e2e8f0' }}>
-            <div style={{ color: textColor }}>{up ? '↑' : '↓'} {up ? '+' : '−'}{fmtDiff(stats.priceDiff)} ({up ? '+' : '−'}{Math.abs(stats.pctChange).toFixed(2)}%)</div>
-            <div style={{ color: '#94a3b8' }}>{stats.bars} bar{stats.bars !== 1 ? 's' : ''} · {fmtDuration(stats.durMs)}</div>
+          <div
+            style={{
+              position: 'absolute',
+              left: labelLeft,
+              top: rect.y,
+              width: labelW,
+              background: '#1e222d',
+              border: `1px solid ${stroke}`,
+              borderRadius: 5,
+              padding: '5px 9px',
+              fontSize: 11,
+              fontFamily: 'ui-monospace, monospace',
+              lineHeight: 1.7,
+              whiteSpace: 'nowrap',
+              color: '#e2e8f0',
+            }}
+          >
+            <div style={{ color: textColor }}>
+              {up ? '↑' : '↓'} {up ? '+' : '−'}
+              {fmtDiff(stats.priceDiff)} ({up ? '+' : '−'}
+              {Math.abs(stats.pctChange).toFixed(2)}%)
+            </div>
+            <div style={{ color: '#94a3b8' }}>
+              {stats.bars} bar{stats.bars !== 1 ? 's' : ''} · {fmtDuration(stats.durMs)}
+            </div>
           </div>
         )}
       </Fragment>
@@ -2870,7 +3320,7 @@ export default function ChartPanel({
       toast.error('Could not render the chart image')
       return
     }
-    const toBlob = fetch(url).then(r => r.blob()) // pass the Promise to ClipboardItem (Safari-safe)
+    const toBlob = fetch(url).then((r) => r.blob()) // pass the Promise to ClipboardItem (Safari-safe)
     try {
       const canClipboard = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write
       if (!canClipboard) throw new Error('clipboard unavailable')
@@ -2881,7 +3331,8 @@ export default function ChartPanel({
     } catch {
       const blob = await toBlob
       const href = URL.createObjectURL(blob)
-      const tf = options.find(o => o.min === selectedMin)?.label ?? spec.baseTimeframe.toUpperCase()
+      const tf =
+        options.find((o) => o.min === selectedMin)?.label ?? spec.baseTimeframe.toUpperCase()
       const a = document.createElement('a')
       a.href = href
       a.download = `${spec.instrument}-${tf}.png`
@@ -2921,15 +3372,19 @@ export default function ChartPanel({
   const startFib = () => {
     const chart = chartRef.current
     if (!chart) return
-    setMeasureMode(false); setAnchor(null); setLiveDrag(null); setMeasurement(null)
+    setMeasureMode(false)
+    setAnchor(null)
+    setLiveDrag(null)
+    setMeasurement(null)
     chart.createOverlay({
       name: FIB,
       extendData: { levels: fibLevels, precision: pricePrecision, chipBg: theme.bgSurface },
-      onDrawEnd: e => {
+      onDrawEnd: (e) => {
         const pts = (e.overlay.points ?? [])
-          .filter(p => typeof p.timestamp === 'number' && typeof p.value === 'number')
-          .map(p => ({ timestamp: p.timestamp as number, value: p.value as number }))
-        if (pts.length >= 2) setFibs(prev => [...prev, { id: crypto.randomUUID(), points: pts.slice(0, 2) }])
+          .filter((p) => typeof p.timestamp === 'number' && typeof p.value === 'number')
+          .map((p) => ({ timestamp: p.timestamp as number, value: p.value as number }))
+        if (pts.length >= 2)
+          setFibs((prev) => [...prev, { id: crypto.randomUUID(), points: pts.slice(0, 2) }])
         return false
       },
     })
@@ -2938,26 +3393,29 @@ export default function ChartPanel({
   const removeFib = (id: string) => {
     if (selectedFibRef.current === id) selectedFibRef.current = null
     if (ctxFibRef.current === id) ctxFibRef.current = null
-    setFibs(prev => prev.filter(f => f.id !== id))
-    setFibEditor(e => (e?.fibId === id ? null : e))   // never leave the editor pointing at a deleted fib
+    setFibs((prev) => prev.filter((f) => f.id !== id))
+    setFibEditor((e) => (e?.fibId === id ? null : e)) // never leave the editor pointing at a deleted fib
   }
 
   // ── Level editor plumbing ───────────────────────────────────────────────────────────────────
   // The ladder the open editor is editing. A drawing with no override edits a COPY of the default,
   // which is what makes the first keystroke on a fib create its override rather than silently
   // retune every other fib on the chart.
-  const fibEditorTarget = fibEditor?.fibId ? fibs.find(f => f.id === fibEditor.fibId) ?? null : null
-  const fibEditorLevels = fibEditor?.fibId ? fibEditorTarget?.levels ?? fibLevels : fibLevels
+  const fibEditorTarget = fibEditor?.fibId
+    ? (fibs.find((f) => f.id === fibEditor.fibId) ?? null)
+    : null
+  const fibEditorLevels = fibEditor?.fibId ? (fibEditorTarget?.levels ?? fibLevels) : fibLevels
 
   const setFibEditorLevels = (next: FibLevel[]) => {
     if (!fibEditor) return
-    if (fibEditor.fibId) setFibs(prev => prev.map(f => (f.id === fibEditor.fibId ? { ...f, levels: next } : f)))
+    if (fibEditor.fibId)
+      setFibs((prev) => prev.map((f) => (f.id === fibEditor.fibId ? { ...f, levels: next } : f)))
     else setFibLevels(next)
   }
 
   const openFibEditor = (x: number, y: number, fibId: string | null) => {
     setFibEditor({ x, y, fibId })
-    setFibEditorSeq(n => n + 1)   // re-seed the rows for the new target
+    setFibEditorSeq((n) => n + 1) // re-seed the rows for the new target
   }
 
   // Promote this drawing's ladder to the default, then DROP its override so it goes back to
@@ -2966,18 +3424,18 @@ export default function ChartPanel({
   const saveFibLevelsAsDefault = () => {
     if (!fibEditor?.fibId) return
     setFibLevels(fibEditorLevels)
-    setFibs(prev => prev.map(f => (f.id === fibEditor.fibId ? { ...f, levels: undefined } : f)))
+    setFibs((prev) => prev.map((f) => (f.id === fibEditor.fibId ? { ...f, levels: undefined } : f)))
   }
 
   const clearFibOverride = () => {
     if (!fibEditor?.fibId) return
-    setFibs(prev => prev.map(f => (f.id === fibEditor.fibId ? { ...f, levels: undefined } : f)))
-    setFibEditorSeq(n => n + 1)
+    setFibs((prev) => prev.map((f) => (f.id === fibEditor.fibId ? { ...f, levels: undefined } : f)))
+    setFibEditorSeq((n) => n + 1)
   }
 
   const resetFibLevels = () => {
     setFibLevels(DEFAULT_FIB_LEVELS)
-    setFibEditorSeq(n => n + 1)
+    setFibEditorSeq((n) => n + 1)
   }
 
   // Delete/Backspace removes the selected fib (ignored while typing); Escape closes the menu;
@@ -2992,14 +3450,17 @@ export default function ChartPanel({
       if (!typing && (e.key === 'Delete' || e.key === 'Backspace') && selectedFibRef.current) {
         const id = selectedFibRef.current
         selectedFibRef.current = null
-        setFibs(prev => prev.filter(f => f.id !== id))
+        setFibs((prev) => prev.filter((f) => f.id !== id))
         e.preventDefault()
       }
       if (!typing && hoveredRef.current && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault()
         stepMarkerRef.current(e.key === 'ArrowRight' ? 1 : -1)
       }
-      if (e.key === 'Escape') { setCtxMenu(null); setFibEditor(null) }
+      if (e.key === 'Escape') {
+        setCtxMenu(null)
+        setFibEditor(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -3048,14 +3509,20 @@ export default function ChartPanel({
       data-applied-hi={loadedHiTs ?? undefined}
       ref={rootRef}
       data-indicators-on={drawnIndicatorNames.join('|')}
-      onMouseEnter={() => { hoveredRef.current = true }}
-      onMouseLeave={() => { hoveredRef.current = false }}
+      onMouseEnter={() => {
+        hoveredRef.current = true
+      }}
+      onMouseLeave={() => {
+        hoveredRef.current = false
+      }}
     >
       {/* Header — TradingView layout: symbol/interval controls top-LEFT (timeframe + layers),
           the snapshot (Copy) top-RIGHT by the fullscreen exit. Chart TOOLS live on the vertical
           strip down the left edge of the chart body (below), not in this row. A host may inject its
           own title/exit via headerLeading/headerTrailing so its chrome shares this single top row. */}
-      <div className={`relative flex items-center justify-between gap-2 flex-wrap mb-2 ${headerClassName ?? ''}`}>
+      <div
+        className={`relative flex items-center justify-between gap-2 flex-wrap mb-2 ${headerClassName ?? ''}`}
+      >
         {/* Left cluster: optional host title + timeframe dropdown + layers dropdown + fetch status. */}
         <div className="flex items-center gap-2">
           {headerLeading}
@@ -3064,16 +3531,19 @@ export default function ChartPanel({
               display TFs. */}
           <div ref={tfRef} className="relative">
             <button
-              onClick={() => setTfOpen(o => !o)}
+              onClick={() => setTfOpen((o) => !o)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-mono font-medium text-text-secondary hover:text-text-primary transition-colors"
             >
-              {options.find(o => o.min === selectedMin)?.label ?? spec.baseTimeframe.toUpperCase()}
+              {options.find((o) => o.min === selectedMin)?.label ??
+                spec.baseTimeframe.toUpperCase()}
               {/* A drill-down is a network round trip (~4.5s measured), and until this landed the
                   ONLY sign of it was an 11px grey line further along the header — while the chart
                   went on showing the previous timeframe's candles, which look exactly like nothing
                   having happened. Reported as "1 min isn't working". */}
               {drillPending && <Loader2 className="w-3 h-3 text-accent animate-spin" />}
-              <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${tfOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-3 h-3 text-text-tertiary transition-transform ${tfOpen ? 'rotate-180' : ''}`}
+              />
             </button>
             {tfOpen && (
               <div
@@ -3087,7 +3557,10 @@ export default function ChartPanel({
                     <Fragment key={tf.label}>
                       {divider && <div className="my-1 border-t border-border-subtle" />}
                       <button
-                        onClick={() => { pickTimeframe(tf.min); setTfOpen(false) }}
+                        onClick={() => {
+                          pickTimeframe(tf.min)
+                          setTfOpen(false)
+                        }}
                         className={`block w-full px-3 py-1.5 text-left text-[11px] font-mono font-medium transition-colors ${
                           tf.min === selectedMin
                             ? 'bg-accent/10 text-accent'
@@ -3126,7 +3599,10 @@ export default function ChartPanel({
               dropdown, separate from Structure: Structure is what the MARKET drew, Analysis is what
               to interrogate about the run. Trades ALSO toggles from the right-click chart menu —
               both drive the same `tradesOn` state. */}
-          {(spec.trades.length > 0 || blocks.length > 0 || misses.length > 0 || analysisGroups.length > 0) && (
+          {(spec.trades.length > 0 ||
+            blocks.length > 0 ||
+            misses.length > 0 ||
+            analysisGroups.length > 0) && (
             <ToggleMenu
               title="Analysis"
               // Wider than the other two menus: the filter chips wrap inside it, and at 198 a
@@ -3139,43 +3615,112 @@ export default function ChartPanel({
                 // whatever the rows below are showing and never decides WHICH trades are drawn —
                 // so it reads as "and show me the detail", not as a mode that owns the menu.
                 // Hidden when the run carries nothing to deepen.
-                ...(debugAvailable ? [{
-                  key: 'deep-debug', label: 'Deep debug', color: theme.accent,
-                  on: debugOn, toggle: toggleDebug, action: true,
-                }] : []),
+                ...(debugAvailable
+                  ? [
+                      {
+                        key: 'deep-debug',
+                        label: 'Deep debug',
+                        color: theme.accent,
+                        on: debugOn,
+                        toggle: toggleDebug,
+                        action: true,
+                      },
+                    ]
+                  : []),
                 // ── The layers themselves ────────────────────────────────────────────────────
-                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length, section: 'Signals' }] : []),
+                ...(spec.trades.length > 0
+                  ? [
+                      {
+                        key: 'trades',
+                        label: 'Trades',
+                        color: TRADE_WIN_COLOR,
+                        on: tradesOn,
+                        toggle: () => setTradesOn((o) => !o),
+                        count: spec.trades.length,
+                        section: 'Signals',
+                      },
+                    ]
+                  : []),
                 // Winners/Losers FILTER Trades — so they are chips under the layer, not rows beside
                 // it. Listed only while something they filter is on the chart: that is Trades or
                 // Fibs, since both effects apply these two predicates, and hiding them with Fibs on
                 // alone would leave the fibs silently filtered by a control nobody can see. Each
                 // carries its count so the split is readable without opening the table.
-                ...(spec.trades.length > 0 && (tradesOn || (tradeFibsOn && tradeFibCount > 0)) ? [{
-                  key: 'trade-outcome', label: 'Show', color: TRADE_WIN_COLOR,
-                  chips: [
-                    { key: 'winners', label: 'Winners', on: winnersOn, toggle: () => setWinnersOn(o => !o), count: outcomeCounts.wins },
-                    { key: 'losers', label: 'Losers', on: losersOn, toggle: () => setLosersOn(o => !o), count: outcomeCounts.losses },
-                  ],
-                }] : []),
+                ...(spec.trades.length > 0 && (tradesOn || (tradeFibsOn && tradeFibCount > 0))
+                  ? [
+                      {
+                        key: 'trade-outcome',
+                        label: 'Show',
+                        color: TRADE_WIN_COLOR,
+                        chips: [
+                          {
+                            key: 'winners',
+                            label: 'Winners',
+                            on: winnersOn,
+                            toggle: () => setWinnersOn((o) => !o),
+                            count: outcomeCounts.wins,
+                          },
+                          {
+                            key: 'losers',
+                            label: 'Losers',
+                            on: losersOn,
+                            toggle: () => setLosersOn((o) => !o),
+                            count: outcomeCounts.losses,
+                          },
+                        ],
+                      },
+                    ]
+                  : []),
                 // Blocked sits under Trades — same subject (what happened to a signal), opposite
                 // answer. Listed only when the run reports any: a runner that can't tell us would
                 // otherwise show a permanently empty toggle.
-                ...(blocks.length > 0 ? [{ key: 'blocks', label: 'Blocked', color: BLOCK_COLOR, on: blocksOn, toggle: () => setBlocksOn(o => !o), count: shownBlockCount }] : []),
+                ...(blocks.length > 0
+                  ? [
+                      {
+                        key: 'blocks',
+                        label: 'Blocked',
+                        color: BLOCK_COLOR,
+                        on: blocksOn,
+                        toggle: () => setBlocksOn((o) => !o),
+                        count: shownBlockCount,
+                      },
+                    ]
+                  : []),
                 // …and one chip per REASON, so a rule can be isolated ("show me only what the veto
                 // refused") or excluded. Each count is how many setups that rule refused — the
                 // number this whole layer exists to produce. Same "only while the parent is on" rule
                 // as Winners/Losers.
-                ...(blocksOn && blockReasons.length > 0 ? [{
-                  key: 'blk-reasons', label: 'Refused by', color: BLOCK_COLOR,
-                  chips: blockReasons.map(r => ({
-                    key: `blk-${r.label}`, label: r.label, count: r.count,
-                    on: !hiddenReasons.has(r.label), toggle: () => toggleReason(r.label),
-                  })),
-                }] : []),
+                ...(blocksOn && blockReasons.length > 0
+                  ? [
+                      {
+                        key: 'blk-reasons',
+                        label: 'Refused by',
+                        color: BLOCK_COLOR,
+                        chips: blockReasons.map((r) => ({
+                          key: `blk-${r.label}`,
+                          label: r.label,
+                          count: r.count,
+                          on: !hiddenReasons.has(r.label),
+                          toggle: () => toggleReason(r.label),
+                        })),
+                      },
+                    ]
+                  : []),
                 // Missed = the setups that never got as far as being refused. Listed after
                 // Blocked because it's the same question one step earlier in the setup's life,
                 // and only when the run reports any (an NT8/MT5 run reports none).
-                ...(misses.length > 0 ? [{ key: 'misses', label: 'Missed', color: MISS_COLOR, on: missesOn, toggle: () => setMissesOn(o => !o), count: shownMissCount }] : []),
+                ...(misses.length > 0
+                  ? [
+                      {
+                        key: 'misses',
+                        label: 'Missed',
+                        color: MISS_COLOR,
+                        on: missesOn,
+                        toggle: () => setMissesOn((o) => !o),
+                        count: shownMissCount,
+                      },
+                    ]
+                  : []),
                 // …the SCORE first, because it is the coarser cut and the one that separates two
                 // genuinely different questions: a 3/3 had every confluence and still did not
                 // trade, a 2/3 never got there. All start ON, so this narrows nothing until it is
@@ -3187,24 +3732,42 @@ export default function ChartPanel({
                 // shipped run: 35 + 417 = 452, and 179 + 238 + 21 + 10 + 4 = 452. Seven rows in one
                 // column read as seven sub-filters of one thing and the counts read as
                 // double-counting — reported from the screen in exactly those words.
-                ...(missesOn && missScores.length > 0 ? [{
-                  key: 'mis-scores', label: 'Score', color: MISS_COLOR,
-                  chips: missScores.map(s => ({
-                    key: `mis-score-${s.key}`, label: s.key.replace('/', ' of '), count: s.count,
-                    on: !hiddenMissScores.has(s.key), toggle: () => toggleMissScore(s.key),
-                  })),
-                }] : []),
+                ...(missesOn && missScores.length > 0
+                  ? [
+                      {
+                        key: 'mis-scores',
+                        label: 'Score',
+                        color: MISS_COLOR,
+                        chips: missScores.map((s) => ({
+                          key: `mis-score-${s.key}`,
+                          label: s.key.replace('/', ' of '),
+                          count: s.count,
+                          on: !hiddenMissScores.has(s.key),
+                          toggle: () => toggleMissScore(s.key),
+                        })),
+                      },
+                    ]
+                  : []),
                 // …then one chip per MISSING confluence, same shape as Blocked's. Some start OFF —
                 // the ones the strategy flagged as routine (see `spec.missNoise`) — so the layer
                 // opens on the misses worth studying rather than every setup that simply never
                 // retraced. Their counts are still listed, so nothing is hidden silently.
-                ...(missesOn && missReasons.length > 0 ? [{
-                  key: 'mis-reasons', label: 'Missing', color: MISS_COLOR,
-                  chips: missReasons.map(r => ({
-                    key: `mis-${r.label}`, label: r.label, count: r.count,
-                    on: !hiddenMissReasons.has(r.label), toggle: () => toggleMissReason(r.label),
-                  })),
-                }] : []),
+                ...(missesOn && missReasons.length > 0
+                  ? [
+                      {
+                        key: 'mis-reasons',
+                        label: 'Missing',
+                        color: MISS_COLOR,
+                        chips: missReasons.map((r) => ({
+                          key: `mis-${r.label}`,
+                          label: r.label,
+                          count: r.count,
+                          on: !hiddenMissReasons.has(r.label),
+                          toggle: () => toggleMissReason(r.label),
+                        })),
+                      },
+                    ]
+                  : []),
                 // ── CONTEXT ──────────────────────────────────────────────────────────────────
                 // Everything below answers a different question from the three layers above it:
                 // those are what the strategy DID with its signals, these are what was on the chart
@@ -3213,44 +3776,71 @@ export default function ChartPanel({
                 // are one family. The caption is the whole fix; the rows are unchanged.
                 ...(() => {
                   const LIQ = 'Liquidity — '
-                  const row = (g: typeof analysisGroups[number], label: string) => ({
-                    key: `ag-${g.name}`, label, color: g.color,
-                    on: groupsOn[g.name], toggle: () => toggleGroup(g.name), count: g.count,
+                  const row = (g: (typeof analysisGroups)[number], label: string) => ({
+                    key: `ag-${g.name}`,
+                    label,
+                    color: g.color,
+                    on: groupsOn[g.name],
+                    toggle: () => toggleGroup(g.name),
+                    count: g.count,
                   })
                   // Fibs — the fib LEG each trade was priced off. A PEER row, not a sub-toggle of
                   // Trades (Aaron's call, 2026-08-03): it is its own reading of the chart, and it
                   // draws with Trades off. It still obeys Winners/Losers, which is why those two are
                   // listed whenever this is on. Default OFF: eight lines per trade is a lot of
                   // chart, and the run reads fine without it.
-                  const fibs: MenuItem[] = tradeFibCount > 0
-                    ? [{ key: 'tradefibs', label: 'Fibs', color: theme.accent, on: tradeFibsOn, toggle: () => setTradeFibsOn(o => !o), count: tradeFibCount }]
-                    : []
+                  const fibs: MenuItem[] =
+                    tradeFibCount > 0
+                      ? [
+                          {
+                            key: 'tradefibs',
+                            label: 'Fibs',
+                            color: theme.accent,
+                            on: tradeFibsOn,
+                            toggle: () => setTradeFibsOn((o) => !o),
+                            count: tradeFibCount,
+                          },
+                        ]
+                      : []
                   // The zone layers — gaps, order blocks, the candle repaint. Each is drawn only
                   // where a trade was taken, refused or missed, so each is "and show me what this
                   // looked like there". Default OFF; the count is how many the run produced.
-                  const zones: MenuItem[] = analysisGroups.filter(g => !g.name.startsWith(LIQ)).flatMap(g => [
-                    row(g, g.name),
-                    // …and, for the candle repaint only, the DIRECTION filter relative to the setup.
-                    // All three start ON: the opposing tier is half the point of the layer, so
-                    // hiding it is something the reader asks for and never a default that quietly
-                    // answers "there was nothing at the turn".
-                    ...(g.name === GROUP_CANDLE_MARKS && groupsOn[g.name]
-                      ? [{
-                          key: 'candle-dirs', label: 'Direction', color: g.color,
-                          chips: CANDLE_DIRS.map(d => ({
-                            key: `cd-${d.key}`, label: d.label, count: candleDirCounts[d.key] ?? 0,
-                            on: !hiddenCandleDirs.has(d.key), toggle: () => toggleCandleDir(d.key),
-                          })),
-                        }]
-                      : []),
-                  ])
+                  const zones: MenuItem[] = analysisGroups
+                    .filter((g) => !g.name.startsWith(LIQ))
+                    .flatMap((g) => [
+                      row(g, g.name),
+                      // …and, for the candle repaint only, the DIRECTION filter relative to the setup.
+                      // All three start ON: the opposing tier is half the point of the layer, so
+                      // hiding it is something the reader asks for and never a default that quietly
+                      // answers "there was nothing at the turn".
+                      ...(g.name === GROUP_CANDLE_MARKS && groupsOn[g.name]
+                        ? [
+                            {
+                              key: 'candle-dirs',
+                              label: 'Direction',
+                              color: g.color,
+                              chips: CANDLE_DIRS.map((d) => ({
+                                key: `cd-${d.key}`,
+                                label: d.label,
+                                count: candleDirCounts[d.key] ?? 0,
+                                on: !hiddenCandleDirs.has(d.key),
+                                toggle: () => toggleCandleDir(d.key),
+                              })),
+                            },
+                          ]
+                        : []),
+                    ])
                   // The three liquidity tiers take their own caption and drop the shared prefix from
                   // their labels. They are one family — H4 alone is 58% of every level a run draws —
                   // so as three peers of Fair Value Gaps they were three long wrapping rows saying
                   // the same word three times. The GROUP NAME is untouched: it is the contract with
                   // the backend and with `groupsOn`, and only the displayed label shortens.
-                  const liq: MenuItem[] = analysisGroups.filter(g => g.name.startsWith(LIQ))
-                    .map((g, i) => ({ ...row(g, g.name.slice(LIQ.length)), ...(i === 0 ? { section: 'Liquidity' } : {}) }))
+                  const liq: MenuItem[] = analysisGroups
+                    .filter((g) => g.name.startsWith(LIQ))
+                    .map((g, i) => ({
+                      ...row(g, g.name.slice(LIQ.length)),
+                      ...(i === 0 ? { section: 'Liquidity' } : {}),
+                    }))
                   const ctx = [...fibs, ...zones, ...liq]
                   // The caption opens the section, so it belongs on whichever row happens to be
                   // first — and never on top of a caption that is already there (a run carrying
@@ -3267,8 +3857,20 @@ export default function ChartPanel({
           <ToggleMenu
             title="Structure"
             items={[
-              ...structureGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name) })),
-              ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name) })),
+              ...structureGroups.map((g) => ({
+                key: `g-${g.name}`,
+                label: g.name,
+                color: g.color,
+                on: groupsOn[g.name],
+                toggle: () => toggleGroup(g.name),
+              })),
+              ...spec.indicators.map((ind, i) => ({
+                key: `i-${ind.name}`,
+                label: ind.name,
+                color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length],
+                on: indicatorsOn[ind.name],
+                toggle: () => toggleIndicator(ind.name),
+              })),
             ]}
           />
 
@@ -3280,30 +3882,45 @@ export default function ChartPanel({
             <ToggleMenu
               title="Strategies"
               minWidth={180}
-              items={tradeLayers.map(l => ({
-                key: l.id, label: l.name, color: l.color,
-                on: !hiddenLayers.has(l.id), toggle: () => toggleLayer(l.id),
+              items={tradeLayers.map((l) => ({
+                key: l.id,
+                label: l.name,
+                color: l.color,
+                on: !hiddenLayers.has(l.id),
+                toggle: () => toggleLayer(l.id),
               }))}
             />
           )}
 
-          {isFetchMode && (() => {
-            // The TF itself is already shown in the dropdown — don't echo it here. Only surface a
-            // STATE worth calling out (loading / feed offline / failed / at the broker's data edge).
-            const warn = fetchStatus === 'empty' || fetchStatus === 'error'
-            // While loading, the chart is showing the SHIPPED bars rather than nothing — say which,
-            // because bars that don't match the TF button would otherwise be a silent lie.
-            const text = fetchStatus === 'loading'
-                ? (showingPlaceholder
+          {isFetchMode &&
+            (() => {
+              // The TF itself is already shown in the dropdown — don't echo it here. Only surface a
+              // STATE worth calling out (loading / feed offline / failed / at the broker's data edge).
+              const warn = fetchStatus === 'empty' || fetchStatus === 'error'
+              // While loading, the chart is showing the SHIPPED bars rather than nothing — say which,
+              // because bars that don't match the TF button would otherwise be a silent lie.
+              const text =
+                fetchStatus === 'loading'
+                  ? showingPlaceholder
                     ? `showing ${spec.baseTimeframe.toUpperCase()} — loading these bars…`
-                    : 'loading these bars…')
-              : fetchStatus === 'empty' ? 'none this far back'
-              : fetchStatus === 'error' ? 'fetch failed'
-              : dataEdge ? 'all the broker still has'
-              : ''
-            if (!text) return null
-            return <span className="text-[11px] font-mono" style={{ color: warn ? theme.gold : theme.textTertiary }}>{text}</span>
-          })()}
+                    : 'loading these bars…'
+                  : fetchStatus === 'empty'
+                    ? 'none this far back'
+                    : fetchStatus === 'error'
+                      ? 'fetch failed'
+                      : dataEdge
+                        ? 'all the broker still has'
+                        : ''
+              if (!text) return null
+              return (
+                <span
+                  className="text-[11px] font-mono"
+                  style={{ color: warn ? theme.gold : theme.textTertiary }}
+                >
+                  {text}
+                </span>
+              )
+            })()}
         </div>
 
         {/* Right cluster: the snapshot (Copy) button — camera icon only, right-inset by the chart's
@@ -3317,7 +3934,11 @@ export default function ChartPanel({
               title={copied ? 'Copied' : 'Copy chart image to clipboard'}
               className="inline-flex items-center justify-center w-8 h-8 text-text-tertiary hover:text-text-secondary transition-colors"
             >
-              {copied ? <Check className="w-[18px] h-[18px] text-accent" /> : <Camera className="w-[18px] h-[18px]" />}
+              {copied ? (
+                <Check className="w-[18px] h-[18px] text-accent" />
+              ) : (
+                <Camera className="w-[18px] h-[18px]" />
+              )}
             </button>
           )}
         </div>
@@ -3342,7 +3963,12 @@ export default function ChartPanel({
           style={{ width: 40 }}
         >
           <button
-            onClick={() => { setMeasureMode(m => !m); setAnchor(null); setLiveDrag(null); setMeasurement(null) }}
+            onClick={() => {
+              setMeasureMode((m) => !m)
+              setAnchor(null)
+              setLiveDrag(null)
+              setMeasurement(null)
+            }}
             title="Measure — click to anchor, move, click to lock. Click a measurement to clear."
             className={`flex items-center justify-center w-8 h-8 rounded-md border transition-colors ${
               measureMode
@@ -3376,9 +4002,9 @@ export default function ChartPanel({
               host's own chrome (its tab strip) off screen with it. Aaron's placement, 2026-08-08. */}
           {toolActions}
           <button
-            onClick={e => {
+            onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect()
-              setSettingsAt(s => (s ? null : { x: r.right + 8, y: r.top }))
+              setSettingsAt((s) => (s ? null : { x: r.right + 8, y: r.top }))
             }}
             title="Chart settings — how the chart is drawn (labels, colours). Saved in this browser; it never changes what a run measured."
             className={`flex items-center justify-center w-8 h-8 rounded-md border transition-colors ${
@@ -3396,7 +4022,7 @@ export default function ChartPanel({
           style={{ position: 'relative' }}
           onClick={handleChartClick}
           onMouseMove={handleChartMove}
-          onContextMenu={e => {
+          onContextMenu={(e) => {
             e.preventDefault()
             // klinecharts' right-click (mousedown, button 2) fires BEFORE this DOM contextmenu, so a
             // right-click ON a fib has already stashed its id in ctxFibRef. Read + clear it: a fib
@@ -3405,7 +4031,8 @@ export default function ChartPanel({
             ctxFibRef.current = null
             // Clamp box for the menu — both branches carry two rows (fib: levels + delete;
             // chart: reset view + show/hide trades). Bump these if either grows a row.
-            const MENU_W = 190, MENU_H = 96
+            const MENU_W = 190,
+              MENU_H = 96
             setCtxMenu({
               x: Math.min(e.clientX, window.innerWidth - MENU_W),
               y: Math.min(e.clientY, window.innerHeight - MENU_H),
@@ -3431,22 +4058,28 @@ export default function ChartPanel({
               style={{ top: 12, pointerEvents: 'none', zIndex: 3 }}
               title={fetchNote ?? undefined}
             >
-              {drillPending
-                ? <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
-                : <EyeOff className="w-3.5 h-3.5 text-warn-text" />}
+              {drillPending ? (
+                <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-warn-text" />
+              )}
               <span className="text-[11px] font-mono text-text-secondary">
                 {drillPending ? (
                   <>
                     loading <span className="text-accent">{drillLabel(selectedMin)}</span> bars
-                    {showingPlaceholder && <> — showing {spec.baseTimeframe.toUpperCase()} meanwhile</>}
+                    {showingPlaceholder && (
+                      <> — showing {spec.baseTimeframe.toUpperCase()} meanwhile</>
+                    )}
                   </>
                 ) : (
                   <>
                     <span className="text-warn-text">{drillLabel(selectedMin)}</span>
                     {' — '}
-                    {fetchNote ? shortNote(fetchNote)
-                      : fetchStatus === 'error' ? 'the request failed'
-                      : 'no bars this far back'}
+                    {fetchNote
+                      ? shortNote(fetchNote)
+                      : fetchStatus === 'error'
+                        ? 'the request failed'
+                        : 'no bars this far back'}
                     {showingPlaceholder && <> · showing {spec.baseTimeframe.toUpperCase()}</>}
                   </>
                 )}
@@ -3456,7 +4089,17 @@ export default function ChartPanel({
 
           {/* Measurement display layer — pointer-events:none so klinecharts canvas gets all events
               (crosshair, scrolling, etc.) and our onClick/onMouseMove handlers fire via bubbling */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 1 }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          >
             {measurement && renderMeasRect(measurement, measurement.id, 1)}
             {liveDrag && renderMeasRect(liveDrag, 'live', 0.85)}
           </div>
@@ -3476,16 +4119,26 @@ export default function ChartPanel({
               ref={sessionsLegendRef}
               className="absolute"
               style={{ top: 32, left: 8, zIndex: 2 }}
-              onClick={e => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
               <button
-                onClick={() => setSessionsLegendOpen(o => !o)}
+                onClick={() => setSessionsLegendOpen((o) => !o)}
                 className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-border-subtle bg-bg-surface text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors shadow-sm"
               >
-                <span className="w-2 h-2 rounded-full" style={{ background: anyClockLayerOn ? theme.accent : 'transparent', boxShadow: `inset 0 0 0 1px ${theme.accent}` }} />
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{
+                    background: anyClockLayerOn ? theme.accent : 'transparent',
+                    boxShadow: `inset 0 0 0 1px ${theme.accent}`,
+                  }}
+                />
                 Sessions
-                <span className="font-mono text-text-tertiary">{clockLayerCount.on}/{clockLayerCount.total}</span>
-                <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${sessionsLegendOpen ? 'rotate-180' : ''}`} />
+                <span className="font-mono text-text-tertiary">
+                  {clockLayerCount.on}/{clockLayerCount.total}
+                </span>
+                <ChevronDown
+                  className={`w-3 h-3 text-text-tertiary transition-transform ${sessionsLegendOpen ? 'rotate-180' : ''}`}
+                />
               </button>
               {sessionsLegendOpen && (
                 <div className="mt-1 min-w-[168px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg">
@@ -3493,11 +4146,15 @@ export default function ChartPanel({
                     onClick={() => setAllClockLayers(!anyClockLayerOn)}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-text-secondary hover:bg-bg-sunken hover:text-text-primary transition-colors"
                   >
-                    {anyClockLayerOn ? <EyeOff className="w-3 h-3 text-text-tertiary" /> : <Eye className="w-3 h-3 text-text-tertiary" />}
+                    {anyClockLayerOn ? (
+                      <EyeOff className="w-3 h-3 text-text-tertiary" />
+                    ) : (
+                      <Eye className="w-3 h-3 text-text-tertiary" />
+                    )}
                     {anyClockLayerOn ? 'Hide all' : 'Show all'}
                   </button>
                   <div className="my-1 border-t border-border-subtle" />
-                  {spec.sessions.map(s => (
+                  {spec.sessions.map((s) => (
                     <button
                       key={s.name}
                       onClick={() => toggleSession(s.name)}
@@ -3505,10 +4162,20 @@ export default function ChartPanel({
                     >
                       <span
                         className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ background: sessionsOn[s.name] ? s.color : 'transparent', boxShadow: `inset 0 0 0 1px ${s.color}`, opacity: sessionsOn[s.name] ? 1 : 0.5 }}
+                        style={{
+                          background: sessionsOn[s.name] ? s.color : 'transparent',
+                          boxShadow: `inset 0 0 0 1px ${s.color}`,
+                          opacity: sessionsOn[s.name] ? 1 : 0.5,
+                        }}
                       />
-                      <span className={sessionsOn[s.name] ? 'text-text-primary' : 'text-text-tertiary'}>{s.name}</span>
-                      {sessionsOn[s.name] && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+                      <span
+                        className={sessionsOn[s.name] ? 'text-text-primary' : 'text-text-tertiary'}
+                      >
+                        {s.name}
+                      </span>
+                      {sessionsOn[s.name] && (
+                        <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />
+                      )}
                     </button>
                   ))}
                   {/* Day breaks — the DAILY session boundary, so it belongs with the session windows
@@ -3516,17 +4183,27 @@ export default function ChartPanel({
                       vertical line, not a box). */}
                   {dailyBreaks.length > 0 && (
                     <>
-                      {spec.sessions.length > 0 && <div className="my-1 border-t border-border-subtle" />}
+                      {spec.sessions.length > 0 && (
+                        <div className="my-1 border-t border-border-subtle" />
+                      )}
                       <button
-                        onClick={() => setDayBreaksOn(o => !o)}
+                        onClick={() => setDayBreaksOn((o) => !o)}
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken"
                       >
                         <span
                           className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ background: dayBreaksOn ? DAY_BREAK_COLOR : 'transparent', boxShadow: `inset 0 0 0 1px ${DAY_BREAK_COLOR}`, opacity: dayBreaksOn ? 1 : 0.5 }}
+                          style={{
+                            background: dayBreaksOn ? DAY_BREAK_COLOR : 'transparent',
+                            boxShadow: `inset 0 0 0 1px ${DAY_BREAK_COLOR}`,
+                            opacity: dayBreaksOn ? 1 : 0.5,
+                          }}
                         />
-                        <span className={dayBreaksOn ? 'text-text-primary' : 'text-text-tertiary'}>Day breaks</span>
-                        {dayBreaksOn && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+                        <span className={dayBreaksOn ? 'text-text-primary' : 'text-text-tertiary'}>
+                          Day breaks
+                        </span>
+                        {dayBreaksOn && (
+                          <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />
+                        )}
                       </button>
                     </>
                   )}
@@ -3541,7 +4218,7 @@ export default function ChartPanel({
           mousedown so a click inside doesn't trip the outside-close listener. */}
       {ctxMenu && (
         <div
-          onMouseDown={e => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           className="fixed min-w-[172px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-xl"
           style={{ left: ctxMenu.x, top: ctxMenu.y, zIndex: 60 }}
         >
@@ -3550,13 +4227,19 @@ export default function ChartPanel({
             // at a time, per Aaron — no reset, no bulk remove here).
             <>
               <button
-                onClick={() => { openFibEditor(ctxMenu.x, ctxMenu.y, ctxMenu.fibId); setCtxMenu(null) }}
+                onClick={() => {
+                  openFibEditor(ctxMenu.x, ctxMenu.y, ctxMenu.fibId)
+                  setCtxMenu(null)
+                }}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-text-secondary hover:bg-bg-sunken hover:text-text-primary transition-colors"
               >
                 <Settings2 className="w-3 h-3 text-text-tertiary" /> Fib levels
               </button>
               <button
-                onClick={() => { removeFib(ctxMenu.fibId!); setCtxMenu(null) }}
+                onClick={() => {
+                  removeFib(ctxMenu.fibId!)
+                  setCtxMenu(null)
+                }}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-neg-text hover:bg-bg-sunken transition-colors"
               >
                 <Trash2 className="w-3 h-3" /> Delete this fib
@@ -3566,17 +4249,27 @@ export default function ChartPanel({
             // Right-clicked on empty chart → chart-only menu: reset the view + show/hide trades.
             <>
               <button
-                onClick={() => { resetView(); setCtxMenu(null) }}
+                onClick={() => {
+                  resetView()
+                  setCtxMenu(null)
+                }}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-text-secondary hover:bg-bg-sunken hover:text-text-primary transition-colors"
               >
                 <RotateCcw className="w-3 h-3 text-text-tertiary" /> Reset chart view
               </button>
               {spec.trades.length > 0 && (
                 <button
-                  onClick={() => { setTradesOn(o => !o); setCtxMenu(null) }}
+                  onClick={() => {
+                    setTradesOn((o) => !o)
+                    setCtxMenu(null)
+                  }}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-text-secondary hover:bg-bg-sunken hover:text-text-primary transition-colors"
                 >
-                  {tradesOn ? <EyeOff className="w-3 h-3 text-text-tertiary" /> : <Eye className="w-3 h-3 text-text-tertiary" />}
+                  {tradesOn ? (
+                    <EyeOff className="w-3 h-3 text-text-tertiary" />
+                  ) : (
+                    <Eye className="w-3 h-3 text-text-tertiary" />
+                  )}
                   {tradesOn ? 'Hide trades' : 'Show trades'}
                 </button>
               )}
@@ -3613,7 +4306,7 @@ export default function ChartPanel({
           settings={chartSettings}
           onChange={setChartSettings}
           onClose={() => setSettingsAt(null)}
-          renderCustom={section =>
+          renderCustom={(section) =>
             section === 'fibLevels' ? (
               <FibLevelEditor
                 scope="default"

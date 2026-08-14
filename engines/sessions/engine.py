@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from .types import SessionEvents, SessionRange, SessionSpec
 
@@ -51,8 +51,8 @@ except ImportError:  # pragma: no cover
 _NY_TZ_NAME = "America/New_York"
 
 # NY opening-range windows, minutes-from-NY-midnight: 0930-0935 (window) and 0935-1600 (extend).
-_NYR_WINDOW = (9 * 60 + 30, 9 * 60 + 35)   # inSession5 = time("5","0930-0935","America/New_York")
-_NYR_EXTEND = (9 * 60 + 35, 16 * 60)       # inExtend5  = time("5","0935-1600","America/New_York")
+_NYR_WINDOW = (9 * 60 + 30, 9 * 60 + 35)  # inSession5 = time("5","0930-0935","America/New_York")
+_NYR_EXTEND = (9 * 60 + 35, 16 * 60)  # inExtend5  = time("5","0935-1600","America/New_York")
 
 _GMT_RE = re.compile(r"^GMT([+-]\d{1,2})(?::?(\d{2}))?$", re.IGNORECASE)
 
@@ -97,7 +97,7 @@ class _SessionTracker:
     def __init__(self, spec: SessionSpec, tz: tzinfo) -> None:
         self.spec = spec
         self.tz = tz
-        self.in_session = False          # this becomes inX[1] on the next bar
+        self.in_session = False  # this becomes inX[1] on the next bar
         self.high: Optional[float] = None
         self.low: Optional[float] = None
         self.start_index: Optional[int] = None
@@ -110,7 +110,9 @@ class _SessionTracker:
         # all-7-days default is correct. If a future export ever mismatches ONLY on weekend bars,
         # the default has changed to weekday-only and a dayofweek gate belongs here.
         local = utc.astimezone(self.tz)
-        return _in_window(local.hour * 60 + local.minute, self.spec.start_minute, self.spec.end_minute)
+        return _in_window(
+            local.hour * 60 + local.minute, self.spec.start_minute, self.spec.end_minute
+        )
 
 
 class SessionEngine:
@@ -133,8 +135,9 @@ class SessionEngine:
         SessionSpec.from_pine("NY", "0800-1700", "America/New_York"),
     )
 
-    def __init__(self, sessions: Optional["list[SessionSpec]"] = None,
-                 ny_timezone: str = _NY_TZ_NAME) -> None:
+    def __init__(
+        self, sessions: Optional["list[SessionSpec]"] = None, ny_timezone: str = _NY_TZ_NAME
+    ) -> None:
         specs = list(sessions) if sessions is not None else list(self.DEFAULT_SESSIONS)
         self._ny_tz = _resolve_tz(ny_timezone)
         self._trackers: Dict[str, _SessionTracker] = {
@@ -146,7 +149,7 @@ class SessionEngine:
         # NY opening-range state (Pine nyr_high_val / nyr_low_val, both var -> persist across day).
         self._nyr_high: Optional[float] = None
         self._nyr_low: Optional[float] = None
-        self._prev_in_nyr_window = False   # Pine inSession5[1]
+        self._prev_in_nyr_window = False  # Pine inSession5[1]
 
     # ------------------------------------------------------------------
     def update(self, index: int, timestamp_ms: int, high: float, low: float) -> SessionEvents:
@@ -157,7 +160,7 @@ class SessionEngine:
         ny_minute_of_day = ny.hour * 60 + ny.minute
         ny_dow = _pine_dayofweek(ny)
 
-        is_weekday = 2 <= ny_dow <= 6                          # Pine isMondayToFriday
+        is_weekday = 2 <= ny_dow <= 6  # Pine isMondayToFriday
         is_new_day = self._prev_ny_dow is not None and ny_dow != self._prev_ny_dow  # Pine newDay
         self._prev_ny_dow = ny_dow
 
@@ -177,8 +180,9 @@ class SessionEngine:
         return events
 
     # ------------------------------------------------------------------
-    def _update_sessions(self, index: int, utc: datetime, high: float, low: float,
-                         events: SessionEvents) -> None:
+    def _update_sessions(
+        self, index: int, utc: datetime, high: float, low: float, events: SessionEvents
+    ) -> None:
         """Session membership + the running-high/low port (Pine 1638-1646). On the first in-session
         bar reset the extremes to this bar's H/L and record an `opened`; while in-session expand
         them; on the first out-of-session bar finalize and record a `closed` SessionRange."""
@@ -188,16 +192,21 @@ class SessionEngine:
             was_in = tr.in_session
 
             if now_in:
-                if not was_in:                               # Pine `not inX[1]` -> reset
+                if not was_in:  # Pine `not inX[1]` -> reset
                     tr.high, tr.low, tr.start_index = high, low, index
                     events.opened.append(name)
-                else:                                        # expand
-                    tr.high = max(tr.high, high)             # type: ignore[type-var]
-                    tr.low = min(tr.low, low)                # type: ignore[type-var]
-            elif was_in and tr.high is not None:             # Pine `not inX and inX[1]` -> finalize
+                else:  # expand
+                    tr.high = max(tr.high, high)  # type: ignore[type-var]
+                    tr.low = min(tr.low, low)  # type: ignore[type-var]
+            elif was_in and tr.high is not None:  # Pine `not inX and inX[1]` -> finalize
                 events.closed.append(
-                    SessionRange(name=name, high=tr.high, low=tr.low,
-                                 start_index=tr.start_index, end_index=index - 1)  # type: ignore[arg-type]
+                    SessionRange(
+                        name=name,
+                        high=tr.high,
+                        low=tr.low,
+                        start_index=tr.start_index,
+                        end_index=index - 1,
+                    )  # type: ignore[arg-type]
                 )
 
             tr.in_session = now_in
@@ -208,18 +217,24 @@ class SessionEngine:
         events.in_ny = flags.get("NY", False)
 
     # ------------------------------------------------------------------
-    def _update_ny_range(self, ny_minute_of_day: int, is_weekday: bool, high: float, low: float,
-                         events: SessionEvents) -> None:
+    def _update_ny_range(
+        self,
+        ny_minute_of_day: int,
+        is_weekday: bool,
+        high: float,
+        low: float,
+        events: SessionEvents,
+    ) -> None:
         """NY opening-range port (Pine 1824-1856), drawing + days-back gate removed. On the first
         bar of the 0930-0935 NY window (a weekday) reset the range to this bar's H/L, then expand
         it across the window; the values persist (Pine `var`) through the rest of the day."""
-        in_window = _in_window(ny_minute_of_day, *_NYR_WINDOW)   # inSession5
-        in_extend = _in_window(ny_minute_of_day, *_NYR_EXTEND)   # inExtend5
+        in_window = _in_window(ny_minute_of_day, *_NYR_WINDOW)  # inSession5
+        in_extend = _in_window(ny_minute_of_day, *_NYR_EXTEND)  # inExtend5
 
         if in_window and is_weekday:
-            if not self._prev_in_nyr_window:                     # inSession5 and not inSession5[1]
-                self._nyr_high, self._nyr_low = high, low        # reset (Pine 1825-1827)
-            if self._nyr_low is None or low < self._nyr_low:     # expand (Pine 1834-1837)
+            if not self._prev_in_nyr_window:  # inSession5 and not inSession5[1]
+                self._nyr_high, self._nyr_low = high, low  # reset (Pine 1825-1827)
+            if self._nyr_low is None or low < self._nyr_low:  # expand (Pine 1834-1837)
                 self._nyr_low = low
             if self._nyr_high is None or high > self._nyr_high:
                 self._nyr_high = high
@@ -238,6 +253,10 @@ class SessionEngine:
         tr = self._trackers.get(name)
         if tr is None or tr.high is None:
             return None
-        return SessionRange(name=name, high=tr.high, low=tr.low,
-                            start_index=tr.start_index,  # type: ignore[arg-type]
-                            end_index=None)
+        return SessionRange(
+            name=name,
+            high=tr.high,
+            low=tr.low,
+            start_index=tr.start_index,  # type: ignore[arg-type]
+            end_index=None,
+        )

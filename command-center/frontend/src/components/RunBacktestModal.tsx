@@ -2,7 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, Play, Info } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
-import { useFirms, useTriggerBacktest, useRunningVpsJob, useHistoryLimit, useBrokerProfiles } from '@/hooks/useLab'
+import {
+  useFirms,
+  useTriggerBacktest,
+  useRunningVpsJob,
+  useHistoryLimit,
+  useBrokerProfiles,
+} from '@/hooks/useLab'
 import { ParamEditor } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
@@ -16,9 +22,12 @@ function currentFrontMonth(): string {
   const year = d.getFullYear()
   const month = d.getMonth() + 1
   const quarters = [3, 6, 9, 12]
-  let q = quarters.find(m => m >= month)
+  let q = quarters.find((m) => m >= month)
   let y = year
-  if (!q) { q = 3; y = year + 1 }
+  if (!q) {
+    q = 3
+    y = year + 1
+  }
   return `${String(q).padStart(2, '0')}-${String(y).slice(-2)}`
 }
 
@@ -43,34 +52,34 @@ function firmChallengeName(firmName: string): string {
 
 const INSTRUMENT_NAMES: Record<string, string> = {
   // Micro E-mini equity index
-  MES:  'Micro E-mini S&P 500',
-  MNQ:  'Micro E-mini Nasdaq-100',
-  MYM:  'Micro E-mini Dow Jones',
-  M2K:  'Micro E-mini Russell 2000',
+  MES: 'Micro E-mini S&P 500',
+  MNQ: 'Micro E-mini Nasdaq-100',
+  MYM: 'Micro E-mini Dow Jones',
+  M2K: 'Micro E-mini Russell 2000',
   // Full-size E-mini equity index
-  ES:   'E-mini S&P 500',
-  NQ:   'E-mini Nasdaq-100',
-  YM:   'E-mini Dow Jones',
-  RTY:  'E-mini Russell 2000',
+  ES: 'E-mini S&P 500',
+  NQ: 'E-mini Nasdaq-100',
+  YM: 'E-mini Dow Jones',
+  RTY: 'E-mini Russell 2000',
   // Metals
-  MGC:  'Micro Gold',
-  GC:   'Gold',
-  MSI:  'Micro Silver',
-  SI:   'Silver',
+  MGC: 'Micro Gold',
+  GC: 'Gold',
+  MSI: 'Micro Silver',
+  SI: 'Silver',
   // Energy
-  MCL:  'Micro Crude Oil',
-  CL:   'Crude Oil',
-  NG:   'Natural Gas',
+  MCL: 'Micro Crude Oil',
+  CL: 'Crude Oil',
+  NG: 'Natural Gas',
   // Crypto
-  MBT:  'Micro Bitcoin',
-  MET:  'Micro Ether',
-  BTC:  'Bitcoin',
-  ETH:  'Ether',
+  MBT: 'Micro Bitcoin',
+  MET: 'Micro Ether',
+  BTC: 'Bitcoin',
+  ETH: 'Ether',
   // Fixed income
-  ZB:   '30-Year T-Bond',
-  ZN:   '10-Year T-Note',
-  ZF:   '5-Year T-Note',
-  ZT:   '2-Year T-Note',
+  ZB: '30-Year T-Bond',
+  ZN: '10-Year T-Note',
+  ZF: '5-Year T-Note',
+  ZT: '2-Year T-Note',
 }
 
 function lookupInstrumentName(sym: string): string {
@@ -85,7 +94,18 @@ function lookupInstrumentName(sym: string): string {
 // MT5_Lab, which is logged into the Vantage demo (see algos/CLAUDE.md), so these must be the Vantage
 // names or the data pull caches Vantage bars under a wrong PU-Prime key. Confirmed against the live
 // terminal 2026-07-22 via the agent's /symbol_info (all ten resolve plain).
-const BROKER_SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'GBPJPY', 'AUDUSD', 'USDCAD', 'EURGBP', 'AUDJPY', 'CADJPY']
+const BROKER_SYMBOLS = [
+  'EURUSD',
+  'GBPUSD',
+  'USDJPY',
+  'XAUUSD',
+  'GBPJPY',
+  'AUDUSD',
+  'USDCAD',
+  'EURGBP',
+  'AUDJPY',
+  'CADJPY',
+]
 
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
@@ -107,7 +127,9 @@ function InfoTooltip({ content, side = 'right' }: { content: string; side?: 'rig
         size={10}
         className="text-text-tertiary group-hover/tip:text-accent cursor-help transition-colors"
       />
-      <span className={`absolute ${anchorCls} bottom-[calc(100%+5px)] z-50 hidden group-hover/tip:block w-56 rounded-md bg-bg-surface border border-border-default px-2.5 py-2 text-[11px] text-text-secondary shadow-xl pointer-events-none leading-relaxed`}>
+      <span
+        className={`absolute ${anchorCls} bottom-[calc(100%+5px)] z-50 hidden group-hover/tip:block w-56 rounded-md bg-bg-surface border border-border-default px-2.5 py-2 text-[11px] text-text-secondary shadow-xl pointer-events-none leading-relaxed`}
+      >
         {content}
       </span>
     </span>
@@ -150,35 +172,36 @@ interface Props {
 
 export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const navigate = useNavigate()
-  const trigger  = useTriggerBacktest()
+  const trigger = useTriggerBacktest()
   const { data: firms = [], isLoading: firmsLoading } = useFirms()
   const { data: runningJob } = useRunningVpsJob()
 
   // NT8 is the only futures platform: contract months, prop-challenge rulesets, and injected
   // foundational params are all NT8-only. MT5 and Python both trade the broker's spot symbols.
-  const scope     = runnerScope(strategy.runner)
-  const isNt8     = isNt8Runner(strategy.runner)
+  const scope = runnerScope(strategy.runner)
+  const isNt8 = isNt8Runner(strategy.runner)
   // Python is the one runner whose cost units we OWN (backtest/fills.AccountProfile), so it is
   // the one that can state them exactly rather than in the platform's general terms.
-  const isPython  = strategy.runner === 'python'
+  const isPython = strategy.runner === 'python'
   const isFutures = runnerMarket(strategy.runner) === 'futures'
 
-  const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
+  const inputCls =
+    'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
   const labelCls = 'block text-[11px] text-text-secondary mb-1'
 
   // ── Instrument ───────────────────────────────────────────────────────────────
   const frontMonth = useMemo(() => currentFrontMonth(), [])
-  const futuresFirms = useMemo(() => firms.filter(f => f.market !== 'forex'), [firms])
-  const forexFirms   = useMemo(() => firms.filter(f => f.market === 'forex'), [firms])
+  const futuresFirms = useMemo(() => firms.filter((f) => f.market !== 'forex'), [firms])
+  const forexFirms = useMemo(() => firms.filter((f) => f.market === 'forex'), [firms])
   const allowedSymbols = useMemo(() => getAllowedSymbols(futuresFirms), [futuresFirms])
 
   const parsed = useMemo(
     () => parseSuggestedInstrument(strategy.suggested_instrument, frontMonth),
-    [strategy.suggested_instrument, frontMonth],
+    [strategy.suggested_instrument, frontMonth]
   )
 
   const [instrumentSymbol, setInstrumentSymbol] = useState(
-    isNt8 ? parsed.symbol : scope === 'python' ? (parsed.symbol || 'XAUUSD') : 'EURUSD'
+    isNt8 ? parsed.symbol : scope === 'python' ? parsed.symbol || 'XAUUSD' : 'EURUSD'
   )
   const [contractMonth, setContractMonth] = useState(parsed.month)
 
@@ -199,7 +222,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
   // ── Period ───────────────────────────────────────────────────────────────────
   const [startDate, setStartDate] = useState(() => yearsAgo(1))
-  const [endDate, setEndDate]     = useState(() => today())
+  const [endDate, setEndDate] = useState(() => today())
 
   // ── Bar size ─────────────────────────────────────────────────────────────────
   const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [5, 15, 30, 60, 240]
@@ -207,16 +230,22 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
   // How far back this instrument + timeframe actually has bars. Depends on barValue, so it
   // re-reads when the bar size changes — a broker can hold years of 15m and months of 1m.
-  const { data: historyLimit } = useHistoryLimit(instrument || null, 'Minute', barValue, strategy.runner)
+  const { data: historyLimit } = useHistoryLimit(
+    instrument || null,
+    'Minute',
+    barValue,
+    strategy.runner
+  )
 
   // ── Sizing mode — how the engine sizes each trade from the room left ───────────
   // A self-sizing strategy sizes its own trades off its own risk % param — the engine never
   // touches it, so there is no mode to pick and the whole section is hidden.
   const selfSizing = strategy.self_sizing === true
   const [sizingMode, setSizingMode] = useState<SizingMode>('consistent')
-  const [manualPct, setManualPct]   = useState('1.0')
+  const [manualPct, setManualPct] = useState('1.0')
   const manualPctNum = parseFloat(manualPct)
-  const manualPctValid = sizingMode !== 'manual' || (!isNaN(manualPctNum) && manualPctNum > 0 && manualPctNum <= 100)
+  const manualPctValid =
+    sizingMode !== 'manual' || (!isNaN(manualPctNum) && manualPctNum > 0 && manualPctNum <= 100)
 
   function barLabel(v: number) {
     if (v < 60) return `${v}m`
@@ -256,10 +285,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [selectedFirms, setSelectedFirms] = useState<Set<string>>(new Set())
 
   const brandFirms = selectedBrand ? (firmsByBrand.get(selectedBrand) ?? []) : []
-  const allBrandSelected = brandFirms.length > 0 && brandFirms.every(f => selectedFirms.has(f.id))
+  const allBrandSelected = brandFirms.length > 0 && brandFirms.every((f) => selectedFirms.has(f.id))
 
   const toggleFirm = (id: string) =>
-    setSelectedFirms(prev => {
+    setSelectedFirms((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
@@ -267,15 +296,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
   const toggleAllBrand = () => {
     if (allBrandSelected) {
-      setSelectedFirms(prev => {
+      setSelectedFirms((prev) => {
         const next = new Set(prev)
-        brandFirms.forEach(f => next.delete(f.id))
+        brandFirms.forEach((f) => next.delete(f.id))
         return next
       })
     } else {
-      setSelectedFirms(prev => {
+      setSelectedFirms((prev) => {
         const next = new Set(prev)
-        brandFirms.forEach(f => next.add(f.id))
+        brandFirms.forEach((f) => next.add(f.id))
         return next
       })
     }
@@ -289,15 +318,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const primaryRuleset = useMemo(() => {
     if (selectedFirms.size === 0) return null
     const firstId = Array.from(selectedFirms)[0]
-    return futuresFirms.find(f => f.id === firstId)
-        ?? forexFirms.find(f => f.id === firstId)
-        ?? null
+    return (
+      futuresFirms.find((f) => f.id === firstId) ?? forexFirms.find((f) => f.id === firstId) ?? null
+    )
   }, [selectedFirms, futuresFirms, forexFirms])
 
   // ── Advanced — pre-filled from primary ruleset, user-editable ────────────────
   // 0/0 is the floor, not a placeholder: a cost you did not state must never be charged, and
   // the old 2.25/1 was a FUTURES prop-firm figure landing on forex and Python runs.
-  const [commPerSide, setCommPerSide]     = useState(0)
+  const [commPerSide, setCommPerSide] = useState(0)
   const [slippageTicks, setSlippageTicks] = useState(0)
 
   // ── Costs (python runner) — OFF by default, and that is the design ──────────
@@ -309,40 +338,56 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [costLayers, setCostLayers] = useState<Set<CostLayer>>(new Set())
   const [brokerProfile, setBrokerProfile] = useState('vantage_demo')
   const { data: brokerProfiles } = useBrokerProfiles()
-  const broker = brokerProfiles?.find(b => b.id === brokerProfile) ?? null
+  const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
 
-  const toggleLayer = (layer: CostLayer) => setCostLayers(prev => {
-    const next = new Set(prev)
-    if (next.has(layer)) next.delete(layer)
-    else next.add(layer)
-    // The spread can be priced as a COST or modelled into the FILLS, never both — doing both
-    // bills one spread twice (see `Execution._charge_spread`). The UI enforces the same
-    // exclusivity the backend does, so the two can never describe different runs.
-    if (layer === 'bid_ask_fills' && next.has('bid_ask_fills')) next.delete('spread')
-    if (layer === 'spread' && next.has('spread')) next.delete('bid_ask_fills')
-    return next
-  })
+  const toggleLayer = (layer: CostLayer) =>
+    setCostLayers((prev) => {
+      const next = new Set(prev)
+      if (next.has(layer)) next.delete(layer)
+      else next.add(layer)
+      // The spread can be priced as a COST or modelled into the FILLS, never both — doing both
+      // bills one spread twice (see `Execution._charge_spread`). The UI enforces the same
+      // exclusivity the backend does, so the two can never describe different runs.
+      if (layer === 'bid_ask_fills' && next.has('bid_ask_fills')) next.delete('spread')
+      if (layer === 'spread' && next.has('spread')) next.delete('bid_ask_fills')
+      return next
+    })
 
   // Every `detail` is derived from the SERVED profile, never retyped — see `useBrokerProfiles`.
   // `tag` marks the two rows that are not plain measured costs, because both mislead if read as
   // one: slippage is a guess, and bid/ask changes the trade list rather than just the P&L.
   const costRows: { id: CostLayer; label: string; detail: string; tag?: string }[] = [
-    { id: 'spread', label: 'Spread',
-      detail: broker ? `$${broker.spread.toFixed(2)} per round turn, measured on this broker`
-                     : 'measured per broker' },
-    { id: 'swap', label: 'Overnight swap',
-      detail: broker?.swap_long_points != null
-        ? `$${swapPerNight(broker, 'long').toFixed(2)} a night per lot long, `
-          + `$${swapPerNight(broker, 'short').toFixed(2)} short`
-        : 'this account prices no financing' },
-    { id: 'commission', label: 'Commission',
-      detail: 'charges the figure below, per lot per side' },
-    { id: 'slippage', label: 'Slippage', tag: 'a guess',
-      detail: 'charges the ticks below, on market exits only' },
-    { id: 'bid_ask_fills', label: 'Model bid/ask on fills', tag: 'moves trades',
+    {
+      id: 'spread',
+      label: 'Spread',
+      detail: broker
+        ? `$${broker.spread.toFixed(2)} per round turn, measured on this broker`
+        : 'measured per broker',
+    },
+    {
+      id: 'swap',
+      label: 'Overnight swap',
+      detail:
+        broker?.swap_long_points != null
+          ? `$${swapPerNight(broker, 'long').toFixed(2)} a night per lot long, ` +
+            `$${swapPerNight(broker, 'short').toFixed(2)} short`
+          : 'this account prices no financing',
+    },
+    { id: 'commission', label: 'Commission', detail: 'charges the figure below, per lot per side' },
+    {
+      id: 'slippage',
+      label: 'Slippage',
+      tag: 'a guess',
+      detail: 'charges the ticks below, on market exits only',
+    },
+    {
+      id: 'bid_ask_fills',
+      label: 'Model bid/ask on fills',
+      tag: 'moves trades',
       detail: broker
         ? `buys transact $${broker.spread.toFixed(2)} higher — some longs never fill, some stops do`
-        : 'buys transact at the ask' },
+        : 'buys transact at the ask',
+    },
   ]
 
   useEffect(() => {
@@ -356,15 +401,17 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
   // ── Validation ───────────────────────────────────────────────────────────────
   const blockingJob = runningJobFor(runningJob, strategy.runner)
-  const jobBlocked  = !!blockingJob?.running
+  const jobBlocked = !!blockingJob?.running
   // Forex runs evaluate against the personal forex ruleset(s); futures against prop
   // challenges. Both require ≥1 selection, but never block when none exist for the platform.
   const evalRequiredMet = isNt8
     ? selectedFirms.size > 0
-    : (selectedFirms.size > 0 || forexFirms.length === 0)
+    : selectedFirms.size > 0 || forexFirms.length === 0
   const canSubmit =
     instrumentSymbol !== '' &&
-    startDate !== '' && endDate !== '' && startDate < endDate &&
+    startDate !== '' &&
+    endDate !== '' &&
+    startDate < endDate &&
     evalRequiredMet &&
     manualPctValid &&
     !trigger.isPending &&
@@ -376,25 +423,25 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     if (!canSubmit) return
     trigger.mutate(
       {
-        strategy_id:         strategy.id,
+        strategy_id: strategy.id,
         instrument,
-        params:              params as Record<string, unknown>,
-        bar_type:            'Minute',
-        bar_value:           barValue,
-        start_date:          startDate,
-        end_date:            endDate,
+        params: params as Record<string, unknown>,
+        bar_type: 'Minute',
+        bar_value: barValue,
+        start_date: startDate,
+        end_date: endDate,
         commission_per_side: commPerSide,
-        slippage_ticks:      slippageTicks,
+        slippage_ticks: slippageTicks,
         // ⚠ `null` for NT8/MT5, NEVER `[]`. The layered-cost switches are python-only, and `[]`
         // is an explicit "this run deliberately charged nothing" — so an NT8 run stored with `[]`
         // had the detail page print "This run was deliberately frictionless" over a run whose
         // tester really did charge the commission and slippage below. `null` is the honest
         // answer: this run does not use layers, and the two legacy fields say what it charged.
-        cost_layers:         isPython ? Array.from(costLayers) : null,
-        broker_profile:      brokerProfile,
-        evaluate_rulesets:   Array.from(selectedFirms),
-        sizing_mode:         sizingMode,
-        manual_risk_pct:     sizingMode === 'manual' ? manualPctNum : null,
+        cost_layers: isPython ? Array.from(costLayers) : null,
+        broker_profile: brokerProfile,
+        evaluate_rulesets: Array.from(selectedFirms),
+        sizing_mode: sizingMode,
+        manual_risk_pct: sizingMode === 'manual' ? manualPctNum : null,
       },
       {
         onSuccess: (data) => {
@@ -402,13 +449,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           if (onSuccess) onSuccess(data.run_id)
           else navigate(`/backtests/runs/${data.run_id}`)
         },
-      },
+      }
     )
   }
 
   // ── Escape key ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
@@ -416,23 +465,29 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
     >
       <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[900px] max-h-[90vh] flex flex-col shadow-2xl">
-
         {/* ── Header ──────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="text-[15px] font-semibold">Run Backtest</div>
-            <span className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border ${
-              isFutures
-                ? 'bg-accent/10 text-accent border-accent/20'
-                : 'bg-warn-muted text-warn-text border-warn-text/30'
-            }`}>
+            <span
+              className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border ${
+                isFutures
+                  ? 'bg-accent/10 text-accent border-accent/20'
+                  : 'bg-warn-muted text-warn-text border-warn-text/30'
+              }`}
+            >
               {isFutures ? 'Futures' : 'Forex'}
             </span>
           </div>
-          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary transition-colors">
+          <button
+            onClick={onClose}
+            className="text-text-tertiary hover:text-text-primary transition-colors"
+          >
             <X size={16} />
           </button>
         </div>
@@ -442,7 +497,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">{RUNNER_LABEL[scope]} is busy:</span> {blockingJob?.description} — wait for it to finish before starting a new run.
+              <span className="font-semibold">{RUNNER_LABEL[scope]} is busy:</span>{' '}
+              {blockingJob?.description} — wait for it to finish before starting a new run.
             </p>
           </div>
         )}
@@ -452,14 +508,16 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-md bg-warn-muted/40 border border-warn-text/20">
             <AlertTriangle size={13} className="text-warn-text flex-shrink-0 mt-[1px]" />
             <p className="text-[12px] text-warn-text leading-snug">
-              <span className="font-semibold">Parameters may be out of date:</span> this strategy's source changed since the last scan. Close this, click <span className="font-semibold">Scan Strategies</span>, then reopen — otherwise the toggles and defaults below are stale.
+              <span className="font-semibold">Parameters may be out of date:</span> this strategy's
+              source changed since the last scan. Close this, click{' '}
+              <span className="font-semibold">Scan Strategies</span>, then reopen — otherwise the
+              toggles and defaults below are stale.
             </p>
           </div>
         )}
 
         {/* ── Scrollable body ─────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-5 space-y-5">
-
           {/* Strategy (read-only) */}
           <div>
             <SectionHead label="Strategy" />
@@ -476,12 +534,12 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 <input
                   type="text"
                   value={instrumentSymbol}
-                  onChange={e => setInstrumentSymbol(e.target.value.toUpperCase())}
+                  onChange={(e) => setInstrumentSymbol(e.target.value.toUpperCase())}
                   placeholder="EURUSD"
                   className={inputCls}
                 />
                 <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {BROKER_SYMBOLS.map(sym => (
+                  {BROKER_SYMBOLS.map((sym) => (
                     <PresetBtn
                       key={sym}
                       label={sym}
@@ -503,10 +561,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     ) : (
                       <select
                         value={instrumentSymbol}
-                        onChange={e => setInstrumentSymbol(e.target.value)}
+                        onChange={(e) => setInstrumentSymbol(e.target.value)}
                         className={inputCls}
                       >
-                        {allowedSymbols.map(sym => {
+                        {allowedSymbols.map((sym) => {
                           const name = lookupInstrumentName(sym)
                           return (
                             <option key={sym} value={sym}>
@@ -520,12 +578,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   <div className="w-[90px]">
                     <div className="flex items-center mb-1">
                       <label className={labelCls.replace(' mb-1', '')}>Contract</label>
-                      <InfoTooltip content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry." side="left" />
+                      <InfoTooltip
+                        content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry."
+                        side="left"
+                      />
                     </div>
                     <input
                       type="text"
                       value={contractMonth}
-                      onChange={e => setContractMonth(e.target.value)}
+                      onChange={(e) => setContractMonth(e.target.value)}
                       placeholder="06-26"
                       className={inputCls}
                     />
@@ -534,10 +595,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 {instrumentSymbol && (
                   <div className="flex items-center justify-between mt-[4px]">
                     {lookupInstrumentName(instrumentSymbol) && (
-                      <span className="text-[10px] text-text-tertiary">{lookupInstrumentName(instrumentSymbol)}</span>
+                      <span className="text-[10px] text-text-tertiary">
+                        {lookupInstrumentName(instrumentSymbol)}
+                      </span>
                     )}
                     <span className="text-[10px] text-text-tertiary ml-auto">
-                      Submits as: <span className="font-mono text-text-secondary">{instrument}</span>
+                      Submits as:{' '}
+                      <span className="font-mono text-text-secondary">{instrument}</span>
                     </span>
                   </div>
                 )}
@@ -554,7 +618,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             <PeriodPicker
               start={startDate}
               end={endDate}
-              onChange={(s, e) => { setStartDate(s); setEndDate(e) }}
+              onChange={(s, e) => {
+                setStartDate(s)
+                setEndDate(e)
+              }}
               limit={historyLimit}
             />
           </div>
@@ -563,12 +630,14 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           <div>
             <SectionHead
               label="Bar Size"
-              tooltip={!isNt8
-                ? "Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size."
-                : "Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size."}
+              tooltip={
+                !isNt8
+                  ? 'Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size.'
+                  : 'Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size.'
+              }
             />
             <div className="flex gap-2">
-              {BAR_PRESETS.map(v => (
+              {BAR_PRESETS.map((v) => (
                 <PresetBtn
                   key={v}
                   label={barLabel(v)}
@@ -604,21 +673,29 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   <label className={labelCls}>Risk % per trade</label>
                   <div className="flex items-center gap-2">
                     <input
-                      type="number" step="0.1" min="0.1" max="100"
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      max="100"
                       value={manualPct}
-                      onChange={e => setManualPct(e.target.value)}
+                      onChange={(e) => setManualPct(e.target.value)}
                       className={`${inputCls} max-w-[120px]`}
                     />
-                    <span className="text-[12px] text-text-tertiary">% of balance, every trade</span>
+                    <span className="text-[12px] text-text-tertiary">
+                      % of balance, every trade
+                    </span>
                   </div>
                   {!manualPctValid && (
-                    <p className="text-[11px] text-neg-text mt-1.5">Enter a risk % between 0 and 100.</p>
+                    <p className="text-[11px] text-neg-text mt-1.5">
+                      Enter a risk % between 0 and 100.
+                    </p>
                   )}
                   <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                    Risks exactly this much of the balance on every trade. The account's hard rules still
-                    clamp it — on a ruleset with a drawdown floor or contract ladder you may get less.
-                    Pair with <span className="text-text-secondary">Unconstrained (No Limits)</span> for
-                    no clamps at all.
+                    Risks exactly this much of the balance on every trade. The account's hard rules
+                    still clamp it — on a ruleset with a drawdown floor or contract ladder you may
+                    get less. Pair with{' '}
+                    <span className="text-text-secondary">Unconstrained (No Limits)</span> for no
+                    clamps at all.
                   </p>
                 </div>
               ) : (
@@ -657,7 +734,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 <div className="text-[12px] text-text-tertiary">No forex rulesets configured.</div>
               ) : (
                 <div className="space-y-2">
-                  {forexFirms.map(f => (
+                  {forexFirms.map((f) => (
                     <label key={f.id} className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -666,9 +743,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                         className="w-4 h-4 rounded accent-accent flex-shrink-0"
                       />
                       <span className="text-[13px] text-text-primary flex-1">{f.name}</span>
-                      <span className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
-                        f.account_tier === 'funded' ? 'bg-pos-muted text-pos-text' : 'bg-warn-muted text-warn-text'
-                      }`}>
+                      <span
+                        className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
+                          f.account_tier === 'funded'
+                            ? 'bg-pos-muted text-pos-text'
+                            : 'bg-warn-muted text-warn-text'
+                        }`}
+                      >
                         {f.account_tier}
                       </span>
                     </label>
@@ -681,18 +762,25 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             ) : firmsLoading ? (
               <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
             ) : futuresFirms.length === 0 ? (
-              <div className="text-[12px] text-text-tertiary">No prop firm challenges configured.</div>
+              <div className="text-[12px] text-text-tertiary">
+                No prop firm challenges configured.
+              </div>
             ) : (
               <div className="space-y-4">
                 {/* Prop firm selector — dropdown scales to any number of brands */}
                 {brandNames.length > 1 ? (
                   <select
                     value={selectedBrand}
-                    onChange={e => { setSelectedBrand(e.target.value); setSelectedFirms(new Set()) }}
+                    onChange={(e) => {
+                      setSelectedBrand(e.target.value)
+                      setSelectedFirms(new Set())
+                    }}
                     className={inputCls}
                   >
-                    {brandNames.map(brand => (
-                      <option key={brand} value={brand}>{brand}</option>
+                    {brandNames.map((brand) => (
+                      <option key={brand} value={brand}>
+                        {brand}
+                      </option>
                     ))}
                   </select>
                 ) : brandNames.length === 1 ? (
@@ -705,7 +793,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     <div className="text-[11px] text-text-tertiary mb-2">Challenge</div>
                   )}
                   <div className="space-y-2">
-                    {brandFirms.map(f => (
+                    {brandFirms.map((f) => (
                       <label key={f.id} className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
@@ -716,9 +804,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                         <span className="text-[13px] text-text-primary flex-1">
                           {firmChallengeName(f.name)}
                         </span>
-                        <span className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
-                          f.account_tier === 'funded' ? 'bg-pos-muted text-pos-text' : 'bg-warn-muted text-warn-text'
-                        }`}>
+                        <span
+                          className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
+                            f.account_tier === 'funded'
+                              ? 'bg-pos-muted text-pos-text'
+                              : 'bg-warn-muted text-warn-text'
+                          }`}
+                        >
                           {f.account_tier}
                         </span>
                       </label>
@@ -758,7 +850,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   schema={strategy.param_schema}
                   mode="run"
                   values={params}
-                  onChange={(name, val) => setParams(p => ({ ...p, [name]: val }))}
+                  onChange={(name, val) => setParams((p) => ({ ...p, [name]: val }))}
                 />
               </div>
             </>
@@ -772,31 +864,77 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 <div className="flex items-center justify-between mb-2">
                   <SectionHead label="Foundational Config" />
                   <span className="text-[11px] text-text-tertiary">
-                    from <span className="text-text-secondary font-medium">{primaryRuleset.name}</span>
+                    from{' '}
+                    <span className="text-text-secondary font-medium">{primaryRuleset.name}</span>
                   </span>
                 </div>
                 <p className="text-[11px] text-text-tertiary mb-3">
-                  <span className="text-text-secondary font-medium">Firm-controlled — set at run time by the ruleset, read-only.</span>{' '}
+                  <span className="text-text-secondary font-medium">
+                    Firm-controlled — set at run time by the ruleset, read-only.
+                  </span>{' '}
                   Injected into the strategy automatically; to change them, edit the ruleset.
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {[
-                    ['Account Size',        primaryRuleset.account_size != null ? `$${primaryRuleset.account_size.toLocaleString()}` : '—'],
-                    ['Risk / Trade',        primaryRuleset.risk_per_trade_pct != null ? `${primaryRuleset.risk_per_trade_pct}%` : '—'],
-                    ['Max Daily Loss',      primaryRuleset.daily_loss_cap != null ? `$${primaryRuleset.daily_loss_cap.toLocaleString()}` : '—'],
-                    ['Halt Fraction',       primaryRuleset.daily_halt_fraction != null ? String(primaryRuleset.daily_halt_fraction) : '—'],
-                    ['Max Consec. Losses',  primaryRuleset.max_consecutive_losses != null ? String(primaryRuleset.max_consecutive_losses) : '—'],
-                    ['Force Flat ET',       primaryRuleset.force_flat_time_et ?? '—'],
-                    ['Entry Hours ET',      (primaryRuleset.earliest_entry_time_et && primaryRuleset.latest_entry_time_et)
-                                              ? `${primaryRuleset.earliest_entry_time_et} – ${primaryRuleset.latest_entry_time_et}`
-                                              : '—'],
-                    ['Days Allowed',        primaryRuleset.days_of_week_allowed?.join(', ') || '—'],
-                    ['Daily Target',        primaryRuleset.daily_profit_target != null ? `$${primaryRuleset.daily_profit_target.toLocaleString()}` : '—'],
-                    ['Lock-In At',          primaryRuleset.daily_profit_lock_pct != null ? `${(primaryRuleset.daily_profit_lock_pct * 100).toFixed(0)}% of target` : '—'],
+                    [
+                      'Account Size',
+                      primaryRuleset.account_size != null
+                        ? `$${primaryRuleset.account_size.toLocaleString()}`
+                        : '—',
+                    ],
+                    [
+                      'Risk / Trade',
+                      primaryRuleset.risk_per_trade_pct != null
+                        ? `${primaryRuleset.risk_per_trade_pct}%`
+                        : '—',
+                    ],
+                    [
+                      'Max Daily Loss',
+                      primaryRuleset.daily_loss_cap != null
+                        ? `$${primaryRuleset.daily_loss_cap.toLocaleString()}`
+                        : '—',
+                    ],
+                    [
+                      'Halt Fraction',
+                      primaryRuleset.daily_halt_fraction != null
+                        ? String(primaryRuleset.daily_halt_fraction)
+                        : '—',
+                    ],
+                    [
+                      'Max Consec. Losses',
+                      primaryRuleset.max_consecutive_losses != null
+                        ? String(primaryRuleset.max_consecutive_losses)
+                        : '—',
+                    ],
+                    ['Force Flat ET', primaryRuleset.force_flat_time_et ?? '—'],
+                    [
+                      'Entry Hours ET',
+                      primaryRuleset.earliest_entry_time_et && primaryRuleset.latest_entry_time_et
+                        ? `${primaryRuleset.earliest_entry_time_et} – ${primaryRuleset.latest_entry_time_et}`
+                        : '—',
+                    ],
+                    ['Days Allowed', primaryRuleset.days_of_week_allowed?.join(', ') || '—'],
+                    [
+                      'Daily Target',
+                      primaryRuleset.daily_profit_target != null
+                        ? `$${primaryRuleset.daily_profit_target.toLocaleString()}`
+                        : '—',
+                    ],
+                    [
+                      'Lock-In At',
+                      primaryRuleset.daily_profit_lock_pct != null
+                        ? `${(primaryRuleset.daily_profit_lock_pct * 100).toFixed(0)}% of target`
+                        : '—',
+                    ],
                   ].map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between px-2.5 py-1.5 rounded bg-bg-sunken border border-border-subtle/50">
+                    <div
+                      key={label}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded bg-bg-sunken border border-border-subtle/50"
+                    >
                       <span className="text-[11px] text-text-tertiary">{label}</span>
-                      <span className="text-[11px] font-mono text-text-secondary tabular-nums">{value}</span>
+                      <span className="text-[11px] font-mono text-text-secondary tabular-nums">
+                        {value}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -816,20 +954,24 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 />
 
                 <div className="flex items-center gap-2 mb-2.5">
-                  <label className="text-[11px] text-text-secondary flex-shrink-0">Broker account</label>
+                  <label className="text-[11px] text-text-secondary flex-shrink-0">
+                    Broker account
+                  </label>
                   <select
                     value={brokerProfile}
-                    onChange={e => setBrokerProfile(e.target.value)}
+                    onChange={(e) => setBrokerProfile(e.target.value)}
                     className={`${inputCls} max-w-[220px]`}
                   >
-                    {(brokerProfiles ?? []).map(b => (
-                      <option key={b.id} value={b.id}>{b.id}</option>
+                    {(brokerProfiles ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.id}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  {costRows.map(row => {
+                  {costRows.map((row) => {
                     const on = costLayers.has(row.id)
                     return (
                       <button
@@ -847,7 +989,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                             on ? 'border-accent bg-accent' : 'border-border-default'
                           }`}
                         >
-                          {on && <span className="text-[9px] leading-none text-bg-base font-bold">✓</span>}
+                          {on && (
+                            <span className="text-[9px] leading-none text-bg-base font-bold">
+                              ✓
+                            </span>
+                          )}
                         </span>
                         <span className="min-w-0">
                           <span className="flex items-center gap-1.5">
@@ -858,7 +1004,9 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                               </span>
                             )}
                           </span>
-                          <span className="block text-[11px] text-text-tertiary leading-snug">{row.detail}</span>
+                          <span className="block text-[11px] text-text-tertiary leading-snug">
+                            {row.detail}
+                          </span>
                         </span>
                       </button>
                     )
@@ -883,34 +1031,57 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Commission / side ($)</label>
-                  <InfoTooltip content={isPython ? "Dollars per LOT, per side — a lot being 100 units (100 oz of gold). Charged on the entry and on every exit rung. Leave at 0 for a demo account, which charges none; a live Vantage RAW ECN is $3.00/side/lot." : !isNt8 ? "Commission per side in account currency. Applied to every fill." : "Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill."} />
+                  <InfoTooltip
+                    content={
+                      isPython
+                        ? 'Dollars per LOT, per side — a lot being 100 units (100 oz of gold). Charged on the entry and on every exit rung. Leave at 0 for a demo account, which charges none; a live Vantage RAW ECN is $3.00/side/lot.'
+                        : !isNt8
+                          ? 'Commission per side in account currency. Applied to every fill.'
+                          : 'Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill.'
+                    }
+                  />
                 </div>
                 <input
-                  type="number" step="0.01" min="0" value={commPerSide}
-                  onChange={e => setCommPerSide(parseFloat(e.target.value) || 0)}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={commPerSide}
+                  onChange={(e) => setCommPerSide(parseFloat(e.target.value) || 0)}
                   className={inputCls}
                 />
               </div>
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Slippage (ticks)</label>
-                  <InfoTooltip content={isPython ? "Ticks of adverse slippage on MARKET exits only — a stop, or a force-close. Entries and take-profit rungs are resting limits, which fill at your price or better or not at all, so they never slip. 1 tick = $0.01 on gold." : !isNt8 ? "Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs." : "Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks."} side="left" />
+                  <InfoTooltip
+                    content={
+                      isPython
+                        ? 'Ticks of adverse slippage on MARKET exits only — a stop, or a force-close. Entries and take-profit rungs are resting limits, which fill at your price or better or not at all, so they never slip. 1 tick = $0.01 on gold.'
+                        : !isNt8
+                          ? 'Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs.'
+                          : 'Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks.'
+                    }
+                    side="left"
+                  />
                 </div>
                 <input
-                  type="number" step="1" min="0" value={slippageTicks}
-                  onChange={e => setSlippageTicks(parseInt(e.target.value, 10) || 0)}
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={slippageTicks}
+                  onChange={(e) => setSlippageTicks(parseInt(e.target.value, 10) || 0)}
                   className={inputCls}
                 />
               </div>
             </div>
           </div>
-
         </form>
 
         {/* ── Footer ──────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle flex-shrink-0">
           <button
-            type="button" onClick={onClose}
+            type="button"
+            onClick={onClose}
             className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
           >
             Cancel
@@ -924,7 +1095,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             {trigger.isPending ? 'Starting…' : 'Run Backtest'}
           </button>
         </div>
-
       </div>
     </div>
   )

@@ -18,13 +18,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import database as db
-from run_logger import StageLogger
-from scanner.solana import SolanaScanner
-from scanner.ethereum import EthereumScanner
 from profiler.filters import QualificationGate
-from profiler.scorer import CompositeScorer
-from profiler.reporter import build_wallet_profile, StageReporter
 from profiler.hyperliquid_profiler import HyperliquidProfiler
+from profiler.reporter import StageReporter, build_wallet_profile
+from profiler.scorer import CompositeScorer
+from run_logger import StageLogger
+from scanner.ethereum import EthereumScanner
+from scanner.solana import SolanaScanner
 
 CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
 
@@ -72,13 +72,15 @@ def run_stage3(config: dict, dry_run: bool = False) -> list[dict]:
                 continue
 
             score = scorer.compute(trades, windows)
-            all_qualifying.append({
-                "wallet": {**wallet, "id": wallet_id, "source": source_name},
-                "trades": trades,
-                "windows": windows,
-                "score": score,
-                "yellow_flags": sum(1 for w in windows if w["strike_level"] == 1),
-            })
+            all_qualifying.append(
+                {
+                    "wallet": {**wallet, "id": wallet_id, "source": source_name},
+                    "trades": trades,
+                    "windows": windows,
+                    "score": score,
+                    "yellow_flags": sum(1 for w in windows if w["strike_level"] == 1),
+                }
+            )
 
     # Step 3.7: Merge with Stage 1 (Hyperliquid) and re-rank
     hl_wallets = db.get_ranked_wallets(source="hyperliquid")
@@ -92,16 +94,19 @@ def run_stage3(config: dict, dry_run: bool = False) -> list[dict]:
     for i, e in enumerate(all_qualifying, 1):
         e["score"]["rank"] = i
         wallet_id = e["wallet"]["id"]
-        db.upsert_score(wallet_id, {
-            "win_rate_consistency": e["score"]["win_rate_consistency"],
-            "risk_adjusted_return": e["score"]["risk_adjusted_return"],
-            "exit_efficiency": e["score"]["exit_efficiency"],
-            "trade_frequency": e["score"]["trade_frequency"],
-            "instrument_day_consistency": e["score"]["instrument_day_consistency"],
-            "composite_score": e["score"]["composite_score"],
-            "rank": e["score"]["rank"],
-            "lookback_tier": e["score"]["lookback_tier"],
-        })
+        db.upsert_score(
+            wallet_id,
+            {
+                "win_rate_consistency": e["score"]["win_rate_consistency"],
+                "risk_adjusted_return": e["score"]["risk_adjusted_return"],
+                "exit_efficiency": e["score"]["exit_efficiency"],
+                "trade_frequency": e["score"]["trade_frequency"],
+                "instrument_day_consistency": e["score"]["instrument_day_consistency"],
+                "composite_score": e["score"]["composite_score"],
+                "rank": e["score"]["rank"],
+                "lookback_tier": e["score"]["lookback_tier"],
+            },
+        )
 
     # Build profiles for top N
     profiler = HyperliquidProfiler(config, logger)
@@ -126,10 +131,13 @@ def run_stage3(config: dict, dry_run: bool = False) -> list[dict]:
     reporter.export_csv(profiles, stage="stage3")
     reporter.export_markdown_summary(profiles, stage="stage3", run_counts=run_counts)
 
-    db.finish_run(run_id, counts={
-        "total_qualified": len(all_qualifying),
-        "total_scanned": len(all_qualifying),
-    })
+    db.finish_run(
+        run_id,
+        counts={
+            "total_qualified": len(all_qualifying),
+            "total_scanned": len(all_qualifying),
+        },
+    )
     logger.print_summary()
     return profiles
 

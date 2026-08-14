@@ -81,8 +81,9 @@ def test_the_engine_actually_drives():
     for s in run(df, EngineConfig(order_blocks=True)):
         created += len(s.order_blocks.created)
         mitigated += len(s.order_blocks.mitigated)
-        live_seen = max(live_seen,
-                        len(s.order_blocks.active_bull) + len(s.order_blocks.active_bear))
+        live_seen = max(
+            live_seen, len(s.order_blocks.active_bull) + len(s.order_blocks.active_bear)
+        )
     assert created > 0, "no order blocks created over 12 days of impulse bars"
     assert mitigated > 0, "blocks were created but none was ever consumed"
     assert live_seen > 0, "no live zone was ever readable off a BarState"
@@ -113,8 +114,18 @@ def test_enabling_order_blocks_changes_no_other_engine():
     'by construction' is how the eq_exempt_fvg coupling got missed for three days.
     """
     df = synth_bars(10)
-    fields = ("structure", "snapshot", "fib", "sniper", "macro",
-              "internal", "fvg", "rsi", "liquidity", "sessions")
+    fields = (
+        "structure",
+        "snapshot",
+        "fib",
+        "sniper",
+        "macro",
+        "internal",
+        "fvg",
+        "rsi",
+        "liquidity",
+        "sessions",
+    )
 
     off = list(run(df))
     on = list(run(df, EngineConfig(order_blocks=True)))
@@ -123,7 +134,8 @@ def test_enabling_order_blocks_changes_no_other_engine():
     for a, b in zip(off, on):
         for name in fields:
             assert repr(getattr(a, name)) == repr(getattr(b, name)), (
-                f"{name} moved when order blocks were switched on, at bar {a.bar.index}")
+                f"{name} moved when order blocks were switched on, at bar {a.bar.index}"
+            )
         # ...and the only field that DID change is the new one
         assert a.order_blocks is None
         assert b.order_blocks is not None

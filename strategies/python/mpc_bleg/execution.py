@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 _PYPKGS = Path(__file__).resolve().parents[1]
 if str(_PYPKGS) not in sys.path:
@@ -63,15 +62,16 @@ def _band_fib(ext, inv, direction, leg_ms):
     if ext is None or inv is None or leg_ms is None or ext == inv:
         return None
     hi, lo = (ext, inv) if direction == 1 else (inv, ext)
-    return TradeFib(levels=[(r, float(fib_level(hi, lo, direction, r))) for r in _FIB_RATIOS],
-                    start_ms=leg_ms)
+    return TradeFib(
+        levels=[(r, float(fib_level(hi, lo, direction, r))) for r in _FIB_RATIOS], start_ms=leg_ms
+    )
 
 
 class BLegExecution(Execution):
     """A+-entry-disabled, B-LEG-entry-only execution. Reuses the parent's whole broker
     emulator + exit ladder; only `_place_entries` differs."""
 
-    _bleg = None   # set by step() before the parent calls _place_entries
+    _bleg = None  # set by step() before the parent calls _place_entries
 
     # No A+ diagnostic markers in this fork. The parent's BLOCKED codes and MISSED-setup
     # confluences both answer "how far did this **A+** setup get before it was refused" — and
@@ -97,18 +97,36 @@ class BLegExecution(Execution):
         # on a side stands the B-LEG down there — the parent's B leg behaviour.
         long_armed, short_armed = self._armed(sig, seq, dec, long_edge, short_edge)
 
-        late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18   # 16:00-17:59 NY block
+        late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18  # 16:00-17:59 NY block
 
         # B-LEG arm (Pine 4429-4430): the frozen band is live, untapped and valid, we're flat,
         # A+ is not armed on this side, not late-day, and this band is not already traded.
-        bleg_l_arm = (cfg.exec_bleg and cfg.exec_longs and not long_armed and bleg.l_on and not bleg.l_tap
-                      and not late and bleg.l_top is not None and bleg.l_inv is not None
-                      and bleg.l_tgt is not None and self._pos_dir == 0
-                      and (self._traded_sos_l is None or bleg.l_bar != self._traded_sos_l))
-        bleg_s_arm = (cfg.exec_bleg and cfg.exec_shorts and not short_armed and bleg.s_on and not bleg.s_tap
-                      and not late and bleg.s_bot is not None and bleg.s_inv is not None
-                      and bleg.s_tgt is not None and self._pos_dir == 0
-                      and (self._traded_sos_s is None or bleg.s_bar != self._traded_sos_s))
+        bleg_l_arm = (
+            cfg.exec_bleg
+            and cfg.exec_longs
+            and not long_armed
+            and bleg.l_on
+            and not bleg.l_tap
+            and not late
+            and bleg.l_top is not None
+            and bleg.l_inv is not None
+            and bleg.l_tgt is not None
+            and self._pos_dir == 0
+            and (self._traded_sos_l is None or bleg.l_bar != self._traded_sos_l)
+        )
+        bleg_s_arm = (
+            cfg.exec_bleg
+            and cfg.exec_shorts
+            and not short_armed
+            and bleg.s_on
+            and not bleg.s_tap
+            and not late
+            and bleg.s_bot is not None
+            and bleg.s_inv is not None
+            and bleg.s_tgt is not None
+            and self._pos_dir == 0
+            and (self._traded_sos_s is None or bleg.s_bar != self._traded_sos_s)
+        )
 
         # Report the B-LEG's OWN arm + entry price (this is the B-LEG bot's decision stream,
         # not the never-placed A+ one). Overwrites what _armed / the parent step() set.
@@ -127,8 +145,8 @@ class BLegExecution(Execution):
         if bleg_l_arm:
             sl = bleg.l_inv - cfg.exec_sl_buf_tk * cfg.mintick
             dist = bleg.l_top - sl
-            tp1 = 2 * bleg.l_top - bleg.l_inv     # broken swing extreme (fib 0.0 of the band)
-            tp2 = bleg.l_tgt                      # expansion extreme
+            tp1 = 2 * bleg.l_top - bleg.l_inv  # broken swing extreme (fib 0.0 of the band)
+            tp2 = bleg.l_tgt  # expansion extreme
             if dist > 0 and tp1 > bleg.l_top and tp2 >= tp1:
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 fib = _band_fib(bleg.l_ext, bleg.l_inv, 1, bleg.l_leg_ms)

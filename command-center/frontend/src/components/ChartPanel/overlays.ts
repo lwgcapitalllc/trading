@@ -3,7 +3,11 @@
  * Each template renders from the points + `extendData` it is given; the panel decides what to
  * create from the spec. `registerChartOverlays()` is idempotent and called once on mount.
  */
-import { registerOverlay, type OverlayCreateFiguresCallbackParams, type OverlayFigure } from 'klinecharts'
+import {
+  registerOverlay,
+  type OverlayCreateFiguresCallbackParams,
+  type OverlayFigure,
+} from 'klinecharts'
 
 /** A rectangle hugging the candles inside a session window (Step 3). */
 export const SESSION_BOX = 'lwgSessionBox'
@@ -35,7 +39,7 @@ export const STRUCTURE_GROUPS = [
 /** Layers-menu dot colour for a structure group that the current run emitted NOTHING into — so all
  *  four toggles can still be listed. Matches the backend's per-group colours (external = the strong
  *  bull/bear pair, internal = the muted pair). */
-export const STRUCTURE_GROUP_COLOR: Record<typeof STRUCTURE_GROUPS[number], string> = {
+export const STRUCTURE_GROUP_COLOR: Record<(typeof STRUCTURE_GROUPS)[number], string> = {
   'External Structure': '#26a69a',
   'Internal Structure': '#80cbc4',
   'Historic Internal Structure': '#80cbc4',
@@ -70,7 +74,7 @@ export const ANALYSIS_GROUPS = [
  *  is a swatch of the boxes it switches on. FVG is the neutral grey of its borderless boxes; Order
  *  Blocks is mpc's `OB_ACCENT` orange outline. Both are distinct from Blocked pink / Missed amber,
  *  and from each other, so the rows tell apart at a glance. */
-export const ANALYSIS_GROUP_COLOR: Record<typeof ANALYSIS_GROUPS[number], string> = {
+export const ANALYSIS_GROUP_COLOR: Record<(typeof ANALYSIS_GROUPS)[number], string> = {
   'Fair Value Gaps': '#94a3b8',
   'Order Blocks': '#E65100',
   // The three liquidity tiers. H4 is mpc's own `H4_ACTIVE_COLOR` reproduced exactly — it is the
@@ -134,34 +138,45 @@ export const TRADE_FIB = 'lwgTradeFib'
 /** One rung of the fib ladder. `visible: false` keeps a level in the user's configured set while
  *  leaving it off the chart — the difference between "I don't use this one right now" and "delete
  *  it", exactly as the checkbox in TradingView's fib settings behaves. */
-export interface FibLevel { ratio: number; color: string; visible?: boolean }
-interface FibExtend { levels?: FibLevel[]; precision?: number; chipBg?: string }
+export interface FibLevel {
+  ratio: number
+  color: string
+  visible?: boolean
+}
+interface FibExtend {
+  levels?: FibLevel[]
+  precision?: number
+  chipBg?: string
+}
 
 // The FACTORY ladder — Aaron's Fibonacci retracement levels + colours (his TradingView setup).
 // 0 & 1 share a neutral grey; the retracement zone runs green (shallow) → blue (the OTE band) →
 // red (deep 0.886). This is the starting point and the "Reset" target, NOT the live set: the ladder
 // is user-editable per drawing and as the tool default — see `fibLevels.ts` and `FibSettings.tsx`.
 export const DEFAULT_FIB_LEVELS: FibLevel[] = [
-  { ratio: 0,     color: '#9598a1' }, // neutral (same as 1)
+  { ratio: 0, color: '#9598a1' }, // neutral (same as 1)
   { ratio: 0.382, color: '#22c55e' }, // green
-  { ratio: 0.5,   color: '#22c55e' }, // green
+  { ratio: 0.5, color: '#22c55e' }, // green
   { ratio: 0.618, color: '#2962ff' }, // blue
   { ratio: 0.702, color: '#2962ff' }, // blue
   { ratio: 0.786, color: '#2962ff' }, // blue
   { ratio: 0.886, color: '#ef5350' }, // red
-  { ratio: 1,     color: '#9598a1' }, // neutral (same as 0)
+  { ratio: 1, color: '#9598a1' }, // neutral (same as 0)
 ]
 
 /** Ratio → factory colour, for a TRADE's fib. It reads the FACTORY set and never the user's
  *  configured ladder: the levels a trade was priced on are a fact about that trade, so retuning
  *  the drawing tool must not restyle them — but a 0.618 drawn by the bot should still look like a
  *  0.618 you drew yourself, which is what sharing the constant buys. */
-const FACTORY_LEVEL_COLOR = new Map(DEFAULT_FIB_LEVELS.map(l => [l.ratio, l.color]))
+const FACTORY_LEVEL_COLOR = new Map(DEFAULT_FIB_LEVELS.map((l) => [l.ratio, l.color]))
 /** A ratio the factory set doesn't name (a strategy with its own ladder) — grey, not invisible. */
 const UNNAMED_LEVEL_COLOR = '#9598a1'
 
 /** One rung of a trade's recorded fib: the ratio and the price the STRATEGY read for it. */
-export interface TradeFibLevel { ratio: number; price: number }
+export interface TradeFibLevel {
+  ratio: number
+  price: number
+}
 interface TradeFibExtend {
   levels?: TradeFibLevel[]
   chipBg?: string
@@ -191,19 +206,19 @@ interface TradeExtend {
   dir?: 'long' | 'short'
   kind?: 'primary' | 'secondary'
   pnl?: number
-  color?: string       // outcome colour (win green / loss red) — the fallback box
-  dirColor?: string    // entry-arrow colour (long green / short red) — fallback box only
-  favColor?: string    // favourable-side green (the profit fill / lines — a LIGHT mint, kept
-                       // distinct from the candle up-colour so the band never blends into green candles)
-  advColor?: string    // adverse-side red (loser fill + the stop)
-  entryColor?: string  // entry bubble + line + chip (neutral)
-  chipBg?: string      // side-label chip background (dark, for legibility over candles)
+  color?: string // outcome colour (win green / loss red) — the fallback box
+  dirColor?: string // entry-arrow colour (long green / short red) — fallback box only
+  favColor?: string // favourable-side green (the profit fill / lines — a LIGHT mint, kept
+  // distinct from the candle up-colour so the band never blends into green candles)
+  advColor?: string // adverse-side red (loser fill + the stop)
+  entryColor?: string // entry bubble + line + chip (neutral)
+  chipBg?: string // side-label chip background (dark, for legibility over candles)
   neutralColor?: string
-  layerColor?: string  // portfolio-stack accent — tints the outcome chip border so overlapping
-                       // strategies read apart (absent on a single-run chart)
-  layerName?: string   // strategy name printed IN the outcome chip ("SOS Fade · Won") — the stack's
-                       // primary "who won this one" signal (absent on a single-run chart)
-  precision?: number   // instrument price decimals — every side label states its own price
+  layerColor?: string // portfolio-stack accent — tints the outcome chip border so overlapping
+  // strategies read apart (absent on a single-run chart)
+  layerName?: string // strategy name printed IN the outcome chip ("SOS Fade · Won") — the stack's
+  // primary "who won this one" signal (absent on a single-run chart)
+  precision?: number // instrument price decimals — every side label states its own price
   // `false` drops the number from every side label, leaving `Entry` / `SL` / `TP1` alone. A reader
   // preference (Chart settings), NOT a data change — the levels drawn are identical either way.
   // Undefined means ON, so a caller that has not been updated keeps the shipped behaviour.
@@ -261,7 +276,13 @@ const NEXT_TP_SHOW_FRAC = 0.33
 export function withAlpha(color: string, a: number): string {
   if (!color.startsWith('#')) return color
   const h = color.slice(1)
-  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h
+  const full =
+    h.length === 3
+      ? h
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : h
   const r = parseInt(full.slice(0, 2), 16)
   const g = parseInt(full.slice(2, 4), 16)
   const b = parseInt(full.slice(4, 6), 16)
@@ -317,7 +338,7 @@ export function registerChartOverlays(): void {
           attrs: { x, y, width, height },
           styles: {
             style: 'stroke_fill',
-            color: withAlpha(color, 0.10),
+            color: withAlpha(color, 0.1),
             borderColor: withAlpha(color, 0.45),
             borderSize: 1,
             borderStyle: 'solid',
@@ -360,18 +381,22 @@ export function registerChartOverlays(): void {
       const x1 = Math.max(entry.x, exit.x)
       const w = Math.max(1, x1 - x0)
       const yOf = (p?: number): number | null =>
-        (yAxis && typeof p === 'number') ? yAxis.convertToPixel(p) : null
+        yAxis && typeof p === 'number' ? yAxis.convertToPixel(p) : null
 
       // Small entry marker (orientation carries direction): long = up-triangle below the bar,
       // short = down-triangle above it.
-      const HALF = 6, HEIGHT = 9, GAP = 4
+      const HALF = 6,
+        HEIGHT = 9,
+        GAP = 4
       const arrowFig = (): OverlayFigure => ({
         type: 'polygon',
-        attrs: { coordinates: [
-          { x: entry.x, y: isLong ? entry.y + GAP : entry.y - GAP },
-          { x: entry.x - HALF, y: isLong ? entry.y + GAP + HEIGHT : entry.y - GAP - HEIGHT },
-          { x: entry.x + HALF, y: isLong ? entry.y + GAP + HEIGHT : entry.y - GAP - HEIGHT },
-        ] },
+        attrs: {
+          coordinates: [
+            { x: entry.x, y: isLong ? entry.y + GAP : entry.y - GAP },
+            { x: entry.x - HALF, y: isLong ? entry.y + GAP + HEIGHT : entry.y - GAP - HEIGHT },
+            { x: entry.x + HALF, y: isLong ? entry.y + GAP + HEIGHT : entry.y - GAP - HEIGHT },
+          ],
+        },
         styles: { style: 'fill', color: arrowColor },
         ignoreEvent: true,
       })
@@ -398,13 +423,24 @@ export function registerChartOverlays(): void {
         attrs: {
           x: entry.x,
           y: isLong ? entry.y + GAP + HEIGHT + 9 : entry.y - GAP - HEIGHT - 9,
-          text: 'SEC', align: 'center', baseline: 'middle',
+          text: 'SEC',
+          align: 'center',
+          baseline: 'middle',
         },
         styles: {
-          style: 'stroke_fill', color: arrowColor, size: 9, weight: 'bold',
+          style: 'stroke_fill',
+          color: arrowColor,
+          size: 9,
+          weight: 'bold',
           backgroundColor: withAlpha(d.chipBg ?? '#0d0d1a', 0.82),
-          borderColor: withAlpha(arrowColor, 0.85), borderSize: 1, borderStyle: 'solid',
-          borderRadius: 3, paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          borderColor: withAlpha(arrowColor, 0.85),
+          borderSize: 1,
+          borderStyle: 'solid',
+          borderRadius: 3,
+          paddingLeft: 4,
+          paddingRight: 4,
+          paddingTop: 1,
+          paddingBottom: 1,
         },
         ignoreEvent: true,
       })
@@ -415,20 +451,28 @@ export function registerChartOverlays(): void {
         .map((l, i, a): { price: number; label: string } =>
           typeof l === 'number'
             ? { price: l, label: i === a.length - 1 && a.length > 1 ? 'Exit' : `TP${i + 1}` }
-            : l)
-        .filter(l => l && typeof l.price === 'number')
-      const legPrices = legs.map(l => l.price)
+            : l
+        )
+        .filter((l) => l && typeof l.price === 'number')
+      const legPrices = legs.map((l) => l.price)
       // banked = deepest price where real profit was taken; a plain win with no leg detail banks
       // at its exit price.
-      const bankedPrice: number | null =
-        legPrices.length ? (isLong ? Math.max(...legPrices) : Math.min(...legPrices))
-        : (typeof d.pnl === 'number' && d.pnl > 0 && typeof d.exitPrice === 'number') ? d.exitPrice
-        : null
+      const bankedPrice: number | null = legPrices.length
+        ? isLong
+          ? Math.max(...legPrices)
+          : Math.min(...legPrices)
+        : typeof d.pnl === 'number' && d.pnl > 0 && typeof d.exitPrice === 'number'
+          ? d.exitPrice
+          : null
       const mfePrice: number | undefined =
-        typeof d.mfePrice === 'number' ? d.mfePrice
-        : bankedPrice != null ? bankedPrice
-        : d.exitPrice
-      const rich = yAxis != null && typeof mfePrice === 'number' &&
+        typeof d.mfePrice === 'number'
+          ? d.mfePrice
+          : bankedPrice != null
+            ? bankedPrice
+            : d.exitPrice
+      const rich =
+        yAxis != null &&
+        typeof mfePrice === 'number' &&
         (legs.length > 0 || typeof d.mfePrice === 'number')
 
       if (!rich) {
@@ -436,11 +480,19 @@ export function registerChartOverlays(): void {
         const y = Math.min(entry.y, exit.y)
         const h = Math.max(1, Math.abs(exit.y - entry.y))
         return [
-          { type: 'rect', attrs: { x: x0, y, width: w, height: h },
-            styles: { style: 'stroke_fill', color: withAlpha(outcome, 0.16),
-              borderColor: withAlpha(outcome, 0.9), borderSize: 1,
-              borderStyle: secondary ? 'dashed' : 'solid', borderDashedValue: [4, 4] },
-            ignoreEvent: true },
+          {
+            type: 'rect',
+            attrs: { x: x0, y, width: w, height: h },
+            styles: {
+              style: 'stroke_fill',
+              color: withAlpha(outcome, 0.16),
+              borderColor: withAlpha(outcome, 0.9),
+              borderSize: 1,
+              borderStyle: secondary ? 'dashed' : 'solid',
+              borderDashedValue: [4, 4],
+            },
+            ignoreEvent: true,
+          },
           arrowFig(),
           // Tagged on the data-poor path too. An NT8/MT5 trade cannot be a secondary today, but a
           // marker that only appears on the rich path would read as "not a re-entry" rather than
@@ -449,29 +501,45 @@ export function registerChartOverlays(): void {
         ]
       }
 
-      const profitColor = favColor              // light mint — profit fill + level lines
+      const profitColor = favColor // light mint — profit fill + level lines
       const entryColor = d.entryColor ?? '#c9cdd6'
       const stopColor = advColor
       const labelBg = withAlpha(d.chipBg ?? '#0d0d1a', 0.82) // subtle dark behind the side labels
 
       const figures: OverlayFigure[] = []
-      const rect = (yA: number, yB: number, color: string) => figures.push({
-        type: 'rect',
-        attrs: { x: x0, y: Math.min(yA, yB), width: w, height: Math.max(1, Math.abs(yB - yA)) },
-        styles: { style: 'fill', color },
-        ignoreEvent: true,
-      })
+      const rect = (yA: number, yB: number, color: string) =>
+        figures.push({
+          type: 'rect',
+          attrs: { x: x0, y: Math.min(yA, yB), width: w, height: Math.max(1, Math.abs(yB - yA)) },
+          styles: { style: 'fill', color },
+          ignoreEvent: true,
+        })
       // A thin dotted line across the trade at a price level.
       const crossLine = (p: number | undefined, color: string, size = 1) => {
-        const y = yOf(p); if (y == null) return
-        figures.push({ type: 'line', attrs: { coordinates: [{ x: x0, y }, { x: x1, y }] },
-          styles: { color, size, style: 'dashed', dashedValue: [2, 3] }, ignoreEvent: true })
+        const y = yOf(p)
+        if (y == null) return
+        figures.push({
+          type: 'line',
+          attrs: {
+            coordinates: [
+              { x: x0, y },
+              { x: x1, y },
+            ],
+          },
+          styles: { color, size, style: 'dashed', dashedValue: [2, 3] },
+          ignoreEvent: true,
+        })
       }
       // A small marker dot on a level, at the trade's left edge (the "bubble").
       const dot = (p: number | undefined, color: string) => {
-        const y = yOf(p); if (y == null) return
-        figures.push({ type: 'circle', attrs: { x: x0, y, r: 3 },
-          styles: { style: 'fill', color }, ignoreEvent: true })
+        const y = yOf(p)
+        if (y == null) return
+        figures.push({
+          type: 'circle',
+          attrs: { x: x0, y, r: 3 },
+          styles: { style: 'fill', color },
+          ignoreEvent: true,
+        })
       }
       // Side labels are collected first, de-collided, then drawn — so a cluster of close levels
       // (e.g. TP1 near the entry) never stacks on itself.
@@ -488,7 +556,8 @@ export function registerChartOverlays(): void {
       const withPrice = d.showPrices !== false
       const labels: { y: number; text: string; color: string }[] = []
       const addLabel = (p: number | undefined, text: string, color: string) => {
-        const y = yOf(p); if (y == null) return
+        const y = yOf(p)
+        if (y == null) return
         labels.push({ y, text: withPrice ? `${text} ${px(p as number)}` : text, color })
       }
 
@@ -496,13 +565,17 @@ export function registerChartOverlays(): void {
       const yMfe = yOf(mfePrice)!
       const entryP = d.entryPrice
       // Favourable fill (light mint): SOLID entry→banked (took profit), FAINT banked→mfe (ran, unbanked).
-      if (bankedPrice != null && typeof entryP === 'number' && (bankedPrice - entryP) * sign > 1e-9) {
+      if (
+        bankedPrice != null &&
+        typeof entryP === 'number' &&
+        (bankedPrice - entryP) * sign > 1e-9
+      ) {
         const yBank = yOf(bankedPrice)!
         rect(entryY, yBank, withAlpha(profitColor, 0.22))
         if ((mfePrice - bankedPrice) * sign > 1e-9) rect(yBank, yMfe, withAlpha(profitColor, 0.07))
       } else if (typeof entryP === 'number' && (mfePrice - entryP) * sign > 1e-9) {
         // nothing banked (e.g. a loser that ran into profit, then stopped) → all faint green
-        rect(entryY, yMfe, withAlpha(profitColor, 0.10))
+        rect(entryY, yMfe, withAlpha(profitColor, 0.1))
       }
       // Adverse red — the mirror of the favourable green, on the loss side, so the drawdown the
       // trade sat through reads as clearly as the profit it ran. A LOSER actually gave it back:
@@ -516,9 +589,12 @@ export function registerChartOverlays(): void {
         if (typeof d.maePrice === 'number' && (d.maePrice - d.stopPrice) * sign < -1e-9) {
           rect(yOf(d.stopPrice)!, yOf(d.maePrice)!, withAlpha(advColor, 0.07))
         }
-      } else if (typeof d.maePrice === 'number' && typeof entryP === 'number' &&
-                 (d.maePrice - entryP) * sign < -1e-9) {
-        rect(entryY, yOf(d.maePrice)!, withAlpha(advColor, 0.10))
+      } else if (
+        typeof d.maePrice === 'number' &&
+        typeof entryP === 'number' &&
+        (d.maePrice - entryP) * sign < -1e-9
+      ) {
+        rect(entryY, yOf(d.maePrice)!, withAlpha(advColor, 0.1))
       }
 
       // How far the trade RAN — the two ends of the hold, one each way, and the pair of annotations
@@ -532,39 +608,63 @@ export function registerChartOverlays(): void {
       // trade that never moved against itself prints `Deepest` on the entry's own pixel row.
       const runColor = withAlpha(profitColor, 0.7)
       if (typeof d.mfePrice === 'number' && (d.mfePrice - (bankedPrice ?? entryP!)) * sign > 1e-9) {
-        crossLine(d.mfePrice, withAlpha(profitColor, 0.4)); dot(d.mfePrice, runColor)
+        crossLine(d.mfePrice, withAlpha(profitColor, 0.4))
+        dot(d.mfePrice, runColor)
         addLabel(d.mfePrice, 'Furthest', runColor)
       } else {
-        crossLine(mfePrice, withAlpha(profitColor, 0.4))   // guide only — Exit already names it
+        crossLine(mfePrice, withAlpha(profitColor, 0.4)) // guide only — Exit already names it
       }
-      if (typeof d.maePrice === 'number' && typeof entryP === 'number'
-          && (d.maePrice - entryP) * sign < -1e-9) {
+      if (
+        typeof d.maePrice === 'number' &&
+        typeof entryP === 'number' &&
+        (d.maePrice - entryP) * sign < -1e-9
+      ) {
         const deepColor = withAlpha(stopColor, 0.75)
-        crossLine(d.maePrice, withAlpha(stopColor, 0.4)); dot(d.maePrice, deepColor)
+        crossLine(d.maePrice, withAlpha(stopColor, 0.4))
+        dot(d.maePrice, deepColor)
         addLabel(d.maePrice, 'Deepest', deepColor)
       }
       // Stop: dotted line across + dot + "SL".
-      crossLine(d.stopPrice, withAlpha(stopColor, 0.85)); dot(d.stopPrice, stopColor); addLabel(d.stopPrice, 'SL', stopColor)
+      crossLine(d.stopPrice, withAlpha(stopColor, 0.85))
+      dot(d.stopPrice, stopColor)
+      addLabel(d.stopPrice, 'SL', stopColor)
       // Each real profit-take: a thin dotted mint line + a dot + its label (TP1/TP2/TP3/Exit). A
       // plain win with no per-rung detail draws one "Exit" at the banked price.
-      const drawnLegs = legs.length ? legs
-        : (bankedPrice != null ? [{ price: bankedPrice, label: 'Exit' }] : [])
-      for (const lg of drawnLegs) { crossLine(lg.price, profitColor); dot(lg.price, profitColor); addLabel(lg.price, lg.label, profitColor) }
+      const drawnLegs = legs.length
+        ? legs
+        : bankedPrice != null
+          ? [{ price: bankedPrice, label: 'Exit' }]
+          : []
+      for (const lg of drawnLegs) {
+        crossLine(lg.price, profitColor)
+        dot(lg.price, profitColor)
+        addLabel(lg.price, lg.label, profitColor)
+      }
       // Entry: NO line across — just a short tick where the green begins, a dot, and the label.
-      figures.push({ type: 'line', attrs: { coordinates: [{ x: x0, y: entryY }, { x: x0 + 16, y: entryY }] },
-        styles: { color: entryColor, size: 1.5, style: 'solid', dashedValue: [] }, ignoreEvent: true })
-      dot(entryP, entryColor); addLabel(entryP, 'Entry', entryColor)
+      figures.push({
+        type: 'line',
+        attrs: {
+          coordinates: [
+            { x: x0, y: entryY },
+            { x: x0 + 16, y: entryY },
+          ],
+        },
+        styles: { color: entryColor, size: 1.5, style: 'solid', dashedValue: [] },
+        ignoreEvent: true,
+      })
+      dot(entryP, entryColor)
+      addLabel(entryP, 'Entry', entryColor)
 
       // Next UNHIT take-profit (near-miss view): the trade banked its earlier rungs but never tagged
       // the FOLLOWING target — draw that target as a FAINT dashed line + a faint label, so you can
       // see how far the runner still had to go. Only when it got CLOSE (NEXT_TP_SHOW_FRAC of the gap).
-      const targets = (d.tpTargets ?? []).filter(t => typeof t === 'number')
+      const targets = (d.tpTargets ?? []).filter((t) => typeof t === 'number')
       if (targets.length && typeof entryP === 'number' && typeof mfePrice === 'number') {
-        const favOf = (p: number) => (p - entryP) * sign          // favourable distance from entry
+        const favOf = (p: number) => (p - entryP) * sign // favourable distance from entry
         const mfeFav = favOf(mfePrice)
-        const nextIdx = targets.findIndex(t => favOf(t) > mfeFav + 1e-9) // first the mfe didn't reach
+        const nextIdx = targets.findIndex((t) => favOf(t) > mfeFav + 1e-9) // first the mfe didn't reach
         if (nextIdx >= 0) {
-          const refFav = nextIdx > 0 ? favOf(targets[nextIdx - 1]) : 0  // last hit target, else entry
+          const refFav = nextIdx > 0 ? favOf(targets[nextIdx - 1]) : 0 // last hit target, else entry
           const covered = (mfeFav - refFav) / (favOf(targets[nextIdx]) - refFav)
           if (covered >= NEXT_TP_SHOW_FRAC) {
             crossLine(targets[nextIdx], withAlpha(profitColor, 0.5))
@@ -584,15 +684,31 @@ export function registerChartOverlays(): void {
       const LBL_GAP = 9
       // `border` overrides the chip's border colour (else it echoes the text colour) — the stack
       // view passes each strategy's layer colour so an overlapping trade's outcome chip reads apart.
-      const chip = (x: number, y: number, text: string, color: string, align: 'left' | 'right' | 'center', border?: string) =>
+      const chip = (
+        x: number,
+        y: number,
+        text: string,
+        color: string,
+        align: 'left' | 'right' | 'center',
+        border?: string
+      ) =>
         figures.push({
           type: 'text',
           attrs: { x, y, text, align, baseline: 'middle' },
           styles: {
-            style: 'stroke_fill', color, size: 10, weight: 'bold',
-            backgroundColor: labelBg, borderColor: withAlpha(border ?? color, border ? 0.85 : 0.4),
-            borderSize: 1, borderStyle: 'solid', borderRadius: 3,
-            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+            style: 'stroke_fill',
+            color,
+            size: 10,
+            weight: 'bold',
+            backgroundColor: labelBg,
+            borderColor: withAlpha(border ?? color, border ? 0.85 : 0.4),
+            borderSize: 1,
+            borderStyle: 'solid',
+            borderRadius: 3,
+            paddingLeft: 5,
+            paddingRight: 5,
+            paddingTop: 2,
+            paddingBottom: 2,
           },
           ignoreEvent: true,
         })
@@ -610,7 +726,7 @@ export function registerChartOverlays(): void {
       if (typeof d.pnl === 'number') {
         const won = d.pnl > 0
         const extY = won ? yMfe : (yOf(d.maePrice ?? d.stopPrice) ?? exit.y)
-        const outPix = won ? -sign : sign      // beyond the extreme, away from entry (px: up = −)
+        const outPix = won ? -sign : sign // beyond the extreme, away from entry (px: up = −)
         // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several
         // strategies' trades on one chart, the outcome alone doesn't say whose trade it was.
         // A 1m re-entry says so here rather than at the entry — see `secTagFig`. It reads
@@ -619,7 +735,9 @@ export function registerChartOverlays(): void {
         // …and the reversal candle at this trade's turn, BY NAME. ⚠ `undefined` prints NOTHING —
         // the layer is off, so the run has not been asked, and `no candle` there would state a
         // measurement nobody took.
-        const parts = [d.layerName, secondary ? 'SEC' : null, outcome, d.patternName].filter(Boolean)
+        const parts = [d.layerName, secondary ? 'SEC' : null, outcome, d.patternName].filter(
+          Boolean
+        )
         const text = parts.join(' · ')
         const cx = (x0 + x1) / 2
         const cy = extY + outPix * 12
@@ -670,7 +788,9 @@ export function registerChartOverlays(): void {
       // Tested with `Array.isArray`, NOT `.length` — an EMPTY configured ladder means the user
       // switched every level off, and must draw nothing. Falling back to the factory set there
       // would answer "delete them all" with "here are the originals back".
-      const levels = (Array.isArray(d.levels) ? d.levels : DEFAULT_FIB_LEVELS).filter(l => l.visible !== false)
+      const levels = (Array.isArray(d.levels) ? d.levels : DEFAULT_FIB_LEVELS).filter(
+        (l) => l.visible !== false
+      )
       const precision = d.precision ?? 2
       const chipBg = withAlpha(d.chipBg ?? '#0d0d1a', 0.82)
       const xLeft = Math.min(a.x, b.x)
@@ -685,19 +805,39 @@ export function registerChartOverlays(): void {
         const y = yAxis.convertToPixel(price)
         figures.push({
           type: 'line',
-          attrs: { coordinates: [{ x: xLeft, y }, { x: xRight, y }] },
+          attrs: {
+            coordinates: [
+              { x: xLeft, y },
+              { x: xRight, y },
+            ],
+          },
           styles: { color: lvl.color, size: 0.5, style: 'solid' },
         })
         // Label = decimal ratio + price in parens, e.g. "0.886 (3987.45)" — same dark rounded chip as
         // the trade level labels (SL/TP1…), so it reads over candles instead of a bare colour string.
         figures.push({
           type: 'text',
-          attrs: { x: xRight, y, text: `${lvl.ratio} (${price.toFixed(precision)})`, align: 'right', baseline: 'middle' },
+          attrs: {
+            x: xRight,
+            y,
+            text: `${lvl.ratio} (${price.toFixed(precision)})`,
+            align: 'right',
+            baseline: 'middle',
+          },
           styles: {
-            style: 'stroke_fill', color: lvl.color, size: 10, weight: 'bold',
-            backgroundColor: chipBg, borderColor: withAlpha(lvl.color, 0.4), borderSize: 1,
-            borderStyle: 'solid', borderRadius: 3,
-            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+            style: 'stroke_fill',
+            color: lvl.color,
+            size: 10,
+            weight: 'bold',
+            backgroundColor: chipBg,
+            borderColor: withAlpha(lvl.color, 0.4),
+            borderSize: 1,
+            borderStyle: 'solid',
+            borderRadius: 3,
+            paddingLeft: 5,
+            paddingRight: 5,
+            paddingTop: 2,
+            paddingBottom: 2,
           },
           ignoreEvent: true,
         })
@@ -732,7 +872,12 @@ export function registerChartOverlays(): void {
         const y = yAxis.convertToPixel(lvl.price)
         figures.push({
           type: 'line',
-          attrs: { coordinates: [{ x: xLeft, y }, { x: xRight, y }] },
+          attrs: {
+            coordinates: [
+              { x: xLeft, y },
+              { x: xRight, y },
+            ],
+          },
           styles: { color, size: 0.5, style: 'solid' },
           ignoreEvent: true,
         })
@@ -745,10 +890,19 @@ export function registerChartOverlays(): void {
           type: 'text',
           attrs: { x: xRight, y, text: `${lvl.ratio}`, align: 'right', baseline: 'middle' },
           styles: {
-            style: 'stroke_fill', color, size: 9, weight: 'normal',
-            backgroundColor: chipBg, borderColor: withAlpha(color, 0.4), borderSize: 1,
-            borderStyle: 'solid', borderRadius: 3,
-            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+            style: 'stroke_fill',
+            color,
+            size: 9,
+            weight: 'normal',
+            backgroundColor: chipBg,
+            borderColor: withAlpha(color, 0.4),
+            borderSize: 1,
+            borderStyle: 'solid',
+            borderRadius: 3,
+            paddingLeft: 4,
+            paddingRight: 4,
+            paddingTop: 1,
+            paddingBottom: 1,
           },
           ignoreEvent: true,
         })
@@ -792,7 +946,7 @@ export function registerChartOverlays(): void {
           styles: {
             style: bordered ? 'stroke_fill' : 'fill',
             color: d.fillColor ?? withAlpha(color, 0.12),
-            borderColor: withAlpha(color, 0.50),
+            borderColor: withAlpha(color, 0.5),
             borderSize: d.lineWidth ?? 1,
             borderStyle: d.lineStyle === 'dashed' ? 'dashed' : 'solid',
             borderDashedValue: [4, 4],
@@ -875,7 +1029,11 @@ export function registerChartOverlays(): void {
           attrs: {
             // Above the high, and centred on the bar — the candle IS the marker, so the tag only
             // has to name the pattern; parking it beside the bar would point at nothing.
-            x, y: hi.y - 5, text: d.label, align: 'center', baseline: 'bottom',
+            x,
+            y: hi.y - 5,
+            text: d.label,
+            align: 'center',
+            baseline: 'bottom',
           },
           styles: { ...FLAT_TEXT, color: edge },
           ignoreEvent: true,
@@ -900,7 +1058,12 @@ export function registerChartOverlays(): void {
       const figures: OverlayFigure[] = [
         {
           type: 'line',
-          attrs: { coordinates: [{ x: a.x, y: a.y }, { x: b.x, y: a.y }] },
+          attrs: {
+            coordinates: [
+              { x: a.x, y: a.y },
+              { x: b.x, y: a.y },
+            ],
+          },
           styles: {
             color,
             size: d.lineWidth ?? 1,
@@ -913,7 +1076,13 @@ export function registerChartOverlays(): void {
       if (d.label) {
         figures.push({
           type: 'text',
-          attrs: { x: Math.max(a.x, b.x) - 4, y: a.y - 3, text: d.label, align: 'right', baseline: 'bottom' },
+          attrs: {
+            x: Math.max(a.x, b.x) - 4,
+            y: a.y - 3,
+            text: d.label,
+            align: 'right',
+            baseline: 'bottom',
+          },
           styles: { ...FLAT_TEXT, color },
           ignoreEvent: true,
         })
@@ -930,7 +1099,11 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+    createPointFigures: ({
+      coordinates,
+      bounding,
+      overlay,
+    }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       if (coordinates.length < 1) return []
       const a = coordinates[0]
       const d = (overlay.extendData ?? {}) as OverlayExtend
@@ -938,7 +1111,12 @@ export function registerChartOverlays(): void {
       return [
         {
           type: 'line',
-          attrs: { coordinates: [{ x: a.x, y: 0 }, { x: a.x, y: bounding.height }] },
+          attrs: {
+            coordinates: [
+              { x: a.x, y: 0 },
+              { x: a.x, y: bounding.height },
+            ],
+          },
           styles: {
             color,
             size: d.lineWidth ?? 1,
@@ -968,10 +1146,17 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, bounding }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+    createPointFigures: ({
+      coordinates,
+      overlay,
+      bounding,
+    }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       const items = ((overlay.extendData ?? {}) as { items?: LabelItem[] }).items ?? []
       if (!items.length) return []
-      const CHAR_W = 6.2, PAD = 10, H = 15, GAP = 2 // chip metrics (must track the text styles below)
+      const CHAR_W = 6.2,
+        PAD = 10,
+        H = 15,
+        GAP = 2 // chip metrics (must track the text styles below)
       type Box = { x: number; y: number; half: number; text: string; color: string; up: boolean }
       const boxes: Box[] = []
       for (let i = 0; i < items.length && i < coordinates.length; i++) {
@@ -1043,18 +1228,22 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+    createPointFigures: ({
+      coordinates,
+      bounding,
+      overlay,
+    }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       if (coordinates.length < 1) return []
       const a = coordinates[0]
       const d = (overlay.extendData ?? {}) as MarkerExtend
       const color = d.color ?? '#ff2e9a'
-      const down = d.dir !== 'short'          // a LONG parks its tag at the bottom
+      const down = d.dir !== 'short' // a LONG parks its tag at the bottom
       // Inset from the pane edge to the chip. Asymmetric because the two edges are not equally
       // busy: the TOP carries the pinned OHLC readout (and the Sessions legend under it), so a tag
       // parked tight against it lands ON that text; the BOTTOM only has to clear the time axis.
       // `row` steps a second layer's tags clear of the first when both are shown together.
-      const inset = (down ? MARKER_TAG_INSET_BOTTOM : MARKER_TAG_INSET_TOP)
-        + (d.row ?? 0) * MARKER_TAG_ROW_H
+      const inset =
+        (down ? MARKER_TAG_INSET_BOTTOM : MARKER_TAG_INSET_TOP) + (d.row ?? 0) * MARKER_TAG_ROW_H
       const yTag = down ? bounding.height - inset : inset
       // Never let the tag cross the level it points at (possible when the price sits right at the
       // pane edge) — the line would double back and read as pointing the wrong way.
@@ -1083,19 +1272,35 @@ export function registerChartOverlays(): void {
         // …and the leader that ties the level to its tag
         {
           type: 'line',
-          attrs: { coordinates: [{ x: a.x, y: a.y }, { x: a.x, y }] },
+          attrs: {
+            coordinates: [
+              { x: a.x, y: a.y },
+              { x: a.x, y },
+            ],
+          },
           styles: { color, size: 1, style: 'dashed', dashedValue: [3, 3] },
         },
         {
           type: 'text',
           attrs: {
-            x: a.x, y, text: d.text ?? '',
-            align: 'center', baseline: down ? 'top' : 'bottom',
+            x: a.x,
+            y,
+            text: d.text ?? '',
+            align: 'center',
+            baseline: down ? 'top' : 'bottom',
           },
           styles: {
-            color: d.textColor ?? '#101014', size: 10, weight: 'bold',
-            backgroundColor: color, borderColor: color, borderSize: 1, borderRadius: 3,
-            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+            color: d.textColor ?? '#101014',
+            size: 10,
+            weight: 'bold',
+            backgroundColor: color,
+            borderColor: color,
+            borderSize: 1,
+            borderRadius: 3,
+            paddingLeft: 5,
+            paddingRight: 5,
+            paddingTop: 2,
+            paddingBottom: 2,
           },
         },
       ]
@@ -1114,7 +1319,11 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+    createPointFigures: ({
+      coordinates,
+      bounding,
+      overlay,
+    }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       if (coordinates.length < 1) return []
       const a = coordinates[0]
       const d = (overlay.extendData ?? {}) as OverlayExtend
@@ -1122,7 +1331,12 @@ export function registerChartOverlays(): void {
       const figures: OverlayFigure[] = [
         {
           type: 'line',
-          attrs: { coordinates: [{ x: a.x, y: 0 }, { x: a.x, y: bounding.height }] },
+          attrs: {
+            coordinates: [
+              { x: a.x, y: 0 },
+              { x: a.x, y: bounding.height },
+            ],
+          },
           styles: { color, size: 1, style: 'dashed', dashedValue: [5, 4] },
           ignoreEvent: true,
         },
@@ -1132,10 +1346,19 @@ export function registerChartOverlays(): void {
           type: 'text',
           attrs: { x: a.x + 6, y: 8, text: d.label, align: 'left', baseline: 'top' },
           styles: {
-            style: 'stroke_fill', color, size: 10, weight: 'bold',
-            backgroundColor: withAlpha('#0d0d1a', 0.82), borderColor: withAlpha(color, 0.5), borderSize: 1,
-            borderStyle: 'solid', borderRadius: 3,
-            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+            style: 'stroke_fill',
+            color,
+            size: 10,
+            weight: 'bold',
+            backgroundColor: withAlpha('#0d0d1a', 0.82),
+            borderColor: withAlpha(color, 0.5),
+            borderSize: 1,
+            borderStyle: 'solid',
+            borderRadius: 3,
+            paddingLeft: 5,
+            paddingRight: 5,
+            paddingTop: 2,
+            paddingBottom: 2,
           },
           ignoreEvent: true,
         })
@@ -1156,7 +1379,11 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+    createPointFigures: ({
+      coordinates,
+      bounding,
+      overlay,
+    }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
       if (coordinates.length < 1) return []
       const a = coordinates[0]
       const d = (overlay.extendData ?? {}) as OverlayExtend
@@ -1172,7 +1399,12 @@ export function registerChartOverlays(): void {
       }
       figures.push({
         type: 'line',
-        attrs: { coordinates: [{ x: a.x, y: 0 }, { x: a.x, y: bounding.height }] },
+        attrs: {
+          coordinates: [
+            { x: a.x, y: 0 },
+            { x: a.x, y: bounding.height },
+          ],
+        },
         styles: { color, size: 1, style: 'dashed', dashedValue: [5, 4] },
         ignoreEvent: true,
       })
@@ -1190,10 +1422,19 @@ export function registerChartOverlays(): void {
             baseline: 'middle',
           },
           styles: {
-            style: 'stroke_fill', color, size: 11, weight: 'bold',
-            backgroundColor: withAlpha('#0d0d1a', 0.82), borderColor: withAlpha(color, 0.5), borderSize: 1,
-            borderStyle: 'solid', borderRadius: 3,
-            paddingLeft: 7, paddingRight: 7, paddingTop: 4, paddingBottom: 4,
+            style: 'stroke_fill',
+            color,
+            size: 11,
+            weight: 'bold',
+            backgroundColor: withAlpha('#0d0d1a', 0.82),
+            borderColor: withAlpha(color, 0.5),
+            borderSize: 1,
+            borderStyle: 'solid',
+            borderRadius: 3,
+            paddingLeft: 7,
+            paddingRight: 7,
+            paddingTop: 4,
+            paddingBottom: 4,
           },
           ignoreEvent: true,
         })

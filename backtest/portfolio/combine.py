@@ -24,7 +24,7 @@ Output of `combine_runs`:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Optional, Sequence
 
 __all__ = ["Leg", "combine_runs", "leg_from_result"]
 
@@ -40,6 +40,7 @@ class Leg:
     `daily_pnl` is the run's stored `{date, pnl}` list (UTC day → net that day). `name` is
     the label shown in the correlation matrix and per-leg table (a strategy or run name).
     """
+
     name: str
     daily_pnl: Sequence[dict]
 
@@ -50,6 +51,7 @@ def leg_from_result(name: str, result: dict) -> Leg:
 
 
 # ── drawdown ──────────────────────────────────────────────────────────────────
+
 
 def _max_drawdown(daily: Sequence[dict]) -> float:
     """Largest peak-to-trough drop of the cumulative daily P&L, as a POSITIVE dollar number.
@@ -68,6 +70,7 @@ def _max_drawdown(daily: Sequence[dict]) -> float:
 
 
 # ── correlation ─────────────────────────────────────────────────────────────--
+
 
 def _pearson(xs: Sequence[float], ys: Sequence[float]) -> Optional[float]:
     """Pearson correlation, or None if either series has no variance (a flat leg —
@@ -107,6 +110,7 @@ def _correlation_matrix(legs: Sequence[Leg]) -> dict:
 
 # ── the entry point ─────────────────────────────────────────────────────────--
 
+
 def combine_runs(legs: Sequence[Leg], *, initial_capital: float = 0.0) -> dict:
     """Add up standalone runs into one idealized combined account. See module docstring."""
     legs = list(legs)
@@ -130,9 +134,9 @@ def combine_runs(legs: Sequence[Leg], *, initial_capital: float = 0.0) -> dict:
     sum_leg_dd = _round(sum(_max_drawdown(leg.daily_pnl) for leg in legs))
     div_dd = {
         "combined_max_dd": combined_dd,
-        "sum_leg_max_dd":  sum_leg_dd,
+        "sum_leg_max_dd": sum_leg_dd,
         # < 1 means the stack drew down less than its parts summed — the diversification benefit.
-        "ratio":           _round(combined_dd / sum_leg_dd, 4) if sum_leg_dd > 0 else None,
+        "ratio": _round(combined_dd / sum_leg_dd, 4) if sum_leg_dd > 0 else None,
     }
 
     # per-leg contribution
@@ -140,18 +144,20 @@ def combine_runs(legs: Sequence[Leg], *, initial_capital: float = 0.0) -> dict:
     per_leg = []
     for leg in legs:
         net = _round(sum(d["pnl"] for d in leg.daily_pnl))
-        per_leg.append({
-            "name":   leg.name,
-            "net":    net,
-            "share":  _round(net / combined_net, 4) if combined_net != 0 else None,
-            "max_dd": _max_drawdown(leg.daily_pnl),
-        })
+        per_leg.append(
+            {
+                "name": leg.name,
+                "net": net,
+                "share": _round(net / combined_net, 4) if combined_net != 0 else None,
+                "max_dd": _max_drawdown(leg.daily_pnl),
+            }
+        )
 
     return {
-        "combined_daily_pnl":    combined_daily,
+        "combined_daily_pnl": combined_daily,
         "combined_equity_curve": curve,
-        "correlation":           _correlation_matrix(legs),
-        "diversification_dd":    div_dd,
-        "per_leg":               per_leg,
-        "combined_net":          combined_net,
+        "correlation": _correlation_matrix(legs),
+        "diversification_dd": div_dd,
+        "per_leg": per_leg,
+        "combined_net": combined_net,
     }

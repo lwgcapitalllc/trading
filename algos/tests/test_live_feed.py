@@ -20,13 +20,15 @@ import feed as live_feed  # noqa: E402
 
 def _raw(times, base=100.0):
     """A `BotMT5.get_candles`-shaped frame: a `time` column of tz-aware UTC timestamps."""
-    return pd.DataFrame({
-        "time": pd.DatetimeIndex(times, tz="UTC"),
-        "open": [base + i for i in range(len(times))],
-        "high": [base + i + 1 for i in range(len(times))],
-        "low": [base + i - 1 for i in range(len(times))],
-        "close": [base + i + 0.5 for i in range(len(times))],
-    })
+    return pd.DataFrame(
+        {
+            "time": pd.DatetimeIndex(times, tz="UTC"),
+            "open": [base + i for i in range(len(times))],
+            "high": [base + i + 1 for i in range(len(times))],
+            "low": [base + i - 1 for i in range(len(times))],
+            "close": [base + i + 0.5 for i in range(len(times))],
+        }
+    )
 
 
 class _FakeBot:
@@ -47,6 +49,7 @@ class _FakeBot:
 def _fake_mt5(monkeypatch):
     """`_tf_const` imports MetaTrader5, which does not exist off Windows."""
     import types
+
     m = types.ModuleType("MetaTrader5")
     m.TIMEFRAME_M15 = 15
     monkeypatch.setitem(sys.modules, "MetaTrader5", m)
@@ -73,21 +76,23 @@ def test_to_canonical_survives_nothing():
 
 def test_new_bars_returns_only_unseen_ones():
     frame = _raw(["10:00", "10:15", "10:30"], base=100)
-    frame["time"] = pd.DatetimeIndex(["2026-07-30 10:00", "2026-07-30 10:15",
-                                      "2026-07-30 10:30"], tz="UTC")
+    frame["time"] = pd.DatetimeIndex(
+        ["2026-07-30 10:00", "2026-07-30 10:15", "2026-07-30 10:30"], tz="UTC"
+    )
     bot = _FakeBot(frame)
     f = live_feed.BarFeed(bot, "M15")
     first = f.new_bars()
     assert len(first) == 1 and first.index[-1] == pd.Timestamp("2026-07-30 10:15", tz="UTC")
-    assert f.new_bars().empty        # nothing has closed since
+    assert f.new_bars().empty  # nothing has closed since
 
 
 def test_mark_seen_stops_warmups_last_bar_being_replayed_live():
     """Warmup already stepped every bar it loaded. Without mark_seen the first poll would hand
     the last one back and the engines would see it twice."""
     frame = _raw(["2026-07-30 10:00", "2026-07-30 10:15", "2026-07-30 10:30"])
-    frame["time"] = pd.DatetimeIndex(["2026-07-30 10:00", "2026-07-30 10:15",
-                                      "2026-07-30 10:30"], tz="UTC")
+    frame["time"] = pd.DatetimeIndex(
+        ["2026-07-30 10:00", "2026-07-30 10:15", "2026-07-30 10:30"], tz="UTC"
+    )
     bot = _FakeBot(frame)
     f = live_feed.BarFeed(bot, "M15")
     warm = f.history(10)

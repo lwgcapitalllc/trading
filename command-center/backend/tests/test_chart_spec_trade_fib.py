@@ -22,11 +22,27 @@ from services.chart_spec import _trade_fib
 # A real bull leg (high 110 / low 100, so every price is 110 - 10*ratio): 0.0 = the high anchor,
 # 1.0 = the low one. These are the A+ bot's own eight ratios at genuine prices — a fixture with
 # hand-rounded prices would make every derived ratio here wrong by a hair and prove nothing.
-_BULL = [[0.0, 110.0], [0.382, 106.18], [0.5, 105.0], [0.618, 103.82],
-         [0.702, 102.98], [0.786, 102.14], [0.886, 101.14], [1.0, 100.0]]
+_BULL = [
+    [0.0, 110.0],
+    [0.382, 106.18],
+    [0.5, 105.0],
+    [0.618, 103.82],
+    [0.702, 102.98],
+    [0.786, 102.14],
+    [0.886, 101.14],
+    [1.0, 100.0],
+]
 # The bear mirror — 0.0 is the LOW anchor and prices ASCEND with the ratio.
-_BEAR = [[0.0, 100.0], [0.382, 103.82], [0.5, 105.0], [0.618, 106.18],
-         [0.702, 107.02], [0.786, 107.86], [0.886, 108.86], [1.0, 110.0]]
+_BEAR = [
+    [0.0, 100.0],
+    [0.382, 103.82],
+    [0.5, 105.0],
+    [0.618, 106.18],
+    [0.702, 107.02],
+    [0.786, 107.86],
+    [0.886, 108.86],
+    [1.0, 110.0],
+]
 
 
 def _point(levels=None, start_ms=None):
@@ -37,6 +53,7 @@ def _point(levels=None, start_ms=None):
 
 
 # ── optionality ───────────────────────────────────────────────────────────────
+
 
 def test_a_trade_with_no_fib_gets_none():
     """The honest answer for NT8/MT5, for a Python run finished before the field existed (there
@@ -57,6 +74,7 @@ def test_a_degenerate_leg_gets_none_rather_than_a_division_by_zero():
 
 # ── the levels are the strategy's, untouched ──────────────────────────────────
 
+
 def test_the_levels_pass_through_exactly_as_the_strategy_recorded_them():
     out = _trade_fib(_point(), 103.82, 101.5)
     assert out["levels"] == [{"ratio": r, "price": p} for r, p in _BULL]
@@ -73,12 +91,15 @@ def test_a_strategy_with_its_own_ladder_is_not_normalised_onto_a_line():
 def test_the_leg_start_is_carried_as_startTime_and_omitted_when_absent():
     """The x-span the drawing begins at — the bar the LEG started on, so the ladder reaches back
     through the retracement instead of starting at the fill."""
-    assert _trade_fib(_point(start_ms=1_700_000_000_000), 103.82, 101.5)["startTime"] \
+    assert (
+        _trade_fib(_point(start_ms=1_700_000_000_000), 103.82, 101.5)["startTime"]
         == 1_700_000_000_000
+    )
     assert "startTime" not in _trade_fib(_point(), 103.82, 101.5)
 
 
 # ── the derived ratios ────────────────────────────────────────────────────────
+
 
 def test_an_entry_ON_a_level_reports_that_level_s_ratio():
     """The common case: the A+ entry model rests the limit AT a fib on most setups, so a chart
@@ -129,6 +150,6 @@ def test_the_ratios_are_read_off_the_LADDER_not_off_assumed_endpoints():
     """The derivation uses the first and last levels it was GIVEN, whatever they are — so a
     partial ladder that never reaches 0.0 or 1.0 still reports correct ratios instead of
     silently rescaling to the range it happens to hold."""
-    partial = [[0.5, 105.0], [0.618, 103.82]]           # a 0.118-wide slice of the same leg
-    out = _trade_fib(_point(partial), 110.0, 100.0)     # the real 0.0 and 1.0 prices
+    partial = [[0.5, 105.0], [0.618, 103.82]]  # a 0.118-wide slice of the same leg
+    out = _trade_fib(_point(partial), 110.0, 100.0)  # the real 0.0 and 1.0 prices
     assert (out["entryRatio"], out["deepestRatio"]) == (0.0, 1.0)

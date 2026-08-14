@@ -69,20 +69,26 @@ def test_importing_it_does_not_pull_in_a_frozen_tree(module):
     The fix is always the same and is never "add it to an allow-list": move the import INSIDE the
     function that needs it. By the time any function here runs, the snapshot is bound.
     """
-    code = _PROBE.format(module=module, live=str(_LIVE),
-                         shared=str(_ROOT / "algos" / "shared"), root=str(_ROOT),
-                         frozen=_FROZEN_TOP_LEVEL)
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                         cwd=str(_ROOT), timeout=120)
+    code = _PROBE.format(
+        module=module,
+        live=str(_LIVE),
+        shared=str(_ROOT / "algos" / "shared"),
+        root=str(_ROOT),
+        frozen=_FROZEN_TOP_LEVEL,
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(_ROOT), timeout=120
+    )
     assert out.returncode == 0, f"importing {module} failed:\n{out.stderr[-2000:]}"
     line = [ln for ln in out.stdout.splitlines() if ln.startswith("LEAKED:")]
     assert line, f"probe produced no verdict for {module}:\n{out.stdout}\n{out.stderr}"
-    leaked = [m for m in line[0][len("LEAKED:"):].split(",") if m]
+    leaked = [m for m in line[0][len("LEAKED:") :].split(",") if m]
     assert not leaked, (
         f"`algos/live/{module}.py` imports {leaked} at MODULE scope. A promoted bot binds its "
         f"frozen snapshot AFTER these modules load, so this import resolves against the repo and "
         f"`runner._bind_code()` will refuse to start the bot (exit 2, 'version pin mismatch'). "
-        f"Move the import inside the function that uses it.")
+        f"Move the import inside the function that uses it."
+    )
 
 
 def test_the_probe_can_actually_detect_a_leak():
@@ -92,10 +98,15 @@ def test_the_probe_can_actually_detect_a_leak():
 
     Imports `backtest.setups` directly and requires the probe to notice.
     """
-    code = _PROBE.format(module="backtest.setups", live=str(_LIVE),
-                         shared=str(_ROOT / "algos" / "shared"), root=str(_ROOT),
-                         frozen=_FROZEN_TOP_LEVEL)
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                         cwd=str(_ROOT), timeout=120)
+    code = _PROBE.format(
+        module="backtest.setups",
+        live=str(_LIVE),
+        shared=str(_ROOT / "algos" / "shared"),
+        root=str(_ROOT),
+        frozen=_FROZEN_TOP_LEVEL,
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(_ROOT), timeout=120
+    )
     line = [ln for ln in out.stdout.splitlines() if ln.startswith("LEAKED:")][0]
     assert "backtest" in line, f"the probe cannot see a leak it was handed: {line}"

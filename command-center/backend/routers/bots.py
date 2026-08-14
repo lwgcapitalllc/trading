@@ -1490,8 +1490,14 @@ def _instance_dir(bot_key: str) -> str:
 _ALERT_THREAD_TTL_SECONDS = 900
 
 
-def _set_alert_thread(bot_key: str, message_id) -> None:
+def _set_alert_thread(bot_key: str, message_id) -> bool:
     """Tell the bot which message its next lifecycle alerts should reply to.
+
+    Returns whether the id reached the box. **Nothing branches on it** — the promote does not
+    care — but a helper that may fail must be ABLE to say so, and this one could not: the first
+    real deploy sent its three messages unthreaded and left no trace anywhere on either machine
+    to say which hop had dropped it (2026-08-14). Every hop was then verified working in
+    isolation, which is the least useful possible outcome of an investigation.
 
     The bot runs on the VPS and this runs on a laptop, so the id has to travel — and the
     instance directory is the channel those two already share (`stop.request`, `bot_state.json`,
@@ -1505,7 +1511,12 @@ def _set_alert_thread(bot_key: str, message_id) -> None:
     but the id was unreadable", and writing that would ask the bot to reply to message zero.
     """
     if not message_id:
-        return
+        # NOT silent. `send_telegram_id` answers None when the send failed and 0 when it went
+        # through but the id could not be read, and BOTH land here — so this branch is the one
+        # that turns "Telegram was slow for 5 seconds" into "the whole deploy came out
+        # unthreaded", with nothing in between to read afterwards.
+        print(f"bots: no root message id for {bot_key} — its deploy alerts will not be threaded")
+        return False
     payload = json.dumps(
         {"message_id": int(message_id), "expires_at": _time.time() + _ALERT_THREAD_TTL_SECONDS}
     )
@@ -1514,7 +1525,7 @@ def _set_alert_thread(bot_key: str, message_id) -> None:
     # one-liner-plus-stdin shape `_write_account_password` uses, minus the marker: this write is
     # a convenience and a caller must never learn about its failure by having the promote fail.
     try:
-        subprocess.run(
+        out = subprocess.run(
             [
                 "ssh",
                 VPS_HOST,
@@ -1528,6 +1539,16 @@ def _set_alert_thread(bot_key: str, message_id) -> None:
         )
     except Exception as e:  # pragma: no cover - a dead box is already reported by the promote
         print(f"bots: could not write the alert thread for {bot_key}: {e}")
+        return False
+    # 🔴 `subprocess.run` without `check=True` does NOT raise on a non-zero exit, so the old
+    # try/except caught a dead box and waved through every failure ssh reports by EXIT CODE — a
+    # refused connection, a remote traceback, a read-only path. The one failure mode a
+    # "never raises" helper must still detect is the one that never raises.
+    if out.returncode != 0:
+        err = (out.stderr or b"").decode("utf-8", "replace").strip()[:300]
+        print(f"bots: alert thread write for {bot_key} exited {out.returncode}: {err}")
+        return False
+    return True
 
 
 def _bot_is_running(bot_key: str) -> bool:

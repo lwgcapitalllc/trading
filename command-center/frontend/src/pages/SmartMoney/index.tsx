@@ -3,10 +3,18 @@ import { useSearchParams } from 'react-router-dom'
 import { Play, Download, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  useSmartMoneyRuns, useSmartMoneyRun, useCandidates,
-  useDisqualified, useSmartMoneyConfig, useConfigGitStatus, useSaveConfig,
-  useRunProgress, useRunPipeline, useStopPipeline,
-  useCacheStats, useClearCache,
+  useSmartMoneyRuns,
+  useSmartMoneyRun,
+  useCandidates,
+  useDisqualified,
+  useSmartMoneyConfig,
+  useConfigGitStatus,
+  useSaveConfig,
+  useRunProgress,
+  useRunPipeline,
+  useStopPipeline,
+  useCacheStats,
+  useClearCache,
 } from '@/hooks/useSmartMoney'
 import { PoolOverview, PoolOverviewEmpty } from './PoolOverview'
 import { Rankings } from './Rankings'
@@ -30,18 +38,19 @@ type FeedEntry = ScanEntry & { id: number }
 
 function ScannerTerminal({ progress }: { progress: RunProgress }) {
   const isRunning = progress.status === 'running'
-  const isDone    = progress.status === 'complete'
-  const isError   = progress.status === 'error'
-  const isIdle    = progress.status === 'idle'
+  const isDone = progress.status === 'complete'
+  const isError = progress.status === 'error'
+  const isIdle = progress.status === 'idle'
 
   // During the scan phase, show per-scan progress (wallets_scanned / wallets_total)
   // instead of overall pipeline %. The backend pct is designed for a multi-stage
   // pipeline (scan = first 10%), which is misleading when only Stage 1 runs.
   const isScanPhase = isRunning && progress.wallets_total > 0
   const displayPct = isScanPhase
-    ? Math.round(progress.wallets_scanned / progress.wallets_total * 100)
-    : isDone ? 100
-    : progress.pct
+    ? Math.round((progress.wallets_scanned / progress.wallets_total) * 100)
+    : isDone
+      ? 100
+      : progress.pct
 
   // Live elapsed counter — ticks from started_at every second so it's smooth
   // even between 1s backend polls.
@@ -63,25 +72,28 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   // visual feed one-by-one at 90ms each so the terminal feels like real-time
   // streaming rather than a batch jump.
   const [feed, setFeed] = useState<FeedEntry[]>([])
-  const seenRef      = useRef(new Set<string>())
-  const drainQueue   = useRef<ScanEntry[]>([])
-  const drainingRef  = useRef(false)
-  const feedIdRef    = useRef(0)
+  const seenRef = useRef(new Set<string>())
+  const drainQueue = useRef<ScanEntry[]>([])
+  const drainingRef = useRef(false)
+  const feedIdRef = useRef(0)
 
   useEffect(() => {
     const incoming = progress.recent_addresses ?? []
-    const newOnes  = incoming.filter(e => !seenRef.current.has(e.a))
+    const newOnes = incoming.filter((e) => !seenRef.current.has(e.a))
     if (!newOnes.length) return
 
     drainQueue.current.push(...newOnes)
-    if (drainingRef.current) return       // already draining — let it continue
+    if (drainingRef.current) return // already draining — let it continue
 
     drainingRef.current = true
     const step = () => {
       const entry = drainQueue.current.shift()
-      if (!entry) { drainingRef.current = false; return }
+      if (!entry) {
+        drainingRef.current = false
+        return
+      }
       seenRef.current.add(entry.a)
-      setFeed(prev => [{ ...entry, id: feedIdRef.current++ }, ...prev.slice(0, 17)])
+      setFeed((prev) => [{ ...entry, id: feedIdRef.current++ }, ...prev.slice(0, 17)])
       setTimeout(step, 90)
     }
     step()
@@ -98,23 +110,26 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
   }, [progress.phase])
 
   // Computed stats
-  const scanRate  = liveElapsed > 1 ? progress.wallets_scanned / liveElapsed : 0
-  const isScan    = isRunning && (progress.phase === 'scanning wallets' || feed.length > 0)
+  const scanRate = liveElapsed > 1 ? progress.wallets_scanned / liveElapsed : 0
+  const isScan = isRunning && (progress.phase === 'scanning wallets' || feed.length > 0)
   // Only show stats bar when there is actual numeric content to display
-  const showStats = progress.wallets_total > 0 || progress.qualified_so_far > 0 || progress.disqualified_so_far > 0 || (isRunning && scanRate >= 0.5)
+  const showStats =
+    progress.wallets_total > 0 ||
+    progress.qualified_so_far > 0 ||
+    progress.disqualified_so_far > 0 ||
+    (isRunning && scanRate >= 0.5)
 
   // Border / bg colour based on state
   const wrapClass = isError
     ? 'border-neg bg-neg-muted'
     : isDone
-    ? 'border-accent/40 bg-accent-muted'
-    : isIdle
-    ? 'border-border-subtle bg-bg-sunken'
-    : 'border-border-default bg-bg-sunken'
+      ? 'border-accent/40 bg-accent-muted'
+      : isIdle
+        ? 'border-border-subtle bg-bg-sunken'
+        : 'border-border-default bg-bg-sunken'
 
   return (
     <div className={`mb-[18px] rounded-lg border overflow-hidden ${wrapClass}`}>
-
       {/* ── Header row ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-[10px] border-b border-border-subtle">
         <div className="flex items-center gap-[10px]">
@@ -124,23 +139,21 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
               <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
             </span>
           )}
-          {isDone  && <span className="w-[8px] h-[8px] rounded-full bg-accent flex-shrink-0" />}
+          {isDone && <span className="w-[8px] h-[8px] rounded-full bg-accent flex-shrink-0" />}
           {isError && <span className="w-[8px] h-[8px] rounded-full bg-neg flex-shrink-0" />}
-          {isIdle  && <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />}
-          <span className={`text-small font-semibold font-mono tracking-wide uppercase ${isIdle ? 'text-text-tertiary/50' : ''}`}>
-            {isIdle ? 'Scanner' : (progress.stage_name || `Stage ${progress.stage}`)}
+          {isIdle && (
+            <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/30 flex-shrink-0" />
+          )}
+          <span
+            className={`text-small font-semibold font-mono tracking-wide uppercase ${isIdle ? 'text-text-tertiary/50' : ''}`}
+          >
+            {isIdle ? 'Scanner' : progress.stage_name || `Stage ${progress.stage}`}
           </span>
           {progress.phase && !['complete', 'error', 'starting'].includes(progress.phase) && (
-            <span className="text-micro text-text-tertiary font-mono">
-              · {progress.phase}
-            </span>
+            <span className="text-micro text-text-tertiary font-mono">· {progress.phase}</span>
           )}
-          {isDone && (
-            <span className="text-micro text-accent font-mono">· run complete</span>
-          )}
-          {isIdle && (
-            <span className="text-micro text-text-tertiary/40 font-mono">· idle</span>
-          )}
+          {isDone && <span className="text-micro text-accent font-mono">· run complete</span>}
+          {isIdle && <span className="text-micro text-text-tertiary/40 font-mono">· idle</span>}
         </div>
         {!isIdle && (
           <div className="flex items-center gap-4 font-mono text-micro">
@@ -150,8 +163,8 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
                 isDone
                   ? 'text-accent drop-shadow-glow-accent'
                   : isError
-                  ? 'text-neg drop-shadow-glow-neg'
-                  : 'text-accent drop-shadow-glow-accent'
+                    ? 'text-neg drop-shadow-glow-neg'
+                    : 'text-accent drop-shadow-glow-accent'
               }`}
             >
               {displayPct}%
@@ -161,8 +174,9 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
       </div>
 
       {/* ── Feed body ───────────────────────────────────────────────────── */}
-      <div className={`relative overflow-hidden font-mono transition-[height] duration-500 ease-in-out ${isRunning ? 'h-[176px] py-3 px-4' : isIdle ? 'h-[80px]' : 'h-[40px] py-3 px-4'}`}>
-
+      <div
+        className={`relative overflow-hidden font-mono transition-[height] duration-500 ease-in-out ${isRunning ? 'h-[176px] py-3 px-4' : isIdle ? 'h-[80px]' : 'h-[40px] py-3 px-4'}`}
+      >
         {/* Scanline sweep — subtle horizontal glint during scan phase */}
         {isScan && (
           <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent animate-scanline pointer-events-none z-10" />
@@ -220,8 +234,10 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           <div
             className="relative w-full h-full"
             style={{
-              maskImage: 'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%)',
-              WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%)',
+              maskImage:
+                'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%)',
+              WebkitMaskImage:
+                'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%)',
             }}
           >
             {/*
@@ -252,25 +268,28 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           <div className="flex flex-col justify-center h-full gap-[8px]">
             <div className="flex items-center gap-[10px] text-[12px] font-mono">
               {isRunning && <span className="text-accent text-[10px]">▶</span>}
-              {isDone    && <span className="text-accent">✓</span>}
-              {isError   && <span className="text-neg">✗</span>}
-              <span className={isError ? 'text-neg-text' : isDone ? 'text-accent-text' : 'text-text-secondary'}>
+              {isDone && <span className="text-accent">✓</span>}
+              {isError && <span className="text-neg">✗</span>}
+              <span
+                className={
+                  isError ? 'text-neg-text' : isDone ? 'text-accent-text' : 'text-text-secondary'
+                }
+              >
                 {isError
-                  ? (progress.message || 'Error')
+                  ? progress.message || 'Error'
                   : isDone
-                  ? (progress.wallets_scanned > 0
+                    ? progress.wallets_scanned > 0
                       ? `${progress.wallets_scanned.toLocaleString()} wallets processed`
-                      : 'Completed')
-                  : (progress.message || progress.phase || 'Starting…')}
+                      : 'Completed'
+                    : progress.message || progress.phase || 'Starting…'}
               </span>
-              {isRunning && (
-                <span className="text-accent animate-pulse leading-none">█</span>
-              )}
+              {isRunning && <span className="text-accent animate-pulse leading-none">█</span>}
             </div>
             {/* Show phase progress for profiling/scoring steps */}
             {isRunning && progress.wallets_total > 0 && !isScan && (
               <div className="text-[10px] text-text-tertiary font-mono tabular-nums">
-                {progress.wallets_scanned.toLocaleString()} / {progress.wallets_total.toLocaleString()} wallets processed
+                {progress.wallets_scanned.toLocaleString()} /{' '}
+                {progress.wallets_total.toLocaleString()} wallets processed
               </div>
             )}
           </div>
@@ -292,8 +311,7 @@ function ScannerTerminal({ progress }: { progress: RunProgress }) {
           )}
           {isRunning && scanRate >= 0.5 && (
             <span className="text-text-tertiary tabular-nums">
-              <span className="text-text-secondary">{scanRate.toFixed(1)}</span>
-              {' '}wallets/sec
+              <span className="text-text-secondary">{scanRate.toFixed(1)}</span> wallets/sec
             </span>
           )}
           {progress.qualified_so_far > 0 && (
@@ -350,21 +368,31 @@ function RunPendingPlaceholder() {
 type Tab = 'overview' | 'rankings' | 'profile' | 'disqualified' | 'config'
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'overview',     label: 'Pool Overview' },
-  { id: 'rankings',     label: 'Rankings' },
-  { id: 'profile',      label: 'Candidate Profile' },
+  { id: 'overview', label: 'Pool Overview' },
+  { id: 'rankings', label: 'Rankings' },
+  { id: 'profile', label: 'Candidate Profile' },
   { id: 'disqualified', label: 'Disqualified' },
-  { id: 'config',       label: 'Config' },
+  { id: 'config', label: 'Config' },
 ]
 
 // Placeholder progress shown immediately after clicking "Run pipeline", before
 // Python has had time to start and write a real progress.json (takes 10–15s).
 const STARTING_PROGRESS: RunProgress = {
-  run_id: '', status: 'running', stage: 1, stage_name: 'Hyperliquid scan',
-  phase: 'starting', pct: 0, wallets_scanned: 0, wallets_total: 0,
-  qualified_so_far: 0, disqualified_so_far: 0,
-  message: 'Launching pipeline…', started_at: new Date().toISOString(),
-  updated_at: null, elapsed_seconds: 0, recent_addresses: [],
+  run_id: '',
+  status: 'running',
+  stage: 1,
+  stage_name: 'Hyperliquid scan',
+  phase: 'starting',
+  pct: 0,
+  wallets_scanned: 0,
+  wallets_total: 0,
+  qualified_so_far: 0,
+  disqualified_so_far: 0,
+  message: 'Launching pipeline…',
+  started_at: new Date().toISOString(),
+  updated_at: null,
+  elapsed_seconds: 0,
+  recent_addresses: [],
 }
 
 export function SmartMoney() {
@@ -407,9 +435,8 @@ export function SmartMoney() {
   }, [isStarting])
 
   // What the terminal should display: local starting placeholder until real data arrives
-  const effectiveProgress = (isStarting && progress?.status !== 'running')
-    ? STARTING_PROGRESS
-    : progress
+  const effectiveProgress =
+    isStarting && progress?.status !== 'running' ? STARTING_PROGRESS : progress
 
   const isLive = isStarting || progress?.status === 'running'
 
@@ -420,10 +447,7 @@ export function SmartMoney() {
   // the user has explicitly selected a historical run — showing the latest
   // run's terminal while browsing older data is confusing.
   const isViewingHistoricalRun =
-    selectedRunId !== null &&
-    runs != null &&
-    runs.length > 0 &&
-    selectedRunId !== runs[0].run_id
+    selectedRunId !== null && runs != null && runs.length > 0 && selectedRunId !== runs[0].run_id
   const showProgress = effectiveProgress != null && !isViewingHistoricalRun
 
   const { data: run, isLoading: runLoading } = useSmartMoneyRun(activeRunId)
@@ -448,7 +472,13 @@ export function SmartMoney() {
   }
 
   const runDate = run?.generated_at
-    ? new Date(run.generated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? new Date(run.generated_at).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
     : null
 
   return (
@@ -485,12 +515,18 @@ export function SmartMoney() {
               {runs && runs.length > 0 && (
                 <select
                   value={activeRunId ?? ''}
-                  onChange={e => setSelectedRunId(e.target.value)}
+                  onChange={(e) => setSelectedRunId(e.target.value)}
                   className="bg-bg-surface border border-border-default rounded-md px-3 py-[6px] text-small text-text-primary focus:outline-none focus:border-accent"
                 >
-                  {runs.map(r => (
+                  {runs.map((r) => (
                     <option key={r.run_id} value={r.run_id}>
-                      {new Date(r.generated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {r.total_qualified} qualified
+                      {new Date(r.generated_at).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}{' '}
+                      · {r.total_qualified} qualified
                     </option>
                   ))}
                 </select>
@@ -535,7 +571,10 @@ export function SmartMoney() {
                   </button>
                   <span className="text-border-subtle">·</span>
                   <button
-                    onClick={() => { clearCache(); setConfirmClear(false) }}
+                    onClick={() => {
+                      clearCache()
+                      setConfirmClear(false)
+                    }}
                     disabled={clearing}
                     className="text-warn font-semibold hover:text-warn/80 transition-colors duration-[120ms] disabled:opacity-50"
                   >
@@ -547,7 +586,7 @@ export function SmartMoney() {
               <div className="flex items-center gap-[6px]">
                 {/* Profile toggle: BOT / HUMAN */}
                 <div className="flex rounded-md overflow-hidden border border-border-default text-[11px] font-mono">
-                  {(['bot', 'human'] as const).map(p => (
+                  {(['bot', 'human'] as const).map((p) => (
                     <button
                       key={p}
                       onClick={() => setProfile(p)}
@@ -578,8 +617,10 @@ export function SmartMoney() {
       {showProgress && effectiveProgress && <ScannerTerminal progress={effectiveProgress} />}
 
       {/* Tabs — entirely non-interactive while a run is live */}
-      <div className={`flex gap-[2px] mb-[18px] border-b border-border-subtle ${isLive ? 'pointer-events-none' : ''}`}>
-        {TABS.map(t => (
+      <div
+        className={`flex gap-[2px] mb-[18px] border-b border-border-subtle ${isLive ? 'pointer-events-none' : ''}`}
+      >
+        {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -587,8 +628,8 @@ export function SmartMoney() {
               isLive
                 ? 'text-text-tertiary/40 border-transparent cursor-default'
                 : tab === t.id
-                ? 'text-text-primary border-accent cursor-pointer'
-                : 'text-text-secondary border-transparent hover:text-text-primary cursor-pointer'
+                  ? 'text-text-primary border-accent cursor-pointer'
+                  : 'text-text-secondary border-transparent hover:text-text-primary cursor-pointer'
             }`}
           >
             {t.label}
@@ -601,58 +642,73 @@ export function SmartMoney() {
         <RunPendingPlaceholder />
       ) : (
         <>
-          {tab === 'overview' && (
-            runLoading
-              ? <div className="text-text-tertiary text-small py-12 text-center">Loading…</div>
-              : run
-              ? <PoolOverview run={run} onNavigate={(t, m) => {
+          {tab === 'overview' &&
+            (runLoading ? (
+              <div className="text-text-tertiary text-small py-12 text-center">Loading…</div>
+            ) : run ? (
+              <PoolOverview
+                run={run}
+                onNavigate={(t, m) => {
                   if (m) setRankingsMarket(m as 'all' | 'crypto' | 'forex')
                   setTab(t as Tab)
-                }} />
-              : <PoolOverviewEmpty />
-          )}
+                }}
+              />
+            ) : (
+              <PoolOverviewEmpty />
+            ))}
 
-          {tab === 'rankings' && (
-            candLoading
-              ? <div className="text-text-tertiary text-small py-12 text-center">Loading candidates…</div>
-              : candidates && candidates.length > 0
-              ? <Rankings candidates={candidates} onSelect={handleSelectCandidate} initialMarket={rankingsMarket} />
-              : <div className="text-center py-12 text-text-tertiary text-small">
-                  No candidates found in this run.
-                </div>
-          )}
+          {tab === 'rankings' &&
+            (candLoading ? (
+              <div className="text-text-tertiary text-small py-12 text-center">
+                Loading candidates…
+              </div>
+            ) : candidates && candidates.length > 0 ? (
+              <Rankings
+                candidates={candidates}
+                onSelect={handleSelectCandidate}
+                initialMarket={rankingsMarket}
+              />
+            ) : (
+              <div className="text-center py-12 text-text-tertiary text-small">
+                No candidates found in this run.
+              </div>
+            ))}
 
-          {tab === 'profile' && (
-            selectedCandidate
-              ? <CandidateProfile candidate={selectedCandidate} onBack={() => setTab('rankings')} />
-              : <div className="text-center py-12 text-text-tertiary text-small">
-                  Select a candidate from the Rankings tab to view their full profile.
-                </div>
-          )}
+          {tab === 'profile' &&
+            (selectedCandidate ? (
+              <CandidateProfile candidate={selectedCandidate} onBack={() => setTab('rankings')} />
+            ) : (
+              <div className="text-center py-12 text-text-tertiary text-small">
+                Select a candidate from the Rankings tab to view their full profile.
+              </div>
+            ))}
 
-          {tab === 'disqualified' && (
-            disqualified
-              ? <DisqualifiedLog disqualified={disqualified} />
-              : <div className="text-center py-12 text-text-tertiary text-small">
-                  No disqualified log available for this run.
-                </div>
-          )}
+          {tab === 'disqualified' &&
+            (disqualified ? (
+              <DisqualifiedLog disqualified={disqualified} />
+            ) : (
+              <div className="text-center py-12 text-text-tertiary text-small">
+                No disqualified log available for this run.
+              </div>
+            ))}
 
-          {tab === 'config' && (
-            cfgLoading
-              ? <div className="text-text-tertiary text-small py-12 text-center">Loading config…</div>
-              : config
-              ? <Config
-                  config={config}
-                  gitStatus={gitStatus}
-                  onSave={saveConfig}
-                  isSaving={saving}
-                  saveError={saveErr ? String(saveErr) : null}
-                />
-              : <div className="text-center py-12 text-neg-text text-small">
-                  Could not load pipeline config. Check that the config file path in Settings is correct.
-                </div>
-          )}
+          {tab === 'config' &&
+            (cfgLoading ? (
+              <div className="text-text-tertiary text-small py-12 text-center">Loading config…</div>
+            ) : config ? (
+              <Config
+                config={config}
+                gitStatus={gitStatus}
+                onSave={saveConfig}
+                isSaving={saving}
+                saveError={saveErr ? String(saveErr) : null}
+              />
+            ) : (
+              <div className="text-center py-12 text-neg-text text-small">
+                Could not load pipeline config. Check that the config file path in Settings is
+                correct.
+              </div>
+            ))}
         </>
       )}
     </div>

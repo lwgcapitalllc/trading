@@ -69,22 +69,22 @@ if str(_ENGINES) not in sys.path:
 GROUP_FVG = "Fair Value Gaps"
 
 # ── mpc_assistant.pine's locked FVG + EQ constants (mpc_assistant.pine:407-414, :420-423) ──
-MPC_MAX_COUNT = 8            # fvgMaxCount
-MPC_REQUIRE_CLOSE = False    # fvgRequireClose
-MPC_THRESH_LTF = 0.0         # fvgThreshLTF — below 15m
-MPC_THRESH_HTF = 0.04        # fvgThreshHTF — 15m and above
-MPC_TF_SPLIT_SECONDS = 900   # timeframe.in_seconds() < 900
-MPC_EQ_PIVOT_LEN = 2         # eqPivotLen
-MPC_EQ_ATR_MULT = 0.1        # eqAtrMult
-MPC_EQ_MAX = 6               # eqMax
-MPC_EQ_EXEMPT = True         # eqExemptFvg — a gap behind an EQH/EQL survives the FIFO cap
+MPC_MAX_COUNT = 8  # fvgMaxCount
+MPC_REQUIRE_CLOSE = False  # fvgRequireClose
+MPC_THRESH_LTF = 0.0  # fvgThreshLTF — below 15m
+MPC_THRESH_HTF = 0.04  # fvgThreshHTF — 15m and above
+MPC_TF_SPLIT_SECONDS = 900  # timeframe.in_seconds() < 900
+MPC_EQ_PIVOT_LEN = 2  # eqPivotLen
+MPC_EQ_ATR_MULT = 0.1  # eqAtrMult
+MPC_EQ_MAX = 6  # eqMax
+MPC_EQ_EXEMPT = True  # eqExemptFvg — a gap behind an EQH/EQL survives the FIFO cap
 
 # Colours. mpc paints BOTH directions the SAME grey (`color.new(color.gray, 80)`) and explicitly no
 # border (`border_color = color(na)`), so that is what is emitted: one flat tint, `lineWidth: 0` (the
 # panel's "no border" signal — see the BOX template in overlays.ts). Bull and bear are therefore
 # indistinguishable, which is exactly how the indicator's boxes look; mpc's only direction cue is a
 # green/red "FVG" caption, and drawing a border here instead would be a shape the chart doesn't have.
-_FILL = "rgba(148,163,184,0.16)"     # slate, ~80% transparent — the Pine's grey body
+_FILL = "rgba(148,163,184,0.16)"  # slate, ~80% transparent — the Pine's grey body
 
 # Payload backstop. Keeps the most RECENT gaps; a truncation is LOGGED, never silent.
 #
@@ -157,15 +157,19 @@ def build_fvg_overlays(
         return []
     bars = _anchor_bars([c["time"] for c in candles], anchors_ms)
     if not bars:
-        return []      # no trade, block or miss on screen ⇒ nothing to explain ⇒ nothing to draw
+        return []  # no trade, block or miss on screen ⇒ nothing to explain ⇒ nothing to draw
 
     try:
         from fair_value_gaps import FairValueGapEngine
+
         eq_engine = None
         if eq_exempt:
             from equal_highs_lows import EqualHighsLowsEngine
+
             eq_engine = EqualHighsLowsEngine(
-                pivot_len=MPC_EQ_PIVOT_LEN, atr_mult=MPC_EQ_ATR_MULT, max_levels=MPC_EQ_MAX,
+                pivot_len=MPC_EQ_PIVOT_LEN,
+                atr_mult=MPC_EQ_ATR_MULT,
+                max_levels=MPC_EQ_MAX,
             )
     except Exception as exc:  # noqa: BLE001 — engine import is best-effort
         log.warning("fvg overlays: engine import failed: %s", exc)
@@ -180,7 +184,9 @@ def build_fvg_overlays(
     lives: dict[int, dict] = {}
 
     try:
-        fvg = FairValueGapEngine(max_count=max_count, threshold_pct=thresh, require_close=require_close)
+        fvg = FairValueGapEngine(
+            max_count=max_count, threshold_pct=thresh, require_close=require_close
+        )
         for i, c in enumerate(candles):
             o, h, l, cl = c["open"], c["high"], c["low"], c["close"]
             # EQ runs BEFORE FVG (the mpc order) and its levels feed the cap: a gap behind an
@@ -196,8 +202,11 @@ def build_fvg_overlays(
                 # Direction is deliberately NOT kept: mpc draws bull and bear boxes identically, so
                 # there is nothing here for it to change.
                 lives[g.id] = {
-                    "top": g.top, "bottom": g.bottom,
-                    "born": g.born_index, "died": None, "seen": False,
+                    "top": g.top,
+                    "bottom": g.bottom,
+                    "born": g.born_index,
+                    "died": None,
+                    "seen": False,
                 }
             for g in (*ev.mitigated, *ev.evicted):
                 rec = lives.get(g.id)
@@ -224,18 +233,29 @@ def build_fvg_overlays(
         left = max(born - 1, 0)
         right = (n - 1) if rec["died"] is None else max(born, rec["died"] - 1)
         right = min(right, n - 1)
-        overlays.append({
-            "type": "box", "group": GROUP_FVG,
-            "t0": times[left], "t1": times[right],
-            "top": round(rec["top"], 5), "bottom": round(rec["bottom"], 5),
-            "style": {"fillColor": _FILL, "lineWidth": 0},
-        })
+        overlays.append(
+            {
+                "type": "box",
+                "group": GROUP_FVG,
+                "t0": times[left],
+                "t1": times[right],
+                "top": round(rec["top"], 5),
+                "bottom": round(rec["bottom"], 5),
+                "style": {"fillColor": _FILL, "lineWidth": 0},
+            }
+        )
 
     overlays.sort(key=lambda ov: ov["t0"])
     if len(overlays) > _MAX_BOXES:
         dropped = len(overlays) - _MAX_BOXES
         overlays = overlays[-_MAX_BOXES:]
         log.info("fvg overlays: capped at %d boxes — dropped the %d oldest", _MAX_BOXES, dropped)
-    log.info("fvg overlays: %d bars, %d anchor bar(s) -> %d gap boxes (tf=%s, threshold=%s)",
-             n, len(bars), len(overlays), timeframe, thresh)
+    log.info(
+        "fvg overlays: %d bars, %d anchor bar(s) -> %d gap boxes (tf=%s, threshold=%s)",
+        n,
+        len(bars),
+        len(overlays),
+        timeframe,
+        thresh,
+    )
     return overlays

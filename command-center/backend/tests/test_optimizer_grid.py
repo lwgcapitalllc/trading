@@ -15,39 +15,50 @@ import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from services import lab_db
 from services.optimization_runner import _expand_axis, base_params_for, expand_grid
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _strategy(strategy_id: str, runner: str, defaults: dict) -> dict:
-    lab_db.upsert_strategy({
-        "id": strategy_id,
-        "name": strategy_id,
-        "class_name": strategy_id,
-        "source_path": f"strategies/{strategy_id}",
-        "scanned_at": int(time.time()),
-        "runner": runner,
-        "default_params": defaults,
-        "param_schema": [],
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": strategy_id,
+            "name": strategy_id,
+            "class_name": strategy_id,
+            "source_path": f"strategies/{strategy_id}",
+            "scanned_at": int(time.time()),
+            "runner": runner,
+            "default_params": defaults,
+            "param_schema": [],
+        }
+    )
     return lab_db.get_strategy(strategy_id)
 
 
 def _run(run_id: str, strategy_id: str, params: dict) -> str:
-    lab_db.insert_run({
-        "run_id": run_id, "strategy_id": strategy_id, "instrument": "XAUUSD.s",
-        "params": params, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "status": "complete", "created_at": int(time.time()),
-    })
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": strategy_id,
+            "instrument": "XAUUSD.s",
+            "params": params,
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2025-01-01",
+            "end_date": "2025-06-01",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "status": "complete",
+            "created_at": int(time.time()),
+        }
+    )
     return run_id
 
 
 # ── 1. "inherited" has to mean inherited ──────────────────────────────────────
+
 
 def test_a_non_swept_param_takes_the_source_runs_value_not_the_strategy_default(fresh_db):
     """The exact shape of the live bug: run 096432c2ad20 was tuned to 30/40 while the strategy
@@ -83,33 +94,44 @@ def test_no_source_run_falls_back_to_the_strategy_defaults(fresh_db):
 
 # ── 2. a list axis is a real axis ─────────────────────────────────────────────
 
+
 def test_a_list_axis_expands_to_exactly_its_values():
     assert _expand_axis(["0.618", "0.886", "1.0"]) == ["0.618", "0.886", "1.0"]
     assert _expand_axis([True, False]) == [True, False]
 
 
 def test_a_list_axis_multiplies_into_the_grid_like_a_range():
-    combos = expand_grid({
-        "exec_sl_level": ["0.886", "1.0"],
-        "exec_risk_pct": {"min": 10, "max": 12, "step": 1},
-    })
+    combos = expand_grid(
+        {
+            "exec_sl_level": ["0.886", "1.0"],
+            "exec_risk_pct": {"min": 10, "max": 12, "step": 1},
+        }
+    )
     assert len(combos) == 6
     assert {c["exec_sl_level"] for c in combos} == {"0.886", "1.0"}
 
 
 # ── 3. only the runner that can walk a list may be sent one ───────────────────
 
+
 def _post_grid(client, strategy_id: str, grid: dict):
     with (
         patch("routers.optimizations.run_optimization", new_callable=AsyncMock),
         patch("routers.optimizations.history_limits.validate_window", return_value=None),
     ):
-        return client.post("/optimizations/run", json={
-            "strategy_id": strategy_id, "instrument": "XAUUSD.s",
-            "bar_type": "Minute", "bar_value": 15,
-            "start_date": "2025-01-01", "end_date": "2025-06-01",
-            "search_method": "native", "param_grid": grid,
-        })
+        return client.post(
+            "/optimizations/run",
+            json={
+                "strategy_id": strategy_id,
+                "instrument": "XAUUSD.s",
+                "bar_type": "Minute",
+                "bar_value": 15,
+                "start_date": "2025-01-01",
+                "end_date": "2025-06-01",
+                "search_method": "native",
+                "param_grid": grid,
+            },
+        )
 
 
 @pytest.mark.parametrize("runner", ["ninjatrader", "mt5"])

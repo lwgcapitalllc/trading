@@ -39,7 +39,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Optional
 
-from services import lab_db, evaluator, worthiness
+from services import evaluator, lab_db, worthiness
 from services.metrics import apply_canonical_sharpe
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -88,7 +88,7 @@ def read_shared_summary(stack_id: str) -> Optional[dict]:
     path = stack_dir(stack_id) / "shared_summary.json"
     try:
         return json.loads(path.read_text())
-    except Exception:                       # noqa: BLE001 — absent or unreadable, same answer here
+    except Exception:  # noqa: BLE001 — absent or unreadable, same answer here
         return None
 
 
@@ -108,12 +108,13 @@ async def run_shared_stack(stack_id: str, legs: list[dict], settings: dict) -> N
     _set_progress(stack_id, phase="starting", pct=1, message="loading bars…")
     try:
         await asyncio.to_thread(_execute, stack_id, legs, settings)
-    except Exception as exc:                # noqa: BLE001 — a background task must not die silently
+    except Exception as exc:  # noqa: BLE001 — a background task must not die silently
         detail = f"{exc}"
         for leg in legs:
             lab_db.update_run_status(leg["run_id"], "failed_error", detail)
-        _set_progress(stack_id, phase="failed", pct=100, message=detail,
-                      error=traceback.format_exc())
+        _set_progress(
+            stack_id, phase="failed", pct=100, message=detail, error=traceback.format_exc()
+        )
     finally:
         # Held for a beat so a poller mid-flight sees the terminal state rather than a gap that
         # reads as "no such stack".
@@ -123,7 +124,6 @@ async def run_shared_stack(stack_id: str, legs: list[dict], settings: dict) -> N
 def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.portfolio import LegSpec, contention_summary, run_stack
-
     from services.python_runner import _build_config, _cost_profile, _resolve, _timeframe_minutes
 
     symbol = settings["instrument"]
@@ -131,8 +131,9 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
 
     df = BarSource().load(symbol, tf, settings["start_date"], settings["end_date"])
     if df.empty:
-        raise ValueError(f"no bars for {symbol} {tf}m over "
-                         f"[{settings['start_date']}, {settings['end_date']}]")
+        raise ValueError(
+            f"no bars for {symbol} {tf}m over [{settings['start_date']}, {settings['end_date']}]"
+        )
 
     balance = float(settings["account_size"])
     profile = _cost_profile(settings)
@@ -144,11 +145,18 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
             raise ValueError(f"no Python strategy class named {leg['class_name']!r}")
         _, entry = found
         config = _build_config(entry["config"], leg.get("params") or {}, symbol)
-        specs.append(LegSpec(name=leg["strategy_id"], strategy_cls=entry["strategy"],
-                             config=config, df=df, cost_profile=profile))
+        specs.append(
+            LegSpec(
+                name=leg["strategy_id"],
+                strategy_cls=entry["strategy"],
+                config=config,
+                df=df,
+                cost_profile=profile,
+            )
+        )
 
     total_ticks = len(df.index)
-    phases = 1 + len(specs)                 # the shared replay, then one solo control per leg
+    phases = 1 + len(specs)  # the shared replay, then one solo control per leg
     phase_names = ["shared"] + [f"solo:{s.name}" for s in specs]
 
     def _progress(phase: str, i: int) -> None:
@@ -157,14 +165,21 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
         except ValueError:
             done = 0
         frac = (done + min(1.0, i / max(1, total_ticks))) / phases
-        _set_progress(stack_id, phase=phase, pct=min(97, 3 + int(frac * 94)),
-                      message=f"{phase} · bar {i:,} / {total_ticks:,}")
+        _set_progress(
+            stack_id,
+            phase=phase,
+            pct=min(97, 3 + int(frac * 94)),
+            message=f"{phase} · bar {i:,} / {total_ticks:,}",
+        )
 
-    run = run_stack(specs, balance=balance,
-                    risk_cap_pct=float(settings["risk_cap_pct"]) / 100.0,
-                    entry_floor_pct=float(settings.get("entry_floor_pct") or 0.0) / 100.0,
-                    progress=_progress,
-                    should_cancel=lambda: _is_cancelled(stack_id, legs))
+    run = run_stack(
+        specs,
+        balance=balance,
+        risk_cap_pct=float(settings["risk_cap_pct"]) / 100.0,
+        entry_floor_pct=float(settings.get("entry_floor_pct") or 0.0) / 100.0,
+        progress=_progress,
+        should_cancel=lambda: _is_cancelled(stack_id, legs),
+    )
 
     if run.cancelled:
         # Every book here is PARTIAL — it holds the trades closed up to the tick the run
@@ -178,8 +193,9 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
 
     _set_progress(stack_id, phase="persisting", pct=98, message="writing results…")
     _persist(stack_id, legs, specs, run, settings, contention_summary(run))
-    _set_progress(stack_id, phase="complete", pct=100,
-                  message=f"{len(run.trades)} trades on one account")
+    _set_progress(
+        stack_id, phase="complete", pct=100, message=f"{len(run.trades)} trades on one account"
+    )
 
 
 def _is_cancelled(stack_id: str, legs: list[dict]) -> bool:
@@ -193,13 +209,14 @@ def _is_cancelled(stack_id: str, legs: list[dict]) -> bool:
             row = lab_db.get_run(leg["run_id"])
             if row and str(row.get("status", "")).startswith("failed_cancelled"):
                 return True
-    except Exception:                       # noqa: BLE001 — see the docstring
+    except Exception:  # noqa: BLE001 — see the docstring
         return False
     return False
 
 
-def _persist(stack_id: str, legs: list[dict], specs: list, run, settings: dict,
-             summary: dict) -> None:
+def _persist(
+    stack_id: str, legs: list[dict], specs: list, run, settings: dict, summary: dict
+) -> None:
     from backtest.output import build_results
 
     sdir = stack_dir(stack_id)
@@ -220,10 +237,13 @@ def _persist(stack_id: str, legs: list[dict], specs: list, run, settings: dict,
         # from the leg's own detail page as well as from the stack's — while the identical leg run
         # through the screen path (`sweep_runner`) had them. Reported off the stack chart as
         # "missed trades, blocked trades, all that stuff is gone".
-        results = build_results(shared_trades, point_value=point_value,
-                                initial_capital=run.opening_balance,
-                                blocked=run.blocked_per_leg.get(spec.name),
-                                missed=run.missed_per_leg.get(spec.name))
+        results = build_results(
+            shared_trades,
+            point_value=point_value,
+            initial_capital=run.opening_balance,
+            blocked=run.blocked_per_leg.get(spec.name),
+            missed=run.missed_per_leg.get(spec.name),
+        )
         _write_leg(leg["run_id"], results, leg.get("ruleset_ids") or [])
 
         # The SOLO control's own book, kept in full rather than as two scalars. This is the ONLY
@@ -238,61 +258,79 @@ def _persist(stack_id: str, legs: list[dict], specs: list, run, settings: dict,
         # $16,925,791 of a shared balance instead of $3,102 of its own. Same R, 2,266x the dollars.
         # Reported off the screen as "how is it the b leg make forty seven million on the stack, but
         # only twenty one thousand by itself".
-        solo_results = build_results(solo_trades, point_value=point_value,
-                                     initial_capital=run.opening_balance)
+        solo_results = build_results(
+            solo_trades, point_value=point_value, initial_capital=run.opening_balance
+        )
         _write_solo(sdir, spec.name, solo_results)
 
-        per_leg_rows.append({
-            "strategy_id": spec.name,
-            "run_id": leg["run_id"],
-            "shared_trades": len(shared_trades),
-            "shared_r": round(sum(getattr(t, "r", 0.0) for t in shared_trades), 4),
-            "solo_trades": len(solo_trades),
-            "solo_r": round(sum(getattr(t, "r", 0.0) for t in solo_trades), 4),
-            "solo_closing_balance": round(run.solo_closing.get(spec.name, 0.0), 2),
-            "contention": summary.get(spec.name, {"shrunk": 0, "blocked": 0,
-                                                  "risk_refused": 0.0}),
-        })
+        per_leg_rows.append(
+            {
+                "strategy_id": spec.name,
+                "run_id": leg["run_id"],
+                "shared_trades": len(shared_trades),
+                "shared_r": round(sum(getattr(t, "r", 0.0) for t in shared_trades), 4),
+                "solo_trades": len(solo_trades),
+                "solo_r": round(sum(getattr(t, "r", 0.0) for t in solo_trades), 4),
+                "solo_closing_balance": round(run.solo_closing.get(spec.name, 0.0), 2),
+                "contention": summary.get(
+                    spec.name, {"shrunk": 0, "blocked": 0, "risk_refused": 0.0}
+                ),
+            }
+        )
 
     (sdir / "contention.json").write_text(json.dumps(run.contention, default=str))
-    (sdir / "shared_summary.json").write_text(json.dumps({
-        "stack_id": stack_id,
-        "opening_balance": run.opening_balance,
-        "closing_balance": round(run.closing_balance, 2),
-        "risk_cap_pct": round(run.risk_cap_pct * 100.0, 4),
-        "entry_floor_pct": round(run.entry_floor_pct * 100.0, 4),
-        "peak_open_risk_pct": round(run.peak_reserved_pct * 100.0, 4),
-        "peak_concurrent_legs": run.peak_concurrent,
-        "leg_count": len(specs),
-        "combined_trades": len(run.trades),
-        "combined_r": round(sum(getattr(t, "r", 0.0) for t in run.trades), 4),
-        "contention_events": len(run.contention),
-        "legs": per_leg_rows,
-        # The one thing this artefact can CHECK rather than report, and it is worth more than
-        # the totals. R is normalised to the trade's own risk, so scaling a position does not
-        # move it: with nothing refused, a leg must post the SAME R shared as solo. If it does
-        # not, the shared account is moving a decision it must not touch — a defect in the
-        # seam, not a portfolio effect. Stored so the page can say so out loud instead of
-        # leaving a reader to compare two columns and wonder.
-        "neutral": _neutrality(run, per_leg_rows),
-        "written_at": int(time.time()),
-    }, default=str))
+    (sdir / "shared_summary.json").write_text(
+        json.dumps(
+            {
+                "stack_id": stack_id,
+                "opening_balance": run.opening_balance,
+                "closing_balance": round(run.closing_balance, 2),
+                "risk_cap_pct": round(run.risk_cap_pct * 100.0, 4),
+                "entry_floor_pct": round(run.entry_floor_pct * 100.0, 4),
+                "peak_open_risk_pct": round(run.peak_reserved_pct * 100.0, 4),
+                "peak_concurrent_legs": run.peak_concurrent,
+                "leg_count": len(specs),
+                "combined_trades": len(run.trades),
+                "combined_r": round(sum(getattr(t, "r", 0.0) for t in run.trades), 4),
+                "contention_events": len(run.contention),
+                "legs": per_leg_rows,
+                # The one thing this artefact can CHECK rather than report, and it is worth more than
+                # the totals. R is normalised to the trade's own risk, so scaling a position does not
+                # move it: with nothing refused, a leg must post the SAME R shared as solo. If it does
+                # not, the shared account is moving a decision it must not touch — a defect in the
+                # seam, not a portfolio effect. Stored so the page can say so out loud instead of
+                # leaving a reader to compare two columns and wonder.
+                "neutral": _neutrality(run, per_leg_rows),
+                "written_at": int(time.time()),
+            },
+            default=str,
+        )
+    )
 
 
 def _neutrality(run, rows: list[dict]) -> dict:
     """Did the shared account move a decision it should not have?"""
     if run.contention:
-        return {"checkable": False,
-                "reason": "the cap bound, so shared and solo are expected to differ — every "
-                          "difference should trace to a row in the contention log"}
+        return {
+            "checkable": False,
+            "reason": "the cap bound, so shared and solo are expected to differ — every "
+            "difference should trace to a row in the contention log",
+        }
     drift = [r["strategy_id"] for r in rows if abs(r["shared_r"] - r["solo_r"]) > 1e-6]
     if drift:
-        return {"checkable": True, "ok": False, "drifted": drift,
-                "reason": "nothing was refused, yet these legs post different R shared and "
-                          "solo — with a full budget the two books must be identical in R"}
-    return {"checkable": True, "ok": True,
-            "reason": "nothing was refused and every leg posts the same R shared as solo, so "
-                      "the shared account changed the dollars and moved no decision"}
+        return {
+            "checkable": True,
+            "ok": False,
+            "drifted": drift,
+            "reason": "nothing was refused, yet these legs post different R shared and "
+            "solo — with a full budget the two books must be identical in R",
+        }
+    return {
+        "checkable": True,
+        "ok": True,
+        "reason": "nothing was refused and every leg posts the same R shared as solo, so "
+        "the shared account changed the dollars and moved no decision",
+    }
 
 
 def _write_solo(sdir: Path, strategy_id: str, results: dict) -> None:
@@ -305,10 +343,8 @@ def _write_solo(sdir: Path, strategy_id: str, results: dict) -> None:
     """
     d = sdir / "solo" / strategy_id
     d.mkdir(parents=True, exist_ok=True)
-    (d / "equity_curve.json").write_text(
-        json.dumps(results.get("equity_curve", []), default=str))
-    (d / "daily_pnl.json").write_text(
-        json.dumps(results.get("daily_pnl", []), default=str))
+    (d / "equity_curve.json").write_text(json.dumps(results.get("equity_curve", []), default=str))
+    (d / "daily_pnl.json").write_text(json.dumps(results.get("daily_pnl", []), default=str))
 
 
 def solo_book(stack_id: str, strategy_id: str) -> tuple[list, list]:
@@ -329,7 +365,7 @@ def _read_json_list(p: Path) -> list:
     try:
         v = json.loads(p.read_text())
         return v if isinstance(v, list) else []
-    except Exception:      # noqa: BLE001 — absent or unreadable both mean "no book stored"
+    except Exception:  # noqa: BLE001 — absent or unreadable both mean "no book stored"
         return []
 
 
@@ -347,8 +383,10 @@ def write_leg_diagnostics(run_id: str, results: dict) -> None:
     """
     run_dir = _LAB_RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    for name, rows in (("blocked_setups.json", results.get("blocked_setups") or []),
-                       ("missed_setups.json", results.get("missed_setups") or [])):
+    for name, rows in (
+        ("blocked_setups.json", results.get("blocked_setups") or []),
+        ("missed_setups.json", results.get("missed_setups") or []),
+    ):
         path = run_dir / name
         if rows:
             path.write_text(json.dumps(rows, default=str))
@@ -374,17 +412,24 @@ def _write_leg(run_id: str, results: dict, ruleset_ids: list[str]) -> None:
 
     apply_canonical_sharpe(kpis, daily_pnl)
 
-    lab_db.update_run_complete(run_id, kpis, {
-        "equity_curve": str(eq_path),
-        "trades": None,
-        "daily_pnl": str(dpnl_path),
-    })
+    lab_db.update_run_complete(
+        run_id,
+        kpis,
+        {
+            "equity_curve": str(eq_path),
+            "trades": None,
+            "daily_pnl": str(dpnl_path),
+        },
+    )
 
     if ruleset_ids:
         evaluator.evaluate_run(run_id, ruleset_ids, kpis, equity_curve, daily_pnl)
         w = worthiness.score_run_after_evals(
-            run_id, ruleset_ids,
-            kpis.get("profit_factor"), kpis.get("max_drawdown"), kpis.get("trade_count"),
+            run_id,
+            ruleset_ids,
+            kpis.get("profit_factor"),
+            kpis.get("max_drawdown"),
+            kpis.get("trade_count"),
         )
         if w:
             lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])

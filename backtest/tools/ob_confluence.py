@@ -76,9 +76,11 @@ _SCRATCH_R = 0.25
 
 def _split(rs):
     """(wins, scratches, losses) at the buffer threshold above."""
-    return (sum(1 for r in rs if r > _SCRATCH_R),
-            sum(1 for r in rs if -_SCRATCH_R <= r <= _SCRATCH_R),
-            sum(1 for r in rs if r < -_SCRATCH_R))
+    return (
+        sum(1 for r in rs if r > _SCRATCH_R),
+        sum(1 for r in rs if -_SCRATCH_R <= r <= _SCRATCH_R),
+        sum(1 for r in rs if r < -_SCRATCH_R),
+    )
 
 
 def _mean_sd(rs):
@@ -98,32 +100,52 @@ def _report(name: str, rs) -> None:
     best = max(rs)
     ex = tot - best
     m, sd = _mean_sd(rs)
-    print(f"  {name:<22} {len(rs):>4} trades   {tot:>+9.2f}R   avg {m:>+7.3f}R   "
-          f"{w:>3}W {s:>3}S {l:>3}L   win {w / len(rs) * 100:>5.1f}%")
-    print(f"  {'':<22} {'':>4}          ex-best {ex:>+8.2f}R  (best single trade {best:+.2f}R, "
-          f"avg ex-best {ex / max(len(rs) - 1, 1):>+7.3f}R)")
-    print(f"  {'':<22} {'':>4}          sd {sd:.3f}R per trade, so the mean carries "
-          f"+/-{sd / len(rs) ** 0.5:.3f}R of standard error")
+    print(
+        f"  {name:<22} {len(rs):>4} trades   {tot:>+9.2f}R   avg {m:>+7.3f}R   "
+        f"{w:>3}W {s:>3}S {l:>3}L   win {w / len(rs) * 100:>5.1f}%"
+    )
+    print(
+        f"  {'':<22} {'':>4}          ex-best {ex:>+8.2f}R  (best single trade {best:+.2f}R, "
+        f"avg ex-best {ex / max(len(rs) - 1, 1):>+7.3f}R)"
+    )
+    print(
+        f"  {'':<22} {'':>4}          sd {sd:.3f}R per trade, so the mean carries "
+        f"+/-{sd / len(rs) ** 0.5:.3f}R of standard error"
+    )
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--start", default=None,
-                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)")
+    ap.add_argument(
+        "--start",
+        default=None,
+        help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)",
+    )
     ap.add_argument("--end", default=None)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--any-direction", action="store_true",
-                    help="a block counts whichever way it points (default: same-direction only)")
-    ap.add_argument("--block-tf", default=None,
-                    help="read the order blocks from THIS timeframe instead of the trading one "
-                         "(e.g. 240 for 4H). The trades never change; only which blocks are asked "
-                         "about. Default: the trading timeframe, via the in-stack engine.")
-    ap.add_argument("--expect-trades", type=int, default=None,
-                    help="assert the run reproduces this trade count — the check that forcing the "
-                         "order-block engine on did not move the baseline being measured")
+    ap.add_argument(
+        "--any-direction",
+        action="store_true",
+        help="a block counts whichever way it points (default: same-direction only)",
+    )
+    ap.add_argument(
+        "--block-tf",
+        default=None,
+        help="read the order blocks from THIS timeframe instead of the trading one "
+        "(e.g. 240 for 4H). The trades never change; only which blocks are asked "
+        "about. Default: the trading timeframe, via the in-stack engine.",
+    )
+    ap.add_argument(
+        "--expect-trades",
+        type=int,
+        default=None,
+        help="assert the run reproduces this trade count — the check that forcing the "
+        "order-block engine on did not move the baseline being measured",
+    )
     args = ap.parse_args(argv)
 
     from backtest.data.history import floor_for
@@ -135,8 +157,10 @@ def main(argv=None) -> int:
     if start is None:
         fl = floor_for(args.symbol, args.tf)
         if fl is None:
-            raise SystemExit(f"cannot measure the broker's earliest {args.tf}m history for "
-                             f"{args.symbol}. Pass --start explicitly rather than guessing one.")
+            raise SystemExit(
+                f"cannot measure the broker's earliest {args.tf}m history for "
+                f"{args.symbol}. Pass --start explicitly rather than guessing one."
+            )
         start = fl.isoformat()
     end = args.end or dt.date.today().isoformat()
 
@@ -168,14 +192,23 @@ def main(argv=None) -> int:
         if hdf.empty:
             raise SystemExit(f"no {args.block_tf}m bars for {args.symbol} in this window.")
         step = pd.Timedelta(minutes=int(args.block_tf))
-        eng = OrderBlockEngine()   # defaults, matching backtest.replay.stack's own construction
+        eng = OrderBlockEngine()  # defaults, matching backtest.replay.stack's own construction
         for i, (ts, row) in enumerate(hdf.iterrows()):
             ev = eng.update(i, float(row.open), float(row.high), float(row.low), float(row.close))
-            snaps.append((ts + step,
-                          [(b.top, b.bottom, b.is_bullish, b.created_index)
-                           for b in (list(ev.active_bull) + list(ev.active_bear))]))
-        print(f"  {len(hdf):,} bars, {sum(1 for _t, b in snaps if b):,} of them carrying a live "
-              f"block", flush=True)
+            snaps.append(
+                (
+                    ts + step,
+                    [
+                        (b.top, b.bottom, b.is_bullish, b.created_index)
+                        for b in (list(ev.active_bull) + list(ev.active_bear))
+                    ],
+                )
+            )
+        print(
+            f"  {len(hdf):,} bars, {sum(1 for _t, b in snaps if b):,} of them carrying a live "
+            f"block",
+            flush=True,
+        )
 
     def blocks_now(sig):
         """The blocks the tag is asked about on this bar."""
@@ -186,17 +219,19 @@ def main(argv=None) -> int:
     # else TRADES the blocks, which is the measurement that has already been done five ways.
     # `exec_secondary=False` is inert here (`run()` never calls step_secondary) and is pinned so
     # the count is comparable to the documented primary-only baseline rather than accidentally so.
-    cfg = ConfigCls(fill_model="bar", symbol=args.symbol,
-                    exec_poi_source="FVG", exec_secondary=False)
+    cfg = ConfigCls(
+        fill_model="bar", symbol=args.symbol, exec_poi_source="FVG", exec_secondary=False
+    )
     strat = StrategyCls(config=cfg, initial_capital=args.capital)
 
     if not cfg.exec_req_fvg:
-        raise SystemExit("exec_req_fvg is off, so an entry can come from the 0.618 fallback rather "
-                         "than from a gap. There is then no 'the gap this trade entered on' to tag.")
+        raise SystemExit(
+            "exec_req_fvg is off, so an entry can come from the 0.618 fallback rather "
+            "than from a gap. There is then no 'the gap this trade entered on' to tag."
+        )
 
-    probe = {"bars_with_blocks": 0, "cand": 0, "cand_on_block": 0,
-             "placed": 0, "mismatch": 0}
-    tags: list = []          # one entry per OPENED position, in open order
+    probe = {"bars_with_blocks": 0, "cand": 0, "cand_on_block": 0, "placed": 0, "mismatch": 0}
+    tags: list = []  # one entry per OPENED position, in open order
 
     ExecCls = type(strat.execution)
 
@@ -218,20 +253,35 @@ def main(argv=None) -> int:
             tag_l = tag_s = None
             for top, bot, is_bull, born, _rank in pois_for(c, sig):
                 probe["cand"] += 1
-                on_ob = any((args.any_direction or od == is_bull)
-                            and _zones_overlap(top, bot, ot, ob)
-                            for (ot, ob, od, _n) in blocks_now(sig))
+                on_ob = any(
+                    (args.any_direction or od == is_bull) and _zones_overlap(top, bot, ot, ob)
+                    for (ot, ob, od, _n) in blocks_now(sig)
+                )
                 if on_ob:
                     probe["cand_on_block"] += 1
                 l_deep_ok = not c.exec_fvg_deep_only or top <= p2
                 s_deep_ok = not c.exec_fvg_deep_only or bot >= p2
                 pre_ok = self._gap_pre_zone(born, sig)
-                if is_bull and sig.fibo_dir == 1 and bot <= p2 and top >= p6 and l_deep_ok and pre_ok:
+                if (
+                    is_bull
+                    and sig.fibo_dir == 1
+                    and bot <= p2
+                    and top >= p6
+                    and l_deep_ok
+                    and pre_ok
+                ):
                     d = self._fib_snap(bot, top, True, sig)
                     e = min(top, p2) if d is None else d
                     if best_l is None or e > best_l:
                         best_l, tag_l = e, on_ob
-                if (not is_bull) and sig.fibo_dir == -1 and top >= p2 and bot <= p6 and s_deep_ok and pre_ok:
+                if (
+                    (not is_bull)
+                    and sig.fibo_dir == -1
+                    and top >= p2
+                    and bot <= p6
+                    and s_deep_ok
+                    and pre_ok
+                ):
                     d = self._fib_snap(bot, top, False, sig)
                     e = max(bot, p2) if d is None else d
                     if best_s is None or e < best_s:
@@ -245,7 +295,8 @@ def main(argv=None) -> int:
                 raise SystemExit(
                     f"the tag replica disagrees with Execution._entry_edges at bar {sig.index}: "
                     f"replica long={best_l!r} short={best_s!r} vs real long={le!r} short={se!r}. "
-                    f"The entry-edge rule changed and this tool was not updated with it.")
+                    f"The entry-edge rule changed and this tool was not updated with it."
+                )
             self._tag_l, self._tag_s = tag_l, tag_s
             return le, se
 
@@ -275,10 +326,12 @@ def main(argv=None) -> int:
     stack_cfg = dataclasses.replace(StrategyCls.engine_config(), order_blocks=True)
 
     from backtest.replay import EngineStack, iter_bars
+
     stack = EngineStack(strat.stack_config(stack_cfg))
 
     print("  replaying (gaps trade, blocks only watch) ...", flush=True)
     import pandas as _pd
+
     bar_step = _pd.Timedelta(minutes=int(args.tf))
     times = list(df.index)
     ptr = 0
@@ -305,31 +358,42 @@ def main(argv=None) -> int:
     if args.expect_trades is not None and len(trades) != args.expect_trades:
         raise SystemExit(
             f"expected {args.expect_trades} trades, got {len(trades)}. Forcing the order-block "
-            f"engine on moved the baseline, so this is no longer a split of the shipped run.")
+            f"engine on moved the baseline, so this is no longer a split of the shipped run."
+        )
 
     # ── NON-VACUITY ──────────────────────────────────────────────────────────────────────
     # A zero from a broken tagger and a zero from a real absence are the same character on screen.
     # Refuse rather than print a confident 0%.
     if probe["bars_with_blocks"] == 0:
-        raise SystemExit("no bar in the whole run carried a live order block — the engine was not "
-                         "actually on. Every tag below would be a false negative.")
+        raise SystemExit(
+            "no bar in the whole run carried a live order block — the engine was not "
+            "actually on. Every tag below would be a false negative."
+        )
     if probe["cand_on_block"] == 0:
-        raise SystemExit("not one gap candidate in the run overlapped a block. That is not "
-                         "plausible over this history; the overlap test is broken.")
+        raise SystemExit(
+            "not one gap candidate in the run overlapped a block. That is not "
+            "plausible over this history; the overlap test is broken."
+        )
     if len(tags) != len(trades):
-        raise SystemExit(f"tagged {len(tags)} opened positions but the run closed {len(trades)} "
-                         f"trades. The open/close pairing this tool assumes does not hold.")
+        raise SystemExit(
+            f"tagged {len(tags)} opened positions but the run closed {len(trades)} "
+            f"trades. The open/close pairing this tool assumes does not hold."
+        )
     if any(t is None for t in tags):
-        raise SystemExit(f"{sum(1 for t in tags if t is None)} trades opened with no tag recorded. "
-                         f"An entry reached a fill without passing through the tagged selector.")
+        raise SystemExit(
+            f"{sum(1 for t in tags if t is None)} trades opened with no tag recorded. "
+            f"An entry reached a fill without passing through the tagged selector."
+        )
 
     on = [t.r for t, g in zip(trades, tags) if g]
     off = [t.r for t, g in zip(trades, tags) if not g]
 
     print()
-    print(f"the gap the limit rested on, split by whether a "
-          f"{'' if args.any_direction else 'same-direction '}"
-          f"{args.block_tf + 'm ' if htf_mode else ''}order block sat under it")
+    print(
+        f"the gap the limit rested on, split by whether a "
+        f"{'' if args.any_direction else 'same-direction '}"
+        f"{args.block_tf + 'm ' if htf_mode else ''}order block sat under it"
+    )
     print(f"  (scratch = |R| <= {_SCRATCH_R})")
     _report("gap ON a block", on)
     _report("plain gap", off)
@@ -343,21 +407,31 @@ def main(argv=None) -> int:
     if on and off:
         m_on, sd_on = _mean_sd(on)
         m_off, sd_off = _mean_sd(off)
-        se = (sd_on ** 2 / len(on) + sd_off ** 2 / len(off)) ** 0.5
+        se = (sd_on**2 / len(on) + sd_off**2 / len(off)) ** 0.5
         d = m_on - m_off
         print()
-        print(f"  difference (on-block minus plain) {d:+.3f}R per trade, standard error "
-              f"{se:.3f}R  ->  {abs(d) / se if se else float('inf'):.2f}x the noise")
+        print(
+            f"  difference (on-block minus plain) {d:+.3f}R per trade, standard error "
+            f"{se:.3f}R  ->  {abs(d) / se if se else float('inf'):.2f}x the noise"
+        )
         if se and abs(d) / se < 2.0:
-            print("  ⚠ under 2x: these two groups are NOT distinguishable on this history. Read "
-                  "the direction as a hint at best, never as an edge.")
+            print(
+                "  ⚠ under 2x: these two groups are NOT distinguishable on this history. Read "
+                "the direction as a hint at best, never as an edge."
+            )
 
     print()
-    print(f"  candidates seen {probe['cand']:,}  of which on a block {probe['cand_on_block']:,} "
-          f"({probe['cand_on_block'] / probe['cand'] * 100:.1f}%)")
-    print(f"  bars with a live block {probe['bars_with_blocks']:,} of {len(df):,} "
-          f"({probe['bars_with_blocks'] / len(df) * 100:.1f}%)")
-    print(f"  bars that placed an order {probe['placed']:,}   replica mismatches {probe['mismatch']}")
+    print(
+        f"  candidates seen {probe['cand']:,}  of which on a block {probe['cand_on_block']:,} "
+        f"({probe['cand_on_block'] / probe['cand'] * 100:.1f}%)"
+    )
+    print(
+        f"  bars with a live block {probe['bars_with_blocks']:,} of {len(df):,} "
+        f"({probe['bars_with_blocks'] / len(df) * 100:.1f}%)"
+    )
+    print(
+        f"  bars that placed an order {probe['placed']:,}   replica mismatches {probe['mismatch']}"
+    )
     return 0
 
 

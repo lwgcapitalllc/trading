@@ -11,7 +11,18 @@ import { copyChartAsPng } from '@/lib/chartImage'
 
 // Shared chart panel: a segmented tab control, optional right-side controls, an Expand button,
 // and the active chart rendered at `height`. `render(key, h)` draws the chart for a tab key.
-export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, render, right, aboveChart, keepMounted }: {
+export function ChartTabPanel({
+  tabs,
+  active,
+  onActive,
+  sub,
+  height,
+  onExpand,
+  render,
+  right,
+  aboveChart,
+  keepMounted,
+}: {
   tabs: readonly (readonly [string, string])[]
   active: string
   onActive: (k: string) => void
@@ -41,7 +52,9 @@ export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, r
               key={key}
               onClick={() => onActive(key)}
               className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
-                active === key ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/30' : 'text-text-tertiary hover:text-text-secondary'
+                active === key
+                  ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/30'
+                  : 'text-text-tertiary hover:text-text-secondary'
               }`}
             >
               {label}
@@ -62,7 +75,7 @@ export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, r
       {sub && <div className="text-[10px] text-text-tertiary mt-4 mb-4 px-0.5">{sub}</div>}
       {aboveChart}
       <div className="relative">
-        {keepMounted?.map(key => (
+        {keepMounted?.map((key) => (
           <div
             key={key}
             className={active === key ? undefined : 'invisible absolute inset-x-0 top-0'}
@@ -81,7 +94,12 @@ export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, r
 // the minimize button close it. Every fullscreen chart carries a camera (copy-as-image) button —
 // that's the point of expanding one: read it, then send it. Inline charts deliberately don't:
 // a copy of the small version isn't worth the header clutter.
-export function ChartModal({ title, onClose, render, controls }: {
+export function ChartModal({
+  title,
+  onClose,
+  render,
+  controls,
+}: {
   title: string
   onClose: () => void
   render: (h: number) => React.ReactNode
@@ -108,7 +126,9 @@ export function ChartModal({ title, onClose, render, controls }: {
     return () => ro.disconnect()
   }, [])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -116,23 +136,39 @@ export function ChartModal({ title, onClose, render, controls }: {
   // the equity draw animation, which makes the line render choppy fullscreen.
   return createPortal(
     <div className="fixed inset-0 z-[90] bg-bg-base flex flex-col" onClick={onClose}>
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0" onClick={e => e.stopPropagation()}>
-        <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">{title}</span>
+      <div
+        className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+          {title}
+        </span>
         <div className="flex items-center gap-3">
           {controls}
-          <button onClick={copy} title={copied ? 'Copied' : 'Copy chart image to clipboard'}
-            className="text-text-tertiary hover:text-text-primary transition-colors">
+          <button
+            onClick={copy}
+            title={copied ? 'Copied' : 'Copy chart image to clipboard'}
+            className="text-text-tertiary hover:text-text-primary transition-colors"
+          >
             {copied ? <Check size={18} className="text-accent" /> : <Camera size={18} />}
           </button>
-          <button onClick={onClose} title="Minimize (Esc)" className="text-text-tertiary hover:text-text-primary transition-colors">
+          <button
+            onClick={onClose}
+            title="Minimize (Esc)"
+            className="text-text-tertiary hover:text-text-primary transition-colors"
+          >
             <Minimize2 size={18} />
           </button>
         </div>
       </div>
-      <div ref={bodyRef} className="flex-1 min-h-0 overflow-hidden px-5 py-4" onClick={e => e.stopPropagation()}>
+      <div
+        ref={bodyRef}
+        className="flex-1 min-h-0 overflow-hidden px-5 py-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         {h > 0 && render(Math.max(200, h - 40))}
       </div>
     </div>,
-    document.body,
+    document.body
   )
 }

@@ -133,7 +133,8 @@ class NewsEngine:
         # reported regardless of blocking; blocking is a separate, opt-in choice below.
         self._holiday_days: List[Tuple[int, int, NewsEvent]] = sorted(
             (*_utc_day_bounds(e.timestamp_ms), e)
-            for e in self._all if self._policy.is_relevant_holiday(e)
+            for e in self._all
+            if self._policy.is_relevant_holiday(e)
         )
         self._holiday_starts: List[int] = [s for s, _, _ in self._holiday_days]
 

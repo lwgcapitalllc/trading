@@ -33,7 +33,7 @@ _ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
-from news import EventStore, Impact, NewsEngine, NewsEvent, NewsPolicy  # noqa: E402
+from news import EventStore, Impact, NewsEngine, NewsPolicy  # noqa: E402
 
 # Aaron's defaults (2026-07-05): block a high-impact release from 15 min before to 30 min after.
 # Asymmetric on purpose — liquidity only dies in the last few minutes before, but the spike +
@@ -74,8 +74,11 @@ def load_engine(
     events, covered = (store or EventStore()).load()
     if not events:
         return None
-    return NewsEngine(events, policy=make_policy(pre_minutes, post_minutes, currencies, min_impact),
-                      covered_ranges=covered)
+    return NewsEngine(
+        events,
+        policy=make_policy(pre_minutes, post_minutes, currencies, min_impact),
+        covered_ranges=covered,
+    )
 
 
 def tag_trades(engine: NewsEngine, trades: Sequence[dict]) -> List[dict]:
@@ -90,25 +93,37 @@ def tag_trades(engine: NewsEngine, trades: Sequence[dict]) -> List[dict]:
     We feed the engine trades in time order (its point-in-time answers — in_blackout / active_event /
     is_holiday — are order-independent; only its edge outputs, which we ignore, care about order).
     """
-    order = sorted(range(len(trades)), key=lambda i: (trades[i].get("entry_ms") is None,
-                                                       trades[i].get("entry_ms") or 0))
+    order = sorted(
+        range(len(trades)),
+        key=lambda i: (trades[i].get("entry_ms") is None, trades[i].get("entry_ms") or 0),
+    )
     tagged: dict = {}
     for i in order:
         t = trades[i]
         ems = t.get("entry_ms")
         if ems is None:
-            tagged[i] = {"index": t.get("index"), "entry_ms": None,
-                         "in_coverage": False, "in_news": False, "in_holiday": False, "title": None}
+            tagged[i] = {
+                "index": t.get("index"),
+                "entry_ms": None,
+                "in_coverage": False,
+                "in_news": False,
+                "in_holiday": False,
+                "title": None,
+            }
             continue
         out = engine.update(t.get("index", i), int(ems))
         in_news = out.has_coverage and out.active_event is not None
         in_holiday = out.has_coverage and out.is_holiday
-        title = (out.active_event.title if in_news
-                 else out.active_holiday.title if in_holiday else None)
+        title = (
+            out.active_event.title if in_news else out.active_holiday.title if in_holiday else None
+        )
         tagged[i] = {
-            "index": t.get("index"), "entry_ms": int(ems),
-            "in_coverage": out.has_coverage, "in_news": in_news,
-            "in_holiday": in_holiday, "title": title,
+            "index": t.get("index"),
+            "entry_ms": int(ems),
+            "in_coverage": out.has_coverage,
+            "in_news": in_news,
+            "in_holiday": in_holiday,
+            "title": title,
         }
     return [tagged[i] for i in range(len(trades))]
 
@@ -130,19 +145,32 @@ def build_report(
     engine = load_engine(pre_minutes, post_minutes, currencies, min_impact, store=store)
     if engine is None:
         return {
-            "has_data": False, "coverage_start_ms": None, "coverage_end_ms": None,
-            "pre_minutes": pre_minutes, "post_minutes": post_minutes,
-            "trades": [{"index": t.get("index"), "entry_ms": t.get("entry_ms"),
-                        "in_coverage": False, "in_news": False, "in_holiday": False, "title": None}
-                       for t in trades],
-            "news_trade_count": 0, "holiday_trade_count": 0,
+            "has_data": False,
+            "coverage_start_ms": None,
+            "coverage_end_ms": None,
+            "pre_minutes": pre_minutes,
+            "post_minutes": post_minutes,
+            "trades": [
+                {
+                    "index": t.get("index"),
+                    "entry_ms": t.get("entry_ms"),
+                    "in_coverage": False,
+                    "in_news": False,
+                    "in_holiday": False,
+                    "title": None,
+                }
+                for t in trades
+            ],
+            "news_trade_count": 0,
+            "holiday_trade_count": 0,
         }
     tagged = tag_trades(engine, trades)
     return {
         "has_data": True,
         "coverage_start_ms": engine.coverage_start_ms,
         "coverage_end_ms": engine.coverage_end_ms,
-        "pre_minutes": pre_minutes, "post_minutes": post_minutes,
+        "pre_minutes": pre_minutes,
+        "post_minutes": post_minutes,
         "trades": tagged,
         "news_trade_count": sum(1 for t in tagged if t["in_news"]),
         "holiday_trade_count": sum(1 for t in tagged if t["in_holiday"]),

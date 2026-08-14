@@ -18,15 +18,17 @@ def _bars(rows):
 
 
 def test_5m_to_15m_aggregates_ohlc_and_drops_empty_windows():
-    df = _bars([
-        ("2026-01-05 09:00", 10, 12, 9, 11),
-        ("2026-01-05 09:05", 11, 13, 10, 12),
-        ("2026-01-05 09:10", 12, 14, 11, 13),   # → 15m 09:00
-        ("2026-01-05 09:15", 13, 15, 12, 14),
-        ("2026-01-05 09:20", 14, 16, 13, 15),   # → 15m 09:15 (partial, 2 bars)
-        # 09:25–09:44 missing (a gap, e.g. the daily break)
-        ("2026-01-05 09:45", 20, 21, 19, 20),   # → 15m 09:45
-    ])
+    df = _bars(
+        [
+            ("2026-01-05 09:00", 10, 12, 9, 11),
+            ("2026-01-05 09:05", 11, 13, 10, 12),
+            ("2026-01-05 09:10", 12, 14, 11, 13),  # → 15m 09:00
+            ("2026-01-05 09:15", 13, 15, 12, 14),
+            ("2026-01-05 09:20", 14, 16, 13, 15),  # → 15m 09:15 (partial, 2 bars)
+            # 09:25–09:44 missing (a gap, e.g. the daily break)
+            ("2026-01-05 09:45", 20, 21, 19, 20),  # → 15m 09:45
+        ]
+    )
     out = resample_up(df, target_minutes=15, base_minutes=5)
 
     assert list(out.index) == [
@@ -49,10 +51,12 @@ def test_5m_to_15m_aggregates_ohlc_and_drops_empty_windows():
 
 def test_windows_align_to_epoch_clock():
     # A bar starting at 09:07 (off-grid) still lands in the 09:00 15m window.
-    df = _bars([
-        ("2026-01-05 09:07", 10, 11, 9, 10),
-        ("2026-01-05 09:12", 10, 12, 8, 11),
-    ])
+    df = _bars(
+        [
+            ("2026-01-05 09:07", 10, 11, 9, 10),
+            ("2026-01-05 09:12", 10, 12, 8, 11),
+        ]
+    )
     out = resample_up(df, 15, 5)
     assert list(out.index) == [pd.Timestamp("2026-01-05 09:00")]
 
@@ -67,9 +71,9 @@ def test_target_equals_base_is_identity_copy():
 def test_non_multiple_target_raises():
     df = _bars([("2026-01-05 09:00", 10, 12, 9, 11)])
     with pytest.raises(ValueError):
-        resample_up(df, 15, 4)   # 15 is not a multiple of 4
+        resample_up(df, 15, 4)  # 15 is not a multiple of 4
     with pytest.raises(ValueError):
-        resample_up(df, 5, 15)   # target below base
+        resample_up(df, 5, 15)  # target below base
 
 
 def test_empty_frame_returns_empty():

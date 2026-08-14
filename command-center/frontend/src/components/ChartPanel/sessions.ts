@@ -22,8 +22,15 @@ export function tzOffsetMinutes(timeZone: string, atUtcMs: number): number {
     second: '2-digit',
   })
   const parts = dtf.formatToParts(new Date(atUtcMs))
-  const get = (t: string) => Number(parts.find(p => p.type === t)?.value)
-  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+  const asUtc = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second')
+  )
   return Math.round((asUtc - atUtcMs) / 60_000)
 }
 
@@ -48,7 +55,7 @@ export interface SessionWindow {
 export function sessionWindows(
   candles: ChartCandle[],
   session: ChartSession,
-  brokerGmtOffsetHours: number,
+  brokerGmtOffsetHours: number
 ): SessionWindow[] {
   if (candles.length === 0) return []
   const tMin = candles[0].time

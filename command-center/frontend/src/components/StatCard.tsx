@@ -12,7 +12,14 @@ interface StatCardProps {
   disabled?: boolean
 }
 
-export function StatCard({ label, value, sub, subVariant = 'neutral', onClick, disabled }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  sub,
+  subVariant = 'neutral',
+  onClick,
+  disabled,
+}: StatCardProps) {
   const subColor = {
     pos: 'text-pos-text',
     neg: 'text-neg-text',

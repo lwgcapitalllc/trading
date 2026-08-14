@@ -1,8 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { runningJobFor, runnerScope } from '@/lib/runner'
-import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check, SlidersHorizontal } from 'lucide-react'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns, useBacktestRun } from '@/hooks/useLab'
+import {
+  ArrowLeft,
+  Download,
+  CheckCircle2,
+  Loader2,
+  XCircle,
+  AlertTriangle,
+  RotateCcw,
+  Square,
+  Trash2,
+  Activity,
+  ChevronUp,
+  ChevronDown,
+  Copy,
+  Check,
+  SlidersHorizontal,
+} from 'lucide-react'
+import {
+  useOptimization,
+  useCancelOptimization,
+  useRetryOptimization,
+  useRerunOptimization,
+  useDeleteOptimization,
+  useRetryBacktest,
+  useRunningVpsJob,
+  useOptimizationLog,
+  useBacktestRuns,
+  useBacktestRun,
+} from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 import StickyHeader from '@/components/StickyHeader'
@@ -12,11 +39,15 @@ import StickyHeader from '@/components/StickyHeader'
 // Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
 // Greenwich. Same fix in BacktestDetail/SweepDetail/StackDetail/StressTestDetail.
 function fmtDate(iso: string) {
-  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function fmtDuration(seconds: number): string {
-  if (seconds < 60)  return `${seconds}s`
+  if (seconds < 60) return `${seconds}s`
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -28,13 +59,13 @@ function firmShortName(firmId: string): string {
   if (parts.length < 3) return firmId
   const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
   const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
-  const size  = (parts[1] ?? '').toUpperCase()
-  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  const size = (parts[1] ?? '').toUpperCase()
+  const tier = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
   return `${brand}${size} ${tier}`
 }
 
 function firmChipCls(firmId: string): string {
-  if (firmId.includes('_eval'))   return 'bg-warn-muted text-warn-text border border-warn-text/20'
+  if (firmId.includes('_eval')) return 'bg-warn-muted text-warn-text border border-warn-text/20'
   if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text border border-pos-text/20'
   return 'bg-bg-surface border border-border-subtle text-text-tertiary'
 }
@@ -44,10 +75,17 @@ function firmChipCls(firmId: string): string {
 // Returns null when there is no honest number to show — a finished job with no end time is a
 // row written before `fail_optimization` recorded one, and counting up to now() on it produced
 // "Ran for 74h" on something that died on Tuesday.
-function useElapsed(startIso: string | null, endIso: string | null, running: boolean): number | null {
+function useElapsed(
+  startIso: string | null,
+  endIso: string | null,
+  running: boolean
+): number | null {
   const [elapsed, setElapsed] = useState<number | null>(null)
   useEffect(() => {
-    if (!startIso) { setElapsed(null); return }
+    if (!startIso) {
+      setElapsed(null)
+      return
+    }
     const start = new Date(startIso).getTime()
     if (!running) {
       setElapsed(endIso ? Math.round((new Date(endIso).getTime() - start) / 1000) : null)
@@ -74,28 +112,57 @@ function csvCell(v: unknown): string {
 function exportCsv(runs: BacktestSummary[], paramKeys: string[], optId: string) {
   // run_id first: without it a row cannot be joined back to the run it describes, which is the
   // one thing you export a grid to do.
-  const headers = ['rank', 'run_id', ...paramKeys, 'net_pnl', 'max_drawdown', 'profit_factor', 'win_rate', 'trade_count', 'sharpe', 'worthiness']
+  const headers = [
+    'rank',
+    'run_id',
+    ...paramKeys,
+    'net_pnl',
+    'max_drawdown',
+    'profit_factor',
+    'win_rate',
+    'trade_count',
+    'sharpe',
+    'worthiness',
+  ]
   const rows = runs
-    .filter(r => r.status === 'complete')
+    .filter((r) => r.status === 'complete')
     .sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity))
-    .map((r, i) => [
-      i + 1, r.run_id,
-      ...paramKeys.map(k => r.params?.[k] ?? ''),
-      r.net_pnl ?? '', r.max_drawdown ?? '', r.profit_factor ?? '',
-      r.win_rate ?? '', r.trade_count ?? '', r.sharpe ?? '',
-      r.worthiness?.tier ?? '',
-    ].map(csvCell).join(','))
-  const csv   = [headers.map(csvCell).join(','), ...rows].join('\n')
-  const blob  = new Blob([csv], { type: 'text/csv' })
-  const url   = URL.createObjectURL(blob)
-  const a     = document.createElement('a')
-  a.href = url; a.download = `optimization_${optId}.csv`; a.click()
+    .map((r, i) =>
+      [
+        i + 1,
+        r.run_id,
+        ...paramKeys.map((k) => r.params?.[k] ?? ''),
+        r.net_pnl ?? '',
+        r.max_drawdown ?? '',
+        r.profit_factor ?? '',
+        r.win_rate ?? '',
+        r.trade_count ?? '',
+        r.sharpe ?? '',
+        r.worthiness?.tier ?? '',
+      ]
+        .map(csvCell)
+        .join(',')
+    )
+  const csv = [headers.map(csvCell).join(','), ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `optimization_${optId}.csv`
+  a.click()
   URL.revokeObjectURL(url)
 }
 
 // ── Progress card ─────────────────────────────────────────────────────────────
 
-function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked }: {
+function ProgressCard({
+  opt,
+  onCancel,
+  onRetry,
+  cancelling,
+  retrying,
+  jobBlocked,
+}: {
   opt: Opt
   onCancel: () => void
   onRetry: () => void
@@ -103,29 +170,39 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
   retrying: boolean
   jobBlocked: boolean
 }) {
-  const isRunning  = opt.status === 'running'
+  const isRunning = opt.status === 'running'
   const isCancelled = opt.status === 'failed_cancelled'
   const isComplete = opt.status === 'complete'
 
-  const completeCount = opt.runs.filter(r => r.status === 'complete').length
-  const failedCount   = opt.runs.filter(r => r.status.startsWith('failed')).length
-  const total         = opt.estimated_runs
+  const completeCount = opt.runs.filter((r) => r.status === 'complete').length
+  const failedCount = opt.runs.filter((r) => r.status.startsWith('failed')).length
+  const total = opt.estimated_runs
 
   const completePct = total > 0 ? (completeCount / total) * 100 : 0
-  const failedPct   = total > 0 ? (failedCount   / total) * 100 : 0
-  const overallPct  = Math.round(completePct + failedPct)
+  const failedPct = total > 0 ? (failedCount / total) * 100 : 0
+  const overallPct = Math.round(completePct + failedPct)
 
-  const hasFailures   = failedCount > 0
-  const allFailed     = failedCount === total && total > 0
-  const failingBadly  = isRunning && failedCount > 0
+  const hasFailures = failedCount > 0
+  const allFailed = failedCount === total && total > 0
+  const failingBadly = isRunning && failedCount > 0
 
   const elapsed = useElapsed(opt.created_at, opt.completed_at ?? null, isRunning)
 
-  const statusLabel = isRunning ? 'Running' : isComplete ? 'Complete' : isCancelled ? 'Cancelled' : 'Failed'
-  const borderCls   = isComplete && !hasFailures ? 'border-accent/20 bg-accent/5'
-    : allFailed || isCancelled ? 'border-neg-text/20 bg-neg-muted'
-    : hasFailures && isComplete ? 'border-warn-text/25 bg-warn-muted/20'
-    : 'border-border-default bg-bg-surface'
+  const statusLabel = isRunning
+    ? 'Running'
+    : isComplete
+      ? 'Complete'
+      : isCancelled
+        ? 'Cancelled'
+        : 'Failed'
+  const borderCls =
+    isComplete && !hasFailures
+      ? 'border-accent/20 bg-accent/5'
+      : allFailed || isCancelled
+        ? 'border-neg-text/20 bg-neg-muted'
+        : hasFailures && isComplete
+          ? 'border-warn-text/25 bg-warn-muted/20'
+          : 'border-border-default bg-bg-surface'
 
   return (
     <div className={`rounded-xl border px-6 py-5 ${borderCls}`}>
@@ -133,16 +210,27 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
         {/* Left: status + progress */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            {isRunning   && <Loader2     size={14} className="text-accent animate-spin flex-shrink-0" />}
-            {isComplete  && !hasFailures && <CheckCircle2 size={14} className="text-accent flex-shrink-0" />}
-            {isComplete  && hasFailures  && <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />}
-            {!isRunning  && !isComplete  && <XCircle size={14} className="text-neg-text flex-shrink-0" />}
-            <span className={`text-[13px] font-semibold ${
-              isRunning ? 'text-accent'
-              : isComplete && !hasFailures ? 'text-accent'
-              : isComplete && hasFailures  ? 'text-warn-text'
-              : 'text-neg-text'
-            }`}>
+            {isRunning && <Loader2 size={14} className="text-accent animate-spin flex-shrink-0" />}
+            {isComplete && !hasFailures && (
+              <CheckCircle2 size={14} className="text-accent flex-shrink-0" />
+            )}
+            {isComplete && hasFailures && (
+              <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />
+            )}
+            {!isRunning && !isComplete && (
+              <XCircle size={14} className="text-neg-text flex-shrink-0" />
+            )}
+            <span
+              className={`text-[13px] font-semibold ${
+                isRunning
+                  ? 'text-accent'
+                  : isComplete && !hasFailures
+                    ? 'text-accent'
+                    : isComplete && hasFailures
+                      ? 'text-warn-text'
+                      : 'text-neg-text'
+              }`}
+            >
               {statusLabel}
             </span>
             {isRunning && <span className="text-[11px] text-text-tertiary">· auto-refreshing</span>}
@@ -191,15 +279,15 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
                       <span className="text-text-tertiary"> failed</span>
                     </span>
                   )}
-                  <span className="text-text-tertiary">
-                    of {total} combinations
-                  </span>
+                  <span className="text-text-tertiary">of {total} combinations</span>
                 </>
               )}
             </div>
             <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
               {isRunning && overallPct === 0
-                ? (opt.live_pct ? `${opt.live_pct}%` : '')
+                ? opt.live_pct
+                  ? `${opt.live_pct}%`
+                  : ''
                 : `${overallPct}%`}
             </span>
           </div>
@@ -213,9 +301,9 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
                 {runnerScope(opt.runner) === 'python'
                   ? ' Check the run logs — a local sweep needs the broker data cache and enough memory.'
                   : runnerScope(opt.runner) === 'mt5'
-                  ? ' Check that the MT5 agent is running and the MT5_Lab terminal is available on the VPS.'
-                  : ' Check that NT8 is open with the Strategy Analyzer window active on the VPS.'}
-                {' '}You can cancel now and retry once the platform is ready.
+                    ? ' Check that the MT5 agent is running and the MT5_Lab terminal is available on the VPS.'
+                    : ' Check that NT8 is open with the Strategy Analyzer window active on the VPS.'}{' '}
+                You can cancel now and retry once the platform is ready.
               </p>
             </div>
           )}
@@ -225,8 +313,8 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
               {runnerScope(opt.runner) === 'python'
                 ? 'Replaying all combinations locally across CPU cores. Results appear here when the full grid completes.'
                 : runnerScope(opt.runner) === 'mt5'
-                ? 'MT5 Strategy Tester is running all combinations. Results appear here when the full grid completes.'
-                : 'NT8 is running all combinations in one job using its native optimizer. Results appear here when the full grid completes.'}
+                  ? 'MT5 Strategy Tester is running all combinations. Results appear here when the full grid completes.'
+                  : 'NT8 is running all combinations in one job using its native optimizer. Results appear here when the full grid completes.'}
             </p>
           )}
         </div>
@@ -238,7 +326,11 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
               {isComplete ? 'Duration' : isRunning ? 'Elapsed' : 'Ran for'}
             </div>
             <div className="text-[20px] font-mono font-semibold text-text-primary tabular-nums leading-none">
-              {elapsed == null ? <span className="text-text-tertiary">—</span> : fmtDuration(elapsed)}
+              {elapsed == null ? (
+                <span className="text-text-tertiary">—</span>
+              ) : (
+                fmtDuration(elapsed)
+              )}
             </div>
           </div>
 
@@ -257,7 +349,9 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
               <button
                 onClick={onRetry}
                 disabled={retrying || jobBlocked}
-                title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined}
+                title={
+                  jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined
+                }
                 className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
               >
                 <RotateCcw size={11} className={retrying ? 'animate-spin' : ''} />
@@ -277,7 +371,13 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
 
 // ── Failed runs table ─────────────────────────────────────────────────────────
 
-function FailedRunsTable({ runs, sweptKeys, navigate, retryRun, jobBlocked }: {
+function FailedRunsTable({
+  runs,
+  sweptKeys,
+  navigate,
+  retryRun,
+  jobBlocked,
+}: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
@@ -294,8 +394,13 @@ function FailedRunsTable({ runs, sweptKeys, navigate, retryRun, jobBlocked }: {
         <table className="w-full text-[12px]">
           <thead>
             <tr className="border-b border-border-subtle bg-bg-sunken">
-              {sweptKeys.map(k => (
-                <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">{k}</th>
+              {sweptKeys.map((k) => (
+                <th
+                  key={k}
+                  className="text-left px-3 py-2 text-text-tertiary font-medium font-mono"
+                >
+                  {k}
+                </th>
               ))}
               <th className="text-left px-3 py-2 text-text-tertiary font-medium">Status</th>
               <th className="text-left px-3 py-2 text-text-tertiary font-medium">Error</th>
@@ -303,32 +408,44 @@ function FailedRunsTable({ runs, sweptKeys, navigate, retryRun, jobBlocked }: {
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
-            {runs.map(run => (
+            {runs.map((run) => (
               <tr
                 key={run.run_id}
                 onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
                 className="hover:bg-bg-hover cursor-pointer transition-colors"
               >
-                {sweptKeys.map(k => (
+                {sweptKeys.map((k) => (
                   <td key={k} className="px-3 py-[9px] font-mono font-semibold text-text-primary">
                     {String(run.params?.[k] ?? '—')}
                   </td>
                 ))}
-                <td className="px-3 py-[9px] font-mono text-neg-text text-[11px]">
-                  {run.status}
-                </td>
+                <td className="px-3 py-[9px] font-mono text-neg-text text-[11px]">{run.status}</td>
                 <td className="px-3 py-[9px] text-text-tertiary text-[11px] max-w-[320px] truncate">
                   {run.error_message ?? '—'}
                 </td>
                 <td className="px-3 py-[9px]">
                   <div className="flex items-center justify-end gap-2">
                     <button
-                      onClick={(e) => { e.stopPropagation(); retryRun.mutate(run.run_id) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        retryRun.mutate(run.run_id)
+                      }}
                       disabled={retryRun.isPending || jobBlocked}
-                      title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : 'Retry this run'}
+                      title={
+                        jobBlocked
+                          ? 'Another NT8 job is running — wait for it to finish'
+                          : 'Retry this run'
+                      }
                       className="p-[4px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 disabled:opacity-40 transition-colors"
                     >
-                      <RotateCcw size={11} className={retryRun.isPending && retryRun.variables === run.run_id ? 'animate-spin' : ''} />
+                      <RotateCcw
+                        size={11}
+                        className={
+                          retryRun.isPending && retryRun.variables === run.run_id
+                            ? 'animate-spin'
+                            : ''
+                        }
+                      />
                     </button>
                     <span className="text-[11px] text-accent">View →</span>
                   </div>
@@ -356,10 +473,20 @@ type SortKey = 'profit_factor' | 'net_pnl' | 'max_drawdown' | 'trade_count' | 's
 // opposite of every other column's. Sorting it descending like the rest would put the worst
 // combination at the top under a header the reader has just clicked to find the best.
 const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
-  profit_factor: false, net_pnl: false, max_drawdown: true, trade_count: false, sharpe: false,
+  profit_factor: false,
+  net_pnl: false,
+  max_drawdown: true,
+  trade_count: false,
+  sharpe: false,
 }
 
-function SortHeader({ label, col, sort, setSort, title }: {
+function SortHeader({
+  label,
+  col,
+  sort,
+  setSort,
+  title,
+}: {
   label: string
   col: SortKey
   sort: { key: SortKey; asc: boolean }
@@ -370,7 +497,9 @@ function SortHeader({ label, col, sort, setSort, title }: {
   return (
     <th
       title={title}
-      onClick={() => setSort(active ? { key: col, asc: !sort.asc } : { key: col, asc: SORT_ASC_DEFAULT[col] })}
+      onClick={() =>
+        setSort(active ? { key: col, asc: !sort.asc } : { key: col, asc: SORT_ASC_DEFAULT[col] })
+      }
       className={`text-left px-3 py-2 font-medium cursor-pointer select-none whitespace-nowrap hover:text-text-secondary transition-colors ${active ? 'text-accent' : 'text-text-tertiary'}`}
     >
       {label}
@@ -379,7 +508,15 @@ function SortHeader({ label, col, sort, setSort, title }: {
   )
 }
 
-function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, setSort }: {
+function ResultsTable({
+  runs,
+  sweptKeys,
+  navigate,
+  bestRunId,
+  minTrades,
+  sort,
+  setSort,
+}: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
@@ -392,9 +529,8 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, s
   // 3 seconds while the job runs.
   const sorted = useMemo(() => {
     const dir = sort.asc ? 1 : -1
-    const miss = sort.asc ? Infinity : -Infinity   // nulls sort last whichever way you're going
-    return [...runs].sort((a, b) =>
-      ((a[sort.key] ?? miss) - (b[sort.key] ?? miss)) * dir)
+    const miss = sort.asc ? Infinity : -Infinity // nulls sort last whichever way you're going
+    return [...runs].sort((a, b) => ((a[sort.key] ?? miss) - (b[sort.key] ?? miss)) * dir)
   }, [runs, sort])
 
   return (
@@ -403,20 +539,27 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, s
         <thead>
           <tr className="border-b border-border-subtle bg-bg-sunken">
             <th className="px-3 py-2 w-6" />
-            {sweptKeys.map(k => (
-              <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">{k}</th>
+            {sweptKeys.map((k) => (
+              <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">
+                {k}
+              </th>
             ))}
-            <SortHeader label="P&L"     col="net_pnl"       sort={sort} setSort={setSort} />
-            <SortHeader label="Max DD"  col="max_drawdown"  sort={sort} setSort={setSort} />
-            <SortHeader label="Trades"  col="trade_count"   sort={sort} setSort={setSort} />
-            <SortHeader label="Sharpe"  col="sharpe"        sort={sort} setSort={setSort} />
-            <SortHeader label="Profit factor" col="profit_factor" sort={sort} setSort={setSort}
-              title="The optimizer's score for raw mode — gross wins ÷ gross losses" />
+            <SortHeader label="P&L" col="net_pnl" sort={sort} setSort={setSort} />
+            <SortHeader label="Max DD" col="max_drawdown" sort={sort} setSort={setSort} />
+            <SortHeader label="Trades" col="trade_count" sort={sort} setSort={setSort} />
+            <SortHeader label="Sharpe" col="sharpe" sort={sort} setSort={setSort} />
+            <SortHeader
+              label="Profit factor"
+              col="profit_factor"
+              sort={sort}
+              setSort={setSort}
+              title="The optimizer's score for raw mode — gross wins ÷ gross losses"
+            />
             <th className="px-3 py-2 w-16" />
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
-          {sorted.map(run => {
+          {sorted.map((run) => {
             // ★ is the winner the BACKEND chose, never "whatever is on row 1". Falling back to
             // row 1 made the star follow the sort, so re-sorting by trades appeared to crown a
             // different combination.
@@ -428,13 +571,20 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, s
                 key={run.run_id}
                 onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
                 className={`hover:bg-bg-hover cursor-pointer transition-colors ${isBest ? 'border-l-2 border-l-gold-text bg-gold-muted/10' : ''} ${belowFloor ? 'opacity-45' : ''}`}
-                title={belowFloor ? `Under the ${minTrades}-trade minimum — not eligible to win` : undefined}
+                title={
+                  belowFloor
+                    ? `Under the ${minTrades}-trade minimum — not eligible to win`
+                    : undefined
+                }
               >
                 <td className="px-3 py-[9px] w-6">
                   {isBest && <span className="text-gold-text font-bold">★</span>}
                 </td>
-                {sweptKeys.map(k => (
-                  <td key={k} className={`px-3 py-[9px] text-left font-mono font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
+                {sweptKeys.map((k) => (
+                  <td
+                    key={k}
+                    className={`px-3 py-[9px] text-left font-mono font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}
+                  >
                     {String(run.params?.[k] ?? '—')}
                   </td>
                 ))}
@@ -442,7 +592,9 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, s
                   {fmtMoney(run.net_pnl)}
                 </td>
                 <td className="px-3 py-[9px] text-left font-mono tabular-nums text-neg-text">
-                  {run.max_drawdown != null ? `$${Math.round(run.max_drawdown).toLocaleString('en-US')}` : '—'}
+                  {run.max_drawdown != null
+                    ? `$${Math.round(run.max_drawdown).toLocaleString('en-US')}`
+                    : '—'}
                 </td>
                 <td className="px-3 py-[9px] text-left tabular-nums text-text-secondary">
                   {run.trade_count ?? '—'}
@@ -450,7 +602,9 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, s
                 <td className="px-3 py-[9px] text-left font-mono tabular-nums text-text-secondary">
                   {run.sharpe?.toFixed(2) ?? '—'}
                 </td>
-                <td className={`px-3 py-[9px] text-left font-mono tabular-nums font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
+                <td
+                  className={`px-3 py-[9px] text-left font-mono tabular-nums font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}
+                >
                   {run.profit_factor?.toFixed(2) ?? '—'}
                 </td>
                 <td className="px-3 py-[9px] text-left">
@@ -467,7 +621,12 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, s
 
 // ── Ranked bar chart ──────────────────────────────────────────────────────────
 
-function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
+function RankedBars({
+  runs,
+  sweptKeys,
+  navigate,
+  bestRunId,
+}: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
@@ -475,22 +634,22 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
 }) {
   const sorted = useMemo(
     () => [...runs].sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity)),
-    [runs],
+    [runs]
   )
-  const maxPf = Math.max(...sorted.map(r => r.profit_factor ?? 0), 1)
+  const maxPf = Math.max(...sorted.map((r) => r.profit_factor ?? 0), 1)
 
   function tierColor(run: BacktestSummary): string {
     const tier = run.worthiness?.tier
     if (tier === 'TIER_1_STRESS_TEST') return '#22c55e'
-    if (tier === 'TIER_2_OPTIMIZE')    return '#06b6d4'
+    if (tier === 'TIER_2_OPTIMIZE') return '#06b6d4'
     return '#ef4444'
   }
 
-  const BAR_H    = 34
-  const LABEL_W  = 160
-  const PF_W     = 44
+  const BAR_H = 34
+  const LABEL_W = 160
+  const PF_W = 44
   const BAR_AREA = 320
-  const PAD_Y    = 4
+  const PAD_Y = 4
 
   const svgH = sorted.length * (BAR_H + PAD_Y) + PAD_Y
   const svgW = LABEL_W + BAR_AREA + PF_W + 8
@@ -499,11 +658,11 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
     <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 overflow-x-auto">
       <svg width={svgW} height={svgH} className="font-mono">
         {sorted.map((run, i) => {
-          const pf    = run.profit_factor ?? 0
+          const pf = run.profit_factor ?? 0
           const isBest = run.run_id === bestRunId
-          const barW  = Math.max(4, (pf / maxPf) * BAR_AREA)
-          const cy    = PAD_Y + i * (BAR_H + PAD_Y)
-          const label = sweptKeys.map(k => run.params?.[k] ?? '?').join(' / ')
+          const barW = Math.max(4, (pf / maxPf) * BAR_AREA)
+          const cy = PAD_Y + i * (BAR_H + PAD_Y)
+          const label = sweptKeys.map((k) => run.params?.[k] ?? '?').join(' / ')
           const color = tierColor(run)
 
           return (
@@ -513,8 +672,15 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
               onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
             >
               {/* Hover bg */}
-              <rect x={0} y={cy} width={svgW} height={BAR_H} fill="transparent"
-                className="hover:fill-white/[0.03]" rx={4} />
+              <rect
+                x={0}
+                y={cy}
+                width={svgW}
+                height={BAR_H}
+                fill="transparent"
+                className="hover:fill-white/[0.03]"
+                rx={4}
+              />
 
               {/* Label */}
               <text
@@ -525,7 +691,8 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
                 fill={isBest ? '#f59e0b' : '#9ca3af'}
                 fontWeight={isBest ? '600' : '400'}
               >
-                {isBest ? '★ ' : ''}{label}
+                {isBest ? '★ ' : ''}
+                {label}
               </text>
 
               {/* Bar track */}
@@ -533,8 +700,10 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
 
               {/* Bar fill */}
               <rect
-                x={LABEL_W} y={cy + 9}
-                width={barW} height={16}
+                x={LABEL_W}
+                y={cy + 9}
+                width={barW}
+                height={16}
                 rx={3}
                 fill={color}
                 fillOpacity={isBest ? 0.9 : 0.55}
@@ -542,8 +711,16 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
 
               {/* Gold border for winner */}
               {isBest && (
-                <rect x={LABEL_W} y={cy + 9} width={barW} height={16} rx={3}
-                  fill="none" stroke="#f59e0b" strokeWidth={1.5} />
+                <rect
+                  x={LABEL_W}
+                  y={cy + 9}
+                  width={barW}
+                  height={16}
+                  rx={3}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth={1.5}
+                />
               )}
 
               {/* PF value */}
@@ -562,7 +739,9 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
         })}
       </svg>
       <p className="text-[11px] text-text-tertiary mt-2">
-        Sorted by profit factor. Bar color: <span className="text-pos-text">green</span> = Tier 1, <span className="text-accent">cyan</span> = Tier 2, <span className="text-neg-text">red</span> = Tier 3.
+        Sorted by profit factor. Bar color: <span className="text-pos-text">green</span> = Tier 1,{' '}
+        <span className="text-accent">cyan</span> = Tier 2,{' '}
+        <span className="text-neg-text">red</span> = Tier 3.
       </p>
     </div>
   )
@@ -575,19 +754,29 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
 // made it the one number a parameter sweep exists to produce and the one number the page did
 // not show. 0 = the neighbours score the same (a plateau you can actually trade). 1 = the
 // neighbours collapse (a lone spike, i.e. the winner is a property of this history).
-function RobustnessCard({ score, summary }: {
+function RobustnessCard({
+  score,
+  summary,
+}: {
   score: number
-  summary: Record<string, Partial<Record<'up' | 'down', { value: number; profit_factor: number; degradation: number }>>> | null
+  summary: Record<
+    string,
+    Partial<Record<'up' | 'down', { value: number; profit_factor: number; degradation: number }>>
+  > | null
 }) {
   const pct = Math.round(score * 100)
-  const tone = score >= 0.5 ? { text: 'text-neg-text',  bg: 'bg-neg-muted',  border: 'border-neg-text/20' }
-    : score >= 0.25       ? { text: 'text-warn-text', bg: 'bg-warn-muted/40', border: 'border-warn-text/20' }
-    : { text: 'text-pos-text', bg: 'bg-pos-muted', border: 'border-pos-text/20' }
-  const verdict = score >= 0.5
-    ? 'Fragile — one step either side of the winner and the result largely disappears. That is the shape of a number fitted to this history.'
-    : score >= 0.25
-    ? 'Mixed — the winner sits on a slope. Nearby settings are worse but not worthless.'
-    : 'Robust — the settings either side score about the same, so the winner is a plateau rather than a spike.'
+  const tone =
+    score >= 0.5
+      ? { text: 'text-neg-text', bg: 'bg-neg-muted', border: 'border-neg-text/20' }
+      : score >= 0.25
+        ? { text: 'text-warn-text', bg: 'bg-warn-muted/40', border: 'border-warn-text/20' }
+        : { text: 'text-pos-text', bg: 'bg-pos-muted', border: 'border-pos-text/20' }
+  const verdict =
+    score >= 0.5
+      ? 'Fragile — one step either side of the winner and the result largely disappears. That is the shape of a number fitted to this history.'
+      : score >= 0.25
+        ? 'Mixed — the winner sits on a slope. Nearby settings are worse but not worthless.'
+        : 'Robust — the settings either side score about the same, so the winner is a plateau rather than a spike.'
 
   return (
     <div className={`rounded-xl border px-5 py-4 ${tone.bg} ${tone.border}`}>
@@ -595,7 +784,9 @@ function RobustnessCard({ score, summary }: {
         <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
           Winner robustness
         </span>
-        <span className={`text-[18px] font-mono font-semibold tabular-nums ${tone.text}`}>{pct}%</span>
+        <span className={`text-[18px] font-mono font-semibold tabular-nums ${tone.text}`}>
+          {pct}%
+        </span>
         <span className="text-[11px] text-text-tertiary">worst neighbour drop</span>
       </div>
       <p className="text-[12px] text-text-secondary leading-snug">{verdict}</p>
@@ -604,14 +795,23 @@ function RobustnessCard({ score, summary }: {
           {Object.entries(summary).map(([param, sides]) => (
             <span key={param} className="text-[11px] font-mono text-text-tertiary">
               <span className="text-text-secondary">{param}</span>
-              {(['down', 'up'] as const).map(d => sides[d] && (
-                <span key={d} className="ml-2">
-                  {d === 'down' ? '↓' : '↑'}{sides[d]!.value} → PF {sides[d]!.profit_factor.toFixed(2)}
-                  <span className={sides[d]!.degradation >= 0.5 ? 'text-neg-text' : 'text-text-tertiary'}>
-                    {' '}(−{Math.round(sides[d]!.degradation * 100)}%)
-                  </span>
-                </span>
-              ))}
+              {(['down', 'up'] as const).map(
+                (d) =>
+                  sides[d] && (
+                    <span key={d} className="ml-2">
+                      {d === 'down' ? '↓' : '↑'}
+                      {sides[d]!.value} → PF {sides[d]!.profit_factor.toFixed(2)}
+                      <span
+                        className={
+                          sides[d]!.degradation >= 0.5 ? 'text-neg-text' : 'text-text-tertiary'
+                        }
+                      >
+                        {' '}
+                        (−{Math.round(sides[d]!.degradation * 100)}%)
+                      </span>
+                    </span>
+                  )
+              )}
             </span>
           ))}
         </div>
@@ -627,17 +827,27 @@ function RobustnessCard({ score, summary }: {
 // already had, which is the only question that decides whether to adopt it.
 // Structural, not `BacktestSummary` — the baseline arrives as a BacktestDetail and the winner
 // as a summary, and this only ever reads the four KPIs both carry.
-type BaselineKpis = Pick<BacktestSummary, 'profit_factor' | 'net_pnl' | 'max_drawdown' | 'trade_count'>
+type BaselineKpis = Pick<
+  BacktestSummary,
+  'profit_factor' | 'net_pnl' | 'max_drawdown' | 'trade_count'
+>
 
 function BaselineRow({ baseline, winner }: { baseline: BaselineKpis; winner?: BaselineKpis }) {
   const delta = (a: number | null | undefined, b: number | null | undefined) =>
     a == null || b == null ? null : a - b
-  const pfDelta   = delta(winner?.profit_factor, baseline.profit_factor)
-  const pnlDelta  = delta(winner?.net_pnl, baseline.net_pnl)
-  const beat      = pfDelta != null && pfDelta > 0
+  const pfDelta = delta(winner?.profit_factor, baseline.profit_factor)
+  const pnlDelta = delta(winner?.net_pnl, baseline.net_pnl)
+  const beat = pfDelta != null && pfDelta > 0
 
-  const Cell = ({ label, base, win, fmt }: {
-    label: string; base: number | null | undefined; win: number | null | undefined
+  const Cell = ({
+    label,
+    base,
+    win,
+    fmt,
+  }: {
+    label: string
+    base: number | null | undefined
+    win: number | null | undefined
     fmt: (v: number | null | undefined) => string
   }) => (
     <div>
@@ -657,19 +867,33 @@ function BaselineRow({ baseline, winner }: { baseline: BaselineKpis; winner?: Ba
           Starting run → winner
         </span>
         {winner && (
-          <span className={`inline-flex px-2 py-[2px] rounded text-[10px] font-semibold ${beat ? 'bg-pos-muted text-pos-text' : 'bg-warn-muted/50 text-warn-text'}`}>
+          <span
+            className={`inline-flex px-2 py-[2px] rounded text-[10px] font-semibold ${beat ? 'bg-pos-muted text-pos-text' : 'bg-warn-muted/50 text-warn-text'}`}
+          >
             {beat ? 'BEAT THE BASELINE' : 'DID NOT BEAT THE BASELINE'}
           </span>
         )}
       </div>
       <div className="flex flex-wrap gap-x-8 gap-y-3">
-        <Cell label="Profit factor" base={baseline.profit_factor} win={winner?.profit_factor}
-          fmt={v => v?.toFixed(2) ?? '—'} />
+        <Cell
+          label="Profit factor"
+          base={baseline.profit_factor}
+          win={winner?.profit_factor}
+          fmt={(v) => v?.toFixed(2) ?? '—'}
+        />
         <Cell label="Net P&L" base={baseline.net_pnl} win={winner?.net_pnl} fmt={fmtMoney} />
-        <Cell label="Max DD" base={baseline.max_drawdown} win={winner?.max_drawdown}
-          fmt={v => v == null ? '—' : `$${Math.round(v).toLocaleString('en-US')}`} />
-        <Cell label="Trades" base={baseline.trade_count} win={winner?.trade_count}
-          fmt={v => v == null ? '—' : String(v)} />
+        <Cell
+          label="Max DD"
+          base={baseline.max_drawdown}
+          win={winner?.max_drawdown}
+          fmt={(v) => (v == null ? '—' : `$${Math.round(v).toLocaleString('en-US')}`)}
+        />
+        <Cell
+          label="Trades"
+          base={baseline.trade_count}
+          win={winner?.trade_count}
+          fmt={(v) => (v == null ? '—' : String(v))}
+        />
       </div>
       {pnlDelta != null && (
         <p className="text-[11px] text-text-tertiary mt-3">
@@ -684,7 +908,12 @@ function BaselineRow({ baseline, winner }: { baseline: BaselineKpis; winner?: Ba
 
 // ── Log section ───────────────────────────────────────────────────────────────
 
-function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
+function OptLogSection({
+  optimizationId,
+  isRunning,
+  isComplete,
+  isFailed,
+}: {
   optimizationId: string
   isRunning: boolean
   isComplete: boolean
@@ -692,7 +921,11 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
 }) {
   const [open, setOpen] = useState(isRunning || isFailed)
   const [copied, setCopied] = useState(false)
-  const { data: log, isFetching, refetch } = useOptimizationLog(open ? optimizationId : null, 300, isRunning)
+  const {
+    data: log,
+    isFetching,
+    refetch,
+  } = useOptimizationLog(open ? optimizationId : null, 300, isRunning)
   const prevLiveRef = useRef(isRunning)
 
   useEffect(() => {
@@ -711,7 +944,7 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
   return (
     <div className="bg-bg-sunken border border-border-subtle rounded-lg overflow-hidden">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-[10px] border-b border-border-subtle hover:bg-bg-hover/40 transition-colors"
       >
         <div className="flex items-center gap-[10px]">
@@ -731,8 +964,12 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
             VPS Log
           </span>
           {isRunning && <span className="text-micro text-text-tertiary font-mono">· live</span>}
-          {isComplete && !isRunning && <span className="text-micro text-accent font-mono">· complete</span>}
-          {isFailed && !isRunning && <span className="text-micro text-neg-text font-mono">· failed</span>}
+          {isComplete && !isRunning && (
+            <span className="text-micro text-accent font-mono">· complete</span>
+          )}
+          {isFailed && !isRunning && (
+            <span className="text-micro text-neg-text font-mono">· failed</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {log && (
@@ -745,7 +982,11 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </span>
           )}
-          {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+          {open ? (
+            <ChevronUp size={14} className="text-text-tertiary" />
+          ) : (
+            <ChevronDown size={14} className="text-text-tertiary" />
+          )}
         </div>
       </button>
       {open && (
@@ -765,18 +1006,17 @@ function OptLogSection({ optimizationId, isRunning, isComplete, isFailed }: {
   )
 }
 
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function OptimizationDetail() {
   const { optimizationId } = useParams<{ optimizationId: string }>()
-  const navigate            = useNavigate()
+  const navigate = useNavigate()
   const { data: opt, isLoading } = useOptimization(optimizationId ?? null)
-  const cancelOpt  = useCancelOptimization()
-  const retryOpt   = useRetryOptimization()
-  const rerunOpt   = useRerunOptimization()
-  const deleteOpt  = useDeleteOptimization()
-  const retryRun   = useRetryBacktest()
+  const cancelOpt = useCancelOptimization()
+  const retryOpt = useRetryOptimization()
+  const rerunOpt = useRerunOptimization()
+  const deleteOpt = useDeleteOptimization()
+  const retryRun = useRetryBacktest()
   const { data: runningJob } = useRunningVpsJob()
   const jobBlocked = !!runningJobFor(runningJob, opt?.runner)?.running
 
@@ -787,51 +1027,69 @@ export function OptimizationDetail() {
   // Scoped to this strategy — the unfiltered call pulled EVERY run in the lab on a page that
   // needs at most a handful, and it polls.
   const { data: allRunsForTune } = useBacktestRuns(
-    opt?.strategy_id ? { strategy_id: opt.strategy_id } : undefined)
+    opt?.strategy_id ? { strategy_id: opt.strategy_id } : undefined
+  )
   const tuneIterations = useMemo(
-    () => (allRunsForTune ?? []).filter(r => bestRunId && r.source_run_id === bestRunId && !r.sweep_id && !r.optimization_id),
-    [allRunsForTune, bestRunId],
+    () =>
+      (allRunsForTune ?? []).filter(
+        (r) => bestRunId && r.source_run_id === bestRunId && !r.sweep_id && !r.optimization_id
+      ),
+    [allRunsForTune, bestRunId]
   )
   // The run this optimization was launched from, for the baseline comparison.
   const { data: baselineRun } = useBacktestRun(opt?.source_run_id ?? null)
-  const tuneRunning = tuneIterations.filter(r => r.status === 'running').length
+  const tuneRunning = tuneIterations.filter((r) => r.status === 'running').length
   const hasRunningStress = !!bestRunId && stressRunIds.has(bestRunId)
   const { data: bestRunStressTests } = useStressTests(hasRunningStress ? bestRunId : undefined)
-  const latestStress = bestRunStressTests?.find(s => !s.status.startsWith('failed') && s.status !== 'complete')
+  const latestStress = bestRunStressTests?.find(
+    (s) => !s.status.startsWith('failed') && s.status !== 'complete'
+  )
 
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [viewMode, setViewMode]           = useState<'table' | 'bars'>('table')
-  const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: 'profit_factor', asc: false })
+  const [viewMode, setViewMode] = useState<'table' | 'bars'>('table')
+  const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({
+    key: 'profit_factor',
+    asc: false,
+  })
   // Hide combos under the optimization's own trade floor. Off by default so the grid is never
   // silently narrower than it says it is — the ineligible rows are dimmed either way.
   const [hideBelowFloor, setHideBelowFloor] = useState(false)
 
   const paramKeys = useMemo(() => (opt ? Object.keys(opt.param_grid) : []), [opt])
-  const sweptKeys = useMemo(() => paramKeys.filter(k => {
-    const spec = opt?.param_grid[k]
-    return Array.isArray(spec) ? spec.length > 1 : typeof spec === 'object' && spec !== null
-  }), [paramKeys, opt])
+  const sweptKeys = useMemo(
+    () =>
+      paramKeys.filter((k) => {
+        const spec = opt?.param_grid[k]
+        return Array.isArray(spec) ? spec.length > 1 : typeof spec === 'object' && spec !== null
+      }),
+    [paramKeys, opt]
+  )
 
-  const isRunning    = opt?.status === 'running'
-  const minTrades    = opt?.min_trades ?? 0
-  const completeRuns = useMemo(
-    () => opt?.runs.filter(r => r.status === 'complete') ?? [], [opt])
-  const failedRuns   = useMemo(
-    () => opt?.runs.filter(r => r.status.startsWith('failed')) ?? [], [opt])
-  const visibleRuns  = useMemo(
-    () => (hideBelowFloor && minTrades > 0
-      ? completeRuns.filter(r => (r.trade_count ?? 0) >= minTrades)
-      : completeRuns),
-    [completeRuns, hideBelowFloor, minTrades])
-  const belowFloorCount = completeRuns.length - (minTrades > 0
-    ? completeRuns.filter(r => (r.trade_count ?? 0) >= minTrades).length
-    : completeRuns.length)
-  const winnerRun = completeRuns.find(r => r.run_id === bestRunId)
+  const isRunning = opt?.status === 'running'
+  const minTrades = opt?.min_trades ?? 0
+  const completeRuns = useMemo(() => opt?.runs.filter((r) => r.status === 'complete') ?? [], [opt])
+  const failedRuns = useMemo(
+    () => opt?.runs.filter((r) => r.status.startsWith('failed')) ?? [],
+    [opt]
+  )
+  const visibleRuns = useMemo(
+    () =>
+      hideBelowFloor && minTrades > 0
+        ? completeRuns.filter((r) => (r.trade_count ?? 0) >= minTrades)
+        : completeRuns,
+    [completeRuns, hideBelowFloor, minTrades]
+  )
+  const belowFloorCount =
+    completeRuns.length -
+    (minTrades > 0
+      ? completeRuns.filter((r) => (r.trade_count ?? 0) >= minTrades).length
+      : completeRuns.length)
+  const winnerRun = completeRuns.find((r) => r.run_id === bestRunId)
 
   return (
     <div>
       <StickyHeader>
-        {scrolled => (
+        {(scrolled) => (
           <div className={`flex items-center justify-between gap-3 ${scrolled ? 'mb-4' : 'mb-5'}`}>
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -843,7 +1101,9 @@ export function OptimizationDetail() {
               {scrolled && opt && (
                 <>
                   <span className="text-text-tertiary flex-shrink-0">·</span>
-                  <h1 className="text-[14px] font-semibold truncate">{opt.strategy_name || opt.strategy_id}</h1>
+                  <h1 className="text-[14px] font-semibold truncate">
+                    {opt.strategy_name || opt.strategy_id}
+                  </h1>
                   <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
                     {opt.instrument}
                   </span>
@@ -852,23 +1112,23 @@ export function OptimizationDetail() {
             </div>
             {opt && !isRunning && (
               <div className="flex items-center gap-2 flex-shrink-0">
-            {opt.status.startsWith('failed') && (
-              <button
-                onClick={() => rerunOpt.mutate(optimizationId!)}
-                disabled={rerunOpt.isPending}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-accent hover:bg-accent/10 border border-accent/30 hover:border-accent/50 disabled:opacity-50 transition-colors"
-              >
-                <RotateCcw size={12} />
-                {rerunOpt.isPending ? 'Starting…' : 'Re-run'}
-              </button>
-            )}
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
-            >
-              <Trash2 size={12} />
-              Delete
-            </button>
+                {opt.status.startsWith('failed') && (
+                  <button
+                    onClick={() => rerunOpt.mutate(optimizationId!)}
+                    disabled={rerunOpt.isPending}
+                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-accent hover:bg-accent/10 border border-accent/30 hover:border-accent/50 disabled:opacity-50 transition-colors"
+                  >
+                    <RotateCcw size={12} />
+                    {rerunOpt.isPending ? 'Starting…' : 'Re-run'}
+                  </button>
+                )}
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
+                >
+                  <Trash2 size={12} />
+                  Delete
+                </button>
               </div>
             )}
           </div>
@@ -876,22 +1136,33 @@ export function OptimizationDetail() {
       </StickyHeader>
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={e => { if (e.target === e.currentTarget) setConfirmDelete(false) }}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmDelete(false)
+          }}
+        >
           <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[400px] shadow-2xl">
             <div className="px-5 py-4 border-b border-border-subtle">
               <div className="text-[15px] font-semibold">Delete this optimization?</div>
             </div>
             <div className="px-5 py-4">
               <p className="text-[13px] text-text-secondary">
-                All {opt?.estimated_runs} child runs, their evaluations, and result files will be permanently removed. This cannot be undone.
+                All {opt?.estimated_runs} child runs, their evaluations, and result files will be
+                permanently removed. This cannot be undone.
               </p>
             </div>
             <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle">
-              <button onClick={() => setConfirmDelete(false)} className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              >
                 Cancel
               </button>
               <button
-                onClick={() => deleteOpt.mutate(optimizationId!, { onSuccess: () => navigate('/optimizations') })}
+                onClick={() =>
+                  deleteOpt.mutate(optimizationId!, { onSuccess: () => navigate('/optimizations') })
+                }
                 disabled={deleteOpt.isPending}
                 className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/15 disabled:opacity-50 transition-colors"
               >
@@ -925,7 +1196,9 @@ export function OptimizationDetail() {
                 {fmtDate(opt.start_date)} → {fmtDate(opt.end_date)}
               </span>
               {opt.ruleset_id ? (
-                <span className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}>
+                <span
+                  className={`inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono ${firmChipCls(opt.ruleset_id)}`}
+                >
                   {firmShortName(opt.ruleset_id)}
                 </span>
               ) : (
@@ -935,7 +1208,11 @@ export function OptimizationDetail() {
               )}
               {opt.regime_filter && (
                 <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
-                  Regime: {opt.regime_filter.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
+                  Regime:{' '}
+                  {opt.regime_filter
+                    .replace('_', ' ')
+                    .toLowerCase()
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
                 </span>
               )}
               {/* What the grid was CHARGED. A ranking produced on a free book is not comparable
@@ -944,13 +1221,17 @@ export function OptimizationDetail() {
                   purpose) are different answers and are worded differently. */}
               <span
                 className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary"
-                title={opt.cost_layers?.length
-                  ? `Charged on the ${opt.broker_profile} profile`
-                  : 'Every combination was replayed with no spread, swap or commission'}
+                title={
+                  opt.cost_layers?.length
+                    ? `Charged on the ${opt.broker_profile} profile`
+                    : 'Every combination was replayed with no spread, swap or commission'
+                }
               >
-                {opt.cost_layers === null ? 'Costs: not recorded'
-                  : opt.cost_layers.length ? `Costs: ${opt.cost_layers.join(', ')}`
-                  : 'Costs: none charged'}
+                {opt.cost_layers === null
+                  ? 'Costs: not recorded'
+                  : opt.cost_layers.length
+                    ? `Costs: ${opt.cost_layers.join(', ')}`
+                    : 'Costs: none charged'}
               </span>
               {minTrades > 0 && (
                 <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
@@ -991,7 +1272,6 @@ export function OptimizationDetail() {
             </button>
           )}
 
-
           {/* Robustness + baseline — the two things that decide whether to ADOPT the winner */}
           {!isRunning && opt.grid_sensitivity_score != null && completeRuns.length > 1 && (
             <RobustnessCard
@@ -1014,8 +1294,10 @@ export function OptimizationDetail() {
                       : `Results — ${completeRuns.length} of ${opt.estimated_runs} combinations`}
                   </h2>
                   {tuneRunning > 0 && (
-                    <span title="A tuning iteration is running on the winner (★)"
-                      className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent">
+                    <span
+                      title="A tuning iteration is running on the winner (★)"
+                      className="inline-flex items-center gap-[3px] px-[5px] py-[2px] rounded text-[10px] font-semibold bg-accent/10 text-accent"
+                    >
                       <SlidersHorizontal size={9} className="animate-pulse" />
                       TUNING WINNER
                     </span>
@@ -1027,7 +1309,7 @@ export function OptimizationDetail() {
                       <input
                         type="checkbox"
                         checked={hideBelowFloor}
-                        onChange={e => setHideBelowFloor(e.target.checked)}
+                        onChange={(e) => setHideBelowFloor(e.target.checked)}
                         className="w-3 h-3 rounded accent-accent cursor-pointer"
                       />
                       Hide {belowFloorCount} under {minTrades} trades
@@ -1035,7 +1317,7 @@ export function OptimizationDetail() {
                   )}
                   {/* View toggle */}
                   <div className="flex rounded-md border border-border-subtle overflow-hidden text-[11px]">
-                    {(['table', 'bars'] as const).map(v => (
+                    {(['table', 'bars'] as const).map((v) => (
                       <button
                         key={v}
                         onClick={() => setViewMode(v)}
@@ -1053,11 +1335,17 @@ export function OptimizationDetail() {
                     <button
                       onClick={() => navigate(`/backtests/runs/${opt.best_run_id}/tune`)}
                       className="flex items-center gap-2 px-3 py-[5px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/15 transition-colors"
-                      title={tuneRunning > 0 ? 'A tuning iteration is running — open the workbench to watch' : 'Take the winning parameter set into the tuning workbench'}
+                      title={
+                        tuneRunning > 0
+                          ? 'A tuning iteration is running — open the workbench to watch'
+                          : 'Take the winning parameter set into the tuning workbench'
+                      }
                     >
-                      {tuneRunning > 0
-                        ? <Loader2 size={12} className="animate-spin" />
-                        : <SlidersHorizontal size={12} />}
+                      {tuneRunning > 0 ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <SlidersHorizontal size={12} />
+                      )}
                       {tuneRunning > 0 ? 'Tuning…' : 'Tune winner'}
                     </button>
                   )}
@@ -1094,7 +1382,13 @@ export function OptimizationDetail() {
           )}
 
           {/* Failed runs — debugging info, always below results */}
-          <FailedRunsTable runs={failedRuns} sweptKeys={sweptKeys} navigate={navigate} retryRun={retryRun} jobBlocked={jobBlocked} />
+          <FailedRunsTable
+            runs={failedRuns}
+            sweptKeys={sweptKeys}
+            navigate={navigate}
+            retryRun={retryRun}
+            jobBlocked={jobBlocked}
+          />
 
           {/* VPS log — collapsible, preserved after completion */}
           {optimizationId && (

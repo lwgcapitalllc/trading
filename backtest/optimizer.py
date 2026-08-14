@@ -45,8 +45,9 @@ class Combo:
 _W: Dict[str, Any] = {}
 
 
-def _init_worker(monorepo_root: str, module_path: str, df, capital: float,
-                 cost_profile=None) -> None:
+def _init_worker(
+    monorepo_root: str, module_path: str, df, capital: float, cost_profile=None
+) -> None:
     """Runs once per worker process. Its args are plain values (str/float/DataFrame) on purpose:
     they are unpickled BEFORE this body runs, so they must not need `sys.path` to already be set.
     Task args (the Combos, carrying a strategy config class) are unpickled after — by then the path
@@ -55,14 +56,12 @@ def _init_worker(monorepo_root: str, module_path: str, df, capital: float,
 
     if monorepo_root and monorepo_root not in sys.path:
         sys.path.insert(0, monorepo_root)
-    entry = getattr(importlib.import_module(module_path), "LAB_STRATEGY")
-    _W.update(strategy_cls=entry["strategy"], df=df, capital=capital,
-              cost_profile=cost_profile)
+    entry = importlib.import_module(module_path).LAB_STRATEGY
+    _W.update(strategy_cls=entry["strategy"], df=df, capital=capital, cost_profile=cost_profile)
 
 
 def _run_in_worker(combo: Combo) -> dict:
-    return _replay_one(_W["strategy_cls"], _W["df"], _W["capital"], combo,
-                       _W.get("cost_profile"))
+    return _replay_one(_W["strategy_cls"], _W["df"], _W["capital"], combo, _W.get("cost_profile"))
 
 
 def _refuse_unreplayable(config) -> None:
@@ -83,7 +82,8 @@ def _refuse_unreplayable(config) -> None:
             "exec_secondary is on and a sweep cannot run it: the 1m re-entry needs a second bar "
             "stream (run_dual) and this replays one frame. Every combo would be primary-only "
             "while the run it is compared against is not. Set exec_secondary=False for the "
-            "sweep, or give the sweep a 1m frame.")
+            "sweep, or give the sweep a 1m frame."
+        )
 
 
 def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=None) -> dict:
@@ -97,8 +97,9 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=Non
     from backtest.replay import EngineStack, build_strategy, iter_bars
 
     _refuse_unreplayable(combo.config)
-    strategy = build_strategy(strategy_cls, combo.config,
-                              initial_capital=capital, cost_profile=cost_profile)
+    strategy = build_strategy(
+        strategy_cls, combo.config, initial_capital=capital, cost_profile=cost_profile
+    )
     if len(df.index) > 1:
         strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
@@ -107,8 +108,7 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=Non
         strategy.step(stack.step(bar))
 
     trades = strategy.execution.trades
-    return {"params": dict(combo.params),
-            "kpis": build_kpis(trades, initial_capital=capital)}
+    return {"params": dict(combo.params), "kpis": build_kpis(trades, initial_capital=capital)}
 
 
 def default_workers(n_combos: int) -> int:
@@ -160,14 +160,17 @@ def run_sweep(
     root = monorepo_root or str(_monorepo_root())
 
     if workers <= 1:
-        return _sweep_serial(module_path, root, df, combos, initial_capital, progress,
-                             should_cancel, cost_profile)
+        return _sweep_serial(
+            module_path, root, df, combos, initial_capital, progress, should_cancel, cost_profile
+        )
 
     results: List[Optional[dict]] = [None] * total
     done = 0
-    with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
-                             initargs=(root, module_path, df, initial_capital,
-                                       cost_profile)) as pool:
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=_init_worker,
+        initargs=(root, module_path, df, initial_capital, cost_profile),
+    ) as pool:
         futures = {pool.submit(_run_in_worker, c): i for i, c in enumerate(combos)}
         pending = set(futures)
         while pending:
@@ -185,14 +188,15 @@ def run_sweep(
     return [r for r in results if r is not None]
 
 
-def _sweep_serial(module_path, root, df, combos, capital, progress, should_cancel,
-                  cost_profile=None) -> List[dict]:
+def _sweep_serial(
+    module_path, root, df, combos, capital, progress, should_cancel, cost_profile=None
+) -> List[dict]:
     """The single-worker path — also what the tests drive, since it needs no pickling or spawn."""
     import importlib
 
     if root and root not in sys.path:
         sys.path.insert(0, root)
-    entry = getattr(importlib.import_module(module_path), "LAB_STRATEGY")
+    entry = importlib.import_module(module_path).LAB_STRATEGY
     strategy_cls = entry["strategy"]
 
     out: List[dict] = []

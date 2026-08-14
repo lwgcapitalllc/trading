@@ -24,13 +24,20 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
-
 from models import (
-    StackRequest, StackResponse, StackSummary, StackDetail, StackStrategyLeg,
-    StackPreviewRequest, StackPreviewResponse, StackPreviewLeg,
-    StackSharedReport, StackLegContention, StackContentionEvent,
+    StackContentionEvent,
+    StackDetail,
+    StackLegContention,
+    StackPreviewLeg,
+    StackPreviewRequest,
+    StackPreviewResponse,
+    StackRequest,
+    StackResponse,
+    StackSharedReport,
+    StackStrategyLeg,
+    StackSummary,
 )
-from services import chart_spec, lab_db, history_limits, portfolio_runner
+from services import chart_spec, history_limits, lab_db, portfolio_runner
 from services.sweep_runner import run_sweep
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -80,7 +87,9 @@ def _validate_stack_strategies(ids: list[str]) -> list[dict]:
         if not strat:
             raise HTTPException(404, f"Strategy '{sid}' not found")
         if strat.get("runner") != "python":
-            raise HTTPException(409, f"Strategy '{sid}' is not a Python strategy — stacks are Python-only")
+            raise HTTPException(
+                409, f"Strategy '{sid}' is not a Python strategy — stacks are Python-only"
+            )
         strategies.append(strat)
     return strategies
 
@@ -97,22 +106,41 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
         # `trigger_stack` or the badge promises something the launch will not do: a shared stack
         # reuses nothing at all, and a per-strategy param override means "run it my way".
         forced = bool(req.params_by_strategy.get(strat["id"]))
-        match = None if (req.mode == "shared" or forced) else lab_db.find_matching_stack_run(
-            strat["id"], req.instrument, req.bar_type, req.bar_value,
-            req.start_date, req.end_date, req.commission_per_side, req.slippage_ticks,
+        match = (
+            None
+            if (req.mode == "shared" or forced)
+            else lab_db.find_matching_stack_run(
+                strat["id"],
+                req.instrument,
+                req.bar_type,
+                req.bar_value,
+                req.start_date,
+                req.end_date,
+                req.commission_per_side,
+                req.slippage_ticks,
+            )
         )
         if match:
             reuse += 1
-            legs.append(StackPreviewLeg(
-                strategy_id=strat["id"], strategy_name=strat.get("name", ""),
-                action="reuse", matched_run_id=match["run_id"],
-                net_pnl=match.get("net_pnl"), trade_count=match.get("trade_count"),
-                profit_factor=match.get("profit_factor"),
-            ))
+            legs.append(
+                StackPreviewLeg(
+                    strategy_id=strat["id"],
+                    strategy_name=strat.get("name", ""),
+                    action="reuse",
+                    matched_run_id=match["run_id"],
+                    net_pnl=match.get("net_pnl"),
+                    trade_count=match.get("trade_count"),
+                    profit_factor=match.get("profit_factor"),
+                )
+            )
         else:
-            legs.append(StackPreviewLeg(
-                strategy_id=strat["id"], strategy_name=strat.get("name", ""), action="run",
-            ))
+            legs.append(
+                StackPreviewLeg(
+                    strategy_id=strat["id"],
+                    strategy_name=strat.get("name", ""),
+                    action="run",
+                )
+            )
     return StackPreviewResponse(legs=legs, reuse_count=reuse, run_count=len(legs) - reuse)
 
 
@@ -129,20 +157,20 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     # single check covers the whole stack.
     try:
         history_limits.validate_window(
-            req.instrument, req.start_date, req.end_date,
-            req.bar_type, req.bar_value, "python")
+            req.instrument, req.start_date, req.end_date, req.bar_type, req.bar_value, "python"
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
     stack_id = "st_" + uuid.uuid4().hex[:10]
-    now      = int(time.time())
+    now = int(time.time())
 
     if req.mode == "shared":
         return _trigger_shared_stack(req, strategies, stack_id, now)
 
-    run_specs: list[dict] = []   # only the fresh legs actually need running
+    run_specs: list[dict] = []  # only the fresh legs actually need running
     job_specs: list[dict] = []
-    run_ids:   list[str]  = []
+    run_ids: list[str] = []
 
     # Resolve each leg to reuse-or-run FIRST, so we only take the python lock if at least
     # one leg genuinely needs a backtest. An all-reused stack is assembled instantly.
@@ -153,8 +181,14 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
             # Only reuse when the caller isn't forcing a custom param set for this leg —
             # a custom override means "run it my way", not "reuse whatever exists".
             match = lab_db.find_matching_stack_run(
-                strat["id"], req.instrument, req.bar_type, req.bar_value,
-                req.start_date, req.end_date, req.commission_per_side, req.slippage_ticks,
+                strat["id"],
+                req.instrument,
+                req.bar_type,
+                req.bar_value,
+                req.start_date,
+                req.end_date,
+                req.commission_per_side,
+                req.slippage_ticks,
             )
         plan.append((strat, match))
 
@@ -162,17 +196,19 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     if needs_run and lab_db.has_running_job("python"):
         raise HTTPException(409, "A Python job is already running — wait for it to finish")
 
-    lab_db.insert_stack({
-        "stack_id":            stack_id,
-        "instrument":          req.instrument,
-        "bar_type":            req.bar_type,
-        "bar_value":           req.bar_value,
-        "start_date":          req.start_date,
-        "end_date":            req.end_date,
-        "commission_per_side": req.commission_per_side,
-        "slippage_ticks":      req.slippage_ticks,
-        "created_at":          now,
-    })
+    lab_db.insert_stack(
+        {
+            "stack_id": stack_id,
+            "instrument": req.instrument,
+            "bar_type": req.bar_type,
+            "bar_value": req.bar_value,
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "commission_per_side": req.commission_per_side,
+            "slippage_ticks": req.slippage_ticks,
+            "created_at": now,
+        }
+    )
 
     for pos, (strat, match) in enumerate(plan):
         if match:
@@ -186,44 +222,50 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
         run_ids.append(run_id)
         params = req.params_by_strategy.get(strat["id"]) or strat.get("default_params") or {}
 
-        lab_db.insert_run_stack({
-            "run_id":             run_id,
-            "strategy_id":        strat["id"],
-            "instrument":         req.instrument,
-            "params":             params,
-            "bar_type":           req.bar_type,
-            "bar_value":          req.bar_value,
-            "start_date":         req.start_date,
-            "end_date":           req.end_date,
-            "commission_per_side": req.commission_per_side,
-            "slippage_ticks":     req.slippage_ticks,
-            "status":             "running",
-            "created_at":         now,
-            "stack_id":           stack_id,
-            "runner":             "python",
-        })
+        lab_db.insert_run_stack(
+            {
+                "run_id": run_id,
+                "strategy_id": strat["id"],
+                "instrument": req.instrument,
+                "params": params,
+                "bar_type": req.bar_type,
+                "bar_value": req.bar_value,
+                "start_date": req.start_date,
+                "end_date": req.end_date,
+                "commission_per_side": req.commission_per_side,
+                "slippage_ticks": req.slippage_ticks,
+                "status": "running",
+                "created_at": now,
+                "stack_id": stack_id,
+                "runner": "python",
+            }
+        )
         lab_db.add_stack_member(stack_id, run_id, owned=1, position=pos)
 
-        run_specs.append({
-            "run_id":       run_id,
-            "job_id":       run_id,
-            "strategy_id":  strat["id"],
-            "instrument":   req.instrument,
-            "ruleset_ids":  req.ruleset_ids,
-            "runner":       "python",
-        })
-        job_specs.append({
-            "job_id":            run_id,
-            "strategy_class":    strat["class_name"],
-            "instrument":        req.instrument,
-            "params":            params,
-            "bar_type":          req.bar_type,
-            "bar_value":         req.bar_value,
-            "start_date":        req.start_date,
-            "end_date":          req.end_date,
-            "commission_per_side": req.commission_per_side,
-            "slippage_ticks":    req.slippage_ticks,
-        })
+        run_specs.append(
+            {
+                "run_id": run_id,
+                "job_id": run_id,
+                "strategy_id": strat["id"],
+                "instrument": req.instrument,
+                "ruleset_ids": req.ruleset_ids,
+                "runner": "python",
+            }
+        )
+        job_specs.append(
+            {
+                "job_id": run_id,
+                "strategy_class": strat["class_name"],
+                "instrument": req.instrument,
+                "params": params,
+                "bar_type": req.bar_type,
+                "bar_value": req.bar_value,
+                "start_date": req.start_date,
+                "end_date": req.end_date,
+                "commission_per_side": req.commission_per_side,
+                "slippage_ticks": req.slippage_ticks,
+            }
+        )
 
     # run_sweep is strategy/instrument-agnostic: it fans the fresh specs out one-at-a-time
     # through a Semaphore(1) and persists each child's equity_curve.json + daily_pnl.json.
@@ -255,8 +297,9 @@ def _pin_for_shared(params: dict) -> dict:
     return {**params, **{k: v for k, v in _SHARED_LEG_PINS.items() if k in params}}
 
 
-def _trigger_shared_stack(req: StackRequest, strategies: list[dict],
-                          stack_id: str, now: int) -> StackResponse:
+def _trigger_shared_stack(
+    req: StackRequest, strategies: list[dict], stack_id: str, now: int
+) -> StackResponse:
     """One balance, one risk budget, every leg replayed together.
 
     Deliberately different from the screen path in three ways, each of which would be a defect
@@ -274,54 +317,59 @@ def _trigger_shared_stack(req: StackRequest, strategies: list[dict],
     if lab_db.has_running_job("python"):
         raise HTTPException(409, "A Python job is already running — wait for it to finish")
 
-    lab_db.insert_stack({
-        "stack_id":            stack_id,
-        "instrument":          req.instrument,
-        "bar_type":            req.bar_type,
-        "bar_value":           req.bar_value,
-        "start_date":          req.start_date,
-        "end_date":            req.end_date,
-        "commission_per_side": req.commission_per_side,
-        "slippage_ticks":      req.slippage_ticks,
-        "created_at":          now,
-        "mode":                "shared",
-        "account_size":        req.account_size,
-        "risk_cap_pct":        req.risk_cap_pct,
-        "entry_floor_pct":     req.entry_floor_pct,
-    })
+    lab_db.insert_stack(
+        {
+            "stack_id": stack_id,
+            "instrument": req.instrument,
+            "bar_type": req.bar_type,
+            "bar_value": req.bar_value,
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "commission_per_side": req.commission_per_side,
+            "slippage_ticks": req.slippage_ticks,
+            "created_at": now,
+            "mode": "shared",
+            "account_size": req.account_size,
+            "risk_cap_pct": req.risk_cap_pct,
+            "entry_floor_pct": req.entry_floor_pct,
+        }
+    )
 
-    legs:    list[dict] = []
-    run_ids: list[str]  = []
+    legs: list[dict] = []
+    run_ids: list[str] = []
     for pos, strat in enumerate(strategies):
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
-        params = dict(req.params_by_strategy.get(strat["id"])
-                      or strat.get("default_params") or {})
+        params = dict(req.params_by_strategy.get(strat["id"]) or strat.get("default_params") or {})
         params = _pin_for_shared(params)
-        lab_db.insert_run_stack({
-            "run_id":             run_id,
-            "strategy_id":        strat["id"],
-            "instrument":         req.instrument,
-            "params":             params,
-            "bar_type":           req.bar_type,
-            "bar_value":          req.bar_value,
-            "start_date":         req.start_date,
-            "end_date":           req.end_date,
-            "commission_per_side": req.commission_per_side,
-            "slippage_ticks":     req.slippage_ticks,
-            "status":             "running",
-            "created_at":         now,
-            "stack_id":           stack_id,
-            "runner":             "python",
-        })
+        lab_db.insert_run_stack(
+            {
+                "run_id": run_id,
+                "strategy_id": strat["id"],
+                "instrument": req.instrument,
+                "params": params,
+                "bar_type": req.bar_type,
+                "bar_value": req.bar_value,
+                "start_date": req.start_date,
+                "end_date": req.end_date,
+                "commission_per_side": req.commission_per_side,
+                "slippage_ticks": req.slippage_ticks,
+                "status": "running",
+                "created_at": now,
+                "stack_id": stack_id,
+                "runner": "python",
+            }
+        )
         lab_db.add_stack_member(stack_id, run_id, owned=1, position=pos)
-        legs.append({
-            "run_id":      run_id,
-            "strategy_id": strat["id"],
-            "class_name":  strat["class_name"],
-            "params":      params,
-            "ruleset_ids": req.ruleset_ids,
-        })
+        legs.append(
+            {
+                "run_id": run_id,
+                "strategy_id": strat["id"],
+                "class_name": strat["class_name"],
+                "params": params,
+                "ruleset_ids": req.ruleset_ids,
+            }
+        )
 
     # ⚠ No `cost_layers` / `broker_profile` here, and that is the CURRENT state of stacks
     # rather than a decision: the stacks table does not carry those columns, so a stack takes
@@ -329,18 +377,22 @@ def _trigger_shared_stack(req: StackRequest, strategies: list[dict],
     # stack in this app. Wire them before anyone expects a priced shared stack — and wire them
     # for BOTH modes at once, or a screen and a shared run over the same legs would be measured
     # on different physics and the delta column would report the cost gap as the cap's doing.
-    portfolio_runner.launch(stack_id, legs, {
-        "instrument":          req.instrument,
-        "bar_type":            req.bar_type,
-        "bar_value":           req.bar_value,
-        "start_date":          req.start_date,
-        "end_date":            req.end_date,
-        "commission_per_side": req.commission_per_side,
-        "slippage_ticks":      req.slippage_ticks,
-        "account_size":        req.account_size,
-        "risk_cap_pct":        req.risk_cap_pct,
-        "entry_floor_pct":     req.entry_floor_pct,
-    })
+    portfolio_runner.launch(
+        stack_id,
+        legs,
+        {
+            "instrument": req.instrument,
+            "bar_type": req.bar_type,
+            "bar_value": req.bar_value,
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "commission_per_side": req.commission_per_side,
+            "slippage_ticks": req.slippage_ticks,
+            "account_size": req.account_size,
+            "risk_cap_pct": req.risk_cap_pct,
+            "entry_floor_pct": req.entry_floor_pct,
+        },
+    )
     return StackResponse(stack_id=stack_id, run_ids=run_ids, status="started")
 
 
@@ -493,9 +545,14 @@ async def _build_regime_timeline(rows: list[dict], first: dict, status: str) -> 
         return []
     try:
         from services.backtest_runner import build_regime_timeline_and_tag
+
         tl, _ = await asyncio.to_thread(
             build_regime_timeline_and_tag,
-            first["instrument"], first["start_date"], first["end_date"], [], "python",
+            first["instrument"],
+            first["start_date"],
+            first["end_date"],
+            [],
+            "python",
         )
         timeline = tl or []
         cache = _LAB_RESULTS_DIR / first_complete["run_id"] / "regime_timeline.json"
@@ -520,7 +577,7 @@ async def get_stack_regime_timeline(stack_id: str) -> dict:
     settings = lab_db.get_stack_settings(stack_id)
     if not rows and not settings:
         raise HTTPException(404, f"Stack '{stack_id}' not found")
-    first  = settings or (rows[0] if rows else {})
+    first = settings or (rows[0] if rows else {})
     status = "running" if any(r["status"] == "running" for r in rows) else "other"
     return {"regime_timeline": await _build_regime_timeline(rows, first, status)}
 
@@ -534,7 +591,7 @@ async def get_stack(stack_id: str, timeline: bool = True) -> StackDetail:
 
     # Shared settings are authoritative (a fully-reused stack has them even if a leg row
     # was later deleted); fall back to the first leg for legacy stacks with no settings row.
-    first     = settings or (rows[0] if rows else {})
+    first = settings or (rows[0] if rows else {})
     completed = sum(1 for r in rows if r["status"] == "complete")
 
     if any(r["status"] == "running" for r in rows):
@@ -542,7 +599,9 @@ async def get_stack(stack_id: str, timeline: bool = True) -> StackDetail:
     elif all(r["status"] == "complete" for r in rows):
         status = "complete"
     elif all(r["status"].startswith("failed") for r in rows):
-        status = "failed_cancelled" if any(r["status"] == "failed_cancelled" for r in rows) else "failed"
+        status = (
+            "failed_cancelled" if any(r["status"] == "failed_cancelled" for r in rows) else "failed"
+        )
     else:
         status = "partial"
 
@@ -588,18 +647,21 @@ async def get_stack(stack_id: str, timeline: bool = True) -> StackDetail:
     # remove the CONTROL rather than the payload — the reader could never turn it back on.
     # It never classifies: an uncached window answers from whether one COULD be built.
     _cached_tl, _tl_cached = _cached_regime_timeline(rows)
-    has_regime_timeline = bool(_cached_tl) if _tl_cached else (
-        status != "running" and any(r["status"] == "complete" for r in rows)
+    has_regime_timeline = (
+        bool(_cached_tl)
+        if _tl_cached
+        else (status != "running" and any(r["status"] == "complete" for r in rows))
     )
 
     _created_ts = min((r["created_at"] for r in rows), default=None) or (
         settings["created_at"] if settings else int(time.time())
     )
     created_at = datetime.fromtimestamp(_created_ts, tz=timezone.utc)
-    done_ats   = [r["completed_at"] for r in rows if r.get("completed_at")]
+    done_ats = [r["completed_at"] for r in rows if r.get("completed_at")]
     completed_at = (
         datetime.fromtimestamp(max(done_ats), tz=timezone.utc)
-        if done_ats and status not in ("running", "partial") else None
+        if done_ats and status not in ("running", "partial")
+        else None
     )
 
     return StackDetail(

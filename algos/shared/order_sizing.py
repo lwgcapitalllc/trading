@@ -70,9 +70,17 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Union
 
 __all__ = [
-    "SymbolSpec", "SizedOrder", "SizingRefusal", "OrderPlan",
-    "value_per_lot", "lots_for_risk", "lots_from_units", "round_down_to_step",
-    "plan_order", "DEFAULT_MARGIN_SAFETY_PCT", "UNIT_MISMATCH_TOLERANCE",
+    "SymbolSpec",
+    "SizedOrder",
+    "SizingRefusal",
+    "OrderPlan",
+    "value_per_lot",
+    "lots_for_risk",
+    "lots_from_units",
+    "round_down_to_step",
+    "plan_order",
+    "DEFAULT_MARGIN_SAFETY_PCT",
+    "UNIT_MISMATCH_TOLERANCE",
 ]
 
 # How much of the account's FREE margin one order may consume. 50% leaves room for the
@@ -98,10 +106,11 @@ class SymbolSpec:
     ACCOUNT's currency**, of a `tick_size` price move on one lot. That is what turns a JPY-quoted
     pair, a gold CFD and an index into the same arithmetic.
     """
+
     symbol: str
-    contract_size: float   # instrument units in ONE lot (gold 100 oz, EURUSD 100,000 EUR)
-    tick_size: float       # the price increment `tick_value` is quoted against
-    tick_value: float      # ACCOUNT-currency profit per lot per `tick_size` of favourable move
+    contract_size: float  # instrument units in ONE lot (gold 100 oz, EURUSD 100,000 EUR)
+    tick_size: float  # the price increment `tick_value` is quoted against
+    tick_value: float  # ACCOUNT-currency profit per lot per `tick_size` of favourable move
     volume_min: float
     volume_max: float
     volume_step: float
@@ -115,20 +124,25 @@ class SymbolSpec:
         a division by zero or an infinite position, so it is refused rather than defaulted —
         there is no safe stand-in for "the broker did not tell us what this is worth".
         """
-        return (self.tick_size > 0 and self.tick_value > 0
-                and self.contract_size > 0 and self.volume_step > 0)
+        return (
+            self.tick_size > 0
+            and self.tick_value > 0
+            and self.contract_size > 0
+            and self.volume_step > 0
+        )
 
 
 @dataclass(frozen=True)
 class SizedOrder:
     """An order that passed every check. `risk_ccy` is what it ACTUALLY risks after rounding —
     always ≤ `intended_risk_ccy`, because rounding is always down."""
+
     lots: float
     risk_ccy: float
     intended_risk_ccy: float
     margin_ccy: Optional[float] = None
-    lots_by_risk: float = 0.0      # route A, before rounding — kept for the ledger
-    lots_by_units: float = 0.0     # route B, before rounding — kept for the ledger
+    lots_by_risk: float = 0.0  # route A, before rounding — kept for the ledger
+    lots_by_units: float = 0.0  # route B, before rounding — kept for the ledger
 
     @property
     def ok(self) -> bool:
@@ -140,6 +154,7 @@ class SizingRefusal:
     """No order. `code` is stable and countable; `detail` is written for a human at 3am and
     always names the numbers, because a refusal nobody can act on is a silent failure with
     extra steps."""
+
     code: str
     detail: str
 
@@ -220,7 +235,8 @@ def plan_order(
         return SizingRefusal(
             "zero_stop_distance",
             f"stop {stop} is at the entry {entry}; qty = risk / distance is undefined and any "
-            f"size would be arbitrary.")
+            f"size would be arbitrary.",
+        )
     if qty_units <= 0:
         return SizingRefusal("non_positive_qty", f"the strategy asked for {qty_units} units.")
 
@@ -230,7 +246,8 @@ def plan_order(
             f"{spec.symbol}: tick_size={spec.tick_size} tick_value={spec.tick_value} "
             f"contract_size={spec.contract_size} volume_step={spec.volume_step}. The terminal "
             f"has not said what a price move is worth, so no size can be derived. Check the "
-            f"symbol name and that it is visible in Market Watch.")
+            f"symbol name and that it is visible in Market Watch.",
+        )
 
     intended_risk = qty_units * dist * float(point_value)
 
@@ -245,11 +262,12 @@ def plan_order(
                 f"the order would risk {intended_risk:,.2f} but {risk_pct}% of the account's "
                 f"{account_equity:,.2f} is {authorised:,.2f}. The strategy is sizing off a "
                 f"balance the account does not have -- most likely warm-up equity that "
-                f"compounded away from the broker's.")
+                f"compounded away from the broker's.",
+            )
 
     # ── checks 1 and 2: two independent routes to the same lot count ──
-    lots_a = lots_for_risk(intended_risk, dist, spec)      # from the money (authoritative)
-    lots_b = lots_from_units(qty_units, spec)              # from the units (cross-check)
+    lots_a = lots_for_risk(intended_risk, dist, spec)  # from the money (authoritative)
+    lots_b = lots_from_units(qty_units, spec)  # from the units (cross-check)
     if _disagree(lots_a, lots_b, unit_tolerance):
         return SizingRefusal(
             "unit_mismatch",
@@ -257,7 +275,8 @@ def plan_order(
             f"({intended_risk:,.2f} over a {dist} stop at {spec.tick_value}/{spec.tick_size} "
             f"per lot) vs {lots_b:.6f} lots by units ({qty_units} / contract {spec.contract_size}). "
             f"A unit, a contract size, a point value or a quote currency is wrong. Refusing "
-            f"rather than picking one -- the ratio here is {max(lots_a, lots_b) / max(min(lots_a, lots_b), 1e-12):,.1f}x.")
+            f"rather than picking one -- the ratio here is {max(lots_a, lots_b) / max(min(lots_a, lots_b), 1e-12):,.1f}x.",
+        )
 
     lots = round_down_to_step(lots_a, spec)
 
@@ -268,13 +287,15 @@ def plan_order(
             f"{lots_a:.6f} lots rounds to {lots}, under {spec.symbol}'s minimum "
             f"{spec.volume_min}. NOT rounding up -- the minimum would risk "
             f"{value_per_lot(dist, spec) * spec.volume_min:,.2f} against an intended "
-            f"{intended_risk:,.2f}. The account is too small for this setup's stop distance.")
+            f"{intended_risk:,.2f}. The account is too small for this setup's stop distance.",
+        )
     if lots > spec.volume_max:
         return SizingRefusal(
             "above_broker_maximum",
             f"{lots} lots exceeds {spec.symbol}'s maximum {spec.volume_max}. NOT clamping -- a "
             f"clamped order is a different position from the one the strategy is holding, and "
-            f"the two would diverge silently.")
+            f"the two would diverge silently.",
+        )
 
     # ── can the account actually carry it? ──
     margin = None
@@ -285,12 +306,14 @@ def plan_order(
                 "margin_unknown",
                 f"the terminal would not compute the margin for {lots} lots of {spec.symbol}. "
                 f"'Cannot ask' is not 'affordable' -- refusing rather than finding out at the "
-                f"fill, which is exactly how the 2026-08-07 order died.")
+                f"fill, which is exactly how the 2026-08-07 order died.",
+            )
         if free_margin is None:
             return SizingRefusal(
                 "free_margin_unknown",
                 f"margin for {lots} lots is {margin:,.2f} but the account's free margin could "
-                f"not be read, so there is nothing to compare it against.")
+                f"not be read, so there is nothing to compare it against.",
+            )
         ceiling = float(free_margin) * float(margin_safety_pct) / 100.0
         if margin > ceiling:
             return SizingRefusal(
@@ -298,7 +321,8 @@ def plan_order(
                 f"{lots} lots of {spec.symbol} needs {margin:,.2f} margin; the cap is "
                 f"{ceiling:,.2f} ({margin_safety_pct:g}% of {float(free_margin):,.2f} free). "
                 f"NOT shrinking to fit -- a smaller position is not the trade the strategy is "
-                f"holding.")
+                f"holding.",
+            )
 
     risk = value_per_lot(dist, spec) * lots
     # Rounding is always down, so this cannot exceed the intent. If it ever does, the step
@@ -307,10 +331,17 @@ def plan_order(
         return SizingRefusal(
             "oversized_after_rounding",
             f"{lots} lots risks {risk:,.2f} against an intended {intended_risk:,.2f}. Rounding "
-            f"is supposed to be downward only; this is a bug in the step arithmetic.")
+            f"is supposed to be downward only; this is a bug in the step arithmetic.",
+        )
 
-    return SizedOrder(lots=lots, risk_ccy=risk, intended_risk_ccy=intended_risk,
-                      margin_ccy=margin, lots_by_risk=lots_a, lots_by_units=lots_b)
+    return SizedOrder(
+        lots=lots,
+        risk_ccy=risk,
+        intended_risk_ccy=intended_risk,
+        margin_ccy=margin,
+        lots_by_risk=lots_a,
+        lots_by_units=lots_b,
+    )
 
 
 def _disagree(a: float, b: float, tol: float) -> bool:

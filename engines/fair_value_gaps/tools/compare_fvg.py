@@ -66,7 +66,7 @@ _MAX_SLOTS = 10
 # ── column groups ──
 TOP_FIELDS = [f"px_fvg_top_{k}" for k in range(1, _MAX_SLOTS + 1)]
 BOT_FIELDS = [f"px_fvg_bot_{k}" for k in range(1, _MAX_SLOTS + 1)]
-PRICE_FIELDS = TOP_FIELDS + BOT_FIELDS                    # tolerance-compared, na-aware
+PRICE_FIELDS = TOP_FIELDS + BOT_FIELDS  # tolerance-compared, na-aware
 BULL_FIELDS = [f"px_fvg_bull_{k}" for k in range(1, _MAX_SLOTS + 1)]  # 1/0 state, na-aware
 COUNT_FIELDS = ["px_fvg_count"]
 PULSE_FIELDS = ["px_fvg_formed", "px_fvg_mit"]
@@ -158,15 +158,18 @@ def _load_rows(path, cols):
         rows = list(csv.DictReader(f))
     tcol = cols.get("time")
     if tcol:
+
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
                 return int(raw)
             try:
                 from datetime import datetime
+
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
+
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -189,10 +192,15 @@ def _read_cfg(header, rows):
         return None
 
     out = {}
-    for key, suffix in (("thresh", "cfg_fvg_thresh"), ("maxcount", "cfg_fvg_maxcount"),
-                        ("requireclose", "cfg_fvg_requireclose"),
-                        ("eq_pivotlen", "cfg_eq_pivotlen"), ("eq_atrmult", "cfg_eq_atrmult"),
-                        ("eq_max", "cfg_eq_max"), ("eq_exempt", "cfg_eq_exempt")):
+    for key, suffix in (
+        ("thresh", "cfg_fvg_thresh"),
+        ("maxcount", "cfg_fvg_maxcount"),
+        ("requireclose", "cfg_fvg_requireclose"),
+        ("eq_pivotlen", "cfg_eq_pivotlen"),
+        ("eq_atrmult", "cfg_eq_atrmult"),
+        ("eq_max", "cfg_eq_max"),
+        ("eq_exempt", "cfg_eq_exempt"),
+    ):
         col = find(suffix)
         if col is None:
             continue
@@ -205,14 +213,40 @@ def _read_cfg(header, rows):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("csv", help="CSV exported from TradingView with fvg_export.pine on the chart")
-    ap.add_argument("--max-count", type=int, default=8, help="fallback if the export has no cfg_fvg_maxcount column (Pine default 8)")
-    ap.add_argument("--threshold-pct", type=float, default=0.0, help="fallback if the export has no cfg_fvg_thresh column (Pine sub-15m default 0.0)")
-    ap.add_argument("--require-close", action="store_true", help="fallback if the export has no cfg_fvg_requireclose column (Pine default off)")
-    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
+    ap.add_argument(
+        "--max-count",
+        type=int,
+        default=8,
+        help="fallback if the export has no cfg_fvg_maxcount column (Pine default 8)",
+    )
+    ap.add_argument(
+        "--threshold-pct",
+        type=float,
+        default=0.0,
+        help="fallback if the export has no cfg_fvg_thresh column (Pine sub-15m default 0.0)",
+    )
+    ap.add_argument(
+        "--require-close",
+        action="store_true",
+        help="fallback if the export has no cfg_fvg_requireclose column (Pine default off)",
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-6,
+        help="abs tolerance for price fields (default 1e-6)",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -229,7 +263,11 @@ def main(argv=None):
     cfg = _read_cfg(header, rows)
     max_count = int(cfg["maxcount"]) if cfg.get("maxcount") is not None else args.max_count
     threshold_pct = cfg["thresh"] if cfg.get("thresh") is not None else args.threshold_pct
-    require_close = bool(round(cfg["requireclose"])) if cfg.get("requireclose") is not None else args.require_close
+    require_close = (
+        bool(round(cfg["requireclose"]))
+        if cfg.get("requireclose") is not None
+        else args.require_close
+    )
     cfg_src = "export cfg_* columns" if cfg else "CLI args (no cfg_* columns in export)"
 
     # A cap above the number of plotted slots means the export cannot describe its own state: gaps
@@ -248,14 +286,21 @@ def main(argv=None):
     eq = None
     if eq_exempt:
         from equal_highs_lows import EqualHighsLowsEngine
+
         eq = EqualHighsLowsEngine(
             pivot_len=int(cfg.get("eq_pivotlen") or 2),
             atr_mult=cfg.get("eq_atrmult") if cfg.get("eq_atrmult") is not None else 0.1,
             max_levels=int(cfg.get("eq_max") or 6),
         )
-    eq_note = f", EQ-exempt ON (pivot={int(cfg.get('eq_pivotlen') or 2)}, mult={cfg.get('eq_atrmult')})" if eq_exempt else ""
+    eq_note = (
+        f", EQ-exempt ON (pivot={int(cfg.get('eq_pivotlen') or 2)}, mult={cfg.get('eq_atrmult')})"
+        if eq_exempt
+        else ""
+    )
 
-    fvg = FairValueGapEngine(max_count=max_count, threshold_pct=threshold_pct, require_close=require_close)
+    fvg = FairValueGapEngine(
+        max_count=max_count, threshold_pct=threshold_pct, require_close=require_close
+    )
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
@@ -298,11 +343,15 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(f"\nCompared {total} bars from {path.name}  (max_count={max_count}, threshold_pct={threshold_pct}, "
-          f"require_close={require_close}{eq_note}, tol={args.tolerance})  [config from {cfg_src}]")
+    print(
+        f"\nCompared {total} bars from {path.name}  (max_count={max_count}, threshold_pct={threshold_pct}, "
+        f"require_close={require_close}{eq_note}, tol={args.tolerance})  [config from {cfg_src}]"
+    )
     print("-" * 72)
     if not any(per_field_mismatch.values()):
-        print("✓ FVG PARITY: every compared field matched on every bar. Python FVG engine == Pine source.")
+        print(
+            "✓ FVG PARITY: every compared field matched on every bar. Python FVG engine == Pine source."
+        )
         return 0
 
     print("MISMATCHES BY FIELD:")
@@ -311,17 +360,21 @@ def main(argv=None):
         if n:
             print(f"  {fld:<20} {n} bar(s)")
     print("-" * 72)
-    print(f"Last mismatching bar: {last_mismatch_bar}  "
-          f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})")
+    print(
+        f"Last mismatching bar: {last_mismatch_bar}  "
+        f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})"
+    )
     print(f"First {len(detailed)} mismatching bar(s) (row index, time, field: python vs pine):")
     for idx, tval, ms in detailed:
         print(f"  bar {idx}  {tval}")
         for fld, pv, pinev in ms:
             print(f"      {fld:<20} python={pv!r:<12} pine={pinev!r}")
     print("-" * 72)
-    print("Tip: mismatches confined to early bars = warmup (a gap whose displacement began before "
-          "the export window still lingering in Pine's arrays). Persistent mismatches after a clean "
-          "run of bars = a real logic gap to fix against mpc_assistant.pine.")
+    print(
+        "Tip: mismatches confined to early bars = warmup (a gap whose displacement began before "
+        "the export window still lingering in Pine's arrays). Persistent mismatches after a clean "
+        "run of bars = a real logic gap to fix against mpc_assistant.pine."
+    )
     return 1
 
 

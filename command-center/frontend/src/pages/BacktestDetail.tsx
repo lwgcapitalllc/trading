@@ -2,24 +2,95 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useS
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
-  CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Play,
-  Copy, Check, SlidersHorizontal, Minimize2, Newspaper, Coins,
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Minus,
+  Info,
+  Square,
+  RefreshCw,
+  RotateCcw,
+  Activity,
+  Play,
+  Copy,
+  Check,
+  SlidersHorizontal,
+  Minimize2,
+  Newspaper,
+  Coins,
 } from 'lucide-react'
 import {
-  AreaChart, Area, ComposedChart, Line, BarChart, Bar, PieChart, Pie, Label,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
+  AreaChart,
+  Area,
+  ComposedChart,
+  Line,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Label,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  ReferenceLine,
+  ReferenceArea,
+  ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, usePrefetchChartSpec, useRefreshChartSpec, useRunCandles, useRunNews, useRunReprice, useHistoryLimit } from '@/hooks/useLab'
+import {
+  useBacktestRun,
+  useBacktestRuns,
+  useRunLog,
+  useLabProgress,
+  useStopBacktest,
+  useReloadCharts,
+  useRetryBacktest,
+  useRunningVpsJob,
+  useStrategy,
+  useRulesets,
+  useChartSpec,
+  usePrefetchChartSpec,
+  useRefreshChartSpec,
+  useRunCandles,
+  useRunNews,
+  useRunReprice,
+  useHistoryLimit,
+} from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
-import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode, CostLayer } from '@/types'
+import type {
+  BacktestDetail as Run,
+  EvaluationDetail,
+  EquityPoint,
+  DailyPnlPoint,
+  ParamSchemaEntry,
+  SizedTimelineDay,
+  NewsTradeTag,
+  SizingMode,
+  CostLayer,
+} from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
-import { balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, type XMode } from '@/lib/chartAxis'
+import {
+  balanceTicks,
+  dateMs,
+  getXMode,
+  monthLabel,
+  monthTicks,
+  regimeBandsByIndex,
+  regimeBandsFromTimeline,
+  setXModePref,
+  type XMode,
+} from '@/lib/chartAxis'
 import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverlayToggle'
 
@@ -36,7 +107,9 @@ import { useStickyBanner } from '@/components/StickyHeader'
 // resolves the same promise, and `lazy()` reads that already-settled promise instead of a fetch.
 const importChartPanel = () => import('@/components/ChartPanel')
 const ChartPanel = lazy(importChartPanel)
-export function preloadChartPanel() { void importChartPanel() }
+export function preloadChartPanel() {
+  void importChartPanel()
+}
 
 // Module scope so the identity is stable across renders — see ChartTabPanel's `keepMounted`.
 const PRICE_TAB_ONLY = ['price'] as const
@@ -105,12 +178,13 @@ function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?
   const [fit, setFit] = useState<{ scale: number; width: number } | null>(null)
   const full = dollar(n, signed)
   useEffect(() => {
-    const wrap = wrapRef.current, ghost = ghostRef.current
+    const wrap = wrapRef.current,
+      ghost = ghostRef.current
     if (!wrap || !ghost) return
     const box = (wrap.closest('[data-fit-box]') as HTMLElement | null) ?? wrap
     const measure = () => {
       const avail = box.getBoundingClientRect().width - FIT_SLACK
-      const need = ghost.getBoundingClientRect().width      // always the UNSCALED width
+      const need = ghost.getBoundingClientRect().width // always the UNSCALED width
       if (!(need > 0) || !(avail > 0) || need <= avail) return setFit(null)
       const scale = Math.max(FIT_MIN_SCALE, avail / need)
       setFit({ scale, width: need * scale })
@@ -123,12 +197,24 @@ function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?
   }, [full])
   if (n == null) return <span>—</span>
   return (
-    <span ref={wrapRef} className="inline-block relative whitespace-nowrap"
-          style={fit ? { width: `${fit.width}px` } : undefined}>
-      <span ref={ghostRef} aria-hidden
-            className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{full}</span>
-      <span className="inline-block origin-left"
-            style={fit ? { transform: `scale(${fit.scale})` } : undefined}>{full}</span>
+    <span
+      ref={wrapRef}
+      className="inline-block relative whitespace-nowrap"
+      style={fit ? { width: `${fit.width}px` } : undefined}
+    >
+      <span
+        ref={ghostRef}
+        aria-hidden
+        className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none"
+      >
+        {full}
+      </span>
+      <span
+        className="inline-block origin-left"
+        style={fit ? { transform: `scale(${fit.scale})` } : undefined}
+      >
+        {full}
+      </span>
     </span>
   )
 }
@@ -139,7 +225,9 @@ function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?
 // guard chartDateLabel below already carried. The slice also tolerates a full ISO datetime.
 function fmtDate(iso: string): string {
   return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   })
 }
 
@@ -151,20 +239,21 @@ function chartDateLabel(iso: string): string {
 
 // ── Calendar tick helpers ─────────────────────────────────────────────────────
 
-const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 // Endpoints show day ("May 30 '23"), interior quarters just month+year ("Apr '24")
 function calTickLabel(iso: string, isEndpoint: boolean): string {
-  const d  = new Date(iso.slice(0, 10) + 'T00:00:00')
-  const m  = _MONTHS[d.getMonth()]
+  const d = new Date(iso.slice(0, 10) + 'T00:00:00')
+  const m = _MONTHS[d.getMonth()]
   const yr = String(d.getFullYear()).slice(-2)
   return isEndpoint ? `${m} ${d.getDate()} '${yr}` : `${m} '${yr}`
 }
 
 // For index-based charts: tick positions at start, Q1/Q2/Q3/Q4 boundaries, end
 function calIndexTicks(pts: Array<{ index: number; date?: string | null }>): number[] {
-  if (pts.length <= 1) return pts.map(p => p.index)
-  const first = pts[0].date, last = pts[pts.length - 1].date
+  if (pts.length <= 1) return pts.map((p) => p.index)
+  const first = pts[0].date,
+    last = pts[pts.length - 1].date
   if (!first || !last) return [pts[0].index, pts[pts.length - 1].index]
 
   const dateToIdx = new Map<string, number>()
@@ -172,26 +261,35 @@ function calIndexTicks(pts: Array<{ index: number; date?: string | null }>): num
     if (p.date && !dateToIdx.has(p.date)) dateToIdx.set(p.date, p.index)
   }
   const sorted = [...dateToIdx.keys()].sort()
-  const nearest = (target: string) => { const d = sorted.find(s => s >= target); return d != null ? dateToIdx.get(d) : undefined }
+  const nearest = (target: string) => {
+    const d = sorted.find((s) => s >= target)
+    return d != null ? dateToIdx.get(d) : undefined
+  }
 
   const sy = new Date(first.slice(0, 10) + 'T00:00:00').getFullYear()
-  const ey = new Date(last.slice(0, 10)  + 'T00:00:00').getFullYear()
+  const ey = new Date(last.slice(0, 10) + 'T00:00:00').getFullYear()
   const set = new Set<number>([pts[0].index, pts[pts.length - 1].index])
   for (let y = sy; y <= ey; y++)
-    for (const m of ['01', '04', '07', '10']) { const idx = nearest(`${y}-${m}-01`); if (idx != null) set.add(idx) }
+    for (const m of ['01', '04', '07', '10']) {
+      const idx = nearest(`${y}-${m}-01`)
+      if (idx != null) set.add(idx)
+    }
   return [...set].sort((a, b) => a - b)
 }
 
 // For date-keyed charts: tick values at start, Q1/Q2/Q3/Q4 boundaries, end
 function calDateTicks(data: DailyPnlPoint[]): string[] {
-  if (data.length <= 1) return data.map(d => d.date)
-  const all = data.map(d => d.date)
-  const nearest = (target: string) => all.find(d => d >= target)
+  if (data.length <= 1) return data.map((d) => d.date)
+  const all = data.map((d) => d.date)
+  const nearest = (target: string) => all.find((d) => d >= target)
   const sy = new Date(data[0].date + 'T00:00:00').getFullYear()
   const ey = new Date(data[data.length - 1].date + 'T00:00:00').getFullYear()
   const set = new Set<string>([data[0].date, data[data.length - 1].date])
   for (let y = sy; y <= ey; y++)
-    for (const m of ['01', '04', '07', '10']) { const d = nearest(`${y}-${m}-01`); if (d) set.add(d) }
+    for (const m of ['01', '04', '07', '10']) {
+      const d = nearest(`${y}-${m}-01`)
+      if (d) set.add(d)
+    }
   return [...set].sort()
 }
 
@@ -199,15 +297,15 @@ function calDateTicks(data: DailyPnlPoint[]): string[] {
 
 function winRateCls(rate: number | null): string {
   if (rate == null) return 'text-text-tertiary'
-  if (rate >= 0.60) return 'text-pos-text'
-  if (rate >= 0.50) return 'text-warn-text'
+  if (rate >= 0.6) return 'text-pos-text'
+  if (rate >= 0.5) return 'text-warn-text'
   return 'text-neg-text'
 }
 
 function winRateLabel(rate: number | null): string {
   if (rate == null) return 'win / total trades'
-  if (rate >= 0.60) return 'strong'
-  if (rate >= 0.50) return 'good'
+  if (rate >= 0.6) return 'strong'
+  if (rate >= 0.5) return 'good'
   if (rate >= 0.45) return 'marginal — needs high R:R'
   return 'weak — needs high R:R'
 }
@@ -242,10 +340,7 @@ function pfLabel(pf: number | null): string {
 
 function sharpeLabel(s: number | null, estimated: boolean): string {
   if (s == null) return 'risk-adjusted annual return'
-  const base =
-    s >= 2.0 ? 'excellent' :
-    s >= 1.0 ? 'good' :
-    s >= 0.5 ? 'marginal' : 'poor'
+  const base = s >= 2.0 ? 'excellent' : s >= 1.0 ? 'good' : s >= 0.5 ? 'marginal' : 'poor'
   return estimated ? `${base} (estimated)` : base
 }
 
@@ -253,7 +348,7 @@ function sharpeLabel(s: number | null, estimated: boolean): string {
 // all. Lets the *Cls helpers stay the single definition of "what counts as bad" while the
 // panel only paints the rows that cross it. See the colour policy on PerformancePanel.
 function exceptionCls(cls: string): string | undefined {
-  return (cls === 'text-text-primary' || cls === 'text-text-tertiary') ? undefined : cls
+  return cls === 'text-text-primary' || cls === 'text-text-tertiary' ? undefined : cls
 }
 
 // ── Recovery factor ──────────────────────────────────────────────────────────
@@ -263,14 +358,14 @@ function exceptionCls(cls: string): string | undefined {
 function computeRecoveryFactor(
   netPnl: number | null,
   maxDrawdown: number | null,
-  equity: EquityPoint[],
+  equity: EquityPoint[]
 ): number | null {
   if (netPnl == null || maxDrawdown == null) return null
   const absDd = Math.abs(maxDrawdown)
   if (absDd === 0 || equity.length < 2) return null
   // Slice to YYYY-MM-DD — MT5 equity dates are full ISO datetimes; appending T00:00:00 breaks parsing
   const firstDate = equity[0].date?.slice(0, 10)
-  const lastDate  = equity[equity.length - 1].date?.slice(0, 10)
+  const lastDate = equity[equity.length - 1].date?.slice(0, 10)
   if (!firstDate || !lastDate) return null
   const days = (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86_400_000
   if (days < 1) return null
@@ -332,7 +427,7 @@ function maxDrawdownPctOf(series: number[]): { pct: number; dollars: number; pea
   let worst: { pct: number; dollars: number; peak: number } | null = null
   for (const v of series) {
     if (v > peak) peak = v
-    if (peak <= 0) continue                       // a non-positive peak has no meaningful percent
+    if (peak <= 0) continue // a non-positive peak has no meaningful percent
     const dd = peak - v
     const pct = dd / peak
     if (worst == null || pct > worst.pct) worst = { pct, dollars: dd, peak }
@@ -356,19 +451,19 @@ function maxDrawdownPctOf(series: number[]): { pct: number; dollars: number; pea
 function computeCalmar(equity: EquityPoint[], balance: number | null): number | null {
   if (balance == null || balance <= 0 || equity.length < 2) return null
   const firstDate = equity[0].date?.slice(0, 10)
-  const lastDate  = equity[equity.length - 1].date?.slice(0, 10)
+  const lastDate = equity[equity.length - 1].date?.slice(0, 10)
   if (!firstDate || !lastDate) return null
   const days = (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86_400_000
   if (days < 1) return null
   // Derive net P&L and max drawdown from the rebased curve (trade-derived → platform-agnostic).
   const rebased = rebaseEquity(equity, balance)
-  const netPnl  = rebased[rebased.length - 1] - balance
-  const dd      = maxDrawdownPctOf(rebased)
+  const netPnl = rebased[rebased.length - 1] - balance
+  const dd = maxDrawdownPctOf(rebased)
   // Zero drawdown isn't "unknown" — it's an undefeated curve, so Calmar is genuinely infinite.
   // Report Infinity (the card prints ∞) rather than a dash that reads as missing data.
   if (dd == null || dd.pct === 0) return netPnl > 0 ? Infinity : null
-  const years   = days / 365
-  const cagr    = Math.pow(1 + netPnl / balance, 1 / Math.max(years, 0.1)) - 1
+  const years = days / 365
+  const cagr = Math.pow(1 + netPnl / balance, 1 / Math.max(years, 0.1)) - 1
   return cagr / dd.pct
 }
 
@@ -393,13 +488,13 @@ function calmarLabel(c: number | null): string {
 // Scratch trades (profit === 0) are excluded so the sequence is cleanly binary.
 function computeZScore(equity: EquityPoint[]): number | null {
   const seq = equity
-    .map(e => e.profit)
+    .map((e) => e.profit)
     .filter((p): p is number => p != null && p !== 0)
-    .map(p => p > 0)
+    .map((p) => p > 0)
   const n = seq.length
   if (n < 2) return null
-  const n1 = seq.filter(Boolean).length   // wins
-  const n2 = n - n1                        // losses
+  const n1 = seq.filter(Boolean).length // wins
+  const n2 = n - n1 // losses
   if (n1 === 0 || n2 === 0) return null
   let runs = 1
   for (let i = 1; i < n; i++) if (seq[i] !== seq[i - 1]) runs++
@@ -417,9 +512,9 @@ function zScoreCls(z: number | null): string {
 // Why the runs test couldn't run, said in the strategy's own terms — a curve with no losing trade
 // has no win/loss sequence to test, and that is information, not a missing value.
 function zScoreUnavailableLabel(equity: EquityPoint[]): string {
-  const profits = equity.map(e => e.profit).filter((p): p is number => p != null && p !== 0)
+  const profits = equity.map((e) => e.profit).filter((p): p is number => p != null && p !== 0)
   if (profits.length < 2) return 'runs test — needs 2+ trades'
-  const losses = profits.filter(p => p < 0).length
+  const losses = profits.filter((p) => p < 0).length
   if (losses === 0) return `all ${profits.length} trades won — no streaks to test`
   if (losses === profits.length) return `all ${profits.length} trades lost — no streaks to test`
   return 'runs test — needs wins & losses'
@@ -429,7 +524,7 @@ function zScoreLabel(z: number | null): string {
   if (z == null) return 'runs test — needs wins & losses'
   const a = Math.abs(z)
   if (a <= 1.5) return 'streaks look random'
-  if (a <= 2)   return 'mild streaking'
+  if (a <= 2) return 'mild streaking'
   return 'non-random streaking'
 }
 
@@ -457,15 +552,19 @@ function equityBase(equity: EquityPoint[]): number {
   return (equity[0].equity ?? 0) - (equity[0].profit ?? 0)
 }
 
-function computeProfitConcentration(daily: DailyPnlPoint[], equity: EquityPoint[] = []): number | null {
+function computeProfitConcentration(
+  daily: DailyPnlPoint[],
+  equity: EquityPoint[] = []
+): number | null {
   // Each entry contributes a WEIGHT: a return when the run compounded, else a dollar amount.
   const base = equityBase(equity)
-  const points: Array<{ date: string; weight: number }> = base > 0
-    ? equity.flatMap(e => {
-        const before = (e.equity ?? 0) - (e.profit ?? 0)
-        return (e.date && before > 0) ? [{ date: e.date, weight: (e.profit ?? 0) / before }] : []
-      })
-    : daily.filter(d => d.date).map(d => ({ date: d.date, weight: d.pnl }))
+  const points: Array<{ date: string; weight: number }> =
+    base > 0
+      ? equity.flatMap((e) => {
+          const before = (e.equity ?? 0) - (e.profit ?? 0)
+          return e.date && before > 0 ? [{ date: e.date, weight: (e.profit ?? 0) / before }] : []
+        })
+      : daily.filter((d) => d.date).map((d) => ({ date: d.date, weight: d.pnl }))
 
   if (points.length < 2) return null
   const t0 = new Date(points[0].date.slice(0, 10)).getTime()
@@ -505,8 +604,8 @@ function computeProfitConcentration(daily: DailyPnlPoint[], equity: EquityPoint[
 // numbers recomputed over a subset anyway.
 function tradeWeights(equity: EquityPoint[]): number[] {
   if (equity.length === 0) return []
-  if (equityBase(equity) <= 0) return equity.map(e => e.profit ?? 0)
-  return equity.flatMap(e => {
+  if (equityBase(equity) <= 0) return equity.map((e) => e.profit ?? 0)
+  return equity.flatMap((e) => {
     const before = (e.equity ?? 0) - (e.profit ?? 0)
     return before > 0 ? [(e.profit ?? 0) / before] : []
   })
@@ -530,11 +629,11 @@ function median(xs: number[]): number {
 // "cannot tell". Mirrors services/metrics.scratch_count.
 function computeScratchCount(equity: EquityPoint[]): number | null {
   const w = tradeWeights(equity)
-  const losses = w.filter(x => x < 0).map(Math.abs)
+  const losses = w.filter((x) => x < 0).map(Math.abs)
   if (losses.length === 0) return null
   const scale = median(losses)
   if (!(scale > 0)) return null
-  return w.filter(x => Math.abs(x) < scale * SCRATCH_FRACTION).length
+  return w.filter((x) => Math.abs(x) < scale * SCRATCH_FRACTION).length
 }
 
 const TRADE_CONCENTRATION_TOP_N = 5
@@ -542,7 +641,9 @@ const TRADE_CONCENTRATION_TOP_N = 5
 // Share of GROSS PROFIT made by the biggest few winners. Mirrors
 // services/metrics.trade_concentration_pct.
 function computeTradeConcentration(equity: EquityPoint[]): number | null {
-  const wins = tradeWeights(equity).filter(x => x > 0).sort((a, b) => b - a)
+  const wins = tradeWeights(equity)
+    .filter((x) => x > 0)
+    .sort((a, b) => b - a)
   const gross = wins.reduce((t, x) => t + x, 0)
   if (!(gross > 0)) return null
   return (wins.slice(0, TRADE_CONCENTRATION_TOP_N).reduce((t, x) => t + x, 0) / gross) * 100
@@ -632,10 +733,13 @@ export function dailySharpe(daily_pnl: DailyPnlPoint[]): number | null {
  */
 export function worstLosingStreakOf(pnls: number[]): number | null {
   if (!pnls.length) return null
-  let max = 0, cur = 0
+  let max = 0,
+    cur = 0
   for (const p of pnls) {
-    if (p < 0) { cur++; if (cur > max) max = cur }
-    else cur = 0
+    if (p < 0) {
+      cur++
+      if (cur > max) max = cur
+    } else cur = 0
   }
   return max
 }
@@ -650,10 +754,10 @@ export function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
 
   // Sample size is still counted in ACTIVE days — zero-filling adds observations to the series
   // but not evidence, so it must not talk a 4-day run past the low-sample gate.
-  const activeDays = daily_pnl.filter(d => (d.pnl ?? 0) !== 0).length
+  const activeDays = daily_pnl.filter((d) => (d.pnl ?? 0) !== 0).length
 
   return {
-    worstDay: Math.min(...daily_pnl.map(d => d.pnl)),
+    worstDay: Math.min(...daily_pnl.map((d) => d.pnl)),
     sharpe: activeDays >= SHARPE_LOW_SAMPLE_DAYS ? dailySharpe(daily_pnl) : null,
   }
 }
@@ -664,9 +768,14 @@ export function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
 // SAME expressions can be evaluated a second time against a comparison run — that is what
 // lets the news filter print a delta on each row instead of shipping a second copy of the
 // panel. Adding a metric here and forgetting the card is harmless; the reverse is what drifts.
-function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], balance: number | null) {
-  const sharpe      = run.sharpe              ?? fallback.sharpe
-  const worstDay    = run.worst_day_pnl       ?? fallback.worstDay
+function deriveKpis(
+  run: Run,
+  fallback: FallbackMetrics,
+  equity: EquityPoint[],
+  balance: number | null
+) {
+  const sharpe = run.sharpe ?? fallback.sharpe
+  const worstDay = run.worst_day_pnl ?? fallback.worstDay
   // No fallback: a streak must come from a TRADE list or not at all. Both synthesizers
   // (buildFilteredRun, StackDetail.composeCombined) set it via worstLosingStreakOf.
   const worstStreak = run.worst_losing_streak
@@ -676,16 +785,15 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   const calmar = computeCalmar(equity, balance)
   // Expectancy. $/trade is always available; R needs per-trade risk, which stored trades
   // don't carry (profit only), so expectancy_r is not computable — left out honestly.
-  const expectancyUsd = (run.net_pnl != null && run.trade_count)
-    ? run.net_pnl / run.trade_count
-    : null
+  const expectancyUsd =
+    run.net_pnl != null && run.trade_count ? run.net_pnl / run.trade_count : null
   const zScore = computeZScore(equity)
   // Profit factor: the backend stores null when gross losses are 0 (divide-by-zero). That case
   // is an undefeated run, not unknown data — recover it from the trades and print ∞.
-  const tradeProfits = equity.map(e => e.profit).filter((p): p is number => p != null && p !== 0)
-  const grossLoss = tradeProfits.filter(p => p < 0).reduce((a, b) => a + Math.abs(b), 0)
-  const pfValue = run.profit_factor
-    ?? (tradeProfits.length > 0 && grossLoss === 0 ? Infinity : null)
+  const tradeProfits = equity.map((e) => e.profit).filter((p): p is number => p != null && p !== 0)
+  const grossLoss = tradeProfits.filter((p) => p < 0).reduce((a, b) => a + Math.abs(b), 0)
+  const pfValue =
+    run.profit_factor ?? (tradeProfits.length > 0 && grossLoss === 0 ? Infinity : null)
   // Profit concentration: largest quarter's share of gross profit, in RETURNS on a compounding
   // run. Computed here rather than read from run.profit_concentration_pct: the stored column is
   // whatever basis was current when the run FINISHED, so preferring it would show a mix of the
@@ -701,28 +809,46 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   // that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak, because the
   // account had grown 33x away from the balance the denominator was frozen at.
   // Null only when no balance is available (no ruleset / no trades).
-  const ddWorst  = (balance != null && balance > 0 && equity.length >= 2)
-    ? maxDrawdownPctOf(rebaseEquity(equity, balance))
-    : null
+  const ddWorst =
+    balance != null && balance > 0 && equity.length >= 2
+      ? maxDrawdownPctOf(rebaseEquity(equity, balance))
+      : null
   const maxDdPct = ddWorst != null ? ddWorst.pct * 100 : null
   // The dollars of that SAME episode — what the card's caption describes. A different, usually
   // larger, dollar drawdown exists later in a compounding run; it is reported separately, never
   // beside the percentage it does not correspond to.
   const ddAtWorstPct = ddWorst?.dollars ?? null
-  const ddPeak       = ddWorst?.peak ?? null
+  const ddPeak = ddWorst?.peak ?? null
   // Deepest drawdown in DOLLARS (trade-derived; falls back to the run's stored value). This is
   // the prop-firm view — a firm caps dollars — and the comparison fallback when there's no balance.
-  const tradeDd  = equity.length >= 2 ? maxDrawdownOf(rebaseEquity(equity, 0)) : null
+  const tradeDd = equity.length >= 2 ? maxDrawdownOf(rebaseEquity(equity, 0)) : null
   const ddDollar = tradeDd ?? (run.max_drawdown != null ? Math.abs(run.max_drawdown) : null)
 
-  const rrRatio = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
-    ? run.avg_win / Math.abs(run.avg_loss) : null
+  const rrRatio =
+    run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0
+      ? run.avg_win / Math.abs(run.avg_loss)
+      : null
 
   return {
-    netPnl: run.net_pnl, winRate: run.win_rate, avgDur: run.avg_trade_duration_min,
-    sharpe, worstDay, worstStreak, recoveryFactor, calmar, expectancyUsd, zScore,
-    pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak, rrRatio,
-    scratches, tradeConc,
+    netPnl: run.net_pnl,
+    winRate: run.win_rate,
+    avgDur: run.avg_trade_duration_min,
+    sharpe,
+    worstDay,
+    worstStreak,
+    recoveryFactor,
+    calmar,
+    expectancyUsd,
+    zScore,
+    pfValue,
+    profitConc,
+    maxDdPct,
+    ddDollar,
+    ddAtWorstPct,
+    ddPeak,
+    rrRatio,
+    scratches,
+    tradeConc,
   }
 }
 type DerivedKpis = ReturnType<typeof deriveKpis>
@@ -739,12 +865,15 @@ type DerivedKpis = ReturnType<typeof deriveKpis>
 // weeks of calendar. It read 67% by rows and 70% by the clock. Equity between two closes sits at
 // the earlier close's level, which is what each day of that gap is judged against.
 function computeTimeUnderwater(daily: DailyPnlPoint[]): number | null {
-  const dated = daily.filter(d => d.date)
+  const dated = daily.filter((d) => d.date)
   if (dated.length < 2) return null
   const dayOf = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00`).getTime()
   const total = (dayOf(dated[dated.length - 1].date) - dayOf(dated[0].date)) / DAY_MS
   if (!(total > 0)) return null
-  let bal = 0, peak = 0, under = 0, prev = dayOf(dated[0].date)
+  let bal = 0,
+    peak = 0,
+    under = 0,
+    prev = dayOf(dated[0].date)
   for (const d of dated) {
     const t = dayOf(d.date)
     // The span ENDING at this close was held at the previous close's level.
@@ -788,7 +917,7 @@ function computeTimeUnderwater(daily: DailyPnlPoint[]): number | null {
 const METER_CEILINGS = [25, 50, 75, 100]
 function meterCeiling(...vals: Array<number | null | undefined>): number {
   const m = Math.max(0, ...vals.filter((v): v is number => v != null && isFinite(v)))
-  return METER_CEILINGS.find(c => m <= c * 0.92) ?? 100
+  return METER_CEILINGS.find((c) => m <= c * 0.92) ?? 100
 }
 
 // The observed drawdown as a bar, with two optional references: the ruleset's stated limit
@@ -796,8 +925,14 @@ function meterCeiling(...vals: Array<number | null | undefined>): number {
 // solid fill). Both are drawn ONLY when real — a percentage drawdown means nothing on its
 // own, but neither reference may ever be invented to give it one. No stress test → no
 // hatch, and the caption says so rather than implying the tail is zero.
-function DrawdownMeter({ pct, limitPct, tailPct }: {
-  pct: number; limitPct: number | null; tailPct: number | null
+function DrawdownMeter({
+  pct,
+  limitPct,
+  tailPct,
+}: {
+  pct: number
+  limitPct: number | null
+  tailPct: number | null
 }) {
   const ceiling = meterCeiling(pct, limitPct, tailPct)
   const x = (v: number) => `${Math.min(100, (v / ceiling) * 100)}%`
@@ -831,11 +966,16 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
           )}
         </div>
         {limitPct != null && (
-          <span className="absolute w-[2px] bg-gold-text" style={{ left: x(limitPct), top: 10, bottom: -3 }} />
+          <span
+            className="absolute w-[2px] bg-gold-text"
+            style={{ left: x(limitPct), top: 10, bottom: -3 }}
+          />
         )}
       </div>
       <div className="flex justify-between mt-[3px] font-mono text-[9.5px] leading-none text-text-tertiary tabular-nums">
-        <span>0%</span><span>{(ceiling / 2).toFixed(0)}%</span><span>{ceiling}%</span>
+        <span>0%</span>
+        <span>{(ceiling / 2).toFixed(0)}%</span>
+        <span>{ceiling}%</span>
       </div>
     </div>
   )
@@ -887,19 +1027,28 @@ export type PanelRow = {
  *  scale labels would otherwise sit on the border. */
 export function panelCardCls(collapsed: boolean, filtered: boolean, topBorder: string): string {
   return `flex flex-col min-w-0 rounded-xl border border-border-subtle px-4 pt-[13px] ${
-    collapsed ? 'pb-[12px]' : 'pb-[6px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'} ${topBorder}`
+    collapsed ? 'pb-[12px]' : 'pb-[6px]'
+  } ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'} ${topBorder}`
 }
 
 /** Title and question share ONE line. The question is orientation you read once; on its own row
  *  it charged ~16px of card height per card, forever, for a sentence nobody re-reads. The narrow
  *  fourth card has no room for one at all, so it passes the slot to its aside instead. */
-export function CardHead({ title, question, aside }: {
-  title: string; question?: string; aside?: React.ReactNode
+export function CardHead({
+  title,
+  question,
+  aside,
+}: {
+  title: string
+  question?: string
+  aside?: React.ReactNode
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="flex items-baseline gap-2 min-w-0">
-        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary shrink-0">{title}</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary shrink-0">
+          {title}
+        </span>
         {question && <span className="text-[10.5px] text-text-tertiary truncate">{question}</span>}
       </span>
       {aside}
@@ -907,13 +1056,28 @@ export function CardHead({ title, question, aside }: {
   )
 }
 
-export function CardHero({ value, unit, cls, tip }: {
-  value: React.ReactNode; unit: React.ReactNode; cls: string; tip: string
+export function CardHero({
+  value,
+  unit,
+  cls,
+  tip,
+}: {
+  value: React.ReactNode
+  unit: React.ReactNode
+  cls: string
+  tip: string
 }) {
   return (
     <div data-fit-box className="flex items-baseline gap-2.5 flex-wrap mt-2 mb-0.5">
-      <span className={`text-[34px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
-      <span className="text-[12px] text-text-tertiary">{unit}<InfoTip text={tip} /></span>
+      <span
+        className={`text-[34px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}
+      >
+        {value}
+      </span>
+      <span className="text-[12px] text-text-tertiary">
+        {unit}
+        <InfoTip text={tip} />
+      </span>
     </div>
   )
 }
@@ -921,30 +1085,52 @@ export function CardHero({ value, unit, cls, tip }: {
 /** Label + ⓘ on the left, value on the right, nothing else. See PanelRow.tip for why.
  *  A row carrying `onClick` renders as a button in the SAME shape — extending this rather than
  *  forking it is what keeps a stack's toggleable leg rows at the 24px every other row is. */
-export function PanelRows({ rows, delta }: {
-  rows: PanelRow[]; delta?: (r: PanelRow) => React.ReactNode
+export function PanelRows({
+  rows,
+  delta,
+}: {
+  rows: PanelRow[]
+  delta?: (r: PanelRow) => React.ReactNode
 }) {
   return (
     <div className="mt-auto pt-2.5 border-t border-border-subtle">
       {rows.map((r, i) => {
         const cls = `flex w-full items-baseline justify-between gap-3 py-[4px] text-[12px] leading-[1.3] ${
-          i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}`
+          i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''
+        }`
         const body = (
           <>
-            <span className={`flex items-center min-w-0 ${r.muted ? 'text-text-tertiary/55' : 'text-text-tertiary'}`}>
+            <span
+              className={`flex items-center min-w-0 ${r.muted ? 'text-text-tertiary/55' : 'text-text-tertiary'}`}
+            >
               {r.lead}
-              <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
+              <span className="truncate">{r.label}</span>
+              <InfoTip text={r.tip} />
             </span>
-            <span className={`font-mono tabular-nums text-right whitespace-nowrap ${
-              r.cls ?? (r.muted ? 'text-text-tertiary/55' : 'text-text-primary')}`}>
-              {r.value}{delta?.(r)}
+            <span
+              className={`font-mono tabular-nums text-right whitespace-nowrap ${
+                r.cls ?? (r.muted ? 'text-text-tertiary/55' : 'text-text-primary')
+              }`}
+            >
+              {r.value}
+              {delta?.(r)}
             </span>
           </>
         )
-        return r.onClick
-          ? <button key={r.key} type="button" onClick={r.onClick}
-              className={`${cls} text-left transition-colors hover:text-text-primary`}>{body}</button>
-          : <div key={r.key} className={cls}>{body}</div>
+        return r.onClick ? (
+          <button
+            key={r.key}
+            type="button"
+            onClick={r.onClick}
+            className={`${cls} text-left transition-colors hover:text-text-primary`}
+          >
+            {body}
+          </button>
+        ) : (
+          <div key={r.key} className={cls}>
+            {body}
+          </div>
+        )
       })}
     </div>
   )
@@ -953,10 +1139,22 @@ export function PanelRows({ rows, delta }: {
 // ── Panel ────────────────────────────────────────────────────────────────────
 
 export function PerformancePanel({
-  run, fallback, equity = [], balance = null, compare = null, filtered = false,
-  tailPct = null, limitPct = null, ribbon = null, verdict = null, collapsed = false,
+  run,
+  fallback,
+  equity = [],
+  balance = null,
+  compare = null,
+  filtered = false,
+  tailPct = null,
+  limitPct = null,
+  ribbon = null,
+  verdict = null,
+  collapsed = false,
 }: {
-  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
+  run: Run
+  fallback: FallbackMetrics
+  equity?: EquityPoint[]
+  balance?: number | null
   // When set, every row's delta is measured against this run instead of showing its caption.
   // The news filter IS this comparison — there is no second copy of the numbers anywhere.
   compare?: { run: Run; fallback: FallbackMetrics; equity: EquityPoint[] } | null
@@ -981,12 +1179,25 @@ export function PerformancePanel({
    */
   collapsed?: boolean
 }) {
-  const d  = deriveKpis(run, fallback, equity, balance)
+  const d = deriveKpis(run, fallback, equity, balance)
   const dc = compare ? deriveKpis(compare.run, compare.fallback, compare.equity, balance) : null
 
-  const { sharpe, worstDay, worstStreak, calmar, expectancyUsd, zScore,
-          pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak,
-          scratches, tradeConc } = d
+  const {
+    sharpe,
+    worstDay,
+    worstStreak,
+    calmar,
+    expectancyUsd,
+    zScore,
+    pfValue,
+    profitConc,
+    maxDdPct,
+    ddDollar,
+    ddAtWorstPct,
+    ddPeak,
+    scratches,
+    tradeConc,
+  } = d
   const sharpeEst = run.sharpe == null && fallback.sharpe != null
   const underwater = computeTimeUnderwater(run.daily_pnl ?? [])
 
@@ -999,9 +1210,8 @@ export function PerformancePanel({
   // ⚠ Keep the caveat on the multiple's tooltip: at a fixed % risk per trade the dollar figure is
   // the number most distorted by compounding — see the Costs row below, where $50k of charged
   // slippage costs $1.6M of net purely because early dollars stop compounding.
-  const multiple = (balance != null && balance > 0 && run.net_pnl != null)
-    ? (balance + run.net_pnl) / balance
-    : null
+  const multiple =
+    balance != null && balance > 0 && run.net_pnl != null ? (balance + run.net_pnl) / balance : null
   // The balance the curve actually STARTED from, taken off the curve itself rather than the
   // ruleset — a python run opens on its own deposit, and that is what the multiple divides by.
   const startBal = equity.length > 0 ? (equity[0].equity ?? 0) - (equity[0].profit ?? 0) : null
@@ -1018,49 +1228,89 @@ export function PerformancePanel({
   // W/L counts: the backend stores win_count, so use it. Deriving them from the rate (which this
   // did) re-rounds a number that was rounded once already — 0.6338 × 142 lands on 90 here only
   // because the rate happens to carry 4 decimals.
-  const wins = run.win_count ?? (run.win_rate != null && run.trade_count != null
-    ? Math.round(run.win_rate * run.trade_count) : null)
-  const losses = (wins != null && run.trade_count != null) ? run.trade_count - wins : null
-  const rr = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
-    ? run.avg_win / Math.abs(run.avg_loss) : null
+  const wins =
+    run.win_count ??
+    (run.win_rate != null && run.trade_count != null
+      ? Math.round(run.win_rate * run.trade_count)
+      : null)
+  const losses = wins != null && run.trade_count != null ? run.trade_count - wins : null
+  const rr =
+    run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0
+      ? run.avg_win / Math.abs(run.avg_loss)
+      : null
 
   const madeRows: PanelRow[] = [
     // Net is the HERO now, so it is not repeated here. The multiple takes its place — the same
     // number the hero used to be, demoted because it is only meaningful beside the balance it
     // multiplies, which is now the caption directly above this list.
-    { key: 'mult', label: 'Return on capital',
+    {
+      key: 'mult',
+      label: 'Return on capital',
       value: multiple != null ? `${multiple.toFixed(1)}x` : '—',
-      tip: `Final balance ÷ starting balance${startBal != null && startBal > 0 ? ` — what ${dollar(startBal)} became` : ''}. Moves with the Account balance slider, since it is measured against whatever capital you tell it. ⚠ At a fixed % risk per trade this is the number most distorted by compounding: a dollar not earned early is a dollar that never compounds, so a small cost early costs many times itself by the end. Compare strategies in R, not here.` },
-    { key: 'per', label: 'Per trade', value: expectancyUsd != null ? dollar(expectancyUsd, true) : '—',
+      tip: `Final balance ÷ starting balance${startBal != null && startBal > 0 ? ` — what ${dollar(startBal)} became` : ''}. Moves with the Account balance slider, since it is measured against whatever capital you tell it. ⚠ At a fixed % risk per trade this is the number most distorted by compounding: a dollar not earned early is a dollar that never compounds, so a small cost early costs many times itself by the end. Compare strategies in R, not here.`,
+    },
+    {
+      key: 'per',
+      label: 'Per trade',
+      value: expectancyUsd != null ? dollar(expectancyUsd, true) : '—',
       cls: expectancyUsd != null && expectancyUsd < 0 ? 'text-neg-text' : undefined,
       tip: 'Expectancy: net P&L ÷ trade count — what one average trade was worth. Dollars only; expectancy in R needs the risk taken per trade, which stored trades do not carry.',
-      cmp: k => k.expectancyUsd, fmt: fmtMoney },
-    { key: 'rr', label: 'Avg win / loss', value: rr != null ? `${rr.toFixed(2)}:1` : '—',
+      cmp: (k) => k.expectancyUsd,
+      fmt: fmtMoney,
+    },
+    {
+      key: 'rr',
+      label: 'Avg win / loss',
+      value: rr != null ? `${rr.toFixed(2)}:1` : '—',
       tip: `Average winning trade ÷ average losing trade. Together with the win rate this is the whole edge${
-        run.avg_win != null && run.avg_loss != null ? `: ${dollar(run.avg_win, true)} per win against ${dollar(run.avg_loss)} per loss` : ''}.`,
-      cmp: k => k.rrRatio, fmt: fmtRatio, goodWhen: 'higher' },
-    { key: 'wr', label: 'Win rate', value: pct(run.win_rate),
+        run.avg_win != null && run.avg_loss != null
+          ? `: ${dollar(run.avg_win, true)} per win against ${dollar(run.avg_loss)} per loss`
+          : ''
+      }.`,
+      cmp: (k) => k.rrRatio,
+      fmt: fmtRatio,
+      goodWhen: 'higher',
+    },
+    {
+      key: 'wr',
+      label: 'Win rate',
+      value: pct(run.win_rate),
       tip: `Share of trades that closed profitable${wins != null && losses != null ? ` — ${wins} wins, ${losses} losses` : ''}. A low win rate is not a fault on its own; read it against the average win/loss above.${scratches != null && scratches > 0 ? ` Read it against the scratch count below too — ${scratches} of these barely moved.` : ''} This run: ${winRateLabel(run.win_rate)}.`,
-      cmp: k => k.winRate, fmt: fmtPct01 },
+      cmp: (k) => k.winRate,
+      fmt: fmtPct01,
+    },
     // The row the win rate needed. A trade that made a sixth of a losing trade counts as a full
     // win above; on the shipped run that is 45 of 111 "winners", every one exiting at the
     // breakeven-stop buffer. Shown as the honest three-way split so the reader gets the shape,
     // not just a count. Exception colour past a quarter of the book — at that point the headline
     // win rate is describing something other than winning.
-    { key: 'scr', label: 'Won / scratched / lost',
-      value: (scratches != null && wins != null && losses != null && run.trade_count)
-        ? `${wins - scratches} / ${scratches} / ${losses}` : '—',
-      cls: (scratches != null && run.trade_count && scratches / run.trade_count >= 0.25)
-        ? 'text-warn-text' : undefined,
+    {
+      key: 'scr',
+      label: 'Won / scratched / lost',
+      value:
+        scratches != null && wins != null && losses != null && run.trade_count
+          ? `${wins - scratches} / ${scratches} / ${losses}`
+          : '—',
+      cls:
+        scratches != null && run.trade_count && scratches / run.trade_count >= 0.25
+          ? 'text-warn-text'
+          : undefined,
       tip: `The win rate above counts any trade that closed a cent up as a win. A SCRATCH is one whose result came to less than ${Math.round(SCRATCH_FRACTION * 100)}% of this run's median losing trade — usually a stop moved to breakeven doing exactly its job, which is real risk control and is not an edge.${
         scratches != null && wins != null && run.trade_count
           ? ` Here ${pct((wins - scratches) / run.trade_count)} genuinely won, ${pct(scratches / run.trade_count)} scratched.`
-          : ' No losing trade in this run, so there is no scale to measure a scratch against.'}` },
-    { key: 'pf', label: 'Profit factor', value: kpiNum(pfValue),
+          : ' No losing trade in this run, so there is no scale to measure a scratch against.'
+      }`,
+    },
+    {
+      key: 'pf',
+      label: 'Profit factor',
+      value: kpiNum(pfValue),
       // Exception: below 1.0 the strategy loses money — the one PF value that must shout.
       cls: pfValue != null && isFinite(pfValue) && pfValue < 1 ? 'text-neg-text' : undefined,
       tip: `Gross wins ÷ gross losses. Above 2.0 is strong, 1.5 good, below 1.0 loses money. This run: ${pfLabel(pfValue)}.`,
-      cmp: k => k.pfValue, fmt: fmtRatio },
+      cmp: (k) => k.pfValue,
+      fmt: fmtRatio,
+    },
     // Costs were charged but INVISIBLE until 2026-08-01: the run row carried the settings and
     // nothing reported what they came to. The row only appears on a priced run — printing
     // "$0" on every unpriced one would read as "trading was free" rather than "nothing was
@@ -1072,79 +1322,138 @@ export function PerformancePanel({
     // fees, $18,200,741 off the final balance — 55x. Naming this row "Costs charged" invited
     // exactly the subtraction that makes those two look like a contradiction, and it was reported
     // as a bug from the screen. The tooltip states the relationship rather than leaving it implied.
-    ...(costsTotal !== 0 ? [{
-      key: 'costs', label: 'Fees charged', value: dollar(costsTotal),
-      tip: `Commission, spread, slippage and swap actually handed to the broker across every fill, already deducted from Net above. ⚠ This is NOT the amount the Net moved by, and the gap is usually large: at a fixed % risk the account compounds, so a dollar of fee paid early also costs every dollar it would have grown into over every trade after it. Expect the balance impact to be many times this figure — that is compounding, not a bigger fee. Judge a cost in R (the Costs pill states it), never in net dollars.`,
-    } as PanelRow] : []),
+    ...(costsTotal !== 0
+      ? [
+          {
+            key: 'costs',
+            label: 'Fees charged',
+            value: dollar(costsTotal),
+            tip: `Commission, spread, slippage and swap actually handed to the broker across every fill, already deducted from Net above. ⚠ This is NOT the amount the Net moved by, and the gap is usually large: at a fixed % risk the account compounds, so a dollar of fee paid early also costs every dollar it would have grown into over every trade after it. Expect the balance impact to be many times this figure — that is compounding, not a bigger fee. Judge a cost in R (the Costs pill states it), never in net dollars.`,
+          } as PanelRow,
+        ]
+      : []),
     // WHICH costs were charged, not just what they came to. A run that charged nothing and a run
     // made before the switches existed look identical from the total alone — and this lab's
     // recurring defect is exactly a number on screen whose provenance nothing states. `null`
     // means "made before layered costs", which is not the same answer as "charged nothing".
-    ...(run.cost_layers != null ? [{
-      key: 'costlayers', label: 'Costs charged for',
-      value: run.cost_layers.length
-        ? run.cost_layers.map(l => COST_LAYER_LABEL[l] ?? l).join(', ')
-        : 'nothing',
-      tip: run.cost_layers.length
-        ? `The cost layers this run had switched on${run.broker_profile ? `, priced off the ${run.broker_profile} account` : ''}. Anything not listed was not charged at all.`
-        : 'This run was deliberately frictionless — no spread, no swap, no commission, no slippage. That is the default, and it is what makes the result directly comparable to the TradingView Strategy Tester.',
-    } as PanelRow] : []),
+    ...(run.cost_layers != null
+      ? [
+          {
+            key: 'costlayers',
+            label: 'Costs charged for',
+            value: run.cost_layers.length
+              ? run.cost_layers.map((l) => COST_LAYER_LABEL[l] ?? l).join(', ')
+              : 'nothing',
+            tip: run.cost_layers.length
+              ? `The cost layers this run had switched on${run.broker_profile ? `, priced off the ${run.broker_profile} account` : ''}. Anything not listed was not charged at all.`
+              : 'This run was deliberately frictionless — no spread, no swap, no commission, no slippage. That is the default, and it is what makes the result directly comparable to the TradingView Strategy Tester.',
+          } as PanelRow,
+        ]
+      : []),
   ]
 
   const riskedRows: PanelRow[] = [
-    { key: 'dd$', label: 'Deepest drop', value: ddDollar != null ? `−${dollar(ddDollar)}` : '—',
+    {
+      key: 'dd$',
+      label: 'Deepest drop',
+      value: ddDollar != null ? `−${dollar(ddDollar)}` : '—',
       tip: `The largest peak-to-trough fall measured in dollars. On a compounding run this is usually a DIFFERENT episode from the percentage above — a later, shallower fall off a much bigger account${
         ddDollar != null && maxDdPct != null && ddAtWorstPct != null && ddDollar > ddAtWorstPct
-          ? `. Here the worst percentage cost ${dollar(ddAtWorstPct)} while the worst dollar figure is ${dollar(ddDollar)}` : ''}. The percentage is what would have ended the account; this is what it would have felt like.`,
-      cmp: k => k.ddDollar, fmt: fmtMoney, goodWhen: 'lower' },
-    { key: 'wd', label: 'Worst day', value: dollar(worstDay),
+          ? `. Here the worst percentage cost ${dollar(ddAtWorstPct)} while the worst dollar figure is ${dollar(ddDollar)}`
+          : ''
+      }. The percentage is what would have ended the account; this is what it would have felt like.`,
+      cmp: (k) => k.ddDollar,
+      fmt: fmtMoney,
+      goodWhen: 'lower',
+    },
+    {
+      key: 'wd',
+      label: 'Worst day',
+      value: dollar(worstDay),
       tip: 'The single worst calendar day, summing every trade that closed on it.',
-      cmp: k => k.worstDay, fmt: fmtMoney },
+      cmp: (k) => k.worstDay,
+      fmt: fmtMoney,
+    },
     // The unit is TRADES. backtest/output.py:_worst_losing_streak walks the trade list, not the
     // day list — it was labelled "days" here, which on a strategy trading twice a month reads as
     // a far worse run of luck than it was (4 losing trades spanned 2 consecutive losing days).
     // Exception at ≥6 only: 3 losses in a row is ordinary on a selective strategy, and colouring
     // it would make the amber mean nothing by the time a real streak showed up.
-    { key: 'ws', label: 'Worst streak', value: worstStreak != null ? `${worstStreak} trades` : '—',
+    {
+      key: 'ws',
+      label: 'Worst streak',
+      value: worstStreak != null ? `${worstStreak} trades` : '—',
       cls: worstStreak != null && worstStreak >= 6 ? 'text-neg-text' : undefined,
       tip: 'The longest run of consecutive losing trades. Counted in trades, not days — a selective strategy can take weeks to produce four of them.',
-      cmp: k => k.worstStreak, fmt: fmtCount, goodWhen: 'lower' },
-    { key: 'uw', label: 'Time underwater', value: underwater != null ? `${(underwater * 100).toFixed(0)}%` : '—',
-      tip: 'Share of the test\'s calendar span spent below the previous equity high. Max drawdown says how deep the hole was; this says how long you sat in it — the half that decides whether a strategy is holdable.',
-      goodWhen: 'lower' },
+      cmp: (k) => k.worstStreak,
+      fmt: fmtCount,
+      goodWhen: 'lower',
+    },
+    {
+      key: 'uw',
+      label: 'Time underwater',
+      value: underwater != null ? `${(underwater * 100).toFixed(0)}%` : '—',
+      tip: "Share of the test's calendar span spent below the previous equity high. Max drawdown says how deep the hole was; this says how long you sat in it — the half that decides whether a strategy is holdable.",
+      goodWhen: 'lower',
+    },
   ]
 
   const trustedRows: PanelRow[] = [
-    { key: 'conc', label: 'Profit concentration',
+    {
+      key: 'conc',
+      label: 'Profit concentration',
       value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
       // Exception: ≥60% in one quarter is the classic curve-fit signal.
       cls: exceptionCls(concentrationCls(profitConc)),
       tip: `Share of gross profit earned in the single best quarter of the test span. Above 60% the edge is clustered in one window rather than repeatable — the classic curve-fit signal. Measured in returns, not dollars: on a compounding account the last quarter holds most of the dollars however evenly the edge is spread.${profitConc != null ? ` This run: ${concentrationLabel(profitConc)}.` : ''}`,
-      cmp: k => k.profitConc, fmt: fmtPctPt, goodWhen: 'lower' },
+      cmp: (k) => k.profitConc,
+      fmt: fmtPctPt,
+      goodWhen: 'lower',
+    },
     // The row above splits the span into QUARTERS, so it answers "did the edge show up in one
     // period". Readers hear the trade question, and the two can disagree completely: run
     // f866873aa862 is 34% by quarter (spread evenly over 6.6 years) while 5 of its 165 trades
     // made 47% of everything won. Not a defect on its own — a runner-based strategy is supposed
     // to be fat-tailed — but it is what says the edge lives in the tail.
-    { key: 'tconc', label: `Top ${TRADE_CONCENTRATION_TOP_N} trades`,
+    {
+      key: 'tconc',
+      label: `Top ${TRADE_CONCENTRATION_TOP_N} trades`,
       value: tradeConc != null ? `${tradeConc.toFixed(0)}%` : '—',
       cls: tradeConc != null && tradeConc >= 50 ? 'text-warn-text' : undefined,
       tip: `Share of gross profit made by the ${TRADE_CONCENTRATION_TOP_N} biggest winners. The row above asks whether the edge clustered in one PERIOD; this asks whether it came from a handful of TRADES, and a run can be spread evenly across the years while resting on five of them. High is not automatically bad — a strategy that rides runners is meant to be fat-tailed — but it tells you the edge lives in the tail, so size the risk for that.${tradeConc != null ? ` This run: ${tradeConcentrationLabel(tradeConc)}.` : ''}`,
-      goodWhen: 'lower' },
-    { key: 'sharpe', label: 'Sharpe', value: sharpe != null ? sharpe.toFixed(2) : '—',
+      goodWhen: 'lower',
+    },
+    {
+      key: 'sharpe',
+      label: 'Sharpe',
+      value: sharpe != null ? sharpe.toFixed(2) : '—',
       // Amber below 1.0 — an EXCEPTION colour, not a sign colour. Green for "positive" would
       // call 0.91 good; amber for "weak" is the threshold that should stop you, which is the
       // policy every other coloured row here follows.
       cls: sharpe != null && sharpe < 1 ? 'text-warn-text' : undefined,
       tip: `Return per unit of volatility, annualized from daily P&L. Above 2 is excellent, 1 is good, below 0.5 is poor. Every weekday in the run's span counts, flat days included as zero — a strategy that trades 20 days a year is not a 250-day strategy, and scoring only its active days inflated this figure roughly 3x (0.91 read as 2.98 until 2026-07-31). This run: ${sharpe != null ? sharpeLabel(sharpe, sharpeEst) : 'not computed'}.`,
-      cmp: k => k.sharpe, fmt: fmtRatio },
-    { key: 'z', label: 'Z-score', value: zScore != null ? zScore.toFixed(2) : '—',
+      cmp: (k) => k.sharpe,
+      fmt: fmtRatio,
+    },
+    {
+      key: 'z',
+      label: 'Z-score',
+      value: zScore != null ? zScore.toFixed(2) : '—',
       cls: exceptionCls(zScoreCls(zScore)),
       tip: `Wald–Wolfowitz runs test on the win/loss sequence: does it streak more than chance? Near 0 means the order looks random, which is what an honest edge produces. Past ±2 the wins and losses clump, and an equity curve built on clumps is fragile. This run: ${zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity)}.`,
-      cmp: k => k.zScore, fmt: fmtRatio, goodWhen: 'none' },
-    { key: 'dur', label: 'Avg hold', value: fmtHold(run.avg_trade_duration_min),
+      cmp: (k) => k.zScore,
+      fmt: fmtRatio,
+      goodWhen: 'none',
+    },
+    {
+      key: 'dur',
+      label: 'Avg hold',
+      value: fmtHold(run.avg_trade_duration_min),
       tip: 'Average time a position was open, entry to exit. Read it against the bar size — a hold of a few bars is a different strategy from one that carries overnight.',
-      cmp: k => k.avgDur, fmt: (x: number) => `${x >= 0 ? '+' : ''}${fmtHold(Math.abs(x))}`, goodWhen: 'none' },
+      cmp: (k) => k.avgDur,
+      fmt: (x: number) => `${x >= 0 ? '+' : ''}${fmtHold(Math.abs(x))}`,
+      goodWhen: 'none',
+    },
   ]
 
   // The delta answers the question the news filter was opened to ask, so it is the one thing
@@ -1152,36 +1461,51 @@ export function PerformancePanel({
   // unfiltered" on every row was eight lines of text to communicate that nothing happened.
   const rowDelta = (r: PanelRow): React.ReactNode => {
     if (!dc || !r.cmp) return null
-    const to = r.cmp(d), from = r.cmp(dc)
+    const to = r.cmp(d),
+      from = r.cmp(dc)
     if (to == null || from == null || !isFinite(to) || !isFinite(from)) return null
     const delta = to - from
     if (Math.abs(delta) < 1e-9) return null
     const good = r.goodWhen === 'lower' ? delta < 0 : delta > 0
-    const cls = r.goodWhen === 'none' ? 'text-text-secondary' : good ? 'text-pos-text' : 'text-neg-text'
+    const cls =
+      r.goodWhen === 'none' ? 'text-text-secondary' : good ? 'text-pos-text' : 'text-neg-text'
     return <span className={`${cls} tabular-nums`}> {(r.fmt ?? fmtRatio)(delta)}</span>
   }
 
   const rows = (list: PanelRow[]) => <PanelRows rows={list} delta={rowDelta} />
 
   // Hero delta: shown beside the big number, in the unit that number is stated in.
-  const heroDelta = (to: number | null | undefined, from: number | null | undefined,
-                     fmt: (x: number) => string, goodWhen: 'higher' | 'lower') => {
+  const heroDelta = (
+    to: number | null | undefined,
+    from: number | null | undefined,
+    fmt: (x: number) => string,
+    goodWhen: 'higher' | 'lower'
+  ) => {
     if (!dc) return null
     if (to == null || from == null || !isFinite(to) || !isFinite(from)) return null
     const delta = to - from
-    if (Math.abs(delta) < 1e-9) return <span className="text-[12px] text-text-tertiary">unchanged</span>
+    if (Math.abs(delta) < 1e-9)
+      return <span className="text-[12px] text-text-tertiary">unchanged</span>
     const good = goodWhen === 'lower' ? delta < 0 : delta > 0
-    return <span className={`text-[12px] tabular-nums ${good ? 'text-pos-text' : 'text-neg-text'}`}>{fmt(delta)}</span>
+    return (
+      <span className={`text-[12px] tabular-nums ${good ? 'text-pos-text' : 'text-neg-text'}`}>
+        {fmt(delta)}
+      </span>
+    )
   }
 
   const cardCls = (top: string) => panelCardCls(collapsed, filtered, top)
-  const head = (title: string, question: string, aside?: React.ReactNode) =>
+  const head = (title: string, question: string, aside?: React.ReactNode) => (
     <CardHead title={title} question={question} aside={aside} />
-  const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) =>
+  )
+  const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) => (
     <CardHero value={value} unit={unit} cls={cls} tip={tip} />
+  )
 
-  const madeTip = "Total profit and loss in dollars across every closed trade, after whatever commission and slippage the run was priced with. The starting balance is beneath it and the multiple is the first row, so what this grew FROM is on screen. ⚠ Dollars on a compounding account are not comparable between runs — a fixed % risk per trade makes the end figure exponential in the edge, so a small change early shows up as a huge change here. Rank strategies by R or profit factor; read this to know what the run was worth."
-  const riskedTip = "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists. The DENOMINATOR is the Account balance in the params panel — the evaluated ruleset's account size, or the run's own opening balance when it was graded against none — so this figure moves with that slider while the dollars beside it do not."
+  const madeTip =
+    'Total profit and loss in dollars across every closed trade, after whatever commission and slippage the run was priced with. The starting balance is beneath it and the multiple is the first row, so what this grew FROM is on screen. ⚠ Dollars on a compounding account are not comparable between runs — a fixed % risk per trade makes the end figure exponential in the edge, so a small change early shows up as a huge change here. Rank strategies by R or profit factor; read this to know what the run was worth.'
+  const riskedTip =
+    "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists. The DENOMINATOR is the Account balance in the params panel — the evaluated ruleset's account size, or the run's own opening balance when it was graded against none — so this figure moves with that slider while the dollars beside it do not."
   const trustedTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown — return earned per unit of pain. Both halves compound, so this DOES move with the Account balance slider; they do not cancel. Above 2 is strong, below 0.5 weak.${d.recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${d.recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The rows beneath are the reasons to distrust the number above them: profit clustered in one quarter, a soft Sharpe, or streaking that isn't random.`
 
   // Four cards when a verdict joins the row, three otherwise. The verdict is narrower because it
@@ -1200,7 +1524,6 @@ export function PerformancePanel({
     <div className="space-y-2.5">
       {ribbon}
       <div className={`grid gap-2.5 items-stretch ${grid}`}>
-
         {/* First, not last: the grade and the sample size are what you check BEFORE reading the
             three numbers to their right, and it inherits the position the ribbon's own verdict
             chip held at the panel's top-left. */}
@@ -1212,7 +1535,7 @@ export function PerformancePanel({
             <FitMoney n={run.net_pnl} signed />,
             'net',
             (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text',
-            madeTip,
+            madeTip
           )}
           {dc && <div className="mb-1">{heroDelta(d.netPnl, dc.netPnl, fmtMoney, 'higher')}</div>}
           {/* The starting balance, which this page never stated anywhere — so "1439.7x" was a
@@ -1228,35 +1551,56 @@ export function PerformancePanel({
         </div>
 
         <div className={cardCls('border-t-2 border-t-neg-text/50')}>
-          {head('Risked', 'What it cost to hold',
-            limitPct != null
-              ? <span className="font-mono text-[10px] text-gold-text">vs {limitPct.toFixed(0)}% limit</span>
-              : <span className="text-[10px] text-text-tertiary">no limit set</span>)}
+          {head(
+            'Risked',
+            'What it cost to hold',
+            limitPct != null ? (
+              <span className="font-mono text-[10px] text-gold-text">
+                vs {limitPct.toFixed(0)}% limit
+              </span>
+            ) : (
+              <span className="text-[10px] text-text-tertiary">no limit set</span>
+            )
+          )}
           {hero(
             maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
-            'worst drawdown', maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', riskedTip,
+            'worst drawdown',
+            maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary',
+            riskedTip
           )}
           {/* The meter survives the collapse — it is the only thing on the page that says
               whether a drawdown number is acceptable, and it costs ~40px. */}
-          {maxDdPct != null
-            ? <DrawdownMeter pct={maxDdPct} limitPct={limitPct} tailPct={tailPct} />
+          {maxDdPct != null ? (
+            <DrawdownMeter pct={maxDdPct} limitPct={limitPct} tailPct={tailPct} />
+          ) : (
             /* This used to read "Set an account balance to measure drawdown as a percentage" on
                every run with no evaluated ruleset — an instruction the page gave no way to follow,
                since the slider only renders once a default exists. The default now falls back to
                the run's OWN opening balance, so the only case left is a run with no equity curve
                at all, and the honest wording says that rather than asking for an input. */
-            : <div className="mt-3.5 text-[11px] text-text-tertiary">This run stored no equity curve, so a drawdown percentage cannot be measured.</div>}
+            <div className="mt-3.5 text-[11px] text-text-tertiary">
+              This run stored no equity curve, so a drawdown percentage cannot be measured.
+            </div>
+          )}
           {!collapsed && (
             <div className="text-[10.5px] text-text-tertiary leading-[1.35] mt-1.5">
-              {maxDdPct != null && ddAtWorstPct != null && ddPeak != null
-                ? <>−{dollar(ddAtWorstPct)} off a {dollar(ddPeak)} peak.{' '}</>
-                : null}
-              {limitPct != null && maxDdPct != null && (maxDdPct >= limitPct
-                ? <span className="text-neg-text">Breaches the {limitPct.toFixed(0)}% limit.{' '}</span>
-                : <>Clears by {(limitPct - maxDdPct).toFixed(1)} pts.{' '}</>)}
-              {tailPct != null
-                ? <>Worst-1% simulated: {tailPct.toFixed(1)}%.</>
-                : <>No stress test — the tail is unknown, not zero.</>}
+              {maxDdPct != null && ddAtWorstPct != null && ddPeak != null ? (
+                <>
+                  −{dollar(ddAtWorstPct)} off a {dollar(ddPeak)} peak.{' '}
+                </>
+              ) : null}
+              {limitPct != null &&
+                maxDdPct != null &&
+                (maxDdPct >= limitPct ? (
+                  <span className="text-neg-text">Breaches the {limitPct.toFixed(0)}% limit. </span>
+                ) : (
+                  <>Clears by {(limitPct - maxDdPct).toFixed(1)} pts. </>
+                ))}
+              {tailPct != null ? (
+                <>Worst-1% simulated: {tailPct.toFixed(1)}%.</>
+              ) : (
+                <>No stress test — the tail is unknown, not zero.</>
+              )}
             </div>
           )}
           {!collapsed && rows(riskedRows)}
@@ -1267,12 +1611,15 @@ export function PerformancePanel({
               it twice on one row made the second copy read as a different number. */}
           {head('Trusted', 'Whether to believe it')}
           {hero(kpiNum(calmar), 'Calmar', calmarCls(calmar), trustedTip)}
-          {dc
-            ? <div className="mb-1">{heroDelta(d.calmar, dc.calmar, fmtRatio, 'higher')}</div>
-            : <div className="text-[11px] text-text-tertiary leading-snug mt-2">{calmarLabel(calmar)}</div>}
+          {dc ? (
+            <div className="mb-1">{heroDelta(d.calmar, dc.calmar, fmtRatio, 'higher')}</div>
+          ) : (
+            <div className="text-[11px] text-text-tertiary leading-snug mt-2">
+              {calmarLabel(calmar)}
+            </div>
+          )}
           {!collapsed && rows(trustedRows)}
         </div>
-
       </div>
     </div>
   )
@@ -1284,13 +1631,21 @@ export function PerformancePanel({
 // Per-series equity-chart toggles (histogram / excursions / run-ups & drawdowns). Default OFF so the
 // chart stays clean until the user opts in; each persists like the regime overlay.
 function getBoolPref(key: string): boolean {
-  try { return localStorage.getItem(key) === 'true' } catch { return false }
+  try {
+    return localStorage.getItem(key) === 'true'
+  } catch {
+    return false
+  }
 }
 function setBoolPref(key: string, v: boolean) {
-  try { localStorage.setItem(key, String(v)) } catch { /* quota */ }
+  try {
+    localStorage.setItem(key, String(v))
+  } catch {
+    /* quota */
+  }
 }
 const _HIST_KEY = 'equity_histogram_enabled'
-const _RUD_KEY  = 'equity_runup_drawdown_enabled'
+const _RUD_KEY = 'equity_runup_drawdown_enabled'
 
 // Performance panel collapse. Defaults COLLAPSED (hence its own getter — getBoolPref defaults
 // off): expanded, the panel plus its header fills the fold on a laptop and pushes the equity
@@ -1299,7 +1654,11 @@ const _RUD_KEY  = 'equity_runup_drawdown_enabled'
 // this run do" without a click.
 const _PERF_COLLAPSED_KEY = 'performance_panel_collapsed'
 function getPerfCollapsed(): boolean {
-  try { return localStorage.getItem(_PERF_COLLAPSED_KEY) !== 'false' } catch { return true }
+  try {
+    return localStorage.getItem(_PERF_COLLAPSED_KEY) !== 'false'
+  } catch {
+    return true
+  }
 }
 
 /** ONE preference behind ONE key, shared by this page and StackDetail. A stack renders the same
@@ -1308,9 +1667,13 @@ function getPerfCollapsed(): boolean {
 export function usePerfCollapsed(): [boolean, () => void] {
   const [collapsed, setCollapsed] = useState(getPerfCollapsed)
   const toggle = useCallback(() => {
-    setCollapsed(prev => {
+    setCollapsed((prev) => {
       const next = !prev
-      try { localStorage.setItem(_PERF_COLLAPSED_KEY, String(next)) } catch { /* quota */ }
+      try {
+        localStorage.setItem(_PERF_COLLAPSED_KEY, String(next))
+      } catch {
+        /* quota */
+      }
       return next
     })
   }, [])
@@ -1319,8 +1682,14 @@ export function usePerfCollapsed(): [boolean, () => void] {
 
 /** The section header's collapse control. Shared so a stack's Performance section and a run's are
  *  the same control — same words, same chevron, same hit area — rather than two look-alikes. */
-export function PerfCollapseToggle({ collapsed, onToggle, suffix }: {
-  collapsed: boolean; onToggle: () => void; suffix?: React.ReactNode
+export function PerfCollapseToggle({
+  collapsed,
+  onToggle,
+  suffix,
+}: {
+  collapsed: boolean
+  onToggle: () => void
+  suffix?: React.ReactNode
 }) {
   return (
     <button
@@ -1335,13 +1704,24 @@ export function PerfCollapseToggle({ collapsed, onToggle, suffix }: {
   )
 }
 
-interface RegimeBand { x1: number; x2: number; regime: string }
+interface RegimeBand {
+  x1: number
+  x2: number
+  regime: string
+}
 
 // Run-ups & drawdowns ribbon: each point is a "run-up" (equity at/above its running peak — green)
 // or a "drawdown" (below the prior peak — red). Contiguous same-state points merge into one band;
 // TradingView draws this as a thin colour strip along the bottom of the equity panel.
-interface RudBand { x1: number; x2: number; up: boolean }
-function computeRunupDrawdownBands(data: EquityPoint[], xOf: (p: EquityPoint) => number): RudBand[] {
+interface RudBand {
+  x1: number
+  x2: number
+  up: boolean
+}
+function computeRunupDrawdownBands(
+  data: EquityPoint[],
+  xOf: (p: EquityPoint) => number
+): RudBand[] {
   const bands: RudBand[] = []
   let peak = -Infinity
   let cur: RudBand | null = null
@@ -1362,7 +1742,10 @@ function computeRunupDrawdownBands(data: EquityPoint[], xOf: (p: EquityPoint) =>
 
 // Same idea, but indexed by the sized timeline's day position — the SizedEquityCurveChart
 // plots on day-index i, not the equity curve's trade index, so it needs its own bands.
-function computeSizedRegimeBands(timeline: SizedTimelineDay[], dailyPnl: DailyPnlPoint[]): RegimeBand[] {
+function computeSizedRegimeBands(
+  timeline: SizedTimelineDay[],
+  dailyPnl: DailyPnlPoint[]
+): RegimeBand[] {
   const dateToRegime = new Map<string, string>()
   for (const d of dailyPnl) dateToRegime.set(d.date, d.regime_tag ?? 'UNKNOWN')
   const bands: RegimeBand[] = []
@@ -1388,7 +1771,10 @@ function computeSizedRegimeBands(timeline: SizedTimelineDay[], dailyPnl: DailyPn
 function trimToLastActive(tl: SizedTimelineDay[]): SizedTimelineDay[] {
   let last = -1
   for (let i = tl.length - 1; i >= 0; i--) {
-    if (tl[i].trades_taken > 0) { last = i; break }
+    if (tl[i].trades_taken > 0) {
+      last = i
+      break
+    }
   }
   return last >= 0 ? tl.slice(0, last + 1) : tl
 }
@@ -1402,13 +1788,26 @@ function fmtChartDate(d?: string): string {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ` '${yr}`
 }
 
-const _money0 = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+const _money0 = (v: number) =>
+  `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
 const DAY_MS = 86_400_000
 
-export function EquityCurveChart({ data, bands = [], showHistogram = false, showRunupDrawdown = false, height = 300, xMode = 'date', windowStart = null, overlayLines = [] }: {
-  data: EquityPoint[]; bands?: RegimeBand[]
-  showHistogram?: boolean; showRunupDrawdown?: boolean; height?: number
+export function EquityCurveChart({
+  data,
+  bands = [],
+  showHistogram = false,
+  showRunupDrawdown = false,
+  height = 300,
+  xMode = 'date',
+  windowStart = null,
+  overlayLines = [],
+}: {
+  data: EquityPoint[]
+  bands?: RegimeBand[]
+  showHistogram?: boolean
+  showRunupDrawdown?: boolean
+  height?: number
   /** Extra lines drawn on top of the main equity curve, keyed on a field the caller has already
    *  attached to each `data` point (so they share the exact x-axis in both date and trade mode).
    *  Used by the portfolio stack to overlay a line per strategy. Empty for a single backtest. */
@@ -1425,7 +1824,7 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
 
   // Runs from the Python runner carry per-trade excursion (favorable/adverse). When present, the
   // bottom-bar toggle draws the combined TradingView-style excursion bar; otherwise plain profit bars.
-  const hasExc = data.some(d => d.favorable != null || d.adverse != null)
+  const hasExc = data.some((d) => d.favorable != null || d.adverse != null)
   const showExcursions = showHistogram && hasExc
   const showProfitBars = showHistogram && !hasExc
 
@@ -1433,13 +1832,13 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
   // account's opening balance and the first point already includes trade #1's P&L, so subtract it
   // back out: startEq = opening balance. Green above it, red below, and the flip lands exactly on
   // this horizontal line — regardless of what the starting balance is.
-  const startEq    = (data[0]?.equity ?? 0) - (data[0]?.profit ?? 0)
+  const startEq = (data[0]?.equity ?? 0) - (data[0]?.profit ?? 0)
   // Anchor the curve on the STARTING BALANCE: prepend a synthetic point at the opening balance so
   // the line visibly leaves the start line (TradingView does this). The anchor carries no trade —
   // it draws no dot, no histogram bar, and its tooltip just reports the starting balance.
-  const byDate     = xMode === 'date'
-  const firstIdx   = data[0]?.index ?? 1
-  const firstMs    = dateMs(data[0]?.date) ?? Date.now()
+  const byDate = xMode === 'date'
+  const firstIdx = data[0]?.index ?? 1
+  const firstMs = dateMs(data[0]?.date) ?? Date.now()
   // `x` is the plotted position: a real timestamp in date mode, the trade number otherwise. Every
   // band/ribbon below is expressed in the same units, so switching mode moves the whole chart
   // together.
@@ -1449,14 +1848,23 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
   const chartData: (EquityPoint & { _anchor?: boolean; x: number })[] = [
     // The anchor also seeds every overlay line at the starting balance, so the strategy lines leave
     // the same origin as the portfolio line instead of appearing to start at their first trade.
-    { index: firstIdx - 1, equity: startEq, _anchor: true, x: anchorX,
-      ...Object.fromEntries(overlayLines.map(ol => [ol.id, startEq])) },
-    ...data.map(d => ({ ...d, x: byDate ? (dateMs(d.date) ?? firstMs) : d.index })),
+    {
+      index: firstIdx - 1,
+      equity: startEq,
+      _anchor: true,
+      x: anchorX,
+      ...Object.fromEntries(overlayLines.map((ol) => [ol.id, startEq])),
+    },
+    ...data.map((d) => ({ ...d, x: byDate ? (dateMs(d.date) ?? firstMs) : d.index })),
   ]
   // Overlay values count toward the y-range too — a strategy line can dip below the portfolio's low.
-  const allValues  = [
-    ...data.map(d => d.equity),
-    ...overlayLines.flatMap(ol => data.map(d => (d as unknown as Record<string, unknown>)[ol.id]).filter((v): v is number => typeof v === 'number')),
+  const allValues = [
+    ...data.map((d) => d.equity),
+    ...overlayLines.flatMap((ol) =>
+      data
+        .map((d) => (d as unknown as Record<string, unknown>)[ol.id])
+        .filter((v): v is number => typeof v === 'number')
+    ),
   ]
   const min = Math.min(...allValues)
   const max = Math.max(...allValues)
@@ -1469,8 +1877,8 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
   // the start line and bleeds a faint red tint into the positive region.
   const dMin = Math.min(startEq, min)
   const dMax = Math.max(startEq, max)
-  const startOffset = Math.min(1, Math.max(0, (dMax - startEq) / ((dMax - dMin) || 1)))
-  const eqTicks    = byDate
+  const startOffset = Math.min(1, Math.max(0, (dMax - startEq) / (dMax - dMin || 1)))
+  const eqTicks = byDate
     ? monthTicks(anchorX, chartData[chartData.length - 1].x)
     : calIndexTicks(data)
 
@@ -1479,15 +1887,13 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
 
   // Profit histogram rides its own hidden axis, scaled to a bottom strip: domain [-barMax, 6×barMax]
   // puts the zero baseline ~14% up so green bars rise and red bars drop within the bottom band.
-  const barMax = showProfitBars
-    ? Math.max(1, ...data.map(d => Math.abs(d.profit ?? 0)))
-    : 1
+  const barMax = showProfitBars ? Math.max(1, ...data.map((d) => Math.abs(d.profit ?? 0))) : 1
 
   // Run-up / drawdown ribbon segments, and a thin band at the very bottom of the plot to draw it in.
   // Pull the first segment left to the anchor so the ribbon spans the full axis (the curve starts at
   // the anchor point, one step left of the first trade).
   const rudBands = showRunupDrawdown
-    ? computeRunupDrawdownBands(data, d => (byDate ? (dateMs(d.date) ?? firstMs) : d.index))
+    ? computeRunupDrawdownBands(data, (d) => (byDate ? (dateMs(d.date) ?? firstMs) : d.index))
     : []
   if (rudBands.length) rudBands[0].x1 = anchorX
 
@@ -1499,7 +1905,7 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
   // the filter could hand the extension to a band that never draws — leaving the leading strip
   // uncoloured anyway (a gap one or two trades wide, which is why it looked size-dependent).
   const lastX = chartData[chartData.length - 1].x
-  const shown = bands.filter(b => b.regime !== 'UNKNOWN')
+  const shown = bands.filter((b) => b.regime !== 'UNKNOWN')
   const plotBands = shown.map((b, i) => ({
     ...b,
     x1: i === 0 ? Math.min(b.x1, anchorX) : b.x1,
@@ -1508,7 +1914,11 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
   const rudY2 = yMin + (yMax - yMin) * 0.025
 
   return (
-    <ResponsiveContainer key={`${bands.length}-${showHistogram}-${showExcursions}-${showRunupDrawdown}-${xMode}`} width="100%" height={height}>
+    <ResponsiveContainer
+      key={`${bands.length}-${showHistogram}-${showExcursions}-${showRunupDrawdown}-${xMode}`}
+      width="100%"
+      height={height}
+    >
       <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           {/* Line stroke: green above break-even, red below, hard edge at the start-balance offset. */}
@@ -1519,10 +1929,10 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
           {/* Fill: green above the start line, red below, hard edge at the same offset. Kept out of
               the positive region above the split so there's no red tint where the account is up. */}
           <linearGradient id="eqFillSplit" x1="0" y1="0" x2="0" y2="1">
-            <stop offset={0}                     stopColor={C.pos} stopOpacity={0.22} />
+            <stop offset={0} stopColor={C.pos} stopOpacity={0.22} />
             <stop offset={Math.max(0, startOffset - 0.0001)} stopColor={C.pos} stopOpacity={0.03} />
-            <stop offset={startOffset}           stopColor={C.neg} stopOpacity={0.03} />
-            <stop offset={1}                     stopColor={C.neg} stopOpacity={0.20} />
+            <stop offset={startOffset} stopColor={C.neg} stopOpacity={0.03} />
+            <stop offset={1} stopColor={C.neg} stopOpacity={0.2} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
@@ -1531,8 +1941,15 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
         {plotBands.map((b, i) => (
           // ifOverflow="visible": the first/last band are deliberately pushed to the plot edges, and
           // Recharts' default is to DISCARD a reference area whose bound sits outside the domain.
-          <ReferenceArea key={`r${i}`} x1={b.x1} x2={b.x2} ifOverflow="visible"
-            fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+          <ReferenceArea
+            key={`r${i}`}
+            x1={b.x1}
+            x2={b.x2}
+            ifOverflow="visible"
+            fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN}
+            fillOpacity={0.1}
+            stroke="none"
+          />
         ))}
         <XAxis
           dataKey="x"
@@ -1542,7 +1959,11 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
           // bars are on — a bar series otherwise switches the axis to band scale, which pads both
           // sides and shifts the curve right, opening a gap between the y-axis and the start line.
           {...(byDate
-            ? { type: 'number' as const, scale: 'time' as const, domain: ['dataMin', 'dataMax'] as [string, string] }
+            ? {
+                type: 'number' as const,
+                scale: 'time' as const,
+                domain: ['dataMin', 'dataMax'] as [string, string],
+              }
             : { scale: 'point' as const })}
           padding={{ left: 0, right: 0 }}
           tick={{ fill: C.axisTick, fontSize: 10 }}
@@ -1578,32 +1999,63 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
         <Tooltip
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null
-            const eq = payload.find((p: { dataKey?: string | number }) => p.dataKey === 'equity') ?? payload[0]
+            const eq =
+              payload.find((p: { dataKey?: string | number }) => p.dataKey === 'equity') ??
+              payload[0]
             if (!eq) return null
             const pt = (eq as { payload?: EquityPoint & { _anchor?: boolean } }).payload
-            const v  = ((eq as { value?: number }).value ?? 0)
-            if (pt?._anchor) return (
-              <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
-                <p style={{ color: C.axisTick, marginBottom: 4 }}>Starting balance</p>
-                <p style={{ color: '#e5e7eb' }}>${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
-              </div>
-            )
+            const v = (eq as { value?: number }).value ?? 0
+            if (pt?._anchor)
+              return (
+                <div
+                  style={{
+                    background: C.tooltipBg,
+                    border: `1px solid ${C.tooltipBorder}`,
+                    borderRadius: 8,
+                    fontSize: 13,
+                    padding: '8px 12px',
+                  }}
+                >
+                  <p style={{ color: C.axisTick, marginBottom: 4 }}>Starting balance</p>
+                  <p style={{ color: '#e5e7eb' }}>
+                    ${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+              )
             const dateStr = pt?.date ? ` · ${fmtChartDate(pt.date)}` : ''
-            const dirStr  = pt?.direction ? ` · ${pt.direction}` : ''
+            const dirStr = pt?.direction ? ` · ${pt.direction}` : ''
             const hasFav = pt?.favorable != null || pt?.adverse != null
             return (
-              <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
-                <p style={{ color: C.axisTick, marginBottom: 4 }}>Trade #{pt?.index}{dateStr}{dirStr}</p>
+              <div
+                style={{
+                  background: C.tooltipBg,
+                  border: `1px solid ${C.tooltipBorder}`,
+                  borderRadius: 8,
+                  fontSize: 13,
+                  padding: '8px 12px',
+                }}
+              >
+                <p style={{ color: C.axisTick, marginBottom: 4 }}>
+                  Trade #{pt?.index}
+                  {dateStr}
+                  {dirStr}
+                </p>
                 <p style={{ color: '#e5e7eb' }}>
                   Balance&nbsp;${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </p>
                 {pt?.profit != null && (
-                  <p style={{ color: (pt.profit ?? 0) >= 0 ? C.pos : C.neg }}>This trade&nbsp;{_money0(pt.profit)}</p>
+                  <p style={{ color: (pt.profit ?? 0) >= 0 ? C.pos : C.neg }}>
+                    This trade&nbsp;{_money0(pt.profit)}
+                  </p>
                 )}
                 {hasFav && (
                   <>
-                    <p style={{ color: C.pos }}>Favorable excursion&nbsp;{_money0(pt?.favorable ?? 0)}</p>
-                    <p style={{ color: C.neg }}>Adverse excursion&nbsp;{_money0(pt?.adverse ?? 0)}</p>
+                    <p style={{ color: C.pos }}>
+                      Favorable excursion&nbsp;{_money0(pt?.favorable ?? 0)}
+                    </p>
+                    <p style={{ color: C.neg }}>
+                      Adverse excursion&nbsp;{_money0(pt?.adverse ?? 0)}
+                    </p>
                   </>
                 )}
               </div>
@@ -1614,13 +2066,23 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
         {/* Run-ups & drawdowns ribbon: a thin strip along the very bottom, green while the equity is
             making new highs, red while it sits under a prior peak. */}
         {rudBands.map((b, i) => (
-          <ReferenceArea key={`rud${i}`} x1={b.x1} x2={b.x2} y1={yMin} y2={rudY2}
-            fill={b.up ? C.pos : C.neg} fillOpacity={0.85} stroke="none" />
+          <ReferenceArea
+            key={`rud${i}`}
+            x1={b.x1}
+            x2={b.x2}
+            y1={yMin}
+            y2={rudY2}
+            fill={b.up ? C.pos : C.neg}
+            fillOpacity={0.85}
+            stroke="none"
+          />
         ))}
         {/* Per-trade realised profit histogram (runs without excursion data) — muted so the line reads on top. */}
         {showProfitBars && (
           <Bar yAxisId="bars" dataKey="profit" isAnimationActive={false} maxBarSize={28}>
-            {chartData.map((d, i) => <Cell key={i} fill={(d.profit ?? 0) >= 0 ? C.pos : C.neg} fillOpacity={0.35} />)}
+            {chartData.map((d, i) => (
+              <Cell key={i} fill={(d.profit ?? 0) >= 0 ? C.pos : C.neg} fillOpacity={0.35} />
+            ))}
           </Bar>
         )}
         {/* Combined trade-excursion bar (TradingView-style): translucent green halo up to the favorable
@@ -1629,29 +2091,72 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
             the same baseline as the equity curve. Driven off a hidden bar (exc axis, base 0 = the
             starting-balance line) whose pixel height gives the $-per-pixel scale for the custom shape. */}
         {showExcursions && (
-          <Bar yAxisId="exc" dataKey={(d: EquityPoint) => Math.max(d.favorable ?? 0, -(d.adverse ?? 0), 0)}
-            isAnimationActive={false} maxBarSize={28}
-            shape={(props: { x?: number; y?: number; width?: number; height?: number; payload?: EquityPoint & { _anchor?: boolean } }) => {
+          <Bar
+            yAxisId="exc"
+            dataKey={(d: EquityPoint) => Math.max(d.favorable ?? 0, -(d.adverse ?? 0), 0)}
+            isAnimationActive={false}
+            maxBarSize={28}
+            shape={(props: {
+              x?: number
+              y?: number
+              width?: number
+              height?: number
+              payload?: EquityPoint & { _anchor?: boolean }
+            }) => {
               const { x = 0, y = 0, width = 0, height = 0, payload } = props
               const fav = payload?.favorable ?? 0
               const adv = payload?.adverse ?? 0
               const profit = payload?.profit ?? 0
               const scale = Math.max(fav, -adv, 0)
               if (payload?._anchor || scale <= 0 || height <= 0) return <g />
-              const ppd   = height / scale        // pixels per dollar (bar spans startEq → startEq+scale)
-              const zeroY = y + height             // pixel of the starting-balance line
-              const w  = width                     // fill the category slot (Recharts already sized it)
+              const ppd = height / scale // pixels per dollar (bar spans startEq → startEq+scale)
+              const zeroY = y + height // pixel of the starting-balance line
+              const w = width // fill the category slot (Recharts already sized it)
               const bx = x
-              const favY  = zeroY - fav * ppd
-              const advY  = zeroY - adv * ppd      // adv ≤ 0 → below the line
+              const favY = zeroY - fav * ppd
+              const advY = zeroY - adv * ppd // adv ≤ 0 → below the line
               const profY = zeroY - profit * ppd
               return (
                 <g>
-                  {fav > 0 && <rect x={bx} y={favY} width={w} height={zeroY - favY} fill={C.pos} fillOpacity={0.28} />}
-                  {adv < 0 && <rect x={bx} y={zeroY} width={w} height={advY - zeroY} fill={C.neg} fillOpacity={0.28} />}
-                  {profit >= 0
-                    ? <rect x={bx} y={profY} width={w} height={Math.max(0, zeroY - profY)} fill={C.pos} fillOpacity={0.6} />
-                    : <rect x={bx} y={zeroY} width={w} height={Math.max(0, profY - zeroY)} fill={C.neg} fillOpacity={0.6} />}
+                  {fav > 0 && (
+                    <rect
+                      x={bx}
+                      y={favY}
+                      width={w}
+                      height={zeroY - favY}
+                      fill={C.pos}
+                      fillOpacity={0.28}
+                    />
+                  )}
+                  {adv < 0 && (
+                    <rect
+                      x={bx}
+                      y={zeroY}
+                      width={w}
+                      height={advY - zeroY}
+                      fill={C.neg}
+                      fillOpacity={0.28}
+                    />
+                  )}
+                  {profit >= 0 ? (
+                    <rect
+                      x={bx}
+                      y={profY}
+                      width={w}
+                      height={Math.max(0, zeroY - profY)}
+                      fill={C.pos}
+                      fillOpacity={0.6}
+                    />
+                  ) : (
+                    <rect
+                      x={bx}
+                      y={zeroY}
+                      width={w}
+                      height={Math.max(0, profY - zeroY)}
+                      fill={C.neg}
+                      fillOpacity={0.6}
+                    />
+                  )}
                 </g>
               )
             }}
@@ -1666,19 +2171,49 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
           // A dot on every trade point (TradingView-style), coloured green/red by whether that point
           // sits above or below the starting balance. A dark stroke ring lifts each dot off the
           // histogram bars so the line takes visual precedence — hover any dot for the excursions.
-          dot={(props: { cx?: number; cy?: number; index?: number; payload?: EquityPoint & { _anchor?: boolean } }) => {
+          dot={(props: {
+            cx?: number
+            cy?: number
+            index?: number
+            payload?: EquityPoint & { _anchor?: boolean }
+          }) => {
             const { cx, cy, payload, index } = props
             if (cx == null || cy == null || payload?._anchor) return <g key={index} />
             const up = (payload?.equity ?? 0) >= startEq
-            return <circle key={index} cx={cx} cy={cy} r={3} fill={up ? C.pos : C.neg} stroke={C.tooltipBg} strokeWidth={1} />
+            return (
+              <circle
+                key={index}
+                cx={cx}
+                cy={cy}
+                r={3}
+                fill={up ? C.pos : C.neg}
+                stroke={C.tooltipBg}
+                strokeWidth={1}
+              />
+            )
           }}
           // Hover dot must match the point's own colour (red below the start line, green above) —
           // a fixed colour showed green even on underwater points.
-          activeDot={(props: { cx?: number; cy?: number; index?: number; payload?: EquityPoint & { _anchor?: boolean } }) => {
+          activeDot={(props: {
+            cx?: number
+            cy?: number
+            index?: number
+            payload?: EquityPoint & { _anchor?: boolean }
+          }) => {
             const { cx, cy, payload, index } = props
             if (cx == null || cy == null || payload?._anchor) return <g key={index} />
             const up = (payload?.equity ?? 0) >= startEq
-            return <circle key={index} cx={cx} cy={cy} r={4.5} fill={up ? C.pos : C.neg} stroke={C.tooltipBg} strokeWidth={1.5} />
+            return (
+              <circle
+                key={index}
+                cx={cx}
+                cy={cy}
+                r={4.5}
+                fill={up ? C.pos : C.neg}
+                stroke={C.tooltipBg}
+                strokeWidth={1.5}
+              />
+            )
           }}
           baseValue={startEq}
           isAnimationActive={false}
@@ -1686,20 +2221,56 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
         {/* Per-strategy overlay lines (portfolio stack). Keyed on fields the caller attached to
             each point, so they ride the same x-axis as the main curve. connectNulls skips the
             synthetic start anchor (which carries no overlay values). */}
-        {overlayLines.map(ol => (
-          <Line key={ol.id} type="monotone" dataKey={ol.id} stroke={ol.color} strokeWidth={1.5}
-            isAnimationActive={false} connectNulls
+        {overlayLines.map((ol) => (
+          <Line
+            key={ol.id}
+            type="monotone"
+            dataKey={ol.id}
+            stroke={ol.color}
+            strokeWidth={1.5}
+            isAnimationActive={false}
+            connectNulls
             // A dot only on the points that are THIS line's own trades — every point carries every
             // leg's running balance, so without the owner check each line would dot on every trade.
-            dot={(props: { cx?: number; cy?: number; index?: number; payload?: { _legOwner?: string } }) => {
+            dot={(props: {
+              cx?: number
+              cy?: number
+              index?: number
+              payload?: { _legOwner?: string }
+            }) => {
               const { cx, cy, payload, index } = props
               if (cx == null || cy == null || payload?._legOwner !== ol.id) return <g key={index} />
-              return <circle key={index} cx={cx} cy={cy} r={2.5} fill={ol.color} stroke={C.tooltipBg} strokeWidth={1} />
+              return (
+                <circle
+                  key={index}
+                  cx={cx}
+                  cy={cy}
+                  r={2.5}
+                  fill={ol.color}
+                  stroke={C.tooltipBg}
+                  strokeWidth={1}
+                />
+              )
             }}
-            activeDot={(props: { cx?: number; cy?: number; index?: number; payload?: { _legOwner?: string } }) => {
+            activeDot={(props: {
+              cx?: number
+              cy?: number
+              index?: number
+              payload?: { _legOwner?: string }
+            }) => {
               const { cx, cy, payload, index } = props
               if (cx == null || cy == null || payload?._legOwner !== ol.id) return <g key={index} />
-              return <circle key={index} cx={cx} cy={cy} r={4} fill={ol.color} stroke={C.tooltipBg} strokeWidth={1.5} />
+              return (
+                <circle
+                  key={index}
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill={ol.color}
+                  stroke={C.tooltipBg}
+                  strokeWidth={1.5}
+                />
+              )
             }}
           />
         ))}
@@ -1714,8 +2285,14 @@ export function EquityCurveChart({ data, bands = [], showHistogram = false, show
 // sized against; balance crossing the floor is a breach. Unlike the per-trade
 // equity curve above, this is the REAL sized account — what actually traded.
 
-function SizedEquityCurveChart({ data, bands = [], height = 300 }: {
-  data: SizedTimelineDay[]; bands?: RegimeBand[]; height?: number
+function SizedEquityCurveChart({
+  data,
+  bands = [],
+  height = 300,
+}: {
+  data: SizedTimelineDay[]
+  bands?: RegimeBand[]
+  height?: number
 }) {
   if (!data.length) return null
 
@@ -1731,35 +2308,44 @@ function SizedEquityCurveChart({ data, bands = [], height = 300 }: {
   }))
 
   const startBal = rows[0].balance
-  const endBal   = rows[rows.length - 1].balance
+  const endBal = rows[rows.length - 1].balance
   const profitable = endBal >= startBal
-  const lineColor  = profitable ? C.pos : C.neg
+  const lineColor = profitable ? C.pos : C.neg
 
-  const vals = rows.flatMap(r => [r.balance, ...(r.floor != null ? [r.floor] : [])])
+  const vals = rows.flatMap((r) => [r.balance, ...(r.floor != null ? [r.floor] : [])])
   const min = Math.min(...vals)
   const max = Math.max(...vals)
   const pad = (max - min) * 0.08 || 500
 
   // Mark days where a breach happened or the engine halted trading.
-  const breachIdx = rows.findIndex(r => r.floor != null && r.balance < r.floor)
-  const haltDays  = rows.filter(r => r.halt)
+  const breachIdx = rows.findIndex((r) => r.floor != null && r.balance < r.floor)
+  const haltDays = rows.filter((r) => r.halt)
 
   // X ticks: first, ~quarterly, last (calendar-spaced, matching the other charts).
   const step = Math.max(1, Math.floor(rows.length / 5))
-  const xTicks = rows.filter((_, i) => i === 0 || i === rows.length - 1 || i % step === 0).map(r => r.i)
+  const xTicks = rows
+    .filter((_, i) => i === 0 || i === rows.length - 1 || i % step === 0)
+    .map((r) => r.i)
 
   return (
     <ResponsiveContainer key={bands.length ? 'regime' : 'base'} width="100%" height={height}>
       <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="sizedFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={lineColor} stopOpacity={0.18} />
+            <stop offset="5%" stopColor={lineColor} stopOpacity={0.18} />
             <stop offset="95%" stopColor={lineColor} stopOpacity={0.02} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
         {bands.map((b, i) => (
-          <ReferenceArea key={i} x1={b.x1} x2={b.x2} fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
+          <ReferenceArea
+            key={i}
+            x1={b.x1}
+            x2={b.x2}
+            fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN}
+            fillOpacity={0.1}
+            stroke="none"
+          />
         ))}
         <XAxis
           dataKey="i"
@@ -1786,16 +2372,32 @@ function SizedEquityCurveChart({ data, bands = [], height = 300 }: {
             const r = payload[0]?.payload as (typeof rows)[number] | undefined
             if (!r) return null
             return (
-              <div style={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}>
+              <div
+                style={{
+                  background: C.tooltipBg,
+                  border: `1px solid ${C.tooltipBorder}`,
+                  borderRadius: 8,
+                  fontSize: 13,
+                  padding: '8px 12px',
+                }}
+              >
                 <p style={{ color: C.axisTick, marginBottom: 4 }}>{fmtChartDate(r.date)}</p>
-                <p style={{ color: '#e5e7eb' }}>Balance&nbsp;${r.balance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                <p style={{ color: '#e5e7eb' }}>
+                  Balance&nbsp;${r.balance.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                </p>
                 {r.floor != null && (
-                  <p style={{ color: C.neg }}>Floor&nbsp;${r.floor.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                  <p style={{ color: C.neg }}>
+                    Floor&nbsp;${r.floor.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </p>
                 )}
                 {r.buffer != null && (
-                  <p style={{ color: C.axisTick }}>Buffer&nbsp;${r.buffer.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                  <p style={{ color: C.axisTick }}>
+                    Buffer&nbsp;${r.buffer.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </p>
                 )}
-                <p style={{ color: C.axisTick }}>{r.trades} trade{r.trades === 1 ? '' : 's'} · {r.contracts} contracts</p>
+                <p style={{ color: C.axisTick }}>
+                  {r.trades} trade{r.trades === 1 ? '' : 's'} · {r.contracts} contracts
+                </p>
                 {r.halt && <p style={{ color: C.gold }}>Halted: {r.halt}</p>}
               </div>
             )
@@ -1824,11 +2426,18 @@ function SizedEquityCurveChart({ data, bands = [], height = 300 }: {
           animationDuration={1500}
         />
         {/* Mark halt days and the breach day so the why-it-stopped reads at a glance. */}
-        {haltDays.map(d => (
+        {haltDays.map((d) => (
           <ReferenceDot key={`h${d.i}`} x={d.i} y={d.balance} r={3} fill={C.gold} stroke="none" />
         ))}
         {breachIdx >= 0 && (
-          <ReferenceDot x={rows[breachIdx].i} y={rows[breachIdx].balance} r={4.5} fill={C.neg} stroke={C.tooltipBg} strokeWidth={1.5} />
+          <ReferenceDot
+            x={rows[breachIdx].i}
+            y={rows[breachIdx].balance}
+            r={4.5}
+            fill={C.neg}
+            stroke={C.tooltipBg}
+            strokeWidth={1.5}
+          />
         )}
       </ComposedChart>
     </ResponsiveContainer>
@@ -1841,16 +2450,29 @@ function sizingModeLabel(mode: SizingMode, manualPct?: number | null): string {
   return mode === 'bullet' ? 'Bullet' : 'Consistent'
 }
 
-function SizedCurveLegend({ mode, manualPct, profitable = true }:
-    { mode: SizingMode; manualPct?: number | null; profitable?: boolean }) {
+function SizedCurveLegend({
+  mode,
+  manualPct,
+  profitable = true,
+}: {
+  mode: SizingMode
+  manualPct?: number | null
+  profitable?: boolean
+}) {
   return (
     <div className="flex items-center gap-4 mt-2 text-[11px] text-text-tertiary">
       <span className="flex items-center gap-1.5">
-        <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: profitable ? C.pos : C.neg }} />
+        <span
+          className="inline-block w-3 h-[2px] rounded-full"
+          style={{ background: profitable ? C.pos : C.neg }}
+        />
         End-of-day balance
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: C.neg }} />
+        <span
+          className="inline-block w-3 border-t-2 border-dashed"
+          style={{ borderColor: C.neg }}
+        />
         Trailing risk floor (breach = fail)
       </span>
       <span className="ml-auto font-medium text-text-secondary">
@@ -1862,7 +2484,11 @@ function SizedCurveLegend({ mode, manualPct, profitable = true }:
 
 // ── Drawdown chart ────────────────────────────────────────────────────────────
 
-export function DrawdownChart({ equity, limitLines, height = 140 }: {
+export function DrawdownChart({
+  equity,
+  limitLines,
+  height = 140,
+}: {
   equity: EquityPoint[]
   limitLines?: Array<{ limit: number; label: string; pass: boolean }>
   height?: number
@@ -1870,13 +2496,13 @@ export function DrawdownChart({ equity, limitLines, height = 140 }: {
   if (!equity.length) return null
 
   let peak = equity[0].equity
-  const ddData = equity.map(pt => {
+  const ddData = equity.map((pt) => {
     if (pt.equity > peak) peak = pt.equity
     const dd = peak !== 0 ? pt.equity - peak : 0
     return { index: pt.index, drawdown: Math.round(dd), date: pt.date }
   })
 
-  const worst  = Math.min(...ddData.map(d => d.drawdown))
+  const worst = Math.min(...ddData.map((d) => d.drawdown))
   const ddTicks = calIndexTicks(ddData)
 
   return (
@@ -1884,8 +2510,8 @@ export function DrawdownChart({ equity, limitLines, height = 140 }: {
       <AreaChart data={ddData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
         <defs>
           <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={C.neg} stopOpacity={0.12} />
-            <stop offset="95%" stopColor={C.neg} stopOpacity={0.30} />
+            <stop offset="5%" stopColor={C.neg} stopOpacity={0.12} />
+            <stop offset="95%" stopColor={C.neg} stopOpacity={0.3} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
@@ -1898,21 +2524,36 @@ export function DrawdownChart({ equity, limitLines, height = 140 }: {
           tickFormatter={(v: number) => {
             const date = ddData[v - 1]?.date
             if (!date) return ''
-            return calTickLabel(date, v === ddData[0].index || v === ddData[ddData.length - 1].index)
+            return calTickLabel(
+              date,
+              v === ddData[0].index || v === ddData[ddData.length - 1].index
+            )
           }}
         />
         <YAxis
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => v === 0 ? '$0' : `$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v: number) => (v === 0 ? '$0' : `$${(v / 1000).toFixed(0)}k`)}
           width={56}
           domain={[worst * 1.1, 0]}
         />
         <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
-          formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Drawdown']}
-          labelFormatter={(_: unknown, payload: Array<{ payload?: { index: number; date?: string } }>) => {
+          contentStyle={{
+            background: C.tooltipBg,
+            border: `1px solid ${C.tooltipBorder}`,
+            borderRadius: 8,
+            fontSize: 13,
+            padding: '8px 12px',
+          }}
+          formatter={(v: number) => [
+            `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+            'Drawdown',
+          ]}
+          labelFormatter={(
+            _: unknown,
+            payload: Array<{ payload?: { index: number; date?: string } }>
+          ) => {
             const pt = payload?.[0]?.payload
             if (!pt) return ''
             const dateStr = pt.date ? ` · ${fmtChartDate(pt.date)}` : ''
@@ -1920,7 +2561,7 @@ export function DrawdownChart({ equity, limitLines, height = 140 }: {
           }}
         />
         <ReferenceLine y={0} stroke={C.refLine} />
-        {limitLines?.map(ll => (
+        {limitLines?.map((ll) => (
           <ReferenceLine
             key={ll.limit}
             y={-ll.limit}
@@ -1952,13 +2593,20 @@ export function DrawdownChart({ equity, limitLines, height = 140 }: {
 // ── Regime legend + overlay toggle ───────────────────────────────────────────
 
 function RegimeLegend({ bands }: { bands: RegimeBand[] }) {
-  const regimes = [...new Set(bands.map(b => b.regime))].filter(r => r !== 'UNKNOWN')
+  const regimes = [...new Set(bands.map((b) => b.regime))].filter((r) => r !== 'UNKNOWN')
   if (!regimes.length) return null
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 mt-2 mb-1">
-      {regimes.map(regime => (
+      {regimes.map((regime) => (
         <div key={regime} className="flex items-center gap-1.5">
-          <div style={{ width: 12, height: 12, background: REGIME_COLORS[regime] ?? REGIME_COLORS.UNKNOWN, borderRadius: 3 }} />
+          <div
+            style={{
+              width: 12,
+              height: 12,
+              background: REGIME_COLORS[regime] ?? REGIME_COLORS.UNKNOWN,
+              borderRadius: 3,
+            }}
+          />
           <span className="text-[10px] text-text-tertiary">{REGIME_LABEL[regime] ?? regime}</span>
         </div>
       ))}
@@ -1967,7 +2615,15 @@ function RegimeLegend({ bands }: { bands: RegimeBand[] }) {
 }
 
 // Generic on/off pill for an equity-chart series (histogram / excursions / run-ups & drawdowns).
-export function SeriesToggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
+export function SeriesToggle({
+  label,
+  on,
+  onChange,
+}: {
+  label: string
+  on: boolean
+  onChange: (v: boolean) => void
+}) {
   return (
     <button
       onClick={() => onChange(!on)}
@@ -1985,18 +2641,20 @@ export function SeriesToggle({ label, on, onChange }: { label: string; on: boole
 // ── Direction breakdown ───────────────────────────────────────────────────────
 
 export function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
-  const trades = equity.filter(pt => pt.direction && pt.profit != null)
+  const trades = equity.filter((pt) => pt.direction && pt.profit != null)
   if (!trades.length) return null
 
   const sides = ['Long', 'Short'] as const
-  const stats = sides.map(dir => {
-    const group    = trades.filter(pt => pt.direction === dir)
-    const wins     = group.filter(pt => (pt.profit ?? 0) > 0).length
-    const losses   = group.length - wins
-    const totalPnl = group.reduce((s, pt) => s + (pt.profit ?? 0), 0)
-    const avgTrade = group.length ? totalPnl / group.length : 0
-    return { dir, count: group.length, wins, losses, totalPnl, avgTrade }
-  }).filter(s => s.count > 0)
+  const stats = sides
+    .map((dir) => {
+      const group = trades.filter((pt) => pt.direction === dir)
+      const wins = group.filter((pt) => (pt.profit ?? 0) > 0).length
+      const losses = group.length - wins
+      const totalPnl = group.reduce((s, pt) => s + (pt.profit ?? 0), 0)
+      const avgTrade = group.length ? totalPnl / group.length : 0
+      return { dir, count: group.length, wins, losses, totalPnl, avgTrade }
+    })
+    .filter((s) => s.count > 0)
 
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -2006,19 +2664,26 @@ export function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
         // Lost first so the animation sweeps red → green (losing to winning)
         const data = [
           { name: 'Lost', value: s.losses },
-          { name: 'Won',  value: s.wins },
+          { name: 'Won', value: s.wins },
         ]
         return (
           <div key={s.dir} className="flex flex-col items-center gap-1">
-            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px]">{s.dir}</div>
-            <div className={`text-[15px] font-semibold font-mono tabular-nums ${pnlCls}`}>{dollar(s.totalPnl, true)}</div>
+            <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px]">
+              {s.dir}
+            </div>
+            <div className={`text-[15px] font-semibold font-mono tabular-nums ${pnlCls}`}>
+              {dollar(s.totalPnl, true)}
+            </div>
             <ResponsiveContainer width="100%" height={118}>
               <PieChart>
                 <Pie
                   data={data}
-                  cx="50%" cy="50%"
-                  innerRadius={36} outerRadius={52}
-                  startAngle={90} endAngle={-270}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={36}
+                  outerRadius={52}
+                  startAngle={90}
+                  endAngle={-270}
                   paddingAngle={2}
                   dataKey="value"
                   strokeWidth={0}
@@ -2029,11 +2694,19 @@ export function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
                 >
                   <Cell fill={C.neg} fillOpacity={0.75} />
                   <Cell fill={C.pos} fillOpacity={0.85} />
-                  <Label value={`${winPct}%`} position="center" fill="#e6edf3" fontSize={16} fontWeight={700} />
+                  <Label
+                    value={`${winPct}%`}
+                    position="center"
+                    fill="#e6edf3"
+                    fontSize={16}
+                    fontWeight={700}
+                  />
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-            <div className="text-[10px] text-text-tertiary">{s.count} trades · avg {dollar(s.avgTrade, true)}/trade</div>
+            <div className="text-[10px] text-text-tertiary">
+              {s.count} trades · avg {dollar(s.avgTrade, true)}/trade
+            </div>
             <div className="flex gap-5 text-[11px] font-semibold mt-[2px]">
               <span className="text-neg-text">{s.losses} lost</span>
               <span className="text-pos-text">{s.wins} won</span>
@@ -2047,18 +2720,28 @@ export function DirectionBreakdown({ equity }: { equity: EquityPoint[] }) {
 
 // ── Daily P&L chart ───────────────────────────────────────────────────────────
 
-export function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPoint[]; netPnl: number | null; height?: number }) {
+export function DailyPnlChart({
+  data,
+  netPnl,
+  height = 260,
+}: {
+  data: DailyPnlPoint[]
+  netPnl: number | null
+  height?: number
+}) {
   if (!data.length) {
     return (
       <div className="h-[160px] flex flex-col items-center justify-center gap-2 text-center px-6">
         <div className="text-text-secondary text-[13px] font-medium">No daily P&L data yet</div>
-        <div className="text-text-tertiary text-[11px]">Available once the backtest report has been parsed.</div>
+        <div className="text-text-tertiary text-[11px]">
+          Available once the backtest report has been parsed.
+        </div>
       </div>
     )
   }
 
   const halfTarget = netPnl != null && netPnl > 0 ? netPnl * 0.5 : null
-  const pnlTicks  = calDateTicks(data)
+  const pnlTicks = calDateTicks(data)
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -2071,7 +2754,9 @@ export function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPo
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(d: string) => calTickLabel(d, d === data[0].date || d === data[data.length - 1].date)}
+          tickFormatter={(d: string) =>
+            calTickLabel(d, d === data[0].date || d === data[data.length - 1].date)
+          }
         />
         <YAxis
           tick={{ fill: C.axisTick, fontSize: 10 }}
@@ -2082,7 +2767,13 @@ export function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPo
         />
         <Tooltip
           cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          contentStyle={{
+            background: C.tooltipBg,
+            border: `1px solid ${C.tooltipBorder}`,
+            borderRadius: 8,
+            fontSize: 13,
+            padding: '8px 12px',
+          }}
           labelStyle={{ color: C.axisTick }}
           itemStyle={{ color: '#e5e7eb' }}
           formatter={(v: number) => [dollar(v, true), 'P&L']}
@@ -2094,7 +2785,12 @@ export function DailyPnlChart({ data, netPnl, height = 260 }: { data: DailyPnlPo
             y={halfTarget}
             stroke={`${C.gold}50`}
             strokeDasharray="4 4"
-            label={{ value: '50% of target', fill: C.gold, fontSize: 10, position: 'insideTopRight' }}
+            label={{
+              value: '50% of target',
+              fill: C.gold,
+              fontSize: 10,
+              position: 'insideTopRight',
+            }}
           />
         )}
         <Bar dataKey="pnl" radius={[2, 2, 0, 0]}>
@@ -2123,32 +2819,49 @@ function personalStreakPass(ev: EvaluationDetail): boolean {
 // condensed sticky) so you can page firms without scrolling back to the eval card, and shows only
 // the SELECTED firm — listing all four overflowed into the action buttons. Chevrons appear only for
 // multi-firm runs; a single-firm run is just the name.
-function HeaderRulesetChip({ evals, selected, onSelect, compact = false }: {
-  evals: EvaluationDetail[]; selected: number; onSelect: (i: number) => void; compact?: boolean
+function HeaderRulesetChip({
+  evals,
+  selected,
+  onSelect,
+  compact = false,
+}: {
+  evals: EvaluationDetail[]
+  selected: number
+  onSelect: (i: number) => void
+  compact?: boolean
 }) {
   if (!evals.length) return null
   const idx = Math.min(selected, evals.length - 1)
   const multi = evals.length > 1
   const py = compact ? 'py-[1px]' : 'py-[2px]'
   // Tighter left/right padding when chevrons sit inside the pill; symmetric when it's just a name.
-  const px = multi
-    ? (compact ? 'pl-1 pr-1.5' : 'pl-1.5 pr-2')
-    : (compact ? 'px-1.5' : 'px-2')
-  const chev = "flex items-center text-warn-text/50 hover:text-warn-text transition-colors flex-shrink-0"
+  const px = multi ? (compact ? 'pl-1 pr-1.5' : 'pl-1.5 pr-2') : compact ? 'px-1.5' : 'px-2'
+  const chev =
+    'flex items-center text-warn-text/50 hover:text-warn-text transition-colors flex-shrink-0'
   return (
-    <span className={`inline-flex items-center gap-1 rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text flex-shrink-0 ${py} ${px}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text flex-shrink-0 ${py} ${px}`}
+    >
       {multi && (
-        <button className={chev} aria-label="Previous firm"
-          onClick={() => onSelect((idx - 1 + evals.length) % evals.length)}>
+        <button
+          className={chev}
+          aria-label="Previous firm"
+          onClick={() => onSelect((idx - 1 + evals.length) % evals.length)}
+        >
           <ChevronLeft size={13} />
         </button>
       )}
       <span className="truncate max-w-[200px]">{evals[idx].ruleset_id}</span>
       {multi && (
         <>
-          <span className="text-warn-text/50 tabular-nums flex-shrink-0">{idx + 1}/{evals.length}</span>
-          <button className={chev} aria-label="Next firm"
-            onClick={() => onSelect((idx + 1) % evals.length)}>
+          <span className="text-warn-text/50 tabular-nums flex-shrink-0">
+            {idx + 1}/{evals.length}
+          </span>
+          <button
+            className={chev}
+            aria-label="Next firm"
+            onClick={() => onSelect((idx + 1) % evals.length)}
+          >
             <ChevronRight size={13} />
           </button>
         </>
@@ -2174,56 +2887,100 @@ function HeaderRulesetChip({ evals, selected, onSelect, compact = false }: {
 // rests on, so it gets the same 34px the other three heroes get, plus the cadence (trades per
 // month) that the repo's own design target is stated in.
 
-const VERDICT_CHIP: Record<string, { label: string; cls: string; top: string; Icon: typeof CheckCircle }> = {
-  PASS:    { label: 'Pass',       cls: 'bg-pos-muted text-pos-text',        top: 'border-t-pos-text/50',      Icon: CheckCircle },
-  WARN:    { label: 'Warn',       cls: 'bg-warn-muted text-warn-text',      top: 'border-t-warn-text/50',     Icon: Minus },
-  DISCARD: { label: 'Discard',    cls: 'bg-neg-muted text-neg-text',        top: 'border-t-neg-text/50',      Icon: XCircle },
+const VERDICT_CHIP: Record<
+  string,
+  { label: string; cls: string; top: string; Icon: typeof CheckCircle }
+> = {
+  PASS: {
+    label: 'Pass',
+    cls: 'bg-pos-muted text-pos-text',
+    top: 'border-t-pos-text/50',
+    Icon: CheckCircle,
+  },
+  WARN: {
+    label: 'Warn',
+    cls: 'bg-warn-muted text-warn-text',
+    top: 'border-t-warn-text/50',
+    Icon: Minus,
+  },
+  DISCARD: {
+    label: 'Discard',
+    cls: 'bg-neg-muted text-neg-text',
+    top: 'border-t-neg-text/50',
+    Icon: XCircle,
+  },
   // Not a grade — the absence of one. `unconstrained` states no limit, so nothing was
   // checked and there is nothing to pass. Neutral on purpose: a green tick here used to
   // claim a verdict the backend explicitly refuses to give (services/evaluator.py).
   // border-strong, not border-default: as a card's top edge the latter is indistinguishable from
   // the card's own border, so the one card in four without a colour read as unfinished rather
   // than as neutral. Neutral still has to be visible to mean anything.
-  INFO:    { label: 'Not graded', cls: 'bg-bg-sunken text-text-tertiary',   top: 'border-t-border-strong',    Icon: Info },
+  INFO: {
+    label: 'Not graded',
+    cls: 'bg-bg-sunken text-text-tertiary',
+    top: 'border-t-border-strong',
+    Icon: Info,
+  },
 }
 
-const UNGRADED_TIP = "Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. Pick a ruleset with a stated limit to grade this run: `personal_forex_risk` is this one's gradeable twin, the same raw behaviour with one stated bar."
+const UNGRADED_TIP =
+  "Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. Pick a ruleset with a stated limit to grade this run: `personal_forex_risk` is this one's gradeable twin, the same raw behaviour with one stated bar."
 
 /** One row per stated rule, pass or fail. Empty when the ruleset states none. */
 function verdictRuleRows(ev: EvaluationDetail): PanelRow[] {
   const mark = (pass: boolean): PanelRow['value'] =>
     pass ? <CheckCircle size={13} className="inline" /> : <XCircle size={13} className="inline" />
-  const cls = (pass: boolean) => pass ? 'text-pos-text' : 'text-neg-text'
+  const cls = (pass: boolean) => (pass ? 'text-pos-text' : 'text-neg-text')
   const out: PanelRow[] = []
 
   if (isPersonal(ev)) {
     if (ev.personal_max_drawdown_from_peak_pct != null) {
-      out.push({ key: 'dd', label: `Drawdown ≤ ${ev.personal_max_drawdown_from_peak_pct}%`,
-        value: mark(ev.drawdown_pass), cls: cls(ev.drawdown_pass),
-        tip: 'Measured peak-relative, at end of day.' })
+      out.push({
+        key: 'dd',
+        label: `Drawdown ≤ ${ev.personal_max_drawdown_from_peak_pct}%`,
+        value: mark(ev.drawdown_pass),
+        cls: cls(ev.drawdown_pass),
+        tip: 'Measured peak-relative, at end of day.',
+      })
     }
     if (ev.personal_daily_loss_cap != null && ev.personal_max_consecutive_loss_days != null) {
       const pass = personalStreakPass(ev)
-      out.push({ key: 'streak', label: `< ${ev.personal_max_consecutive_loss_days} capped days`,
-        value: mark(pass), cls: cls(pass),
-        tip: `Days in a row that hit the −$${ev.personal_daily_loss_cap.toLocaleString()} daily loss cap.` })
+      out.push({
+        key: 'streak',
+        label: `< ${ev.personal_max_consecutive_loss_days} capped days`,
+        value: mark(pass),
+        cls: cls(pass),
+        tip: `Days in a row that hit the −$${ev.personal_daily_loss_cap.toLocaleString()} daily loss cap.`,
+      })
     }
     return out
   }
 
-  out.push({ key: 'dd', label: `Daily DD ≤ $${ev.firm_max_loss_eod.toLocaleString()}`,
-    value: mark(ev.drawdown_pass), cls: cls(ev.drawdown_pass),
-    tip: 'End-of-day trailing max loss — the firm\'s hard floor.' })
+  out.push({
+    key: 'dd',
+    label: `Daily DD ≤ $${ev.firm_max_loss_eod.toLocaleString()}`,
+    value: mark(ev.drawdown_pass),
+    cls: cls(ev.drawdown_pass),
+    tip: "End-of-day trailing max loss — the firm's hard floor.",
+  })
   if (ev.firm_profit_target > 0) {
-    out.push({ key: 'tgt', label: `Target $${ev.firm_profit_target.toLocaleString()}`,
-      value: mark(ev.target_pass), cls: cls(ev.target_pass),
-      tip: 'Net P&L required to pass the evaluation.' })
+    out.push({
+      key: 'tgt',
+      label: `Target $${ev.firm_profit_target.toLocaleString()}`,
+      value: mark(ev.target_pass),
+      cls: cls(ev.target_pass),
+      tip: 'Net P&L required to pass the evaluation.',
+    })
   }
   if (ev.consistency_pass != null && ev.firm_consistency_pct != null) {
-    out.push({ key: 'con',
-      label: `Consistency ${ev.largest_day_share_pct != null ? `${ev.largest_day_share_pct.toFixed(0)}%` : ''}`.trim(),
-      value: mark(ev.consistency_pass), cls: cls(ev.consistency_pass),
-      tip: `No single day may hold more than ${ev.firm_consistency_pct}% of total P&L.` })
+    out.push({
+      key: 'con',
+      label:
+        `Consistency ${ev.largest_day_share_pct != null ? `${ev.largest_day_share_pct.toFixed(0)}%` : ''}`.trim(),
+      value: mark(ev.consistency_pass),
+      cls: cls(ev.consistency_pass),
+      tip: `No single day may hold more than ${ev.firm_consistency_pct}% of total P&L.`,
+    })
   }
   return out
 }
@@ -2231,24 +2988,38 @@ function verdictRuleRows(ev: EvaluationDetail): PanelRow[] {
 // Sample size + cadence. Trades per month is the unit CLAUDE.md's Trading Philosophy states
 // the design target in ("a couple of times a month"), so the panel reports it in that unit
 // rather than leaving the reader to divide.
-function TradeCountAnchor({ count, of, spanDays }: {
-  count: number; of?: number | null; spanDays: number | null
+function TradeCountAnchor({
+  count,
+  of,
+  spanDays,
+}: {
+  count: number
+  of?: number | null
+  spanDays: number | null
 }) {
   const months = spanDays != null && spanDays > 0 ? spanDays / 30.44 : null
   const perMonth = months != null && months >= 1 ? count / months : null
   const years = months != null ? months / 12 : null
   return (
     <div className="ml-auto flex items-center gap-2.5 pl-4 border-l border-border-subtle shrink-0">
-      <span className="text-[25px] font-bold font-mono leading-none text-accent tabular-nums">{count}</span>
+      <span className="text-[25px] font-bold font-mono leading-none text-accent tabular-nums">
+        {count}
+      </span>
       <span className="flex flex-col leading-[1.25]">
         <span className="text-[11px] font-bold uppercase tracking-[0.9px] text-text-secondary">
           {of != null && of !== count ? `of ${of} trades` : 'Trades'}
         </span>
         {(years != null || perMonth != null) && (
           <span className="font-mono text-[10px] text-text-tertiary">
-            {years != null && years >= 1 ? `${years.toFixed(1)} yrs` : months != null ? `${months.toFixed(0)} mo` : ''}
+            {years != null && years >= 1
+              ? `${years.toFixed(1)} yrs`
+              : months != null
+                ? `${months.toFixed(0)} mo`
+                : ''}
             {years != null && perMonth != null ? ' · ' : ''}
-            {perMonth != null ? `≈${perMonth < 1 ? perMonth.toFixed(1) : perMonth.toFixed(0)}/month` : ''}
+            {perMonth != null
+              ? `≈${perMonth < 1 ? perMonth.toFixed(1) : perMonth.toFixed(0)}/month`
+              : ''}
           </span>
         )}
       </span>
@@ -2256,7 +3027,14 @@ function TradeCountAnchor({ count, of, spanDays }: {
   )
 }
 
-function VerdictCard({ ev, tradeCount, totalTrades, spanDays, filtered, collapsed }: {
+function VerdictCard({
+  ev,
+  tradeCount,
+  totalTrades,
+  spanDays,
+  filtered,
+  collapsed,
+}: {
   ev: EvaluationDetail | null
   tradeCount: number | null
   totalTrades?: number | null
@@ -2268,7 +3046,9 @@ function VerdictCard({ ev, tradeCount, totalTrades, spanDays, filtered, collapse
   const cfg = ev ? (VERDICT_CHIP[ev.verdict] ?? VERDICT_CHIP.DISCARD) : null
   // A profitable run that fails a firm rule is amber, not red — same rule the old card used.
   const top = cfg
-    ? (ev!.verdict === 'DISCARD' && (ev!.net_pnl ?? 0) > 0 ? VERDICT_CHIP.WARN.top : cfg.top)
+    ? ev!.verdict === 'DISCARD' && (ev!.net_pnl ?? 0) > 0
+      ? VERDICT_CHIP.WARN.top
+      : cfg.top
     : 'border-t-accent/45'
   const ungraded = ev?.verdict === 'INFO'
 
@@ -2276,20 +3056,35 @@ function VerdictCard({ ev, tradeCount, totalTrades, spanDays, filtered, collapse
   const years = months != null ? months / 12 : null
   const perMonth = months != null && months >= 1 && tradeCount != null ? tradeCount / months : null
   const cadence = [
-    years != null && years >= 1 ? `${years.toFixed(1)} yrs` : months != null ? `${months.toFixed(0)} mo` : null,
+    years != null && years >= 1
+      ? `${years.toFixed(1)} yrs`
+      : months != null
+        ? `${months.toFixed(0)} mo`
+        : null,
     perMonth != null ? `≈${perMonth < 1 ? perMonth.toFixed(1) : perMonth.toFixed(0)}/month` : null,
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   const rows: PanelRow[] = []
   // Was a `verdict unfiltered` badge on the bar. As a row it states the number instead of
   // asking you to decode a label, and it sits where the reader is already reading numbers.
   if (filtered && totalTrades != null) {
-    rows.push({ key: 'graded', label: 'Graded on', value: `all ${totalTrades}`,
-      tip: 'Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This card grades the full run even while the Performance numbers beside it have news and holiday trades removed.' })
+    rows.push({
+      key: 'graded',
+      label: 'Graded on',
+      value: `all ${totalTrades}`,
+      tip: 'Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This card grades the full run even while the Performance numbers beside it have news and holiday trades removed.',
+    })
   }
   if (ev && ungraded) {
-    rows.push({ key: 'checks', label: 'Checks run', value: 'none',
-      cls: 'text-text-tertiary', tip: UNGRADED_TIP })
+    rows.push({
+      key: 'checks',
+      label: 'Checks run',
+      value: 'none',
+      cls: 'text-text-tertiary',
+      tip: UNGRADED_TIP,
+    })
   } else if (ev) {
     rows.push(...verdictRuleRows(ev))
   }
@@ -2298,22 +3093,31 @@ function VerdictCard({ ev, tradeCount, totalTrades, spanDays, filtered, collapse
     <div className={panelCardCls(collapsed, filtered, `border-t-2 ${top}`)}>
       <CardHead
         title="Verdict"
-        aside={cfg && (
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.4px] shrink-0 ${cfg.cls}`}>
-            <cfg.Icon size={10} />{cfg.label}
-          </span>
-        )}
+        aside={
+          cfg && (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.4px] shrink-0 ${cfg.cls}`}
+            >
+              <cfg.Icon size={10} />
+              {cfg.label}
+            </span>
+          )
+        }
       />
       <CardHero
         value={tradeCount ?? '—'}
-        unit={totalTrades != null && totalTrades !== tradeCount ? `of ${totalTrades} trades` : 'trades'}
+        unit={
+          totalTrades != null && totalTrades !== tradeCount ? `of ${totalTrades} trades` : 'trades'
+        }
         cls="text-accent"
         tip="How many trades this verdict and every number beside it rest on. Sample size is a portfolio property in this repo, not a strategy one — a selective strategy is DESIGNED to trade a couple of times a month, so read the cadence below rather than the count alone (CLAUDE.md → Trading Philosophy)."
       />
       {/* The ruleset name is identity, not measurement, so it sits here where it can truncate
           rather than in the right-hand column, which is nowrap and would push the card wide. */}
-      <div className="text-[11px] text-text-tertiary leading-[1.35] mt-2 truncate"
-        title={ev?.ruleset_name ?? undefined}>
+      <div
+        className="text-[11px] text-text-tertiary leading-[1.35] mt-2 truncate"
+        title={ev?.ruleset_name ?? undefined}
+      >
         {ev ? ev.ruleset_name : 'No ruleset evaluated'}
       </div>
       {cadence && <div className="font-mono text-[10.5px] text-text-tertiary">{cadence}</div>}
@@ -2324,13 +3128,20 @@ function VerdictCard({ ev, tradeCount, totalTrades, spanDays, filtered, collapse
 
 // Optimizer parameter sets have no equity curve and no firm verdicts yet, so there is
 // nothing to grade — the ribbon carries the prompt to run a real backtest instead.
-function UnscoredRibbon({ tradeCount, onRunFullBacktest, busy }: {
-  tradeCount?: number | null; onRunFullBacktest: () => void; busy?: boolean
+function UnscoredRibbon({
+  tradeCount,
+  onRunFullBacktest,
+  busy,
+}: {
+  tradeCount?: number | null
+  onRunFullBacktest: () => void
+  busy?: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border-subtle border-l-[3px] border-l-border-default bg-bg-surface pl-4 pr-2.5 py-2.5">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-bg-sunken px-3 py-[4px] text-[11px] font-bold uppercase tracking-[0.4px] text-text-tertiary shrink-0">
-        <Info size={11} />Unscored
+        <Info size={11} />
+        Unscored
       </span>
       <span className="text-[12.5px] text-text-secondary">
         Optimizer parameter set — no equity curve, trade-level data or firm evaluation yet.
@@ -2351,22 +3162,22 @@ function UnscoredRibbon({ tradeCount, onRunFullBacktest, busy }: {
 // ── Running banner ────────────────────────────────────────────────────────────
 
 const NT8_RUN_STEPS = [
-  { label: 'Connect',   startPct: 0  },
+  { label: 'Connect', startPct: 0 },
   { label: 'Configure', startPct: 20 },
-  { label: 'Run',       startPct: 30 },
-  { label: 'Results',   startPct: 70 },
-  { label: 'Evaluate',  startPct: 95 },
-  { label: 'Tagging',   startPct: 97 },
+  { label: 'Run', startPct: 30 },
+  { label: 'Results', startPct: 70 },
+  { label: 'Evaluate', startPct: 95 },
+  { label: 'Tagging', startPct: 97 },
 ]
 
 const PYTHON_RUN_STEPS = [
-  { label: 'Load bars', startPct: 0  },
-  { label: 'Replay',    startPct: 15 },
-  { label: 'Results',   startPct: 95 },
+  { label: 'Load bars', startPct: 0 },
+  { label: 'Replay', startPct: 15 },
+  { label: 'Results', startPct: 95 },
 ]
 
 const MT5_RUN_STEPS = [
-  { label: 'Launch',  startPct: 0  },
+  { label: 'Launch', startPct: 0 },
   { label: 'Testing', startPct: 10 },
   { label: 'Results', startPct: 90 },
   { label: 'Tagging', startPct: 95 },
@@ -2386,7 +3197,11 @@ function useElapsed(startedAt: string | null): string {
 
 // ── Milestone log parser ──────────────────────────────────────────────────────
 
-interface Milestone { time: string; text: string; accent: boolean }
+interface Milestone {
+  time: string
+  text: string
+  accent: boolean
+}
 
 const NT8_MILESTONE_PATTERNS: Array<{
   re: RegExp
@@ -2463,7 +3278,15 @@ function parseMilestones(logText: string, runner: string): Milestone[] {
 
 // ── Running banner ────────────────────────────────────────────────────────────
 
-function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps = NT8_RUN_STEPS }: {
+function RunningBanner({
+  pct,
+  message,
+  startedAt,
+  onStop,
+  runId,
+  runner,
+  steps = NT8_RUN_STEPS,
+}: {
   pct: number
   message: string
   startedAt: string | null
@@ -2472,8 +3295,8 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
   runner: string
   steps?: typeof NT8_RUN_STEPS
 }) {
-  const elapsed   = useElapsed(startedAt)
-  const activeIdx = steps.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
+  const elapsed = useElapsed(startedAt)
+  const activeIdx = steps.reduce((best, step, i) => (pct >= step.startPct ? i : best), 0)
   // ⚠ 200 lines, the SAME argument `LogsSection` uses. `lines` is part of the query key, so asking
   // for 500 here made this a second cache entry and a second `/log` request every 2 seconds for
   // the whole run — two polls of one endpoint on one page. The milestones are parsed out of the
@@ -2484,22 +3307,26 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
 
   return (
     <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 pt-4 pb-4 space-y-4">
-
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-accent uppercase tracking-[0.6px]">Running</span>
+        <span className="text-[10px] font-semibold text-accent uppercase tracking-[0.6px]">
+          Running
+        </span>
         <span className="text-[11px] font-mono text-accent tabular-nums">{Math.round(pct)}%</span>
       </div>
 
       {/* Stage pipeline — connectors are the progress bar */}
       <div className="flex items-start">
         {steps.map((step, i) => {
-          const done   = i < activeIdx
+          const done = i < activeIdx
           const active = i === activeIdx
           const isLast = i === steps.length - 1
-          const segFill = isLast ? 0 : Math.min(1, Math.max(0,
-            (pct - step.startPct) / (steps[i + 1].startPct - step.startPct)
-          ))
+          const segFill = isLast
+            ? 0
+            : Math.min(
+                1,
+                Math.max(0, (pct - step.startPct) / (steps[i + 1].startPct - step.startPct))
+              )
           return (
             <Fragment key={step.label}>
               <div className="flex flex-col items-center gap-[6px]">
@@ -2508,14 +3335,25 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
                     'w-[9px] h-[9px] rounded-full flex-shrink-0 transition-all duration-300',
                     done || active ? 'bg-accent' : 'border border-border-default bg-transparent',
                   ].join(' ')}
-                  style={active ? { boxShadow: '0 0 0 4px rgba(0,229,255,0.15), 0 0 12px rgba(0,229,255,0.45)' } : undefined}
+                  style={
+                    active
+                      ? {
+                          boxShadow:
+                            '0 0 0 4px rgba(0,229,255,0.15), 0 0 12px rgba(0,229,255,0.45)',
+                        }
+                      : undefined
+                  }
                 />
-                <span className={[
-                  'text-[9px] whitespace-nowrap uppercase tracking-wide leading-none',
-                  done   ? 'text-accent/60' :
-                  active ? 'text-accent font-semibold' :
-                           'text-text-tertiary/50',
-                ].join(' ')}>
+                <span
+                  className={[
+                    'text-[9px] whitespace-nowrap uppercase tracking-wide leading-none',
+                    done
+                      ? 'text-accent/60'
+                      : active
+                        ? 'text-accent font-semibold'
+                        : 'text-text-tertiary/50',
+                  ].join(' ')}
+                >
                   {step.label}
                 </span>
               </div>
@@ -2561,7 +3399,6 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
           </button>
         </div>
       </div>
-
     </div>
   )
 }
@@ -2574,28 +3411,43 @@ function getFailureGuidance(status: string, runner: string): string {
   }
   const scope = runnerScope(runner)
   if (status === 'failed_timeout') {
-    if (scope === 'python') return 'The local run stopped making progress. Check the run logs below, then re-run.'
+    if (scope === 'python')
+      return 'The local run stopped making progress. Check the run logs below, then re-run.'
     return scope === 'mt5'
       ? 'The MT5 agent stopped responding mid-run. Check the MT5 agent log on the VPS, then re-run.'
       : 'The NT8 agent stopped responding mid-run. Verify NT8 is running and the Strategy Analyzer is open in the RDP session, then re-run.'
   }
-  if (scope === 'python') return 'An unexpected error occurred. Check the run logs below for details.'
+  if (scope === 'python')
+    return 'An unexpected error occurred. Check the run logs below for details.'
   return scope === 'mt5'
     ? 'An unexpected error occurred. Check the run logs below and the MT5 agent log for details.'
     : 'An unexpected error occurred. Check the run logs below and the NT8 agent log for details.'
 }
 
-function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => void; retrying?: boolean }) {
+function FailureBanner({
+  run,
+  onRetry,
+  retrying,
+}: {
+  run: Run
+  onRetry?: () => void
+  retrying?: boolean
+}) {
   const guidance = getFailureGuidance(run.status, run.runner ?? 'ninjatrader')
   return (
     // `data-testid` so a browser check can scope to THIS banner. Its Retry button and the page
     // header's are two different controls; a page-wide `Retry` locator matches the header and
     // passes against a banner that has no button at all.
-    <div data-testid="failure-banner" className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4">
+    <div
+      data-testid="failure-banner"
+      className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4"
+    >
       <div className="flex items-start gap-3">
         <AlertTriangle size={15} className="text-neg-text flex-shrink-0 mt-[1px]" />
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-neg-text mb-1">Run failed — {run.status}</div>
+          <div className="text-[13px] font-semibold text-neg-text mb-1">
+            Run failed — {run.status}
+          </div>
           {run.error_message && (
             <div className="text-[12px] font-mono text-neg-text/80 mb-3 whitespace-pre-wrap break-all">
               {run.error_message}
@@ -2620,7 +3472,13 @@ function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => v
 
 // ── Logs section ──────────────────────────────────────────────────────────────
 
-function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
+function LogsSection({
+  runId,
+  autoExpand,
+  isRunning,
+  isComplete,
+  isFailed,
+}: {
   runId: string
   autoExpand: boolean
   isRunning: boolean
@@ -2642,7 +3500,7 @@ function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
   return (
     <div className="bg-bg-sunken border border-border-subtle rounded-lg overflow-hidden">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-[10px] border-b border-border-subtle hover:bg-bg-hover/40 transition-colors"
       >
         <div className="flex items-center gap-[10px]">
@@ -2661,9 +3519,7 @@ function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
           <span className="text-small font-semibold font-mono tracking-wide uppercase text-text-secondary">
             Run Logs
           </span>
-          {isRunning && (
-            <span className="text-micro text-text-tertiary font-mono">· live</span>
-          )}
+          {isRunning && <span className="text-micro text-text-tertiary font-mono">· live</span>}
           {isComplete && !isRunning && (
             <span className="text-micro text-accent font-mono">· complete</span>
           )}
@@ -2682,7 +3538,11 @@ function LogsSection({ runId, autoExpand, isRunning, isComplete, isFailed }: {
               {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
             </span>
           )}
-          {open ? <ChevronUp size={14} className="text-text-tertiary" /> : <ChevronDown size={14} className="text-text-tertiary" />}
+          {open ? (
+            <ChevronUp size={14} className="text-text-tertiary" />
+          ) : (
+            <ChevronDown size={14} className="text-text-tertiary" />
+          )}
         </div>
       </button>
       {open && (
@@ -2713,14 +3573,23 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function ChartLoadingSkeleton({ height }: { height: number }) {
-  const bars = [42, 61, 38, 74, 55, 88, 49, 72, 64, 91, 46, 68, 81, 53, 77, 59, 84, 44, 70, 57, 86, 51]
+  const bars = [
+    42, 61, 38, 74, 55, 88, 49, 72, 64, 91, 46, 68, 81, 53, 77, 59, 84, 44, 70, 57, 86, 51,
+  ]
   const barsH = Math.round(height * 0.68)
   return (
     <div style={{ height }} className="relative overflow-hidden">
-      {[25, 50, 75].map(p => (
-        <div key={p} className="absolute left-0 right-0 h-px bg-border-subtle/25" style={{ top: `${p}%` }} />
+      {[25, 50, 75].map((p) => (
+        <div
+          key={p}
+          className="absolute left-0 right-0 h-px bg-border-subtle/25"
+          style={{ top: `${p}%` }}
+        />
       ))}
-      <div className="absolute bottom-8 left-2 right-2 flex items-end gap-[3px]" style={{ height: barsH }}>
+      <div
+        className="absolute bottom-8 left-2 right-2 flex items-end gap-[3px]"
+        style={{ height: barsH }}
+      >
         {bars.map((h, i) => (
           <div
             key={i}
@@ -2738,7 +3607,14 @@ function ChartLoadingSkeleton({ height }: { height: number }) {
 
 // Candlestick panel body (klinecharts). Lazy: the chart library and the run's ChartSpec (a heavy
 // candle fetch) load only when `active` — i.e. when the Price tab in the primary chart is selected.
-function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscreenClose, onRebuild, rebuilding }: {
+function PriceChartPanel({
+  runId,
+  height = 520,
+  isFullscreen = false,
+  onFullscreenClose,
+  onRebuild,
+  rebuilding,
+}: {
   runId: string
   height?: number
   isFullscreen?: boolean
@@ -2752,9 +3628,15 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
   const requestCandles = useRunCandles(runId)
   return (
     <PriceChartView
-      spec={spec} isLoading={isLoading} isError={isError} requestCandles={requestCandles}
-      height={height} isFullscreen={isFullscreen} onFullscreenClose={onFullscreenClose}
-      onRebuild={onRebuild} rebuilding={rebuilding}
+      spec={spec}
+      isLoading={isLoading}
+      isError={isError}
+      requestCandles={requestCandles}
+      height={height}
+      isFullscreen={isFullscreen}
+      onFullscreenClose={onFullscreenClose}
+      onRebuild={onRebuild}
+      rebuilding={rebuilding}
     />
   )
 }
@@ -2796,7 +3678,17 @@ function RebuildChartButton({ onClick, pending }: { onClick: () => void; pending
 // tools, and fullscreen chrome, driven by an already-fetched ChartSpec. BacktestDetail feeds it a
 // single run's spec; StackDetail feeds it the merged stack spec (trades layered by strategy) — both
 // get identical functionality. `requestCandles` wires M1/M5 drill-down; pass undefined to disable.
-export function PriceChartView({ spec, isLoading, isError, requestCandles, height = 520, isFullscreen = false, onFullscreenClose, onRebuild, rebuilding = false }: {
+export function PriceChartView({
+  spec,
+  isLoading,
+  isError,
+  requestCandles,
+  height = 520,
+  isFullscreen = false,
+  onFullscreenClose,
+  onRebuild,
+  rebuilding = false,
+}: {
   spec: ChartSpec | undefined
   isLoading: boolean
   isError: boolean
@@ -2826,7 +3718,9 @@ export function PriceChartView({ spec, isLoading, isError, requestCandles, heigh
   // Escape key to close fullscreen.
   useEffect(() => {
     if (!isFullscreen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onFullscreenClose?.() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onFullscreenClose?.()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isFullscreen, onFullscreenClose])
@@ -2836,61 +3730,83 @@ export function PriceChartView({ spec, isLoading, isError, requestCandles, heigh
   // border-b), and a small safety buffer. Without subtracting the header the chart overflows and
   // overflow-hidden clips the klinecharts x-axis.
   const effectiveH = isFullscreen
-    ? (fsBodyH > 0 ? Math.max(200, fsBodyH - 64) : Math.max(200, window.innerHeight - 120))
+    ? fsBodyH > 0
+      ? Math.max(200, fsBodyH - 64)
+      : Math.max(200, window.innerHeight - 120)
     : height
 
   const box = (msg: string, cls = 'text-text-tertiary') => (
-    <div style={{ height: effectiveH }} className={`flex items-center justify-center text-[12px] ${cls}`}>{msg}</div>
+    <div
+      style={{ height: effectiveH }}
+      className={`flex items-center justify-center text-[12px] ${cls}`}
+    >
+      {msg}
+    </div>
   )
 
   // chartBody is always at the same tree position inside the body div so the klinecharts
   // instance (ChartPanel) is never unmounted when toggling between inline and fullscreen.
-  const chartBody = isLoading ? <ChartLoadingSkeleton height={effectiveH} />
-    : isError ? box("Couldn't load chart data for this run.", 'text-neg-text')
-    : !spec || spec.candles.length === 0 ? box('No price data available for this run.')
-    : (
-      <>
-        {spec.baseTimeframe === 'D1' && !isFullscreen && (
-          <div className="mb-2 text-[11px] text-warn-text">
-            Showing daily candles — intraday history wasn't available from the data agent for this run.
-          </div>
-        )}
-        <Suspense fallback={<ChartLoadingSkeleton height={effectiveH} />}>
-          {/* Drill-down (1m/5m) only for intraday runs — a D1 (NT8 daily) run has no sub-base bars.
+  const chartBody = isLoading ? (
+    <ChartLoadingSkeleton height={effectiveH} />
+  ) : isError ? (
+    box("Couldn't load chart data for this run.", 'text-neg-text')
+  ) : !spec || spec.candles.length === 0 ? (
+    box('No price data available for this run.')
+  ) : (
+    <>
+      {spec.baseTimeframe === 'D1' && !isFullscreen && (
+        <div className="mb-2 text-[11px] text-warn-text">
+          Showing daily candles — intraday history wasn't available from the data agent for this
+          run.
+        </div>
+      )}
+      <Suspense fallback={<ChartLoadingSkeleton height={effectiveH} />}>
+        {/* Drill-down (1m/5m) only for intraday runs — a D1 (NT8 daily) run has no sub-base bars.
               Fullscreen: fold the "Price" title + exit X onto the panel's own top row (header
               slots), so TF/Layers/Copy and the exit all share one bar instead of stacking two. */}
-          <ChartPanel
-            spec={spec}
-            height={effectiveH}
-            onRequestCandles={spec.baseTimeframe !== 'D1' ? requestCandles : undefined}
-            // Snapshot button on the expanded chart only — same rule as every other chart here.
-            showCopy={isFullscreen}
-            // On the tool strip, so it is there in BOTH views — the tab strip that used to carry it
-            // is off screen in fullscreen.
-            toolActions={onRebuild
-              ? <RebuildChartButton onClick={onRebuild} pending={rebuilding} />
-              : undefined}
-            headerClassName={isFullscreen ? 'border-b border-border-subtle pb-2' : undefined}
-            headerLeading={isFullscreen
-              ? <span className="text-[15px] font-bold uppercase tracking-wide text-text-primary ml-1 mr-2">{spec.instrument}</span>
-              : undefined}
-            headerTrailing={isFullscreen
-              ? (
-                <button onClick={onFullscreenClose} title="Minimize (Esc)" className="text-text-tertiary hover:text-text-primary">
-                  <Minimize2 size={18} />
-                </button>
-              )
-              : undefined}
-          />
-        </Suspense>
-      </>
-    )
+        <ChartPanel
+          spec={spec}
+          height={effectiveH}
+          onRequestCandles={spec.baseTimeframe !== 'D1' ? requestCandles : undefined}
+          // Snapshot button on the expanded chart only — same rule as every other chart here.
+          showCopy={isFullscreen}
+          // On the tool strip, so it is there in BOTH views — the tab strip that used to carry it
+          // is off screen in fullscreen.
+          toolActions={
+            onRebuild ? <RebuildChartButton onClick={onRebuild} pending={rebuilding} /> : undefined
+          }
+          headerClassName={isFullscreen ? 'border-b border-border-subtle pb-2' : undefined}
+          headerLeading={
+            isFullscreen ? (
+              <span className="text-[15px] font-bold uppercase tracking-wide text-text-primary ml-1 mr-2">
+                {spec.instrument}
+              </span>
+            ) : undefined
+          }
+          headerTrailing={
+            isFullscreen ? (
+              <button
+                onClick={onFullscreenClose}
+                title="Minimize (Esc)"
+                className="text-text-tertiary hover:text-text-primary"
+              >
+                <Minimize2 size={18} />
+              </button>
+            ) : undefined
+          }
+        />
+      </Suspense>
+    </>
+  )
 
   return (
     <div className={isFullscreen ? 'fixed inset-0 z-[90] bg-bg-base flex flex-col' : ''}>
       {/* Minimal left/right padding in fullscreen to maximise chart space (the price gets its own
           small inset via headerLeading's ml-1; the tool strip sits just inside the edge). */}
-      <div ref={fsBodyRef} className={isFullscreen ? 'flex-1 min-h-0 overflow-hidden pl-2 pr-2 pt-2 pb-2' : ''}>
+      <div
+        ref={fsBodyRef}
+        className={isFullscreen ? 'flex-1 min-h-0 overflow-hidden pl-2 pr-2 pt-2 pb-2' : ''}
+      >
         {chartBody}
       </div>
     </div>
@@ -2908,7 +3824,9 @@ function Skeleton() {
     <div className="animate-pulse space-y-6">
       <div className="h-6 w-64 bg-bg-surface rounded" />
       <div className="grid grid-cols-4 gap-3">
-        {[0,1,2,3].map(i => <div key={i} className="h-20 bg-bg-surface rounded-lg" />)}
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-20 bg-bg-surface rounded-lg" />
+        ))}
       </div>
       <div className="h-[320px] bg-bg-surface rounded-lg" />
       <div className="h-[260px] bg-bg-surface rounded-lg" />
@@ -2918,7 +3836,6 @@ function Skeleton() {
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
-
 // ── Chart verdict banner ──────────────────────────────────────────────────────
 
 // ── Performance by Regime ────────────────────────────────────────────────────
@@ -2927,40 +3844,80 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
   // Built server-side by metrics.compute_regime_breakdown — the single source of truth.
   const rows = run.regime_breakdown
   if (!rows.length) return null
-  const worstOverall = run.daily_pnl.length ? Math.min(...run.daily_pnl.map(d => d.pnl)) : null
+  const worstOverall = run.daily_pnl.length ? Math.min(...run.daily_pnl.map((d) => d.pnl)) : null
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-border-subtle">
-        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Performance by Regime</div>
-        <div className="text-[10px] text-text-tertiary mt-[2px]">How the strategy performs in each market condition.</div>
+        <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">
+          Performance by Regime
+        </div>
+        <div className="text-[10px] text-text-tertiary mt-[2px]">
+          How the strategy performs in each market condition.
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-border-subtle">
-              {['Regime','Days','Trades','Net P&L','Win Rate','Prof. Factor','Worst Day'].map(h => (
-                <th key={h} className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-5 py-3 ${h === 'Regime' ? 'text-left' : 'text-right'}`}>{h}</th>
-              ))}
+              {['Regime', 'Days', 'Trades', 'Net P&L', 'Win Rate', 'Prof. Factor', 'Worst Day'].map(
+                (h) => (
+                  <th
+                    key={h}
+                    className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-5 py-3 ${h === 'Regime' ? 'text-left' : 'text-right'}`}
+                  >
+                    {h}
+                  </th>
+                )
+              )}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => {
               const color = REGIME_COLORS[row.regime] ?? REGIME_COLORS.UNKNOWN
               return (
-                <tr key={i} className={i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}>
+                <tr
+                  key={i}
+                  className={i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}
+                >
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 11, height: 11, background: color, borderRadius: 3, flexShrink: 0 }} />
-                      <span className="text-text-secondary">{REGIME_LABEL[row.regime] ?? row.regime}</span>
+                      <div
+                        style={{
+                          width: 11,
+                          height: 11,
+                          background: color,
+                          borderRadius: 3,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span className="text-text-secondary">
+                        {REGIME_LABEL[row.regime] ?? row.regime}
+                      </span>
                     </div>
                   </td>
-                  <td className="text-right px-5 py-3.5 text-text-secondary tabular-nums">{row.days}</td>
-                  <td className="text-right px-5 py-3.5 text-text-secondary tabular-nums">{row.trades}</td>
-                  <td className={`text-right px-5 py-3.5 tabular-nums font-medium ${row.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(row.net_pnl, true)}</td>
-                  <td className={`text-right px-5 py-3.5 tabular-nums ${winRateCls(row.win_rate)}`}>{row.win_rate != null ? `${(row.win_rate * 100).toFixed(1)}%` : '—'}</td>
-                  <td className={`text-right px-5 py-3.5 tabular-nums ${pfCls(row.profit_factor)}`}>{row.profit_factor != null ? row.profit_factor.toFixed(2) : '—'}</td>
-                  <td className={`text-right px-5 py-3.5 tabular-nums ${row.worst_day != null && row.worst_day < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{row.worst_day != null ? dollar(row.worst_day) : '—'}</td>
+                  <td className="text-right px-5 py-3.5 text-text-secondary tabular-nums">
+                    {row.days}
+                  </td>
+                  <td className="text-right px-5 py-3.5 text-text-secondary tabular-nums">
+                    {row.trades}
+                  </td>
+                  <td
+                    className={`text-right px-5 py-3.5 tabular-nums font-medium ${row.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+                  >
+                    {dollar(row.net_pnl, true)}
+                  </td>
+                  <td className={`text-right px-5 py-3.5 tabular-nums ${winRateCls(row.win_rate)}`}>
+                    {row.win_rate != null ? `${(row.win_rate * 100).toFixed(1)}%` : '—'}
+                  </td>
+                  <td className={`text-right px-5 py-3.5 tabular-nums ${pfCls(row.profit_factor)}`}>
+                    {row.profit_factor != null ? row.profit_factor.toFixed(2) : '—'}
+                  </td>
+                  <td
+                    className={`text-right px-5 py-3.5 tabular-nums ${row.worst_day != null && row.worst_day < 0 ? 'text-neg-text' : 'text-text-secondary'}`}
+                  >
+                    {row.worst_day != null ? dollar(row.worst_day) : '—'}
+                  </td>
                 </tr>
               )
             })}
@@ -2968,12 +3925,32 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
           <tfoot>
             <tr className="border-t border-border-subtle bg-bg-elevated/30">
               <td className="px-5 py-3.5 text-[11px] font-semibold text-text-secondary">Overall</td>
-              <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.daily_pnl.length}</td>
-              <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">{run.trade_count ?? run.equity_curve.length}</td>
-              <td className={`text-right px-5 py-3.5 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(run.net_pnl, true)}</td>
-              <td className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${winRateCls(run.win_rate)}`}>{run.win_rate != null ? `${(run.win_rate * 100).toFixed(1)}%` : '—'}</td>
-              <td className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${pfCls(run.profit_factor)}`}>{run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}</td>
-              <td className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${worstOverall != null && worstOverall < 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{worstOverall != null ? dollar(worstOverall) : '—'}</td>
+              <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">
+                {run.daily_pnl.length}
+              </td>
+              <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">
+                {run.trade_count ?? run.equity_curve.length}
+              </td>
+              <td
+                className={`text-right px-5 py-3.5 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+              >
+                {dollar(run.net_pnl, true)}
+              </td>
+              <td
+                className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${winRateCls(run.win_rate)}`}
+              >
+                {run.win_rate != null ? `${(run.win_rate * 100).toFixed(1)}%` : '—'}
+              </td>
+              <td
+                className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${pfCls(run.profit_factor)}`}
+              >
+                {run.profit_factor != null ? run.profit_factor.toFixed(2) : '—'}
+              </td>
+              <td
+                className={`text-right px-5 py-3.5 text-[11px] font-medium tabular-nums ${worstOverall != null && worstOverall < 0 ? 'text-neg-text' : 'text-text-secondary'}`}
+              >
+                {worstOverall != null ? dollar(worstOverall) : '—'}
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -2993,56 +3970,108 @@ function SizedTimelineTable({ run }: { run: Run }) {
   const [open, setOpen] = useState(false)
   if (!rows.length) return null
 
-  const haltDays   = rows.filter(d => d.halt_reason).length
-  const tradedDays = rows.filter(d => d.trades_taken > 0).length
-  const finalBal   = rows[rows.length - 1].eod_balance
+  const haltDays = rows.filter((d) => d.halt_reason).length
+  const tradedDays = rows.filter((d) => d.trades_taken > 0).length
+  const finalBal = rows[rows.length - 1].eod_balance
 
-  const headCells = ['Date', 'Trades', 'Contracts', 'Day P&L', 'EOD Balance', 'Risk Floor', 'Buffer', 'Status']
+  const headCells = [
+    'Date',
+    'Trades',
+    'Contracts',
+    'Day P&L',
+    'EOD Balance',
+    'Risk Floor',
+    'Buffer',
+    'Status',
+  ]
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="w-full px-4 py-3 border-b border-border-subtle flex items-center justify-between text-left hover:bg-bg-elevated/30 transition-colors"
       >
         <div>
-          <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">Sizing Timeline</div>
+          <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">
+            Sizing Timeline
+          </div>
           <div className="text-[10px] text-text-tertiary mt-[2px]">
             {rows.length} day{rows.length === 1 ? '' : 's'} · {tradedDays} traded
-            {haltDays > 0 && <span className="text-gold-text"> · {haltDays} halted</span>}
-            {' '}· what the engine sized, day by day.
+            {haltDays > 0 && <span className="text-gold-text"> · {haltDays} halted</span>} · what
+            the engine sized, day by day.
           </div>
         </div>
-        {open ? <ChevronUp size={15} className="text-text-tertiary" /> : <ChevronDown size={15} className="text-text-tertiary" />}
+        {open ? (
+          <ChevronUp size={15} className="text-text-tertiary" />
+        ) : (
+          <ChevronDown size={15} className="text-text-tertiary" />
+        )}
       </button>
       {open && (
         <div className="overflow-auto max-h-[480px]">
           <table className="w-full text-[13px]">
             <thead className="sticky top-0 bg-bg-surface z-10">
               <tr className="border-b border-border-subtle">
-                {headCells.map(h => (
-                  <th key={h} className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-5 py-3 ${h === 'Date' ? 'text-left' : h === 'Status' ? 'text-center' : 'text-right'}`}>{h}</th>
+                {headCells.map((h) => (
+                  <th
+                    key={h}
+                    className={`text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.5px] px-5 py-3 ${h === 'Date' ? 'text-left' : h === 'Status' ? 'text-center' : 'text-right'}`}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((d, i) => {
                 const breached = d.risk_floor != null && d.eod_balance < d.risk_floor
-                const rowTint  = breached ? 'bg-neg-muted/30' : d.halt_reason ? 'bg-gold-muted/20' : ''
+                const rowTint = breached
+                  ? 'bg-neg-muted/30'
+                  : d.halt_reason
+                    ? 'bg-gold-muted/20'
+                    : ''
                 return (
-                  <tr key={i} className={`${i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''} ${rowTint}`}>
-                    <td className="px-5 py-3 text-left text-text-secondary tabular-nums whitespace-nowrap">{fmtChartDate(d.date)}</td>
-                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">{d.trades_taken}</td>
-                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">{d.contracts_total}</td>
-                    <td className={`px-5 py-3 text-right tabular-nums font-medium ${d.day_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(d.day_pnl, true)}</td>
-                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">{dollar(d.eod_balance)}</td>
-                    <td className="px-5 py-3 text-right text-text-tertiary tabular-nums">{d.risk_floor != null ? dollar(d.risk_floor) : '—'}</td>
-                    <td className={`px-5 py-3 text-right tabular-nums ${d.floor_distance != null && d.floor_distance <= 0 ? 'text-neg-text' : 'text-text-secondary'}`}>{d.floor_distance != null ? dollar(d.floor_distance) : '—'}</td>
+                  <tr
+                    key={i}
+                    className={`${i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''} ${rowTint}`}
+                  >
+                    <td className="px-5 py-3 text-left text-text-secondary tabular-nums whitespace-nowrap">
+                      {fmtChartDate(d.date)}
+                    </td>
+                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">
+                      {d.trades_taken}
+                    </td>
+                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">
+                      {d.contracts_total}
+                    </td>
+                    <td
+                      className={`px-5 py-3 text-right tabular-nums font-medium ${d.day_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+                    >
+                      {dollar(d.day_pnl, true)}
+                    </td>
+                    <td className="px-5 py-3 text-right text-text-secondary tabular-nums">
+                      {dollar(d.eod_balance)}
+                    </td>
+                    <td className="px-5 py-3 text-right text-text-tertiary tabular-nums">
+                      {d.risk_floor != null ? dollar(d.risk_floor) : '—'}
+                    </td>
+                    <td
+                      className={`px-5 py-3 text-right tabular-nums ${d.floor_distance != null && d.floor_distance <= 0 ? 'text-neg-text' : 'text-text-secondary'}`}
+                    >
+                      {d.floor_distance != null ? dollar(d.floor_distance) : '—'}
+                    </td>
                     <td className="px-5 py-3 text-center">
                       {breached ? (
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.5px] px-2 py-0.5 rounded bg-neg-muted text-neg-text border border-neg/40">Breach</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.5px] px-2 py-0.5 rounded bg-neg-muted text-neg-text border border-neg/40">
+                          Breach
+                        </span>
                       ) : d.halt_reason ? (
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-gold-muted text-gold-text border border-gold-text/20" title={d.halt_reason}>{d.halt_reason}</span>
+                        <span
+                          className="text-[10px] font-medium px-2 py-0.5 rounded bg-gold-muted text-gold-text border border-gold-text/20"
+                          title={d.halt_reason}
+                        >
+                          {d.halt_reason}
+                        </span>
                       ) : (
                         <span className="text-text-tertiary">—</span>
                       )}
@@ -3054,10 +4083,18 @@ function SizedTimelineTable({ run }: { run: Run }) {
             <tfoot>
               <tr className="border-t border-border-subtle bg-bg-elevated/30">
                 <td className="px-5 py-3 text-[11px] font-semibold text-text-secondary">Final</td>
-                <td className="text-right px-5 py-3 text-[11px] font-medium text-text-secondary tabular-nums">{run.trade_count ?? '—'}</td>
+                <td className="text-right px-5 py-3 text-[11px] font-medium text-text-secondary tabular-nums">
+                  {run.trade_count ?? '—'}
+                </td>
                 <td className="px-5 py-3" />
-                <td className={`text-right px-5 py-3 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>{dollar(run.net_pnl, true)}</td>
-                <td className="text-right px-5 py-3 text-[11px] font-semibold text-text-secondary tabular-nums">{dollar(finalBal)}</td>
+                <td
+                  className={`text-right px-5 py-3 text-[11px] font-semibold tabular-nums ${(run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+                >
+                  {dollar(run.net_pnl, true)}
+                </td>
+                <td className="text-right px-5 py-3 text-[11px] font-semibold text-text-secondary tabular-nums">
+                  {dollar(finalBal)}
+                </td>
                 <td className="px-5 py-3" />
                 <td className="px-5 py-3" />
                 <td className="px-5 py-3" />
@@ -3076,7 +4113,15 @@ function SizedTimelineTable({ run }: { run: Run }) {
  *  this on EITHER side is excluded from the degradation as not-assessable. */
 const WF_MIN_TRADES_PER_WINDOW = 20
 
-function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () => void; navigate: (path: string) => void }) {
+function RunStressTestModal({
+  run,
+  onClose,
+  navigate,
+}: {
+  run: Run
+  onClose: () => void
+  navigate: (path: string) => void
+}) {
   const runTest = useRunStressTest()
   const { data: rulesets } = useRulesets()
 
@@ -3087,18 +4132,19 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
   // test was started. Selectable, so the choice is visible rather than merely consistent.
   const evals = run.evaluations ?? []
   const limitOf = (rulesetId: string): number => {
-    const rs = rulesets?.find(r => r.id === rulesetId)
+    const rs = rulesets?.find((r) => r.id === rulesetId)
     if (!rs) return Infinity
     if (rs.ruleset_type === 'personal' || rs.ruleset_type === 'demo') {
-      return (rs.max_drawdown_from_peak_pct && rs.account_size)
-        ? rs.account_size * rs.max_drawdown_from_peak_pct / 100 : Infinity
+      return rs.max_drawdown_from_peak_pct && rs.account_size
+        ? (rs.account_size * rs.max_drawdown_from_peak_pct) / 100
+        : Infinity
     }
     return rs.max_loss_eod || Infinity
   }
   const strictest = useMemo(() => {
     if (!evals.length) return undefined
-    const prop = evals.filter(e => {
-      const rs = rulesets?.find(r => r.id === e.ruleset_id)
+    const prop = evals.filter((e) => {
+      const rs = rulesets?.find((r) => r.id === e.ruleset_id)
       return rs && rs.ruleset_type !== 'personal' && rs.ruleset_type !== 'demo'
     })
     const pool = prop.length ? prop : evals
@@ -3106,7 +4152,9 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
   }, [evals, rulesets])
 
   const [rulesetId, setRulesetId] = useState<string | undefined>(strictest?.ruleset_id)
-  useEffect(() => { setRulesetId(strictest?.ruleset_id) }, [strictest?.ruleset_id])
+  useEffect(() => {
+    setRulesetId(strictest?.ruleset_id)
+  }, [strictest?.ruleset_id])
 
   const [windows, setWindows] = useState(5)
   const trades = run.trade_count ?? 0
@@ -3119,30 +4167,42 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
   const maxUsableWindows = Math.floor((trades * 0.3) / WF_MIN_TRADES_PER_WINDOW)
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4 max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4 max-h-[88vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-base font-semibold text-text-primary">Run Stress Test</h2>
 
         {evals.length ? (
           <div className="space-y-1.5">
             <p className="text-xs text-text-secondary">
               Grade against
-              <span className="text-text-tertiary"> — every grade is a statement about drawdown vs this ruleset's limit</span>
+              <span className="text-text-tertiary">
+                {' '}
+                — every grade is a statement about drawdown vs this ruleset's limit
+              </span>
             </p>
             <select
               value={rulesetId ?? ''}
-              onChange={e => setRulesetId(e.target.value || undefined)}
+              onChange={(e) => setRulesetId(e.target.value || undefined)}
               className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1.5 text-xs text-text-primary"
             >
-              {evals.map(ev => (
+              {evals.map((ev) => (
                 <option key={ev.ruleset_id} value={ev.ruleset_id}>
-                  {ev.ruleset_name}{ev.ruleset_id === strictest?.ruleset_id ? ' — strictest' : ''}
+                  {ev.ruleset_name}
+                  {ev.ruleset_id === strictest?.ruleset_id ? ' — strictest' : ''}
                 </option>
               ))}
             </select>
           </div>
         ) : (
-          <p className="text-xs text-text-tertiary">No ruleset — Monte Carlo only, and no letter grade.</p>
+          <p className="text-xs text-text-tertiary">
+            No ruleset — Monte Carlo only, and no letter grade.
+          </p>
         )}
 
         <div className="space-y-1.5">
@@ -3153,12 +4213,18 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
             </span>
           </label>
           <input
-            type="range" min={2} max={10} step={1} value={windows}
-            onChange={e => setWindows(Number(e.target.value))}
+            type="range"
+            min={2}
+            max={10}
+            step={1}
+            value={windows}
+            onChange={(e) => setWindows(Number(e.target.value))}
             className="w-full accent-accent"
           />
           <div className="flex justify-between text-[10px] text-text-tertiary font-mono">
-            <span>2</span><span className="text-text-primary">{windows} windows</span><span>10</span>
+            <span>2</span>
+            <span className="text-text-primary">{windows} windows</span>
+            <span>10</span>
           </div>
           {wfThin && (
             <p className="text-[11px] text-warn-text leading-snug">
@@ -3180,32 +4246,44 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
         <div className="flex gap-2 pt-2">
           <button
             onClick={() => {
-              runTest.mutate({
-                run_id: run.run_id,
-                ruleset_id: rulesetId,
-                include_walk_forward: true,
-                include_sensitivity: true,
-                num_simulations: 10_000,
-                num_bootstrap: 1_000,
-                walk_forward_windows: windows,
-              }, { onSuccess: (data) => {
-                // The server's OWN estimate, not a number invented here. The old modal hardcoded
-                // "~45 / ~80 min" while the response already carried an estimate computed from the
-                // real param count and runner — for a python run the truth is minutes.
-                if (data.estimated_duration_min) {
-                  toast.info(`Estimated ~${data.estimated_duration_min} min · ${data.notes.join(' · ')}`,
-                             { duration: 10_000 })
+              runTest.mutate(
+                {
+                  run_id: run.run_id,
+                  ruleset_id: rulesetId,
+                  include_walk_forward: true,
+                  include_sensitivity: true,
+                  num_simulations: 10_000,
+                  num_bootstrap: 1_000,
+                  walk_forward_windows: windows,
+                },
+                {
+                  onSuccess: (data) => {
+                    // The server's OWN estimate, not a number invented here. The old modal hardcoded
+                    // "~45 / ~80 min" while the response already carried an estimate computed from the
+                    // real param count and runner — for a python run the truth is minutes.
+                    if (data.estimated_duration_min) {
+                      toast.info(
+                        `Estimated ~${data.estimated_duration_min} min · ${data.notes.join(' · ')}`,
+                        { duration: 10_000 }
+                      )
+                    }
+                    onClose()
+                    navigate(`/stress-tests/${data.stress_test_id}`)
+                  },
                 }
-                onClose()
-                navigate(`/stress-tests/${data.stress_test_id}`)
-              } })
+              )
             }}
             disabled={runTest.isPending}
             className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"
           >
             {runTest.isPending ? 'Starting…' : 'Run Stress Test'}
           </button>
-          <button onClick={onClose} className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover">Cancel</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -3215,7 +4293,12 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
 // Shown when running a full backtest on an optimizer combo that has no ruleset to score against
 // (the backend couldn't inherit one). The user picks the market-appropriate ruleset(s); the run is
 // then re-fired and scored. Mirrors the Run Backtest modal's "evaluate against" choice.
-function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
+function FullBacktestEvalModal({
+  run,
+  busy,
+  onConfirm,
+  onClose,
+}: {
   run: Run
   busy: boolean
   onConfirm: (rulesetIds: string[]) => void
@@ -3225,32 +4308,41 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
   // Forex (MT5/Python) runs evaluate against forex rulesets; futures (NT8) against the prop rows.
   const isFutures = runnerMarket(run.runner) === 'futures'
   const options = useMemo(
-    () => rulesets.filter(r => (isFutures ? r.market !== 'forex' : r.market === 'forex')),
-    [rulesets, isFutures],
+    () => rulesets.filter((r) => (isFutures ? r.market !== 'forex' : r.market === 'forex')),
+    [rulesets, isFutures]
   )
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const toggle = (id: string) => setSelected(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div>
           <h2 className="text-base font-semibold text-text-primary">Run Full Backtest</h2>
           <p className="text-xs text-text-secondary mt-1">
-            This optimizer parameter set has no ruleset attached. Pick which {isFutures ? 'futures' : 'forex'} ruleset(s)
-            to score it against.
+            This optimizer parameter set has no ruleset attached. Pick which{' '}
+            {isFutures ? 'futures' : 'forex'} ruleset(s) to score it against.
           </p>
         </div>
 
         {options.length === 0 ? (
-          <p className="text-xs text-text-tertiary">No {isFutures ? 'futures' : 'forex'} rulesets available.</p>
+          <p className="text-xs text-text-tertiary">
+            No {isFutures ? 'futures' : 'forex'} rulesets available.
+          </p>
         ) : (
           <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
-            {options.map(r => (
+            {options.map((r) => (
               <label
                 key={r.id}
                 className="flex items-center gap-2.5 px-3 py-2 rounded border border-border-subtle hover:bg-bg-hover cursor-pointer"
@@ -3275,7 +4367,12 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
           >
             {busy ? 'Starting…' : 'Run Full Backtest'}
           </button>
-          <button onClick={onClose} className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover">Cancel</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -3289,41 +4386,67 @@ function FullBacktestEvalModal({ run, busy, onConfirm, onClose }: {
 // period is persisted with it so the record never describes a window it wasn't run over.
 // Sweep children and optimizer combos share one period across the whole set, so they never get
 // here (the backend rejects a period override on them too).
-function RerunModal({ run, busy, onConfirm, onClose }: {
+function RerunModal({
+  run,
+  busy,
+  onConfirm,
+  onClose,
+}: {
   run: Run
   busy: boolean
   onConfirm: (start: string, end: string) => void
   onClose: () => void
 }) {
   const [start, setStart] = useState(run.start_date)
-  const [end, setEnd]     = useState(run.end_date)
+  const [end, setEnd] = useState(run.end_date)
   // Same measured floor the new-run modal uses — a rerun picks a new window, so it needs
   // the identical guard rather than inheriting the original run's (possibly wider) period.
   const { data: historyLimit } = useHistoryLimit(
-    run.instrument || null, run.bar_type || 'Minute', run.bar_value ?? 15, run.runner)
+    run.instrument || null,
+    run.bar_type || 'Minute',
+    run.bar_value ?? 15,
+    run.runner
+  )
   const floor = historyLimit?.earliest_date ?? null
   const valid = !!start && !!end && start < end && !(floor && start < floor)
   const moved = start !== run.start_date || end !== run.end_date
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div>
           <h2 className="text-base font-semibold text-text-primary">Rerun Backtest</h2>
           <p className="text-xs text-text-secondary mt-1">
-            {run.strategy_name} · {run.instrument} — same parameters, same rulesets. Adjust the period to
-            test over more (or less) history.
+            {run.strategy_name} · {run.instrument} — same parameters, same rulesets. Adjust the
+            period to test over more (or less) history.
           </p>
         </div>
 
         <div>
-          <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">Period</div>
-          <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} limit={historyLimit} />
+          <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
+            Period
+          </div>
+          <PeriodPicker
+            start={start}
+            end={end}
+            onChange={(s, e) => {
+              setStart(s)
+              setEnd(e)
+            }}
+            limit={historyLimit}
+          />
         </div>
 
         {moved && (
           <p className="text-[11px] text-warn-text">
-            This replaces the existing result for {fmtDate(run.start_date)} → {fmtDate(run.end_date)}.
+            This replaces the existing result for {fmtDate(run.start_date)} →{' '}
+            {fmtDate(run.end_date)}.
           </p>
         )}
 
@@ -3344,7 +4467,12 @@ function RerunModal({ run, busy, onConfirm, onClose }: {
           >
             {busy ? 'Starting…' : 'Rerun'}
           </button>
-          <button onClick={onClose} className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover">Cancel</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-text-secondary border border-border-subtle rounded hover:bg-bg-hover"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -3353,7 +4481,17 @@ function RerunModal({ run, busy, onConfirm, onClose }: {
 
 // ── Parameters side panel ─────────────────────────────────────────────────────
 
-function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle, balance, defaultBalance, onBalanceChange, headerH = 0 }: {
+function ParamsSidePanel({
+  run,
+  paramSchema,
+  baselineParams,
+  collapsed,
+  onToggle,
+  balance,
+  defaultBalance,
+  onBalanceChange,
+  headerH = 0,
+}: {
   run: Run
   paramSchema?: ParamSchemaEntry[]
   baselineParams?: Record<string, unknown>
@@ -3364,11 +4502,11 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
   onBalanceChange?: (v: number | null) => void
   headerH?: number
 }) {
-  const schemaByName = new Map((paramSchema ?? []).map(s => [s.name, s]))
+  const schemaByName = new Map((paramSchema ?? []).map((s) => [s.name, s]))
   const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
   const entries = Object.entries(run.params || {})
   if (!entries.length) return null
-  const tunable      = entries.filter(([k]) => !isFoundational(k))
+  const tunable = entries.filter(([k]) => !isFoundational(k))
   const foundational = entries.filter(([k]) => isFoundational(k))
   const changedCount = baselineParams
     ? tunable.filter(([k, v]) => String(v) !== String(baselineParams[k])).length
@@ -3387,8 +4525,15 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
           className="sticky flex flex-col items-center gap-2 py-4 px-2 w-full hover:bg-bg-hover transition-colors"
         >
           <ChevronRight size={14} className="text-text-tertiary" />
-          <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
-          {changedCount > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent" title={`${changedCount} changed vs baseline`} />}
+          <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">
+            Parameters
+          </span>
+          {changedCount > 0 && (
+            <span
+              className="w-[6px] h-[6px] rounded-full bg-accent"
+              title={`${changedCount} changed vs baseline`}
+            />
+          )}
         </button>
       </div>
     )
@@ -3396,15 +4541,26 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
 
   return (
     <div className="flex-shrink-0 w-[248px] bg-bg-surface border-r border-border-subtle">
-      <div className="sticky flex flex-col" style={{ top: Math.max(headerH - 22, 0), maxHeight: `calc(100vh - 56px - ${headerH}px)` }}>
+      <div
+        className="sticky flex flex-col"
+        style={{ top: Math.max(headerH - 22, 0), maxHeight: `calc(100vh - 56px - ${headerH}px)` }}
+      >
         <div className="px-3 py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Parameters</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+              Parameters
+            </span>
             {baselineParams && changedCount > 0 && (
-              <span className="text-[10px] text-accent whitespace-nowrap">{changedCount} changed</span>
+              <span className="text-[10px] text-accent whitespace-nowrap">
+                {changedCount} changed
+              </span>
             )}
           </div>
-          <button onClick={onToggle} title="Collapse" className="text-text-tertiary hover:text-text-secondary flex-shrink-0">
+          <button
+            onClick={onToggle}
+            title="Collapse"
+            className="text-text-tertiary hover:text-text-secondary flex-shrink-0"
+          >
             <ChevronLeft size={14} />
           </button>
         </div>
@@ -3419,7 +4575,11 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
               >
                 <span className="text-[11px] font-mono text-text-tertiary truncate">{k}</span>
                 <span className="text-[12px] font-mono font-semibold text-text-primary flex-shrink-0 text-right">
-                  {changed && <span className="text-[10px] text-text-tertiary line-through mr-1">{String(baselineParams![k])}</span>}
+                  {changed && (
+                    <span className="text-[10px] text-text-tertiary line-through mr-1">
+                      {String(baselineParams![k])}
+                    </span>
+                  )}
                   {String(v)}
                 </span>
               </div>
@@ -3427,12 +4587,18 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
           })}
           {foundational.length > 0 && (
             <details className="pt-2 mt-1 border-t border-border-subtle/40">
-              <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">Foundational · {foundational.length}</summary>
+              <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">
+                Foundational · {foundational.length}
+              </summary>
               <div className="mt-1.5 space-y-[3px]">
                 {foundational.map(([k, v]) => (
                   <div key={k} className="flex items-center justify-between gap-2 px-2">
-                    <span className="text-[10px] font-mono text-text-tertiary truncate" title={k}>{k}</span>
-                    <span className="text-[10px] font-mono text-text-secondary flex-shrink-0">{String(v)}</span>
+                    <span className="text-[10px] font-mono text-text-tertiary truncate" title={k}>
+                      {k}
+                    </span>
+                    <span className="text-[10px] font-mono text-text-secondary flex-shrink-0">
+                      {String(v)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -3442,20 +4608,34 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
         {/* Account-balance what-if — rebases the Max DD % KPI (moved here from that card). */}
         {onBalanceChange && defaultBalance != null && balance != null && (
           <div className="px-3 py-3 border-t border-border-subtle flex-shrink-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-2">Account balance · rebases Max DD %</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-2">
+              Account balance · rebases Max DD %
+            </div>
             <div className="flex items-center gap-2">
               <input
-                type="range" min={5000} max={250000} step={5000}
+                type="range"
+                min={5000}
+                max={250000}
+                step={5000}
                 value={Math.min(250000, Math.max(5000, balance))}
-                onChange={e => onBalanceChange(Number(e.target.value))}
+                onChange={(e) => onBalanceChange(Number(e.target.value))}
                 className="flex-1 accent-accent cursor-pointer"
               />
-              <span className="text-[11px] font-mono font-semibold tabular-nums text-text-primary whitespace-nowrap">${(balance / 1000).toFixed(0)}k</span>
+              <span className="text-[11px] font-mono font-semibold tabular-nums text-text-primary whitespace-nowrap">
+                ${(balance / 1000).toFixed(0)}k
+              </span>
             </div>
             <div className="mt-1 text-right">
-              {balance === defaultBalance
-                ? <span className="text-[9px] text-text-tertiary">default</span>
-                : <button onClick={() => onBalanceChange(null)} className="text-[9px] text-accent hover:underline">reset to ${(defaultBalance / 1000).toFixed(0)}k</button>}
+              {balance === defaultBalance ? (
+                <span className="text-[9px] text-text-tertiary">default</span>
+              ) : (
+                <button
+                  onClick={() => onBalanceChange(null)}
+                  className="text-[9px] text-accent hover:underline"
+                >
+                  reset to ${(defaultBalance / 1000).toFixed(0)}k
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -3480,38 +4660,44 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
 // series. Nulling is load-bearing — a left-behind `sharpe` would be the raw run's, sitting in a grid
 // labelled filtered.
 function buildFilteredRun(run: Run, kept: EquityPoint[], curve: EquityPoint[]): Run {
-  const pnls   = kept.map(t => t.profit ?? 0)
-  const wins   = pnls.filter(p => p > 0)
-  const losses = pnls.filter(p => p < 0)
-  const grossWin  = wins.reduce((a, b) => a + b, 0)
+  const pnls = kept.map((t) => t.profit ?? 0)
+  const wins = pnls.filter((p) => p > 0)
+  const losses = pnls.filter((p) => p < 0)
+  const grossWin = wins.reduce((a, b) => a + b, 0)
   const grossLoss = Math.abs(losses.reduce((a, b) => a + b, 0))
 
   // Daily P&L regrouped from the kept trades. Regime tags are carried over by DATE from the raw
   // series, so the regime overlay and the per-regime table keep working (a regime is a property of
   // the market on a date — removing a trade cannot change it).
-  const regimeByDate = new Map((run.daily_pnl ?? []).map(d => [d.date, d.regime_tag]))
+  const regimeByDate = new Map((run.daily_pnl ?? []).map((d) => [d.date, d.regime_tag]))
   const byDay = new Map<string, number>()
   for (const t of kept) if (t.date) byDay.set(t.date, (byDay.get(t.date) ?? 0) + (t.profit ?? 0))
   const daily: DailyPnlPoint[] = [...byDay.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, pnl]) => ({ date, pnl, regime_tag: regimeByDate.get(date) }))
 
-  let cum = 0, peak = 0, maxDd = 0
-  for (const p of pnls) { cum += p; peak = Math.max(peak, cum); maxDd = Math.max(maxDd, peak - cum) }
+  let cum = 0,
+    peak = 0,
+    maxDd = 0
+  for (const p of pnls) {
+    cum += p
+    peak = Math.max(peak, cum)
+    maxDd = Math.max(maxDd, peak - cum)
+  }
 
   return {
     ...run,
-    net_pnl:      pnls.reduce((a, b) => a + b, 0),
-    trade_count:  kept.length,
-    win_rate:     kept.length ? wins.length / kept.length : 0,
+    net_pnl: pnls.reduce((a, b) => a + b, 0),
+    trade_count: kept.length,
+    win_rate: kept.length ? wins.length / kept.length : 0,
     // Same convention as the backend: null when there is no denominator. KpiGrid recovers ∞ from the
     // trade list itself, so an undefeated filtered run still prints ∞ rather than a dash.
     profit_factor: grossLoss > 0 ? grossWin / grossLoss : null,
-    max_drawdown:  maxDd,
-    avg_win:       wins.length   ? grossWin / wins.length : null,
-    avg_loss:      losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : null,
-    equity_curve:  curve,
-    daily_pnl:     daily,
+    max_drawdown: maxDd,
+    avg_win: wins.length ? grossWin / wins.length : null,
+    avg_loss: losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : null,
+    equity_curve: curve,
+    daily_pnl: daily,
     // Recomputed downstream from the filtered daily series.
     worst_day_pnl: null,
     sharpe: null,
@@ -3551,22 +4737,44 @@ function avgDurationOf(trades: EquityPoint[]): number | null {
 // tag on turning it on. Both rules render through this; neither is hidden, which is the whole point.
 // The panel this replaced applied the holiday rule invisibly, so the pill could report trades being
 // removed while the only switch on screen said the news ones were kept.
-function ExcludeRule({ checked, onChange, label, note, count, tone, children }: {
-  checked: boolean; onChange: (next: boolean) => void
-  label: string; note?: string; count: number; tone: 'holiday' | 'news'; children?: React.ReactNode
+function ExcludeRule({
+  checked,
+  onChange,
+  label,
+  note,
+  count,
+  tone,
+  children,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  label: string
+  note?: string
+  count: number
+  tone: 'holiday' | 'news'
+  children?: React.ReactNode
 }) {
   return (
-    <div className={`rounded-md border px-2.5 py-2 ${checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle'}`}>
+    <div
+      className={`rounded-md border px-2.5 py-2 ${checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle'}`}
+    >
       <button
         type="button"
         onClick={() => onChange(!checked)}
         className="w-full flex items-center gap-2 text-left cursor-pointer group"
       >
-        <span className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
-          checked ? 'bg-accent border-accent' : 'border-border-default group-hover:border-text-tertiary'}`}>
+        <span
+          className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
+            checked
+              ? 'bg-accent border-accent'
+              : 'border-border-default group-hover:border-text-tertiary'
+          }`}
+        >
           {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
         </span>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'holiday' ? 'bg-neg-text' : 'bg-gold-text'}`} />
+        <span
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'holiday' ? 'bg-neg-text' : 'bg-gold-text'}`}
+        />
         <span className="text-[12px] text-text-primary flex-1 min-w-0">
           {label}
           {note && <span className="text-text-tertiary"> · {note}</span>}
@@ -3592,7 +4800,9 @@ export type CostFilter = ReturnType<typeof useCostFilter>
 const REPRICEABLE: CostLayer[] = ['spread', 'commission', 'swap']
 
 const COST_ROW_LABEL: Record<string, string> = {
-  spread: 'Spread', commission: 'Commission', swap: 'Overnight swap',
+  spread: 'Spread',
+  commission: 'Commission',
+  swap: 'Overnight swap',
 }
 
 // Why a cost belongs on this page at all, given the news filter next to it is the only other
@@ -3611,17 +4821,22 @@ function useCostFilter(run: Run | undefined) {
   // Only a python run stores the per-trade record a re-price needs; NT8/MT5 curves carry no stop
   // price or size, so the pill does not appear rather than appearing and failing.
   const enabled = run?.runner === 'python' && (run?.equity_curve?.length ?? 0) > 0
-  const chosen = useMemo(() => REPRICEABLE.filter(l => layers.has(l)), [layers])
+  const chosen = useMemo(() => REPRICEABLE.filter((l) => layers.has(l)), [layers])
   // ⚠ `isError` is READ, not ignored. The server REFUSES rather than degrades — a curve missing an
   // entry price, a stop or a size raises `RepriceError` → 400, which is the correct behaviour and
   // the whole point of `reprice.py`'s refusal discipline. But the pill destructured only `data`,
   // so a refusal left `report` undefined, `view` null and `active` false — and the label read
   // "Charging nothing" with the reader's boxes still ticked. A backend that carefully refuses to
   // guess is worth nothing if the UI renders the refusal as "no costs apply".
-  const { data: report, isLoading, isError, error } = useRunReprice(run?.run_id ?? null, chosen, enabled)
+  const {
+    data: report,
+    isLoading,
+    isError,
+    error,
+  } = useRunReprice(run?.run_id ?? null, chosen, enabled)
 
   const toggle = (l: CostLayer) =>
-    setLayers(prev => {
+    setLayers((prev) => {
       const next = new Set(prev)
       next.has(l) ? next.delete(l) : next.add(l)
       return next
@@ -3632,22 +4847,27 @@ function useCostFilter(run: Run | undefined) {
   // and the two controls cannot drift into disagreeing about how a KPI is recomputed.
   const view = useMemo(() => {
     if (!run || !report || !chosen.length) return null
-    const priced = new Map(report.trades.map(t => [t.index, t]))
-    const raw = (run.equity_curve ?? []).filter(p => p.profit != null || p.direction)
+    const priced = new Map(report.trades.map((t) => [t.index, t]))
+    const raw = (run.equity_curve ?? []).filter((p) => p.profit != null || p.direction)
     // A trade the server did not price back is a mismatch, not something to pass through at its
     // old value — that would show a partly-charged book as a fully-charged one.
     //
     // ⚠ It returns a NAMED refusal rather than a bare null. A bare null made `active` false, and
     // `active` false renders as "Charging nothing" with the reader's boxes still ticked — the
     // identical failure the `isError` fix above exists to have stopped, arriving one branch over.
-    const unpriced = raw.filter(p => !priced.has(p.index)).length
+    const unpriced = raw.filter((p) => !priced.has(p.index)).length
     if (unpriced) {
       return {
-        partial: unpriced, total: raw.length,
-        kept: null, curve: null, run: null, netBefore: 0, netAfter: 0,
+        partial: unpriced,
+        total: raw.length,
+        kept: null,
+        curve: null,
+        run: null,
+        netBefore: 0,
+        netAfter: 0,
       }
     }
-    const kept = raw.map(p => {
+    const kept = raw.map((p) => {
       const t = priced.get(p.index)!
       // ⚠ **SIGNED, never `-Math.abs`.** `cost_usd` is positive for a charge and NEGATIVE for a
       // credit, because a short's gold swap is a real credit (+26.98 points/night on Vantage) and
@@ -3671,7 +4891,7 @@ function useCostFilter(run: Run | undefined) {
       // guarantees `adverse ≤ profit ≤ favorable` survives every rounding path: a halo the result
       // escapes is the one shape this bar can never be allowed to draw.
       const fav = p.favorable == null ? undefined : Math.max(p.favorable - t.cost_usd, t.profit, 0)
-      const adv = p.adverse   == null ? undefined : Math.min(p.adverse   - t.cost_usd, t.profit, 0)
+      const adv = p.adverse == null ? undefined : Math.min(p.adverse - t.cost_usd, t.profit, 0)
       return {
         ...p,
         profit: t.profit,
@@ -3687,13 +4907,23 @@ function useCostFilter(run: Run | undefined) {
     const netBefore = raw.reduce((t, p) => t + (p.profit ?? 0), 0)
     const netAfter = kept.reduce((t, p) => t + (p.profit ?? 0), 0)
     return {
-      partial: 0, total: raw.length,
-      kept, curve: kept, run: buildFilteredRun(run, kept, kept), netBefore, netAfter,
+      partial: 0,
+      total: raw.length,
+      kept,
+      curve: kept,
+      run: buildFilteredRun(run, kept, kept),
+      netBefore,
+      netAfter,
     }
   }, [run, report, chosen])
 
   return {
-    enabled, isLoading, report, layers, chosen, toggle,
+    enabled,
+    isLoading,
+    report,
+    layers,
+    chosen,
+    toggle,
     active: chosen.length > 0 && view?.run != null,
     repricedRun: view?.run ?? null,
     repricedCurve: view?.curve ?? null,
@@ -3766,15 +4996,15 @@ function useNewsFilter(run: Run | undefined) {
   // reach, and it reads as though something still depends on it.
   const [removeNews, setRemoveNews] = useState(false)
   const [removeHolidays, setRemoveHolidays] = useState(false)
-  const [pre, setPre]   = useState(15)                 // block window before an event (minutes)
-  const [post, setPost] = useState(30)                 // block window after an event (minutes)
+  const [pre, setPre] = useState(15) // block window before an event (minutes)
+  const [post, setPost] = useState(30) // block window after an event (minutes)
   const enabled = (run?.equity_curve.length ?? 0) > 0
   const { data: report, isLoading } = useRunNews(run?.run_id ?? null, pre, post, enabled)
 
   // Raw trades = curve points carrying a per-trade P&L (a leading balance anchor, if any, has none).
   const rawTrades = useMemo(
-    () => (run?.equity_curve ?? []).filter(p => p.profit != null || p.direction),
-    [run?.equity_curve],
+    () => (run?.equity_curve ?? []).filter((p) => p.profit != null || p.direction),
+    [run?.equity_curve]
   )
 
   // Apply both rules in one pass. The COUNTS are what each rule matches, not what it removed — a
@@ -3791,13 +5021,15 @@ function useNewsFilter(run: Run | undefined) {
     const tag = new Map<number, NewsTradeTag>()
     for (const t of report?.trades ?? []) if (t.index != null) tag.set(t.index, t)
     const kept: EquityPoint[] = []
-    let holidayCount = 0, newsCount = 0
+    let holidayCount = 0,
+      newsCount = 0
     for (const p of rawTrades) {
       const tg = tag.get(p.index)
       const isHoliday = !!tg?.in_holiday
-      const isNews    = !!tg?.in_news
-      if (isHoliday)      holidayCount++          // counted once, holiday takes precedence
-      else if (isNews)    newsCount++
+      const isNews = !!tg?.in_news
+      if (isHoliday)
+        holidayCount++ // counted once, holiday takes precedence
+      else if (isNews) newsCount++
       if ((isHoliday && removeHolidays) || (isNews && removeNews)) continue
       kept.push(p)
     }
@@ -3812,54 +5044,89 @@ function useNewsFilter(run: Run | undefined) {
   // mode counts the trades actually shown.
   const filteredCurve = useMemo<EquityPoint[] | null>(() => {
     const removed = rawTrades.length - view.kept.length
-    if (!removed) return null                       // nothing taken out — the real curve is correct
-    const anchors = (run?.equity_curve ?? []).filter(p => p.profit == null && !p.direction)
+    if (!removed) return null // nothing taken out — the real curve is correct
+    const anchors = (run?.equity_curve ?? []).filter((p) => p.profit == null && !p.direction)
     const startBal = rawTrades[0].equity - (rawTrades[0].profit ?? 0)
     const from = anchors.length ? anchors[anchors.length - 1].index + 1 : 1
     let cum = 0
     return [
       ...anchors,
-      ...view.kept.map((p, i) => ({ ...p, index: from + i, equity: startBal + (cum += (p.profit ?? 0)) })),
+      ...view.kept.map((p, i) => ({
+        ...p,
+        index: from + i,
+        equity: startBal + (cum += p.profit ?? 0),
+      })),
     ]
   }, [rawTrades, view.kept, run?.equity_curve])
 
-  const hasEntryTimes = rawTrades.some(p => p.entry_ms != null)
+  const hasEntryTimes = rawTrades.some((p) => p.entry_ms != null)
   const active = !!report?.has_data && hasEntryTimes && filteredCurve != null
 
   // The whole run rebuilt on the kept trades — what the page's KPI grid reads while the filter is on.
   const filteredRun = useMemo(
     () => (run && filteredCurve ? buildFilteredRun(run, view.kept, filteredCurve) : null),
-    [run, view.kept, filteredCurve],
+    [run, view.kept, filteredCurve]
   )
 
   return {
-    enabled, isLoading, report, pre, setPre, post, setPost,
-    removeNews, setRemoveNews, removeHolidays, setRemoveHolidays,
-    ...view, filteredCurve, filteredRun, hasEntryTimes,
-    totalTrades: rawTrades.length,   // the run as traded — the denominator of "N of M counted"
+    enabled,
+    isLoading,
+    report,
+    pre,
+    setPre,
+    post,
+    setPost,
+    removeNews,
+    setRemoveNews,
+    removeHolidays,
+    setRemoveHolidays,
+    ...view,
+    filteredCurve,
+    filteredRun,
+    hasEntryTimes,
+    totalTrades: rawTrades.length, // the run as traded — the denominator of "N of M counted"
     // How many trades the CURRENT settings take out. Derived from the kept list rather than summed
     // from the two counts: the counts are per-RULE and a trade can match both, so adding them would
     // over-report. Lives here because the pill and the Performance header both state it, and two
     // copies of this expression is exactly how they would come to disagree.
     excluded: rawTrades.length - view.kept.length,
-    isNt8: isNt8Runner(run?.runner),   // only NT8 has a "Reload charts" that can backfill trade times
+    isNt8: isNt8Runner(run?.runner), // only NT8 has a "Reload charts" that can backfill trade times
     // `active` = the filter is actually removing trades right now, so the main chart is showing the
     // FILTERED run and has to say so. Everything else on the page still reports the raw backtest.
     active,
     // `usable` = the calendar answered and the trades carry times, so the knobs mean something.
-    usable:     !!report?.has_data && hasEntryTimes,
-    noData:     !isLoading && !!report && !report.has_data,
-    oldRun:     !isLoading && !!report && report.has_data && !hasEntryTimes,
-    nothingHit: !isLoading && !!report && report.has_data && hasEntryTimes
-                && view.holidayCount === 0 && view.newsCount === 0,
+    usable: !!report?.has_data && hasEntryTimes,
+    noData: !isLoading && !!report && !report.has_data,
+    oldRun: !isLoading && !!report && report.has_data && !hasEntryTimes,
+    nothingHit:
+      !isLoading &&
+      !!report &&
+      report.has_data &&
+      hasEntryTimes &&
+      view.holidayCount === 0 &&
+      view.newsCount === 0,
   }
 }
 
 function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: string | null }) {
   const {
-    isLoading, pre, setPre, post, setPost,
-    removeNews, setRemoveNews, removeHolidays, setRemoveHolidays,
-    holidayCount, newsCount, totalTrades, excluded, noData, oldRun, nothingHit, usable,
+    isLoading,
+    pre,
+    setPre,
+    post,
+    setPost,
+    removeNews,
+    setRemoveNews,
+    removeHolidays,
+    setRemoveHolidays,
+    holidayCount,
+    newsCount,
+    totalTrades,
+    excluded,
+    noData,
+    oldRun,
+    nothingHit,
+    usable,
   } = news
 
   const [open, setOpen] = useState(false)
@@ -3872,37 +5139,52 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
     const onDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   // The pill counts what is OUT of the numbers beside it. Always a count of excluded trades, never
   // a state word: "News kept" read as "nothing removed" while 3 holiday trades were being removed
   // by a rule the UI never showed. One number, one meaning, in every state.
-  const label = blocked ? 'Excluding n/a'
-    : isLoading ? 'Checking calendar…'
-    : noData  ? 'No calendar data'
-    : oldRun  ? 'No trade times'
-    : excluded ? `Excluding ${excluded} ${excluded === 1 ? 'trade' : 'trades'}`
-    : 'Excluding nothing'
+  const label = blocked
+    ? 'Excluding n/a'
+    : isLoading
+      ? 'Checking calendar…'
+      : noData
+        ? 'No calendar data'
+        : oldRun
+          ? 'No trade times'
+          : excluded
+            ? `Excluding ${excluded} ${excluded === 1 ? 'trade' : 'trades'}`
+            : 'Excluding nothing'
 
   const disabled = !!blocked || isLoading || !usable
 
   return (
     <div ref={wrapRef} className="relative shrink-0">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         disabled={disabled}
         title={blocked ?? undefined}
         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-          excluded > 0 ? 'border-accent/40 bg-accent/15 text-accent'
-                       : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'}`}
+          excluded > 0
+            ? 'border-accent/40 bg-accent/15 text-accent'
+            : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'
+        }`}
       >
         <Newspaper size={12} className="shrink-0" />
         <span className="tabular-nums">{label}</span>
-        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={12}
+          className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {open && (
@@ -3943,27 +5225,49 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
                 it can't read as a global setting. Both re-tag live off the backend. */}
             <label className="flex items-center gap-2 text-[11px] text-text-tertiary">
               <span className="w-10 shrink-0">Before</span>
-              <input type="range" min={0} max={120} step={5} value={pre}
-                onChange={e => setPre(Number(e.target.value))}
-                className="flex-1 accent-accent cursor-pointer" />
-              <span className="w-8 text-right tabular-nums text-text-primary font-medium">{pre}m</span>
+              <input
+                type="range"
+                min={0}
+                max={120}
+                step={5}
+                value={pre}
+                onChange={(e) => setPre(Number(e.target.value))}
+                className="flex-1 accent-accent cursor-pointer"
+              />
+              <span className="w-8 text-right tabular-nums text-text-primary font-medium">
+                {pre}m
+              </span>
             </label>
             <label className="flex items-center gap-2 text-[11px] text-text-tertiary">
               <span className="w-10 shrink-0">After</span>
-              <input type="range" min={0} max={120} step={5} value={post}
-                onChange={e => setPost(Number(e.target.value))}
-                className="flex-1 accent-accent cursor-pointer" />
-              <span className="w-8 text-right tabular-nums text-text-primary font-medium">{post}m</span>
+              <input
+                type="range"
+                min={0}
+                max={120}
+                step={5}
+                value={post}
+                onChange={(e) => setPost(Number(e.target.value))}
+                className="flex-1 accent-accent cursor-pointer"
+              />
+              <span className="w-8 text-right tabular-nums text-text-primary font-medium">
+                {post}m
+              </span>
             </label>
           </ExcludeRule>
 
           <div className="border-t border-border-subtle pt-2.5 text-[12px] text-text-secondary">
-            {nothingHit
-              ? 'No release or holiday landed on a trade — nothing to exclude.'
-              : <><span className="tabular-nums font-medium text-text-primary">{totalTrades - excluded}</span>
-                  {' of '}
-                  <span className="tabular-nums">{totalTrades}</span>
-                  {' trades counted'}</>}
+            {nothingHit ? (
+              'No release or holiday landed on a trade — nothing to exclude.'
+            ) : (
+              <>
+                <span className="tabular-nums font-medium text-text-primary">
+                  {totalTrades - excluded}
+                </span>
+                {' of '}
+                <span className="tabular-nums">{totalTrades}</span>
+                {' trades counted'}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3975,8 +5279,14 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
 // `title` saying which question it answers. It exists because that footer carries THREE numbers of
 // two different units, and the version that printed one of them with a borrowed caption is what let
 // a reader conclude the pill was lying (see the footer's own comment).
-function Figure({ label, hint, children }: {
-  label: string; hint: string; children: React.ReactNode
+function Figure({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint: string
+  children: React.ReactNode
 }) {
   return (
     <p className="flex items-baseline justify-between gap-3" title={hint}>
@@ -3997,27 +5307,55 @@ function Figure({ label, hint, children }: {
 // panel would look broken while every number in it was correct. In R the size cancels, so these
 // sum exactly. It is also the unit a cost should be read in: 12R of cost turned $28.3M into $10.1M
 // on the reference run, so the dollars answer a different question from the one the row asks.
-function CostRule({ checked, onChange, label, note, costR, tone, locked = false }: {
-  checked: boolean; onChange: () => void; label: string; note?: string
-  costR: number | undefined; tone: 'cost' | 'swap'; locked?: boolean
+function CostRule({
+  checked,
+  onChange,
+  label,
+  note,
+  costR,
+  tone,
+  locked = false,
+}: {
+  checked: boolean
+  onChange: () => void
+  label: string
+  note?: string
+  costR: number | undefined
+  tone: 'cost' | 'swap'
+  locked?: boolean
 }) {
   return (
     <button
       onClick={locked ? undefined : onChange}
       disabled={locked}
-      title={locked ? 'This run was measured with this cost charged, so it is already in every '
-                    + 'number on the page. Charging it off again would be a re-run, not arithmetic.'
-                   : undefined}
+      title={
+        locked
+          ? 'This run was measured with this cost charged, so it is already in every ' +
+            'number on the page. Charging it off again would be a re-run, not arithmetic.'
+          : undefined
+      }
       className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
-        locked ? 'border-border-subtle bg-bg-sunken/40 cursor-default'
-        : checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle hover:bg-bg-sunken/60'}`}
+        locked
+          ? 'border-border-subtle bg-bg-sunken/40 cursor-default'
+          : checked
+            ? 'border-border-default bg-bg-sunken'
+            : 'border-border-subtle hover:bg-bg-sunken/60'
+      }`}
     >
-      <span className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
-        checked ? (locked ? 'bg-text-tertiary border-text-tertiary' : 'bg-accent border-accent')
-                : 'border-border-default'}`}>
+      <span
+        className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
+          checked
+            ? locked
+              ? 'bg-text-tertiary border-text-tertiary'
+              : 'bg-accent border-accent'
+            : 'border-border-default'
+        }`}
+      >
         {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
       </span>
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'swap' ? 'bg-neg-text' : 'bg-gold-text'}`} />
+      <span
+        className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'swap' ? 'bg-neg-text' : 'bg-gold-text'}`}
+      />
       <span className="text-[12px] text-text-primary flex-1 min-w-0">
         {label}
         {note && <span className="text-text-tertiary"> · {note}</span>}
@@ -4029,10 +5367,13 @@ function CostRule({ checked, onChange, label, note, costR, tone, locked = false 
           charge came to is baked into its stored trades and never reported separately, so any
           figure here would be invented. */}
       <span className="text-[12px] tabular-nums text-text-secondary shrink-0">
-        {locked ? 'in the run'
-          : costR == null ? '—'
-          : costR === 0 ? 'none on this account'
-          : `−${costR.toFixed(2)}R`}
+        {locked
+          ? 'in the run'
+          : costR == null
+            ? '—'
+            : costR === 0
+              ? 'none on this account'
+              : `−${costR.toFixed(2)}R`}
       </span>
     </button>
   )
@@ -4047,9 +5388,24 @@ function CostRule({ checked, onChange, label, note, costR, tone, locked = false 
 // the cost is not size-independent there and the whole justification for re-pricing evaporates.
 function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?: string | null }) {
   const {
-    isLoading, layers, toggle, active, totalCost, totalCostR, needsRerun, notExact, derivedBasis,
-    approximateLayers, netBefore, netAfter, balanceImpact, alreadyCharged, failed, failReason,
-    partial, partialOf,
+    isLoading,
+    layers,
+    toggle,
+    active,
+    totalCost,
+    totalCostR,
+    needsRerun,
+    notExact,
+    derivedBasis,
+    approximateLayers,
+    netBefore,
+    netAfter,
+    balanceImpact,
+    alreadyCharged,
+    failed,
+    failReason,
+    partial,
+    partialOf,
   } = costs
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -4059,10 +5415,15 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
     const onDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   // Like the news pill beside it, the label states the SIZE of what is applied rather than that
@@ -4081,26 +5442,36 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
   // layers and something WAS charged, just not to the whole book). Passing the short answer
   // through at its old values would have shown a partly-charged book as a fully-charged one,
   // which is why the view refuses it; saying so is the other half of that refusal.
-  const label = blocked ? 'Charging n/a'
-    : failed ? 'Can’t price this run'
-    : isLoading ? 'Pricing…'
-    : partial ? `${partial} of ${partialOf} unpriced`
-    : active ? `Charging ${Math.abs(totalCostR).toFixed(2)}R`
-    : 'Charging nothing'
+  const label = blocked
+    ? 'Charging n/a'
+    : failed
+      ? 'Can’t price this run'
+      : isLoading
+        ? 'Pricing…'
+        : partial
+          ? `${partial} of ${partialOf} unpriced`
+          : active
+            ? `Charging ${Math.abs(totalCostR).toFixed(2)}R`
+            : 'Charging nothing'
 
   return (
     <div ref={wrapRef} className="relative shrink-0">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         disabled={!!blocked}
         title={blocked ?? undefined}
         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-          active && !blocked ? 'border-gold-text/40 bg-gold-text/15 text-gold-text'
-                 : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'}`}
+          active && !blocked
+            ? 'border-gold-text/40 bg-gold-text/15 text-gold-text'
+            : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'
+        }`}
       >
         <Coins size={12} className="shrink-0" />
         <span className="tabular-nums">{label}</span>
-        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={12}
+          className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {open && (
@@ -4121,7 +5492,7 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
             <InfoTip text="The run was measured at whatever costs it was launched with — this re-prices its trades on top, without re-running. It works because each of these costs a fixed amount of R no matter what size the position was, so the R is knowable and the dollars follow. Every figure is priced off the named broker's own MEASURED spread and swap, never a typed-in number. Reshapes the Performance numbers and the Equity chart only." />
           </div>
 
-          {REPRICEABLE.map(l => {
+          {REPRICEABLE.map((l) => {
             // A layer the RUN charged is shown ticked and LOCKED. It is already in every number on
             // the page, the server refuses to charge it again, and it cannot be charged off from
             // here either — the stored trades were measured with it, so removing it is a re-run.
@@ -4148,9 +5519,7 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 curve predates the stored entry/stop/size genuinely cannot be re-priced and the
                 honest answer is a re-run. */}
             {failed && (
-              <p className="text-neg-text">
-                {failReason || 'This run could not be re-priced.'}
-              </p>
+              <p className="text-neg-text">{failReason || 'This run could not be re-priced.'}</p>
             )}
             {/* The re-price came back short. Saying "charging nothing" here would be the same lie
                 the refusal above exists to have stopped — the server DID price most of the book. */}
@@ -4163,8 +5532,10 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
             )}
             {needsRerun.length > 0 && (
               <p className="text-gold-text">
-                {needsRerun.join(' and ')} can’t be applied here — {needsRerun.length === 1 ? 'it changes' : 'they change'} which
-                setups fill, so {needsRerun.length === 1 ? 'it needs' : 'they need'} a re-run from the strategy page.
+                {needsRerun.join(' and ')} can’t be applied here —{' '}
+                {needsRerun.length === 1 ? 'it changes' : 'they change'} which setups fill, so{' '}
+                {needsRerun.length === 1 ? 'it needs' : 'they need'} a re-run from the strategy
+                page.
               </p>
             )}
             {active && notExact && (
@@ -4197,7 +5568,10 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                     −{Math.abs(totalCostR).toFixed(2)}R
                   </span>
                 </Figure>
-                <Figure label="Fees charged" hint="what actually left the account, on the charged path">
+                <Figure
+                  label="Fees charged"
+                  hint="what actually left the account, on the charged path"
+                >
                   {dollar(Math.abs(totalCost))}
                 </Figure>
                 {balanceImpact != null && netBefore != null && netAfter != null && (
@@ -4209,12 +5583,17 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                     </Figure>
                     <p className="pt-0.5 text-[11px] leading-[1.45] text-text-tertiary">
                       The balance moves{' '}
-                      <span className="tabular-nums text-neg-text">{dollar(-Math.abs(balanceImpact))}</span>
-                      {Math.abs(totalCost) > 1 && Math.abs(balanceImpact) > Math.abs(totalCost) * 1.5
+                      <span className="tabular-nums text-neg-text">
+                        {dollar(-Math.abs(balanceImpact))}
+                      </span>
+                      {Math.abs(totalCost) > 1 &&
+                      Math.abs(balanceImpact) > Math.abs(totalCost) * 1.5
                         ? `, ${(Math.abs(balanceImpact) / Math.abs(totalCost)).toFixed(0)}x the fees`
                         : ''}
                       {' — a fee paid early also costs everything it would have compounded into. '}
-                      <span className="text-text-secondary">Read the cost as R, not as dollars.</span>
+                      <span className="text-text-secondary">
+                        Read the cost as R, not as dollars.
+                      </span>
                     </p>
                   </>
                 )}
@@ -4234,9 +5613,20 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
 // already spanned the column with nothing in it, so the whole control costs zero vertical space —
 // and putting it HERE rather than in a section of its own is what removed the duplicated KPI tiles:
 // the filter reshapes these numbers, so it belongs on their header.
-function PerformanceHeader({ news, costs, blocked, filtered, collapsed, onToggle }: {
-  news: NewsFilter; costs: CostFilter; blocked: string | null; filtered: boolean
-  collapsed: boolean; onToggle: () => void
+function PerformanceHeader({
+  news,
+  costs,
+  blocked,
+  filtered,
+  collapsed,
+  onToggle,
+}: {
+  news: NewsFilter
+  costs: CostFilter
+  blocked: string | null
+  filtered: boolean
+  collapsed: boolean
+  onToggle: () => void
 }) {
   return (
     <div className="flex items-center justify-between gap-3 mb-2">
@@ -4246,11 +5636,13 @@ function PerformanceHeader({ news, costs, blocked, filtered, collapsed, onToggle
       <PerfCollapseToggle
         collapsed={collapsed}
         onToggle={onToggle}
-        suffix={filtered && (
-          <span className="text-accent normal-case tracking-normal font-medium">
-            · {news.totalTrades - news.excluded} of {news.totalTrades} trades
-          </span>
-        )}
+        suffix={
+          filtered && (
+            <span className="text-accent normal-case tracking-normal font-medium">
+              · {news.totalTrades - news.excluded} of {news.totalTrades} trades
+            </span>
+          )
+        }
       />
       {/* Two controls, one header, and they compose in one direction: costs re-price the trades,
           then the news filter removes some of them. The reverse would be wrong — a cost is a
@@ -4270,12 +5662,30 @@ function NewsFilterNote({ news }: { news: NewsFilter }) {
   if (!noData && !oldRun) return null
   return (
     <div className="flex items-start gap-2 text-[11px] text-text-tertiary">
-      <Info size={12} className={`mt-[2px] shrink-0 ${oldRun ? 'text-warn-text' : 'text-text-tertiary'}`} />
-      {noData
-        ? <span>News filter is off: no calendar data cached for these months. Backfill with <code className="text-text-secondary">engines/news/tools/backfill.py</code>.</span>
-        : <span>News filter is off: this run recorded no trade times. {isNt8
-            ? <><span className="text-text-secondary font-medium">Reload charts</span> or rerun it to enable it.</>
-            : <><span className="text-text-secondary font-medium">Rerun it</span> to enable it.</>}</span>}
+      <Info
+        size={12}
+        className={`mt-[2px] shrink-0 ${oldRun ? 'text-warn-text' : 'text-text-tertiary'}`}
+      />
+      {noData ? (
+        <span>
+          News filter is off: no calendar data cached for these months. Backfill with{' '}
+          <code className="text-text-secondary">engines/news/tools/backfill.py</code>.
+        </span>
+      ) : (
+        <span>
+          News filter is off: this run recorded no trade times.{' '}
+          {isNt8 ? (
+            <>
+              <span className="text-text-secondary font-medium">Reload charts</span> or rerun it to
+              enable it.
+            </>
+          ) : (
+            <>
+              <span className="text-text-secondary font-medium">Rerun it</span> to enable it.
+            </>
+          )}
+        </span>
+      )}
     </div>
   )
 }
@@ -4284,11 +5694,11 @@ function NewsFilterNote({ news }: { news: NewsFilter }) {
 
 export function BacktestDetail() {
   const { runId } = useParams<{ runId: string }>()
-  const navigate     = useNavigate()
+  const navigate = useNavigate()
   // A leg opened from a stack carries the stack id in nav state, so Back returns to that stack
   // instead of the Runs list.
-  const location     = useLocation()
-  const fromStack    = (location.state as { fromStack?: string } | null)?.fromStack ?? null
+  const location = useLocation()
+  const fromStack = (location.state as { fromStack?: string } | null)?.fromStack ?? null
   const { data: run, isLoading } = useBacktestRun(runId ?? null)
   // A tuning iteration is a standalone run derived from a baseline (source_run_id set,
   // not a sweep/optimization child). Fetch its baseline to wire up breadcrumbs.
@@ -4308,8 +5718,8 @@ export function BacktestDetail() {
   const { data: derivedRuns } = useBacktestRuns({ source_run_id: runId ?? '__no_run__' })
   const tuneCount = useMemo(
     // A sweep and an optimization stamp `source_run_id` too — only a standalone child is a tweak.
-    () => (derivedRuns ?? []).filter(r => !r.sweep_id && !r.optimization_id).length,
-    [derivedRuns],
+    () => (derivedRuns ?? []).filter((r) => !r.sweep_id && !r.optimization_id).length,
+    [derivedRuns]
   )
   const { data: strategy } = useStrategy(run?.strategy_id ?? null)
   // Owned here, not in the card, so the main Equity chart can redraw on the kept trades (see
@@ -4320,23 +5730,32 @@ export function BacktestDetail() {
   const costs = useCostFilter(run)
   const news = useNewsFilter(costs.repricedRun ?? run)
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem('bt_params_panel') === 'collapsed' } catch { return false }
+    try {
+      return localStorage.getItem('bt_params_panel') === 'collapsed'
+    } catch {
+      return false
+    }
   })
-  const toggleParams = () => setParamsCollapsed(c => {
-    const next = !c
-    try { localStorage.setItem('bt_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
-    return next
-  })
+  const toggleParams = () =>
+    setParamsCollapsed((c) => {
+      const next = !c
+      try {
+        localStorage.setItem('bt_params_panel', next ? 'collapsed' : 'open')
+      } catch {
+        /* quota */
+      }
+      return next
+    })
   const { ref: headerRef, scrolled, height: headerH, collapse } = useStickyBanner()
-  const { data: progress }       = useLabProgress()
-  const stopBacktest             = useStopBacktest()
-  const reloadCharts             = useReloadCharts()
-  const refreshChartSpec         = useRefreshChartSpec()
-  const retryBacktest            = useRetryBacktest()
-  const { data: runningJob }     = useRunningVpsJob()
-  const { data: stressTests }    = useStressTests(run?.run_id)
-  const { data: stressLock }     = useRunningStressLock()
-  const latestStress             = stressTests?.[0]
+  const { data: progress } = useLabProgress()
+  const stopBacktest = useStopBacktest()
+  const reloadCharts = useReloadCharts()
+  const refreshChartSpec = useRefreshChartSpec()
+  const retryBacktest = useRetryBacktest()
+  const { data: runningJob } = useRunningVpsJob()
+  const { data: stressTests } = useStressTests(run?.run_id)
+  const { data: stressLock } = useRunningStressLock()
+  const latestStress = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)
   const [showEvalPicker, setShowEvalPicker] = useState(false)
   const [showRerun, setShowRerun] = useState(false)
@@ -4347,16 +5766,25 @@ export function BacktestDetail() {
   // shows the combined trade-excursion bar — solid net result + translucent favorable/adverse halo;
   // on other runs it falls back to plain per-trade profit bars. Run-ups & drawdowns is its own thing.
   const [histOn, setHistOn] = useState(() => getBoolPref(_HIST_KEY))
-  const toggleHist = useCallback((v: boolean) => { setHistOn(v); setBoolPref(_HIST_KEY, v) }, [])
+  const toggleHist = useCallback((v: boolean) => {
+    setHistOn(v)
+    setBoolPref(_HIST_KEY, v)
+  }, [])
   const [rudOn, setRudOn] = useState(() => getBoolPref(_RUD_KEY))
-  const toggleRud = useCallback((v: boolean) => { setRudOn(v); setBoolPref(_RUD_KEY, v) }, [])
+  const toggleRud = useCallback((v: boolean) => {
+    setRudOn(v)
+    setBoolPref(_RUD_KEY, v)
+  }, [])
   // Equity x-axis: calendar (default) or trade number. Calendar is canonical — it's the axis the
   // tuning workbench compares runs on, and the only one where a flat month reads as a flat month.
   const [xMode, setXMode] = useState<XMode>(getXMode)
-  const toggleXMode = useCallback((v: XMode) => { setXMode(v); setXModePref(v) }, [])
+  const toggleXMode = useCallback((v: XMode) => {
+    setXMode(v)
+    setXModePref(v)
+  }, [])
   const hasExcursionData = useMemo(
-    () => run?.equity_curve.some(p => p.favorable != null || p.adverse != null) ?? false,
-    [run?.equity_curve],
+    () => run?.equity_curve.some((p) => p.favorable != null || p.adverse != null) ?? false,
+    [run?.equity_curve]
   )
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
@@ -4369,7 +5797,7 @@ export function BacktestDetail() {
   // Gated on the run having a curve at all (the same `hasCharts` test the Charts section makes) —
   // a run with no chart data has no Price tab to warm.
   const canChart = (run?.equity_curve.length ?? 0) > 0
-  usePrefetchChartSpec(canChart ? runId ?? null : null, canChart)
+  usePrefetchChartSpec(canChart ? (runId ?? null) : null, canChart)
   // The third cost — the panel BUILD — can only be paid by mounting it, so the Charts section
   // keeps the Price tab mounted (hidden) once `warmPrice` is set. Deferred to an idle beat rather
   // than done on mount: klinecharts blocks the main thread while it lays the candles out, and the
@@ -4383,19 +5811,25 @@ export function BacktestDetail() {
     // not a belt-and-braces extra.
     const ric = window.requestIdleCallback?.(arm, { timeout: 2_500 })
     const t = window.setTimeout(arm, 1_200)
-    return () => { if (ric != null) window.cancelIdleCallback?.(ric); window.clearTimeout(t) }
+    return () => {
+      if (ric != null) window.cancelIdleCallback?.(ric)
+      window.clearTimeout(t)
+    }
   }, [canChart, warmPrice])
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
   // When a run is scored against several firms, show ONE at a time (a wall of cards is
   // confusing). This selects which firm's evaluation card is shown; defaults to the first
   // and resets when the run changes. Performance follows the same firm once sizing lands.
   const [selectedEvalIdx, setSelectedEvalIdx] = useState(0)
-  useEffect(() => { setSelectedEvalIdx(0) }, [run?.run_id])
+  useEffect(() => {
+    setSelectedEvalIdx(0)
+  }, [run?.run_id])
 
   // Capital-based scores (Calmar, Max DD %) rebase the run to an account balance. Default to the
   // primary evaluated ruleset's account_size; the slider is a view-time what-if override only.
   const { data: rulesets } = useRulesets()
-  const rulesetBalance = rulesets?.find(r => r.id === run?.evaluations?.[0]?.ruleset_id)?.account_size ?? null
+  const rulesetBalance =
+    rulesets?.find((r) => r.id === run?.evaluations?.[0]?.ruleset_id)?.account_size ?? null
 
   // The run's OWN opening balance, recovered from the curve's first point — `equity` is
   // cumulative and anchored on it, so `equity - profit` is exact arithmetic, not a guess.
@@ -4418,23 +5852,27 @@ export function BacktestDetail() {
   }, [run?.equity_curve])
 
   const [balanceOverride, setBalanceOverride] = useState<number | null>(null)
-  useEffect(() => { setBalanceOverride(null) }, [run?.run_id])
+  useEffect(() => {
+    setBalanceOverride(null)
+  }, [run?.run_id])
   const defaultBalance = rulesetBalance ?? curveBalance
   const balance = balanceOverride ?? defaultBalance
 
   // The firm whose evaluation is currently shown in the verdict ribbon.
-  const selectedEval = (run && run.evaluations.length)
-    ? run.evaluations[Math.min(selectedEvalIdx, run.evaluations.length - 1)]
-    : null
+  const selectedEval =
+    run && run.evaluations.length
+      ? run.evaluations[Math.min(selectedEvalIdx, run.evaluations.length - 1)]
+      : null
 
   // The drawdown meter's simulated tail — the worst-1% drawdown Monte Carlo produced.
   // Gated on dd_basis === 'percent': the dollar basis is not comparable to a peak-relative
   // percentage on a compounding run, and tests run before 2026-07-30 have no percent columns
   // at all. Null means "not measured", and the meter says exactly that rather than drawing a
   // tail of zero — an unmeasured tail is unknown, not absent.
-  const stressTailPct = (latestStress?.dd_basis === 'percent' && latestStress.pct1_max_dd_pct != null)
-    ? latestStress.pct1_max_dd_pct
-    : null
+  const stressTailPct =
+    latestStress?.dd_basis === 'percent' && latestStress.pct1_max_dd_pct != null
+      ? latestStress.pct1_max_dd_pct
+      : null
 
   const [perfCollapsed, togglePerfCollapsed] = usePerfCollapsed()
 
@@ -4457,7 +5895,9 @@ export function BacktestDetail() {
     if (!run) return run
     const ev = selectedEval
     if (!ev || ev.net_pnl == null) return run
-    const sizedTl = trimToLastActive(ev.sized_timeline?.length ? ev.sized_timeline : run.sized_timeline)
+    const sizedTl = trimToLastActive(
+      ev.sized_timeline?.length ? ev.sized_timeline : run.sized_timeline
+    )
     const cutoff = sizedTl.length ? sizedTl[sizedTl.length - 1].date : ''
     return {
       ...run,
@@ -4473,8 +5913,10 @@ export function BacktestDetail() {
       // Daily P&L trimmed to the same cutoff so its chart ends with the others (and the daily-derived
       // KPIs — worst day / streak / Sharpe / concentration — don't count dead post-breach flat days).
       daily_pnl: cutoff
-        ? (ev.daily_pnl?.length ? ev.daily_pnl : run.daily_pnl).filter(d => d.date <= cutoff)
-        : (ev.daily_pnl?.length ? ev.daily_pnl : run.daily_pnl),
+        ? (ev.daily_pnl?.length ? ev.daily_pnl : run.daily_pnl).filter((d) => d.date <= cutoff)
+        : ev.daily_pnl?.length
+          ? ev.daily_pnl
+          : run.daily_pnl,
       // Sized trade-by-trade curve for THIS firm — drives its Drawdown, Long/Short, Calmar,
       // Max DD % and Z-Score. The Equity/"Strategy (1 unit)" tab keeps the raw run.equity_curve.
       equity_curve: ev.equity_curve?.length ? ev.equity_curve : run.equity_curve,
@@ -4488,8 +5930,8 @@ export function BacktestDetail() {
       // number sitting right there in this firm's own equity curve.
       worst_losing_streak: worstLosingStreakOf(
         (ev.equity_curve?.length ? ev.equity_curve : run.equity_curve)
-          .filter(p => p.profit != null)
-          .map(p => p.profit as number),
+          .filter((p) => p.profit != null)
+          .map((p) => p.profit as number)
       ),
       sharpe: null,
       platform_sharpe: null,
@@ -4507,9 +5949,10 @@ export function BacktestDetail() {
   // curve is re-indexed 1..N over only the trades that firm took, so the news tags (keyed on raw
   // indices) would not even line up. So when a firm's sizing is actually overriding the numbers,
   // the filter is refused outright rather than applied to something it does not describe.
-  const newsBlocked = (run && effRun && effRun.equity_curve !== run.equity_curve)
-    ? 'Not available while a firm’s sized numbers are shown — position sizes depend on the trades before them, so removing one needs a re-run, not arithmetic.'
-    : null
+  const newsBlocked =
+    run && effRun && effRun.equity_curve !== run.equity_curve
+      ? 'Not available while a firm’s sized numbers are shown — position sizes depend on the trades before them, so removing one needs a re-run, not arithmetic.'
+      : null
   const newsOnKpis = news.active && !newsBlocked && news.filteredRun != null
   // Costs are refused under a firm's sizing for exactly the reason the news filter is, and it is
   // worth stating in its own right: a sized curve is PATH DEPENDENT, so charging trade #7 changes
@@ -4517,28 +5960,23 @@ export function BacktestDetail() {
   // On the raw one-unit curve the charge is size-independent in R, which is the whole reason this
   // control can exist at all.
   const costOnKpis = costs.active && !newsBlocked && costs.repricedRun != null
-  const costedRun  = costOnKpis ? costs.repricedRun! : effRun
-  const kpiRun     = newsOnKpis ? news.filteredRun! : costedRun
+  const costedRun = costOnKpis ? costs.repricedRun! : effRun
+  const kpiRun = newsOnKpis ? news.filteredRun! : costedRun
 
-  const fallback = useMemo(
-    () => computeFallbacks(kpiRun?.daily_pnl ?? []),
-    [kpiRun?.daily_pnl],
-  )
+  const fallback = useMemo(() => computeFallbacks(kpiRun?.daily_pnl ?? []), [kpiRun?.daily_pnl])
   // The unfiltered side of every card's "vs unfiltered" delta.
-  const rawFallback = useMemo(
-    () => computeFallbacks(effRun?.daily_pnl ?? []),
-    [effRun?.daily_pnl],
-  )
+  const rawFallback = useMemo(() => computeFallbacks(effRun?.daily_pnl ?? []), [effRun?.daily_pnl])
   // Every card's "vs unfiltered" delta compares against the run AS IT WAS MEASURED, so it answers
   // the question either pill was opened to ask — what did charging this cost, or removing those
   // trades, actually do. Driven by EITHER control being on, not just the news one.
-  const kpiCompare = ((newsOnKpis || costOnKpis) && effRun)
-    ? { run: effRun, fallback: rawFallback, equity: effRun.equity_curve }
-    : null
+  const kpiCompare =
+    (newsOnKpis || costOnKpis) && effRun
+      ? { run: effRun, fallback: rawFallback, equity: effRun.equity_curve }
+      : null
 
   const hasRealRegimeTags = useMemo(
-    () => run?.daily_pnl.some(d => d.regime_tag && d.regime_tag !== 'UNKNOWN') ?? false,
-    [run?.daily_pnl],
+    () => run?.daily_pnl.some((d) => d.regime_tag && d.regime_tag !== 'UNKNOWN') ?? false,
+    [run?.daily_pnl]
   )
 
   // What the main Equity chart draws: the news/holiday-filtered curve while that filter is removing
@@ -4550,42 +5988,42 @@ export function BacktestDetail() {
   // saying why. One switch drives both.
   // The costed curve is the fallback BENEATH the news-filtered one, so the chart follows whichever
   // controls are on and always matches the grid above it.
-  const equityCurve = (newsOnKpis ? news.filteredCurve : null)
-    ?? (costOnKpis ? costs.repricedCurve : null)
-    ?? run?.equity_curve ?? []
+  const equityCurve =
+    (newsOnKpis ? news.filteredCurve : null) ??
+    (costOnKpis ? costs.repricedCurve : null) ??
+    run?.equity_curve ??
+    []
 
   // Regime bands for the main equity chart, in whatever units its x-axis is using.
   // DATE mode reads the run's FULL-CALENDAR timeline — every trading day in the window, classified
   // server-side — so the bands show the market's real regime calendar and match the tuning
   // workbench exactly. Runs completed before the backend emitted a timeline fall back to the old
   // per-trade-day derivation. TRADE mode always uses the per-trade one (only it is indexed by trade).
-  const regimeBands = useMemo(
-    () => {
-      if (!overlayOn || !run) return []
-      // One source of truth for "what regime was this date": the run's FULL-CALENDAR timeline when
-      // it has one, else whatever tags its traded days carry (runs completed before the timeline
-      // existed). Then project it onto whichever axis the chart is on.
-      const map = new Map<string, string>()
-      for (const d of run.regime_timeline ?? []) map.set(d.date, d.regime)
-      if (!map.size) for (const d of run.daily_pnl) if (d.regime_tag) map.set(d.date, d.regime_tag)
-      if (!map.size) return []
-      return xMode === 'trade'
-        // Trade-# bands are indexed off the CURVE, so they must read the same curve the chart is
+  const regimeBands = useMemo(() => {
+    if (!overlayOn || !run) return []
+    // One source of truth for "what regime was this date": the run's FULL-CALENDAR timeline when
+    // it has one, else whatever tags its traded days carry (runs completed before the timeline
+    // existed). Then project it onto whichever axis the chart is on.
+    const map = new Map<string, string>()
+    for (const d of run.regime_timeline ?? []) map.set(d.date, d.regime)
+    if (!map.size) for (const d of run.daily_pnl) if (d.regime_tag) map.set(d.date, d.regime_tag)
+    if (!map.size) return []
+    return xMode === 'trade'
+      ? // Trade-# bands are indexed off the CURVE, so they must read the same curve the chart is
         // drawing — the filtered one when the news filter is removing trades, or every band after
         // the first removal sits one trade to the right of the trade it describes.
-        ? regimeBandsByIndex(equityCurve, map)
-        : regimeBandsFromTimeline([...map.entries()].map(([date, regime]) => ({ date, regime })))
-    },
-    [overlayOn, xMode, run?.regime_timeline, equityCurve, run?.daily_pnl],
-  )
+        regimeBandsByIndex(equityCurve, map)
+      : regimeBandsFromTimeline([...map.entries()].map(([date, regime]) => ({ date, regime })))
+  }, [overlayOn, xMode, run?.regime_timeline, equityCurve, run?.daily_pnl])
 
   // Regime is a market property (same calendar days for every firm), so tag lookup uses the
   // primary run's tagged daily P&L; day positions come from the selected firm's sized timeline.
   const sizedRegimeBands = useMemo(
-    () => (overlayOn && hasRealRegimeTags && run && effRun?.sized_timeline.length)
-      ? computeSizedRegimeBands(effRun.sized_timeline, run.daily_pnl)
-      : [],
-    [overlayOn, hasRealRegimeTags, effRun?.sized_timeline, run?.daily_pnl],
+    () =>
+      overlayOn && hasRealRegimeTags && run && effRun?.sized_timeline.length
+        ? computeSizedRegimeBands(effRun.sized_timeline, run.daily_pnl)
+        : [],
+    [overlayOn, hasRealRegimeTags, effRun?.sized_timeline, run?.daily_pnl]
   )
 
   // Did the SELECTED firm breach its trailing drawdown floor? If so the account is dead — trading
@@ -4594,65 +6032,88 @@ export function BacktestDetail() {
   const breachInfo = useMemo(() => {
     const ev = selectedEval
     if (!ev || ev.drawdown_pass !== false) return null
-    const day = (ev.sized_timeline || []).find(t => t.risk_floor != null && t.eod_balance < t.risk_floor)
+    const day = (ev.sized_timeline || []).find(
+      (t) => t.risk_floor != null && t.eod_balance < t.risk_floor
+    )
     return { date: day?.date ?? null }
   }, [selectedEval])
 
-  const isRunning  = run?.status === 'running'
-  const isFailed   = run?.status.startsWith('failed') ?? false
-  const isComplete    = run?.status === 'complete'
-  const scope         = runnerScope(run?.runner)
-  const isNt8         = isNt8Runner(run?.runner)
+  const isRunning = run?.status === 'running'
+  const isFailed = run?.status.startsWith('failed') ?? false
+  const isComplete = run?.status === 'complete'
+  const scope = runnerScope(run?.runner)
+  const isNt8 = isNt8Runner(run?.runner)
   // Optimization combo run: exists in the grid export but has never been fully backtested
-  const isOptCombo    = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
-  const stressBlocked = runnerMarket(run?.runner) === 'futures'
-    ? (stressLock?.futures ?? false)
-    : (stressLock?.forex ?? false)
-  const jobBusy       = !!runningJobFor(runningJob, run?.runner)?.running
+  const isOptCombo = !!run?.optimization_id && !run?.equity_curve?.length && isComplete
+  const stressBlocked =
+    runnerMarket(run?.runner) === 'futures'
+      ? (stressLock?.futures ?? false)
+      : (stressLock?.forex ?? false)
+  const jobBusy = !!runningJobFor(runningJob, run?.runner)?.running
 
   // Rerun / full-backtest. For an optimizer combo with no inheritable ruleset the backend replies
   // status="needs_ruleset" instead of starting — we then open a picker and re-fire with the choice.
   const runFullBacktest = useCallback(() => {
     if (!run) return
     retryBacktest.mutate(run.run_id, {
-      onSuccess: (data) => { if (data.status === 'needs_ruleset') setShowEvalPicker(true) },
+      onSuccess: (data) => {
+        if (data.status === 'needs_ruleset') setShowEvalPicker(true)
+      },
     })
   }, [run, retryBacktest])
 
-  const confirmFullBacktest = useCallback((rulesetIds: string[]) => {
-    if (!run) return
-    retryBacktest.mutate(
-      { runId: run.run_id, evaluateRulesets: rulesetIds },
-      { onSuccess: () => setShowEvalPicker(false) },
-    )
-  }, [run, retryBacktest])
+  const confirmFullBacktest = useCallback(
+    (rulesetIds: string[]) => {
+      if (!run) return
+      retryBacktest.mutate(
+        { runId: run.run_id, evaluateRulesets: rulesetIds },
+        { onSuccess: () => setShowEvalPicker(false) }
+      )
+    },
+    [run, retryBacktest]
+  )
 
   // A standalone run owns its own period, so its rerun goes through the modal (pick the window
   // first). Sweep children and optimizer combos inherit the set's period — they re-fire directly.
   const ownsPeriod = !!run && !run.sweep_id && !run.optimization_id
-  const confirmRerun = useCallback((start: string, end: string) => {
-    if (!run) return
-    retryBacktest.mutate(
-      { runId: run.run_id, startDate: start, endDate: end },
-      { onSuccess: () => setShowRerun(false) },
-    )
-  }, [run, retryBacktest])
+  const confirmRerun = useCallback(
+    (start: string, end: string) => {
+      if (!run) return
+      retryBacktest.mutate(
+        { runId: run.run_id, startDate: start, endDate: end },
+        { onSuccess: () => setShowRerun(false) }
+      )
+    },
+    [run, retryBacktest]
+  )
 
   const progressMatches = progress?.job_id === run?.run_id
-  const runPct       = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
-  const runMessage   = isRunning ? (progressMatches ? (progress?.message ?? 'Starting…') : 'Starting…') : ''
+  const runPct = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
+  const runMessage = isRunning
+    ? progressMatches
+      ? (progress?.message ?? 'Starting…')
+      : 'Starting…'
+    : ''
   const runStartedAt = isRunning ? (progressMatches ? (progress?.started_at ?? null) : null) : null
 
-  const backLabel = fromStack ? 'Stack'
-    : isTuneIteration ? 'Tuning workbench'
-    : run?.optimization_id ? 'Optimization'
-    : run?.sweep_id ? 'Sweep'
-    : 'Backtests'
-  const backPath  = fromStack ? `/backtests/stacks/${fromStack}`
-    : isTuneIteration ? `/backtests/runs/${run!.source_run_id}/tune`
-    : run?.optimization_id ? `/optimizations/${run.optimization_id}`
-    : run?.sweep_id ? `/backtests/sweeps/${run.sweep_id}`
-    : '/backtests'
+  const backLabel = fromStack
+    ? 'Stack'
+    : isTuneIteration
+      ? 'Tuning workbench'
+      : run?.optimization_id
+        ? 'Optimization'
+        : run?.sweep_id
+          ? 'Sweep'
+          : 'Backtests'
+  const backPath = fromStack
+    ? `/backtests/stacks/${fromStack}`
+    : isTuneIteration
+      ? `/backtests/runs/${run!.source_run_id}/tune`
+      : run?.optimization_id
+        ? `/optimizations/${run.optimization_id}`
+        : run?.sweep_id
+          ? `/backtests/sweeps/${run.sweep_id}`
+          : '/backtests'
 
   return (
     // Full-bleed page (cancel main's p-[22px]): a full-width header row on top, then a
@@ -4679,7 +6140,11 @@ export function BacktestDetail() {
             <div className="flex items-center justify-between gap-4">
               {scrolled ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <button onClick={() => navigate(backPath)} title={backLabel} className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0">
+                  <button
+                    onClick={() => navigate(backPath)}
+                    title={backLabel}
+                    className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
+                  >
                     <ArrowLeft size={14} />
                   </button>
                   <h1
@@ -4697,7 +6162,12 @@ export function BacktestDetail() {
                   </span>
                   {run.evaluations.length > 0 && (
                     <div className="max-[900px]:hidden">
-                      <HeaderRulesetChip evals={run.evaluations} selected={selectedEvalIdx} onSelect={setSelectedEvalIdx} compact />
+                      <HeaderRulesetChip
+                        evals={run.evaluations}
+                        selected={selectedEvalIdx}
+                        onSelect={setSelectedEvalIdx}
+                        compact
+                      />
                     </div>
                   )}
                   {run.sized && (
@@ -4710,79 +6180,101 @@ export function BacktestDetail() {
                   )}
                 </div>
               ) : (
-              <div>
-                <div className="flex items-center gap-3 flex-wrap mb-2">
-                  <h1
-                    className="text-h1 font-semibold leading-tight cursor-pointer hover:text-accent transition-colors"
-                    onClick={() => navigate(`/strategies/${run.strategy_id}`)}
-                    title="Go to strategy"
-                  >
-                    {run.strategy_name || run.strategy_id}
-                  </h1>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
-                    {run.instrument}
-                  </span>
-                  <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
-                    {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
-                  </span>
-                  {run.evaluations.length > 0 && (
-                    <HeaderRulesetChip evals={run.evaluations} selected={selectedEvalIdx} onSelect={setSelectedEvalIdx} />
-                  )}
-                  {run.sized && (
-                    <span
-                      className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20"
-                      title="The sizing engine set contract size from each ruleset's contract ladder and room left — this run reflects real prop-firm sizing, not unit size."
+                <div>
+                  <div className="flex items-center gap-3 flex-wrap mb-2">
+                    <h1
+                      className="text-h1 font-semibold leading-tight cursor-pointer hover:text-accent transition-colors"
+                      onClick={() => navigate(`/strategies/${run.strategy_id}`)}
+                      title="Go to strategy"
                     >
-                      Engine-sized · {sizingModeLabel(run.sizing_mode, run.manual_risk_pct)}
+                      {run.strategy_name || run.strategy_id}
+                    </h1>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+                      {run.instrument}
                     </span>
-                  )}
-                  {isTuneIteration && (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20">
-                      <SlidersHorizontal size={11} />
-                      Tuning iteration
-                      <button onClick={() => navigate(`/backtests/runs/${run.source_run_id}/tune`)} className="underline decoration-dotted underline-offset-2 hover:opacity-80">
-                        open workbench
-                      </button>
-                      {tuneBaseline?.optimization_id && (
-                        <>
-                          <span className="text-accent/40">·</span>
-                          <button onClick={() => navigate(`/optimizations/${tuneBaseline.optimization_id}`)} className="underline decoration-dotted underline-offset-2 hover:opacity-80">
-                            optimization
-                          </button>
-                        </>
-                      )}
+                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
+                      {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
                     </span>
-                  )}
+                    {run.evaluations.length > 0 && (
+                      <HeaderRulesetChip
+                        evals={run.evaluations}
+                        selected={selectedEvalIdx}
+                        onSelect={setSelectedEvalIdx}
+                      />
+                    )}
+                    {run.sized && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20"
+                        title="The sizing engine set contract size from each ruleset's contract ladder and room left — this run reflects real prop-firm sizing, not unit size."
+                      >
+                        Engine-sized · {sizingModeLabel(run.sizing_mode, run.manual_risk_pct)}
+                      </span>
+                    )}
+                    {isTuneIteration && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20">
+                        <SlidersHorizontal size={11} />
+                        Tuning iteration
+                        <button
+                          onClick={() => navigate(`/backtests/runs/${run.source_run_id}/tune`)}
+                          className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                        >
+                          open workbench
+                        </button>
+                        {tuneBaseline?.optimization_id && (
+                          <>
+                            <span className="text-accent/40">·</span>
+                            <button
+                              onClick={() =>
+                                navigate(`/optimizations/${tuneBaseline.optimization_id}`)
+                              }
+                              className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                            >
+                              optimization
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
               )}
               <div className="flex items-center gap-2 flex-shrink-0">
                 {!isRunning && (
                   <button
-                    onClick={() => ownsPeriod ? setShowRerun(true) : runFullBacktest()}
+                    onClick={() => (ownsPeriod ? setShowRerun(true) : runFullBacktest())}
                     disabled={retryBacktest.isPending || jobBusy}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40"
-                    title={jobBusy
-                      ? `${RUNNER_LABEL[scope]} is busy — wait for the current job to finish`
-                      : run.optimization_id && !run.equity_curve?.length
-                        ? 'Run a full backtest on this parameter set to get charts and trade data'
-                        : `${run.status.startsWith('failed') ? 'Retry' : 'Rerun'} this backtest${ownsPeriod ? ' — pick the period first' : ''}`}
+                    title={
+                      jobBusy
+                        ? `${RUNNER_LABEL[scope]} is busy — wait for the current job to finish`
+                        : run.optimization_id && !run.equity_curve?.length
+                          ? 'Run a full backtest on this parameter set to get charts and trade data'
+                          : `${run.status.startsWith('failed') ? 'Retry' : 'Rerun'} this backtest${ownsPeriod ? ' — pick the period first' : ''}`
+                    }
                   >
-                    {retryBacktest.isPending
-                      ? <RefreshCw size={14} className="animate-spin" />
-                      : <Play size={14} />}
-                    {run.status.startsWith('failed') ? 'Retry' : run.optimization_id && !run.equity_curve?.length ? 'Full Backtest' : 'Rerun'}
+                    {retryBacktest.isPending ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <Play size={14} />
+                    )}
+                    {run.status.startsWith('failed')
+                      ? 'Retry'
+                      : run.optimization_id && !run.equity_curve?.length
+                        ? 'Full Backtest'
+                        : 'Rerun'}
                   </button>
                 )}
                 {run.status === 'complete' && (run.trade_count ?? 0) > 0 && (
                   <button
                     onClick={() => navigate(`/backtests/runs/${run.run_id}/tune`)}
                     className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-                    title={tuneCount
-                      ? `Open the tuning workbench — ${tuneCount} iteration${tuneCount !== 1 ? 's' : ''} already run from this backtest`
-                      : 'Tweak parameters and compare iterations'}
+                    title={
+                      tuneCount
+                        ? `Open the tuning workbench — ${tuneCount} iteration${tuneCount !== 1 ? 's' : ''} already run from this backtest`
+                        : 'Tweak parameters and compare iterations'
+                    }
                   >
                     <SlidersHorizontal size={14} /> Tune
                     {tuneCount > 0 && (
@@ -4793,39 +6285,57 @@ export function BacktestDetail() {
                   </button>
                 )}
                 {(run.trade_count ?? 0) > 0 && <OptimizeButton run={run} />}
-                {run?.status === 'complete' && (run.trade_count ?? 0) > 0 && (() => {
-                  const stressRunning = latestStress && latestStress.status !== 'complete' && !latestStress.status.startsWith('failed')
-                  if (stressRunning) return (
-                    <button
-                      onClick={() => navigate(`/stress-tests/${latestStress.stress_test_id}`)}
-                      className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-accent/30 bg-accent/5 text-accent hover:bg-accent/10 transition-colors"
-                    >
-                      <Activity size={14} className="animate-pulse flex-shrink-0" />
-                      In progress
-                    </button>
-                  )
-                  const tc = run.trade_count ?? 0
-                  const tooFewForStress = tc < MIN_TRADES_FOR_STRESS
-                  return (
-                    <button
-                      onClick={() => !stressBlocked && !tooFewForStress && setShowStressModal(true)}
-                      disabled={stressBlocked || tooFewForStress}
-                      title={
-                        tooFewForStress
-                          ? `Needs ≥${MIN_TRADES_FOR_STRESS} trades to stress test — this run has ${tc}. Get more trades from more data first (longer period, more instruments, or a smaller timeframe).`
-                          : stressBlocked ? `A ${runnerMarket(run?.runner)} stress test is already running` : undefined
-                      }
-                      className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Activity size={14} />
-                      Stress Test
-                      {latestStress?.grade && <RobustnessGradeBadge grade={latestStress.grade} size="sm" />}
-                    </button>
-                  )
-                })()}
+                {run?.status === 'complete' &&
+                  (run.trade_count ?? 0) > 0 &&
+                  (() => {
+                    const stressRunning =
+                      latestStress &&
+                      latestStress.status !== 'complete' &&
+                      !latestStress.status.startsWith('failed')
+                    if (stressRunning)
+                      return (
+                        <button
+                          onClick={() => navigate(`/stress-tests/${latestStress.stress_test_id}`)}
+                          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-accent/30 bg-accent/5 text-accent hover:bg-accent/10 transition-colors"
+                        >
+                          <Activity size={14} className="animate-pulse flex-shrink-0" />
+                          In progress
+                        </button>
+                      )
+                    const tc = run.trade_count ?? 0
+                    const tooFewForStress = tc < MIN_TRADES_FOR_STRESS
+                    return (
+                      <button
+                        onClick={() =>
+                          !stressBlocked && !tooFewForStress && setShowStressModal(true)
+                        }
+                        disabled={stressBlocked || tooFewForStress}
+                        title={
+                          tooFewForStress
+                            ? `Needs ≥${MIN_TRADES_FOR_STRESS} trades to stress test — this run has ${tc}. Get more trades from more data first (longer period, more instruments, or a smaller timeframe).`
+                            : stressBlocked
+                              ? `A ${runnerMarket(run?.runner)} stress test is already running`
+                              : undefined
+                        }
+                        className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Activity size={14} />
+                        Stress Test
+                        {latestStress?.grade && (
+                          <RobustnessGradeBadge grade={latestStress.grade} size="sm" />
+                        )}
+                      </button>
+                    )
+                  })()}
                 {isRunning && <StatusPill status={run.status} size="md" />}
               </div>
-              {showStressModal && run && <RunStressTestModal run={run} onClose={() => setShowStressModal(false)} navigate={navigate} />}
+              {showStressModal && run && (
+                <RunStressTestModal
+                  run={run}
+                  onClose={() => setShowStressModal(false)}
+                  navigate={navigate}
+                />
+              )}
               {showEvalPicker && run && (
                 <FullBacktestEvalModal
                   run={run}
@@ -4862,309 +6372,392 @@ export function BacktestDetail() {
             headerH={headerH}
           />
           <div className="flex-1 min-w-0 px-[22px] pb-[22px] space-y-8">
-
-          {/* ── Banners ───────────────────────────────────────────────────── */}
-          {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={scope === 'mt5' ? MT5_RUN_STEPS : scope === 'python' ? PYTHON_RUN_STEPS : NT8_RUN_STEPS} />}
-          {/* `onRetry` was declared on FailureBanner and never passed, so the banner's Retry button
+            {/* ── Banners ───────────────────────────────────────────────────── */}
+            {isRunning && (
+              <RunningBanner
+                pct={runPct}
+                message={runMessage}
+                startedAt={runStartedAt}
+                onStop={() => stopBacktest.mutate(run.run_id)}
+                runId={run.run_id}
+                runner={run.runner ?? 'ninjatrader'}
+                steps={
+                  scope === 'mt5'
+                    ? MT5_RUN_STEPS
+                    : scope === 'python'
+                      ? PYTHON_RUN_STEPS
+                      : NT8_RUN_STEPS
+                }
+              />
+            )}
+            {/* `onRetry` was declared on FailureBanner and never passed, so the banner's Retry button
               did not exist — on the one banner a reader is looking at because something failed.
               A standalone run picks its window first (the same RerunModal the header Rerun opens);
               a sweep child or optimizer combo inherits its set's period and re-fires directly. */}
-          {isFailed && (
-            <FailureBanner
-              run={run}
-              onRetry={ownsPeriod ? () => setShowRerun(true) : runFullBacktest}
-              /* Disabled while THIS platform holds a job too — the backend 409s on a busy
+            {isFailed && (
+              <FailureBanner
+                run={run}
+                onRetry={ownsPeriod ? () => setShowRerun(true) : runFullBacktest}
+                /* Disabled while THIS platform holds a job too — the backend 409s on a busy
                  platform, and a button whose only outcome is an error toast is not a button. */
-              retrying={retryBacktest.isPending || jobBusy}
-            />
-          )}
-          {/* ── Evaluation + Performance ──────────────────────────────────── */}
-          {/* One row of four question cards: Made, Risked, Trusted, Verdict. The evaluation used
+                retrying={retryBacktest.isPending || jobBusy}
+              />
+            )}
+            {/* ── Evaluation + Performance ──────────────────────────────────── */}
+            {/* One row of four question cards: Made, Risked, Trusted, Verdict. The evaluation used
               to be a fixed-height COLUMN beside a 6+6 KPI grid, then a full-width ribbon above
               three cards — see PerformancePanel and VerdictCard for why both are gone. An
               optimizer combo has no verdict to card up, so it keeps the bar, which is a prompt to
               run a real backtest rather than a grade and earns its width. */}
-          {isComplete && (
-            <div className="space-y-2.5">
-              <PerformanceHeader
-                news={news} costs={costs} blocked={newsBlocked} filtered={newsOnKpis}
-                collapsed={perfCollapsed} onToggle={togglePerfCollapsed}
-              />
-              <PerformancePanel
-                run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
-                balance={balance} compare={kpiCompare} filtered={newsOnKpis}
-                limitPct={selectedEval?.personal_max_drawdown_from_peak_pct ?? null}
-                tailPct={stressTailPct}
-                collapsed={perfCollapsed}
-                ribbon={isOptCombo ? (
-                  <UnscoredRibbon
-                    tradeCount={run.trade_count}
-                    onRunFullBacktest={runFullBacktest}
-                    busy={retryBacktest.isPending || jobBusy}
-                  />
-                ) : null}
-                verdict={isOptCombo ? null : (
-                  <VerdictCard
-                    ev={selectedEval}
-                    tradeCount={kpiRun?.trade_count ?? run.trade_count}
-                    totalTrades={run.trade_count}
-                    spanDays={runSpanDays}
-                    filtered={newsOnKpis}
-                    collapsed={perfCollapsed}
-                  />
-                )}
-              />
-              <NewsFilterNote news={news} />
-            </div>
-          )}
+            {isComplete && (
+              <div className="space-y-2.5">
+                <PerformanceHeader
+                  news={news}
+                  costs={costs}
+                  blocked={newsBlocked}
+                  filtered={newsOnKpis}
+                  collapsed={perfCollapsed}
+                  onToggle={togglePerfCollapsed}
+                />
+                <PerformancePanel
+                  run={kpiRun!}
+                  fallback={fallback}
+                  equity={kpiRun!.equity_curve}
+                  balance={balance}
+                  compare={kpiCompare}
+                  filtered={newsOnKpis}
+                  limitPct={selectedEval?.personal_max_drawdown_from_peak_pct ?? null}
+                  tailPct={stressTailPct}
+                  collapsed={perfCollapsed}
+                  ribbon={
+                    isOptCombo ? (
+                      <UnscoredRibbon
+                        tradeCount={run.trade_count}
+                        onRunFullBacktest={runFullBacktest}
+                        busy={retryBacktest.isPending || jobBusy}
+                      />
+                    ) : null
+                  }
+                  verdict={
+                    isOptCombo ? null : (
+                      <VerdictCard
+                        ev={selectedEval}
+                        tradeCount={kpiRun?.trade_count ?? run.trade_count}
+                        totalTrades={run.trade_count}
+                        spanDays={runSpanDays}
+                        filtered={newsOnKpis}
+                        collapsed={perfCollapsed}
+                      />
+                    )
+                  }
+                />
+                <NewsFilterNote news={news} />
+              </div>
+            )}
 
-          {/* The News & holiday filter no longer has a section of its own. It was carrying a
+            {/* The News & holiday filter no longer has a section of its own. It was carrying a
               duplicate copy of five KPIs the Performance grid already showed; it now lives as a
               pill on that grid's header and reshapes the real twelve. */}
-          {/* ── Charts ────────────────────────────────────────────────────── */}
-          {isComplete && !isOptCombo && (() => {
-            const hasCharts = run.equity_curve.length > 0
+            {/* ── Charts ────────────────────────────────────────────────────── */}
+            {isComplete &&
+              !isOptCombo &&
+              (() => {
+                const hasCharts = run.equity_curve.length > 0
 
-            // Drawdown limit line follows the SELECTED firm (the chart plots that firm's sized
-            // curve). Personal/demo have no trailing EOD rule — firm_max_loss_eod is the 0 sentinel
-            // and must never render as a "$0 limit" reference line.
-            const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
-            if (selectedEval && !isPersonal(selectedEval) && selectedEval.firm_max_loss_eod) {
-              evalLimits.push({
-                limit: selectedEval.firm_max_loss_eod,
-                label: selectedEval.ruleset_name,
-                pass: selectedEval.drawdown_pass,
-              })
-            }
-
-            // The Sized tab appears only for engine-sized runs (a reshaped strategy emitted
-            // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
-            const hasSized = run.sized && effRun!.sized_timeline.length > 0
-            const firmName = selectedEval?.ruleset_name || 'the selected firm'
-            const endsAtBreach = breachInfo ? ' Ends where the account breached.' : ''
-            const SUBS: Record<string, string> = {
-              equity: hasSized
-                ? 'The bare strategy at a flat 1 unit — no sizing. This is the raw edge: is there one at all?'
-                : 'Steadily rising = good. Big peak then long decline = giving back gains.',
-              sized: hasSized
-                ? `${firmName}'s real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.${endsAtBreach}`
-                : 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
-              price: 'Candlesticks with trade context.',
-              breakdown: hasSized
-                ? `Sized to ${firmName} — drawdown, daily P&L, and long vs short.${endsAtBreach}`
-                : 'Drawdown, daily P&L, and long vs short — the supporting detail.',
-            }
-            const TITLES: Record<string, string> = {
-              equity: hasSized ? 'Strategy (1 unit)' : 'Equity curve', sized: 'Sized account', price: 'Price', breakdown: 'Breakdown',
-            }
-            const hasDirection = effRun!.equity_curve.some(p => p.direction)
-            const primaryTabs: ReadonlyArray<readonly [string, string]> = [
-              ['equity', hasSized ? 'Strategy (1 unit)' : 'Equity'],
-              ...(hasSized ? [['sized', 'Sized account'] as const] : []),
-              ['price', 'Price'],
-              ['breakdown', 'Breakdown'],
-            ]
-            const subLabel = (t: string) => <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">{t}</div>
-
-            // Explains the cutoff: a breached account stops trading, so the sized + breakdown charts
-            // end at the breach instead of running to the end of the requested range.
-            const breachNote = breachInfo ? (
-              <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-md bg-neg-muted border border-neg-text/20 text-neg-text text-[12px] leading-snug">
-                <AlertTriangle size={13} className="flex-shrink-0 mt-[1px]" />
-                <span>
-                  <span className="font-semibold">{firmName} breached its drawdown limit{breachInfo.date ? ` on ${fmtDate(breachInfo.date)}` : ''}.</span>{' '}
-                  The account failed there, so trading stopped — these charts end at the breach, not at the end of the test.
-                </span>
-              </div>
-            ) : null
-
-            // isModal=true means this render call is from inside ChartModal (equity/breakdown only).
-            // Price chart manages its own fullscreen internally via position:fixed so the single
-            // klinecharts instance is never disposed/re-inited during the fullscreen toggle.
-            // View controls for a chart tab — rendered BOTH inline and in the fullscreen header.
-            // Fullscreen is where a chart is actually read, so every control must exist there too
-            // (the axis switch especially: expanding to compare against a date is the whole point).
-            // Actions (Refresh / Rebuild) stay OUT of this slot — they're not view state, and the
-            // equity/breakdown ChartModal is a portal over a page whose own chrome is still there.
-            // ⚠ That reasoning does NOT extend to the PRICE chart: it goes fullscreen by
-            // position:fixed over the whole app and takes this tab strip with it, so Rebuild travels
-            // with the chart, on ChartPanel's tool strip via `toolActions`. See `RebuildChartButton`.
-            const chartControls = (key: string): React.ReactNode => (
-              <>
-                {key === 'equity' && (
-                  <SeriesToggle label={hasExcursionData ? 'Trade excursions' : 'Histogram'} on={histOn} onChange={toggleHist} />
-                )}
-                {key === 'equity' && (
-                  <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={toggleRud} />
-                )}
-                {key === 'equity' && (
-                  <XModeToggle value={xMode} onChange={toggleXMode} />
-                )}
-                {(key === 'equity' || key === 'sized') && hasRealRegimeTags && (
-                  <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
-                )}
-              </>
-            )
-
-            const renderChart = (key: string, h: number, isModal = false): React.ReactNode => {
-              switch (key) {
-                case 'equity':
-                  return (
-                    <>
-                      <EquityCurveChart
-                        data={equityCurve}
-                        bands={regimeBands}
-                        showHistogram={histOn}
-                        showRunupDrawdown={rudOn}
-                        height={h}
-                        xMode={xMode}
-                        windowStart={run.start_date}
-                      />
-                      {overlayOn && regimeBands.length > 0 && <RegimeLegend bands={regimeBands} />}
-                    </>
-                  )
-                case 'sized':
-                  return (
-                    <>
-                      {breachNote}
-                      <SizedEquityCurveChart data={effRun!.sized_timeline} bands={sizedRegimeBands} height={h} />
-                      <SizedCurveLegend
-                        mode={run.sizing_mode}
-                        manualPct={run.manual_risk_pct}
-                        profitable={effRun!.sized_timeline[effRun!.sized_timeline.length - 1].eod_balance >= effRun!.sized_timeline[0].eod_balance}
-                      />
-                      {overlayOn && sizedRegimeBands.length > 0 && <RegimeLegend bands={sizedRegimeBands} />}
-                    </>
-                  )
-                case 'price': {
-                  // Price chart manages its own fullscreen via position:fixed — never rendered
-                  // inside ChartModal. isModal=true means we're in a modal (equity/breakdown):
-                  // skip the price chart entirely there.
-                  if (isModal) return null
-                  return runId ? (
-                    <PriceChartPanel
-                      runId={runId}
-                      height={h}
-                      isFullscreen={fullscreenChart === 'price'}
-                      onFullscreenClose={() => setFullscreenChart(null)}
-                      onRebuild={isNt8 ? undefined : () => refreshChartSpec.mutate(runId)}
-                      rebuilding={refreshChartSpec.isPending}
-                    />
-                  ) : null
+                // Drawdown limit line follows the SELECTED firm (the chart plots that firm's sized
+                // curve). Personal/demo have no trailing EOD rule — firm_max_loss_eod is the 0 sentinel
+                // and must never render as a "$0 limit" reference line.
+                const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
+                if (selectedEval && !isPersonal(selectedEval) && selectedEval.firm_max_loss_eod) {
+                  evalLimits.push({
+                    limit: selectedEval.firm_max_loss_eod,
+                    label: selectedEval.ruleset_name,
+                    pass: selectedEval.drawdown_pass,
+                  })
                 }
-                case 'breakdown': {
-                  // All three supporting charts share the tab's height: drawdown full-width on top,
-                  // then daily P&L + long vs short side by side. Scales up when the tab is expanded.
-                  const hDraw = Math.max(140, Math.round((h - 56) * 0.45))
-                  const hRow = Math.max(160, Math.round((h - 56) * 0.55))
-                  return (
-                    <div className="space-y-8">
-                      {breachNote}
-                      <div>
-                        {subLabel('Drawdown from peak')}
-                        <DrawdownChart equity={effRun!.equity_curve} limitLines={evalLimits} height={hDraw} />
-                      </div>
-                      <div className={hasDirection ? 'grid gap-6 lg:grid-cols-2' : ''}>
-                        <div>
-                          {subLabel('Daily P&L')}
-                          <DailyPnlChart data={effRun!.daily_pnl} netPnl={effRun!.net_pnl} height={hRow} />
-                        </div>
-                        {hasDirection && (
-                          <div>
-                            {subLabel('Long vs Short')}
-                            <DirectionBreakdown equity={effRun!.equity_curve} />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
+
+                // The Sized tab appears only for engine-sized runs (a reshaped strategy emitted
+                // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
+                const hasSized = run.sized && effRun!.sized_timeline.length > 0
+                const firmName = selectedEval?.ruleset_name || 'the selected firm'
+                const endsAtBreach = breachInfo ? ' Ends where the account breached.' : ''
+                const SUBS: Record<string, string> = {
+                  equity: hasSized
+                    ? 'The bare strategy at a flat 1 unit — no sizing. This is the raw edge: is there one at all?'
+                    : 'Steadily rising = good. Big peak then long decline = giving back gains.',
+                  sized: hasSized
+                    ? `${firmName}'s real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.${endsAtBreach}`
+                    : 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
+                  price: 'Candlesticks with trade context.',
+                  breakdown: hasSized
+                    ? `Sized to ${firmName} — drawdown, daily P&L, and long vs short.${endsAtBreach}`
+                    : 'Drawdown, daily P&L, and long vs short — the supporting detail.',
                 }
-                default:
-                  return null
-              }
-            }
-
-            return (
-              <div className="space-y-4">
-                <div className="flex items-start justify-between">
-                  <SectionLabel>Charts</SectionLabel>
-                  {!hasCharts && isNt8 && (
-                    <button
-                      onClick={() => runId && reloadCharts.mutate(runId)}
-                      disabled={reloadCharts.isPending}
-                      className="flex items-center gap-[6px] px-3 py-[5px] rounded-md text-[12px] font-medium bg-accent-muted border border-accent/30 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <RefreshCw size={12} className={reloadCharts.isPending ? 'animate-spin' : ''} />
-                      {reloadCharts.isPending ? 'Exporting from NT8…' : 'Load chart data from NT8'}
-                    </button>
-                  )}
-                </div>
-
-                {!hasCharts ? (
-                  <div className="bg-bg-surface border border-border-subtle rounded-lg flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
-                    <div className="text-text-secondary text-[13px] font-medium">No chart data yet</div>
-                    <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
-                      {scope === 'mt5'
-                        ? 'Chart data is parsed from the MT5 report at completion. If empty, the report may not have included trade data.'
-                        : scope === 'python'
-                        ? 'Chart data is built locally at completion from the same cached bars the run replayed. If empty, the run made no trades.'
-                        : 'Click "Load chart data from NT8" — requires NT8 Strategy Analyzer open with this run\'s results loaded.'}
-                    </div>
+                const TITLES: Record<string, string> = {
+                  equity: hasSized ? 'Strategy (1 unit)' : 'Equity curve',
+                  sized: 'Sized account',
+                  price: 'Price',
+                  breakdown: 'Breakdown',
+                }
+                const hasDirection = effRun!.equity_curve.some((p) => p.direction)
+                const primaryTabs: ReadonlyArray<readonly [string, string]> = [
+                  ['equity', hasSized ? 'Strategy (1 unit)' : 'Equity'],
+                  ...(hasSized ? [['sized', 'Sized account'] as const] : []),
+                  ['price', 'Price'],
+                  ['breakdown', 'Breakdown'],
+                ]
+                const subLabel = (t: string) => (
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-secondary mb-1.5">
+                    {t}
                   </div>
-                ) : (
+                )
+
+                // Explains the cutoff: a breached account stops trading, so the sized + breakdown charts
+                // end at the breach instead of running to the end of the requested range.
+                const breachNote = breachInfo ? (
+                  <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-md bg-neg-muted border border-neg-text/20 text-neg-text text-[12px] leading-snug">
+                    <AlertTriangle size={13} className="flex-shrink-0 mt-[1px]" />
+                    <span>
+                      <span className="font-semibold">
+                        {firmName} breached its drawdown limit
+                        {breachInfo.date ? ` on ${fmtDate(breachInfo.date)}` : ''}.
+                      </span>{' '}
+                      The account failed there, so trading stopped — these charts end at the breach,
+                      not at the end of the test.
+                    </span>
+                  </div>
+                ) : null
+
+                // isModal=true means this render call is from inside ChartModal (equity/breakdown only).
+                // Price chart manages its own fullscreen internally via position:fixed so the single
+                // klinecharts instance is never disposed/re-inited during the fullscreen toggle.
+                // View controls for a chart tab — rendered BOTH inline and in the fullscreen header.
+                // Fullscreen is where a chart is actually read, so every control must exist there too
+                // (the axis switch especially: expanding to compare against a date is the whole point).
+                // Actions (Refresh / Rebuild) stay OUT of this slot — they're not view state, and the
+                // equity/breakdown ChartModal is a portal over a page whose own chrome is still there.
+                // ⚠ That reasoning does NOT extend to the PRICE chart: it goes fullscreen by
+                // position:fixed over the whole app and takes this tab strip with it, so Rebuild travels
+                // with the chart, on ChartPanel's tool strip via `toolActions`. See `RebuildChartButton`.
+                const chartControls = (key: string): React.ReactNode => (
                   <>
-                    {/* One tabbed panel: Equity / Price / Breakdown (the 3 supporting charts together) */}
-                    <ChartTabPanel
-                      tabs={primaryTabs}
-                      active={primaryTab}
-                      onActive={k => setPrimaryTab(k as 'equity' | 'sized' | 'price' | 'breakdown')}
-                      sub={SUBS[primaryTab]}
-                      height={520}
-                      // Build the price chart in the background once the page has settled, so the
-                      // Price tab is already drawn by the time it is clicked. See `warmPrice`.
-                      keepMounted={warmPrice ? PRICE_TAB_ONLY : undefined}
-                      onExpand={() => setFullscreenChart(primaryTab)}
-                      render={renderChart}
-                      right={<>
-                        {chartControls(primaryTab)}
-                        {isNt8 && (
-                          <button
-                            onClick={() => runId && reloadCharts.mutate(runId)}
-                            disabled={reloadCharts.isPending}
-                            className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
-                          >
-                            <RefreshCw size={11} className={reloadCharts.isPending ? 'animate-spin' : ''} />
-                            Refresh
-                          </button>
-                        )}
-                        {/* ⚠ Rebuild chart is NOT here any more — it is on the price chart's own
-                            tool strip, above the Chart settings cog, so it survives fullscreen.
-                            Do not add a second copy back: see `RebuildChartButton`. */}
-                      </>}
-                    />
-
-                    {/* Performance by Regime — permanent panel */}
-                    {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
-
-                    {/* Sizing timeline — engine's day-by-day audit; sized runs only */}
-                    {hasSized && <SizedTimelineTable run={effRun!} />}
-
-                    {fullscreenChart && fullscreenChart !== 'price' && (
-                      <ChartModal
-                        title={TITLES[fullscreenChart] ?? 'Chart'}
-                        onClose={() => setFullscreenChart(null)}
-                        render={h => renderChart(fullscreenChart, h, true)}
-                        controls={chartControls(fullscreenChart)}
+                    {key === 'equity' && (
+                      <SeriesToggle
+                        label={hasExcursionData ? 'Trade excursions' : 'Histogram'}
+                        on={histOn}
+                        onChange={toggleHist}
                       />
                     )}
+                    {key === 'equity' && (
+                      <SeriesToggle label="Run-ups & drawdowns" on={rudOn} onChange={toggleRud} />
+                    )}
+                    {key === 'equity' && <XModeToggle value={xMode} onChange={toggleXMode} />}
+                    {(key === 'equity' || key === 'sized') && hasRealRegimeTags && (
+                      <RegimeOverlayToggle on={overlayOn} onChange={handleOverlayToggle} />
+                    )}
                   </>
-                )}
-              </div>
-            )
-          })()}
+                )
 
-          {/* ── Logs ─────────────────────────────────────────────────────── */}
-          {runId && !isOptCombo && <LogsSection runId={runId} autoExpand={isFailed || isRunning} isRunning={isRunning} isComplete={isComplete} isFailed={isFailed} />}
+                const renderChart = (key: string, h: number, isModal = false): React.ReactNode => {
+                  switch (key) {
+                    case 'equity':
+                      return (
+                        <>
+                          <EquityCurveChart
+                            data={equityCurve}
+                            bands={regimeBands}
+                            showHistogram={histOn}
+                            showRunupDrawdown={rudOn}
+                            height={h}
+                            xMode={xMode}
+                            windowStart={run.start_date}
+                          />
+                          {overlayOn && regimeBands.length > 0 && (
+                            <RegimeLegend bands={regimeBands} />
+                          )}
+                        </>
+                      )
+                    case 'sized':
+                      return (
+                        <>
+                          {breachNote}
+                          <SizedEquityCurveChart
+                            data={effRun!.sized_timeline}
+                            bands={sizedRegimeBands}
+                            height={h}
+                          />
+                          <SizedCurveLegend
+                            mode={run.sizing_mode}
+                            manualPct={run.manual_risk_pct}
+                            profitable={
+                              effRun!.sized_timeline[effRun!.sized_timeline.length - 1]
+                                .eod_balance >= effRun!.sized_timeline[0].eod_balance
+                            }
+                          />
+                          {overlayOn && sizedRegimeBands.length > 0 && (
+                            <RegimeLegend bands={sizedRegimeBands} />
+                          )}
+                        </>
+                      )
+                    case 'price': {
+                      // Price chart manages its own fullscreen via position:fixed — never rendered
+                      // inside ChartModal. isModal=true means we're in a modal (equity/breakdown):
+                      // skip the price chart entirely there.
+                      if (isModal) return null
+                      return runId ? (
+                        <PriceChartPanel
+                          runId={runId}
+                          height={h}
+                          isFullscreen={fullscreenChart === 'price'}
+                          onFullscreenClose={() => setFullscreenChart(null)}
+                          onRebuild={isNt8 ? undefined : () => refreshChartSpec.mutate(runId)}
+                          rebuilding={refreshChartSpec.isPending}
+                        />
+                      ) : null
+                    }
+                    case 'breakdown': {
+                      // All three supporting charts share the tab's height: drawdown full-width on top,
+                      // then daily P&L + long vs short side by side. Scales up when the tab is expanded.
+                      const hDraw = Math.max(140, Math.round((h - 56) * 0.45))
+                      const hRow = Math.max(160, Math.round((h - 56) * 0.55))
+                      return (
+                        <div className="space-y-8">
+                          {breachNote}
+                          <div>
+                            {subLabel('Drawdown from peak')}
+                            <DrawdownChart
+                              equity={effRun!.equity_curve}
+                              limitLines={evalLimits}
+                              height={hDraw}
+                            />
+                          </div>
+                          <div className={hasDirection ? 'grid gap-6 lg:grid-cols-2' : ''}>
+                            <div>
+                              {subLabel('Daily P&L')}
+                              <DailyPnlChart
+                                data={effRun!.daily_pnl}
+                                netPnl={effRun!.net_pnl}
+                                height={hRow}
+                              />
+                            </div>
+                            {hasDirection && (
+                              <div>
+                                {subLabel('Long vs Short')}
+                                <DirectionBreakdown equity={effRun!.equity_curve} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+                    default:
+                      return null
+                  }
+                }
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between">
+                      <SectionLabel>Charts</SectionLabel>
+                      {!hasCharts && isNt8 && (
+                        <button
+                          onClick={() => runId && reloadCharts.mutate(runId)}
+                          disabled={reloadCharts.isPending}
+                          className="flex items-center gap-[6px] px-3 py-[5px] rounded-md text-[12px] font-medium bg-accent-muted border border-accent/30 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <RefreshCw
+                            size={12}
+                            className={reloadCharts.isPending ? 'animate-spin' : ''}
+                          />
+                          {reloadCharts.isPending
+                            ? 'Exporting from NT8…'
+                            : 'Load chart data from NT8'}
+                        </button>
+                      )}
+                    </div>
+
+                    {!hasCharts ? (
+                      <div className="bg-bg-surface border border-border-subtle rounded-lg flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+                        <div className="text-text-secondary text-[13px] font-medium">
+                          No chart data yet
+                        </div>
+                        <div className="text-text-tertiary text-[11px] leading-relaxed max-w-xs">
+                          {scope === 'mt5'
+                            ? 'Chart data is parsed from the MT5 report at completion. If empty, the report may not have included trade data.'
+                            : scope === 'python'
+                              ? 'Chart data is built locally at completion from the same cached bars the run replayed. If empty, the run made no trades.'
+                              : 'Click "Load chart data from NT8" — requires NT8 Strategy Analyzer open with this run\'s results loaded.'}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* One tabbed panel: Equity / Price / Breakdown (the 3 supporting charts together) */}
+                        <ChartTabPanel
+                          tabs={primaryTabs}
+                          active={primaryTab}
+                          onActive={(k) =>
+                            setPrimaryTab(k as 'equity' | 'sized' | 'price' | 'breakdown')
+                          }
+                          sub={SUBS[primaryTab]}
+                          height={520}
+                          // Build the price chart in the background once the page has settled, so the
+                          // Price tab is already drawn by the time it is clicked. See `warmPrice`.
+                          keepMounted={warmPrice ? PRICE_TAB_ONLY : undefined}
+                          onExpand={() => setFullscreenChart(primaryTab)}
+                          render={renderChart}
+                          right={
+                            <>
+                              {chartControls(primaryTab)}
+                              {isNt8 && (
+                                <button
+                                  onClick={() => runId && reloadCharts.mutate(runId)}
+                                  disabled={reloadCharts.isPending}
+                                  className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
+                                >
+                                  <RefreshCw
+                                    size={11}
+                                    className={reloadCharts.isPending ? 'animate-spin' : ''}
+                                  />
+                                  Refresh
+                                </button>
+                              )}
+                              {/* ⚠ Rebuild chart is NOT here any more — it is on the price chart's own
+                            tool strip, above the Chart settings cog, so it survives fullscreen.
+                            Do not add a second copy back: see `RebuildChartButton`. */}
+                            </>
+                          }
+                        />
+
+                        {/* Performance by Regime — permanent panel */}
+                        {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
+
+                        {/* Sizing timeline — engine's day-by-day audit; sized runs only */}
+                        {hasSized && <SizedTimelineTable run={effRun!} />}
+
+                        {fullscreenChart && fullscreenChart !== 'price' && (
+                          <ChartModal
+                            title={TITLES[fullscreenChart] ?? 'Chart'}
+                            onClose={() => setFullscreenChart(null)}
+                            render={(h) => renderChart(fullscreenChart, h, true)}
+                            controls={chartControls(fullscreenChart)}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
+
+            {/* ── Logs ─────────────────────────────────────────────────────── */}
+            {runId && !isOptCombo && (
+              <LogsSection
+                runId={runId}
+                autoExpand={isFailed || isRunning}
+                isRunning={isRunning}
+                isComplete={isComplete}
+                isFailed={isFailed}
+              />
+            )}
           </div>
         </div>
       )}

@@ -45,10 +45,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
-try:                                    # 3.9+ on the VPS; the fallback keeps the Mac tests honest
+try:  # 3.9+ on the VPS; the fallback keeps the Mac tests honest
     from zoneinfo import ZoneInfo
-except ImportError:                     # pragma: no cover
-    ZoneInfo = None                     # type: ignore
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 __all__ = ["alert", "when", "LOCAL_TZ", "SPEC"]
 
@@ -119,7 +119,7 @@ def when(ts, tz: str = LOCAL_TZ, now: Optional[datetime] = None) -> str:
             ts = ts.astimezone(ZoneInfo(tz))
         except Exception:
             ts = ts.astimezone(timezone.utc)
-    else:                               # pragma: no cover
+    else:  # pragma: no cover
         ts = ts.astimezone(timezone.utc)
     # ⚠ NOT `%-I`. That is a glibc extension: it strips the leading zero on Linux and macOS and
     # raises `ValueError: Invalid format string` on Windows, where the equivalent is `%#I`. This

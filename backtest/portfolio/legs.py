@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -42,14 +42,18 @@ class StrategyLeg:
         # the OB engine switched on, and a stack without it hands the strategy
         # `order_blocks=None`). Older strategies may not have the method; fall back rather than
         # require it, since `engine_config()` is the whole of the contract for them.
-        cfg = strategy.stack_config() if hasattr(strategy, "stack_config") \
+        cfg = (
+            strategy.stack_config()
+            if hasattr(strategy, "stack_config")
             else strategy.engine_config()
+        )
         self._stack = EngineStack(cfg)
         # The strategy's swap clock and time stop are measured in bar durations, so the leg has
         # to state its own — a 15m leg and a 1m leg in one stack cannot share one figure.
         if len(df.index) > 1:
             strategy.execution.bar_ms = int(
-                df.index.to_series().diff().min().total_seconds() * 1000)
+                df.index.to_series().diff().min().total_seconds() * 1000
+            )
 
     def bars(self) -> Iterator[Any]:
         return iter_bars(self._df)
@@ -65,8 +69,9 @@ class StrategyLeg:
         return self.strategy.execution.trades
 
 
-def build_leg(name: str, strategy_cls, config, df, *, account,
-              initial_capital: float, cost_profile=None) -> StrategyLeg:
+def build_leg(
+    name: str, strategy_cls, config, df, *, account, initial_capital: float, cost_profile=None
+) -> StrategyLeg:
     """Construct one leg bound to `account`.
 
     `name` is the leg's key in the account and must be distinct within a stack — the account
@@ -74,8 +79,14 @@ def build_leg(name: str, strategy_cls, config, df, *, account,
     risk cap would under-count the open risk while reporting itself enforced.
     """
     _refuse_unreplayable(name, config)
-    strategy = build_strategy(strategy_cls, config, initial_capital=initial_capital,
-                              cost_profile=cost_profile, account=account, leg=name)
+    strategy = build_strategy(
+        strategy_cls,
+        config,
+        initial_capital=initial_capital,
+        cost_profile=cost_profile,
+        account=account,
+        leg=name,
+    )
     return StrategyLeg(name, strategy, df)
 
 
@@ -94,4 +105,5 @@ def _refuse_unreplayable(name: str, config) -> None:
             f"leg {name!r}: exec_secondary is on and a shared-account stack cannot run it — the "
             f"1m re-entry needs a second bar stream (run_dual) and a leg is one frame. This leg "
             f"would be primary-only while everything it is compared against is not. Set "
-            f"exec_secondary=False on this leg's config.")
+            f"exec_secondary=False on this leg's config."
+        )

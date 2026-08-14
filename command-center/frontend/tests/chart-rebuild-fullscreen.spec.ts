@@ -26,7 +26,7 @@ test('Rebuild chart is on the chart itself, in both views, exactly once', async 
   // CACHED spec instead: the click only has to prove it reaches the endpoint, and the panel still
   // gets a real payload back so nothing downstream is mocked into a shape the server never sends.
   let refreshes = 0
-  await page.route(/\/chart-spec\?.*refresh=true/, async route => {
+  await page.route(/\/chart-spec\?.*refresh=true/, async (route) => {
     refreshes += 1
     await route.continue({ url: route.request().url().replace(/\?.*$/, '') })
   })

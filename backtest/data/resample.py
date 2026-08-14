@@ -67,14 +67,11 @@ def resample_up(df: pd.DataFrame, target_minutes: int, base_minutes: int) -> pd.
     agg = dict(_AGG)
     if VOLUME_COL in df.columns:
         agg[VOLUME_COL] = _volume_sum
-    out = (
-        df.resample(
-            f"{target_minutes}min",
-            label="left",
-            closed="left",
-            origin="epoch",
-        )
-        .agg(agg)
-    )
+    out = df.resample(
+        f"{target_minutes}min",
+        label="left",
+        closed="left",
+        origin="epoch",
+    ).agg(agg)
     # Empty windows produce all-NaN rows; "open" is NaN iff the window had no bars.
     return out.dropna(subset=["open"])

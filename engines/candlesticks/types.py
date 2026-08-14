@@ -58,24 +58,24 @@ class PatternSpec:
 #    `CandlestickEvents.detected` comes out in, so a consumer that takes "the first pattern on this
 #    bar" gets the same one the chart lists first. `min_history` marked `trend` below is resolved
 #    against the engine's `trend` input at construction. ──
-_TREND = -1   # sentinel: "this rule needs `trend` bars of history" (resolved by the engine)
+_TREND = -1  # sentinel: "this rule needs `trend` bars of history" (resolved by the engine)
 
 PATTERNS: Tuple[PatternSpec, ...] = (
-    PatternSpec("doji",               "Doji",               "doji",         NEUTRAL, 0),
-    PatternSpec("bearish_harami",     "Bearish Harami",     "bearHarami",   BEARISH, _TREND),
-    PatternSpec("bullish_harami",     "Bullish Harami",     "bullHarami",   BULLISH, _TREND),
-    PatternSpec("bearish_engulfing",  "Bearish Engulfing",  "bearEng",      BEARISH, _TREND),
-    PatternSpec("bullish_engulfing",  "Bullish Engulfing",  "bullEng",      BULLISH, _TREND),
-    PatternSpec("piercing_line",      "Piercing Line",      "piercing",     BULLISH, _TREND),
-    PatternSpec("bullish_belt",       "Bullish Belt",       "bullBelt",     BULLISH, _TREND),
-    PatternSpec("bullish_kicker",     "Bullish Kicker",     "bullKick",     BULLISH, _TREND),
-    PatternSpec("bearish_kicker",     "Bearish Kicker",     "bearKick",     BEARISH, _TREND),
-    PatternSpec("hanging_man",        "Hanging Man",        "hangingMan",   BEARISH, _TREND),
-    PatternSpec("evening_star",       "Evening Star",       "eveningStar",  BEARISH, 2),
-    PatternSpec("morning_star",       "Morning Star",       "morningStar",  BULLISH, 2),
-    PatternSpec("shooting_star",      "Shooting Star",      "shootingStar", BEARISH, 1),
-    PatternSpec("hammer",             "Hammer",             "hammer",       NEUTRAL, 0),
-    PatternSpec("inverted_hammer",    "Inverted Hammer",    "invHammer",    NEUTRAL, 0),
+    PatternSpec("doji", "Doji", "doji", NEUTRAL, 0),
+    PatternSpec("bearish_harami", "Bearish Harami", "bearHarami", BEARISH, _TREND),
+    PatternSpec("bullish_harami", "Bullish Harami", "bullHarami", BULLISH, _TREND),
+    PatternSpec("bearish_engulfing", "Bearish Engulfing", "bearEng", BEARISH, _TREND),
+    PatternSpec("bullish_engulfing", "Bullish Engulfing", "bullEng", BULLISH, _TREND),
+    PatternSpec("piercing_line", "Piercing Line", "piercing", BULLISH, _TREND),
+    PatternSpec("bullish_belt", "Bullish Belt", "bullBelt", BULLISH, _TREND),
+    PatternSpec("bullish_kicker", "Bullish Kicker", "bullKick", BULLISH, _TREND),
+    PatternSpec("bearish_kicker", "Bearish Kicker", "bearKick", BEARISH, _TREND),
+    PatternSpec("hanging_man", "Hanging Man", "hangingMan", BEARISH, _TREND),
+    PatternSpec("evening_star", "Evening Star", "eveningStar", BEARISH, 2),
+    PatternSpec("morning_star", "Morning Star", "morningStar", BULLISH, 2),
+    PatternSpec("shooting_star", "Shooting Star", "shootingStar", BEARISH, 1),
+    PatternSpec("hammer", "Hammer", "hammer", NEUTRAL, 0),
+    PatternSpec("inverted_hammer", "Inverted Hammer", "invHammer", NEUTRAL, 0),
 )
 
 PATTERN_KEYS: Tuple[str, ...] = tuple(p.key for p in PATTERNS)
@@ -105,9 +105,9 @@ def resolve_keys(keys: Optional[Iterable[str]]) -> Tuple[str, ...]:
     """
     if keys is None:
         return PATTERN_KEYS
-    wanted = {k: None for k in keys}          # dedupe, keep it cheap
+    wanted = {k: None for k in keys}  # dedupe, keep it cheap
     for k in wanted:
-        spec_for(k)                            # raises on a typo
+        spec_for(k)  # raises on a typo
     return tuple(k for k in PATTERN_KEYS if k in wanted)
 
 
@@ -175,7 +175,7 @@ class CandlePattern:
     def direction(self) -> int:
         return self.spec.direction
 
-    def __repr__(self) -> str:      # pragma: no cover - diagnostics only
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
         arrow = {BULLISH: "+", BEARISH: "-", NEUTRAL: "0"}[self.spec.direction]
         return f"<CandlePattern {self.spec.key}{arrow} @ {self.bar_index}>"
 
@@ -203,8 +203,9 @@ class CandlestickEvents:
         spec_for(key)
         return any(p.key == key for p in self.detected)
 
-    def matching(self, keys: Optional[Iterable[str]] = None,
-                 direction: Optional[int] = None) -> List[CandlePattern]:
+    def matching(
+        self, keys: Optional[Iterable[str]] = None, direction: Optional[int] = None
+    ) -> List[CandlePattern]:
         """This bar's detections filtered by key set and/or direction (+1 / -1 / 0).
 
         This is the confluence read: `ev.matching(keys=cfg.patterns, direction=+1)` answers "did any

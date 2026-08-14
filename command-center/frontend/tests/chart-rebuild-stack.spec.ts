@@ -29,13 +29,15 @@ const STACK = 'st_94aeb25f0c'
 
 test('a stack price chart can rebuild itself', async ({ page }) => {
   const errors: string[] = []
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+  })
 
   // A real rebuild re-runs every leg's own spec build — two full-history replays, ~55s measured.
   // Serve the CACHED merge instead: the click only has to prove it reaches the endpoint with
   // refresh=true, and the panel still gets a real payload so nothing downstream is mocked.
   let refreshes = 0
-  await page.route(/\/stacks\/[^/]+\/chart-spec\?.*refresh=true/, async route => {
+  await page.route(/\/stacks\/[^/]+\/chart-spec\?.*refresh=true/, async (route) => {
     refreshes += 1
     await route.continue({ url: route.request().url().replace(/\?.*$/, '') })
   })

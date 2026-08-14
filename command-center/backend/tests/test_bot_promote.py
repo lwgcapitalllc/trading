@@ -292,3 +292,56 @@ def test_a_missing_message_id_writes_nothing(monkeypatch, mid):
     monkeypatch.setattr(bots.subprocess, "run", lambda *a, **k: calls.append(a) or _Done())
     bots._set_alert_thread("mpc_sos_fade_demo", mid)
     assert calls == []
+
+
+# ── it has to be able to SAY it failed (2026-08-14) ──────────────────────────────
+#
+# 🔴 The first real deploy carrying the threading sent its three messages UNTHREADED, and the
+# investigation that followed is the reason these exist: every hop was verified working in
+# isolation — the backend's own writer put the file on the VPS, the bot's own reader returned
+# the id from it — and **not one line anywhere on either machine said which hop had dropped it.**
+# `subprocess.run` without `check=True` does not raise on a non-zero exit, so the blanket
+# try/except caught the failures that raise and waved through every failure ssh reports by EXIT
+# CODE; and a falsy root id returned in silence. A helper that is allowed to fail must still be
+# able to say that it did, or the next occurrence is as unreadable as the first.
+
+
+class _Failed:
+    returncode = 255
+    stdout = b""
+    stderr = b"ssh: connect to host forexvps port 22: Connection refused"
+
+
+def test_a_write_that_LANDED_reports_success(monkeypatch):
+    monkeypatch.setattr(bots.subprocess, "run", lambda *a, **k: _Done())
+    assert bots._set_alert_thread("mpc_sos_fade_demo", 4242) is True
+
+
+def test_a_NONZERO_ssh_exit_is_a_failure_and_is_not_swallowed(monkeypatch, capsys):
+    """🔴 The defect this pass fixed. `check=True` is absent by design — raising here would let
+    a Telegram convenience fail a promote — so the exit code is the ONLY signal, and it was the
+    one thing the old code never looked at."""
+    monkeypatch.setattr(bots.subprocess, "run", lambda *a, **k: _Failed())
+    assert bots._set_alert_thread("mpc_sos_fade_demo", 4242) is False
+    assert "255" in capsys.readouterr().out
+
+
+def test_a_write_that_RAISED_reports_failure_too(monkeypatch):
+    """Both shapes of failure answer the same thing. Reporting only the raising half would make
+    the return value a claim the caller cannot rely on, which is worse than no return value."""
+
+    def boom(*_a, **_k):
+        raise OSError("ssh is down")
+
+    monkeypatch.setattr(bots.subprocess, "run", boom)
+    assert bots._set_alert_thread("mpc_sos_fade_demo", 4242) is False
+
+
+@pytest.mark.parametrize("mid", [None, 0])
+def test_a_MISSING_root_id_says_so_rather_than_returning_in_silence(monkeypatch, mid, capsys):
+    """`send_telegram_id` answers None for *the send failed* and 0 for *it went through but the
+    id was unreadable*, and BOTH arrive here. This branch is where a five-second Telegram hiccup
+    becomes a whole deploy's worth of unthreaded messages, so it may not be the quiet one."""
+    monkeypatch.setattr(bots.subprocess, "run", lambda *a, **k: _Done())
+    assert bots._set_alert_thread("mpc_sos_fade_demo", mid) is False
+    assert "not be threaded" in capsys.readouterr().out

@@ -53,6 +53,7 @@ def _open(ex: Execution, *, direction=1, entry=3290.0, stop=3280.0, qty=2.0, sta
 
 # ── the field set ────────────────────────────────────────────────────────────
 
+
 def test_the_snapshot_covers_every_field_open_position_assigns():
     """DERIVED from `_open_position`'s own source, never hand-listed.
 
@@ -73,7 +74,8 @@ def test_the_snapshot_covers_every_field_open_position_assigns():
     assert not missing, (
         f"`_open_position` assigns {sorted(missing)} and `_POSITION_FIELDS` does not carry them, "
         f"so a restarted bot would manage the trade with those at their DEFAULTS. Add each to "
-        f"`Execution._POSITION_FIELDS`.")
+        f"`Execution._POSITION_FIELDS`."
+    )
 
 
 def test_the_snapshot_carries_the_traded_leg_latch():
@@ -87,6 +89,7 @@ def test_the_snapshot_carries_the_traded_leg_latch():
 
 
 # ── round trip ───────────────────────────────────────────────────────────────
+
 
 def test_a_snapshot_restores_every_field_to_the_same_value():
     a = _open(_ex(), stage=2)
@@ -124,6 +127,7 @@ def test_the_snapshot_is_plain_json_types():
     """It is written to disk as JSON. A dataclass or a tuple in here fails at `json.dump`, on the
     bar a real trade opened — so it is asserted rather than left to the first live fill."""
     import json
+
     snap = _open(_ex()).snapshot_position()
     json.loads(json.dumps(snap))  # raises if anything in there is not serialisable
 
@@ -140,6 +144,7 @@ def test_a_pending_close_survives_as_a_tuple():
 
 
 # ── the refusals ─────────────────────────────────────────────────────────────
+
 
 def test_restoring_an_incomplete_record_REFUSES_rather_than_defaulting():
     """The whole safety property. A record missing `_stage` is not "a trade at stage 0" — it is a
@@ -175,6 +180,7 @@ def test_restore_clears_the_resting_limits():
 
 
 # ── it changes nothing about a backtest ──────────────────────────────────────
+
 
 def test_nothing_in_the_bar_path_calls_either_method():
     """Parity is structurally unaffected, and that is checked rather than asserted: if `step` or

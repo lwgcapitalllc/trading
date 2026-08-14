@@ -29,9 +29,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services import lab_db
-from services.metrics import (daily_sharpe, profit_concentration_pct, active_day_count,
-                             SHARPE_LOW_SAMPLE_DAYS)
 from services.evaluator import compute_contract_cap_status
+from services.metrics import (
+    SHARPE_LOW_SAMPLE_DAYS,
+    active_day_count,
+    daily_sharpe,
+    profit_concentration_pct,
+)
 
 
 def _load_json(path):
@@ -81,7 +85,8 @@ def backfill(dry_run: bool = False) -> dict:
             # instead of the clustering it exists to detect (see services/metrics). Absent file
             # → the dollar basis, and the stored basis says so.
             conc, conc_basis = profit_concentration_pct(
-                daily_pnl, _load_json(run["equity_curve_path"]) or [])
+                daily_pnl, _load_json(run["equity_curve_path"]) or []
+            )
             stats["concentration_set" if conc is not None else "concentration_null"] += 1
             sets = ["profit_concentration_pct = ?", "profit_concentration_basis = ?"]
             params = [conc, conc_basis]
@@ -95,8 +100,7 @@ def backfill(dry_run: bool = False) -> dict:
             if run["sharpe"] is not None and abs((run["sharpe"] or 0.0) - new_sharpe) > 1e-9:
                 stats["sharpe_value_changed"] += 1
             sets += ["sharpe = ?", "sharpe_low_sample = ?"]
-            params += [new_sharpe,
-                       1 if active_day_count(daily_pnl) < SHARPE_LOW_SAMPLE_DAYS else 0]
+            params += [new_sharpe, 1 if active_day_count(daily_pnl) < SHARPE_LOW_SAMPLE_DAYS else 0]
 
             # platform_sharpe is a ONE-WAY move and must stay null-guarded: before the first
             # backfill `sharpe` still holds the platform's own value, so that pass relocates it.
@@ -163,15 +167,15 @@ def main():
     mode = "DRY RUN — no writes" if dry_run else "applied"
     print(f"\nBackfill ({mode}):")
     print(f"  completed runs scanned         : {stats['complete_runs']}")
-    print(f"  ── Sharpe trio ─────────────────")
+    print("  ── Sharpe trio ─────────────────")
     print(f"    backfilled (platform was null): {stats['sharpe_backfilled']}")
     print(f"    skipped (already backfilled)  : {stats['sharpe_already_done']}")
     print(f"    sharpe VALUE changed          : {stats['sharpe_value_changed']}")
-    print(f"  ── Profit concentration ────────")
+    print("  ── Profit concentration ────────")
     print(f"    set (had positive profit)     : {stats['concentration_set']}")
     print(f"    null (no positive profit)     : {stats['concentration_null']}")
     print(f"  ── Skipped (no daily_pnl file)  : {stats['no_daily_file']}")
-    print(f"  ── Contract-cap status ─────────")
+    print("  ── Contract-cap status ─────────")
     print(f"    evaluations refreshed         : {stats['contract_status_updated']}")
     print(f"    of which value changed        : {stats['contract_status_changed']}")
     print(f"    runs with no evaluations      : {stats['runs_without_evals']}")

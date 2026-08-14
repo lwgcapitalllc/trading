@@ -10,10 +10,9 @@ TradingView export; these lock the logic so a regression is caught without an ex
 from datetime import datetime
 
 import pytest
-
+from sessions.engine import _resolve_tz
 from vwap import VwapEngine
 from vwap.engine import _key_day
-from sessions.engine import _resolve_tz
 
 
 def ms(tz_name, y, mo, d, h, mi=0):
@@ -32,17 +31,18 @@ def _eng(rollover=0):
 
 # ── the volume-weighted running mean ─────────────────────────────────────────
 
+
 def test_single_bar_vwap_is_hlc3():
     vw = _eng()
     ev = vw.update(0, ms(NY, 2024, 7, 1, 10), high=110, low=90, close=100, volume=5)
-    assert ev.value == pytest.approx(100.0)     # hlc3 = (110+90+100)/3 = 100
-    assert ev.anchored is False                 # first fed bar never pulses anchored
-    assert ev.side == 0                          # close 100 sits exactly on the line
+    assert ev.value == pytest.approx(100.0)  # hlc3 = (110+90+100)/3 = 100
+    assert ev.anchored is False  # first fed bar never pulses anchored
+    assert ev.side == 0  # close 100 sits exactly on the line
 
 
 def test_two_bars_volume_weighted():
     vw = _eng()
-    vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=1)     # hlc3 100, vol 1
+    vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=1)  # hlc3 100, vol 1
     ev = vw.update(1, ms(NY, 2024, 7, 1, 11), 210, 190, 200, volume=3)  # hlc3 200, vol 3
     # (100*1 + 200*3) / (1+3) = 700/4 = 175 — pulled toward the heavier-volume 200
     assert ev.value == pytest.approx(175.0)
@@ -51,45 +51,49 @@ def test_two_bars_volume_weighted():
 def test_volume_actually_weights():
     """Same two prices, swap the volumes → the average moves the other way."""
     vw = _eng()
-    vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=3)     # hlc3 100, vol 3
+    vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=3)  # hlc3 100, vol 3
     ev = vw.update(1, ms(NY, 2024, 7, 1, 11), 210, 190, 200, volume=1)  # hlc3 200, vol 1
-    assert ev.value == pytest.approx(125.0)     # (300+200)/4
+    assert ev.value == pytest.approx(125.0)  # (300+200)/4
 
 
 # ── trading-day re-anchor ────────────────────────────────────────────────────
 
+
 def test_new_day_resets_accumulator():
     vw = _eng()
-    vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=10)    # day 1
+    vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=10)  # day 1
     ev = vw.update(1, ms(NY, 2024, 7, 2, 10), 210, 190, 200, volume=1)  # day 2 → reset
     assert ev.anchored is True
-    assert ev.value == pytest.approx(200.0)     # day-2 bar only; day-1 volume is gone
+    assert ev.value == pytest.approx(200.0)  # day-2 bar only; day-1 volume is gone
 
 
 def test_same_day_does_not_reanchor():
     vw = _eng()
     vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=1)
     ev = vw.update(1, ms(NY, 2024, 7, 1, 23, 59), 210, 190, 200, volume=1)
-    assert ev.anchored is False                 # still 1 Jul → same session
+    assert ev.anchored is False  # still 1 Jul → same session
 
 
 def test_evening_open_rolls_at_18():
     """rollover=18: the 18:00-NY bar opens the NEXT trading day, so it re-anchors; 17:00 does not."""
     vw = _eng(rollover=18)
-    vw.update(0, ms(NY, 2024, 7, 1, 17, 0), 110, 90, 100, volume=1)     # still 1-Jul session
-    ev_open = vw.update(1, ms(NY, 2024, 7, 1, 18, 0), 210, 190, 200, volume=1)  # opens 2-Jul session
+    vw.update(0, ms(NY, 2024, 7, 1, 17, 0), 110, 90, 100, volume=1)  # still 1-Jul session
+    ev_open = vw.update(
+        1, ms(NY, 2024, 7, 1, 18, 0), 210, 190, 200, volume=1
+    )  # opens 2-Jul session
     assert ev_open.anchored is True
     assert ev_open.value == pytest.approx(200.0)
 
 
 # ── zero / missing volume guard ──────────────────────────────────────────────
 
+
 def test_zero_volume_bar_gives_na_then_recovers():
     vw = _eng()
     ev0 = vw.update(0, ms(NY, 2024, 7, 1, 10), 110, 90, 100, volume=0)
-    assert ev0.value is None                     # 0/0 → na, like Pine ta.vwap
+    assert ev0.value is None  # 0/0 → na, like Pine ta.vwap
     ev1 = vw.update(1, ms(NY, 2024, 7, 1, 11), 210, 190, 200, volume=2)
-    assert ev1.value == pytest.approx(200.0)     # first real volume anchors the value
+    assert ev1.value == pytest.approx(200.0)  # first real volume anchors the value
 
 
 def test_none_volume_treated_as_zero():
@@ -100,11 +104,12 @@ def test_none_volume_treated_as_zero():
 
 # ── derived close-vs-line cross ──────────────────────────────────────────────
 
+
 def test_side_above_and_below():
     vw = _eng()
     ev = vw.update(0, ms(NY, 2024, 7, 1, 10), high=101, low=99, close=98, volume=1)
-    assert ev.value == pytest.approx((101 + 99 + 98) / 3)   # 99.333
-    assert ev.side == -1                          # close 98 below the line
+    assert ev.value == pytest.approx((101 + 99 + 98) / 3)  # 99.333
+    assert ev.side == -1  # close 98 below the line
 
 
 def test_cross_up_then_down():
@@ -122,13 +127,14 @@ def test_cross_up_then_down():
 
 def test_no_double_cross_when_staying_above():
     vw = _eng()
-    vw.update(0, ms(NY, 2024, 7, 1, 10), 101, 99, 98, volume=1)      # below
-    vw.update(1, ms(NY, 2024, 7, 1, 11), 110, 108, 109, volume=1)    # cross up
+    vw.update(0, ms(NY, 2024, 7, 1, 10), 101, 99, 98, volume=1)  # below
+    vw.update(1, ms(NY, 2024, 7, 1, 11), 110, 108, 109, volume=1)  # cross up
     ev = vw.update(2, ms(NY, 2024, 7, 1, 12), 120, 118, 119, volume=1)  # stays above
     assert ev.side == 1 and ev.crossed_up is False and ev.crossed_down is False
 
 
 # ── misc ─────────────────────────────────────────────────────────────────────
+
 
 def test_value_read_matches_event():
     vw = _eng()

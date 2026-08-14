@@ -29,18 +29,37 @@ import pytest
 # MetaTrader5 is Windows-only. `mt5_ops` imports it at module scope, and the source-inspection
 # tests at the bottom of this file need the module object — so it gets the same stub
 # `test_bar_stream_holes.py` uses.
-sys.modules.setdefault("MetaTrader5", types.SimpleNamespace(
-    TIMEFRAME_M1=1, TIMEFRAME_M5=5, TIMEFRAME_M15=15, TIMEFRAME_M30=30,
-    TIMEFRAME_H1=60, TIMEFRAME_H4=240, TIMEFRAME_D1=1440))
+sys.modules.setdefault(
+    "MetaTrader5",
+    types.SimpleNamespace(
+        TIMEFRAME_M1=1,
+        TIMEFRAME_M5=5,
+        TIMEFRAME_M15=15,
+        TIMEFRAME_M30=30,
+        TIMEFRAME_H1=60,
+        TIMEFRAME_H4=240,
+        TIMEFRAME_D1=1440,
+    ),
+)
 
 _REPO = Path(__file__).resolve().parent.parent.parent
-for p in (str(Path(__file__).resolve().parent), str(_REPO),
-          str(_REPO / "algos" / "live"), str(_REPO / "algos" / "shared")):
+for p in (
+    str(Path(__file__).resolve().parent),
+    str(_REPO),
+    str(_REPO / "algos" / "live"),
+    str(_REPO / "algos" / "shared"),
+):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from test_live_bridge import (_bridge, _Dec, _FakeExecution,  # noqa: E402
-                              _FakeMt5Ops, _Pos, _Sig)
+from test_live_bridge import (
+    _bridge,
+    _Dec,
+    _FakeExecution,  # noqa: E402
+    _FakeMt5Ops,
+    _Pos,
+    _Sig,
+)
 
 
 class _CostyOps(_FakeMt5Ops):
@@ -64,21 +83,28 @@ def _close_with(breakdown, *, lots=0.42, entry=3290.0, stop=3280.0):
     b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
     b.sync(_Dec(stop=stop), _Sig())
     ops.positions = []
-    ops.deal = (3320.0, 1260.0)          # the GROSS-only answer, still available
+    ops.deal = (3320.0, 1260.0)  # the GROSS-only answer, still available
     ex._pos_dir = 0
     b.sync(_Dec(), _Sig())
     return [kw for k, kw in ledger.rows if k == "closed"][0], ops, notes
 
 
 def _bd(**kw):
-    base = {"close_price": 3320.0, "gross_usd": 1260.0, "swap_usd": 0.0,
-            "commission_usd": 0.0, "net_usd": 1260.0, "deals": 2}
+    base = {
+        "close_price": 3320.0,
+        "gross_usd": 1260.0,
+        "swap_usd": 0.0,
+        "commission_usd": 0.0,
+        "net_usd": 1260.0,
+        "deals": 2,
+    }
     base.update(kw)
     base["net_usd"] = base["gross_usd"] + base["swap_usd"] + base["commission_usd"]
     return base
 
 
 # ── the parts are kept, not just the total ───────────────────────────────────────
+
 
 def test_the_closed_record_carries_gross_swap_and_commission_separately():
     """The whole point. A single netted number cannot be taken apart afterwards, so a study of
@@ -111,6 +137,7 @@ def test_R_is_computed_from_the_net_not_the_gross():
 
 # ── a credit is not a charge ─────────────────────────────────────────────────────
 
+
 def test_a_positive_swap_stays_positive():
     """🔴 Gold's SHORT swap is a real CREDIT — measured at +26.98 points/night over the 6.5-year
     replay, where shorts were PAID 2.14R while longs paid 8.55R. The command center booked
@@ -130,12 +157,13 @@ def test_a_credit_can_carry_a_trade_from_loss_to_profit():
 
 # ── absence is never zero ────────────────────────────────────────────────────────
 
+
 def test_an_ops_handle_that_cannot_answer_falls_back_instead_of_crashing():
     """The plain `_FakeMt5Ops` has no `get_deal_breakdown` — and neither does an older
     `mt5_ops` on a box that has not pulled. Losing the cost breakdown is a bad day; raising out
     of the EXIT path and losing the record that the trade closed at all is a much worse one."""
     closed, _, _ = _close_with(None)
-    assert closed["pnl_usd"] == 1260.0          # the old gross-only answer
+    assert closed["pnl_usd"] == 1260.0  # the old gross-only answer
     assert closed["swap_usd"] is None
 
 
@@ -154,10 +182,11 @@ def test_a_breakdown_reporting_no_deals_is_treated_as_not_found():
     missing one because nothing downstream can tell."""
     closed, _, _ = _close_with(_bd(gross_usd=0.0, deals=0))
     assert closed["swap_usd"] is None
-    assert closed["pnl_usd"] == 1260.0          # fell back to get_deal_result
+    assert closed["pnl_usd"] == 1260.0  # fell back to get_deal_result
 
 
 # ── entry slippage rides on the same row ─────────────────────────────────────────
+
 
 def test_the_closed_row_repeats_the_fill_and_the_intended_price():
     """Entry slippage is the OTHER half of G5 — what the spread actually costs on a resting
@@ -176,18 +205,32 @@ def test_the_closed_row_repeats_the_fill_and_the_intended_price():
 # the derived field right" — the derivation lives in `Ledger.trade_closed`, so these drive it
 # directly.
 
+
 def _row(tmp_path, **kw):
-    from ledger import Ledger
     import json
+
+    from ledger import Ledger
+
     led = Ledger(tmp_path, "bot")
-    base = dict(ticket=1, direction="LONG", symbol="XAUUSD.s", price=3320.0,
-                pnl_usd=10.0, r_multiple=1.0, reason="tp")
+    base = dict(
+        ticket=1,
+        direction="LONG",
+        symbol="XAUUSD.s",
+        price=3320.0,
+        pnl_usd=10.0,
+        r_multiple=1.0,
+        reason="tp",
+    )
     base.update(kw)
     led.trade_closed(**base)
     # Found by glob rather than by rebuilding the filename: the ledger owns its own day-rollover
     # rule, and a test that re-derives the name would pass at 23:59 and fail at 00:01.
-    line = next(l for f in sorted(tmp_path.glob("decisions-*.jsonl"))
-                for l in f.read_text().splitlines() if '"closed"' in l)
+    line = next(
+        l
+        for f in sorted(tmp_path.glob("decisions-*.jsonl"))
+        for l in f.read_text().splitlines()
+        if '"closed"' in l
+    )
     return json.loads(line)
 
 
@@ -215,23 +258,29 @@ def test_the_cost_fields_default_to_None_on_the_ledger_itself(tmp_path):
 
 # ── the breakdown reader itself ──────────────────────────────────────────────────
 
+
 def test_the_breakdown_sums_every_deal_not_just_the_closing_one():
     """Commission is charged on the ENTRY deal. Reading only the closing deal — which is what
     `get_deal_result` does — loses the entry-side commission entirely, which is exactly the
     half a 'zero commission' broker claim would hide."""
     import inspect
+
     import mt5_ops
+
     src = inspect.getsource(mt5_ops.BotMT5.get_deal_breakdown)
     before_closing_filter = src.split("closing =")[0]
-    assert "d.entry == 1" not in before_closing_filter, \
+    assert "d.entry == 1" not in before_closing_filter, (
         "the sums must run over every deal of the position, before any closing-deal filter"
+    )
     assert "mine" in before_closing_filter
 
 
 def test_the_breakdown_reports_how_many_deals_it_summed():
     """Without a count there is no way to tell an empty answer from a free trade."""
     import inspect
+
     import mt5_ops
+
     assert '"deals"' in inspect.getsource(mt5_ops.BotMT5.get_deal_breakdown)
 
 
@@ -239,7 +288,9 @@ def test_the_breakdown_does_not_abs_the_swap():
     """The 2026-08-03 command-center bug in one line: `-abs(cost)` cannot represent a credit,
     and gold's short swap is one."""
     import inspect
+
     import mt5_ops
+
     src = inspect.getsource(mt5_ops.BotMT5.get_deal_breakdown)
     assert "abs(" not in src.split('"""')[-1], "a cost field must be able to be positive"
 
@@ -248,8 +299,11 @@ def test_get_deal_result_is_left_alone():
     """Five other callers unpack its 2-tuple. Widening it to smuggle costs into `pnl` would
     silently redefine every one of them, including the batch-close paths."""
     import inspect
+
     import mt5_ops
+
     sig = inspect.signature(mt5_ops.BotMT5.get_deal_result)
     assert list(sig.parameters) == ["self", "ticket"]
-    assert "GROSS" in (mt5_ops.BotMT5.get_deal_result.__doc__ or ""), \
+    assert "GROSS" in (mt5_ops.BotMT5.get_deal_result.__doc__ or ""), (
         "its docstring must say the number is gross, or the next reader repeats this bug"
+    )

@@ -26,9 +26,9 @@ for p in (str(_REPO), str(_REPO / "algos" / "live")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import live_config                                                  # noqa: E402
-from bridge import OrderBridge                                      # noqa: E402
-from runner import LiveRunner                                       # noqa: E402
+import live_config  # noqa: E402
+from bridge import OrderBridge  # noqa: E402
+from runner import LiveRunner  # noqa: E402
 
 
 class _Bridge:
@@ -64,10 +64,16 @@ def runner(tmp_path, monkeypatch):
     (inst / "bot").mkdir(parents=True)
 
     base = {
-        "bot_key": "bot", "display_name": "Bot",
-        "mt5_path": r"C:\MT5\terminal64.exe", "account": 1, "server": "S",
-        "symbol": "XAUUSD.s", "magic": 7, "timeframe": "M15",
-        "strategy_package": "mpc_sos_fade", "strategy_class": "MpcSosFadeStrategy",
+        "bot_key": "bot",
+        "display_name": "Bot",
+        "mt5_path": r"C:\MT5\terminal64.exe",
+        "account": 1,
+        "server": "S",
+        "symbol": "XAUUSD.s",
+        "magic": 7,
+        "timeframe": "M15",
+        "strategy_package": "mpc_sos_fade",
+        "strategy_class": "MpcSosFadeStrategy",
         "strategy_source_hash": "abc123",
         "strategy_params": {"exec_risk_pct": 10.0, "aplus_window": 4320},
     }
@@ -76,8 +82,9 @@ def runner(tmp_path, monkeypatch):
 
     r = LiveRunner.__new__(LiveRunner)
     r.cfg = live_config.load("bot")
-    r.log = SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None,
-                            error=lambda *a, **k: None)
+    r.log = SimpleNamespace(
+        info=lambda *a, **k: None, warning=lambda *a, **k: None, error=lambda *a, **k: None
+    )
     r.ledger = _Ledger()
     r.bridge = _Bridge(flat=True)
     r.notes = []
@@ -91,8 +98,11 @@ def runner(tmp_path, monkeypatch):
     # test_the_strategy_config_is_frozen_...). Both are stubbed: this file is about which
     # changes get applied and when, not about the strategy or the engines.
     def _build():
-        s = SimpleNamespace(execution=SimpleNamespace(
-            cfg=SimpleNamespace(exec_risk_pct=r.cfg.strategy_params["exec_risk_pct"])))
+        s = SimpleNamespace(
+            execution=SimpleNamespace(
+                cfg=SimpleNamespace(exec_risk_pct=r.cfg.strategy_params["exec_risk_pct"])
+            )
+        )
         return s, s.execution.cfg
 
     def _warm():
@@ -115,6 +125,7 @@ def _rewrite(runner, **params):
 def _bump(runner):
     st = runner._path.stat()
     import os
+
     os.utime(runner._path, (st.st_atime + 10, st.st_mtime + 10))
 
 
@@ -134,7 +145,7 @@ def test_applying_it_announces_the_change(runner):
 
 
 def test_an_unchanged_file_is_not_reapplied(runner):
-    _bump(runner)                       # touched but identical
+    _bump(runner)  # touched but identical
     runner._maybe_reload_runtime()
     assert runner.ledger.kinds() == []
 
@@ -279,21 +290,35 @@ def test_one_config_object_is_shared_by_every_component():
 
 # ── robustness ──────────────────────────────────────────────────────────────────
 def test_a_half_written_file_is_ignored_and_retried(runner):
-    runner._path.write_text('{"bot_key": "bot", "strategy_par')     # truncated mid-write
+    runner._path.write_text('{"bot_key": "bot", "strategy_par')  # truncated mid-write
     _bump(runner)
     runner._maybe_reload_runtime()
-    assert runner.ledger.kinds() == []                              # no refusal, no apply
+    assert runner.ledger.kinds() == []  # no refusal, no apply
 
-    runner._path.write_text(json.dumps({
-        **json.loads(json.dumps({
-            "bot_key": "bot", "display_name": "Bot",
-            "mt5_path": r"C:\MT5\terminal64.exe", "account": 1, "server": "S",
-            "symbol": "XAUUSD.s", "magic": 7, "timeframe": "M15",
-            "strategy_package": "mpc_sos_fade",
-            "strategy_class": "MpcSosFadeStrategy",
-            "strategy_source_hash": "abc123",
-            "strategy_params": {"exec_risk_pct": 5.0, "aplus_window": 4320},
-        }))}))
+    runner._path.write_text(
+        json.dumps(
+            {
+                **json.loads(
+                    json.dumps(
+                        {
+                            "bot_key": "bot",
+                            "display_name": "Bot",
+                            "mt5_path": r"C:\MT5\terminal64.exe",
+                            "account": 1,
+                            "server": "S",
+                            "symbol": "XAUUSD.s",
+                            "magic": 7,
+                            "timeframe": "M15",
+                            "strategy_package": "mpc_sos_fade",
+                            "strategy_class": "MpcSosFadeStrategy",
+                            "strategy_source_hash": "abc123",
+                            "strategy_params": {"exec_risk_pct": 5.0, "aplus_window": 4320},
+                        }
+                    )
+                )
+            }
+        )
+    )
     _bump(runner)
     runner._maybe_reload_runtime()
     assert runner.strategy.execution.cfg.exec_risk_pct == 5.0
@@ -301,7 +326,7 @@ def test_a_half_written_file_is_ignored_and_retried(runner):
 
 def test_a_missing_file_is_survived(runner):
     runner._path.unlink()
-    runner._maybe_reload_runtime()                                  # must not raise
+    runner._maybe_reload_runtime()  # must not raise
     assert runner.strategy.execution.cfg.exec_risk_pct == 10.0
 
 

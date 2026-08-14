@@ -45,8 +45,10 @@ def main(argv=None) -> int:
     total, changed = store.upsert_result(result)
     start = store.coverage_start_ms()
 
-    print(f"[news.refresh] fetched {len(result.events)} events; "
-          f"store now {total} ({changed} new/updated)")
+    print(
+        f"[news.refresh] fetched {len(result.events)} events; "
+        f"store now {total} ({changed} new/updated)"
+    )
     if start is not None:
         print(f"[news.refresh] coverage starts {_fmt(start)}  ->  {store.path}")
     return 0

@@ -30,12 +30,12 @@ from mpc_sos_fade.config import SosFadeConfig  # noqa: E402
 @dataclass(frozen=True)
 class BLegConfig(SosFadeConfig):
     # ── Inherited toggle, re-defaulted to this fork's Pine value ───────────────────
-    exec_bleg: bool = True        # "Trade B-Leg setups" — THIS fork's core setup, so ON here
+    exec_bleg: bool = True  # "Trade B-Leg setups" — THIS fork's core setup, so ON here
     #   `mpc_b_leg_strategy.pine` ships execBLeg = true (the A+ file ships it false). Turn OFF
     #   only to prove the bot trades nothing without it. `exec_aplus` is inherited and still
     #   matters: A+ never PLACES an order here, but it holds the priority gate — set it False
     #   to drop that gate and read the B leg completely on its own.
-    exec_sl_level: str = "1.0"    # "Stop fib level" — pinned, NOT inherited
+    exec_sl_level: str = "1.0"  # "Stop fib level" — pinned, NOT inherited
     #   The parent defaulted this "1.0" → "0.886" on 2026-07-27 to match the A+ Pine. This fork's
     #   Pine (`mpc_b_leg_strategy.pine`) still ships "1.0", and toggle-default parity with its OWN
     #   Pine is the contract, so the value is pinned here rather than inherited. It is also unused
@@ -48,13 +48,13 @@ class BLegConfig(SosFadeConfig):
     #   fork overrides `_place_entries` but NOT `_entry_edges`, and the edges it produces feed
     #   `_armed()` — the "A+ has priority, stand the B leg down" gate. A different A+ entry edge
     #   therefore changes which bars the B leg is allowed to trade on.
-    exec_deep_fib: bool = True        # the parent defaulted this True → False on 2026-08-02
-    exec_fib_nearest: bool = False    # rule 3 — the parent's new default, absent from this Pine
-    exec_fib_overlap: bool = False    # rule 1 — absent from this Pine
+    exec_deep_fib: bool = True  # the parent defaulted this True → False on 2026-08-02
+    exec_fib_nearest: bool = False  # rule 3 — the parent's new default, absent from this Pine
+    exec_fib_overlap: bool = False  # rule 1 — absent from this Pine
     exec_fib_deep_edge: bool = False  # rule 2 — absent from this Pine
-    exec_fvg_pre_zone: bool = False   # the pre-zone gate — absent from this Pine
-    exec_sl_deep: bool = False        # the deep-entry stop override — absent, and unused here
-    exec_secondary: bool = False      # the 1m sniper re-entry — pinned OFF, and NOT inert
+    exec_fvg_pre_zone: bool = False  # the pre-zone gate — absent from this Pine
+    exec_sl_deep: bool = False  # the deep-entry stop override — absent, and unused here
+    exec_secondary: bool = False  # the 1m sniper re-entry — pinned OFF, and NOT inert
     #   The parent defaulted this True on 2026-08-07. It is an A+ feature end to end: it re-enters
     #   a 15m A+ leg whose PRIMARY reached breakeven, and in this fork A+ never places an order, so
     #   there is no primary for it to follow. `MpcBLegStrategy.run_dual` raises outright.
@@ -64,7 +64,7 @@ class BLegConfig(SosFadeConfig):
     #   that NotImplementedError. Same class as the `exec_min_stop_mode` pin below — a parent
     #   default that this fork's code cannot honour — but the failure is loud instead of silent,
     #   which is the only reason it was caught rather than shipped.
-    exec_nogap_arm: str = "Any"       # "↳ No-FVG entries need" — pinned, and INERT here
+    exec_nogap_arm: str = "Any"  # "↳ No-FVG entries need" — pinned, and INERT here
     #   Added to the parent 2026-08-10 to gate its no-FVG fallback entry. Pinned to the inert
     #   value for the same reason as `exec_min_stop_mode` below: it is read only when
     #   `exec_req_fvg` is False, which this fork inherits as True, so it cannot fire today — and
@@ -75,7 +75,7 @@ class BLegConfig(SosFadeConfig):
     #   ⚠ Not inert by ACCIDENT: this fork overrides `_place_entries` but NOT `_entry_edges`, and
     #   those edges feed the "A+ has priority" gate — so if `exec_req_fvg` is ever turned off
     #   here, this field starts deciding which bars the B leg may trade on. Sweep it then.
-    exec_min_stop_mode: str = "Off"   # "Minimum stop distance" — pinned OFF, and INERT here
+    exec_min_stop_mode: str = "Off"  # "Minimum stop distance" — pinned OFF, and INERT here
     #   Inherited from the parent, which added it 2026-07-30 as the guard for a stop that collapses
     #   onto the entry. It does NOT apply on this path: the floor is enforced in the parent's
     #   `_place_entries`, which `BLegExecution` overrides, and `mpc_b_leg_strategy.pine` has no such
@@ -119,7 +119,7 @@ class BLegConfig(SosFadeConfig):
     #   (0.25% -> 43.6R against 109.3R at 1.0), because an A+ stop is a fib fraction of a leg on
     #   a ladder whose rungs are also fib levels. Do not "reconcile" the two.
 
-    exec_time_stop_hrs: float = 8.0   # "Time stop (hours)" — RE-DEFAULTED for this fork
+    exec_time_stop_hrs: float = 8.0  # "Time stop (hours)" — RE-DEFAULTED for this fork
     #   The parent ships 36.0 and BOTH numbers are measured, on their own trades, and they
     #   disagree — so this is pinned rather than inherited, the same call as exec_trail_pct
     #   above. `exec_time_stop_mode` is NOT pinned: "Before TP1 only" is right on both forks.
@@ -151,7 +151,7 @@ class BLegConfig(SosFadeConfig):
     #   is what lets the stage-2 cohort run; protecting earlier saves the 18 and kills the 31.
 
     # ── B-LEG-only input (Pine bLegMaxDays, group "Strategy Execution") ─────────────
-    bleg_max_days: float = 4.0    # days a frozen band watches before it goes stale (1-6)
+    bleg_max_days: float = 4.0  # days a frozen band watches before it goes stale (1-6)
     #   Converted to a BAR count (day ÷ chart timeframe) so weekends and the daily close
     #   don't burn the clock. 1.25 = the original 120 bars on 15m. See bleg.py.
     #   RE-DEFAULTED 1.25 -> 4.0 on 2026-08-06, and the interesting part is that the old value

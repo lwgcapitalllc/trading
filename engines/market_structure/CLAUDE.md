@@ -32,7 +32,7 @@ engines/market_structure/
 ```python
 from market_structure import StructureEngine, Bar
 
-eng = StructureEngine(major_length=15)   # 15 is the validated default; do not change casually
+eng = StructureEngine(major_length=15)  # 15 is the validated default; do not change casually
 
 # Feed one closed candle at a time, in order:
 events = eng.update(Bar(index=i, open=o, high=h, low=l, close=c))
@@ -50,12 +50,12 @@ events = eng.update(Bar(index=i, open=o, high=h, low=l, close=c))
 all_events = eng.replay(bars)
 
 # Current-state reads:
-eng.dir                    # 1 bullish, -1 bearish, 0 undetermined
-eng.active_swing_high      # SwingLevel | None
+eng.dir  # 1 bullish, -1 bearish, 0 undetermined
+eng.active_swing_high  # SwingLevel | None
 eng.active_swing_low
 eng.last_confirmed_high
 eng.last_confirmed_low
-eng.internal_mode          # 1 tracking up, -1 tracking down, 0 watching
+eng.internal_mode  # 1 tracking up, -1 tracking down, 0 watching
 eng.internal_swing
 ```
 

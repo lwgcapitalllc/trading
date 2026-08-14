@@ -2,15 +2,58 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import {
-  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea, ReferenceLine,
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  ReferenceArea,
+  ReferenceLine,
 } from 'recharts'
-import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, Camera, Check, Square } from 'lucide-react'
+import {
+  ArrowLeft,
+  Play,
+  RotateCcw,
+  AlertTriangle,
+  Star,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  Camera,
+  Check,
+  Square,
+} from 'lucide-react'
 import { copyChartAsPng } from '@/lib/chartImage'
-import { balTick, balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, tradeTicks, type XMode } from '@/lib/chartAxis'
+import {
+  balTick,
+  balanceTicks,
+  dateMs,
+  getXMode,
+  monthLabel,
+  monthTicks,
+  regimeBandsByIndex,
+  regimeBandsFromTimeline,
+  setXModePref,
+  tradeTicks,
+  type XMode,
+} from '@/lib/chartAxis'
 import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverlayToggle'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
-import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useStopBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
+import {
+  useBacktestRun,
+  useStrategy,
+  useBacktestRuns,
+  useTriggerBacktest,
+  useStopBacktest,
+  useRunningVpsJob,
+  useLabProgress,
+} from '@/hooks/useLab'
 import { ParamEditor, ParamCoach, type ParamValue } from '@/components/ParamEditor'
 import { useStickyBanner } from '@/components/StickyHeader'
 import { api } from '@/api/client'
@@ -65,7 +108,11 @@ function ddPctOf(r: BacktestSummary | null | undefined): number | null {
 
 // ── Regime bands (shared timeline from the baseline's daily pnl) ────────────────
 
-interface Band { x1: number; x2: number; regime: string }
+interface Band {
+  x1: number
+  x2: number
+  regime: string
+}
 const ts = (date: string): number => dateMs(date) ?? NaN
 
 // Account balance after each trade, as a timestamp→balance map — straight off the run's own
@@ -101,11 +148,25 @@ function pnlByRegime(daily: DailyPnlPoint[]): Record<string, number> {
   return out
 }
 
-const LINE_PALETTE = ['#d9a441', '#22c55e', '#ec4899', '#a855f7', '#f97316', '#3b82f6', '#14b8a6', '#eab308']
+const LINE_PALETTE = [
+  '#d9a441',
+  '#22c55e',
+  '#ec4899',
+  '#a855f7',
+  '#f97316',
+  '#3b82f6',
+  '#14b8a6',
+  '#eab308',
+]
 
 // ── Chart dots ──────────────────────────────────────────────────────────────────
 
-type DotProps = { cx?: number; cy?: number; index?: number; payload?: Record<string, number | boolean> }
+type DotProps = {
+  cx?: number
+  cy?: number
+  index?: number
+  payload?: Record<string, number | boolean>
+}
 
 // A dot only where the run actually traded (`<id>__pt`), coloured by which side of the starting
 // balance it closed on — the forward-filled rows in between are another run's trade days.
@@ -113,18 +174,44 @@ function tradeDot(p: DotProps, id: string, startBal: number, r: number) {
   const { cx, cy, payload, index } = p
   if (cx == null || cy == null || !payload?.[`${id}__pt`]) return <g key={index} />
   const up = ((payload[id] as number) ?? 0) >= startBal
-  return <circle key={index} cx={cx} cy={cy} r={r} fill={up ? C.pos : C.neg} stroke={C.tooltipBg} strokeWidth={r > 3 ? 1.5 : 1} />
+  return (
+    <circle
+      key={index}
+      cx={cx}
+      cy={cy}
+      r={r}
+      fill={up ? C.pos : C.neg}
+      stroke={C.tooltipBg}
+      strokeWidth={r > 3 ? 1.5 : 1}
+    />
+  )
 }
 
 // ── Delta cell ──────────────────────────────────────────────────────────────────
 
 /** `good = null` means the direction carries no verdict — more trades is neither better nor worse,
  *  it is a different sample, and colouring it green would say otherwise. */
-function Delta({ value, good, digits = 2, suffix = '' }: { value: number | null; good: boolean | null; digits?: number; suffix?: string }) {
+function Delta({
+  value,
+  good,
+  digits = 2,
+  suffix = '',
+}: {
+  value: number | null
+  good: boolean | null
+  digits?: number
+  suffix?: string
+}) {
   if (value == null) return null
   const cls = good == null ? 'text-text-tertiary' : good ? 'text-pos-text' : 'text-neg-text'
   const sign = value > 0 ? '+' : ''
-  return <span className={`text-[10px] font-mono ${cls}`}>{sign}{value.toFixed(digits)}{suffix}</span>
+  return (
+    <span className={`text-[10px] font-mono ${cls}`}>
+      {sign}
+      {value.toFixed(digits)}
+      {suffix}
+    </span>
+  )
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -150,27 +237,36 @@ export function TuningWorkbench() {
       const raw = sessionStorage.getItem(`tune_edits_${runId ?? ''}`)
       const parsed = raw ? JSON.parse(raw) : null
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-    } catch { return {} }
+    } catch {
+      return {}
+    }
   })
   useEffect(() => {
     try {
       if (Object.keys(edits).length) sessionStorage.setItem(editsKey, JSON.stringify(edits))
       else sessionStorage.removeItem(editsKey)
-    } catch { /* quota / private mode */ }
+    } catch {
+      /* quota / private mode */
+    }
   }, [edits, editsKey])
 
   const [coachParam, setCoachParam] = useState<string | null>(null)
   const [showRegime, setShowRegime] = useRegimeOverlay()
   // Same stored preference the run page's equity chart uses, so the two never disagree.
   const [xMode, setXMode] = useState<XMode>(getXMode)
-  const toggleXMode = (v: XMode) => { setXMode(v); setXModePref(v) }
+  const toggleXMode = (v: XMode) => {
+    setXMode(v)
+    setXModePref(v)
+  }
   const [chartFs, setChartFs] = useState(false)
   const fsChartRef = useRef<HTMLDivElement>(null)
   const fsPlotRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!chartFs) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setChartFs(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setChartFs(false)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [chartFs])
@@ -190,13 +286,22 @@ export function TuningWorkbench() {
     return () => ro.disconnect()
   }, [chartFs])
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem('tune_params_panel') === 'collapsed' } catch { return false }
+    try {
+      return localStorage.getItem('tune_params_panel') === 'collapsed'
+    } catch {
+      return false
+    }
   })
-  const togglePanel = () => setPanelCollapsed(c => {
-    const next = !c
-    try { localStorage.setItem('tune_params_panel', next ? 'collapsed' : 'open') } catch { /* quota */ }
-    return next
-  })
+  const togglePanel = () =>
+    setPanelCollapsed((c) => {
+      const next = !c
+      try {
+        localStorage.setItem('tune_params_panel', next ? 'collapsed' : 'open')
+      } catch {
+        /* quota */
+      }
+      return next
+    })
   const { ref: headerRef, scrolled, height: headerH, collapse } = useStickyBanner()
 
   const schemaByName = useMemo(() => {
@@ -208,7 +313,7 @@ export function TuningWorkbench() {
   // Current editable values = baseline overlaid with the user's edits (typed).
   const values = useMemo(
     () => ({ ...(baseline?.params ?? {}), ...edits }) as Record<string, ParamValue>,
-    [baseline, edits],
+    [baseline, edits]
   )
 
   const foundational = useMemo(() => {
@@ -250,7 +355,7 @@ export function TuningWorkbench() {
   // All runs to show in the leaderboard / overlay: baseline first, then iterations.
   const baselineSummary: BacktestSummary | null = useMemo(() => {
     if (!baseline) return null
-    return allRuns?.find(r => r.run_id === baseline.run_id) ?? null
+    return allRuns?.find((r) => r.run_id === baseline.run_id) ?? null
   }, [allRuns, baseline])
 
   // Ranked by profit factor, because that is what the caption above the table says. It used to be
@@ -261,9 +366,11 @@ export function TuningWorkbench() {
     const rows: BacktestSummary[] = []
     if (baselineSummary) rows.push(baselineSummary)
     rows.push(...iterations)
-    const rank = (r: BacktestSummary) => (r.status === 'complete' && r.profit_factor != null ? r.profit_factor : null)
+    const rank = (r: BacktestSummary) =>
+      r.status === 'complete' && r.profit_factor != null ? r.profit_factor : null
     return rows.sort((a, b) => {
-      const ra = rank(a), rb = rank(b)
+      const ra = rank(a),
+        rb = rank(b)
       if (ra == null && rb == null) return b.created_at.localeCompare(a.created_at)
       if (ra == null) return 1
       if (rb == null) return -1
@@ -272,20 +379,26 @@ export function TuningWorkbench() {
   }, [baselineSummary, iterations])
 
   const bestPf = useMemo(() => {
-    const eligible = leaderboard.filter(r =>
-      r.status === 'complete' && r.profit_factor != null && (r.trade_count ?? 0) >= MIN_STAR_TRADES)
+    const eligible = leaderboard.filter(
+      (r) =>
+        r.status === 'complete' &&
+        r.profit_factor != null &&
+        (r.trade_count ?? 0) >= MIN_STAR_TRADES
+    )
     if (!eligible.length) return null
-    return eligible.reduce((a, b) => (b.profit_factor as number) > (a.profit_factor as number) ? b : a).run_id
+    return eligible.reduce((a, b) =>
+      (b.profit_factor as number) > (a.profit_factor as number) ? b : a
+    ).run_id
   }, [leaderboard])
 
   // Live single-run progress for the iteration currently running (lab_progress.json).
-  const runningIter = leaderboard.find(r => r.status === 'running') ?? null
+  const runningIter = leaderboard.find((r) => r.status === 'running') ?? null
   const liveJobId = progress?.status === 'running' ? progress.job_id : null
 
   // Fetch full detail (for daily_pnl) of every complete run, for the overlay + regime breakdown.
   const completeIds = useMemo(
-    () => leaderboard.filter(r => r.status === 'complete').map(r => r.run_id),
-    [leaderboard],
+    () => leaderboard.filter((r) => r.status === 'complete').map((r) => r.run_id),
+    [leaderboard]
   )
   // `regime_timeline` is 96 KB of a 137 KB run detail (measured on a 165-trade run) and it is the
   // SAME calendar for every run in this window — the chart bands off exactly one copy. So the
@@ -298,20 +411,21 @@ export function TuningWorkbench() {
   // timeline, and handing it a stripped copy would blank the bands over there instead.
   const baseHasTimeline = (baseline?.regime_timeline?.length ?? 0) > 0
   const detailQueries = useQueries({
-    queries: (baseline ? completeIds : []).map(id => {
+    queries: (baseline ? completeIds : []).map((id) => {
       const slim = baseHasTimeline && id !== baseline?.run_id
       return {
         queryKey: slim ? ['lab', 'run', id, 'slim'] : ['lab', 'run', id],
-        queryFn: () => api.get<BacktestDetail>(`/backtests/runs/${id}${slim ? '?timeline=false' : ''}`),
+        queryFn: () =>
+          api.get<BacktestDetail>(`/backtests/runs/${id}${slim ? '?timeline=false' : ''}`),
         staleTime: 60_000,
       }
     }),
   })
   const details = useMemo(
-    () => detailQueries.map(q => q.data).filter((d): d is BacktestDetail => !!d),
-    [detailQueries],
+    () => detailQueries.map((q) => q.data).filter((d): d is BacktestDetail => !!d),
+    [detailQueries]
   )
-  const detailsLoading = detailQueries.some(q => q.isLoading)
+  const detailsLoading = detailQueries.some((q) => q.isLoading)
 
   // Assign each run a stable color. The baseline line itself is drawn green-above /
   // red-below the starting balance (like the equity chart), so its legend/table swatch is
@@ -335,8 +449,13 @@ export function TuningWorkbench() {
     const m = new Map<string, [string, unknown][]>()
     if (!baseline) return m
     for (const r of iterations) {
-      m.set(r.run_id, Object.entries(r.params || {}).filter(([k, v]) =>
-        !isFoundational(schemaByName.get(k)) && String(v) !== String(baseline.params[k])))
+      m.set(
+        r.run_id,
+        Object.entries(r.params || {}).filter(
+          ([k, v]) =>
+            !isFoundational(schemaByName.get(k)) && String(v) !== String(baseline.params[k])
+        )
+      )
     }
     return m
   }, [iterations, baseline, schemaByName])
@@ -345,18 +464,24 @@ export function TuningWorkbench() {
   // old→new, so repeating it there would just make the row twice as wide.
   const shortLabel = useCallback(
     (id: string) => (id === baseline?.run_id ? 'Baseline' : `Tweak ${id.slice(0, 6)}`),
-    [baseline],
+    [baseline]
   )
   // Descriptive form, for everywhere a run is named with nothing else beside it: the chart legend,
   // the tooltip, the regime table's headers, the running banner. `Tweak 15f0122a` tells a reader
   // nothing about which line is which; `exec_tp1_pct=30` is the whole point of the comparison.
-  const labelFor = useCallback((id: string) => {
-    if (id === baseline?.run_id) return 'Baseline'
-    const ch = changesById.get(id)
-    if (!ch?.length) return `Tweak ${id.slice(0, 6)}`
-    const head = ch.slice(0, 2).map(([k, v]) => `${k}=${v}`).join(' · ')
-    return ch.length > 2 ? `${head} +${ch.length - 2}` : head
-  }, [baseline, changesById])
+  const labelFor = useCallback(
+    (id: string) => {
+      if (id === baseline?.run_id) return 'Baseline'
+      const ch = changesById.get(id)
+      if (!ch?.length) return `Tweak ${id.slice(0, 6)}`
+      const head = ch
+        .slice(0, 2)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' · ')
+      return ch.length > 2 ? `${head} +${ch.length - 2}` : head
+    },
+    [baseline, changesById]
+  )
 
   // Overlay dataset — ACCOUNT BALANCE per run, so this chart reads exactly like the equity
   // curve on BacktestDetail: same starting balance on the axis, same break-even reference,
@@ -369,10 +494,10 @@ export function TuningWorkbench() {
     // vertices, which is why the baseline here didn't trace the same path as on the run page.)
     const byDate = xMode === 'date'
     const series = details
-      .map(d => ({ id: d.run_id, bal: byDate ? balByTime(d) : balByIndex(d) }))
-      .filter(s => s.bal.size > 0)
+      .map((d) => ({ id: d.run_id, bal: byDate ? balByTime(d) : balByIndex(d) }))
+      .filter((s) => s.bal.size > 0)
     const allTs = new Set<number>()
-    series.forEach(s => s.bal.forEach((_, t) => allTs.add(t)))
+    series.forEach((s) => s.bal.forEach((_, t) => allTs.add(t)))
     if (!allTs.size) return null
 
     // Starting balance, derived the same way the equity chart does it: the first trade's
@@ -382,9 +507,9 @@ export function TuningWorkbench() {
       return p ? (p.equity ?? 0) - (p.profit ?? 0) : null
     }
     const startBal =
-      startOf(details.find(d => d.run_id === baseline?.run_id && d.equity_curve?.length))
-      ?? startOf(details.find(d => d.equity_curve?.length))
-      ?? 0
+      startOf(details.find((d) => d.run_id === baseline?.run_id && d.equity_curve?.length)) ??
+      startOf(details.find((d) => d.equity_curve?.length)) ??
+      0
 
     // Anchor every line on the run's start date at the starting balance, so they all leave the
     // same point on the left edge instead of each one appearing part-way across the chart.
@@ -397,8 +522,8 @@ export function TuningWorkbench() {
     // `connectNulls` bridge them drew a straight diagonal across flat stretches — a slow bleed
     // or climb that never happened. `<id>__pt` marks the rows that are a REAL trade for that
     // run, so only those get a dot (as on the equity chart, one dot = one trade).
-    const last = new Map<string, number>(series.map(s => [s.id, startBal]))
-    const data = sortedTs.map(t => {
+    const last = new Map<string, number>(series.map((s) => [s.id, startBal]))
+    const data = sortedTs.map((t) => {
       const row: Record<string, number | boolean> = { t }
       for (const s of series) {
         const hit = s.bal.has(t)
@@ -411,11 +536,15 @@ export function TuningWorkbench() {
 
     const stats = new Map<string, { min: number; max: number; end: number }>()
     for (const s of series) {
-      const vals = data.map(r => r[s.id] as number)
-      stats.set(s.id, { min: Math.min(...vals), max: Math.max(...vals), end: vals[vals.length - 1] })
+      const vals = data.map((r) => r[s.id] as number)
+      stats.set(s.id, {
+        min: Math.min(...vals),
+        max: Math.max(...vals),
+        end: vals[vals.length - 1],
+      })
     }
-    const lows = [...stats.values()].map(v => v.min)
-    const highs = [...stats.values()].map(v => v.max)
+    const lows = [...stats.values()].map((v) => v.min)
+    const highs = [...stats.values()].map((v) => v.max)
     const min = Math.min(startBal, ...lows)
     const max = Math.max(startBal, ...highs)
     const pad = (max - min) * 0.1 || 500
@@ -431,7 +560,7 @@ export function TuningWorkbench() {
     const bStats = stats.get(baseline?.run_id ?? '')
     const dMin = Math.min(startBal, bStats?.min ?? startBal)
     const dMax = Math.max(startBal, bStats?.max ?? startBal)
-    const split = Math.min(1, Math.max(0, (dMax - startBal) / ((dMax - dMin) || 1)))
+    const split = Math.min(1, Math.max(0, (dMax - startBal) / (dMax - dMin || 1)))
 
     // Regime bands come from the FULL-CALENDAR timeline (every trading day in the window,
     // classified server-side), not from the days a run happened to trade — regime is a property of
@@ -440,32 +569,43 @@ export function TuningWorkbench() {
     // Fallback for runs completed before the backend emitted a timeline: merge whatever tagged
     // days the loaded runs do carry, so the chart isn't left blank.
     const dateToRegime = new Map<string, string>()
-    const withTimeline = details.find(d => d.run_id === baseline?.run_id && d.regime_timeline?.length)
-      ?? details.find(d => d.regime_timeline?.length)
+    const withTimeline =
+      details.find((d) => d.run_id === baseline?.run_id && d.regime_timeline?.length) ??
+      details.find((d) => d.regime_timeline?.length)
     if (withTimeline) {
       for (const d of withTimeline.regime_timeline) dateToRegime.set(d.date, d.regime)
     } else {
-      for (const d of details) for (const p of d.daily_pnl) if (p.regime_tag) dateToRegime.set(p.date, p.regime_tag)
+      for (const d of details)
+        for (const p of d.daily_pnl) if (p.regime_tag) dateToRegime.set(p.date, p.regime_tag)
     }
-    const baseCurve = details.find(d => d.run_id === baseline?.run_id)?.equity_curve ?? []
+    const baseCurve = details.find((d) => d.run_id === baseline?.run_id)?.equity_curve ?? []
     const bands: Band[] = byDate
-      ? regimeBandsFromTimeline([...dateToRegime.entries()].map(([date, regime]) => ({ date, regime })))
+      ? regimeBandsFromTimeline(
+          [...dateToRegime.entries()].map(([date, regime]) => ({ date, regime }))
+        )
       : regimeBandsByIndex(baseCurve, dateToRegime)
     // Stretch the first/last band to the chart edges so there's no uncoloured margin.
     if (bands.length) {
       bands[0].x1 = Math.min(bands[0].x1, sortedTs[0])
-      bands[bands.length - 1].x2 = Math.max(bands[bands.length - 1].x2, sortedTs[sortedTs.length - 1])
+      bands[bands.length - 1].x2 = Math.max(
+        bands[bands.length - 1].x2,
+        sortedTs[sortedTs.length - 1]
+      )
     }
     // Which regimes are actually PAINTED — the legend names those and no others, so it can never
     // advertise a colour that isn't on the chart. Known labels keep the canonical order.
-    const painted = new Set(bands.map(b => b.regime))
+    const painted = new Set(bands.map((b) => b.regime))
     const bandRegimes = [
-      ...REGIME_ORDER.filter(r => painted.has(r)),
-      ...[...painted].filter(r => !REGIME_ORDER.includes(r)),
+      ...REGIME_ORDER.filter((r) => painted.has(r)),
+      ...[...painted].filter((r) => !REGIME_ORDER.includes(r)),
     ]
 
     return {
-      data, bands, bandRegimes, startBal, split,
+      data,
+      bands,
+      bandRegimes,
+      startBal,
+      split,
       yDomain: [yMin, yMax] as [number, number],
       yTicks,
       byDate,
@@ -493,7 +633,9 @@ export function TuningWorkbench() {
   const regimeMatrix = useMemo(() => {
     const byRun = new Map<string, Record<string, number>>()
     for (const d of details) byRun.set(d.run_id, pnlByRegime(d.daily_pnl))
-    const regimes = REGIME_ORDER.filter(r => details.some(d => byRun.get(d.run_id)?.[r] != null))
+    const regimes = REGIME_ORDER.filter((r) =>
+      details.some((d) => byRun.get(d.run_id)?.[r] != null)
+    )
     return { byRun, regimes }
   }, [details])
 
@@ -502,7 +644,7 @@ export function TuningWorkbench() {
   }
 
   const jobBlocked = !!runningJobFor(runningJob, baseline.runner)?.running
-  const rulesetIds = baseline.evaluations.map(e => e.ruleset_id)
+  const rulesetIds = baseline.evaluations.map((e) => e.ruleset_id)
 
   const baseParams = baseline.params as Record<string, unknown>
   // Params this baseline or the current schema actually knows about. Everything downstream — the
@@ -512,58 +654,66 @@ export function TuningWorkbench() {
   // one, and a request carrying an input the runner does not declare is worse than a dropped edit —
   // MT5 treats a set file with an unknown input as mismatched and silently runs something else.)
   const knownParams = new Set([...Object.keys(baseParams), ...schemaByName.keys()])
-  const dirtyKeys = Object.keys(edits).filter(k => knownParams.has(k) && String(edits[k]) !== String(baseParams[k]))
+  const dirtyKeys = Object.keys(edits).filter(
+    (k) => knownParams.has(k) && String(edits[k]) !== String(baseParams[k])
+  )
   const isDirty = dirtyKeys.length > 0
 
-  const onChangeParam = (name: string, value: ParamValue) => setEdits(prev => ({ ...prev, [name]: value }))
+  const onChangeParam = (name: string, value: ParamValue) =>
+    setEdits((prev) => ({ ...prev, [name]: value }))
   const resetParams = () => setEdits({})
 
   // What this iteration will be charged and sized on — READ OFF THE BASELINE, and stated here
   // because it is a claim about what the run will do. See `runIteration`.
   const carriedLayers = baseline.cost_layers ?? []
   const costSummary = carriedLayers.length
-    ? `${carriedLayers.map(l => COST_LAYER_LABEL[l] ?? l).join(', ')}${baseline.broker_profile ? ` · ${baseline.broker_profile}` : ''}`
+    ? `${carriedLayers.map((l) => COST_LAYER_LABEL[l] ?? l).join(', ')}${baseline.broker_profile ? ` · ${baseline.broker_profile}` : ''}`
     : 'no costs charged'
-  const sizingSummary = baseline.sizing_mode === 'manual' && baseline.manual_risk_pct != null
-    ? `manual ${baseline.manual_risk_pct}%`
-    : baseline.sizing_mode
+  const sizingSummary =
+    baseline.sizing_mode === 'manual' && baseline.manual_risk_pct != null
+      ? `manual ${baseline.manual_risk_pct}%`
+      : baseline.sizing_mode
 
   const runIteration = () => {
     const params: Record<string, unknown> = { ...baseline.params }
     for (const [k, v] of Object.entries(edits)) if (knownParams.has(k)) params[k] = v
 
-    trigger.mutate({
-      strategy_id:         baseline.strategy_id,
-      instrument:          baseline.instrument,
-      params,
-      bar_type:            baseline.bar_type,
-      bar_value:           baseline.bar_value,
-      start_date:          baseline.start_date,
-      end_date:            baseline.end_date,
-      commission_per_side: baseline.commission_per_side,
-      slippage_ticks:      baseline.slippage_ticks,
-      // The whole page is a comparison, so the iteration has to be measured on the baseline's own
-      // physics. Without these it ran on a FREE book and default sizing while sitting in a table
-      // beside a charged, differently-sized baseline — two numbers produced under different rules,
-      // presented as a difference caused by the param. Retry has always carried them; this was the
-      // one run-launching path that did not.
-      //
-      // ⚠ `cost_layers: null` on the baseline means "made before layered costs existed", which is
-      // not a contract a NEW run can be created under — `[]` is its honest equivalent and charges
-      // exactly the same nothing. Do NOT send `null` here; the API models it as a plain list.
-      cost_layers:         carriedLayers,
-      broker_profile:      baseline.broker_profile ?? undefined,
-      sizing_mode:         baseline.sizing_mode,
-      manual_risk_pct:     baseline.manual_risk_pct ?? null,
-      evaluate_rulesets:   rulesetIds,
-      source_run_id:       baseline.run_id,
-    }, {
-      onSuccess: () => setEdits({}),
-    })
+    trigger.mutate(
+      {
+        strategy_id: baseline.strategy_id,
+        instrument: baseline.instrument,
+        params,
+        bar_type: baseline.bar_type,
+        bar_value: baseline.bar_value,
+        start_date: baseline.start_date,
+        end_date: baseline.end_date,
+        commission_per_side: baseline.commission_per_side,
+        slippage_ticks: baseline.slippage_ticks,
+        // The whole page is a comparison, so the iteration has to be measured on the baseline's own
+        // physics. Without these it ran on a FREE book and default sizing while sitting in a table
+        // beside a charged, differently-sized baseline — two numbers produced under different rules,
+        // presented as a difference caused by the param. Retry has always carried them; this was the
+        // one run-launching path that did not.
+        //
+        // ⚠ `cost_layers: null` on the baseline means "made before layered costs existed", which is
+        // not a contract a NEW run can be created under — `[]` is its honest equivalent and charges
+        // exactly the same nothing. Do NOT send `null` here; the API models it as a plain list.
+        cost_layers: carriedLayers,
+        broker_profile: baseline.broker_profile ?? undefined,
+        sizing_mode: baseline.sizing_mode,
+        manual_risk_pct: baseline.manual_risk_pct ?? null,
+        evaluate_rulesets: rulesetIds,
+        source_run_id: baseline.run_id,
+      },
+      {
+        onSuccess: () => setEdits({}),
+      }
+    )
   }
 
-  const baseMetric = (k: 'net_pnl' | 'profit_factor' | 'max_drawdown' | 'sharpe' | 'win_rate' | 'trade_count') =>
-    baselineSummary?.[k] ?? null
+  const baseMetric = (
+    k: 'net_pnl' | 'profit_factor' | 'max_drawdown' | 'sharpe' | 'win_rate' | 'trade_count'
+  ) => baselineSummary?.[k] ?? null
 
   // `copyChartAsPng` already toasts on every failure path (no chart, render error, encode error),
   // so there is nothing to add here — only the "copied" tick, which is this page's own state.
@@ -578,77 +728,126 @@ export function TuningWorkbench() {
   // The baseline is drawn as the SAME object BacktestDetail draws — a monotone Area anchored on
   // the starting balance with the split stroke + fill — so the two charts trace an identical
   // path. Iterations ride on top as dashed lines (they need to stay tellable apart).
-  const renderOverlay = (height: number) => chart && (
-    <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={chart.data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
-        <defs>
-          {/* Baseline stroke: green above the starting balance, red below, hard edge at the split. */}
-          <linearGradient id="tuneBaseStroke" x1="0" y1="0" x2="0" y2="1">
-            <stop offset={chart.split} stopColor={C.pos} />
-            <stop offset={chart.split} stopColor={C.neg} />
-          </linearGradient>
-          {/* Fill: green above the start line, red below, hard edge at the same offset. */}
-          <linearGradient id="tuneBaseFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset={0} stopColor={C.pos} stopOpacity={0.22} />
-            <stop offset={Math.max(0, chart.split - 0.0001)} stopColor={C.pos} stopOpacity={0.03} />
-            <stop offset={chart.split} stopColor={C.neg} stopOpacity={0.03} />
-            <stop offset={1} stopColor={C.neg} stopOpacity={0.20} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke={C.grid} vertical={false} />
-        {showRegime && chart.bands.map((b, i) => (
-          <ReferenceArea key={i} x1={b.x1} x2={b.x2} ifOverflow="visible"
-            fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN} fillOpacity={0.1} stroke="none" />
-        ))}
-        <XAxis
-          dataKey="t" type="number" domain={['dataMin', 'dataMax']}
-          {...(chart.byDate ? { scale: 'time' as const } : {})}
-          ticks={chart.xTicks}
-          tickFormatter={(v: number) => (chart.byDate ? monthLabel(v) : `#${v}`)}
-          tick={{ fill: C.axisTick, fontSize: 10 }} axisLine={false} tickLine={false}
-        />
-        <YAxis
-          domain={chart.yDomain} ticks={chart.yTicks} tickFormatter={balTick}
-          tick={{ fill: C.axisTick, fontSize: 10 }} axisLine={false} tickLine={false} width={56}
-        />
-        <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 12, padding: '8px 12px' }}
-          labelStyle={{ color: C.axisTick }}
-          itemStyle={{ color: '#e5e7eb' }}
-          labelFormatter={t => (chart.byDate
-            ? new Date(t as number).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-            : `Trade #${t}`)}
-          // Balance first, then the gain on the account so far — the two numbers a comparison needs.
-          formatter={(v: number, name: string) => [`${balTick(v)}  (${money(v - chart.startBal)})`, labelFor(name)]}
-        />
-        {/* Break-even = the starting balance, same dashed reference as the equity chart. */}
-        <ReferenceLine y={chart.startBal} stroke={C.refLine} strokeDasharray="4 4" />
-        {/* Baseline first so its translucent fill can't wash out the iteration lines on top. */}
-        <Area
-          type="monotone" dataKey={baseline.run_id} isAnimationActive={false}
-          stroke="url(#tuneBaseStroke)" strokeWidth={2.5} fill="url(#tuneBaseFill)"
-          baseValue={chart.startBal}
-          // One dot per actual trade (not per forward-filled row), coloured by which side of the
-          // starting balance it landed — exactly as on the equity chart.
-          dot={baseDots.dot}
-          activeDot={baseDots.activeDot}
-        />
-        {completeIds.filter(id => id !== baseline.run_id).map(id => (
-          <Line
-            key={id} type="monotone" dataKey={id} isAnimationActive={false}
-            stroke={colorFor.get(id)} strokeWidth={1.5} dot={false} strokeDasharray="4 2"
+  const renderOverlay = (height: number) =>
+    chart && (
+      <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={chart.data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+          <defs>
+            {/* Baseline stroke: green above the starting balance, red below, hard edge at the split. */}
+            <linearGradient id="tuneBaseStroke" x1="0" y1="0" x2="0" y2="1">
+              <stop offset={chart.split} stopColor={C.pos} />
+              <stop offset={chart.split} stopColor={C.neg} />
+            </linearGradient>
+            {/* Fill: green above the start line, red below, hard edge at the same offset. */}
+            <linearGradient id="tuneBaseFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset={0} stopColor={C.pos} stopOpacity={0.22} />
+              <stop
+                offset={Math.max(0, chart.split - 0.0001)}
+                stopColor={C.pos}
+                stopOpacity={0.03}
+              />
+              <stop offset={chart.split} stopColor={C.neg} stopOpacity={0.03} />
+              <stop offset={1} stopColor={C.neg} stopOpacity={0.2} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke={C.grid} vertical={false} />
+          {showRegime &&
+            chart.bands.map((b, i) => (
+              <ReferenceArea
+                key={i}
+                x1={b.x1}
+                x2={b.x2}
+                ifOverflow="visible"
+                fill={REGIME_COLORS[b.regime] ?? REGIME_COLORS.UNKNOWN}
+                fillOpacity={0.1}
+                stroke="none"
+              />
+            ))}
+          <XAxis
+            dataKey="t"
+            type="number"
+            domain={['dataMin', 'dataMax']}
+            {...(chart.byDate ? { scale: 'time' as const } : {})}
+            ticks={chart.xTicks}
+            tickFormatter={(v: number) => (chart.byDate ? monthLabel(v) : `#${v}`)}
+            tick={{ fill: C.axisTick, fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
           />
-        ))}
-      </ComposedChart>
-    </ResponsiveContainer>
-  )
+          <YAxis
+            domain={chart.yDomain}
+            ticks={chart.yTicks}
+            tickFormatter={balTick}
+            tick={{ fill: C.axisTick, fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
+            width={56}
+          />
+          <Tooltip
+            contentStyle={{
+              background: C.tooltipBg,
+              border: `1px solid ${C.tooltipBorder}`,
+              borderRadius: 8,
+              fontSize: 12,
+              padding: '8px 12px',
+            }}
+            labelStyle={{ color: C.axisTick }}
+            itemStyle={{ color: '#e5e7eb' }}
+            labelFormatter={(t) =>
+              chart.byDate
+                ? new Date(t as number).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })
+                : `Trade #${t}`
+            }
+            // Balance first, then the gain on the account so far — the two numbers a comparison needs.
+            formatter={(v: number, name: string) => [
+              `${balTick(v)}  (${money(v - chart.startBal)})`,
+              labelFor(name),
+            ]}
+          />
+          {/* Break-even = the starting balance, same dashed reference as the equity chart. */}
+          <ReferenceLine y={chart.startBal} stroke={C.refLine} strokeDasharray="4 4" />
+          {/* Baseline first so its translucent fill can't wash out the iteration lines on top. */}
+          <Area
+            type="monotone"
+            dataKey={baseline.run_id}
+            isAnimationActive={false}
+            stroke="url(#tuneBaseStroke)"
+            strokeWidth={2.5}
+            fill="url(#tuneBaseFill)"
+            baseValue={chart.startBal}
+            // One dot per actual trade (not per forward-filled row), coloured by which side of the
+            // starting balance it landed — exactly as on the equity chart.
+            dot={baseDots.dot}
+            activeDot={baseDots.activeDot}
+          />
+          {completeIds
+            .filter((id) => id !== baseline.run_id)
+            .map((id) => (
+              <Line
+                key={id}
+                type="monotone"
+                dataKey={id}
+                isAnimationActive={false}
+                stroke={colorFor.get(id)}
+                strokeWidth={1.5}
+                dot={false}
+                strokeDasharray="4 2"
+              />
+            ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    )
 
   // Which line is which, and what the background colours mean. Shared by the inline and fullscreen
   // charts so the fullscreen copy (which is what gets pasted into a chat) carries them too.
   const renderLegend = () => (
     <div className="mt-2 px-2 space-y-1">
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {completeIds.map(id => (
+        {completeIds.map((id) => (
           <span key={id} className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
             <span className="w-3 h-[2px]" style={{ background: colorFor.get(id) }} />
             {labelFor(id)}
@@ -657,10 +856,12 @@ export function TuningWorkbench() {
       </div>
       {showRegime && !!chart?.bandRegimes.length && (
         <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {chart.bandRegimes.map(rg => (
+          {chart.bandRegimes.map((rg) => (
             <span key={rg} className="flex items-center gap-1 text-[10px] text-text-tertiary">
-              <span className="w-2.5 h-2.5 rounded-sm"
-                style={{ background: REGIME_COLORS[rg] ?? REGIME_COLORS.UNKNOWN, opacity: 0.45 }} />
+              <span
+                className="w-2.5 h-2.5 rounded-sm"
+                style={{ background: REGIME_COLORS[rg] ?? REGIME_COLORS.UNKNOWN, opacity: 0.45 }}
+              />
               {REGIME_LABEL[rg] ?? rg}
             </span>
           ))}
@@ -675,57 +876,85 @@ export function TuningWorkbench() {
         ref={headerRef}
         className={`sticky -top-[22px] z-30 bg-bg-base px-[22px] pt-[22px] transition-[padding] duration-200 ${scrolled ? 'pb-3 shadow-[0_10px_18px_-14px_rgba(0,0,0,0.8)]' : 'pb-4'}`}
       >
-      {/* Header — condenses to a single row once scrolled */}
-      {scrolled ? (
-        <div className="flex items-center gap-2 text-[13px] min-w-0">
-          <button
-            onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
-            title="Back to run"
-            className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
-          >
-            <ArrowLeft size={14} />
-          </button>
-          <span className="font-semibold text-[14px] flex-shrink-0">Tune Parameters</span>
-          <span className="text-text-tertiary flex-shrink-0">·</span>
-          <span className="font-semibold text-text-secondary truncate flex-shrink min-w-0">{baseline.strategy_name}</span>
-          <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-1.5 py-[1px] rounded text-[11px] flex-shrink-0">{baseline.instrument}</span>
-          <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[1100px]:hidden">{baseline.start_date} → {baseline.end_date}</span>
-          {rulesetIds.length > 0 && (
-            <span className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[900px]:hidden">{rulesetIds.join(', ')}</span>
-          )}
-        </div>
-      ) : (
-        <>
-          <button
-            onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
-            className="flex items-center gap-1.5 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors mb-3"
-          >
-            <ArrowLeft size={13} /> Back to run
-          </button>
-          <div className="flex items-baseline gap-3 mb-2">
-            <h1 className="text-h1 font-semibold">Tune Parameters</h1>
-            <span className="text-[15px] font-semibold text-text-secondary">{baseline.strategy_name}</span>
-          </div>
-          <div className="flex items-center gap-1.5 mb-5 flex-wrap text-[12px]">
-            <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-[2px] rounded">{baseline.instrument}</span>
-            <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded">{baseline.start_date} → {baseline.end_date}</span>
-            {rulesetIds.length > 0 ? (
-              rulesetIds.map(id => (
-                <span key={id} className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-2 py-[2px] rounded">{id}</span>
-              ))
-            ) : (
-              <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary px-2 py-[2px] rounded">No ruleset</span>
+        {/* Header — condenses to a single row once scrolled */}
+        {scrolled ? (
+          <div className="flex items-center gap-2 text-[13px] min-w-0">
+            <button
+              onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
+              title="Back to run"
+              className="flex items-center text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"
+            >
+              <ArrowLeft size={14} />
+            </button>
+            <span className="font-semibold text-[14px] flex-shrink-0">Tune Parameters</span>
+            <span className="text-text-tertiary flex-shrink-0">·</span>
+            <span className="font-semibold text-text-secondary truncate flex-shrink min-w-0">
+              {baseline.strategy_name}
+            </span>
+            <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-1.5 py-[1px] rounded text-[11px] flex-shrink-0">
+              {baseline.instrument}
+            </span>
+            <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[1100px]:hidden">
+              {baseline.start_date} → {baseline.end_date}
+            </span>
+            {rulesetIds.length > 0 && (
+              <span className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[900px]:hidden">
+                {rulesetIds.join(', ')}
+              </span>
             )}
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            <button
+              onClick={() => navigate(`/backtests/runs/${baseline.run_id}`)}
+              className="flex items-center gap-1.5 text-[12px] text-text-tertiary hover:text-text-secondary transition-colors mb-3"
+            >
+              <ArrowLeft size={13} /> Back to run
+            </button>
+            <div className="flex items-baseline gap-3 mb-2">
+              <h1 className="text-h1 font-semibold">Tune Parameters</h1>
+              <span className="text-[15px] font-semibold text-text-secondary">
+                {baseline.strategy_name}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 mb-5 flex-wrap text-[12px]">
+              <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-[2px] rounded">
+                {baseline.instrument}
+              </span>
+              <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded">
+                {baseline.start_date} → {baseline.end_date}
+              </span>
+              {rulesetIds.length > 0 ? (
+                rulesetIds.map((id) => (
+                  <span
+                    key={id}
+                    className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-2 py-[2px] rounded"
+                  >
+                    {id}
+                  </span>
+                ))
+              ) : (
+                <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary px-2 py-[2px] rounded">
+                  No ruleset
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-stretch flex-1 min-h-0">
-
         {/* ── Param editor — full-height dockable side column (mirrors BacktestDetail) ── */}
-        <div className={`flex-shrink-0 bg-bg-surface border-r border-border-subtle transition-[width] duration-200 ${panelCollapsed ? 'w-[44px]' : 'w-[440px]'}`}>
-          <div className="sticky flex flex-col" style={{ top: Math.max(headerH - 22, 0), maxHeight: `calc(100vh - 56px - ${headerH}px)` }}>
+        <div
+          className={`flex-shrink-0 bg-bg-surface border-r border-border-subtle transition-[width] duration-200 ${panelCollapsed ? 'w-[44px]' : 'w-[440px]'}`}
+        >
+          <div
+            className="sticky flex flex-col"
+            style={{
+              top: Math.max(headerH - 22, 0),
+              maxHeight: `calc(100vh - 56px - ${headerH}px)`,
+            }}
+          >
             {panelCollapsed ? (
               <button
                 onClick={togglePanel}
@@ -733,25 +962,43 @@ export function TuningWorkbench() {
                 className="w-full flex flex-col items-center gap-2.5 py-4 hover:bg-bg-hover transition-colors"
               >
                 <ChevronRight size={14} className="text-text-tertiary" />
-                <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">Parameters</span>
-                {dirtyKeys.length > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent" title={`${dirtyKeys.length} changed`} />}
+                <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary [writing-mode:vertical-rl]">
+                  Parameters
+                </span>
+                {dirtyKeys.length > 0 && (
+                  <span
+                    className="w-[6px] h-[6px] rounded-full bg-accent"
+                    title={`${dirtyKeys.length} changed`}
+                  />
+                )}
               </button>
             ) : (
               <>
                 <div className="px-[13px] py-[10px] border-b border-border-subtle flex items-center justify-between flex-shrink-0">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary flex items-center gap-2">
                     Parameters
-                    {dirtyKeys.length > 0 && <span className="text-accent normal-case tracking-normal font-medium">· {dirtyKeys.length} changed</span>}
+                    {dirtyKeys.length > 0 && (
+                      <span className="text-accent normal-case tracking-normal font-medium">
+                        · {dirtyKeys.length} changed
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-3">
                     {/* Enabled whenever an edit is being HELD, not only when one differs from the
                         baseline — a value typed and typed back is still an edit sitting there, and
                         greying the only way to clear it made Reset look broken. */}
-                    <button onClick={resetParams} disabled={Object.keys(edits).length === 0}
-                      className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                    <button
+                      onClick={resetParams}
+                      disabled={Object.keys(edits).length === 0}
+                      className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
                       <RotateCcw size={11} /> Reset
                     </button>
-                    <button onClick={togglePanel} title="Collapse" className="text-text-tertiary hover:text-text-secondary">
+                    <button
+                      onClick={togglePanel}
+                      title="Collapse"
+                      className="text-text-tertiary hover:text-text-secondary"
+                    >
                       <ChevronLeft size={15} />
                     </button>
                   </div>
@@ -764,7 +1011,8 @@ export function TuningWorkbench() {
                     <div className="mx-2.5 mb-2.5 flex items-start gap-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
                       <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
                       <p className="text-[11px] text-warn-text leading-snug">
-                        This strategy has changed since its last scan — these parameters may be out of date. Re-scan it on the Strategies page before trusting an iteration.
+                        This strategy has changed since its last scan — these parameters may be out
+                        of date. Re-scan it on the Strategies page before trusting an iteration.
                       </p>
                     </div>
                   )}
@@ -779,11 +1027,15 @@ export function TuningWorkbench() {
                   />
                   {foundational.length > 0 && (
                     <details className="mt-2.5 px-2.5">
-                      <summary className="text-[11px] text-text-tertiary cursor-pointer select-none">Foundational config (read-only) · {foundational.length}</summary>
+                      <summary className="text-[11px] text-text-tertiary cursor-pointer select-none">
+                        Foundational config (read-only) · {foundational.length}
+                      </summary>
                       <div className="mt-2 space-y-[5px]">
                         {foundational.map(([k, v]) => (
                           <div key={k} className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono text-text-tertiary truncate" title={k}>{k}</span>
+                            <span className="font-mono text-text-tertiary truncate" title={k}>
+                              {k}
+                            </span>
                             <span className="font-mono text-text-secondary">{String(v)}</span>
                           </div>
                         ))}
@@ -794,20 +1046,29 @@ export function TuningWorkbench() {
 
                 {/* Pinned coach — always-on guidance for the focused param; rows above never shift */}
                 <div className="px-[13px] py-[11px] border-t border-border-subtle flex-shrink-0 bg-gradient-to-b from-accent/[0.04] to-transparent">
-                  <ParamCoach schema={strategy?.param_schema ?? []} values={values} focusName={coachParam} />
+                  <ParamCoach
+                    schema={strategy?.param_schema ?? []}
+                    values={values}
+                    focusName={coachParam}
+                  />
                 </div>
 
                 <div className="px-[13px] py-[11px] border-t border-border-subtle flex-shrink-0">
                   {jobBlocked && (
                     <div className="flex items-start gap-2 mb-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
                       <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
-                      <p className="text-[11px] text-warn-text leading-snug">{RUNNER_LABEL[runnerScope(baseline.runner)]} is busy — wait for the current job to finish.</p>
+                      <p className="text-[11px] text-warn-text leading-snug">
+                        {RUNNER_LABEL[runnerScope(baseline.runner)]} is busy — wait for the current
+                        job to finish.
+                      </p>
                     </div>
                   )}
                   {/* What the iteration inherits. On screen because it is a claim about the run that
                       is about to fire, and this page spent its life not making it. */}
                   <p className="text-[10px] text-text-tertiary leading-snug mb-2">
-                    Same window and costs as the baseline: <span className="text-text-secondary">{costSummary}</span> · sizing <span className="text-text-secondary">{sizingSummary}</span>
+                    Same window and costs as the baseline:{' '}
+                    <span className="text-text-secondary">{costSummary}</span> · sizing{' '}
+                    <span className="text-text-secondary">{sizingSummary}</span>
                   </p>
                   <button
                     onClick={runIteration}
@@ -815,7 +1076,11 @@ export function TuningWorkbench() {
                     className="w-full flex items-center justify-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] py-2 rounded-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                   >
                     <Play size={13} />
-                    {trigger.isPending ? 'Starting…' : isDirty ? `Run with ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}` : 'Change a param to run'}
+                    {trigger.isPending
+                      ? 'Starting…'
+                      : isDirty
+                        ? `Run with ${dirtyKeys.length} change${dirtyKeys.length !== 1 ? 's' : ''}`
+                        : 'Change a param to run'}
                   </button>
                 </div>
               </>
@@ -825,12 +1090,17 @@ export function TuningWorkbench() {
 
         {/* ── Results (the hero) — no top padding so ITERATIONS lines up with PARAMETERS ── */}
         <div className="flex-1 min-w-0 space-y-[14px] px-[22px] pb-[22px]">
-
           {/* Leaderboard */}
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-baseline justify-between gap-3">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Iterations ({leaderboard.length})</span>
-              <span className="text-[11px] text-text-tertiary">Ranked by profit factor · <Star size={9} className="inline text-gold-text" fill="currentColor" /> best over {MIN_STAR_TRADES} trades · Δ vs baseline</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+                Iterations ({leaderboard.length})
+              </span>
+              <span className="text-[11px] text-text-tertiary">
+                Ranked by profit factor ·{' '}
+                <Star size={9} className="inline text-gold-text" fill="currentColor" /> best over{' '}
+                {MIN_STAR_TRADES} trades · Δ vs baseline
+              </span>
             </div>
 
             {/* Live progress for the running iteration — watch it here, no need to leave */}
@@ -844,12 +1114,17 @@ export function TuningWorkbench() {
                     <Loader2 size={13} className="animate-spin flex-shrink-0" />
                     <span className="truncate">
                       Running {labelFor(runningIter.run_id)}
-                      {liveJobId === runningIter.run_id && progress ? ` — ${progress.pct}% · ${progress.message}` : '…'}
+                      {liveJobId === runningIter.run_id && progress
+                        ? ` — ${progress.pct}% · ${progress.message}`
+                        : '…'}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <button
-                      onClick={e => { e.stopPropagation(); stopRun.mutate(runningIter.run_id) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        stopRun.mutate(runningIter.run_id)
+                      }}
                       disabled={stopRun.isPending}
                       title="Cancel this iteration"
                       className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-neg-text transition-colors disabled:opacity-40"
@@ -861,7 +1136,10 @@ export function TuningWorkbench() {
                 </div>
                 {liveJobId === runningIter.run_id && progress && (
                   <div className="mt-1.5 w-full bg-bg-sunken rounded-full h-[4px] overflow-hidden">
-                    <div className="h-full bg-accent transition-all duration-700" style={{ width: `${progress.pct}%` }} />
+                    <div
+                      className="h-full bg-accent transition-all duration-700"
+                      style={{ width: `${progress.pct}%` }}
+                    />
                   </div>
                 )}
               </div>
@@ -874,7 +1152,12 @@ export function TuningWorkbench() {
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium w-6" />
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Run</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Net P&L</th>
-                    <th className="text-left px-3 py-2 text-text-tertiary font-medium" title="Worst peak-to-trough fall as a % of the peak it fell from, with the dollars beneath it">Max DD</th>
+                    <th
+                      className="text-left px-3 py-2 text-text-tertiary font-medium"
+                      title="Worst peak-to-trough fall as a % of the peak it fell from, with the dollars beneath it"
+                    >
+                      Max DD
+                    </th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">PF</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Sharpe</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Win%</th>
@@ -883,7 +1166,7 @@ export function TuningWorkbench() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-subtle">
-                  {leaderboard.map(r => {
+                  {leaderboard.map((r) => {
                     const isBaseline = r.run_id === baseline.run_id
                     const isBest = r.run_id === bestPf
                     const changes = isBaseline ? [] : (changesById.get(r.run_id) ?? [])
@@ -899,7 +1182,8 @@ export function TuningWorkbench() {
                     const myDdPct = ddPctOf(r)
                     const baseDdPct = ddPctOf(baselineSummary)
                     const ddPctDelta = delta(myDdPct, baseDdPct)
-                    const ddUsdDelta = ddPctDelta == null ? delta(r.max_drawdown, baseMetric('max_drawdown')) : null
+                    const ddUsdDelta =
+                      ddPctDelta == null ? delta(r.max_drawdown, baseMetric('max_drawdown')) : null
                     return (
                       <tr
                         key={r.run_id}
@@ -907,56 +1191,104 @@ export function TuningWorkbench() {
                         className={`hover:bg-bg-hover cursor-pointer transition-colors [&>td]:align-top ${isBest ? 'bg-gold-muted/10' : ''}`}
                       >
                         <td className="px-3 py-[9px]">
-                          <span className="inline-block w-[10px] h-[10px] rounded-full" style={{ background: colorFor.get(r.run_id) }} />
+                          <span
+                            className="inline-block w-[10px] h-[10px] rounded-full"
+                            style={{ background: colorFor.get(r.run_id) }}
+                          />
                         </td>
                         <td className="px-3 py-[9px] font-medium whitespace-nowrap">
                           <span className="flex items-center gap-1.5">
-                            {isBest && <Star size={11} className="text-gold-text" fill="currentColor" />}
+                            {isBest && (
+                              <Star size={11} className="text-gold-text" fill="currentColor" />
+                            )}
                             {shortLabel(r.run_id)}
                             <WorthinessBadge worthiness={r.worthiness} />
                             {r.status === 'running' && (
-                              <span className="text-[10px] text-accent">· running{liveJobId === r.run_id && progress ? ` ${progress.pct}%` : ''}</span>
+                              <span className="text-[10px] text-accent">
+                                · running
+                                {liveJobId === r.run_id && progress ? ` ${progress.pct}%` : ''}
+                              </span>
                             )}
-                            {r.status.startsWith('failed') && <span className="text-[10px] text-neg-text">· failed</span>}
+                            {r.status.startsWith('failed') && (
+                              <span className="text-[10px] text-neg-text">· failed</span>
+                            )}
                           </span>
                         </td>
                         <td className="px-3 py-[9px] font-mono tabular-nums">
-                          <span className={(r.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}>{money(r.net_pnl)}</span>
-                          {pnlDelta != null && <span className="ml-1.5"><Delta value={pnlDelta} good={pnlDelta >= 0} digits={0} /></span>}
+                          <span
+                            className={(r.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}
+                          >
+                            {money(r.net_pnl)}
+                          </span>
+                          {pnlDelta != null && (
+                            <span className="ml-1.5">
+                              <Delta value={pnlDelta} good={pnlDelta >= 0} digits={0} />
+                            </span>
+                          )}
                         </td>
                         {/* Percent leads because it is the figure comparable across runs whose
                             accounts grew to different sizes; the dollars sit under it because that
                             is the unit a prop-firm limit is written in. */}
                         <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
-                          {myDdPct == null && r.max_drawdown == null ? '—' : (
+                          {myDdPct == null && r.max_drawdown == null ? (
+                            '—'
+                          ) : (
                             <>
                               <div>
-                                {myDdPct != null ? `${myDdPct.toFixed(1)}%` : moneyAbs(r.max_drawdown)}
+                                {myDdPct != null
+                                  ? `${myDdPct.toFixed(1)}%`
+                                  : moneyAbs(r.max_drawdown)}
                                 {ddPctDelta != null && Math.abs(ddPctDelta) >= 0.1 && (
-                                  <span className="ml-1.5"><Delta value={ddPctDelta} good={ddPctDelta <= 0} digits={1} suffix="pp" /></span>
+                                  <span className="ml-1.5">
+                                    <Delta
+                                      value={ddPctDelta}
+                                      good={ddPctDelta <= 0}
+                                      digits={1}
+                                      suffix="pp"
+                                    />
+                                  </span>
                                 )}
                                 {ddUsdDelta != null && Math.abs(ddUsdDelta) >= 1 && (
-                                  <span className="ml-1.5"><Delta value={ddUsdDelta} good={ddUsdDelta <= 0} digits={0} /></span>
+                                  <span className="ml-1.5">
+                                    <Delta value={ddUsdDelta} good={ddUsdDelta <= 0} digits={0} />
+                                  </span>
                                 )}
                               </div>
                               {myDdPct != null && r.max_drawdown != null && (
-                                <div className="text-[10px] text-text-tertiary leading-tight">{moneyAbs(r.max_drawdown)}</div>
+                                <div className="text-[10px] text-text-tertiary leading-tight">
+                                  {moneyAbs(r.max_drawdown)}
+                                </div>
                               )}
                             </>
                           )}
                         </td>
                         <td className="px-3 py-[9px] font-mono tabular-nums">
                           {r.profit_factor?.toFixed(2) ?? '—'}
-                          {pfDelta != null && <span className="ml-1.5"><Delta value={pfDelta} good={pfDelta >= 0} /></span>}
+                          {pfDelta != null && (
+                            <span className="ml-1.5">
+                              <Delta value={pfDelta} good={pfDelta >= 0} />
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                           {r.sharpe?.toFixed(2) ?? '—'}
-                          {shDelta != null && <span className="ml-1.5"><Delta value={shDelta} good={shDelta >= 0} /></span>}
+                          {shDelta != null && (
+                            <span className="ml-1.5">
+                              <Delta value={shDelta} good={shDelta >= 0} />
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                           {pct(r.win_rate)}
                           {wrDelta != null && Math.abs(wrDelta) >= 0.001 && (
-                            <span className="ml-1.5"><Delta value={wrDelta * 100} good={wrDelta >= 0} digits={1} suffix="pp" /></span>
+                            <span className="ml-1.5">
+                              <Delta
+                                value={wrDelta * 100}
+                                good={wrDelta >= 0}
+                                digits={1}
+                                suffix="pp"
+                              />
+                            </span>
                           )}
                         </td>
                         {/* No colour on the trade-count delta: fewer trades is not worse, it is a
@@ -964,22 +1296,31 @@ export function TuningWorkbench() {
                         <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                           {r.trade_count ?? '—'}
                           {tcDelta != null && tcDelta !== 0 && (
-                            <span className="ml-1.5"><Delta value={tcDelta} good={null} digits={0} /></span>
+                            <span className="ml-1.5">
+                              <Delta value={tcDelta} good={null} digits={0} />
+                            </span>
                           )}
                         </td>
                         <td className="px-3 py-[9px] text-[11px] font-mono align-top">
-                          {isBaseline ? <span className="text-text-tertiary">—</span>
-                            : changes.length === 0 ? <span className="text-text-tertiary">none</span> : (
-                              <div className="flex flex-col gap-[2px]">
-                                {changes.map(([k, v]) => (
-                                  <span key={k} className="whitespace-nowrap">
-                                    <span className="text-text-tertiary">{schemaByName.get(k)?.label || k} </span>
-                                    <span className="text-text-tertiary line-through">{String(baseline.params[k])}</span>
-                                    <span className="text-accent">→{String(v)}</span>
+                          {isBaseline ? (
+                            <span className="text-text-tertiary">—</span>
+                          ) : changes.length === 0 ? (
+                            <span className="text-text-tertiary">none</span>
+                          ) : (
+                            <div className="flex flex-col gap-[2px]">
+                              {changes.map(([k, v]) => (
+                                <span key={k} className="whitespace-nowrap">
+                                  <span className="text-text-tertiary">
+                                    {schemaByName.get(k)?.label || k}{' '}
                                   </span>
-                                ))}
-                              </div>
-                            )}
+                                  <span className="text-text-tertiary line-through">
+                                    {String(baseline.params[k])}
+                                  </span>
+                                  <span className="text-accent">→{String(v)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )
@@ -992,13 +1333,18 @@ export function TuningWorkbench() {
           {/* Equity overlay */}
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Equity overlay</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+                Equity overlay
+              </span>
               <div className="flex items-center gap-2">
                 <XModeToggle value={xMode} onChange={toggleXMode} />
                 <RegimeOverlayToggle on={showRegime} onChange={setShowRegime} />
                 {overlayData.length > 0 && (
-                  <button onClick={() => setChartFs(true)} title="Fullscreen"
-                    className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors">
+                  <button
+                    onClick={() => setChartFs(true)}
+                    title="Fullscreen"
+                    className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors"
+                  >
                     <Maximize2 size={13} />
                   </button>
                 )}
@@ -1031,17 +1377,25 @@ export function TuningWorkbench() {
           {regimeMatrix.regimes.length > 0 && details.length > 0 && (
             <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
               <div className="px-[15px] py-[10px] border-b border-border-subtle">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Net P&L by regime</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+                  Net P&L by regime
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="border-b border-border-subtle bg-bg-sunken">
                       <th className="text-left px-3 py-2 text-text-tertiary font-medium">Regime</th>
-                      {completeIds.map(id => (
-                        <th key={id} className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
+                      {completeIds.map((id) => (
+                        <th
+                          key={id}
+                          className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap"
+                        >
                           <span className="flex items-center gap-1.5">
-                            <span className="w-[8px] h-[8px] rounded-full" style={{ background: colorFor.get(id) }} />
+                            <span
+                              className="w-[8px] h-[8px] rounded-full"
+                              style={{ background: colorFor.get(id) }}
+                            />
                             {labelFor(id)}
                           </span>
                         </th>
@@ -1049,18 +1403,24 @@ export function TuningWorkbench() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
-                    {regimeMatrix.regimes.map(rg => (
+                    {regimeMatrix.regimes.map((rg) => (
                       <tr key={rg}>
                         <td className="px-3 py-[8px]">
                           <span className="flex items-center gap-1.5">
-                            <span className="w-[10px] h-[10px] rounded-sm" style={{ background: REGIME_COLORS[rg] }} />
+                            <span
+                              className="w-[10px] h-[10px] rounded-sm"
+                              style={{ background: REGIME_COLORS[rg] }}
+                            />
                             <span className="text-text-secondary">{REGIME_LABEL[rg] ?? rg}</span>
                           </span>
                         </td>
-                        {completeIds.map(id => {
+                        {completeIds.map((id) => {
                           const v = regimeMatrix.byRun.get(id)?.[rg]
                           return (
-                            <td key={id} className={`px-3 py-[8px] font-mono tabular-nums ${v == null ? 'text-text-tertiary' : v >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+                            <td
+                              key={id}
+                              className={`px-3 py-[8px] font-mono tabular-nums ${v == null ? 'text-text-tertiary' : v >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
+                            >
                               {v == null ? '—' : money(v)}
                             </td>
                           )
@@ -1083,15 +1443,24 @@ export function TuningWorkbench() {
       {chartFs && (
         <div className="fixed inset-0 z-50 bg-bg-base flex flex-col">
           <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
-            <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Equity overlay — {baseline.strategy_name} · {baseline.instrument}</span>
+            <span className="text-[12px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+              Equity overlay — {baseline.strategy_name} · {baseline.instrument}
+            </span>
             <div className="flex items-center gap-2">
               <XModeToggle value={xMode} onChange={toggleXMode} />
               <RegimeOverlayToggle on={showRegime} onChange={setShowRegime} />
-              <button onClick={copyChart} title={copied ? 'Copied' : 'Copy chart image to clipboard'}
-                className="text-text-tertiary hover:text-text-primary transition-colors">
+              <button
+                onClick={copyChart}
+                title={copied ? 'Copied' : 'Copy chart image to clipboard'}
+                className="text-text-tertiary hover:text-text-primary transition-colors"
+              >
                 {copied ? <Check size={18} className="text-accent" /> : <Camera size={18} />}
               </button>
-              <button onClick={() => setChartFs(false)} title="Minimize (Esc)" className="text-text-tertiary hover:text-text-primary transition-colors">
+              <button
+                onClick={() => setChartFs(false)}
+                title="Minimize (Esc)"
+                className="text-text-tertiary hover:text-text-primary transition-colors"
+              >
                 <Minimize2 size={18} />
               </button>
             </div>
@@ -1101,7 +1470,9 @@ export function TuningWorkbench() {
               devtools) left the chart at the old height until something else re-rendered. */}
           <div ref={fsChartRef} className="flex-1 min-h-0 px-5 py-4 flex flex-col">
             <div ref={fsPlotRef} className="flex-1 min-h-0">
-              {renderOverlay(fsPlotH > 0 ? Math.max(300, fsPlotH) : Math.max(300, window.innerHeight - 160))}
+              {renderOverlay(
+                fsPlotH > 0 ? Math.max(300, fsPlotH) : Math.max(300, window.innerHeight - 160)
+              )}
             </div>
             {renderLegend()}
           </div>

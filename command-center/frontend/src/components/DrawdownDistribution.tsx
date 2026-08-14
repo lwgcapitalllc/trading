@@ -1,4 +1,13 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  Cell,
+} from 'recharts'
 import { C } from '@/themes/chart'
 
 interface Props {
@@ -11,7 +20,12 @@ interface Props {
   height?: number
 }
 
-export default function DrawdownDistribution({ distribution, maxLoss, unit = 'dollars', height = 252 }: Props) {
+export default function DrawdownDistribution({
+  distribution,
+  maxLoss,
+  unit = 'dollars',
+  height = 252,
+}: Props) {
   if (!distribution?.counts) return null
 
   const pct = unit === 'percent'
@@ -23,10 +37,9 @@ export default function DrawdownDistribution({ distribution, maxLoss, unit = 'do
     count,
     overLimit: maxLoss != null && distribution.edges[i] > maxLoss,
   }))
-  const fmtAxis = (v: number) => pct ? `${v.toFixed(0)}%` : `$${(v / 1000).toFixed(1)}k`
-  const fmtFull = (v: number) => pct
-    ? `${v.toFixed(1)}%`
-    : `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  const fmtAxis = (v: number) => (pct ? `${v.toFixed(0)}%` : `$${(v / 1000).toFixed(1)}k`)
+  const fmtFull = (v: number) =>
+    pct ? `${v.toFixed(1)}%` : `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -37,18 +50,36 @@ export default function DrawdownDistribution({ distribution, maxLoss, unit = 'do
           tick={{ fill: C.axisTick, fontSize: 10 }}
           tickLine={false}
           label={{
-            value: pct ? 'Max drawdown reached (% of the running peak)' : 'Max drawdown reached ($)',
-            position: 'insideBottom', offset: -12, fill: C.axisTick, fontSize: 10,
+            value: pct
+              ? 'Max drawdown reached (% of the running peak)'
+              : 'Max drawdown reached ($)',
+            position: 'insideBottom',
+            offset: -12,
+            fill: C.axisTick,
+            fontSize: 10,
           }}
         />
         <YAxis
           tick={{ fill: C.axisTick, fontSize: 10 }}
           tickLine={false}
           axisLine={false}
-          label={{ value: '# simulations', angle: -90, position: 'insideLeft', fill: C.axisTick, fontSize: 10, style: { textAnchor: 'middle' } }}
+          label={{
+            value: '# simulations',
+            angle: -90,
+            position: 'insideLeft',
+            fill: C.axisTick,
+            fontSize: 10,
+            style: { textAnchor: 'middle' },
+          }}
         />
         <Tooltip
-          contentStyle={{ background: C.tooltipBg, border: `1px solid ${C.tooltipBorder}`, borderRadius: 8, fontSize: 13, padding: '8px 12px' }}
+          contentStyle={{
+            background: C.tooltipBg,
+            border: `1px solid ${C.tooltipBorder}`,
+            borderRadius: 8,
+            fontSize: 13,
+            padding: '8px 12px',
+          }}
           labelStyle={{ color: C.axisTick }}
           itemStyle={{ color: '#e5e7eb' }}
           cursor={false}
@@ -56,11 +87,20 @@ export default function DrawdownDistribution({ distribution, maxLoss, unit = 'do
           labelFormatter={(v: number) => `Max DD: ${fmtFull(v)}`}
         />
         {maxLoss != null && (
-          <ReferenceLine x={maxLoss} stroke={C.neg} strokeDasharray="4 2" label={{ value: 'Limit', fill: C.neg, fontSize: 10 }} />
+          <ReferenceLine
+            x={maxLoss}
+            stroke={C.neg}
+            strokeDasharray="4 2"
+            label={{ value: 'Limit', fill: C.neg, fontSize: 10 }}
+          />
         )}
         <Bar dataKey="count" radius={[2, 2, 0, 0]} activeBar={{ fillOpacity: 1 }}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.overLimit ? C.neg : C.accent} fillOpacity={d.overLimit ? 0.75 : 0.55} />
+            <Cell
+              key={i}
+              fill={d.overLimit ? C.neg : C.accent}
+              fillOpacity={d.overLimit ? 0.75 : 0.55}
+            />
           ))}
         </Bar>
       </BarChart>

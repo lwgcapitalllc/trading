@@ -104,8 +104,10 @@ def _replay(params: dict, df, warmup: int):
     known = {f.name for f in dataclasses.fields(ConfigCls)}
     unknown = sorted(set(params) - known)
     if unknown:
-        print(f"  ! instance config carries {len(unknown)} field(s) this build does not know: "
-              f"{', '.join(unknown)}")
+        print(
+            f"  ! instance config carries {len(unknown)} field(s) this build does not know: "
+            f"{', '.join(unknown)}"
+        )
     cfg = ConfigCls(**{k: v for k, v in params.items() if k in known})
 
     strat = build_strategy(LAB_STRATEGY["strategy"], cfg, initial_capital=10_000.0)
@@ -122,16 +124,27 @@ def _same_price(a, b) -> bool:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--ledger", required=True, help="ledger dir or a single decisions-*.jsonl")
-    ap.add_argument("--config", default=None,
-                    help="the bot's instance config.json (for its promoted strategy_params)")
-    ap.add_argument("--lab-symbol", default="XAUUSD",
-                    help="symbol in the LAB's cache (Vantage), not the live symbol")
+    ap.add_argument(
+        "--config",
+        default=None,
+        help="the bot's instance config.json (for its promoted strategy_params)",
+    )
+    ap.add_argument(
+        "--lab-symbol",
+        default="XAUUSD",
+        help="symbol in the LAB's cache (Vantage), not the live symbol",
+    )
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--warmup", type=int, default=5000,
-                    help="bars the lab warms on before the compared window; match the bot's")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=5000,
+        help="bars the lab warms on before the compared window; match the bot's",
+    )
     ap.add_argument("--show", type=int, default=8, help="example mismatches to print per field")
     args = ap.parse_args(argv)
 
@@ -176,16 +189,20 @@ def main(argv=None) -> int:
     # warm-up. Deriving the split from the DATA rather than from --warmup means the engines see
     # every bar available, and the count reported below is the real one.
     pos = int(df.index.searchsorted(first))
-    print(f"  {len(df):,} bars  {df.index[0]} -> {df.index[-1]}   "
-          f"(warm-up {pos:,} bars before the window)", flush=True)
+    print(
+        f"  {len(df):,} bars  {df.index[0]} -> {df.index[-1]}   "
+        f"(warm-up {pos:,} bars before the window)",
+        flush=True,
+    )
     if pos < args.warmup:
-        print(f"  ! only {pos:,} warm-up bars available, the bot had {args.warmup:,} — "
-              f"engine state may differ and show up below as drift")
+        print(
+            f"  ! only {pos:,} warm-up bars available, the bot had {args.warmup:,} — "
+            f"engine state may differ and show up below as drift"
+        )
 
     strat = _replay(params, df, warmup=0)
     lab = {int(df.index[d.index].timestamp() * 1000): d for d in strat.decisions}
-    lab_close = {int(t.timestamp() * 1000): float(c)
-                 for t, c in zip(df.index, df["close"])}
+    lab_close = {int(t.timestamp() * 1000): float(c) for t, c in zip(df.index, df["close"])}
 
     # ── join ──
     # A live bar AFTER the lab feed ends is a stale cache, not a disagreement about when a bar
@@ -219,7 +236,7 @@ def main(argv=None) -> int:
     print(f"NO lab bar at that time {len(no_bar):5d}", end="")
     if no_bar:
         print("   <- the two feeds disagree about when a bar closed (a CLOCK finding)")
-        for row, _ in no_bar[:args.show]:
+        for row, _ in no_bar[: args.show]:
             print(f"    {pd.Timestamp(row['bar_time'], unit='ms')}  close {row['close']}")
         if len(no_bar) > args.show:
             print(f"    ... and {len(no_bar) - args.show} more")
@@ -235,18 +252,25 @@ def main(argv=None) -> int:
     # noise print identically — "min 0.04 median 0.05" reads as jitter when it is in fact one
     # broker quoting consistently above the other, which is a completely different fact about
     # the feed and the only one of the two that cannot cause a trade to flip.
-    diffs = [round(lab_close[row["bar_time"]] - row["close"], 4)
-             for row, _ in matched if row["bar_time"] in lab_close]
+    diffs = [
+        round(lab_close[row["bar_time"]] - row["close"], 4)
+        for row, _ in matched
+        if row["bar_time"] in lab_close
+    ]
     same = sum(1 for d in diffs if abs(d) < _PRICE_EPS)
     print(f"\n--- FEED: the bar CLOSE, live ({live_symbol}) vs lab ({args.lab_symbol}) ---")
     print(f"  identical closes  {same} of {len(diffs)}")
     if diffs:
         signed = [d for d in diffs if abs(d) >= _PRICE_EPS]
         one_way = all(d > 0 for d in signed) or all(d < 0 for d in signed)
-        print(f"  lab MINUS live    min ${min(diffs):+.3f}  median ${statistics.median(diffs):+.3f}"
-              f"  max ${max(diffs):+.3f}")
-        print(f"  always one way?   {'YES' if one_way else 'NO'}"
-              f"   <- {'a systematic quote offset, not drift' if one_way else 'the gap changes sign, so it is not a fixed offset'}")
+        print(
+            f"  lab MINUS live    min ${min(diffs):+.3f}  median ${statistics.median(diffs):+.3f}"
+            f"  max ${max(diffs):+.3f}"
+        )
+        print(
+            f"  always one way?   {'YES' if one_way else 'NO'}"
+            f"   <- {'a systematic quote offset, not drift' if one_way else 'the gap changes sign, so it is not a fixed offset'}"
+        )
     print("  ⚠ These are DIFFERENT BROKERS by design — the live bot trades PU Prime and every")
     print("    backtest here was measured on Vantage. A non-zero difference is expected, and it")
     print("    is the denominator for the decision section below, not a defect on its own.")
@@ -265,7 +289,9 @@ def main(argv=None) -> int:
                 mismatch[f].append((row["bar_time"], row.get(f), getattr(d, f)))
 
     total = sum(len(v) for v in mismatch.values())
-    print(f"\n--- DECISIONS: {len(matched)} bars x {len(_BOOL_FIELDS) + len(_INT_FIELDS) + len(_PRICE_FIELDS)} fields ---")
+    print(
+        f"\n--- DECISIONS: {len(matched)} bars x {len(_BOOL_FIELDS) + len(_INT_FIELDS) + len(_PRICE_FIELDS)} fields ---"
+    )
     if not mismatch:
         print("  IDENTICAL on every compared field.")
     else:
@@ -273,13 +299,15 @@ def main(argv=None) -> int:
         for f in sorted(mismatch, key=lambda k: -len(mismatch[k])):
             rows = mismatch[f]
             print(f"  {f:<14} {len(rows):4d} / {len(matched)} bars")
-            for ms, a, b in rows[:args.show]:
+            for ms, a, b in rows[: args.show]:
                 print(f"      {pd.Timestamp(ms, unit='ms')}   live={a!r:<14} lab={b!r}")
             if len(rows) > args.show:
                 print(f"      ... and {len(rows) - args.show} more")
 
-    print(f"\n  not compared: {', '.join(_UNCOMPARED)}"
-          f"  (sequence state, which a replay does not retain per bar)")
+    print(
+        f"\n  not compared: {', '.join(_UNCOMPARED)}"
+        f"  (sequence state, which a replay does not retain per bar)"
+    )
     return 0 if not mismatch and not no_bar else 2
 
 

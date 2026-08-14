@@ -57,11 +57,12 @@ from typing import Any, Iterator
 
 import pandas as pd
 
-try:                                    # POSIX: a real cross-process lock.
+try:  # POSIX: a real cross-process lock.
     import fcntl
+
     CROSS_PROCESS = True
-except ImportError:                     # pragma: no cover - Windows
-    fcntl = None                        # type: ignore[assignment]
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
     CROSS_PROCESS = False
 
 # ⚠ `CROSS_PROCESS` is exported rather than swallowed. On a platform with no `flock` this

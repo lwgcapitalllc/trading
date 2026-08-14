@@ -41,7 +41,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import scripts.run_diff as rd  # noqa: E402
 
-
 # The columns run_diff reads. Built from the REAL schema (via lab_db.init_db)
 # rather than hand-rolled, so a basis field added to the table cannot silently
 # leave this file testing a shape production no longer has.
@@ -114,6 +113,7 @@ def run_diff(db: Path, a: str, b: str, capsys) -> tuple[int, str]:
 
 # ── the basis check ───────────────────────────────────────────────────────────
 
+
 def test_two_runs_differing_only_in_cost_layers_are_not_comparable(lab, capsys):
     """THE test this file exists for. Real history cannot express this pair.
 
@@ -122,8 +122,8 @@ def test_two_runs_differing_only_in_cost_layers_are_not_comparable(lab, capsys):
     identical on all 13 basis fields, and the verdict flips to comparable.
     Run, and it went red.
     """
-    insert_run(lab, "aaaa", cost_layers=None)          # pre-layer row
-    insert_run(lab, "bbbb", cost_layers="[]")          # explicitly free
+    insert_run(lab, "aaaa", cost_layers=None)  # pre-layer row
+    insert_run(lab, "bbbb", cost_layers="[]")  # explicitly free
 
     code, out = run_diff(lab, "aaaa", "bbbb", capsys)
 
@@ -197,6 +197,7 @@ def test_a_basis_change_that_moves_dollars_says_so(lab, capsys):
 
 # ── R, and the two ways it must refuse ────────────────────────────────────────
 
+
 def test_a_run_with_no_recorded_R_does_not_report_zero(lab, tmp_path, capsys):
     """Per-trade `r` has only been written since 2026-08-03. A run without it
     has not been measured at zero — it has not been measured.
@@ -220,10 +221,14 @@ def test_a_partially_recorded_R_refuses_rather_than_summing_the_subset(lab, tmp_
     MUTATION: drop the `len(with_r) != len(trades)` branch → the run reports
     +1.0000 over two trades, and this goes red.
     """
-    curve = write_curve(tmp_path, "aaaa", [
-        {"index": 1, "r": 1.0},
-        {"index": 2},               # same run, no r on this trade
-    ])
+    curve = write_curve(
+        tmp_path,
+        "aaaa",
+        [
+            {"index": 1, "r": 1.0},
+            {"index": 2},  # same run, no r on this trade
+        ],
+    )
     insert_run(lab, "aaaa", cost_layers="[]", equity_curve_path=curve)
     insert_run(lab, "bbbb", cost_layers="[]", equity_curve_path=curve)
 
@@ -263,6 +268,7 @@ def test_an_unreadable_equity_curve_is_named_not_swallowed(lab, tmp_path, capsys
 
 
 # ── the field list is a claim about the schema ────────────────────────────────
+
 
 def test_every_basis_field_exists_on_the_runs_table(lab):
     """BASIS_FIELDS names columns, and this pins that every name is real.

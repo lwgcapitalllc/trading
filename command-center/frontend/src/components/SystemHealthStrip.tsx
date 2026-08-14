@@ -16,10 +16,10 @@ interface DotDef {
 function buildDots(h: SystemHealth | undefined): DotDef[] {
   if (!h) {
     return [
-      { key: 'api',   label: 'API',       state: 'grey', tip: 'checking…' },
-      { key: 'ssh',   label: 'SSH',       state: 'grey', tip: 'checking…' },
-      { key: 'nt8',   label: 'NT8',       state: 'grey', tip: 'checking…' },
-      { key: 'mt5',   label: 'MT5 Agent', state: 'grey', tip: 'checking…' },
+      { key: 'api', label: 'API', state: 'grey', tip: 'checking…' },
+      { key: 'ssh', label: 'SSH', state: 'grey', tip: 'checking…' },
+      { key: 'nt8', label: 'NT8', state: 'grey', tip: 'checking…' },
+      { key: 'mt5', label: 'MT5 Agent', state: 'grey', tip: 'checking…' },
     ]
   }
 
@@ -36,20 +36,20 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
   const nt8State: DotState = !h.nt8_agent
     ? 'red'
     : h.nt8_running === false
-    ? 'yellow'
-    : h.nt8_sa_visible === false
-    ? 'yellow'
-    : 'green'
+      ? 'yellow'
+      : h.nt8_sa_visible === false
+        ? 'yellow'
+        : 'green'
 
   const nt8Tip = !h.nt8_agent
     ? h.ssh_tunnel
       ? 'NT8: agent not running — click to start (NinjaTrader’s own state is unknown until it answers)'
       : 'NT8: agent not running — SSH must be up first'
     : h.nt8_running === false
-    ? 'NT8: agent OK — NinjaTrader not running on VPS (open NT8 via RDP)'
-    : h.nt8_sa_visible === false
-    ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
-    : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
+      ? 'NT8: agent OK — NinjaTrader not running on VPS (open NT8 via RDP)'
+      : h.nt8_sa_visible === false
+        ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
+        : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
 
   // SSH: three-state, because "the tunnel is down" and "the VPS is unreachable"
   // are different problems with different fixes and this dot used to conflate
@@ -61,36 +61,34 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
   const sshTip = h.ssh_tunnel
     ? 'SSH tunnel: both port forwards up (8765 + 8766)'
     : h.vps_reachable
-    ? 'SSH tunnel: down, but the VPS is reachable — the supervisor is rebuilding it'
-    : 'SSH: VPS unreachable — check ForexVPS or ssh config'
+      ? 'SSH tunnel: down, but the VPS is reachable — the supervisor is rebuilding it'
+      : 'SSH: VPS unreachable — check ForexVPS or ssh config'
 
   // MT5: three-state for the same reason NT8 is. A responding agent is not a
   // usable terminal — every python backtest that needs uncached bars goes
   // through MT5_Lab, so an agent up with the terminal disconnected is a run
   // that will fail at fetch time. `null` = we could not ask, which is reported
   // as such rather than guessed either way.
-  const mt5State: DotState = !h.mt5_agent
-    ? 'red'
-    : h.mt5_connected === false
-    ? 'yellow'
-    : 'green'
+  const mt5State: DotState = !h.mt5_agent ? 'red' : h.mt5_connected === false ? 'yellow' : 'green'
 
   const mt5Tip = !h.mt5_agent
     ? h.ssh_tunnel
       ? 'MT5 agent: down — click to start'
       : 'MT5 agent: down — the tunnel must be up first'
     : h.mt5_connected === false
-    ? 'MT5 agent OK — the MT5_Lab terminal is NOT connected to the broker (open it via RDP). Bar fetches will fail.'
-    : h.mt5_connected === null
-    ? 'MT5 agent: responding — terminal state unknown'
-    : `MT5 agent OK, terminal connected${h.mt5_server ? ` · ${h.mt5_server}` : ''}${h.mt5_account ? ` · ${h.mt5_account}` : ''}`
+      ? 'MT5 agent OK — the MT5_Lab terminal is NOT connected to the broker (open it via RDP). Bar fetches will fail.'
+      : h.mt5_connected === null
+        ? 'MT5 agent: responding — terminal state unknown'
+        : `MT5 agent OK, terminal connected${h.mt5_server ? ` · ${h.mt5_server}` : ''}${h.mt5_account ? ` · ${h.mt5_account}` : ''}`
 
   return [
     {
       key: 'api',
       label: 'API',
       state: h.backend ? 'green' : 'red',
-      tip: h.backend ? 'Local backend: healthy' : 'Local backend: unreachable — restart the backend',
+      tip: h.backend
+        ? 'Local backend: healthy'
+        : 'Local backend: unreachable — restart the backend',
     },
     {
       key: 'ssh',
@@ -116,41 +114,46 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
 // ── Visuals ───────────────────────────────────────────────────────────────────
 
 const DOT_CLS: Record<DotState, string> = {
-  green:  'bg-pos',
+  green: 'bg-pos',
   yellow: 'bg-warn-text',
-  red:    'bg-neg',
-  grey:   'bg-text-tertiary opacity-40',
+  red: 'bg-neg',
+  grey: 'bg-text-tertiary opacity-40',
 }
 
 const DOT_GLOW: Record<DotState, string | undefined> = {
-  green:  '0 0 5px #00ff7f',
+  green: '0 0 5px #00ff7f',
   yellow: '0 0 5px #ffb300',
-  red:    undefined,
-  grey:   undefined,
+  red: undefined,
+  grey: undefined,
 }
 
 const STATUS_TEXT: Record<DotState, string> = {
-  green:  'ok',
+  green: 'ok',
   yellow: 'warn',
-  red:    'down',
-  grey:   '…',
+  red: 'down',
+  grey: '…',
 }
 
 const STATUS_TEXT_CLS: Record<DotState, string> = {
-  green:  'text-pos-text',
+  green: 'text-pos-text',
   yellow: 'text-warn-text',
-  red:    'text-neg-text',
-  grey:   'text-text-tertiary',
+  red: 'text-neg-text',
+  grey: 'text-text-tertiary',
 }
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-function DotRow({ def, onRedClick, loading }: { def: DotDef; onRedClick: () => void; loading?: boolean }) {
+function DotRow({
+  def,
+  onRedClick,
+  loading,
+}: {
+  def: DotDef
+  onRedClick: () => void
+  loading?: boolean
+}) {
   return (
-    <div
-      className="flex items-center gap-[8px] py-[3px]"
-      title={def.tip}
-    >
+    <div className="flex items-center gap-[8px] py-[3px]" title={def.tip}>
       <span
         className={`w-[6px] h-[6px] rounded-full flex-shrink-0 transition-colors duration-300 ${DOT_CLS[def.state]} ${def.state === 'red' ? 'cursor-pointer' : ''} ${loading ? 'animate-pulse' : ''}`}
         style={DOT_GLOW[def.state] ? { boxShadow: DOT_GLOW[def.state] } : undefined}
@@ -187,7 +190,7 @@ export function SystemHealthStrip({ collapsed }: { collapsed?: boolean }) {
   if (collapsed) {
     return (
       <div className="flex flex-col items-center gap-[7px] pb-2">
-        {dots.map(def => (
+        {dots.map((def) => (
           <span
             key={def.key}
             title={`${def.label}: ${STATUS_TEXT[def.state]}`}
@@ -202,14 +205,14 @@ export function SystemHealthStrip({ collapsed }: { collapsed?: boolean }) {
 
   return (
     <div className="px-2 pb-2">
-      {dots.map(def => (
+      {dots.map((def) => (
         <DotRow
           key={def.key}
           def={def}
           onRedClick={() => handleRedClick(def.key)}
           loading={
-            (def.key === 'nt8'   && startNt8Agent.isPending) ||
-            (def.key === 'mt5'   && startMt5Agent.isPending)
+            (def.key === 'nt8' && startNt8Agent.isPending) ||
+            (def.key === 'mt5' && startMt5Agent.isPending)
           }
         />
       ))}

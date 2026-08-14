@@ -14,9 +14,9 @@ This module abstracts that difference — callers in runner_dispatch see identic
 from __future__ import annotations
 
 import json
-import uuid
 import urllib.error
 import urllib.request
+import uuid
 from typing import Optional
 
 import config as cfg
@@ -46,6 +46,7 @@ def _post(path: str, body: Optional[dict] = None, timeout: int = _TIMEOUT) -> di
 
 # ── Observability ──────────────────────────────────────────────────────────────
 
+
 def health() -> dict:
     return _get("/health", timeout=5)
 
@@ -72,6 +73,7 @@ def agent_log(lines: int = 100) -> str:
 
 
 # ── Job control ────────────────────────────────────────────────────────────────
+
 
 def start_backtest(job_spec: dict) -> dict:
     """POST /backtests — submit a backtest job to the MT5 agent."""
@@ -124,9 +126,8 @@ def native_wf_results(job_id: str) -> dict:
 
 # ── Historical data ───────────────────────────────────────────────────────────
 
-def get_historical_data(
-    symbol: str, timeframe: str, start_date: str, end_date: str
-) -> dict:
+
+def get_historical_data(symbol: str, timeframe: str, start_date: str, end_date: str) -> dict:
     """GET /historical_data — fetch OHLC bars from MT5 agent.
 
     Returns {"bars": [{"time": ISO, "open": f, "high": f, "low": f, "close": f}, ...],
@@ -142,6 +143,7 @@ def get_historical_data(
 
 # ── Strategy file management ───────────────────────────────────────────────────
 
+
 def list_strategy_files() -> list[dict]:
     """GET /files/strategies — list .mq5/.ex5 in MT5 Experts folder."""
     return _get("/files/strategies")
@@ -152,14 +154,15 @@ def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict
     url = cfg.MT5_AGENT_TUNNEL.rstrip("/") + f"/files/strategies/{filename}"
     boundary = uuid.uuid4().hex
     body_parts = [
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
-        f"filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n".encode(),
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+        f'filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode(),
         content,
-        f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\n"
+        f'\r\n--{boundary}\r\nContent-Disposition: form-data; name="overwrite"\r\n\r\n'
         f"{'true' if overwrite else 'false'}\r\n--{boundary}--\r\n".encode(),
     ]
     req = urllib.request.Request(
-        url, data=b"".join(body_parts),
+        url,
+        data=b"".join(body_parts),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
@@ -167,7 +170,9 @@ def upload_strategy_file(filename: str, content: bytes, overwrite: bool) -> dict
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"MT5 upload {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
+        raise RuntimeError(
+            f"MT5 upload {filename}: HTTP {exc.code} — {exc.read().decode()}"
+        ) from exc
     except Exception as exc:
         raise RuntimeError(f"MT5 upload {filename}: {exc}") from exc
 
@@ -180,7 +185,9 @@ def _delete_one(filename: str) -> dict:
         with urllib.request.urlopen(req, timeout=10) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"MT5 delete {filename}: HTTP {exc.code} — {exc.read().decode()}") from exc
+        raise RuntimeError(
+            f"MT5 delete {filename}: HTTP {exc.code} — {exc.read().decode()}"
+        ) from exc
     except Exception as exc:
         raise RuntimeError(f"MT5 delete {filename}: {exc}") from exc
 

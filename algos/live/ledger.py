@@ -119,8 +119,12 @@ class Ledger:
 
     def _write(self, stream: str, kind: str, payload: Dict[str, Any]) -> None:
         now = datetime.now(timezone.utc)
-        row = {"ts": now.isoformat(timespec="seconds"),
-               "bot": self.bot_key, "kind": kind, **payload}
+        row = {
+            "ts": now.isoformat(timespec="seconds"),
+            "bot": self.bot_key,
+            "kind": kind,
+            **payload,
+        }
         try:
             with self._path(stream, now).open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row, default=str) + "\n")
@@ -133,51 +137,82 @@ class Ledger:
         """One closed bar's decision. Fields are read defensively (`getattr`) so a strategy
         with a different `Decision` shape logs what it has instead of crashing the bot — this
         module must not know what an A+ stage is in order to keep working."""
-        self._write(DECISIONS, "bar", {
-            "bar_time": getattr(sig, "time_ms", None),
-            "bar_index": getattr(sig, "index", None),
-            "close": getattr(sig, "close", None),
-            "l_stage": getattr(dec, "l_stage", None),
-            "s_stage": getattr(dec, "s_stage", None),
-            "long_armed": getattr(dec, "long_armed", None),
-            "short_armed": getattr(dec, "short_armed", None),
-            "long_edge": getattr(dec, "long_edge", None),
-            "short_edge": getattr(dec, "short_edge", None),
-            "long_veto": getattr(dec, "long_veto", None),
-            "short_veto": getattr(dec, "short_veto", None),
-            "stop": getattr(dec, "stop", None),
-            "tp1": getattr(dec, "tp1", None),
-            "tp2": getattr(dec, "tp2", None),
-            "l_sos_bar": getattr(seq, "l_sos_bar", None),
-            "s_sos_bar": getattr(seq, "s_sos_bar", None),
-            "l_arm_src": getattr(seq, "l_arm_src", None),
-            "s_arm_src": getattr(seq, "s_arm_src", None),
-            **(extra or {}),
-        })
+        self._write(
+            DECISIONS,
+            "bar",
+            {
+                "bar_time": getattr(sig, "time_ms", None),
+                "bar_index": getattr(sig, "index", None),
+                "close": getattr(sig, "close", None),
+                "l_stage": getattr(dec, "l_stage", None),
+                "s_stage": getattr(dec, "s_stage", None),
+                "long_armed": getattr(dec, "long_armed", None),
+                "short_armed": getattr(dec, "short_armed", None),
+                "long_edge": getattr(dec, "long_edge", None),
+                "short_edge": getattr(dec, "short_edge", None),
+                "long_veto": getattr(dec, "long_veto", None),
+                "short_veto": getattr(dec, "short_veto", None),
+                "stop": getattr(dec, "stop", None),
+                "tp1": getattr(dec, "tp1", None),
+                "tp2": getattr(dec, "tp2", None),
+                "l_sos_bar": getattr(seq, "l_sos_bar", None),
+                "s_sos_bar": getattr(seq, "s_sos_bar", None),
+                "l_arm_src": getattr(seq, "l_arm_src", None),
+                "s_arm_src": getattr(seq, "s_arm_src", None),
+                **(extra or {}),
+            },
+        )
 
     def blocked(self, block) -> None:
         """A setup the strategy had READY and one of its own rules refused. The lab surfaces
         these on the price chart; live they are the answer to "why didn't it take that"."""
-        self._write(DECISIONS, "blocked", {
-            "dir": block.dir, "bar_time": block.time_ms, "edge": block.edge,
-            "sos_bar": block.sos_bar, "codes": list(block.codes),
-            "labels": block.labels, "reasons": block.reasons,
-        })
+        self._write(
+            DECISIONS,
+            "blocked",
+            {
+                "dir": block.dir,
+                "bar_time": block.time_ms,
+                "edge": block.edge,
+                "sos_bar": block.sos_bar,
+                "codes": list(block.codes),
+                "labels": block.labels,
+                "reasons": block.reasons,
+            },
+        )
 
     def missed(self, miss) -> None:
         """A setup that died partway — met some confluences and never became a trade."""
-        self._write(DECISIONS, "missed", {
-            "dir": miss.dir, "bar_time": miss.time_ms, "edge": getattr(miss, "edge", None),
-            "met": getattr(miss, "met", None), "of": getattr(miss, "of", None),
-            "near": getattr(miss, "near", None),
-            "labels": getattr(miss, "labels", None), "reasons": getattr(miss, "reasons", None),
-        })
+        self._write(
+            DECISIONS,
+            "missed",
+            {
+                "dir": miss.dir,
+                "bar_time": miss.time_ms,
+                "edge": getattr(miss, "edge", None),
+                "met": getattr(miss, "met", None),
+                "of": getattr(miss, "of", None),
+                "near": getattr(miss, "near", None),
+                "labels": getattr(miss, "labels", None),
+                "reasons": getattr(miss, "reasons", None),
+            },
+        )
 
     # ── trades ───────────────────────────────────────────────────────────────
-    def trade_opened(self, *, ticket: int, direction: str, symbol: str, lots: float,
-                     price: float, stop: float, tp1: float = 0.0, tp2: float = 0.0,
-                     intended_price: float = 0.0, risk_pct: Optional[float] = None,
-                     confluences: Optional[dict] = None) -> None:
+    def trade_opened(
+        self,
+        *,
+        ticket: int,
+        direction: str,
+        symbol: str,
+        lots: float,
+        price: float,
+        stop: float,
+        tp1: float = 0.0,
+        tp2: float = 0.0,
+        intended_price: float = 0.0,
+        risk_pct: Optional[float] = None,
+        confluences: Optional[dict] = None,
+    ) -> None:
         """`price` is the BROKER's fill; `intended_price` is where the strategy rested its
         limit. Both are recorded because the gap between them is the only honest measure of
         live-vs-backtest execution quality, and it is invisible if only one is kept.
@@ -188,21 +223,44 @@ class Ledger:
         trade 15 was 0.02 — and the live-vs-lab comparison, which is the entire reason this
         ledger exists, becomes unreadable at exactly the point it starts to matter.
         """
-        self._write(DECISIONS, "trade", {
-            "event": "opened", "ticket": ticket, "dir": direction, "symbol": symbol,
-            "lots": lots, "price": price, "intended_price": intended_price,
-            "slippage": (price - intended_price) if intended_price else None,
-            "stop": stop, "tp1": tp1, "tp2": tp2, "risk_pct": risk_pct,
-            "confluences": confluences or {},
-        })
+        self._write(
+            DECISIONS,
+            "trade",
+            {
+                "event": "opened",
+                "ticket": ticket,
+                "dir": direction,
+                "symbol": symbol,
+                "lots": lots,
+                "price": price,
+                "intended_price": intended_price,
+                "slippage": (price - intended_price) if intended_price else None,
+                "stop": stop,
+                "tp1": tp1,
+                "tp2": tp2,
+                "risk_pct": risk_pct,
+                "confluences": confluences or {},
+            },
+        )
 
-    def trade_closed(self, *, ticket: int, direction: str, symbol: str, price: float,
-                     pnl_usd: float, r_multiple: Optional[float], reason: str,
-                     lots: float = 0.0, held_bars: Optional[int] = None,
-                     gross_usd: Optional[float] = None, swap_usd: Optional[float] = None,
-                     commission_usd: Optional[float] = None,
-                     entry_price: Optional[float] = None,
-                     intended_price: Optional[float] = None) -> None:
+    def trade_closed(
+        self,
+        *,
+        ticket: int,
+        direction: str,
+        symbol: str,
+        price: float,
+        pnl_usd: float,
+        r_multiple: Optional[float],
+        reason: str,
+        lots: float = 0.0,
+        held_bars: Optional[int] = None,
+        gross_usd: Optional[float] = None,
+        swap_usd: Optional[float] = None,
+        commission_usd: Optional[float] = None,
+        entry_price: Optional[float] = None,
+        intended_price: Optional[float] = None,
+    ) -> None:
         """Record a closed trade, with its COSTS kept apart from its price move.
 
         `pnl_usd` is NET — gross + swap + commission — because that is what the balance did.
@@ -218,15 +276,30 @@ class Ledger:
         it fails silently for any trade whose open record predates a log rotation, and a cost
         study that quietly drops its oldest trades is worse than one that cannot run.
         """
-        self._write(DECISIONS, "trade", {
-            "event": "closed", "ticket": ticket, "dir": direction, "symbol": symbol,
-            "lots": lots, "price": price, "pnl_usd": pnl_usd,
-            "gross_usd": gross_usd, "swap_usd": swap_usd, "commission_usd": commission_usd,
-            "entry_price": entry_price, "intended_price": intended_price,
-            "entry_slippage": ((entry_price - intended_price)
-                               if entry_price and intended_price else None),
-            "r": r_multiple, "reason": reason, "held_bars": held_bars,
-        })
+        self._write(
+            DECISIONS,
+            "trade",
+            {
+                "event": "closed",
+                "ticket": ticket,
+                "dir": direction,
+                "symbol": symbol,
+                "lots": lots,
+                "price": price,
+                "pnl_usd": pnl_usd,
+                "gross_usd": gross_usd,
+                "swap_usd": swap_usd,
+                "commission_usd": commission_usd,
+                "entry_price": entry_price,
+                "intended_price": intended_price,
+                "entry_slippage": (
+                    (entry_price - intended_price) if entry_price and intended_price else None
+                ),
+                "r": r_multiple,
+                "reason": reason,
+                "held_bars": held_bars,
+            },
+        )
 
     # ── everything else, routed by name ──────────────────────────────────────
     def event(self, name: str, **fields: Any) -> None:

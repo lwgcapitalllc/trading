@@ -412,18 +412,56 @@ Every number behind them is in `HISTORY.md` → *Formatting and linting arrive*.
   `sys.path.insert` then `from market_structure import ...`. ⚠ **That makes the import SORTER the
   thing to watch, and it was checked rather than assumed: 0 hoisted across all 193.** Re-run that
   check if `I` is ever swapped for a different sorter.
+- 🔴 **`F401`'s "unused" is per-MODULE, so `--fix` DELETES a RE-EXPORT and nothing fails until
+  run time.** It cannot see `other_module.NAME` read in a different file. It did exactly that on
+  2026-08-14 to `sizing_pipeline.MODES`, and one test caught it — an `AttributeError` inside a
+  sizing branch, i.e. a crash on a real backtest rather than on import. ⚠ **Checking `__init__.py`
+  files is NOT enough** — that reasoning covers a package's public API and a plain module launders
+  a re-export straight past it. **A deliberate re-export needs `# noqa: F401` and a comment naming
+  its consumer**, or the next `--fix` removes it again.
 - **`E741`, `B904`, and eslint's React Compiler rules are off or at warn** — each fires dozens of
   times on code that ships and works. `rules-of-hooks` stays an error: a conditional hook call is a
   crash, not advice.
+- 🔴 **A rule nothing can AUTO-FIX blocks the ratchet, and that is worse than it sounds.**
+  `pre-commit` runs `ruff check --fix`, which exits non-zero while any finding remains — so a
+  legacy file carrying one un-fixable finding is a file you cannot commit a one-line change to.
+  Six such rules (`B023`, `F841`, `B007`, `B008`, `B017`, `E731`) were selected wholesale, never
+  measured, and turned 46 shipping-and-working sites into a wall; each is now off with its count
+  and the reason it was READ rather than waved through, in `ruff.toml`. ⚠ **Before selecting a
+  rule, ask what it does to the files you are NOT going to fix** — a wall gets `--no-verify`d, and
+  that leaves no trace.
 - **Markdown is NOT formatted.** Prettier pads table columns, which grows a CLAUDE.md ~35% in pure
   whitespace and would trip this repo's own doc-growth guard on every commit.
 
-### The ratchet: only files you TOUCH
+### The ratchet, and the one bulk pass that was allowed through it
 
-413 of 627 python files predate any formatter. They are **not** reformatted in one pass — that would
-rewrite `engines/` and `strategies/`, which rule 22 forbids without re-running every `compare_*.py`
-gate first. The repo converges as it is worked on, and no commit is blocked by a file it did not
-touch.
+413 of 627 python files predated any formatter. A bulk pass ran on **2026-08-14** and covers 424 of
+them — but **`engines/` and `strategies/` were carved OUT of it by rule 22**, and how that was
+decided is the part worth keeping.
+
+**Rule 22 was applied by RUNNING all 14 gates, not by reasoning that layout cannot change
+behaviour.** It cannot — and that is exactly the confident argument a gate exists so you do not
+have to trust. **Only the 5 engines whose gate ran GREEN were reformatted** (`market_structure`,
+`rsi_divergence`, `session_volume_profile`, `candlesticks`, `vwap`). `fibonacci`, `order_blocks`,
+`sessions`, `liquidity`, `fair_value_gaps`, `equal_highs_lows` and **all four strategies including
+the LIVE `mpc_sos_fade`** were reverted to HEAD and are still unformatted.
+
+🔴 **9 of the 14 gates COULD NOT RUN, and that is the finding.** Exports are git-ignored scratch
+(`.gitignore` → `*VANTAGE_*.csv`), so **which engine you can gate depends on what is sitting on
+that machine**, and a fresh clone can gate almost nothing. ⚠ **Rule 22 is therefore unsatisfiable
+on demand for most of this repo — it blocks work rather than gating it.** Fixing that is a decision
+about where exports live, not a formatting job.
+
+⚠ **A "pre-existing" red is still a red.** `fibonacci`, `sessions` and `liquidity` were re-run
+against HEAD in a throwaway worktree and gave byte-identical output. That exonerates the formatter
+and changes nothing about whether they may be committed. They may not.
+
+⚠ **`regime/` and `news/` were reformatted and have NO parity gate by construction** — no Pine
+source, so no `compare_*.py` can exist. Unit tests are the only gate they will ever have. Do not
+read this as rule 22 having a general exception.
+
+Per-gate bar counts and the full verdict table: `HISTORY.md` → *The bulk reformat, and the nine
+gates that could not answer*. Outside those two trees the repo still converges as it is worked on.
 
 🔴 **`deployed/` is excluded in `ruff.toml` AND the hook passes `--force-exclude`** — that flag is
 what makes an explicitly-named path still honour the exclusion. An edit there changes what a running

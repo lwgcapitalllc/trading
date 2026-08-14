@@ -46,6 +46,7 @@ def _overlap(holds_a, holds_b, n):
 
 # ── the bar range a trade occupies ───────────────────────────────────────────────
 
+
 def test_a_hold_is_half_open_so_a_trade_occupies_its_entry_bar_not_its_exit_bar():
     # Entering on bar 10 and exiting on bar 13 = exposed on 10, 11, 12.
     holds = oa._holds([_T(1, 10, 13)])
@@ -67,6 +68,7 @@ def test_direction_is_carried_onto_every_bar_of_the_hold():
 
 
 # ── overlap between the two bots ─────────────────────────────────────────────────
+
 
 def test_back_to_back_trades_do_not_overlap():
     # A ends ON the bar B starts. With half-open ranges that is zero shared bars, and
@@ -108,6 +110,7 @@ def test_two_positions_at_once_within_ONE_strategy_raises():
 
 
 # ── correlation ──────────────────────────────────────────────────────────────────
+
 
 def test_correlation_of_a_flat_series_is_None_not_zero():
     # "Cannot be computed" and "uncorrelated" are different facts. Returning 0.0 for the

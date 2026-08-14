@@ -38,6 +38,7 @@ _DISPLAY_TO_ENGINE = {"Tokyo": "Asia", "London": "London", "New York": "NY"}
 def _engine_specs():
     """The canonical engine's own default windows, read off the class rather than restated."""
     from sessions.engine import SessionEngine
+
     return {s.name: s for s in SessionEngine.DEFAULT_SESSIONS}
 
 

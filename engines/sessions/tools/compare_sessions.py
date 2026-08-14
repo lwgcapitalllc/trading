@@ -62,16 +62,26 @@ from sessions import SessionEngine
 
 # ── column groups ──
 FLAG_FIELDS = [
-    "px_in_asia", "px_in_london", "px_in_ny",
-    "px_in_kz1", "px_in_kz2", "px_in_kz3",
-    "px_in_nyr_window", "px_in_nyr_extend",
-    "px_new_day", "px_weekday",
+    "px_in_asia",
+    "px_in_london",
+    "px_in_ny",
+    "px_in_kz1",
+    "px_in_kz2",
+    "px_in_kz3",
+    "px_in_nyr_window",
+    "px_in_nyr_extend",
+    "px_new_day",
+    "px_weekday",
 ]
 PRICE_FIELDS = [
-    "px_asia_high", "px_asia_low",
-    "px_london_high", "px_london_low",
-    "px_ny_high", "px_ny_low",
-    "px_nyr_high", "px_nyr_low",
+    "px_asia_high",
+    "px_asia_low",
+    "px_london_high",
+    "px_london_low",
+    "px_ny_high",
+    "px_ny_low",
+    "px_nyr_high",
+    "px_nyr_low",
 ]
 ALL_FIELDS = FLAG_FIELDS + PRICE_FIELDS
 
@@ -83,7 +93,7 @@ NYR_FIELDS = ["px_in_nyr_window", "px_in_nyr_extend", "px_nyr_high", "px_nyr_low
 _NYR_MAX_BAR_SECONDS = 300
 
 # threshold below which a positive integer timestamp is seconds, not milliseconds
-_SECONDS_CEILING = 10 ** 11
+_SECONDS_CEILING = 10**11
 
 
 def _num(s):
@@ -180,9 +190,11 @@ def _python_row(engine, ev):
         "px_nyr_high": ev.ny_range_high,
         "px_nyr_low": ev.ny_range_low,
     }
-    for name, hi, lo in (("Asia", "px_asia_high", "px_asia_low"),
-                         ("London", "px_london_high", "px_london_low"),
-                         ("NY", "px_ny_high", "px_ny_low")):
+    for name, hi, lo in (
+        ("Asia", "px_asia_high", "px_asia_low"),
+        ("London", "px_london_high", "px_london_low"),
+        ("NY", "px_ny_high", "px_ny_low"),
+    ):
         rng = engine.current_range(name)
         row[hi] = rng.high if rng else None
         row[lo] = rng.low if rng else None
@@ -200,13 +212,30 @@ def _values_match(field, py_val, pine_val, tol):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("csv", help="CSV exported from TradingView with sessions_export.pine on the chart")
-    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "csv", help="CSV exported from TradingView with sessions_export.pine on the chart"
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-6,
+        help="abs tolerance for price fields (default 1e-6)",
+    )
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
-    ap.add_argument("--skip-nyr", action="store_true",
-                    help="don't compare the 4 NY-opening-range fields (they need a <=5m export; see NYR_FIELDS)")
+    ap.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        help="skip the first N bars in the report (still fed to the engine)",
+    )
+    ap.add_argument(
+        "--skip-nyr",
+        action="store_true",
+        help="don't compare the 4 NY-opening-range fields (they need a <=5m export; see NYR_FIELDS)",
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -221,11 +250,13 @@ def main(argv=None):
     bar_seconds = _bar_seconds(rows, cols)
     fields = [f for f in ALL_FIELDS if f not in NYR_FIELDS] if args.skip_nyr else list(ALL_FIELDS)
     if not args.skip_nyr and bar_seconds is not None and bar_seconds > _NYR_MAX_BAR_SECONDS:
-        print(f"WARNING: this export is on a {bar_seconds // 60}-minute chart. The NY opening range is a "
-              f"<=5m feature (Pine reads a 5m security, Python sees only the bar it is fed), so "
-              f"{', '.join(NYR_FIELDS)} will mismatch for a reason that is not a bug.\n"
-              f"         Re-run with --skip-nyr to check the other {len(ALL_FIELDS) - len(NYR_FIELDS)} "
-              f"fields, and validate the range itself on a separate 5m export.\n")
+        print(
+            f"WARNING: this export is on a {bar_seconds // 60}-minute chart. The NY opening range is a "
+            f"<=5m feature (Pine reads a 5m security, Python sees only the bar it is fed), so "
+            f"{', '.join(NYR_FIELDS)} will mismatch for a reason that is not a bug.\n"
+            f"         Re-run with --skip-nyr to check the other {len(ALL_FIELDS) - len(NYR_FIELDS)} "
+            f"fields, and validate the range itself on a separate 5m export.\n"
+        )
 
     engine = SessionEngine()
 
@@ -259,9 +290,14 @@ def main(argv=None):
             if len(detailed) < args.max_report:
                 detailed.append((i, row[cols["time"]], bar_mismatches))
 
-    skipped = "" if not args.skip_nyr else (
-        f"\nNOT CHECKED: {', '.join(NYR_FIELDS)} — the NY opening range is a <=5m feature and this run "
-        f"skipped it. It is NOT covered by this result; validate it on a 5m export.")
+    skipped = (
+        ""
+        if not args.skip_nyr
+        else (
+            f"\nNOT CHECKED: {', '.join(NYR_FIELDS)} — the NY opening range is a <=5m feature and this run "
+            f"skipped it. It is NOT covered by this result; validate it on a 5m export."
+        )
+    )
 
     mismatched_fields = {f: n for f, n in per_field_mismatch.items() if n}
     print(f"Compared {total} bars ({args.warmup} warmup skipped) across {len(fields)} fields.")
@@ -269,7 +305,9 @@ def main(argv=None):
         print("PARITY OK — every field matches on every warm bar." + skipped)
         return 0
 
-    print(f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}.")
+    print(
+        f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}."
+    )
     print("Per-field mismatch counts:")
     for fld, n in sorted(mismatched_fields.items(), key=lambda p: -p[1]):
         print(f"  {fld}: {n}")
@@ -277,9 +315,15 @@ def main(argv=None):
     for idx, t, bar_fields in detailed:
         for fld, pv, xv in bar_fields:
             print(f"  bar {idx} @ {t}  {fld}: {pv} vs {xv}")
-    if set(mismatched_fields) <= set(NYR_FIELDS) and bar_seconds is not None and bar_seconds > _NYR_MAX_BAR_SECONDS:
-        print(f"\nEvery mismatching field is a NY-opening-range field on a {bar_seconds // 60}-minute "
-              f"export — expected, not a bug. Re-run with --skip-nyr and validate the range on 5m.")
+    if (
+        set(mismatched_fields) <= set(NYR_FIELDS)
+        and bar_seconds is not None
+        and bar_seconds > _NYR_MAX_BAR_SECONDS
+    ):
+        print(
+            f"\nEvery mismatching field is a NY-opening-range field on a {bar_seconds // 60}-minute "
+            f"export — expected, not a bug. Re-run with --skip-nyr and validate the range on 5m."
+        )
     print(skipped)
     return 1
 

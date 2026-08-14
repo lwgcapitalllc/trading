@@ -8,15 +8,26 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
+
 from fastapi import APIRouter, HTTPException
+from models import (
+    DeployJobStatus,
+    InstrumentResult,
+    InstrumentSummary,
+    ReconcileResult,
+    ScanResult,
+    Strategy,
+    StrategyVersion,
+)
 from pydantic import BaseModel
-from models import Strategy, ScanResult, ReconcileResult, InstrumentSummary, InstrumentResult, DeployJobStatus, StrategyVersion
 
 
 class StrategyPatch(BaseModel):
     description: Optional[str] = None
-from services import lab_db, strategy_scanner, runner_dispatch
+
+
 import config as cfg
+from services import lab_db, runner_dispatch, strategy_scanner
 
 # Deploy is synchronous (the upload finishes inside the request), so a job here
 # exists only for the status GET the frontend fires straight after. It is capped
@@ -67,6 +78,7 @@ def get_param_types(strategy_id: str):
     the directory and raised IsADirectoryError → 500 on every python strategy.)
     """
     import re
+
     row = lab_db.get_strategy(strategy_id)
     if not row:
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
@@ -79,7 +91,11 @@ def get_param_types(strategy_id: str):
                 out[p["name"]] = "int" if t == "int" else "double"
         return out
 
-    source_path = (row.get("source_path") or "") if isinstance(row, dict) else (getattr(row, "source_path", "") or "")
+    source_path = (
+        (row.get("source_path") or "")
+        if isinstance(row, dict)
+        else (getattr(row, "source_path", "") or "")
+    )
     if not source_path:
         return {}
     full_path = Path(cfg.MONOREPO_ROOT) / source_path
@@ -87,9 +103,9 @@ def get_param_types(strategy_id: str):
         return {}
     content = full_path.read_text(encoding="utf-8", errors="ignore")
     # Match: public int|double|float PropertyName { get; set; }
-    pattern = re.compile(r'\bpublic\s+(int|double|float)\s+(\w+)\s*\{')
+    pattern = re.compile(r"\bpublic\s+(int|double|float)\s+(\w+)\s*\{")
     # Also match MQL5 style: input int|double Name
-    pattern_mql = re.compile(r'\binput\s+(int|double|float)\s+(\w+)')
+    pattern_mql = re.compile(r"\binput\s+(int|double|float)\s+(\w+)")
     result = {}
     for m in pattern.finditer(content):
         result[m.group(2)] = "int" if m.group(1) == "int" else "double"
@@ -148,7 +164,10 @@ def deploy_strategy(strategy_id: str):
 
     source_path = strategy.get("source_path")
     if not source_path:
-        raise HTTPException(400, "Strategy has no source_path. Set it first or use the Deployed tab to upload manually.")
+        raise HTTPException(
+            400,
+            "Strategy has no source_path. Set it first or use the Deployed tab to upload manually.",
+        )
 
     file_path = Path(cfg.MONOREPO_ROOT) / source_path
     if not file_path.is_file():
@@ -178,10 +197,12 @@ def deploy_strategy(strategy_id: str):
         class_name = strategy.get("class_name") or strategy_id
         lab_db.ensure_strategy_version(strategy_id, src_hash, len(content))
         lab_db.set_strategy_deployed(class_name, src_hash)
-        _deploy_jobs[job_id].update({
-            "status": "complete",
-            "uploaded_size_bytes": result.get("size_bytes"),
-        })
+        _deploy_jobs[job_id].update(
+            {
+                "status": "complete",
+                "uploaded_size_bytes": result.get("size_bytes"),
+            }
+        )
     except RuntimeError as exc:
         msg = str(exc)
         _deploy_jobs[job_id].update({"status": "failed", "error": msg})
@@ -216,10 +237,10 @@ def list_versions(strategy_id: str):
 @router.get("/{strategy_id}/instrument_summary", response_model=InstrumentSummary)
 def instrument_summary(
     strategy_id: str,
-    ruleset_id:  Optional[str] = None,
-    firm_id:     Optional[str] = None,   # backward-compat alias
-    start_date:  Optional[str] = None,
-    end_date:    Optional[str] = None,
+    ruleset_id: Optional[str] = None,
+    firm_id: Optional[str] = None,  # backward-compat alias
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ) -> InstrumentSummary:
     """Return best worthiness per instrument for this strategy, and untested instruments."""
     if not lab_db.get_strategy(strategy_id):
@@ -237,9 +258,9 @@ def instrument_summary(
 
     TIER_ORDER = {
         "TIER_1_STRESS_TEST": 0,
-        "TIER_2_OPTIMIZE":    1,
-        "TIER_3_DISCARD":     2,
-        None:                 3,
+        "TIER_2_OPTIMIZE": 1,
+        "TIER_3_DISCARD": 2,
+        None: 3,
     }
 
     best_by_instrument: dict[str, dict] = {}
@@ -250,32 +271,34 @@ def instrument_summary(
         tier = run.get("worthiness_tier")
         if base not in best_by_instrument:
             best_by_instrument[base] = {
-                "instrument":      inst,
+                "instrument": inst,
                 "best_worthiness": tier,
-                "best_run_id":     run["run_id"],
-                "tested_at":       run.get("completed_at"),
+                "best_run_id": run["run_id"],
+                "tested_at": run.get("completed_at"),
             }
         else:
             current_order = TIER_ORDER.get(best_by_instrument[base]["best_worthiness"], 3)
-            new_order     = TIER_ORDER.get(tier, 3)
+            new_order = TIER_ORDER.get(tier, 3)
             if new_order < current_order:
                 best_by_instrument[base] = {
-                    "instrument":      inst,
+                    "instrument": inst,
                     "best_worthiness": tier,
-                    "best_run_id":     run["run_id"],
-                    "tested_at":       run.get("completed_at"),
+                    "best_run_id": run["run_id"],
+                    "tested_at": run.get("completed_at"),
                 }
 
     instrument_results = []
     tested_bases: set[str] = set()
     for base, info in best_by_instrument.items():
         tested_bases.add(base)
-        instrument_results.append(InstrumentResult(
-            instrument=info["instrument"],
-            best_worthiness=info["best_worthiness"],
-            best_run_id=info["best_run_id"],
-            tested_at=info["tested_at"],
-        ))
+        instrument_results.append(
+            InstrumentResult(
+                instrument=info["instrument"],
+                best_worthiness=info["best_worthiness"],
+                best_run_id=info["best_run_id"],
+                tested_at=info["tested_at"],
+            )
+        )
 
     # Sort by tier (best first)
     instrument_results.sort(key=lambda r: TIER_ORDER.get(r.best_worthiness, 3))

@@ -31,11 +31,11 @@ export interface ChartCandle {
 
 /** A market session window, placed from `tz` + the spec's broker GMT offset. */
 export interface ChartSession {
-  name: string   // display label, e.g. "Tokyo"
-  tz: string     // IANA timezone, e.g. "Asia/Tokyo"
-  start: string  // "HH:MM" local to `tz`
-  end: string    // "HH:MM" local to `tz`
-  color: string  // hex / rgba — the session box tint
+  name: string // display label, e.g. "Tokyo"
+  tz: string // IANA timezone, e.g. "Asia/Tokyo"
+  start: string // "HH:MM" local to `tz`
+  end: string // "HH:MM" local to `tz`
+  color: string // hex / rgba — the session box tint
 }
 
 export type TradeDir = 'long' | 'short'
@@ -87,16 +87,16 @@ export interface ChartTrade {
   entryPrice: number
   exitTime: EpochMs
   exitPrice: number
-  pnl: number           // trade net P&L — sign picks the outcome colour (win green / loss red)
-  kind?: 'primary' | 'secondary'  // 15m primary vs 1m sniper re-entry; solid vs dashed border
-  exitReason?: string   // carried in data; never drawn on the chart
+  pnl: number // trade net P&L — sign picks the outcome colour (win green / loss red)
+  kind?: 'primary' | 'secondary' // 15m primary vs 1m sniper re-entry; solid vs dashed border
+  exitReason?: string // carried in data; never drawn on the chart
   // Profit-depth fields — all optional; absent ⇒ the trade falls back to the plain box.
-  mfePrice?: number             // deepest FAVOURABLE price the hold reached (bottom of the green for a short)
-  maePrice?: number             // deepest ADVERSE price the hold reached (drives a loser's red depth)
+  mfePrice?: number // deepest FAVOURABLE price the hold reached (bottom of the green for a short)
+  maePrice?: number // deepest ADVERSE price the hold reached (drives a loser's red depth)
   profitLegs?: ChartProfitLeg[] // where profit was actually taken → one labelled dotted line each
-  stopPrice?: number            // initial 1R stop → a bubble + dotted risk line
-  tpTargets?: number[]          // TP target ladder (nearest→furthest); first UNHIT one drawn faintly
-  fib?: ChartTradeFib           // the fib leg this trade was priced off → the Trade fibs layer
+  stopPrice?: number // initial 1R stop → a bubble + dotted risk line
+  tpTargets?: number[] // TP target ladder (nearest→furthest); first UNHIT one drawn faintly
+  fib?: ChartTradeFib // the fib leg this trade was priced off → the Trade fibs layer
   // Portfolio-stack layering — OPTIONAL, absent on a single-run spec. `layer` names the strategy the
   // trade belongs to (so a host can filter to the toggled-on strategies); `layerColor` tints the
   // entry marker + outcome chip so overlapping strategies read apart; `layerName` is the human name
@@ -128,8 +128,8 @@ export interface ChartBlockReason {
 export interface ChartBlock {
   id: string
   time: EpochMs
-  dir: TradeDir      // the side that was refused — tag sits below for a long, above for a short
-  price: number      // where the entry limit would have rested
+  dir: TradeDir // the side that was refused — tag sits below for a long, above for a short
+  price: number // where the entry limit would have rested
   reasons: ChartBlockReason[]
   /** Portfolio stack only — the strategy whose rule refused it. Absent on a single-run spec, which
    *  is what keeps every stack affordance invisible on an ordinary backtest.
@@ -155,8 +155,8 @@ export interface ChartBlock {
 export interface ChartMiss {
   id: string
   time: EpochMs
-  dir: TradeDir      // the side that was set up — tag sits below for a long, above for a short
-  price: number      // where the entry limit would have rested, had it got that far
+  dir: TradeDir // the side that was set up — tag sits below for a long, above for a short
+  price: number // where the entry limit would have rested, had it got that far
   met: number
   of: number
   near: boolean
@@ -307,7 +307,7 @@ export interface ChartIndicator {
 }
 
 export interface ChartSpec {
-  instrument: string            // e.g. "AUDJPY.s"
+  instrument: string // e.g. "AUDJPY.s"
   // The bars SHIPPED in `candles` — always the timeframe the run TRADED. A long run is capped by
   // trimming the WINDOW (newest slice), never by coarsening the bars.
   baseTimeframe: string
@@ -317,8 +317,8 @@ export interface ChartSpec {
   // Epoch ms of the run's START. `candles` may begin later (the window cap), and the panel pages the
   // gap in as you scroll left, stopping here. Absent ⇒ no paging (nothing older is claimed to exist).
   historyStartMs?: number | null
-  brokerGmtOffsetHours: number  // for correct session placement
-  candles: ChartCandle[]        // base-TF OHLC
+  brokerGmtOffsetHours: number // for correct session placement
+  candles: ChartCandle[] // base-TF OHLC
   sessions: ChartSession[]
   trades: ChartTrade[]
   // Refused setups. OPTIONAL — a runner that can't report them (NT8/MT5) omits the key, which is
@@ -330,7 +330,7 @@ export interface ChartSpec {
   // from each miss's own `near` flag. Just strings to the panel: it hides them on first render
   // and the reader ticks them back on. Absent/empty ⇒ every reason starts visible.
   missNoise?: string[]
-  overlays: ChartOverlay[]      // generic strategy structure, each tagged with a `group`
+  overlays: ChartOverlay[] // generic strategy structure, each tagged with a `group`
   indicators: ChartIndicator[]
 }
 

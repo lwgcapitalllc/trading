@@ -98,29 +98,25 @@ Three changes:
 3. **Comment + schtasks command (lines 61–66):** Remove "Omit /ru" comment and add `/ru trader`
 to the `task_cmd` string. Current:
 ```python
-    # /sc onlogon  — fires when Administrator logs in
-    # /rl HIGHEST  — run with highest privileges
-    # /f           — overwrite if task already exists
-    # Omit /ru so it defaults to current user (Administrator)
-    print(f"\nRegistering Task Scheduler task '{TASK_NAME}'...")
-    task_cmd = (
-        f"schtasks /create /tn {TASK_NAME} "
-        f"/tr \"python {AGENT_WIN}\" "
-        f"/sc onlogon /rl HIGHEST /f"
-    )
+# /sc onlogon  — fires when Administrator logs in
+# /rl HIGHEST  — run with highest privileges
+# /f           — overwrite if task already exists
+# Omit /ru so it defaults to current user (Administrator)
+print(f"\nRegistering Task Scheduler task '{TASK_NAME}'...")
+task_cmd = f'schtasks /create /tn {TASK_NAME} /tr "python {AGENT_WIN}" /sc onlogon /rl HIGHEST /f'
 ```
 Replace with:
 ```python
-    # /sc onlogon  — fires when trader logs in via RDP
-    # /ru trader   — run as the trader account (the VPS's single operating account)
-    # /rl HIGHEST  — run with highest privileges
-    # /f           — overwrite if task already exists
-    print(f"\nRegistering Task Scheduler task '{TASK_NAME}'...")
-    task_cmd = (
-        f"schtasks /create /tn {TASK_NAME} "
-        f"/tr \"python {AGENT_WIN}\" "
-        f"/sc onlogon /ru trader /rl HIGHEST /f"
-    )
+# /sc onlogon  — fires when trader logs in via RDP
+# /ru trader   — run as the trader account (the VPS's single operating account)
+# /rl HIGHEST  — run with highest privileges
+# /f           — overwrite if task already exists
+print(f"\nRegistering Task Scheduler task '{TASK_NAME}'...")
+task_cmd = (
+    f"schtasks /create /tn {TASK_NAME} "
+    f'/tr "python {AGENT_WIN}" '
+    f"/sc onlogon /ru trader /rl HIGHEST /f"
+)
 ```
 
 ---
@@ -128,11 +124,11 @@ Replace with:
 ### 2e — command-center/backend/routers/bots.py
 **Current (line 603):**
 ```python
-_PYTHON_EXE  = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
+_PYTHON_EXE = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
 ```
 **Replace with:**
 ```python
-_PYTHON_EXE  = r"C:\Python311\python.exe"
+_PYTHON_EXE = r"C:\Python311\python.exe"
 ```
 
 ---

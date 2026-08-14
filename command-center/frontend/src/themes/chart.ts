@@ -9,20 +9,20 @@ import t from './dark-2026.js'
 
 export const C = {
   // Data colors
-  pos:    t.pos,
-  neg:    t.neg,
+  pos: t.pos,
+  neg: t.neg,
   accent: t.accent,
-  gold:   t.gold,
+  gold: t.gold,
   series: t.series,
 
   // Chart chrome
-  tooltipBg:     t.bgSunken,
+  tooltipBg: t.bgSunken,
   tooltipBorder: t.borderStrong,
-  axisTick:      t.textTertiary,
+  axisTick: t.textTertiary,
 
   // Subtle grids and reference lines — intentionally low-opacity white,
   // not theme colors, so they work on any dark background.
-  grid:        '#ffffff07',
-  refLine:     '#ffffff14',
-  refLineDim:  '#ffffff08',
+  grid: '#ffffff07',
+  refLine: '#ffffff14',
+  refLineDim: '#ffffff08',
 } as const

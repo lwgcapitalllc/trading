@@ -84,8 +84,10 @@ def _describe(label: str, rows: list, total: int) -> str:
     if not rows:
         return f"  {label:<34} {0:>4}  {_pct(0, total)}"
     rs = [r["r"] for r in rows]
-    return (f"  {label:<34} {len(rows):>4}  {_pct(len(rows), total)}"
-            f"   R sum {sum(rs):>8.2f}   median {statistics.median(rs):>6.3f}")
+    return (
+        f"  {label:<34} {len(rows):>4}  {_pct(len(rows), total)}"
+        f"   R sum {sum(rs):>8.2f}   median {statistics.median(rs):>6.3f}"
+    )
 
 
 def main(argv=None) -> int:
@@ -120,7 +122,7 @@ def main(argv=None) -> int:
     cfg = ConfigCls(fill_model="bar", symbol=args.symbol)
     patch: dict = {}
     if hasattr(cfg, "exec_secondary"):
-        patch["exec_secondary"] = False      # see the module docstring
+        patch["exec_secondary"] = False  # see the module docstring
     for ov in args.overrides:
         field, raw = ov.split("=", 1)
         field = field.strip()
@@ -148,15 +150,17 @@ def main(argv=None) -> int:
     rows = []
     for t in trades:
         risk = t.risk_usd or 1.0
-        rows.append({
-            "dir": "long" if t.dir > 0 else "short",
-            "r": t.r,
-            "mfe_r": t.mfe_usd / risk,
-            "tp1": _touched(t, t.tp1),
-            "tp2": _touched(t, t.tp2),
-            "hours": (t.exit_ms - t.entry_ms) / 3_600_000.0 if t.exit_ms else 0.0,
-            "reason": t.exit_reason,
-        })
+        rows.append(
+            {
+                "dir": "long" if t.dir > 0 else "short",
+                "r": t.r,
+                "mfe_r": t.mfe_usd / risk,
+                "tp1": _touched(t, t.tp1),
+                "tp2": _touched(t, t.tp2),
+                "hours": (t.exit_ms - t.entry_ms) / 3_600_000.0 if t.exit_ms else 0.0,
+                "reason": t.exit_reason,
+            }
+        )
     n = len(rows)
     if not n:
         print("no trades in this window")
@@ -167,10 +171,14 @@ def main(argv=None) -> int:
     losses = [r for r in rows if r["r"] < -band]
 
     print("\n" + "=" * 96)
-    print(f"{args.strategy}  {args.symbol} {args.tf}m   {df.index[0].date()} -> {df.index[-1].date()}"
-          f"   {n} trades   scratch band +/-{band}R")
-    print(f"  TP1 size {cfg.exec_tp1_pct}%  TP2 size {cfg.exec_tp2_pct}%  "
-          f"BE buffer {cfg.exec_be_buf_tk} ticks  trail {cfg.exec_runner_trail!r}")
+    print(
+        f"{args.strategy}  {args.symbol} {args.tf}m   {df.index[0].date()} -> {df.index[-1].date()}"
+        f"   {n} trades   scratch band +/-{band}R"
+    )
+    print(
+        f"  TP1 size {cfg.exec_tp1_pct}%  TP2 size {cfg.exec_tp2_pct}%  "
+        f"BE buffer {cfg.exec_be_buf_tk} ticks  trail {cfg.exec_runner_trail!r}"
+    )
     print("=" * 96)
 
     # Peak-to-trough on the CLOSED-TRADE cumulative R curve. Reported beside total R because on
@@ -186,8 +194,10 @@ def main(argv=None) -> int:
         peak = max(peak, cum)
         max_dd = max(max_dd, peak - cum)
 
-    print(f"\nOUTCOME MIX          (total R {sum(r['r'] for r in rows):.2f}"
-          f"   maxDD {max_dd:.2f}R   R per trade {sum(r['r'] for r in rows) / n:+.3f})")
+    print(
+        f"\nOUTCOME MIX          (total R {sum(r['r'] for r in rows):.2f}"
+        f"   maxDD {max_dd:.2f}R   R per trade {sum(r['r'] for r in rows) / n:+.3f})"
+    )
     print(_describe("WON  (> +%.2fR)" % band, wins, n))
     print(_describe("SCRATCHED (came back to BE)", scratches, n))
     print(_describe("LOST (< -%.2fR)" % band, losses, n))
@@ -202,30 +212,40 @@ def main(argv=None) -> int:
     print("\nTHE SCRATCHES — HOW MUCH WAS ON THE TABLE BEFORE THEY CAME BACK")
     if scratches:
         mfes = sorted(r["mfe_r"] for r in scratches)
-        print(f"  peak unrealised R:  median {statistics.median(mfes):.2f}R   "
-              f"mean {statistics.mean(mfes):.2f}R   max {mfes[-1]:.2f}R   min {mfes[0]:.2f}R")
+        print(
+            f"  peak unrealised R:  median {statistics.median(mfes):.2f}R   "
+            f"mean {statistics.mean(mfes):.2f}R   max {mfes[-1]:.2f}R   min {mfes[0]:.2f}R"
+        )
         for thr in (0.5, 1.0, 1.5, 2.0, 3.0):
             over = [m for m in mfes if m >= thr]
-            print(f"    ran to >= {thr:>3.1f}R at some point:  {len(over):>3}"
-                  f"  ({_pct(len(over), len(scratches)).strip()} of scratches,"
-                  f" {_pct(len(over), n).strip()} of all trades)"
-                  f"   total unrealised {sum(over):>7.2f}R")
+            print(
+                f"    ran to >= {thr:>3.1f}R at some point:  {len(over):>3}"
+                f"  ({_pct(len(over), len(scratches)).strip()} of scratches,"
+                f" {_pct(len(over), n).strip()} of all trades)"
+                f"   total unrealised {sum(over):>7.2f}R"
+            )
         print(f"  hold time:  median {statistics.median([r['hours'] for r in scratches]):.1f}h")
         by_dir = {}
         for r in scratches:
             by_dir.setdefault(r["dir"], []).append(r)
         for d, grp in sorted(by_dir.items()):
-            print(f"  {d:<6} {len(grp):>3}  median peak {statistics.median([x['mfe_r'] for x in grp]):.2f}R")
+            print(
+                f"  {d:<6} {len(grp):>3}  median peak {statistics.median([x['mfe_r'] for x in grp]):.2f}R"
+            )
 
     print("\nWHAT THE WINNERS GAVE BACK (for scale — the cost side of any change)")
     if wins:
         give = [r["mfe_r"] - r["r"] for r in wins]
-        print(f"  median peak {statistics.median([r['mfe_r'] for r in wins]):.2f}R   "
-              f"median booked {statistics.median([r['r'] for r in wins]):.2f}R   "
-              f"median given back {statistics.median(give):.2f}R")
+        print(
+            f"  median peak {statistics.median([r['mfe_r'] for r in wins]):.2f}R   "
+            f"median booked {statistics.median([r['r'] for r in wins]):.2f}R   "
+            f"median given back {statistics.median(give):.2f}R"
+        )
         big = [r for r in wins if r["r"] >= 3.0]
-        print(f"  winners >= 3R: {len(big)}  ({_pct(len(big), n).strip()} of all trades), "
-              f"carrying {sum(r['r'] for r in big):.2f}R of the book's {sum(r['r'] for r in rows):.2f}R")
+        print(
+            f"  winners >= 3R: {len(big)}  ({_pct(len(big), n).strip()} of all trades), "
+            f"carrying {sum(r['r'] for r in big):.2f}R of the book's {sum(r['r'] for r in rows):.2f}R"
+        )
 
     print("\nEXIT REASONS")
     reasons: dict = {}

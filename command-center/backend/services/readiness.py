@@ -45,28 +45,36 @@ def _news_calendar() -> str | None:
     """
     try:
         from news import EventStore  # type: ignore
+
         events, _ = EventStore().load()
     except Exception as exc:
         return f"news calendar cache unreadable ({exc}) — the News & Holiday filter will be inert"
     if not events:
-        return ("news calendar cache is EMPTY — the News & Holiday filter will tag nothing. "
-                "Backfill with engines/news/tools/backfill.py --from YYYY-MM")
+        return (
+            "news calendar cache is EMPTY — the News & Holiday filter will tag nothing. "
+            "Backfill with engines/news/tools/backfill.py --from YYYY-MM"
+        )
     newest = max(e.timestamp_ms for e in events)
     days_behind = (datetime.now(timezone.utc).timestamp() * 1000 - newest) / 86_400_000
     if days_behind > 30:
         end = datetime.fromtimestamp(newest / 1000, tz=timezone.utc).date()
-        return (f"news calendar cache ends {end} ({int(days_behind)}d ago) — trades after that "
-                f"date come back untagged, not unaffected")
+        return (
+            f"news calendar cache ends {end} ({int(days_behind)}d ago) — trades after that "
+            f"date come back untagged, not unaffected"
+        )
     return None
 
 
 def _telegram() -> str | None:
     from services import notify
+
     if notify.telegram_configured():
         return None
     path = cfg.MONOREPO_ROOT / "algos" / "credentials.json"
-    return (f"Telegram not configured — stress-test grades and bot alerts will be dropped "
-            f"silently. Set LWG_TELEGRAM_TOKEN / LWG_TELEGRAM_CHAT_ID or fill {path}")
+    return (
+        f"Telegram not configured — stress-test grades and bot alerts will be dropped "
+        f"silently. Set LWG_TELEGRAM_TOKEN / LWG_TELEGRAM_CHAT_ID or fill {path}"
+    )
 
 
 def check() -> list[str]:

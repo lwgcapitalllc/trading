@@ -16,10 +16,6 @@ between a bar that traded no ticks (a measurement, draw it) and a bar whose volu
 (the absence of one, draw nothing), which is this repo's own standing rule arriving in a new layer.
 """
 
-import math
-
-import pytest
-
 from services.vwap_overlays import INDICATOR_VWAP, build_vwap_indicator
 
 BAR_MS = 15 * 60 * 1000
@@ -51,10 +47,14 @@ def test_the_value_is_the_volume_weighted_mean_of_hlc3():
     hlc3 is 100 on bar 1 and 200 on bar 2; at 1:3 volume the weighted mean is 175 and the
     unweighted one is 150 — so this cannot pass on an emitter that dropped the weighting.
     """
-    ind = build_vwap_indicator(_bars([
-        (100.0, 100.0, 100.0, 100.0),
-        (200.0, 200.0, 200.0, 300.0),
-    ]))
+    ind = build_vwap_indicator(
+        _bars(
+            [
+                (100.0, 100.0, 100.0, 100.0),
+                (200.0, 200.0, 200.0, 300.0),
+            ]
+        )
+    )
 
     assert [p["value"] for p in ind["series"]] == [100.0, 175.0]
 
@@ -89,12 +89,14 @@ def test_it_matches_the_canonical_engine_bar_for_bar():
         sys.path.insert(0, str(engines))
     from vwap import VwapEngine
 
-    candles = _bars([
-        (101.0, 99.0, 100.0, 10.0),
-        (105.0, 100.0, 104.0, 30.0),
-        (104.0, 98.0, 99.0, 5.0),
-        (110.0, 103.0, 108.0, 250.0),
-    ])
+    candles = _bars(
+        [
+            (101.0, 99.0, 100.0, 10.0),
+            (105.0, 100.0, 104.0, 30.0),
+            (104.0, 98.0, 99.0, 5.0),
+            (110.0, 103.0, 108.0, 250.0),
+        ]
+    )
     engine = VwapEngine()
     expected = []
     for i, c in enumerate(candles):
@@ -205,7 +207,12 @@ def _frame(volume):
     import pandas as pd
 
     idx = pd.to_datetime([T0 * 1_000_000, (T0 + BAR_MS) * 1_000_000])
-    cols = {"open": [100.0, 101.0], "high": [102.0, 103.0], "low": [99.0, 100.0], "close": [101.0, 102.0]}
+    cols = {
+        "open": [100.0, 101.0],
+        "high": [102.0, 103.0],
+        "low": [99.0, 100.0],
+        "close": [101.0, 102.0],
+    }
     if volume is not None:
         cols["volume"] = volume
     return pd.DataFrame(cols, index=idx)

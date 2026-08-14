@@ -12,12 +12,17 @@ could never have taken.
 
 import numpy as np
 import pytest
-
 from services.stress_tester import choose_shuffle_series, run_monte_carlo
 
 LIMITED = {"id": "p", "ruleset_type": "prop_funded", "max_loss_eod": 5000, "account_size": 50000}
-NO_LIMIT = {"id": "u", "name": "Unconstrained", "ruleset_type": "personal",
-            "max_loss_eod": 0, "max_drawdown_from_peak_pct": None, "account_size": 10000}
+NO_LIMIT = {
+    "id": "u",
+    "name": "Unconstrained",
+    "ruleset_type": "personal",
+    "max_loss_eod": 0,
+    "max_drawdown_from_peak_pct": None,
+    "account_size": 10000,
+}
 
 
 def _fixed_size_run(n=120, start=50_000.0):
@@ -44,6 +49,7 @@ def _compounding_run(n=120, start=10_000.0, risk=0.10):
 
 
 # ── series selection ──────────────────────────────────────────────────────────
+
 
 def test_fixed_size_run_keeps_the_dollar_model():
     pnls, balances = _fixed_size_run()
@@ -76,9 +82,9 @@ def test_growing_trade_size_without_account_growth_keeps_dollars():
 def test_missing_or_unusable_balances_fall_back_to_dollars():
     pnls, balances = _compounding_run()
     assert choose_shuffle_series(pnls, None)[1] == "dollars"
-    assert choose_shuffle_series(pnls, balances[:-1])[1] == "dollars"          # misaligned
-    assert choose_shuffle_series(pnls, [0.0] * len(pnls))[1] == "dollars"      # zero balance
-    assert choose_shuffle_series(pnls[:10], balances[:10])[1] == "dollars"     # too few to judge
+    assert choose_shuffle_series(pnls, balances[:-1])[1] == "dollars"  # misaligned
+    assert choose_shuffle_series(pnls, [0.0] * len(pnls))[1] == "dollars"  # zero balance
+    assert choose_shuffle_series(pnls[:10], balances[:10])[1] == "dollars"  # too few to judge
 
 
 def test_a_total_wipeout_falls_back_to_dollars():
@@ -89,6 +95,7 @@ def test_a_total_wipeout_falls_back_to_dollars():
 
 
 # ── the simulation itself ─────────────────────────────────────────────────────
+
 
 def test_fixed_size_results_are_unchanged_by_passing_balances():
     """The compounding support must not perturb a single existing fixed-size run."""
@@ -120,6 +127,7 @@ def test_compounded_paths_never_lose_more_than_the_account():
 
 
 # ── nothing to test against ───────────────────────────────────────────────────
+
 
 def test_no_drawdown_limit_reports_none_not_zero():
     """0.0 is a claim; None is the absence of one. Reporting 0% breach AND 0% pass for the same

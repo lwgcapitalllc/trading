@@ -28,12 +28,12 @@ if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
 from services.liquidity_overlays import (
+    _KIND_GROUP,
+    _SWEPT_COLOR,
     GROUP_LIQ_H4,
     GROUP_LIQ_HTF,
     GROUP_LIQ_SESSION,
     GROUPS,
-    _KIND_GROUP,
-    _SWEPT_COLOR,
     build_liquidity_overlays,
     sweep_label_for,
 )
@@ -53,13 +53,15 @@ def _walk(n, base=2000.0, drift=0.0, rng=3.0, start=START_MS):
     out = []
     price = base
     for i in range(n):
-        out.append({
-            "time": start + i * BAR_MS,
-            "open": price,
-            "high": price + rng,
-            "low": price - rng,
-            "close": price + drift,
-        })
+        out.append(
+            {
+                "time": start + i * BAR_MS,
+                "open": price,
+                "high": price + rng,
+                "low": price - rng,
+                "close": price + drift,
+            }
+        )
         price += drift
     return out
 
@@ -73,6 +75,7 @@ def _by_group(overlays):
 
 
 # ── what gets drawn at all ───────────────────────────────────────────────────────────────────────
+
 
 def test_no_anchor_means_no_layer():
     """A run with no trade, block or miss on screen draws nothing — which is what keeps the three
@@ -111,6 +114,7 @@ def test_an_anchor_off_the_end_of_the_candles_is_ignored():
 
 # ── the swept state, which is the point of the layer ─────────────────────────────────────────────
 
+
 def test_a_swept_level_is_dashed_grey_and_says_which_side_went():
     """The feature in one assertion: a pool price has taken renders as taken.
 
@@ -130,7 +134,7 @@ def test_a_swept_level_is_dashed_grey_and_says_which_side_went():
 def test_a_live_level_is_solid_and_carries_no_sweep_tag():
     """The other half, stated on its own — a rule asserted in one direction is the one that gets
     'simplified' back. A level nothing has reached is drawn in its tier's colour with a bare name."""
-    candles = _walk(700)   # flat: nothing is ever taken
+    candles = _walk(700)  # flat: nothing is ever taken
     ovs = build_liquidity_overlays(candles, [c["time"] for c in candles])
     live = [o for o in ovs if o["style"]["lineStyle"] == "solid"]
     assert live
@@ -159,7 +163,7 @@ def test_the_derived_sweep_label_agrees_with_the_engines_own():
         for lvl in ev.mitigated:
             if lvl.kind != "h4" or not lvl.sweep_label:
                 continue
-            derived = sweep_label_for(lvl.side, None)      # what we WOULD have derived
+            derived = sweep_label_for(lvl.side, None)  # what we WOULD have derived
             assert derived == lvl.sweep_label, (
                 f"derived {derived!r} for a swept {lvl.side} against the engine's {lvl.sweep_label!r}"
             )
@@ -183,6 +187,7 @@ def test_the_engines_own_label_wins_over_the_derivation():
 
 
 # ── geometry ─────────────────────────────────────────────────────────────────────────────────────
+
 
 def test_a_swept_levels_line_stops_at_the_bar_it_was_taken():
     """The Pine freezes a broken level's line at the break bar. A line that ran on past it would
@@ -227,7 +232,7 @@ def test_a_lines_origin_is_the_candle_that_made_the_level_not_the_bar_it_appeare
     checked = 0
     for o in ovs:
         if o["label"].startswith("PWC"):
-            continue   # a close need never have been touched as a high or a low
+            continue  # a close need never have been touched as a high or a low
         bar = by_time[o["t0"]]
         assert bar["low"] - 1e-9 <= o["price"] <= bar["high"] + 1e-9, (
             f"{o['label']} at {o['price']} anchored on a bar spanning {bar['low']}–{bar['high']}"
@@ -237,6 +242,7 @@ def test_a_lines_origin_is_the_candle_that_made_the_level_not_the_bar_it_appeare
 
 
 # ── contract ─────────────────────────────────────────────────────────────────────────────────────
+
 
 def test_the_label_is_a_top_level_field_not_a_style_key():
     """🔴 The panel reads `ov.label` and spreads `style` separately, so a label nested inside `style`
@@ -277,7 +283,11 @@ def test_the_groups_match_the_frontends_analysis_groups():
     memory. Same guard shape as the fair-value-gap and order-block groups."""
     ts = (
         Path(__file__).resolve().parent.parent.parent
-        / "frontend" / "src" / "components" / "ChartPanel" / "overlays.ts"
+        / "frontend"
+        / "src"
+        / "components"
+        / "ChartPanel"
+        / "overlays.ts"
     ).read_text()
     for group in GROUPS:
         assert f"'{group}'" in ts, f"{group!r} is not in the frontend's ANALYSIS_GROUPS/colours"

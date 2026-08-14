@@ -10,7 +10,6 @@ FILTER, mirrored exactly, plus grading's handling of the unassessable result.
 """
 
 import numpy as np
-
 from services.grading import compute_grade
 from services.stress_tester import (
     _WF_IS_SHARPE_FLOOR,
@@ -23,14 +22,16 @@ LIMITED = {"id": "p", "ruleset_type": "prop_funded", "max_loss_eod": 5000}
 
 def _avg_degradation(summary: list[dict]):
     """Mirror of the filter + average at the end of run_walk_forward_task."""
-    thin = [w["window"] for w in summary
-            if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
-            or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW]
+    thin = [
+        w["window"]
+        for w in summary
+        if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+        or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+    ]
     degs = [
         _clamp_wf_degradation(1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"])
         for w in summary
-        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR
-        and w["window"] not in thin
+        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR and w["window"] not in thin
     ]
     return float(np.mean(degs)) if degs else None
 
@@ -38,10 +39,10 @@ def _avg_degradation(summary: list[dict]):
 # The real windows of stress test 630cefbebd8347db: 126 trades over 5 years, split 5 ways.
 REAL_RUN = [
     {"window": 1, "is_sharpe": -0.1268, "oos_sharpe": -3.6622, "is_trades": 15, "oos_trades": 6},
-    {"window": 2, "is_sharpe": 1.8156,  "oos_sharpe": 0.5065,  "is_trades": 24, "oos_trades": 6},
-    {"window": 3, "is_sharpe": -1.8737, "oos_sharpe": 1.5675,  "is_trades": 10, "oos_trades": 6},
-    {"window": 4, "is_sharpe": 1.5620,  "oos_sharpe": 0.6940,  "is_trades": 16, "oos_trades": 12},
-    {"window": 5, "is_sharpe": 2.3792,  "oos_sharpe": 2.6627,  "is_trades": 22, "oos_trades": 8},
+    {"window": 2, "is_sharpe": 1.8156, "oos_sharpe": 0.5065, "is_trades": 24, "oos_trades": 6},
+    {"window": 3, "is_sharpe": -1.8737, "oos_sharpe": 1.5675, "is_trades": 10, "oos_trades": 6},
+    {"window": 4, "is_sharpe": 1.5620, "oos_sharpe": 0.6940, "is_trades": 16, "oos_trades": 12},
+    {"window": 5, "is_sharpe": 2.3792, "oos_sharpe": 2.6627, "is_trades": 22, "oos_trades": 8},
 ]
 
 
@@ -76,10 +77,17 @@ def test_missing_trade_counts_exclude_the_window():
 
 # ── how grading reports it ────────────────────────────────────────────────────
 
+
 def _st(**over):
-    base = {"pct1_max_dd": 1000.0, "pct5_max_dd": 800.0, "median_max_dd": 500.0,
-            "median_final_pnl": 20000.0, "prob_breach": 0.0,
-            "walk_forward_degradation": None, "sensitivity_max_degradation": None}
+    base = {
+        "pct1_max_dd": 1000.0,
+        "pct5_max_dd": 800.0,
+        "median_max_dd": 500.0,
+        "median_final_pnl": 20000.0,
+        "prob_breach": 0.0,
+        "walk_forward_degradation": None,
+        "sensitivity_max_degradation": None,
+    }
     base.update(over)
     return base
 
@@ -110,7 +118,7 @@ def test_unassessable_walk_forward_caps_the_grade_at_b():
     strategy held up, which is a claim nothing in the run supports. Monte Carlo here is clean
     enough for an A on its own; the missing evidence is the only thing holding it to B."""
     clean_mc = _st(sensitivity_max_degradation=0.05)
-    assert compute_grade(clean_mc, None, {"p": {}}, LIMITED)[0] == "A"   # WF simply not run
+    assert compute_grade(clean_mc, None, {"p": {}}, LIMITED)[0] == "A"  # WF simply not run
     grade, reasons = compute_grade(clean_mc, REAL_RUN, {"p": {}}, LIMITED)
     assert grade == "B"
     assert any("Capped at B" in r for r in reasons)

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from models import PersonalRulesetPatch, Ruleset, RulesetCreate
-
 from services import lab_db
 
 router = APIRouter(prefix="/rulesets", tags=["rulesets"])

@@ -23,7 +23,8 @@ except ImportError:
     _requests = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from credentials import get as _cred, telegram_credentials  # noqa: E402
+from credentials import get as _cred  # noqa: E402
+from credentials import telegram_credentials
 
 # ── Where a message goes is decided by WHAT IT IS ────────────────────────────────────────────
 #
@@ -53,7 +54,7 @@ SIGNAL = "signal"
 #: kind -> the credential key naming its chat. HEALTH and SIGNAL fall back to the TRADE chat (see
 #: `chat_for`); a message in the wrong room beats a message nobody sends.
 CHAT_KEYS = {
-    TRADE:  "telegram_chat_id",
+    TRADE: "telegram_chat_id",
     HEALTH: "telegram_health_chat",
     SIGNAL: "telegram_signal_chat",
 }
@@ -79,8 +80,9 @@ def chat_for(kind: str, override: str = ""):
     chatter is the thing being prevented.
     """
     if kind not in CHAT_KEYS:
-        raise ValueError(f"unknown notification kind {kind!r} - expected one of "
-                         f"{sorted(CHAT_KEYS)}")
+        raise ValueError(
+            f"unknown notification kind {kind!r} - expected one of {sorted(CHAT_KEYS)}"
+        )
     if override:
         return override, True
     dest = _cred(CHAT_KEYS[kind])
@@ -90,14 +92,17 @@ def chat_for(kind: str, override: str = ""):
         fallback = _cred(CHAT_KEYS[TRADE])
         if fallback and kind not in _warned_kinds:
             _warned_kinds.add(kind)
-            print(f"notify: {CHAT_KEYS[kind]} is not set - {kind} messages are going to the "
-                  f"main group. Set it in algos/credentials.json to split them out.")
+            print(
+                f"notify: {CHAT_KEYS[kind]} is not set - {kind} messages are going to the "
+                f"main group. Set it in algos/credentials.json to split them out."
+            )
         return fallback, False
     return "", False
 
 
-def send_telegram(text: str, kind: str, chat_id: str = "", token_key: str = "",
-                  reply_to=None) -> bool:
+def send_telegram(
+    text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None
+) -> bool:
     """Send `text` to the chat this `kind` routes to. Returns True on success.
 
     `kind` is `TRADE` or `HEALTH` and is required — see the routing block above.
@@ -125,8 +130,7 @@ def send_telegram(text: str, kind: str, chat_id: str = "", token_key: str = "",
     return send_telegram_id(text, kind, chat_id, token_key, reply_to) is not None
 
 
-def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "",
-                     reply_to=None):
+def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None):
     """Same send, but returns Telegram's `message_id` (or None on failure).
 
     The id is what lets a later message REPLY to this one — the trade exit replies to the trade
@@ -145,15 +149,19 @@ def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "
             token = named
         elif token_key not in _warned_keys:
             _warned_keys.add(token_key)
-            print(f"notify: credential {token_key!r} is not set - falling back to the default "
-                  f"Telegram bot. Add it to algos/credentials.json, or clear telegram_token_key "
-                  f"in this bot's instance config.")
+            print(
+                f"notify: credential {token_key!r} is not set - falling back to the default "
+                f"Telegram bot. Add it to algos/credentials.json, or clear telegram_token_key "
+                f"in this bot's instance config."
+            )
     dest, _dedicated = chat_for(kind, chat_id)
     if not token or not dest:
         if not _warned:
             _warned = True
-            print("notify: Telegram is not configured (see algos/credentials.template.json) - "
-                  "messages will be dropped for the rest of this run")
+            print(
+                "notify: Telegram is not configured (see algos/credentials.template.json) - "
+                "messages will be dropped for the rest of this run"
+            )
         return None
     if _requests is None:
         print(f"notify: requests not installed, dropping message: {text}")
@@ -182,8 +190,7 @@ def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "
             # rejects the WHOLE message — so the alert that never arrives is the one reporting a
             # crash, whose text is a traceback full of paths. Measured on the first real send:
             # "MT5_FFT" alone was enough. Retry unformatted rather than lose it.
-            print("notify: Markdown rejected, resending as plain text - "
-                  f"{r.text[:160]}")
+            print(f"notify: Markdown rejected, resending as plain text - {r.text[:160]}")
             r = _post(None, reply_to)
         if r.status_code != 200:
             print(f"notify: Telegram returned {r.status_code}: {r.text[:200]}")

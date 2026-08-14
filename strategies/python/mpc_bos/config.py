@@ -43,7 +43,7 @@ class BosConfig(SosFadeConfig):
     exec_aplus: bool = False
     #   There is no A+ path in this fork at all — the arm is a BOS, not a swept SOS. Pinned
     #   False so the parent's `_armed` can never place an order behind this fork's back.
-    exec_bleg: bool = False        # nor a B-LEG one
+    exec_bleg: bool = False  # nor a B-LEG one
     exec_secondary: bool = False
     #   🔴 PINNED, and it is the one that would break the LAB rather than the strategy. The
     #   parent defaulted the 1-minute re-entry ON on 2026-08-07, and it needs a second bar
@@ -60,7 +60,7 @@ class BosConfig(SosFadeConfig):
     #   2026-08-02 when its four-rule entry model replaced Method 3; this fork's Pine still
     #   ships `true` and has none of those rules, and `BosExecution._entry_edges` reads this
     #   flag itself. Inheriting the parent's new default would silently switch Method 3 off.
-    exec_fib_overlap: bool = False    # the parent's rule 1 — absent from this fork's Pine
+    exec_fib_overlap: bool = False  # the parent's rule 1 — absent from this fork's Pine
     exec_fib_deep_edge: bool = False  # the parent's rule 2 — absent from this fork's Pine
     exec_fib_nearest: bool = False
     #   🔴 PINNED False, and this is the one that MOVES TRADES if inherited. The parent defaults
@@ -68,8 +68,8 @@ class BosConfig(SosFadeConfig):
     #   the gap edge, where Method 3 always takes the shallower one. `mpc_bos_strategy.pine` has
     #   no `execFibNearest` input, so an inherited True would price every gap entry at a level
     #   the Pine never chose — invisible to the gate, because the export has no column for it.
-    exec_fvg_pre_zone: bool = False   # the parent's pre-zone gate — absent from this fork's Pine
-    exec_fvg_50: bool = False         # Pine execFvg50 — a gap STRADDLING the shallow end
+    exec_fvg_pre_zone: bool = False  # the parent's pre-zone gate — absent from this fork's Pine
+    exec_fvg_50: bool = False  # Pine execFvg50 — a gap STRADDLING the shallow end
     exec_runner_trail: str = "Structure (swing)"
     #   PINNED — this fork's Pine ships the TWO-option dropdown ("Fixed step" / "Structure
     #   (swing)"). The parent moved to "Structure + % ratchet" on 2026-07-28. Un-pin only in the
@@ -81,21 +81,21 @@ class BosConfig(SosFadeConfig):
     exec_sl_level: str = "1.0"
     #   Unused here — the stop comes from `bos_sl_model`. Declared so the parent's `_sl_anchor`
     #   cannot be reached with a value this fork never chose.
-    exec_respect_veto: bool = False   # unused here — the BOS veto is `bos_respect_veto`
+    exec_respect_veto: bool = False  # unused here — the BOS veto is `bos_respect_veto`
     exec_close_opp_sos: bool = False  # unused here — the BOS close is `bos_close_opp_div`
-    exec_no_late_day: bool = True     # Pine execNoLateDay (F7) — a market-hours fact
-    exec_htf_weekly: str = "Ignore"   # Pine execHtfWeekly
-    exec_htf_daily: str = "Ignore"    # Pine execHtfDaily
+    exec_no_late_day: bool = True  # Pine execNoLateDay (F7) — a market-hours fact
+    exec_htf_weekly: str = "Ignore"  # Pine execHtfWeekly
+    exec_htf_daily: str = "Ignore"  # Pine execHtfDaily
     exec_htf_exhaust_only: bool = False  # not an input in this fork's Pine
 
     # ── 2. WHAT ARMS IT — the break (spec §4, Pine section 2) ────────────────────
-    bos_which: str = "All"             # F1 ∈ {"1st only", "1st + 2nd", "All"}
+    bos_which: str = "All"  # F1 ∈ {"1st only", "1st + 2nd", "All"}
     #   Which break after the shift may arm. Defaulted "1st only" → "All" 2026-08-07: taking
     #   every break measured better at the 0.786 entry depth.
-    bos_min_disp_atr: float = 0.0      # F2 — the break must CLOSE past the swing by N × ATR(14)
-    bos_min_leg_atr: float = 0.0       # F3 — break-leg range floor, 0 = off
-    bos_max_days: float = 3.0          # F9 — armed-BOS staleness, DAYS → a bar count
-    bos_max_per_regime: int = 10       # F6 — filled trades since the last SOS; 10 ≈ off
+    bos_min_disp_atr: float = 0.0  # F2 — the break must CLOSE past the swing by N × ATR(14)
+    bos_min_leg_atr: float = 0.0  # F3 — break-leg range floor, 0 = off
+    bos_max_days: float = 3.0  # F9 — armed-BOS staleness, DAYS → a bar count
+    bos_max_per_regime: int = 10  # F6 — filled trades since the last SOS; 10 ≈ off
     bos_req_hold: bool = False
     #   F4 — a close back through the broken swing kills the setup. OFF BY MEASUREMENT, not by
     #   omission: the entry band sits BELOW the broken swing on almost every leg, so price cannot
@@ -108,7 +108,7 @@ class BosConfig(SosFadeConfig):
     #   "Expansion leg" → "Break leg" 2026-08-07, and the reason is HONESTY rather than a
     #   measured win: every number behind today's defaults came from a skeleton that froze the
     #   leg at the break bar. "Expansion leg" has NOT been measured head-to-head.
-    bos_entry_top: str = "0.5"         # ∈ {"0.5", "0.382"} — the SHALLOW end of the entry band
+    bos_entry_top: str = "0.5"  # ∈ {"0.5", "0.382"} — the SHALLOW end of the entry band
     #   The deep end (0.886) is fixed and does not move with this.
     bos_use_fvg: bool = False
     #   🔴 Defaulted True → False 2026-08-07 and it was the losing half of the book. Two
@@ -116,17 +116,17 @@ class BosConfig(SosFadeConfig):
     #   −15.1R with no winner bigger than +3.3R, and the 2026-08-06 engine study found a plain
     #   0.786 fib beats it +14.5% vs +3.7% over a matched random control. The gap decides where
     #   the limit rests, and it rests too shallow for a continuation trade.
-    exec_req_fvg: bool = True          # Pine execReqFVG — no gap = no trade (inert while off)
-    exec_fvg_deep_only: bool = True    # Pine execFvgDeepOnly — the gap must sit fully past lTop
-    exec_conf_sz2: bool = True         # Pine execConfSZ2 — the Sniper Zone COUNTS as a gap
-    bos_entry_fib: str = "0.786"       # ∈ {"0.382","0.5","0.618","0.702","0.786","0.886"}
+    exec_req_fvg: bool = True  # Pine execReqFVG — no gap = no trade (inert while off)
+    exec_fvg_deep_only: bool = True  # Pine execFvgDeepOnly — the gap must sit fully past lTop
+    exec_conf_sz2: bool = True  # Pine execConfSZ2 — the Sniper Zone COUNTS as a gap
+    bos_entry_fib: str = "0.786"  # ∈ {"0.382","0.5","0.618","0.702","0.786","0.886"}
     #   ⚠ SINCE 2026-08-07 THIS IS THE PRIMARY ENTRY, NOT A FALLBACK — `bos_use_fvg` is off, so
     #   this level is what actually trades. The name is the Pine's and is kept deliberately.
     #   ⚠ Do NOT pair it with a tighter stop: 0.786 against a 0.886 stop scored higher on paper
     #   and is a trap (median stop $0.74, so the $0.22 spread is 30% of R).
 
     # ── 4. WHAT CAN REFUSE IT (spec §4) ──────────────────────────────────────────
-    bos_respect_veto: bool = False     # F5 — divergence / extreme RSI blocks a NEW entry (LIVE)
+    bos_respect_veto: bool = False  # F5 — divergence / extreme RSI blocks a NEW entry (LIVE)
     bos_vwap_req: str = "Trend's side"  # F10 ∈ {"Off", "Trend's side"}
     #   The session VWAP filter, added 2026-08-06 and the only MEASURED default here: it roughly
     #   doubles this trigger's edge over a matched random control (+4.4% → +6.8%) and cuts the
@@ -144,10 +144,12 @@ class BosConfig(SosFadeConfig):
     #   ⚠ "Broken swing level" is largely INOPERABLE and is not a real option: for a long that
     #   level sits ABOVE the entry, so `dist = entry − stop` is negative and the order is refused.
     #   It is kept only because the Pine has it.
-    bos_sl_atr: float = 1.3            # ATR model only. 1.2–1.5 is one plateau inside the noise.
-    exec_min_stop_mode: str = "% of price"   # inherited value, and this fork's Pine agrees
-    bos_move_stop: str = "Off"         # Pine execMoveStop ∈ {"Off","$ of price","Structure (swing)"}
-    bos_move_stop_val: float = 5.0     # Pine execMoveStopVal — DOLLARS in "$ of price", TICKS in "Structure"
+    bos_sl_atr: float = 1.3  # ATR model only. 1.2–1.5 is one plateau inside the noise.
+    exec_min_stop_mode: str = "% of price"  # inherited value, and this fork's Pine agrees
+    bos_move_stop: str = "Off"  # Pine execMoveStop ∈ {"Off","$ of price","Structure (swing)"}
+    bos_move_stop_val: float = (
+        5.0  # Pine execMoveStopVal — DOLLARS in "$ of price", TICKS in "Structure"
+    )
     #   🔴 NEW FIELDS — `SosFadeConfig` has no moving stop at all, so there was nothing to
     #   inherit. It is a trail that runs from the bar AFTER the fill instead of waiting for TP2
     #   like the runner trail: it follows the best price the trade has seen and can only ever
@@ -169,8 +171,8 @@ class BosConfig(SosFadeConfig):
     #   every axis — +137.7R vs +90.8R for 30/30/20 and +113.4R for a pure runner, at the same
     #   drawdown, a higher t-stat and less concentration. Whatever you leave under 100 becomes
     #   the runner again.
-    bos_tp3_measured: bool = False     # TP3 = the break leg's range projected from the broken level
-    bos_close_opp_div: bool = False    # close an OPEN trade on a confirmed opposing divergence
+    bos_tp3_measured: bool = False  # TP3 = the break leg's range projected from the broken level
+    bos_close_opp_div: bool = False  # close an OPEN trade on a confirmed opposing divergence
 
     # `exec_be_buf_tk` (30), `exec_trail_step` (5.0), `exec_struct_trail_buf_tk` (20),
     # `exec_tp2_stop_mode` ("TP1 price") and `exec_sl_buf_tk` (0.0) are inherited unchanged —
@@ -193,14 +195,24 @@ class BosConfig(SosFadeConfig):
         _one_of("bos_which", self.bos_which, ("1st only", "1st + 2nd", "All"))
         _one_of("bos_fib_anchor", self.bos_fib_anchor, ("Expansion leg", "Break leg"))
         _one_of("bos_entry_top", self.bos_entry_top, ("0.5", "0.382"))
-        _one_of("bos_entry_fib", self.bos_entry_fib,
-                ("0.382", "0.5", "0.618", "0.702", "0.786", "0.886"))
+        _one_of(
+            "bos_entry_fib",
+            self.bos_entry_fib,
+            ("0.382", "0.5", "0.618", "0.702", "0.786", "0.886"),
+        )
         _one_of("bos_vwap_req", self.bos_vwap_req, ("Off", "Trend's side"))
-        _one_of("bos_move_stop", self.bos_move_stop,
-                ("Off", "$ of price", "Structure (swing)"))
-        _one_of("bos_sl_model", self.bos_sl_model,
-                ("Fib 1.0 (leg origin)", "Broken swing level", "Fib 0.886",
-                 "Last confirmed swing", "ATR"))
+        _one_of("bos_move_stop", self.bos_move_stop, ("Off", "$ of price", "Structure (swing)"))
+        _one_of(
+            "bos_sl_model",
+            self.bos_sl_model,
+            (
+                "Fib 1.0 (leg origin)",
+                "Broken swing level",
+                "Fib 0.886",
+                "Last confirmed swing",
+                "ATR",
+            ),
+        )
         if self.bos_max_days <= 0:
             raise ValueError("bos_max_days must be > 0 (Pine minval 0.25)")
         if self.bos_max_per_regime < 1:

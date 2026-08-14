@@ -21,7 +21,6 @@ came back as `1785888000` instead of `1785888000000`.
 
 import pandas as pd
 import pytest
-
 from services import chart_spec
 from services.structure_overlays import (
     GROUP_EXTERNAL,
@@ -53,10 +52,10 @@ def test_warmup_overlays_are_context_never_content(monkeypatch):
     """
     lo, hi = 10 * DAY, 20 * DAY
     built = [
-        _label(GROUP_EXTERNAL, 5 * DAY),        # wholly in the warm-up
-        _label(GROUP_EXTERNAL, 15 * DAY),       # inside
-        _hline(GROUP_EXTERNAL, 5 * DAY, 12 * DAY),   # starts in warm-up, REACHES IN
-        _hline(GROUP_EXTERNAL, 1 * DAY, 4 * DAY),    # wholly in the warm-up
+        _label(GROUP_EXTERNAL, 5 * DAY),  # wholly in the warm-up
+        _label(GROUP_EXTERNAL, 15 * DAY),  # inside
+        _hline(GROUP_EXTERNAL, 5 * DAY, 12 * DAY),  # starts in warm-up, REACHES IN
+        _hline(GROUP_EXTERNAL, 1 * DAY, 4 * DAY),  # wholly in the warm-up
     ]
     monkeypatch.setattr(chart_spec, "build_market_structure_overlays", lambda c: built)
     got = chart_spec._drill_structure([{"time": lo}], lo, hi)
@@ -92,15 +91,20 @@ def test_internal_content_is_demoted_to_historic(monkeypatch):
 
 def test_a_failed_replay_costs_the_page_its_structure_not_its_bars(monkeypatch):
     """A drill-down is about its BARS. Structure is a bonus and may never take the window down."""
+
     def boom(_):
         raise RuntimeError("engine exploded")
+
     monkeypatch.setattr(chart_spec, "build_market_structure_overlays", boom)
     assert chart_spec._drill_structure([{"time": 0}], 0, DAY) == []
 
 
 def test_no_candles_is_no_structure(monkeypatch):
-    monkeypatch.setattr(chart_spec, "build_market_structure_overlays",
-                        lambda c: pytest.fail("must not replay an empty window"))
+    monkeypatch.setattr(
+        chart_spec,
+        "build_market_structure_overlays",
+        lambda c: pytest.fail("must not replay an empty window"),
+    )
     assert chart_spec._drill_structure([], 0, DAY) == []
 
 
@@ -115,8 +119,9 @@ def test_the_unit_is_stated_not_assumed(monkeypatch, unit):
     1000 in a field called `time` that every consumer reads as ms.
     """
     idx = pd.DatetimeIndex(["2026-08-05 00:00", "2026-08-05 00:15"], name="time").as_unit(unit)
-    df = pd.DataFrame({"open": [1.0] * 2, "high": [2.0] * 2, "low": [0.5] * 2, "close": [1.5] * 2},
-                      index=idx)
+    df = pd.DataFrame(
+        {"open": [1.0] * 2, "high": [2.0] * 2, "low": [0.5] * 2, "close": [1.5] * 2}, index=idx
+    )
     monkeypatch.setattr(chart_spec.ohlc_fetcher, "get_ohlc", lambda *a, **k: df)
     rows = chart_spec._build_candles("XAUUSD", "2026-08-05", "2026-08-05", "M5", "python")
     assert [r["time"] for r in rows] == [1785888000000, 1785888900000]

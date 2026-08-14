@@ -75,8 +75,8 @@ from .types import SvpEvents
 # which is why liquidity is stale and this engine is not.
 _ASIA_SPEC = SessionSpec.from_pine("Asia", "0900-1800", "Asia/Tokyo")
 
-_SVP_ROWS = 50         # svpRows (mpc line 317) — fixed row count of the profile (was 100 pre-2026-07-08)
-_SVP_HISTORY = 2       # svpHistory input default (mpc line 224) — FIFO cap on kept POCs
+_SVP_ROWS = 50  # svpRows (mpc line 317) — fixed row count of the profile (was 100 pre-2026-07-08)
+_SVP_HISTORY = 2  # svpHistory input default (mpc line 224) — FIFO cap on kept POCs
 # Pine caps the replay at `math.min(svp_sLen - 1, 1490)`, i.e. the newest 1491 bars of the session.
 # On a 5m feed the Asia session is ~108 bars so this never bites, but it is ported for fidelity.
 _SVP_BAR_CAP = 1491
@@ -96,19 +96,29 @@ class SvpEngine:
     bar, and the sweep state/edge — all Pine-validated.
     """
 
-    def __init__(self, history: int = _SVP_HISTORY,
-                 session_engine: Optional[SessionEngine] = None) -> None:
+    def __init__(
+        self, history: int = _SVP_HISTORY, session_engine: Optional[SessionEngine] = None
+    ) -> None:
         # Compose a sessions engine tracking only Asia (the one window SVP needs). Injectable so a
         # consumer can share one sessions engine if it ever wants to.
-        self._sessions = (session_engine if session_engine is not None
-                          else SessionEngine(sessions=[_ASIA_SPEC]))
-        self._buffer: List[_Bar] = []               # this Asia session's bars, chronological
+        self._sessions = (
+            session_engine if session_engine is not None else SessionEngine(sessions=[_ASIA_SPEC])
+        )
+        self._buffer: List[_Bar] = []  # this Asia session's bars, chronological
         self._poc_px: "deque[float]" = deque(maxlen=history)  # recent POCs, FIFO (Pine svp_poc_px)
-        self._swept = False                          # Pine mv_swept
+        self._swept = False  # Pine mv_swept
 
     # ------------------------------------------------------------------
-    def update(self, index: int, timestamp_ms: int, open_: float, high: float, low: float,
-               close: float, volume: Optional[float]) -> SvpEvents:
+    def update(
+        self,
+        index: int,
+        timestamp_ms: int,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        volume: Optional[float],
+    ) -> SvpEvents:
         """Feed one closed bar: its index, UTC open time (epoch milliseconds, == Pine `time`), the
         bar's open/high/low/close, and its volume. Returns this bar's SvpEvents."""
         ev = SvpEvents()
@@ -119,14 +129,14 @@ class SvpEngine:
         asia_closed = next((r for r in sess.closed if r.name == "Asia"), None)
 
         # Buffer the session's bars. Start fresh on the open edge, append every in-session bar.
-        svp_new = "Asia" in sess.opened            # Pine svpNew — first bar of a new Asia session
+        svp_new = "Asia" in sess.opened  # Pine svpNew — first bar of a new Asia session
         if svp_new:
             self._buffer = []
         if sess.in_asia:
             self._buffer.append((open_, high, low, close, volume))
 
         svp_end = asia_closed is not None
-        if svp_end:                                  # Asia just closed → build the profile
+        if svp_end:  # Asia just closed → build the profile
             self._build_profile(index, asia_closed, (open_, high, low, close, volume), ev)
             self._buffer = []
 
@@ -136,9 +146,9 @@ class SvpEngine:
         if poc is not None and not self._swept and high >= poc and low <= poc:
             self._swept = True
             ev.confirmed = True
-        if svp_new:                                  # reset on the NEXT Asia OPEN (Pine svpNew, not
-            self._swept = False                      # svpEnd) — the confirmed/swept state now
-            ev.confirmed = False                     # persists all day until the next session opens
+        if svp_new:  # reset on the NEXT Asia OPEN (Pine svpNew, not
+            self._swept = False  # svpEnd) — the confirmed/swept state now
+            ev.confirmed = False  # persists all day until the next session opens
         ev.swept = self._swept
         return ev
 
@@ -149,18 +159,18 @@ class SvpEngine:
         current out-of-session bar, which Pine folds into the profile (quirk #1)."""
         svp_lo, svp_hi = rng.low, rng.high
         svp_range = svp_hi - svp_lo
-        if svp_range <= 0:                            # Pine `if svp_range > 0` guard (degenerate day)
+        if svp_range <= 0:  # Pine `if svp_range > 0` guard (degenerate day)
             return
 
         # profile_bars == the whole session plus the close bar, chronological; == svp_sLen entries.
         profile_bars = self._buffer + [close_bar]
-        svp_slen = index - rng.start_index + 1        # Pine bar_index - svp_startBar + 1
-        window = profile_bars[-min(svp_slen, _SVP_BAR_CAP):]   # newest 1491 bars (Pine cap)
+        svp_slen = index - rng.start_index + 1  # Pine bar_index - svp_startBar + 1
+        window = profile_bars[-min(svp_slen, _SVP_BAR_CAP) :]  # newest 1491 bars (Pine cap)
 
         row_up = [0.0] * _SVP_ROWS
         row_dn = [0.0] * _SVP_ROWS
         # Newest-first, matching Pine's b = 0 (close bar) → older; keep bull/bear separate (quirk #2).
-        for (o, h, l, c, v) in reversed(window):
+        for o, h, l, c, v in reversed(window):
             vol = v if v is not None else 0.0
             bull = c >= o
             r_lo = max(0, min(math.floor((l - svp_lo) / svp_range * _SVP_ROWS), _SVP_ROWS - 1))
@@ -177,12 +187,12 @@ class SvpEngine:
         poc_row = 0
         for r in range(_SVP_ROWS):
             rv = row_up[r] + row_dn[r]
-            if rv > max_vol:                          # strict > → first (lowest) row wins a tie
+            if rv > max_vol:  # strict > → first (lowest) row wins a tie
                 max_vol = rv
                 poc_row = r
 
         poc_px = svp_lo + (poc_row + 0.5) * (svp_range / _SVP_ROWS)
-        self._poc_px.append(poc_px)                   # deque(maxlen) == Pine shift-then-push FIFO
+        self._poc_px.append(poc_px)  # deque(maxlen) == Pine shift-then-push FIFO
         ev.formed = True
 
     # ------------------------------------------------------------------

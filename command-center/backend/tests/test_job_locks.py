@@ -10,19 +10,20 @@ scope sees it, and the other two do not.
 import time
 
 import pytest
-
 from services import lab_db
 
 
 def _strategy(strategy_id: str, runner: str) -> None:
-    lab_db.upsert_strategy({
-        "id": strategy_id,
-        "name": strategy_id,
-        "class_name": strategy_id,
-        "source_path": f"strategies/{strategy_id}",
-        "scanned_at": int(time.time()),
-        "runner": runner,
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": strategy_id,
+            "name": strategy_id,
+            "class_name": strategy_id,
+            "source_path": f"strategies/{strategy_id}",
+            "scanned_at": int(time.time()),
+            "runner": runner,
+        }
+    )
 
 
 def _run(run_id: str, runner: str, status: str = "running", **extra) -> None:
@@ -31,11 +32,18 @@ def _run(run_id: str, runner: str, status: str = "running", **extra) -> None:
     strategy_id = f"strat_{runner or 'legacy'}"
     _strategy(strategy_id, runner or "ninjatrader")
     data = {
-        "run_id": run_id, "strategy_id": strategy_id, "instrument": "XAUUSD.s",
-        "params": {}, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "status": status, "created_at": int(time.time()),
+        "run_id": run_id,
+        "strategy_id": strategy_id,
+        "instrument": "XAUUSD.s",
+        "params": {},
+        "bar_type": "Minute",
+        "bar_value": 15,
+        "start_date": "2025-01-01",
+        "end_date": "2025-06-01",
+        "commission_per_side": 0.0,
+        "slippage_ticks": 0,
+        "status": status,
+        "created_at": int(time.time()),
     }
     if runner is not None:
         data["runner"] = runner
@@ -46,13 +54,23 @@ def _run(run_id: str, runner: str, status: str = "running", **extra) -> None:
 def _optimization(opt_id: str, runner: str, status: str = "running") -> None:
     strategy_id = f"strat_{runner}"
     _strategy(strategy_id, runner)
-    lab_db.insert_optimization({
-        "optimization_id": opt_id, "strategy_id": strategy_id, "instrument": "XAUUSD.s",
-        "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "ruleset_id": None, "mode": "raw", "search_method": "native",
-        "param_grid": {}, "status": status, "estimated_runs": 4,
-    })
+    lab_db.insert_optimization(
+        {
+            "optimization_id": opt_id,
+            "strategy_id": strategy_id,
+            "instrument": "XAUUSD.s",
+            "start_date": "2025-01-01",
+            "end_date": "2025-06-01",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "ruleset_id": None,
+            "mode": "raw",
+            "search_method": "native",
+            "param_grid": {},
+            "status": status,
+            "estimated_runs": 4,
+        }
+    )
 
 
 ALL_SCOPES = ("nt8", "mt5", "python")
@@ -74,6 +92,7 @@ def _assert_only_scope_busy(busy_scope: str) -> None:
 
 # ── Backtests ─────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("scope", ALL_SCOPES)
 def test_running_backtest_locks_only_its_own_scope(fresh_db, scope):
     _run("r1", RUNNER_OF_SCOPE[scope])
@@ -89,6 +108,7 @@ def test_legacy_run_without_a_runner_falls_to_nt8(fresh_db):
 # `optimizations` has no runner column — the scope comes from the joined strategy. Without the
 # join every optimization would land in NT8's bucket and block NinjaTrader.
 
+
 @pytest.mark.parametrize("scope", ALL_SCOPES)
 def test_running_optimization_locks_only_its_own_scope(fresh_db, scope):
     _optimization("o1", RUNNER_OF_SCOPE[scope])
@@ -97,22 +117,35 @@ def test_running_optimization_locks_only_its_own_scope(fresh_db, scope):
 
 # ── Sweeps ────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("scope", ALL_SCOPES)
 def test_running_sweep_child_locks_only_its_own_scope(fresh_db, scope):
     runner = RUNNER_OF_SCOPE[scope]
     _strategy(f"strat_{runner}", runner)
-    lab_db.insert_run_sweep({
-        "run_id": "r1", "strategy_id": f"strat_{runner}",
-        "instrument": "XAUUSD.s", "params": {}, "bar_type": "Minute", "bar_value": 15,
-        "start_date": "2025-01-01", "end_date": "2025-06-01",
-        "commission_per_side": 0.0, "slippage_ticks": 0,
-        "status": "running", "created_at": int(time.time()),
-        "sweep_id": "s1", "source_run_id": None, "runner": runner,
-    })
+    lab_db.insert_run_sweep(
+        {
+            "run_id": "r1",
+            "strategy_id": f"strat_{runner}",
+            "instrument": "XAUUSD.s",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2025-01-01",
+            "end_date": "2025-06-01",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "status": "running",
+            "created_at": int(time.time()),
+            "sweep_id": "s1",
+            "source_run_id": None,
+            "runner": runner,
+        }
+    )
     _assert_only_scope_busy(scope)
 
 
 # ── Idle / finished ───────────────────────────────────────────────────────────
+
 
 def test_no_jobs_means_every_scope_is_idle(fresh_db):
     for scope in ALL_SCOPES:

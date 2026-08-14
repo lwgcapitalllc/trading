@@ -34,8 +34,8 @@ _ALGOS = Path(__file__).resolve().parent.parent
 _REPO = _ALGOS.parent
 sys.path.insert(0, str(_ALGOS / "shared"))
 
-import credentials as creds_mod      # noqa: E402
-import notify                        # noqa: E402
+import credentials as creds_mod  # noqa: E402
+import notify  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +57,7 @@ def _creds(monkeypatch, **values):
 
 # ── the two rooms ────────────────────────────────────────────────────────────────────────────
 
+
 def test_a_trade_goes_to_the_trades_chat(monkeypatch):
     _creds(monkeypatch, telegram_chat_id="-100trades", telegram_health_chat="-100health")
     assert notify.chat_for(notify.TRADE) == ("-100trades", True)
@@ -76,6 +77,7 @@ def test_the_two_rooms_are_not_the_same_room(monkeypatch):
 
 
 # ── the fallback, and why it is loud ─────────────────────────────────────────────────────────
+
 
 def test_an_unset_health_chat_falls_back_to_the_main_group(monkeypatch):
     """Delivery beats tidiness. An operator who has not made the second group yet still gets
@@ -108,6 +110,7 @@ def test_a_trade_never_falls_back_to_the_health_chat(monkeypatch):
 
 # ── overrides and refusals ───────────────────────────────────────────────────────────────────
 
+
 def test_a_bots_own_chat_wins(monkeypatch):
     """Per-bot routing from the instance config, which is what lets two bots on two accounts
     report into two different rooms."""
@@ -137,6 +140,7 @@ def test_the_health_key_has_a_registered_env_name():
 
 # ── the send path actually uses the routing ──────────────────────────────────────────────────
 
+
 class _FakeResponse:
     status_code = 200
     text = "{}"
@@ -149,8 +153,12 @@ class _FakeResponse:
 def test_the_sender_posts_to_the_kinds_chat(monkeypatch):
     """The resolver being right is worth nothing if the sender ignores it — which is precisely
     how `send_telegram` behaved before this change."""
-    _creds(monkeypatch, telegram_token="t", telegram_chat_id="-100trades",
-           telegram_health_chat="-100health")
+    _creds(
+        monkeypatch,
+        telegram_token="t",
+        telegram_chat_id="-100trades",
+        telegram_health_chat="-100health",
+    )
     seen = {}
 
     class _Req:
@@ -196,12 +204,12 @@ def _call_sites():
             continue
         for path in sorted(root.rglob("*.py")):
             if path.name == "notify.py":
-                continue            # the definitions and the docstring examples live here
+                continue  # the definitions and the docstring examples live here
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
             for i, line in enumerate(lines, 1):
                 if _SEND_CALL.search(line):
                     # A call can wrap; give the checker the statement, not the first line of it.
-                    yield path, i, "\n".join(lines[i - 1:i + 6])
+                    yield path, i, "\n".join(lines[i - 1 : i + 6])
 
 
 def test_the_sweep_actually_finds_call_sites():
@@ -211,7 +219,11 @@ def test_the_sweep_actually_finds_call_sites():
 
 
 def test_every_send_call_states_its_kind():
-    unrouted = [f"{p.relative_to(_REPO)}:{n}"
-                for p, n, text in _call_sites() if not _KIND_TOKEN.search(text)]
-    assert not unrouted, ("these Telegram sends do not say which room they belong in: "
-                          + ", ".join(unrouted))
+    unrouted = [
+        f"{p.relative_to(_REPO)}:{n}"
+        for p, n, text in _call_sites()
+        if not _KIND_TOKEN.search(text)
+    ]
+    assert not unrouted, "these Telegram sends do not say which room they belong in: " + ", ".join(
+        unrouted
+    )

@@ -30,7 +30,7 @@ _LIVE = _REPO / "algos" / "live"
 if str(_LIVE) not in sys.path:
     sys.path.insert(0, str(_LIVE))
 
-from ledger import DECISIONS, HEALTH, Ledger, _DECISION_EVENTS   # noqa: E402
+from ledger import _DECISION_EVENTS, DECISIONS, HEALTH, Ledger  # noqa: E402
 
 
 def _rows(path: Path) -> list[dict]:
@@ -44,21 +44,29 @@ def _today() -> str:
 
 
 def _streams(tmp_path: Path) -> tuple[Path, Path]:
-    return (tmp_path / f"decisions-{_today()}.jsonl",
-            tmp_path / f"health-{_today()}.jsonl")
+    return (tmp_path / f"decisions-{_today()}.jsonl", tmp_path / f"health-{_today()}.jsonl")
 
 
 # ── the split itself ─────────────────────────────────────────────────────────
 def test_trade_records_go_only_to_decisions(tmp_path):
     led = Ledger(tmp_path, "bot")
     led.bar(SimpleNamespace(l_stage=1), SimpleNamespace(time_ms=1), SimpleNamespace())
-    led.blocked(SimpleNamespace(dir="long", time_ms=2, edge=1.0, sos_bar=0,
-                                codes=[7], labels=["x"], reasons=["y"]))
+    led.blocked(
+        SimpleNamespace(
+            dir="long", time_ms=2, edge=1.0, sos_bar=0, codes=[7], labels=["x"], reasons=["y"]
+        )
+    )
     led.missed(SimpleNamespace(dir="short", time_ms=3))
-    led.trade_opened(ticket=1, direction="long", symbol="XAUUSD", lots=0.1,
-                     price=100.0, stop=99.0)
-    led.trade_closed(ticket=1, direction="long", symbol="XAUUSD", price=101.0,
-                     pnl_usd=10.0, r_multiple=1.0, reason="tp")
+    led.trade_opened(ticket=1, direction="long", symbol="XAUUSD", lots=0.1, price=100.0, stop=99.0)
+    led.trade_closed(
+        ticket=1,
+        direction="long",
+        symbol="XAUUSD",
+        price=101.0,
+        pnl_usd=10.0,
+        r_multiple=1.0,
+        reason="tp",
+    )
 
     dec, health = _streams(tmp_path)
     assert [r["kind"] for r in _rows(dec)] == ["bar", "blocked", "missed", "trade", "trade"]
@@ -77,7 +85,13 @@ def test_lifecycle_records_go_only_to_health(tmp_path):
     dec, health = _streams(tmp_path)
     assert _rows(dec) == [], "a process record leaked into the decision stream"
     assert [r.get("event") or r["kind"] for r in _rows(health)] == [
-        "startup", "mt5_link_lost", "rewarm", "halted", "shutdown", "pulse"]
+        "startup",
+        "mt5_link_lost",
+        "rewarm",
+        "halted",
+        "shutdown",
+        "pulse",
+    ]
 
 
 def test_order_events_are_decisions_because_they_are_about_a_setup(tmp_path):
@@ -111,16 +125,28 @@ def test_every_event_written_in_algos_live_is_classified():
     assert written, "found no ledger.event() calls at all — the pattern stopped matching"
 
     stale = _DECISION_EVENTS - written
-    assert not stale, (f"_DECISION_EVENTS routes {sorted(stale)}, which nothing in algos/live/ "
-                       f"writes any more")
+    assert not stale, (
+        f"_DECISION_EVENTS routes {sorted(stale)}, which nothing in algos/live/ writes any more"
+    )
 
     # Everything else is health by default, which is correct — but it has to be a CHOICE. The
     # health names are listed here so adding an event makes somebody name it in one of the two
     # places rather than discovering the routing later from a file that grew a stranger.
     known_health = {
-        "startup", "startup_failed", "shutdown", "version_mismatch", "warmed", "rewarm",
-        "bar_error", "loop_error", "mt5_link_lost", "mt5_link_restored",
-        "config_applied", "config_change_refused", "halted", "went_live",
+        "startup",
+        "startup_failed",
+        "shutdown",
+        "version_mismatch",
+        "warmed",
+        "rewarm",
+        "bar_error",
+        "loop_error",
+        "mt5_link_lost",
+        "mt5_link_restored",
+        "config_applied",
+        "config_change_refused",
+        "halted",
+        "went_live",
         # HEALTH rather than a decision, and the line is the usual one: it is about the
         # machinery correcting its own book-keeping, not about a setup. No order changes
         # because of it — the next one is merely sized off a number that is true.
@@ -166,7 +192,8 @@ def test_every_event_written_in_algos_live_is_classified():
     assert not unclassified, (
         f"unrouted ledger event(s): {sorted(unclassified)}. Add each to _DECISION_EVENTS in "
         f"algos/live/ledger.py if it is about a SETUP or an ORDER, or to `known_health` here "
-        f"if it is about the PROCESS.")
+        f"if it is about the PROCESS."
+    )
 
 
 # ── the silent-death detector ────────────────────────────────────────────────
@@ -183,7 +210,7 @@ def test_a_run_that_was_killed_reads_as_not_clean(tmp_path):
     ABSENCE of a closing record after the last startup, and only the next run can see it."""
     led = Ledger(tmp_path, "bot")
     led.event("startup")
-    led.pulse(link=True)          # ran for a while, then the process vanished
+    led.pulse(link=True)  # ran for a while, then the process vanished
 
     assert led.previous_run_was_clean() is False
     assert led.last_run_status()["event"] == "startup"
@@ -206,7 +233,7 @@ def test_a_torn_last_line_does_not_hide_the_record_before_it(tmp_path):
     led.event("shutdown", exit_code=0)
     _, health = _streams(tmp_path)
     with health.open("a", encoding="utf-8") as f:
-        f.write('{"ts": "2026-08-05T12:00:00+00:00", "kind": "pu')      # cut mid-write
+        f.write('{"ts": "2026-08-05T12:00:00+00:00", "kind": "pu')  # cut mid-write
 
     assert led.previous_run_was_clean() is True
 
@@ -215,8 +242,9 @@ def test_the_previous_run_is_found_in_an_earlier_days_file(tmp_path):
     """A bot started yesterday and killed overnight has its last record in yesterday's file.
     Reading only today's would report every morning's first start as "no history"."""
     (tmp_path / "health-2026-08-03.jsonl").write_text(
-        json.dumps({"ts": "2026-08-03T10:00:00+00:00", "kind": "event", "event": "startup"})
-        + "\n", encoding="utf-8")
+        json.dumps({"ts": "2026-08-03T10:00:00+00:00", "kind": "event", "event": "startup"}) + "\n",
+        encoding="utf-8",
+    )
     led = Ledger(tmp_path, "bot")
 
     assert led.previous_run_was_clean() is False

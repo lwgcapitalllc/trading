@@ -10,14 +10,14 @@ bot) that nothing in the repo imported. See algos/CLAUDE.md's Shared Components 
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Add engines/ to sys.path so we can import from trading/engines/market_structure/
 _ENGINES = Path(__file__).resolve().parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
-from market_structure import Bar, StructureEngine as _StructureEngine, StructureEvents
+from market_structure import Bar, StructureEvents
+from market_structure import StructureEngine as _StructureEngine
 
 
 class StructureEngine:

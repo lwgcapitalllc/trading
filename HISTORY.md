@@ -15,7 +15,63 @@ the other one did.
 
 ## Latest
 
-**Last reviewed:** 2026-08-14 (latest) — 🟢 **THE ECN SPREAD IS MEASURED AND ITS SENTINEL IS RETIRED — AFTER WAITING TWO WEEKS FOR A TERMINAL TO SIT STILL, NOT FOR ANYONE'S ATTENTION.** Aaron: *"My account has been logged into the ECN type for a couple days did you get everything you need? I think you wanted to check spread?"* The answer was no, and that was the whole blocker. `puprime_ecn` had carried `SPREAD_UNMEASURED` since 2026-08-06, and the live bot has traded that tier since 2026-08-12 — so **the account actually being traded was the one whose spread every backtest refused to charge.** `broker_facts.py --bot mpc_sos_fade_demo --history-days 6` read **3,033,270 ticks over 5 whole days**: median **$0.12** (12 points), p90 $0.12, p99 $0.18, max $0.19, min $0.11, across **all 23 traded hours**. `_SPREAD_XAUUSD_PUPRIME_ECN = 0.12` replaces the sentinel.
+### The bulk reformat, and the nine gates that could not answer (2026-08-14)
+
+The ratchet was meant to avoid a bulk pass. Aaron asked for one anyway — *"fix all the formatting"* — so
+`ruff format` + `ruff check --fix` ran over the tree: **392 files reformatted**, then **330 lint fixes**
+(76 unused imports, 45 f-strings with no placeholders, 221 import sorts). The 46 findings needing
+`--unsafe-fixes` were left alone; 24 of them are `function-uses-loop-variable`, a real bug class that
+deserves reading rather than an autofix.
+
+🔴 **Rule 22 was applied by RUNNING all 14 parity gates rather than by arguing that layout cannot change
+behaviour.** It cannot. That is precisely the argument a gate exists so nobody has to trust — and this
+repo has an incident for it already: `test_deploy_thread.py` went red on 2026-08-14 because ruff split
+`"🟢", "ONLINE"` across two lines and a source-reading test matched it as one literal. A formatter
+"cannot" change behaviour right up until the thing reading the source is a test.
+
+**Verdicts — 5 green, 1 red, 8 unable to run:**
+
+| Gate | Verdict | Bars compared |
+|---|---|---|
+| `market_structure` | 🟢 PASS | 8,905 — all 24 fields incl. 8 break-leg columns |
+| `rsi_divergence` | 🟢 PASS | 13,324 (green at both documented and lowered warmup) |
+| `session_volume_profile` | 🟢 PASS | 12,645 |
+| `candlesticks` | 🟢 PASS | 20,138 × 2 exports, 302,070 flag comparisons each |
+| `vwap` | 🟢 PASS | 6,883 |
+| `fibonacci` | 🔴 FAIL | 6,889 — Macro fields only, first mismatch bar 2632 |
+| `sessions` · `liquidity` | ⚠ stale export | London/NY fields only; Asia + kill zones match |
+| `order_blocks` · `fair_value_gaps` | ⚠ stale export | 0 — refused at header, slot count predates the re-port |
+| `equal_highs_lows` | ⚠ no export | 0 — `exports/` holds only a `.gitignore` |
+| `mpc_sos_fade` · `mpc_bleg` · `mpc_bos` | ⚠ no export | 0 — no strategy export exists on this machine |
+
+Only the five green engines kept their reformat. Everything else was reverted to HEAD, so the final
+commit is **424 files** and touches no ungated engine and no strategy — including the live one.
+
+🔴 **The finding is not the reformat, it is that 9 of 14 gates cannot be run on demand.** Exports are
+git-ignored scratch (`.gitignore` → `*VANTAGE_*.csv`), so **which engine you can gate depends on what
+happens to be sitting on that machine**, and a fresh clone can gate nothing at all. Rule 22 says a
+changed engine ships behind a passing gate; for most of this repo that gate is currently unavailable,
+which means the rule **blocks** work rather than gating it. A rule that cannot be satisfied gets
+skipped eventually, and the skip leaves no trace — the same failure mode as `--no-verify`. Where the
+exports live is now a real decision, not housekeeping.
+
+⚠ **"Pre-existing" was PROVEN, not assumed.** `fibonacci`, `sessions` and `liquidity` were each re-run
+against committed HEAD in a throwaway worktree and gave **byte-identical** output — same mismatch
+counts, same first mismatching bar. That exonerates the formatter completely and changes nothing about
+whether they may be committed. They may not. ⚠ **`sessions` and `liquidity` are the same root cause**
+(the 2026-07-31 London/NY re-sync, exports taken before it) and the diagnosis is corroborated rather
+than guessed: reconstructing the old `GMT-4` windows makes today's engine match its export on all 18
+fields with zero mismatches.
+
+⚠ **`regime/` and `news/` were reformatted with no parity gate at all** — they have no Pine source, so
+no `compare_*.py` can exist. Unit tests are the only gate they will ever have. That is a genuine
+structural exception, not a precedent.
+
+⚠ **Two harnesses print a bar count that OVERSTATES what they compared** — `compare_svp.py` and
+`compare_rsi_div.py` increment before the warmup `continue`, so they report bars *fed*. The real
+figures are `total - warmup`, and the table above uses those.
+
+**Last reviewed:** 2026-08-14 — 🟢 **THE ECN SPREAD IS MEASURED AND ITS SENTINEL IS RETIRED — AFTER WAITING TWO WEEKS FOR A TERMINAL TO SIT STILL, NOT FOR ANYONE'S ATTENTION.** Aaron: *"My account has been logged into the ECN type for a couple days did you get everything you need? I think you wanted to check spread?"* The answer was no, and that was the whole blocker. `puprime_ecn` had carried `SPREAD_UNMEASURED` since 2026-08-06, and the live bot has traded that tier since 2026-08-12 — so **the account actually being traded was the one whose spread every backtest refused to charge.** `broker_facts.py --bot mpc_sos_fade_demo --history-days 6` read **3,033,270 ticks over 5 whole days**: median **$0.12** (12 points), p90 $0.12, p99 $0.18, max $0.19, min $0.11, across **all 23 traded hours**. `_SPREAD_XAUUSD_PUPRIME_ECN = 0.12` replaces the sentinel.
 
 🟢 **THE REFUSAL NAMED ITS OWN RELEASE CONDITION, WHICH IS WHY THIS TOOK ONE COMMAND RATHER THAN AN INVESTIGATION.** The 2026-08-10 comment did not merely say *unmeasured* — it said *five minutes of one quiet Asian session, and the 22:00 UTC reopen is the only wide hour on this broker, so cover the reopen*. The new read covers it: **22:00 UTC median $0.16 / p99 $0.19**, the single wide hour against $0.12 everywhere else — **the same SHAPE Standard shows at a different level**, which is what a marked-up quote sitting on top of a raw one should look like. **A sentinel that records what would retire it is worth several that only record doubt.**
 

@@ -32,13 +32,13 @@ Access from Mac via SSH tunnel:
     curl http://localhost:8765/health
 """
 
-import sys
 import csv
 import json
+import subprocess
+import sys
+import threading
 import time
 import uuid
-import threading
-import subprocess
 from pathlib import Path
 
 try:
@@ -48,21 +48,22 @@ except ImportError:
     sys.exit(1)
 
 SCRIPT_DIR = Path(__file__).parent
-PORT       = 8765
-NT8_DOCS   = Path.home() / "Documents" / "NinjaTrader 8"
-NT8_LOG    = NT8_DOCS / "log"
+PORT = 8765
+NT8_DOCS = Path.home() / "Documents" / "NinjaTrader 8"
+NT8_LOG = NT8_DOCS / "log"
 
 app = Flask(__name__)
 
 _agent_log: list = []
-_jobs: dict      = {}   # job_id → job dict
-_lock            = threading.Lock()
+_jobs: dict = {}  # job_id → job dict
+_lock = threading.Lock()
 
 
 # ── Logging helpers ───────────────────────────────────────────────────────────
 
+
 def _alog(msg: str):
-    ts    = time.strftime("%H:%M:%S")
+    ts = time.strftime("%H:%M:%S")
     entry = f"[{ts}] {msg}"
     with _lock:
         _agent_log.append(entry)
@@ -72,7 +73,7 @@ def _alog(msg: str):
 
 
 def _jlog(job_id: str, msg: str):
-    ts    = time.strftime("%H:%M:%S")
+    ts = time.strftime("%H:%M:%S")
     entry = f"[{ts}] {msg}"
     _alog(f"[{job_id[:8]}] {msg}")
     with _lock:
@@ -91,21 +92,23 @@ def _jupdate(job_id: str, **kwargs):
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 
+
 @app.after_request
 def _cors(response):
-    response.headers["Access-Control-Allow-Origin"]  = "*"
+    response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
 
 @app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
-@app.route("/<path:path>",             methods=["OPTIONS"])
+@app.route("/<path:path>", methods=["OPTIONS"])
 def _options(path):
     return "", 204
 
 
 # ── Observability ─────────────────────────────────────────────────────────────
+
 
 @app.route("/health")
 def health():
@@ -116,6 +119,7 @@ def health():
 def _enum_window_titles() -> list[str]:
     """Enumerate top-level window titles via raw ctypes — no COM, no pywinauto."""
     import ctypes
+
     titles: list[str] = []
     buf = ctypes.create_unicode_buffer(512)
 
@@ -137,7 +141,9 @@ def nt_health():
     try:
         out = subprocess.check_output(
             ["tasklist", "/FI", "IMAGENAME eq NinjaTrader.exe", "/NH"],
-            text=True, timeout=10, stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+            stderr=subprocess.DEVNULL,
         )
         result["nt8_running"] = "NinjaTrader.exe" in out
     except Exception as e:
@@ -171,9 +177,9 @@ def nt_compile_status():
             elif "compilation succeeded" in ll or "compile succeeded" in ll:
                 last_ok = line.strip()
                 break
-        result["ok"]     = len(errors) == 0 and last_ok is not None
+        result["ok"] = len(errors) == 0 and last_ok is not None
         result["errors"] = errors
-        result["at"]     = last_ok
+        result["at"] = last_ok
     except Exception as e:
         result["errors"] = [str(e)]
     return jsonify(result)
@@ -202,7 +208,7 @@ def agent_log():
 
 # ── Strategy file management ──────────────────────────────────────────────────
 
-STRATEGIES_DIR   = NT8_DOCS / "bin" / "Custom" / "Strategies"
+STRATEGIES_DIR = NT8_DOCS / "bin" / "Custom" / "Strategies"
 MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — NinjaScript files are typically 5–30 KB
 
 
@@ -219,11 +225,12 @@ def _is_locked(filepath: Path) -> bool:
 def _file_info(p: Path, platform: str = "NT8") -> dict:
     st = p.stat()
     import datetime
+
     return {
-        "filename":    p.name,
-        "size_bytes":  st.st_size,
+        "filename": p.name,
+        "size_bytes": st.st_size,
         "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(),
-        "platform":    platform,
+        "platform": platform,
     }
 
 
@@ -257,9 +264,11 @@ def upload_strategy_file(filename):
         if not overwrite:
             return jsonify({"error": "File already exists", "filename": filename}), 409
         if _is_locked(dest):
-            return jsonify({
-                "error": "File is in use by NT8. Stop the running strategy or close it from charts before redeploying."
-            }), 423
+            return jsonify(
+                {
+                    "error": "File is in use by NT8. Stop the running strategy or close it from charts before redeploying."
+                }
+            ), 423
 
     dest.write_bytes(content)
     _alog(f"Uploaded {filename} ({len(content)} bytes, overwrite={overwrite})")
@@ -276,9 +285,11 @@ def delete_strategy_file(filename):
         return jsonify({"error": "File not found"}), 404
 
     if _is_locked(dest):
-        return jsonify({
-            "error": "File is in use by NT8. Stop the running strategy or close it from charts first."
-        }), 423
+        return jsonify(
+            {
+                "error": "File is in use by NT8. Stop the running strategy or close it from charts first."
+            }
+        ), 423
 
     dest.unlink()
     _alog(f"Deleted {filename}")
@@ -287,7 +298,7 @@ def delete_strategy_file(filename):
 
 # ── Compile (pywinauto F5) ────────────────────────────────────────────────────
 
-_compile_jobs: dict = {}   # compile_job_id → result dict
+_compile_jobs: dict = {}  # compile_job_id → result dict
 
 
 def _run_compile(compile_job_id: str):
@@ -309,8 +320,10 @@ def _run_compile(compile_job_id: str):
         si.lpDesktop = "winsta0\\default"
         proc = subprocess.Popen(
             [sys.executable, "-u", str(runner)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
             startupinfo=si,
         )
         for line in proc.stdout:
@@ -329,12 +342,14 @@ def _run_compile(compile_job_id: str):
         status = "failed"
         errors.append(f"Runner launch failed: {e}")
 
-    _compile_jobs[compile_job_id].update({
-        "status": status,
-        "errors": errors,
-        "warnings": warnings,
-        "completed_at": time.time(),
-    })
+    _compile_jobs[compile_job_id].update(
+        {
+            "status": status,
+            "errors": errors,
+            "warnings": warnings,
+            "completed_at": time.time(),
+        }
+    )
     _alog(f"Compile job {compile_job_id[:8]}: {status} ({len(errors)} errors)")
 
 
@@ -363,6 +378,7 @@ def compile_status(compile_job_id):
 
 # ── Job control ───────────────────────────────────────────────────────────────
 
+
 @app.route("/native-optimize", methods=["POST"])
 def start_native_optimize():
     """
@@ -372,12 +388,12 @@ def start_native_optimize():
     of a flat params dict.  job_id is required; the runner switches SA to
     Optimization mode and executes the full param grid in one NT8 pass.
     """
-    spec   = request.get_json(silent=True) or {}
+    spec = request.get_json(silent=True) or {}
     job_id = spec.get("job_id")
     if not job_id:
         return jsonify({"error": "job_id required"}), 400
     required = ["strategy_class", "instrument", "start_date", "end_date"]
-    missing  = [k for k in required if k not in spec]
+    missing = [k for k in required if k not in spec]
     if missing:
         return jsonify({"error": f"Missing fields: {missing}"}), 400
     if not spec.get("param_ranges"):
@@ -386,15 +402,15 @@ def start_native_optimize():
         if job_id in _jobs and _jobs[job_id]["status"] == "running":
             return jsonify({"error": "Job already running"}), 409
         _jobs[job_id] = {
-            "job_id":     job_id,
-            "status":     "running",
-            "pct":        0,
-            "message":    "Starting native optimizer...",
+            "job_id": job_id,
+            "status": "running",
+            "pct": 0,
+            "message": "Starting native optimizer...",
             "started_at": time.time(),
             "updated_at": time.time(),
-            "log":        [],
-            "result":     None,
-            "error":      None,
+            "log": [],
+            "result": None,
+            "error": None,
         }
     _alog(f"Native opt job {job_id} submitted: {spec['strategy_class']} on {spec['instrument']}")
     threading.Thread(target=_run_native_opt_job, args=(job_id, spec), daemon=True).start()
@@ -428,27 +444,27 @@ def start_native_walkforward():
     wf_windows (default 5), oos_pct (default 30).
     All params are run as fixed values — no re-optimization per IS window.
     """
-    spec   = request.get_json(silent=True) or {}
+    spec = request.get_json(silent=True) or {}
     job_id = spec.get("job_id")
     if not job_id:
         return jsonify({"error": "job_id required"}), 400
     required = ["strategy_class", "instrument", "start_date", "end_date"]
-    missing  = [k for k in required if k not in spec]
+    missing = [k for k in required if k not in spec]
     if missing:
         return jsonify({"error": f"Missing fields: {missing}"}), 400
     with _lock:
         if job_id in _jobs and _jobs[job_id]["status"] == "running":
             return jsonify({"error": "Job already running"}), 409
         _jobs[job_id] = {
-            "job_id":     job_id,
-            "status":     "running",
-            "pct":        0,
-            "message":    "Starting native walk-forward...",
+            "job_id": job_id,
+            "status": "running",
+            "pct": 0,
+            "message": "Starting native walk-forward...",
             "started_at": time.time(),
             "updated_at": time.time(),
-            "log":        [],
-            "result":     None,
-            "error":      None,
+            "log": [],
+            "result": None,
+            "error": None,
         }
     _alog(f"Native WF job {job_id} submitted: {spec['strategy_class']} on {spec['instrument']}")
     threading.Thread(target=_run_native_wf_job, args=(job_id, spec), daemon=True).start()
@@ -475,27 +491,27 @@ def native_wf_results(job_id):
 
 @app.route("/backtest", methods=["POST"])
 def start_backtest():
-    spec   = request.get_json(silent=True) or {}
+    spec = request.get_json(silent=True) or {}
     job_id = spec.get("job_id")
     if not job_id:
         return jsonify({"error": "job_id required"}), 400
     required = ["strategy_class", "instrument", "start_date", "end_date"]
-    missing  = [k for k in required if k not in spec]
+    missing = [k for k in required if k not in spec]
     if missing:
         return jsonify({"error": f"Missing fields: {missing}"}), 400
     with _lock:
         if job_id in _jobs and _jobs[job_id]["status"] == "running":
             return jsonify({"error": "Job already running"}), 409
         _jobs[job_id] = {
-            "job_id":     job_id,
-            "status":     "running",
-            "pct":        0,
-            "message":    "Starting...",
+            "job_id": job_id,
+            "status": "running",
+            "pct": 0,
+            "message": "Starting...",
             "started_at": time.time(),
             "updated_at": time.time(),
-            "log":        [],
-            "result":     None,
-            "error":      None,
+            "log": [],
+            "result": None,
+            "error": None,
         }
     _alog(f"Job {job_id} submitted: {spec['strategy_class']} on {spec['instrument']}")
     threading.Thread(target=_run_job, args=(job_id, spec), daemon=True).start()
@@ -557,32 +573,36 @@ def cancel_job(job_id):
 
 # ── Background job runner ─────────────────────────────────────────────────────
 
+
 def _run_job(job_id: str, spec: dict):
-    runner    = str(SCRIPT_DIR / "nt8_backtest_runner.py")
-    spec_dir  = NT8_DOCS / "lab_results" / job_id
+    runner = str(SCRIPT_DIR / "nt8_backtest_runner.py")
+    spec_dir = NT8_DOCS / "lab_results" / job_id
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / "job_spec.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
 
-    cmd = [sys.executable, "-u", runner,
-           "--job-id", job_id,
-           "--job-spec", str(spec_path)]
+    cmd = [sys.executable, "-u", runner, "--job-id", job_id, "--job-spec", str(spec_path)]
     _jlog(job_id, f"CMD: {' '.join(cmd)}")
     _jupdate(job_id, pct=5, message="Runner started")
 
     # Heartbeat — keeps updated_at fresh so the backend can detect stalls
     stop_hb = threading.Event()
+
     def _heartbeat():
         while not stop_hb.wait(30):
             with _lock:
                 if _jobs.get(job_id, {}).get("status") == "running":
                     _jobs[job_id]["updated_at"] = time.time()
+
     threading.Thread(target=_heartbeat, daemon=True).start()
 
     try:
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
         for line in proc.stdout:
             line = line.rstrip()
@@ -590,16 +610,17 @@ def _run_job(job_id: str, spec: dict):
             if line.startswith("PCT:"):
                 try:
                     parts = line.split(":", 2)
-                    pct   = int(parts[1])
-                    msg   = parts[2] if len(parts) > 2 else ""
+                    pct = int(parts[1])
+                    msg = parts[2] if len(parts) > 2 else ""
                     _jupdate(job_id, pct=pct, message=msg)
                 except Exception:
                     pass
         proc.wait()
     except Exception as e:
         stop_hb.set()
-        _jupdate(job_id, status="failed_runtime", error=str(e),
-                 message=f"Runner launch failed: {e}")
+        _jupdate(
+            job_id, status="failed_runtime", error=str(e), message=f"Runner launch failed: {e}"
+        )
         _alog(f"Job {job_id} launch error: {e}")
         return
     finally:
@@ -621,33 +642,45 @@ def _run_job(job_id: str, spec: dict):
 
 def _run_native_wf_job(job_id: str, spec: dict):
     """Background runner for /native-walkforward — same pattern as _run_native_opt_job."""
-    runner    = str(SCRIPT_DIR / "nt8_backtest_runner.py")
-    spec_dir  = NT8_DOCS / "lab_results" / job_id
+    runner = str(SCRIPT_DIR / "nt8_backtest_runner.py")
+    spec_dir = NT8_DOCS / "lab_results" / job_id
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / "job_spec.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
 
-    cmd = [sys.executable, "-u", runner,
-           "--mode", "native-walkforward",
-           "--job-id", job_id,
-           "--job-spec", str(spec_path)]
+    cmd = [
+        sys.executable,
+        "-u",
+        runner,
+        "--mode",
+        "native-walkforward",
+        "--job-id",
+        job_id,
+        "--job-spec",
+        str(spec_path),
+    ]
     _jlog(job_id, f"CMD: {' '.join(cmd)}")
     _jupdate(job_id, pct=5, message="Native walk-forward started")
 
     stop_hb = threading.Event()
+
     def _heartbeat():
         while not stop_hb.wait(30):
             with _lock:
                 if _jobs.get(job_id, {}).get("status") == "running":
                     _jobs[job_id]["updated_at"] = time.time()
+
     threading.Thread(target=_heartbeat, daemon=True).start()
 
     try:
         si = subprocess.STARTUPINFO()
         si.lpDesktop = "winsta0\\default"
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
             startupinfo=si,
         )
         for line in proc.stdout:
@@ -656,8 +689,8 @@ def _run_native_wf_job(job_id: str, spec: dict):
             if line.startswith("PCT:"):
                 try:
                     parts = line.split(":", 2)
-                    pct   = int(parts[1])
-                    msg   = parts[2] if len(parts) > 2 else ""
+                    pct = int(parts[1])
+                    msg = parts[2] if len(parts) > 2 else ""
                     _jupdate(job_id, pct=pct, message=msg)
                     if pct == 100:
                         wf_results_path_early = spec_dir / "native_wf_result.json"
@@ -669,8 +702,9 @@ def _run_native_wf_job(job_id: str, spec: dict):
         proc.wait()
     except Exception as e:
         stop_hb.set()
-        _jupdate(job_id, status="failed_runtime", error=str(e),
-                 message=f"Runner launch failed: {e}")
+        _jupdate(
+            job_id, status="failed_runtime", error=str(e), message=f"Runner launch failed: {e}"
+        )
         _alog(f"Native WF job {job_id} launch error: {e}")
         return
     finally:
@@ -691,33 +725,45 @@ def _run_native_wf_job(job_id: str, spec: dict):
 
 def _run_native_opt_job(job_id: str, spec: dict):
     """Background runner for /native-optimize — same pattern as _run_job."""
-    runner    = str(SCRIPT_DIR / "nt8_backtest_runner.py")
-    spec_dir  = NT8_DOCS / "lab_results" / job_id
+    runner = str(SCRIPT_DIR / "nt8_backtest_runner.py")
+    spec_dir = NT8_DOCS / "lab_results" / job_id
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / "job_spec.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
 
-    cmd = [sys.executable, "-u", runner,
-           "--mode", "native-optimize",
-           "--job-id", job_id,
-           "--job-spec", str(spec_path)]
+    cmd = [
+        sys.executable,
+        "-u",
+        runner,
+        "--mode",
+        "native-optimize",
+        "--job-id",
+        job_id,
+        "--job-spec",
+        str(spec_path),
+    ]
     _jlog(job_id, f"CMD: {' '.join(cmd)}")
     _jupdate(job_id, pct=5, message="Native optimizer started")
 
     stop_hb = threading.Event()
+
     def _heartbeat():
         while not stop_hb.wait(30):
             with _lock:
                 if _jobs.get(job_id, {}).get("status") == "running":
                     _jobs[job_id]["updated_at"] = time.time()
+
     threading.Thread(target=_heartbeat, daemon=True).start()
 
     try:
         si = subprocess.STARTUPINFO()
         si.lpDesktop = "winsta0\\default"
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
             startupinfo=si,
         )
         for line in proc.stdout:
@@ -726,8 +772,8 @@ def _run_native_opt_job(job_id: str, spec: dict):
             if line.startswith("PCT:"):
                 try:
                     parts = line.split(":", 2)
-                    pct   = int(parts[1])
-                    msg   = parts[2] if len(parts) > 2 else ""
+                    pct = int(parts[1])
+                    msg = parts[2] if len(parts) > 2 else ""
                     _jupdate(job_id, pct=pct, message=msg)
                     # Mark complete immediately when PCT:100 arrives and results
                     # file exists — don't wait for subprocess exit.  On Windows,
@@ -743,8 +789,9 @@ def _run_native_opt_job(job_id: str, spec: dict):
         proc.wait()
     except Exception as e:
         stop_hb.set()
-        _jupdate(job_id, status="failed_runtime", error=str(e),
-                 message=f"Runner launch failed: {e}")
+        _jupdate(
+            job_id, status="failed_runtime", error=str(e), message=f"Runner launch failed: {e}"
+        )
         _alog(f"Native opt job {job_id} launch error: {e}")
         return
     finally:
@@ -764,7 +811,7 @@ def _run_native_opt_job(job_id: str, spec: dict):
 
 
 def _classify_failure(job_id: str, log_text: str, returncode: int):
-    lt     = log_text.lower()
+    lt = log_text.lower()
     status = "failed_unknown"
     if "compile error" in lt or "compilation failed" in lt:
         status = "failed_compile"
@@ -781,15 +828,16 @@ def _classify_failure(job_id: str, log_text: str, returncode: int):
 
     # Extract the last ERROR: line from the log as the human-readable message
     error_lines = [l for l in log_text.splitlines() if "ERROR:" in l]
-    error_msg = error_lines[-1].split("ERROR:", 1)[-1].strip() if error_lines else f"Exit code {returncode}"
+    error_msg = (
+        error_lines[-1].split("ERROR:", 1)[-1].strip() if error_lines else f"Exit code {returncode}"
+    )
 
-    _jupdate(job_id, status=status,
-             message=status.replace("_", " ").title(),
-             error=error_msg)
+    _jupdate(job_id, status=status, message=status.replace("_", " ").title(), error=error_msg)
     _alog(f"Job {job_id} classified as {status}: {error_msg}")
 
 
 # ── Legacy endpoints ──────────────────────────────────────────────────────────
+
 
 @app.route("/status")
 def legacy_status():
@@ -815,6 +863,7 @@ def legacy_results():
 
 # ── Diagnostic endpoints ──────────────────────────────────────────────────────
 
+
 @app.route("/diagnose")
 def diagnose():
     try:
@@ -828,12 +877,13 @@ def diagnose():
 def dump_sa():
     try:
         from pywinauto import Desktop
+
         sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
         controls = []
         for el in sa.descendants():
             title = el.window_text()
-            aid   = el.element_info.automation_id
+            aid = el.element_info.automation_id
             ctype = el.element_info.control_type
             if title or aid:
                 controls.append({"title": title, "control_type": ctype, "auto_id": aid})
@@ -849,7 +899,7 @@ def select_and_dump():
         return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
     try:
         from pywinauto import Desktop
-        from pywinauto.keyboard import send_keys
+
         sa = Desktop(backend="uia").window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
         selector = sa.child_window(auto_id="NinjaScriptSelector")
@@ -861,13 +911,15 @@ def select_and_dump():
             if not item.exists(timeout=0.5):
                 raise Exception("not in SA subtree")
         except Exception:
-            item = Desktop(backend="uia").window(title=strategy, control_type="MenuItem", found_index=0)
+            item = Desktop(backend="uia").window(
+                title=strategy, control_type="MenuItem", found_index=0
+            )
         item.click_input()
         time.sleep(2.0)
         controls = []
         for el in sa.descendants():
             title = el.window_text()
-            aid   = el.element_info.automation_id
+            aid = el.element_info.automation_id
             ctype = el.element_info.control_type
             if title or aid:
                 controls.append({"title": title, "control_type": ctype, "auto_id": aid})
@@ -905,9 +957,9 @@ def export_trades():
                 pass
 
     try:
+        import pywinauto.mouse as _mouse
         from pywinauto import Desktop
         from pywinauto.keyboard import send_keys
-        import pywinauto.mouse as _mouse
 
         dt = Desktop(backend="uia")
         _dismiss_export_dialog(dt)
@@ -932,27 +984,26 @@ def export_trades():
         sa.set_focus()
         time.sleep(0.1)
         sa_rect = sa.rectangle()
-        rc_x = sa_rect.left + (sa_rect.right  - sa_rect.left) // 4
-        rc_y = sa_rect.top  + int((sa_rect.bottom - sa_rect.top) * 0.55)
+        rc_x = sa_rect.left + (sa_rect.right - sa_rect.left) // 4
+        rc_y = sa_rect.top + int((sa_rect.bottom - sa_rect.top) * 0.55)
 
         # Pass 1: open context menu, scan NT8 UIA tree for Export item coordinates.
         # The scan dismisses the WPF popup via focus events — that's expected.
         # We capture the absolute position before the menu closes.
         nt8 = sa.top_level_parent()
         export_coords = None
-        menu_items    = []
+        menu_items = []
         _mouse.right_click(coords=(rc_x, rc_y))
         for el in nt8.descendants():
             try:
                 txt = (el.window_text() or "").strip()
-                ct  = str(getattr(el.element_info, "control_type", ""))
+                ct = str(getattr(el.element_info, "control_type", ""))
                 if ct == "MenuItem" and txt:
                     menu_items.append(txt)
                     if txt.startswith("Export") and export_coords is None:
                         r = el.rectangle()
                         if r.width() > 5:
-                            export_coords = ((r.left + r.right) // 2,
-                                             (r.top  + r.bottom) // 2)
+                            export_coords = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
                             break
             except Exception:
                 pass
@@ -981,7 +1032,9 @@ def export_trades():
 
         # Step 5: find the most recently created CSV in Documents (NT8 default save location)
         docs = Path.home() / "Documents"
-        csvs = sorted(docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        csvs = sorted(
+            docs.glob("NinjaTrader Grid*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         if not csvs:
             return jsonify({"error": "No NinjaTrader Grid CSV found in Documents", "log": log})
         out_path = str(csvs[0])
@@ -992,11 +1045,19 @@ def export_trades():
 
         lines = content.splitlines()
         log.append(f"CSV lines: {len(lines)}")
-        return jsonify({"ok": True, "log": log, "total_lines": len(lines),
-                        "header": lines[0] if lines else "", "csv": content})
+        return jsonify(
+            {
+                "ok": True,
+                "log": log,
+                "total_lines": len(lines),
+                "header": lines[0] if lines else "",
+                "csv": content,
+            }
+        )
 
     except Exception as e:
         import traceback
+
         try:
             _dismiss_export_dialog(dt)
         except Exception:
@@ -1009,8 +1070,9 @@ def probe_display():
     """Click dmsDisplay, wait, dump what's visible in SA + Desktop. Use to confirm Trades item type."""
     try:
         from pywinauto import Desktop
-        dt  = Desktop(backend="uia")
-        sa  = dt.window(title_re=".*Strategy Analyzer.*")
+
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
         nt8 = sa.top_level_parent()
 
@@ -1019,7 +1081,13 @@ def probe_display():
         display_ctrl.click_input()
         time.sleep(1.2)
 
-        results = {"dmsDisplay_rect": rect, "found_in_sa": [], "found_in_nt8": [], "found_in_desktop": [], "new_windows": []}
+        results = {
+            "dmsDisplay_rect": rect,
+            "found_in_sa": [],
+            "found_in_nt8": [],
+            "found_in_desktop": [],
+            "new_windows": [],
+        }
 
         wins_before = {w.handle for w in dt.windows()}
 
@@ -1028,15 +1096,17 @@ def probe_display():
                 try:
                     txt = (el.window_text() or "").strip()
                     if txt:
-                        results[key].append({
-                            "text": txt,
-                            "control_type": str(getattr(el.element_info, "control_type", "?")),
-                            "auto_id": (el.automation_id() or "").strip(),
-                        })
+                        results[key].append(
+                            {
+                                "text": txt,
+                                "control_type": str(getattr(el.element_info, "control_type", "?")),
+                                "auto_id": (el.automation_id() or "").strip(),
+                            }
+                        )
                 except Exception:
                     pass
 
-        wins_after  = {w.handle for w in dt.windows()}
+        wins_after = {w.handle for w in dt.windows()}
         new_handles = wins_after - wins_before
         for hwnd in new_handles:
             try:
@@ -1046,11 +1116,15 @@ def probe_display():
                     try:
                         txt = (el.window_text() or "").strip()
                         if txt:
-                            popup_info["children"].append({
-                                "text": txt,
-                                "control_type": str(getattr(el.element_info, "control_type", "?")),
-                                "auto_id": (el.automation_id() or "").strip(),
-                            })
+                            popup_info["children"].append(
+                                {
+                                    "text": txt,
+                                    "control_type": str(
+                                        getattr(el.element_info, "control_type", "?")
+                                    ),
+                                    "auto_id": (el.automation_id() or "").strip(),
+                                }
+                            )
                     except Exception:
                         pass
                 results["new_windows"].append(popup_info)
@@ -1072,7 +1146,9 @@ def _switch_to_opt_mode_and_select(sa, strategy: str, dt) -> str:
     bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
     bt_combo.select("Optimize")
     time.sleep(0.5)
-    val_before_select = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
+    val_before_select = (
+        bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
+    )
     _alog(f"[diag] BacktestType after set (before strategy select): {val_before_select!r}")
 
     selector = sa.child_window(auto_id="NinjaScriptSelector")
@@ -1088,7 +1164,11 @@ def _switch_to_opt_mode_and_select(sa, strategy: str, dt) -> str:
     time.sleep(3.0)
 
     try:
-        val_after_select = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
+        val_after_select = (
+            bt_combo.selected_text()
+            if hasattr(bt_combo, "selected_text")
+            else bt_combo.window_text()
+        )
     except Exception:
         val_after_select = "read-failed"
     _alog(f"[diag] BacktestType after strategy select: {val_after_select!r}")
@@ -1108,6 +1188,7 @@ def combo_items():
         return jsonify({"error": "Pass ?aid=AutomationId"}), 400
     try:
         from pywinauto import Desktop
+
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
@@ -1132,10 +1213,17 @@ def test_bt_switch():
     Query params:
         ?value=Optimize   (default: Optimize)
     """
-    BT_AID   = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
-    BT_ORDER = ["Backtest", "Optimize", "WalkForward", "WalkForwardAnchored", "MultiObjective", "AiGenerate"]
-    target   = request.args.get("value", "Optimize")
-    log      = []
+    BT_AID = "StrategyAnalyzerTabPropertiesPropertyGridEditorBacktestType"
+    BT_ORDER = [
+        "Backtest",
+        "Optimize",
+        "WalkForward",
+        "WalkForwardAnchored",
+        "MultiObjective",
+        "AiGenerate",
+    ]
+    target = request.args.get("value", "Optimize")
+    log = []
 
     def L(msg):
         _alog(f"[test-bt-switch] {msg}")
@@ -1144,8 +1232,9 @@ def test_bt_switch():
     try:
         from pywinauto import Desktop
         from pywinauto.keyboard import send_keys
-        dt   = Desktop(backend="uia")
-        sa   = dt.window(title_re=".*Strategy Analyzer.*")
+
+        dt = Desktop(backend="uia")
+        sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
         ctrl = sa.child_window(auto_id=BT_AID, control_type="ComboBox")
         if not ctrl.exists(timeout=2.0):
@@ -1170,12 +1259,12 @@ def test_bt_switch():
             for item in items:
                 if item.window_text() == target:
                     item.click_input()
-                    L(f"A2 click_input SUCCESS")
+                    L("A2 click_input SUCCESS")
                     return jsonify({"winner": "expand+descendants", "log": log})
             try:
                 ctrl.collapse()
             except Exception:
-                ctrl.type_keys('{ESC}')
+                ctrl.type_keys("{ESC}")
             L("A2 item not found in descendants")
         except Exception as e:
             L(f"A2 FAIL: {e}")
@@ -1204,7 +1293,7 @@ def test_bt_switch():
                 if found:
                     return jsonify({"winner": "expand+all-windows", "log": log})
             try:
-                ctrl.type_keys('{ESC}')
+                ctrl.type_keys("{ESC}")
             except Exception:
                 pass
             L("A3 item not found in any window")
@@ -1216,14 +1305,14 @@ def test_bt_switch():
             idx = BT_ORDER.index(target)
             ctrl.click_input()
             time.sleep(0.2)
-            ctrl.type_keys('{F4}')
+            ctrl.type_keys("{F4}")
             time.sleep(0.4)
-            ctrl.type_keys('{HOME}')
+            ctrl.type_keys("{HOME}")
             time.sleep(0.1)
             for _ in range(idx):
-                ctrl.type_keys('{DOWN}')
+                ctrl.type_keys("{DOWN}")
                 time.sleep(0.08)
-            ctrl.type_keys('{ENTER}')
+            ctrl.type_keys("{ENTER}")
             time.sleep(0.3)
             L(f"A4 keyboard HOME+{idx}xDOWN+ENTER sent")
             return jsonify({"winner": "keyboard-ctrl", "log": log, "note": "check SA visually"})
@@ -1235,14 +1324,14 @@ def test_bt_switch():
             idx = BT_ORDER.index(target)
             ctrl.set_focus()
             time.sleep(0.2)
-            send_keys('{F4}')
+            send_keys("{F4}")
             time.sleep(0.4)
-            send_keys('{HOME}')
+            send_keys("{HOME}")
             time.sleep(0.1)
             for _ in range(idx):
-                send_keys('{DOWN}')
+                send_keys("{DOWN}")
                 time.sleep(0.08)
-            send_keys('{ENTER}')
+            send_keys("{ENTER}")
             time.sleep(0.3)
             L(f"A5 send_keys HOME+{idx}xDOWN+ENTER sent")
             return jsonify({"winner": "send_keys", "log": log, "note": "check SA visually"})
@@ -1269,6 +1358,7 @@ def opt_param_groups():
         return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
     try:
         from pywinauto import Desktop
+
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
@@ -1280,8 +1370,8 @@ def opt_param_groups():
         all_els = list(sa.descendants())
         entries = []
         for i, el in enumerate(all_els):
-            ct    = str(el.element_info.control_type)
-            aid   = el.element_info.automation_id or ""
+            ct = str(el.element_info.control_type)
+            aid = el.element_info.automation_id or ""
             title = el.window_text() or ""
             if ct in ("Group", "Edit", "ComboBox") or aid == "txtBox":
                 entries.append({"idx": i, "type": ct, "aid": aid, "title": title})
@@ -1291,13 +1381,31 @@ def opt_param_groups():
         i = 0
         while i < len(entries):
             e = entries[i]
-            if e["type"] == "Group" and e["title"] and e["title"] not in (
-                "General", "Misc", "Strategy parameters", "Data Series",
-                "Time frame", "Setup", "Historical fill processing",
-                "Optimize", "Order handling", "Order properties", "template",
+            if (
+                e["type"] == "Group"
+                and e["title"]
+                and e["title"]
+                not in (
+                    "General",
+                    "Misc",
+                    "Strategy parameters",
+                    "Data Series",
+                    "Time frame",
+                    "Setup",
+                    "Historical fill processing",
+                    "Optimize",
+                    "Order handling",
+                    "Order properties",
+                    "template",
+                )
             ):
-                row = {"label": e["title"], "idx": e["idx"], "txtbox_value": None,
-                       "combo_value": None, "combo_items": []}
+                row = {
+                    "label": e["title"],
+                    "idx": e["idx"],
+                    "txtbox_value": None,
+                    "combo_value": None,
+                    "combo_items": [],
+                }
                 # Peek ahead for the next Edit or ComboBox
                 j = i + 1
                 while j < len(entries) and entries[j]["type"] == "Group":
@@ -1342,18 +1450,25 @@ def backtest_type_check():
         return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
     try:
         from pywinauto import Desktop
+
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
 
         bt_combo = sa.child_window(auto_id=_BACKTEST_TYPE_AID, control_type="ComboBox")
         try:
-            initial = bt_combo.selected_text() if hasattr(bt_combo, "selected_text") else bt_combo.window_text()
+            initial = (
+                bt_combo.selected_text()
+                if hasattr(bt_combo, "selected_text")
+                else bt_combo.window_text()
+            )
         except Exception:
             initial = "read-failed"
 
         final = _switch_to_opt_mode_and_select(sa, strategy, dt)
-        return jsonify({"initial": initial, "after_set": "Optimization", "after_strategy_select": final})
+        return jsonify(
+            {"initial": initial, "after_set": "Optimization", "after_strategy_select": final}
+        )
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -1376,14 +1491,15 @@ def opt_set_ranges_dry_run():
             "param_display_names": {}   // optional explicit overrides
         }
     """
-    body     = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True) or {}
     strategy = body.get("strategy", "")
     if not strategy:
         return jsonify({"error": "Pass 'strategy' in body"}), 400
     try:
         import sys
+
         sys.path.insert(0, str(SCRIPT_DIR))
-        from nt8_backtest_runner import _build_opt_grid_map, _set_range_in_grid, _match_display_name
+        from nt8_backtest_runner import _build_opt_grid_map, _match_display_name, _set_range_in_grid
         from pywinauto import Desktop
 
         dt = Desktop(backend="uia")
@@ -1391,8 +1507,8 @@ def opt_set_ranges_dry_run():
         sa.wait("visible", timeout=10)
         _switch_to_opt_mode_and_select(sa, strategy, dt)
 
-        grid_map    = _build_opt_grid_map(sa)
-        explicit    = body.get("param_display_names", {})
+        grid_map = _build_opt_grid_map(sa)
+        explicit = body.get("param_display_names", {})
         param_ranges = body.get("param_ranges", {})
 
         results = []
@@ -1403,7 +1519,8 @@ def opt_set_ranges_dry_run():
                 lo, hi = rspec[0], rspec[-1]
                 step = round(rspec[1] - rspec[0], 8) if len(rspec) > 1 else 1
             else:
-                lo = hi = rspec; step = 1
+                lo = hi = rspec
+                step = 1
 
             ok = _set_range_in_grid(grid_map, name, lo, hi, step, explicit)
             # Read back the written value
@@ -1415,11 +1532,13 @@ def opt_set_ranges_dry_run():
                         written = grid_map[matched_key].window_text()
                     except Exception:
                         pass
-            results.append({"param": name, "ok": ok, "written": written,
-                            "expected": f"{lo};{hi};{step}"})
+            results.append(
+                {"param": name, "ok": ok, "written": written, "expected": f"{lo};{hi};{step}"}
+            )
 
-        return jsonify({"strategy": strategy, "grid_map_keys": list(grid_map.keys()),
-                        "results": results})
+        return jsonify(
+            {"strategy": strategy, "grid_map_keys": list(grid_map.keys()), "results": results}
+        )
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -1441,6 +1560,7 @@ def optimize_mode_dump():
         return jsonify({"error": "Pass ?strategy=StrategyName"}), 400
     try:
         from pywinauto import Desktop
+
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
@@ -1451,16 +1571,18 @@ def optimize_mode_dump():
         controls = []
         for el in sa.descendants():
             title = el.window_text()
-            aid   = el.element_info.automation_id
+            aid = el.element_info.automation_id
             ctype = str(el.element_info.control_type)
             if include_all or title or aid:
                 controls.append({"title": title, "control_type": ctype, "auto_id": aid})
-        return jsonify({
-            "strategy": strategy,
-            "backtest_type_after_select": final_bt,
-            "total": len(controls),
-            "controls": controls,
-        })
+        return jsonify(
+            {
+                "strategy": strategy,
+                "backtest_type_after_select": final_bt,
+                "total": len(controls),
+                "controls": controls,
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -1478,12 +1600,13 @@ def opt_param_click_dump():
         ?strategy=ORB   (required)
         ?param=ORMinutes  (required — the NinjaScript property name)
     """
-    strategy   = request.args.get("strategy", "")
+    strategy = request.args.get("strategy", "")
     param_name = request.args.get("param", "")
     if not strategy or not param_name:
         return jsonify({"error": "Pass ?strategy=X&param=Y"}), 400
     try:
         from pywinauto import Desktop
+
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=10)
@@ -1498,12 +1621,14 @@ def opt_param_click_dump():
         def _snap():
             out = {}
             for el in sa.descendants():
-                aid   = el.element_info.automation_id or ""
+                aid = el.element_info.automation_id or ""
                 title = el.window_text() or ""
                 ctype = str(el.element_info.control_type or "")
                 if aid or title:
                     out[f"{aid}||{title}||{ctype}"] = {
-                        "auto_id": aid, "title": title, "control_type": ctype
+                        "auto_id": aid,
+                        "title": title,
+                        "control_type": ctype,
                     }
             return out
 
@@ -1523,17 +1648,20 @@ def opt_param_click_dump():
         new_keys = set(after.keys()) - set(before.keys())
         new_controls = [after[k] for k in sorted(new_keys)]
         changed = [
-            after[k] for k in (set(after.keys()) & set(before.keys()))
+            after[k]
+            for k in (set(after.keys()) & set(before.keys()))
             if after[k]["title"] != before[k]["title"]
         ]
 
-        return jsonify({
-            "param_aid":      param_aid,
-            "new_controls":   new_controls,
-            "changed_titles": changed,
-            "total_before":   len(before),
-            "total_after":    len(after),
-        })
+        return jsonify(
+            {
+                "param_aid": param_aid,
+                "new_controls": new_controls,
+                "changed_titles": changed,
+                "total_before": len(before),
+                "total_after": len(after),
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -1546,18 +1674,21 @@ def export_grid_test():
     and return the first line of the resulting CSV so we can verify the format.
     """
     import glob as _glob
-    from pywinauto import mouse as _mouse, Desktop
-    y_pct     = float(request.args.get("y_pct", 15))
+
+    from pywinauto import Desktop
+    from pywinauto import mouse as _mouse
+
+    y_pct = float(request.args.get("y_pct", 15))
     do_export = request.args.get("do_export", "0") == "1"
     try:
         dt = Desktop(backend="uia")
         sa = dt.window(title_re=".*Strategy Analyzer.*")
         sa.wait("visible", timeout=5)
-        r  = sa.rectangle()
-        sw = r.right  - r.left
+        r = sa.rectangle()
+        sw = r.right - r.left
         sh = r.bottom - r.top
         cx = r.left + int(sw * 0.25)
-        cy = r.top  + int(sh * y_pct / 100)
+        cy = r.top + int(sh * y_pct / 100)
         _alog(f"[export-grid-test] right-click at ({cx},{cy}) = ({25}%x, {y_pct}%y)")
         _mouse.right_click(coords=(cx, cy))
         time.sleep(0.5)
@@ -1566,7 +1697,7 @@ def export_grid_test():
         export_coords = None
         for el in nt8.descendants():
             txt = (el.window_text() or "").strip()
-            ct  = str(getattr(el.element_info, "control_type", ""))
+            ct = str(getattr(el.element_info, "control_type", ""))
             if ct == "MenuItem" and txt:
                 er = el.rectangle()
                 items.append(f"{txt}@{er.width()}x{er.height()}")
@@ -1580,6 +1711,7 @@ def export_grid_test():
             _mouse.click(coords=export_coords)
             time.sleep(0.8)
             from pywinauto.keyboard import send_keys as _sk
+
             _sk("{ENTER}")
             time.sleep(0.3)
             _sk("{ENTER}")
@@ -1592,12 +1724,14 @@ def export_grid_test():
                         csv_first_line = f.readline().strip()
                 except Exception as e:
                     csv_first_line = f"read error: {e}"
-        return jsonify({
-            "click_pos": {"x": cx, "y": cy, "x_pct": 25, "y_pct": y_pct},
-            "menu_items": items,
-            "export_coords": export_coords,
-            "csv_first_line": csv_first_line,
-        })
+        return jsonify(
+            {
+                "click_pos": {"x": cx, "y": cy, "x_pct": 25, "y_pct": y_pct},
+                "menu_items": items,
+                "export_coords": export_coords,
+                "csv_first_line": csv_first_line,
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)})
 

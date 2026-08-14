@@ -18,7 +18,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 from services import strategy_import
 
 
@@ -30,21 +29,25 @@ def _write_pkg(root: Path, name: str, default: str) -> Path:
     pkg.mkdir(parents=True, exist_ok=True)
     (root / "strategies" / "__init__.py").touch()
     (root / "strategies" / "python" / "__init__.py").touch()
-    (pkg / "config.py").write_text(textwrap.dedent(f"""
+    (pkg / "config.py").write_text(
+        textwrap.dedent(f"""
         from dataclasses import dataclass
 
         @dataclass
         class Cfg:
             mode: str = {default!r}
-    """))
-    (pkg / "__init__.py").write_text(textwrap.dedent(f"""
+    """)
+    )
+    (pkg / "__init__.py").write_text(
+        textwrap.dedent(f"""
         from .config import Cfg
 
         class Strat:
             pass
 
         LAB_STRATEGY = {{"name": "{name}", "config": Cfg, "strategy": Strat}}
-    """))
+    """)
+    )
     return pkg
 
 
@@ -71,7 +74,9 @@ def _clean_modules():
     sys.path[:] = path_before
 
 
-def test_an_edited_default_reaches_the_scan_even_though_the_module_was_already_imported(tmp_path, monkeypatch):
+def test_an_edited_default_reaches_the_scan_even_though_the_module_was_already_imported(
+    tmp_path, monkeypatch
+):
     """THE REGRESSION. Watched red against the cached-import version, where the stored default came
     back "Off" — the exact symptom Aaron reported: the Run modal offering a value config.py no
     longer contained."""
@@ -84,7 +89,9 @@ def test_an_edited_default_reaches_the_scan_even_though_the_module_was_already_i
     assert sys.modules["strategies.python.probe_strat.config"].Cfg().mode == "Off"
 
     # The edit on disk that must reach the lab.
-    (pkg / "config.py").write_text((pkg / "config.py").read_text().replace("'Off'", "'Before TP1 only'"))
+    (pkg / "config.py").write_text(
+        (pkg / "config.py").read_text().replace("'Off'", "'Before TP1 only'")
+    )
 
     strategy_import.purge_strategy_modules()
     row, err = strategy_scanner._parse_python_package(pkg, tmp_path)
@@ -107,8 +114,9 @@ def test_the_hash_and_the_defaults_describe_the_same_version(tmp_path):
     after, _ = strategy_scanner._parse_python_package(pkg, tmp_path)
 
     assert after["source_hash"] != before["source_hash"], "the hash must move when the file does"
-    assert after["default_params"]["mode"] != before["default_params"]["mode"], \
+    assert after["default_params"]["mode"] != before["default_params"]["mode"], (
         "and so must the defaults — a moved hash beside a frozen default is the self-sealing bug"
+    )
 
 
 def test_purge_drops_the_whole_namespace_not_one_package(tmp_path):
@@ -139,9 +147,9 @@ def test_purging_does_not_break_references_already_held(tmp_path):
 
     strategy_import.purge_strategy_modules()
 
-    assert held().mode == "Off"          # the object still works
+    assert held().mode == "Off"  # the object still works
     fresh = strategy_import.import_strategy_package("probe_live", tmp_path)
-    assert fresh.LAB_STRATEGY["config"] is not held   # and the next import is genuinely new
+    assert fresh.LAB_STRATEGY["config"] is not held  # and the next import is genuinely new
 
 
 def test_purging_an_unimported_namespace_is_a_no_op():

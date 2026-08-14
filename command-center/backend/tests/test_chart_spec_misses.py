@@ -21,8 +21,12 @@ _CANDLES = [{"time": _T0 + i * 900_000, "close": 100.0} for i in range(10)]
 
 def _row(t_off, label, *, near=True, met=3, direction="Long", edge=99.0, met_lines=None):
     return {
-        "time_ms": _T0 + t_off * 900_000, "direction": direction, "edge": edge,
-        "met": met, "of": 3, "near": near,
+        "time_ms": _T0 + t_off * 900_000,
+        "direction": direction,
+        "edge": edge,
+        "met": met,
+        "of": 3,
+        "near": near,
         "met_lines": met_lines if met_lines is not None else ["SOS — confirmed"],
         "reasons": [{"label": label, "reason": f"why: {label}"}],
     }
@@ -40,8 +44,18 @@ def test_no_file_means_no_misses(tmp_path):
 
 
 def test_score_and_met_lines_reach_the_chart(tmp_path):
-    d = _write(tmp_path, [_row(1, "Never filled", met=3, direction="Short",
-                               met_lines=["Arm — Sweep · Day Low", "SOS — confirmed"])])
+    d = _write(
+        tmp_path,
+        [
+            _row(
+                1,
+                "Never filled",
+                met=3,
+                direction="Short",
+                met_lines=["Arm — Sweep · Day Low", "SOS — confirmed"],
+            )
+        ],
+    )
     out, _ = _build_misses(d, _CANDLES)
     assert len(out) == 1
     assert out[0]["dir"] == "short" and (out[0]["met"], out[0]["of"]) == (3, 3)
@@ -53,12 +67,15 @@ def test_noise_list_is_the_labels_that_never_appear_on_a_near_miss(tmp_path):
     """This is what reproduces the Pine's "Near misses only" default. A label earns its place on
     the chart's opening view by appearing on at least ONE miss the strategy called near; nothing
     here knows or cares which label that is."""
-    d = _write(tmp_path, [
-        _row(1, "No retrace", near=False, met=2),
-        _row(2, "No retrace", near=False, met=2),
-        _row(3, "Never filled", near=True),
-        _row(4, "Final hour", near=True),
-    ])
+    d = _write(
+        tmp_path,
+        [
+            _row(1, "No retrace", near=False, met=2),
+            _row(2, "No retrace", near=False, met=2),
+            _row(3, "Never filled", near=True),
+            _row(4, "Final hour", near=True),
+        ],
+    )
     out, noise = _build_misses(d, _CANDLES)
     assert len(out) == 4
     assert noise == ["No retrace"]
@@ -68,8 +85,10 @@ def test_a_label_seen_on_even_one_near_miss_is_not_noise(tmp_path):
     """A reason is noise only if the strategy NEVER flagged it as worth looking at. One near
     miss is enough to keep it in the opening view — hiding a reason that sometimes matters is a
     worse failure than showing one that usually doesn't."""
-    d = _write(tmp_path, [_row(1, "No FVG in zone", near=False, met=2),
-                          _row(2, "No FVG in zone", near=True, met=2)])
+    d = _write(
+        tmp_path,
+        [_row(1, "No FVG in zone", near=False, met=2), _row(2, "No FVG in zone", near=True, met=2)],
+    )
     _, noise = _build_misses(d, _CANDLES)
     assert noise == []
 
@@ -77,10 +96,19 @@ def test_a_label_seen_on_even_one_near_miss_is_not_noise(tmp_path):
 def test_near_defaults_to_true_on_a_record_that_predates_the_flag(tmp_path):
     """A file written before `near` existed must not have every one of its reasons filed as
     noise and hidden on open — an old run would look like it had no misses at all."""
-    d = _write(tmp_path, [{
-        "time_ms": _T0 + 900_000, "direction": "Long", "edge": 99.0, "met": 3, "of": 3,
-        "reasons": [{"label": "Never filled", "reason": "x"}],
-    }])
+    d = _write(
+        tmp_path,
+        [
+            {
+                "time_ms": _T0 + 900_000,
+                "direction": "Long",
+                "edge": 99.0,
+                "met": 3,
+                "of": 3,
+                "reasons": [{"label": "Never filled", "reason": "x"}],
+            }
+        ],
+    )
     out, noise = _build_misses(d, _CANDLES)
     assert out[0]["near"] is True and noise == []
 

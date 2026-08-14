@@ -64,9 +64,7 @@ class BarSource:
             bars = resample_up(base_bars, target_min, base_min)
         return _slice(bars, start_date, end_date)
 
-    def _load_base(
-        self, symbol: str, base_tf: str, start_date: str, end_date: str
-    ) -> pd.DataFrame:
+    def _load_base(self, symbol: str, base_tf: str, start_date: str, end_date: str) -> pd.DataFrame:
         """Cache-first base-bar load. Fetches only the sub-ranges of [start, end] that are not
         already recorded as fetched, merges them into the cache, and returns the whole file.
 
@@ -124,9 +122,7 @@ class BarSource:
 _MAX_CLOSURE_DAYS = 4
 
 
-def covered_spans(
-    fetched: pd.DataFrame, gap_start: str, gap_end: str
-) -> list[tuple[str, str]]:
+def covered_spans(fetched: pd.DataFrame, gap_start: str, gap_end: str) -> list[tuple[str, str]]:
     """The date ranges this fetch may honestly claim to have covered — DESCRIBING the bars that
     came back, never the window that was asked for.
 

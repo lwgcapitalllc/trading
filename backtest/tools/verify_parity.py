@@ -23,6 +23,7 @@ be silently skipped as if it were warmup.
 
 Exit 0 = every applicable check green. Exit 1 = at least one real drift (or an error).
 """
+
 from __future__ import annotations
 
 import csv
@@ -47,18 +48,31 @@ _ROOT = Path(__file__).resolve().parents[2]
 # only landed 2026-07-25, so every older A+ export would silently stop being checked.
 _CHECKS: List[Tuple[str, str, str, str, List[str]]] = [
     ("market_structure", "engines/market_structure/tools/compare_tradingview.py", "px_ash", "", []),
-    ("order_blocks",     "engines/order_blocks/tools/compare_ob.py",              "px_ob_bull_count", "", []),
-    ("fibonacci",        "engines/fibonacci/tools/compare_fib.py",                "px_fib_active", "", []),
-    ("fair_value_gaps",  "engines/fair_value_gaps/tools/compare_fvg.py",          "px_fvg_count", "", []),
-    ("rsi_divergence",   "engines/rsi_divergence/tools/compare_rsi_div.py",       "px_div_rsi", "", []),
-    ("equal_highs_lows", "engines/equal_highs_lows/tools/compare_eq.py",          "px_eq_tol", "", []),
-    ("liquidity",        "engines/liquidity/tools/compare_liquidity.py",          "px_pdh", "", []),
-    ("sessions",         "engines/sessions/tools/compare_sessions.py",            "px_in_asia", "", []),
-    ("vwap",             "engines/vwap/tools/compare_vwap.py",                    "px_vwap", "", []),
-    ("session_volume_profile", "engines/session_volume_profile/tools/compare_svp.py", "px_svp_poc", "", []),
-    ("strategy A+ (bot)", "strategies/python/mpc_sos_fade/tools/compare_strategy.py", "px_stages", "bl_bits", []),
-    ("strategy B-LEG (bot)", "strategies/python/mpc_bleg/tools/compare_bleg.py",  "bl_bits", "", []),
+    ("order_blocks", "engines/order_blocks/tools/compare_ob.py", "px_ob_bull_count", "", []),
+    ("fibonacci", "engines/fibonacci/tools/compare_fib.py", "px_fib_active", "", []),
+    ("fair_value_gaps", "engines/fair_value_gaps/tools/compare_fvg.py", "px_fvg_count", "", []),
+    ("rsi_divergence", "engines/rsi_divergence/tools/compare_rsi_div.py", "px_div_rsi", "", []),
+    ("equal_highs_lows", "engines/equal_highs_lows/tools/compare_eq.py", "px_eq_tol", "", []),
+    ("liquidity", "engines/liquidity/tools/compare_liquidity.py", "px_pdh", "", []),
+    ("sessions", "engines/sessions/tools/compare_sessions.py", "px_in_asia", "", []),
+    ("vwap", "engines/vwap/tools/compare_vwap.py", "px_vwap", "", []),
+    (
+        "session_volume_profile",
+        "engines/session_volume_profile/tools/compare_svp.py",
+        "px_svp_poc",
+        "",
+        [],
+    ),
+    (
+        "strategy A+ (bot)",
+        "strategies/python/mpc_sos_fade/tools/compare_strategy.py",
+        "px_stages",
+        "bl_bits",
+        [],
+    ),
+    ("strategy B-LEG (bot)", "strategies/python/mpc_bleg/tools/compare_bleg.py", "bl_bits", "", []),
 ]
+
 
 def _header(csv_path: Path) -> set:
     with csv_path.open(newline="") as f:
@@ -84,13 +98,18 @@ def _first_mismatch(out: str) -> str:
         if s.startswith("bar "):
             return s
     for s in (ln.strip() for ln in lines):
-        if s.startswith("Last mismatching bar") or "last at bar" in s or "first diverging bar" in s.lower():
+        if (
+            s.startswith("Last mismatching bar")
+            or "last at bar" in s
+            or "first diverging bar" in s.lower()
+        ):
             return s
     return lines[-1].strip() if lines and lines[-1].strip() else "(mismatch)"
 
 
-def check_one(label: str, tool: Path, csv_path: Path, extra: List[str],
-              rows: int) -> Tuple[str, str]:
+def check_one(
+    label: str, tool: Path, csv_path: Path, extra: List[str], rows: int
+) -> Tuple[str, str]:
     """Run the tool at warmup 0; if that fails, walk a warmup ladder to skip cold-start
     bars. A REAL drift never goes green on any warmup, so it stays red. The ladder is
     tool-agnostic (no output parsing) and capped at 25% of the file, so a late, genuine
@@ -116,7 +135,9 @@ def main(argv=None) -> int:
     if argv:
         csvs = [Path(a) for a in argv]
     else:
-        pool = sorted((_ROOT / "backtest").glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        pool = sorted(
+            (_ROOT / "backtest").glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         if not pool:
             print("No CSV given and none found in backtest/. Pass an export path.")
             return 1
@@ -131,9 +152,14 @@ def main(argv=None) -> int:
             continue
         header = _header(csv_path)
         rows = _row_count(csv_path)
-        applicable = [(lbl, t, mk, ex) for (lbl, t, mk, veto, ex) in _CHECKS
-                      if mk in header and not (veto and veto in header)]
-        print(f"── {csv_path.name}  ({rows} bars, {len(applicable)}/{len(_CHECKS)} checks apply) ──")
+        applicable = [
+            (lbl, t, mk, ex)
+            for (lbl, t, mk, veto, ex) in _CHECKS
+            if mk in header and not (veto and veto in header)
+        ]
+        print(
+            f"── {csv_path.name}  ({rows} bars, {len(applicable)}/{len(_CHECKS)} checks apply) ──"
+        )
         if not applicable:
             print("   (no parity columns found — is this the right export?)\n")
             continue

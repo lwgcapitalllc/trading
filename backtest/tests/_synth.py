@@ -21,7 +21,7 @@ def synth_bars(n_days: int = 10, start: str = "2025-01-06") -> pd.DataFrame:
     rows = []
     for i in range(n):
         seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
-        drift = ((seed >> 8) % 1000) / 1000.0 - 0.5   # -0.5..0.5
+        drift = ((seed >> 8) % 1000) / 1000.0 - 0.5  # -0.5..0.5
 
         # Every 24 bars, fire a clean 3-bar bullish or bearish impulse that leaves
         # a displacement gap the FVG engine will catch.

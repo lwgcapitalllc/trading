@@ -37,10 +37,10 @@ __all__ = ["telegram_credentials", "credentials_path", "env_name", "get", "requi
 _PATH = Path(__file__).resolve().parent.parent / "credentials.json"
 
 _ENV_KEYS = {
-    "telegram_token":           "LWG_TELEGRAM_TOKEN",
-    "telegram_chat_id":         "LWG_TELEGRAM_CHAT_ID",
-    "telegram_admin_chat_id":   "LWG_TELEGRAM_ADMIN_CHAT_ID",
-    "telegram_health_chat":     "LWG_TELEGRAM_HEALTH_CHAT",
+    "telegram_token": "LWG_TELEGRAM_TOKEN",
+    "telegram_chat_id": "LWG_TELEGRAM_CHAT_ID",
+    "telegram_admin_chat_id": "LWG_TELEGRAM_ADMIN_CHAT_ID",
+    "telegram_health_chat": "LWG_TELEGRAM_HEALTH_CHAT",
 }
 
 _cache: Optional[dict] = None
@@ -96,6 +96,4 @@ def require(key: str) -> str:
 def telegram_credentials() -> tuple[str, str, str]:
     """`(token, group_chat_id, admin_chat_id)` — the trio every notifier needs. Any of them may
     be empty; senders no-op rather than raising."""
-    return (get("telegram_token"),
-            get("telegram_chat_id"),
-            get("telegram_admin_chat_id"))
+    return (get("telegram_token"), get("telegram_chat_id"), get("telegram_admin_chat_id"))

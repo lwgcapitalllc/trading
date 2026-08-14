@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import database as db
 from run_logger import StageLogger
-
 
 # ---------------------------------------------------------------------------
 # Transparency weighting
@@ -42,6 +41,7 @@ def _apply_transparency_weight(score: float, source: str, config: dict) -> float
 # Unified pool builder
 # ---------------------------------------------------------------------------
 
+
 class UnifiedPool:
     def __init__(self, config: dict, logger: StageLogger):
         self._cfg = config
@@ -67,9 +67,7 @@ class UnifiedPool:
 
         # Apply transparency weighting
         for w in all_wallets:
-            adjusted = _apply_transparency_weight(
-                w["composite_score"], w["source"], self._cfg
-            )
+            adjusted = _apply_transparency_weight(w["composite_score"], w["source"], self._cfg)
             w["adjusted_composite_score"] = adjusted
 
         # Re-rank by adjusted score
@@ -141,19 +139,31 @@ class UnifiedPool:
             ],
             "market_breakdown": {
                 "top_10_crypto": [
-                    {"unified_rank": w["unified_rank"], "address": w["address"],
-                     "source": w["source"], "adjusted_score": w["adjusted_composite_score"]}
+                    {
+                        "unified_rank": w["unified_rank"],
+                        "address": w["address"],
+                        "source": w["source"],
+                        "adjusted_score": w["adjusted_composite_score"],
+                    }
                     for w in crypto_wallets[:10]
                 ],
                 "top_10_forex": [
-                    {"unified_rank": w["unified_rank"], "address": w["address"],
-                     "source": w["source"], "adjusted_score": w["adjusted_composite_score"]}
+                    {
+                        "unified_rank": w["unified_rank"],
+                        "address": w["address"],
+                        "source": w["source"],
+                        "adjusted_score": w["adjusted_composite_score"],
+                    }
                     for w in forex_accounts[:10]
                 ],
                 "top_5_overall": [
-                    {"unified_rank": w["unified_rank"], "address": w["address"],
-                     "market": "crypto" if w["source"] in CRYPTO_SOURCES else "forex",
-                     "source": w["source"], "adjusted_score": w["adjusted_composite_score"]}
+                    {
+                        "unified_rank": w["unified_rank"],
+                        "address": w["address"],
+                        "market": "crypto" if w["source"] in CRYPTO_SOURCES else "forex",
+                        "source": w["source"],
+                        "adjusted_score": w["adjusted_composite_score"],
+                    }
                     for w in shortlist
                 ],
             },
@@ -175,20 +185,31 @@ class UnifiedPool:
             return path
 
         fieldnames = [
-            "unified_rank", "address", "source", "market",
-            "composite_score", "adjusted_composite_score", "lookback_tier",
-            "trade_count", "account_age_days",
-            "win_rate_consistency", "risk_adjusted_return",
-            "exit_efficiency", "trade_frequency", "instrument_day_consistency",
+            "unified_rank",
+            "address",
+            "source",
+            "market",
+            "composite_score",
+            "adjusted_composite_score",
+            "lookback_tier",
+            "trade_count",
+            "account_age_days",
+            "win_rate_consistency",
+            "risk_adjusted_return",
+            "exit_efficiency",
+            "trade_frequency",
+            "instrument_day_consistency",
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for w in pool:
-                writer.writerow({
-                    **w,
-                    "market": "crypto" if w["source"] in CRYPTO_SOURCES else "forex",
-                })
+                writer.writerow(
+                    {
+                        **w,
+                        "market": "crypto" if w["source"] in CRYPTO_SOURCES else "forex",
+                    }
+                )
         self._log.info(f"Unified pool CSV → {path}")
         return path
 
@@ -204,8 +225,8 @@ class UnifiedPool:
             f"**Generated:** {report.get('generated_at', '')}",
             "",
             "## Summary",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Total Qualifying Candidates | {summary.get('total_qualifying_candidates', 0)} |",
             f"| Sources Active | {summary.get('total_sources_scanned', 0)} |",
         ]

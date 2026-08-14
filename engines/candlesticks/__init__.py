@@ -36,11 +36,11 @@ either as bullish.
 from .engine import CandlestickEngine
 from .types import (
     BEARISH,
-    CHART_PRESET,
     BULLISH,
+    CHART_PRESET,
     NEUTRAL,
-    PATTERNS,
     PATTERN_KEYS,
+    PATTERNS,
     CandlePattern,
     CandlestickEvents,
     PatternSpec,

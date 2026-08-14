@@ -54,11 +54,12 @@ class FairValueGapEngine:
     Pine inputs the export carried — compare_fvg.py reads them from the CSV's cfg_* columns.
     """
 
-    def __init__(self, max_count: int = 8, threshold_pct: float = 0.0,
-                 require_close: bool = False) -> None:
-        self._max_count = max_count            # Pine fvgMaxCount (default 8)
-        self._threshold_pct = threshold_pct    # Pine fvgThreshPct (0.0 sub-15m / 0.04 15m+)
-        self._require_close = require_close     # Pine fvgRequireClose (default False = classic FVG)
+    def __init__(
+        self, max_count: int = 8, threshold_pct: float = 0.0, require_close: bool = False
+    ) -> None:
+        self._max_count = max_count  # Pine fvgMaxCount (default 8)
+        self._threshold_pct = threshold_pct  # Pine fvgThreshPct (0.0 sub-15m / 0.04 15m+)
+        self._require_close = require_close  # Pine fvgRequireClose (default False = classic FVG)
 
         # The single live gap list, oldest-first — the Pine fvg* parallel arrays as one list.
         self._active: List[FairValueGap] = []
@@ -73,8 +74,16 @@ class FairValueGapEngine:
         self._next_id = 0
 
     # ------------------------------------------------------------------
-    def update(self, bar_index: int, open_: float, high: float, low: float,
-               close: float, eq_levels=None, eq_tol: float = 0.0) -> FvgEvents:
+    def update(
+        self,
+        bar_index: int,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        eq_levels=None,
+        eq_tol: float = 0.0,
+    ) -> FvgEvents:
         """Feed one closed bar (index + OHLC). Returns this bar's FVG events.
 
         `eq_levels` / `eq_tol` model the Pine `eqExemptFvg` coupling: an FVG that overlaps (or sits
@@ -86,26 +95,34 @@ class FairValueGapEngine:
         """
 
         self._window.append((open_, high, low, close))
-        self._eq_levels = eq_levels          # active EQ level prices this bar (or None = no exemption)
-        self._eq_tol = eq_tol                # Pine eqTol — the proximity band for the exemption
+        self._eq_levels = eq_levels  # active EQ level prices this bar (or None = no exemption)
+        self._eq_tol = eq_tol  # Pine eqTol — the proximity band for the exemption
         events = FvgEvents()
 
         # ── Detection: confirmed bars only (we only ever feed closed bars) and bar_index >= 2 so
         #    the two-bars-back candle exists (Pine `barstate.isconfirmed and bar_index >= 2`) ──
         if bar_index >= 2 and len(self._window) == 3:
-            o0, h0, l0, c0 = self._window[-1]   # this bar
-            o1, h1, l1, c1 = self._window[-2]   # [1] the middle displacement bar
-            o2, h2, l2, c2 = self._window[-3]   # [2]
+            o0, h0, l0, c0 = self._window[-1]  # this bar
+            o1, h1, l1, c1 = self._window[-2]  # [1] the middle displacement bar
+            o2, h2, l2, c2 = self._window[-3]  # [2]
 
             # LuxAlgo 3-candle imbalance: the two outer candles don't overlap and the gap is at least
             # threshold_pct% of price. The middle bar's close clearing the gap is OPTIONAL — gated by
             # require_close, exactly the Pine `(not fvgRequireClose or close[1] > high[2])`. No
             # clean-impulse / progressive-close rule.
             # Bullish gap: between two-bars-back high and this bar's low (Pine: top=low, bot=high[2]).
-            if l0 > h2 and (not self._require_close or c1 > h2) and (l0 - h2) / h2 * 100 > self._threshold_pct:
+            if (
+                l0 > h2
+                and (not self._require_close or c1 > h2)
+                and (l0 - h2) / h2 * 100 > self._threshold_pct
+            ):
                 self._form(top=l0, bottom=h2, is_bullish=True, born=bar_index, events=events)
             # Bearish gap: between two-bars-back low and this bar's high (Pine: top=low[2], bot=high).
-            if h0 < l2 and (not self._require_close or c1 < l2) and (l2 - h0) / l2 * 100 > self._threshold_pct:
+            if (
+                h0 < l2
+                and (not self._require_close or c1 < l2)
+                and (l2 - h0) / l2 * 100 > self._threshold_pct
+            ):
                 self._form(top=l2, bottom=h0, is_bullish=False, born=bar_index, events=events)
 
             # FIFO cap: `max_count` bounds the ORDINARY gaps only, and an EQ-exempt gap rides ON TOP
@@ -128,7 +145,7 @@ class FairValueGapEngine:
                         drop_idx = idx
                         break
                 if drop_idx is None:
-                    break                       # every remaining gap is behind liquidity — keep them all
+                    break  # every remaining gap is behind liquidity — keep them all
                 events.evicted.append(self._active.pop(drop_idx))
                 non_eq -= 1
 
@@ -150,8 +167,9 @@ class FairValueGapEngine:
         return events
 
     # ------------------------------------------------------------------
-    def _form(self, top: float, bottom: float, is_bullish: bool, born: int,
-              events: FvgEvents) -> None:
+    def _form(
+        self, top: float, bottom: float, is_bullish: bool, born: int, events: FvgEvents
+    ) -> None:
         """Push a freshly detected gap onto the live list (Pine array.push into all five arrays)."""
         gap = FairValueGap(
             top=top,

@@ -40,14 +40,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-try:                                             # pragma: no cover - import shim
+try:  # pragma: no cover - import shim
     from order_sizing import SymbolSpec, value_per_lot
-except ImportError:                              # pragma: no cover
+except ImportError:  # pragma: no cover
     from .order_sizing import SymbolSpec, value_per_lot  # type: ignore
 
 __all__ = [
-    "Exposure", "AccountRisk", "RiskUnmeasurable",
-    "measure_exposure", "check_account_cap",
+    "Exposure",
+    "AccountRisk",
+    "RiskUnmeasurable",
+    "measure_exposure",
+    "check_account_cap",
 ]
 
 
@@ -59,20 +62,22 @@ class Exposure:
     two code paths that can disagree about the arithmetic; `resting` is carried so the refusal
     message can say what is holding the room.
     """
+
     ticket: int
     symbol: str
     magic: int
-    direction: int         # +1 long, -1 short — see the note in `measure_exposure`
-    volume: float          # LOTS, as the broker reports it
-    entry: float           # open price, or the resting limit's price
-    stop: float            # the broker-side SL; 0.0 / None means there isn't one
+    direction: int  # +1 long, -1 short — see the note in `measure_exposure`
+    volume: float  # LOTS, as the broker reports it
+    entry: float  # open price, or the resting limit's price
+    stop: float  # the broker-side SL; 0.0 / None means there isn't one
     resting: bool = False
-    label: str = ""        # which bot, when it can be named — for the refusal message only
+    label: str = ""  # which bot, when it can be named — for the refusal message only
 
 
 @dataclass(frozen=True)
 class AccountRisk:
     """What the account has on, in account currency."""
+
     total_ccy: float
     positions: int
     resting: int
@@ -110,7 +115,8 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
         raise RiskUnmeasurable(
             f"the broker has not said what a tick of {spec.symbol} is worth "
             f"(tick_size={spec.tick_size}, tick_value={spec.tick_value}), so no open risk on this "
-            f"account can be converted into money.")
+            f"account can be converted into money."
+        )
 
     total = 0.0
     positions = 0
@@ -120,7 +126,8 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
         if it.symbol != spec.symbol:
             raise RiskUnmeasurable(
                 f"ticket {it.ticket} is on {it.symbol} and the spec describes {spec.symbol}; one "
-                f"instrument's tick value must never be applied to another's position.")
+                f"instrument's tick value must never be applied to another's position."
+            )
         if not it.stop:
             # 0.0 and None are the same thing here and both mean NO STOP AT THE BROKER. That is
             # not small risk, it is unbounded risk — the position runs until something else stops
@@ -129,7 +136,8 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
             raise RiskUnmeasurable(
                 f"{'order' if it.resting else 'position'} {it.ticket} on {it.symbol} "
                 f"(magic {it.magic}) has NO broker-side stop, so its risk is unbounded and the "
-                f"account's open risk cannot be totalled. Attach a stop to it, or close it.")
+                f"account's open risk cannot be totalled. Attach a stop to it, or close it."
+            )
         # DIRECTION-AWARE, and `abs()` here is a real bug rather than a simplification — it was
         # written that way first and a test caught it. A long whose stop has ratcheted ABOVE its
         # entry is locked in profit and risks NOTHING; `abs()` scores that as risk and grows it
@@ -146,13 +154,15 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
             resting += 1
         else:
             positions += 1
-    return AccountRisk(total_ccy=round(total, 2), positions=positions, resting=resting,
-                       per_magic=per_magic)
+    return AccountRisk(
+        total_ccy=round(total, 2), positions=positions, resting=resting, per_magic=per_magic
+    )
 
 
 @dataclass(frozen=True)
 class CapVerdict:
     """Allowed, or refused with a reason a human can act on at 3am."""
+
     allowed: bool
     code: str = ""
     detail: str = ""
@@ -161,8 +171,13 @@ class CapVerdict:
     room_ccy: float = 0.0
 
 
-def check_account_cap(*, new_order_risk_ccy: float, open_risk: AccountRisk,
-                      balance: Optional[float], cap_pct: Optional[float]) -> CapVerdict:
+def check_account_cap(
+    *,
+    new_order_risk_ccy: float,
+    open_risk: AccountRisk,
+    balance: Optional[float],
+    cap_pct: Optional[float],
+) -> CapVerdict:
     """Does this order fit inside the account-level cap?
 
     `cap_pct` is a PERCENT of the live balance (10.0 = 10%), matching `exec_risk_pct`'s unit so
@@ -177,30 +192,41 @@ def check_account_cap(*, new_order_risk_ccy: float, open_risk: AccountRisk,
         return CapVerdict(allowed=True, code="no_cap")
     if cap_pct <= 0:
         return CapVerdict(
-            allowed=False, code="cap_not_positive",
+            allowed=False,
+            code="cap_not_positive",
             detail=f"the account risk cap is {cap_pct}%, which refuses every order. Remove the "
-                   f"setting to run uncapped, or set a real percentage.")
+            f"setting to run uncapped, or set a real percentage.",
+        )
     if balance is None or balance <= 0:
         return CapVerdict(
-            allowed=False, code="balance_unreadable",
+            allowed=False,
+            code="balance_unreadable",
             detail="the account balance could not be read, so the account-level risk cap cannot "
-                   "be computed. Refusing rather than guessing — 'cannot ask' is never "
-                   "'affordable'.")
+            "be computed. Refusing rather than guessing — 'cannot ask' is never "
+            "'affordable'.",
+        )
 
     cap = balance * cap_pct / 100.0
     room = cap - open_risk.total_ccy
     if new_order_risk_ccy > room:
         held = ", ".join(f"magic {m}: ${v:,.2f}" for m, v in sorted(open_risk.per_magic.items()))
         return CapVerdict(
-            allowed=False, code="account_risk_cap",
-            detail=(f"this order risks ${new_order_risk_ccy:,.2f} and only ${room:,.2f} is left "
-                    f"under the account cap (${cap:,.2f} = {cap_pct}% of ${balance:,.2f}). "
-                    f"The account already has ${open_risk.total_ccy:,.2f} on across "
-                    f"{open_risk.positions} position(s) and {open_risk.resting} resting order(s)"
-                    + (f" — {held}." if held else ".")),
-            open_risk_ccy=open_risk.total_ccy, cap_ccy=cap, room_ccy=room)
-    return CapVerdict(allowed=True, code="", open_risk_ccy=open_risk.total_ccy,
-                      cap_ccy=cap, room_ccy=room)
+            allowed=False,
+            code="account_risk_cap",
+            detail=(
+                f"this order risks ${new_order_risk_ccy:,.2f} and only ${room:,.2f} is left "
+                f"under the account cap (${cap:,.2f} = {cap_pct}% of ${balance:,.2f}). "
+                f"The account already has ${open_risk.total_ccy:,.2f} on across "
+                f"{open_risk.positions} position(s) and {open_risk.resting} resting order(s)"
+                + (f" — {held}." if held else ".")
+            ),
+            open_risk_ccy=open_risk.total_ccy,
+            cap_ccy=cap,
+            room_ccy=room,
+        )
+    return CapVerdict(
+        allowed=True, code="", open_risk_ccy=open_risk.total_ccy, cap_ccy=cap, room_ccy=room
+    )
 
 
 # ⚠ WHY THERE IS NO `shrink_to_room()` HERE, and it is not an omission.

@@ -9,7 +9,6 @@ calendar_service). All logic (fetch, cache, beat/miss) lives in the service (hou
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-
 from models import CalendarCurrencies, CalendarResponse
 from services import calendar_service
 from services.calendar_service import iso_to_ms

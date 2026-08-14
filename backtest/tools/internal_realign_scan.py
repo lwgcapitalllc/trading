@@ -88,13 +88,23 @@ CACHE = _ROOT / "backtest" / "cache"
 UTC = dt.timezone.utc
 
 # Minutes per cached frame. M5 is not cached and is RESAMPLED from M1 — see `_load`.
-_TF_MINUTES = {"M1": 1, "M2": 2, "M3": 3, "M5": 5, "M10": 10,
-               "M15": 15, "M30": 30, "H1": 60, "H4": 240}
+_TF_MINUTES = {
+    "M1": 1,
+    "M2": 2,
+    "M3": 3,
+    "M5": 5,
+    "M10": 10,
+    "M15": 15,
+    "M30": 30,
+    "H1": 60,
+    "H4": 240,
+}
 
 
 # --------------------------------------------------------------------------------------
 # Bars
 # --------------------------------------------------------------------------------------
+
 
 def _read_csv(path: Path) -> list[tuple[dt.datetime, float, float, float, float]]:
     if not path.exists():
@@ -102,10 +112,15 @@ def _read_csv(path: Path) -> list[tuple[dt.datetime, float, float, float, float]
     rows = []
     with path.open(newline="") as fh:
         for r in csv.DictReader(fh):
-            rows.append((
-                dt.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC),
-                float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"]),
-            ))
+            rows.append(
+                (
+                    dt.datetime.strptime(r["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC),
+                    float(r["open"]),
+                    float(r["high"]),
+                    float(r["low"]),
+                    float(r["close"]),
+                )
+            )
     return rows
 
 
@@ -157,8 +172,10 @@ def _gap_report(rows, minutes: int, label: str) -> None:
             worst = max(worst, d)
     span_bars = (rows[-1][0] - rows[0][0]) / step
     density = len(rows) / span_bars if span_bars else 0.0
-    print(f"  {label}: {len(rows):,} bars  {rows[0][0]:%Y-%m-%d}..{rows[-1][0]:%Y-%m-%d}  "
-          f"density {density:.1%} of a contiguous frame  gaps {holes:,}  worst {worst.days}d")
+    print(
+        f"  {label}: {len(rows):,} bars  {rows[0][0]:%Y-%m-%d}..{rows[-1][0]:%Y-%m-%d}  "
+        f"density {density:.1%} of a contiguous frame  gaps {holes:,}  worst {worst.days}d"
+    )
 
 
 def _load(symbol: str, tf: str, prefer_resample: bool = True):
@@ -182,6 +199,7 @@ def _load(symbol: str, tf: str, prefer_resample: bool = True):
 # --------------------------------------------------------------------------------------
 # Pass 1 — replay each frame once
 # --------------------------------------------------------------------------------------
+
 
 class Frame:
     """One bar frame plus its engine's per-bar output. Nothing here decides whether a
@@ -265,9 +283,9 @@ def replay(rows, label: str = "", minutes: int = 0) -> Frame:
 # neither is an extension of the other.
 _PATTERNS = {
     # name        the ordered sequence of (kind, direction) the stream must produce
-    "strict":   (("bos", +1), ("sos", -1), ("sos", +1)),
+    "strict": (("bos", +1), ("sos", -1), ("sos", +1)),
     "opposing": (("sos", -1), ("sos", +1)),
-    "any":      (("any", -1), ("sos", +1)),
+    "any": (("any", -1), ("sos", +1)),
     # Entry DELAYED by one confirmation: the realignment must be followed by a further
     # with-trend internal break before the entry is taken. Tests "we are early", which is
     # what the long side's worst-at-1R failure signature points at.
@@ -367,9 +385,17 @@ def _match_pattern(stream, j0: int, j_end: int, d: int, steps):
     return None
 
 
-def find(htf: Frame, frames, budget_hrs: float, pattern: str,
-         horizon_hrs: float = 168.0, target_r: float = 0.0,
-         internal_source: str = "internal", sides=(+1, -1), wide_stop: bool = False):
+def find(
+    htf: Frame,
+    frames,
+    budget_hrs: float,
+    pattern: str,
+    horizon_hrs: float = 168.0,
+    target_r: float = 0.0,
+    internal_source: str = "internal",
+    sides=(+1, -1),
+    wide_stop: bool = False,
+):
     """For each external false break, walk the cascade and look for the internal sequence.
 
     LONG  (d=+1): external trend BULLISH, then a bearish SOS = the false break. Target is
@@ -397,13 +423,14 @@ def find(htf: Frame, frames, budget_hrs: float, pattern: str,
             # ⚠ `e[0] < bi` is load-bearing. A CHoCH bar raises BOTH its plain BOS and its
             # SOS flag, so this SOS's own twin sits in the slice and every candidate would
             # disqualify ITSELF — which reads exactly like "the setup never happens".
-            between = [e for e in htf.ext[:k]
-                       if last_trend[0] < e[0] < bi and e[1] in counter_kinds]
+            between = [
+                e for e in htf.ext[:k] if last_trend[0] < e[0] < bi and e[1] in counter_kinds
+            ]
             if between:
                 continue
 
             dev_stamp = htf.time[bi]
-            ext_target = (htf.broken_high.get(bi) if d > 0 else htf.broken_low.get(bi))
+            ext_target = htf.broken_high.get(bi) if d > 0 else htf.broken_low.get(bi)
 
             for ltf in frames:
                 budget_bars = int(budget_hrs * 60 / ltf.minutes)
@@ -426,9 +453,9 @@ def find(htf: Frame, frames, budget_hrs: float, pattern: str,
                 # leg — a much wider stop, tested because the long side fails at 1R.
                 anchor = j0 if (wide_stop or last_counter is None) else last_counter
                 if d > 0:
-                    level = min(ltf.low[anchor:trigger + 1])
+                    level = min(ltf.low[anchor : trigger + 1])
                 else:
-                    level = max(ltf.high[anchor:trigger + 1])
+                    level = max(ltf.high[anchor : trigger + 1])
                 stop_dist = (entry - level) * d
                 if stop_dist <= 0:
                     continue
@@ -441,20 +468,22 @@ def find(htf: Frame, frames, budget_hrs: float, pattern: str,
                         break
                 outcome = _resolve(ltf, trigger, d, level, target, horizon_bars)
 
-                out.append({
-                    "dir": d,
-                    "rung": ltf.label,
-                    "frame": ltf,
-                    "time": ltf.time[trigger],
-                    "entry": entry,
-                    "stop": level,
-                    "target": target,
-                    "stop_dist": stop_dist,
-                    "reward_risk": (target - entry) * d / stop_dist,
-                    "hrs_to_trigger": (trigger - j0) * ltf.minutes / 60.0,
-                    "resolved": outcome is not None,
-                    "won": outcome == "win",
-                })
+                out.append(
+                    {
+                        "dir": d,
+                        "rung": ltf.label,
+                        "frame": ltf,
+                        "time": ltf.time[trigger],
+                        "entry": entry,
+                        "stop": level,
+                        "target": target,
+                        "stop_dist": stop_dist,
+                        "reward_risk": (target - entry) * d / stop_dist,
+                        "hrs_to_trigger": (trigger - j0) * ltf.minutes / 60.0,
+                        "resolved": outcome is not None,
+                        "won": outcome == "win",
+                    }
+                )
                 break  # first rung that produces the sequence wins the setup
     return sorted(out, key=lambda r: r["time"])
 
@@ -462,6 +491,7 @@ def find(htf: Frame, frames, budget_hrs: float, pattern: str,
 # --------------------------------------------------------------------------------------
 # Report
 # --------------------------------------------------------------------------------------
+
 
 def _median(xs):
     return statistics.median(xs) if xs else float("nan")
@@ -475,11 +505,12 @@ def _score(rows, horizon_hrs: float, indent: str = "  "):
     won = [r for r in res if r["won"]]
     wr = len(won) / len(res)
     exp = sum(r["reward_risk"] for r in won) / len(res) - (len(res) - len(won)) / len(res)
-    print(f"{indent}median stop ${_median([r['stop_dist'] for r in rows]):.2f}   "
-          f"median R:R {_median([r['reward_risk'] for r in rows]):.2f}R   "
-          f"median {_median([r['hrs_to_trigger'] for r in rows]):.1f}h to trigger")
-    print(f"{indent}reached target     {len(won)}/{len(res)} ({wr:.1%})   "
-          f"expectancy {exp:+.3f}R")
+    print(
+        f"{indent}median stop ${_median([r['stop_dist'] for r in rows]):.2f}   "
+        f"median R:R {_median([r['reward_risk'] for r in rows]):.2f}R   "
+        f"median {_median([r['hrs_to_trigger'] for r in rows]):.1f}h to trigger"
+    )
+    print(f"{indent}reached target     {len(won)}/{len(res)} ({wr:.1%})   expectancy {exp:+.3f}R")
     ctrl = [c for c in control(rows, horizon_hrs) if c[0] is not None]
     if not ctrl:
         return
@@ -489,8 +520,10 @@ def _score(rows, horizon_hrs: float, indent: str = "  "):
     se = (wr * (1 - wr) / len(res)) ** 0.5 if len(res) > 1 else 0.0
     z = (wr - cwr) / se if se else 0.0
     print(f"{indent}control (n={len(ctrl):,})   {cwr:.1%} hit rate   {cexp:+.3f}R")
-    print(f"{indent}EDGE               {wr-cwr:+.1%} hit rate ({z:+.1f} sigma)   "
-          f"{exp-cexp:+.3f}R expectancy")
+    print(
+        f"{indent}EDGE               {wr - cwr:+.1%} hit rate ({z:+.1f} sigma)   "
+        f"{exp - cexp:+.3f}R expectancy"
+    )
 
 
 def report(rows, label: str, frames, budget_hrs: float, horizon_hrs: float) -> None:
@@ -499,11 +532,12 @@ def report(rows, label: str, frames, budget_hrs: float, horizon_hrs: float) -> N
         print("  NO OCCURRENCES — the sequence never completed inside the window.")
         return
     span = (rows[-1]["time"] - rows[0]["time"]).days / 365.25
-    rate = f" ({len(rows)/span:.1f}/yr)" if span > 0 else ""
+    rate = f" ({len(rows) / span:.1f}/yr)" if span > 0 else ""
     longs = [r for r in rows if r["dir"] > 0]
     shorts = [r for r in rows if r["dir"] < 0]
-    print(f"  {len(rows)} setups over {span:.1f} yrs{rate}   "
-          f"{len(longs)} long / {len(shorts)} short")
+    print(
+        f"  {len(rows)} setups over {span:.1f} yrs{rate}   {len(longs)} long / {len(shorts)} short"
+    )
 
     for name, sub in (("LONG", longs), ("SHORT", shorts)):
         if not sub:
@@ -522,40 +556,65 @@ def report(rows, label: str, frames, budget_hrs: float, horizon_hrs: float) -> N
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--htf", default="M15")
-    ap.add_argument("--cascade", default="M5",
-                    help="internal frames tried in order; the first that matches wins")
-    ap.add_argument("--pattern", choices=tuple(_PATTERNS), default="strict",
-                    help="strict = iBOS with-trend, iSOS counter, iSOS with-trend; "
-                         "opposing = just the two opposing iSOS; any = any counter break "
-                         "then a with-trend iSOS")
+    ap.add_argument(
+        "--cascade",
+        default="M5",
+        help="internal frames tried in order; the first that matches wins",
+    )
+    ap.add_argument(
+        "--pattern",
+        choices=tuple(_PATTERNS),
+        default="strict",
+        help="strict = iBOS with-trend, iSOS counter, iSOS with-trend; "
+        "opposing = just the two opposing iSOS; any = any counter break "
+        "then a with-trend iSOS",
+    )
     ap.add_argument("--window-hrs", type=float, default=24.0)
     ap.add_argument("--horizon-hrs", type=float, default=168.0)
-    ap.add_argument("--internal-source", choices=("internal", "external"),
-                    default="internal",
-                    help="the engine's own iBOS/iSOS stream (what the chart draws), or "
-                         "the lower frame's external swings")
+    ap.add_argument(
+        "--internal-source",
+        choices=("internal", "external"),
+        default="internal",
+        help="the engine's own iBOS/iSOS stream (what the chart draws), or "
+        "the lower frame's external swings",
+    )
     ap.add_argument("--target-r", type=float, default=0.0)
     ap.add_argument("--side", choices=("both", "long", "short"), default="both")
-    ap.add_argument("--wide-stop", action="store_true",
-                    help="anchor the stop at the whole deviation, not the internal leg")
+    ap.add_argument(
+        "--wide-stop",
+        action="store_true",
+        help="anchor the stop at the whole deviation, not the internal leg",
+    )
     args = ap.parse_args()
 
     print(f"loading {args.symbol} {args.htf} + cascade {args.cascade} …", flush=True)
     htf = replay(_load(args.symbol, args.htf), args.htf, _TF_MINUTES[args.htf])
-    frames = [replay(_load(args.symbol, tf), tf, _TF_MINUTES[tf])
-              for tf in [t.strip() for t in args.cascade.split(",") if t.strip()]]
+    frames = [
+        replay(_load(args.symbol, tf), tf, _TF_MINUTES[tf])
+        for tf in [t.strip() for t in args.cascade.split(",") if t.strip()]
+    ]
     sides = {"both": (+1, -1), "long": (+1,), "short": (-1,)}[args.side]
 
-    rows = find(htf, frames, args.window_hrs, args.pattern,
-                horizon_hrs=args.horizon_hrs, target_r=args.target_r,
-                internal_source=args.internal_source, sides=sides,
-                wide_stop=args.wide_stop)
-    label = (f"{args.symbol}  ext {args.htf}  int {args.cascade} "
-             f"[{args.internal_source}]  pattern={args.pattern}")
+    rows = find(
+        htf,
+        frames,
+        args.window_hrs,
+        args.pattern,
+        horizon_hrs=args.horizon_hrs,
+        target_r=args.target_r,
+        internal_source=args.internal_source,
+        sides=sides,
+        wide_stop=args.wide_stop,
+    )
+    label = (
+        f"{args.symbol}  ext {args.htf}  int {args.cascade} "
+        f"[{args.internal_source}]  pattern={args.pattern}"
+    )
     report(rows, label, frames, args.window_hrs, args.horizon_hrs)
 
 

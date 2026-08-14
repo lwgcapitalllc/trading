@@ -9,14 +9,21 @@
     padding: 0;
   }
 
-  html, body, #root {
+  html,
+  body,
+  #root {
     height: 100%;
   }
 
   body {
     background-color: #03040a; /* theme: bgBase */
     color: #f0f3ff;
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
     font-size: 13px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
@@ -44,7 +51,7 @@
 
 @layer utilities {
   .mono {
-    font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+    font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
   }
 }

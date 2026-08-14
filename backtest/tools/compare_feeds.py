@@ -39,7 +39,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backtest.data import SERVED_TF, BarSource, Mt5Agent, BarCache  # noqa: E402
+from backtest.data import SERVED_TF, BarCache, BarSource, Mt5Agent  # noqa: E402
 
 _OHLC = ["open", "high", "low", "close"]
 
@@ -68,9 +68,7 @@ def parse_tv_csv(path: str | Path) -> pd.DataFrame:
         idx = pd.to_datetime(times, utc=True)
     idx = idx.dt.tz_convert("UTC").dt.tz_localize(None)  # naive UTC, our convention
 
-    out = pd.DataFrame(
-        {c: raw[col(c)].astype("float64") for c in _OHLC}
-    )
+    out = pd.DataFrame({c: raw[col(c)].astype("float64") for c in _OHLC})
     out.index = pd.DatetimeIndex(idx, name="time")
     out = out[~out.index.duplicated(keep="last")].sort_index()
     return out
@@ -120,9 +118,9 @@ def detect_offset(tv: pd.DataFrame, mt5: pd.DataFrame, max_hours: int = 14) -> t
 
 @dataclass
 class OffsetChunk:
-    start: str          # chunk start date (YYYY-MM-DD)
-    shift_hours: int    # MT5->TV shift that best aligns this chunk
-    overlap: int        # matched bars in the chunk at that shift
+    start: str  # chunk start date (YYYY-MM-DD)
+    shift_hours: int  # MT5->TV shift that best aligns this chunk
+    overlap: int  # matched bars in the chunk at that shift
 
 
 def offset_profile(tv: pd.DataFrame, mt5: pd.DataFrame, chunks: int = 8) -> list[OffsetChunk]:
@@ -176,9 +174,9 @@ class FeedDiff:
     tv_only: int
     mt5_only: int
     shift_hours: int
-    mean_abs: dict          # per-OHLC-column mean absolute price diff
-    max_abs: dict           # per-OHLC-column max absolute price diff
-    mean_abs_pct: float     # close mean-abs-diff as a fraction of mean close
+    mean_abs: dict  # per-OHLC-column mean absolute price diff
+    max_abs: dict  # per-OHLC-column max absolute price diff
+    mean_abs_pct: float  # close mean-abs-diff as a fraction of mean close
 
 
 def align_and_diff(tv: pd.DataFrame, mt5: pd.DataFrame, shift_hours: int) -> FeedDiff:
@@ -225,11 +223,15 @@ def format_report(diff: FeedDiff, profile: list[OffsetChunk], symbol: str, tf_na
     elif len(shifts) == 1:
         ahead = -shifts[0]
         lines.append(f"    MISALIGNED — MT5 runs a constant {ahead:+d}h vs TradingView.")
-        lines.append("    Fix the agent's UTC conversion before trusting session/liquidity engines.")
+        lines.append(
+            "    Fix the agent's UTC conversion before trusting session/liquidity engines."
+        )
     else:
         aheads = ", ".join(f"{-s:+d}h" for s in shifts)
         lines.append(f"    MISALIGNED + VARIABLE — MT5 runs {aheads} vs TradingView")
-        lines.append("    across the window: a broker server clock on DST (MetaTrader UTC+2/UTC+3).")
+        lines.append(
+            "    across the window: a broker server clock on DST (MetaTrader UTC+2/UTC+3)."
+        )
         lines.append("    The agent MUST convert broker time to true UTC, DST-aware, before demo.")
         for c in profile:
             lines.append(f"      from {c.start}: {-c.shift_hours:+d}h")
@@ -254,8 +256,12 @@ def main(argv=None) -> int:
     ap.add_argument("--csv", required=True, help="TradingView 'Export chart data' CSV")
     ap.add_argument("--symbol", default="XAUUSD.s", help="MT5 broker symbol (default XAUUSD.s)")
     ap.add_argument("--agent-url", default="http://localhost:8766", help="MT5 agent base URL")
-    ap.add_argument("--warn-pct", type=float, default=0.05,
-                    help="fail (exit 2) if close drift exceeds this %% of price (default 0.05)")
+    ap.add_argument(
+        "--warn-pct",
+        type=float,
+        default=0.05,
+        help="fail (exit 2) if close drift exceeds this %% of price (default 0.05)",
+    )
     args = ap.parse_args(argv)
 
     tv = parse_tv_csv(args.csv)
@@ -271,16 +277,18 @@ def main(argv=None) -> int:
         return 1
 
     profile = offset_profile(tv, mt5)
-    corrected = dst_correct(tv, mt5, profile)   # each bar shifted by its own chunk's offset
-    diff = align_and_diff(tv, corrected, 0)     # true feed gap, clock offset removed
+    corrected = dst_correct(tv, mt5, profile)  # each bar shifted by its own chunk's offset
+    diff = align_and_diff(tv, corrected, 0)  # true feed gap, clock offset removed
     print(format_report(diff, profile, args.symbol, tf_name))
 
     shifts = {c.shift_hours for c in profile}
     if shifts and shifts != {0}:
-        return 2   # a clock offset exists — a real agent bug to fix before demo
+        return 2  # a clock offset exists — a real agent bug to fix before demo
     if diff.mean_abs_pct * 100 > args.warn_pct:
-        print(f"\nWARNING: close drift {diff.mean_abs_pct * 100:.4f}% exceeds "
-              f"{args.warn_pct}% — investigate (wrong symbol? feed issue?).")
+        print(
+            f"\nWARNING: close drift {diff.mean_abs_pct * 100:.4f}% exceeds "
+            f"{args.warn_pct}% — investigate (wrong symbol? feed issue?)."
+        )
         return 2
     return 0
 

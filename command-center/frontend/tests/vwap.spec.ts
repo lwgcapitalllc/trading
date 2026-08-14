@@ -70,7 +70,7 @@ test('an indicator that omits defaultOn still arrives ON', async ({ page }) => {
   // The rule the ATR sub-pane depends on, and the one a `?? false` default would silently break.
   // No run in this lab carries both an ATR pane and a VWAP, so the second indicator is injected
   // into the REAL spec rather than the whole response being hand-written.
-  await page.route(`**/backtests/runs/${RUN}/chart-spec*`, async route => {
+  await page.route(`**/backtests/runs/${RUN}/chart-spec*`, async (route) => {
     const res = await route.fetch()
     const spec = await res.json()
     const vwap = spec.indicators.find((i: { name: string }) => i.name === VWAP)
@@ -88,7 +88,9 @@ test('an indicator that omits defaultOn still arrives ON', async ({ page }) => {
   expect(on).not.toContain(VWAP)
 })
 
-test("the reader's choice survives a chart rebuild rather than being re-seeded", async ({ page }) => {
+test("the reader's choice survives a chart rebuild rather than being re-seeded", async ({
+  page,
+}) => {
   // `reconcileToggles`. **Rebuild chart** re-fetches the spec with `?refresh=true` and writes the
   // result into the cache, so a spec that came back DIFFERENT gives `spec.indicators` a new
   // identity, `indicatorRoster` recomputes, and the effect that seeds `indicatorsOn` fires. A plain
@@ -111,11 +113,14 @@ test("the reader's choice survives a chart rebuild rather than being re-seeded",
   await page.keyboard.press('Escape')
 
   // The rebuild comes back carrying one layer the reader has never seen.
-  await page.route('**/chart-spec?*refresh=true*', async route => {
+  await page.route('**/chart-spec?*refresh=true*', async (route) => {
     const res = await route.fetch()
     const spec = await res.json()
     const vwap = spec.indicators.find((i: { name: string }) => i.name === VWAP)
-    spec.indicators = [...spec.indicators, { name: 'ATR', pane: 'sub', series: vwap.series.slice(0, 500) }]
+    spec.indicators = [
+      ...spec.indicators,
+      { name: 'ATR', pane: 'sub', series: vwap.series.slice(0, 500) },
+    ]
     await route.fulfill({ response: res, json: spec })
   })
 

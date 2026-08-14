@@ -95,8 +95,13 @@ class FleetHaltReading:
 
     @property
     def kind(self) -> str:
-        return "requested" if self.readable and self.halted else \
-               "unreadable" if self.halted else "clear"
+        return (
+            "requested"
+            if self.readable and self.halted
+            else "unreadable"
+            if self.halted
+            else "clear"
+        )
 
 
 def read_fleet_halt(root: Path | str | None = None) -> FleetHaltReading:
@@ -118,7 +123,8 @@ def read_fleet_halt(root: Path | str | None = None) -> FleetHaltReading:
             True,
             f"cannot read the halt directory {directory} ({type(e).__name__}: {e}), so this bot "
             f"cannot be told whether the fleet is halted and has stopped placing orders",
-            readable=False)
+            readable=False,
+        )
 
     # 2. THE FLAG. FileNotFoundError here is the NORMAL state and the only clear answer; every
     #    other OSError is "cannot ask", which halts.
@@ -131,7 +137,8 @@ def read_fleet_halt(root: Path | str | None = None) -> FleetHaltReading:
             True,
             f"cannot read the halt flag {path} ({type(e).__name__}: {e}), so this bot cannot be "
             f"told whether the fleet is halted and has stopped placing orders",
-            readable=False)
+            readable=False,
+        )
 
     # 3. The flag is THERE, so the answer is halt whatever its contents say. Reading the reason is
     #    a courtesy to the human on the other end and must never change the verdict — an empty or

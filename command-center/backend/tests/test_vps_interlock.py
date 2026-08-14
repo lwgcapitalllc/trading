@@ -17,12 +17,13 @@ un-stubbed call would still have been made. That is why `LiveVpsCall` derives fr
 """
 
 import subprocess
+
 import pytest
 
 from tests.conftest import LiveVpsCall, _targets_the_vps
 
-
 # ── The classifier ────────────────────────────────────────────────────────────
+
 
 def test_an_ssh_argv_is_refused():
     assert _targets_the_vps(["ssh", "forexvps", "echo ok"]) is True
@@ -62,14 +63,17 @@ def test_a_local_command_runs_for_real():
 
 # ── The guard, at the real call sites ─────────────────────────────────────────
 
+
 def test_the_bots_ssh_helper_is_blocked():
     from routers import bots
+
     with pytest.raises(LiveVpsCall):
         bots._ssh("whoami")
 
 
 def test_restarting_the_tunnel_is_blocked_before_it_kills_anything():
     from services import agent_supervisor as sup
+
     with pytest.raises(LiveVpsCall):
         sup.restart_tunnel()
 
@@ -78,6 +82,7 @@ def test_firing_a_scheduled_task_is_blocked():
     """`schtasks_run` catches `Exception` and re-raises as a 502 — so a catchable guard
     would turn a live call into a tidy error response and let the call happen."""
     from services import agent_supervisor as sup
+
     with pytest.raises(LiveVpsCall):
         sup.schtasks_run("SYS_STARTUP")
 
@@ -89,6 +94,7 @@ def test_a_swallowing_caller_cannot_eat_the_guard():
     the ssh subprocess was still attempted on the way in. It must RAISE.
     """
     from services import agent_supervisor as sup
+
     with pytest.raises(LiveVpsCall):
         sup.vps_reachable()
 
@@ -97,6 +103,7 @@ def test_the_http_half_survives_a_swallowing_caller_too():
     """`_agent_ok` is the same shape one channel over: `try: client.health() except
     Exception: return False`."""
     from services import agent_supervisor as sup
+
     with pytest.raises(LiveVpsCall):
         sup.nt8_agent_ok()
     with pytest.raises(LiveVpsCall):
@@ -112,9 +119,11 @@ def test_the_guard_is_not_an_exception():
 
 # ── Named stubs still win ─────────────────────────────────────────────────────
 
+
 def test_a_stubbed_call_site_still_works(monkeypatch):
     """The guard must not make the VPS untestable — a test that stubs the function it needs
     patches above the fixture, and its patch wins."""
     from routers import bots
+
     monkeypatch.setattr(bots, "_ssh", lambda _c: "stubbed")
     assert bots._ssh("whoami") == "stubbed"

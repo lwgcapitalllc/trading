@@ -7,10 +7,10 @@ lists, so the predicates were visible next to the thing they drew. Now they are 
 `lab_db.get_nav_activity` and nothing in the UI can contradict them — which is the saving and
 also the risk, so every predicate is pinned here, including the ones that must NOT match.
 """
+
 import time
 
 import pytest
-
 from services import lab_db
 
 
@@ -18,16 +18,18 @@ def _strategy() -> str:
     """Same shape the shared `_insert_strategy` fixture helper uses — a hand-rolled INSERT drifts
     from the real schema and then fails for a reason that has nothing to do with the test."""
     sid = "strat_nav_activity"
-    lab_db.upsert_strategy({
-        "id": sid,
-        "name": "Nav Activity",
-        "class_name": "NavActivity",
-        "source_path": "test/NavActivity.py",
-        "scanned_at": int(time.time()),
-        "default_params": {},
-        "param_schema": [],
-        "runner": "python",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": sid,
+            "name": "Nav Activity",
+            "class_name": "NavActivity",
+            "source_path": "test/NavActivity.py",
+            "scanned_at": int(time.time()),
+            "default_params": {},
+            "param_schema": [],
+            "runner": "python",
+        }
+    )
     return sid
 
 
@@ -56,13 +58,16 @@ def _run(run_id: str, status: str, **over) -> None:
             vals.append(over[col])
     if sets:
         with lab_db._connect() as conn:
-            conn.execute(f"UPDATE backtest_runs SET {', '.join(sets)} WHERE run_id = ?",
-                         (*vals, run_id))
+            conn.execute(
+                f"UPDATE backtest_runs SET {', '.join(sets)} WHERE run_id = ?", (*vals, run_id)
+            )
 
 
 def test_all_quiet_by_default(fresh_db):
     assert lab_db.get_nav_activity() == {
-        "backtests": False, "optimizations": False, "stress_tests": False,
+        "backtests": False,
+        "optimizations": False,
+        "stress_tests": False,
     }
 
 
@@ -101,8 +106,25 @@ def _optimization(status: str) -> None:
             "end_date, commission_per_side, slippage_ticks, mode, search_method, param_grid, "
             "status, estimated_runs, completed_runs, created_at, bar_type, bar_value, min_trades) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            ("opt_run", _strategy(), "XAUUSD", "2024-01-01", "2024-12-31", 0.0, 0,
-             "standard", "native", "{}", status, 4, 0, int(time.time()), "Minute", 15, 0),
+            (
+                "opt_run",
+                _strategy(),
+                "XAUUSD",
+                "2024-01-01",
+                "2024-12-31",
+                0.0,
+                0,
+                "standard",
+                "native",
+                "{}",
+                status,
+                4,
+                0,
+                int(time.time()),
+                "Minute",
+                15,
+                0,
+            ),
         )
 
 
@@ -119,7 +141,7 @@ def test_a_running_optimization_lights_optimizations(fresh_db):
     _optimization("running")
     act = lab_db.get_nav_activity()
     assert act["optimizations"] is True
-    assert act["backtests"] is False   # scopes must not bleed
+    assert act["backtests"] is False  # scopes must not bleed
 
 
 def test_a_finished_optimization_lights_nothing(fresh_db):
@@ -132,11 +154,11 @@ def test_every_stress_PHASE_lights_stress_tests(fresh_db, status):
     """⚠ `LIKE 'running%'`, not `= 'running'`. A stress test spends most of its life in
     `running_wf` / `running_sens`, so an equality check leaves the dot off for most of the run —
     which looks exactly like a test that already finished."""
-    _run("r_for_stress", "complete")          # the FK target — a stress test needs a real run
+    _run("r_for_stress", "complete")  # the FK target — a stress test needs a real run
     _stress_test(status, "r_for_stress")
     act = lab_db.get_nav_activity()
     assert act["stress_tests"] is True
-    assert act["backtests"] is False          # its source run is finished; scopes must not bleed
+    assert act["backtests"] is False  # its source run is finished; scopes must not bleed
 
 
 def test_a_graded_stress_test_lights_nothing(fresh_db):

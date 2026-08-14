@@ -13,19 +13,18 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-
 from models import StressTest, StressTestCreate, StressTestDetail
 from services import lab_db
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.stress_tester import (
-    run_stress_test_task,
-    _estimate_wf_duration_min,
+    MIN_TRADES_FOR_STRESS,
     _estimate_sens_duration_min,
+    _estimate_wf_duration_min,
     phases_requested,
+    run_stress_test_task,
     sensitivity_param_count,
     sensitivity_shift_count,
     walk_forward_feasibility,
-    MIN_TRADES_FOR_STRESS,
 )
 
 router = APIRouter(prefix="/stress-tests", tags=["stress-tests"])
@@ -115,31 +114,37 @@ async def trigger_stress_test(body: StressTestCreate):
             raise HTTPException(404, "Ruleset not found")
 
     strategy = lab_db.get_strategy(run.get("strategy_id", ""))
-    runner   = (strategy or {}).get("runner", "ninjatrader")
+    runner = (strategy or {}).get("runner", "ninjatrader")
     # ONE definition of which market a runner belongs to (lab_db.stress_market_for_runner), mirrored
     # by the frontend's `runnerMarket`. Inline, a python run was filed under futures here and read
     # as forex on the page, so its own button never knew it was blocked.
-    market   = lab_db.stress_market_for_runner(runner)
-    locks    = lab_db.running_stress_test_markets()
+    market = lab_db.stress_market_for_runner(runner)
+    locks = lab_db.running_stress_test_markets()
     if locks[market]:
         raise HTTPException(409, f"A {market} stress test is already running")
 
     if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_running_job(runner):
-        raise HTTPException(409, f"An {'MT5' if runner == 'mt5' else 'NT8'} job is already running — walk-forward and sensitivity require the platform to be idle")
+        raise HTTPException(
+            409,
+            f"An {'MT5' if runner == 'mt5' else 'NT8'} job is already running — walk-forward and sensitivity require the platform to be idle",
+        )
 
     st_id = uuid.uuid4().hex[:16]
-    lab_db.insert_stress_test({
-        "stress_test_id": st_id,
-        "run_id": body.run_id,
-        "ruleset_id": body.ruleset_id,
-        "status": "running",
-        "created_at": int(time.time()),
-        "num_simulations": body.num_simulations,
-        "num_bootstrap": body.num_bootstrap,
-        "walk_forward_windows": body.walk_forward_windows,
-        "phases_requested": phases_requested(body.include_walk_forward,
-                                             body.include_sensitivity),
-    })
+    lab_db.insert_stress_test(
+        {
+            "stress_test_id": st_id,
+            "run_id": body.run_id,
+            "ruleset_id": body.ruleset_id,
+            "status": "running",
+            "created_at": int(time.time()),
+            "num_simulations": body.num_simulations,
+            "num_bootstrap": body.num_bootstrap,
+            "walk_forward_windows": body.walk_forward_windows,
+            "phases_requested": phases_requested(
+                body.include_walk_forward, body.include_sensitivity
+            ),
+        }
+    )
 
     task = asyncio.create_task(
         run_stress_test_task(st_id, body.include_walk_forward, body.include_sensitivity)
@@ -176,8 +181,10 @@ async def trigger_stress_test(body: StressTestCreate):
         # assumes, and the modal was quoting ~12 min for a ~69 min job.
         sens_min = _estimate_sens_duration_min(n_params, runner, run)
         est_min += sens_min
-        notes.append(f"Sensitivity: at most ~{sens_min} min ({n_backtests} backtests before "
-                     f"no-op shifts are skipped)")
+        notes.append(
+            f"Sensitivity: at most ~{sens_min} min ({n_backtests} backtests before "
+            f"no-op shifts are skipped)"
+        )
 
     return {
         "stress_test_id": st_id,
@@ -206,21 +213,28 @@ async def cancel_stress_test(stress_test_id: str) -> dict:
 
     children = lab_db.cancel_stress_test(stress_test_id)
     if children is None:
-        raise HTTPException(409, f"Stress test is '{st['status']}' — only a running test can be cancelled")
+        raise HTTPException(
+            409, f"Stress test is '{st['status']}' — only a running test can be cancelled"
+        )
 
     run = lab_db.get_run(st["run_id"]) or {}
     strategy = lab_db.get_strategy(run.get("strategy_id", "")) or {}
     runner = strategy.get("runner", "ninjatrader")
 
     from services import runner_dispatch
+
     job_stopped = True
     for child_id in children:
         try:
             await asyncio.to_thread(runner_dispatch.cancel_job, child_id, runner)
         except Exception:
             job_stopped = False
-    return {"stress_test_id": stress_test_id, "status": "failed_cancelled",
-            "children_cancelled": len(children), "job_stopped": job_stopped}
+    return {
+        "stress_test_id": stress_test_id,
+        "status": "failed_cancelled",
+        "children_cancelled": len(children),
+        "job_stopped": job_stopped,
+    }
 
 
 @router.delete("/{stress_test_id}", status_code=204)

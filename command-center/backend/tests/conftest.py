@@ -18,8 +18,9 @@ the SSH tunnel and fire scheduled tasks on the live VPS.
 import os
 import subprocess
 import time
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
 
 # Set before `main` is ever imported: the startup hook reads it, and every
 # endpoint test triggers that hook via TestClient. A module-scope env write is
@@ -30,6 +31,7 @@ os.environ["CC_DISABLE_SUPERVISOR"] = "1"
 
 # ── DB isolation ──────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def fresh_db(tmp_path, monkeypatch):
     """
@@ -37,6 +39,7 @@ def fresh_db(tmp_path, monkeypatch):
     All fixtures that depend on this share the same temp DB within one test.
     """
     from services import lab_db
+
     db = tmp_path / "lab.db"
     monkeypatch.setattr(lab_db, "DB_PATH", db)
     lab_db.init_db()
@@ -44,6 +47,7 @@ def fresh_db(tmp_path, monkeypatch):
 
 
 # ── VPS isolation, enforced ───────────────────────────────────────────────────
+
 
 class LiveVpsCall(BaseException):
     """A test reached for the live VPS. Deliberately NOT an `Exception`.
@@ -86,6 +90,7 @@ def _targets_the_vps(cmd) -> bool:
     if os.path.basename(argv[0]) in _SSH_PROGRAMS:
         return True
     import config as cfg
+
     alias = getattr(cfg, "SSH_ALIAS", "")
     return bool(alias) and any(alias in a for a in argv)
 
@@ -119,6 +124,7 @@ def _no_live_vps(request):
     ⚠ Tests marked `integration` are EXEMPT — driving the live VPS is their entire job, and
     they are already interlocked by `pytest.ini`'s `-m "not integration"`.
     """
+
     def refuse_http(*a, **kw):
         raise LiveVpsCall(
             "A test tried to call the live VPS agent over HTTP. Stub the specific "
@@ -143,6 +149,7 @@ def _no_live_vps(request):
                     "scheduled task, or kill an ssh process on the machine running it."
                 )
             return real(cmd, *a, **kw)
+
         return wrapper
 
     with (
@@ -194,6 +201,7 @@ def _no_live_bot_config(request):
 
 # ── API client ────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def client(fresh_db):
     """
@@ -205,8 +213,8 @@ def client(fresh_db):
     Use this for all endpoint tests. Tests that only need the service layer
     directly can use fresh_db + seeded_run without this fixture.
     """
-    from main import app
     from fastapi.testclient import TestClient
+    from main import app
 
     with (
         patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}),
@@ -232,16 +240,19 @@ def client(fresh_db):
 
 # ── Seeded data helpers ───────────────────────────────────────────────────────
 
+
 def _insert_strategy(lab_db):
-    lab_db.upsert_strategy({
-        "id": "test_strategy",
-        "name": "Test Strategy",
-        "class_name": "TestStrategy",
-        "source_path": "test/TestStrategy.cs",
-        "scanned_at": int(time.time()),
-        "default_params": {},
-        "param_schema": [],
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "test_strategy",
+            "name": "Test Strategy",
+            "class_name": "TestStrategy",
+            "source_path": "test/TestStrategy.cs",
+            "scanned_at": int(time.time()),
+            "default_params": {},
+            "param_schema": [],
+        }
+    )
     return "test_strategy"
 
 
@@ -258,34 +269,40 @@ def seeded_run(fresh_db):
     strategy_id = _insert_strategy(lab_db)
     run_id = "testrun12abc"
 
-    lab_db.insert_run({
-        "run_id": run_id,
-        "strategy_id": strategy_id,
-        "instrument": "MNQ 06-26",
-        "params": {},
-        "bar_type": "Minute",
-        "bar_value": 5,
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "commission_per_side": 0.50,
-        "slippage_ticks": 1,
-        "status": "running",
-        "created_at": int(time.time()),
-    })
-    lab_db.update_run_complete(run_id, {
-        "net_pnl": 4000.0,
-        "max_drawdown": 1500.0,
-        "profit_factor": 1.8,
-        "win_rate": 0.55,
-        "win_count": 80,
-        "trade_count": 145,
-        "sharpe": 1.2,
-        "sortino": 1.5,
-        "cagr": 0.22,
-        "avg_win": 120.0,
-        "avg_loss": -85.0,
-        "avg_trade_duration_min": 43.0,
-        "worst_day_pnl": -400.0,
-        "worst_losing_streak": 5,
-    }, {})
+    lab_db.insert_run(
+        {
+            "run_id": run_id,
+            "strategy_id": strategy_id,
+            "instrument": "MNQ 06-26",
+            "params": {},
+            "bar_type": "Minute",
+            "bar_value": 5,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "commission_per_side": 0.50,
+            "slippage_ticks": 1,
+            "status": "running",
+            "created_at": int(time.time()),
+        }
+    )
+    lab_db.update_run_complete(
+        run_id,
+        {
+            "net_pnl": 4000.0,
+            "max_drawdown": 1500.0,
+            "profit_factor": 1.8,
+            "win_rate": 0.55,
+            "win_count": 80,
+            "trade_count": 145,
+            "sharpe": 1.2,
+            "sortino": 1.5,
+            "cagr": 0.22,
+            "avg_win": 120.0,
+            "avg_loss": -85.0,
+            "avg_trade_duration_min": 43.0,
+            "worst_day_pnl": -400.0,
+            "worst_losing_streak": 5,
+        },
+        {},
+    )
     return run_id

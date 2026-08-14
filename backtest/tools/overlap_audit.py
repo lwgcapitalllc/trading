@@ -83,7 +83,7 @@ class Hold:
     def __init__(self, direction: int, start: int, end: int, r: float, idx: int):
         self.dir = direction
         self.start = start
-        self.end = max(end, start + 1)   # a same-bar entry/exit still occupies its bar
+        self.end = max(end, start + 1)  # a same-bar entry/exit still occupies its bar
         self.r = r
         self.idx = idx
 
@@ -118,6 +118,7 @@ def _replay(key: str, df, warmup: int, capital: float, overrides: dict):
     cfg = ConfigCls(fill_model="bar", symbol="XAUUSD")
     if overrides:
         import dataclasses
+
         cfg = dataclasses.replace(cfg, **overrides)
     strat = StrategyCls(config=cfg, initial_capital=capital)
     print(f"  replaying {spec['name']} (warmup {warmup}) ...", flush=True)
@@ -154,19 +155,27 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--a", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--b", default="mpc_bleg", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
-    ap.add_argument("--start", default=None,
-                    help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)")
+    ap.add_argument(
+        "--start",
+        default=None,
+        help="YYYY-MM-DD (default: the broker's measured earliest bar at this tf)",
+    )
     ap.add_argument("--end", default=None)
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--cluster-bars", type=int, default=_CLUSTER_BARS,
-                    help="same-direction entries this close are reported as one cluster")
+    ap.add_argument(
+        "--cluster-bars",
+        type=int,
+        default=_CLUSTER_BARS,
+        help="same-direction entries this close are reported as one cluster",
+    )
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
 
@@ -182,7 +191,8 @@ def main(argv=None) -> int:
         if fl is None:
             raise SystemExit(
                 f"cannot measure the broker's earliest {args.tf}m history for {args.symbol}. "
-                f"Pass --start explicitly rather than guessing one.")
+                f"Pass --start explicitly rather than guessing one."
+            )
         start = fl.isoformat()
     end = args.end or dt.date.today().isoformat()
 
@@ -246,54 +256,84 @@ def main(argv=None) -> int:
     # ── report ──
     w = 100
     print("\n" + "=" * w)
-    print(f"OVERLAP AUDIT   {args.a}  vs  {args.b}"
-          f"   {df.index[0].date()} -> {df.index[-1].date()}   {n:,} bars")
+    print(
+        f"OVERLAP AUDIT   {args.a}  vs  {args.b}"
+        f"   {df.index[0].date()} -> {df.index[-1].date()}   {n:,} bars"
+    )
     print("=" * w)
 
-    print(f"\n{args.a:<18} {len(ta):4d} trades   {sum(t.r for t in ta):8.2f}R"
-          f"   in the market {in_a:6,d} bars ({_pct(in_a, n)} of all bars)")
-    print(f"{args.b:<18} {len(tb):4d} trades   {sum(t.r for t in tb):8.2f}R"
-          f"   in the market {in_b:6,d} bars ({_pct(in_b, n)} of all bars)")
+    print(
+        f"\n{args.a:<18} {len(ta):4d} trades   {sum(t.r for t in ta):8.2f}R"
+        f"   in the market {in_a:6,d} bars ({_pct(in_a, n)} of all bars)"
+    )
+    print(
+        f"{args.b:<18} {len(tb):4d} trades   {sum(t.r for t in tb):8.2f}R"
+        f"   in the market {in_b:6,d} bars ({_pct(in_b, n)} of all bars)"
+    )
 
     print("\n--- BARS BOTH BOTS HELD A POSITION ---")
-    print(f"  both in the market   {both:6,d} bars"
-          f"   = {_pct(both, in_a)} of {args.a}'s hold time"
-          f", {_pct(both, in_b)} of {args.b}'s")
-    print(f"    SAME direction     {same:6,d} bars  ({_pct(same, both)} of the overlap)"
-          f"   <- doubled risk on one idea")
-    print(f"    OPPOSITE direction {opp:6,d} bars  ({_pct(opp, both)} of the overlap)"
-          f"   <- partially hedged")
+    print(
+        f"  both in the market   {both:6,d} bars"
+        f"   = {_pct(both, in_a)} of {args.a}'s hold time"
+        f", {_pct(both, in_b)} of {args.b}'s"
+    )
+    print(
+        f"    SAME direction     {same:6,d} bars  ({_pct(same, both)} of the overlap)"
+        f"   <- doubled risk on one idea"
+    )
+    print(
+        f"    OPPOSITE direction {opp:6,d} bars  ({_pct(opp, both)} of the overlap)"
+        f"   <- partially hedged"
+    )
 
     print("\n--- TRADES THAT OVERLAP AT ALL ---")
-    print(f"  {args.a:<18} {len(a_paired):4d} of {len(ta):4d} trades ({_pct(len(a_paired), len(ta))})"
-          f" share a bar with a {args.b} trade")
-    print(f"  {args.b:<18} {len(b_paired):4d} of {len(tb):4d} trades ({_pct(len(b_paired), len(tb))})"
-          f" share a bar with a {args.a} trade")
-    print(f"  overlapping PAIRS    {len(pairs):4d}   of which {len(same_dir_pairs)} are same-direction")
+    print(
+        f"  {args.a:<18} {len(a_paired):4d} of {len(ta):4d} trades ({_pct(len(a_paired), len(ta))})"
+        f" share a bar with a {args.b} trade"
+    )
+    print(
+        f"  {args.b:<18} {len(b_paired):4d} of {len(tb):4d} trades ({_pct(len(b_paired), len(tb))})"
+        f" share a bar with a {args.a} trade"
+    )
+    print(
+        f"  overlapping PAIRS    {len(pairs):4d}   of which {len(same_dir_pairs)} are same-direction"
+    )
 
-    print(f"\n--- SAME STRUCTURE BREAK? (same-direction entries <= {args.cluster_bars} bars apart) ---")
+    print(
+        f"\n--- SAME STRUCTURE BREAK? (same-direction entries <= {args.cluster_bars} bars apart) ---"
+    )
     if clusters:
         gaps = [abs(c[2]) for c in clusters]
-        print(f"  {len(clusters)} of {len(ta)} {args.a} trades have a same-direction {args.b} entry"
-              f" within {args.cluster_bars} bars")
-        print(f"  gap in bars: min {min(gaps)}  median {statistics.median(gaps):.0f}  max {max(gaps)}")
+        print(
+            f"  {len(clusters)} of {len(ta)} {args.a} trades have a same-direction {args.b} entry"
+            f" within {args.cluster_bars} bars"
+        )
+        print(
+            f"  gap in bars: min {min(gaps)}  median {statistics.median(gaps):.0f}  max {max(gaps)}"
+        )
         for x, y, d in clusters[:15]:
             side = "long " if x.dir > 0 else "short"
             when = df.index[x.start]
-            print(f"    {when}  {side}  {args.b} entered {d:+d} bars"
-                  f"   A {x.r:+6.2f}R   B {y.r:+6.2f}R")
+            print(
+                f"    {when}  {side}  {args.b} entered {d:+d} bars"
+                f"   A {x.r:+6.2f}R   B {y.r:+6.2f}R"
+            )
         if len(clusters) > 15:
             print(f"    ... and {len(clusters) - 15} more (see clusters.csv)")
     else:
-        print(f"  NONE. No {args.a} trade has a same-direction {args.b} entry within"
-              f" {args.cluster_bars} bars.")
+        print(
+            f"  NONE. No {args.a} trade has a same-direction {args.b} entry within"
+            f" {args.cluster_bars} bars."
+        )
 
     print("\n--- WHAT ONE ACCOUNT WOULD HAVE CARRIED ---")
     print(f"  bars at 1 position   {in_a + in_b - 2 * both:6,d}")
     print(f"  bars at 2 positions  {both:6,d}   (peak concurrent positions: {2 if both else 1})")
-    print(f"  ⚠ each bot sizes off its OWN equity, so 2 positions is 2x the per-trade risk %.")
-    print(f"    At exec_risk_pct = 10 that is 20% of the account at risk on {both:,} bars,"
-          f" {same:,} of them on the SAME side.")
+    print("  ⚠ each bot sizes off its OWN equity, so 2 positions is 2x the per-trade risk %.")
+    print(
+        f"    At exec_risk_pct = 10 that is 20% of the account at risk on {both:,} bars,"
+        f" {same:,} of them on the SAME side."
+    )
 
     print("\n--- MONTHLY R CORRELATION ---")
     print(f"  months with any trade: {len(months)}  (both traded in {len(both_traded)})")
@@ -301,22 +341,51 @@ def main(argv=None) -> int:
         print("  correlation: not computable (a series is flat or too short)")
     else:
         print(f"  Pearson r = {corr:+.3f} over {len(months)} months")
-        print("  ⚠ months where only one bot traded contribute a 0 for the other, which pulls r "
-              "toward 0.\n    Read it as a floor on how together they move, not a precise figure.")
+        print(
+            "  ⚠ months where only one bot traded contribute a 0 for the other, which pulls r "
+            "toward 0.\n    Read it as a floor on how together they move, not a precise figure."
+        )
 
     # ── files ──
-    out = Path(args.out) if args.out else _ROOT / "backtest" / "reports" / (
-        "overlap_" + dt.datetime.now().strftime("%Y%m%dT%H%M%S"))
+    out = (
+        Path(args.out)
+        if args.out
+        else _ROOT
+        / "backtest"
+        / "reports"
+        / ("overlap_" + dt.datetime.now().strftime("%Y%m%dT%H%M%S"))
+    )
     out.mkdir(parents=True, exist_ok=True)
 
     with open(out / "pairs.csv", "w", newline="") as fh:
         wr = csv.writer(fh)
-        wr.writerow(["a_entry_utc", "a_dir", "a_r", "b_entry_utc", "b_dir", "b_r",
-                     "shared_bars", "same_direction", "entry_gap_bars"])
+        wr.writerow(
+            [
+                "a_entry_utc",
+                "a_dir",
+                "a_r",
+                "b_entry_utc",
+                "b_dir",
+                "b_r",
+                "shared_bars",
+                "same_direction",
+                "entry_gap_bars",
+            ]
+        )
         for x, y, shared in sorted(pairs, key=lambda p: p[0].start):
-            wr.writerow([df.index[x.start].isoformat(), x.dir, round(x.r, 3),
-                         df.index[y.start].isoformat(), y.dir, round(y.r, 3),
-                         shared, x.dir == y.dir, y.start - x.start])
+            wr.writerow(
+                [
+                    df.index[x.start].isoformat(),
+                    x.dir,
+                    round(x.r, 3),
+                    df.index[y.start].isoformat(),
+                    y.dir,
+                    round(y.r, 3),
+                    shared,
+                    x.dir == y.dir,
+                    y.start - x.start,
+                ]
+            )
 
     with open(out / "clusters.csv", "w", newline="") as fh:
         wr = csv.writer(fh)

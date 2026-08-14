@@ -33,6 +33,7 @@ class SwingLevel:
     that the mid-pullback promotion locks the level but does NOT raise `new_swing_high`/
     `new_swing_low` in ExternalEvents — see the note on those fields.
     """
+
     price: float
     index: int
     locked: bool = False
@@ -45,10 +46,10 @@ class ExternalEvents:
 
     # BOS / CHoCH ("BOS" or "SOS" text) — a body close beyond the active swing level.
     bull_bos: bool = False
-    bull_bos_price: Optional[float] = None    # the ASH level that broke
-    bull_sos: bool = False                    # True only when the break also flips the trend (CHoCH)
+    bull_bos_price: Optional[float] = None  # the ASH level that broke
+    bull_sos: bool = False  # True only when the break also flips the trend (CHoCH)
     bear_bos: bool = False
-    bear_bos_price: Optional[float] = None    # the ASL level that broke
+    bear_bos_price: Optional[float] = None  # the ASL level that broke
     bear_sos: bool = False
 
     # The full impulse LEG of the break — both endpoints of the move that broke, fired on the
@@ -102,10 +103,10 @@ class ExternalEvents:
     # new active swing and is classified by the NEXT break in that direction. Those bars carry
     # "ASH"/"ASL" instead of a confirmed label. Consumers keying off "HH"/"LH"/"HL"/"LL" must
     # treat "ASH"/"ASL" as "not yet classified", not as an unknown value.
-    broken_high_label: Optional[str] = None   # "HH" | "LH" | "ASH"
+    broken_high_label: Optional[str] = None  # "HH" | "LH" | "ASH"
     broken_high_price: Optional[float] = None
     broken_high_index: Optional[int] = None
-    broken_low_label: Optional[str] = None    # "HL" | "LL" | "ASL"
+    broken_low_label: Optional[str] = None  # "HL" | "LL" | "ASL"
     broken_low_price: Optional[float] = None
     broken_low_index: Optional[int] = None
 
@@ -123,11 +124,11 @@ class InternalEvents:
     new_swing_high: bool = False
     new_swing_high_price: Optional[float] = None
     new_swing_high_index: Optional[int] = None
-    swing_high_label: Optional[str] = None    # "iSH" | "iHH" (never "iLH" — see NOTE above)
+    swing_high_label: Optional[str] = None  # "iSH" | "iHH" (never "iLH" — see NOTE above)
     new_swing_low: bool = False
     new_swing_low_price: Optional[float] = None
     new_swing_low_index: Optional[int] = None
-    swing_low_label: Optional[str] = None     # "iSL" | "iLL" (never "iHL" — see NOTE above)
+    swing_low_label: Optional[str] = None  # "iSL" | "iLL" (never "iHL" — see NOTE above)
 
     # iBOS ("iBOS" text) — internal continuation break.
     bull_bos: bool = False
@@ -138,7 +139,7 @@ class InternalEvents:
     # The pullback low/high being tracked at the moment an iBOS fires gets classified and
     # labeled here — "iHL" text alongside a bullish iBOS, "iLH" text alongside a bearish one.
     # This is the label that was previously dropped entirely by the port (see CLAUDE.md).
-    demoted_low_label: Optional[str] = None   # "iHL"
+    demoted_low_label: Optional[str] = None  # "iHL"
     demoted_low_price: Optional[float] = None
     demoted_low_index: Optional[int] = None
     demoted_high_label: Optional[str] = None  # "iLH"

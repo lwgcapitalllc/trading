@@ -4,8 +4,15 @@ import type { Impact } from '@/types'
 
 // Country flag per currency (regional-indicator emoji). Shown instead of the ISO code.
 export const CURRENCY_FLAG: Record<string, string> = {
-  USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', CAD: '🇨🇦',
-  AUD: '🇦🇺', NZD: '🇳🇿', CHF: '🇨🇭', CNY: '🇨🇳',
+  USD: '🇺🇸',
+  EUR: '🇪🇺',
+  GBP: '🇬🇧',
+  JPY: '🇯🇵',
+  CAD: '🇨🇦',
+  AUD: '🇦🇺',
+  NZD: '🇳🇿',
+  CHF: '🇨🇭',
+  CNY: '🇨🇳',
 }
 export const flagOf = (currency: string) => CURRENCY_FLAG[currency] ?? currency
 

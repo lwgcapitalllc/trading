@@ -38,19 +38,19 @@ except ImportError:
 # DERIVED, not hardcoded — same reason as algos/shared/bot_state.py. A literal
 # "C:/trading/algos" is correct on the VPS and silently wrong everywhere else, which makes
 # this file untestable off the box.
-ALGOS_ROOT     = Path(__file__).resolve().parent.parent
-STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
-SUPPRESS_FILE  = ALGOS_ROOT / "stop_suppress.json"
-TEXAS          = ZoneInfo("America/Chicago")
+ALGOS_ROOT = Path(__file__).resolve().parent.parent
+STATE_FILE = ALGOS_ROOT / "monitor_state.json"
+SUPPRESS_FILE = ALGOS_ROOT / "stop_suppress.json"
+TEXAS = ZoneInfo("America/Chicago")
 
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 import bot_state as _bot_state
+from alert_format import alert  # noqa: E402
 
 # Telegram credentials are resolved from the environment or the git-ignored
 # algos/credentials.json — never pasted here. See algos/shared/credentials.py.
 from credentials import telegram_credentials  # noqa: E402
-from notify import chat_for, HEALTH            # noqa: E402
-from alert_format import alert                 # noqa: E402
+from notify import HEALTH, chat_for  # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 
@@ -71,11 +71,10 @@ LOG_STALE_SECS = 5 * 60
 # indistinguishable the moment a second one exists.
 BOTS = {
     "mpc_sos_fade_demo": {
-        "name":         "MPC SOS Fade",
+        "name": "MPC SOS Fade",
         "suppress_key": "mpc_sos_fade_demo",
-        "script":       "mpc_sos_fade_demo",
-        "log":          str(ALGOS_ROOT / "markets/fx/instances/mpc_sos_fade_demo"
-                                         "/mpc_sos_fade_demo.log"),
+        "script": "mpc_sos_fade_demo",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/mpc_sos_fade_demo/mpc_sos_fade_demo.log"),
     },
     # Registered while it sits on the BENCH, and that pairing is deliberate. `check_bot` skips a
     # bot with no account, so this costs nothing today — but registering it only when somebody
@@ -83,11 +82,10 @@ BOTS = {
     # nothing to notice until it died unobserved. The registry is static and complete; whether a
     # bot is EXPECTED to be running is read from its own config, every pass.
     "mpc_bleg_demo": {
-        "name":         "MPC B-LEG",
+        "name": "MPC B-LEG",
         "suppress_key": "mpc_bleg_demo",
-        "script":       "mpc_bleg_demo",
-        "log":          str(ALGOS_ROOT / "markets/fx/instances/mpc_bleg_demo"
-                                         "/mpc_bleg_demo.log"),
+        "script": "mpc_bleg_demo",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/mpc_bleg_demo/mpc_bleg_demo.log"),
     },
 }
 
@@ -112,7 +110,7 @@ def send_alert(message: str):
     if not TELEGRAM_TOKEN or not dest:
         print(f"Alert dropped (Telegram not configured): {message[:80]}")
         return
-    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": dest, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
@@ -135,9 +133,10 @@ def save_state(state: dict):
 def is_running(script: str) -> bool:
     try:
         result = subprocess.run(
-            ["wmic", "process", "where", "name='python.exe'",
-             "get", "commandline"],
-            capture_output=True, text=True, timeout=10
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return script in result.stdout
     except Exception:
@@ -176,7 +175,7 @@ def restart_bot(bot_key: str) -> bool:
     coordinator = ALGOS_ROOT / "bots" / "startup_coordinator.py"
     try:
         flags = 0
-        if hasattr(subprocess, "DETACHED_PROCESS"):        # Windows only; harmless elsewhere
+        if hasattr(subprocess, "DETACHED_PROCESS"):  # Windows only; harmless elsewhere
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         subprocess.Popen(
             [sys.executable, str(coordinator), "--bot", bot_key],
@@ -199,28 +198,28 @@ def restart_bot(bot_key: str) -> bool:
 
 def check_bot(bot_key: str, state: dict, today: str) -> dict:
     """Check bot availability and heartbeat. Nothing here alerts on P&L — see the header."""
-    cfg       = BOTS[bot_key]
+    cfg = BOTS[bot_key]
     bot_state = state.get(bot_key, {})
 
-    running     = is_running(cfg["script"])
+    running = is_running(cfg["script"])
     was_running = bot_state.get("running", None)
 
     # ── Running state change alerts ───────────────────────────────────────
     if was_running is not None and running != was_running:
         if not running:
             suppress_key = cfg.get("suppress_key", "")
-            suppressed   = _is_stop_suppressed(suppress_key) if suppress_key else False
+            suppressed = _is_stop_suppressed(suppress_key) if suppress_key else False
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
-                send_alert(alert(
-                    "🔴", "OFFLINE", cfg["name"],
-                    "The process is gone. Restarting it now."))
+                send_alert(
+                    alert("🔴", "OFFLINE", cfg["name"], "The process is gone. Restarting it now.")
+                )
             _bot_state.set_status(bot_key, "offline")
         else:
             if not bot_state.get("stop_suppressed"):
-                send_alert(alert(
-                    "🟢", "BACK ONLINE", cfg["name"],
-                    "It is running again. Nothing to do."))
+                send_alert(
+                    alert("🟢", "BACK ONLINE", cfg["name"], "It is running again. Nothing to do.")
+                )
             bot_state["stop_suppressed"] = False
             bot_state["restart_tries"] = 0
             bot_state["max_retry_alerted"] = False
@@ -248,14 +247,19 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
 
         tries = bot_state.get("restart_tries", 0)
         if tries < MAX_BOT_RESTARTS:
-            print(f"{bot_key} is DOWN. Restart attempt {tries+1}/{MAX_BOT_RESTARTS}...")
+            print(f"{bot_key} is DOWN. Restart attempt {tries + 1}/{MAX_BOT_RESTARTS}...")
             if restart_bot(bot_key):
                 bot_state["restart_tries"] = 0
                 bot_state["running"] = True
-                send_alert(alert(
-                    "🟢", "RESTARTED", cfg["name"],
-                    "It was offline and has been restarted automatically.",
-                    "Worth checking the log for why it stopped."))
+                send_alert(
+                    alert(
+                        "🟢",
+                        "RESTARTED",
+                        cfg["name"],
+                        "It was offline and has been restarted automatically.",
+                        "Worth checking the log for why it stopped.",
+                    )
+                )
                 _bot_state.set_status(bot_key, "running")
             else:
                 bot_state["restart_tries"] = tries + 1
@@ -264,12 +268,17 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             # needs a person to read the log, and repeating the alert every minute trains you
             # to mute the channel that also carries the trade alerts.
             bot_state["max_retry_alerted"] = True
-            send_alert(alert(
-                "🚨", "WILL NOT START", cfg["name"],
-                f"{MAX_BOT_RESTARTS} restart attempts have failed. It is not trading and will "
-                f"not retry.",
-                "It will stay down until someone looks. Usually a version pin or the MT5 login "
-                "— check its log."))
+            send_alert(
+                alert(
+                    "🚨",
+                    "WILL NOT START",
+                    cfg["name"],
+                    f"{MAX_BOT_RESTARTS} restart attempts have failed. It is not trading and will "
+                    f"not retry.",
+                    "It will stay down until someone looks. Usually a version pin or the MT5 login "
+                    "— check its log.",
+                )
+            )
         return bot_state
 
     # ── Heartbeat check — catches alive-but-frozen loops ─────────────────
@@ -287,39 +296,54 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # and this sent `STALLED — 7 minutes`, then `RECOVERED` a minute later, on a healthy bot.
     # `max` keeps the fallback above intact (a bot that boots and never stamps still ages from
     # `started`) while a fresh start can no longer be judged on the previous run's clock.
-    bot_live    = _bot_state.read_bot(bot_key)
-    heartbeat   = max(bot_live.get("heartbeat") or 0, bot_live.get("started") or 0)
-    stale_secs  = (time.time() - heartbeat) if heartbeat else 0
+    bot_live = _bot_state.read_bot(bot_key)
+    heartbeat = max(bot_live.get("heartbeat") or 0, bot_live.get("started") or 0)
+    stale_secs = (time.time() - heartbeat) if heartbeat else 0
     if stale_secs > LOG_STALE_SECS:
         if not bot_state.get("stale_alerted"):
-            send_alert(alert(
-                "⚠️", "STALLED", cfg["name"],
-                f"The process is alive but has not stamped its heartbeat for "
-                f"{stale_secs / 60:.0f} minutes, so it is not working through bars.",
-                "Restart it from the command center, or check its log."))
+            send_alert(
+                alert(
+                    "⚠️",
+                    "STALLED",
+                    cfg["name"],
+                    f"The process is alive but has not stamped its heartbeat for "
+                    f"{stale_secs / 60:.0f} minutes, so it is not working through bars.",
+                    "Restart it from the command center, or check its log.",
+                )
+            )
             bot_state["stale_alerted"] = True
             _bot_state.set_status(bot_key, "stalled")
     else:
         if bot_state.get("stale_alerted"):
-            send_alert(alert(
-                "🟢", "RECOVERED", cfg["name"],
-                "The heartbeat resumed and it is working through bars again.",
-                "Nothing to do."))
+            send_alert(
+                alert(
+                    "🟢",
+                    "RECOVERED",
+                    cfg["name"],
+                    "The heartbeat resumed and it is working through bars again.",
+                    "Nothing to do.",
+                )
+            )
             _bot_state.set_status(bot_key, "running")
         bot_state["stale_alerted"] = False
 
     # ── Unresolved symbol alerts (once per symbol per day) ───────────────
-    unresolved    = bot_live.get("unresolved_symbols", [])
+    unresolved = bot_live.get("unresolved_symbols", [])
     alerted_today = bot_state.get("unresolved_symbols_alerted", {})
     if unresolved:
         for entry in unresolved:
             sym = entry.get("symbol", "")
             if not sym or alerted_today.get(sym) == today:
                 continue
-            send_alert(alert(
-                "⚠️", "SYMBOL NOT FOUND", cfg["name"],
-                f"The broker does not list {sym}, so it was skipped this cycle.",
-                "Fix the watchlist in config.json."))
+            send_alert(
+                alert(
+                    "⚠️",
+                    "SYMBOL NOT FOUND",
+                    cfg["name"],
+                    f"The broker does not list {sym}, so it was skipped this cycle.",
+                    "Fix the watchlist in config.json.",
+                )
+            )
             alerted_today[sym] = today
     bot_state["unresolved_symbols_alerted"] = alerted_today
 
@@ -332,46 +356,60 @@ def check_telegram_bot(state: dict) -> dict:
     Auto-restarts up to 3 times. Sends alert when back online.
     After 3 failures sends a critical alert requiring manual intervention.
     """
-    tg_state  = state.get("telegram_bot", {})
-    running   = is_running("telegram_bot.py")
+    tg_state = state.get("telegram_bot", {})
+    running = is_running("telegram_bot.py")
     max_tries = 3
 
     if not running:
         tries = tg_state.get("restart_tries", 0)
-        print(f"Telegram bot is DOWN. Restart attempt {tries+1}/{max_tries}...")
+        print(f"Telegram bot is DOWN. Restart attempt {tries + 1}/{max_tries}...")
 
         if tries < max_tries:
             try:
                 result = subprocess.run(
                     ["schtasks", "/run", "/tn", "SYS_TELEGRAM"],
-                    capture_output=True, text=True, timeout=15
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
                 )
                 if result.returncode == 0:
-                    import time; time.sleep(5)
+                    import time
+
+                    time.sleep(5)
                     if is_running("telegram_bot.py"):
                         print("Telegram bot restarted successfully.")
-                        send_alert(alert(
-                            "🟢", "RESTARTED", "Telegram bot",
-                            "It was offline and has been restarted. Commands work again.",
-                            "Nothing to do."))
+                        send_alert(
+                            alert(
+                                "🟢",
+                                "RESTARTED",
+                                "Telegram bot",
+                                "It was offline and has been restarted. Commands work again.",
+                                "Nothing to do.",
+                            )
+                        )
                         tg_state["restart_tries"] = 0
-                        tg_state["running"]        = True
+                        tg_state["running"] = True
                     else:
                         tg_state["restart_tries"] = tries + 1
-                        tg_state["running"]        = False
+                        tg_state["running"] = False
             except Exception as e:
                 print(f"Restart error: {e}")
                 tg_state["restart_tries"] = tries + 1
         else:
             if not tg_state.get("max_retry_alerted"):
-                send_alert(alert(
-                    "🚨", "WILL NOT START", "Telegram bot",
-                    f"{max_tries} restart attempts have failed, so commands are unavailable.",
-                    "RDP into the VPS and run: schtasks /run /tn SYS_TELEGRAM"))
+                send_alert(
+                    alert(
+                        "🚨",
+                        "WILL NOT START",
+                        "Telegram bot",
+                        f"{max_tries} restart attempts have failed, so commands are unavailable.",
+                        "RDP into the VPS and run: schtasks /run /tn SYS_TELEGRAM",
+                    )
+                )
                 tg_state["max_retry_alerted"] = True
     else:
-        tg_state["running"]           = True
-        tg_state["restart_tries"]     = 0
+        tg_state["running"] = True
+        tg_state["restart_tries"] = 0
         tg_state["max_retry_alerted"] = False
 
     return tg_state

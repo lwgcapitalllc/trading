@@ -89,16 +89,16 @@ computes** (a consumer that wants it off ignores the events) = `showEq = true`, 
 ```python
 from equal_highs_lows import EqualHighsLowsEngine
 
-eq = EqualHighsLowsEngine()   # pivot_len=2, atr_mult=0.1, max_levels=6 — the mpc defaults
+eq = EqualHighsLowsEngine()  # pivot_len=2, atr_mult=0.1, max_levels=6 — the mpc defaults
 
-ev = eq.update(bar.index, bar.high, bar.low, bar.close)   # each closed bar, in order
-for lvl in ev.formed:        # levels that printed THIS bar (event)
+ev = eq.update(bar.index, bar.high, bar.low, bar.close)  # each closed bar, in order
+for lvl in ev.formed:  # levels that printed THIS bar (event)
     lvl.is_high, lvl.price, lvl.left_bar, lvl.formed_bar, lvl.id
-for lvl in ev.mitigated:     # levels taken (closed through) THIS bar (event)
+for lvl in ev.mitigated:  # levels taken (closed through) THIS bar (event)
     ...
 ev.active_eqh, ev.active_eql  # live level prices, oldest→newest (state)
-ev.tolerance                  # eqTol this bar (diagnostic)
-ev.pivot_high, ev.pivot_low   # strict price pivots confirmed this bar (diagnostic)
+ev.tolerance  # eqTol this bar (diagnostic)
+ev.pivot_high, ev.pivot_low  # strict price pivots confirmed this bar (diagnostic)
 ```
 
 ---

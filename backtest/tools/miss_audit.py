@@ -112,7 +112,7 @@ def main(argv=None) -> int:
     cfg = ConfigCls(fill_model="bar", symbol=args.symbol)
     patch: dict = {}
     if hasattr(cfg, "exec_secondary"):
-        patch["exec_secondary"] = False       # single-stream replay; see exit_audit.py
+        patch["exec_secondary"] = False  # single-stream replay; see exit_audit.py
     for ov in args.overrides:
         field, raw = ov.split("=", 1)
         field = field.strip()
@@ -141,15 +141,21 @@ def main(argv=None) -> int:
     blocks = [b for b in strat.execution.blocks if b.index >= args.warmup]
 
     print("\n" + "=" * 92)
-    print(f"{args.strategy}  {args.symbol} {args.tf}m   {df.index[0].date()} -> {df.index[-1].date()}")
+    print(
+        f"{args.strategy}  {args.symbol} {args.tf}m   {df.index[0].date()} -> {df.index[-1].date()}"
+    )
     print(f"  {len(trades)} trades   {len(misses)} missed setups   {len(blocks)} blocked setups")
     print("=" * 92)
 
     three = [m for m in misses if m.met >= 3]
     two = [m for m in misses if m.met == 2]
-    print(f"\nMISSES BY HOW FAR THEY GOT")
-    print(f"  3 of 3 — every confluence met, no trade   {len(three):>5}  {_pct(len(three), len(misses))}")
-    print(f"  2 of 3 — arm or zone missing              {len(two):>5}  {_pct(len(two), len(misses))}")
+    print("\nMISSES BY HOW FAR THEY GOT")
+    print(
+        f"  3 of 3 — every confluence met, no trade   {len(three):>5}  {_pct(len(three), len(misses))}"
+    )
+    print(
+        f"  2 of 3 — arm or zone missing              {len(two):>5}  {_pct(len(two), len(misses))}"
+    )
 
     for label, grp in (("3 OF 3", three), ("2 OF 3", two)):
         if not grp:
@@ -159,12 +165,14 @@ def main(argv=None) -> int:
         for code, n in counts.most_common():
             lbl = grp[0].labels[0] if False else None
             name = next((m.labels[0] for m in grp if m.code == code), f"code {code}")
-            print(f"  {code}  {name:<24} {n:>5}  {_pct(n, len(grp)):>6}   -> {_LEVER.get(code, '?')}")
+            print(
+                f"  {code}  {name:<24} {n:>5}  {_pct(n, len(grp)):>6}   -> {_LEVER.get(code, '?')}"
+            )
 
     if three:
         print("\n3 OF 3 — SHAPE")
         by_dir = Counter("long" if m.dir > 0 else "short" for m in three)
-        print(f"  direction: " + "  ".join(f"{d} {n}" for d, n in sorted(by_dir.items())))
+        print("  direction: " + "  ".join(f"{d} {n}" for d, n in sorted(by_dir.items())))
         per_year: dict = defaultdict(lambda: [0, 0])
         for m in three:
             per_year[dt.datetime.utcfromtimestamp(m.time_ms / 1000).year][0] += 1

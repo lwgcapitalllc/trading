@@ -5,7 +5,13 @@ import { Layers } from 'lucide-react'
 // stack page and the tuning workbench's overlay — the tune page used to carry a plain checkbox, so
 // the same control looked like two different things on two charts that are meant to read as one
 // system.
-export function RegimeOverlayToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function RegimeOverlayToggle({
+  on,
+  onChange,
+}: {
+  on: boolean
+  onChange: (v: boolean) => void
+}) {
   return (
     <button
       onClick={() => onChange(!on)}
@@ -40,11 +46,19 @@ const _KEY = 'regime_overlay_enabled'
 
 export function useRegimeOverlay(): [boolean, (v: boolean) => void] {
   const [on, setOn] = useState(() => {
-    try { return localStorage.getItem(_KEY) === 'true' } catch { return false }
+    try {
+      return localStorage.getItem(_KEY) === 'true'
+    } catch {
+      return false
+    }
   })
   const set = useCallback((v: boolean) => {
     setOn(v)
-    try { localStorage.setItem(_KEY, String(v)) } catch { /* quota */ }
+    try {
+      localStorage.setItem(_KEY, String(v))
+    } catch {
+      /* quota */
+    }
   }, [])
   return [on, set]
 }

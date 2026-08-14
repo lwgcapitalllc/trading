@@ -113,8 +113,10 @@ class BarCache:
     def is_stale(self, symbol: str, tf_name: str) -> bool:
         """True if a cache file exists but was written under a different FEED_VERSION —
         its values no longer mean what we now expect them to mean."""
-        return self.path(symbol, tf_name).is_file() and \
-            self.version_of(symbol, tf_name) != FEED_VERSION
+        return (
+            self.path(symbol, tf_name).is_file()
+            and self.version_of(symbol, tf_name) != FEED_VERSION
+        )
 
     def load(self, symbol: str, tf_name: str) -> pd.DataFrame:
         """Return all cached bars for (symbol, tf), or an empty frame if none.
@@ -146,15 +148,19 @@ class BarCache:
         are needed and why neither is sufficient alone.
         """
         with cache_lock(self.dir, symbol, tf_name):
-            existing = _empty_bars() if self.is_stale(symbol, tf_name) \
-                else self.load(symbol, tf_name)
+            existing = (
+                _empty_bars() if self.is_stale(symbol, tf_name) else self.load(symbol, tf_name)
+            )
             merged = self.merge(existing, bars)
             atomic_write_csv(self.path(symbol, tf_name), merged.reset_index())
             # `has_volume` describes the FILE as written, not the version's intent — see above.
-            atomic_write_json(self.meta_path(symbol, tf_name), {
-                "feed_version": FEED_VERSION,
-                "has_volume": VOLUME_COL in merged.columns,
-            })
+            atomic_write_json(
+                self.meta_path(symbol, tf_name),
+                {
+                    "feed_version": FEED_VERSION,
+                    "has_volume": VOLUME_COL in merged.columns,
+                },
+            )
 
     @staticmethod
     def merge(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:

@@ -15,7 +15,6 @@ import sys
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
@@ -35,8 +34,16 @@ from order_sizing import SymbolSpec  # noqa: E402
 # 1m bar carried two fields the real one did not, so every test exercised a shape the code never
 # produced). Sharing the type makes that impossible: a field the fake supplies is one the real
 # method must supply too.
-GOLD_SPEC = SymbolSpec(symbol="XAUUSD", contract_size=100.0, tick_size=0.01, tick_value=1.0,
-                       volume_min=0.01, volume_max=100.0, volume_step=0.01, digits=2)
+GOLD_SPEC = SymbolSpec(
+    symbol="XAUUSD",
+    contract_size=100.0,
+    tick_size=0.01,
+    tick_value=1.0,
+    volume_min=0.01,
+    volume_max=100.0,
+    volume_step=0.01,
+    digits=2,
+)
 
 
 # ── fakes ─────────────────────────────────────────────────────────────────────
@@ -101,17 +108,36 @@ class _FakeMt5Ops:
         with a hand-listed exposure it would be exercising nothing.
         """
         from account_risk import Exposure
+
         if not self.exposure_readable:
             return None
         out = []
         for p in self.positions:
-            out.append(Exposure(ticket=p.ticket, symbol=self.symbol, magic=self.magic,
-                                direction=1 if p.type == 0 else -1, volume=p.volume,
-                                entry=p.price_open, stop=p.sl, resting=False))
+            out.append(
+                Exposure(
+                    ticket=p.ticket,
+                    symbol=self.symbol,
+                    magic=self.magic,
+                    direction=1 if p.type == 0 else -1,
+                    volume=p.volume,
+                    entry=p.price_open,
+                    stop=p.sl,
+                    resting=False,
+                )
+            )
         for o in self.orders:
-            out.append(Exposure(ticket=o.ticket, symbol=self.symbol, magic=self.magic,
-                                direction=1 if o.buy else -1, volume=o.volume,
-                                entry=o.price, stop=o.sl, resting=True))
+            out.append(
+                Exposure(
+                    ticket=o.ticket,
+                    symbol=self.symbol,
+                    magic=self.magic,
+                    direction=1 if o.buy else -1,
+                    volume=o.volume,
+                    entry=o.price,
+                    stop=o.sl,
+                    resting=True,
+                )
+            )
         return out + list(self.external)
 
     def normalize_volume(self, lots, symbol=None):
@@ -137,8 +163,9 @@ class _FakeMt5Ops:
     def place_pending_limit(self, direction, lots, price, sl, tp=0.0, comment="", symbol=None):
         self._ticket += 1
         self.actions.append(("place", direction, lots, price, sl))
-        self.orders.append(_Order(self._ticket, price=price, sl=sl, volume=lots,
-                                  buy=direction == "bullish"))
+        self.orders.append(
+            _Order(self._ticket, price=price, sl=sl, volume=lots, buy=direction == "bullish")
+        )
         return self._ticket, price
 
     def modify_pending(self, ticket, price, sl, tp=0.0, symbol=None):
@@ -265,8 +292,17 @@ def _stub_mt5(monkeypatch):
     monkeypatch.setitem(sys.modules, "MetaTrader5", m)
 
 
-def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, kinds=None,
-            account_risk_cap_pct=None, instance_dir=None):
+def _bridge(
+    execution,
+    *,
+    dry_run=False,
+    mt5ops=None,
+    ledger=None,
+    notes=None,
+    kinds=None,
+    account_risk_cap_pct=None,
+    instance_dir=None,
+):
     mt5ops = mt5ops or _FakeMt5Ops()
     ledger = ledger or _FakeLedger()
     notes = notes if notes is not None else []
@@ -284,10 +320,16 @@ def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, k
         kinds.append(kind)
         return len(notes)
 
-    b = live_bridge.OrderBridge(mt5ops, execution, ledger, _Log(),
-                                notify=_notify, dry_run=dry_run,
-                                account_risk_cap_pct=account_risk_cap_pct,
-                                instance_dir=instance_dir)
+    b = live_bridge.OrderBridge(
+        mt5ops,
+        execution,
+        ledger,
+        _Log(),
+        notify=_notify,
+        dry_run=dry_run,
+        account_risk_cap_pct=account_risk_cap_pct,
+        instance_dir=instance_dir,
+    )
     b.state = live_bridge.BridgeState.LIVE
     return b, mt5ops, ledger, notes
 
@@ -296,23 +338,26 @@ def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, k
 def test_partial_take_profits_are_refused_not_ignored():
     """The bridge places one entry and one stop. A configured scale-out that silently never
     happens would make the live curve diverge from every backtest with nothing to point at."""
-    cfg = types.SimpleNamespace(exec_tp1_pct=30.0, exec_tp2_pct=40.0,
-                                exec_secondary=False, fill_model="bar")
+    cfg = types.SimpleNamespace(
+        exec_tp1_pct=30.0, exec_tp2_pct=40.0, exec_secondary=False, fill_model="bar"
+    )
     with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="partial take-profits"):
         live_bridge.assert_supported(cfg)
 
 
 def test_tick_fill_model_is_refused():
-    cfg = types.SimpleNamespace(exec_tp1_pct=0, exec_tp2_pct=0,
-                                exec_secondary=False, fill_model="tick")
+    cfg = types.SimpleNamespace(
+        exec_tp1_pct=0, exec_tp2_pct=0, exec_secondary=False, fill_model="tick"
+    )
     with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="BACKTEST cost model"):
         live_bridge.assert_supported(cfg)
 
 
 def test_the_shipped_config_is_supported():
-    cfg = types.SimpleNamespace(exec_tp1_pct=0.0, exec_tp2_pct=0.0,
-                                exec_secondary=False, fill_model="bar")
-    live_bridge.assert_supported(cfg)          # no raise
+    cfg = types.SimpleNamespace(
+        exec_tp1_pct=0.0, exec_tp2_pct=0.0, exec_secondary=False, fill_model="bar"
+    )
+    live_bridge.assert_supported(cfg)  # no raise
 
 
 # ── placing and maintaining a resting limit ───────────────────────────────────
@@ -379,7 +424,7 @@ def test_a_sub_minimum_size_is_recorded_rather_than_rounded_up():
     own name left the other seven — including the margin refusal that would have caught the
     2026-08-07 order — with nowhere to be recorded.
     """
-    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 0.4, 3280.0))   # 0.4 oz = 0.004 lots
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 0.4, 3280.0))  # 0.4 oz = 0.004 lots
     b, ops, ledger, _ = _bridge(ex)
     b.sync(_Dec(), _Sig())
     assert ops.actions == []
@@ -413,13 +458,13 @@ def test_opening_a_position_reports_the_brokers_real_fill():
     is kept."""
     ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
     b, ops, ledger, notes = _bridge(ex)
-    b.sync(_Dec(), _Sig())                                    # places the limit
-    ops.positions = [_Pos(901, 0, 3289.7, 0.42, 3280.0)]      # ...it fills, 30c better
+    b.sync(_Dec(), _Sig())  # places the limit
+    ops.positions = [_Pos(901, 0, 3289.7, 0.42, 3280.0)]  # ...it fills, 30c better
     ex._pos_dir, ex._pend_long = 1, None
     b.sync(_Dec(stop=3280.0), _Sig())
 
     opened = [kw for k, kw in ledger.rows if k == "opened"][0]
-    assert opened["price"] == 3289.7          # what the broker gave
+    assert opened["price"] == 3289.7  # what the broker gave
     assert opened["intended_price"] == 3290.0  # where the strategy rested its limit
     assert notes and "ENTRY" in notes[0]
 
@@ -429,18 +474,20 @@ def test_opening_a_position_reports_the_brokers_real_fill():
 # single most serious HEALTH one. Both are pinned, because the split is only worth anything if
 # it holds at the one place that produces both kinds.
 
+
 def test_the_entry_and_exit_alerts_are_TRADES():
     import notify
+
     ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
     kinds: list = []
     b, ops, ledger, notes = _bridge(ex, kinds=kinds)
     b.sync(_Dec(), _Sig())
     ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
     ex._pos_dir, ex._pend_long = 1, None
-    b.sync(_Dec(stop=3280.0), _Sig())                 # entry alert
+    b.sync(_Dec(stop=3280.0), _Sig())  # entry alert
     ops.positions = []
     ex._pos_dir = 0
-    b.sync(_Dec(), _Sig())                            # exit alert
+    b.sync(_Dec(), _Sig())  # exit alert
     assert kinds, "the bridge sent nothing at all"
     assert set(kinds) == {notify.TRADE}
 
@@ -449,6 +496,7 @@ def test_a_HALT_is_health_not_a_trade():
     """A halt is the bot refusing to place orders — a fact about the machinery, and the one
     message that must not be sitting in a room only checked when a fill arrives."""
     import notify
+
     kinds: list = []
     b, ops, ledger, notes = _bridge(_FakeExecution(), kinds=kinds)
     b._halt("emulator and broker disagree")
@@ -463,9 +511,9 @@ def test_closing_a_position_reports_pnl_and_r():
     ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
     ex = _FakeExecution(pos_dir=1)
     b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
-    b.sync(_Dec(stop=3280.0), _Sig())          # adopt the open position
-    ops.positions = []                          # ...it closes
-    ops.deal = (3320.0, 1260.0)                 # 30 points × 0.42 × 100
+    b.sync(_Dec(stop=3280.0), _Sig())  # adopt the open position
+    ops.positions = []  # ...it closes
+    ops.deal = (3320.0, 1260.0)  # 30 points × 0.42 × 100
     ex._pos_dir = 0
     b.sync(_Dec(), _Sig())
 
@@ -483,7 +531,7 @@ def test_a_position_cancels_any_leftover_resting_order():
     ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
     b, ops, _, _ = _bridge(ex)
     b.sync(_Dec(), _Sig())
-    ops.positions = [_Pos(950, 1, 3320.0, 0.4, 3330.0)]   # a SHORT filled
+    ops.positions = [_Pos(950, 1, 3320.0, 0.4, 3330.0)]  # a SHORT filled
     ex._pos_dir = -1
     ops.actions.clear()
     b.sync(_Dec(stop=3330.0), _Sig())
@@ -515,7 +563,7 @@ def test_a_broker_position_the_strategy_does_not_know_about_halts_the_bot():
 def test_a_halted_bridge_places_nothing_further():
     ex = _FakeExecution(pos_dir=1)
     b, ops, _, _ = _bridge(ex)
-    b.sync(_Dec(stop=3280.0), _Sig())          # halts
+    b.sync(_Dec(stop=3280.0), _Sig())  # halts
     ops.actions.clear()
     ex._pos_dir, ex._pend_long = 0, _Pend(1, 3290.0, 42.0, 3280.0)
     b.sync(_Dec(), _Sig())
@@ -557,7 +605,7 @@ def test_a_position_opened_during_warmup_is_never_placed_live():
     b.begin_live()
     assert b.state is live_bridge.BridgeState.WARMING
     b.sync(_Dec(stop=3280.0), _Sig())
-    assert ops.actions == []                 # no order, and no halt either
+    assert ops.actions == []  # no order, and no halt either
     assert b.state is live_bridge.BridgeState.WARMING
 
 
@@ -588,8 +636,10 @@ def test_dry_run_sends_nothing_but_records_what_it_would_have_done():
 # the BRIDGE's half: that it converts at all, that it converts through the one seam, and that
 # every way an order can fail to reach the broker leaves a record and a message.
 
+
 class _Cfg:
     """A stand-in for `SosFadeConfig` carrying only what the bridge reads off it."""
+
     def __init__(self, risk_pct=10.0, point_value=1.0):
         self.exec_risk_pct = risk_pct
         self.point_value = point_value
@@ -597,8 +647,16 @@ class _Cfg:
         self.exec_tp2_pct = 0.0
 
 
-def _sizing_bridge(pend, *, balance=2000.0, free=2000.0, spec=GOLD_SPEC, risk_pct=10.0,
-                   point_value=1.0, monkeypatch=None):
+def _sizing_bridge(
+    pend,
+    *,
+    balance=2000.0,
+    free=2000.0,
+    spec=GOLD_SPEC,
+    risk_pct=10.0,
+    point_value=1.0,
+    monkeypatch=None,
+):
     ex = _FakeExecution(pend_long=pend)
     ex.cfg = _Cfg(risk_pct, point_value)
     ops = _FakeMt5Ops(spec=spec, free=free)
@@ -650,8 +708,9 @@ def test_an_order_the_account_cannot_afford_is_refused_and_not_shrunk():
     # 500 oz = 5 lots = $43,000 of margin at 1:500, against $2,000 free. The balance is set so
     # the risk is genuinely AUTHORISED ($5,000 is 10% of $50,000) — otherwise the equity check
     # fires first and this test would pass without ever reaching the margin one.
-    b, ops, ledger, _ = _sizing_bridge(_Pend(1, 4300.0, 500.0, 4290.0),
-                                       balance=50_000.0, free=2000.0)
+    b, ops, ledger, _ = _sizing_bridge(
+        _Pend(1, 4300.0, 500.0, 4290.0), balance=50_000.0, free=2000.0
+    )
     b.sync(_Dec(), _Sig())
     assert ops.actions == []
     code = next(kw for k, kw in ledger.rows if k == "event:order_refused")["code"]
@@ -674,12 +733,12 @@ def test_a_refusal_that_clears_can_alert_again():
     """The counterpart. Keying the silence on the refusal CODE rather than on 'have we ever
     alerted' is what stops this becoming the de-duplicating-alerter bug — a NEW problem after a
     good order must still speak up."""
-    pend_ok = _Pend(1, 4300.0, 200.0 / 10.0, 4290.0)      # 20 oz, $200 risk, 0.20 lots
+    pend_ok = _Pend(1, 4300.0, 200.0 / 10.0, 4290.0)  # 20 oz, $200 risk, 0.20 lots
     b, ops, _, notes = _sizing_bridge(_Pend(1, 3290.0, 0.4, 3280.0))
     b.sync(_Dec(), _Sig())
     assert len([n for n in notes if "REFUSED" in n]) == 1
     b._ex._pend_long = pend_ok
-    b.sync(_Dec(), _Sig())                                 # places fine, refusal cleared
+    b.sync(_Dec(), _Sig())  # places fine, refusal cleared
     b._ex._pend_long = _Pend(1, 3290.0, 0.4, 3280.0)
     b.sync(_Dec(), _Sig())
     assert len([n for n in notes if "REFUSED" in n]) == 2
@@ -719,7 +778,7 @@ def test_a_resting_order_the_broker_deleted_is_noticed_and_reported():
     b, ops, ledger, notes = _sizing_bridge(_Pend(1, 4300.0, 20.0, 4290.0))
     b.sync(_Dec(), _Sig())
     assert b._rest[1] is not None
-    ops.orders.clear()                     # the broker deleted it; no position appeared
+    ops.orders.clear()  # the broker deleted it; no position appeared
     b.sync(_Dec(), _Sig())
     assert "event:order_vanished" in ledger.kinds()
     assert any("ORDER GONE" in n for n in notes)
@@ -752,10 +811,11 @@ def test_the_halt_names_the_refusal_that_caused_it():
     once, so it sent the reader at the fill logic when the answer was the order size. If the
     order was REFUSED, the halt says so and quotes the reason.
     """
-    b, ops, ledger, notes = _sizing_bridge(_Pend(1, 4300.0, 500.0, 4290.0),
-                                           balance=50_000.0, free=2000.0)
-    b.sync(_Dec(), _Sig())                      # refused: insufficient margin
-    b._ex._pos_dir = 1                          # the emulator fills it anyway
+    b, ops, ledger, notes = _sizing_bridge(
+        _Pend(1, 4300.0, 500.0, 4290.0), balance=50_000.0, free=2000.0
+    )
+    b.sync(_Dec(), _Sig())  # refused: insufficient margin
+    b._ex._pos_dir = 1  # the emulator fills it anyway
     b._ex._pend_long = None
     b.sync(_Dec(stop=4290.0), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
@@ -778,9 +838,18 @@ def _cap_pend(edge=3300.0, sl=3290.0, qty=20.0):
 def _other_bot(risk_dollars, magic=880220):
     """A SECOND bot's open position holding `risk_dollars` of the account's budget."""
     from account_risk import Exposure
-    lots = risk_dollars / (10.0 / 0.01 * 1.00)     # $10 of stop distance on gold
-    return Exposure(ticket=555, symbol="XAUUSD", magic=magic, direction=1, volume=lots,
-                    entry=3300.0, stop=3290.0, resting=False)
+
+    lots = risk_dollars / (10.0 / 0.01 * 1.00)  # $10 of stop distance on gold
+    return Exposure(
+        ticket=555,
+        symbol="XAUUSD",
+        magic=magic,
+        direction=1,
+        volume=lots,
+        entry=3300.0,
+        stop=3290.0,
+        resting=False,
+    )
 
 
 def test_with_no_cap_configured_the_bridge_behaves_exactly_as_before(_stub_mt5):
@@ -788,7 +857,7 @@ def test_with_no_cap_configured_the_bridge_behaves_exactly_as_before(_stub_mt5):
     account cap, and a default appearing from nowhere would move a live bot with no measurement
     behind it."""
     b, ops, _, _ = _bridge(_FakeExecution(pend_long=_cap_pend()))
-    ops.external = [_other_bot(100_000.0)]         # the account is enormously over any cap
+    ops.external = [_other_bot(100_000.0)]  # the account is enormously over any cap
     b.sync(_Dec(), _Sig())
     assert [a[0] for a in ops.actions] == ["place"]
 
@@ -796,9 +865,10 @@ def test_with_no_cap_configured_the_bridge_behaves_exactly_as_before(_stub_mt5):
 def test_the_second_bot_is_REFUSED_when_the_first_holds_the_whole_budget(_stub_mt5):
     """Aaron's requirement, end to end: one bot has the account's risk on, this one wants in,
     and the system blocks it. Nothing reaches the broker."""
-    b, ops, ledger, notes = _bridge(_FakeExecution(pend_long=_cap_pend()),
-                                    account_risk_cap_pct=10.0)
-    ops.external = [_other_bot(200.0)]             # the whole 10% of $2,000
+    b, ops, ledger, notes = _bridge(
+        _FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0
+    )
+    ops.external = [_other_bot(200.0)]  # the whole 10% of $2,000
     b.sync(_Dec(), _Sig())
 
     assert ops.actions == []
@@ -813,8 +883,19 @@ def test_room_freed_by_the_other_bot_moving_ITS_stop_to_breakeven_lets_this_one_
     full position, and holding NO risk — so it is not blocking anything."""
     b, ops, _, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
     from account_risk import Exposure
-    ops.external = [Exposure(ticket=555, symbol="XAUUSD", magic=880220, direction=1,
-                             volume=0.20, entry=3300.0, stop=3300.0, resting=False)]
+
+    ops.external = [
+        Exposure(
+            ticket=555,
+            symbol="XAUUSD",
+            magic=880220,
+            direction=1,
+            volume=0.20,
+            entry=3300.0,
+            stop=3300.0,
+            resting=False,
+        )
+    ]
     b.sync(_Dec(), _Sig())
     assert [a[0] for a in ops.actions] == ["place"]
 
@@ -825,12 +906,13 @@ def test_a_partly_used_budget_REFUSES_rather_than_placing_a_smaller_order(_stub_
     feature created. The BACKTEST allocator shrinks instead, which is coherent there because the
     account hands the granted size back — nothing hands a size back across a process boundary."""
     b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
-    ops.external = [_other_bot(150.0)]             # $50 of room against a $200 order
+    ops.external = [_other_bot(150.0)]  # $50 of room against a $200 order
     b.sync(_Dec(), _Sig())
 
-    assert ops.actions == []                       # NOT a 0.05-lot order
-    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == \
-        ["account_risk_cap"]
+    assert ops.actions == []  # NOT a 0.05-lot order
+    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == [
+        "account_risk_cap"
+    ]
 
 
 def test_this_bots_OWN_resting_order_does_not_block_its_own_re_size(_stub_mt5):
@@ -838,10 +920,10 @@ def test_this_bots_OWN_resting_order_does_not_block_its_own_re_size(_stub_mt5):
     anything of ours already resting is what this order REPLACES — counting it would make the bot
     refuse its own re-sizes near the cap, which reads exactly like a broken strategy."""
     b, ops, _, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
-    b.sync(_Dec(), _Sig())                          # places, and the fake's book now holds it
+    b.sync(_Dec(), _Sig())  # places, and the fake's book now holds it
     assert [a[0] for a in ops.actions] == ["place"]
 
-    b._ex._pend_long = _cap_pend(edge=3301.0, sl=3291.0)   # same risk, moved a dollar
+    b._ex._pend_long = _cap_pend(edge=3301.0, sl=3291.0)  # same risk, moved a dollar
     b.sync(_Dec(), _Sig())
     assert [a[0] for a in ops.actions] == ["place", "modify"]
 
@@ -852,8 +934,19 @@ def test_a_hand_trade_with_NO_STOP_refuses_rather_than_scoring_as_zero_risk(_stu
     cap exists to bound sit invisibly underneath it."""
     b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
     from account_risk import Exposure
-    ops.external = [Exposure(ticket=42, symbol="XAUUSD", magic=0, direction=1, volume=0.5,
-                             entry=3300.0, stop=0.0, resting=False)]
+
+    ops.external = [
+        Exposure(
+            ticket=42,
+            symbol="XAUUSD",
+            magic=0,
+            direction=1,
+            volume=0.5,
+            entry=3300.0,
+            stop=0.0,
+            resting=False,
+        )
+    ]
     b.sync(_Dec(), _Sig())
 
     assert ops.actions == []
@@ -870,18 +963,21 @@ def test_an_unreadable_account_REFUSES_and_never_reads_as_an_empty_one(_stub_mt5
     b.sync(_Dec(), _Sig())
 
     assert ops.actions == []
-    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == \
-        ["account_risk_unreadable"]
+    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == [
+        "account_risk_unreadable"
+    ]
 
 
 def test_a_per_order_refusal_is_reported_BEFORE_the_account_cap(_stub_mt5):
     """Precedence. A refusal should name the first thing wrong with the ORDER itself before it
     starts talking about what other bots are holding — otherwise a collapsed stop gets blamed on
     a busy account and the reader goes looking in the wrong place."""
-    b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_Pend(dir=1, edge=3300.0, qty=20.0,
-                                                               sl=3300.0)),
-                                account_risk_cap_pct=10.0)
-    ops.external = [_other_bot(200.0)]              # the account is also full
+    b, ops, ledger, _ = _bridge(
+        _FakeExecution(pend_long=_Pend(dir=1, edge=3300.0, qty=20.0, sl=3300.0)),
+        account_risk_cap_pct=10.0,
+    )
+    ops.external = [_other_bot(200.0)]  # the account is also full
     b.sync(_Dec(), _Sig())
-    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == \
-        ["zero_stop_distance"]
+    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == [
+        "zero_stop_distance"
+    ]
