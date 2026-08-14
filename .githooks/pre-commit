@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# Format and lint the files in THIS commit. Nothing else.
+#
+#   python  -> ruff format, then ruff check --fix   (.venv-lint/bin/ruff)
+#   ts/tsx  -> prettier --write, then eslint --fix  (node_modules/.bin)
+#   json/css/yml/html -> prettier --write
+#
+# Rewritten files are re-staged, so a formatting fix lands in the commit you are making.
+#
+# **Why staged files rather than the whole repo.** 413 of 627 python files and 79 of 108 TS
+# files predate any formatter. Reformatting them all in one commit would rewrite `engines/` and
+# `strategies/`, which this repo may not do without re-running every `compare_*.py` parity gate
+# first (root CLAUDE.md, rule 22). So the repo converges as it is worked on, and no commit is
+# ever blocked by a file it did not touch.
+#
+# **This hook does NOT run the tests.** That is `.githooks/pre-push`, and the split is
+# deliberate: the suite is ~7 minutes (measured 2026-08-14 — 4:45 for the root suite, 2:20 for
+# the backend), and a 7-minute pre-commit is a hook people learn to `--no-verify` past. A commit
+# stays cheap; nothing broken reaches the remote.
+#
+# 🔴 **THE TOOL CHECK COMES AFTER THE SCOPE CHECK, AND THAT ORDER IS LOAD-BEARING.**
+# `algos/tools/ledger_sync.py` commits the live bot's decision record UNATTENDED, twice a day,
+# from the Mac. It stages only `.jsonl` and `.log` files, so there is nothing here to lint — and
+# this hook must therefore exit 0 without ever asking whether node is installed. **A rule that
+# fires on a robot's commit has no human to read its message: it does not nag, it silently stops
+# the job.** That has already happened twice on the docs half of `commit-msg` (root CLAUDE.md,
+# 2026-08-05). Checking for tools first would be a third.
+
+set -u
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# ── Cases that are not somebody writing code ──────────────────────────────────
+# Same reasoning as commit-msg: a merge or a rebase carries somebody else's change, and
+# reformatting it here would rewrite a conflict resolution under the person resolving it.
+GIT_DIR="$(git rev-parse --git-dir)"
+if [ -f "$GIT_DIR/MERGE_HEAD" ] || [ -d "$GIT_DIR/rebase-merge" ] || [ -d "$GIT_DIR/rebase-apply" ]; then
+  exit 0
+fi
+
+# ── 1. Is anything in scope? ──────────────────────────────────────────────────
+# The globs here MUST stay in step with lint-staged.config.mjs. They are stated twice because
+# this half has to answer WITHOUT running node — that is the whole point of the ordering above.
+STAGED="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR)"
+IN_SCOPE="$(printf '%s\n' "$STAGED" | grep -Ei '\.(py|ts|tsx|json|css|scss|html|ya?ml)$' || true)"
+
+if [ -z "$IN_SCOPE" ]; then
+  exit 0
+fi
+
+# ── 2. Are the tools here? ────────────────────────────────────────────────────
+# Refuse rather than skip. A formatter that quietly does nothing on the one machine that lacks
+# it produces a repo that is formatted on one clone and not the other, and the next person reads
+# the silence as "checked".
+MISSING=""
+[ -x ".venv-lint/bin/ruff" ] || MISSING="$MISSING .venv-lint/bin/ruff"
+[ -d "node_modules/lint-staged" ] || MISSING="$MISSING node_modules(lint-staged)"
+
+if [ -n "$MISSING" ]; then
+  echo ""
+  echo "  COMMIT REFUSED - the formatting tools are not installed in this clone."
+  echo ""
+  echo "  Missing:$MISSING"
+  echo ""
+  echo "  One command fixes it:"
+  echo ""
+  echo "      ./scripts/install_dev_tools.sh"
+  echo ""
+  echo "  (./go runs it for you. It is safe to re-run and silent when nothing is needed.)"
+  echo ""
+  exit 1
+fi
+
+# ── 3. Run it ─────────────────────────────────────────────────────────────────
+npx --no-install lint-staged
+STATUS=$?
+
+if [ "$STATUS" -ne 0 ]; then
+  echo ""
+  echo "  COMMIT REFUSED - a formatter or linter failed on a file in this commit."
+  echo ""
+  echo "  The finding above needs a decision, so nothing was changed: lint-staged"
+  echo "  REVERTED every fix it had made rather than leaving your tree half-applied."
+  echo "  Your files are exactly as you left them."
+  echo ""
+  echo "  Apply the automatic fixes yourself, then deal with what is left:"
+  echo ""
+  echo "      .venv-lint/bin/ruff format <file> && .venv-lint/bin/ruff check --fix <file>"
+  echo "      npx prettier --write <file> && npx eslint --fix <file>"
+  echo ""
+  echo "  Rules: ruff.toml and eslint.config.mjs, each with the reason it is set that way."
+  echo ""
+fi
+
+exit $STATUS

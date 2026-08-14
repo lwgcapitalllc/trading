@@ -1,0 +1,88 @@
+# Ruff — the ONE Python formatter and linter for this repo.
+#
+# Why ruff and not black + flake8 + isort: it is all three in one binary, so there is one
+# config, one version to pin, and one thing to install. Its formatter is black-compatible,
+# so the output is the style everyone already recognises.
+#
+# ⚠ **Prettier CANNOT format Python.** There is no official support and the community plugin
+# is abandoned. So the split across this repo is: ruff owns `.py`, prettier owns the
+# frontend's `.ts`/`.tsx`/`.json`/`.css`. `lint-staged` is what lets ONE pre-commit hook drive
+# both — it is a node tool, but it runs whatever command you point at a glob, so a python file
+# goes to ruff and a tsx file goes to prettier from a single config.
+#
+# ⚠ **This is a `ruff.toml`, deliberately NOT a `pyproject.toml`.** A pyproject at the repo
+# root is read by pytest, pip and setuptools as well, and this repo already resolves its
+# pytest rootdir through `pytest.ini`. A dedicated file cannot have a side effect on any of
+# them.
+#
+# Nothing here is enforced by ruff's presence alone — see `.githooks/pre-commit`.
+
+# MEASURED, not picked (2026-08-14). Python lines in this repo: p50 43, p90 94, p99 107.
+# Ruff's default of 88 would rewrap 21,040 lines; 100 rewraps 2,647. Reformatting the repo at
+# 88 produces a 48,591-line diff against 39,430 at 100. 100 is how this code is already
+# written, so the formatter codifies the house style instead of imposing a new one.
+line-length = 100
+
+# The LOWEST python any part of this repo runs on. `command-center/backend/.venv` is 3.9;
+# the VPS runs 3.11. Targeting 3.9 means ruff never proposes syntax that would break the
+# backend — and it is why the `UP` (pyupgrade) rules are NOT selected below: 1,362 of their
+# hits are `Optional[X]` → `X | None`, which is a 3.10+ form.
+target-version = "py39"
+
+extend-exclude = [
+    ".venv-lint",
+    "node_modules",
+    # A live bot imports from this frozen snapshot, and it is git-ignored build output copied
+    # by `algos/tools/promote.py` — reformatting it would edit what a running bot executes.
+    "algos/markets/fx/instances/*/deployed",
+]
+
+[lint]
+# Chosen by MEASURING the whole repo (627 files) rather than by taste. This set produces 552
+# findings, 378 of them auto-fixable; the ignores below are each a rule this repo breaks on
+# purpose or in volume.
+#
+#   E4/E7/E9  import, statement and syntax errors — pycodestyle's real-error subset
+#   F         pyflakes: undefined names, unused imports, broken f-strings
+#   I         import sorting (auto-fixable; see the safety note below)
+#   B         bugbear: the genuine bug classes, e.g. B023 closing over a loop variable
+#   W         trailing whitespace and friends (auto-fixable)
+select = ["E4", "E7", "E9", "F", "I", "B", "W"]
+
+ignore = [
+    # 🔴 **E402 is off because this repo's engine imports DEPEND on breaking it.** The bare-name
+    # pattern (`sys.path.insert(0, str(_ENGINES))` then `from market_structure import ...`) is
+    # how every consumer reaches the canonical engines, and 193 tracked files use it. E402 fires
+    # on all of them; 39 files already carried a hand-written `# noqa: E402` saying so.
+    #
+    # ⚠ **This makes the import SORTER the thing to watch, and it was CHECKED rather than
+    # assumed.** An import lifted above its `sys.path.insert` would fail at import time — in a
+    # file that still looks tidy — and with E402 off nothing else is watching. Ruff only sorts
+    # CONTIGUOUS import blocks, so a statement between them is a barrier. Measured 2026-08-14
+    # by applying `--select I --fix` to a copy of all 193 files and diffing the import set below
+    # each file's first `sys.path` statement: **0 hoisted**. Re-run that check if `I` is ever
+    # swapped for a different sorter.
+    "E402",
+    # Ambiguous single-character names (`l`, `I`, `O`). 93 hits, all cosmetic, none of them a
+    # bug this repo has ever had. Kept off so the linter's findings stay worth reading.
+    "E741",
+    # `raise ... from err` inside an except block. 78 hits, nearly all of them the FastAPI
+    # `raise HTTPException(...)` idiom, where the chain adds nothing a reader wants. A rule that
+    # fires 78 times on correct code is how a hook gets bypassed — see the root CLAUDE.md on
+    # guards that criticise work they should not.
+    "B904",
+]
+
+[lint.per-file-ignores]
+# A test names its fixtures for the reader, and an unused one is usually a deliberate arrangement
+# rather than a leftover.
+"**/tests/**" = ["F841"]
+
+[format]
+# Black's convention, and ruff's default. ⚠ It deliberately does NOT match the frontend, which
+# prettier holds at single quotes because that is what those 108 files already use (377 single
+# against 4 double, measured). Each language keeps its own community default; a repo-wide quote
+# rule would fight both.
+quote-style = "double"
+# Off: this repo's docstrings carry measured evidence, tables and prose, not runnable snippets.
+docstring-code-format = false

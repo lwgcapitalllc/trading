@@ -1,0 +1,57 @@
+# What prettier is NOT allowed to touch.
+#
+# Prettier owns the frontend's TS/TSX/JSON/CSS/HTML. Everything below is either a language it
+# cannot parse, generated output, or a file where its opinion is actively wrong.
+
+# ── Not source ────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.venv/
+.venv-lint/
+package-lock.json
+test-results/
+playwright-report/
+command-center/frontend/dist/
+
+# ── Languages prettier cannot format ──────────────────────────────────────────
+# Python is ruff's (prettier has no python support — the community plugin is abandoned).
+*.py
+# Pine Script, NinjaScript and MQL5 have no prettier parser at all.
+*.pine
+*.cs
+*.mq5
+*.mqh
+*.ps1
+*.sh
+
+# ── Data, not code ────────────────────────────────────────────────────────────
+*.csv
+*.jsonl
+*.db
+backtest/cache/
+engines/news/data/
+algos/ledger_archive/
+# Machine-specific and hidden from git by `./go` with --skip-worktree; formatting it would
+# un-hide it on the next status.
+command-center/backend/config.json
+
+# ── 🔴 Markdown, and this one is a DECISION with a measurement behind it ───────
+# The ask was "just do all file types", and markdown is the one place that is wrong here.
+#
+# Prettier's markdown printer PADS TABLE COLUMNS to align the pipes. This repo's CLAUDE.md
+# files are mostly wide tables with 300-character cells, so the padding is enormous and buys
+# nothing a reader can see in a terminal. MEASURED 2026-08-14 on `command-center/CLAUDE.md`:
+# 82 changed lines, and the file grows **22,813 → 30,844 bytes, +35%**, essentially all of it
+# whitespace.
+#
+# ⚠ That collides head-on with a guard this repo already runs. `.claude/hooks/guard_sensitive_paths.py`
+# fires on a CLAUDE.md over 40 KB that GROWS, precisely so the docs stop inflating — and it was
+# deliberately changed to fire on growth rather than size because a guard that nags about work
+# it should not be criticising is one people learn to dismiss. A formatter that adds 35% to
+# every one of these files on every commit would trip it constantly, on whitespace.
+#
+# Turning this back on is a one-line delete plus `prettier --write` over the tree — but do it
+# as its own commit, and check what it does to the guard first.
+*.md
+*.markdown

@@ -348,6 +348,90 @@ still happens; only the message is hidden. Run plain `pytest` to see it.
 ⚠ **A hook that is not executable is skipped by git in silence** — same "looks installed, does
 nothing" shape one level down. The installer chmods every hook every run.
 
+---
+
+## Formatting, linting and the test gate
+
+**Added 2026-08-14.** Until this date the repo had no formatter, no linter and no automated test
+run — the standing practice was to run the suites by hand before committing, which is a practice
+rather than a mechanism.
+
+**One command installs everything:** `./scripts/install_dev_tools.sh` (run by `./go`, named by the
+pre-commit hook when a clone lacks it).
+
+| | tool | where |
+|---|---|---|
+| Python — format + lint | **ruff** 0.16.3, pinned | `.venv-lint/` (git-ignored), `requirements-lint.txt`, config in `ruff.toml` |
+| TS/TSX/JSON/CSS — format | **prettier** | `node_modules/`, config in `.prettierrc.json` |
+| TS/TSX — lint | **eslint** | `eslint.config.mjs` |
+| Which tool sees which file | **lint-staged** | `lint-staged.config.mjs` |
+| pre-commit | format + lint the STAGED files | `.githooks/pre-commit` |
+| pre-push | the full test suite | `.githooks/pre-push` → `scripts/run_all_tests.sh` |
+
+**Prettier cannot format Python** — no official support, the community plugin is abandoned — so
+ruff owns `.py` and prettier owns the frontend. **`lint-staged` is the common ground**: it is a node
+package, but it runs whatever command you point at a glob, so one config drives both languages from
+one hook.
+
+**Tests are on PUSH, not on commit, because the suite is ~7 minutes.** A seven-minute pre-commit is
+a hook people learn to `--no-verify` past, and that leaves no trace — strictly worse than no hook,
+because the history then reads as checked.
+
+⚠ **"Run all tests" is NOT a bare `pytest`** — the root collects 2,670 tests and dies on a
+collection error, because the backend has its own `pytest.ini`, its own venv, and imports
+`services`/`routers` by bare name. Use `scripts/run_all_tests.sh`. It runs all three suites even
+when one fails: stopping early reports the others as unknown, and unknown reads as fine.
+
+⚠ **Playwright is deliberately NOT in the gate.** Its config has no `webServer` block on purpose —
+this backend talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand can
+start things on the trading box. `./start.sh` then `npm test` stays a person's decision; `tsc
+--noEmit` is the half that needs nothing running.
+
+### 🔴 Both hooks are built around the UNATTENDED committer
+
+`algos/tools/ledger_sync.py` commits AND pushes the live bot's decision record twice a day from the
+Mac with nobody watching, staging only `.jsonl` and `.log`. **A rule that fires on a robot's commit
+has no human to read its message: it does not nag, it silently stops the job** — which has already
+happened twice on the docs half of `commit-msg` (2026-08-05).
+
+- **`pre-commit` checks SCOPE BEFORE TOOLS** — nothing lintable staged ⇒ exit 0 without ever asking
+  whether node is installed.
+- **`pre-push` skips a push carrying no code**, on a POSITIVE trigger rather than an ignore-list, so
+  a new data format added tomorrow is skipped by default — the safe direction.
+- Deliberate skip: `LWG_SKIP_TESTS=1 git push`. It prints a loud line and has no silent form.
+
+### The rules were MEASURED, not picked
+
+Every number behind them is in `HISTORY.md` → *Formatting and linting arrive*. The rules themselves:
+
+- **`line-length = 100`**, because that is how this code is already written (p90 94). Ruff's default
+  88 would rewrap 21,040 lines against 2,647.
+- **`target-version = "py39"`** — the lowest runtime here. It is why `UP` is not selected: those
+  rules propose 3.10+ syntax the backend venv cannot run.
+- 🔴 **`E402` is OFF because the engine imports DEPEND on breaking it** — 193 files do
+  `sys.path.insert` then `from market_structure import ...`. ⚠ **That makes the import SORTER the
+  thing to watch, and it was checked rather than assumed: 0 hoisted across all 193.** Re-run that
+  check if `I` is ever swapped for a different sorter.
+- **`E741`, `B904`, and eslint's React Compiler rules are off or at warn** — each fires dozens of
+  times on code that ships and works. `rules-of-hooks` stays an error: a conditional hook call is a
+  crash, not advice.
+- **Markdown is NOT formatted.** Prettier pads table columns, which grows a CLAUDE.md ~35% in pure
+  whitespace and would trip this repo's own doc-growth guard on every commit.
+
+### The ratchet: only files you TOUCH
+
+413 of 627 python files predate any formatter. They are **not** reformatted in one pass — that would
+rewrite `engines/` and `strategies/`, which rule 22 forbids without re-running every `compare_*.py`
+gate first. The repo converges as it is worked on, and no commit is blocked by a file it did not
+touch.
+
+🔴 **`deployed/` is excluded in `ruff.toml` AND the hook passes `--force-exclude`** — that flag is
+what makes an explicitly-named path still honour the exclusion. An edit there changes what a running
+bot executes, with no promote and no restart.
+
+⚠ **Ruff's version is PINNED**, or two machines reformat the same file differently and each undoes
+the other on every commit.
+
 ## Branches
 
 - `main` — active development, all code changes go here

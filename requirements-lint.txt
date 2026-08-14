@@ -1,0 +1,7 @@
+# The python tooling, pinned. Installed into `.venv-lint/` by scripts/install_dev_tools.sh.
+#
+# ⚠ **Pinned to an exact version on purpose.** Ruff's formatter output and its rule set both
+# change between releases, so a floating version means Aaron's machine and his brother's
+# reformat the same file differently and each "fixes" the other's diff on every commit. Bump it
+# deliberately, in its own commit, and look at what `ruff format --diff` does to the tree first.
+ruff==0.16.3

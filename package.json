@@ -1,0 +1,23 @@
+{
+  "name": "lwg-trading-devtools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Repo-root dev tooling ONLY — formatting, linting, and the pre-commit runner. This is NOT an application package: nothing here is imported by any app, and `command-center/frontend` keeps its own package.json for the actual React build. It lives at the root because lint-staged has to see EVERY staged path (python included), and a tool rooted inside one subsystem cannot.",
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint command-center/frontend",
+    "lint:fix": "eslint --fix command-center/frontend",
+    "precommit": "lint-staged"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.1.0",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.9.6",
+    "typescript-eslint": "^8.48.2"
+  }
+}

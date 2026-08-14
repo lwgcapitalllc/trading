@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+#
+# Run the whole test suite before anything leaves this machine.
+#
+# **Why pre-push and not pre-commit.** The suite is ~7 minutes — MEASURED 2026-08-14: 4:45 for
+# `engines backtest algos strategies smart-money` (1,698 tests) and 2:20 for the command-center
+# backend (1,001 tests). Seven minutes on every commit is the kind of guard people learn to
+# `--no-verify` past, and `--no-verify` leaves no trace, which is strictly worse than no hook at
+# all because the history then reads as checked. So commits stay cheap and the gate sits where
+# the work becomes somebody else's problem.
+#
+# 🔴 **IT SKIPS A PUSH THAT CARRIES NO CODE, AND THAT IS NOT AN OPTIMISATION.**
+# `algos/tools/ledger_sync.py` runs UNATTENDED twice a day on the Mac and pushes the live bot's
+# decision record — the only copy of what the bot decided, including every setup it refused, and
+# no broker statement contains it. It stages only `algos/ledger_archive/**/*.jsonl` and `*.log`.
+# Running a 7-minute suite on that push would, on any red day, silently stop the one backup that
+# matters. **A rule that fires on a robot's push has no human to read its message.** The docs
+# half of `commit-msg` learned this twice (root CLAUDE.md, 2026-08-05); this hook is built
+# already knowing it.
+#
+# The trigger is therefore POSITIVE — run only when the push carries something a test could
+# read — rather than a list of things to ignore. A new data format added tomorrow is skipped by
+# default, which is the safe direction; a new code extension has to be added here, and the worst
+# case is a suite that did not run rather than a backup that did not land.
+#
+# Deliberate skip, when you know what you are doing and are prepared to say so:
+#
+#     LWG_SKIP_TESTS=1 git push
+#
+# It prints a loud line. There is no silent version on purpose.
+
+set -u
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+REMOTE_SHA_ZERO="0000000000000000000000000000000000000000"
+
+# ── The deliberate escape ─────────────────────────────────────────────────────
+if [ "${LWG_SKIP_TESTS:-}" = "1" ]; then
+  echo ""
+  echo "  ⚠ LWG_SKIP_TESTS=1 - pushing WITHOUT running the tests."
+  echo "    Nothing recorded this anywhere. Say so in the PR or to whoever pulls it."
+  echo ""
+  exit 0
+fi
+
+# ── What is actually being pushed ─────────────────────────────────────────────
+# git feeds pre-push lines of: <local ref> <local sha> <remote ref> <remote sha>
+CHANGED=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  # A branch being DELETED pushes an all-zero local sha. There is no tree to test.
+  [ "$local_sha" = "$REMOTE_SHA_ZERO" ] && continue
+
+  if [ "$remote_sha" = "$REMOTE_SHA_ZERO" ]; then
+    # A brand-new branch on the remote. Diff against whatever the remote already has rather than
+    # against the empty tree, or the first push of a branch tests the entire repo's history.
+    RANGE="$(git rev-list "$local_sha" --not --remotes | tail -1)"
+    if [ -n "$RANGE" ]; then
+      FILES="$(git diff --name-only "$RANGE^" "$local_sha" 2>/dev/null || git show --name-only --format= "$local_sha")"
+    else
+      FILES=""
+    fi
+  else
+    FILES="$(git diff --name-only "$remote_sha" "$local_sha")"
+  fi
+  CHANGED="$CHANGED
+$FILES"
+done
+
+# Nothing to push (git still runs the hook for an up-to-date push).
+if [ -z "$(printf '%s' "$CHANGED" | tr -d '[:space:]')" ]; then
+  exit 0
+fi
+
+# ── Does any of it affect a test? ─────────────────────────────────────────────
+# ⚠ `.json` IS in this list and `.jsonl` is NOT, and the distinction is real: `*.meta.json` is a
+# contract the Pine and the lab both read (the commit-msg hook refuses to exempt it for the same
+# reason), while `*.jsonl` is the ledger's recorded data.
+CODE="$(printf '%s\n' "$CHANGED" \
+  | grep -Ei '\.(py|ts|tsx|js|jsx|mjs|cjs|json|toml|ini|cfg|sh|ps1|pine|cs|mq5|mqh)$|^\.githooks/|^conftest\.py$' \
+  | grep -vEi '\.jsonl$' || true)"
+
+if [ -z "$CODE" ]; then
+  echo "  pre-push: nothing here a test can read (data or docs only) - not running the suite."
+  exit 0
+fi
+
+# ── Run it ────────────────────────────────────────────────────────────────────
+echo ""
+echo "  Running the full test suite before push (~7 min). LWG_SKIP_TESTS=1 to skip."
+echo ""
+
+./scripts/run_all_tests.sh
+STATUS=$?
+
+if [ "$STATUS" -ne 0 ]; then
+  echo ""
+  echo "  PUSH REFUSED - the test suite is not green."
+  echo ""
+  echo "  Fix it, or push deliberately and say so:"
+  echo ""
+  echo "      LWG_SKIP_TESTS=1 git push"
+  echo ""
+fi
+
+exit $STATUS

@@ -25,6 +25,12 @@ venv/
 env/
 node_modules/
 
+# The dev-tool venv (ruff), built by scripts/install_dev_tools.sh from requirements-lint.txt.
+# Per-machine and reproducible from that pinned file — which is why `.githooks/pre-commit`
+# REFUSES when it is missing rather than skipping: a formatter that silently does nothing on
+# one clone leaves the repo formatted on one machine and not the other.
+.venv-lint/
+
 # =============================================================
 # Secrets — never commit
 # =============================================================

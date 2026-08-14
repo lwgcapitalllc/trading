@@ -67,6 +67,19 @@ else
   printf '%s\n' "$HOOKS_OUT"
 fi
 
+# ── 3b. The tools those hooks need ────────────────────────────────────────────
+# `pre-commit` formats and lints the files in a commit, and it REFUSES rather than skipping
+# when ruff / lint-staged are absent — so a clone that has the hooks and not the tools would
+# be unable to commit at all. Installing them here is what keeps the two in step. Silent when
+# nothing needs doing; the `|| true` is so a missing npm warns instead of killing `./go` under
+# `set -e` (the app itself does not need any of this to run).
+TOOLS_OUT="$("$ROOT/scripts/install_dev_tools.sh" --quiet 2>&1 || true)"
+if [ -z "$TOOLS_OUT" ]; then
+  ok "dev tools installed (ruff, prettier, eslint, lint-staged)"
+else
+  printf '%s\n' "$TOOLS_OUT"
+fi
+
 # ── 4. Directories the app writes into ────────────────────────────────────────
 mkdir -p "$ROOT/command-center/backend/data" \
          "$ROOT/command-center/backend/reports/lab" \
