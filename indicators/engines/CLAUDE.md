@@ -2,7 +2,8 @@
 
 **Purpose:** The Pine `indicator()` sources — the charting engines every Python engine under
 `engines/` was ported FROM, plus the instrumented `_export` twins their parity gates diff
-against, plus the from-scratch `smc_engine_v2.pine` rebuild.
+against, plus the from-scratch `smc_engine_v2.pine` rebuild, plus a small number of THIRD-PARTY
+indicators kept here for reference under their own licences.
 **Scope:** This file owns everything true of an INDICATOR Pine file here. It does NOT cover the
 `strategy()` sources (`indicators/strategies/CLAUDE.md`) and it does NOT restate what any Python
 engine does — each `engines/<name>/CLAUDE.md` owns that, and duplicating it here is how three
@@ -21,6 +22,11 @@ A file is in this folder if its declaration is `indicator()`, and in `../strateg
 `mpc_m15_playbook.pine` is an `indicator()` and lives here while `mpc_m15_playbook_strategy.pine`
 is a `strategy()` and lives next door, and `structure_engine.pine` reads like a strategy
 component but is an indicator.
+
+⚠ **A `_luxalgo` or otherwise vendor-suffixed file is THIRD-PARTY reference, not our source.** It
+was not ported from `mpc_assistant.pine`, no `compare_*.py` gate measures it, and it carries its
+own licence header at line 1 — leave that line alone. It is here to be read, not to be edited: an
+edit makes it a fork nobody can re-download, so change the CLAUDE.md and take a new copy instead.
 
 🔴 **Two separate tracks live in this one folder and confusing them wastes a session.**
 `mpc_assistant.pine` and everything extracted from it (`structure_engine.pine`, every
@@ -52,6 +58,7 @@ The missing one is the one that fires on a WIN — `fibo7Touched`, price back at
 - `indicators/engines/ob_export.pine` — instrumented build for the ORDER-BLOCK parity check. **REBUILT 2026-07-31 (1148 → ~300 lines): it no longer embeds the structure engine at all.** [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsobexportpine)
 - `indicators/engines/candle_sticks.pine` — **a THIRD-PARTY indicator, added 2026-08-08** ("Candlestick Patterns Identified, update 1-17-26", © repo32, MPL-2.0, v6). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorscandlestickspine)
 - `indicators/engines/candle_sticks_export.pine` — the parity harness for `engines/candlesticks/`. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorscandlesticksexportpine)
+- `indicators/engines/mss_sweeps_luxalgo.pine` — **a THIRD-PARTY indicator, added 2026-08-13.** "MSS Sweeps [LuxAlgo]", published open-source on TradingView (`tradingview.com/script/gRo6KnE6`, author `MrQuant_Jacob`), MPL-2.0, v6, 193 lines. Fetched VERBATIM — the pine-facade API reports `scriptAccess: open_no_auth`, and the licence header is line 1. **Reference only: nothing imports it, no Python port exists, no `compare_*.py` measures it.** What it does: tracks internal SMC legs, waits for a hidden CHoCH followed by an internal BOS, remembers the protected swing that break left behind, and fires when price sweeps that level and reclaims it. Four `alertcondition`s — bullish BOS, bearish BOS, higher-low sweep, lower-high sweep. ⚠ **It is a SECOND structure implementation and must never become an import path** — `engines/market_structure/` is canonical, and this file's leg detection is its own rule, not ours. Read it for the sweep-and-reclaim idea; do not wire it to anything.
 - `indicators/docs/STRUCTURE_OS_BUILD.md` — cross-session handoff doc for the from-scratch rebuild: architecture, design decisions, validation findings, build-stage status. Read this first when resuming that track.
 - `docs/market_structure_engine_spec.md` — the source-of-truth rules spec, written from the TradingView overview page. `STRUCTURE_OS_BUILD.md` treats this as priority-1 source of truth.
 

@@ -20,7 +20,7 @@ across both folders on exactly this rule.
 | folder | declaration | count | owns |
 |---|---|---|---|
 | [`strategies/`](strategies/CLAUDE.md) | `strategy(` | 12 | the numbered input-panel contract, the trade annotations, the colour palette |
-| [`engines/`](engines/CLAUDE.md) | `indicator()` | 16 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules |
+| [`engines/`](engines/CLAUDE.md) | `indicator()` | 17 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
 
 ⚠ **Ask the folder, then read that folder's CLAUDE.md — not this one.** A fact lives in exactly
 ONE CLAUDE.md, the one next to the code. This file keeping its own copy of the panel contract is
