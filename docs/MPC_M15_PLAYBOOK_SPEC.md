@@ -1,6 +1,6 @@
 # MPC M15 Playbook — strategy spec
 
-**File:** `indicators/mpc_m15_playbook_strategy.pine`
+**File:** `indicators/strategies/mpc_m15_playbook_strategy.pine`
 **Source of the idea:** `education/learned/2026-08-11-smc-strategy-too-simple-to-ignore-1150-trades.md`
 (Lewis Kelly, "This SMC Strategy Is Too Simple to Ignore", https://youtu.be/lTrDQPVfJyI)
 **Status:** built 2026-08-11. **Not compiled, not measured, no Python port, no parity harness.**
@@ -9,7 +9,7 @@
 
 ## Why this file exists
 
-`indicators/mpc_m15_playbook.pine` is an **indicator**. It draws structure, sessions,
+`indicators/engines/mpc_m15_playbook.pine` is an **indicator**. It draws structure, sessions,
 fair value gaps, order blocks, liquidity levels and a confirmation table, and it places
 no orders — so the Strategy Tester cannot score it and there is no way to find out
 whether the model wins. This file is the same five rules with an execution layer.
@@ -69,7 +69,7 @@ session open.
 
 **The fill bar may not stage its own stop.** A resting limit is reached by price coming
 to it from the wrong side, so the fill bar's favourable extreme is the approach to the
-order, not a move the trade made. (`indicators/BUG_exit_fill_price_mismatch.md`.)
+order, not a move the trade made. (`indicators/docs/BUG_exit_fill_price_mismatch.md`.)
 
 **A rung is issued only while unfilled.** Calling `strategy.exit` again with an id whose
 order has already filled places a NEW order rather than modifying it, which banks another

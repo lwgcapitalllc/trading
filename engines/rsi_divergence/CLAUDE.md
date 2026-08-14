@@ -28,8 +28,8 @@ STRICT extreme on the RIGHT (the last bar of an equal run is the pivot); this en
 (`_pivot_high_rsi` rejects if any LEFT bar is strictly higher OR any RIGHT bar is `>=` it, mirror for
 lows). Re-validated exit 0 on the 2026-07-19 16,639-bar grand export with ZERO tie exceptions remaining.
 Detection formula unchanged (parameterized threshold); only the default constant moved.
-**Pine:** ported from `indicators/mpc_assistant.pine`'s RSI DIVERGENCE block (+ the `GRP_DIV`
-inputs); parity harness is `indicators/rsi_div_export.pine`, diffed against this Python by
+**Pine:** ported from `indicators/engines/mpc_assistant.pine`'s RSI DIVERGENCE block (+ the `GRP_DIV`
+inputs); parity harness is `indicators/engines/rsi_div_export.pine`, diffed against this Python by
 `tools/compare_rsi_div.py`.
 **Last reviewed:** 2026-07-19 (built + unit-tested + Pine-parity-validated exit 0; pivot-tie bug fixed).
 
@@ -51,7 +51,7 @@ engines/rsi_divergence/
 ```
 
 Pine source of truth: `mpc_assistant.pine`'s `GRP_DIV` inputs + the "RSI DIVERGENCE" compute block.
-Parity export build: `indicators/rsi_div_export.pine`.
+Parity export build: `indicators/engines/rsi_div_export.pine`.
 
 ---
 
@@ -183,7 +183,7 @@ pivots/divergences (its first-bar ages are 471 / 1902), so the cold-started Pyth
 once its Wilder RMA has settled and its own in-window divergences supersede Pine's off-window ones.
 The harness:
 
-1. `indicators/rsi_div_export.pine` — the RSI DIVERGENCE compute block from `mpc_assistant.pine`
+1. `indicators/engines/rsi_div_export.pine` — the RSI DIVERGENCE compute block from `mpc_assistant.pine`
    (drawing removed) + `plot()` columns: `px_div_rsi`, `px_div_pl` / `px_div_ph` (the confirmed RSI
    pivots), `px_div_bull` / `px_div_bear` (this-bar divergence pulses), `px_div_bull_active` /
    `px_div_bear_active` (the live flags), and `px_div_bull_age` / `px_div_bear_age` (bars since the
@@ -207,8 +207,8 @@ abs tolerance (default 1e-2) to absorb CSV rounding; the pulses, flags and ages 
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` RSI DIVERGENCE block + `GRP_DIV` inputs.
-- Parity export build: `indicators/rsi_div_export.pine`.
+- Pine source of truth: `indicators/engines/mpc_assistant.pine` RSI DIVERGENCE block + `GRP_DIV` inputs.
+- Parity export build: `indicators/engines/rsi_div_export.pine`.
 - Consumer (not yet built): the A+ setup sequence — reads `bull_active` / `bear_active` as a
   confluence tag on its READY/EARLY row. See `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 - Sibling in shape (also standalone, events-not-visuals off the same indicator):

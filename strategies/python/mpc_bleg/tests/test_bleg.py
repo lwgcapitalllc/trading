@@ -187,7 +187,7 @@ def test_the_time_stop_only_ever_fires_before_tp1():
     import re
 
     for name in ("mpc_b_leg_strategy.pine", "mpc_b_leg_strategy_export.pine"):
-        src = (_ROOT / "indicators" / name).read_text()
+        src = (_ROOT / "indicators" / "strategies" / name).read_text()
         hits = [ln for ln in src.splitlines()
                 if re.match(r"bool [ls]TimeUp = ", ln)]
         assert len(hits) == 2, f"{name}: expected a long and a short time-stop line, got {len(hits)}"
@@ -227,7 +227,7 @@ def test_the_staleness_cap_default_is_reachable_on_its_own_pine_input():
     import re
 
     for name in ("mpc_b_leg_strategy.pine", "mpc_b_leg_strategy_export.pine"):
-        src = (_ROOT / "indicators" / name).read_text()
+        src = (_ROOT / "indicators" / "strategies" / name).read_text()
         line = next(ln for ln in src.splitlines() if ln.startswith("float bLegMaxDays = input."))
         default = float(re.search(r"input\.float\(([\d.]+)", line).group(1))
         lo = float(re.search(r"minval = ([\d.]+)", line).group(1))
@@ -257,7 +257,7 @@ def test_the_meta_descs_are_the_pine_tooltips_verbatim():
     import json
     import re
 
-    pine = (_ROOT / "indicators" / "mpc_b_leg_strategy.pine").read_text().splitlines()
+    pine = (_ROOT / "indicators" / "strategies" / "mpc_b_leg_strategy.pine").read_text().splitlines()
     meta = json.loads((_ROOT / "strategies" / "python" / "mpc_bleg"
                        / "mpc_bleg.meta.json").read_text())
     by_name = {p["name"]: p for p in meta["params"]}

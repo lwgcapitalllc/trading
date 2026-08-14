@@ -1,6 +1,6 @@
 # MPC SOS Fade — Strategy Spec (Step S)
 
-**Source of truth:** `indicators/mpc_strategy.pine` (the execution layer, lines ~3640–4735).
+**Source of truth:** `indicators/strategies/mpc_strategy.pine` (the execution layer, lines ~3640–4735).
 **Purpose:** the exact, machine-followable rules the Python port reproduces. The parity check
 (`compare_strategy.py`) proves the port matches these rules on real data.
 **Status:** APPROVED 2026-07-15 — build started (A0 data layer first).

@@ -1,398 +1,54 @@
 # CLAUDE.md — indicators/
 
-**Purpose:** From-scratch Pine Script rebuild of the "Structure OS / SMC Engine" market-structure indicator (swing highs/lows, HH/HL/LH/LL, BOS, CHoCH), replicating a private TradingView indicator's behavior using a pullback-only detection method.
-**Scope:** This covers Pine Script indicator development and the market-structure detection engine only. It does NOT cover trading strategy logic, risk management, or any live/backtest execution — this is a charting indicator, not a bot.
-**Status:** Under construction — Stage 2b (break-gated swing structure + BOS/CHoCH) is ~95% validated against the original; Stage 3 (internal structure) and Stage 4 (multi-symbol/timeframe comparison) not started. Blocked on chart validation by Aaron before Stage 3 begins.
+**Purpose:** Every Pine Script source in the repo — the charting engines the 13 canonical Python
+engines were ported from, the `strategy()` files Aaron runs in the TradingView Strategy Tester,
+and the instrumented `_export` twins that are half of every parity gate.
+**Scope:** This file ROUTES and keeps the dated build narrative. The RULES live in the two child
+CLAUDE.md files next to the code they describe. It does not cover any Python port — those live
+under `engines/` and `strategies/python/`, each owning its own CLAUDE.md.
+**Last reviewed:** 2026-08-13 — the 28 `.pine` files were split into `strategies/` and `engines/`
+and the rules that applied to only one half moved into that half's CLAUDE.md.
 
-🔴 **The one real defect: `f_rev15` had three ways to die and the chart-side A+ engine has four.** The missing one is the one that fires on a WIN — `fibo7Touched`, price back at the leg origin. So on the 15m chart the REV row read `Pass` the moment TP3 printed, while the **1m chart kept the same leg alive at stage 4 saying TAKE PROFIT** until an opposite SOS or a continuation BOS happened along, which can be hours. Two charts, two answers, one setup. Worse than a stale row: the RE-ENTRY round trip clears the TP latches when price returns to 0.618, so a finished trade could hand the 1m a fresh AWAIT and ask for a 1m SOS on a leg the 15m had closed the book on. Fixed with `or L_tp0` / `or S_tp0` on the two death conditions — `L_tp0` **is** TP3, since `p0` is `L_high`, the leg origin, the same 0.0 the drawn fib labels TP3. ⚠ **It kills one bar LATE**: the death block runs before the fib block that sets the latch, where the 15m side kills on the bar itself. Left as is — every other value this engine ships crosses the security boundary a bar late in the same way. ⚠ **It retires the whole 1m stack together, not just the row** — `rStage` falling below 3 drops `_m15Retraced`, which is what `fiboShowAligned`, the 1m External Fib, the 1m Sniper Zone and the 1m ENTRY row all hang off. ⚠ **Nothing on the 15m moves**: every consumer of `rStage`/`rTp50`/`rDeepCode`/`rZoneLo` sits behind `_fibOneMin`, `_sn1m`, `revOn1m` or the non-15m branch of the table, checked one by one; `f_rev15` exists only in `mpc_assistant.pine` and `mpc_m15_playbook.pine`, so **no bot and no parity gate can see this.**
+## The split — where a `.pine` file goes, and the one thing that decides it
 
+**The Pine DECLARATION decides it, not the filename.** A file declaring `strategy(` goes in
+`strategies/`; a file declaring `indicator()` goes in `engines/`. Nothing else is consulted,
+which is the point — `structure_engine.pine` reads like a strategy component and is an
+indicator, and `mpc_m15_playbook.pine` / `mpc_m15_playbook_strategy.pine` are a pair split
+across both folders on exactly this rule.
 
+| folder | declaration | count | owns |
+|---|---|---|---|
+| [`strategies/`](strategies/CLAUDE.md) | `strategy(` | 12 | the numbered input-panel contract, the trade annotations, the colour palette |
+| [`engines/`](engines/CLAUDE.md) | `indicator()` | 16 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules |
 
----
+⚠ **Ask the folder, then read that folder's CLAUDE.md — not this one.** A fact lives in exactly
+ONE CLAUDE.md, the one next to the code. This file keeping its own copy of the panel contract is
+how three files in this repo came to disagree about whether a bot was live.
 
+⚠ **`CLAUDE.md` is the only file left at this level, and that is structural rather than tidy** —
+the commit hook finds a changed file's OWNING doc by walking up from its folder, so this file has
+to sit above both children to be the thing `strategies/` and `engines/` fall back to.
 
-**Last reviewed:** 2026-08-12 - the dated build narrative that used to sit here moved VERBATIM to `indicators/docs/INDICATORS_BUILD_NOTES.md`. **Nothing was deleted.** It was 129,018 bytes in 3 paragraph(s), the largest 95,897 bytes on a single line, loaded in full every time anyone opened this area. Rules stay here; the evidence is one file away.
-
-## THE INPUT PANEL CONTRACT — where a new toggle goes
-
-**Aaron's standing rule, 2026-08-12.** Every strategy Pine here uses the SAME numbered
-groups in the SAME order, so section 5 is Entry whichever file you open. A strategy that
-has no fibs simply has no `9 · Drawing: Fibs` group — **the numbering does not close up**,
-because the number is the address.
-
-| # | group | what lives here |
-|---|---|---|
-| 1 | Confirmation Table | the JARVIS panel's own switches |
-| 2 | Market Structure | swing/BOS/SOS drawing and labels |
-| 3 | What trades | longs/shorts, risk %, sizing mode |
-| 4 | What arms it | the trigger — sweep, divergence, band tap, confirmation candle |
-| 5 | Entry | where the limit rests, and **everything that decides which zones exist** |
-| 6 | Stop & targets | SL anchor, TP rungs, trail, time stop, breakeven |
-| 7 | Filters | things that REFUSE a setup — HTF bias, final hour, minimum stop |
-| 8 | Chart annotations | blocked / missed / position boxes / entry triangles |
-| 9 | Drawing: Fibs | draw-only, ONE toggle, default OFF |
-| 10 | Drawing: Sessions | draw-only, ONE toggle, default OFF |
-| 11 | Drawing: Liquidity | draw-only |
-| 12 | Debug | the last resort, and nothing a reader tunes on |
-
-### Section 2 is FIXED — four toggles, same order, same defaults, every file
-
-Aaron, 2026-08-12: *"On all of my strategies, the market structure should be the exact same…
-There should always be four toggles… the only thing that should be on by default is show
-external structure, nothing else."*
-
-```
-Show External Structure            ON
-Show Internal Structure            off
-Show Historic Internal Structure   off
-Show Swing Point Labels            off
-```
-
-🔴 **`mpc_d_strategy.pine` HAD TWO OF THE FOUR, AND THE MISSING PAIR WAS A MISSING ENGINE
-RATHER THAN A MISSING INPUT.** That file embeds only the EXTERNAL half of
-`structure_engine.pine`, so there was nothing for an internal toggle to switch. Adding the
-two checkboxes alone would have shipped exactly the hazard the deleted `REQUIRED` toggles
-were: a control that looks like it does something. **The internal engine is ported in
-instead** — 452 lines, taken from `structure_engine.pine` rather than from a sibling
-STRATEGY, because the strategies' copy also seeds the External Fib (`i_confirmed_*`) and D
-has no fibs. ✅ **Proven the right source rather than assumed: the two blocks were diffed
-comment-free, and the only difference is those four fib-anchor writes plus `IFIB_GREY` and
-`extBreakThisBar`.** ⚠ **It draws and decides nothing** — D reads no internal swing, so this
-is annotation only and cannot move a trade. ⚠ `showSwingLabels` also shipped **ON** in D
-against every sibling's off.
-
-🟢 **`mpc_h4_sweep_strategy.pine` GOT THE SECTION TOO (Aaron's call, 2026-08-12), AND IT IS
-THE ONE FILE WHERE THE ENGINE DECIDES NOTHING.** That file had no structure engine at all —
-it trades an H4 liquidity sweep confirmed by a candlestick pattern, consuming no swing, no BOS
-and no SOS — so honouring "the exact same" there meant porting ~1,000 lines of engine purely to
-draw with. It was recorded as an open decision rather than skipped, and answered *do it*.
-
-**Lifted from `mpc_d_strategy.pine`, not from `structure_engine.pine`**, on purpose: D's copy is
-the STANDARDISED one (external half + the fib-free internal port above), so taking it means all
-five files share one block rather than four sharing one and H4 sharing a fifth. 880 → 1,921
-lines. ✅ **Checked mechanically rather than by eye — zero duplicate top-level declarations and
-zero name collisions with H4's own identifiers** (`st`, `ph`, `pl`, `bullColor`, `majorLength`,
-`f_swingCol`, every `i_*`), and the block was confirmed self-contained first by grepping it for
-`exec*` / `d[A-Z]*` references, which returned nothing.
-
-⚠ **It draws and decides nothing, and the file says so at the block AND at the section.** Flip
-any of the four toggles and H4's trade list is unchanged. **The comment names the condition that
-would end that**: if a future rule in this file starts reading `st`, it stops being a drawing
-block and the toggles stop being free — say so at the rule, because nothing else will.
-
-⚠ **The compile-token cost is real and unmeasured.** H4 more than doubled; only a paste can say
-whether it clears CE10117. If it does not, this block is the first thing to cut, and cutting it
-costs a chart annotation rather than a trade.
-
-### Trade longs / Trade shorts — every file, both ON
-
-🔴 **`mpc_h4_sweep_strategy.pine` had NEITHER.** Added, and the wiring is the interesting
-half: a refused side is **block code 5, numbered last and ranked FIRST** (a code is a wire
-format `px_blk` carries into exports already on disk, so an existing number can never be
-renumbered — only its place in the chain moves).
-
-⚠ **A DISABLED SIDE DOES NOT CONSUME THE H4 WINDOW, unlike every other refusal in that
-file, and the asymmetry is deliberate.** H4 allows one setup per H4 window and burns it on
-any trigger, refused or not — which is right for a stop-too-tight refusal (about that
-setup) and wrong for a direction switch (about every trade on that side). Burning it would
-have removed LONGS that happened to share a window with a short, so "longs only" would not
-have been the long book. **That is the trap this repo keeps meeting: a filter that quietly
-changes the population it was not aimed at.**
-
-### The confirmation table
-
-Present and **default OFF** where the strategy reads one — `mpc_strategy.pine` and
-`mpc_b_leg_strategy.pine`. **Absent from BOS, D and H4 by Aaron's own instruction**, because
-none of them has a table for it to show; already the case in all three, so nothing was
-removed.
+**Everything else that is prose lives in [`docs/`](docs/):** `PINE_INPUT_DEFAULTS.md`,
+`BUG_exit_fill_price_mismatch.md`, `MARKET_STRUCTURE_GLOSSARY.md`, `STRUCTURE_OS_BUILD.md` and
+`INDICATORS_BUILD_NOTES.md`. They were NOT split across the two children: each describes both
+halves, and splitting them would have made two half-true copies.
 
 ---
 
-## PHASE 1 — the trade annotations, and the one piece that CANNOT be ported
 
-The other half of the standardisation: *"as I move to strategies, nothing seems different other
-than the logic of the strategy."* Same blocked marker, same missed callout, same position box,
-same entry triangles, on every file.
+## The build narrative
 
-| annotation | A+ | B-LEG | BOS | D | H4 |
-|---|---|---|---|---|---|
-| position box / result bands | ✅ | ✅ | ✅ | ✅ | ✅ |
-| entry callout, recoloured on close | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **entry triangles** | ✅ | ✅ | ✅ | ✅ **new** | ✅ |
-| **blocked-setup tag (pink)** | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
-| missed-setup callout (2-of-3) | ✅ | ✅ | ❌ | ❌ | ❌ |
+Everything below this line is the dated story of how these files got here — what a pass found,
+what it measured, and what it cost. It is kept rather than summarised, because a rule with no
+incident behind it reads as arbitrary and gets "tidied up" by the next reader.
 
-**D gained the entry triangles.** `plotshape` is a GLOBAL-SCOPE call, so it cannot live inside
-the fill block and the fill edge is written out at top level instead — the SAME test the fill
-block uses, so a triangle can never appear on a bar the tracker did not treat as a fill. Gated
-on `execShowPosBox` like A+, because the triangles are part of the position drawing.
-⚠ **They are not redundant with the boxes**: a scratch paints a risk block a few pixels tall and
-reads as no trade at all, which is exactly when you need to see where it opened.
-
-**H4 gained the blocked-setup tag.** It has carried the refusal CODES since its export twin
-landed and had nothing on the chart that drew them. It reads `hTrigCode` — already written at
-decision time — and re-derives nothing, so the tag and the export's `px_blk` cannot tell
-different stories.
-
-🔴 **The side had to be RECORDED rather than inferred, and `mpc_d_strategy.pine` already paid for
-learning that.** D's tag read direction off the SOS on the same bar, correct only while every
-candidate arrived on one — and the moment a second entry mode existed, every candidate drew as a
-SHORT. Here the equivalent shortcut is reading `trigShort`, a per-bar local: right today, silent
-the day a refusal is reported from anywhere but those two blocks. `hTrigDir` is written beside
-`hTrigCode` instead.
-
-⚠ **No dedupe, and that is not an omission.** A trigger fires at most once per H4 window
-(`firedWindow`), so one refusal is already one bar. A+ needs its `sosBar + code` key because a
-setup there can stay refused for twenty consecutive bars. ⚠ **`hTrigBar == bar_index` is what
-scopes it** — the four `hTrig*` fields are `var` and keep the last trigger's values for ever.
-
-### 🔴 The missed-setup callout is NOT portable to BOS, D or H4, and this file already said so
-
-A+'s callout scores a **2-of-3 confluence sequence** — arm (sweep or divergence), SOS, then the
-retrace zone — and reports which one was missing. **`mpc_bos_strategy.pine` DELETED those four
-inputs on 2026-07-31 with the reason written down**: *"The BOS arm is a break of structure, so
-there is no sweep→SOS clock to bound and no 2-of-3 sequence to score."* The same is true of D (a
-three-SOS sequence with no partial state) and of H4 (a sweep window plus a confirmation candle —
-two facts, not three).
-
-**So this is a DESIGN decision per strategy, not a port**, and inventing one would have shipped a
-callout naming confluences those files do not have — the exact mistake the B-LEG block tag was
-built to avoid (*"a shared annotation is shared at the DISPLAY, never at the reasons"*).
-
-⚠ **And the cost is not symmetric.** `mpc_bos_strategy.pine` has hit **CE10117 twice**, is the
-largest file here at 4,384 lines, and its export sits at **60 of Pine's 64 plots**. Adding ~90
-statements of `MissW` machinery to it, unverified, immediately before a five-file paste is the
-wrong trade — a file that will not compile is worse than a file missing one annotation.
-
-**What each would need, so the decision is a decision rather than a blank:**
-- **BOS** — a break armed a leg, the limit rested, and price never reached it (or the leg died
-  first). One state, not three: the honest callout is *"armed, never filled"* plus the reason.
-- **D** — the shakeout completed and the with-trend SOS never came, or came stale. `dCandDir`
-  and the three `dCand*` gate values are already recorded for every candidate, so the data is
-  there; only the drawing is missing.
-- **H4** — a sweep window opened and no confirmation candle fired in it. Cheapest of the three,
-  and the one whose absence is least visible, since `firedWindow` already bounds it.
-
-### The rule that decides the section
-
-**Ask what it CHANGES, never what it is ABOUT.** A setting goes in 3-7 if it can move a
-trade, and in 8-12 if it can only move a pixel. This is the whole contract, and it was
-chosen over the obvious alternative (group everything named "FVG" into an FVG group)
-deliberately.
-
-🔴 **THE FAIR VALUE GAP GROUP IS WHY.** In `mpc_strategy.pine` it reads as a drawing group
-and it is not: `Show FVG (REQUIRED — feeds entries)`, both `FVG Min Gap` floors, the
-middle-bar close test, `Max Active FVGs` and `keep until broken` **all change WHICH GAPS
-EXIST, and therefore which entries fire** — six of its seven inputs. `eqExemptFvg` does the
-identical thing from inside `Liquidity Levels`. Grouping by name would have demoted six
-trade-deciding knobs to the bottom of the panel alongside the fib colours, and nothing
-would have errored. **They belong in `5 · Entry`, with the entry rules that consume them.**
-
-⚠ **The converse is equally load-bearing: a group named for an OBJECT invites settings that
-merely mention that object.** "Fair Value Gaps" attracted the entry rules' detection
-constants and a liquidity exemption because they all say FVG. Naming a group for a JOB —
-"Entry" — gives a new toggle exactly one honest home.
-
-### Collapsing, and why it is the same edit as grouping
-
-⚠ **Do not regroup a file and collapse it in two passes.** 76 of A+'s 156 inputs are fib,
-session and liquidity sub-settings Aaron has said he will never configure; each family
-collapses to ONE draw toggle with the rest hardcoded at today's values. Moving them into
-new groups and then deleting them is the risky work done twice, on the panel that decides
-what he trades. **One pass per file: collapse, then group what survives.** A+ goes
-156 → about 75.
-
-⚠ **Collapse means HIDE THE SUB-SETTINGS, never remove the on/off.** Aaron, 2026-08-12:
-*"I don't even need to see the time frame or the colors of the sessions. It could just be
-one button that says show sessions… I'll never configure them."* Both draw toggles default
-**OFF**.
-
-### 🔴 The trap that makes this dangerous rather than cosmetic
-
-**Two of the "show X" toggles are not display toggles at all, and their own titles say so:**
-
-```
-Show External Fib (REQUIRED — SL/TP/entry levels)
-Show All Liquidity Levels (REQUIRED — arms sweeps)
-```
-
-`showFibo` gates the block that computes `fiboP1..fiboP7` — every entry, stop and target
-price in the file. Default that OFF as part of a drawing group and **the bot silently stops
-trading.** Each therefore SPLITS in two: the calculation is hardcoded permanently on and
-stops being an input at all, and the new draw toggle guards only the drawing. Verified
-before relying on it — the fib block is pure arithmetic for its first ~80 lines and draws
-through per-level flags further down, so the seam is clean.
-
-⚠ **`marketStructureOnly` ("Hide Everything Except Market Structure") is the same hazard by
-another route** — it force-disables `showFibo` and `showFVG`, so ticking it stops the bot
-trading. It becomes a DRAWING switch, which is what its name already claims.
-
-⚠ **`showDiv` (`Track RSI divergence`) looks like a third one and must NOT be hardcoded** —
-it is packed into `cfg_bits` bit 1024 in the export, so removing it breaks
-`compare_strategy.py`. It stays an input and is hoisted into `4 · What arms it`.
-
-### The Pine mechanics this collides with
-
-⚠ **Reordering `input.*` declarations RESETS saved chart values** — TradingView keys them
-off declaration order within each type. This pass therefore costs exactly ONE
-"Reset settings to defaults", which is only safe because the file DEFAULTS are what Aaron
-runs. **That is what `indicators/PINE_INPUT_DEFAULTS.md` is for**: it snapshots every
-input's type, per-type ordinal, group, title and default BEFORE the pass, so the reorder is
-proven cosmetic by re-dumping and diffing rather than argued to be.
-
-⚠ **Group ORDER is the order each group's FIRST input is declared**, so controlling the
-panel means controlling declaration order — retagging `group =` alone cannot do it. The
-answer is one consolidated input block near the top of the file, which the execution inputs
-already use (2026-07-28). Moving a declaration EARLIER is always safe; moving it LATER than
-its first read is a compile error.
-
-⚠ **An input referenced by another input's `active =` must stay declared before it.**
-
-🔴 **THE REORDER BROKE THAT RULE IN `mpc_bos_strategy.pine` AND IT ONLY SHOWED UP ON THE PASTE
-(`CE10272: Undeclared identifier "bosUseFvg"`, 2026-08-12).** `bosEntryFib` carries
-`active = not (bosUseFvg and execReqFVG)` and the collapse landed it ABOVE both of them. Fixed by
-moving `bosEntryFib` BELOW the whole gap block — which is where it reads better anyway, since its own
-title is *"Fallback entry level"* and it is the fallback FROM that block. ⚠ **The same defect was in
-`mpc_bos_strategy_export.pine`**, because the twin is a copy: **a compile error in a parent is a
-compile error in its export, and only the parent gets pasted.** ✅ **The move shifts NO saved value
-and needs no extra reset** — proven rather than assumed: the four inputs it crossed are all `bool`
-and it is a `string`, so every per-type ordinal, default and title is identical to before the fix.
-
-⚠ **The check is cheap and none of the five files was run through it.** For each `active =`, every
-identifier in it must be declared at a lower line number than the input carrying it — a ten-line
-script over `indicators/*.pine`. Run it after any panel edit; it found the export twin here, which
-nobody would have pasted until much later.
-
-### 🔴 "Trades on chart" CANNOT be defaulted from code, and it is the one thing on the Style tab that matters here
-
-Aaron, 2026-08-12: *"Under the styles tab, I don't ever want trades on charts enabled. It should
-always be unchecked. Can you make that a default button on everything, please?"*
-
-**It cannot be done in Pine, and this is recorded rather than re-litigated because it looks like
-it should be possible.** Checked against TradingView's own reference and the Strategies FAQ:
-`strategy()` has no argument for it, and the FAQ says outright that trade-marker visibility is a
-chart-side UI setting with no Pine equivalent. `display = display.none` works on a `plot`; the
-trade markers are not a plot — TradingView draws them itself from the order log, and there is no
-way to place an order without one.
-
-**So this is a per-chart-instance UI action, and the good news is it is nearly a one-time one.**
-The setting lives with the script INSTANCE on the chart, not with the source, so:
-
-- Saving edited code in the Pine Editor updates the instance in place and the unticked box
-  **survives**. Ordinary iteration does not undo it.
-- It comes back ON only when the script is added to a chart FRESH, or when you hit
-  **"Reset settings to defaults"**.
-
-⚠ **Which is exactly what the 2026-08-12 panel reorder costs, once, on every one of these files** —
-so untick it in the SAME visit as the reset, or the next paste is the one that surprises you.
-
-**It applies to all six strategy files, `mpc_m15_playbook_strategy.pine` included**, even though
-that file was out of scope for the panel pass.
-
-⚠ **The reason it matters is not tidiness — it is DOUBLE-DRAWING.** Every strategy here already
-draws its own trade: the position box with its result bands, the entry triangles, the TP tags and
-the result label. `execShowPosBox`'s own tooltip says it *"replaces TradingView's built-in trade
-markers"*, and it only replaces them if the built-in ones are off. Leaving both on puts two
-different renderings of one trade on the same candles, at two different exit prices whenever a
-partial filled.
-
----
-
-## THE ANNOTATION PALETTE — one result, one colour, `mpc_strategy.pine` is the standard
-
-Aaron, 2026-08-12: *"the colors of the labels that show if a trade had won or lost, if it broke
-even, if it was blocked, what was the max drawdown, where the price went, the long and short
-positions — all those colors are not consistent across all the pines. They should be the same
-colors. Use MPC, the A+ strategy as a standard."*
-
-**Every colour a TRADE is drawn in is copied from `mpc_strategy.pine`. Change a value by changing
-it there first and copying it down** — never by picking one in a fork.
-
-| slot | colour | where |
-|---|---|---|
-| WIN | `#26A69A` @12 label, @0 leader | closed winner's callout |
-| LOSS | `#EF5350` @12 / @0 | closed loser |
-| **BREAKEVEN** | `#FF9800` @12 / @0 | inside the ± band — **orange, never yellow** |
-| OPEN | `#787B86` @12 / @0 | result not known yet |
-| risk / adverse excursion | `#EF5350` @88 | how far it went against you — behind everything |
-| reward, by rung | `#26A69A` @55 / @70 / @82 | TP1 / TP2 / TP3 — the gradient IS the legend |
-| entry markers | `#26A69A` @0 / `#EF5350` @0 | long / short triangles, solid |
-| TP tags + their lines | `#26A69A` @40 | one colour for all three |
-| blocked setup | `#FF2E9A` @12 / @0 | pink |
-| label text | `#101014` @0 | dark on every bright fill |
-
-### 🔴 A+ carries TWO palettes and that is what the forks got wrong
-
-The one real finding of the pass. A+ has a **TABLE** palette (`#00E676` / `#FF5252` / `#ffde59` —
-the JARVIS status panel's bull / bear / armed text) and a **POSITION** palette (`#26A69A` /
-`#EF5350` / `#FF9800` — every trade drawing). They are different greens and different reds on
-purpose.
-
-**`mpc_d_strategy.pine` applied the TABLE palette to its TRADES.** A D winner drew in the green
-A+ uses for a table row and never in the green A+ uses for a winner; its breakeven was
-`#ffde59`, which is A+'s *"Armed"* highlight. Nothing was wrong with either palette — the file
-was reading the wrong one, and both are still there. Its state panel keeps the table colours,
-which is where they belong.
-
-⚠ **`mpc_h4_sweep_strategy.pine` had NO colour constants at all** — every value was a hex literal
-at its use site, which is exactly why it drifted without anyone being able to see that it had.
-The hues were mostly already A+'s; the **transparencies** were not, so the same green read as a
-different shade per file. It has a named block now.
-
-⚠ **Three deliberate behaviour corrections came with it, all label-only.** D coloured its open
-callout by DIRECTION (A+ paints it grey — the result is not known yet, and direction is already
-in the label text and the triangle); D never recoloured its leader LINE on close, so a grey line
-ran into a green label; and D used white label text where every other file uses `#101014`.
-
-🔴 **H4 had NO breakeven state, so a +0.02R scratch drew as a full WIN and a −0.02R scratch as a
-full LOSS** — the two loudest colours on the chart for a trade that made nothing. It grades
-against a band now. ⚠ **The band is a CONSTANT (`H4_BE_BAND = 0.15`), not an input**, because
-adding an input resets every saved value on the chart and it has never been tuned here; A+
-exposes it as `execBeBandR`. Promote it when the rest of H4's annotations are brought up.
-
-### ⚠ The one collision, left OPEN rather than silently resolved
-
-**A+ itself uses `#FF9800` for two different things: BREAKEVEN and the missed-setup callout.**
-H4 then uses the same orange for its trigger line and label. They are different objects in
-different places, so it is not wrong — but on a chart showing both, orange has two meanings.
-Recorded rather than fixed, because resolving it means changing A+, which changes the standard
-and every chart running it. **Aaron's call, not a tidy-up.**
-
-### What is NOT in this pass
-
-Colours only. **D still draws no entry triangles and H4 still has no blocked-setup tag or
-missed-setup callout** — those are missing ANNOTATIONS, not wrong colours, and they belong with
-the Phase-1 annotation work. A palette pass that invented them would have hidden how much of the
-annotation set is still absent.
-
-⚠ **Nothing here touches an input, so no saved chart value moves and no panel order changes** —
-this is safe to paste onto a chart already carrying the panel rebuild.
-
----
-
-## Key paths & entry points
-
-- `indicators/smc_engine_v2.pine` — the current pullback-only rewrite (v6 Pine Script), overlay indicator named "SMC Engine"
-- `indicators/STRUCTURE_OS_BUILD.md` — cross-session handoff doc: architecture, design decisions, validation findings, build-stage status. Read this first when resuming work.
-- `docs/market_structure_engine_spec.md` — the source-of-truth rules spec, written from the TradingView overview page. `STRUCTURE_OS_BUILD.md` treats this as priority-1 source of truth.
-- `indicators/mpc_assistant.pine` — a full-featured SMC indicator (structure + order blocks + sessions + kill zones + VWAP + liquidity levels + fibonacci + SVP) that Aaron sourced separately. [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcassistantpine)
-- `indicators/structure_engine.pine` — a straight extraction of *only* the market-structure logic (external ASH/ASL/BOS/CHoCH/HH/HL/LH/LL + internal iSH/iSL/iBOS/iSOS) from `mpc_assistant.pine`, with every other feature (OBs, sessions, kill zones, VWAP, liquidity, fibo, SVP) stripped out. [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsstructureenginepine)
-- `indicators/fib_export.pine` — instrumented build for the FIB parity check: the external **and internal** structure engine (copied from `structure_engine_export.pine`, plus the mpc capture lines the fibs need — `i_confirmed_*` and the `iFib_*` seed anchors) + the Structure, Sniper, Macro AND Internal fib blocks lifted from … [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsfibexportpine)
-- `indicators/structure_engine_export.pine` — instrumented copy of `structure_engine.pine` (logic byte-for-byte identical; adds `plot()` output columns, including the eight break-leg columns `px_bull_bos_high/low` + `px_bull_bos_h_ago/l_ago` and bear mirror added 2026-07-02). [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsstructureengineexportpine)
-- `indicators/ob_export.pine` — instrumented build for the ORDER-BLOCK parity check. **REBUILT 2026-07-31 (1148 → ~300 lines): it no longer embeds the structure engine at all.** [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsobexportpine)
-- `indicators/candle_sticks.pine` — **a THIRD-PARTY indicator, added 2026-08-08** ("Candlestick Patterns Identified, update 1-17-26", © repo32, MPL-2.0, v6). [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorscandlestickspine)
-- `indicators/candle_sticks_export.pine` — the parity harness for `engines/candlesticks/`. [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorscandlesticksexportpine)
-- `indicators/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
-- `indicators/mpc_d_strategy.pine` — **the D strategy ("D as in dog, the dirty one", Aaron 2026-08-06).** [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategypine)
-- `indicators/mpc_d_strategy_export.pine` — **the D strategy's decision-stream twin (2026-08-06).** `mpc_d_strategy.pine` + one appended block, body byte-identical apart from line 60's title; 48 transparent `plot()` columns. [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategyexportpine)
-- `indicators/mpc_m15_playbook_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11). [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcm15playbookstrategypine)
-- `indicators/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
-- `indicators/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
-
-- `indicators/mpc_realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `mpc_strategy.pine`: it embeds `mpc_assistant.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/mpc_realign/` (its own CLAUDE.md); spec: `docs/MPC_REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `mpc_d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
-- `indicators/mpc_realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
-
----
+⚠ **An earlier drain (2026-08-12) moved 129,018 bytes of narrative VERBATIM to
+`indicators/docs/INDICATORS_BUILD_NOTES.md` and nothing was deleted; the entries below
+accumulated after it.** They are the next thing to drain, and this file is still ~100 KB —
+over the 40 KB ceiling the editor guard watches. Draining is deliberately SILENT to that
+guard, so nothing will remind you.
 
 ## 2026-08-13 — 🟢 A FALSE BREAK BECAME A STRATEGY, AND THE TOOL THAT COUNTED IT GOT THE SHORT SIDE'S SIGN WRONG
 
@@ -1138,7 +794,7 @@ EXT/INT structure pair only, so the stuck row cannot occur there and neither fil
 
 ## 2026-07-31 — the harness pass: four exports validated, one file deleted, session windows finally forked back together
 
-**`indicators/mpc_jarvis_v2.pine` DELETED** (Aaron's call). It was a 2,084-line lean `indicator()`
+**`mpc_jarvis_v2.pine` DELETED** (Aaron's call). It was a 2,084-line lean `indicator()`
 build superseded by `mpc_strategy_export.pine`. Last committed at **`825592a`** — recover from there,
 never from memory. All doc references removed in the same pass.
 
@@ -1323,7 +979,7 @@ while the mode is "Off" (the default), wrong the moment it is not.
 
 ## 2026-07-29 — `mpc_bos_strategy.pine`, the third strategy off the shared engine
 
-**New file `indicators/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
+**New file `indicators/strategies/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
 trades the CONTINUATION: an SOS sets a regime, and every BOS after it in that direction is a fresh
 leg whose retrace is bought/sold. A+ fades the shift; this rides what the shift started.
 
@@ -1434,7 +1090,7 @@ The trade annotations were rebuilt so a chart can be read without decoding text,
 
 ## 2026-07-24 — the B-LEG fork + 500x leverage pin
 
-**New file `indicators/mpc_b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/mpc_bleg/`.
+**New file `indicators/strategies/mpc_b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/mpc_bleg/`.
 
 **500x leverage pinned in the `strategy()` call** to match Aaron's demo account. `mpc_strategy.pine`, `mpc_strategy_export.pine` and `mpc_b_leg_strategy.pine` now carry `margin_long = 0.2, margin_short = 0.2` (margin % = 100 / leverage → 500x = 0.2%), and the two `tradingview/` research strategies (`ny_orb.pine`, `london_breakout.pine`) got the same. Like `slippage = 0`, this only sets the Strategy Tester Properties defaults so a fresh paste reproduces Aaron's account — it is not signal logic and does not touch the `px_*`/`cfg_*` decision stream, so `compare_strategy.py` parity is unaffected.
 
@@ -1599,7 +1255,7 @@ no `cfg_exitmode` (i.e. taken before this change) instead of guessing.
    this class of gap by editing the Pine** — it is the source of truth; the pin belongs in the port.
 
 `mpc_b_leg_strategy.pine` compiles (confirmed on TradingView), and its parity harness was built the
-same day: **`indicators/mpc_b_leg_strategy_export.pine`** = that file with the body byte-identical
+same day: **`indicators/strategies/mpc_b_leg_strategy_export.pine`** = that file with the body byte-identical
 (only the line-40 `strategy()` title differs) + an appended PARITY EXPORT block, diffed by
 `strategies/python/mpc_bleg/tools/compare_bleg.py` and registered in `backtest/tools/verify_parity.py`.
 It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this fork), the band's 0.5 edge,
@@ -1650,26 +1306,7 @@ the chart was configured to do, which the code's defaults are not.
 
 ---
 
-## Standing instructions
-
-**Do**
-- Confirm swings only by the 3-candle pullback method: a swing high needs 3 consecutive candles each closing below the previous candle's low; a swing low needs 3 consecutive candles each closing above the previous candle's high.
-- Reset the pullback count to zero at a new extreme if price prints a new high (while seeking a high) or new low (while seeking a low) before the count reaches 3.
-- Keep detection to a single fixed constant (3). No numeric tuning inputs for detection.
-- Reuse the same shared pullback-tracker type (`type PB`) for both the swing (external) engine and the internal engine — instantiate it twice, don't fork the logic.
-- Gate new swing structure on a body-close break of the current trading range (BOS/CHoCH), per the corrected Stage 2b architecture — do not let swings form freely inside the range.
-- Update `STRUCTURE_OS_BUILD.md` status/changelog as each stage is validated on a real chart.
-
-**Never do**
-- Do not use `ta.pivothigh` / `ta.pivotlow` or any fixed-lookback-window pivot method to detect swings in `smc_engine_v2.pine` (the from-scratch rebuild). This does not apply to `mpc_assistant.pine` / `structure_engine.pine`, which are a separate, intentionally pivot-seeded track — see Key paths above.
-- Do not add numeric/tunable inputs for the detection logic itself — it must stay a zero-parameter mechanical rule.
-- Do not fork the shared `PB` pullback-tracker type into two separate code paths for swing vs. internal — if the two ever need to diverge, branch inside `PB` with a flag instead.
-- Do not build or validate Stage 2/3 logic on top of an unvalidated swing map — the swing detector is the foundation; get it confirmed against the real chart first.
-- Do not treat a wick-only touch of a range boundary as a break — only a candle body close beyond the boundary counts (BOS/CHoCH).
-
----
-
 ## Guides & references
 
-- `indicators/STRUCTURE_OS_BUILD.md` — full build log: settings-panel parity, architecture (two engines/one shared type), design decisions, open questions, and per-stage validation status against the original TradingView indicator.
+- `indicators/docs/STRUCTURE_OS_BUILD.md` — full build log: settings-panel parity, architecture (two engines/one shared type), design decisions, open questions, and per-stage validation status against the original TradingView indicator.
 - `docs/market_structure_engine_spec.md` — plain-language spec of the detection rules (swing points, HH/HL/LH/LL, BOS/CHoCH, internal engine) derived from the TradingView indicator's public description.

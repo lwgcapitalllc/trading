@@ -5,7 +5,7 @@ fixed AND the fix is parity-verified.** This file is for things the code gets *w
 sweeps and "which setting is better" questions belong in `mpc_sos_fade_optimization.md`.
 
 A bug is only closed when all four are true: the fix is in `execution.py` (or wherever it lives),
-the same fix is in `indicators/mpc_strategy.pine` AND `indicators/mpc_strategy_export.pine`,
+the same fix is in `indicators/strategies/mpc_strategy.pine` AND `indicators/strategies/mpc_strategy_export.pine`,
 `compare_strategy.py` is exit 0 on a fresh export taken after the change, and the affected numbers
 in the optimization log carry a stale-baseline note.
 
@@ -25,7 +25,7 @@ Present identically in three places, which is why nothing has caught it:
 | where | line |
 |---|---|
 | `strategies/python/mpc_sos_fade/execution.py` | `_advance_stage`, ~1312 (`if self._stage < 1 and sig.high >= self._tp1`) |
-| `indicators/mpc_strategy.pine` | 4546 (`if lStage < 1 and high >= lTP1`) |
+| `indicators/strategies/mpc_strategy.pine` | 4546 (`if lStage < 1 and high >= lTP1`) |
 | the live bridge | inherits `execution.py` — it decides on closed bars, so it sends the same stop-modify |
 
 ## Symptom

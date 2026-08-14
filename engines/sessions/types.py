@@ -5,7 +5,7 @@ No behavior lives here (bar the two tiny parsers on SessionSpec, which are pure 
 arithmetic). Three kinds of container:
 
   SessionSpec — one configured trading-session window: a name, a [start, end) minute window in a
-    named timezone. Mirrors the per-session inputs in indicators/mpc_assistant.pine (Tokyo/London/
+    named timezone. Mirrors the per-session inputs in indicators/engines/mpc_assistant.pine (Tokyo/London/
     New York — the display name + `input.session` string + `input.session` timezone). Colours and
     the "show" toggles are drawing concerns and dropped. The three Pine defaults are exposed as
     SessionEngine.DEFAULT_SESSIONS.

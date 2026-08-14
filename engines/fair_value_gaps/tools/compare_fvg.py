@@ -18,7 +18,7 @@ What is compared (per bar, after --warmup)
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with indicators/fvg_export.pine on the chart (chart menu → Export
+Export ONE CSV from TradingView with indicators/engines/fvg_export.pine on the chart (chart menu → Export
 chart data). Each row carries the candle (fed to Python) and the Pine FVG engine's outputs. Both
 sides come from the same file, so there is no data-source mismatch. The export's `cfg_fvg_*` columns
 carry the Pine's own settings and are read automatically — run with NO config flags. The
@@ -105,7 +105,7 @@ def _resolve_columns(header):
             raise SystemExit(
                 f"ERROR: column '{name}' not found in CSV header.\n"
                 f"Header was: {header}\n"
-                f"Make sure indicators/fvg_export.pine is the build on the chart and that you "
+                f"Make sure indicators/engines/fvg_export.pine is the build on the chart and that you "
                 f"exported via 'Export chart data'."
             )
         return None
@@ -239,7 +239,7 @@ def main(argv=None):
             f"ERROR: the export ran with fvgMaxCount={max_count} but fvg_export.pine plots only "
             f"{_MAX_SLOTS} slots per array, so gaps {_MAX_SLOTS + 1}..{max_count} are never exported "
             f"and could not be compared.\nWiden the px_fvg_top_/bot_/bull_ plots in "
-            f"indicators/fvg_export.pine and _MAX_SLOTS here to match, then re-export."
+            f"indicators/engines/fvg_export.pine and _MAX_SLOTS here to match, then re-export."
         )
 
     # EQ coupling (mpc eqExemptFvg): when the export carries the cfg_eq_* columns AND the exemption is

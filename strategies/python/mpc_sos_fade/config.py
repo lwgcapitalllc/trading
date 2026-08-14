@@ -1,5 +1,5 @@
 """SosFadeConfig — every input toggle the A+ strategy trades on, with the SAME name
-and SAME default as `indicators/mpc_strategy.pine`.
+and SAME default as `indicators/strategies/mpc_strategy.pine`.
 
 **Toggle parity is a hard requirement** (see docs/MPC_SOS_FADE_SPEC.md): the regression
 harness reads the toggle columns out of a TradingView export and configures this
@@ -38,7 +38,7 @@ class SosFadeConfig:
     #   pair with `exec_bleg` ON in the B-LEG bot to read that setup's results in isolation.
     exec_bleg: bool = False            # "Trade B-Leg setups" (Pine execBLeg)
     #   The A+ bot never trades a B leg, so this stays False here; `mpc_bleg.BLegConfig`
-    #   overrides it to True to match `indicators/mpc_b_leg_strategy.pine`'s own default.
+    #   overrides it to True to match `indicators/strategies/mpc_b_leg_strategy.pine`'s own default.
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require an FVG in the zone"

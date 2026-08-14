@@ -6,7 +6,7 @@ backtest infrastructure (`backtest/`), the lab that runs it (`command-center/`),
 it subclasses (`strategies/python/mpc_sos_fade/` — read that one's `## The exit ladder` before
 touching an exit).
 **Status:** 🟢 **PARITY GREEN 2026-08-07 — and read the coverage caveat below before quoting
-anything.** Built 2026-08-07 from `indicators/mpc_bos_strategy_export.pine`, and
+anything.** Built 2026-08-07 from `indicators/strategies/mpc_bos_strategy_export.pine`, and
 `tools/compare_bos.py` now exits 0 on a real export: **6,300 bars compared, no divergence**,
 at warmups 900 / 1000 / 2000 / 3000. ⚠ **It is green about the SHIPPED defaults only** — the
 run had `bos_use_fvg` OFF, so the entire gap-entry ladder is still unverified, and 6 trades

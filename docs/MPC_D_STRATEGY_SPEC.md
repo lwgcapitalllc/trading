@@ -3,7 +3,7 @@
 **"D" as in dog. The dirty one.** Aaron's name, 2026-08-06.
 
 **Status:** specified from four hand-marked chart examples. Pine `strategy()` built
-(`indicators/mpc_d_strategy.pine`) — a full execution layer with %-of-equity sizing and a
+(`indicators/strategies/mpc_d_strategy.pine`) — a full execution layer with %-of-equity sizing and a
 TP1/TP2/runner ladder, so it drives the TradingView Strategy Tester and has a Properties tab.
 Compiled and **MEASURED once, 2026-08-06** — see *The first measurement* below. **The edge is
 statistically indistinguishable from zero (t = 1.00).** Not ported to Python, no parity gate.
@@ -170,7 +170,7 @@ that is a new gate with its own measurement, not a correction to this one.
 
 ## Inputs
 
-**Naming, grouping and tooltips follow `indicators/mpc_strategy.pine`** (Aaron, 2026-08-06):
+**Naming, grouping and tooltips follow `indicators/strategies/mpc_strategy.pine`** (Aaron, 2026-08-06):
 the sequence gates get their own group with a `d` prefix, exactly as A+ uses `aplus*`, and
 everything that decides what a trade *does* lives under **Strategy Execution** with an
 `exec` prefix. Five groups, same as that file: `D Setup`, `Strategy Execution`, `D Debug`,

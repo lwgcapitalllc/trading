@@ -14,7 +14,7 @@ No behaviour lives here except the registry lookups. Three things:
                       Pine's own declaration order, with helpers for filtering by key/direction.
 
 ⚠ DIRECTION IS THE PINE'S OWN RENDERING, NOT A TRADING OPINION.
-`indicators/candle_sticks.pine` draws six patterns as a green up-arrow BELOW the bar, six as a red
+`indicators/engines/candle_sticks.pine` draws six patterns as a green up-arrow BELOW the bar, six as a red
 down-arrow ABOVE it, and three (Doji, Hammer, Inverted Hammer) as a neutral white cross/diamond. That
 split is what `direction` carries: +1 / -1 / 0. **Hammer and Inverted Hammer are conventionally read
 as bullish reversals and this source does NOT say so** — it emits them undirected, with no trend

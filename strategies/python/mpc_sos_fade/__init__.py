@@ -1,4 +1,4 @@
-"""MPC A+ — the reversal strategy ported from indicators/mpc_strategy.pine.
+"""MPC A+ — the reversal strategy ported from indicators/strategies/mpc_strategy.pine.
 
 Reads the canonical engine stack's per-bar `BarState` (backtest.replay) and turns the
 A+ sequence into orders. Public API grows as Deliverable B lands:

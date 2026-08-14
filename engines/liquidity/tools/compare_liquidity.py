@@ -7,7 +7,7 @@ Purpose
 Prove the Python engine in liquidity/ produces the same liquidity levels as the source-of-truth
 blocks in mpc_assistant.pine, on real candles. It feeds each bar (timestamp + OHLC) through
 LiquidityEngine and diffs the current active-level prices + mitigation flags against the px_* columns
-the Pine build in indicators/liquidity_export.pine plotted, bar by bar.
+the Pine build in indicators/engines/liquidity_export.pine plotted, bar by bar.
 
 What is compared (per bar, after --warmup)
 ------------------------------------------
@@ -36,7 +36,7 @@ hide_mitigated_on_new_day=False (the export drops that drawing-only tidy; it is 
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with indicators/liquidity_export.pine on the chart (chart menu →
+Export ONE CSV from TradingView with indicators/engines/liquidity_export.pine on the chart (chart menu →
 Export chart data), on the same timeframe you pass here (e.g. VANTAGE_XAUUSD, 5m or 15m). Each row
 carries the candle's timestamp + OHLC (fed to Python) and the Pine engine's px_* outputs (compared
 against). Both sides come from the same file, so there is no data-source mismatch.

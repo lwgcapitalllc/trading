@@ -6,7 +6,7 @@ market-structure engine's output into fib LEVEL EVENTS — first-touch of each l
 TP1-TP5, 1.0), edge-triggered. Colours and lines are out of scope; this is the trading-signal
 layer, not the drawing layer.
 
-Ported line-by-line from indicators/mpc_assistant.pine's fib blocks. Feeds off
+Ported line-by-line from indicators/engines/mpc_assistant.pine's fib blocks. Feeds off
 market_structure/ via StructureSnapshot (public reads/events only — never that engine's internals).
 
 Public API:

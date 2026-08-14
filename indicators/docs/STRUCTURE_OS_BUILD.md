@@ -12,7 +12,7 @@ Keep it accurate — update status as each stage is validated on a real chart.
 3. The settings-panel screenshots Aaron pasted (2026-06-20) — see Settings below.
 
 **Files:**
-- `indicators/smc_engine_v2.pine` — the NEW pullback-only build (this rewrite).
+- `indicators/engines/smc_engine_v2.pine` — the NEW pullback-only build (this rewrite).
 
 ---
 

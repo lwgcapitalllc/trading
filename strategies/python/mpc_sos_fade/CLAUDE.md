@@ -1,7 +1,7 @@
 # CLAUDE.md — strategies/python/mpc_sos_fade/ (the MPC SOS Fade bot)
 
 **Purpose:** The MPC SOS Fade strategy in Python — a line-for-line port of the A+ block +
-execution layer in `indicators/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
+execution layer in `indicators/strategies/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
 the canonical engine stack's per-bar output and turns the A+ sequence into trades.
 **Scope:** This strategy only — its state machine, order logic, config, and parity harness. It does
 NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`command-center/`).
@@ -33,7 +33,7 @@ so a mangled one fails to compile, it does not quietly change a trade.
 ### `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
 
 Every `label` in the meta file is byte-identical to that input's title in
-`indicators/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
+`indicators/strategies/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
 input's tooltip **verbatim**. One parameter, one name, one explanation, two UIs.
 
 **Change a label or a desc and change the Pine in the same commit.** Otherwise the lab and
@@ -158,7 +158,7 @@ structurally unaffected) and **a Custom result is a lab finding, not a validated
 than 0.886 is Run 4's hazard at any ratio, not only at three — turn `exec_min_stop_mode` on first.
 Detail: `### The Custom stop level`. 129 tests green (7 new).
 Earlier: 2026-08-01 — 🔴 **THE FILL BAR WAS STAGING THE STOP — fixed, and it moved every
-number in this file.** `indicators/BUG_exit_fill_price_mismatch.md`, open since 2026-07-14, was not
+number in this file.** `indicators/docs/BUG_exit_fill_price_mismatch.md`, open since 2026-07-14, was not
 a TradingView artifact: `_advance_stage` ran on the ENTRY bar and read that bar's whole high/low.
 A resting limit is reached by price coming to it from the wrong side, so the entry bar's
 *favourable* extreme is the approach to the order, never the trade's own move — the stop went to
@@ -962,7 +962,7 @@ hold advances the clock by the whole weekend on a handful of bars, which is deli
 
 ⚠ **`mpc_bleg` INHERITS it, unlike the minimum-stop guard which that fork pins Off.** The lever
 lives in the parent's `step()`, which `BLegExecution` delegates to, and both bots share ONE exit
-ladder. `indicators/mpc_b_leg_strategy.pine` got the identical inputs in the same commit so the two
+ladder. `indicators/strategies/mpc_b_leg_strategy.pine` got the identical inputs in the same commit so the two
 sides cannot drift. **But the 24h–40h plateau was measured on A+ trades only** — a B leg waits for a
 LATE retrace by construction, so treat any value there as untested until it is replayed.
 
@@ -1445,7 +1445,7 @@ showing the same trade count as its source is working correctly.
 ### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
 
 **Read this before reporting "the exit price matches no stop and no target" again.** That symptom
-was the phantom-exit bug (`indicators/BUG_exit_fill_price_mismatch.md`, fixed 2026-08-01), but with
+was the phantom-exit bug (`indicators/docs/BUG_exit_fill_price_mismatch.md`, fixed 2026-08-01), but with
 that fixed there is a *legitimate* residue that produces a similar-looking exit, and it will keep
 appearing on the chart forever.
 
@@ -1961,5 +1961,5 @@ Full context in `strategies/python/mpc_bleg/CLAUDE.md`.
 ## References
 
 - Spec: `docs/MPC_SOS_FADE_SPEC.md`; build plan + order: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-- Pine source of truth: `indicators/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
+- Pine source of truth: `indicators/strategies/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.

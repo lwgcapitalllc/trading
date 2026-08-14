@@ -23,7 +23,7 @@ What is compared (per bar, after --warmup)
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with indicators/rsi_div_export.pine on the chart (chart menu → Export
+Export ONE CSV from TradingView with indicators/engines/rsi_div_export.pine on the chart (chart menu → Export
 chart data), with showDiv ON. Each row carries the candle (fed to Python) and the Pine divergence
 engine's outputs. Both sides come from the same file, so there is no data-source mismatch. Set
 --rsi-len / --pivot-len / --oversold / --overbought / --valid-bars to match the Pine inputs (defaults
@@ -98,7 +98,7 @@ def _resolve_columns(header):
             raise SystemExit(
                 f"ERROR: column '{name}' not found in CSV header.\n"
                 f"Header was: {header}\n"
-                f"Make sure indicators/rsi_div_export.pine is the build on the chart and that you "
+                f"Make sure indicators/engines/rsi_div_export.pine is the build on the chart and that you "
                 f"exported via 'Export chart data'."
             )
         return None

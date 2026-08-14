@@ -1,6 +1,6 @@
 """BosTracker — the BOS continuation state machine (Stage 0/1, the anchor fib, and death).
 
-Ports `indicators/mpc_bos_strategy_export.pine` lines 3446-3629 plus the session-VWAP gate
+Ports `indicators/strategies/mpc_bos_strategy_export.pine` lines 3446-3629 plus the session-VWAP gate
 at 3800-3818. It owns everything that happens BEFORE an order is considered:
 
     SOS opens a regime  ->  each later BOS in that direction arms a leg

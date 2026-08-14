@@ -11,8 +11,8 @@ hand-traced tests, green), and **100% Pine-parity-validated on a real `VANTAGE_X
 (6,973 bars): both fields — the VWAP value and the trading-day anchor pulse — match on every warm bar
 (`--htf-rollover 18 --warmup 90`, exit 0). The one canonical implementation — no consumer builds its
 own.
-**Pine:** ported from `indicators/mpc_assistant.pine` line 852 (`vwapValue = ta.vwap(hlc3)`); parity
-harness is `indicators/vwap_export.pine`, diffed against this Python by `tools/compare_vwap.py`. Pine
+**Pine:** ported from `indicators/engines/mpc_assistant.pine` line 852 (`vwapValue = ta.vwap(hlc3)`); parity
+harness is `indicators/engines/vwap_export.pine`, diffed against this Python by `tools/compare_vwap.py`. Pine
 stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the
 engine's half.
 **Consumers:** `strategies/python/mpc_bos/` since 2026-08-07 — the FIRST strategy consumer this
@@ -89,8 +89,8 @@ engines/vwap/
     └── compare_vwap.py      ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/mpc_assistant.pine` line 852 (`vwapValue = ta.vwap(hlc3)`).
-Parity export build: `indicators/vwap_export.pine`.
+Pine source of truth: `indicators/engines/mpc_assistant.pine` line 852 (`vwapValue = ta.vwap(hlc3)`).
+Parity export build: `indicators/engines/vwap_export.pine`.
 
 ---
 
@@ -161,7 +161,7 @@ holds Friday's pre-window volume while Python starts cold; both re-anchor cleanl
 in-window trading-day open (Sun 31 May 18:00 NY = bar 90) and match from there. The harness mirrors
 the other engines:
 
-1. `indicators/vwap_export.pine` — `ta.vwap(hlc3)` plus `px_volume`, `px_vwap`, and the
+1. `indicators/engines/vwap_export.pine` — `ta.vwap(hlc3)` plus `px_volume`, `px_vwap`, and the
    `px_vwap_anchor` trading-day roll pulse. Put it on the same `VANTAGE_XAUUSD` chart/timeframe (5m),
    Export chart data → CSV, drop it in `engines/vwap/exports/` (git-ignored).
 2. `python3 engines/vwap/tools/compare_vwap.py <that.csv> --warmup 90` — feeds each bar (timestamp +
@@ -180,8 +180,8 @@ Re-run `compare_vwap.py` after any change to the VWAP line in `mpc_assistant.pin
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` line 852.
-- Parity export build: `indicators/vwap_export.pine`.
+- Pine source of truth: `indicators/engines/mpc_assistant.pine` line 852.
+- Parity export build: `indicators/engines/vwap_export.pine`.
 - Anchor twin (same trading-day boundary): `engines/liquidity/CLAUDE.md`.
 - Sibling engines / the shared porting pattern: `engines/sessions/CLAUDE.md`,
   `engines/order_blocks/CLAUDE.md`.

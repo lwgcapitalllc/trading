@@ -22,8 +22,8 @@ Each stage produces one artefact. The stage is not done until the artefact exist
 | # | Stage | Artefact | Gate — how you know it is done |
 |---|---|---|---|
 | 1 | **Spec** | `docs/MPC_<NAME>_SPEC.md` | Rules written with no discretion left in them |
-| 2 | **Pine strategy** | `indicators/mpc_<name>_strategy.pine` | Compiles in TradingView, runs in the Strategy Tester |
-| 3 | **Pine export twin** | `indicators/mpc_<name>_strategy_export.pine` | Compiles; plots the per-bar decision stream (`px_*`) and every input (`cfg_*`) |
+| 2 | **Pine strategy** | `indicators/strategies/mpc_<name>_strategy.pine` | Compiles in TradingView, runs in the Strategy Tester |
+| 3 | **Pine export twin** | `indicators/strategies/mpc_<name>_strategy_export.pine` | Compiles; plots the per-bar decision stream (`px_*`) and every input (`cfg_*`) |
 | 4 | **A real CSV export** | a `.csv` on disk from "Export chart data" | Has thousands of bars and the `px_*` / `cfg_*` columns |
 | 5 | **Python port** | `strategies/python/mpc_<name>/` | Imports; declares `LAB_STRATEGY`; ships `mpc_<name>.meta.json` |
 | 6 | **Parity harness** | `strategies/python/mpc_<name>/tools/compare_<name>.py` | **Exit 0** on the stage-4 CSV |
@@ -83,8 +83,8 @@ said it was only a model.
 ```
 docs/MPC_<NAME>_SPEC.md                                  the rules
 docs/MPC_<NAME>_OPTIMIZATION.md                          one entry per sweep, so nothing is re-measured
-indicators/mpc_<name>_strategy.pine                      what you trade
-indicators/mpc_<name>_strategy_export.pine               its instrumented twin
+indicators/strategies/mpc_<name>_strategy.pine                      what you trade
+indicators/strategies/mpc_<name>_strategy_export.pine               its instrumented twin
 strategies/python/mpc_<name>/config.py                   every input, as a dataclass
 strategies/python/mpc_<name>/strategy.py                 declares LAB_STRATEGY
 strategies/python/mpc_<name>/mpc_<name>.meta.json        labels + tooltips for the lab UI

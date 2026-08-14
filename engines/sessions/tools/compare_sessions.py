@@ -7,7 +7,7 @@ Purpose
 Prove the Python engine in sessions/ produces the same session / kill-zone / NY-range clock output
 as the source-of-truth blocks in mpc_assistant.pine, on real candles. It feeds each bar's timestamp
 (+ high/low) through SessionEngine and diffs the result against the px_* columns the Pine build in
-indicators/sessions_export.pine plotted, bar by bar.
+indicators/engines/sessions_export.pine plotted, bar by bar.
 
 What is compared (per bar, after --warmup)
 ------------------------------------------
@@ -19,7 +19,7 @@ What is compared (per bar, after --warmup)
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with indicators/sessions_export.pine on the chart (chart menu →
+Export ONE CSV from TradingView with indicators/engines/sessions_export.pine on the chart (chart menu →
 Export chart data). Each row carries the candle's timestamp + OHLC (fed to Python) and the Pine
 engine's px_* outputs (compared against). Both sides come from the same file, so there is no
 data-source mismatch.

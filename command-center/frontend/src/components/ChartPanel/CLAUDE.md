@@ -967,7 +967,7 @@ here**, so the chart shows exactly what the strategy saw.
 - **Market-structure overlays (Step 7c).** The canonical `engines/market_structure/` engine is replayed
   over the run's candles **server-side** (`backend/services/structure_overlays.py`, imported by bare
   name — never a second engine) and emitted as generic `hline` + `label` overlays in **four groups that
-  are the four TradingView toggles**, same names and order as `indicators/structure_engine.pine`:
+  are the four TradingView toggles**, same names and order as `indicators/engines/structure_engine.pine`:
   `External Structure` (BOS/SOS break lines + tags, and the active unbroken swing rays),
   `Internal Structure` (iBOS/iSOS for the current external leg), `Historic Internal Structure` (the
   same for older legs), `Swing Point Labels` (HH/HL/LH/LL/ASH/ASL + internal iSH/iSL/…).

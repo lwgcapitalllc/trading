@@ -1,6 +1,6 @@
 """MPC B-LEG — the late-retrace reversal, split out to run PARALLEL to the A+ bot.
 
-Ported from `indicators/mpc_b_leg_strategy.pine` (Aaron's brother's B-LEG fork of the
+Ported from `indicators/strategies/mpc_b_leg_strategy.pine` (Aaron's brother's B-LEG fork of the
 MPC-JARVIS strategy). It reuses the canonical engine stack + the A+ SEQUENCE tracker from
 `mpc_sos_fade` (the B-LEG arms off the A+ death) and adds only the B-LEG tracker + a thin
 execution subclass. Full rules: `CLAUDE.md` in this package.

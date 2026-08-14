@@ -58,6 +58,30 @@ CASES = [
      {"file_path": "/Users/alwg/trading/algos/markets/fx/instances/x/deployed/config.py",
       "old_string": "a", "new_string": "b"},
      lambda s: "FROZEN DEPLOYMENT SNAPSHOT" in s),
+
+    # The subsystem reminders are anchored at the repo root. Before 2026-08-13 they were a
+    # substring test over the absolute path, so the two Pine cases below were told they were
+    # canonical Python code. Both halves are asserted: the Pine files must NOT get the Python
+    # subsystem advice, and the real Python subsystems must still get it.
+    ("Pine ENGINE source is not a canonical Python engine",
+     {"file_path": "/Users/alwg/trading/indicators/engines/fib_export.pine",
+      "old_string": "a", "new_string": "b"},
+     lambda s: "CANONICAL engine" not in s and "Pine file" in s),
+
+    ("Pine STRATEGY source is not a deployed Python strategy",
+     {"file_path": "/Users/alwg/trading/indicators/strategies/mpc_strategy.pine",
+      "old_string": "a", "new_string": "b"},
+     lambda s: "what a bot actually trades" not in s and "Pine file" in s),
+
+    ("a real canonical engine still gets its reminder",
+     {"file_path": "/Users/alwg/trading/engines/vwap/engine.py",
+      "old_string": "a", "new_string": "b"},
+     lambda s: "CANONICAL engine" in s),
+
+    ("a real deployed strategy still gets its reminder",
+     {"file_path": "/Users/alwg/trading/strategies/python/mpc_sos_fade/config.py",
+      "old_string": "a", "new_string": "b"},
+     lambda s: "what a bot actually trades" in s),
 ]
 
 fails = 0

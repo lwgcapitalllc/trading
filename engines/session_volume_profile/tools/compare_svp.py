@@ -8,7 +8,7 @@ Prove the Python engine in svp/ produces the same Asia POC / "MV" line as the so
 VOLUME PROFILE block in mpc_assistant.pine (line ~2554) and its MV confirmation slot (line ~2772), on
 real candles. It feeds each bar (timestamp + open/high/low/close + volume) through SvpEngine and diffs
 the current POC, the form pulse and the sweep state against the px_* columns the Pine build in
-indicators/svp_export.pine plotted, bar by bar.
+indicators/engines/svp_export.pine plotted, bar by bar.
 
 What is compared (per bar, after --warmup)
 ------------------------------------------

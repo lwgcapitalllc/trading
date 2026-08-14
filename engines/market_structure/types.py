@@ -4,7 +4,7 @@ market_structure/types.py — plain data containers for the structure engine.
 No behavior lives here. See engine.py for the state machine that produces these.
 
 Every field pair below (`<name>` / `<name>_price` / `<name>_index`) corresponds to exactly one
-`label.new(...)` call in indicators/structure_engine.pine — see the mapping table in
+`label.new(...)` call in indicators/engines/structure_engine.pine — see the mapping table in
 MARKET_STRUCTURE_ENGINE.md for the full label-text -> field cross-reference.
 """
 

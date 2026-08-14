@@ -1,6 +1,6 @@
 # Market Structure Rule Engine — Spec
 
-**Status:** 🔨 **SPEC for work IN PROGRESS — and on the track people confuse.** It targets the from-scratch `indicators/smc_engine_v2.pine` rebuild (progress in `indicators/STRUCTURE_OS_BUILD.md`), **NOT** the shipped `engines/market_structure/` engine, which was ported from `mpc_assistant.pine` and is complete and parity-green. Two different structure efforts; do not read this spec as describing the live one.
+**Status:** 🔨 **SPEC for work IN PROGRESS — and on the track people confuse.** It targets the from-scratch `indicators/engines/smc_engine_v2.pine` rebuild (progress in `indicators/docs/STRUCTURE_OS_BUILD.md`), **NOT** the shipped `engines/market_structure/` engine, which was ported from `mpc_assistant.pine` and is complete and parity-green. Two different structure efforts; do not read this spec as describing the live one.
 
 Replication target: **Structure OS** (private TradingView indicator). This doc defines only the
 structure-detection logic — swing highs/lows, HH/HL/LH/LL, BOS, CHoCH — using the indicator's own

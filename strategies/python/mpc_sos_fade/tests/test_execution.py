@@ -223,7 +223,7 @@ def test_trade_records_favorable_and_adverse_excursion():
 
 
 def test_the_entry_bar_cannot_stage_the_stop():
-    """Regression — `indicators/BUG_exit_fill_price_mismatch.md`.
+    """Regression — `indicators/docs/BUG_exit_fill_price_mismatch.md`.
 
     A resting limit is reached by price coming to it from the WRONG side: this buy limit at
     103.82 is filled on the way down, so the entry bar's HIGH is where the market was before
@@ -956,7 +956,7 @@ def test_the_shipped_default_is_the_measured_guard_not_off():
     not comparable to one replayed at defaults before it.** Every A+ figure in this folder measured
     at "Off" describes a different configuration. Pin the mode explicitly when reproducing one.
 
-    ⚠ It must stay in lockstep with `indicators/mpc_strategy.pine`'s `execMinStopMode` /
+    ⚠ It must stay in lockstep with `indicators/strategies/mpc_strategy.pine`'s `execMinStopMode` /
     `execMinStopVal` defaults and its export mirror — toggle parity is a hard requirement, and a
     default that differs between the two silently makes `compare_strategy.py` compare two
     strategies whenever an export predates the column.

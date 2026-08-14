@@ -7,7 +7,7 @@ is TIME-driven, not price-driven: its inputs are the bar's wall-clock timestamp 
 milliseconds, UTC — exactly Pine's `time`) and, for the running session/NY-range extremes, the
 bar's high/low.
 
-Ported from indicators/mpc_assistant.pine, four blocks that all key off the clock:
+Ported from indicators/engines/mpc_assistant.pine, four blocks that all key off the clock:
 
   - session windows inAsia/inLondon/inNY .............. Pine 836-838   (time(session, tz))
   - SESSION H/L TRACKING (running asia/london/ny H/L) . Pine 1638-1646

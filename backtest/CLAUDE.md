@@ -424,7 +424,11 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   doc records. That is the evidence the bump was orthogonal to the clock. **Pin a floor when you
   mean a floor, and ask what a version bump actually CHANGED before refusing on it.**
 
-- **`tools/bos_sweep.py`** — 🔴 **DO NOT QUOTE ITS NUMBERS. FALSIFIED 2026-08-07, the day it was
+- **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `indicators/strategies/mpc_bos_strategy.pine`
+  since 2026-08-13; the `.pine` sources were split into `indicators/strategies/` and
+  `indicators/engines/` by their DECLARATION, so a path here from before that date is stale.
+  **Comment-only — no documented baseline in this file moves and no stored run re-prices.**
+  🔴 **DO NOT QUOTE ITS NUMBERS. FALSIFIED 2026-08-07, the day it was
   written.** On the same symbol, timeframe and window, with the config confirmed identical by the
   Pine's own `[CFG]` echo, this tool reports **20 trades / 80% win / PF 2.97 / +102.5%** where the
   TradingView Strategy Tester reports **24 trades / 66.67% win / PF 1.043 / +5.01%**. The Tester is

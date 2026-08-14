@@ -1,13 +1,13 @@
 # MPC SOS Fade — Build Plan
 
-**Goal:** port the MPC SOS Fade strategy (`indicators/mpc_strategy.pine`) to a Python bot, backtest it
+**Goal:** port the MPC SOS Fade strategy (`indicators/strategies/mpc_strategy.pine`) to a Python bot, backtest it
 in the command-center lab against XAUUSD (and any market/timeframe), and forward-test it on an MT5
 demo account.
 **Method:** S.Y.S.T.E.M. (`docs/BOT_DEVELOPMENT_METHOD.md`) under the strategy framework
 (`docs/LWG_Strategy_Framework.md`).
 **Status:** building — spec approved, Phase-0 probe done, **A0 (data layer) + A1 (replay loop) landed
 2026-07-15**, **B-Y (the A+ strategy) landed 2026-07-15** (`strategies/python/mpc_sos_fade/`, 18 offline
-tests). **Parity harness BUILT 2026-07-15** — `indicators/mpc_strategy_export.pine` (strategy +
+tests). **Parity harness BUILT 2026-07-15** — `indicators/strategies/mpc_strategy_export.pine` (strategy +
 appended decision-stream plot block), `strategies/python/mpc_sos_fade/tools/compare_strategy.py` (the
 diff tool, round-trip-tested), and the `/audit-strategy` slash command. **Next: RUN the parity gate —
 BLOCKED on a TradingView CSV export** of `mpc_strategy_export.pine` (5m XAUUSD) from Aaron/brother.

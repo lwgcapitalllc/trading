@@ -4,7 +4,7 @@
 //           changes on a body-close break: BOS/CHoCH, broken swings → HH/HL/LH/LL,
 //           new swing pullback-confirmed after the break. No structure inside the
 //           range (that's INTERNAL — Stage 3).
-// See indicators/STRUCTURE_OS_BUILD.md for the full plan and status.
+// See indicators/docs/STRUCTURE_OS_BUILD.md for the full plan and status.
 indicator("SMC Engine", overlay = true, max_labels_count = 500, max_lines_count = 500)
 
 // ─────────────────────────────────────────────

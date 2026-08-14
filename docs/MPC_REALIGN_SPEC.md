@@ -328,8 +328,8 @@ have been.
 
 | # | Stage | Artefact |
 |---|---|---|
-| 2 | Pine strategy | `indicators/mpc_realign_strategy.pine` |
-| 3 | Pine export twin | `indicators/mpc_realign_strategy_export.pine` |
+| 2 | Pine strategy | `indicators/strategies/mpc_realign_strategy.pine` |
+| 3 | Pine export twin | `indicators/strategies/mpc_realign_strategy_export.pine` |
 | 4 | A real CSV export | **Aaron only** — Claude has no TradingView session |
 | 5 | Python port | `strategies/python/mpc_realign/` |
 | 6 | Parity harness | `strategies/python/mpc_realign/tools/compare_realign.py`, exit 0 |

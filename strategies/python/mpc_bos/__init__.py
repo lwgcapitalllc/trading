@@ -2,7 +2,7 @@
 
 A+ fades the shift of structure; this rides what the shift started. An SOS opens a regime, and
 every later BOS in that direction is a fresh continuation leg whose retracement is the entry.
-Ported from `indicators/mpc_bos_strategy.pine`. Full rules: `CLAUDE.md` in this package.
+Ported from `indicators/strategies/mpc_bos_strategy.pine`. Full rules: `CLAUDE.md` in this package.
 
     BosConfig       — SosFadeConfig superset + the BOS setup's own inputs
     BosTracker      — regime / arm / anchor-fib / death state machine (BosState)

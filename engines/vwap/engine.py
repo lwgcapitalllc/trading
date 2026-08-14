@@ -4,7 +4,7 @@ vwap/engine.py — the session VWAP state machine.
 One stateful streaming engine, fed one closed bar at a time (index + UTC timestamp + high/low/close
 + volume), returning that bar's VWAP EVENTS: the running session VWAP value, whether the session
 re-anchored on this bar, and a derived close-vs-line cross. Ported from the single VWAP line in
-indicators/mpc_assistant.pine:
+indicators/engines/mpc_assistant.pine:
 
     hlc3       = (high + low + close) / 3                       (Pine built-in)
     vwapValue  = ta.vwap(hlc3)                                  (mpc line 852)

@@ -108,7 +108,33 @@ def oversized_claude_md(path: str, tool_input: dict) -> str:
     )
 
 
-# path fragment -> the reminder that belongs with it
+def subsystem_matches(fragment: str, rel: str) -> bool:
+    """Does this repo-relative path live under the subsystem this fragment names?
+
+    ANCHORED at the repo root, deliberately, and that is not a tidy-up. Until 2026-08-13
+    this was a plain `fragment in path` substring test over the ABSOLUTE path, which was
+    fine only because no two subsystems shared a directory name. Splitting the Pine sources
+    into `indicators/strategies/` and `indicators/engines/` broke that assumption instantly:
+    `indicators/engines/fib_export.pine` contains `/engines/`, so a Pine file would have
+    been told it is a canonical Python engine and must not be committed until its
+    `compare_*.py` gate passes — advice aimed at the OTHER half of that gate. Same for
+    `/strategies/` and the "what a bot actually trades" reminder.
+
+    That matters more than the miss itself. A guard that fires on work it should not be
+    criticising is a guard people learn to dismiss, and a dismissed guard is worth LESS
+    than none, because the next reader takes silence for checked. So a fragment naming a
+    top-level subsystem now only matches paths actually under it, and the `.pine` reminder
+    — which is about the FILE TYPE, not where it sits — still matches anywhere.
+    """
+    if fragment.startswith("/"):
+        return ("/" + rel).startswith(fragment)
+    return fragment in rel
+
+
+# path fragment -> the reminder that belongs with it.
+# A fragment starting with "/" names a TOP-LEVEL subsystem and is anchored at the repo root
+# (see `subsystem_matches`). Anything else is a plain substring test — `.pine` is about what
+# the file IS, so it fires wherever the file lives.
 REMINDERS = [
     (
         "/engines/",
@@ -182,7 +208,7 @@ def main() -> None:
         }))
         return
 
-    notes = [note for fragment, note in REMINDERS if fragment in path]
+    notes = [note for fragment, note in REMINDERS if subsystem_matches(fragment, rel)]
 
     bloat = oversized_claude_md(path, tool_input)
     if bloat:

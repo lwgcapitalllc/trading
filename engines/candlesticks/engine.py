@@ -2,7 +2,7 @@
 candlesticks/engine.py — the candlestick-pattern detector.
 
 One stateful streaming engine, fed one CLOSED bar at a time (index + OHLC). It returns every pattern
-that fired on that bar. Ported line-by-line from `indicators/candle_sticks.pine` ("Candlestick
+that fired on that bar. Ported line-by-line from `indicators/engines/candle_sticks.pine` ("Candlestick
 Patterns Identified", repo32, v6), which is a flat file of fifteen boolean expressions and their
 `plotshape` calls — there is no state machine in the source, so the only state here is the rolling
 OHLC window each rule reads back through.

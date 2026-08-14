@@ -1,5 +1,5 @@
 """
-market_structure/engine.py — StructureEngine: stateful port of indicators/structure_engine.pine.
+market_structure/engine.py — StructureEngine: stateful port of indicators/engines/structure_engine.pine.
 
 This is a line-by-line port of the Pine v6 `SMCStructure` type (external structure) and the
 i_-prefixed internal-structure state machine. See MARKET_STRUCTURE_ENGINE.md for the plain-English
@@ -151,7 +151,7 @@ class _InternalState:
 
 class StructureEngine:
     """
-    Streaming port of indicators/structure_engine.pine.
+    Streaming port of indicators/engines/structure_engine.pine.
 
     Call update(bar) once per closed candle, in ascending bar order. State (active swing,
     pullback counters, trend direction) carries forward between calls — this is a state machine,

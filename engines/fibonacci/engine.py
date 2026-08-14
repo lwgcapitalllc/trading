@@ -5,7 +5,7 @@ This module holds one small state machine per fib type. Each is fed one closed b
 plus a StructureSnapshot (the structure engine's public output for that bar) and returns the
 fib's events for that bar. The geometry itself is shared — see geometry.py.
 
-Ported line-by-line from indicators/mpc_assistant.pine. As with market_structure/, do not
+Ported line-by-line from indicators/engines/mpc_assistant.pine. As with market_structure/, do not
 "clean up" or reorder the ported logic: the gating (0.618 must be reached before targets arm,
 targets only from the NEXT bar, retrace levels only while price is at/through 0.618) is exact and
 any change breaks parity with the chart.

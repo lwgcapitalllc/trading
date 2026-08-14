@@ -2392,6 +2392,12 @@ for the same reason.
 
 ## Fair value gaps — only where something happened
 
+⚠ **The Pine sources these overlay services cite moved on 2026-08-13** — `.pine` files were split
+into `indicators/strategies/` and `indicators/engines/` by their DECLARATION, so `structure_overlays.py`
+now points at `indicators/engines/structure_engine.pine` and `fvg_overlays.py` at
+`indicators/engines/mpc_assistant.pine`. Comments only; no overlay geometry moved and no stored run
+re-renders. A path here from before that date is stale.
+
 `services/fvg_overlays.py`. Replays the canonical `engines/fair_value_gaps/` engine over the candles
 the chart is about to show and emits one `box` overlay per gap, in the group `Fair Value Gaps`, which
 the panel lists in its **Analysis** dropdown (default OFF). Never a second FVG engine — bare-name

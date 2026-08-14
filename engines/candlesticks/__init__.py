@@ -5,7 +5,7 @@ Turns the bar stream into CANDLESTICK PATTERN EVENTS: fifteen classic single-, t
 patterns (Doji, Harami, Engulfing, Piercing Line, Belt Hold, Kicker, Hanging Man, Morning/Evening
 Star, Shooting Star, Hammer, Inverted Hammer), each with the direction the source Pine draws it in.
 
-Ported line-by-line from `indicators/candle_sticks.pine` ("Candlestick Patterns Identified", repo32,
+Ported line-by-line from `indicators/engines/candle_sticks.pine` ("Candlestick Patterns Identified", repo32,
 v6). Standalone and OHLC-driven — no upstream engine, no volume, no timestamp. A sibling of
 `fair_value_gaps/`, `rsi_divergence/` and `equal_highs_lows/` in shape.
 

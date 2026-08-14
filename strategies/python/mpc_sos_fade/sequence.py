@@ -1,6 +1,6 @@
 """SosFadeSequence — the A+ setup state machine.
 
-A line-for-line port of the A+ SETUP SEQUENCE block in `indicators/mpc_strategy.pine`
+A line-for-line port of the A+ SETUP SEQUENCE block in `indicators/strategies/mpc_strategy.pine`
 (3708-3972) plus the execution layer's arm-source snapshot (4309-4355). It is a
 *sequence, not a checklist*: each stage counts only if the previous one is done.
 

@@ -10,7 +10,7 @@ One container, no behaviour:
 
 WHAT IS PINE-VALIDATED vs DERIVED
 ---------------------------------
-`value` is the port of `ta.vwap(hlc3)` from indicators/mpc_assistant.pine (line 852) and is checked
+`value` is the port of `ta.vwap(hlc3)` from indicators/engines/mpc_assistant.pine (line 852) and is checked
 at 100% Pine parity. `anchored` mirrors the trading-day roll the parity export also plots. The
 cross fields (`side`, `crossed_up`, `crossed_down`) are a DERIVED convenience the engine adds on top
 — the Pine source only DRAWS the VWAP line, it emits no cross event — so they are unit-tested here

@@ -32,7 +32,7 @@ What is compared (per bar, after --warmup)
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with indicators/ob_export.pine on the chart (chart menu → Export
+Export ONE CSV from TradingView with indicators/engines/ob_export.pine on the chart (chart menu → Export
 chart data). Each row carries the candle (fed to Python) and the Pine OB engine's outputs. Both
 sides come from the same file, so there is no data-source mismatch.
 
@@ -128,7 +128,7 @@ def _resolve_columns(header):
             raise SystemExit(
                 f"ERROR: column '{name}' not found in CSV header.\n"
                 f"Header was: {header}\n"
-                f"Make sure indicators/ob_export.pine is the build on the chart and that you "
+                f"Make sure indicators/engines/ob_export.pine is the build on the chart and that you "
                 f"exported via 'Export chart data'."
             )
         return None

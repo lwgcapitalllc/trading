@@ -14,8 +14,8 @@ no consumer builds its own. **The real-export run caught a genuine pivot bug** (
 semantics" below): `ta.pivothigh`/`pivotlow` allow an EQUAL bar on the LEFT of the centre but require a
 STRICT extreme on the RIGHT, so the LAST bar of an equal-price run is the pivot; the engine had used
 strict-both-sides and silently dropped the frequent raw-price ties on gold. Fixed and re-validated.
-**Pine:** ported line-by-line from `indicators/mpc_assistant.pine`'s "EQUAL HIGHS / LOWS (EQH / EQL)"
-block (+ the `GRP_EQ` inputs); parity harness is `indicators/eq_export.pine`, diffed against this
+**Pine:** ported line-by-line from `indicators/engines/mpc_assistant.pine`'s "EQUAL HIGHS / LOWS (EQH / EQL)"
+block (+ the `GRP_EQ` inputs); parity harness is `indicators/engines/eq_export.pine`, diffed against this
 Python by `tools/compare_eq.py`.
 **Last reviewed:** 2026-07-19 (built + unit-tested + Pine-parity-validated, exit 0; pivot-tie bug fixed).
 
@@ -37,7 +37,7 @@ engines/equal_highs_lows/
 ```
 
 Pine source of truth: `mpc_assistant.pine`'s `GRP_EQ` inputs + the "EQUAL HIGHS / LOWS" compute block.
-Parity export build: `indicators/eq_export.pine`.
+Parity export build: `indicators/engines/eq_export.pine`.
 
 ---
 
@@ -149,7 +149,7 @@ cross-check on a random walk (per-bar equality + positive paths, incl. a nonzero
 window's price ceiling that never mitigate); the wider re-export both cleared those and exposed the real
 pivot-tie bug now fixed (see "Pivot tie semantics" above). The harness:
 
-1. `indicators/eq_export.pine` — the EQ compute block from `mpc_assistant.pine` (drawing removed, the
+1. `indicators/engines/eq_export.pine` — the EQ compute block from `mpc_assistant.pine` (drawing removed, the
    `eqhPx` / `eqlPx` price arrays kept) + `px_eq*` `plot()` columns: `px_eq_tol`, `px_eq_ph` /
    `px_eq_pl` (confirmed pivots), `px_eqh_new` / `px_eql_new` (this-bar formation price), `px_eqh_cnt`
    / `px_eql_cnt` (active counts) and `px_eqh_0..5` / `px_eql_0..5` (active-level prices, oldest→
@@ -165,8 +165,8 @@ pivot-tie bug now fixed (see "Pivot tie semantics" above). The harness:
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` EQ block + `GRP_EQ` inputs.
-- Parity export build: `indicators/eq_export.pine`.
+- Pine source of truth: `indicators/engines/mpc_assistant.pine` EQ block + `GRP_EQ` inputs.
+- Parity export build: `indicators/engines/eq_export.pine`.
 - Siblings in shape (also standalone, events-not-visuals off the same indicator):
   `engines/fair_value_gaps/CLAUDE.md`, `engines/rsi_divergence/CLAUDE.md`.
 - Pivot semantics reused from: `engines/market_structure/engine.py` / `engines/rsi_divergence/engine.py`.

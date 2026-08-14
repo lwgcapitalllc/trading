@@ -4,7 +4,7 @@ order_blocks/engine.py — the order-block state machine (OrderBlockEngine).
 One stateful streaming engine, fed one closed bar at a time (index + OHLC), returning that bar's
 ORDER-BLOCK EVENTS: zones created, consumed (mitigated), aged out (expired) and dropped past the cap
 (evicted), plus the two live zone lists. Ported line-by-line from the ORDER BLOCKS blocks in
-indicators/mpc_assistant.pine.
+indicators/engines/mpc_assistant.pine.
 
 --------------------------------------------------------------------------------------------------
 THIS IS A RE-PORT, NOT A RE-SYNC (2026-07-31)

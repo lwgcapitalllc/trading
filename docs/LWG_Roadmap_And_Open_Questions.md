@@ -48,7 +48,7 @@ Both testers run on minute bars — trustworthy for bar-close logic at M5+, not 
 Smart Money stages 3–4 are blocked on API keys. ⚠ **The Smart Money UI is flagged OFF since 2026-08-04** (`frontend/src/lib/features.ts`) — nothing was deleted and one boolean restores it. **Prerequisite:** API keys, and Aaron wanting it back.
 
 ### Structure OS / SMC indicator rebuild
-`indicators/smc_engine_v2.pine`, a from-scratch pullback-only rewrite tracked in `indicators/STRUCTURE_OS_BUILD.md`. Stage 2b ~95% validated; Stages 3–4 not started, blocked on chart validation. ⚠ **This is a separate track from the pivot-seeded `mpc_assistant.pine` the Python engines were ported from** — do not confuse the two.
+`indicators/engines/smc_engine_v2.pine`, a from-scratch pullback-only rewrite tracked in `indicators/docs/STRUCTURE_OS_BUILD.md`. Stage 2b ~95% validated; Stages 3–4 not started, blocked on chart validation. ⚠ **This is a separate track from the pivot-seeded `mpc_assistant.pine` the Python engines were ported from** — do not confuse the two.
 
 ---
 

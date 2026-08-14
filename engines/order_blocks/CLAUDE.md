@@ -8,11 +8,11 @@ boxes, no colours, no box width, no trend-aligned hide — those are all drawing
 Pine-parity-VALIDATED the same day**: `compare_ob.py` exit 0 on a real 21,691-bar
 `VANTAGE_XAUUSD, 15m` export (2025-09-01 → 2026-07-31) at `--warmup 798`, config read from the
 export's own `cfg_ob_*` columns, and still green at warm-up 1000 / 2000 / 5000 / 10000. Engine +
-types + `__init__` + 19 unit tests + a rebuilt `indicators/ob_export.pine` + a rebuilt
+types + `__init__` + 19 unit tests + a rebuilt `indicators/engines/ob_export.pine` + a rebuilt
 `tools/compare_ob.py`. ⚠ **Budget ~300 bars of warm-up** — see *The 798-bar warm-up* below; it was
 investigated rather than accepted, and the direction of the error matters to a consumer. The one
 canonical implementation — no consumer builds its own.
-**Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`,
+**Pine:** ported from `indicators/engines/mpc_assistant.pine`; parity harness is `indicators/engines/ob_export.pine`,
 diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-08-03 — **THE FIRST CONSUMER LANDED, AND IT IS A DISPLAY ONE.**
@@ -78,7 +78,7 @@ that consumer mirrors is the Pine's drawing rule (`OB_STUB`, the `obNear` stretc
 which is NOT in this engine. Keep those in step: `command-center/backend/CLAUDE.md` → *Order blocks*.
 And unlike the Cycle fib, there is **no
 two-Pine fork to worry about**: the strategy files dropped order blocks entirely on 2026-07-24/25, so
-`mpc_assistant.pine` is the only source. **`indicators/ob_export.pine` was rebuilt too** — it used to
+`mpc_assistant.pine` is the only source. **`indicators/engines/ob_export.pine` was rebuilt too** — it used to
 EMBED the whole structure engine (1148 lines → ~300), which was its single biggest maintenance trap
 (it silently went stale twice); it now needs no structure re-sync ever again, and carries `cfg_ob_*`
 columns so `compare_ob.py` configures the Python engine FROM the export. Earlier: 2026-07-14 —
@@ -102,7 +102,7 @@ engines/order_blocks/
 
 Pine source of truth: `mpc_assistant.pine` — the type + `manageOBs`/`extendOBs` (191-393), the shared
 turn pivot + PUSH source (2626-2715), `f_obAdd` (2269-2550), the TURN source (2717-2881).
-Parity export build: `indicators/ob_export.pine`.
+Parity export build: `indicators/engines/ob_export.pine`.
 
 ---
 
@@ -337,8 +337,8 @@ is the only backstop. It did not bite on the 21,691-bar run above.
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` OB blocks (191-393 / 2269-2550 / 2626-2881).
-- Parity export build: `indicators/ob_export.pine`.
+- Pine source of truth: `indicators/engines/mpc_assistant.pine` OB blocks (191-393 / 2269-2550 / 2626-2881).
+- Parity export build: `indicators/engines/ob_export.pine`.
 - **Consumers** (public events only — never this engine's internals):
   - `command-center/backend/services/ob_overlays.py` — draws the blocks that were live at each trade
     entry / blocked setup / missed setup on the lab's price chart (Analysis → Order Blocks). A

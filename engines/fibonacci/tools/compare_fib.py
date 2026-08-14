@@ -12,7 +12,7 @@ px_sniper_* / px_macro_* columns the Pine build plotted.
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with indicators/fib_export.pine on the chart (chart menu →
+Export ONE CSV from TradingView with indicators/engines/fib_export.pine on the chart (chart menu →
 Export chart data). Each row carries the candle (fed to Python) and the Pine fibs' outputs:
   Structure: px_fib_active, px_fib_dir, px_fib_origin,
              px_fib_<lvl>_price and px_fib_<lvl>_touch for lvl in E1..E4, 100, TP1..TP5
@@ -141,7 +141,7 @@ def _resolve_columns(header):
             raise SystemExit(
                 f"ERROR: column '{name}' not found in CSV header.\n"
                 f"Header was: {header}\n"
-                f"Make sure indicators/fib_export.pine is the build on the chart and that you "
+                f"Make sure indicators/engines/fib_export.pine is the build on the chart and that you "
                 f"exported via 'Export chart data'."
             )
         return None

@@ -237,8 +237,8 @@ bars with no internal break.
 
 ## Source and validation
 
-This engine is ported line-by-line from `indicators/structure_engine.pine`, a Pine Script v6
-indicator that is itself a market-structure-only extraction from `indicators/mpc_assistant.pine`
+This engine is ported line-by-line from `indicators/engines/structure_engine.pine`, a Pine Script v6
+indicator that is itself a market-structure-only extraction from `indicators/engines/mpc_assistant.pine`
 (all non-structure features — order blocks, sessions, kill zones, VWAP, liquidity levels,
 Fibonacci, SVP — stripped out; the structure detection logic itself is byte-for-byte identical to
 `mpc_assistant.pine`). Aaron validated `mpc_assistant.pine` on a live chart at ~99.99% parity

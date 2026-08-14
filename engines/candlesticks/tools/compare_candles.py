@@ -5,7 +5,7 @@ compare_candles.py — parity check: TradingView Pine export vs the Python candl
 Purpose
 -------
 Prove the Python engine in `candlesticks/` fires the same fifteen patterns, on the same bars, as the
-source-of-truth `indicators/candle_sticks.pine`. It replays CandlestickEngine over the candles the
+source-of-truth `indicators/engines/candle_sticks.pine`. It replays CandlestickEngine over the candles the
 Pine build itself saw and diffs its per-bar detections against the `px_*` flag columns that build
 plotted.
 
@@ -38,7 +38,7 @@ the exit code. Read that list before believing the gate.
 
 Data lineup
 -----------
-Export ONE CSV from TradingView with `indicators/candle_sticks_export.pine` on the chart (chart menu
+Export ONE CSV from TradingView with `indicators/engines/candle_sticks_export.pine` on the chart (chart menu
 → Export chart data). Each row carries the candle (fed to Python) and that bar's Pine flags, so both
 sides come from one file and there is no data-source mismatch.
 
@@ -157,7 +157,7 @@ def _resolve_columns(header):
             raise SystemExit(
                 f"ERROR: column '{name}' not found in CSV header.\n"
                 f"Header was: {header}\n"
-                f"Make sure indicators/candle_sticks_export.pine is the build on the chart and that "
+                f"Make sure indicators/engines/candle_sticks_export.pine is the build on the chart and that "
                 f"you exported via 'Export chart data'."
             )
         return None
@@ -416,7 +416,7 @@ def main(argv=None):
           "CSV, which separates 'the two sides disagree about ta.lowest(10)[1]' from 'they disagree "
           "about the belt rule'. Mismatches confined to the first ~max(trend, 10) bars are the "
           "history guard; anything later is a real logic gap to fix against "
-          "indicators/candle_sticks.pine.")
+          "indicators/engines/candle_sticks.pine.")
     return 1
 
 

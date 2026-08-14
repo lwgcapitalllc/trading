@@ -2,19 +2,19 @@
 description: Run the A+ strategy logic-parity check — prove the Python bot trades bar-for-bar identically to mpc_strategy.pine, under whatever toggles the export carried
 ---
 
-Run the A+ strategy LOGIC-PARITY check: prove the Python bot in `strategies/python/mpc_sos_fade/` makes the exact same per-bar decisions as `indicators/mpc_strategy.pine`, on the Pine's own bars, under the exact toggles the export was run with. Nothing about the strategy is trusted until this is exit 0 — the same discipline as every engine's `compare_*.py`.
+Run the A+ strategy LOGIC-PARITY check: prove the Python bot in `strategies/python/mpc_sos_fade/` makes the exact same per-bar decisions as `indicators/strategies/mpc_strategy.pine`, on the Pine's own bars, under the exact toggles the export was run with. Nothing about the strategy is trusted until this is exit 0 — the same discipline as every engine's `compare_*.py`.
 
 This is LOGIC parity (same decisions on the SAME candles), NOT feed parity (do MT5's candles match TradingView's — that is `backtest/tools/compare_feeds.py`, a separate check). They never mix: this replays TradingView's own exported bars, so the broker feed is irrelevant here.
 
 ## What you need first
 
-A CSV exported from `indicators/mpc_strategy_export.pine` (that file = `mpc_strategy.pine` + an appended decision-stream plot block; its trade logic is byte-identical to the strategy). Aaron/his brother puts it on a **5m XAUUSD** chart (5m exercises the Macro fib), sets whatever toggles they want to test, and uses **Export chart data → CSV**. If there is no export yet, say so and stop — this check cannot run without one. The CSV lives wherever Aaron dropped it (commonly `strategies/python/mpc_sos_fade/exports/`, git-ignored, or the repo root).
+A CSV exported from `indicators/strategies/mpc_strategy_export.pine` (that file = `mpc_strategy.pine` + an appended decision-stream plot block; its trade logic is byte-identical to the strategy). Aaron/his brother puts it on a **5m XAUUSD** chart (5m exercises the Macro fib), sets whatever toggles they want to test, and uses **Export chart data → CSV**. If there is no export yet, say so and stop — this check cannot run without one. The CSV lives wherever Aaron dropped it (commonly `strategies/python/mpc_sos_fade/exports/`, git-ignored, or the repo root).
 
 ## Steps
 
 1. **Locate the export CSV.** Ask Aaron for the path if it is not obvious. Confirm it has the `px_*` decision columns and the `cfg_*` toggle columns (a plain price export won't work — it must be from `mpc_strategy_export.pine`).
 
-2. **Check for Pine drift first.** If `indicators/mpc_strategy.pine` changed since `mpc_strategy_export.pine` was last regenerated, the export's trade logic is stale. Regenerate it: re-copy `mpc_strategy.pine` to `mpc_strategy_export.pine` and re-append the parity block (the block is self-marked at the end of the file). Tell Aaron his brother must re-run the export from the fresh file. Same re-paste discipline as the engine export harnesses.
+2. **Check for Pine drift first.** If `indicators/strategies/mpc_strategy.pine` changed since `mpc_strategy_export.pine` was last regenerated, the export's trade logic is stale. Regenerate it: re-copy `mpc_strategy.pine` to `mpc_strategy_export.pine` and re-append the parity block (the block is self-marked at the end of the file). Tell Aaron his brother must re-run the export from the fresh file. Same re-paste discipline as the engine export harnesses.
 
 3. **Run the check:**
    ```

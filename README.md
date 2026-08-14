@@ -39,7 +39,7 @@ trading/
 │   └── news/            ← Economic-calendar (news + holiday) blackout engine (off-roadmap, not a Pine port; standalone)
 │
 │  ── TOOLING / SOURCE ────────────────────────────────────────────
-├── indicators/          ← Pine Script market-structure indicator rebuild + parity-export harnesses
+├── indicators/          ← Pine Script source — strategies/ (12 strategy() files) + engines/ (16 indicator() files)
 ├── scripts/             ← Cross-subsystem VPS recovery and bootstrap scripts
 ├── tools/               ← Standalone utilities (e.g. skool-transcript — rips course video transcripts)
 ├── education/           ← Course libraries: transcripts, summaries + visual playbooks (e.g. smc/ — the source material behind the engines); learned/ holds one-off video notes from /learn
@@ -76,7 +76,7 @@ Read these in order for full context:
 17. `engines/candlesticks/CLAUDE.md` — candlestick-pattern engine, the boundary-tie rule, measured frequencies
 18. `engines/news/CLAUDE.md` — news/economic-calendar blackout engine, data paths, validation (no Pine source)
 19. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-20. `indicators/CLAUDE.md` — Pine Script indicator rebuild, design decisions, build status
+20. `indicators/CLAUDE.md` — Pine source map + build narrative. The RULES live in `indicators/strategies/CLAUDE.md` (input-panel contract, annotations, palette) and `indicators/engines/CLAUDE.md` (extraction track + `smc_engine_v2` detection rules)
 21. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
 22. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 
@@ -101,7 +101,7 @@ Read these in order for full context:
 | `engines/candlesticks/` | Candlestick-pattern engine, 15 patterns (standalone; ported from a third-party Pine) | Production — 100% Pine parity (VANTAGE_XAUUSD 15m, 14 of 15 patterns fired) | `engines/candlesticks/CLAUDE.md` |
 | `engines/news/` | Economic-calendar (news + holiday) blackout engine | Production — 29 tests + live checks (no Pine source) | `engines/news/CLAUDE.md` |
 | `strategies/` | Generic strategy source files (NT8 + MT5 + TradingView research) | Production | `strategies/CLAUDE.md` |
-| `indicators/` | Pine Script market-structure indicator rebuild | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
+| `indicators/` | Pine Script source, split by declaration into `strategies/` + `engines/` | Under construction — Stage 2b (~95% validated) | `indicators/CLAUDE.md` |
 | `scripts/` | VPS bootstrap and full-recovery scripts | Stable | `scripts/README.md` |
 
 ## Conventions

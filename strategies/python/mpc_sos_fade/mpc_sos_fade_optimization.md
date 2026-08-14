@@ -11,7 +11,7 @@ Standing rules for anything recorded here:
 - **Record per-year and per-half splits**, so a config that only worked in one regime is
   visible without re-running the grid.
 - **A result here is a measurement, not a default.** Adopting one means a single commit
-  across `config.py`, `indicators/mpc_strategy.pine`, `indicators/mpc_strategy_export.pine`
+  across `config.py`, `indicators/strategies/mpc_strategy.pine`, `indicators/strategies/mpc_strategy_export.pine`
   and `compare_strategy.py`, with Pine↔Python parity re-run green.
 - **Sweep in bar mode, validate the winner in tick mode.** A tick pass is ~100x slower, so
   the grid runs at zero costs and only the survivor gets real spread, slippage and swap.
@@ -48,7 +48,7 @@ which is a window/config difference nobody has chased down yet. Do not average t
 one as if it settles the other.
 
 ➡ The defect itself — mechanism, why it is wrong, why no parity gate could see it, and what is still
-open — is in **`indicators/BUG_exit_fill_price_mismatch.md`** (status: ✅ CLOSED). It was found by
+open — is in **`indicators/docs/BUG_exit_fill_price_mismatch.md`** (status: ✅ CLOSED). It was found by
 eye off a price chart by Aaron's brother on 2026-07-14.
 
 ✅ **Both Pine↔Python parity gates were re-run GREEN on 2026-08-01, post-fix** (`compare_strategy.py`
@@ -168,7 +168,7 @@ a useful honesty check that no row is quietly cherry-picked. Winner's per-year R
    full-runner config holds positions longer, so it carries more swap than the partial-heavy
    configs it beat — bar mode cannot see that.
 2. Any default change lands in **one commit** across `config.py`,
-   `indicators/mpc_strategy.pine`, `indicators/mpc_strategy_export.pine` and
+   `indicators/strategies/mpc_strategy.pine`, `indicators/strategies/mpc_strategy_export.pine` and
    `compare_strategy.py`, with Pine↔Python parity re-run and green.
 3. 187 trades is the largest sample this bot has ever been tuned on (4x the 2-year window,
    8x the 365-day window) but it is still 187. Treat the size of the win as approximate and
@@ -1060,8 +1060,8 @@ fallback if `pct` ever misbehaves at a different price regime.
 
 ## What adoption requires (the standing rule)
 
-`exec_min_stop_pct` (default 0.1) in `config.py` **and** in `indicators/mpc_strategy.pine` **and**
-`indicators/mpc_strategy_export.pine` (new `cfg_*` column) **and** `compare_strategy.py`
+`exec_min_stop_pct` (default 0.1) in `config.py` **and** in `indicators/strategies/mpc_strategy.pine` **and**
+`indicators/strategies/mpc_strategy_export.pine` (new `cfg_*` column) **and** `compare_strategy.py`
 (`_TOGGLE_COLS`), in ONE commit, with `compare_strategy.py` re-run green on a fresh export. Note
 `mpc_bleg` inherits `_place_entries` — decide explicitly whether the B-LEG's band-origin stop wants
 the same floor before shipping.
@@ -1979,7 +1979,7 @@ run `d2ab68f9e884` — same direction, ~+11R either way, but off a different bas
 reconciliation warning at the top of this file before quoting either.
 
 ➡ **The defect itself — mechanism, why it is wrong, why no parity gate could see it, and what is
-still open — lives in `indicators/BUG_exit_fill_price_mismatch.md`** (status: ✅ CLOSED). This entry
+still open — lives in `indicators/docs/BUG_exit_fill_price_mismatch.md`** (status: ✅ CLOSED). This entry
 is the MEASUREMENT only. Do not duplicate the analysis here; update the bug file.
 
 ## How it was found
@@ -2002,7 +2002,7 @@ bar 12058   O 3838.07  -> already through 3842.90, fills at the open.  -0.12R
 
 The position's best price while open was its own fill. It was never one cent in profit. Why that is
 a defect rather than a tuning choice, and why no parity gate could see it:
-`indicators/BUG_exit_fill_price_mismatch.md`.
+`indicators/docs/BUG_exit_fill_price_mismatch.md`.
 
 ## Measured — 2020-01-01 → 2026-07-29, 155,255 M15 bars, shipped config
 
@@ -2048,7 +2048,7 @@ the same.**
 
 🔴 **IT SHIPPED, so every historical figure in THIS FILE has moved** — all 12 prior runs are measured
 against a 110.65R baseline that the fix invalidated, and **none of them has been re-measured.** The
-re-baselining is tracked in `indicators/BUG_exit_fill_price_mismatch.md` → *What is still open*.
+re-baselining is tracked in `indicators/docs/BUG_exit_fill_price_mismatch.md` → *What is still open*.
 
 Harness: `scratchpad/why_trade.py`, `why_trade2.py`, `why_exit.py`, `stage_audit.py` — the audit
 monkey-patches `Execution._advance_stage` to skip the entry bar; **no repo file modified.**
@@ -2174,7 +2174,7 @@ everything attached to it:
 - re-export off a fresh paste and re-run `compare_strategy.py` to exit 0,
 - **then** re-measure the baseline, and treat every prior run in this file as superseded.
 
-Same prerequisite chain as `indicators/BUG_exit_fill_price_mismatch.md` (the Run 13 defect). Do not
+Same prerequisite chain as `indicators/docs/BUG_exit_fill_price_mismatch.md` (the Run 13 defect). Do not
 do the one-line half of it alone.
 
 ⚠ **Unverified from the screenshot: WHICH filter refused those two specific gaps.** Three candidates

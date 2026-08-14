@@ -4,7 +4,7 @@ liquidity/engine.py — the liquidity-levels state machine.
 One stateful streaming engine, fed one closed bar at a time (index + UTC timestamp + high/low/close),
 returning that bar's liquidity EVENTS: which levels were created, which price took (swept/broke),
 which were evicted, and the full active set. Ported from the liquidity blocks of
-indicators/mpc_assistant.pine:
+indicators/engines/mpc_assistant.pine:
 
   - DAILY / WEEKLY LEVELS  ............. mpc DAILY/WEEKLY blocks  (prev period high/low + mitigation)
   - PREVIOUS WEEKLY CLOSE (PWC)  ........ mpc PWC block  (prev week's close, a reference line)
@@ -29,7 +29,7 @@ live bot must never trade a level built from future information. So every HTF le
 from the PREVIOUS, fully-completed period only: on the first bar of a new day/week the just-finished
 period's high/low (and, for PWC, its final close) become the new level. This is exactly what the
 source shows in real time (yesterday's completed high), made deterministic and streamable.
-The parity harness (indicators/liquidity_export.pine) mirrors the same non-repainting reads, so the
+The parity harness (indicators/engines/liquidity_export.pine) mirrors the same non-repainting reads, so the
 Python↔Pine check still validates at 100% — the same "deliberate deviation, mirrored in the export"
 move the sessions engine used for its render gates.
 

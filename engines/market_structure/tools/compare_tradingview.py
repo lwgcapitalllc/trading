@@ -11,7 +11,7 @@ engines on the *exact same* candles and diffing their output bar by bar.
 How the data lines up
 ---------------------
 You export ONE CSV from TradingView (chart menu → Export chart data) with the
-`indicators/structure_engine_export.pine` build on the chart. That CSV contains, in each row:
+`indicators/engines/structure_engine_export.pine` build on the chart. That CSV contains, in each row:
   - the candle: open/high/low/close  (this is what we feed into the Python engine)
   - the Pine engine's output columns:  px_ash, px_asl, px_dir, px_lch, px_lcl,
     px_bull_bos, px_bear_bos, px_bull_sos, px_bear_sos, px_new_sh, px_new_sl,

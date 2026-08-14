@@ -1,7 +1,7 @@
 """Execution — turns the A+ sequence state into orders, and fills them the way
 TradingView's broker emulator does.
 
-A port of the STRATEGY EXECUTION block in `indicators/mpc_strategy.pine` (4112-4735):
+A port of the STRATEGY EXECUTION block in `indicators/strategies/mpc_strategy.pine` (4112-4735):
 entry edge → resting limit → TP1/TP2/runner ladder → staged stop → %-risk sizing →
 graded R. It runs on top of a small broker emulator (`_Broker`) that reproduces the
 two TradingView fill assumptions logic-parity depends on:

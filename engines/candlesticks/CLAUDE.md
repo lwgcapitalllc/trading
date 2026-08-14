@@ -21,9 +21,9 @@ differences**.
 section below. They are float representation, not logic.
 ⚠ **`bullish_belt` fired ONCE and `hanging_man` ONCE in this window**, so those two are technically
 exercised and statistically unproven here. Read them as covered by a single bar each.
-**Pine:** ported line-by-line from `indicators/candle_sticks.pine` ("Candlestick Patterns
+**Pine:** ported line-by-line from `indicators/engines/candle_sticks.pine` ("Candlestick Patterns
 Identified, update 1-17-26", © repo32, v6 — a third-party indicator Aaron added 2026-08-08). Parity
-harness is `indicators/candle_sticks_export.pine`, diffed against this Python by
+harness is `indicators/engines/candle_sticks_export.pine`, diffed against this Python by
 `tools/compare_candles.py`.
 **Last reviewed:** 2026-08-08 — built from scratch. See the notes below; three of them are about the
 SOURCE file rather than about this port, and two of those change how the output should be read.
@@ -110,7 +110,7 @@ answer per bar picks by direction or by priority; it must not assume only one fi
 
 ## 🔴 Direction is the PINE'S RENDERING, and three patterns are undirected
 
-`indicators/candle_sticks.pine` draws six patterns as a green up-arrow BELOW the bar, six as a red
+`indicators/engines/candle_sticks.pine` draws six patterns as a green up-arrow BELOW the bar, six as a red
 down-arrow ABOVE it, and **Doji, Hammer and Inverted Hammer as a neutral white cross/diamond**. That
 is exactly what `PatternSpec.direction` carries (+1 / −1 / 0), and the engine will not upgrade the
 three neutrals.
@@ -198,7 +198,7 @@ of 1m" guess, which cost three weeks).
 
 ## 🔴 The export twin took THREE attempts, and the fix was to stop copying the drawing
 
-`indicators/candle_sticks_export.pine` was refused by TradingView with **RE10140** twice — a runtime
+`indicators/engines/candle_sticks_export.pine` was refused by TradingView with **RE10140** twice — a runtime
 error that is **not in TradingView's published error list at all**, raised with a clean compile and
 **no calculation spinner**, i.e. at INITIALIZATION before a bar was processed.
 
@@ -231,7 +231,7 @@ What must hold instead is that the **sixteen logic lines are byte-identical**, a
 
 ```sh
 R='^(doji|bearHarami|bullHarami|bearEng|bullEng|piercing|lower|bullBelt|bullKick|bearKick|hangingMan|eveningStar|morningStar|shootingStar|hammer|invHammer) ='
-diff <(grep -E "$R" indicators/candle_sticks_export.pine) <(grep -E "$R" indicators/candle_sticks.pine)
+diff <(grep -E "$R" indicators/engines/candle_sticks_export.pine) <(grep -E "$R" indicators/engines/candle_sticks.pine)
 ```
 
 It must print nothing. **A harness whose rules have drifted from the file it mirrors reports a correct
@@ -244,7 +244,7 @@ are about to be the exception, the burden is on the exception.**
 
 ### The `trend` finding itself, restated honestly
 
-`indicators/candle_sticks.pine` declares `trend = input.int(5, minval = 1, title = "Trend in Bars")`
+`indicators/engines/candle_sticks.pine` declares `trend = input.int(5, minval = 1, title = "Trend in Bars")`
 with **no `maxval`**, and ten rules then read `open[trend]`. ⚠ **This is a much weaker concern than
 the first write-up of it claimed**, and the correction matters: `open` is a built-in series with a
 large native buffer, so an ordinary value is safe and it would take a `trend` in the thousands to
@@ -294,7 +294,7 @@ lever: the full fifteen replay 186,366 bars in **10.2s** (18k bars/s) and a two-
 ## Rules
 
 **Do**
-- Keep every rule byte-faithful to `indicators/candle_sticks.pine`. It is the source of truth. If the
+- Keep every rule byte-faithful to `indicators/engines/candle_sticks.pine`. It is the source of truth. If the
   Pine looks wrong, the fix goes in the Pine and flows here — never the other way round.
 - Add a pattern to `PATTERNS` (types.py), a detector in `engine.py`, a `plot()` in
   `candle_sticks_export.pine` and a row in `compare_candles.py`'s `PATTERN_COLUMNS` **in one commit**.

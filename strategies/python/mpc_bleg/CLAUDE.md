@@ -1,7 +1,7 @@
 # CLAUDE.md — strategies/python/mpc_bleg/ (the MPC B-LEG bot)
 
 **Purpose:** The B-LEG setup as a standalone Python strategy — a port of
-`indicators/mpc_b_leg_strategy.pine` (Aaron's brother's B-LEG fork of MPC-JARVIS). The
+`indicators/strategies/mpc_b_leg_strategy.pine` (Aaron's brother's B-LEG fork of MPC-JARVIS). The
 B LEG is the SOS whose retrace arrived LATE: an A+ reversal dies at 2/3 on a continuation
 BOS before it retraces, the Sniper-Zone band (0.382–0.5) of that break is frozen, and a
 resting limit at the 0.5 edge waits for the late return.
@@ -11,7 +11,7 @@ engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it re
 **Status:** Built + unit-tested (19 tests green) + **Pine-parity GREEN (exit 0), re-validated 2026-07-31**
 on a fresh 6,329-bar `VANTAGE_XAUUSD, 15m` export off the session-window build — bar-for-bar
 identical decision stream. The harness is `tools/compare_bleg.py` +
-`indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`.
+`indicators/strategies/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`.
 ⚠ **STILL NO ESTABLISHED EDGE, but the defaults MOVED THREE TIMES on 2026-08-06 and the old numbers
 no longer describe this bot.** The shipped configuration is now **114 trades / +17.56R / PF 1.45 /
 maxDD −5.15R over 7.9 years with spread and swap charged** (free book: +23.28R / PF 1.65 / maxDD
@@ -22,7 +22,7 @@ defaults lost 8R in the first. **The 95% CI on mean R is −0.068 → +0.376 and
 moved up and narrowed", never as "it works". Three defaults carry it and each was measured on its
 own axis: `exec_trail_pct` 1.0 → 0.05, `bleg_max_days` 1.25 → 4.0, `exec_time_stop_hrs` 36 → 8.
 See "The exit-ladder re-default".
-`indicators/mpc_b_leg_strategy.pine`.** All 11 params in `mpc_bleg.meta.json` carry that input's
+`indicators/strategies/mpc_b_leg_strategy.pine`.** All 11 params in `mpc_bleg.meta.json` carry that input's
 Pine title byte-for-byte and its tooltip verbatim as the `desc`; change one and change the Pine in
 the same commit. Two of them are deliberately the FORK's own wording, not the A+ parent's —
 `exec_aplus` is "A+ has priority (stand the B-leg down)" because in this file A+ never places an
@@ -46,7 +46,7 @@ in the same commit that ports the model into `mpc_b_leg_strategy.pine`, then re-
 and `Signals` gained `fibo_half_bar`. Both are read only by the pinned-off gate, so no B-LEG decision
 moves. Earlier: 2026-08-01 — 🔴 **THIS BOT INHERITED THE PHANTOM-EXIT BUG AND IS FIXED WITH THE
 A+ — it reuses `mpc_sos_fade/execution.py`, so the fix arrived here without a line changing in this
-folder.** `indicators/BUG_exit_fill_price_mismatch.md`: the FILL BAR was allowed to stage the stop,
+folder.** `indicators/docs/BUG_exit_fill_price_mismatch.md`: the FILL BAR was allowed to stage the stop,
 which put the stop through the market on a trade that had gone nowhere and market-closed every leg
 at the next bar's open. Fixed on both sides, including `mpc_b_leg_strategy.pine` and its export.
 ✅ **`compare_bleg.py` exit 0** on a FULL-HISTORY post-fix export (`VANTAGE_XAUUSD, 15_1b2f3.csv`,
@@ -185,7 +185,7 @@ full register is `mpc_sos_fade/CLAUDE.md` → `## The exit ladder`. What is spec
   fork, so `exec_aplus=False` doesn't disable an entry path — it drops the "A+ stands the B leg
   down" gate entirely. That is the tuning experiment this file's own notes have called for since
   2026-07-24, now a one-flag run instead of a code edit. The same input was added to
-  `indicators/mpc_b_leg_strategy.pine` under the label "A+ has priority (stand the B-leg down)".
+  `indicators/strategies/mpc_b_leg_strategy.pine` under the label "A+ has priority (stand the B-leg down)".
 - **This bot OVERRIDES TP1 / TP2 / SL** with its band prices (SL = band origin, TP1 = the broken
   swing extreme, TP2 = the expansion extreme). Everything from the stop staging down — the floor,
   the trail, both dropdowns — is the parent's, unchanged.
@@ -198,7 +198,7 @@ full register is `mpc_sos_fade/CLAUDE.md` → `## The exit ladder`. What is spec
   way a fib stop can. Porting it is three edits in one commit (Pine input, floor check in this
   fork's `_place_entries`, `cfg_min_stop` export column) followed by `compare_bleg.py`.
 
-`indicators/mpc_b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
+`indicators/strategies/mpc_b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
 `execStructTrailBufTk`, `execTp2StopMode`, `execAplus`, and the `lStage2Floor` / structure-trail
 exit block copied line-for-line from `mpc_strategy.pine`. **Completed 2026-07-28** — that Pine had
 fallen a lever behind: it lacked the `"Structure + % ratchet"` trail method (+ `f_swingRatchet` and
@@ -285,7 +285,7 @@ register and run side by side — the parallel-stack use case.
 
 ## The parity gate — `tools/compare_bleg.py` + `mpc_b_leg_strategy_export.pine` (built 2026-07-26)
 
-BUILT, plumbing-tested, **awaiting its first real export**. `indicators/mpc_b_leg_strategy_export.pine`
+BUILT, plumbing-tested, **awaiting its first real export**. `indicators/strategies/mpc_b_leg_strategy_export.pine`
 = `mpc_b_leg_strategy.pine` (body byte-identical, only the line-40 `strategy()` title differs) + an
 appended PARITY EXPORT block. Export it from a 15m XAUUSD chart, then:
 
@@ -489,7 +489,7 @@ trade). The "by regime" answer for B-LEG has not been measured and is a genuinel
 ## The exit-ladder re-default — 2026-08-06
 
 Two defaults moved. Both are FORK PINS in `config.py` and matched defaults in
-`indicators/mpc_b_leg_strategy.pine` + its export; neither is inherited, and neither should be
+`indicators/strategies/mpc_b_leg_strategy.pine` + its export; neither is inherited, and neither should be
 "reconciled" with the A+ parent, whose own measurements say the opposite in both cases.
 
 | | `exec_trail_pct` | `bleg_max_days` |
@@ -572,7 +572,7 @@ deepest-band migration, BLEG_MAX conversion) + end-to-end driver run + longs/sho
 
 ## References
 
-- Pine source of truth: `indicators/mpc_b_leg_strategy.pine` (B-LEG block ~3683-3758,
+- Pine source of truth: `indicators/strategies/mpc_b_leg_strategy.pine` (B-LEG block ~3683-3758,
   execution ~4429-4506).
 - The A+ bot it reuses: `strategies/python/mpc_sos_fade/CLAUDE.md`.
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.

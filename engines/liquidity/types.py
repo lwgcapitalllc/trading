@@ -8,7 +8,7 @@ No behavior lives here (bar a couple of tiny helpers on LiquidityLevel). Two con
     (H4 sweep target), or a finished session's high/low (Asia/London/NY H/L). Carries its price, the
     bar it was created on, its mitigation rule, and — once price takes it — the bar it was mitigated
     (swept) on. Mirrors the persisted d_hPrice / w_hPrice / h4TrackHigh / asiaHigh ... state in
-    indicators/mpc_assistant.pine's liquidity blocks. Colours, lines and labels are drawing concerns
+    indicators/engines/mpc_assistant.pine's liquidity blocks. Colours, lines and labels are drawing concerns
     and dropped.
 
   LiquidityEvents — the engine's per-bar OUTPUT: the levels created this bar (edge), the levels

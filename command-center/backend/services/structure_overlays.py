@@ -11,7 +11,7 @@ name (same `sys.path` shim as regime/news) and only reads its public events — 
 BOS/SOS/swing detection.
 
 Four overlay groups, each a Layers checkbox, mapping 1:1 to the four TradingView toggles in
-`indicators/structure_engine.pine` (Show External / Internal / Historic Internal Structure /
+`indicators/engines/structure_engine.pine` (Show External / Internal / Historic Internal Structure /
 Swing Point Labels):
   - "External Structure"          — BOS/SOS break lines + labels, and the active (unbroken) swing rays.
   - "Internal Structure"          — iBOS/iSOS break lines + labels, for the CURRENT swing range.

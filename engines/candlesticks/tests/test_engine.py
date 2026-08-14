@@ -1,7 +1,7 @@
 """
 Hand-traced tests for the candlestick-pattern engine.
 
-These pin the ported Pine behaviour (indicators/candle_sticks.pine, "Candlestick Patterns
+These pin the ported Pine behaviour (indicators/engines/candle_sticks.pine, "Candlestick Patterns
 Identified", repo32, v6). Every bar below was worked out against the source expression by hand and
 each test names the rule it satisfies, so a failure points at a term rather than at "the engine".
 

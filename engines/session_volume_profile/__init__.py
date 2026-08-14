@@ -5,7 +5,7 @@ Turns the bar stream into the Asia session POINT-OF-CONTROL â€” the "MV" line â€
 On each Asia session (0900-1800 Asia/Tokyo) close the engine builds a 50-row volume profile over the
 session's range, spreading each bar's volume across the rows its high/low span, and reports the
 mid-price of the highest-volume row as the POC. Ported line-by-line from the SESSION VOLUME PROFILE
-block in indicators/mpc_assistant.pine (line ~2554) plus its confirmation-table "MV slot" (line
+block in indicators/engines/mpc_assistant.pine (line ~2554) plus its confirmation-table "MV slot" (line
 ~2772).
 
 Composes engines/sessions/ for the Asia window/edges (the same pattern engines/liquidity/ uses), and

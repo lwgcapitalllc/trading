@@ -24,7 +24,7 @@ gaps at those instead.
 
 THE GAPS ARE mpc_assistant.pine's, NOT THE STRATEGY'S
 ----------------------------------------------------
-The settings below mirror `indicators/mpc_assistant.pine` — the indicator the charts are read
+The settings below mirror `indicators/engines/mpc_assistant.pine` — the indicator the charts are read
 against — locked constants, not panel inputs (`mpc_assistant.pine:407-414`, `:420-423`):
 
     fvgMaxCount      = 8

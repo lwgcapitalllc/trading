@@ -193,7 +193,7 @@ strategy("MPC H4 Sweep", overlay = true, initial_capital = 10000,
 // already satisfies every such pair; keep it that way when adding one.
 //
 // ⚠ ADDING, REMOVING OR REORDERING AN INPUT RESETS SAVED CHART VALUES — TradingView keys
-// them off declaration order within each type. `indicators/PINE_INPUT_DEFAULTS.md` exists
+// them off declaration order within each type. `indicators/docs/PINE_INPUT_DEFAULTS.md` exists
 // so that a pass like this can be PROVEN cosmetic by re-dumping and diffing rather than
 // argued to be.
 //============================================================================
@@ -373,8 +373,8 @@ color LIQ_SWEPT  = color.new(#999999, 45)
 // ════════════════════════════════════════════════════════════════════════════
 //  MARKET STRUCTURE — the canonical engine, DRAWING ONLY in this file
 // ════════════════════════════════════════════════════════════════════════════
-// Lifted BYTE-FOR-BYTE from indicators/mpc_d_strategy.pine, which lifted it from
-// indicators/structure_engine.pine, itself the external+internal half of mpc_assistant.pine.
+// Lifted BYTE-FOR-BYTE from indicators/strategies/mpc_d_strategy.pine, which lifted it from
+// indicators/engines/structure_engine.pine, itself the external+internal half of mpc_assistant.pine.
 // It is not re-implemented here — a second structure engine is forbidden by CLAUDE.md and
 // would be the thing that silently drifts.
 //

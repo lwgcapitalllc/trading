@@ -15,8 +15,8 @@ prices, their 12 mitigation flags, 3 boundary-roll pulses) and RE-PASSED exit 0 
 `VANTAGE_XAUUSD, 5m` export (13,759 bars, `--htf-rollover 18 --warmup 1742` — the warm-up is now just
 the weekly cold-start, not the old monthly one). The one canonical implementation — no consumer builds
 its own.
-**Pine:** ported from `indicators/mpc_assistant.pine` (DAILY/WEEKLY LEVELS, PWC, H4
-LIQUIDITY SWEEP, SESSION H/L); parity harness is `indicators/liquidity_export.pine`, diffed against
+**Pine:** ported from `indicators/engines/mpc_assistant.pine` (DAILY/WEEKLY LEVELS, PWC, H4
+LIQUIDITY SWEEP, SESSION H/L); parity harness is `indicators/engines/liquidity_export.pine`, diffed against
 this Python by `tools/compare_liquidity.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME.** `compare_liquidity.py --htf-rollover 18 --warmup 862` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export (2026-05-27 → 2026-07-31), stable at warm-up 2000 / 6000. All 28 fields. The prev-WEEK levels are the long pole in the warm-up, as expected on a two-month window. Earlier the same evening — ✅ **RE-VALIDATED ON THE NEW WINDOWS.**
@@ -26,7 +26,7 @@ match on every warm bar, and it stays green at warm-up 1000 / 2000 / 5000. The 4
 entirely the `_mit` flags reading `None` in Python against `0.0` in Pine — Python has not formed the
 level yet where Pine's `var bool` initialised false — not a disagreement about any level's price.
 **The STALE-BY-INPUT flag below is cleared:** the Asia/London/NY session H/L levels now form over the
-re-synced windows and agree with Pine across all four changeovers. Earlier the same day — 🔴 **STALE-BY-INPUT: the session windows underneath this engine moved.** `/audit-engines` found the 2026-07-31 mpc paste re-stated all three session windows in their own cities' clocks (see `engines/sessions/CLAUDE.md`). **NO code changed here** — `LiquidityEngine` constructs `SessionEngine()` with no args, so it picked the new windows up automatically — but the **Asia / London / NY session high-low levels this engine creates now form over different windows**: Asia is unchanged, while London and New York both shift **one hour earlier in UTC** under BST/EDT (~7 months a year). Every non-session level (PDH/PDL, PWH/PWL, PWC, H4 SSH/BSL) is untouched, as are all the mitigation rules and the per-bar order. `indicators/liquidity_export.pine` hardcoded the OLD session strings and was re-synced in the same pass. 14 unit tests green. ⚠ **The 2026-07-09 GREEN parity run predates this and no longer describes the session levels** — re-run `compare_liquidity.py --htf-rollover 18` on a fresh export off the re-synced harness, exit 0, before trusting any session-level result or committing this as validated. Earlier: 2026-07-05
+re-synced windows and agree with Pine across all four changeovers. Earlier the same day — 🔴 **STALE-BY-INPUT: the session windows underneath this engine moved.** `/audit-engines` found the 2026-07-31 mpc paste re-stated all three session windows in their own cities' clocks (see `engines/sessions/CLAUDE.md`). **NO code changed here** — `LiquidityEngine` constructs `SessionEngine()` with no args, so it picked the new windows up automatically — but the **Asia / London / NY session high-low levels this engine creates now form over different windows**: Asia is unchanged, while London and New York both shift **one hour earlier in UTC** under BST/EDT (~7 months a year). Every non-session level (PDH/PDL, PWH/PWL, PWC, H4 SSH/BSL) is untouched, as are all the mitigation rules and the per-bar order. `indicators/engines/liquidity_export.pine` hardcoded the OLD session strings and was re-synced in the same pass. 14 unit tests green. ⚠ **The 2026-07-09 GREEN parity run predates this and no longer describes the session levels** — re-run `compare_liquidity.py --htf-rollover 18` on a fresh export off the re-synced harness, exit 0, before trusting any session-level result or committing this as validated. Earlier: 2026-07-05
 
 ---
 
@@ -61,10 +61,10 @@ engines/liquidity/
     └── compare_liquidity.py ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/mpc_assistant.pine` — DAILY/WEEKLY LEVELS (1334-1506),
+Pine source of truth: `indicators/engines/mpc_assistant.pine` — DAILY/WEEKLY LEVELS (1334-1506),
 PREVIOUS WEEKLY CLOSE (1508-1533), H4 LIQUIDITY SWEEP TRACKER (1535-1591), SESSION H/L TRACKING
 (1593-1760), the HTF securities (811-817) and the newDay tidy (1344 / 1402 / 1460 / 1618).
-Parity export build: `indicators/liquidity_export.pine`.
+Parity export build: `indicators/engines/liquidity_export.pine`.
 
 ---
 
@@ -193,7 +193,7 @@ value while Python forms its first in-window weekly level at bar 1742) — far s
 4,653-bar warm-up, which the monthly level dominated. (Pre-removal run for the record: GREEN 2026-07-05,
 33 fields, `--warmup 4653`.) The harness:
 
-1. `indicators/liquidity_export.pine` — the liquidity levels lifted from `mpc_assistant.pine` with
+1. `indicators/engines/liquidity_export.pine` — the liquidity levels lifted from `mpc_assistant.pine` with
    drawing removed, using the **non-repainting** `high[1]/low[1]/close[1]` reads, plus `px_*` columns
    for each level's price + mitigation flag and `px_*_roll` boundary pulses. Put it on the same
    `VANTAGE_XAUUSD` chart/timeframe (5m), Export chart data → CSV, drop it in
@@ -211,8 +211,8 @@ covered by the unit tests). Re-run `compare_liquidity.py` after any change to th
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` (liquidity blocks listed under Key paths).
-- Parity export build: `indicators/liquidity_export.pine`.
+- Pine source of truth: `indicators/engines/mpc_assistant.pine` (liquidity blocks listed under Key paths).
+- Parity export build: `indicators/engines/liquidity_export.pine`.
 - Upstream (consumed): `engines/sessions/CLAUDE.md` (session H/L).
 - Sibling / the shared non-repainting-port pattern: `engines/sessions/CLAUDE.md`,
   `engines/order_blocks/CLAUDE.md`.

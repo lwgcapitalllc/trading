@@ -4,7 +4,7 @@ fair_value_gaps/engine.py — the fair-value-gap state machine.
 One stateful streaming engine, fed one closed bar at a time (index + OHLC). It maintains the single
 live gap list and returns the gaps formed / mitigated / evicted on that bar.
 
-Ported line-by-line from indicators/mpc_assistant.pine's FVG block ("FAIR VALUE GAPS — persist until
+Ported line-by-line from indicators/engines/mpc_assistant.pine's FVG block ("FAIR VALUE GAPS — persist until
 mitigated"). The Pine keeps five parallel `var array` structures (fvgBoxes / fvgTops / fvgBots /
 fvgIsBull / fvgBorn) and runs two blocks each bar:
 

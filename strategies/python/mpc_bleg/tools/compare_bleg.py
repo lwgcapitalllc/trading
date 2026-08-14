@@ -1,7 +1,7 @@
 """compare_bleg.py — the B-LEG LOGIC-PARITY check.
 
 The B-LEG twin of `mpc_sos_fade/tools/compare_strategy.py`. Reads a TradingView
-"Export chart data" CSV of `indicators/mpc_b_leg_strategy_export.pine` — the instrumented
+"Export chart data" CSV of `indicators/strategies/mpc_b_leg_strategy_export.pine` — the instrumented
 B-LEG strategy that plots its per-bar DECISION STREAM plus the B-LEG TRACKER's own state
 plus every input toggle as a column — replays the export's OWN bars through the Python bot
 configured to the SAME toggles, and diffs the two streams bar by bar.

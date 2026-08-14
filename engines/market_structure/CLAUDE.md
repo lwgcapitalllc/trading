@@ -7,7 +7,7 @@ chart rendering.
 **Status:** Production — ported, unit-tested, and Pine-parity-validated (100% on the
 `OANDA_XAUUSD, 15m` export, 21,729 bars); wired into `algos/` via
 `algos/shared/structure_engine.py` (shim).
-**Pine:** ported from `indicators/structure_engine.pine`; parity harness is `indicators/structure_engine_export.pine`, diffed against this Python by `tools/compare_tradingview.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
+**Pine:** ported from `indicators/engines/structure_engine.pine`; parity harness is `indicators/engines/structure_engine_export.pine`, diffed against this Python by `tools/compare_tradingview.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-08-08 (latest) — 🟢 **THE INTERNAL BREAKS CARRY THEIR OWN BAR NOW, AND THE CONSUMER THAT HAD TO GUESS ONE WAS WRONG AT EXACTLY ONE OF SIX SITES.** `InternalEvents` gained `bull_bos_loc` / `bear_bos_loc` / `bull_sos_loc` / `bear_sos_loc` — the BAR the broken level sits on, beside the four `*_price` fields that had been emitted bare since the port. 🔴 **The external engine has carried this since it was written (`bull_bos_h_loc` / `bear_bos_l_loc`); the internal engine never did, so a consumer that needed to DRAW a break had nothing to anchor it to and reached for `ifib_seed_*_loc` instead** — which is a fib LEG, a low and a high, not the level that broke. At five of the six internal-break sites the end of that leg *happens* to be the broken level. **At the first bear-iSOS branch it is not:** the break is `i_last_hl` while the seed's bottom is `i_tracked_ext`, a different price on a different bar, assigned two lines apart in `engine.py`. ✅ **MEASURED over 2.5 years of real cached M5 bars, 169 internal breaks: iBOS bull 65/65, iBOS bear 57/57, iSOS bull 22/22 — and iSOS bear 3/25**, wrong by up to $18.47. Found via the command-center chart, where the visible symptom was not the price at all: the wrong bar can land ON the break bar, so the line had zero length and did not render (12.4% of every internal break drew a line ≤1 bar). ⚠ **`int_break_origin_loc` is NOT this field and cannot substitute for it** — it is the order-block scan origin, and over the same 169 breaks it lands on the broken wick **zero** times in every category. That measurement is what said the engine had to grow the fields rather than the consumer picking a different existing one. ⚠ **Capture-only, the same additive pattern as `int_break_origin_loc`, `i_confirmed_*` and `ifib_seed_*`** — set at the six existing assignment sites, before the state reset, and nothing in the engine reads them back, so no structure decision can depend on them. ✅ **PROVEN COSMETIC BY A/B REPLAY rather than argued:** the engine was replayed at HEAD and at the working tree over **186,488 real cached M15 bars** and every pre-existing field diffed bar by bar — **12,308,208 field values, 0 differences**, with the four new fields carrying **1,993 real values** rather than a column of `None` (i.e. the check is not vacuous in either direction). ⚠ **THE PINE PARITY GATE IS OWED AND THE A/B REPLAY IS NOT A SUBSTITUTE FOR IT.** No `structure_engine_export.pine` CSV is on disk, so `compare_tradingview.py` could not be run — the same position the fib engine was in on 2026-08-02, where the A/B diff was accepted as *the same evidence by a different route* and the gate was still re-run on the next real export. **Re-run `compare_tradingview.py` on the next export.** ✅ 74 engine tests green (market_structure + fibonacci + order_blocks). **The standing lesson is about what an event is allowed to omit: the four prices were correct for their whole life, and the field the engine did NOT emit is what made a downstream consumer invent an answer — silently, and right often enough that only one branch in six ever showed it.** Earlier: 2026-07-12 — re-synced to the `choch_lock` removal in `mpc_assistant.pine` and re-validated at 100% parity (`compare_tradingview.py --warmup 365`, exit 0, `VANTAGE_XAUUSD, 5m`, 9,270 bars). See "The 2026-07-12 CHoCH re-sync" below.
 
 ---
@@ -128,7 +128,7 @@ Both are `None` off their firing bar.
 
 ## Do
 
-- Port changes to `indicators/structure_engine.pine` back into `engine.py` line-by-line if that
+- Port changes to `indicators/engines/structure_engine.pine` back into `engine.py` line-by-line if that
   Pine source is ever updated post-validation. Do not let the two drift.
 - Keep `update()`'s hot path free of pandas/numpy — see "Never do" below.
 - When adding a new event or read property, update `MARKET_STRUCTURE_ENGINE.md` and this file's
@@ -159,7 +159,7 @@ Both are `None` off their firing bar.
 
 Before trusting the engine on live money, confirm it matches the Pine source on real candles:
 
-1. `indicators/structure_engine_export.pine` — an instrumented copy of `structure_engine.pine`
+1. `indicators/engines/structure_engine_export.pine` — an instrumented copy of `structure_engine.pine`
    (logic byte-identical; adds `plot()` columns for every engine output). Put it on a chart in
    TradingView and export the chart data to CSV.
 2. `engines/market_structure/tools/compare_tradingview.py <that.csv>` — feeds the CSV's candles through
@@ -228,8 +228,8 @@ both exit 0.
 ## References
 
 - Algorithm explained in plain English: `MARKET_STRUCTURE_ENGINE.md`
-- Pine source of truth: `indicators/structure_engine.pine` (validated ~99.99% parity against the
-  original "Structure OS" TradingView indicator via `indicators/mpc_assistant.pine`)
+- Pine source of truth: `indicators/engines/structure_engine.pine` (validated ~99.99% parity against the
+  original "Structure OS" TradingView indicator via `indicators/engines/mpc_assistant.pine`)
 - Shim and bot integration: `algos/shared/structure_engine.py`
 - Sibling shared-library pattern (stateless, for contrast): `engines/regime/CLAUDE.md`
 - Monorepo context: `../CLAUDE.md`

@@ -21,7 +21,7 @@ export const VLINE = 'lwgVline'
 export const LABEL = 'lwgLabel'
 
 /** Market-structure overlay groups (emitted by backend `structure_overlays.py`) — the four
- *  TradingView toggles from `indicators/structure_engine.pine`, same names, same order. Kept in one
+ *  TradingView toggles from `indicators/engines/structure_engine.pine`, same names, same order. Kept in one
  *  place so the panel can (a) default them OFF — unlike other overlay groups — and (b) order them
  *  together in the Layers menu. MUST match the GROUP_* names in the backend module.
  *  They NEST like the Pine's: the dependencies ride on each overlay's `requires` list, not here. */

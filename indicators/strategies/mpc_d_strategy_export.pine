@@ -35,7 +35,7 @@
 // 30/30/40 and TP3 = 3 to reproduce the 218-trade / +14.03R baseline of the same morning.
 //
 // The structure engine below (type SMCStructure through the external execution block) is
-// lifted BYTE-FOR-BYTE from indicators/structure_engine.pine, itself the external half of
+// lifted BYTE-FOR-BYTE from indicators/engines/structure_engine.pine, itself the external half of
 // mpc_assistant.pine. It is not re-implemented here — a second structure engine is
 // forbidden by CLAUDE.md and would be the thing that silently drifts.
 //
@@ -69,7 +69,7 @@
 // on a knob a reader turns precisely while tuning. 300 covers the whole declared range.
 // The failure is the shape this repo keeps recording: correct at the default, broken the first
 // time somebody uses the lever the default exists to be tuned away from.
-strategy("MPC D Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, process_orders_on_close = true, margin_long = 0.2, margin_short = 0.2, max_bars_back = 300)
+strategy("MPC D Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, process_orders_on_close = true, margin_long = 0.2, margin_short = 0.2, max_bars_back = 300)
 //============================================================================
 //  THE INPUT PANEL — one consolidated block, twelve numbered sections
 //============================================================================
@@ -96,7 +96,7 @@ strategy("MPC D Strategy", overlay = true, max_labels_count = 500, max_lines_cou
 // already satisfies every such pair; keep it that way when adding one.
 //
 // ⚠ ADDING, REMOVING OR REORDERING AN INPUT RESETS SAVED CHART VALUES — TradingView keys
-// them off declaration order within each type. `indicators/PINE_INPUT_DEFAULTS.md` exists
+// them off declaration order within each type. `indicators/docs/PINE_INPUT_DEFAULTS.md` exists
 // so that a pass like this can be PROVEN cosmetic by re-dumping and diffing rather than
 // argued to be.
 //============================================================================
@@ -2182,3 +2182,295 @@ if showStatePanel and barstate.islast
     string dWait = dTrendDir == 0 ? "Warming up" : dTrendBos < dTrendBosMin ? "Trend too young" : dCurBos > dCtrBosMax ? "Shakeout became a trend" : not na(dSosBar) and bar_index - dSosBar > dCtrBarsMax ? "Shakeout stale" : needLose ? "Waiting for price to lose VWAP" : (vwapGates and not vwapOkNow) ? (dVwapLost ? "Waiting on VWAP reclaim" : "Waiting on VWAP") : dSeqTaken ? "Sequence already taken" : execEntryMode == "VWAP side" ? (dTrendDir == 1 ? "Armed - long on VWAP reclaim" : "Armed - short on VWAP reclaim") : dTrendDir == 1 ? "Armed - need bull SOS" : "Armed - need bear SOS"
     f_dCell(dTbl, 5, "State", dWait, str.startswith(dWait, "Armed") ? #ffde59 : D_MUTED)
     f_dCell(dTbl, 6, "Position", strategy.position_size == 0 ? "Flat" : (tDir == 1 ? "LONG " : "SHORT ") + "stage " + str.tostring(tStage), strategy.position_size == 0 ? D_MUTED : (tDir == 1 ? D_LONG : D_SHORT))
+
+//============================================================================
+//  PARITY / ANALYSIS EXPORT — per-bar DECISION STREAM
+//============================================================================
+// This file is `mpc_d_strategy.pine` + THIS appended block, and NOTHING else changed.
+// The body above is byte-identical to the parent apart from line 72's title.
+//
+// ⚠ REGENERATE WITH THIS EXACT RECIPE — and CHECK THE PLOT COUNT AFTERWARDS.
+//     B=$(grep -n 'PARITY / ANALYSIS EXPORT' <export> | head -1 | cut -d: -f1)
+//     sed -n "$((B-2)),\$p" <export> > /tmp/blk
+//     cp indicators/strategies/mpc_d_strategy.pine <export>
+//     sed -i '' '72s/strategy("MPC D Strategy"/strategy("MPC D Strategy Export"/' <export>
+//     cat /tmp/blk >> <export>
+//     grep -c '^plot(' <export>      # MUST be 51
+// (48 → 51 on 2026-08-06 with the VWAP work: px_vwap and cfg_vwap_slope_bars were added to
+//  this block, and the PARENT gained one visible plot of its own — the VWAP line — which
+//  arrives here for free through the copy. Bump this number whenever either side gains a
+//  plot, or the check stops being a check.)
+// The count check is not ceremony. On 2026-08-06 the extraction grep was anchored on the
+// `//====` rule line, which does not contain the words it was matching, so it produced an
+// EMPTY block — and every downstream check still passed, because a bare copy of the parent
+// is byte-identical to the parent and compiles perfectly. It just silently exported nothing.
+// A regeneration that loses the whole point of the file must fail loudly; count the plots.
+//
+// WHY IT EXISTS. The Strategy Tester's trade list records FILLS. It cannot say what the
+// gates refused, how far a trade ran before it handed the move back, or what a different
+// stop anchor would have produced. Those are the three questions this strategy is being
+// tuned on, so they get columns.
+//
+// ⚠ GOTCHA, inherited from every other export in this repo: a plotted column MUST use a
+// transparent colour, never `display.none` — TradingView DROPS display.none series from
+// the CSV. Every plot here uses _INV.
+//
+// ── READING THE STREAM ──────────────────────────────────────────────────────
+// Most columns are na except on the bars where they mean something, so the CSV filters
+// down to a few hundred rows.
+//
+// CANDIDATE BARS — any bar where px_cand_dir is non-na. ⚠ THAT IS NO LONGER THE SAME THING
+//   AS "A BAR WHERE AN SOS FIRED", and reading it that way is now the easiest mistake to
+//   make with this file. Under execEntryMode = "VWAP side" a candidate arrives on an
+//   ORDINARY bar — no SOS on it, so px_sos carries only bit 4 (dFired) and none of the SOS
+//   bits. Filter the CSV on px_cand_dir, never on px_sos.
+//
+//   Every value is the parent's OWN record, taken at decision time and copied, never
+//   re-derived here: px_cand_dir, px_ctr_ext, px_rcl_ext, px_sos_lvl and the three px_gate_*
+//   columns all come straight off dCandDir / dCandCtr / dCandRcl / dCandSos / dCandTBos /
+//   dCandCBos / dCandBars. That is exact by construction rather than by argument — there is
+//   no second implementation here that could disagree with the gate.
+//
+//   The authoritative dCtrHi / dCtrLo / dCtrSos are still plotted on FIRED bars (px_fire_*),
+//   and on any fired bar they must agree with px_ctr_ext / px_sos_lvl. That cross-check now
+//   guards a copy rather than a reconstruction, so it should be trivially true — if it ever
+//   is not, something upstream in the parent has moved.
+//
+// THE POINT OF px_ctr_ext / px_rcl_ext / px_sos_lvl. With those three plus px_cand_entry
+// you can compute OFFLINE what every stop anchor and every retrace level would have priced,
+// on every candidate the strategy ever saw, without re-running TradingView:
+//   Sweep extreme       = px_ctr_ext
+//   Counter-SOS line    = px_sos_lvl
+//   Between the two @p  = px_sos_lvl + (px_ctr_ext - px_sos_lvl) * p/100
+//   Retrace @f (entry)  = px_rcl_ext - (px_rcl_ext - px_ctr_ext) * f   [long; mirrored short]
+// That turns one export into a sweep instead of one configuration.
+//
+// px_mfe_r / px_mae_r are the running favourable and adverse excursion of the OPEN trade,
+// in R, per bar. They are what the trade list cannot give you, and they are what settles
+// whether a winner's drawdown came BEFORE or AFTER it reached a staging level — the one
+// unknown that bounds the whole exit-ladder result. Both EXCLUDE the fill bar, for the same
+// reason the parent's tMaxFav does (BUG_exit_fill_price_mismatch).
+//
+// px_stage is tracked here rather than read from tStage, because the parent resets tStage
+// to 0 on the close bar and the close bar is exactly where the final stage matters.
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// ── Candidate geometry: DELETED 2026-08-06, and the deletion is the fix ─────
+// `f_xCand()` lived here and rebuilt the candidate's direction and leg extremes from
+// `st.bull_sos` plus `[1]` lookups. It is gone, not repaired: the parent publishes
+// dCandDir / dCandCtr / dCandRcl for every candidate at decision time, so there was never a
+// second claim worth maintaining — only a second claim that could disagree. See the note at
+// the px_cand_* plots for what it got wrong once a candidate could arrive off an SOS bar.
+// ⚠ Do not reintroduce a derivation here. Anything the columns need, the parent should
+// record and this block should copy.
+
+// ── Trade tracker — export-owned, so the parent's close-bar resets cannot erase it ──
+// Returns [fillPx, oneR, stage, mfeR, maeR, closedR]. Every value survives the bar the
+// trade closes on, which is the bar the parent has already zeroed tStage / tDir / tFillBar.
+f_xTrade() =>
+    var int   _dir = 0
+    var float _e = na, var float _d1r = na, var float _risk = na, var float _np = na
+    var int   _fb = na
+    var float _hi = na, var float _lo = na
+    var int   _stg = 0
+    float _fill = na, float _cr = na
+    bool _isFill  = strategy.position_size != 0 and strategy.position_size[1] == 0
+    bool _isClose = strategy.position_size == 0 and strategy.position_size[1] != 0
+    if _isFill
+        _dir  := tDir
+        _e    := tE
+        _d1r  := tDist
+        _risk := tRiskUsd
+        _np   := tNpAt
+        _fb   := bar_index
+        _hi   := na
+        _lo   := na
+        _stg  := 0
+        _fill := tE
+    if strategy.position_size != 0 and not na(_fb) and bar_index > _fb
+        _hi  := na(_hi) ? high : math.max(_hi, high)
+        _lo  := na(_lo) ? low  : math.min(_lo, low)
+        // Ternary, not math.max — math.max returns a float and _stg is an int, which is a
+        // type error rather than a silent widening. Same reason the plots below build a
+        // float local instead of putting an int in a ternary against na.
+        _stg := tStage > _stg ? tStage : _stg
+    if _isClose and not na(_risk) and _risk != 0
+        _cr := (strategy.netprofit - nz(_np)) / _risk
+    float _mfe = na, float _mae = na
+    if _dir != 0 and not na(_d1r) and _d1r != 0 and not na(_hi)
+        _mfe := _dir == 1 ? (_hi - _e) / _d1r : (_e - _lo) / _d1r
+        _mae := _dir == 1 ? (_lo - _e) / _d1r : (_e - _hi) / _d1r
+    bool _live = strategy.position_size != 0 or _isClose
+    // _stgOut is declared float FIRST. `_live ? _stg : na` with an int _stg leaves Pine to
+    // infer a type for the na branch, and it does not always pick float — which is a paste-
+    // time compile error, not a wrong number, so it is cheap to prevent and expensive to hit.
+    float _stgOut = _live ? _stg : na
+    [_fill, _live ? _d1r : na, _stgOut, _live ? _mfe : na, _live ? _mae : na, _cr]
+
+// ── Real exit fills this bar, by rung ───────────────────────────────────────
+// The PRICE the engine actually got, never the level it aimed at. A non-na px_exit_run on a
+// bar where px_stage is 0 is a stop-out or a forced close (time stop / opposite SOS), which
+// is how those are told apart offline.
+f_xExits() =>
+    var int _seen = 0
+    float _t1 = na, float _t2 = na, float _rn = na
+    if strategy.closedtrades > _seen
+        for _i = _seen to strategy.closedtrades - 1
+            if strategy.closedtrades.exit_bar_index(_i) == bar_index
+                string _id = strategy.closedtrades.exit_id(_i)
+                float  _px = strategy.closedtrades.exit_price(_i)
+                if str.contains(_id, "TP1")
+                    _t1 := _px
+                else if str.contains(_id, "TP2")
+                    _t2 := _px
+                else
+                    _rn := _px
+        _seen := strategy.closedtrades
+    [_t1, _t2, _rn]
+
+[_xFill, _xR, _xStg, _xMfe, _xMae, _xClosedR] = f_xTrade()
+[_xT1, _xT2, _xRun] = f_xExits()
+
+// ── DECISION STREAM ─────────────────────────────────────────────────────────
+// px_sos (packed) = bull_sos·1 + bear_sos·2 + dFired·4 + limit_resting·8 + fill_bar·16 + close_bar·32
+//   "limit_resting" only ever appears under Entry = Retrace; under SOS close the fill is the
+//   signal bar. Counting bars where bit 8 is set and no bit 16 follows IS the unfilled-limit
+//   rate, which is the entire cost of the Retrace entry and is invisible in the trade list.
+plot((st.bull_sos ? 1 : 0) + (st.bear_sos ? 2 : 0) + (dFired ? 4 : 0) + (strategy.position_size == 0 and not na(tOrdBar) ? 8 : 0) + (strategy.position_size != 0 and strategy.position_size[1] == 0 ? 16 : 0) + (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 32 : 0), "px_sos", _INV, editable = false)
+// The refusal code, identical to the pink chart tag and the [BLOCK] log line:
+//   0 none · 1 direction off · 2 trend too young · 3 shakeout became a trend
+//   4 shakeout stale · 5 stop too tight · 6 stop wrong side · 7 already in a position
+//   8 ACCOUNT BUST — equity <= 0. Once this appears it appears on every candidate after it,
+//     and that run of 8s marks the exact bar the strategy died. Nothing later is a signal.
+// Each is built as a float LOCAL before it is plotted. Every one is an int in a ternary
+// against na, which is the one shape Pine will not reliably type.
+// 🔴 THESE NOW READ THE PARENT'S OWN RECORD AND NO LONGER RECONSTRUCT ANYTHING (2026-08-06).
+// They used to be rebuilt here from `st.bull_sos` plus a set of `[1]` lookups, on the premise
+// that every candidate arrives on an SOS bar and the shift has already destroyed the values
+// the gate read. Both halves of that premise broke the moment "VWAP side" existed:
+//   (a) a VWAP-side candidate arrives on an ORDINARY bar, so `st.bull_sos` is false and the
+//       reconstruction returned direction 0 — which would have blanked px_cand_dir,
+//       px_ctr_ext, px_rcl_ext, px_sos_lvl and all three px_gate_* columns on EVERY
+//       candidate of the new mode. The export would have gone on producing a clean CSV that
+//       simply had nothing in it, which is the failure this file is least able to detect.
+//   (b) `[1]` is only equivalent to "before the shift" on a bar where the shift RAN. On a
+//       non-SOS bar nothing shifted, and `dCurBos` can have been incremented by a plain BOS
+//       earlier in the same bar — so `dCurBos[1]` would report the value the gate did NOT
+//       read, on exactly the bars where a BOS and a candidate coincide.
+// The parent records dCandDir / dCandCtr / dCandRcl / dCandSos / dCandTBos / dCandCBos /
+// dCandBars for EVERY candidate, fired or refused, read at decision time and before any
+// shift. Those are the authoritative values; copying them cannot drift from what the gate
+// saw, where a reconstruction has to be re-proved against every new way a candidate can
+// arise. px_fire_* below still carries the parent's fire-time geometry, so the two remain
+// cross-checkable on any fired bar.
+float _pBlk      = dBlk == 0 ? na : dBlk
+float _pDir      = dCandDir == 0 ? na : dCandDir
+float _pSosLvl   = dCandDir == 0 ? na : dCandSos
+float _pTrendBos = dCandDir == 0 ? na : dCandTBos
+float _pCtrBos   = dCandDir == 0 ? na : dCandCBos
+float _pCtrBars  = dCandDir == 0 ? na : dCandBars
+plot(_pBlk,                      "px_blk",        _INV, editable = false)
+plot(_pDir,                      "px_cand_dir",   _INV, editable = false)
+plot(dBlkPx,                     "px_cand_entry", _INV, editable = false)   // set for FIRED and BLOCKED alike
+plot(dStop,                      "px_sig_stop",   _INV, editable = false)   // fired only
+plot(dCandCtr,                   "px_ctr_ext",    _INV, editable = false)   // the shakeout's own extreme (exact)
+plot(dCandRcl,                   "px_rcl_ext",    _INV, editable = false)   // the reclaim leg's extreme (exact)
+plot(_pSosLvl,                   "px_sos_lvl",    _INV, editable = false)   // the counter-SOS's broken level (exact)
+// The three gate INPUTS, exact, at decision time. Every candidate carries them whether it
+// fired or not, so a gate can be re-run offline over the whole history from one export.
+plot(_pTrendBos,                 "px_gate_trend_bos", _INV, editable = false)
+plot(_pCtrBos,                   "px_gate_ctr_bos",   _INV, editable = false)
+plot(_pCtrBars,                  "px_gate_ctr_bars",  _INV, editable = false)
+// The parent's OWN geometry on fired bars — the cross-check on the reconstruction above.
+plot(dFired ? dCtrHi  : na,      "px_fire_ctr_hi",  _INV, editable = false)
+plot(dFired ? dCtrLo  : na,      "px_fire_ctr_lo",  _INV, editable = false)
+plot(dFired ? dCtrSos : na,      "px_fire_sos_lvl", _INV, editable = false)
+
+// ── TRADE STREAM ────────────────────────────────────────────────────────────
+plot(_xFill,    "px_fill",      _INV, editable = false)   // fill price, on the fill bar only
+plot(_xR,       "px_1r",        _INV, editable = false)   // 1R in PRICE, so R and dollars are reconcilable
+plot(_xStg,     "px_stage",     _INV, editable = false)   // 0 open · 1 TP1 reached · 2 TP2 reached
+plot(_xMfe,     "px_mfe_r",     _INV, editable = false)   // running favourable excursion, in R
+plot(_xMae,     "px_mae_r",     _INV, editable = false)   // running adverse excursion, in R (negative)
+plot(_xT1,      "px_exit_tp1",  _INV, editable = false)
+plot(_xT2,      "px_exit_tp2",  _INV, editable = false)
+plot(_xRun,     "px_exit_run",  _INV, editable = false)
+plot(_xClosedR, "px_closed_r",  _INV, editable = false)   // the trade's own R, on its close bar
+plot(strategy.equity, "px_equity", _INV, editable = false)
+plot(dAtr,      "px_atr14",     _INV, editable = false)
+// ⚠ px_vwap IS PLOTTED ON EVERY BAR, UNGATED, AND IS NOT THE SAME COLUMN AS THE BODY'S
+// VISIBLE "VWAP" PLOT — that one is gated on execShowVwap and is `na` whenever the line is
+// switched off, so a parser must never read it.
+// ⚠ This is the column that makes the VWAP rule RE-PRICEABLE OFFLINE, which is the whole
+// design of this block. With the value on every bar you can reconstruct the side test at any
+// candidate bar, and the slope over ANY lookback, from a run taken with the gate switched
+// OFF entirely — so one export answers "would a VWAP filter have helped?" instead of
+// requiring a second run to ask it. Storing only the boolean answer would have thrown away
+// exactly the information the question needs.
+plot(dVwap,     "px_vwap",      _INV, editable = false)
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+// Every input that can change a trade gets a column, so a stored export is self-describing
+// and two of them can never be compared without noticing they ran different settings.
+//   cfg_bits  = execLongs·1 + execShorts·2 + execCloseOppSOS·4
+//               + execVwapReq·8 + execVwapSlope·16
+//   cfg_modes = entry·1 + slAnchor·10 + minStop·100 + sizing·1000
+//               + tp2Floor·10000 + runnerTrail·100000 + timeStop·1000000
+//     entry:       0 SOS close · 1 Retrace · 2 VWAP side
+//     slAnchor:    0 Sweep extreme · 1 Counter-SOS line · 2 Between the two · 3 % of entry-to-sweep
+//     minStop:     0 Off · 1 % of price · 2 Fixed $ · 3 x ATR(14)
+//     sizing:      0 Risk % of equity · 1 Fixed contracts
+//     tp2Floor:    0 TP1 price · 1 Breakeven · 2 One trail step behind
+//     runnerTrail: 0 Fixed step · 1 Structure (swing) · 2 Structure + % ratchet
+//     timeStop:    0 Off · 1 Before TP1 only · 2 Always
+// The numerics are plotted RAW, one column each, and deliberately NOT packed: they are
+// floats, any pack that fits several into one float64 has to round, and a silently rounded
+// threshold mis-describes the run — the exact failure this block exists to prevent.
+// ⚠ cfg_ctr_bars_max is in BARS, so it means a different amount of TIME on every timeframe.
+// A 5m export and a 15m export carrying the same 400 are NOT the same strategy.
+// ⚠ THE NEW BITS AND THE NEW ENTRY VALUE ARE BOTH BACKWARD-SAFE, AND THAT IS WHY THEY WERE
+// APPENDED RATHER THAN RESHUFFLED. An export taken before 2026-08-06 carries bits 8 and 16
+// CLEAR, which decodes to both VWAP gates OFF — which is exactly what it ran, because they
+// did not exist. Likewise entry ∈ {0,1} keeps its old meaning and only the new value 2 is
+// added. A stored export must go on decoding the way it did the day it was taken; that is
+// the whole contract of these columns, and it is why an existing code is never renumbered.
+plot((execLongs ? 1 : 0) + (execShorts ? 2 : 0) + (execCloseOppSOS ? 4 : 0) + (execVwapReq ? 8 : 0) + (execVwapSlope ? 16 : 0), "cfg_bits", _INV, editable = false)
+// 🔴 THREE-WAY, NOT TWO-WAY, AND THE OLD FORM WAS ALREADY WRONG THE MOMENT "VWAP side"
+// EXISTED. `execEntryMode == "SOS close" ? 0 : 1` sends BOTH other modes to 1, so a VWAP
+// run would have been stored, and later read, as a Retrace run — a whole different entry
+// model, reported with total confidence. This is the `execRunnerTrail` trap of 2026-07-26
+// exactly: a code that collapses a widened dropdown does not fail, it lies. **Whenever an
+// option is added to any input, find its cfg digit in the same commit.**
+plot((execEntryMode == "SOS close" ? 0 : execEntryMode == "Retrace" ? 1 : 2)
+   + (execSlMode == "Sweep extreme" ? 0 : execSlMode == "Counter-SOS line" ? 1 : execSlMode == "Between the two" ? 2 : 3) * 10
+   + (execMinStopMode == "Off" ? 0 : execMinStopMode == "% of price" ? 1 : execMinStopMode == "Fixed $" ? 2 : 3) * 100
+   + (execSizeMode == "Risk % of equity" ? 0 : 1) * 1000
+   + (execTp2StopMode == "TP1 price" ? 0 : execTp2StopMode == "Breakeven" ? 1 : 2) * 10000
+   + (execRunnerTrail == "Fixed step" ? 0 : execRunnerTrail == "Structure (swing)" ? 1 : 2) * 100000
+   + (execTimeStopMode == "Off" ? 0 : execTimeStopMode == "Before TP1 only" ? 1 : 2) * 1000000, "cfg_modes", _INV, editable = false)
+plot(dTrendBosMin,          "cfg_trend_bos_min", _INV, editable = false)
+plot(dCtrBosMax,            "cfg_ctr_bos_max",   _INV, editable = false)
+plot(dCtrBarsMax,           "cfg_ctr_bars_max",  _INV, editable = false)
+plot(execRetraceFib,        "cfg_retrace_fib",   _INV, editable = false)
+plot(execLimitBars,         "cfg_limit_bars",    _INV, editable = false)
+plot(execSlPct,             "cfg_sl_pct",        _INV, editable = false)
+plot(execSlBufTk,           "cfg_sl_buf",        _INV, editable = false)
+plot(execMinStopVal,        "cfg_min_stop_val",  _INV, editable = false)
+plot(execRiskPct,           "cfg_risk_pct",      _INV, editable = false)
+plot(execFixedQty,          "cfg_fixed_qty",     _INV, editable = false)
+plot(execTp1R,              "cfg_tp1_r",         _INV, editable = false)
+plot(execTp2R,              "cfg_tp2_r",         _INV, editable = false)
+plot(execTp3R,              "cfg_tp3_r",         _INV, editable = false)
+plot(execTp1Pct,            "cfg_tp1_pct",       _INV, editable = false)
+plot(execTp2Pct,            "cfg_tp2_pct",       _INV, editable = false)
+plot(execBeBufTk,           "cfg_be_buf",        _INV, editable = false)
+plot(execStructTrailBufTk,  "cfg_struct_buf",    _INV, editable = false)
+plot(execTrailPct,          "cfg_trail_pct",     _INV, editable = false)
+plot(execTrailStep,         "cfg_trail_step",    _INV, editable = false)
+plot(execTimeStopHrs,       "cfg_time_stop_hrs", _INV, editable = false)
+plot(execBeBandR,           "cfg_scratch_r",     _INV, editable = false)
+// Raw, like every other numeric here, and for the same reason. ⚠ It is in BARS — a 5m and a
+// 15m export both carrying 4 are measuring the slope over different amounts of TIME, the
+// same warning cfg_ctr_bars_max carries.
+plot(execVwapSlopeBars,     "cfg_vwap_slope_bars", _INV, editable = false)
