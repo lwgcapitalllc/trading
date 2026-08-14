@@ -32,7 +32,8 @@
 // display boxes can be unticked for a clean chart and the sweeps keep firing. This is the
 // only line that differs and it must be re-applied after any regeneration.
 //
-// ⚠ NOTHING HERE IS MEASURED. No compile, no Strategy Tester run, no parity gate, no Python
+// ✅ COMPILES on TradingView (Aaron, 2026-08-13). ⚠ NOTHING HERE IS MEASURED — compiling says
+// the syntax is valid and nothing else. No Strategy Tester run, no parity gate, no Python
 // port. Every default below is a starting point chosen to be legible, not an optimum. The
 // stats table exists so the trend filter can be judged from a real chart rather than argued
 // about — read "raw" against "signalled" before believing the filter helps.
