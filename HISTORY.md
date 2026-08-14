@@ -15,6 +15,45 @@ the other one did.
 
 ## Latest
 
+### The test gate lasted one day (2026-08-14)
+
+Aaron, on the ~7 minutes a push now cost: *"That's way too long. For a pre-push, let's take testing
+out of it… just check linting and formatting."* Done, and the reasoning is the same argument that
+kept the suite off `pre-commit` one step earlier — **a seven-minute guard is one people route
+around, and `LWG_SKIP_TESTS=1` on every push is indistinguishable from having no gate while reading
+like one.** The hook that gets bypassed is worse than the hook that never existed, because the
+history reads as checked.
+
+**MEASURED, before and after:**
+
+| | before | after |
+|---|---|---|
+| test suite | ~6m 40s | **removed** |
+| ruff, all 628 python files | — | **0.2s** |
+| prettier, frontend | — | 6.4s → **~1s cached** |
+| eslint, frontend | — | 28s → **1.9s cached** |
+| **whole hook** | **~7 min** | **~3s warm, ~35s cold** |
+
+🔴 **eslint was 70% of what remained, and `--cache` is the entire reason this is 3s rather than
+35s.** `typescript-eslint` is type-aware, so it rebuilds the TS program before it can lint a line —
+27s of the 28 is that, not the linting. ⚠ A first run after a pull that touched the frontend pays
+the full cost again; that is the cache working, not a fault. ⚠ **Both cache files are git-ignored**
+— they key on local file mtimes, so a checked-in cache is a linter skipping files it has never read
+on this machine.
+
+⚠ **What is LOST is stated rather than left to be discovered: no hook runs the tests any more, so a
+broken suite can reach `main` and the first to know is whoever pulls it.** `scripts/run_all_tests.sh`
+is still the one command and is now a person's job — the hook's own final line says so on every
+push. **If that bites twice, the answer is a faster suite, not a slower hook**: the three parts are
+independent and could run concurrently, the root suite is single-core on a 12-core box, and Aaron's
+own instinct on the count (*"there's no way I have almost three thousand tests"*) is worth its own
+pass — the early read is that it is not the 2,739 count but the full 150k-bar replays inside it.
+
+⚠ **The trigger got NARROWER, deliberately.** The old one fired on anything a test could read,
+including `.pine`, `.mq5` and `.cs`; the new one fires only on what ruff and prettier actually
+parse. A Pine change has no linter here, so it is not a reason to sweep the repo. The unattended
+`ledger_sync.py` push is skipped by both, which was the point of the positive trigger.
+
 ### The bulk reformat, and the nine gates that could not answer (2026-08-14)
 
 The ratchet was meant to avoid a bulk pass. Aaron asked for one anyway — *"fix all the formatting"* — so

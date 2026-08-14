@@ -366,16 +366,35 @@ pre-commit hook when a clone lacks it).
 | TS/TSX — lint | **eslint** | `eslint.config.mjs` |
 | Which tool sees which file | **lint-staged** | `lint-staged.config.mjs` |
 | pre-commit | format + lint the STAGED files | `.githooks/pre-commit` |
-| pre-push | the full test suite | `.githooks/pre-push` → `scripts/run_all_tests.sh` |
+| pre-push | repo-wide lint + format sweep (**NOT the tests**) | `.githooks/pre-push` |
 
 **Prettier cannot format Python** — no official support, the community plugin is abandoned — so
 ruff owns `.py` and prettier owns the frontend. **`lint-staged` is the common ground**: it is a node
 package, but it runs whatever command you point at a glob, so one config drives both languages from
 one hook.
 
-**Tests are on PUSH, not on commit, because the suite is ~7 minutes.** A seven-minute pre-commit is
-a hook people learn to `--no-verify` past, and that leaves no trace — strictly worse than no hook,
-because the history then reads as checked.
+🔴 **NO HOOK RUNS THE TESTS. `pre-push` ran the full suite for one day and it was removed on
+2026-08-14 (Aaron's call).** MEASURED: 4:21 for the root suite (1,725 tests) + 2:17 for the backend
+(1,014) = **~7 minutes on every push**. That is the same argument that kept the suite off
+`pre-commit`, one step later: a seven-minute guard is one people route around, and
+`LWG_SKIP_TESTS=1` on every push is indistinguishable from no gate while reading like one.
+
+⚠ **State the loss plainly rather than letting the next reader find it: a broken suite can now
+reach `main`, and the first to know is whoever pulls it.** `scripts/run_all_tests.sh` is still the
+one command — it is now a thing a PERSON runs, and both the hook's output and its header say so. If
+that bites twice, the answer is a FASTER suite (the three parts are independent and could run
+concurrently; the root suite is single-core on a 12-core box, and much of its time is full
+150k-bar replays) rather than a slower hook.
+
+**What `pre-push` does now costs ~3s and is still worth having**: `pre-commit` only ever sees
+STAGED files, so a `--no-verify` commit, a rebase that resurrected an old file, or an edit from
+another tool reaches a branch unformatted. This is the repo-wide sweep that catches them.
+⚠ **The 3s is entirely down to CACHING, and it is all eslint** — MEASURED: ruff clears 628 python
+files in **0.2s**, prettier takes **6.4s**, eslint takes **28s** (70% of the hook) because
+`typescript-eslint` is type-aware and rebuilds the TS program. `--cache` on both makes it **1.9s**
+warm. A first run after a frontend pull pays the full ~35s again — that is the cache working.
+⚠ **The cache files are git-ignored**: they key on local file mtimes, so a checked-in cache is a
+linter skipping files it has never read on this machine.
 
 ⚠ **"Run all tests" is NOT a bare `pytest`** — the root collects 2,670 tests and dies on a
 collection error, because the backend has its own `pytest.ini`, its own venv, and imports
@@ -398,7 +417,8 @@ happened twice on the docs half of `commit-msg` (2026-08-05).
   whether node is installed.
 - **`pre-push` skips a push carrying no code**, on a POSITIVE trigger rather than an ignore-list, so
   a new data format added tomorrow is skipped by default — the safe direction.
-- Deliberate skip: `LWG_SKIP_TESTS=1 git push`. It prints a loud line and has no silent form.
+- Deliberate skip: `LWG_SKIP_PREPUSH=1 git push` (`LWG_SKIP_TESTS=1` still works — it is what is in
+  everyone's muscle memory). It prints a loud line and has no silent form.
 
 ### The rules were MEASURED, not picked
 

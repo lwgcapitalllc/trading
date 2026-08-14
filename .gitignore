@@ -168,3 +168,8 @@ tv-exports/
 # Playwright browser-test artifacts (command-center/frontend)
 test-results/
 playwright-report/
+
+# Linter caches. Machine-local by construction (they key on file mtimes), so a checked-in
+# cache is a linter skipping files it has never read on THIS machine.
+.eslintcache
+node_modules/.cache/
