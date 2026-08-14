@@ -146,8 +146,14 @@ def test_the_thread_is_consumed_in_exactly_ONE_place(tmp_path):
         f"is the last message a deploy produces. Clearing it anywhere earlier orphans the "
         f"message sent by the process that comes after."
     )
-    # And it is the ONLINE one: the consume must follow that alert, never the STOPPED alert.
-    assert src.index("self.clear_alert_thread()") > src.index('"🟢", "ONLINE"')
+    # And it is the ONLINE one: the consume sits between the two lifecycle alerts, so it follows
+    # ONLINE and never STOPPED.
+    #
+    # ⚠ **Matched on the single label literals, NOT on `'"🟢", "ONLINE"'`.** The first version of
+    # this assertion did the latter and broke the moment a formatter put the two arguments on
+    # separate lines — a source-reading test must key off something the LAYOUT cannot move, or it
+    # goes red for a reformat and teaches the next reader that it is noise.
+    assert src.index('"ONLINE"') < src.index("self.clear_alert_thread()") < src.index('"STOPPED"')
 
 
 def test_an_ORDINARY_health_message_is_not_threaded(tmp_path):
