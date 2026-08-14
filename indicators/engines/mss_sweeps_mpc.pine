@@ -1115,6 +1115,8 @@ string msRejectSizeIn = input.string("Small", "Rejected marker size", options = 
 bool   msShowLevelTag = input.bool(true, "Tag the armed level", group = GRP_MSSTY, tooltip = "Put a tag on the right end of every armed level reading direction, level type and price — e.g. \"▲ iHL 3891.20\". Without it a dashed line is just a line: you cannot tell a protected LOW waiting to be swept downward from a protected HIGH waiting to be swept upward.")
 color  msArmBullCol   = input.color(#26a69a, "Armed level — bullish (protected iHL)", group = GRP_MSSTY, tooltip = "A protected higher low. Price is expected to dip THROUGH it and close back above — a long.")
 color  msArmBearCol   = input.color(#ef5350, "Armed level — bearish (protected iLH)", group = GRP_MSSTY, tooltip = "A protected lower high. Price is expected to poke ABOVE it and close back below — a short.")
+color  msSweptBullCol = input.color(#7e57c2, "Taken level — was a protected iHL", group = GRP_MSSTY, tooltip = "Deliberately NOT a shade of the armed colour. WAITING and TAKEN are different states of the level, and a darker green reads as \"the same thing, dimmer\" rather than as \"this one is finished\".")
+color  msSweptBearCol = input.color(#ff9800, "Taken level — was a protected iLH", group = GRP_MSSTY, tooltip = "Same reasoning as the bullish one. Purple and amber sit far from the teal/red armed pair and far from each other, so all four states are separable at a glance.")
 string msLevelColMode = input.string("By direction", "Armed level colour", options = ["By direction", "Single colour"], group = GRP_MSSTY, tooltip = "By direction = green for a protected low, red for a protected high, so the line itself says which way the trade would be. Single colour falls back to the \"Protected level\" colour above.")
 
 string msRejectSize = msRejectSizeIn == "Tiny" ? size.tiny : msRejectSizeIn == "Normal" ? size.normal : msRejectSizeIn == "Large" ? size.large : size.small
@@ -1234,14 +1236,18 @@ if msSweepLow
             label.new(bar_index, low - _off, "", style = label.style_triangleup, color = msBullCol, size = msMarkSize, tooltip = "SIGNAL — bullish HL sweep, all gates passed\n\nProtected iHL: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
             // The level lights up in the sweep colour, so the chart shows WHICH level was taken
             // rather than just that something happened here.
-            line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBullCol, style = line.style_solid, width = 2)
+            // Two layers, two colour families, on purpose. The LEVEL that was taken draws in
+            // the taken colour — solid, one step thicker, plus its wick box and its tag. The
+            // TRADE draws in the direction colour — the triangle and the bar tint. Mixing them
+            // is what made "waiting" and "taken" look like the same thing.
+            line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msSweptBullCol, style = line.style_solid, width = msLevelWidth + 1)
             if msShowZone
-                box.new(bar_index - 1, msArmLevel, bar_index + 1, low, xloc = xloc.bar_index, border_color = color.new(msBullCol, 30), bgcolor = color.new(msBullCol, 75))
+                box.new(bar_index - 1, msArmLevel, bar_index + 1, low, xloc = xloc.bar_index, border_color = color.new(msSweptBullCol, 30), bgcolor = color.new(msSweptBullCol, 75))
             // Names the level that was taken, at the price it was taken at. "A sweep happened
             // here" and "THIS level was swept" are different facts and only the second one is
             // actionable — it is the stop.
             if msShowLevelTag
-                label.new(bar_index + 2, msArmLevel, "▲ SWEPT iHL " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = msBullCol, size = size.small)
+                label.new(bar_index + 2, msArmLevel, "▲ TAKEN iHL " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = msSweptBullCol, size = size.small)
     else
         msCntFiltered += 1
         if msShowFiltered
@@ -1278,11 +1284,11 @@ if msSweepHigh
         if msShow
             float _off = na(msAtr) ? 0.0 : msAtr * 0.5
             label.new(bar_index, high + _off, "", style = label.style_triangledown, color = msBearCol, size = msMarkSize, tooltip = "SIGNAL — bearish LH sweep, all gates passed\n\nProtected iLH: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
-            line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBearCol, style = line.style_solid, width = 2)
+            line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msSweptBearCol, style = line.style_solid, width = msLevelWidth + 1)
             if msShowZone
-                box.new(bar_index - 1, high, bar_index + 1, msArmLevel, xloc = xloc.bar_index, border_color = color.new(msBearCol, 30), bgcolor = color.new(msBearCol, 75))
+                box.new(bar_index - 1, high, bar_index + 1, msArmLevel, xloc = xloc.bar_index, border_color = color.new(msSweptBearCol, 30), bgcolor = color.new(msSweptBearCol, 75))
             if msShowLevelTag
-                label.new(bar_index + 2, msArmLevel, "▼ SWEPT iLH " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = msBearCol, size = size.small)
+                label.new(bar_index + 2, msArmLevel, "▼ TAKEN iLH " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = msSweptBearCol, size = size.small)
     else
         msCntFiltered += 1
         if msShowFiltered
@@ -1377,7 +1383,7 @@ if not na(msArmLbl)
 // Read "raw" against "signalled". A filter that removes most of the sample and leaves the same
 // hit rate has not helped; it has just made the sample smaller. That question is settled by
 // replaying it, not by this table — the table only tells you how big the difference IS.
-var table msTbl = table.new(position.top_right, 2, 12, border_width = 1)
+var table msTbl = table.new(position.top_right, 2, 13, border_width = 1)
 
 if barstate.islast and msShowStats
     table.cell(msTbl, 0, 0, "MSS Sweeps (MPC)", text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
@@ -1407,6 +1413,8 @@ if barstate.islast and msShowStats
     table.cell(msTbl, 1, 10, "armed low — dip through, close above = long", text_color = msArmBullCol, text_size = size.small)
     table.cell(msTbl, 0, 11, "▼ iLH",  text_color = msArmBearCol, text_size = size.small)
     table.cell(msTbl, 1, 11, "armed high — poke above, close below = short", text_color = msArmBearCol, text_size = size.small)
+    table.cell(msTbl, 0, 12, "━ solid", text_color = msSweptBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 12, "TAKEN — purple was a low, amber was a high", text_color = msSweptBearCol, text_size = size.small)
 
 // ── Signal bar tint ──────────────────────────────────────
 // bgcolor() has to be a top-level call, so it cannot live inside the drawing blocks above.
