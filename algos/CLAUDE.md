@@ -344,8 +344,16 @@ layered-cost tables in `strategies/python/mpc_sos_fade/CLAUDE.md` were all run o
 so the charged rows there understate this account.
 ✅ **SUPERSEDED 2026-08-06: `PROFILES` now carries $0.32** (re-measured over 1,893,438 ticks / 3
 whole days), and it is stored per ACCOUNT TIER — `_SPREAD_XAUUSD_PUPRIME_STANDARD`, because this
-demo is a Standard account and the raw tiers refuse rather than borrowing it. **Do not quote the
+demo is a Standard account and an unread tier refuses rather than borrowing it. **Do not quote the
 $0.33 above as current**; it is kept because the paragraph is a dated record of that day's reading.
+🔴 **AND SUPERSEDED AGAIN FOR THE ACCOUNT THIS BOT ACTUALLY TRADES: NONE OF THE NUMBERS IN THIS
+PARAGRAPH BELONG TO IT.** Every figure above was read off a **Standard** account (`XAUUSD.s`); the
+bot moved to the **ECN** demo 700152905 / `XAUUSD.p` on 2026-08-12, and that tier measured
+**$0.12** on 2026-08-14 — 3,033,270 ticks over 5 whole days, all 23 traded hours, `broker_facts.py
+--bot mpc_sos_fade_demo --history-days 6`. **2.7x tighter than anything written above.** The tier
+table and what still refuses: `backtest/CLAUDE.md`. ⚠ **This is the second time a dated reading
+here has quietly become a statement about a different account** — a paragraph that names its
+account survives the move; one that says "the live demo" does not.
 ⚠ **The short swap is a CREDIT and it is BIGGER here than on Vantage.** Gold's long swap costs and
 its short swap pays; on the 6.5-year replay shorts were paid 2.14R while longs paid 8.55R, so this
 broker is slightly better for the short side and slightly worse for the long one.

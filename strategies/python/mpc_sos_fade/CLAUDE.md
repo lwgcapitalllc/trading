@@ -1402,10 +1402,15 @@ matches the TradingView feed the Pine was written on, which is a parity decision
 measured on PU Prime's **Standard** account — the one tier priced by a MARKED-UP spread — and
 `backtest/fills.py::PROFILES` gave all four PU Prime tiers the same number, so a `puprime_ecn` run
 charged ECN's commission ON TOP OF Standard's spread, a combination no real account offers.
-✅ The three unmeasured tiers now carry `SPREAD_UNMEASURED` and **REFUSE**: `_spread()` routes
+✅ The unmeasured tiers carry `SPREAD_UNMEASURED` and **REFUSE**: `_spread()` routes
 through `AccountProfile.spread_or_refuse()`, so the refusal fires wherever the profile came from
 rather than only on the lab's path. ⚠ **It refuses the SPREAD, not the tier** — a raw tier's
-commission and swap are known and still chargeable. ⚠ **`0.0` and "unmeasured" must never
+commission and swap are known and still chargeable.
+✅ **ECN — the tier this bot actually trades — left that list on 2026-08-14 at `$0.12`** (5 days of
+its own ticks; provenance and which tiers still refuse: `backtest/CLAUDE.md`). ⚠ **NO documented
+baseline here moves.** The tier RAISED before, so no table below ever charged an ECN spread, and
+the `cost_tiers.py` row that quoted $0.12 as `stated` returns an identical 157 trades / +151.39R
+now that it is `measured`. ⚠ **`0.0` and "unmeasured" must never
 collapse**: 0.0 charges nothing on purpose, and the sentinel is NEGATIVE, so passing it through
 would PAY the trader half a spread on every fill. 🔴 **The SWAP on those tiers refuses too, and that
 assumption was checked rather than argued**: `XAUUSD.s` and `XAUUSD.crp` are the SAME market on ONE

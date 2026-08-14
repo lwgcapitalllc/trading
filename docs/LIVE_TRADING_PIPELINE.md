@@ -283,11 +283,30 @@ $0.00 = $0.31 · Prime $0.12 + $0.07 = $0.19 · ECN $0.12 + $0.02 = $0.14.** Sta
 hidden spread markup to save $0.02 of visible commission. ⚠ **Swap is IDENTICAL on all three tiers,
 so swap cannot pick an account** — that is the natural guess and it is false.
 
-⚠ **`SPREAD_UNMEASURED` STILL STANDS on every raw tier**, and the ECN readings have not retired it:
-two sessions on two terminals now agree at $0.12 (Asian on `MT5_Lab` 2026-08-10, London/NY on
-`MT5_FFT` 2026-08-12 — 239 fresh reads, p99 $0.12, max $0.15), but both are minutes of one session
-and neither covers the 22:00 UTC reopen. Close it with `broker_facts.py --history-days 1` once a
-full day of ticks has built up on this terminal.
+✅ **`SPREAD_UNMEASURED` IS RETIRED FOR ECN AS OF 2026-08-14 — AND FOR ECN ONLY.** Aaron left
+`MT5_FFT` logged into 700152905 for several days, so the terminal finally held the tick history the
+refusal was waiting on: `broker_facts.py --bot mpc_sos_fade_demo --history-days 6` read
+**3,033,270 ticks over 5 whole days**, median **$0.12**, p99 $0.18, max $0.19, across **all 23
+traded hours** — including the 22:00 UTC reopen that was the named blocker (median $0.16, p99
+$0.19, i.e. the one wide hour, exactly as on Standard). `backtest/fills.py` now carries
+`_SPREAD_XAUUSD_PUPRIME_ECN = 0.12` and `cost_tiers.py` needs no `--spread` flag for that row.
+
+⚠ **No stored run re-prices.** `spread_or_refuse()` RAISED for this tier, so nothing that ever
+completed charged an ECN spread, and every figure in the table below was produced with
+`--spread puprime_ecn=0.12` — the same number, labelled `stated`. Re-run 2026-08-14 with it
+measured: **ECN 157 trades / +151.39R**, identical to the cent.
+
+🔴 **PRIME KEEPS THE SENTINEL AND THAT IS DELIBERATE, NOT AN OVERSIGHT.** Prime and ECN are
+indistinguishable on every field this terminal publishes, so "they're obviously the same, copy it
+across" is available as an argument again — and it is precisely the argument that put Standard's
+$0.32 on all four tiers and was wrong by 2.7x. A terminal can only hold the ticks of the account it
+is logged into. Close Prime the same way: sit `MT5_FFT` on 700152904 for a day and re-run.
+
+⚠ **The tool also read the SWAP at −81.18 / +31.29**, against the −79.60 / +30.25 that
+`fills.py::_XAUUSD_SWAP` still carries (2.0% / 3.4% adrift in six days). **Deliberately NOT changed
+in this pass** — swap is the largest re-priceable cost on this strategy, so moving it re-prices
+every charged figure in the repo and belongs in its own commit with the affected numbers restated.
+It is recorded here so the drift is not discovered again from scratch.
 
 🔴 **THE MOVE FOUND THREE DEFECTS AND NONE OF THEM RAISED ANYTHING** — full write-ups in
 `algos/CLAUDE.md`, named here because each is a hazard of *moving a live bot between accounts*
@@ -325,10 +344,17 @@ terminal ($0.31–$0.32 through all three windows), because one terminal means t
 logins and gold's spread moves through a session — without the control, a tier gap and a moment gap
 are the same measurement.
 
-⚠ **The spread is still `SPREAD_UNMEASURED` in `backtest/fills.py`.** Five minutes of one quiet
-Asian session is not a spread, and the 22:00 UTC reopen — the only wide hour on this broker — was
-not covered. Model it with `cost_tiers.py --spread puprime_ecn=0.12`. Full detail and how to close
-it: `docs/BROKER_QUESTIONS.md`.
+✅ **ECN's $0.12 is MEASURED in `backtest/fills.py` since 2026-08-14** (5 days, 3.03M ticks, all 23
+traded hours) — see the box at the top of this section. **Prime's $0.12 in the table above is still
+a five-minute reading and is NOT in `fills.py`**; model it with
+`cost_tiers.py --spread puprime_prime=0.12`, which labels the row `stated`. Full detail:
+`docs/BROKER_QUESTIONS.md`.
+
+⚠ **Read the row above with that split in mind.** The Standard and ECN spreads are now measurements
+and the Prime one is not, so the "Prime and ECN are the same account with two commission rates"
+conclusion rests on a measured ECN beside an unmeasured Prime. It does not change the DECISION —
+ECN is cheaper on commission at a spread that cannot be worse than equal — but it is not three
+measurements, and it should not be quoted as if it were.
 
 ⚠ **Commission was settled by FILLING something**, since it is not a symbol property — 0.10-lot
 round turns on each demo through `get_deal_breakdown()`. A first attempt at 0.01 lots read "$0.01

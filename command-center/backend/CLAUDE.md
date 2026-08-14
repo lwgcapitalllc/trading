@@ -417,10 +417,15 @@ Four rules, each of which fails silently if broken:
   `backtest/fills.py` used to give all four PU Prime tiers the SAME spread and swap — both measured
   on a **Standard** demo, which is the one tier priced by a marked-up spread. So `puprime_ecn`
   charged ECN's commission on top of Standard's spread and swap: a cost model no real account
-  offers, and **nothing errored**. The three unmeasured tiers now carry `SPREAD_UNMEASURED` /
-  `UNMEASURED_SWAP` and raise `CostsNotConfigured` naming `algos/tools/broker_facts.py`. **So a run
-  requesting `spread`, `bid_ask_fills` or `swap` on `puprime_prime` / `puprime_ecn` / `puprime_cent`
-  now FAILS instead of returning a plausible wrong number.** ⚠ **`commission` on those tiers still
+  offers, and **nothing errored**. An unmeasured tier carries `SPREAD_UNMEASURED` /
+  `UNMEASURED_SWAP` and raises `CostsNotConfigured` naming `algos/tools/broker_facts.py`. **So a run
+  requesting `spread`, `bid_ask_fills` or `swap` on a tier nobody has read
+  now FAILS instead of returning a plausible wrong number.** ✅ **`puprime_ecn`'s SPREAD left that
+  set on 2026-08-14** (measured $0.12 over 5 days of its own ticks), so a lab run asking for the
+  spread layer on ECN now succeeds where it used to 500 — **that is not a regression in the guard**.
+  ⚠ **What still refuses is narrower than this paragraph used to imply**: the SPREAD on
+  `puprime_prime` and `puprime_cent`, and the SWAP on `puprime_cent` alone — Prime's and ECN's swap
+  was measured on each tier on 2026-08-08. **Check `PROFILES` before telling a user a tier refuses.** ⚠ **`commission` on those tiers still
   works** — it is the one of the three a broker states unambiguously per lot, so the refusal is on
   the unmeasured COST, not on the tier. ⚠ **The swap half was measured, not assumed:** on ONE PU
   Prime account `XAUUSD.s` and `XAUUSD.crp` are the same market (median M15 close difference $0.08

@@ -273,16 +273,26 @@ does mean **the numbers in the questions below are the ones to get confirmed, no
 1. Put the confirmed figures into **`docs/LIVE_TRADING_PIPELINE.md` → G5a**, replacing the
    published ones and **labelling them as broker-stated, not measured**. A support reply is a
    better source than a marketing page and is still not a measurement.
-2. ✅ **Replace the sentinel in `backtest/fills.py::PROFILES` with what you measured.** The three
-   raw tiers now carry `SPREAD_UNMEASURED` and **refuse to be charged a spread** rather than
-   borrowing Standard's 0.32 (which is what they all did until 2026-08-06 — see G5a). Once you
-   have a real figure, set it on that tier and the refusal turns itself off. ⚠ **Do not paste in
-   the number support gives you as though it were measured** — record it as broker-stated, and
-   measure the tier properly once an account of that type exists.
+2. ✅ **Replace the sentinel in `backtest/fills.py::PROFILES` with what you measured.** The raw
+   tiers carried `SPREAD_UNMEASURED` and **refused to be charged a spread** rather than borrowing
+   Standard's 0.32 (which is what they all did until 2026-08-06 — see G5a). Set a measured figure
+   on the tier and the refusal turns itself off. ⚠ **Do not paste in the number support gives you
+   as though it were measured** — record it as broker-stated, and measure the tier properly once
+   an account of that type exists.
+   ✅ **DONE FOR ECN, 2026-08-14** — `_SPREAD_XAUUSD_PUPRIME_ECN = 0.12`, off 3,033,270 ticks over
+   5 whole days on 700152905, all 23 traded hours including the 22:00 UTC reopen.
+   🔴 **Prime and Cent still refuse, and ECN's figure may not be copied onto Prime.** The two are
+   identical on every field the terminal publishes, which is the same "they look the same, so they
+   are" reasoning that produced the 2026-08-06 defect and was wrong by 2.7x. A terminal only holds
+   the ticks of the account it is logged into: sit `MT5_FFT` on 700152904 for a day and re-run.
 3. **Once the live account is open, measure it — do not trust the reply.** Run
-   `algos/tools/broker_facts.py --history-days 3` against the funded terminal. That is the same
-   read-only tool that produced the $0.32, and it is the only figure on this page that came from
-   the broker's own tick stream rather than from a page describing it.
+   `algos/tools/broker_facts.py --bot <bot> --history-days 3` against the funded terminal. That is
+   the same read-only tool that produced the $0.32 and the ECN $0.12, and those are the only
+   figures on this page that came from the broker's own tick stream rather than from a page
+   describing it. ⚠ **`--history-days N` reads STORED ticks, so it can only see as far back as the
+   terminal has been sitting on that account** — it is the measurement `--sample` cannot make (a
+   live sample only ever sees the session you are sitting in), and it is why the ECN answer had to
+   wait for the terminal rather than for anyone's attention.
 4. ⚠ **Re-measure swap periodically regardless.** The values in `fills.py` were read on 2026-07-16
    and were 1.7% / 2.6% adrift three weeks later, with nothing to announce it. Swap is the largest
    re-priceable cost on this strategy.
