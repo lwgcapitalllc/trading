@@ -1511,6 +1511,120 @@ bgcolor(msShowBg and msSignalLow ? color.new(msBullCol, 85) : msShowBg and msSig
 // display toggle. That gate is now forced open (see the engine block), so all three Market
 // Structure display boxes can be unticked for a clean chart and every signal keeps firing.
 
+//============================================================
+//  TRADING SESSIONS — ported from mpc_strategy.pine
+//============================================================
+// ⚠ ONE TOGGLE, DEFAULT OFF, EVERYTHING ELSE HARDCODED. That is the standing contract for a
+// section-10 drawing group (indicators/strategies/CLAUDE.md): Aaron does not configure session
+// windows, timezones or colours, so exposing them would be six inputs nobody moves and six more
+// declaration slots that reset saved values whenever they are touched.
+//
+// ⚠ THE VALUES ARE COPIED, NOT CHOSEN. Windows, timezones and colours are the ones every other
+// Pine file here runs, including the DST-aware city clocks — each session keeps its OWN city's
+// time zone rather than a fixed GMT offset, which is what makes Tokyo/London/New York stay
+// correct across the four changeovers a year. A fixed offset was the old form and it drifted.
+//
+// ⚠ Ported from the mpc_assistant.pine copy rather than the strategy copy, and the difference is
+// DEAD CODE ONLY: the strategies still carry the session open/close and average lines behind
+// three flags hardcoded false, so those branches cannot execute. The drawing is identical — the
+// box, its dotted border and its name label — and this file has a compile-token budget to
+// respect. If those lines are ever wanted, they are in mpc_strategy.pine.
+//
+// ⚠ The input is declared HERE, at the very end of the file, so it sits after every existing
+// bool. TradingView keys saved values off declaration order within each type.
+bool showSessionsInput = input.bool(false, "Show Sessions", group = "10 · Drawing: sessions", display = display.none, tooltip = "Tokyo / London / New York session boxes, in the same windows, timezones and colours every other MPC Pine draws them. Draw-only: no signal, level or filter in this file reads a session.")
+
+bool showSessions         = showSessionsInput
+bool showSessionNames     = false
+// ⚠ FALSE is the strategy default and is deliberately kept. It limits the boxes to the CURRENT
+// week, anchored at Sunday 00:00 New York — so scrolling back through history shows no session
+// shading. Flip this constant to true for the mpc_assistant behaviour (every session, all
+// history) if reviewing old signals against sessions is what you are here for.
+bool showHistoricSessions = false
+
+bool   showFirst         = true
+string firstSessionName  = "Tokyo"
+string firstSessionTime  = "0900-1800"
+string firstSessionTZ    = "Asia/Tokyo"
+color  firstSessionColor = color.new(#FF5252, 92)
+
+bool   showSecond         = true
+string secondSessionName  = "London"
+string secondSessionTime  = "0800-1700"
+string secondSessionTZ    = "Europe/London"
+color  secondSessionColor = color.new(#2962FF, 92)
+
+bool   showThird         = true
+string thirdSessionName  = "New York"
+string thirdSessionTime  = "0800-1700"
+string thirdSessionTZ    = "America/New_York"
+color  thirdSessionColor = color.new(#FFEB3B, 90)
+
+type SessionDisplay
+    box   sessionBox
+    label sessionLabel
+
+type SessionInfo
+    color  color
+    string name
+    string session
+    string timezone
+    SessionDisplay active = na
+
+method setName(SessionDisplay this, string name) =>
+    this.sessionLabel.set_y(this.sessionBox.get_bottom())
+    this.sessionLabel.set_text(showSessionNames ? name : "")
+
+method createSessionDisplay(SessionInfo this) =>
+    boxColor    = this.color
+    opaqueColor = color.new(boxColor, 0)
+    dis = SessionDisplay.new(
+      sessionBox   = box.new(bar_index, high, bar_index, low, bgcolor = boxColor, border_color = color.new(boxColor, 40), border_width = 1, border_style = line.style_dotted),
+      sessionLabel = label.new(bar_index + 2, low, "", style = label.style_label_upper_left, textalign = text.align_left, textcolor = opaqueColor, color = color(na)))
+    dis.setName(this.name)
+    this.active := dis
+
+method updateSessionDisplay(SessionInfo this) =>
+    sessionDisp = this.active
+    sessionBox  = sessionDisp.sessionBox
+    sessionBox.set_top(math.max(sessionBox.get_top(), high))
+    sessionBox.set_bottom(math.min(sessionBox.get_bottom(), low))
+    sessionBox.set_right(bar_index)
+    sessionDisp.setName(this.name)
+    sessionDisp
+
+method update(SessionInfo this) =>
+    bool isChange = timeframe.change("1D")
+    if not na(time("", this.session, this.timezone))
+        if na(this.active) or isChange
+            this.createSessionDisplay()
+        else
+            this.updateSessionDisplay()
+    else if not na(this.active)
+        this.active := na
+
+getSessionInfos() =>
+    array<SessionInfo> sessionInfos = array.new<SessionInfo>()
+    if showFirst and showSessions
+        sessionInfos.push(SessionInfo.new(firstSessionColor, firstSessionName, firstSessionTime, firstSessionTZ))
+    if showSecond and showSessions
+        sessionInfos.push(SessionInfo.new(secondSessionColor, secondSessionName, secondSessionTime, secondSessionTZ))
+    if showThird and showSessions
+        sessionInfos.push(SessionInfo.new(thirdSessionColor, thirdSessionName, thirdSessionTime, thirdSessionTZ))
+    sessionInfos
+
+// Anchored to the CALENDAR week rather than a rolling seven days, so mid-week it cannot bleed
+// into last week's boxes.
+int  msNyMidnight      = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
+int  msDaysSinceSunday = dayofweek(timenow, "America/New_York") - dayofweek.sunday
+int  msWeekStart       = msNyMidnight - msDaysSinceSunday * 86400000
+bool withinSessionDays = showHistoricSessions or time >= msWeekStart
+
+var array<SessionInfo> sessionInfos = getSessionInfos()
+if showSessions and timeframe.isintraday and withinSessionDays
+    for info in sessionInfos
+        info.update()
+
 // ── Alerts ───────────────────────────────────────────────
 // Every one of these is confirmed-bar only. The engine's breaks already require
 // barstate.isconfirmed and the sweep test requires it again, so nothing here can fire on a
