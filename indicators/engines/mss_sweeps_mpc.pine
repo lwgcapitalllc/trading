@@ -1183,6 +1183,12 @@ var int msCntFiltered = 0
 var int msCntFailed   = 0
 var int msCntBroken   = 0
 var int msCntExpired  = 0
+// The three ways a level can leave WITHOUT price ever resolving it. They were pooled into an
+// unlabelled remainder, and "died young" and "superseded by a fresher level" mean opposite
+// things — the first says the levels are not surviving, the second is ordinary housekeeping.
+var int msCntShiftInt = 0
+var int msCntShiftExt = 0
+var int msCntReplaced = 0
 
 // ── Sweep test ───────────────────────────────────────────
 // ⚠ THIS BLOCK RUNS BEFORE THE ARM BLOCK ON PURPOSE. On an iBOS bar the level being armed is
@@ -1366,7 +1372,14 @@ bool msExtAgainst   = msBlockOnExt and ((msArmDir == 1 and st.bear_sos) or (msAr
 bool msStale        = msMaxBars > 0 and msArmDir != 0 and not na(msArmBar) and (bar_index - msArmBar) > msMaxBars
 
 if msArmDir != 0 and (msShiftAgainst or msExtAgainst or msStale)
-    if msStale and not msShiftAgainst and not msExtAgainst
+    // Disjoint, in precedence order, so the rows sum. Internal shift first because it is the
+    // nearer cause: if internal structure has already turned, the external SOS behind it is
+    // reporting the same event one degree up.
+    if msShiftAgainst
+        msCntShiftInt += 1
+    else if msExtAgainst
+        msCntShiftExt += 1
+    else
         msCntExpired += 1
     f_msCloseLine()
     f_msDropTag()
@@ -1392,6 +1405,10 @@ bool msArmBull = int_bull_bos and not na(i_last_hl) and (na(i_last_hl_loc[1]) or
 bool msArmBear = int_bear_bos and not na(i_last_lh) and (na(i_last_lh_loc[1]) or i_last_lh_loc != i_last_lh_loc[1])
 
 if msArmBull
+    // Counted BEFORE msArmDir is overwritten. Arming while a level is still live means a
+    // fresher break moved the level up (or down) — the old one was never tested by price.
+    if msArmDir != 0
+        msCntReplaced += 1
     f_msCloseLine()
     f_msDropTag()
     msArmDir   := 1
@@ -1404,6 +1421,10 @@ if msArmBull
     msArmLbl   := msShowLevelTag ? label.new(bar_index + 2, msArmLevel, "▲ iHL " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = _c, size = size.small, tooltip = "Protected higher low, armed by a bullish iBOS.\nWaiting for price to dip through it and CLOSE back above.\nThat close would be a long.") : na
 
 if msArmBear
+    // Counted BEFORE msArmDir is overwritten. Arming while a level is still live means a
+    // fresher break moved the level up (or down) — the old one was never tested by price.
+    if msArmDir != 0
+        msCntReplaced += 1
     f_msCloseLine()
     f_msDropTag()
     msArmDir   := -1
@@ -1425,7 +1446,17 @@ if not na(msArmLbl)
 // Read "raw" against "signalled". A filter that removes most of the sample and leaves the same
 // hit rate has not helped; it has just made the sample smaller. That question is settled by
 // replaying it, not by this table — the table only tells you how big the difference IS.
-var table msTbl = table.new(position.top_right, 2, 14, border_width = 1)
+//
+// ⚠ EVERY ARMED LEVEL NOW HAS TO LAND IN EXACTLY ONE OUTCOME ROW, and the last row proves it.
+// The rows below used to account for 75 of 154 levels and the other 79 sat in an unlabelled
+// remainder that nobody could see, which is how a diagnostic starts lying by omission. The
+// "Unaccounted" row is a self-check: it is 0 when the model is complete, and any other number
+// means a level left by a path this table does not model. Read it before reading anything else.
+// ⚠ A failed touch only ENDS a level when msOneShot is on, so it only joins the sum then.
+int msAccounted   = msCntRaw + msCntBroken + (msOneShot ? msCntFailed : 0) + msCntExpired + msCntShiftInt + msCntShiftExt + msCntReplaced + (msArmDir != 0 ? 1 : 0)
+int msUnaccounted = msCntArmed - msAccounted
+
+var table msTbl = table.new(position.top_right, 2, 17, border_width = 1)
 
 if barstate.islast and msShowStats
     table.cell(msTbl, 0, 0, "MSS Sweeps (MPC)", text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
@@ -1442,26 +1473,32 @@ if barstate.islast and msShowStats
     // surviving is the trigger being picky; a high BREAK count means the levels are simply
     // being taken out, which is a different problem and needs a different answer.
     table.cell(msTbl, 0, 5, "Failed touches", text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 1, 5, str.tostring(msCntFailed) + (msOneShot ? "  (each kills a level)" : "  (level survives)"), text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 5, str.tostring(msCntFailed) + (msOneShot ? "  (each ends a level)" : "  (level survives)"), text_color = chart.fg_color, text_size = size.small)
     table.cell(msTbl, 0, 6, "Closed through", text_color = msBearCol, text_size = size.small)
     table.cell(msTbl, 1, 6, str.tostring(msCntBroken), text_color = msBearCol, text_size = size.small)
-    table.cell(msTbl, 0, 7, "Expired unused", text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 1, 7, msMaxBars > 0 ? str.tostring(msCntExpired) : "— (no expiry)", text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 0, 8, "Armed now",      text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 1, 8, msArmDir == 1 ? "bullish @ " + str.tostring(msArmLevel, format.mintick) : msArmDir == -1 ? "bearish @ " + str.tostring(msArmLevel, format.mintick) : "—", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 7, "Structure turned", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 7, str.tostring(msCntShiftInt) + " internal / " + str.tostring(msCntShiftExt) + " external", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 8, "Replaced by newer", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 8, str.tostring(msCntReplaced), text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 9, "Expired unused", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 9, msMaxBars > 0 ? str.tostring(msCntExpired) : "— (no expiry)", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 10, "Armed now",      text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 10, msArmDir == 1 ? "bullish @ " + str.tostring(msArmLevel, format.mintick) : msArmDir == -1 ? "bearish @ " + str.tostring(msArmLevel, format.mintick) : "—", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 11, "Unaccounted", text_color = msUnaccounted == 0 ? color.gray : msBearCol, text_size = size.small)
+    table.cell(msTbl, 1, 11, str.tostring(msUnaccounted) + (msUnaccounted == 0 ? "  (rows sum)" : "  ⚠ rows do NOT sum"), text_color = msUnaccounted == 0 ? color.gray : msBearCol, text_size = size.small)
     // The legend is not decoration. The one question a reader has in front of this chart is
     // "is that mark a trade or not", and answering it in a tooltip means it is only answered
     // for whoever hovers.
-    table.cell(msTbl, 0, 9, "▲▼ solid", text_color = msBullCol, text_size = size.small)
-    table.cell(msTbl, 1, 9, "SIGNAL — shaded wick, tinted bar", text_color = msBullCol, text_size = size.small)
-    table.cell(msTbl, 0, 10, "✕ grey",  text_color = msRejectCol, text_size = size.small)
-    table.cell(msTbl, 1, 10, "swept, refused — hover for the gate", text_color = msRejectCol, text_size = size.small)
-    table.cell(msTbl, 0, 11, "▲ iHL",  text_color = msArmBullCol, text_size = size.small)
-    table.cell(msTbl, 1, 11, "armed low — dip through, close above = long", text_color = msArmBullCol, text_size = size.small)
-    table.cell(msTbl, 0, 12, "▼ iLH",  text_color = msArmBearCol, text_size = size.small)
-    table.cell(msTbl, 1, 12, "armed high — poke above, close below = short", text_color = msArmBearCol, text_size = size.small)
-    table.cell(msTbl, 0, 13, "━ solid", text_color = msSweptBullCol, text_size = size.small)
-    table.cell(msTbl, 1, 13, "TAKEN — purple was a low, amber was a high", text_color = msSweptBearCol, text_size = size.small)
+    table.cell(msTbl, 0, 12, "▲▼ solid", text_color = msBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 12, "SIGNAL — shaded wick, tinted bar", text_color = msBullCol, text_size = size.small)
+    table.cell(msTbl, 0, 13, "✕ grey",  text_color = msRejectCol, text_size = size.small)
+    table.cell(msTbl, 1, 13, "swept, refused — hover for the gate", text_color = msRejectCol, text_size = size.small)
+    table.cell(msTbl, 0, 14, "▲ iHL",  text_color = msArmBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 14, "armed low — dip through, close above = long", text_color = msArmBullCol, text_size = size.small)
+    table.cell(msTbl, 0, 15, "▼ iLH",  text_color = msArmBearCol, text_size = size.small)
+    table.cell(msTbl, 1, 15, "armed high — poke above, close below = short", text_color = msArmBearCol, text_size = size.small)
+    table.cell(msTbl, 0, 16, "━ solid", text_color = msSweptBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 16, "TAKEN — purple was a low, amber was a high", text_color = msSweptBearCol, text_size = size.small)
 
 // ── Signal bar tint ──────────────────────────────────────
 // bgcolor() has to be a top-level call, so it cannot live inside the drawing blocks above.
