@@ -2007,6 +2007,19 @@ on success, so for the length of that request every number on the banner — inc
 NO browser check and its mutation was RUN and stayed green**: it governs only a transient, and a
 Playwright assertion retries until the state settles. Named rather than glossed.
 
+🔴 **THE SAME BUTTON WAS ALSO LIVE OVER ITS OWN PREVIEW, and that half was reported separately the
+same day:** *"I click deploy and then it expanded to show me all the things that it will commit. But
+the deploy button is still there. I click it. It just keeps repeating the process over and over."*
+Pressing it re-ran the dry run and re-rendered an identical panel, which is **pixel-identical to a
+dead button** — so the reader's reasonable next move is to press it again. It is disabled while a
+preview is on screen (`awaitingConfirm`), leaving **exactly one live control**: `Deploy & restart`
+below. ⚠ **Disabling was not enough on its own** — a greyed button still labelled `Deploy v164 →
+v167` reads as BROKEN rather than as done-its-part, so the label becomes `checked — confirm below`
+and names where the action went. ⚠ **`Cancel` hands it back** rather than the gate being one-shot:
+the repo can move while you are reading the preview. ⚠ **It is a separate flag from `busy`, not an
+addition to it** — `busy` also disables the confirm button, so folding it in would disable BOTH and
+leave no way to deploy at all.
+
 🔴 **The success line named `local_version` — what the reader ASKED for, not what landed.** MEASURED:
 it read *"running v165"* over a bot running **v164**. It is `deployed_version` now, and is withheld
 until the refetch answers — **a version quoted from the pre-deploy payload is a claim about the thing
@@ -2029,7 +2042,7 @@ mutation IN THE SAME SHELL CALL left Vite serving the previous module**, so two 
 arriving in the dev server.** Every step asserts the replacement APPLIED and runs in its own call —
 **a mutation that silently no-ops looks exactly like a test doing its job.**
 
-✅ **`tests/bots-version.spec.ts` — 16 checks, and they need NO BACKEND and no VPS** (the real
+✅ **`tests/bots-version.spec.ts` — 17 checks, and they need NO BACKEND and no VPS** (the real
 `/version` route SSHes to the live trading box and `/promote` deploys onto it, so both are
 intercepted whole — the `calendar.spec.ts` shape, and it matters more here than anywhere).
 ⚠ **A fail-watch against HEAD is VACUOUS** — the banner did not exist, so every check would go red

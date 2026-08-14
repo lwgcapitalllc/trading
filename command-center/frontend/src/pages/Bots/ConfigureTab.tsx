@@ -1,13 +1,29 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight,
-  GitCommitHorizontal, HelpCircle, Info, Lock,
-  PackageCheck, Snowflake, RotateCcw, SlidersHorizontal, Upload,
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  GitCommitHorizontal,
+  HelpCircle,
+  Info,
+  Lock,
+  PackageCheck,
+  Snowflake,
+  RotateCcw,
+  SlidersHorizontal,
+  Upload,
 } from 'lucide-react'
 import {
-  useBotSnapshot, useBotParams, useSaveBotRuntime,
-  useBotVersion, useBotVersions, usePreviewPromote, usePromoteBot,
+  useBotSnapshot,
+  useBotParams,
+  useSaveBotRuntime,
+  useBotVersion,
+  useBotVersions,
+  usePreviewPromote,
+  usePromoteBot,
 } from '@/hooks/useBots'
 import type { BotDeployedVersion, BotParamRow, BotParamsView, BotStatus } from '@/types'
 
@@ -46,13 +62,21 @@ function fmt(v: unknown): string {
   return String(v)
 }
 
-function Card({ title, children, right }: {
-  title: string; children: React.ReactNode; right?: React.ReactNode
+function Card({
+  title,
+  children,
+  right,
+}: {
+  title: string
+  children: React.ReactNode
+  right?: React.ReactNode
 }) {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">{title}</p>
+        <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
+          {title}
+        </p>
         {right}
       </div>
       {children}
@@ -60,8 +84,14 @@ function Card({ title, children, right }: {
   )
 }
 
-function Row({ label, children, title }: {
-  label: string; children: React.ReactNode; title?: string
+function Row({
+  label,
+  children,
+  title,
+}: {
+  label: string
+  children: React.ReactNode
+  title?: string
 }) {
   return (
     <div className="flex items-start justify-between gap-3 py-[5px]" title={title}>
@@ -76,7 +106,7 @@ function Row({ label, children, title }: {
 /** Risk % → dollars on the balance the bot last reported. */
 function riskUsd(pct: number, balance: number | null): string {
   if (balance == null || !balance) return ''
-  return `$${(balance * pct / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  return `$${((balance * pct) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
 
 // ── one reading of a deployment record ──────────────────────────────────────────
@@ -123,7 +153,13 @@ function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
 // extra fetch — the flat stack was already reading every bot's version to render every
 // DeployCard, and these are the same cache entries.
 
-function FleetCount({ label, n, tone, icon: Icon, title }: {
+function FleetCount({
+  label,
+  n,
+  tone,
+  icon: Icon,
+  title,
+}: {
   label: string
   n: number
   tone: 'warn' | 'neutral'
@@ -148,34 +184,45 @@ function FleetCount({ label, n, tone, icon: Icon, title }: {
   )
 }
 
-function FleetStrip({ bots, flags, unreadable, loading }: {
+function FleetStrip({
+  bots,
+  flags,
+  unreadable,
+  loading,
+}: {
   bots: BotStatus[]
   flags: (VersionFlags | null)[]
   unreadable: number
   loading: boolean
 }) {
-  const running = bots.filter(b => b.status === 'RUNNING').length
-  const live    = bots.filter(b => b.account_type === 'live').length
-  const known   = flags.filter((f): f is VersionFlags => f !== null)
+  const running = bots.filter((b) => b.status === 'RUNNING').length
+  const live = bots.filter((b) => b.account_type === 'live').length
+  const known = flags.filter((f): f is VersionFlags => f !== null)
 
-  const restartPending   = known.filter(f => f.restartPending).length
-  const notFrozen        = known.filter(f => f.notFrozen).length
-  const snapshotModified = known.filter(f => f.snapshotModified).length
-  const drifted          = known.filter(f => f.driftCount > 0).length
-  const behind           = known.filter(f => f.behind > 0).length
+  const restartPending = known.filter((f) => f.restartPending).length
+  const notFrozen = known.filter((f) => f.notFrozen).length
+  const snapshotModified = known.filter((f) => f.snapshotModified).length
+  const drifted = known.filter((f) => f.driftCount > 0).length
+  const behind = known.filter((f) => f.behind > 0).length
 
-  const clean = known.length > 0 && known.every(f => !f.anyWarn)
+  const clean = known.length > 0 && known.every((f) => !f.anyWarn)
 
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg px-4 py-[11px] mb-4
-                    flex items-center gap-x-[10px] gap-y-[8px] flex-wrap">
+    <div
+      className="bg-bg-surface border border-border-subtle rounded-lg px-4 py-[11px] mb-4
+                    flex items-center gap-x-[10px] gap-y-[8px] flex-wrap"
+    >
       <div className="flex items-baseline gap-[6px] mr-[4px]">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">Fleet</span>
+        <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
+          Fleet
+        </span>
         <span className="text-[11px] text-text-secondary font-mono tabular-nums">
           {bots.length} {bots.length === 1 ? 'bot' : 'bots'}
         </span>
         <span className="text-[11px] text-text-tertiary">·</span>
-        <span className="text-[11px] text-text-tertiary font-mono tabular-nums">{running} running</span>
+        <span className="text-[11px] text-text-tertiary font-mono tabular-nums">
+          {running} running
+        </span>
         {live > 0 && (
           <>
             <span className="text-[11px] text-text-tertiary">·</span>
@@ -186,23 +233,38 @@ function FleetStrip({ bots, flags, unreadable, loading }: {
 
       <div className="flex items-center gap-[6px] flex-wrap ml-auto">
         <FleetCount
-          label="restart pending" n={restartPending} tone="warn" icon={RotateCcw}
+          label="restart pending"
+          n={restartPending}
+          tone="warn"
+          icon={RotateCcw}
           title="Promoted, but the running process still reports the OLD hash — the new version is on disk and the old one is trading."
         />
         <FleetCount
-          label="not frozen" n={notFrozen} tone="warn" icon={Snowflake}
+          label="not frozen"
+          n={notFrozen}
+          tone="warn"
+          icon={Snowflake}
           title="Still importing from the repo working tree, so a git pull changes what it trades. Promote it."
         />
         <FleetCount
-          label="snapshot edited" n={snapshotModified} tone="warn" icon={AlertTriangle}
+          label="snapshot edited"
+          n={snapshotModified}
+          tone="warn"
+          icon={AlertTriangle}
           title="The deployed files no longer match their record — edited in place, bypassing promote."
         />
         <FleetCount
-          label="settings changed" n={drifted} tone="warn" icon={SlidersHorizontal}
+          label="settings changed"
+          n={drifted}
+          tone="warn"
+          icon={SlidersHorizontal}
           title="config.json now states settings the deployment does not carry. They take effect at the next promote (risk % applies live)."
         />
         <FleetCount
-          label="behind repo" n={behind} tone="neutral" icon={GitCommitHorizontal}
+          label="behind repo"
+          n={behind}
+          tone="neutral"
+          icon={GitCommitHorizontal}
           title="The repo has moved past this deployment. Normal — a bot runs what it was promoted at, not what the repo says today."
         />
 
@@ -230,7 +292,13 @@ function FleetStrip({ bots, flags, unreadable, loading }: {
 
 // ── the rail ────────────────────────────────────────────────────────────────────
 
-function RailRow({ bot, flags, unread, selected, onSelect }: {
+function RailRow({
+  bot,
+  flags,
+  unread,
+  selected,
+  onSelect,
+}: {
   bot: BotStatus
   flags: VersionFlags | null
   unread: boolean
@@ -238,7 +306,7 @@ function RailRow({ bot, flags, unread, selected, onSelect }: {
   onSelect: () => void
 }) {
   const isRunning = bot.status === 'RUNNING'
-  const isLive    = bot.account_type === 'live'
+  const isLive = bot.account_type === 'live'
 
   return (
     <button
@@ -257,8 +325,10 @@ function RailRow({ bot, flags, unread, selected, onSelect }: {
             isRunning ? 'bg-pos shadow-[0_0_6px_#00ff7f]' : 'bg-neg'
           }`}
         />
-        <span className={`text-[11px] truncate ${selected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}
-              title={bot.name}>
+        <span
+          className={`text-[11px] truncate ${selected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}
+          title={bot.name}
+        >
           {bot.name}
         </span>
         {flags?.anyWarn && (
@@ -269,13 +339,20 @@ function RailRow({ bot, flags, unread, selected, onSelect }: {
           />
         )}
         {unread && (
-          <span className="ml-auto shrink-0 text-[10px] text-text-tertiary" title="Deployment record unreadable">?</span>
+          <span
+            className="ml-auto shrink-0 text-[10px] text-text-tertiary"
+            title="Deployment record unreadable"
+          >
+            ?
+          </span>
         )}
       </div>
       <div className="flex items-center gap-[5px] mt-[5px] pl-[13px]">
-        <span className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill uppercase tracking-[0.4px] ${
-          isLive ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'
-        }`}>
+        <span
+          className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill uppercase tracking-[0.4px] ${
+            isLive ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'
+          }`}
+        >
           {bot.account_type}
         </span>
         <span className="text-[10px] font-mono text-text-tertiary truncate">{bot.account}</span>
@@ -296,8 +373,10 @@ function RailRow({ bot, flags, unread, selected, onSelect }: {
 
 function Warn({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-[6px] text-[10px] leading-[1.5] text-amber-400/90
-                    bg-amber-400/[0.06] border border-amber-400/20 rounded px-[8px] py-[6px] mt-[8px]">
+    <div
+      className="flex items-start gap-[6px] text-[10px] leading-[1.5] text-amber-400/90
+                    bg-amber-400/[0.06] border border-amber-400/20 rounded px-[8px] py-[6px] mt-[8px]"
+    >
       <AlertTriangle size={11} className="shrink-0 mt-[1px]" />
       <span>{children}</span>
     </div>
@@ -329,9 +408,12 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
   // there — Aaron pressed Deploy, it worked, and the page gave him no way to tell. **A
   // panel that shows a result has to say which ACTION produced it**; the text alone cannot,
   // because promote.py's own output reads much the same either way.
-  const [result, setResult] = useState<
-    { kind: 'preview' | 'deploy'; ok: boolean; restarted: boolean; output: string } | null
-  >(null)
+  const [result, setResult] = useState<{
+    kind: 'preview' | 'deploy'
+    ok: boolean
+    restarted: boolean
+    output: string
+  } | null>(null)
   const [showChanges, setShowChanges] = useState(false)
   // A FINISHED deploy shows its `<pre>` only on request. The output is the thing you read
   // while deciding whether to press the button and the thing you read when it FAILS — after a
@@ -347,10 +429,18 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
   const deployed = result?.kind === 'deploy' && result.ok
   const refreshing = deployed && isFetching
   const busy = preview.isPending || promote.isPending || refreshing
+  // 🔴 A preview on screen means the question has MOVED to the confirm button below, and this
+  // one has nothing left to do — pressing it re-runs the same dry run and re-renders the same
+  // panel, which reads as *nothing happened*. Aaron, 2026-08-14: *"I click it. It just keeps
+  // repeating the process over and over."* The two-step is the whole safety property of this
+  // control, so exactly one of the two buttons may be live at a time; `Cancel` puts it back.
+  const awaitingConfirm = result?.kind === 'preview'
   const c = v?.compare ?? null
 
   if (isLoading) {
-    return <div className="text-[11px] text-text-tertiary px-[14px] py-[12px]">checking versions…</div>
+    return (
+      <div className="text-[11px] text-text-tertiary px-[14px] py-[12px]">checking versions…</div>
+    )
   }
 
   // Every state that makes this unanswerable has its own fix and none of them is "deploy", so
@@ -358,9 +448,11 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
   // which is the most reassuring answer available and the one most likely to be wrong.
   if (!c || !c.comparable) {
     return (
-      <div data-testid="version-banner"
-           className="flex items-start gap-[8px] text-[11px] leading-[1.5] text-text-secondary
-                      bg-bg-elevated border border-border-subtle rounded-lg px-[14px] py-[12px]">
+      <div
+        data-testid="version-banner"
+        className="flex items-start gap-[8px] text-[11px] leading-[1.5] text-text-secondary
+                      bg-bg-elevated border border-border-subtle rounded-lg px-[14px] py-[12px]"
+      >
         <HelpCircle size={13} className="shrink-0 mt-[1px] text-text-tertiary" />
         <span>
           <strong className="text-text-primary">Version unknown.</strong>{' '}
@@ -375,8 +467,8 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
   // A pinned setting cannot move on a promote, so it is not part of "what would change" — it
   // is listed separately, because *your bot is holding this still* is the reassuring half of
   // the same question and dropping it makes "not affected" look like "not checked".
-  const willChange = c.setting_changes.filter(s => !s.stated)
-  const pinned = c.setting_changes.filter(s => s.stated)
+  const willChange = c.setting_changes.filter((s) => !s.stated)
+  const pinned = c.setting_changes.filter((s) => s.stated)
   // `null` is "no upstream to ask" — not "everything is pushed". Both render nothing here, but
   // they must never be collapsed into one value upstream of this line.
   const unpushed = c.unpushed_commits ?? []
@@ -388,22 +480,37 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
       onClick={() => {
         setResult(null)
         setShowOutput(false)
-        preview.mutate({ botName: botKey }, {
-          onSuccess: r => setResult({ kind: 'preview', ok: r.ok, restarted: false, output: r.output }),
-        })
+        preview.mutate(
+          { botName: botKey },
+          {
+            onSuccess: (r) =>
+              setResult({ kind: 'preview', ok: r.ok, restarted: false, output: r.output }),
+          }
+        )
       }}
-      disabled={busy}
+      disabled={busy || awaitingConfirm}
       className={`inline-flex items-center gap-[6px] px-[14px] py-[7px] rounded-md font-medium
-                  disabled:opacity-40 ${behind > 0
-        ? 'text-[12px] bg-gold-text/20 text-gold-bright hover:bg-gold-text/30 border border-gold-text/40'
-        : 'text-[10px] text-text-tertiary hover:text-text-secondary'}`}
+                  disabled:opacity-40 ${
+                    behind > 0
+                      ? 'text-[12px] bg-gold-text/20 text-gold-bright hover:bg-gold-text/30 border border-gold-text/40'
+                      : 'text-[10px] text-text-tertiary hover:text-text-secondary'
+                  }`}
     >
       <Upload size={behind > 0 ? 13 : 10} />
-      {promote.isPending ? 'deploying…'
-        : refreshing ? 'checking…'
-        : preview.isPending ? 'working…'
-        : behind > 0 ? `Deploy v${c.deployed_version} → v${c.local_version}`
-        : 'Re-deploy'}
+      {/* A greyed button still labelled `Deploy v164 → v167` reads as BROKEN rather than as
+          done-its-part, and the reader's next move is to click it again — which is the report.
+          The label names where the action went. */}
+      {promote.isPending
+        ? 'deploying…'
+        : refreshing
+          ? 'checking…'
+          : preview.isPending
+            ? 'working…'
+            : awaitingConfirm
+              ? 'checked — confirm below'
+              : behind > 0
+                ? `Deploy v${c.deployed_version} → v${c.local_version}`
+                : 'Re-deploy'}
     </button>
   )
 
@@ -413,15 +520,21 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
        "no deploy button" assertion passes on a broken banner too — the vacuous-locator trap
        this repo has now hit three times (`svg.first()` was the sidebar logo; a page-wide
        Retry matched the page header's own). */
-    <div data-testid="version-banner"
-         className={`rounded-lg border px-[14px] py-[12px] ${behind > 0
-      ? 'bg-amber-400/[0.07] border-amber-400/30'
-      : 'bg-pos-muted/40 border-pos-text/25'}`}>
-
+    <div
+      data-testid="version-banner"
+      className={`rounded-lg border px-[14px] py-[12px] ${
+        behind > 0
+          ? 'bg-amber-400/[0.07] border-amber-400/30'
+          : 'bg-pos-muted/40 border-pos-text/25'
+      }`}
+    >
       <div className="flex items-start justify-between gap-[16px] flex-wrap">
         <div>
-          <p className={`flex items-center gap-[7px] text-[13px] font-semibold ${
-            behind > 0 ? 'text-amber-300' : 'text-pos-text'}`}>
+          <p
+            className={`flex items-center gap-[7px] text-[13px] font-semibold ${
+              behind > 0 ? 'text-amber-300' : 'text-pos-text'
+            }`}
+          >
             {behind > 0 ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
             {behind > 0
               ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
@@ -431,7 +544,9 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
             <span className="text-text-tertiary">
               Deployed{' '}
               <span className="text-text-primary font-mono text-[13px]">v{c.deployed_version}</span>
-              {v?.promoted_at ? <span className="text-text-tertiary"> · {v.promoted_at}</span> : null}
+              {v?.promoted_at ? (
+                <span className="text-text-tertiary"> · {v.promoted_at}</span>
+              ) : null}
             </span>
             <span className="text-text-tertiary">
               Backtester{' '}
@@ -443,12 +558,22 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
       </div>
 
       {dirty > 0 && (
-        <p className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
-           title={c.uncommitted_files.join('\n')}>
-          Your backtester also has <strong>{dirty} edited file{dirty === 1 ? '' : 's'}</strong>{' '}
+        <p
+          className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+          title={c.uncommitted_files.join('\n')}
+        >
+          Your backtester also has{' '}
+          <strong>
+            {dirty} edited file{dirty === 1 ? '' : 's'}
+          </strong>{' '}
           {dirty === 1 ? 'that is' : 'that are'} not committed
-          {dirty === 1 ? <> (<span className="font-mono">{c.uncommitted_files[0]}</span>)</> : null}.
-          {' '}Not part of v{c.local_version}, and a promote refuses a dirty tree — commit or revert
+          {dirty === 1 ? (
+            <>
+              {' '}
+              (<span className="font-mono">{c.uncommitted_files[0]}</span>)
+            </>
+          ) : null}
+          . Not part of v{c.local_version}, and a promote refuses a dirty tree — commit or revert
           first.
         </p>
       )}
@@ -460,16 +585,25 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
           against and renders nothing; `[]` is the measured "all pushed" and renders nothing
           too. Only a real count speaks. */}
       {unpushed.length > 0 && (
-        <p className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
-           title={unpushed.join('\n')}>
-          <strong>{unpushed.length} commit{unpushed.length === 1 ? '' : 's'} touching this bot
-          {unpushed.length === 1 ? ' is' : ' are'} not pushed.</strong>{' '}
+        <p
+          className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+          title={unpushed.join('\n')}
+        >
+          <strong>
+            {unpushed.length} commit{unpushed.length === 1 ? '' : 's'} touching this bot
+            {unpushed.length === 1 ? ' is' : ' are'} not pushed.
+          </strong>{' '}
           A promote pulls on the VPS, so it can only reach{' '}
           <span className="font-mono">v{deployable}</span>
-          {deployable != null && c.local_version != null && deployable < c.local_version
-            ? <> — push first, or the bot lands {c.local_version - deployable} version
-                {c.local_version - deployable === 1 ? '' : 's'} short of your backtester.</>
-            : '.'}
+          {deployable != null && c.local_version != null && deployable < c.local_version ? (
+            <>
+              {' '}
+              — push first, or the bot lands {c.local_version - deployable} version
+              {c.local_version - deployable === 1 ? '' : 's'} short of your backtester.
+            </>
+          ) : (
+            '.'
+          )}
         </p>
       )}
 
@@ -478,13 +612,22 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
           {willChange.length > 0 ? (
             <div>
               <p className="text-[10px] uppercase tracking-[0.4px] text-text-tertiary mb-[5px]">
-                {willChange.length} setting{willChange.length === 1 ? '' : 's'} would change on this bot
+                {willChange.length} setting{willChange.length === 1 ? '' : 's'} would change on this
+                bot
               </p>
-              {willChange.map(s => (
-                <div key={s.name} className="flex items-baseline gap-[8px] text-[11px] py-[2px]" title={s.desc}>
+              {willChange.map((s) => (
+                <div
+                  key={s.name}
+                  className="flex items-baseline gap-[8px] text-[11px] py-[2px]"
+                  title={s.desc}
+                >
                   <span className="text-text-secondary min-w-[150px]">{s.label}</span>
                   <span className="font-mono text-[10px] text-text-tertiary">
-                    {s.is_new ? <em className="not-italic">not in v{c.deployed_version}</em> : s.was}
+                    {s.is_new ? (
+                      <em className="not-italic">not in v{c.deployed_version}</em>
+                    ) : (
+                      s.was
+                    )}
                   </span>
                   <ArrowRight size={9} className="text-text-tertiary shrink-0" />
                   <span className="font-mono text-[10px] text-amber-300">{s.now}</span>
@@ -502,12 +645,12 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
               {pinned.length} other setting{pinned.length === 1 ? '' : 's'} changed in the repo but{' '}
               <strong>this bot pins {pinned.length === 1 ? 'it' : 'them'}</strong>, so{' '}
               {pinned.length === 1 ? 'it' : 'they'} will not move:{' '}
-              {pinned.map(s => `${s.label} (${s.was} → ${s.now})`).join(', ')}.
+              {pinned.map((s) => `${s.label} (${s.was} → ${s.now})`).join(', ')}.
             </p>
           )}
 
           <button
-            onClick={() => setShowChanges(s => !s)}
+            onClick={() => setShowChanges((s) => !s)}
             className="inline-flex items-center gap-[4px] text-[10px] text-text-tertiary hover:text-text-secondary"
           >
             {showChanges ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
@@ -515,7 +658,7 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
           </button>
           {showChanges && (
             <div className="max-h-[200px] overflow-y-auto space-y-[3px] pl-[14px]">
-              {c.changes.map(ch => (
+              {c.changes.map((ch) => (
                 <div key={ch.commit} className="text-[10px] leading-[1.45] text-text-secondary">
                   <span className="text-text-tertiary font-mono mr-[6px]">{ch.date}</span>
                   {ch.subject}
@@ -529,8 +672,11 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
       {result && (
         <div className="mt-[11px] border-t border-border-subtle/60 pt-[9px]">
           {result.kind === 'deploy' ? (
-            <p className={`flex items-center gap-[6px] text-[12px] font-semibold mb-[6px] ${
-              result.ok ? 'text-pos-text' : 'text-neg-text'}`}>
+            <p
+              className={`flex items-center gap-[6px] text-[12px] font-semibold mb-[6px] ${
+                result.ok ? 'text-pos-text' : 'text-neg-text'
+              }`}
+            >
               {result.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
               {/* 🔴 It named `c.local_version` — the BACKTESTER's version, i.e. what the reader
                   asked for rather than what landed. Those differ whenever the deploy could not
@@ -539,9 +685,11 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
                   it is withheld until the refetch answers — a version quoted from the pre-deploy
                   payload is a claim about the thing that just changed. */}
               {result.ok
-                ? `Deployed${result.restarted
-                    ? ` — ${botLabel} restarted${refreshing ? '' : ` and is running v${c.deployed_version}`}`
-                    : ` — restart ${botLabel} to pick it up`}`
+                ? `Deployed${
+                    result.restarted
+                      ? ` — ${botLabel} restarted${refreshing ? '' : ` and is running v${c.deployed_version}`}`
+                      : ` — restart ${botLabel} to pick it up`
+                  }`
                 : `Deploy failed — ${botLabel} is untouched and still on v${c.deployed_version}`}
             </p>
           ) : (
@@ -550,16 +698,22 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
             </p>
           )}
           {refreshing && (
-            <p className="text-[10px] text-text-tertiary mb-[6px]">re-reading the deployed version…</p>
+            <p className="text-[10px] text-text-tertiary mb-[6px]">
+              re-reading the deployed version…
+            </p>
           )}
           {/* A preview's output IS the thing you read before deciding, and a failure's output is
               the only place the reason lives. A SUCCESS has already been summarised by the green
               line above, so it collapses behind a toggle — that `<pre>` holding the panel open in
               its pre-deploy shape is what made a finished deploy look like a pending one. */}
           {(result.kind === 'preview' || !result.ok || showOutput) && (
-            <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
+            <pre
+              className="text-[10px] leading-[1.45] font-mono text-text-secondary
                             whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto
-                            bg-bg-base/60 rounded p-[8px]">{result.output}</pre>
+                            bg-bg-base/60 rounded p-[8px]"
+            >
+              {result.output}
+            </pre>
           )}
           <div className="flex items-center gap-[8px] mt-[9px] flex-wrap">
             {/* The deploy button exists ONLY on the preview. Leaving it up after a successful
@@ -569,30 +723,43 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
                  the page that changes what a live account trades, and the reader arrived here
                  by clicking a rail row — the name is the thing being confirmed. */
               <button
-                onClick={() => promote.mutate({ botName: botKey, restart: true }, {
-                  onSuccess: r => setResult({
-                    kind: 'deploy', ok: r.ok, restarted: r.restarted, output: r.output,
-                  }),
-                })}
+                onClick={() =>
+                  promote.mutate(
+                    { botName: botKey, restart: true },
+                    {
+                      onSuccess: (r) =>
+                        setResult({
+                          kind: 'deploy',
+                          ok: r.ok,
+                          restarted: r.restarted,
+                          output: r.output,
+                        }),
+                    }
+                  )
+                }
                 disabled={busy}
                 className="inline-flex items-center gap-[5px] text-[11px] px-[12px] py-[5px]
                            rounded bg-gold-text/20 text-gold-bright hover:bg-gold-text/30
                            border border-gold-text/40 disabled:opacity-40"
               >
-                <PackageCheck size={12} /> Deploy &amp; restart <span className="font-mono">{botLabel}</span>
+                <PackageCheck size={12} /> Deploy &amp; restart{' '}
+                <span className="font-mono">{botLabel}</span>
               </button>
             )}
             {deployed && (
               <button
                 data-testid="deploy-output-toggle"
-                onClick={() => setShowOutput(s => !s)}
+                onClick={() => setShowOutput((s) => !s)}
                 className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
               >
                 {showOutput ? 'Hide output' : 'Show output'}
               </button>
             )}
             <button
-              onClick={() => { setResult(null); setShowOutput(false) }}
+              onClick={() => {
+                setResult(null)
+                setShowOutput(false)
+              }}
               className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
             >
               {result.kind === 'deploy' ? 'Close' : 'Cancel'}
@@ -610,26 +777,39 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
 function DeployCard({ botKey }: { botKey: string }) {
   const { data: v, isLoading } = useBotVersion(botKey)
 
-  if (isLoading) return <Card title="Deployed version"><Row label="">loading…</Row></Card>
-  if (!v) return <Card title="Deployed version"><Row label="">unavailable</Row></Card>
+  if (isLoading)
+    return (
+      <Card title="Deployed version">
+        <Row label="">loading…</Row>
+      </Card>
+    )
+  if (!v)
+    return (
+      <Card title="Deployed version">
+        <Row label="">unavailable</Row>
+      </Card>
+    )
 
   const f = versionFlags(v)!
 
   return (
     <Card title="Deployed version">
       <Row label="Strategy">{fmt(v.strategy_package)}</Row>
-      <Row label="Code hash" title={v.hash}>{v.hash ? v.hash.slice(0, 12) : '—'}</Row>
+      <Row label="Code hash" title={v.hash}>
+        {v.hash ? v.hash.slice(0, 12) : '—'}
+      </Row>
       <Row label="From commit">{fmt(v.commit)}</Row>
       <Row label="Deployed on">{fmt(v.promoted_at)}</Row>
       <Row label="Files">{v.files ? `${v.files} .py` : '—'}</Row>
       <Row label="Repo now">
-        {fmt(v.repo_commit)}{f.behind > 0 ? ` · ${f.behind} ahead` : ' · same'}
+        {fmt(v.repo_commit)}
+        {f.behind > 0 ? ` · ${f.behind} ahead` : ' · same'}
       </Row>
 
       {f.notFrozen && (
         <Warn>
-          <strong>Not frozen.</strong> This bot still imports from the repo working tree, so a
-          pull changes what it trades and can stop it starting. Promote it.
+          <strong>Not frozen.</strong> This bot still imports from the repo working tree, so a pull
+          changes what it trades and can stop it starting. Promote it.
         </Warn>
       )}
       {f.snapshotModified && (
@@ -648,14 +828,14 @@ function DeployCard({ botKey }: { botKey: string }) {
       {f.driftCount > 0 && (
         <Warn>
           <strong>{f.driftCount} setting(s) changed since deploy:</strong>{' '}
-          <span className="font-mono">{v.params_drift.join(', ')}</span>. They take effect at
-          the next promote, except risk % which applies live.
+          <span className="font-mono">{v.params_drift.join(', ')}</span>. They take effect at the
+          next promote, except risk % which applies live.
         </Warn>
       )}
 
       <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
-        This bot runs a frozen copy of its code. Pulling, backtesting or editing the repo does
-        not touch it — only promoting does. Deploy from the banner at the top of this page.
+        This bot runs a frozen copy of its code. Pulling, backtesting or editing the repo does not
+        touch it — only promoting does. Deploy from the banner at the top of this page.
       </p>
     </Card>
   )
@@ -663,8 +843,16 @@ function DeployCard({ botKey }: { botKey: string }) {
 
 // ── the one editable lever ──────────────────────────────────────────────────────
 
-function RuntimeEditor({ botKey, botLabel, row, balance }: {
-  botKey: string; botLabel: string; row: BotParamRow; balance: number | null
+function RuntimeEditor({
+  botKey,
+  botLabel,
+  row,
+  balance,
+}: {
+  botKey: string
+  botLabel: string
+  row: BotParamRow
+  balance: number | null
 }) {
   const current = Number(row.value)
   const [draft, setDraft] = useState<string>(String(current))
@@ -672,14 +860,17 @@ function RuntimeEditor({ botKey, botLabel, row, balance }: {
   const save = useSaveBotRuntime()
 
   const next = parseFloat(draft)
-  const valid = Number.isFinite(next)
-    && (row.min == null || next >= row.min)
-    && (row.max == null || next <= row.max)
+  const valid =
+    Number.isFinite(next) &&
+    (row.min == null || next >= row.min) &&
+    (row.max == null || next <= row.max)
   const dirty = valid && next !== current
 
   function commit() {
-    save.mutate({ botName: botKey, values: { [row.name]: next } },
-      { onSuccess: () => setConfirming(false) })
+    save.mutate(
+      { botName: botKey, values: { [row.name]: next } },
+      { onSuccess: () => setConfirming(false) }
+    )
   }
 
   return (
@@ -688,7 +879,9 @@ function RuntimeEditor({ botKey, botLabel, row, balance }: {
         <div>
           <p className="text-[10px] text-text-tertiary mb-[3px]">{row.label}</p>
           <div className="flex items-baseline gap-1">
-            <span className="text-[22px] font-mono tabular-nums text-text-primary">{fmt(row.value)}</span>
+            <span className="text-[22px] font-mono tabular-nums text-text-primary">
+              {fmt(row.value)}
+            </span>
             <span className="text-[11px] text-text-tertiary">{row.unit ?? '%'}</span>
           </div>
           {balance != null && (
@@ -707,7 +900,7 @@ function RuntimeEditor({ botKey, botLabel, row, balance }: {
               step={0.5}
               min={row.min ?? undefined}
               max={row.max ?? undefined}
-              onChange={e => setDraft(e.target.value)}
+              onChange={(e) => setDraft(e.target.value)}
               className="w-[78px] bg-bg-sunken border border-border-subtle rounded px-[7px] py-[5px] text-[12px] font-mono text-right focus:border-accent/50 outline-none transition-colors"
             />
           </div>
@@ -733,7 +926,8 @@ function RuntimeEditor({ botKey, botLabel, row, balance }: {
 
       {row.note && (
         <p className="text-[10px] text-text-tertiary mt-[10px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
-          <Info size={10} className="inline mr-[4px] -mt-[1px]" />{row.note}
+          <Info size={10} className="inline mr-[4px] -mt-[1px]" />
+          {row.note}
         </p>
       )}
 
@@ -765,16 +959,36 @@ function RuntimeEditor({ botKey, botLabel, row, balance }: {
  * changed is a choice the reader made a scroll ago and can no longer see — and this dialog
  * is the last point at which a wrong row is still free to fix.
  */
-function ConfirmRuntime({ botLabel, label, from, to, unit, balance, pending, onCancel, onConfirm }: {
-  botLabel: string; label: string; from: number; to: number; unit: string; balance: number | null
-  pending: boolean; onCancel: () => void; onConfirm: () => void
+function ConfirmRuntime({
+  botLabel,
+  label,
+  from,
+  to,
+  unit,
+  balance,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  botLabel: string
+  label: string
+  from: number
+  to: number
+  unit: string
+  balance: number | null
+  pending: boolean
+  onCancel: () => void
+  onConfirm: () => void
 }) {
   const bigger = to > from
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={onCancel}
+    >
       <div
         className="bg-bg-surface border border-border-default rounded-lg p-5 w-[440px]"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <p className="text-[13px] font-semibold mb-1">
           Change {label} on <span className="font-mono">{botLabel}</span>
@@ -785,9 +999,15 @@ function ConfirmRuntime({ botLabel, label, from, to, unit, balance, pending, onC
 
         <div className="bg-bg-sunken border border-border-subtle rounded-md p-3 mb-3">
           <div className="flex items-center justify-center gap-3 font-mono tabular-nums">
-            <span className="text-[20px] text-text-tertiary">{from}{unit}</span>
+            <span className="text-[20px] text-text-tertiary">
+              {from}
+              {unit}
+            </span>
             <span className="text-text-tertiary">→</span>
-            <span className={`text-[20px] ${bigger ? 'text-warn-text' : 'text-text-primary'}`}>{to}{unit}</span>
+            <span className={`text-[20px] ${bigger ? 'text-warn-text' : 'text-text-primary'}`}>
+              {to}
+              {unit}
+            </span>
           </div>
           {balance != null && !!balance && (
             <div className="flex items-center justify-center gap-3 mt-[6px] text-[11px] font-mono tabular-nums text-text-tertiary">
@@ -839,7 +1059,7 @@ function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[] }) {
   return (
     <div className="border-b border-border-subtle/60 last:border-b-0">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 py-[8px] text-left cursor-pointer"
       >
         <ChevronDown
@@ -851,9 +1071,10 @@ function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[] }) {
       </button>
       {open && (
         <div className="pb-[8px] pl-[20px]">
-          {rows.map(r => (
+          {rows.map((r) => (
             <Row key={r.name} label={r.label} title={r.desc ?? undefined}>
-              {fmt(r.value)}{r.unit ? ` ${r.unit}` : ''}
+              {fmt(r.value)}
+              {r.unit ? ` ${r.unit}` : ''}
             </Row>
           ))}
         </div>
@@ -879,7 +1100,7 @@ function BotPanel({ bot }: { bot: BotStatus }) {
 
   const v: BotParamsView = data
   const groups = v.strategy.reduce<Record<string, BotParamRow[]>>((acc, r) => {
-    (acc[r.group] ??= []).push(r)
+    ;(acc[r.group] ??= []).push(r)
     return acc
   }, {})
 
@@ -889,7 +1110,6 @@ function BotPanel({ bot }: { bot: BotStatus }) {
 
   return (
     <div className="grid grid-cols-2 gap-4 items-start">
-
       {/* FIRST, full width, and deliberately above the risk editor: "am I behind, and by how
           much" is the question this tab is opened to answer, and it had no answer on the page
           at all until 2026-08-07. It also carries the only Deploy control. */}
@@ -900,12 +1120,19 @@ function BotPanel({ bot }: { bot: BotStatus }) {
       {/* Risk — the only thing on this page that can be changed */}
       <div className="col-span-2">
         <Card title="Risk per trade">
-          {v.runtime.length === 0
-            ? <p className="text-[11px] text-text-tertiary">No runtime-editable settings.</p>
-            : v.runtime.map(r => (
-                <RuntimeEditor key={r.name} botKey={bot.key} botLabel={bot.name}
-                                 row={r} balance={bot.balance} />
-              ))}
+          {v.runtime.length === 0 ? (
+            <p className="text-[11px] text-text-tertiary">No runtime-editable settings.</p>
+          ) : (
+            v.runtime.map((r) => (
+              <RuntimeEditor
+                key={r.name}
+                botKey={bot.key}
+                botLabel={bot.name}
+                row={r}
+                balance={bot.balance}
+              />
+            ))
+          )}
         </Card>
       </div>
 
@@ -914,7 +1141,9 @@ function BotPanel({ bot }: { bot: BotStatus }) {
         <Row label="Server">{fmt(v.identity.server)}</Row>
         <Row label="Symbol">{fmt(v.identity.symbol)}</Row>
         <Row label="Timeframe">{fmt(v.identity.timeframe)}</Row>
-        <Row label="Terminal" title={v.identity.mt5_path ?? ''}>{terminal}</Row>
+        <Row label="Terminal" title={v.identity.mt5_path ?? ''}>
+          {terminal}
+        </Row>
         <Row label="Magic">{fmt(v.identity.magic)}</Row>
       </Card>
 
@@ -953,13 +1182,13 @@ export function ConfigureTab() {
   const bots = snapshot?.bots ?? []
   // The KEY, not the display name — see `BotStatus.key`. A name is a label chosen for a
   // human and is the field that eventually changes; everything addressable keys off `key`.
-  const keys = bots.map(b => b.key)
+  const keys = bots.map((b) => b.key)
 
   // One fetch per bot, sharing DeployCard's cache entries — see `useBotVersions`.
   const versionQueries = useBotVersions(keys)
-  const flags     = versionQueries.map(q => versionFlags(q.data))
-  const unreadable = versionQueries.filter(q => !q.isPending && !q.data).length
-  const loading    = versionQueries.some(q => q.isPending)
+  const flags = versionQueries.map((q) => versionFlags(q.data))
+  const unreadable = versionQueries.filter((q) => !q.isPending && !q.data).length
+  const loading = versionQueries.some((q) => q.isPending)
 
   // Selection lives in the URL, like every other tab state in this app — so a link to a
   // specific bot's config is a real link, and a refresh does not silently move you to
@@ -971,7 +1200,7 @@ export function ConfigureTab() {
   // wanted. A stale key falls back the same way, but a key is not a label and nobody edits
   // it for readability.
   const requested = searchParams.get('bot')
-  const selected = bots.find(b => b.key === requested) ?? bots[0] ?? null
+  const selected = bots.find((b) => b.key === requested) ?? bots[0] ?? null
 
   function selectBot(key: string) {
     const next = new URLSearchParams(searchParams)
@@ -989,7 +1218,6 @@ export function ConfigureTab() {
       <FleetStrip bots={bots} flags={flags} unreadable={unreadable} loading={loading} />
 
       <div className="flex items-start gap-4">
-
         {/* ── Rail ──────────────────────────────────────────────────────────── */}
         <div className="w-[212px] shrink-0 sticky top-0">
           <div className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]">
@@ -1010,8 +1238,8 @@ export function ConfigureTab() {
             </div>
           </div>
           <p className="text-[10px] text-text-tertiary leading-[1.5] mt-[8px] px-[4px]">
-            One bot at a time. Only the selected bot's Promote and Deploy controls exist on
-            this page.
+            One bot at a time. Only the selected bot's Promote and Deploy controls exist on this
+            page.
           </p>
         </div>
 
@@ -1028,16 +1256,26 @@ export function ConfigureTab() {
                   below scroll up through the transparent strip it leaves. */}
               <div className="pb-[10px] flex items-center gap-2 flex-wrap">
                 <span className="text-[14px] font-semibold">{selected.name}</span>
-                <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
-                  selected.status === 'RUNNING' ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
-                }`}>
-                  {selected.status === 'RUNNING' ? 'Running' : selected.status === 'ERROR' ? 'Error' : 'Stopped'}
+                <span
+                  className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
+                    selected.status === 'RUNNING'
+                      ? 'bg-pos-muted text-pos-text'
+                      : 'bg-neg-muted text-neg-text'
+                  }`}
+                >
+                  {selected.status === 'RUNNING'
+                    ? 'Running'
+                    : selected.status === 'ERROR'
+                      ? 'Error'
+                      : 'Stopped'}
                 </span>
-                <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
-                  selected.account_type === 'live'
-                    ? 'bg-warn-muted text-warn-text'
-                    : 'bg-bg-surface-2 text-text-secondary'
-                }`}>
+                <span
+                  className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
+                    selected.account_type === 'live'
+                      ? 'bg-warn-muted text-warn-text'
+                      : 'bg-bg-surface-2 text-text-secondary'
+                  }`}
+                >
                   {selected.account_type}
                 </span>
                 <span className="text-[11px] font-mono text-text-tertiary">{selected.account}</span>
