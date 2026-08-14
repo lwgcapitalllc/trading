@@ -116,7 +116,7 @@ replaced by a collector:
 |---|---|---|
 | 👀 SETUP FORMING | 608 | 7.7 |
 | 👋 NO TRADE | 449 | 5.7 |
-| 🎯 ENTRY ZONE LIVE | 332 | 4.2 |
+| 🎯 BUY/SELL LIMIT RESTING | 332 | 4.2 |
 | ✅ ENTERED | 158 | 2.0 |
 | 🚫 BLOCKED | 55 | 0.7 |
 | **total** | **1,602** | **20.2** |
@@ -257,23 +257,36 @@ Waiting on a retrace into that zone.
 ⚠ **"Stop IF IT FILLS", never "Stop".** The stop is projected off the deep edge of the zone and no
 order exists yet. Stating it flat would be a price the bot is not holding — §9.
 
-### 5.2 Entry zone live — replies to 5.1
+### 5.2 Limit resting — replies to 5.1
 
-An order is resting at a price. ~4.2/month. **Deduped per setup** (§3) — one of these per setup,
-ever, whatever the order does afterwards.
+A real order exists at a price and has NOT filled. ~4.2/month. **Deduped per setup** (§3) — one of
+these per setup, ever, whatever the order does afterwards.
 
 ```
-🎯 ENTRY ZONE LIVE · SHORT
-(2 of 3)
-
-Sweep — Day High
-Shift of structure — confirmed
-Retrace zone — not tagged yet
-
-Entry 3,412.55   (limit resting)
-Stop 3,428.90
+🎯 SELL LIMIT RESTING
+2 of 3
+Limit 3,412.55 · stop 3,428.90
 TP1 3,389.20 · TP2 3,371.05
+Still missing: Retrace zone
 ```
+
+🔴 **It was headed `ENTRY ZONE LIVE` for one day and was read as a FILL by the only person who
+reads this channel** (Aaron, 2026-08-14: *"I thought the trade entered when you just did a limit
+order"*). It had not: price was 41 points above the limit and never came back that day. The header
+is now the MT5 order type he sees in the terminal, so the message and the platform call one thing
+by one name, and `RESTING` says the part the old header said nowhere.
+
+🔴 **THE FINDING IS THAT THE VERBOSITY TRIM CAUSED IT, AND IT IS THE MORE USEFUL HALF.** The
+version above this one — shipped 2026-08-13, `29661b1` — read
+`Entry 3,412.55   (limit resting)` and numbered its targets. The trim later that day (`6bcae0e`,
+eight lines down to four) deleted **both**: `(limit resting)` went out with `(the zone's deep
+edge)` as an explainer, and `TP1`/`TP2` collapsed to a bare `TP`. One of those two really was an
+explainer. **The other was the only word on the message saying nothing had been bought**, and
+removing it left a header naming a ZONE over a body naming a PRICE, with no verb anywhere.
+⚠ **The transferable rule: when trimming a message, a word that explains a NUMBER is decoration
+and a word that names the STATE of something is not** — `(the zone's deep edge)` tells you how
+4,317.71 was derived, which the reader can live without; `(limit resting)` tells you no position
+exists, which they cannot. Both looked like the same kind of parenthetical.
 
 🔴 **An order can rest at 2 of 3, and the message must not imply otherwise — found by rendering
 this against real bars rather than by reading the code.** The entry edge comes from a gap

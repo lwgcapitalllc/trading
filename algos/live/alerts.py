@@ -177,7 +177,7 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
 
 
 def format_entry_zone(snap, digits: int = 2) -> str:
-    """Every confluence met and an order is resting at a price. Replies to `format_watching`.
+    """A limit order is RESTING at a price, unfilled. Replies to `format_watching`.
 
     Sent ONCE per setup. The resting price is recomputed every bar and can shift when a new gap
     forms, and re-announcing each shift was measured at double the volume for no new decision —
@@ -188,19 +188,35 @@ def format_entry_zone(snap, digits: int = 2) -> str:
     the limit is placed in advance and the retrace confluence is still outstanding. Listing only
     the met confluences (the first version of this) hid exactly the fact a reader needs: the
     order is real, and price has not come to it yet.
+
+    🔴 **The header says RESTING because "ENTRY ZONE LIVE" was read as a FILL** (Aaron, 2026-08-14,
+    on a real send: *"I thought the trade entered when you just did a limit order"*). It had not —
+    price was 41 points above the limit and stayed there. **This is the one message in the thread
+    whose whole job is to say that an order EXISTS and has NOT filled**, and the old header said
+    neither word. `BUY LIMIT` / `SELL LIMIT` is the MT5 order type he sees in the terminal, so the
+    message and the platform now call the same thing by the same name; it also carries the
+    direction, which is why there is no `· LONG` subject to repeat it.
+
+    ⚠ **`Limit`, never `Entry`.** An entry is a price you got; a limit is a price you are offering.
+    Same misreading one line down from the header that just caused it.
+
+    ⚠ **The targets are NUMBERED.** `TP 3,296.10 · 3,311.75` leaves the reader to infer that the
+    first is TP1 — true here, and an inference the message should not be asking for.
     """
     order = []
     if snap.entry is not None:
-        order.append(f"Entry {_price(snap.entry, digits)}")
+        order.append(f"Limit {_price(snap.entry, digits)}")
     if snap.stop is not None:
         order.append(f"stop {_price(snap.stop, digits)}")
     lines = [f"{snap.met} of {snap.of}", " · ".join(order)]
     if snap.targets:
-        lines.append("TP " + " · ".join(_price(t, digits) for t in snap.targets if t))
+        lines.append(" · ".join(f"TP{i} {_price(t, digits)}"
+                                for i, t in enumerate(snap.targets, 1) if t))
     # ⚠ This line IS the safety property above. The full confluence dump it replaces said the same
     # thing in three lines and buried it among two that were fine.
     lines.append(_outstanding(snap))
-    return alert("🎯", "ENTRY ZONE LIVE", snap.direction, *lines)
+    side = "BUY" if snap.side > 0 else "SELL"
+    return alert("🎯", f"{side} LIMIT RESTING", "", *lines)
 
 
 def format_blocked(snap, digits: int = 2) -> str:

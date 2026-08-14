@@ -6,7 +6,7 @@ gets pre-trade alerts by implementing `live_setups()`; nothing here changes.
 **What it sends, per setup, in order:**
 
     👀 SETUP FORMING     the root — confluences so far, the tradeable zone, the projected stop
-    🎯 ENTRY ZONE LIVE   a reply — every confluence met, an order resting at a price
+    🎯 BUY/SELL LIMIT RESTING   a reply — a real order exists at a price and has NOT filled
     🚫 BLOCKED           a reply — one of your own rules refused it
     ✅ ENTERED / 👋 NO TRADE   a reply — what became of it
 

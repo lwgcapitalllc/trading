@@ -47,8 +47,10 @@ def test_a_limit_resting_at_2_of_3_NAMES_what_is_still_missing():
 
     The entry edge comes from a gap overlapping the 0.5-0.886 band, and a gap can be there before
     PRICE is — so the bot places a real limit while the retrace confluence is still outstanding.
-    A message headed `ENTRY ZONE LIVE` with a price on it reads as *everything is met and we are
-    waiting on a fill*, and for these it is not true.
+    A message carrying a price and no count reads as *everything is met and we are waiting on a
+    fill*, and for these it is not true. (The header that said exactly that — `ENTRY ZONE LIVE` —
+    is gone for a related reason; see `test_the_resting_message_names_an_ORDER_that_has_NOT_filled`
+    below, which pins the other half of the same claim.)
 
     The first version listed only the MET confluences, which hid exactly this. The second listed
     all three, one per line. This one names only what is outstanding — same property, one line —
@@ -68,6 +70,54 @@ def test_a_limit_resting_at_3_of_3_does_NOT_claim_something_is_missing():
                                         entry=3279.6, stop=3270.9))
     assert "3 of 3" in out
     assert "missing" not in out.lower(), out
+
+
+def test_the_resting_message_names_an_ORDER_that_has_NOT_filled():
+    """🔴 The claim this message exists to make, and it was made by neither of its first two
+    headers. `ENTRY ZONE LIVE` was read as a fill by the only person who reads this channel
+    (Aaron, 2026-08-14) on a real send where price was 41 points above the limit and never came
+    back. The reader has to be able to tell, from the header alone on a lock screen, that an
+    order EXISTS and that nothing has been bought.
+
+    Pins the two claims, not the phrasing: the message names the ORDER TYPE, and it says the
+    order is still waiting. A different word for waiting is free to replace `RESTING`; a header
+    that names neither is the bug.
+    """
+    out = alerts.format_entry_zone(snap(state=RESTING, confluences=conf(False),
+                                        entry=3279.6, stop=3270.9))
+    head = out.split("\n")[0]
+    assert "LIMIT" in head, f"the header must name the order type:\n{out}"
+    assert "RESTING" in head, f"the header must say the order has not filled:\n{out}"
+
+
+def test_the_resting_price_is_never_called_an_ENTRY():
+    """An entry is a price you GOT; a limit is a price you are OFFERING. The header caused the
+    misreading and this line sat directly under it saying `Entry 3,279.60` for a price nothing
+    had traded at. Same false claim, one line down."""
+    out = alerts.format_entry_zone(snap(state=RESTING, confluences=conf(False),
+                                        entry=3279.6, stop=3270.9))
+    assert "Entry" not in out, f"nothing has been entered yet:\n{out}"
+    assert "Limit 3,279.60" in out, out
+
+
+def test_a_short_says_SELL_because_the_terminal_does():
+    """The order type is what MT5 shows in the terminal, so the message and the platform must
+    call one thing by one name. A long is a Buy Limit and a short is a Sell Limit — reporting
+    both as `LIMIT` would leave the direction to the body on the one line that gets read alone."""
+    assert "SELL LIMIT" in alerts.format_entry_zone(
+        snap(state=RESTING, side=-1, confluences=conf(False), entry=3279.6)).split("\n")[0]
+    assert "BUY LIMIT" in alerts.format_entry_zone(
+        snap(state=RESTING, side=1, confluences=conf(False), entry=3279.6)).split("\n")[0]
+
+
+def test_the_targets_are_numbered_so_the_ladder_is_not_inferred():
+    """`TP 3,296.10 · 3,311.75` asks the reader to infer that the first one is TP1. It is — and a
+    message should not be asking. The NUMBER is the claim: TP2 must be the second target the
+    strategy declared, whatever order the prices happen to fall in."""
+    out = alerts.format_entry_zone(snap(state=RESTING, confluences=conf(True), entry=3279.6,
+                                        stop=3270.9, targets=(3296.1, 3311.75)))
+    assert "TP1 3,296.10" in out, out
+    assert "TP2 3,311.75" in out, out
 
 
 def test_every_blocking_rule_is_carried_not_just_the_first():

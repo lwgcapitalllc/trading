@@ -816,11 +816,21 @@ setups over 6.5 years. Edge-triggering alone still announces one setup two or th
 *"can you make them less verbose?"*). Confluences collapsed onto one line as the strategy's own
 `detail`; `Waiting on a retrace into that zone` went because it sat directly under
 `Retrace zone — not tagged yet`; `(the zone's deep edge)` went because it explained a number rather
-than giving one. 🔴 **`ENTRY ZONE LIVE` now names only what is OUTSTANDING, and that one line is a
+than giving one. 🔴 **The resting message names only what is OUTSTANDING, and that one line is a
 safety property, not a nicety** — an order can rest at 2 of 3 (the gap can exist before price gets
-there), so a message headed `ENTRY ZONE LIVE` with a price on it must not read as *everything is
-met*. ⚠ **The `display` name comes from the RUNNER**, because a strategy only knows its class name
-and `MpcSosFadeStrategy` is not what the same bot is called in every other message.
+there), so a message carrying a price must not read as *everything is met*. ⚠ **The `display` name
+comes from the RUNNER**, because a strategy only knows its class name and `MpcSosFadeStrategy` is
+not what the same bot is called in every other message.
+
+🔴 **AND THE SAME TRIM CAUSED THE NEXT DAY'S DEFECT, so the rule it produced is the one to keep:
+when trimming a message, a word that explains a NUMBER is decoration and a word that names the
+STATE of something is not.** `(the zone's deep edge)` tells you how a price was derived and a
+reader can live without it; `(limit resting)` — deleted in the same pass, as the same kind of
+parenthetical — was the only word saying no position existed, and the message was read as a fill
+the next day. The header is the MT5 order type now (`BUY LIMIT RESTING` / `SELL LIMIT RESTING`) so
+the message and the terminal call one thing by one name, and the price line says `Limit`, never
+`Entry`. Four tests pin it, all watched RED. Story: `docs/ALGOS_BUILD_NOTES.md` → *The limit that
+read as a fill*.
 
 🔴 **`algos/tests/test_setup_alert_wording.py` exists because there was NOTHING there — every one
 of these four formatters was rewritten and 643 tests stayed green.** `test_setup_alerts.py` covers

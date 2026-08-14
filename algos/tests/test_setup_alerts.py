@@ -92,7 +92,7 @@ def test_the_resting_message_is_sent_once_even_if_the_order_flickers():
     a = _alerts(rec)
     for state in (RESTING, WATCHING, RESTING, WATCHING, RESTING):
         a._handle(_snap(state=state, entry=95.0, targets=(92.0, 88.0)))
-    assert rec.heads().count("🎯 ENTRY ZONE LIVE · LONG") == 1
+    assert rec.heads().count("🎯 BUY LIMIT RESTING") == 1
 
 
 # ── threading, so an outcome is never read apart from the setup it came from ─────────────────
@@ -118,7 +118,7 @@ def test_the_root_is_sent_first_even_when_a_setup_arrives_already_RESTING():
     rec = Recorder()
     a = _alerts(rec)
     a._handle(_snap(state=RESTING, entry=95.0))
-    assert rec.heads() == ["👀 SETUP FORMING · LONG", "🎯 ENTRY ZONE LIVE · LONG"]
+    assert rec.heads() == ["👀 SETUP FORMING · LONG", "🎯 BUY LIMIT RESTING"]
     assert rec.sent[1]["reply_to"] == 1
 
 
@@ -193,7 +193,7 @@ def test_a_switched_off_category_is_suppressed_while_the_others_still_send():
     a = _alerts(rec, categories=(ENTRY_ZONE_MSG,))
     for _ in range(5):
         a._handle(_snap(state=RESTING, entry=95.0))
-    assert rec.heads() == ["🎯 ENTRY ZONE LIVE · LONG"]
+    assert rec.heads() == ["🎯 BUY LIMIT RESTING"]
 
 
 def test_an_unknown_category_name_is_dropped_rather_than_silently_enabling_everything():
