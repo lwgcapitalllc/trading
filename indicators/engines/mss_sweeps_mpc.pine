@@ -1085,15 +1085,15 @@ var string GRP_MSSTY = "MSS Style"
 bool  msShow          = input.bool(true,  "Show MSS sweeps",                group = GRP_MSS, tooltip = "The signal itself. Off leaves the protected levels drawn but prints nothing.")
 bool  msShowLevel     = input.bool(true,  "Show protected level",           group = GRP_MSS, tooltip = "Extend the iHL/iLH the last iBOS left behind, until it is swept, failed, or invalidated.")
 bool  msShowFiltered  = input.bool(true,  "Show filtered-out sweeps (grey)",group = GRP_MSS, tooltip = "Draw the sweeps the trend filter REJECTED, in grey. This is how you judge whether the filter is helping or just cutting the sample. Turn it off once you have decided.")
-int   msMaxBars       = input.int(60, "Protected level expires after (bars)", minval = 0, maxval = 500, group = GRP_MSS, tooltip = "A level nobody has come back to for this many bars is no longer the level the market is defending. 0 = never expire. UNMEASURED — 60 is a legible starting point, not an optimum.")
-float msMaxDepthAtr   = input.float(1.0, "Max sweep depth (ATR)",  minval = 0.0, step = 0.1, group = GRP_MSS, tooltip = "How far price may go BEYOND the level and still count as a sweep. Deeper than this is a breakdown wearing a sweep's clothes. 0 = no cap.")
-float msMinReclaimAtr = input.float(0.1, "Min reclaim beyond level (ATR)", minval = 0.0, step = 0.05, group = GRP_MSS, tooltip = "The close must reclaim the level by this much, so a bar closing one tick back over it does not count. 0 = any close on the right side.")
+int   msMaxBars       = input.int(0, "Protected level expires after (bars)", minval = 0, maxval = 500, group = GRP_MSS, tooltip = "0 = never expire, which is now the default. Expiry matters much less since a level is also retired the moment price CLOSES through it, and at 60 bars it was throwing away a third of all levels untouched.")
+float msMaxDepthAtr   = input.float(0.0, "Max sweep depth (ATR)",  minval = 0.0, step = 0.1, group = GRP_MSS, tooltip = "How far price may WICK beyond the level and still count. 0 = no cap, which is now the default: a candle that closes back on the right side has reclaimed the level however deep the wick went, and a genuine breakdown is already caught by the close-through rule.")
+float msMinReclaimAtr = input.float(0.0, "Min reclaim beyond level (ATR)", minval = 0.0, step = 0.05, group = GRP_MSS, tooltip = "Extra distance the close must clear the level by. 0 = any close on the right side, which is now the default. Raise it if you get sweeps that close back over the level by a hair.")
 
 // ── Trend filter — the whole point of this fork ──────────
 // LuxAlgo's version has ONE degree of structure and therefore cannot ask this question.
 // Ours has two, so the filter is our own external engine rather than a bolted-on average.
-string msTrendMode = input.string("External structure", "Trend filter", options = ["Off", "External structure", "External + internal agree"], group = GRP_TREND, tooltip = "Off = every sweep prints (this is roughly what the LuxAlgo original does). External structure = the sweep must point the same way as our external engine's direction, st.dir. External + internal agree = both degrees must point that way.")
-int    msMinBos    = input.int(1, "Min continuation breaks in trend", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "How many iBOS the current internal run must have printed before its sweeps count. A trend is a SEQUENCE of continuation breaks, not one. 0 = off. This gate is independent of the dropdown above, so each can be judged on its own.")
+string msTrendMode = input.string("Trending market", "Trend filter", options = ["Off", "Trending market", "Trending + same direction"], group = GRP_TREND, tooltip = "Off = every sweep prints.\n\nTrending market (default) = the EXTERNAL structure must have continued at least once since its last change of character. Directionless on purpose: it asks whether the market is trending, not which way. In chop the external structure keeps flipping, the run never builds, and sweeps are refused.\n\nTrending + same direction ALSO demands the sweep point the same way as the last external break. 🔴 That was the old default and it refused ~100% of sweeps — our internal structure is rebuilt inside the PULLBACK of each external leg, so its first setup points against the external break by construction. Kept as an option, not a default, and only useful once you have measured it.")
+int    msMinBos    = input.int(0, "Min INTERNAL continuation breaks", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "⚠ 1 DOES NOTHING. A protected level only exists because a continuation break created it, so the count is already at least 1 by the time any sweep can happen — the gate was inert at its old default of 1 and looked like it was working. 2 or more is the first value that filters anything. 0 = off.")
 bool   msBlockOnExt = input.bool(true, "Disarm on opposing external SOS", group = GRP_TREND, tooltip = "An external change of character against the armed direction throws the level away. This is the case the LuxAlgo original gets wrong: there, only the opposite BOS disarms, so a stale level stays live through a whole counter-leg.")
 
 // ── Style / diagnostics ──────────────────────────────────
@@ -1118,6 +1118,11 @@ color  msArmBearCol   = input.color(#ef5350, "Armed level — bearish (protected
 color  msSweptBullCol = input.color(#7e57c2, "Taken level — was a protected iHL", group = GRP_MSSTY, tooltip = "Deliberately NOT a shade of the armed colour. WAITING and TAKEN are different states of the level, and a darker green reads as \"the same thing, dimmer\" rather than as \"this one is finished\".")
 color  msSweptBearCol = input.color(#ff9800, "Taken level — was a protected iLH", group = GRP_MSSTY, tooltip = "Same reasoning as the bullish one. Purple and amber sit far from the teal/red armed pair and far from each other, so all four states are separable at a glance.")
 string msLevelColMode = input.string("By direction", "Armed level colour", options = ["By direction", "Single colour"], group = GRP_MSSTY, tooltip = "By direction = green for a protected low, red for a protected high, so the line itself says which way the trade would be. Single colour falls back to the \"Protected level\" colour above.")
+
+// ⚠ Appended after every existing input of their own type, same reason as the block above.
+int   msMinExtBos = input.int(1, "Min EXTERNAL continuation breaks", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "This is the trending-versus-chopping measure. Counts how many times the EXTERNAL structure has continued in its own direction since its last change of character. In a trend that number builds; in chop the structure keeps reversing and it sits at 0. Directionless on purpose. Only read when the Trend filter is not Off.")
+bool  msOneShot   = input.bool(false, "Kill the level after one failed touch", group = GRP_MSS, tooltip = "🔴 This was HARDCODED ON and is the reason most levels never produced anything. The first candle to poke through decided, and a level that failed by a hair was deleted even though the next candle might have swept it perfectly. Off by default now: a level survives failed touches and keeps waiting. It is still retired the moment price CLOSES through it, which is a real break rather than a failed sweep.")
+bool  msReqGreen  = input.bool(false, "Sweep candle must close in its own direction", group = GRP_MSS, tooltip = "Was hardcoded ON. Demands a green candle on a bullish sweep, red on a bearish one. A genuine wick-and-reclaim often closes the other colour while still finishing back on the right side of the level, so this refused real sweeps. Off by default.")
 
 string msRejectSize = msRejectSizeIn == "Tiny" ? size.tiny : msRejectSizeIn == "Normal" ? size.normal : msRejectSizeIn == "Large" ? size.large : size.small
 
@@ -1148,6 +1153,21 @@ if int_bear_bos
     msRunCount := msRunDir == -1 ? msRunCount + 1 : 1
     msRunDir   := -1
 
+// ── External run tracking — the trending-vs-chopping measure ─
+// 🔴 THIS REPLACES THE OLD DIRECTION TEST, WHICH WAS THE BUG. `st.dir` is the direction of the
+// last EXTERNAL break. Our internal structure is wiped and reseeded on every external break,
+// and it reseeds tracking the PULLBACK — so the first protected level of every external leg
+// points AGAINST st.dir by construction. A filter demanding they agree therefore refused
+// essentially every sweep, and the chart read as "too strict" when it was asking an impossible
+// question. Counting external CONTINUATIONS instead asks the question that was actually wanted:
+// is this market trending, or is it turning over every leg. It has no direction in it at all.
+// ⚠ An external SOS also sets bull_bos/bear_bos in the engine, so SOS must be tested FIRST.
+var int msExtRun = 0
+if st.bull_sos or st.bear_sos
+    msExtRun := 0
+else if st.bull_bos or st.bear_bos
+    msExtRun += 1
+
 // ── Armed state ──────────────────────────────────────────
 var int   msArmDir   = 0
 var float msArmLevel = na
@@ -1161,6 +1181,7 @@ var int msCntRaw      = 0
 var int msCntSignal   = 0
 var int msCntFiltered = 0
 var int msCntFailed   = 0
+var int msCntBroken   = 0
 var int msCntExpired  = 0
 
 // ── Sweep test ───────────────────────────────────────────
@@ -1176,24 +1197,47 @@ bool  msDepthOkLo = msMaxDepthAtr <= 0 or na(msAtr) or msDepthLow  <= msMaxDepth
 bool  msDepthOkHi = msMaxDepthAtr <= 0 or na(msAtr) or msDepthHigh <= msMaxDepthAtr * msAtr
 
 float msReclaimBuf = na(msAtr) ? 0.0 : msMinReclaimAtr * msAtr
-bool  msReclaimLo  = close > msArmLevel + msReclaimBuf and close > open
-bool  msReclaimHi  = close < msArmLevel - msReclaimBuf and close < open
+bool  msReclaimLo  = close > msArmLevel + msReclaimBuf and (not msReqGreen or close > open)
+bool  msReclaimHi  = close < msArmLevel - msReclaimBuf and (not msReqGreen or close < open)
 
 bool msSweepLow  = barstate.isconfirmed and msWickLow  and msDepthOkLo and msReclaimLo
 bool msSweepHigh = barstate.isconfirmed and msWickHigh and msDepthOkHi and msReclaimHi
-bool msFailLow   = barstate.isconfirmed and msWickLow  and not msSweepLow
-bool msFailHigh  = barstate.isconfirmed and msWickHigh and not msSweepHigh
+
+// 🔴 A FAILED TOUCH IS NOT A BREAK, AND CONFLATING THEM WAS THE SECOND BUG. The old code
+// retired a level on ANY poke through that did not qualify — so a level that missed by a hair
+// was deleted before the candle that would have swept it properly ever arrived. Two different
+// events now:
+//   TOUCH FAIL — the wick went through and the candle did not qualify. The level SURVIVES
+//                and keeps waiting, unless msOneShot puts the old behaviour back.
+//   BREAK      — price CLOSED through and stayed there. That is not a failed sweep, it is the
+//                level being taken out, and it always retires it. No wick required: a gap that
+//                opens and closes beyond the level counts too.
+bool msTouchFailLow  = barstate.isconfirmed and msWickLow  and not msSweepLow
+bool msTouchFailHigh = barstate.isconfirmed and msWickHigh and not msSweepHigh
+bool msBreakLow  = barstate.isconfirmed and msArmDir ==  1 and not na(msArmLevel) and close < msArmLevel
+bool msBreakHigh = barstate.isconfirmed and msArmDir == -1 and not na(msArmLevel) and close > msArmLevel
+bool msFailLow   = msBreakLow  or (msOneShot and msTouchFailLow)
+bool msFailHigh  = msBreakHigh or (msOneShot and msTouchFailHigh)
+
+// Counted DISJOINT. A bar that closes through has also wicked through, so it satisfies both
+// tests — counting it in both rows would inflate "failed touches" with levels that were simply
+// taken out, and those two numbers call for opposite responses. A break wins.
+if msBreakLow or msBreakHigh
+    msCntBroken += 1
+else if msTouchFailLow or msTouchFailHigh
+    msCntFailed += 1
 
 // ── The trend gate ───────────────────────────────────────
 // Evaluated at SWEEP time, never at arm time. The trend has to still be intact when the
 // signal prints, and arming unconditionally is what lets the stats table report what the
 // filter actually removed.
-bool msExtOkLong  = msTrendMode == "Off" ? true : msTrendMode == "External structure" ? st.dir ==  1 : (st.dir ==  1 and msRunDir ==  1)
-bool msExtOkShort = msTrendMode == "Off" ? true : msTrendMode == "External structure" ? st.dir == -1 : (st.dir == -1 and msRunDir == -1)
+bool msTrendOk    = msTrendMode == "Off" or msExtRun >= msMinExtBos
+bool msDirOkLong  = msTrendMode != "Trending + same direction" or st.dir ==  1
+bool msDirOkShort = msTrendMode != "Trending + same direction" or st.dir == -1
 bool msRunOk      = msRunCount >= msMinBos
 
-bool msSignalLow  = msSweepLow  and msExtOkLong  and msRunOk
-bool msSignalHigh = msSweepHigh and msExtOkShort and msRunOk
+bool msSignalLow  = msSweepLow  and msTrendOk and msDirOkLong  and msRunOk
+bool msSignalHigh = msSweepHigh and msTrendOk and msDirOkShort and msRunOk
 
 // ── Why a sweep was refused ──────────────────────────────
 // 🔴 The first version of this tooltip printed the external direction and the break count and
@@ -1203,12 +1247,12 @@ bool msSignalHigh = msSweepHigh and msExtOkShort and msRunOk
 // the direction the sweep WAS, or it is not a verdict, it is a data dump.
 string msExtTxt = st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none yet"
 
-f_msWhy(bool dirOk, bool runOk, string want) =>
-    string _head = not dirOk ? "TREND DIRECTION" : not runOk ? "TREND MATURITY" : "—"
-    "REJECTED — failed on " + _head + "\n\n" + (dirOk ? "PASS" : "FAIL") + "  trend direction: external is " + msExtTxt + ", needs " + want + "\n" + (runOk ? "PASS" : "FAIL") + "  trend maturity: " + str.tostring(msRunCount) + " continuation break(s), needs " + str.tostring(msMinBos)
+f_msWhy(bool trendOk, bool dirOk, bool runOk, string want) =>
+    string _head = not trendOk ? "MARKET NOT TRENDING" : not dirOk ? "TREND DIRECTION" : not runOk ? "INTERNAL MATURITY" : "—"
+    "REJECTED — failed on " + _head + "\n\n" + (trendOk ? "PASS" : "FAIL") + "  trending: " + str.tostring(msExtRun) + " external continuation(s), needs " + str.tostring(msMinExtBos) + "\n" + (dirOk ? "PASS" : "FAIL") + "  direction: external is " + msExtTxt + ", needs " + want + (msTrendMode == "Trending + same direction" ? "" : "  (not checked)") + "\n" + (runOk ? "PASS" : "FAIL") + "  internal maturity: " + str.tostring(msRunCount) + " break(s), needs " + str.tostring(msMinBos)
 
-f_msWhyShort(bool dirOk, bool runOk) =>
-    not dirOk ? "wrong trend" : not runOk ? "trend too young" : ""
+f_msWhyShort(bool trendOk, bool dirOk, bool runOk) =>
+    not trendOk ? "not trending" : not dirOk ? "wrong trend" : not runOk ? "trend too young" : ""
 
 // ── Draw and disarm ──────────────────────────────────────
 // The armed level carries a live tag on its right end. It is a separate object from the line
@@ -1257,7 +1301,7 @@ if msSweepLow
             // no wick box and no bar tint. Shape, colour and supporting marks all disagree with
             // a signal, which is what makes the two unmistakable at a glance.
             float _roff = na(msAtr) ? 0.0 : msAtr * 0.5
-            label.new(bar_index, low - _roff, msRejectText ? f_msWhyShort(msExtOkLong, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bullish HL sweep — NOT TAKEN\n\n" + f_msWhy(msExtOkLong, msRunOk, "bullish"))
+            label.new(bar_index, low - _roff, msRejectText ? f_msWhyShort(msTrendOk, msDirOkLong, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bullish HL sweep — NOT TAKEN\n\n" + f_msWhy(msTrendOk, msDirOkLong, msRunOk, "bullish"))
     f_msCloseLine()
     f_msDropTag()
     msArmDir := 0
@@ -1267,7 +1311,6 @@ if msSweepLow
     msArmLine := na
     msArmLbl := na
 else if msFailLow
-    msCntFailed += 1
     f_msCloseLine()
     f_msDropTag()
     msArmDir := 0
@@ -1293,7 +1336,7 @@ if msSweepHigh
         msCntFiltered += 1
         if msShowFiltered
             float _roff = na(msAtr) ? 0.0 : msAtr * 0.5
-            label.new(bar_index, high + _roff, msRejectText ? f_msWhyShort(msExtOkShort, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bearish LH sweep — NOT TAKEN\n\n" + f_msWhy(msExtOkShort, msRunOk, "bearish"))
+            label.new(bar_index, high + _roff, msRejectText ? f_msWhyShort(msTrendOk, msDirOkShort, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bearish LH sweep — NOT TAKEN\n\n" + f_msWhy(msTrendOk, msDirOkShort, msRunOk, "bearish"))
     f_msCloseLine()
     f_msDropTag()
     msArmDir := 0
@@ -1303,7 +1346,6 @@ if msSweepHigh
     msArmLine := na
     msArmLbl := na
 else if msFailHigh
-    msCntFailed += 1
     f_msCloseLine()
     f_msDropTag()
     msArmDir := 0
@@ -1383,11 +1425,11 @@ if not na(msArmLbl)
 // Read "raw" against "signalled". A filter that removes most of the sample and leaves the same
 // hit rate has not helped; it has just made the sample smaller. That question is settled by
 // replaying it, not by this table — the table only tells you how big the difference IS.
-var table msTbl = table.new(position.top_right, 2, 13, border_width = 1)
+var table msTbl = table.new(position.top_right, 2, 14, border_width = 1)
 
 if barstate.islast and msShowStats
     table.cell(msTbl, 0, 0, "MSS Sweeps (MPC)", text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
-    table.cell(msTbl, 1, 0, msTrendMode == "Off" ? "filter OFF" : "filter ON", text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
+    table.cell(msTbl, 1, 0, msTrendMode == "Off" ? "filter OFF" : "trending run " + str.tostring(msExtRun) + "/" + str.tostring(msMinExtBos), text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
     table.cell(msTbl, 0, 1, "Levels armed",   text_color = chart.fg_color, text_size = size.small)
     table.cell(msTbl, 1, 1, str.tostring(msCntArmed),  text_color = chart.fg_color, text_size = size.small)
     table.cell(msTbl, 0, 2, "Sweeps (raw)",   text_color = chart.fg_color, text_size = size.small)
@@ -1396,25 +1438,30 @@ if barstate.islast and msShowStats
     table.cell(msTbl, 1, 3, str.tostring(msCntSignal), text_color = msBullCol, text_size = size.small)
     table.cell(msTbl, 0, 4, "Cut by filter",  text_color = color.gray, text_size = size.small)
     table.cell(msTbl, 1, 4, str.tostring(msCntFiltered) + (msCntRaw > 0 ? "  (" + str.tostring(math.round(100.0 * msCntFiltered / msCntRaw)) + "%)" : ""), text_color = color.gray, text_size = size.small)
-    table.cell(msTbl, 0, 5, "Failed reclaim", text_color = msBearCol, text_size = size.small)
-    table.cell(msTbl, 1, 5, str.tostring(msCntFailed), text_color = msBearCol, text_size = size.small)
-    table.cell(msTbl, 0, 6, "Expired unused", text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 1, 6, str.tostring(msCntExpired), text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 0, 7, "Armed now",      text_color = chart.fg_color, text_size = size.small)
-    table.cell(msTbl, 1, 7, msArmDir == 1 ? "bullish @ " + str.tostring(msArmLevel, format.mintick) : msArmDir == -1 ? "bearish @ " + str.tostring(msArmLevel, format.mintick) : "—", text_color = chart.fg_color, text_size = size.small)
+    // Touches and breaks are counted apart on purpose. A high touch count with the level
+    // surviving is the trigger being picky; a high BREAK count means the levels are simply
+    // being taken out, which is a different problem and needs a different answer.
+    table.cell(msTbl, 0, 5, "Failed touches", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 5, str.tostring(msCntFailed) + (msOneShot ? "  (each kills a level)" : "  (level survives)"), text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 6, "Closed through", text_color = msBearCol, text_size = size.small)
+    table.cell(msTbl, 1, 6, str.tostring(msCntBroken), text_color = msBearCol, text_size = size.small)
+    table.cell(msTbl, 0, 7, "Expired unused", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 7, msMaxBars > 0 ? str.tostring(msCntExpired) : "— (no expiry)", text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 0, 8, "Armed now",      text_color = chart.fg_color, text_size = size.small)
+    table.cell(msTbl, 1, 8, msArmDir == 1 ? "bullish @ " + str.tostring(msArmLevel, format.mintick) : msArmDir == -1 ? "bearish @ " + str.tostring(msArmLevel, format.mintick) : "—", text_color = chart.fg_color, text_size = size.small)
     // The legend is not decoration. The one question a reader has in front of this chart is
     // "is that mark a trade or not", and answering it in a tooltip means it is only answered
-    // for whoever hovers. Two rows, always on screen.
-    table.cell(msTbl, 0, 8, "▲▼ solid", text_color = msBullCol, text_size = size.small)
-    table.cell(msTbl, 1, 8, "SIGNAL — shaded wick, tinted bar", text_color = msBullCol, text_size = size.small)
-    table.cell(msTbl, 0, 9, "✕ grey",   text_color = msRejectCol, text_size = size.small)
-    table.cell(msTbl, 1, 9, "swept, refused — hover for the gate", text_color = msRejectCol, text_size = size.small)
-    table.cell(msTbl, 0, 10, "▲ iHL",  text_color = msArmBullCol, text_size = size.small)
-    table.cell(msTbl, 1, 10, "armed low — dip through, close above = long", text_color = msArmBullCol, text_size = size.small)
-    table.cell(msTbl, 0, 11, "▼ iLH",  text_color = msArmBearCol, text_size = size.small)
-    table.cell(msTbl, 1, 11, "armed high — poke above, close below = short", text_color = msArmBearCol, text_size = size.small)
-    table.cell(msTbl, 0, 12, "━ solid", text_color = msSweptBullCol, text_size = size.small)
-    table.cell(msTbl, 1, 12, "TAKEN — purple was a low, amber was a high", text_color = msSweptBearCol, text_size = size.small)
+    // for whoever hovers.
+    table.cell(msTbl, 0, 9, "▲▼ solid", text_color = msBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 9, "SIGNAL — shaded wick, tinted bar", text_color = msBullCol, text_size = size.small)
+    table.cell(msTbl, 0, 10, "✕ grey",  text_color = msRejectCol, text_size = size.small)
+    table.cell(msTbl, 1, 10, "swept, refused — hover for the gate", text_color = msRejectCol, text_size = size.small)
+    table.cell(msTbl, 0, 11, "▲ iHL",  text_color = msArmBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 11, "armed low — dip through, close above = long", text_color = msArmBullCol, text_size = size.small)
+    table.cell(msTbl, 0, 12, "▼ iLH",  text_color = msArmBearCol, text_size = size.small)
+    table.cell(msTbl, 1, 12, "armed high — poke above, close below = short", text_color = msArmBearCol, text_size = size.small)
+    table.cell(msTbl, 0, 13, "━ solid", text_color = msSweptBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 13, "TAKEN — purple was a low, amber was a high", text_color = msSweptBearCol, text_size = size.small)
 
 // ── Signal bar tint ──────────────────────────────────────
 // bgcolor() has to be a top-level call, so it cannot live inside the drawing blocks above.
