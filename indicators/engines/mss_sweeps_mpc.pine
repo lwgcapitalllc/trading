@@ -37,7 +37,7 @@
 // port. Every default below is a starting point chosen to be legible, not an optimum. The
 // stats table exists so the trend filter can be judged from a real chart rather than argued
 // about — read "raw" against "signalled" before believing the filter helps.
-indicator("MSS Sweeps (MPC)", "MSS Sweeps (MPC)", overlay = true, max_labels_count = 500, max_lines_count = 500)
+indicator("MSS Sweeps (MPC)", "MSS Sweeps (MPC)", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
 
 //============================================================
 //  SMC SETTINGS (hardcoded)
@@ -1536,11 +1536,15 @@ bool showSessionsInput = input.bool(false, "Show Sessions", group = "10 · Drawi
 
 bool showSessions         = showSessionsInput
 bool showSessionNames     = false
-// ⚠ FALSE is the strategy default and is deliberately kept. It limits the boxes to the CURRENT
-// week, anchored at Sunday 00:00 New York — so scrolling back through history shows no session
-// shading. Flip this constant to true for the mpc_assistant behaviour (every session, all
-// history) if reviewing old signals against sessions is what you are here for.
-bool showHistoricSessions = false
+// ⚠ TRUE HERE, and it deliberately DIFFERS from mpc_strategy.pine, which keeps this false and
+// draws the current week only. This file exists to be read backwards — every signal it prints
+// is a historical one being judged — and a session box that stops at Sunday answers "was that
+// sweep in London?" for this week and nowhere else. Same value mpc_assistant.pine runs.
+// ⚠ IT IS WHY max_boxes_count IS RAISED TO 500 in the indicator() declaration. At Pine's
+// default of 50 the newest boxes silently evict the oldest, so the shading would simply stop a
+// couple of weeks back and look like the toggle was broken rather than capped. 500 covers
+// roughly 160 days of three sessions, minus whatever the swept-wick boxes are holding.
+bool showHistoricSessions = true
 
 bool   showFirst         = true
 string firstSessionName  = "Tokyo"
@@ -1613,8 +1617,10 @@ getSessionInfos() =>
         sessionInfos.push(SessionInfo.new(thirdSessionColor, thirdSessionName, thirdSessionTime, thirdSessionTZ))
     sessionInfos
 
-// Anchored to the CALENDAR week rather than a rolling seven days, so mid-week it cannot bleed
-// into last week's boxes.
+// The current-week anchor. ⚠ INERT while showHistoricSessions is true — it is kept, not deleted,
+// so putting the current-week behaviour back stays the one-word change the constant above
+// promises. Anchored to the CALENDAR week rather than a rolling seven days, so mid-week it
+// cannot bleed into last week's boxes.
 int  msNyMidnight      = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
 int  msDaysSinceSunday = dayofweek(timenow, "America/New_York") - dayofweek.sunday
 int  msWeekStart       = msNyMidnight - msDaysSinceSunday * 86400000
