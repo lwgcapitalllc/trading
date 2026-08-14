@@ -203,20 +203,38 @@ ssh forexvps "cd C:\trading && git pull origin main"
 # Stages, verifies it imports, then swaps; a failure leaves the running bot untouched.
 ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot mpc_sos_fade_demo"
 
-# Restart onto the new version. SYS_MONITOR also restarts a dead bot on its own within
-# ~60s, so killing it is enough — but this is the deliberate path.
-ssh forexvps "schtasks /run /tn SYS_STARTUP"
+# Stop the running bot by ASKING, never by killing. It polls its instance dir every 10s,
+# writes a shutdown record, and clears the file. Give it ~30s, then confirm it is gone.
+ssh forexvps "echo stop > C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\stop.request"
 ssh forexvps "wmic process where \"name='python.exe'\" get commandline"
+
+# Restart onto the new version. SYS_MONITOR also brings a dead bot back on its own within
+# ~60s — but this is the deliberate path.
+ssh forexvps "schtasks /run /tn SYS_STARTUP"
+```
+
+🔴 **Ask, do not kill — and it is not politeness.** A hard kill gives the bot no chance to
+write its `shutdown` record, so the next startup reports *"the previous run ended without
+shutting down."* That sentence is the **silent-death detector**, and while this workflow said
+to kill, it fired on every restart anybody performed on purpose. **An alarm that fires when
+you press the button is one you learn to scroll past**, and the thing it catches is the one
+failure here that leaves no other trace. `stop.request` is the graceful path (`runner.py` →
+`STOP_FILE`); the Command Center's Stop button has used it since 2026-08-07 and the CLI was
+the half left behind. Story: `HISTORY.md`, the 2026-08-13 deploy that alarmed on itself.
+
+⚠ **Escalate only for a bot that ignored the request** — wedged, blocked in an MT5 call, or
+running code that predates the file. Delete the request afterwards, since nothing consumed it:
+
+```bash
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
+ssh forexvps "del C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\stop.request"
 ```
 
 ⚠ **NEVER `taskkill /f /im python.exe`.** It kills every Python process on the box — the
 trading bot, the Telegram bot, the MT5 backtest agent and the NT8 agent — and it is what
 killed the live bot on 2026-07-31 (dead for three days; nothing restarted it then). This
-workflow told you to run it, which is how it kept happening. Kill ONE bot by its commandline:
-
-```bash
-ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
-```
+workflow told you to run it, which is how it kept happening. Kill ONE bot by its commandline,
+as above.
 
 VPS path: `C:\trading\algos\` (main)
 
