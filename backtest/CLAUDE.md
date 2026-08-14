@@ -385,6 +385,44 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   VWAP stretch and fading the opening-range break both lose to random in 9 years out of 9. Gold does
   not mean-revert intraday. Do not build either. Stdlib only, runs off `backtest/cache/`.
 
+- **`tools/sweep_edge.py`** — **the sweep-and-reclaim is one trigger. Which LEVEL should it sweep?**
+  Added 2026-08-14 to settle structure-vs-session-vs-both with a number instead of a chart. Holds
+  the trigger fixed and varies only the level across five families — `structure` (the protected
+  iHL/iLH `mss_sweeps_mpc.pine` arms), `session`, `day`, `week`, and `h4` as an internal BASELINE.
+  Stdlib only, runs off `backtest/cache/`. Full record: `docs/SWEEP_LEVEL_STUDY.md`.
+  🔴 **ITS FINDING IS ABOUT THE TRIGGER, NOT THE LEVEL, WHICH IS NOT THE QUESTION IT WAS ASKED.**
+  `--trigger wick` drops only the close-back requirement, and **every family goes negative — h4 at
+  −2.2% / −5.3σ over 11,541 events.** Adding the reclaim is worth ~2 points of win rate to all five
+  families alike. The ranking between levels (structure +5.3% / +2.1σ, session +1.6%, day +1.9%,
+  week −0.6%, h4 +0.3%) is worth a fraction of that, falls to +1.5σ under `--min-risk-atr 0.5`,
+  is negative in 2023, and peaks at exactly the 2R the table was scored on. **Keep the reclaim; do
+  not add session levels to the MSS trigger on this evidence.**
+  ⚠ **Confluence made it WORSE**: structure alone +7.2%, structure ∧ session +4.3%. "Both" is not
+  the answer. ⚠ **The video's own headline rule — Asia high taken in London — is the WORST of the
+  six session pairings** (−0.8%, and −3.9% under the stop guard) while Asia-in-NY is the best.
+  That measures his LOCATION rule stripped of his M1 confirmation and his OB entry; it says the
+  location carries no information alone, not that his book is fake.
+  🔴 **The control is matched on THREE axes, not `trigger_edge.py`'s two.** Session sweeps land at
+  specific HOURS and gold does not drift uniformly around the clock, so a control drawn from all
+  hours would hand the session rows an edge made entirely of what time of day it is. Built by
+  post-stratification over cached (direction, hour, 0.25-ATR stop) cells — resampling per table row
+  was ~200M bar steps and the first draft did exactly that.
+  🔴 **CONFLUENCE IS READ OFF A PRE-SWEEP SNAPSHOT, and the first version was ORDER-DEPENDENT.**
+  Several families routinely hold a level at one price — a session low that is also PDL is one line
+  on the chart — and scoring off the mutated live-level dict meant whichever fired first was the
+  only one the next could still see: the four levels swept at 1192.89 reported four DIFFERENT
+  confluence sets, descending as they were popped. The structure-vs-session-vs-both answer is
+  decided entirely by that set.
+  ⚠ **The engines own the LEVELS; this tool owns the TRIGGER.** `ev.mitigated` is deliberately NOT
+  read — day/session/H4 mitigate on a bare wick while week mitigates on a close-through, so it
+  would score five families on three different triggers and call the difference a level effect.
+  Only `ev.created` / `ev.evicted` are consumed.
+  ⚠ **Median stop is 0.69 ATR — a few dollars on gold against a $0.12–0.33 round trip.** The tool
+  prints that warning itself and names `--min-risk-atr 0.5`. No costs, no ladder, no position slot:
+  a prior for a LEVEL, never a strategy's number.
+  ⚠ **`--min-risk-atr` defaults to 0** (honest for a study, wrong for a strategy) and it is the
+  cut that decides whether structure's edge clears 2σ. Quote both.
+
 - **`tools/killzone_profile.py`** + **`tools/killzone_sweep.py`** — **is the New York kill zone
   special, or does it just look special because we watch it?** Added 2026-08-04, stdlib only, runs
   off `backtest/cache/`. The profile tool measures what price DOES in a window and reports the same
