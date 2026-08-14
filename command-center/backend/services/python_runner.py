@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import config as cfg
+
 # Stdlib-only, imports nothing from services — safe at module scope despite this module sitting
 # inside the runner_dispatch import cycle.
 from services import strategy_import
@@ -98,7 +99,9 @@ def _cost_profile(spec: dict):
       measurements (`backtest/fills.py` records the tick counts behind each spread and the
       Specification window behind each swap), and a number the operator can type is a number that
       can silently disagree with the broker. Picking `puprime_standard` instead of the default
-      `vantage_demo` moves the spread 0.22 → 0.33, because those are two different measurements.
+      `vantage_demo` moves the spread 0.22 → 0.32, because those are two different measurements.
+      (This line said 0.33 until 2026-08-14; `b03aacd` re-measured Standard to 0.32 on
+      2026-08-10 and the prose was the stale half. The number lives in `backtest/fills.py`.)
     * **`bid_ask_fills` REPLACES the spread cost, it does not add to it** — see
       `Execution._charge_spread`. It is also the ONLY layer that can change which trades exist,
       which is why it is its own switch, and it implies `spread`: modelling the ask with no
@@ -114,26 +117,29 @@ def _cost_profile(spec: dict):
     slippage = int(spec.get("slippage_ticks") or 0)
     layers = spec.get("cost_layers")
 
-    if layers is None:                      # pre-2026-08-02 row — the old contract, untouched
+    if layers is None:  # pre-2026-08-02 row — the old contract, untouched
         if commission <= 0 and slippage <= 0:
             return None
-        return AccountProfile(name="lab", commission_per_side_per_lot=commission,
-                              slippage_ticks=slippage, swap=None)
+        return AccountProfile(
+            name="lab", commission_per_side_per_lot=commission, slippage_ticks=slippage, swap=None
+        )
 
     on = {str(x) for x in layers}
     unknown = on - set(COST_LAYERS)
     if unknown:
         raise ValueError(
             f"unknown cost layer(s) {sorted(unknown)} — known layers are {list(COST_LAYERS)}. "
-            f"A layer nobody reads would be charged as nothing while the page said otherwise.")
+            f"A layer nobody reads would be charged as nothing while the page said otherwise."
+        )
     if not on:
-        return None                         # explicit "charge nothing": no charge path entered
+        return None  # explicit "charge nothing": no charge path entered
 
     broker = spec.get("broker_profile") or "vantage_demo"
     if broker not in PROFILES:
         raise ValueError(
             f"broker_profile {broker!r} unknown — the spread and swap are read off a real "
-            f"account, so it must be one of: {sorted(PROFILES)}")
+            f"account, so it must be one of: {sorted(PROFILES)}"
+        )
     base = PROFILES[broker]
 
     bid_ask = "bid_ask_fills" in on
@@ -174,8 +180,11 @@ def _shed_old_payloads_locked() -> None:
     Caller must hold `_LOCK`. Running jobs are never touched — a job still working needs its
     accumulators, and its payload is the one thing that cannot be recomputed.
     """
-    finished = [j for j in _JOBS.values()
-                if j["status"] != "running" and (j.get("results") or j.get("combos"))]
+    finished = [
+        j
+        for j in _JOBS.values()
+        if j["status"] != "running" and (j.get("results") or j.get("combos"))
+    ]
     if len(finished) <= _MAX_FINISHED_PAYLOADS:
         return
     finished.sort(key=lambda j: j["updated_at"], reverse=True)
@@ -190,9 +199,16 @@ def start_backtest(job_spec: dict) -> dict:
     job_id = job_spec.get("job_id") or f"py_{int(time.time() * 1000)}"
     with _LOCK:
         _JOBS[job_id] = {
-            "job_id": job_id, "status": "running", "pct": 1,
-            "message": "starting…", "created_at": time.time(), "updated_at": time.time(),
-            "results": None, "error": None, "cancelled": False, "log": [],
+            "job_id": job_id,
+            "status": "running",
+            "pct": 1,
+            "message": "starting…",
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "results": None,
+            "error": None,
+            "cancelled": False,
+            "log": [],
         }
         _shed_old_payloads_locked()
     t = threading.Thread(target=_run, args=(job_id, job_spec), daemon=True)
@@ -203,9 +219,14 @@ def start_backtest(job_spec: dict) -> dict:
 def _run(job_id: str, spec: dict) -> None:
     try:
         _execute(job_id, spec)
-    except Exception as exc:                       # noqa: BLE001 — a worker thread must never die silently
-        _set(job_id, status="failed_error", pct=100, message=str(exc),
-             error=f"{exc}\n{traceback.format_exc()}")
+    except Exception as exc:  # noqa: BLE001 — a worker thread must never die silently
+        _set(
+            job_id,
+            status="failed_error",
+            pct=100,
+            message=str(exc),
+            error=f"{exc}\n{traceback.format_exc()}",
+        )
 
 
 def _cancelled(job_id: str) -> bool:
@@ -233,13 +254,15 @@ def _execute(job_id: str, spec: dict) -> None:
     _set(job_id, pct=5, message=f"loading {symbol} {tf}m bars…")
     df = BarSource().load(symbol, tf, spec["start_date"], spec["end_date"])
     if df.empty:
-        raise ValueError(f"no bars for {symbol} {tf}m over "
-                         f"[{spec['start_date']}, {spec['end_date']}]")
+        raise ValueError(
+            f"no bars for {symbol} {tf}m over [{spec['start_date']}, {spec['end_date']}]"
+        )
 
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
     capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
-    strategy = build_strategy(entry["strategy"], config, initial_capital=capital,
-                              cost_profile=_cost_profile(spec))
+    strategy = build_strategy(
+        entry["strategy"], config, initial_capital=capital, cost_profile=_cost_profile(spec)
+    )
 
     if getattr(config, "exec_secondary", False):
         # Secondary (1m sniper) re-entry is on → replay 15m PRIMARY + 1m SECONDARY on one clock
@@ -256,7 +279,8 @@ def _execute(job_id: str, spec: dict) -> None:
             raise ValueError(
                 f"exec_secondary is on but no 1m bars loaded for {symbol} over "
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves 1m history "
-                f"for this window (or turn the secondary off).")
+                f"for this window (or turn the secondary off)."
+            )
         _set(job_id, pct=15, message=f"replaying {len(df):,} × 15m + {len(df1m):,} × 1m…")
 
         def _prog(i: int, n: int) -> None:
@@ -274,12 +298,20 @@ def _execute(job_id: str, spec: dict) -> None:
     _set(job_id, pct=95, message="building results…")
     # `blocks` / `misses` are optional on the execution layer — a strategy that records no
     # refusals or near-misses (or an older one) yields an empty list, never a missing key.
-    results = build_results(strategy.execution.trades, point_value=config.point_value,
-                            initial_capital=capital,
-                            blocked=getattr(strategy.execution, "blocks", None),
-                            missed=getattr(strategy.execution, "misses", None))
-    _set(job_id, status="complete", pct=100, results=results,
-         message=f"{len(strategy.execution.trades)} trades")
+    results = build_results(
+        strategy.execution.trades,
+        point_value=config.point_value,
+        initial_capital=capital,
+        blocked=getattr(strategy.execution, "blocks", None),
+        missed=getattr(strategy.execution, "misses", None),
+    )
+    _set(
+        job_id,
+        status="complete",
+        pct=100,
+        results=results,
+        message=f"{len(strategy.execution.trades)} trades",
+    )
 
 
 def _replay(job_id: str, strategy, df, total: int) -> None:
@@ -293,8 +325,7 @@ def _replay(job_id: str, strategy, df, total: int) -> None:
     from backtest.replay import EngineStack, iter_bars
 
     if len(df.index) > 1:
-        strategy.execution.bar_ms = int(
-            df.index.to_series().diff().min().total_seconds() * 1000)
+        strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
     stack = EngineStack(strategy.engine_config())
     step = max(1, total // 100)
@@ -302,8 +333,11 @@ def _replay(job_id: str, strategy, df, total: int) -> None:
         if bar.index % step == 0:
             if _cancelled(job_id):
                 return
-            _set(job_id, pct=min(94, 15 + int(bar.index / total * 79)),
-                 message=f"bar {bar.index:,} / {total:,}")
+            _set(
+                job_id,
+                pct=min(94, 15 + int(bar.index / total * 79)),
+                message=f"bar {bar.index:,} / {total:,}",
+            )
         strategy.step(stack.step(bar))
 
 
@@ -391,10 +425,19 @@ def job_status(job_id: str) -> dict:
     with _LOCK:
         job = _JOBS.get(job_id)
         if job is None:
-            return {"status": "failed_error", "pct": 100,
-                    "message": f"unknown python job {job_id}", "updated_at": time.time()}
-        out = {"status": job["status"], "pct": job["pct"], "message": job["message"],
-               "updated_at": job["updated_at"], "error": job["error"]}
+            return {
+                "status": "failed_error",
+                "pct": 100,
+                "message": f"unknown python job {job_id}",
+                "updated_at": time.time(),
+            }
+        out = {
+            "status": job["status"],
+            "pct": job["pct"],
+            "message": job["message"],
+            "updated_at": job["updated_at"],
+            "error": job["error"],
+        }
         # Sweep jobs only: drives the optimizer's live completed_runs. Absent on single
         # backtests, which have no combo count — the poller skips a missing key.
         if job.get("total_count"):
@@ -450,15 +493,25 @@ def health() -> dict:
 # no terminal here, so "native" means `backtest.optimizer.run_sweep` on this box's cores. The job
 # contract is identical either way, so `optimization_runner` needs no Python-specific branch.
 
+
 def start_native_optimization(opt_spec: dict) -> dict:
     """Submit a Python grid sweep. Same contract as the agents' /native-optimize."""
     job_id = opt_spec.get("job_id") or f"pyopt_{int(time.time() * 1000)}"
     with _LOCK:
         _JOBS[job_id] = {
-            "job_id": job_id, "status": "running", "pct": 1,
-            "message": "expanding grid…", "created_at": time.time(), "updated_at": time.time(),
-            "results": None, "error": None, "cancelled": False, "log": [],
-            "combos": None, "completed_count": 0, "total_count": 0,
+            "job_id": job_id,
+            "status": "running",
+            "pct": 1,
+            "message": "expanding grid…",
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "results": None,
+            "error": None,
+            "cancelled": False,
+            "log": [],
+            "combos": None,
+            "completed_count": 0,
+            "total_count": 0,
         }
         _shed_old_payloads_locked()
     threading.Thread(target=_run_opt, args=(job_id, opt_spec), daemon=True).start()
@@ -468,9 +521,14 @@ def start_native_optimization(opt_spec: dict) -> dict:
 def _run_opt(job_id: str, spec: dict) -> None:
     try:
         _execute_opt(job_id, spec)
-    except Exception as exc:                       # noqa: BLE001 — a worker thread must never die silently
-        _set(job_id, status="failed_error", pct=100, message=str(exc),
-             error=f"{exc}\n{traceback.format_exc()}")
+    except Exception as exc:  # noqa: BLE001 — a worker thread must never die silently
+        _set(
+            job_id,
+            status="failed_error",
+            pct=100,
+            message=str(exc),
+            error=f"{exc}\n{traceback.format_exc()}",
+        )
 
 
 def _execute_opt(job_id: str, spec: dict) -> None:
@@ -509,33 +567,50 @@ def _execute_opt(job_id: str, spec: dict) -> None:
     if not param_sets:
         raise ValueError("param_sets was empty and param_ranges expanded to no combinations")
 
-    _set(job_id, total_count=len(param_sets),
-         message=f"loading {symbol} {tf}m bars for {len(param_sets)} combos…", pct=5)
+    _set(
+        job_id,
+        total_count=len(param_sets),
+        message=f"loading {symbol} {tf}m bars for {len(param_sets)} combos…",
+        pct=5,
+    )
     df = BarSource().load(symbol, tf, spec["start_date"], spec["end_date"])
     if df.empty:
-        raise ValueError(f"no bars for {symbol} {tf}m over "
-                         f"[{spec['start_date']}, {spec['end_date']}]")
+        raise ValueError(
+            f"no bars for {symbol} {tf}m over [{spec['start_date']}, {spec['end_date']}]"
+        )
 
     fixed = spec.get("fixed_params") or {}
     capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
-    combos = [Combo(params=ps, config=_build_config(entry["config"], {**fixed, **ps}, symbol))
-              for ps in param_sets]
+    combos = [
+        Combo(params=ps, config=_build_config(entry["config"], {**fixed, **ps}, symbol))
+        for ps in param_sets
+    ]
 
     def _progress(done: int, total: int) -> None:
-        _set(job_id, completed_count=done, total_count=total,
-             pct=min(95, 5 + int(done / total * 90)), message=f"combo {done} / {total}")
+        _set(
+            job_id,
+            completed_count=done,
+            total_count=total,
+            pct=min(95, 5 + int(done / total * 90)),
+            message=f"combo {done} / {total}",
+        )
 
     _set(job_id, pct=8, message=f"sweeping {len(combos)} combos…")
-    rows = run_sweep(module_path=f"strategies.python.{pkg_name}", df=df, combos=combos,
-                     initial_capital=capital, monorepo_root=str(_MONOREPO),
-                     progress=_progress, should_cancel=lambda: _cancelled(job_id),
-                     cost_profile=_cost_profile(spec))
+    rows = run_sweep(
+        module_path=f"strategies.python.{pkg_name}",
+        df=df,
+        combos=combos,
+        initial_capital=capital,
+        monorepo_root=str(_MONOREPO),
+        progress=_progress,
+        should_cancel=lambda: _cancelled(job_id),
+        cost_profile=_cost_profile(spec),
+    )
 
     if _cancelled(job_id):
         _set(job_id, status="failed_cancelled", pct=100, message="cancelled")
         return
-    _set(job_id, status="complete", pct=100, combos=rows,
-         message=f"{len(rows)} combos complete")
+    _set(job_id, status="complete", pct=100, combos=rows, message=f"{len(rows)} combos complete")
 
 
 def native_opt_results(job_id: str) -> dict:

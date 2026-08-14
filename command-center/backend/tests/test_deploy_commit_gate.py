@@ -25,7 +25,7 @@ committer is a program: it does not nag, it stops the work and reports something
 from __future__ import annotations
 
 import ast
-import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -41,18 +41,83 @@ _HOOK = _REPO / ".githooks" / "commit-msg"
 _BOTS = _BACKEND / "routers" / "bots.py"
 
 
-def _run_hook(message: str) -> subprocess.CompletedProcess:
-    """Run the REAL hook against a message. It only READS the staged set, so this commits nothing.
+_PROBE_STAGED = "algos/markets/fx/instances/mpc_sos_fade_demo/config.json"
 
-    ⚠ It is given a message with no staged code files, so it exercises the DOCS-line parser rather
-    than the pairing rule — which is the half this app can control.
+
+def _run_hook(message: str) -> subprocess.CompletedProcess:
+    """Run the REAL hook against a message, with a staged set WE control.
+
+    🔴 **This used to inherit whatever the developer happened to have staged, and that made both
+    tests below a coin flip on the state of the working tree (fixed 2026-08-14).** The hook exits
+    0 at `[ -z "$STAGED" ] && exit 0` — the FIRST thing it does after the merge/rebase checks —
+    so with nothing staged it never reaches the DOCS parser at all, and
+    `test_a_message_without_a_docs_line_is_refused_by_the_real_hook` failed by getting exit 0 for
+    a reason that has nothing to do with the DOCS line. This docstring previously ASSERTED the
+    opposite ("it exercises the DOCS-line parser rather than the pairing rule") — a claim about
+    the hook's control flow that nothing checked, which is this repo's most-repeated defect in
+    its quietest form. The reverse case is just as bad: run the suite with real code staged and
+    the "the hook accepts our message" test fails on the PAIRING rule instead.
+
+    ⚠ **`GIT_INDEX_FILE` points git at a SCRATCH index, so the real one is never touched** — no
+    `git add`, no `git reset`, nothing to restore if the process dies mid-test. The scratch index
+    is seeded from `HEAD` and then one path is force-removed from it, which shows up as exactly
+    one staged deletion. That path is an INSTANCE CONFIG on purpose: it is what this app really
+    commits, and `needs_proof` does not match it, so the hook reaches the DOCS parser rather than
+    stopping at the money-path evidence rule one branch earlier.
+
+    ⚠ **`--force-remove` rather than staging a modification**, because writing a blob to stage a
+    change would put a loose object in `.git/objects` for a test that claims to commit nothing.
     """
     msg = _REPO / ".git" / "COMMIT_EDITMSG_probe"
+    index = _REPO / ".git" / "index_probe"
     msg.write_text(message, encoding="utf-8")
+    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
     try:
-        return subprocess.run([str(_HOOK), str(msg)], capture_output=True, text=True, timeout=30)
+        _seed_probe_index(env, index)
+        return subprocess.run(
+            [str(_HOOK), str(msg)], cwd=_REPO, env=env, capture_output=True, text=True, timeout=30
+        )
     finally:
         msg.unlink(missing_ok=True)
+        index.unlink(missing_ok=True)
+
+
+def _git(env, *argv) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *argv], cwd=_REPO, env=env, check=True, capture_output=True, text=True, timeout=30
+    )
+
+
+def _seed_probe_index(env: dict, index: Path) -> None:
+    """Put exactly `_PROBE_STAGED` in the scratch index and nothing else.
+
+    ⚠ **Both `_run_hook` and the non-vacuity test below go through THIS function**, rather than
+    each holding its own copy of the two git calls. A guard that restates the thing it guards
+    cannot fail when that thing breaks — it just agrees with itself, which is how the first
+    version of this fix was written and why it is worth a named helper for two lines.
+    """
+    index.unlink(missing_ok=True)
+    _git(env, "read-tree", "HEAD")
+    _git(env, "update-index", "--force-remove", _PROBE_STAGED)
+
+
+@pytest.mark.skipif(not _HOOK.exists(), reason="hook not present in this checkout")
+def test_the_probe_really_stages_something():
+    """Non-vacuity for `_run_hook` itself: an empty staged set makes both tests below meaningless.
+
+    ✅ Watched RED by MUTATION — dropping the `--force-remove` call from `_seed_probe_index`
+    turns this red AND `test_a_message_without_a_docs_line_is_refused_by_the_real_hook` with it,
+    which is exactly the state the suite was silently in before 2026-08-14.
+    """
+    index = _REPO / ".git" / "index_probe"
+    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+    try:
+        _seed_probe_index(env, index)
+        staged = _git(env, "diff", "--cached", "--name-only", "--diff-filter=ACMRD")
+    finally:
+        index.unlink(missing_ok=True)
+
+    assert staged.stdout.split() == [_PROBE_STAGED]
 
 
 @pytest.mark.skipif(not _HOOK.exists(), reason="hook not present in this checkout")
@@ -81,7 +146,8 @@ def test_the_real_hook_accepts_the_message_shape_this_app_produces():
     assert captured, "no commit was attempted"
     result = _run_hook(captured[0] + "\n")
     assert result.returncode == 0, (
-        f"the real commit-msg hook REFUSED this app's own message:\n{result.stdout}{result.stderr}")
+        f"the real commit-msg hook REFUSED this app's own message:\n{result.stdout}{result.stderr}"
+    )
 
 
 def test_a_message_without_a_docs_line_is_refused_by_the_real_hook():
@@ -93,8 +159,9 @@ def test_a_message_without_a_docs_line_is_refused_by_the_real_hook():
     if not _HOOK.exists():
         pytest.skip("hook not present in this checkout")
 
-    # Staged set is empty in this probe, so the hook exits 0 on the PAIRING rule — what is checked
-    # here is the DOCS parser, which is the part this app's message has to satisfy.
+    # `_run_hook` stages one instance config, so the hook gets past its empty-staged early exit
+    # and past `needs_proof` (an instance config is not a money path) and lands on the DOCS
+    # parser — the part this app's message has to satisfy.
     result = _run_hook("bots: probe [command center]\n\nDOCS: none - short\n")
     assert result.returncode != 0, "the hook accepted a DOCS reason under ten characters"
     assert "reason" in (result.stdout + result.stderr).lower()
@@ -116,16 +183,20 @@ def test_every_call_site_passes_a_reason():
     routes somebody remembered to write one for, and a new deploy path added next month is exactly
     the one nobody will. The signature makes it a TypeError, and this names it in the suite."""
     tree = ast.parse(_BOTS.read_text(encoding="utf-8"))
-    calls = [n for n in ast.walk(tree)
-             if isinstance(n, ast.Call)
-             and isinstance(n.func, ast.Name)
-             and n.func.id == "_git_commit_push"]
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "_git_commit_push"
+    ]
 
     assert calls, "no _git_commit_push call sites found — has it been renamed?"
     for call in calls:
         assert len(call.args) >= 3, (
             f"_git_commit_push at line {call.lineno} passes no docs_reason. The commit-msg hook "
-            f"will refuse the commit and the endpoint will report 'git push failed'.")
+            f"will refuse the commit and the endpoint will report 'git push failed'."
+        )
 
 
 def test_no_call_site_reaches_for_no_verify():
@@ -138,9 +209,11 @@ def test_no_call_site_reaches_for_no_verify():
     argument. The first version of this test failed on its own docstring.
     """
     tree = ast.parse(_BOTS.read_text(encoding="utf-8"))
-    literals = [n.value for n in ast.walk(tree)
-                if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    literals = [
+        n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    ]
     offenders = [s for s in literals if s.strip() == "--no-verify"]
     assert not offenders, f"a git call passes {offenders} — it leaves no trace of the skip"
-    assert any(s == "commit" for s in literals), \
+    assert any(s == "commit" for s in literals), (
         "no 'commit' argument found — the git call shape changed, re-check this guard"
+    )

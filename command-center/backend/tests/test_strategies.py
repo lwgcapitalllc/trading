@@ -3,10 +3,11 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) + 2 Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
-mpc_bleg 2026-07-24; mpc_bos deleted 2026-08-04). NT8 and Python strategies get a
-suggested_instrument; MT5 does not. Param types span int/double/bool (NT8), string (MT5),
-and all four off a dataclass (Python).
+2026-06-22) + 4 Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
+mpc_bleg 2026-07-24, mpc_bos deleted 2026-08-04 and re-added 2026-08-07,
+mpc_realign 2026-08-13). NT8 and Python strategies get a suggested_instrument; MT5 does
+not. Param types span int/double/bool (NT8), string (MT5), and all four off a dataclass
+(Python).
 
 `EXPECTED_CLASS_NAMES` is the single place the roster is stated — every count below is
 `len()` of it, never a repeated literal. Adding a strategy is then a one-line edit here
@@ -22,7 +23,6 @@ just its package path.
 """
 
 import textwrap
-import pytest
 
 EXPECTED_CLASS_NAMES = {
     "ORB",
@@ -33,6 +33,12 @@ EXPECTED_CLASS_NAMES = {
     # gone stale in BOTH directions — a deleted strategy left behind, then a new one not added —
     # which is the callout above earning its keep for the second time.
     "MpcBosStrategy",
+    # Added 2026-08-14. `strategies/python/mpc_realign` landed 2026-08-13 (e87c304) and its
+    # roster line did not — the THIRD time these three tests have gone red for this one cause,
+    # and the second time in the "new strategy not added" direction. `MpcRealignStrategy`
+    # subclasses `MpcSosFadeStrategy`, so grepping for the base class name would not have found
+    # it either: the thing to grep for is `LAB_STRATEGY`, which is what the scanner reads.
+    "MpcRealignStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\
@@ -57,6 +63,7 @@ SYNTHETIC_CS = textwrap.dedent("""\
 
 # ── Cold start ─────────────────────────────────────────────────────────────────
 
+
 def test_scan_adds_every_strategy(client):
     r = client.post("/strategies/scan")
     assert r.status_code == 200
@@ -77,8 +84,9 @@ def test_strategies_have_populated_param_schema(client):
     strategies = client.get("/strategies").json()
     for s in strategies:
         schema = s["param_schema"]
-        assert isinstance(schema, list) and len(schema) > 0, \
+        assert isinstance(schema, list) and len(schema) > 0, (
             f"{s['class_name']} has empty param_schema"
+        )
         for p in schema:
             assert p.get("name")
             assert isinstance(p.get("type"), str) and p["type"]
@@ -96,6 +104,7 @@ def test_nt8_strategies_have_suggested_instrument(client):
 
 # ── Idempotence ────────────────────────────────────────────────────────────────
 
+
 def test_second_scan_is_idempotent(client):
     client.post("/strategies/scan")
     r = client.post("/strategies/scan")
@@ -106,6 +115,7 @@ def test_second_scan_is_idempotent(client):
 
 
 # ── Param-schema + hash update on source change ───────────────────────────────
+
 
 def _write_synthetic(tmp_path, range_max):
     nt8_dir = tmp_path / "strategies" / "ninjatrader"
@@ -125,16 +135,18 @@ def test_range_change_updates_param_schema(fresh_db, monkeypatch, tmp_path):
 
     result1 = strategy_scanner.scan_strategies()
     assert result1["added"] == 1
-    period_v1 = next(p for p in lab_db.get_strategy("syntheticstrat")["param_schema"]
-                     if p["name"] == "Period")
+    period_v1 = next(
+        p for p in lab_db.get_strategy("syntheticstrat")["param_schema"] if p["name"] == "Period"
+    )
     assert period_v1["max"] == 60
 
     cs_file.write_text(SYNTHETIC_CS.format(range_max=120))
     result2 = strategy_scanner.scan_strategies()
     assert result2["updated"] == 1
     assert result2["added"] == 0
-    period_v2 = next(p for p in lab_db.get_strategy("syntheticstrat")["param_schema"]
-                     if p["name"] == "Period")
+    period_v2 = next(
+        p for p in lab_db.get_strategy("syntheticstrat")["param_schema"] if p["name"] == "Period"
+    )
     assert period_v2["max"] == 120
 
 
@@ -155,19 +167,26 @@ def test_source_hash_updates_on_change(fresh_db, monkeypatch, tmp_path):
 
 # ── remove_strategy: the VPS delete must skip local-only runners ──────────────
 
+
 def test_remove_python_strategy_never_calls_the_vps(fresh_db, monkeypatch):
     """A python strategy is a package that runs in-process — it is never deployed, so removing
     it must not ask the agent to delete a file. Regression: reconcile passed the package DIR
     name to the NT8 agent, which replied "Only .cs files are allowed" and surfaced a warning
     about a file that never existed."""
     import time
+
     from services import lab_db, strategy_scanner
 
-    lab_db.upsert_strategy({
-        "id": "pystrat", "name": "Py", "class_name": "PyStrategy",
-        "source_path": "strategies/python/pystrat", "scanned_at": int(time.time()),
-        "runner": "python",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "pystrat",
+            "name": "Py",
+            "class_name": "PyStrategy",
+            "source_path": "strategies/python/pystrat",
+            "scanned_at": int(time.time()),
+            "runner": "python",
+        }
+    )
 
     def _boom(_filename):
         raise AssertionError("the VPS agent must not be called for a python strategy")
@@ -183,20 +202,27 @@ def test_remove_python_strategy_never_calls_the_vps(fresh_db, monkeypatch):
 def test_remove_nt8_strategy_still_deletes_the_vps_file(fresh_db, monkeypatch):
     """The python skip must not disarm the delete for runners that DO deploy."""
     import time
+
     from services import lab_db, strategy_scanner
 
-    lab_db.upsert_strategy({
-        "id": "orbtest", "name": "ORB", "class_name": "ORB",
-        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "orbtest",
+            "name": "ORB",
+            "class_name": "ORB",
+            "source_path": "strategies/ninjatrader/ORB.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
 
     called = []
-    monkeypatch.setattr(strategy_scanner.runner_dispatch, "delete_strategy_file",
-                        lambda fn: called.append(fn))
+    monkeypatch.setattr(
+        strategy_scanner.runner_dispatch, "delete_strategy_file", lambda fn: called.append(fn)
+    )
 
     res = strategy_scanner.remove_strategy("orbtest")
-    assert called == ["ORB.cs"]          # the filename, not the path
+    assert called == ["ORB.cs"]  # the filename, not the path
     assert res["vps_deleted"] is True
 
 
@@ -204,8 +230,10 @@ def test_remove_nt8_strategy_still_deletes_the_vps_file(fresh_db, monkeypatch):
 # Both endpoints below assumed a file and called read_text() on the package dir
 # (IsADirectoryError → 500). sync-status took every OTHER strategy down with it.
 
+
 def _add_python_strategy(tmp_path, monkeypatch):
     import time
+
     import config as cfg
     from services import lab_db
 
@@ -213,17 +241,22 @@ def _add_python_strategy(tmp_path, monkeypatch):
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("")
     monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
-    lab_db.upsert_strategy({
-        "id": "pystrat", "name": "Py Strat", "class_name": "PyStrategy",
-        "source_path": "strategies/python/pystrat", "scanned_at": int(time.time()),
-        "runner": "python",
-        "param_schema": [
-            {"name": "lookback", "type": "int", "default": 5},
-            {"name": "risk_pct", "type": "float", "default": 1.0},
-            {"name": "enabled", "type": "bool", "default": True},
-            {"name": "mode", "type": "str", "default": "a"},
-        ],
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "pystrat",
+            "name": "Py Strat",
+            "class_name": "PyStrategy",
+            "source_path": "strategies/python/pystrat",
+            "scanned_at": int(time.time()),
+            "runner": "python",
+            "param_schema": [
+                {"name": "lookback", "type": "int", "default": 5},
+                {"name": "risk_pct", "type": "float", "default": 1.0},
+                {"name": "enabled", "type": "bool", "default": True},
+                {"name": "mode", "type": "str", "default": "a"},
+            ],
+        }
+    )
 
 
 def test_param_types_reads_the_schema_for_python(client, tmp_path, monkeypatch):
@@ -239,14 +272,20 @@ def test_sync_status_skips_python_and_still_reports_the_others(client, tmp_path,
     """A python strategy has no deployed file, so it gets no row — and its presence must not
     break the report for NT8/MT5 strategies."""
     import time
+
     from services import lab_db
 
     _add_python_strategy(tmp_path, monkeypatch)
-    lab_db.upsert_strategy({
-        "id": "orbtest", "name": "ORB", "class_name": "ORB",
-        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "orbtest",
+            "name": "ORB",
+            "class_name": "ORB",
+            "source_path": "strategies/ninjatrader/ORB.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
 
     r = client.get("/strategy-files/sync-status")
     assert r.status_code == 200, r.text
@@ -260,24 +299,33 @@ def test_sync_status_skips_python_and_still_reports_the_others(client, tmp_path,
 # and a row with no sync object renders no status pill and a Run button, so a
 # strategy that needed deploying looked ready to run.
 
+
 def _break_nt8(monkeypatch):
     from services import runner_dispatch
 
     def boom():
-        raise RuntimeError("VPS agent /files/strategies: Remote end closed connection without response")
+        raise RuntimeError(
+            "VPS agent /files/strategies: Remote end closed connection without response"
+        )
 
     monkeypatch.setattr(runner_dispatch, "list_strategy_files", boom)
 
 
 def test_sync_status_survives_a_dead_nt8_agent_and_names_it(client, tmp_path, monkeypatch):
     import time
+
     from services import lab_db
 
-    lab_db.upsert_strategy({
-        "id": "orbtest", "name": "ORB", "class_name": "ORB",
-        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "orbtest",
+            "name": "ORB",
+            "class_name": "ORB",
+            "source_path": "strategies/ninjatrader/ORB.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
     _break_nt8(monkeypatch)
 
     r = client.get("/strategy-files/sync-status")
@@ -293,17 +341,26 @@ def test_an_unreachable_agent_leaves_presence_UNKNOWN_not_false(client, tmp_path
     GONE. Reporting it because nobody answered would invent an alarm; reporting
     `True` would invent a reassurance. It has to be None."""
     import time
+
     from services import lab_db
 
-    lab_db.upsert_strategy({
-        "id": "orbtest", "name": "ORB", "class_name": "ORB",
-        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "orbtest",
+            "name": "ORB",
+            "class_name": "ORB",
+            "source_path": "strategies/ninjatrader/ORB.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
     _break_nt8(monkeypatch)
 
-    row = next(r for r in client.get("/strategy-files/sync-status").json()["statuses"]
-               if r["strategy_id"] == "orbtest")
+    row = next(
+        r
+        for r in client.get("/strategy-files/sync-status").json()["statuses"]
+        if r["strategy_id"] == "orbtest"
+    )
     assert row["file_exists_on_vps"] is None
     assert row["in_sync"] is None
 
@@ -314,17 +371,26 @@ def test_deploy_state_still_answers_with_the_agent_down(client, tmp_path, monkey
     rows are still served. A strategy that needs deploying must not render a Run
     button just because the VPS is unreachable."""
     import time
+
     from services import lab_db
 
-    lab_db.upsert_strategy({
-        "id": "orbtest", "name": "ORB", "class_name": "ORB",
-        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "orbtest",
+            "name": "ORB",
+            "class_name": "ORB",
+            "source_path": "strategies/ninjatrader/ORB.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
     _break_nt8(monkeypatch)
 
-    row = next(r for r in client.get("/strategy-files/sync-status").json()["statuses"]
-               if r["strategy_id"] == "orbtest")
+    row = next(
+        r
+        for r in client.get("/strategy-files/sync-status").json()["statuses"]
+        if r["strategy_id"] == "orbtest"
+    )
     # Never deployed through the tracked path → deployed hash is NULL → needs deploy.
     assert row["needs_deploy"] is True
 
@@ -340,6 +406,7 @@ def test_the_file_list_reports_which_platform_failed(client, monkeypatch):
 
 
 # ── Deploy refuses what it cannot deploy ──────────────────────────────────────
+
 
 def test_deploying_a_python_strategy_is_a_400_not_a_500(client, tmp_path, monkeypatch):
     """A python strategy's `source_path` is a PACKAGE DIRECTORY. `read_bytes()` on
@@ -361,26 +428,34 @@ def test_a_deploy_job_is_not_readable_from_another_strategys_url(client):
 
 # ── An orphan is a standing fact, not a scan result ───────────────────────────
 
+
 def test_a_strategy_whose_source_is_gone_is_flagged_on_the_row(client, tmp_path, monkeypatch):
     """The Reconcile control used to be gated on the last SCAN's output, so an
     orphan was invisible on a fresh page load until somebody happened to press
     Scan. Whether a file exists on disk is answerable at any moment."""
     import time
+
     import config as cfg
     from services import lab_db
 
     monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
-    lab_db.upsert_strategy({
-        "id": "ghost", "name": "Ghost", "class_name": "Ghost",
-        "source_path": "strategies/ninjatrader/Ghost.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "ghost",
+            "name": "Ghost",
+            "class_name": "Ghost",
+            "source_path": "strategies/ninjatrader/Ghost.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
     rows = {r["id"]: r for r in client.get("/strategies").json()}
     assert rows["ghost"]["is_orphan"] is True
 
 
 def test_a_strategy_whose_source_exists_is_not_an_orphan(client, tmp_path, monkeypatch):
     import time
+
     import config as cfg
     from services import lab_db
 
@@ -388,16 +463,22 @@ def test_a_strategy_whose_source_exists_is_not_an_orphan(client, tmp_path, monke
     src.mkdir(parents=True)
     (src / "Real.cs").write_text("// present")
     monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
-    lab_db.upsert_strategy({
-        "id": "real", "name": "Real", "class_name": "Real",
-        "source_path": "strategies/ninjatrader/Real.cs", "scanned_at": int(time.time()),
-        "runner": "ninjatrader",
-    })
+    lab_db.upsert_strategy(
+        {
+            "id": "real",
+            "name": "Real",
+            "class_name": "Real",
+            "source_path": "strategies/ninjatrader/Real.cs",
+            "scanned_at": int(time.time()),
+            "runner": "ninjatrader",
+        }
+    )
     rows = {r["id"]: r for r in client.get("/strategies").json()}
     assert rows["real"]["is_orphan"] is False
 
 
 # ── A package that cannot be imported is REPORTED, never silently skipped ─────
+
 
 def test_a_broken_python_package_is_named_in_the_scan_warnings(tmp_path, monkeypatch, fresh_db):
     """Returning a bare None made a broken package indistinguishable from one
@@ -416,7 +497,9 @@ def test_a_broken_python_package_is_named_in_the_scan_warnings(tmp_path, monkeyp
     assert any("brokenstrat" in w for w in result["warnings"]), result["warnings"]
 
 
-def test_a_package_that_is_simply_not_a_strategy_warns_about_nothing(tmp_path, monkeypatch, fresh_db):
+def test_a_package_that_is_simply_not_a_strategy_warns_about_nothing(
+    tmp_path, monkeypatch, fresh_db
+):
     """A helper package under strategies/python/ is the NORMAL state, not a
     fault — warning about it would train the reader to ignore the list."""
     import config as cfg
