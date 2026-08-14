@@ -1,0 +1,31 @@
+2026-08-13 20:31:10,244 [INFO] Stop requested by file — shutting down cleanly.
+2026-08-13 20:31:10,268 [INFO] Stop requested — shutting down.
+2026-08-13 20:31:10,277 [INFO] Cleared a stale stop.request from a previous run.
+2026-08-13 20:31:11,226 [INFO] MT5 disconnected.
+2026-08-13 20:31:23,682 [ERROR] Cannot freeze this deployment: backtest, backtest.setups was already imported from the repo before the snapshot was bound. The bot would run a mix of deployed and repo code while reporting the deployed version. Move that import later.
+2026-08-13 20:32:06,420 [ERROR] Cannot freeze this deployment: backtest, backtest.setups was already imported from the repo before the snapshot was bound. The bot would run a mix of deployed and repo code while reporting the deployed version. Move that import later.
+2026-08-13 20:33:05,117 [ERROR] Cannot freeze this deployment: backtest, backtest.setups was already imported from the repo before the snapshot was bound. The bot would run a mix of deployed and repo code while reporting the deployed version. Move that import later.
+2026-08-13 20:34:04,533 [ERROR] Cannot freeze this deployment: backtest, backtest.setups was already imported from the repo before the snapshot was bound. The bot would run a mix of deployed and repo code while reporting the deployed version. Move that import later.
+2026-08-13 20:38:04,324 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash 08e8fab7ec8c | commit 1edaa95 | frozen | LIVE
+2026-08-13 20:38:04,903 [INFO] Connected | #700152905 | $9,996.99 | PUPrime-Demo
+2026-08-13 20:38:04,920 [INFO] MT5 connection lock released
+2026-08-13 20:38:05,076 [INFO] Sizing against account balance $9,996.99
+2026-08-13 20:38:05,078 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-13 20:38:05,089 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-08-13 20:38:08,559 [INFO] Warmed 5000 bars (2026-05-29 04:30:00+00:00 → 2026-08-13 20:15:00+00:00) in 3.3s
+2026-08-13 20:38:08,560 [INFO] Equity re-anchored to the account after warm-up: 19,900.22 → 9,996.99
+2026-08-13 20:38:09,011 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-13 22:15:09,626 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-08-13 22:15:09,644 [INFO] Sizing against account balance $9,996.99
+2026-08-13 22:15:12,275 [INFO] Warmed 5000 bars (2026-05-29 05:15:00+00:00 → 2026-08-13 22:00:00+00:00) in 2.5s
+2026-08-13 22:15:12,277 [INFO] Equity re-anchored to the account after warm-up: 19,900.22 → 9,996.99
+2026-08-13 23:59:23,970 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash 2cafe86f3c86 | commit 87e7c53 | frozen | LIVE
+2026-08-13 23:59:23,973 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-13T20:38:04+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-13 23:59:24,510 [INFO] Connected | #700152905 | $9,996.99 | PUPrime-Demo
+2026-08-13 23:59:24,512 [INFO] MT5 connection lock released
+2026-08-13 23:59:24,729 [INFO] Sizing against account balance $9,996.99
+2026-08-13 23:59:24,732 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-13 23:59:24,746 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-08-13 23:59:27,770 [INFO] Warmed 5000 bars (2026-05-29 06:45:00+00:00 → 2026-08-13 23:30:00+00:00) in 2.9s
+2026-08-13 23:59:27,772 [INFO] Equity re-anchored to the account after warm-up: 19,900.22 → 9,996.99
+2026-08-13 23:59:28,382 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
