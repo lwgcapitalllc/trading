@@ -19,7 +19,6 @@
  */
 import { test, expect, type Page } from '@playwright/test'
 
-const API = 'http://localhost:8000'
 const UI = 'http://localhost:5173'
 const SHARED_ID = 'st_shared01'
 const SCREEN_ID = 'st_screen01'
@@ -39,20 +38,34 @@ const LEGS = [
  * $47,758,999 against $21,064. `solo` omitted models a stack replayed before the control book was
  * kept (or a screen, which has no control at all).
  */
-function leg(l: typeof LEGS[number], pnl: number, r: number, soloPnl?: number) {
+function leg(l: (typeof LEGS)[number], pnl: number, r: number, soloPnl?: number) {
   const point = (profit: number) => ({
-    trade_number: 1, equity: 10000 + profit, profit, date: '2024-03-01',
-    direction: 'Long', entry_ms: 1709251200000, exit_ms: 1709254800000, r,
+    trade_number: 1,
+    equity: 10000 + profit,
+    profit,
+    date: '2024-03-01',
+    direction: 'Long',
+    entry_ms: 1709251200000,
+    exit_ms: 1709254800000,
+    r,
   })
   return {
-    ...l, status: 'complete', net_pnl: pnl, max_drawdown: -100, trade_count: 17,
-    sharpe: 1.2, avg_trade_duration_min: 60, error_message: null,
+    ...l,
+    status: 'complete',
+    net_pnl: pnl,
+    max_drawdown: -100,
+    trade_count: 17,
+    sharpe: 1.2,
+    avg_trade_duration_min: 60,
+    error_message: null,
     daily_pnl: [{ date: '2024-03-01', pnl }],
     equity_curve: [point(pnl)],
-    ...(soloPnl == null ? {} : {
-      solo_equity_curve: [point(soloPnl)],
-      solo_daily_pnl: [{ date: '2024-03-01', pnl: soloPnl }],
-    }),
+    ...(soloPnl == null
+      ? {}
+      : {
+          solo_equity_curve: [point(soloPnl)],
+          solo_daily_pnl: [{ date: '2024-03-01', pnl: soloPnl }],
+        }),
   }
 }
 
@@ -61,10 +74,18 @@ function stackDetail(mode: 'screen' | 'shared', opts: { solo?: boolean } = {}) {
   const keepSolo = mode === 'shared' && opts.solo !== false
   return {
     stack_id: mode === 'shared' ? SHARED_ID : SCREEN_ID,
-    instrument: 'XAUUSD', start_date: '2024-01-01', end_date: '2024-12-31',
-    bar_type: 'Minute', bar_value: 15, commission_per_side: 0, slippage_ticks: 0,
-    total_strategies: 2, completed_strategies: 2, status: 'complete',
-    created_at: '2026-08-09T10:00:00Z', completed_at: '2026-08-09T10:20:00Z',
+    instrument: 'XAUUSD',
+    start_date: '2024-01-01',
+    end_date: '2024-12-31',
+    bar_type: 'Minute',
+    bar_value: 15,
+    commission_per_side: 0,
+    slippage_ticks: 0,
+    total_strategies: 2,
+    completed_strategies: 2,
+    status: 'complete',
+    created_at: '2026-08-09T10:00:00Z',
+    completed_at: '2026-08-09T10:20:00Z',
     regime_timeline: [],
     strategies: [
       leg(LEGS[0], 14183, 20.04, keepSolo ? 3000 : undefined),
@@ -80,27 +101,50 @@ function stackDetail(mode: 'screen' | 'shared', opts: { solo?: boolean } = {}) {
 /** The measured shape: nothing refused, and every leg posting the same R shared as solo. */
 function sharedReport(over: Record<string, unknown> = {}) {
   return {
-    stack_id: SHARED_ID, available: true,
-    opening_balance: 10000, closing_balance: 36805.85,
-    risk_cap_pct: 10, entry_floor_pct: 0,
-    peak_open_risk_pct: 10, peak_concurrent_legs: 2, leg_count: 2,
-    combined_trades: 33, combined_r: 26.35, contention_events: 0,
+    stack_id: SHARED_ID,
+    available: true,
+    opening_balance: 10000,
+    closing_balance: 36805.85,
+    risk_cap_pct: 10,
+    entry_floor_pct: 0,
+    peak_open_risk_pct: 10,
+    peak_concurrent_legs: 2,
+    leg_count: 2,
+    combined_trades: 33,
+    combined_r: 26.35,
+    contention_events: 0,
     legs: [
       {
-        strategy_id: 'mpc_sos_fade', run_id: 'r_a', shared_trades: 17, shared_r: 20.04,
-        solo_trades: 17, solo_r: 20.04, solo_closing_balance: 21681.11,
-        shrunk: 0, blocked: 0, risk_refused: 0,
+        strategy_id: 'mpc_sos_fade',
+        run_id: 'r_a',
+        shared_trades: 17,
+        shared_r: 20.04,
+        solo_trades: 17,
+        solo_r: 20.04,
+        solo_closing_balance: 21681.11,
+        shrunk: 0,
+        blocked: 0,
+        risk_refused: 0,
       },
       {
-        strategy_id: 'mpc_bleg', run_id: 'r_b', shared_trades: 16, shared_r: 6.31,
-        solo_trades: 16, solo_r: 6.31, solo_closing_balance: 15188.43,
-        shrunk: 0, blocked: 0, risk_refused: 0,
+        strategy_id: 'mpc_bleg',
+        run_id: 'r_b',
+        shared_trades: 16,
+        shared_r: 6.31,
+        solo_trades: 16,
+        solo_r: 6.31,
+        solo_closing_balance: 15188.43,
+        shrunk: 0,
+        blocked: 0,
+        risk_refused: 0,
       },
     ],
     events: [],
     neutral: {
-      checkable: true, ok: true,
-      reason: 'nothing was refused and every leg posts the same R shared as solo, so the shared ' +
+      checkable: true,
+      ok: true,
+      reason:
+        'nothing was refused and every leg posts the same R shared as solo, so the shared ' +
         'account changed the dollars and moved no decision',
     },
     progress: { phase: 'complete', pct: 100, message: '33 trades on one account' },
@@ -118,30 +162,56 @@ async function mock(
   page: Page,
   mode: 'screen' | 'shared',
   report?: Record<string, unknown>,
-  opts: { solo?: boolean } = {},
+  opts: { solo?: boolean } = {}
 ) {
-  await page.route(u => u.pathname.endsWith('/contention'), r =>
-    r.fulfill({ json: report ?? sharedReport() }))
-  await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
-    r.fulfill({ json: stackDetail(mode, opts) }))
-  await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
-    r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
-  await page.route(u => u.pathname.endsWith('/api/backtests/stacks'), r => r.fulfill({
-    json: [
-      {
-        stack_id: SHARED_ID, instrument: 'XAUUSD', start_date: '2024-01-01',
-        end_date: '2024-12-31', total_strategies: 2, completed_strategies: 2,
-        failed_strategies: 0, status: 'complete', created_at: '2026-08-09T10:00:00Z',
-        strategy_names: 'MPC SOS Fade + MPC B-LEG', mode: 'shared', risk_cap_pct: 10,
-      },
-      {
-        stack_id: SCREEN_ID, instrument: 'XAUUSD', start_date: '2024-01-01',
-        end_date: '2024-12-31', total_strategies: 2, completed_strategies: 2,
-        failed_strategies: 0, status: 'complete', created_at: '2026-08-08T10:00:00Z',
-        strategy_names: 'MPC SOS Fade + MPC B-LEG', mode: 'screen', risk_cap_pct: null,
-      },
-    ],
-  }))
+  await page.route(
+    (u) => u.pathname.endsWith('/contention'),
+    (r) => r.fulfill({ json: report ?? sharedReport() })
+  )
+  await page.route(
+    (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+    (r) => r.fulfill({ json: stackDetail(mode, opts) })
+  )
+  await page.route(
+    (u) => u.pathname.endsWith('/chart-spec'),
+    (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
+  )
+  await page.route(
+    (u) => u.pathname.endsWith('/api/backtests/stacks'),
+    (r) =>
+      r.fulfill({
+        json: [
+          {
+            stack_id: SHARED_ID,
+            instrument: 'XAUUSD',
+            start_date: '2024-01-01',
+            end_date: '2024-12-31',
+            total_strategies: 2,
+            completed_strategies: 2,
+            failed_strategies: 0,
+            status: 'complete',
+            created_at: '2026-08-09T10:00:00Z',
+            strategy_names: 'MPC SOS Fade + MPC B-LEG',
+            mode: 'shared',
+            risk_cap_pct: 10,
+          },
+          {
+            stack_id: SCREEN_ID,
+            instrument: 'XAUUSD',
+            start_date: '2024-01-01',
+            end_date: '2024-12-31',
+            total_strategies: 2,
+            completed_strategies: 2,
+            failed_strategies: 0,
+            status: 'complete',
+            created_at: '2026-08-08T10:00:00Z',
+            strategy_names: 'MPC SOS Fade + MPC B-LEG',
+            mode: 'screen',
+            risk_cap_pct: null,
+          },
+        ],
+      })
+  )
 }
 
 test.describe('shared-account stacks', () => {
@@ -176,7 +246,13 @@ test.describe('shared-account stacks', () => {
     // handler and never increments — which makes the assertion below trivially true. That is a
     // third vacuous pass in this one file; every one of them looked like a green test.
     let asked = 0
-    await page.route(u => u.pathname.endsWith('/contention'), r => { asked++; return r.fulfill({ json: sharedReport() }) })
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => {
+        asked++
+        return r.fulfill({ json: sharedReport() })
+      }
+    )
     await page.goto(`${UI}/backtests/stacks/${SCREEN_ID}`)
     // ⚠ Wait on the Verdict card, not on the shared panel — the panel's absence is the thing under
     // test, so waiting for anything derived from it would be waiting for the assertion.
@@ -202,7 +278,7 @@ test.describe('shared-account stacks', () => {
     await panel.getByTestId('contention-chip').locator('.cursor-help').hover()
     const tip = page.locator('body > span', { hasText: 'rarely have had anything to arbitrate' })
     await expect(tip).toContainText('Nothing was ever refused')
-    await expect(tip).toContainText('current')          // ...to each trade's CURRENT stop
+    await expect(tip).toContainText('current') // ...to each trade's CURRENT stop
   })
 
   test('together-vs-apart is computed off the SOLO controls', async ({ page }) => {
@@ -222,7 +298,9 @@ test.describe('shared-account stacks', () => {
     // `docs/SHARED_RISK_STACK.md` predicted the opposite SIGN from exactly that misreading. When
     // the panel was condensed the sentence moved onto the ⓘ; it must still be reachable.
     await row.locator('.cursor-help').hover()
-    await expect(page.locator('body > span', { hasText: 'COMPOUNDING' })).toContainText('never on these dollars')
+    await expect(page.locator('body > span', { hasText: 'COMPOUNDING' })).toContainText(
+      'never on these dollars'
+    )
   })
 
   test('the cap and the peak risk are stated together', async ({ page }) => {
@@ -236,7 +314,9 @@ test.describe('shared-account stacks', () => {
     await expect(panel).toContainText('2 of 2 holding at once')
   })
 
-  test('the per-strategy table is folded away when the budget refused nothing', async ({ page }) => {
+  test('the per-strategy table is folded away when the budget refused nothing', async ({
+    page,
+  }) => {
     // MUTATION: render the table unconditionally → the first assertion goes red.
     // On every run measured so far its Shrunk / Blocked / Risk-refused columns are entirely
     // em-dashes, so unfolded it is the largest thing on the page saying the least.
@@ -259,7 +339,9 @@ test.describe('shared-account stacks', () => {
     await expect(page.getByTestId('shared-account-panel').locator('table')).toBeVisible()
   })
 
-  test('the strategies are toggled from INSIDE the Verdict card, and the KPIs follow', async ({ page }) => {
+  test('the strategies are toggled from INSIDE the Verdict card, and the KPIs follow', async ({
+    page,
+  }) => {
     // MUTATION: pass a fixed leg set to `composeCombined` instead of `enabled` → red.
     // This is the whole reason the legs moved into the Verdict card: the control that decides
     // what Made / Risked / Trusted count now sits in the same row as the numbers it recomputes,
@@ -290,7 +372,9 @@ test.describe('shared-account stacks', () => {
     await expect(verdict.getByRole('button', { name: /MPC SOS Fade/ })).toHaveCount(0)
   })
 
-  test('switching a strategy off swaps in the SOLO control, not its share of the stack', async ({ page }) => {
+  test('switching a strategy off swaps in the SOLO control, not its share of the stack', async ({
+    page,
+  }) => {
     // 🔴 THE DEFECT THIS FILE EXISTS FOR MOST. Reported off the screen 2026-08-10: with MPC SOS
     // Fade switched off, the page said MPC B-LEG had made $47,758,999 — while the same strategy
     // run standalone over the same window made $21,064. Both were right. Composing the remaining
@@ -318,7 +402,9 @@ test.describe('shared-account stacks', () => {
     await expect(page.getByTestId('basis-chip')).toContainText('on its own account')
   })
 
-  test('a leg row is stated in R, which is the one figure a shared account cannot move', async ({ page }) => {
+  test('a leg row is stated in R, which is the one figure a shared account cannot move', async ({
+    page,
+  }) => {
     // MUTATION: make the row value `counts.get(id)` again → red on the R assertions.
     // The row used to read the trade count with "It made <net_pnl> on its own account" on its
     // tooltip — and on a shared stack `net_pnl` is the leg's dollars INSIDE the portfolio, so that
@@ -337,7 +423,9 @@ test.describe('shared-account stacks', () => {
     await expect(verdict).toContainText('+20.04R')
   })
 
-  test('a shared stack with no stored control REFUSES rather than composing one', async ({ page }) => {
+  test('a shared stack with no stored control REFUSES rather than composing one', async ({
+    page,
+  }) => {
     // MUTATION: fall back to the shared curves when `solo_equity_curve` is absent → red, because
     // the page would then render KPIs (and no refusal card) off the wrong book.
     // A stack replayed before 2026-08-10 kept only `solo_r` and `solo_closing_balance`, so there
@@ -379,10 +467,21 @@ test.describe('shared-account stacks', () => {
     // feedback reads as a page that failed; `available: false` here means STILL RUNNING and the
     // progress line is what separates it from "this is a screen" and "it failed".
     await mock(page, 'shared', {
-      stack_id: SHARED_ID, available: false, legs: [], events: [], neutral: null,
-      opening_balance: null, closing_balance: null, risk_cap_pct: null, entry_floor_pct: null,
-      peak_open_risk_pct: null, peak_concurrent_legs: null, leg_count: null,
-      combined_trades: null, combined_r: null, contention_events: null,
+      stack_id: SHARED_ID,
+      available: false,
+      legs: [],
+      events: [],
+      neutral: null,
+      opening_balance: null,
+      closing_balance: null,
+      risk_cap_pct: null,
+      entry_floor_pct: null,
+      peak_open_risk_pct: null,
+      peak_concurrent_legs: null,
+      leg_count: null,
+      combined_trades: null,
+      combined_r: null,
+      contention_events: null,
       progress: { phase: 'solo:mpc_bleg', pct: 86, message: 'solo:mpc_bleg · bar 15,872 / 23,712' },
     })
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
@@ -390,17 +489,25 @@ test.describe('shared-account stacks', () => {
     await expect(page.getByTestId('shared-account-panel')).toContainText('86%')
   })
 
-  test('a seam failure is called out rather than left in a column to be spotted', async ({ page }) => {
+  test('a seam failure is called out rather than left in a column to be spotted', async ({
+    page,
+  }) => {
     // MUTATION: render `neutral.reason` in the neutral style regardless of `ok` → red.
     // R is normalised to the trade's own risk, so with a full budget a leg MUST post the same R
     // shared as solo. A difference is the shared account moving a decision it must not touch —
     // a defect in the seam, not a portfolio effect — and it is invisible in a table of numbers.
-    await mock(page, 'shared', sharedReport({
-      neutral: {
-        checkable: true, ok: false, drifted: ['mpc_bleg'],
-        reason: 'nothing was refused, yet these legs post different R shared and solo',
-      },
-    }))
+    await mock(
+      page,
+      'shared',
+      sharedReport({
+        neutral: {
+          checkable: true,
+          ok: false,
+          drifted: ['mpc_bleg'],
+          reason: 'nothing was refused, yet these legs post different R shared and solo',
+        },
+      })
+    )
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     await expect(page.getByTestId('shared-account-panel')).toContainText('Seam check failed')
   })
@@ -465,16 +572,24 @@ test.describe('the regime overlay', () => {
     // stack with `?timeline=false` (the calendar is 43% of that payload and this overlay defaults
     // OFF), so `regime_timeline` is empty on every real response and a fixture that populated it
     // would be testing a shape production never sends.
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => r.fulfill({
-      json: { ...stackDetail('shared'), has_regime_timeline: true },
-    }))
-    await page.route(u => u.pathname.endsWith('/regime-timeline'), r => r.fulfill({
-      json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
-    }))
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) =>
+        r.fulfill({
+          json: { ...stackDetail('shared'), has_regime_timeline: true },
+        })
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/regime-timeline'),
+      (r) =>
+        r.fulfill({
+          json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
+        })
+    )
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const pill = page.getByRole('button', { name: 'Regimes' })
     await expect(pill).toBeVisible()
-    await expect(pill).toHaveAttribute('title', 'Show regime bands')   // i.e. it is currently OFF
+    await expect(pill).toHaveAttribute('title', 'Show regime bands') // i.e. it is currently OFF
 
     // ...and the answer PERSISTS, which is the half that never worked on this page: turn it on,
     // reload, and it must still be on. A `useState(true)` would come back on regardless, so this
@@ -482,7 +597,10 @@ test.describe('the regime overlay', () => {
     await pill.click()
     await expect(pill).toHaveAttribute('title', 'Hide regime bands')
     await page.reload()
-    await expect(page.getByRole('button', { name: 'Regimes' })).toHaveAttribute('title', 'Hide regime bands')
+    await expect(page.getByRole('button', { name: 'Regimes' })).toHaveAttribute(
+      'title',
+      'Hide regime bands'
+    )
   })
 })
 
@@ -557,8 +675,10 @@ test.describe('the stack detail audit', () => {
     // 🔴 `useStack`'s `isError` was never read, so a bad id, a stale bookmark, or a stack deleted
     // in another tab left the back button over an empty page — which is pixel-identical to a page
     // still loading, i.e. the reader waits instead of going back.
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
-      r.fulfill({ status: 404, json: { detail: "Stack 'st_gone' not found" } }))
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => r.fulfill({ status: 404, json: { detail: "Stack 'st_gone' not found" } })
+    )
     await page.goto(`${UI}/backtests/stacks/st_gone`)
     await expect(page.getByTestId('stack-not-found')).toBeVisible()
     await expect(page.getByRole('button', { name: /back to stacks/i })).toBeVisible()
@@ -575,20 +695,32 @@ test.describe('the stack detail audit', () => {
     // nothing visible, which is exactly why it survived. The window is 8s against a 3s interval,
     // so a still-polling page lands at 3 or 4 and a fixed one stays at 1.
     let fetches = 0
-    await page.route(u => u.pathname.endsWith('/contention'), r => r.fulfill({ json: sharedReport() }))
-    await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
-      r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
-      fetches++
-      const d = stackDetail('shared')
-      return r.fulfill({
-        json: {
-          ...d, status: 'partial', completed_strategies: 1,
-          strategies: [d.strategies[0],
-                       { ...d.strategies[1], status: 'failed_error', error_message: 'boom' }],
-        },
-      })
-    })
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => r.fulfill({ json: sharedReport() })
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/chart-spec'),
+      (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
+    )
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        fetches++
+        const d = stackDetail('shared')
+        return r.fulfill({
+          json: {
+            ...d,
+            status: 'partial',
+            completed_strategies: 1,
+            strategies: [
+              d.strategies[0],
+              { ...d.strategies[1], status: 'failed_error', error_message: 'boom' },
+            ],
+          },
+        })
+      }
+    )
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     await expect(page.getByTestId('stack-verdict-card')).toBeVisible()
     await page.waitForTimeout(8_000)
@@ -603,16 +735,25 @@ test.describe('the stack detail audit', () => {
     // `reset_stale_runs` marks the legs crashed. The panel then span "Replaying the strategies on
     // one account…" for ever, over a run that had been dead since the restart — and the poll
     // behind it never stopped either.
-    await mock(page, 'shared', { stack_id: SHARED_ID, available: false, progress: null,
-                                 legs: [], events: [] })
+    await mock(page, 'shared', {
+      stack_id: SHARED_ID,
+      available: false,
+      progress: null,
+      legs: [],
+      events: [],
+    })
     // Registered AFTER `mock` so it wins — Playwright matches the most recently registered route
     // first, and a counter installed before it is shadowed and never increments.
     let asked = 0
-    await page.route(u => u.pathname.endsWith('/contention'), r => {
-      asked++
-      return r.fulfill({ json: { stack_id: SHARED_ID, available: false, progress: null,
-                                 legs: [], events: [] } })
-    })
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => {
+        asked++
+        return r.fulfill({
+          json: { stack_id: SHARED_ID, available: false, progress: null, legs: [], events: [] },
+        })
+      }
+    )
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const panel = page.getByTestId('shared-account-panel')
     await expect(panel).toContainText('did not finish')
@@ -635,20 +776,30 @@ test.describe('the stack detail audit', () => {
 // stack `st_94aeb25f0c`) and the overlay it feeds defaults OFF — so the common page load has no
 // use for it at all. It is fetched separately, only once the reader switches the overlay on.
 test.describe('the regime calendar is fetched only when it is wanted', () => {
-  test('loading the page asks for the stack WITHOUT its calendar, and never fetches one', async ({ page }) => {
+  test('loading the page asks for the stack WITHOUT its calendar, and never fetches one', async ({
+    page,
+  }) => {
     // MUTATION: drop `?timeline=false` from `useStack`, or fire `useStackRegimeTimeline` without
     // its `enabled` gate → red on the respective assertion.
     await mock(page, 'shared')
     let calendars = 0
-    await page.route(u => u.pathname.endsWith('/regime-timeline'), r => {
-      calendars++
-      return r.fulfill({ json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] } })
-    })
+    await page.route(
+      (u) => u.pathname.endsWith('/regime-timeline'),
+      (r) => {
+        calendars++
+        return r.fulfill({
+          json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
+        })
+      }
+    )
     const slim: boolean[] = []
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
-      slim.push(new URL(r.request().url()).searchParams.get('timeline') === 'false')
-      return r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: true } })
-    })
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        slim.push(new URL(r.request().url()).searchParams.get('timeline') === 'false')
+        return r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: true } })
+      }
+    )
 
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     // ⚠ Wait on the PAGE having rendered, not on a timer — asserting a request count straight
@@ -661,19 +812,28 @@ test.describe('the regime calendar is fetched only when it is wanted', () => {
     expect(calendars).toBe(0)
   })
 
-  test('switching the overlay on fetches it once, and switching off and on again does not refetch', async ({ page }) => {
+  test('switching the overlay on fetches it once, and switching off and on again does not refetch', async ({
+    page,
+  }) => {
     // MUTATION: remove `staleTime: Infinity` from `useStackRegimeTimeline` → the second toggle
     // refetches and the final count is 2.
     // ⚠ The second half is the one worth having: a finished stack's window is fixed, so the
     // calendar cannot change, and a reader flicking the overlay to compare should not pay for it.
     await mock(page, 'shared')
     let calendars = 0
-    await page.route(u => u.pathname.endsWith('/regime-timeline'), r => {
-      calendars++
-      return r.fulfill({ json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] } })
-    })
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
-      r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: true } }))
+    await page.route(
+      (u) => u.pathname.endsWith('/regime-timeline'),
+      (r) => {
+        calendars++
+        return r.fulfill({
+          json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
+        })
+      }
+    )
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: true } })
+    )
 
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const pill = page.getByRole('button', { name: 'Regimes' })
@@ -697,8 +857,10 @@ test.describe('the regime calendar is fetched only when it is wanted', () => {
     // ⚠ `has_regime_timeline: false` is a MEASUREMENT — the window was classified and has nothing
     // to show — so offering a toggle that draws nothing would read as a broken overlay.
     await mock(page, 'shared')
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
-      r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: false } }))
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: false } })
+    )
 
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     // ⚠ Scoped to a control that only exists once the page has rendered its charts, so "absent"
@@ -717,18 +879,39 @@ test.describe('the stack preview is only asked when it has something to say', ()
     // MUTATION: pass `settingsReady` instead of `askPreview` to `useStackPreview` → red.
     await mock(page, 'shared')
     let previews = 0
-    await page.route(u => u.pathname.endsWith('/stacks/preview'), r => {
-      previews++
-      return r.fulfill({ json: { legs: [], reuse_count: 0, run_count: 2 } })
-    })
-    await page.route(u => u.pathname.endsWith('/api/strategies'), r => r.fulfill({
-      json: [
-        { id: 'mpc_sos_fade', name: 'MPC SOS Fade', runner: 'python', suggested_instrument: 'XAUUSD',
-          param_schema: [], default_params: {}, needs_scan: false },
-        { id: 'mpc_bleg', name: 'MPC B-LEG', runner: 'python', suggested_instrument: 'XAUUSD',
-          param_schema: [], default_params: {}, needs_scan: false },
-      ],
-    }))
+    await page.route(
+      (u) => u.pathname.endsWith('/stacks/preview'),
+      (r) => {
+        previews++
+        return r.fulfill({ json: { legs: [], reuse_count: 0, run_count: 2 } })
+      }
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/api/strategies'),
+      (r) =>
+        r.fulfill({
+          json: [
+            {
+              id: 'mpc_sos_fade',
+              name: 'MPC SOS Fade',
+              runner: 'python',
+              suggested_instrument: 'XAUUSD',
+              param_schema: [],
+              default_params: {},
+              needs_scan: false,
+            },
+            {
+              id: 'mpc_bleg',
+              name: 'MPC B-LEG',
+              runner: 'python',
+              suggested_instrument: 'XAUUSD',
+              param_schema: [],
+              default_params: {},
+              needs_scan: false,
+            },
+          ],
+        })
+    )
 
     await page.goto(`${UI}/backtests?tab=stacks`)
     await page.getByRole('button', { name: /new stack/i }).click()
@@ -740,7 +923,7 @@ test.describe('the stack preview is only asked when it has something to say', ()
     // satisfied by a modal that has not finished opening, which is this file's recorded trap.
     await expect(page.getByTestId('stack-account-fields')).toBeVisible()
     await expect(page.getByTestId('stack-mode-blurb')).toContainText('nothing is reused')
-    await page.waitForTimeout(1200)   // past the 350ms debounce, several times over
+    await page.waitForTimeout(1200) // past the 350ms debounce, several times over
     expect(previews).toBe(0)
   })
 })
@@ -773,21 +956,29 @@ test.describe('a leg the reader switched off stays off while the stack finishes'
   test('a third leg finishing does not switch a chosen one back on', async ({ page }) => {
     const THIRD = { run_id: 'r_c', strategy_id: 'mpc_bos', strategy_name: 'MPC BOS' }
     let allDone = false
-    await page.route(u => u.pathname.endsWith('/contention'), r => r.fulfill({ json: sharedReport() }))
-    await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
-      r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
-      const d = stackDetail('shared') as Record<string, unknown>
-      const third = leg(THIRD, 900, 3.5, 400)
-      d.strategies = [
-        ...(d.strategies as unknown[]),
-        allDone ? third : { ...third, status: 'running' },
-      ]
-      d.total_strategies = 3
-      d.completed_strategies = allDone ? 3 : 2
-      d.status = allDone ? 'complete' : 'running'
-      return r.fulfill({ json: d })
-    })
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => r.fulfill({ json: sharedReport() })
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/chart-spec'),
+      (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
+    )
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        const d = stackDetail('shared') as Record<string, unknown>
+        const third = leg(THIRD, 900, 3.5, 400)
+        d.strategies = [
+          ...(d.strategies as unknown[]),
+          allDone ? third : { ...third, status: 'running' },
+        ]
+        d.total_strategies = 3
+        d.completed_strategies = allDone ? 3 : 2
+        d.status = allDone ? 'complete' : 'running'
+        return r.fulfill({ json: d })
+      }
+    )
 
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const verdict = page.getByTestId('stack-verdict-card')
@@ -819,19 +1010,27 @@ test.describe('a stack says what it was replayed with', () => {
    * `StackDetail`) and this goes red.
    */
   test('each leg lists the settings it ran with, including a pinned one', async ({ page }) => {
-    await page.route(u => u.pathname.endsWith('/contention'), r => r.fulfill({ json: sharedReport() }))
-    await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
-      r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
-    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
-      const d = stackDetail('shared')
-      d.strategies = d.strategies.map(s => ({
-        ...s,
-        // `exec_secondary` is the PINNED one: the strategy's own default is true and a shared
-        // leg cannot run it, so this is the value that exists nowhere else on the page.
-        params: { exec_secondary: false, exec_risk_pct: 10 },
-      }))
-      return r.fulfill({ json: d })
-    })
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => r.fulfill({ json: sharedReport() })
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/chart-spec'),
+      (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
+    )
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        const d = stackDetail('shared')
+        d.strategies = d.strategies.map((s) => ({
+          ...s,
+          // `exec_secondary` is the PINNED one: the strategy's own default is true and a shared
+          // leg cannot run it, so this is the value that exists nowhere else on the page.
+          params: { exec_secondary: false, exec_risk_pct: 10 },
+        }))
+        return r.fulfill({ json: d })
+      }
+    )
 
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const settings = page.getByTestId('stack-settings')

@@ -35,14 +35,6 @@ function ev(over: Partial<CalendarEvent> & { timestamp_ms: number }): CalendarEv
   }
 }
 
-/** Local Monday 00:00 of the week `offset` weeks from `now` — the page's own `localWeekStart`. */
-function weekStart(now: Date, offset = 0): Date {
-  const d = new Date(now)
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + offset * 7)
-  return d
-}
-
 type Opts = {
   /** Fail every response after the Nth (0 = fail immediately). */
   failAfter?: number
@@ -60,22 +52,27 @@ type Opts = {
 async function mockCalendar(page: Page, opts: Opts = {}) {
   const served = { n: 0 }
   // Registered first; the glob below cannot match it (Playwright's `*` stops at a `/`).
-  await page.route('**/api/calendar/currencies', route =>
+  await page.route('**/api/calendar/currencies', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ currencies: opts.currencies ?? ['USD', 'EUR', 'GBP'] }),
-    }))
-  await page.route('**/api/calendar*', async route => {
+    })
+  )
+  await page.route('**/api/calendar*', async (route) => {
     if (opts.failAfter !== undefined && served.n >= opts.failAfter) {
       served.n++
-      return route.fulfill({ status: 502, contentType: 'application/json', body: '{"detail":"feed down"}' })
+      return route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: '{"detail":"feed down"}',
+      })
     }
     served.n++
     const from = new Date(new URL(route.request().url()).searchParams.get('from')!)
     const events = opts.build
       ? opts.build(from)
-      : [0, 1, 2, 3, 4].map(i => {
+      : [0, 1, 2, 3, 4].map((i) => {
           const d = new Date(from)
           d.setDate(d.getDate() + i)
           d.setHours(12, 0, 0, 0)
@@ -92,12 +89,17 @@ async function mockCalendar(page: Page, opts: Opts = {}) {
       from_ms: from.getTime(),
       to_ms: from.getTime() + 7 * 86_400_000,
     }
-    if (opts.delayMs) await new Promise(r => setTimeout(r, opts.delayMs))
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+    if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs))
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
   })
   // The shell mounts on every page; stub it so this suite needs no backend at all.
-  await page.route('**/api/system/**', r =>
-    r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
+  await page.route('**/api/system/**', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+  )
   return served
 }
 
@@ -111,7 +113,7 @@ test.describe('Calendar — the week window', () => {
     // midnight, so a tab left open across Sunday→Monday asked for LAST week for ever — the same
     // defect the Overview fixed, whose comment claimed THIS page already recomputed. It did not.
     const asked: string[] = []
-    page.on('request', r => {
+    page.on('request', (r) => {
       const m = r.url().match(/\/api\/calendar\?from=([^&]+)/)
       if (m) asked.push(decodeURIComponent(m[1]).slice(0, 10))
     })
@@ -181,27 +183,36 @@ test.describe('Calendar — a feed that stops answering', () => {
     // event: the app sets a global `staleTime: 30_000`, so a focus refetch on a query fetched a
     // second ago is skipped entirely and the test would pass by never refetching at all.
     let n = 0
-    await page.route('**/api/calendar*', async route => {
+    await page.route('**/api/calendar*', async (route) => {
       n++
       if (n > 1) return route.fulfill({ status: 502, contentType: 'application/json', body: '{}' })
       const from = new Date(new URL(route.request().url()).searchParams.get('from')!)
-      const d = new Date(from); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0)
+      const d = new Date(from)
+      d.setDate(d.getDate() + 1)
+      d.setHours(12, 0, 0, 0)
       const body: CalendarResponse = {
         events: [ev({ timestamp_ms: d.getTime(), title: 'Held Event' })],
         server_now_ms: from.getTime() + 86_400_000,
-        from_ms: from.getTime(), to_ms: from.getTime() + 7 * 86_400_000,
+        from_ms: from.getTime(),
+        to_ms: from.getTime() + 7 * 86_400_000,
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(body),
+      })
     })
-    await page.route('**/api/system/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }))
+    await page.route('**/api/system/**', (r) =>
+      r.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    )
     await page.clock.install()
     await page.goto('/calendar?day=1')
     await page.waitForLoadState('networkidle')
     await expect(rows(page)).toHaveCount(1)
 
-    await page.clock.fastForward('01:00')   // past the 45s poll → the 502
+    await page.clock.fastForward('01:00') // past the 45s poll → the 502
     await expect(page.getByText(/didn't answer the last refresh/)).toBeVisible({ timeout: 15_000 })
-    await expect(rows(page)).toHaveCount(1)   // the rows survive
+    await expect(rows(page)).toHaveCount(1) // the rows survive
   })
 })
 
@@ -256,10 +267,14 @@ test.describe('Calendar — duplicate events', () => {
   test('two identical rows both render, with no duplicate-key warning', async ({ page }) => {
     // The live feed really does carry two `CAD Budget Balance` rows at one timestamp.
     const warnings: string[] = []
-    page.on('console', m => { if (/same key|duplicate/i.test(m.text())) warnings.push(m.text()) })
+    page.on('console', (m) => {
+      if (/same key|duplicate/i.test(m.text())) warnings.push(m.text())
+    })
     await mockCalendar(page, {
-      build: monday => {
-        const d = new Date(monday); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0)
+      build: (monday) => {
+        const d = new Date(monday)
+        d.setDate(d.getDate() + 1)
+        d.setHours(12, 0, 0, 0)
         return [
           ev({ timestamp_ms: d.getTime(), currency: 'CAD', title: 'Budget Balance' }),
           ev({ timestamp_ms: d.getTime(), currency: 'CAD', title: 'Budget Balance' }),
@@ -280,15 +295,17 @@ test.describe('Calendar — duplicate events', () => {
 
 test.describe('Calendar — the countdown', () => {
   test('reads in days for an event days away, not 152h', async ({ page }) => {
-    const now = new Date(2026, 7, 3, 9, 0, 0)   // Monday morning
+    const now = new Date(2026, 7, 3, 9, 0, 0) // Monday morning
     await page.clock.install({ time: now })
     await mockCalendar(page, {
-      build: monday => {
-        const d = new Date(monday); d.setDate(d.getDate() + 4); d.setHours(12, 0, 0, 0)
+      build: (monday) => {
+        const d = new Date(monday)
+        d.setDate(d.getDate() + 4)
+        d.setHours(12, 0, 0, 0)
         return [ev({ timestamp_ms: d.getTime(), title: 'Distant NFP' })]
       },
     })
-    await page.goto('/calendar?day=4')   // the day the event is on; see the note above
+    await page.goto('/calendar?day=4') // the day the event is on; see the note above
     await page.waitForLoadState('networkidle')
     await expect(page.getByTestId('now-line')).toContainText(/\dd \d+h/)
   })
@@ -302,7 +319,9 @@ test.describe('Calendar — the countdown', () => {
 // control of its own. Neither would ever have rendered an error.
 
 test.describe('Calendar — the filter roster', () => {
-  test('the currency chips are the backend roster, not a list held in the page', async ({ page }) => {
+  test('the currency chips are the backend roster, not a list held in the page', async ({
+    page,
+  }) => {
     // A roster the shipped page has never contained. The old hardcoded nine would ignore this
     // entirely and draw its own chips — which is the defect, stated as a test.
     await mockCalendar(page, { currencies: ['USD', 'SEK', 'NOK'] })
@@ -312,7 +331,9 @@ test.describe('Calendar — the filter roster', () => {
     await expect(chips).toHaveText([/USD/, /SEK/, /NOK/])
   })
 
-  test('a currency held in the URL but absent from the roster is still offered', async ({ page }) => {
+  test('a currency held in the URL but absent from the roster is still offered', async ({
+    page,
+  }) => {
     // Otherwise a stale bookmark filters the list with no way to clear it — the same trap the
     // category dropdown had.
     await mockCalendar(page, { currencies: ['USD', 'EUR'] })
@@ -321,12 +342,16 @@ test.describe('Calendar — the filter roster', () => {
     await expect(page.locator('[data-testid="currency-chip"][title="ZAR"]')).toBeVisible()
   })
 
-  test('a NONE-impact row gets its own chip and survives unticking another level', async ({ page }) => {
+  test('a NONE-impact row gets its own chip and survives unticking another level', async ({
+    page,
+  }) => {
     // ⚠ THE OLD RULE: NONE rows were shown only while all three chips were ticked, so unticking
     // `Low` — a different level entirely — silently took them with it.
     await mockCalendar(page, {
-      build: monday => {
-        const d = new Date(monday); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0)
+      build: (monday) => {
+        const d = new Date(monday)
+        d.setDate(d.getDate() + 1)
+        d.setHours(12, 0, 0, 0)
         return [
           ev({ timestamp_ms: d.getTime(), impact: 'NONE', title: 'Unrated Release' }),
           ev({ timestamp_ms: d.getTime() + 3600_000, impact: 'LOW', title: 'Minor Release' }),

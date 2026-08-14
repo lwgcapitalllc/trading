@@ -1215,6 +1215,32 @@ question it had not already thought of.
   **169h**, where the old `from + 7 × 86_400_000` gave 168h and quietly dropped the last hour of
   that Sunday.
 
+## ESLint runs on this folder, from a config at the REPO ROOT (2026-08-14)
+
+`eslint.config.mjs`, `.prettierrc.json` and `node_modules/` are at the monorepo root, not here.
+That is not an accident of layout: `lint-staged` has to see every staged path — python included —
+and a tool rooted inside one subsystem cannot. This folder keeps its own `package.json` for the
+React build; the root one is dev tooling only. Full rules and why each is set: root `CLAUDE.md` →
+*Formatting, linting and the test gate*.
+
+Two things that decide what you see here:
+
+- **The React Compiler rules are at WARN, not error.** `eslint-plugin-react-hooks` v7 promoted them
+  into its recommended set and they are **51 of the 65 errors** this frontend produced, every one on
+  code that ships and works (28 are `set-state-in-effect` alone). Read them — several point at real
+  re-render bugs — but an error would mean editing one line of `BacktestDetail.tsx` blocks the commit
+  on 28 findings nobody in that commit created. ⚠ **`rules-of-hooks` stays an ERROR** and must: a
+  conditional hook call is a crash, not advice.
+- **`@typescript-eslint/no-unused-expressions` allows ternaries**, because
+  `set.has(x) ? set.delete(x) : set.add(x)` is a deliberate toggle idiom used in 11 places here.
+
+**Current state: 0 errors, 78 warnings.** Getting to zero errors deleted three genuinely dead
+symbols the linter found in the Playwright specs — an unused `type Page` import, an uncalled
+`weekStart` helper, and an unreferenced `API` constant. ⚠ **`prettier` is configured `semi: false`
+/ `singleQuote: true` because that is what these 108 files already do** (377 single-quoted imports
+against 4 double, 30 semicolon-terminated lines out of 40,677) — it codifies the house style rather
+than imposing one. Markdown is deliberately excluded; the measurement is in `.prettierignore`.
+
 ## Browser tests — `npm test`, and what deliberately is NOT in them
 
 **Added 2026-08-05.** This folder had no test runner at all: the convention was "verify it in a
