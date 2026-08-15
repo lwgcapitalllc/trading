@@ -179,14 +179,22 @@ test.describe('Backtests list — destructive actions ask first', () => {
   test('millions render as M, not as five digits of thousands', async ({ page }) => {
     // `+$14387.5k` — the `k` branch with no `M` step, in the column whose job is comparing runs.
     const runs = await getJson<BacktestSummary[]>('/backtests/runs')
-    const big = { ...runs.find((r) => r.status === 'complete')!, net_pnl: 14_387_474.88 }
+    // A STANDALONE completed run: the list nests sweep / optimizer / tune children under their
+    // source, so a child served alone renders no top-level row at all.
+    const base = runs.find(
+      (r) => r.status === 'complete' && !r.sweep_id && !r.optimization_id && !r.source_run_id
+    )!
+    const big = { ...base, net_pnl: 14_387_474.88 }
     await page.route(
       (u) => u.pathname.endsWith('/api/backtests/runs'),
       (route) =>
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify([big, ...runs.filter((r) => r.run_id !== big.run_id)]),
+          // ⚠ The list is ORDERED BY THE PAGE, not by this array — serving `big` first and
+          // asserting on row one passed only while it happened to be the newest run, and went
+          // red the day another run landed. One row, so there is no ordering to get wrong.
+          body: JSON.stringify([big]),
         })
     )
 
