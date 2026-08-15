@@ -240,6 +240,14 @@ Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
   a plain `pytest tests/` restarts the SSH tunnel and fires two scheduled tasks on the live VPS
 - Commit credentials (Telegram tokens, API keys, `.env`)
 - Add a prop firm without filling in `docs_url` — rules drift, the link is how you verify
+- Re-read a bar cache, or re-replay an engine, once per TEST when the tests share a window.
+  `tests/test_structure_internal_breaks.py` read the 31 MB / 559,035-row M5 cache once per window
+  per test and replayed the structure engine six times for two distinct answers — **62s of a suite
+  that was 221s**, now 21s, by `lru_cache` on the read, the window slice and the replay, plus a
+  `timegm` slice in place of `strptime` (2.45s a window on its own, and its equivalence is
+  asserted). ⚠ **A cached frame is handed out as-is, so nothing may mutate one**, and ⚠ **the
+  caches are MODULE-level, so a parallel runner has to keep a file on ONE worker**
+  (`--dist loadfile`) or every worker rebuilds them
 
 ---
 
