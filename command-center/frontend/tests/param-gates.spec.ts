@@ -309,17 +309,17 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
 })
 
 /**
- * The Run modal opens on what the strategy IS SET TO, not on a column of controls.
+ * The Run modal shows every setting AND lets you edit it in place — one view, no modes.
  *
- * 🔴 Aaron, 2026-08-15: *"I hate going through all these settings to figure out what is my
- * default strategy settings. I should have a concise section that... shows them to me. And then
- * only if I wanna change that, then I go into the parameters."* Plus the space complaint the same
- * message opened with — a read-only Strategy row, a full-width instrument input over ten preset
- * chips, and four uppercase section headings, all above the first setting.
+ * 🔴 The first attempt was a read-only summary with an Edit button, and Aaron rejected it:
+ * *"what's the point of essentials if I have a read only view and an edit view?"* A curation of
+ * "the important ones" only earns its place when the rest are hidden, and it DUPLICATED those
+ * params. So this layout has no Essentials card, no Simple/Expert switch, and nothing to click
+ * before a value can be changed.
  *
  * ⚠ Drives the REAL schema off the backend, same rule as the rest of this file.
  */
-test.describe('the Run modal shows the settings before it offers the controls', () => {
+test.describe('the Run modal is one editable view of every setting', () => {
   async function openModal(page: Page) {
     await page.route('**/api/backtests/running-job', (r) =>
       r.fulfill({
@@ -329,49 +329,50 @@ test.describe('the Run modal shows the settings before it offers the controls', 
     await page.goto('/strategies')
     const row = page.locator('tbody tr').filter({ hasText: 'MPC SOS Fade' }).first()
     await row.getByRole('button', { name: 'Run' }).click()
-    await expect(page.getByTestId('param-summary')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('param-compact')).toBeVisible({ timeout: 20_000 })
   }
 
-  test('it opens on the read-only summary, and Edit swaps in the editor', async ({ page }) => {
-    // MUTATION: default `editingParams` to true and the first assertion goes red.
+  test('no Essentials card, no Simple/Expert, and every group is open', async ({ page }) => {
+    // MUTATION: render the stacked layout here and the first two go red.
     await openModal(page)
-    // The summary is showing and the editor is not — no Essentials card, no toggles.
     await expect(page.getByText('ESSENTIALS')).toHaveCount(0)
-    // Every group heading the editor would have is in the summary, read-only.
-    await expect(page.getByTestId('param-summary')).toContainText('Risk & stop')
-    await expect(page.getByTestId('param-summary')).toContainText('10 % of balance')
-
-    await page.getByTestId('run-params-edit').click()
-    await expect(page.getByText('ESSENTIALS').first()).toBeVisible()
-    await expect(page.getByTestId('param-summary')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Expert' })).toHaveCount(0)
+    // Groups are open on arrival — the point of the layout is reading all of it at once.
+    for (const g of ['What arms a setup', 'Risk & stop', 'Exit ladder', 'Divergence veto']) {
+      await expect(page.getByRole('button', { name: new RegExp(g, 'i') })).toBeVisible()
+    }
+    await expect(page.getByTestId('param-row-exec_risk_pct')).toBeVisible()
   })
 
-  test('🔴 the summary lists exactly what the EDITOR would offer, never a row it would not', async ({
-    page,
-  }) => {
-    // A summary promising a setting the editor does not render sends the reader hunting for a
-    // control that is not there. Both sides read `visibleParams`, and this is what pins it.
-    // MUTATION: drop the `isSettled` clause from `visibleParams` and this goes red — the summary
-    // would carry the 26 settled params the editor hides.
+  test('🔴 a setting is edited IN PLACE, and its dependants react', async ({ page }) => {
+    // The whole claim of this layout: no Edit step. MUTATION: drop `onChange` from CompactRow and
+    // the count never appears.
     await openModal(page)
-    const summary = page.getByTestId('param-summary')
-    // A SETTLED param: off the editor, so it must be off the summary too.
-    await expect(summary).not.toContainText('Trade longs')
-    await expect(summary).not.toContainText('Close on opposite SOS')
-    // ...and a live one is on both.
-    await expect(summary).toContainText('Secondary re-entries (1m SOS)')
+    await expect(page.getByTestId('run-params-changed')).toHaveCount(0)
+
+    // `exec_nogap_arm` is gated on `exec_req_fvg` being OFF, so it is absent while a gap is
+    // required and appears the moment it is not — show_if still driving the compact rows.
+    await expect(page.getByTestId('param-row-exec_nogap_arm')).toHaveCount(0)
+    await page.getByTestId('param-row-exec_req_fvg').locator('select').selectOption('false')
+    await expect(page.getByTestId('param-row-exec_nogap_arm')).toBeVisible()
+    await expect(page.getByTestId('run-params-changed')).toContainText('1 changed from default')
+  })
+
+  test('a settled param is still off the list, and the count says so', async ({ page }) => {
+    // MUTATION: drop the `isSettled` clause from `visibleParams` and both go red — the
+    // compact grid is built from that same exported function.
+    await openModal(page)
+    await expect(page.getByTestId('param-row-exec_longs')).toHaveCount(0)
+    await expect(page.getByTestId('param-row-exec_close_opp_sos')).toHaveCount(0)
+    await expect(page.getByTestId('param-settled-count')).toContainText('26 settled')
   })
 
   test('the strategy name is in the TITLE and the setup fits one row', async ({ page }) => {
     // MUTATION: put the Strategy section back and the first assertion goes red (two copies).
     await openModal(page)
-    // Scoped to the modal — the row behind it names the strategy too. Inside the modal it must
-    // appear ONCE: in the title, and nowhere as a read-only field.
     const modal = page.locator('div.fixed.inset-0.z-50')
     await expect(modal.getByText('MPC SOS Fade', { exact: true })).toHaveCount(1)
-    // The four uppercase headings that used to stack above the settings are down to labels on
-    // one row — `Instrument`, `Bar size`, `Period` — and the bar presets are a select now.
-    await expect(page.getByLabel(/Bar size/).or(page.locator('select').first())).toBeVisible()
+    // The bar-size presets became a select, so no `15m` button survives.
     await expect(page.getByRole('button', { name: '15m', exact: true })).toHaveCount(0)
   })
 })

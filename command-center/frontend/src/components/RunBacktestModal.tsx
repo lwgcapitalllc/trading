@@ -9,13 +9,7 @@ import {
   useHistoryLimit,
   useBrokerProfiles,
 } from '@/hooks/useLab'
-import {
-  ParamEditor,
-  ParamSummary,
-  isChanged,
-  visibleParams,
-  type ParamValue,
-} from '@/components/ParamEditor'
+import { ParamEditor, isChanged, visibleParams, type ParamValue } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import type { Strategy, Firm, SizingMode, CostLayer, BrokerProfile } from '@/types'
@@ -394,8 +388,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // the params editor and Advanced. It opens if anything is ticked, so a configured run is
   // never hiding its own physics.
   const [costsOpen, setCostsOpen] = useState(false)
-  // Read-only by default — see the Strategy Settings block below.
-  const [editingParams, setEditingParams] = useState(false)
   // ⚠ Counted over `visibleParams`, the SAME set the summary lists, so the number can never
   // point at a row the reader cannot find. A settled param moved off its default is visible
   // again, so it counts here too.
@@ -992,35 +984,22 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center justify-between mb-2.5">
                   <SectionHead label="Strategy Settings" />
-                  <div className="flex items-center gap-3">
-                    {changedCount > 0 && (
-                      <span
-                        data-testid="run-params-changed"
-                        className="text-[11px] text-accent font-medium"
-                      >
-                        {changedCount} changed from default
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      data-testid="run-params-edit"
-                      onClick={() => setEditingParams((v) => !v)}
-                      className="text-[11px] px-2.5 py-[3px] rounded border border-border-subtle text-text-secondary hover:text-accent hover:border-accent/40 transition-colors"
+                  {changedCount > 0 && (
+                    <span
+                      data-testid="run-params-changed"
+                      className="text-[11px] text-accent font-medium"
                     >
-                      {editingParams ? 'Done' : 'Edit'}
-                    </button>
-                  </div>
+                      {changedCount} changed from default
+                    </span>
+                  )}
                 </div>
-                {editingParams ? (
-                  <ParamEditor
-                    schema={strategy.param_schema}
-                    mode="run"
-                    values={params}
-                    onChange={(name, val) => setParams((p) => ({ ...p, [name]: val }))}
-                  />
-                ) : (
-                  <ParamSummary schema={strategy.param_schema} values={params} />
-                )}
+                <ParamEditor
+                  schema={strategy.param_schema}
+                  mode="run"
+                  layout="compact"
+                  values={params}
+                  onChange={(name, val) => setParams((p) => ({ ...p, [name]: val }))}
+                />
               </div>
             </>
           )}

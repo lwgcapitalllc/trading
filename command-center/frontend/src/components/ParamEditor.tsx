@@ -184,22 +184,6 @@ export function visibleParams(
   )
 }
 
-/**
- * What a param currently READS as, in the words the editor uses — a bool as its own on/off
- * labels, never `true`.
- *
- * ⚠ It takes the ALREADY token-filled param (`visibleParams` output), so a `{exec_sl_level}`
- * cannot reach the screen through this path either.
- */
-export function displayValue(p: ParamSchemaEntry, v: ParamValue | undefined): string {
-  if (v === undefined || v === null || v === '') return '—'
-  if (p.type === 'bool') {
-    const on = v === true || v === 'true'
-    return String(on ? (p.options?.on ?? 'On') : (p.options?.off ?? 'Off'))
-  }
-  return p.unit ? `${v} ${p.unit}` : String(v)
-}
-
 /** True when this param is not sitting on the strategy's own default. */
 export function isChanged(p: ParamSchemaEntry, v: ParamValue | undefined): boolean {
   if (p.default === undefined || v === undefined) return false
@@ -207,72 +191,127 @@ export function isChanged(p: ParamSchemaEntry, v: ParamValue | undefined): boole
 }
 
 /**
- * 🔴 THE DEFAULTS, READ-ONLY AND AT A GLANCE (2026-08-15, Aaron's ask: *"I hate going through all
- * these settings to figure out what is my default strategy settings. I should have a concise
- * section that... shows them to me. And then only if I wanna change that, then I go into the
- * parameters."*)
+ * 🔴 ONE VIEW: SCAN EVERY SETTING AND EDIT ANY OF THEM IN PLACE (2026-08-15).
  *
- * Every setting the editor would offer, as `label · value`, grouped, three to a row. The editor
- * renders one 34px control per param on its own line with a label above it; this renders the same
- * information at ~22px a row, three abreast. On `mpc_sos_fade` that is ~1,800px of scrolling
- * against ~220px.
+ * The first attempt at Aaron's *"show me the settings, and only if I want to change one do I go
+ * into the parameters"* was a READ-ONLY summary with an Edit button that swapped in the stacked
+ * editor. He rejected it, and the reason is the part worth keeping: **a read-only view and an
+ * edit view of one thing is one view too many.** It also left the Essentials card meaningless —
+ * a curation of "the important ones" only earns its place when the rest are hidden behind
+ * accordions, and it DUPLICATED those params, so the same setting appeared twice.
  *
- * ⚠ It is a SUMMARY, not a second editor — nothing here is clickable, and the only way to change
- * a value stays the editor. Two ways to set one setting is how they come to disagree.
- * ⚠ A value that is not the strategy's default is marked, because that is the one thing a reader
- * scanning defaults actually needs to spot.
+ * So: every setting, grouped, two to a row, each one editable where it sits. ~30px a row against
+ * the stacked editor's ~60px, and no mode to be in.
+ *
+ * ⚠ **No Essentials card and no Simple/Expert switch in this layout.** Every param appears
+ * exactly once, under the group it belongs to.
+ * ⚠ **Every control is the SAME WIDTH on the right edge**, so the labels form one column and the
+ * values another — which is what makes 30 settings scannable rather than a wall.
+ * ⚠ It shares `visible` / `settled` / `inert` with the stacked layout, so the two cannot disagree
+ * about which rows exist.
  */
-export function ParamSummary({
-  schema,
-  values,
-}: {
-  schema: ParamSchemaEntry[]
-  values: Record<string, ParamValue>
-}) {
-  const params = useMemo(() => visibleParams(schema, values), [schema, values])
-  const groups = useMemo(() => {
-    const out: { name: string; rows: ParamSchemaEntry[] }[] = []
-    for (const p of params) {
-      const g = p.group || 'Settings'
-      const last = out[out.length - 1]
-      if (last && last.name === g) last.rows.push(p)
-      else out.push({ name: g, rows: [p] })
-    }
-    return out
-  }, [params])
+function CompactRow(
+  props: Props & {
+    p: ParamSchemaEntry
+    valueOf: (n: string) => ParamValue
+    inert: boolean
+  }
+) {
+  const { p, valueOf, inert, onChange, mode, baseline } = props
+  const v = valueOf(p.name)
+  const changed = isChanged(p, props.values[p.name])
+  const tuned =
+    mode === 'tune' &&
+    baseline &&
+    Object.prototype.hasOwnProperty.call(baseline, p.name) &&
+    String(v) !== String(baseline[p.name])
 
-  if (!params.length) return null
+  const set = (next: ParamValue) => onChange?.(p.name, next)
+  const ctlBase =
+    'w-[190px] flex-shrink-0 h-[26px] rounded-md border bg-bg-sunken px-2 text-[12px] font-mono ' +
+    'focus:outline-none focus:border-accent transition-colors ' +
+    (changed ? 'border-accent/50 text-accent' : 'border-border-subtle text-text-secondary')
+
+  let control
+  if (p.choices?.length) {
+    control = (
+      <select
+        value={String(v ?? '')}
+        disabled={inert}
+        onChange={(e) => set(e.target.value)}
+        className={ctlBase}
+      >
+        {p.choices.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+    )
+  } else if (p.type === 'bool') {
+    // A SELECT rather than the stacked layout's segmented toggle: at 168px a two-button toggle
+    // truncates labels like `Structure + % ratchet`, and a truncated state label is the one thing
+    // this row cannot afford to get wrong.
+    control = (
+      <select
+        value={v === true || v === 'true' ? 'true' : 'false'}
+        disabled={inert}
+        onChange={(e) => set(e.target.value === 'true')}
+        className={ctlBase}
+      >
+        <option value="false">{String(p.options?.off ?? 'Off')}</option>
+        <option value="true">{String(p.options?.on ?? 'On')}</option>
+      </select>
+    )
+  } else if (p.type === 'int' || p.type === 'double') {
+    control = (
+      <div className="relative w-[190px] flex-shrink-0">
+        <input
+          type="number"
+          step={p.step ?? 'any'}
+          min={p.min ?? undefined}
+          max={p.max ?? undefined}
+          disabled={inert}
+          value={String(v ?? '')}
+          onChange={(e) => set(coerceInput(p, e.target.value, v))}
+          className={`${ctlBase} w-full ${p.unit ? 'pr-[52px]' : ''} invalid:text-neg-text`}
+        />
+        {p.unit && (
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-text-tertiary pointer-events-none">
+            {p.unit}
+          </span>
+        )}
+      </div>
+    )
+  } else {
+    control = (
+      <input
+        type="text"
+        disabled={inert}
+        value={String(v ?? '')}
+        onChange={(e) => set(e.target.value)}
+        className={ctlBase}
+      />
+    )
+  }
+
   return (
-    <div data-testid="param-summary" className="space-y-2.5">
-      {groups.map((g) => (
-        <div key={g.name}>
-          <div className="text-[9.5px] font-semibold text-text-tertiary/70 uppercase tracking-[0.7px] mb-1">
-            {g.name}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-[3px]">
-            {g.rows.map((p) => {
-              const v = values[p.name] ?? (p.default as ParamValue)
-              const changed = isChanged(p, values[p.name])
-              return (
-                <div
-                  key={p.name}
-                  className="flex items-baseline gap-2 text-[11.5px] min-w-0"
-                  title={p.description}
-                >
-                  <span className="text-text-tertiary truncate flex-1">{p.label || p.name}</span>
-                  <span
-                    className={`font-mono flex-shrink-0 ${
-                      changed ? 'text-accent font-semibold' : 'text-text-secondary'
-                    }`}
-                  >
-                    {displayValue(p, v)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
+    <div
+      data-testid={`param-row-${p.name}`}
+      className={`flex items-center gap-3 py-[3px] pl-2 pr-1 rounded border-l-2 min-w-0 hover:bg-bg-hover/60 ${
+        changed ? 'border-l-accent/60' : 'border-l-transparent'
+      } ${inert ? 'opacity-50' : ''}`}
+      title={inert ? p.disable_note : p.description}
+    >
+      <span className="flex-1 min-w-0 truncate text-[12px] text-text-secondary">
+        {labelOf(p)}
+        {tuned && baseline && (
+          <span className="text-[10px] text-text-tertiary ml-1.5">
+            was <b className="text-gold-text font-mono">{fmt(baseline[p.name])}</b>
+          </span>
+        )}
+      </span>
+      {control}
     </div>
   )
 }
@@ -283,6 +322,12 @@ interface Props {
   /** Current values (run/tune); for optimize, the run's inherited values (for show_if + display). */
   values: Record<string, ParamValue>
   onChange?: (name: string, value: ParamValue) => void
+  /**
+   * `compact` = one dense scannable grid, every row editable in place, no Essentials card and no
+   * explainer column. See `CompactRow` for why the read-only-view-plus-Edit-button shape it
+   * replaced was wrong. Unset = the stacked layout.
+   */
+  layout?: 'stacked' | 'compact'
   /** Tune only — original baseline values, shown as "was X" on changed rows. */
   baseline?: Record<string, unknown>
   /** Optimize only. */
@@ -413,6 +458,27 @@ export function ParamEditor(props: Props) {
 
   const toggleGroup = (g: string) => setOpen((s) => ({ ...s, [g]: !s[g] }))
 
+  // ── compact layout state ─────────────────────────────────────────────────
+  // ⚠ Groups start OPEN and the state tracks what is COLLAPSED, not what is open. The whole
+  // point of this layout is reading every setting at once; a map of what is open defaults every
+  // group to shut the first time it renders, which is the opposite.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const toggleGroup2 = (g: string) => setCollapsed((s) => ({ ...s, [g]: !s[g] }))
+  // Group order is first appearance in the schema, which is the canonical UI order the meta sets.
+  // ⚠ Built from the EXPORTED `visibleParams`, not from a second `params.filter(visible)`. The
+  // Run modal counts changed settings with that same function, and a private copy here is how the
+  // count comes to name a row this grid does not render.
+  const compactGroups = useMemo(() => {
+    const out: { name: string; rows: ParamSchemaEntry[] }[] = []
+    for (const p of visibleParams(schema, values)) {
+      const g = p.group || 'Settings'
+      const found = out.find((x) => x.name === g)
+      if (found) found.rows.push(p)
+      else out.push({ name: g, rows: [p] })
+    }
+    return out
+  }, [schema, values])
+
   const left = (
     <>
       {hasCore && (
@@ -542,6 +608,49 @@ export function ParamEditor(props: Props) {
       )}
     </>
   )
+
+  // ── Compact: scan everything, edit anything, no modes ─────────────────────
+  // Rendered instead of `left` entirely — no Essentials, no Simple/Expert, no explainer column.
+  // See `CompactRow` for why the read-only-plus-Edit shape it replaced was wrong.
+  if (props.layout === 'compact') {
+    return (
+      <div data-testid="param-compact">
+        {compactGroups.map((g) => (
+          <div key={g.name} className="mb-3 last:mb-0">
+            <button
+              type="button"
+              onClick={() => toggleGroup2(g.name)}
+              aria-expanded={!collapsed[g.name]}
+              className="flex items-center gap-1 w-full text-[10px] font-bold uppercase tracking-[0.7px] text-gold-text/80 hover:text-gold-text transition-colors mb-1"
+            >
+              {collapsed[g.name] ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+              {g.name}
+              <span className="normal-case tracking-normal font-normal text-[10px] text-text-tertiary/70">
+                · {g.rows.length}
+              </span>
+            </button>
+            {!collapsed[g.name] && (
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-0">
+                {g.rows.map((p) => (
+                  <CompactRow key={p.name} p={p} {...props} valueOf={valueOf} inert={inert(p)} />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {settledCount > 0 && (
+          <p
+            data-testid="param-settled-count"
+            className="text-[10.5px] text-text-tertiary italic pt-2 leading-snug"
+          >
+            {settledCount} settled setting{settledCount > 1 ? 's' : ''} hidden — still in the
+            strategy, still sent at {settledCount > 1 ? 'their defaults' : 'its default'}. Any one
+            moved off its default reappears here.
+          </p>
+        )}
+      </div>
+    )
+  }
 
   // Inline / coach mode: single column. Inline drops the explainer under the focused
   // row; coach leaves teaching to the parent's pinned <ParamCoach> footer. Either way the
