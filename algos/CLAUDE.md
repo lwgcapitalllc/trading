@@ -2,7 +2,23 @@
 
 **Purpose:** Standing instructions for the XAUUSD/forex MT5 bot suite running on the Windows VPS.
 **Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `engines/regime/` internals (regime is imported via the `shared_regime.py` shim).
-**Status:** Active — **ONE BOT LIVE AND ARMED.** `mpc_sos_fade_demo` has run since 2026-07-31 and has placed real orders since 2026-08-05, on a PU Prime **ECN demo** account (700152905 / `XAUUSD.p` since 2026-08-12), under a 10% account-level risk cap. `mpc_bleg_demo` is registered and **BENCHED** (`account: null`) pending a fresh `compare_bleg.py` parity run at its moved defaults. The four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first; the pipeline that got the first Python strategy live is `docs/LIVE_TRADING_PIPELINE.md`.
+**Status:** Active — **ONE BOT LIVE AND ARMED.** `mpc_sos_fade_demo` has run since 2026-07-31 and has placed real orders since 2026-08-05, on a PU Prime **ECN demo** account (700152905 / `XAUUSD.p` since 2026-08-12), under a 10% account-level risk cap. **`exec_sl_deep` was switched ON 2026-08-15 and takes effect on its next RESTART** — see below.
+
+### `exec_sl_deep` ON (2026-08-15) — two rules, both live-path
+
+🔴 **It COSTS 23R and is WORSE at matched drawdown — it is a deliberate trade of return for a
+smaller ride, never an improvement.** +140.0R → **+117.0R**, max DD 5.61R → **4.73R** (45.6% →
+41.1% at `exec_risk_pct` 10); re-levered to equal drawdown it returns 3,830x against 4,868x.
+**Stated here because a reader meeting +117.0R against a +140.0R history otherwise reads a
+regression.** Aaron's call, evidence and every warning in the `_exec_sl_deep` block of
+`markets/fx/instances/mpc_sos_fade_demo/config.json`; the measurement is in
+`docs/ALGOS_BUILD_NOTES.md` → *Which stop-outs a wider stop rescues*.
+
+🔴 **A param change to a NON-reloadable field is REFUSED by the running bot, with a Telegram
+message, and that refusal is the guard working.** `RUNTIME_RELOADABLE` is `{"exec_risk_pct"}`
+alone, so the VPS `git pull` leaves this on disk and **the bot keeps trading the old rule until it
+is RESTARTED.** ⚠ A param change needs **no `promote.py`** — the frozen snapshot covers code, and
+the source-hash pin is re-checked on the restart regardless. `mpc_bleg_demo` is registered and **BENCHED** (`account: null`) pending a fresh `compare_bleg.py` parity run at its moved defaults. The four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first; the pipeline that got the first Python strategy live is `docs/LIVE_TRADING_PIPELINE.md`.
 
 
 
