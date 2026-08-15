@@ -14,13 +14,18 @@ and the rules that applied to only one half moved into that half's CLAUDE.md.
 **The Pine DECLARATION decides it, not the filename.** A file declaring `strategy(` goes in
 `strategies/`; a file declaring `indicator()` goes in `engines/`. Nothing else is consulted,
 which is the point — `structure_engine.pine` reads like a strategy component and is an
-indicator, and `mpc_m15_playbook.pine` / `mpc_m15_playbook_strategy.pine` are a pair split
-across both folders on exactly this rule.
+indicator. ⚠ **`mpc_m15_playbook.pine` / `mpc_m15_playbook_strategy.pine` used to be the
+textbook example of this — a near-identical pair split across both folders on the declaration
+alone. On 2026-08-15 the indicator was DELETED and the strategy renamed to
+`smc_session_sweep_strategy.pine`**; the note that says why is in
+[`engines/CLAUDE.md`](engines/CLAUDE.md). Several paragraphs below still name the deleted file in
+the present tense, deliberately — each records a decision applied across many files that is still
+binding on the survivors.
 
 | folder | declaration | count | owns |
 |---|---|---|---|
 | [`strategies/`](strategies/CLAUDE.md) | `strategy(` | 12 | the numbered input-panel contract, the trade annotations, the colour palette |
-| [`engines/`](engines/CLAUDE.md) | `indicator()` | 18 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
+| [`engines/`](engines/CLAUDE.md) | `indicator()` | 17 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
 
 ⚠ **Ask the folder, then read that folder's CLAUDE.md — not this one.** A fact lives in exactly
 ONE CLAUDE.md, the one next to the code. This file keeping its own copy of the panel contract is
@@ -856,18 +861,19 @@ is now measured too.
 ⚠ **Compile status after that pass, stated exactly.** `mpc_b_leg_strategy_export.pine` and
 `svp_export.pine` both compiled — Aaron exported from them, which is stronger evidence than a paste.
 `mpc_b_leg_strategy.pine` is body-identical to its export apart from the line-40 title, so it is
-covered by construction. **`mpc_m15_playbook.pine` has never been pasted since its windows were
-edited, and is deliberately left that way** — Aaron's call, 2026-07-31: it is his BROTHER's work in
-progress, not ready and not part of this repo's validated set. Do not raise it as an open validation
-item. The changes there were value-only, so if he does compile it and something breaks, it is one of
-the six session strings.
+covered by construction. **`mpc_m15_playbook.pine` was never pasted after its windows were edited
+and now never will be — it was DELETED on 2026-08-15** (Aaron's call; the note is in
+`engines/CLAUDE.md`). ⚠ **It was described here as his BROTHER'S work in progress**, so the six
+edited session strings in it were never compiled by anyone and that question closes unanswered
+rather than resolved. The surviving files carrying the same block are listed below.
 
 Synced in `mpc_b_leg_strategy.pine`, `mpc_b_leg_strategy_export.pine` and `mpc_m15_playbook.pine`
-(each file's own `display = display.none` preserved — only the six values changed).
-⚠ **`mpc_m15_playbook.pine`'s NY window was `0900-1700`**, unlike every other file's `0900-1800` — a
-pre-existing difference of unknown origin, now folded into the common `0800-1700`. Nothing replays
-that file, but it is his BROTHER's in-progress file, so if that hour was deliberate it is his to
-judge — mention it to him rather than assume the sync was right. `svp_export.pine` was re-stated too, purely for
+(each file's own `display = display.none` preserved — only the six values changed; the third of
+those was deleted 2026-08-15).
+⚠ **That deleted file's NY window had been `0900-1700`**, unlike every other file's `0900-1800` — a
+pre-existing difference of unknown origin, folded into the common `0800-1700` by the sync. It was
+his BROTHER's in-progress file and the question of whether that hour was deliberate was never put
+to him; the file is gone, so the question is now moot rather than answered. `svp_export.pine` was re-stated too, purely for
 consistency: `"2000-0500" GMT-4` and `"0900-1800" Asia/Tokyo` are the SAME 00:00-09:00 UTC window all
 year, which is exactly why `engines/session_volume_profile/` needed no code change.
 

@@ -15,6 +15,52 @@ the other one did.
 
 ## Latest
 
+### The name said the timeframe, and the indicator half had never been scored (2026-08-15)
+
+Aaron, opening the session: *"I'm not seeming to make any money from the pine. I think we need to
+port over to Python… delete the MPC m15 playbook pine… rename MPC m15 playbook strategy to
+smc_session_sweep_strategy."* Housekeeping ahead of the port, and both halves are worth a line.
+
+**The rename.** `indicators/strategies/mpc_m15_playbook_strategy.pine` →
+`smc_session_sweep_strategy.pine`; `docs/MPC_M15_PLAYBOOK_SPEC.md` → `docs/SMC_SESSION_SWEEP_SPEC.md`.
+The old name named the timeframe the DIRECTION is read on and said nothing about the setup, and it
+wore the `mpc_` prefix of a Pine family it was never part of — it came from a 2026-08-11 video note,
+not from `mpc_assistant.pine`. Anyone grepping `mpc_` for the JARVIS lineage got this file too.
+
+**The deletion.** `indicators/engines/mpc_m15_playbook.pine`, 270 KB, gone. It was the `indicator()`
+half of the pair: structure, sessions, gaps, order blocks and a confirmation table, drawing only, no
+orders — so **the Strategy Tester could never score it and nothing in this repo ever measured it.**
+⚠ **It was also the file the surviving strategy's `MTFStruct` block was lifted out of byte-for-byte**,
+so that block's provenance now points at `engines/market_structure/` — the canonical implementation
+and the only other copy. Recover from git if a drawing is ever wanted back.
+
+🔴 **The deletion CLOSED TWO OPEN QUESTIONS WITHOUT ANSWERING EITHER, and both were recorded as
+pending against that file.** (1) Its New York session window had been `0900-1700` where every other
+file had `0900-1800`; the 2026-07-31 sync folded it into the common `0800-1700` and the note said *if
+that hour was deliberate, this changed it — ask him.* Nobody did. (2) It had never been pasted since
+those windows were edited, deliberately, because `indicators/CLAUDE.md` records it as **Aaron's
+BROTHER's work in progress**. So six edited session strings were never compiled by anyone. Both notes
+now say *moot*, not *resolved* — ⚠ **a question that dies with its file has not been answered, and
+writing "closed" is how it gets remembered as if it had been.**
+
+⚠ **The old names were NOT scrubbed from `HISTORY.md` or the two BUILD_NOTES files.** A diary entry
+records what a file was called when the thing happened; rewriting it makes the record false. Grep
+either name. What DID get rewritten is every line stating a present fact — the folder counts, the
+declaration-rule example, the key-paths entries, the spec's own header, the anchor link into the
+build notes, and the `indicator()` count in the root file, which read **16 while there were 18**.
+
+🔴 **A doc claimed an export twin that does not exist, in two places, and the port about to start is
+exactly what it would have misled.** Both `docs/LWG_Roadmap_And_Open_Questions.md` and
+`docs/LWG_Project_State_Snapshot.md` listed three un-ported Pine strategies and said *"each has an
+export twin ready."* Two do. This one has **no twin, no compile, and no number of any kind** — its
+port starts a stage earlier than `mpc_d` and `mpc_h4_sweep` do. Both lines now say so. **This is
+rule 4 in its quietest form: the sentence was true of the list's majority and was written as if true
+of the list.**
+
+Checked rather than assumed: `indicators/tools/check_active_order.py` is green on all twelve strategy
+pines, and a repo-wide grep confirms nothing outside markdown ever referenced either file — no
+Python, no TypeScript, no harness.
+
 ### The test gate lasted one day (2026-08-14)
 
 Aaron, on the ~7 minutes a push now cost: *"That's way too long. For a pre-push, let's take testing

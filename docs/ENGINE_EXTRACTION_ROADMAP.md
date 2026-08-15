@@ -415,6 +415,9 @@ same 00:00-09:00 UTC window year-round, which is the same equivalence that left
 ⚠ **`mpc_m15_playbook.pine`'s NY window was `0900-1700`, not the `0900-1800` every other file had** —
 a pre-existing difference of unknown origin, now folded into the common `0800-1700` America/New_York.
 It is not a bot and nothing replays it, but if that shorter window was deliberate, this changed it.
+⚠ **That file was DELETED on 2026-08-15** (Aaron's call), so this open question closes unanswered
+rather than resolved. Its `strategy()` half survives as
+`indicators/strategies/smc_session_sweep_strategy.pine` and carries its own session block.
 
 **Done as a line-targeted edit, not a string replace, on purpose:** in these files the OLD Tokyo
 value (`"2000-0500"`) and the OLD New York value (`"0900-1800"`) collide with the NEW Tokyo value, so

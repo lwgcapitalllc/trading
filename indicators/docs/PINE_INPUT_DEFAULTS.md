@@ -24,8 +24,9 @@ nothing errors. Only Aaron can say whether any chart differs.
 "Trades on chart" — untick it again in the same visit.** It cannot be defaulted
 from Pine (no `strategy()` argument exists), it survives ordinary code saves once
 unticked, and the strategies here draw their own position boxes precisely so the
-built-in markers can be off. Applies to all six strategy files, the M15 playbook
-included. Full note: `indicators/CLAUDE.md` → *"Trades on chart" CANNOT be
+built-in markers can be off. Applies to all six strategy files, the session sweep
+(`smc_session_sweep_strategy.pine`, called `mpc_m15_playbook_strategy.pine` until
+2026-08-15) included. Full note: `indicators/CLAUDE.md` → *"Trades on chart" CANNOT be
 defaulted from code*.
 
 `ord` is the per-type declaration index — the number TradingView actually keys on,

@@ -1,7 +1,12 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
 // =============================================================================
-//  MPC M15 PLAYBOOK STRATEGY
+//  SMC SESSION SWEEP STRATEGY
+// =============================================================================
+//  Named `mpc_m15_playbook_strategy.pine` until 2026-08-15. The old name said
+//  where the direction is read and nothing about what the setup IS, and it
+//  carried the `mpc_` prefix of a Pine family this file is not part of. Grep the
+//  old name in HISTORY.md and the build notes — the diary entries keep it.
 // =============================================================================
 //  The five-step SMC continuation model from Lewis Kelly's "This SMC Strategy Is
 //  Too Simple to Ignore", written up in
@@ -21,16 +26,15 @@
 //                     far side of price. Limit into it, stop beyond it.
 //    5. TARGETS     — TP1 previous day's low/high, TP2 previous week's low/high.
 //
-//  WHAT THIS FILE IS NOT
-//  ---------------------
-//  `../engines/mpc_m15_playbook.pine` is an INDICATOR — a dashboard that draws
-//  structure, sessions, gaps, order blocks and a confirmation table. It places no
-//  orders and cannot be scored. This file is the strategy; keep the indicator on
-//  the chart beside it if you want the full drawing set.
-//
-//  The 15m / 1m structure engine below is LIFTED BYTE-FOR-BYTE from that file
-//  (its drawing-free `MTFStruct` port of `SMCStructure.process()`), which is the
-//  same state machine as `engines/market_structure/`. Do not paraphrase it.
+//  WHERE THE STRUCTURE ENGINE CAME FROM
+//  ------------------------------------
+//  The 15m / 1m structure engine below was lifted BYTE-FOR-BYTE from the
+//  drawing-free `MTFStruct` port of `SMCStructure.process()` that used to live in
+//  `../engines/mpc_m15_playbook.pine`. That indicator was DELETED on 2026-08-15
+//  (Aaron's call — it drew a dashboard nobody read and could not be scored), so
+//  the only remaining copies of that state machine are this file and the
+//  canonical `engines/market_structure/`. Do not paraphrase it; if it has to
+//  change, change it against the canonical engine and say so.
 //
 //  THE PANEL AND THE PALETTE ARE THE HOUSE STANDARD (2026-08-14)
 //  ------------------------------------------------------------
@@ -82,7 +86,7 @@
 //    and read the tester's window as what you asked for, not what arrived.
 // =============================================================================
 
-strategy("MPC M15 Playbook Strategy", overlay = true, pyramiding = 0,
+strategy("SMC Session Sweep Strategy", overlay = true, pyramiding = 0,
   initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
   margin_long = 0.2, margin_short = 0.2, slippage = 0,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 2000)
@@ -287,9 +291,11 @@ float tickSz   = syminfo.mintick
 //============================================================
 //  MARKET STRUCTURE ENGINE (drawing-free)
 //============================================================
-// Lifted BYTE-FOR-BYTE from mpc_m15_playbook.pine's MTFStruct block, which is
-// itself a drawing-free port of SMCStructure.process() — the same state machine
-// as engines/market_structure/. It runs inside request.security so each
+// Lifted BYTE-FOR-BYTE from the MTFStruct block of mpc_m15_playbook.pine (that
+// indicator was deleted 2026-08-15; see the header), itself a drawing-free port
+// of SMCStructure.process() — the same state machine as
+// engines/market_structure/, which is now the only other copy. It runs inside
+// request.security so each
 // timeframe is tracked on its own bars, independent of the chart timeframe.
 // Do not paraphrase or 'tidy' it: a swing map that disagrees with the chart is
 // a strategy trading a different market from the one being read.

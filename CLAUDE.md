@@ -160,7 +160,7 @@ each engine's own CLAUDE.md and is not restated here.
 | Subsystem | What it is |
 |---|---|
 | `strategies/` | Strategy source by runner platform. Python ports with a GREEN parity gate: `mpc_sos_fade`, `mpc_bleg`, and `mpc_bos` (**narrow** — the gap ladder never ran). **`mpc_realign` has NO gate at all** — no export twin, no CSV, no `compare_realign.py` — so every number it has produced is a lab finding. The end-to-end process, and which step only a human can do, is `docs/STRATEGY_WORKFLOW.md`. |
-| `indicators/` | Pine source, split by DECLARATION since 2026-08-13: `strategies/` holds the 12 `strategy(` files, `engines/` the 16 `indicator()` files, and each owns its own CLAUDE.md. **The declaration decides it, never the filename** — `structure_engine.pine` reads like a strategy component and is an indicator. Includes the from-scratch `smc_engine_v2.pine` rebuild — mid-build, and a **separate track** from the `mpc_assistant.pine` the Python engines were ported from. Do not confuse the two. |
+| `indicators/` | Pine source, split by DECLARATION since 2026-08-13: `strategies/` holds the 12 `strategy(` files, `engines/` the 17 `indicator()` files, and each owns its own CLAUDE.md. ⚠ **Count them with `ls`, never from this line** — it read 16 while there were 18, and one was then deleted. **The declaration decides it, never the filename** — `structure_engine.pine` reads like a strategy component and is an indicator. Includes the from-scratch `smc_engine_v2.pine` rebuild — mid-build, and a **separate track** from the `mpc_assistant.pine` the Python engines were ported from. Do not confuse the two. |
 | `education/smc/` | The course material the engines were extracted FROM. Reference a human reads; no code reads any of it. |
 
 ### scripts/

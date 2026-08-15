@@ -1,21 +1,34 @@
-# MPC M15 Playbook — strategy spec
+# SMC Session Sweep — strategy spec
 
-**File:** `indicators/strategies/mpc_m15_playbook_strategy.pine`
+**File:** `indicators/strategies/smc_session_sweep_strategy.pine`
 **Source of the idea:** `education/learned/2026-08-11-smc-strategy-too-simple-to-ignore-1150-trades.md`
 (Lewis Kelly, "This SMC Strategy Is Too Simple to Ignore", https://youtu.be/lTrDQPVfJyI)
 **Status:** built 2026-08-11; standardised onto the house input panel and colour palette
-2026-08-14. **Not compiled, not measured, no Python port, no parity harness.**
+2026-08-14; renamed 2026-08-15. **Not compiled, not measured, no Python port, no parity
+harness.**
 
 ---
 
-## Why this file exists
+## The rename, and the file that went with it (2026-08-15)
 
-`indicators/engines/mpc_m15_playbook.pine` is an **indicator**. It draws structure, sessions,
-fair value gaps, order blocks, liquidity levels and a confirmation table, and it places
-no orders — so the Strategy Tester cannot score it and there is no way to find out
-whether the model wins. This file is the same five rules with an execution layer.
+Both were Aaron's call, in the same breath as *"I think we need to port over to Python"*.
 
-The two are meant to sit on one chart: the indicator draws, the strategy trades.
+**`mpc_m15_playbook_strategy.pine` → `smc_session_sweep_strategy.pine`, and this spec moved
+from `MPC_M15_PLAYBOOK_SPEC.md`.** The old name named the timeframe the DIRECTION is read on
+and said nothing about the setup, and it wore the `mpc_` prefix of a Pine family this file was
+never part of — it came from a video note, not from `mpc_assistant.pine`. The new name is the
+setup: a session sweeps the previous session's level, and the model trades the reversal off it.
+
+🔴 **`indicators/engines/mpc_m15_playbook.pine` was DELETED.** It was the 270 KB indicator half
+of the pair — structure, sessions, gaps, order blocks and a confirmation table, drawing only,
+no orders, so the Strategy Tester could never score it. ⚠ **It was also the file the strategy's
+structure engine was lifted byte-for-byte OUT of**, so that block's provenance now points at
+`engines/market_structure/`, which is the canonical implementation and the only other copy.
+Recover it from git if a drawing is ever wanted back.
+
+⚠ **The old names are NOT scrubbed from `HISTORY.md` or the build notes.** A diary entry
+records what a file was called when the thing happened; rewriting it makes the record false.
+Grep either name.
 
 ---
 

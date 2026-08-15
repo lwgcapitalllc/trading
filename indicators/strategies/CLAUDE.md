@@ -6,8 +6,11 @@ Strategy Tester, plus their instrumented `_export` twins.
 contract, the trade annotations, and the colour palette. It does NOT cover the `indicator()`
 sources those strategies were cut from — that is `indicators/engines/CLAUDE.md` — and it does
 not cover the Python ports, which own their own CLAUDE.md under `strategies/python/`.
-**Last reviewed:** 2026-08-15 — `mpc_m15_playbook_strategy.pine` was brought onto the panel
-contract and the palette, then had two drawing bugs found on a chart (see *The playbook strategy* below; full narrative in `../docs/INDICATORS_BUILD_NOTES.md`). The `active =`
+**Last reviewed:** 2026-08-15 — **`mpc_m15_playbook_strategy.pine` is now
+`smc_session_sweep_strategy.pine`, and `../engines/mpc_m15_playbook.pine` was DELETED** (Aaron,
+2026-08-15; see *The session sweep strategy* below). Before that it was brought onto the panel
+contract and the palette, then had two drawing bugs found on a chart. Full narrative in
+`../docs/INDICATORS_BUILD_NOTES.md`. The `active =`
 declaration-order check this file has been asking for since 2026-08-12 now exists and has been
 run on all twelve files. 2026-08-13: split out of `indicators/CLAUDE.md` when the Pine sources
 were divided into `strategies/` and `engines/`; the rules below moved verbatim.
@@ -15,10 +18,10 @@ were divided into `strategies/` and `engines/`; the rules below moved verbatim.
 ## What lives here, and the one thing that decides it
 
 A file is in this folder if its declaration is `strategy(`, and in `../engines/` if it is
-`indicator()`. That is the whole rule, and it is mechanical on purpose — `mpc_m15_playbook.pine`
-is an `indicator()` and sits next door, while `mpc_m15_playbook_strategy.pine` is a `strategy()`
-and sits here. **Check the declaration, never the filename**: `structure_engine.pine` reads like
-a strategy component and is an indicator.
+`indicator()`. That is the whole rule, and it is mechanical on purpose. **Check the declaration,
+never the filename**: `structure_engine.pine` reads like a strategy component and is an indicator,
+and `smc_session_sweep_strategy.pine` had an `indicator()` twin next door under a near-identical
+name until that twin was deleted on 2026-08-15.
 
 ⚠ **Every file here is half of a parity gate.** The `_export` twin is the instrumented copy a
 `compare_*.py` diffs against its Python port, and it has to move with its parent — a change to
@@ -312,7 +315,7 @@ The setting lives with the script INSTANCE on the chart, not with the source, so
 ⚠ **Which is exactly what the 2026-08-12 panel reorder costs, once, on every one of these files** —
 so untick it in the SAME visit as the reset, or the next paste is the one that surprises you.
 
-**It applies to all six strategy files, `mpc_m15_playbook_strategy.pine` included**, even though
+**It applies to all six strategy files, `smc_session_sweep_strategy.pine` included**, even though
 that file was out of scope for the panel pass.
 
 ⚠ **The reason it matters is not tidiness — it is DOUBLE-DRAWING.** Every strategy here already
@@ -396,7 +399,18 @@ this is safe to paste onto a chart already carrying the panel rebuild.
 
 ---
 
-## The playbook strategy — the rules the 2026-08-14/15 pass left behind
+## The session sweep strategy — the rules the 2026-08-14/15 pass left behind
+
+**`smc_session_sweep_strategy.pine`, called `mpc_m15_playbook_strategy.pine` until 2026-08-15.**
+The old name named the timeframe the DIRECTION is read on, said nothing about the setup, and wore
+the `mpc_` prefix of a Pine family this file was never part of — it came from a video note, not
+from `mpc_assistant.pine`. Its `indicator()` twin, `../engines/mpc_m15_playbook.pine`, was deleted
+in the same pass: 270 KB of dashboard that placed no orders, so the Strategy Tester could never
+score it. ⚠ **That deleted file is where this strategy's structure-engine block was lifted from
+byte-for-byte**, so its provenance now points at `engines/market_structure/` — the canonical
+implementation and the only other copy. ⚠ **The old names are deliberately left standing in
+`HISTORY.md` and the build notes**: a diary entry records what a file was called when the thing
+happened, and rewriting it makes the record false.
 
 **Full narrative: `../docs/INDICATORS_BUILD_NOTES.md` → *the playbook joins the contract*.** What
 is here is the instruction; that file is the evidence. Six rules, each learned by something on a
@@ -507,7 +521,7 @@ file that carries the block.**
 - `indicators/strategies/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
 - `indicators/strategies/mpc_d_strategy.pine` — **the D strategy ("D as in dog, the dirty one", Aaron 2026-08-06).** [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategypine)
 - `indicators/strategies/mpc_d_strategy_export.pine` — **the D strategy's decision-stream twin (2026-08-06).** `mpc_d_strategy.pine` + one appended block, body byte-identical apart from line 60's title; 48 transparent `plot()` columns. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategyexportpine)
-- `indicators/strategies/mpc_m15_playbook_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11; brought onto the panel contract and the palette 2026-08-14 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcm15playbookstrategypine)
+- `indicators/strategies/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `mpc_m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
 - `indicators/strategies/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
 - `indicators/strategies/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
 

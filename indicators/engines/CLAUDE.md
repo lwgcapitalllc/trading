@@ -12,16 +12,29 @@ files came to disagree about whether a bot was live.
 (break-gated swing structure + BOS/CHoCH) is ~95% validated against the original; Stage 3
 (internal structure) and Stage 4 (multi-symbol/timeframe comparison) not started. Blocked on
 chart validation by Aaron before Stage 3 begins.
-**Last reviewed:** 2026-08-13 — split out of `indicators/CLAUDE.md` when the Pine sources were
-divided into `strategies/` and `engines/`. The rules below moved verbatim; nothing was rewritten.
+**Last reviewed:** 2026-08-15 — **`mpc_m15_playbook.pine` was DELETED** (Aaron's call; see below).
+2026-08-13: split out of `indicators/CLAUDE.md` when the Pine sources were divided into
+`strategies/` and `engines/`. The rules below moved verbatim; nothing was rewritten.
 
 ## What lives here, and the one thing that decides it
 
 A file is in this folder if its declaration is `indicator()`, and in `../strategies/` if it is
 `strategy(`. Mechanical on purpose — **check the declaration, never the filename**:
-`mpc_m15_playbook.pine` is an `indicator()` and lives here while `mpc_m15_playbook_strategy.pine`
-is a `strategy()` and lives next door, and `structure_engine.pine` reads like a strategy
-component but is an indicator.
+`structure_engine.pine` reads like a strategy component but is an indicator.
+
+🔴 **`mpc_m15_playbook.pine` was DELETED on 2026-08-15 and this is the note that says where it
+went.** 270 KB of dashboard — structure, sessions, gaps, order blocks, a confirmation table — that
+placed no orders, so the Strategy Tester could never score it and nothing here ever measured it.
+Its `strategy()` half survives and was renamed in the same pass:
+`../strategies/smc_session_sweep_strategy.pine`. ⚠ **It is also where that strategy's structure
+engine was lifted from byte-for-byte**, so if that block ever has to change, change it against
+`engines/market_structure/` — the canonical implementation, and now the only other copy. Recover
+the indicator from git if a drawing is ever wanted back. ⚠ **Notes in this file and in
+`../CLAUDE.md` still name it in the present tense** — the `f_rev15` death conditions below, and
+over there the mitigated-liquidity-label input, the session-window sync and the export-mirror
+diff. They are kept because each records a decision made ACROSS several files and still binding
+on the survivors, but the file they name is gone. `f_rev15` in particular now exists only in
+`mpc_assistant.pine`.
 
 🔴 **The stale-armed-level defect, found 2026-08-13 by reading `mss_sweeps_luxalgo.pine`, and the reason `mss_sweeps_mpc.pine` disarms on the CHARACTER change rather than only on the opposite break.** In their file the armed direction is cleared by a sweep, a failed sweep, or the OPPOSITE BOS — and an opposite BOS needs a character change plus a second break. So: bull BOS freezes the protected low at 100, price makes a new internal low at 110, price closes under 110 (a confirmed bearish character change), and **nothing touches the armed state**. Price then wicks to 98, closes 102 green, and a *bullish* signal prints into a confirmed bearish leg. It self-heals only in the one case where the protected level and the current internal low are still the same price, which any pullback after the break destroys. **Our fork disarms on any shift against the armed direction at EITHER degree**, plus a bar-count expiry and an ATR depth cap. ⚠ **The same bug has a second entrance and it is guarded separately**: the engine writes `i_last_hl` only when it has a tracked pullback extreme, and otherwise KEEPS THE PREVIOUS VALUE rather than going `na` — so `not na(i_last_hl)` alone would arm on an iHL from an earlier cycle. The arm test requires the LOCATION to have moved on this bar. **The standing lesson is about what clears state, not about their file: a state machine is only as good as its exits, and "the opposite event will overwrite it" is not an exit when the opposite event needs two steps to arrive.**
 
