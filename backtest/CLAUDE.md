@@ -870,6 +870,24 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 
 ## Rules
 
+- 🔴 **A gap that serves NO bars has two opposite causes and `source.py` must never guess between
+  them.** The market was SHUT over it (a weekend, a holiday, or a window ending today before the
+  session opens), or the data is MISSING (the 45-day M1 hole `covered_spans` records). Until
+  2026-08-15 both raised, so **every backtest whose end date fell on a non-trading day failed
+  outright** — the same window had completed the day before. `BarSource._market_was_shut` is the one
+  thing allowed to tell them apart and it demands BOTH: the gap is no longer than
+  `_MAX_CLOSURE_DAYS` (this module's own measured answer to how long this market can legitimately
+  print nothing — 2 days observed, 4 with headroom), **and** a wider probe around it does serve
+  bars, which proves the agent, the terminal, the symbol and the history are all fine and only the
+  market was absent. ⚠ **The probe must be LONGER than any closure it excuses or it is not a probe**
+  — it returns the same empty answer for both causes. `_PROBE_DAYS` is derived from
+  `_MAX_CLOSURE_DAYS`, never picked, because the forward half is clamped at today and a symmetric
+  reach collapsed to exactly the closure length in the one case that matters most. ⚠ **A probe that
+  RAISES answers "not shut"** — cannot-ask is never no-market — and ⚠ **a closed span records NO
+  coverage**, so nothing claims bars it does not hold. ⚠ **No stored result moves**: the only
+  changed path is inside `except Mt5AgentError`, which previously always propagated, so any load
+  that succeeded before is byte-identical. Tests: `tests/test_source_market_closed.py` (12; 4
+  watched RED against HEAD, the other 8 killed by 4 mutations).
 - **An engine input the decision stream does not export is a silent parity trap.** `EngineConfig`
   carries the engine-construction knobs, and a consumer replaying a specific Pine must pin every one
   that Pine does not leave at the engine's default — `EngineConfig`'s own defaults cannot be right for

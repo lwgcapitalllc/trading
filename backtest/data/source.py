@@ -20,7 +20,7 @@ from .atomic import cache_lock
 from .cache import BarCache
 from .coverage import RangeCoverage
 from .history import HistoryFloors, assert_bar_spacing
-from .mt5_agent import Mt5Agent
+from .mt5_agent import Mt5Agent, Mt5AgentError
 from .resample import resample_up
 from .timeframes import resolve_base_tf, to_minutes
 
@@ -87,7 +87,23 @@ class BarSource:
         if self.cache.is_stale(symbol, base_tf):
             self.coverage.reset(symbol, base_tf)
         for gap_start, gap_end in self.coverage.missing(symbol, base_tf, start_date, end_date):
-            fetched = self.agent.bars(symbol, base_tf, gap_start, gap_end)
+            try:
+                fetched = self.agent.bars(symbol, base_tf, gap_start, gap_end)
+            except Mt5AgentError:
+                # THE WHOLE GAP SERVED NOTHING. That has two causes and they need opposite
+                # responses: the market was SHUT over it (a weekend, a holiday, or a window
+                # ending today before the session opens), or the data is MISSING (the 45-day
+                # M1 hole `covered_spans` records). Raising on both made every run whose end
+                # date fell on a Saturday fail — which is how this was found — and swallowing
+                # both would hide the hole. `_market_was_shut` is the one thing that can tell
+                # them apart, and it refuses to guess.
+                if self._market_was_shut(symbol, base_tf, gap_start, gap_end):
+                    # Deliberately record NO coverage. The span carries no bars, so there is
+                    # nothing to describe, and `covered_spans` already joins across closures
+                    # up to `_MAX_CLOSURE_DAYS` — so the next fetch that DOES serve bars
+                    # absorbs this weekend into its span and the probe stops happening.
+                    continue
+                raise
             # The bars and the coverage that DESCRIBES them are written as ONE operation. The
             # invariant that matters is not "each file is well-formed" but *coverage never claims
             # more than the bars on disk* — and a save and a record that are individually atomic
@@ -108,6 +124,68 @@ class BarSource:
                     self.coverage.record(symbol, base_tf, span_start, span_end)
         return self.cache.load(symbol, base_tf)
 
+    def _market_was_shut(self, symbol: str, base_tf: str, gap_start: str, gap_end: str) -> bool:
+        """Did this gap serve nothing because the MARKET was shut, rather than because the data
+        is missing? Only `True` when that can be shown; `False` whenever it cannot.
+
+        🔴 **The whole point is that an empty answer means two opposite things and the caller
+        must not guess.** A backtest ending on a Saturday, a Sunday, a holiday, or on today
+        before the session opens asks for a window that legitimately holds no bars — and until
+        2026-08-15 every one of those failed the entire run with "MT5 agent returned no bars".
+        A gap in the MIDDLE of history that serves nothing is the opposite case: 45 days of M1
+        went missing that way, and swallowing it would make the hole permanent.
+
+        Two conditions, and BOTH are required:
+
+        1. **The gap is no longer than `_MAX_CLOSURE_DAYS`.** That constant is already this
+           module's measured answer to "how long can this market legitimately print no bars"
+           — 2 days observed over 186,366 bars, 4 with headroom. A longer stretch is missing
+           data BY THE DEFINITION ALREADY IN USE HERE, so it can never be called a closure and
+           the 45-day hole stays loud.
+        2. **A WIDER window around the gap does serve bars.** This is the half that makes the
+           answer worth anything: it proves the agent is up, the terminal is connected, the
+           symbol resolves, and history exists right there — so the only thing absent is the
+           market itself. ⚠ **The probe must be longer than any closure it is being used to
+           excuse, or it answers the same "no bars" for both cases and is not a probe at all**
+           — this repo's own rule about a negative a healthy system can also produce. It is
+           `_MAX_CLOSURE_DAYS` either side, so the shortest probe is 9 days against a longest
+           measured closure of 2.
+
+        ⚠ **The probe is clamped at today.** Asking past it is asking for bars nothing can have
+        yet, which is the very failure this function exists to stop — from inside itself.
+
+        ⚠ **A probe that RAISES answers `False`.** An unreachable agent cannot license skipping
+        anything, and the caller re-raises the original error, which is the accurate one.
+
+        ⚠ **The probe's bars are deliberately DISCARDED.** Every bar it returns lies outside the
+        gap (the gap served nothing), so they are either already cached or outside the window
+        that was asked for; saving them would record coverage for a span nobody requested.
+        """
+        import datetime as _dt
+
+        if _days_between(gap_start, gap_end) > _MAX_CLOSURE_DAYS:
+            return False
+        today = _dt.date.today()
+        # 🔴 The BACKWARD reach carries the whole probe, and it is not symmetric with the
+        # forward one for a measured reason: the forward side is clamped at today, and the
+        # gap that matters most IS today (a run ending on a Saturday). Reaching
+        # `_MAX_CLOSURE_DAYS` each way collapsed to a 4-day window there — exactly the
+        # length of the closure it was being asked to excuse, so it answered "no bars" for
+        # both causes and was not a probe at all. Caught by the test that asserts the span,
+        # against the fix, not against HEAD.
+        lo = _dt.date.fromisoformat(gap_start) - _dt.timedelta(days=_PROBE_DAYS)
+        hi = min(
+            _dt.date.fromisoformat(gap_end) + _dt.timedelta(days=_MAX_CLOSURE_DAYS),
+            today,
+        )
+        if hi <= lo:
+            return False
+        try:
+            probe = self.agent.bars(symbol, base_tf, str(lo), str(hi))
+        except Mt5AgentError:
+            return False
+        return not probe.empty
+
 
 # The longest stretch of consecutive days on which this market legitimately prints NO bars.
 # MEASURED rather than chosen: over the whole cached XAUUSD history (2018-09-14 → 2026-08-06,
@@ -120,6 +198,12 @@ class BarSource:
 # past a week would start swallowing real losses; tightening it below 3 would make every Easter
 # refetch for ever.
 _MAX_CLOSURE_DAYS = 4
+
+# How far BACK `_market_was_shut` reaches to prove the feed is alive. Derived from the
+# constant above rather than chosen: it must stay longer than the longest span that may be
+# called a closure even after the forward half is clamped at today, or the probe returns
+# the same empty answer for "market shut" and "data missing" and decides nothing.
+_PROBE_DAYS = _MAX_CLOSURE_DAYS * 2 + 1
 
 
 def covered_spans(fetched: pd.DataFrame, gap_start: str, gap_end: str) -> list[tuple[str, str]]:
