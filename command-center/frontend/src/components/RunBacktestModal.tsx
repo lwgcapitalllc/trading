@@ -9,7 +9,13 @@ import {
   useHistoryLimit,
   useBrokerProfiles,
 } from '@/hooks/useLab'
-import { ParamEditor } from '@/components/ParamEditor'
+import {
+  ParamEditor,
+  ParamSummary,
+  isChanged,
+  visibleParams,
+  type ParamValue,
+} from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import type { Strategy, Firm, SizingMode, CostLayer, BrokerProfile } from '@/types'
@@ -388,6 +394,18 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // the params editor and Advanced. It opens if anything is ticked, so a configured run is
   // never hiding its own physics.
   const [costsOpen, setCostsOpen] = useState(false)
+  // Read-only by default — see the Strategy Settings block below.
+  const [editingParams, setEditingParams] = useState(false)
+  // ⚠ Counted over `visibleParams`, the SAME set the summary lists, so the number can never
+  // point at a row the reader cannot find. A settled param moved off its default is visible
+  // again, so it counts here too.
+  const changedCount = useMemo(
+    () =>
+      visibleParams(strategy.param_schema, params as Record<string, ParamValue>).filter((p) =>
+        isChanged(p, (params as Record<string, ParamValue>)[p.name])
+      ).length,
+    [strategy.param_schema, params]
+  )
 
   const toggleLayer = (layer: CostLayer) =>
     setCostLayers((prev) => {
@@ -578,11 +596,19 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[900px] max-h-[90vh] flex flex-col shadow-2xl">
-        {/* ── Header ──────────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="text-[15px] font-semibold">Run Backtest</div>
+      {/* ⚠ WIDER THAN THE OTHER MODALS ON PURPOSE (1180px). This one carries a strategy's whole
+          settings surface, and at 900px the summary below could only fit two columns — which put
+          the thing the reader opens this for below the fold. */}
+      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[1180px] max-h-[92vh] flex flex-col shadow-2xl">
+        {/* ── Header — the STRATEGY NAME lives here, not in a row of its own ────
+            It is read-only, so a full-width input for it was ~70px spent restating the title of
+            the thing you clicked Run on. */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[15px] font-semibold flex-shrink-0">Run</span>
+            <span className="text-[15px] font-semibold text-accent truncate">
+              {strategy.name || strategy.class_name}
+            </span>
             <span
               className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border ${
                 isFutures
@@ -626,134 +652,138 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         )}
 
         {/* ── Scrollable body ─────────────────────────────────────────────────── */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-5 space-y-5">
-          {/* Strategy (read-only) */}
-          <div>
-            <SectionHead label="Strategy" />
-            <div className="bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] font-mono text-text-secondary">
-              {strategy.name || strategy.class_name}
-            </div>
-          </div>
-
-          {/* Instrument */}
-          <div>
-            <SectionHead label="Instrument" />
-            {!isNt8 ? (
-              <>
-                <input
-                  type="text"
-                  value={instrumentSymbol}
-                  onChange={(e) => setInstrumentSymbol(e.target.value.toUpperCase())}
-                  placeholder="EURUSD"
-                  className={inputCls}
-                />
-                <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {BROKER_SYMBOLS.map((sym) => (
-                    <PresetBtn
-                      key={sym}
-                      label={sym}
-                      active={instrumentSymbol === sym}
-                      onClick={() => setInstrumentSymbol(sym)}
-                    />
-                  ))}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
-                  <div>
-                    <label className={labelCls}>Symbol</label>
-                    {firmsLoading ? (
-                      <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
-                    ) : allowedSymbols.length === 0 ? (
-                      <div className={`${inputCls} text-text-tertiary`}>No rulesets configured</div>
-                    ) : (
-                      <select
-                        value={instrumentSymbol}
-                        onChange={(e) => setInstrumentSymbol(e.target.value)}
+        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {/* ── Setup — instrument, bar size and period on ONE row ─────────────────
+              These were four stacked sections with four uppercase headings, and between them
+              they cost ~340px before the first strategy setting appeared. Nothing was dropped:
+              the instrument's ten preset chips became the input's own dropdown list (so a
+              broker symbol can still be TYPED), the bar presets became a select, and the period
+              keeps its quick ranges beside the dates. */}
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(140px,200px)_110px_minmax(360px,1fr)] gap-x-4 gap-y-3 items-start">
+            {/* Instrument */}
+            <div className="min-w-0">
+              {!isNt8 ? (
+                <>
+                  <label className={labelCls}>Instrument</label>
+                  {/* A LIST, not a select: the preset chips were the only way to pick one, and a
+                      select would take away typing a symbol they do not cover. */}
+                  <input
+                    type="text"
+                    list="run-broker-symbols"
+                    value={instrumentSymbol}
+                    onChange={(e) => setInstrumentSymbol(e.target.value.toUpperCase())}
+                    placeholder="EURUSD"
+                    className={inputCls}
+                  />
+                  <datalist id="run-broker-symbols">
+                    {BROKER_SYMBOLS.map((sym) => (
+                      <option key={sym} value={sym} />
+                    ))}
+                  </datalist>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
+                    <div>
+                      <label className={labelCls}>Symbol</label>
+                      {firmsLoading ? (
+                        <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
+                      ) : allowedSymbols.length === 0 ? (
+                        <div className={`${inputCls} text-text-tertiary`}>
+                          No rulesets configured
+                        </div>
+                      ) : (
+                        <select
+                          value={instrumentSymbol}
+                          onChange={(e) => setInstrumentSymbol(e.target.value)}
+                          className={inputCls}
+                        >
+                          {allowedSymbols.map((sym) => {
+                            const name = lookupInstrumentName(sym)
+                            return (
+                              <option key={sym} value={sym}>
+                                {name ? `${sym} — ${name}` : sym}
+                              </option>
+                            )
+                          })}
+                        </select>
+                      )}
+                    </div>
+                    <div className="w-[90px]">
+                      <div className="flex items-center mb-1">
+                        <label className={labelCls.replace(' mb-1', '')}>Contract</label>
+                        <InfoTooltip
+                          content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry."
+                          side="left"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={contractMonth}
+                        onChange={(e) => setContractMonth(e.target.value)}
+                        placeholder="06-26"
                         className={inputCls}
-                      >
-                        {allowedSymbols.map((sym) => {
-                          const name = lookupInstrumentName(sym)
-                          return (
-                            <option key={sym} value={sym}>
-                              {name ? `${sym} — ${name}` : sym}
-                            </option>
-                          )
-                        })}
-                      </select>
-                    )}
-                  </div>
-                  <div className="w-[90px]">
-                    <div className="flex items-center mb-1">
-                      <label className={labelCls.replace(' mb-1', '')}>Contract</label>
-                      <InfoTooltip
-                        content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry."
-                        side="left"
                       />
                     </div>
-                    <input
-                      type="text"
-                      value={contractMonth}
-                      onChange={(e) => setContractMonth(e.target.value)}
-                      placeholder="06-26"
-                      className={inputCls}
-                    />
                   </div>
-                </div>
-                {instrumentSymbol && (
-                  <div className="flex items-center justify-between mt-[4px]">
-                    {lookupInstrumentName(instrumentSymbol) && (
-                      <span className="text-[10px] text-text-tertiary">
-                        {lookupInstrumentName(instrumentSymbol)}
+                  {instrumentSymbol && (
+                    <div className="flex items-center justify-between mt-[4px]">
+                      {lookupInstrumentName(instrumentSymbol) && (
+                        <span className="text-[10px] text-text-tertiary">
+                          {lookupInstrumentName(instrumentSymbol)}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-text-tertiary ml-auto">
+                        Submits as:{' '}
+                        <span className="font-mono text-text-secondary">{instrument}</span>
                       </span>
-                    )}
-                    <span className="text-[10px] text-text-tertiary ml-auto">
-                      Submits as:{' '}
-                      <span className="font-mono text-text-secondary">{instrument}</span>
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
-          {/* Period */}
-          <div>
-            <SectionHead
-              label="Period"
-              tooltip="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above."
-            />
-            <PeriodPicker
-              start={startDate}
-              end={endDate}
-              onChange={(s, e) => {
-                setStartDate(s)
-                setEndDate(e)
-              }}
-              limit={historyLimit}
-            />
-          </div>
-
-          {/* Bar Size */}
-          <div>
-            <SectionHead
-              label="Bar Size"
-              tooltip={
-                !isNt8
-                  ? 'Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size.'
-                  : 'Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size.'
-              }
-            />
-            <div className="flex gap-2">
-              {BAR_PRESETS.map((v) => (
-                <PresetBtn
-                  key={v}
-                  label={barLabel(v)}
-                  active={barValue === v}
-                  onClick={() => setBarValue(v)}
+            {/* Bar size */}
+            <div className="min-w-0">
+              <div className="flex items-center mb-1">
+                <label className={labelCls.replace(' mb-1', '')}>Bar size</label>
+                <InfoTooltip
+                  content={
+                    !isNt8
+                      ? 'Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size.'
+                      : 'Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size.'
+                  }
                 />
-              ))}
+              </div>
+              <select
+                value={barValue}
+                onChange={(e) => setBarValue(Number(e.target.value))}
+                className={inputCls}
+              >
+                {BAR_PRESETS.map((v) => (
+                  <option key={v} value={v}>
+                    {barLabel(v)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Period */}
+            <div className="min-w-0">
+              <div className="flex items-center mb-1">
+                <label className={labelCls.replace(' mb-1', '')}>Period</label>
+                <InfoTooltip content="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above." />
+              </div>
+              <PeriodPicker
+                compact
+                start={startDate}
+                end={endDate}
+                onChange={(s, e) => {
+                  setStartDate(s)
+                  setEndDate(e)
+                }}
+                limit={historyLimit}
+              />
             </div>
           </div>
 
@@ -949,18 +979,48 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             )}
           </div>
 
-          {/* Strategy parameters */}
+          {/* ── Strategy settings — READ them by default, EDIT on request ──────────
+              Aaron, 2026-08-15: *"I hate going through all these settings to figure out what is
+              my default strategy settings. I should have a concise section that... shows them to
+              me. And then only if I wanna change that, then I go into the parameters."* So the
+              modal opens on the summary and the editor is one click away.
+              ⚠ The count of CHANGED settings is on the header either way, because the summary is
+              the thing a reader trusts to tell them nothing unusual is set. */}
           {strategy.param_schema.length > 0 && (
             <>
               <Divider />
               <div>
-                <SectionHead label="Strategy Parameters" />
-                <ParamEditor
-                  schema={strategy.param_schema}
-                  mode="run"
-                  values={params}
-                  onChange={(name, val) => setParams((p) => ({ ...p, [name]: val }))}
-                />
+                <div className="flex items-center justify-between mb-2.5">
+                  <SectionHead label="Strategy Settings" />
+                  <div className="flex items-center gap-3">
+                    {changedCount > 0 && (
+                      <span
+                        data-testid="run-params-changed"
+                        className="text-[11px] text-accent font-medium"
+                      >
+                        {changedCount} changed from default
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      data-testid="run-params-edit"
+                      onClick={() => setEditingParams((v) => !v)}
+                      className="text-[11px] px-2.5 py-[3px] rounded border border-border-subtle text-text-secondary hover:text-accent hover:border-accent/40 transition-colors"
+                    >
+                      {editingParams ? 'Done' : 'Edit'}
+                    </button>
+                  </div>
+                </div>
+                {editingParams ? (
+                  <ParamEditor
+                    schema={strategy.param_schema}
+                    mode="run"
+                    values={params}
+                    onChange={(name, val) => setParams((p) => ({ ...p, [name]: val }))}
+                  />
+                ) : (
+                  <ParamSummary schema={strategy.param_schema} values={params} />
+                )}
               </div>
             </>
           )}

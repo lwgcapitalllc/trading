@@ -162,6 +162,121 @@ export function sweepChoices(p: ParamSchemaEntry): { value: string; label: strin
   return []
 }
 
+/**
+ * The params the editor WOULD render, tokens filled — foundational dropped, `show_if` applied,
+ * settled ones gone unless moved.
+ *
+ * ⚠ Exported so the read-only summary and the editor cannot disagree about what a strategy's
+ * settings ARE. A summary listing a row the editor does not offer (or missing one it does) is
+ * worse than no summary: the reader opens the editor to change something the summary promised.
+ */
+export function visibleParams(
+  schema: ParamSchemaEntry[],
+  values: Record<string, ParamValue>
+): ParamSchemaEntry[] {
+  const filled = fillTokens(schema, values)
+  const { raw } = readerFor(filled, values)
+  return filled.filter(
+    (p) =>
+      p.category !== 'foundational' &&
+      (!p.show_if || condHolds(p.show_if, raw)) &&
+      !isSettled(p, raw(p.name))
+  )
+}
+
+/**
+ * What a param currently READS as, in the words the editor uses — a bool as its own on/off
+ * labels, never `true`.
+ *
+ * ⚠ It takes the ALREADY token-filled param (`visibleParams` output), so a `{exec_sl_level}`
+ * cannot reach the screen through this path either.
+ */
+export function displayValue(p: ParamSchemaEntry, v: ParamValue | undefined): string {
+  if (v === undefined || v === null || v === '') return '—'
+  if (p.type === 'bool') {
+    const on = v === true || v === 'true'
+    return String(on ? (p.options?.on ?? 'On') : (p.options?.off ?? 'Off'))
+  }
+  return p.unit ? `${v} ${p.unit}` : String(v)
+}
+
+/** True when this param is not sitting on the strategy's own default. */
+export function isChanged(p: ParamSchemaEntry, v: ParamValue | undefined): boolean {
+  if (p.default === undefined || v === undefined) return false
+  return !sameValue(v, p.default as ParamValue)
+}
+
+/**
+ * 🔴 THE DEFAULTS, READ-ONLY AND AT A GLANCE (2026-08-15, Aaron's ask: *"I hate going through all
+ * these settings to figure out what is my default strategy settings. I should have a concise
+ * section that... shows them to me. And then only if I wanna change that, then I go into the
+ * parameters."*)
+ *
+ * Every setting the editor would offer, as `label · value`, grouped, three to a row. The editor
+ * renders one 34px control per param on its own line with a label above it; this renders the same
+ * information at ~22px a row, three abreast. On `mpc_sos_fade` that is ~1,800px of scrolling
+ * against ~220px.
+ *
+ * ⚠ It is a SUMMARY, not a second editor — nothing here is clickable, and the only way to change
+ * a value stays the editor. Two ways to set one setting is how they come to disagree.
+ * ⚠ A value that is not the strategy's default is marked, because that is the one thing a reader
+ * scanning defaults actually needs to spot.
+ */
+export function ParamSummary({
+  schema,
+  values,
+}: {
+  schema: ParamSchemaEntry[]
+  values: Record<string, ParamValue>
+}) {
+  const params = useMemo(() => visibleParams(schema, values), [schema, values])
+  const groups = useMemo(() => {
+    const out: { name: string; rows: ParamSchemaEntry[] }[] = []
+    for (const p of params) {
+      const g = p.group || 'Settings'
+      const last = out[out.length - 1]
+      if (last && last.name === g) last.rows.push(p)
+      else out.push({ name: g, rows: [p] })
+    }
+    return out
+  }, [params])
+
+  if (!params.length) return null
+  return (
+    <div data-testid="param-summary" className="space-y-2.5">
+      {groups.map((g) => (
+        <div key={g.name}>
+          <div className="text-[9.5px] font-semibold text-text-tertiary/70 uppercase tracking-[0.7px] mb-1">
+            {g.name}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-[3px]">
+            {g.rows.map((p) => {
+              const v = values[p.name] ?? (p.default as ParamValue)
+              const changed = isChanged(p, values[p.name])
+              return (
+                <div
+                  key={p.name}
+                  className="flex items-baseline gap-2 text-[11.5px] min-w-0"
+                  title={p.description}
+                >
+                  <span className="text-text-tertiary truncate flex-1">{p.label || p.name}</span>
+                  <span
+                    className={`font-mono flex-shrink-0 ${
+                      changed ? 'text-accent font-semibold' : 'text-text-secondary'
+                    }`}
+                  >
+                    {displayValue(p, v)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 interface Props {
   schema: ParamSchemaEntry[]
   mode: ParamEditorMode
@@ -268,8 +383,11 @@ export function ParamEditor(props: Props) {
 
   const [simple, setSimple] = useState(false)
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  // ⚠ The opening focus must be a param that is actually RENDERED. Picking the first `core` one
+  // off the raw list opened the explainer on `exec_arm_div` — a SETTLED param with no row on
+  // screen — so the panel described a setting the reader could not find.
   const [focus, setFocus] = useState<string>(
-    () => (params.find((p) => p.core) ?? params[0])?.name ?? ''
+    () => (params.find((p) => p.core && visible(p)) ?? params.find(visible))?.name ?? ''
   )
 
   // Surface the focused param to a 'coach' parent (fires on mount + every focus change).

@@ -49,6 +49,7 @@ export function PeriodPicker({
   end,
   onChange,
   limit,
+  compact,
 }: {
   start: string
   end: string
@@ -60,6 +61,14 @@ export function PeriodPicker({
    * layer still refuse a bad window, so guessing a limit here would only be wrong.
    */
   limit?: HistoryLimit | null
+  /**
+   * One line: both dates AND the quick ranges, instead of three stacked rows.
+   *
+   * ⚠ It changes the LAYOUT and nothing else — same inputs, same presets, same clamping and the
+   * same three notes below. A compact mode that also dropped a control would be a different
+   * picker wearing one name.
+   */
+  compact?: boolean
 }) {
   const todayStr = useMemo(() => today(), [])
   const floor = limit?.earliest_date ?? null
@@ -79,27 +88,52 @@ export function PeriodPicker({
   const activePreset = presets.find((p) => p.start === start && p.end === end)?.label ?? null
   const beforeFloor = !!(floor && start && start < floor)
 
+  const dates = (
+    <div className={`grid grid-cols-[1fr_16px_1fr] items-center gap-1 ${compact ? '' : 'mb-2'}`}>
+      <input
+        type="date"
+        value={start}
+        min={floor ?? undefined}
+        max={todayStr}
+        onChange={(e) => onChange(e.target.value, end)}
+        className={`${DATE_CLS} ${beforeFloor ? 'border-neg-text/60' : ''}`}
+      />
+      <span className="text-text-tertiary text-center text-[12px]">→</span>
+      <input
+        type="date"
+        value={end}
+        min={floor ?? undefined}
+        max={todayStr}
+        onChange={(e) => onChange(start, e.target.value)}
+        className={DATE_CLS}
+      />
+    </div>
+  )
+  const quick = (
+    <div className="flex gap-2">
+      {presets.map((p) => (
+        <PresetBtn
+          key={p.label}
+          label={p.label}
+          active={activePreset === p.label}
+          onClick={() => onChange(p.start, p.end)}
+        />
+      ))}
+    </div>
+  )
+
   return (
     <>
-      <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1 mb-2">
-        <input
-          type="date"
-          value={start}
-          min={floor ?? undefined}
-          max={todayStr}
-          onChange={(e) => onChange(e.target.value, end)}
-          className={`${DATE_CLS} ${beforeFloor ? 'border-neg-text/60' : ''}`}
-        />
-        <span className="text-text-tertiary text-center text-[12px]">→</span>
-        <input
-          type="date"
-          value={end}
-          min={floor ?? undefined}
-          max={todayStr}
-          onChange={(e) => onChange(start, e.target.value)}
-          className={DATE_CLS}
-        />
-      </div>
+      {compact ? (
+        // The dates take the room they need and the quick ranges sit beside them; they wrap to
+        // their own line only when the column is genuinely too narrow for both.
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex-1 min-w-[260px]">{dates}</div>
+          {quick}
+        </div>
+      ) : (
+        dates
+      )}
       {start && end && start >= end && (
         <p className="text-[11px] text-neg-text mb-2">Start must be before end.</p>
       )}
@@ -124,16 +158,7 @@ export function PeriodPicker({
           {limit?.source === 'seed' ? ' (last known — terminal unreachable)' : ''}
         </p>
       )}
-      <div className="flex gap-2">
-        {presets.map((p) => (
-          <PresetBtn
-            key={p.label}
-            label={p.label}
-            active={activePreset === p.label}
-            onClick={() => onChange(p.start, p.end)}
-          />
-        ))}
-      </div>
+      {!compact && quick}
     </>
   )
 }

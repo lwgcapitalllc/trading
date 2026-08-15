@@ -307,3 +307,71 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
     await expect(panel.getByText('div_rsi_len', { exact: true })).toBeVisible()
   })
 })
+
+/**
+ * The Run modal opens on what the strategy IS SET TO, not on a column of controls.
+ *
+ * 🔴 Aaron, 2026-08-15: *"I hate going through all these settings to figure out what is my
+ * default strategy settings. I should have a concise section that... shows them to me. And then
+ * only if I wanna change that, then I go into the parameters."* Plus the space complaint the same
+ * message opened with — a read-only Strategy row, a full-width instrument input over ten preset
+ * chips, and four uppercase section headings, all above the first setting.
+ *
+ * ⚠ Drives the REAL schema off the backend, same rule as the rest of this file.
+ */
+test.describe('the Run modal shows the settings before it offers the controls', () => {
+  async function openModal(page: Page) {
+    await page.route('**/api/backtests/running-job', (r) =>
+      r.fulfill({
+        json: { nt8: { running: false }, mt5: { running: false }, python: { running: false } },
+      })
+    )
+    await page.goto('/strategies')
+    const row = page.locator('tbody tr').filter({ hasText: 'MPC SOS Fade' }).first()
+    await row.getByRole('button', { name: 'Run' }).click()
+    await expect(page.getByTestId('param-summary')).toBeVisible({ timeout: 20_000 })
+  }
+
+  test('it opens on the read-only summary, and Edit swaps in the editor', async ({ page }) => {
+    // MUTATION: default `editingParams` to true and the first assertion goes red.
+    await openModal(page)
+    // The summary is showing and the editor is not — no Essentials card, no toggles.
+    await expect(page.getByText('ESSENTIALS')).toHaveCount(0)
+    // Every group heading the editor would have is in the summary, read-only.
+    await expect(page.getByTestId('param-summary')).toContainText('Risk & stop')
+    await expect(page.getByTestId('param-summary')).toContainText('10 % of balance')
+
+    await page.getByTestId('run-params-edit').click()
+    await expect(page.getByText('ESSENTIALS').first()).toBeVisible()
+    await expect(page.getByTestId('param-summary')).toHaveCount(0)
+  })
+
+  test('🔴 the summary lists exactly what the EDITOR would offer, never a row it would not', async ({
+    page,
+  }) => {
+    // A summary promising a setting the editor does not render sends the reader hunting for a
+    // control that is not there. Both sides read `visibleParams`, and this is what pins it.
+    // MUTATION: drop the `isSettled` clause from `visibleParams` and this goes red — the summary
+    // would carry the 26 settled params the editor hides.
+    await openModal(page)
+    const summary = page.getByTestId('param-summary')
+    // A SETTLED param: off the editor, so it must be off the summary too.
+    await expect(summary).not.toContainText('Trade longs')
+    await expect(summary).not.toContainText('Close on opposite SOS')
+    // ...and a live one is on both.
+    await expect(summary).toContainText('Secondary re-entries (1m SOS)')
+  })
+
+  test('the strategy name is in the TITLE and the setup fits one row', async ({ page }) => {
+    // MUTATION: put the Strategy section back and the first assertion goes red (two copies).
+    await openModal(page)
+    // Scoped to the modal — the row behind it names the strategy too. Inside the modal it must
+    // appear ONCE: in the title, and nowhere as a read-only field.
+    const modal = page.locator('div.fixed.inset-0.z-50')
+    await expect(modal.getByText('MPC SOS Fade', { exact: true })).toHaveCount(1)
+    // The four uppercase headings that used to stack above the settings are down to labels on
+    // one row — `Instrument`, `Bar size`, `Period` — and the bar presets are a select now.
+    await expect(page.getByLabel(/Bar size/).or(page.locator('select').first())).toBeVisible()
+    await expect(page.getByRole('button', { name: '15m', exact: true })).toHaveCount(0)
+  })
+})
