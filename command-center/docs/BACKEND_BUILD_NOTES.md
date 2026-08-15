@@ -237,3 +237,72 @@ their params.
   signature, so HEAD fails with `TypeError` for reasons unrelated to the defect. Non-vacuity is
   by **MUTATION**: making the floor ignore `params` (the exact pre-fix behaviour) turns **4**
   tests red and leaves the three "nothing was narrowed" guards green.
+
+---
+
+## The change list was one git process per commit (2026-08-15)
+
+Found while auditing why the test suites take ~7 minutes, not from the page — which is the point.
+
+`services/bot_versions.py::changes_between` answers *which commits sit between the deployed
+version and HEAD, and which of the bot's trees each one touched*. It ran `git log` for the commit
+list, then a `git show --name-only` for **each commit in it** to read that commit's file list.
+
+**The output was never wrong.** Re-running the whole history through the old and new code gives
+byte-identical results — 172 commits, every `commit`/`subject`/`date`/`areas` field equal. So no
+number on the Configure tab was ever off, and nothing a reader could see would have surfaced this.
+
+### What it cost
+
+The expensive part is not git, it is **one process launch per commit** at ~40ms.
+
+| | before | after |
+|---|---|---|
+| full history (172 commits) | **5.5s** | **0.10s** |
+| `tests/test_bot_version.py` (15 tests) | **53.7s** | **8.7s** |
+| git subprocesses in that file | **1,080** | 14 |
+
+Profiled with `cProfile`: `_git` accounted for **51.8s of the 53.7s**, of which 44.3s was
+`select.poll` — the parent waiting on child processes. `changes_between` alone was 47s across 12
+calls. The fixture stubs SSH carefully and stubs local git not at all, so every test ran ~77 real
+git processes against the working repo.
+
+🔴 **The fan-out scales with the RANGE.** A bot 89 commits behind paid ~3.7s inside `/version`, on
+top of its SSH round trip; a bot 200 behind would pay double. **Every commit either of us pushes
+made this endpoint and this test file slower, permanently.** That is the property worth recognising
+next time — a cost that grows with repo history and never appears in a result.
+
+### The fix
+
+`--name-only` on the same `git log` emits each commit's file list in the same stream, so a range
+costs one process however far behind the bot is.
+
+- **Records are prefixed with `%x1e` and the output is split on it.** git puts a blank line between
+  the format line and the file list; a line-oriented parser has to encode that layout, a record
+  separator does not. `%s` is the subject's first line only, so no record can carry a stray
+  separator.
+- **The pathspec now filters git's output, and the `tree + "/"` test is still applied.** A pathspec
+  of `engines` also matches a top-level file of that name.
+- **Merge commits are unaffected**: `git show` prints no file list for a merge either, so both
+  forms give `areas: []`.
+
+### The half that was not tested, and how it was found
+
+🔴 **`areas` had no assertion anywhere.** Forcing `areas = []` left all **49** tests across
+`test_bot_version.py` and `test_bot_versions.py` green. The field has a paragraph of documentation
+explaining that it names a tree and is *not* a claim about trades — and nothing checked it. The only
+thing standing behind the rewrite was the one-off equivalence diff above, which is a measurement
+taken once and not a gate.
+
+Two tests added, each **watched red against its own mutation** and green against the other's:
+
+| test | mutation that reddens it |
+|---|---|
+| `test_every_change_names_the_tree_it_touched` | `areas = []` |
+| `test_the_change_list_is_ONE_git_process_per_range` | the per-commit `git show` restored (13 processes for 12 commits) |
+
+⚠ **The process-count test asserts on the COUNT OF `git` INVOCATIONS, not on elapsed time.** A
+wall-clock bound is flaky on a loaded laptop and vacuous on a fast one, and the defect was the
+fan-out rather than the duration.
+
+**1,050 backend tests green (was 1,048), suite 221s → 156s.**

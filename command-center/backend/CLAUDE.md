@@ -1384,6 +1384,33 @@ could be on, and it is the exact value that misreported `strategy_version` for i
 (see `algos/CLAUDE.md`). ⚠ **A FAILED promote sends no alert at all**, so no version pair can
 describe a move that did not happen.
 
+### `changes_between` is ONE git process per RANGE, never one per commit
+
+🔴 **It was one `git show --name-only` per commit until 2026-08-15**, and the output was
+byte-identical either way — so nothing on the page could show it. **MEASURED: 5.5s → 0.10s over
+this repo's full history; `tests/test_bot_version.py` fired 1,080 git subprocesses, 51.8s of a
+53.7s run.** ⚠ **The fan-out scaled with the RANGE, so it got worse every time anybody pushed.**
+`--name-only` on the same `git log` returns every file list in one stream. Story:
+`../docs/BACKEND_BUILD_NOTES.md` → *The change list was one git process per commit*.
+
+⚠ **Records are split on `%x1e`, never parsed line by line** — git puts a blank line between the
+format line and the file list, and a record separator does not care what git puts between fields.
+
+⚠ **The `tree + "/"` test is KEPT even though the pathspec now filters git's output.** A pathspec
+of `engines` also matches a top-level FILE of that name; dropping it widens what counts as touching
+a tree.
+
+🔴 **`areas` had NO test at all and it was found by MUTATION, not review** — forcing `areas = []`
+left all 49 tests across both bot-version files GREEN. Pinned now by
+`test_every_change_names_the_tree_it_touched` and `test_the_change_list_is_ONE_git_process_per_range`,
+each watched red against its own mutation. ⚠ **The second counts PROCESSES, not seconds**: a
+wall-clock assertion is flaky on a busy laptop and silent on a fast one, and the defect was the
+fan-out rather than the speed.
+
+⚠ **The standing rule: a cost can hide in correct code run N times, and no result will show it.**
+When a helper loops over a list calling something that launches a process, ask what sets the
+length of that list.
+
 ### The settings that change without anyone asking
 
 `setting_changes` diffs the strategy's dataclass DEFAULTS between the two commits and marks which

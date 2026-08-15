@@ -171,19 +171,46 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
     """
     if not from_commit or not to_commit or not trees:
         return None
-    out = _git("log", "--format=%h\x1f%s\x1f%cs", f"{from_commit}..{to_commit}", "--", *trees)
+    # ONE git call for the whole range, files included.
+    #
+    # 🔴 It was `git log` for the commit list plus a `git show --name-only` PER COMMIT, and the
+    # cost is not the git work — it is 1,080 PROCESS LAUNCHES at ~40ms each. MEASURED on the
+    # `tests/test_bot_version.py` suite: 1,080 subprocesses, 51.8s of a 53.7s run, i.e. the whole
+    # file. ⚠ **It grew with the repo**: the fan-out is one process per commit in the range, so
+    # every commit anybody makes made this endpoint and that suite slower, for ever. Off a bot
+    # deployed 89 commits back that is ~3.7s of the /version card's own latency.
+    #
+    # `--name-only` on the same `git log` gives every commit's file list in one stream, so the
+    # range costs ONE process however far behind the bot is.
+    #
+    # ⚠ **`%x1e` (record separator) prefixes each record and the output is SPLIT on it, rather
+    # than parsed line by line.** git puts a blank line between the format line and the file
+    # list, so a line-oriented reader has to know that layout; a record separator does not care
+    # what git puts between the fields. `%s` is the subject's FIRST LINE, so no record can
+    # contain a stray separator.
+    out = _git(
+        "log",
+        "--format=%x1e%h\x1f%s\x1f%cs",
+        "--name-only",
+        f"{from_commit}..{to_commit}",
+        "--",
+        *trees,
+    )
     if out is None:
         return None
 
     changes: list[dict] = []
-    for line in out.splitlines():
-        if not line.strip():
+    for record in out.split("\x1e"):
+        if not record.strip():
             continue
-        parts = line.split("\x1f")
+        header, _, files = record.partition("\n")
+        parts = header.split("\x1f")
         if len(parts) != 3:
             continue
         sha, subject, date = parts
-        files = _git("show", "--name-only", "--format=", sha) or ""
+        # ⚠ The `tree + "/"` test is KEPT even though the pathspec above already filters git's
+        # output. A pathspec of `engines` also matches a top-level FILE named `engines`, which
+        # this test excludes — dropping it would quietly widen what counts as touching a tree.
         areas = sorted(
             {
                 tree

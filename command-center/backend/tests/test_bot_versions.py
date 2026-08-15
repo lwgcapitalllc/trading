@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import config as cfg
 import pytest
@@ -130,6 +131,57 @@ def test_the_change_list_matches_the_version_gap():
     r = bv.compare("mpc_sos_fade", "HEAD~50", {})
     assert r["comparable"] is True
     assert len(r["changes"]) == r["versions_behind"]
+
+
+def test_every_change_names_the_tree_it_touched():
+    """`areas` is what lets the banner separate *the strategy's own rules changed* from *a shared
+    engine moved underneath it*, and NOTHING pinned it until 2026-08-15.
+
+    🔴 It was found untested by MUTATION, during the rewrite that turned `changes_between` from
+    one `git show` per commit into a single `git log --name-only`: forcing `areas = []` left all
+    49 tests in these two files GREEN. So the field the module docstring explains at length was
+    free to break in silence, and the only thing standing behind that rewrite was a one-off
+    diff against the old implementation's output.
+
+    Two properties, and the second is the one a wrong pathspec breaks:
+
+    * every change names at least one tree — a commit reached this list BECAUSE it touched one,
+      so an empty `areas` means the file list was not read rather than that nothing was touched;
+    * every named tree is one of the bot's own — a widened pathspec (`engines` matching a
+      top-level FILE of that name, a missing `tree + "/"` test) shows up here and nowhere else.
+    """
+    trees = bv.trees_for("mpc_sos_fade")
+    r = bv.compare("mpc_sos_fade", "HEAD~50", {})
+    assert r["changes"], "no changes to check — widen the range"
+    for c in r["changes"]:
+        assert c["areas"], f"{c['commit']} names no tree: {c['subject']}"
+        assert set(c["areas"]) <= set(trees), f"{c['commit']} names a foreign tree: {c['areas']}"
+
+
+def test_the_change_list_is_ONE_git_process_per_range():
+    """The whole point of the 2026-08-15 rewrite, pinned so it cannot regress quietly.
+
+    🔴 The old form fanned out one `git show --name-only` PER COMMIT. That is invisible in a
+    result — the output was byte-identical over all 172 commits of this repo's history — and it
+    made both this endpoint and the suite around it slower on every commit anybody pushed:
+    MEASURED at 1,080 subprocesses and 51.8s of a 53.7s run of `test_bot_version.py`.
+
+    ⚠ **This counts PROCESSES, not seconds.** A wall-clock assertion is a flaky test on a busy
+    laptop and says nothing on a fast one; the defect was never the speed, it was the fan-out.
+    """
+    calls: list[tuple] = []
+    real = subprocess.run
+
+    def _counting_run(args, **kwargs):
+        if args and args[0] == "git":
+            calls.append(tuple(args))
+        return real(args, **kwargs)
+
+    with mock.patch.object(subprocess, "run", _counting_run):
+        changes = bv.changes_between("HEAD~50", "HEAD", bv.trees_for("mpc_sos_fade"))
+
+    assert changes, "no changes to check — widen the range"
+    assert len(calls) == 1, f"{len(calls)} git processes for {len(changes)} commits: {calls}"
 
 
 # ── the settings diff ───────────────────────────────────────────────────────────
