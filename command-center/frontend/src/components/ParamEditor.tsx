@@ -423,10 +423,10 @@ export function ParamEditor(props: Props) {
   // a dropdown set to Custom = 1.0 must disable exactly what its own 1.0 disables.
   const inert = (p: ParamSchemaEntry) => isInert(p, params, values)
 
-  const coreParams = params.filter((p) => p.core && visible(p))
-  const hasCore = coreParams.length > 0
+  // The group the `core` params live in — the one that opens first. Nothing else reads `core`
+  // in this layout any more; see the note above `left`.
+  const firstCoreGroup = params.find((p) => p.core && visible(p))?.group ?? null
 
-  const [simple, setSimple] = useState(false)
   const [open, setOpen] = useState<Record<string, boolean>>({})
   // ⚠ The opening focus must be a param that is actually RENDERED. Picking the first `core` one
   // off the raw list opened the explainer on `exec_arm_div` — a SETTLED param with no row on
@@ -445,16 +445,14 @@ export function ParamEditor(props: Props) {
   const groups = useMemo(() => {
     const seen: string[] = []
     for (const p of params) {
-      if (hasCore && p.core) continue
       const g = p.group || 'Parameters'
       if (!seen.includes(g)) seen.push(g)
     }
     return seen
-  }, [params, hasCore])
+  }, [params])
 
   const focusP = params.find((p) => p.name === focus)
-  const focusGroup = focusP && !(hasCore && focusP.core) ? focusP.group : null
-  const essActive = !!(focusP && hasCore && focusP.core)
+  const focusGroup = focusP?.group ?? null
 
   const toggleGroup = (g: string) => setOpen((s) => ({ ...s, [g]: !s[g] }))
 
@@ -479,118 +477,69 @@ export function ParamEditor(props: Props) {
     return out
   }, [schema, values])
 
+  // 🔴 NO ESSENTIALS CARD, AND NO SIMPLE/EXPERT SWITCH (2026-08-15, Aaron's call).
+  //
+  // A curation of "the important ones" only earns its place when the rest are HIDDEN. It was
+  // built when the accordions were shut and the card was the way in — but it DUPLICATED those
+  // params, so a `core` setting appeared both in the card and inside the group it belongs to,
+  // and changing one place left the other looking untouched. Simple mode went with it: its only
+  // job was hiding the non-core rows, which is a question about a card that no longer exists.
+  //
+  // ⚠ Every param now appears EXACTLY ONCE, under its own group. `core` still means something —
+  // it decides which group opens first — it just no longer means "and also render it up there".
   const left = (
     <>
-      {hasCore && (
-        <div
-          className={`flex items-center justify-end pt-3 pb-1 ${explainer === 'panel' ? 'sticky top-0 z-10 bg-bg-surface' : ''}`}
-        >
-          <div className="inline-flex bg-bg-sunken border border-border-subtle rounded-lg p-[3px]">
-            {(['simple', 'expert'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setSimple(m === 'simple')}
-                className={`px-3 py-[5px] rounded-md text-[12px] font-semibold capitalize transition-colors ${
-                  (simple ? 'simple' : 'expert') === m
-                    ? 'bg-accent text-bg-base'
-                    : 'text-text-tertiary hover:text-text-secondary'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Essentials */}
-      {hasCore && (
-        <div
-          className={`rounded-xl border border-l-[3px] px-3.5 pt-1 pb-2 mt-2 transition-colors ${
-            essActive
-              ? 'border-accent/40 border-l-accent bg-accent/5'
-              : 'border-border-subtle border-l-transparent bg-bg-sunken/40'
-          }`}
-        >
-          <div
-            className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 pt-3 pb-1 ${essActive ? 'text-accent' : 'text-gold-text'}`}
-          >
-            <span>★ Essentials</span>
-          </div>
-          {coreParams.map((p) => (
-            <Row
-              key={p.name}
-              p={p}
-              {...props}
-              widget={widgetOf(p, valueOf(p.name))}
-              focused={focus === p.name}
-              onFocus={() => setFocus(p.name)}
-              valueOf={valueOf}
-              inert={inert(p)}
-              star
-              starActive={essActive}
-            />
-          ))}
-        </div>
-      )}
-
       {/* Accordions (or Simple-mode hint) */}
-      {hasCore && simple ? (
-        <p className="text-[11.5px] italic text-text-tertiary px-1 pt-3">
-          Simple mode — {params.filter((p) => !p.core && visible(p)).length} more setting(s) hidden.
-          Switch to Expert to see them.
-        </p>
-      ) : (
-        groups.map((g, gi) => {
-          const rows = params.filter((p) => p.group === g && (!hasCore || !p.core) && visible(p))
-          if (!rows.length) return null
-          const isOpen = open[g] ?? (!hasCore && gi === 0) // default-open first group when there's no Essentials card
-          const active = g === focusGroup
-          return (
-            <div
-              key={g}
-              className={`rounded-xl border border-l-[3px] mt-2.5 overflow-hidden bg-bg-sunken/40 transition-colors ${
-                active
-                  ? 'border-accent/40 border-l-accent'
-                  : 'border-border-subtle border-l-transparent'
-              }`}
+      {groups.map((g, gi) => {
+        const rows = params.filter((p) => p.group === g && visible(p))
+        if (!rows.length) return null
+        // ⚠ The group holding the ESSENTIAL params opens first — that is all `core` decides
+        // now. Falling back to `gi === 0` keeps a strategy with no core flags working.
+        const isOpen = open[g] ?? (g === firstCoreGroup || (!firstCoreGroup && gi === 0))
+        const active = g === focusGroup
+        return (
+          <div
+            key={g}
+            className={`rounded-xl border border-l-[3px] mt-2.5 overflow-hidden bg-bg-sunken/40 transition-colors ${
+              active
+                ? 'border-accent/40 border-l-accent'
+                : 'border-border-subtle border-l-transparent'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => toggleGroup(g)}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 ${active ? 'bg-accent/5' : ''}`}
             >
-              <button
-                type="button"
-                onClick={() => toggleGroup(g)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 ${active ? 'bg-accent/5' : ''}`}
+              <span
+                className={`flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider ${active ? 'text-accent' : 'text-gold-text'}`}
               >
-                <span
-                  className={`flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider ${active ? 'text-accent' : 'text-gold-text'}`}
-                >
-                  {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  {g}
-                </span>
-                <span className="text-[11px] text-text-tertiary font-medium">
-                  {rows.length} setting{rows.length > 1 ? 's' : ''}
-                </span>
-              </button>
-              {isOpen && (
-                <div className="px-3.5 pb-2 border-t border-border-subtle">
-                  {rows.map((p) => (
-                    <Row
-                      key={p.name}
-                      p={p}
-                      {...props}
-                      widget={widgetOf(p, valueOf(p.name))}
-                      focused={focus === p.name}
-                      onFocus={() => setFocus(p.name)}
-                      valueOf={valueOf}
-                      inert={inert(p)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })
-      )}
+                {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                {g}
+              </span>
+              <span className="text-[11px] text-text-tertiary font-medium">
+                {rows.length} setting{rows.length > 1 ? 's' : ''}
+              </span>
+            </button>
+            {isOpen && (
+              <div className="px-3.5 pb-2 border-t border-border-subtle">
+                {rows.map((p) => (
+                  <Row
+                    key={p.name}
+                    p={p}
+                    {...props}
+                    widget={widgetOf(p, valueOf(p.name))}
+                    focused={focus === p.name}
+                    onFocus={() => setFocus(p.name)}
+                    valueOf={valueOf}
+                    inert={inert(p)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
 
       {/* ⚠ The count is SAID OUT LOUD rather than left implicit. A settled param is still in the
           strategy and still being sent, so an editor that simply showed fewer rows would read as
@@ -615,22 +564,31 @@ export function ParamEditor(props: Props) {
   if (props.layout === 'compact') {
     return (
       <div data-testid="param-compact">
+        {/* ⚠ Each group is its own bordered SECTION, not a heading over a continuous list.
+            Read as one list the 30 rows blur together and the group name stops doing any work —
+            "do something to make it visible that these are sections, segregate it from each
+            other". The header is the collapse control, so a section can be shut to focus. */}
         {compactGroups.map((g) => (
-          <div key={g.name} className="mb-3 last:mb-0">
+          <div
+            key={g.name}
+            className="mb-2 last:mb-0 rounded-lg border border-border-subtle bg-bg-sunken/30 overflow-hidden"
+          >
             <button
               type="button"
               onClick={() => toggleGroup2(g.name)}
               aria-expanded={!collapsed[g.name]}
-              className="flex items-center gap-1 w-full text-[10px] font-bold uppercase tracking-[0.7px] text-gold-text/80 hover:text-gold-text transition-colors mb-1"
+              className={`flex items-center gap-1.5 w-full px-3 py-[7px] text-[10.5px] font-bold uppercase tracking-[0.7px] text-gold-text hover:bg-bg-hover/50 transition-colors ${
+                collapsed[g.name] ? '' : 'border-b border-border-subtle'
+              }`}
             >
-              {collapsed[g.name] ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+              {collapsed[g.name] ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
               {g.name}
-              <span className="normal-case tracking-normal font-normal text-[10px] text-text-tertiary/70">
-                · {g.rows.length}
+              <span className="ml-auto normal-case tracking-normal font-normal text-[10px] text-text-tertiary">
+                {g.rows.length} setting{g.rows.length > 1 ? 's' : ''}
               </span>
             </button>
             {!collapsed[g.name] && (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-0">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-0 px-2.5 py-1.5">
                 {g.rows.map((p) => (
                   <CompactRow key={p.name} p={p} {...props} valueOf={valueOf} inert={inert(p)} />
                 ))}
@@ -686,11 +644,9 @@ function Row(
     valueOf: (n: string) => ParamValue
     /** `disable_if` holds — the row is shown, greyed, and says why. Never hidden. */
     inert: boolean
-    star?: boolean
-    starActive?: boolean
   }
 ) {
-  const { p, focused, onFocus, star, starActive, inert } = props // widget forwarded to Control via {...props}
+  const { p, focused, onFocus, inert } = props // widget forwarded to Control via {...props}
   const showInline = props.explainer === 'inline' && focused
   return (
     <>
@@ -703,13 +659,6 @@ function Row(
         {/* line 1 — label (full row width, so it reads in full) + the tune "was X" tag */}
         <div className="flex items-baseline justify-between gap-2 mb-1.5">
           <span className="flex items-baseline gap-1.5 text-[13px] font-semibold text-text-primary min-w-0">
-            {star && (
-              <span
-                className={`text-[11px] flex-shrink-0 ${starActive ? 'text-accent' : 'text-gold-text'}`}
-              >
-                ★
-              </span>
-            )}
             <span className="truncate" title={labelOf(p)}>
               {labelOf(p)}
             </span>

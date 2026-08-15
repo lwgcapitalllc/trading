@@ -20,7 +20,14 @@ import { test, expect, type Page } from '@playwright/test'
 import type { BacktestDetail, BacktestSummary } from '../src/types'
 
 const API = 'http://localhost:8000'
-const BASELINE_ID = '211384ddbea4'
+// 🔴 RESOLVED FROM THE LAB, NOT HARDCODED (2026-08-15). This was a literal run id, and the day
+// that run was deleted EIGHT tests failed on "not in the lab any more" — pointing at the
+// leaderboard, which was fine. A fixture pinned to one row is a fixture with an expiry date.
+// `resolveBaseline` takes the newest completed standalone run that carries a regime timeline,
+// which is the only thing these tests actually need of it.
+let BASELINE_ID = ''
+/** Sentinel in CHILDREN — swapped for the resolved id when the fixture is built. */
+const BASE = '<baseline>'
 
 /** A synthetic child of the baseline. `pf`/`trades` are what each assertion turns on. */
 interface Child {
@@ -34,8 +41,8 @@ interface Child {
 
 const CHILDREN: Child[] = [
   // The real winner: best PF among the runs with a defensible sample.
-  { id: 'aaa111aaa111', parent: BASELINE_ID, pf: 4.9, trades: 120, edits: { exec_tp1_pct: 40 } },
-  { id: 'bbb222bbb222', parent: BASELINE_ID, pf: 2.0, trades: 90, edits: { exec_tp2_pct: 25 } },
+  { id: 'aaa111aaa111', parent: BASE, pf: 4.9, trades: 120, edits: { exec_tp1_pct: 40 } },
+  { id: 'bbb222bbb222', parent: BASE, pf: 2.0, trades: 90, edits: { exec_tp2_pct: 25 } },
   // A GRANDCHILD — tuning an iteration. The page listed direct children only and dropped it.
   {
     id: 'ccc333ccc333',
@@ -45,10 +52,10 @@ const CHILDREN: Child[] = [
     edits: { exec_tp1_pct: 40, exec_risk_pct: 5 },
   },
   // Highest PF on the page and three trades behind it. It may rank first; it may not be starred.
-  { id: 'fff444fff444', parent: BASELINE_ID, pf: 99.0, trades: 3, edits: { exec_tp1_pct: 90 } },
+  { id: 'fff444fff444', parent: BASE, pf: 99.0, trades: 3, edits: { exec_tp1_pct: 90 } },
   // A SWEEP child. `source_run_id` is stamped by sweeps and optimizations too, so this used to
   // appear in the leaderboard as a tweak.
-  { id: 'swp555swp555', parent: BASELINE_ID, pf: 50.0, trades: 200, edits: {}, sweep: 'sw_1' },
+  { id: 'swp555swp555', parent: BASE, pf: 50.0, trades: 200, edits: {}, sweep: 'sw_1' },
 ]
 
 async function getJson<T>(path: string): Promise<T> {
@@ -58,23 +65,43 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 /** Records every run-detail URL the page asked for, so the payload trim can be asserted. */
-type Fixture = { detailUrls: string[] }
+type Fixture = { detailUrls: string[]; base: BacktestSummary }
 
 async function mockLeaderboard(page: Page): Promise<Fixture> {
   const runs = await getJson<BacktestSummary[]>('/backtests/runs')
-  const base = runs.find((r) => r.run_id === BASELINE_ID)
-  if (!base)
-    throw new Error(`run ${BASELINE_ID} is not in the lab any more — pick another baseline`)
-  const baseDetail = await getJson<BacktestDetail>(`/backtests/runs/${BASELINE_ID}`)
-  expect(
-    baseDetail.regime_timeline.length,
-    'the baseline must carry a timeline for the slim path'
-  ).toBeGreaterThan(0)
+  // A STANDALONE completed run carrying a regime timeline — the slim-payload assertions need the
+  // timeline, and a sweep/optimizer child would nest under its own source instead of listing.
+  // ...and with NO children of its own, or the real ones land in the leaderboard beside the
+  // five synthetic ones and every count assertion moves with whatever is in the lab that day.
+  const parents = new Set(runs.map((r) => r.source_run_id).filter(Boolean))
+  const candidates = runs.filter(
+    (r) =>
+      r.status === 'complete' &&
+      !r.sweep_id &&
+      !r.optimization_id &&
+      !r.source_run_id &&
+      !parents.has(r.run_id)
+  )
+  let base: BacktestSummary | undefined
+  let baseDetail: BacktestDetail | undefined
+  for (const c of candidates) {
+    const d = await getJson<BacktestDetail>(`/backtests/runs/${c.run_id}`)
+    if (d.regime_timeline?.length) {
+      base = c
+      baseDetail = d
+      break
+    }
+  }
+  if (!base || !baseDetail)
+    throw new Error(
+      `no completed standalone run in the lab carries a regime timeline (${candidates.length} candidates) — run one`
+    )
+  BASELINE_ID = base.run_id
 
   const summaries: BacktestSummary[] = CHILDREN.map((c, i) => ({
     ...base,
     run_id: c.id,
-    source_run_id: c.parent,
+    source_run_id: c.parent === BASE ? BASELINE_ID : c.parent,
     sweep_id: c.sweep ?? null,
     profit_factor: c.pf,
     trade_count: c.trades,
@@ -94,7 +121,7 @@ async function mockLeaderboard(page: Page): Promise<Fixture> {
       })
   )
 
-  const fixture: Fixture = { detailUrls: [] }
+  const fixture: Fixture = { detailUrls: [], base }
   await page.route(
     (u) => /\/api\/backtests\/runs\/[0-9a-z]+$/.test(u.pathname),
     async (route) => {
@@ -182,16 +209,20 @@ test.describe('Tuning workbench — the leaderboard', () => {
   test('Max DD leads with the peak-relative percent and keeps the dollars beneath it', async ({
     page,
   }) => {
-    await mockLeaderboard(page)
+    const fx = await mockLeaderboard(page)
     await page.goto(`/backtests/runs/${BASELINE_ID}/tune`)
     await expect(page.getByText('Iterations (5)')).toBeVisible()
 
-    // The baseline's own stored figure — 55.92% off a $1,725,524 fall. In dollars alone that reads
-    // as ~12% of the profit beside it, which is the misreading this column was fixed for.
+    // ⚠ Read off the BASELINE'S OWN stored figures rather than typed in — the baseline is
+    // resolved from the lab, so a literal here would be a second run's numbers the day the first
+    // is deleted. The subject is the ORDER: percent leads, dollars sit beneath it. In dollars
+    // alone the fall reads as a small share of the profit beside it, which is the misreading this
+    // column was fixed for.
     const row = page.locator('table tbody tr').filter({ hasText: 'Baseline' }).first()
     const dd = await row.locator('td:nth-child(4)').innerText()
-    expect(dd).toContain('55.9%')
-    expect(dd).toContain('$1,725,524')
+    expect(fx.base.max_drawdown_pct, 'the baseline must carry a percent').toBeGreaterThan(0)
+    expect(dd).toContain(`${fx.base.max_drawdown_pct.toFixed(1)}%`)
+    expect(dd.indexOf('%')).toBeLessThan(dd.indexOf('$'))
   })
 
   test('a run is named by what it CHANGED wherever it is named alone', async ({ page }) => {

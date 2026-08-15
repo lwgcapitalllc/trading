@@ -60,10 +60,11 @@ async function mock(page: Page, params: Record<string, unknown>) {
 /**
  * Opens the tuning workbench and expands the group holding the toggle.
  *
- * ⚠ `exec_sl_level` is `core` and renders in the Essentials card; `exec_sl_deep` is NOT, so it
- * sits in the `Risk & stop` accordion, which is CLOSED by default whenever an Essentials card
- * exists. A check that only waited for the dropdown would find it and then time out on a toggle
- * that was merely folded away.
+ * ⚠ BOTH params live in the `Risk & stop` accordion, and it is CLOSED on arrival — only the group
+ * holding the FIRST core param opens by itself. Until 2026-08-15 `exec_sl_level` was rendered up
+ * front in an Essentials card, so waiting on it worked and the toggle beside it did not; the card
+ * is gone (it duplicated every param it showed), so the group has to be opened before either is
+ * on screen.
  */
 async function openEditor(page: Page, params: Record<string, unknown> = {}) {
   await mock(page, {
@@ -73,11 +74,11 @@ async function openEditor(page: Page, params: Record<string, unknown> = {}) {
     ...params,
   })
   await page.goto(`/backtests/runs/${RUN_ID}/tune`)
-  await expect(page.getByText('Stop fib level (deep side of 0.5)').first()).toBeVisible()
   await page
     .getByRole('button', { name: /Risk & stop/ })
     .first()
     .click()
+  await expect(page.getByText('Stop fib level (deep side of 0.5)').first()).toBeVisible()
   await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0').first()).toBeVisible()
 }
 
@@ -256,9 +257,7 @@ test.describe('a settled param is hidden, not removed', () => {
     // The guard that makes hiding safe at all. MUTATION: make `settled` return `!!p.hidden` and
     // this goes red — the run would carry `exec_longs: false` with nothing on screen saying so.
     await openEditor(page, { exec_longs: false })
-    // Not a core param, so it lives in an accordion — open the one it belongs to.
-    await page.getByRole('button', { name: /What arms a setup/ }).click()
-
+    // `What arms a setup` holds the first core param, so it is the group that opens by itself.
     await expect(page.getByText('Trade longs')).toBeVisible()
     await expect(page.getByTestId('param-settled-count')).toContainText('25 settled')
   })
