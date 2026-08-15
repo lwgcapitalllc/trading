@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -301,6 +302,47 @@ def test_a_short_is_credited_swap_rather_than_charged():
 
 
 # ── the reference: does it agree with a real replay? ───────────────────────────────────────────
+#
+# ⚠ **The replays below are CACHED, and the FREE one is why.** Every case here replays
+# `mpc_sos_fade` twice over two years of M15 bars — free, then charged — and the free replay is
+# character-for-character the same run in all four. MEASURED before caching: 8 full replays and 4
+# reads of the bar cache, 182s for this file; the four distinct replays it actually needs are the
+# free one plus one per cost layer.
+#
+# ⚠ **Keyed on the cost kwargs, not on the built profile.** `_profile()` returns a fresh object per
+# call, so a cache keyed on it would depend on `AccountProfile` hashing by VALUE — true today and
+# not something this file should be pinning. The kwargs are what the parametrize block states, and
+# `test_the_sizing_fraction...` below deliberately states the SAME spread as the first case so the
+# two share a replay rather than repeating one.
+#
+# ⚠ **An execution is handed to every caller as-is, so nothing may mutate one.** Both tests read
+# `.trades` and neither writes; a copy per call would replace the saving with a deep copy of the
+# thing that was expensive to build.
+
+
+@lru_cache(maxsize=None)
+def _window_df():
+    """The reference window: two years of real cached M15 bars."""
+    import pandas as pd
+
+    df = pd.read_csv(_CACHE, parse_dates=["time"])
+    df = df[(df["time"] >= "2021-01-01") & (df["time"] <= "2023-01-01")]
+    return df.set_index("time").tz_localize("UTC")
+
+
+@lru_cache(maxsize=None)
+def _replay(cost_kwargs: tuple = ()):
+    """One replay of the reference strategy over that window. `()` is the FREE run."""
+    from backtest.replay import build_strategy
+    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+
+    profile = _profile(**dict(cost_kwargs)) if cost_kwargs else None
+    cfg = LAB_STRATEGY["config"]()
+    s = build_strategy(
+        LAB_STRATEGY["strategy"], cfg, initial_capital=10_000.0, cost_profile=profile
+    )
+    s.run(_window_df(), warmup=200)
+    return s.execution
 
 
 @pytest.mark.skipif(not _CACHE.exists(), reason="bar cache absent (git-ignored)")
@@ -338,26 +380,10 @@ def test_repricing_reproduces_a_real_charged_replay(layers, kwargs, tolerance, e
     balance re-walk — swap's 0.0376R lands as 0.32% of the final balance on the full run — so one
     shared bound would either let a real R divergence through or fail the exact layers on dollars.
     """
-    import pandas as pd
-
     from backtest.output import build_equity_curve
-    from backtest.replay import build_strategy
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
 
-    df = pd.read_csv(_CACHE, parse_dates=["time"])
-    df = df[(df["time"] >= "2021-01-01") & (df["time"] <= "2023-01-01")]
-    df = df.set_index("time").tz_localize("UTC")
-
-    def replay(profile):
-        cfg = LAB_STRATEGY["config"]()
-        s = build_strategy(
-            LAB_STRATEGY["strategy"], cfg, initial_capital=10_000.0, cost_profile=profile
-        )
-        s.run(df, warmup=200)
-        return s.execution
-
-    free = replay(None)
-    charged = replay(_profile(**kwargs))
+    free = _replay()
+    charged = _replay(tuple(sorted(kwargs.items())))
     curve = build_equity_curve(free.trades, initial_capital=10_000.0)
 
     rebuilt = reprice_curve(
@@ -386,27 +412,15 @@ def test_the_sizing_fraction_is_a_property_of_the_trade_not_of_the_cost_layer():
     at 5.9%-9.8% instead of the configured 10%, because a resting limit is SIZED WHEN PLACED and
     the balance moves before it fills. Re-pricing reads that fraction off the stored run; this pins
     that reading it is legitimate, i.e. that charging a cost does not change it."""
-    import pandas as pd
 
-    from backtest.replay import build_strategy
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
-
-    df = pd.read_csv(_CACHE, parse_dates=["time"])
-    df = df[(df["time"] >= "2021-01-01") & (df["time"] <= "2023-01-01")]
-    df = df.set_index("time").tz_localize("UTC")
-
-    def fractions(profile):
-        cfg = LAB_STRATEGY["config"]()
-        s = build_strategy(
-            LAB_STRATEGY["strategy"], cfg, initial_capital=10_000.0, cost_profile=profile
-        )
-        s.run(df, warmup=200)
+    def fractions(execution):
         bal, out = 10_000.0, []
-        for t in sorted(s.execution.trades, key=lambda x: (x.exit_ms, x.entry_ms)):
+        for t in sorted(execution.trades, key=lambda x: (x.exit_ms, x.entry_ms)):
             out.append((t.stop_distance * t.qty) / bal)
             bal += t.pnl_usd
         return out
 
-    free, charged = fractions(None), fractions(_profile(spread=0.22))
+    # The same 0.22 the first reference case states, so the two share one charged replay.
+    free, charged = fractions(_replay()), fractions(_replay((("spread", 0.22),)))
     assert len(free) == len(charged)
     assert all(math.isclose(a, b, rel_tol=1e-9) for a, b in zip(free, charged))

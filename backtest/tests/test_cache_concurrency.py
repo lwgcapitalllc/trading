@@ -64,30 +64,47 @@ def _run_writers(cache_dir: Path, n: int = _WRITERS) -> None:
         assert p.wait(timeout=300) == 0, "a writer subprocess failed"
 
 
-def test_concurrent_writers_leave_a_readable_cache(tmp_path):
+@pytest.fixture(scope="module")
+def contended_cache(tmp_path_factory):
+    """One contended write, shared by the three tests that assert on its outcome.
+
+    ⚠ **The writers are the EVENT; the three tests are three properties of one outcome.** Each used
+    to fire its own set — 5 processes x 250,000 rows, MEASURED at ~28s a test, 86s for the file —
+    to produce a cache it then examined from one angle. Firing it once and asserting three times
+    covers exactly the same ground.
+
+    ⚠ **Scoped to the MODULE, so the three share one collision rather than getting one each.** The
+    cost of that, stated plainly: a racy test run three times has three chances to catch an
+    intermittent regression, and this has one. It is acceptable HERE because the reproduction is
+    STRUCTURAL rather than lucky — 250,000 rows makes the read-merge-write window enormous, which
+    is why that size was measured in the first place, and against the unlocked code both failures
+    appear on every run. ⚠ **If `_ROWS_EACH` is ever reduced, this goes back to per-test.**
+    """
+    d = tmp_path_factory.mktemp("contended")
+    _run_writers(d)
+    return d
+
+
+def test_concurrent_writers_leave_a_readable_cache(contended_cache):
     """The file still parses, and every timestamp is unique and in order.
 
     Against the unlocked code this fails at `read_csv`: the splice leaves a clipped token like
     `6-17 07:47:00` where a timestamp should be, which is exactly what three real quarter fetches
     died on.
     """
-    _run_writers(tmp_path)
-
-    raw = pd.read_csv(tmp_path / "XAUUSD__M1.csv", parse_dates=["time"])
+    raw = pd.read_csv(contended_cache / "XAUUSD__M1.csv", parse_dates=["time"])
     assert raw["time"].is_monotonic_increasing, "rows are out of order — two frames were spliced"
     assert not raw["time"].duplicated().any()
 
 
-def test_concurrent_writers_lose_nobodys_bars(tmp_path):
+def test_concurrent_writers_lose_nobodys_bars(contended_cache):
     """Every writer's span survives.
 
     This is the half a valid-looking file does NOT give you. Atomic writes alone make the result
     parse cleanly while one writer's whole fetch is silently gone — the M15 shape, where the cache
     reads fine and simply holds less than it claims.
     """
-    _run_writers(tmp_path)
-
-    bars = BarCache(tmp_path).load("XAUUSD", "M1")
+    bars = BarCache(contended_cache).load("XAUUSD", "M1")
     assert len(bars) == _WRITERS * _ROWS_EACH, (
         f"expected {_WRITERS * _ROWS_EACH} bars, found {len(bars)} — "
         "a writer's span was overwritten by another's"
@@ -140,10 +157,8 @@ def test_different_cache_entries_do_not_block_each_other(tmp_path):
             pass
 
 
-def test_the_meta_sidecar_survives_concurrent_writers(tmp_path):
+def test_the_meta_sidecar_survives_concurrent_writers(contended_cache):
     """A half-written sidecar reads as feed version 1, which silently invalidates the whole file
     and triggers a full re-pull — loud in cost, silent in cause."""
-    _run_writers(tmp_path)
-
-    meta = json.loads((tmp_path / "XAUUSD__M1.meta.json").read_text())
+    meta = json.loads((contended_cache / "XAUUSD__M1.meta.json").read_text())
     assert meta["feed_version"] == 3
