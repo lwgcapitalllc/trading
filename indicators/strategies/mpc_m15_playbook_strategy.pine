@@ -169,6 +169,7 @@ bool   pbTradeLdn    = input.bool(true, "Location — trade London (sweeps the A
 bool   pbTradeNy     = input.bool(true, "Location — trade New York (sweeps the London high/low)", group = G4, tooltip = "New York's pool is London's high and low, frozen at the New York open. NY wins the overlap — it is the later session, and its pool is whatever London had made by the time it opened.")
 bool   pbRequireConf = input.bool(true, "Confirmation — require a lower-timeframe change of character", group = G4, tooltip = "ON: after the sweep, wait for the confirmation timeframe to shift into the direction timeframe's direction. This is the step the video calls the edge. OFF: enter on the sweep alone — expect to be run to the top of the move.")
 string pbConfTf      = input.string("1", "   ↳ Confirmation timeframe", options = ["1", "3", "5", "15"], group = G4, active = pbRequireConf, tooltip = "Where the change of character is read. 1 is the video's. Setting it to the chart timeframe removes the discrepancy the setup is built on.")
+string pbConfWhen    = input.string("Before the zone (rest a limit)", "   ↳ When the shift must happen", options = ["Before the zone (rest a limit)", "At the zone (enter at market)"], group = G4, active = pbRequireConf, tooltip = "The ORDER of steps 3 and 4, and it is an open question rather than a setting with a known answer. BEFORE = the video's five steps as listed: the shift happens on the retrace, then the nearest untouched zone is found above/below price and a limit rests in it. AT = the standard SMC sequence: the zone is frozen when the sweep completes, price has to travel INTO it, and only a shift that happens while price is inside it counts — then entry is at MARKET. ⚠ Before is odd on its face: the lower timeframe turns against the move and price then has to push FURTHER to reach your order. ⚠ The note this was built from is a transcript of what he SAID, and its own header records that the chart walkthrough was largely missed — so which one his chart actually does is not established. Run both and let the tester decide.")
 
 // ── 5 · Entry ───────────────────────────────────────────────────
 // Everything that decides WHICH ZONES EXIST lives here with the entry rules that
@@ -743,17 +744,6 @@ if rawSess != 0
             sweepLoLvl := poolLo
         sweptLo := true
 
-// A shift only counts as confirmation once the sweep has happened — the sequence
-// is location THEN confirmation, and a 1m flip before the sweep is a different
-// setup wearing the same flag.
-if rawSess != 0 and newConfShift
-    if sweptHi and confDir == -1
-        confShort := true
-    if sweptLo and confDir == 1
-        confLong := true
-
-bool confOkShort = pbRequireConf ? confShort : sweptHi
-bool confOkLong  = pbRequireConf ? confLong  : sweptLo
 
 //============================================================
 //  STEP 4 — POINT OF INTEREST: the nearest untouched gap
@@ -825,6 +815,62 @@ f_poiScan(bool untouchedOnly) =>
     [bullT, bullB, bearT, bearB]
 
 [poiBullTop, poiBullBot, poiBearTop, poiBearBot] = request.security(syminfo.tickerid, pbPoiTf, f_poiScan(pbPoiUntouched))
+
+// ── STEPS 3 AND 4, IN EITHER ORDER ──────────────────────────────
+// `pbConfWhen` decides which happens first, and it is an OPEN QUESTION rather
+// than a setting with a right answer. Aaron, 2026-08-15: "why would I look for
+// the gap after a one-minute shift? Shouldn't I look for the point of interest
+// first, and then once price is in it, look for the shift?" He is describing the
+// standard SMC sequence, and the objection is a good one: under the video's
+// listed order the lower timeframe turns AGAINST the move and price then has to
+// push FURTHER to reach the resting order.
+// ⚠ The note this was built from is a transcript of what he SAID, and its own
+// header records that frame selection largely missed the chart walkthrough — so
+// the five steps' ORDER is established and the mechanics are not. Neither branch
+// here is the "correct" one. Run both.
+//
+// AT THE ZONE — the zone is FROZEN when the sweep completes, because the live
+// scan would drop it at the worst possible moment: a gap price has traded into is
+// marked touched, and with untouched-only on it stops being returned exactly as
+// price arrives. `armDir` is stored with it so a direction flip mid-session
+// cannot hand a bear zone to a long.
+bool confAtZone = pbRequireConf and pbConfWhen == "At the zone (enter at market)"
+
+var float armZTop = na, var float armZBot = na
+var int   armDir  = 0
+var bool  armTouched = false
+if newLeg
+    armZTop := na
+    armZBot := na
+    armDir  := 0
+    armTouched := false
+
+if confAtZone and rawSess != 0
+    if armDir == 0
+        if dirDir == -1 and sweptHi and not na(poiBearTop)
+            armZTop := poiBearTop
+            armZBot := poiBearBot
+            armDir  := -1
+        else if dirDir == 1 and sweptLo and not na(poiBullTop)
+            armZTop := poiBullTop
+            armZBot := poiBullBot
+            armDir  := 1
+    if not na(armZTop) and high >= armZBot and low <= armZTop
+        armTouched := true
+
+// A shift only counts as confirmation once the sweep has happened — the sequence
+// is location THEN confirmation, and a 1m flip before the sweep is a different
+// setup wearing the same flag. In AT-THE-ZONE mode it must ALSO happen while
+// price is inside the frozen zone.
+if rawSess != 0 and newConfShift
+    bool placeOk = not confAtZone or armTouched
+    if sweptHi and confDir == -1 and placeOk
+        confShort := true
+    if sweptLo and confDir == 1 and placeOk
+        confLong := true
+
+bool confOkShort = pbRequireConf ? confShort : sweptHi
+bool confOkLong  = pbRequireConf ? confLong  : sweptLo
 
 //============================================================
 //  STEP 5 — TARGETS
@@ -916,9 +962,13 @@ f_zoneEntry(int dir, float zTop, float zBot) =>
     execZoneEntry == "Proximal edge" ? prox : execZoneEntry == "Distal edge" ? dist : (zTop + zBot) / 2
 
 // ── SHORT ─────────────────────────────────────────────────
-float sZTop  = poiBearTop
-float sZBot  = poiBearBot
-float sEntry = na(sZTop) ? na : f_zoneEntry(-1, sZTop, sZBot)
+// In AT-THE-ZONE mode the zone is the FROZEN one and the entry is at MARKET:
+// price is already inside the zone, so a limit at its proximal edge would sit
+// behind the market and fill instantly anyway. `close` is the sizing estimate;
+// the real fill is read back off the position at `justFilled`.
+float sZTop  = confAtZone ? (armDir == -1 ? armZTop : na) : poiBearTop
+float sZBot  = confAtZone ? (armDir == -1 ? armZBot : na) : poiBearBot
+float sEntry = na(sZTop) ? na : confAtZone ? close : f_zoneEntry(-1, sZTop, sZBot)
 float sStop  = na(sZTop) ? na : sZTop + execSlBufTk * tickSz
 float sDist  = na(sEntry) or na(sStop) ? na : sStop - sEntry
 [sT1, sT2]   = f_targets(-1, nz(sEntry, close), nz(sDist, close * 0.001))
@@ -934,9 +984,9 @@ else if not sweptHi
     sBlk := 4
 else if not confOkShort
     sBlk := 5
-else if na(sZTop) or na(sEntry) or sEntry <= close
+else if na(sZTop) or na(sEntry) or (not confAtZone and sEntry <= close)
     sBlk := 6
-else if pbPoiMaxAtr > 0 and not na(atr14) and sEntry - close > pbPoiMaxAtr * atr14
+else if not confAtZone and pbPoiMaxAtr > 0 and not na(atr14) and sEntry - close > pbPoiMaxAtr * atr14
     sBlk := 7
 else if na(sDist) or sDist <= 0 or sDist < minStopDist
     sBlk := 8
@@ -946,9 +996,9 @@ else if busy
     sBlk := 10
 
 // ── LONG ──────────────────────────────────────────────────
-float lZTop  = poiBullTop
-float lZBot  = poiBullBot
-float lEntry = na(lZTop) ? na : f_zoneEntry(1, lZTop, lZBot)
+float lZTop  = confAtZone ? (armDir == 1 ? armZTop : na) : poiBullTop
+float lZBot  = confAtZone ? (armDir == 1 ? armZBot : na) : poiBullBot
+float lEntry = na(lZTop) ? na : confAtZone ? close : f_zoneEntry(1, lZTop, lZBot)
 float lStop  = na(lZBot) ? na : lZBot - execSlBufTk * tickSz
 float lDist  = na(lEntry) or na(lStop) ? na : lEntry - lStop
 [lT1, lT2]   = f_targets(1, nz(lEntry, close), nz(lDist, close * 0.001))
@@ -964,9 +1014,9 @@ else if not sweptLo
     lBlk := 4
 else if not confOkLong
     lBlk := 5
-else if na(lZTop) or na(lEntry) or lEntry >= close
+else if na(lZTop) or na(lEntry) or (not confAtZone and lEntry >= close)
     lBlk := 6
-else if pbPoiMaxAtr > 0 and not na(atr14) and close - lEntry > pbPoiMaxAtr * atr14
+else if not confAtZone and pbPoiMaxAtr > 0 and not na(atr14) and close - lEntry > pbPoiMaxAtr * atr14
     lBlk := 7
 else if na(lDist) or lDist <= 0 or lDist < minStopDist
     lBlk := 8
@@ -1007,7 +1057,10 @@ f_qty(float dist) =>
 if armShort
     float q = f_qty(sDist)
     if q > 0
-        strategy.entry("PB-S", strategy.short, qty = q, limit = sEntry)
+        if confAtZone
+            strategy.entry("PB-S", strategy.short, qty = q)
+        else
+            strategy.entry("PB-S", strategy.short, qty = q, limit = sEntry)
         pendDir   := -1
         pendEntry := sEntry
         pendStop  := sStop
@@ -1020,7 +1073,10 @@ if armShort
 if armLong and pendDir == 0
     float q = f_qty(lDist)
     if q > 0
-        strategy.entry("PB-L", strategy.long, qty = q, limit = lEntry)
+        if confAtZone
+            strategy.entry("PB-L", strategy.long, qty = q)
+        else
+            strategy.entry("PB-L", strategy.long, qty = q, limit = lEntry)
         pendDir   := 1
         pendEntry := lEntry
         pendStop  := lStop
@@ -1369,5 +1425,9 @@ if showStatePanel and barstate.islast
     f_row(1, "SESSION", rawSess == 2 ? "New York" : rawSess == 1 ? "London" : "off-hours", rawSess == 0 or not sessTradable ? TBL_OFF : TBL_GOOD)
     f_row(2, "POOL " + (poolNm == "" ? "—" : poolNm), rawSess == 0 ? "—" : str.tostring(sd == 1 ? poolLo : poolHi, format.mintick), TBL_OFF)
     f_row(3, "SWEPT", rawSess == 0 ? "—" : (sd == 1 ? sweptLo : sweptHi) ? "yes" : "waiting", (sd == 1 ? sweptLo : sweptHi) ? TBL_GOOD : TBL_WARN)
-    f_row(4, pbConfTf + "m SHIFT", not pbRequireConf ? "not required" : (sd == 1 ? confOkLong : confOkShort) ? "agreed" : "waiting", (sd == 1 ? confOkLong : confOkShort) ? TBL_GOOD : TBL_WARN)
+    // In AT-THE-ZONE mode there are TWO waits behind one gate, and they need
+    // opposite responses: price never reached the zone is a market fact, no shift
+    // once it got there is a rule fact.
+    bool cOk = sd == 1 ? confOkLong : confOkShort
+    f_row(4, pbConfTf + "m SHIFT", not pbRequireConf ? "not required" : cOk ? "agreed" : confAtZone and not armTouched ? "waiting on the zone" : "waiting", cOk ? TBL_GOOD : TBL_WARN)
     f_row(5, "ZONE", pendDir != 0 ? "order resting" : strategy.position_size != 0 ? "in a trade" : f_blkWhy(sd == 1 ? lBlk : sBlk) == "" ? "ready" : f_blkWhy(sd == 1 ? lBlk : sBlk), pendDir != 0 or strategy.position_size != 0 ? TBL_GOOD : TBL_WARN)

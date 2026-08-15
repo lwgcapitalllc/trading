@@ -442,6 +442,44 @@ numbers. Worth checking on any strategy here whose rules are a named sequence.
 state their own limit. A cap discovered on the chart reads as a defect; a cap stated in the panel
 reads as a boundary.
 
+### 🔴 The ORDER of steps 3 and 4 is an OPEN QUESTION, and it is now a switch
+
+Aaron, 2026-08-15: *"Why would I look for the gap after a one-minute shift? Shouldn't I look for
+the point of interest first, and then once price is in it, look for the shift?"* He is describing
+the standard SMC sequence, and **the objection is a good one on the mechanics**: under the video's
+listed order the lower timeframe turns AGAINST the move and price then has to push FURTHER to reach
+the resting limit.
+
+`pbConfWhen` ships **Before the zone** (the video's listed order — shift, then rest a limit) with
+**At the zone** as the alternative (freeze the zone at the sweep, price must travel into it, only a
+shift that happens *inside* it counts, entry at MARKET).
+
+⚠ **Neither branch is the "correct" one and the file says so at the input.** `education/learned/`'s
+note is a transcript of what he SAID, and **its own header records that frame selection largely
+missed the chart walkthrough** — so the five steps' ORDER is established and the MECHANICS are not.
+**The honest move was a switch and a measurement, not a rewrite in either direction.**
+
+⚠ **AT-THE-ZONE has to FREEZE the zone and could not reuse the live scan**, and the reason is the
+kind that produces zero trades with nothing to debug: a gap price has traded into is marked
+touched, so with untouched-only on **the scan drops the zone at the exact moment price arrives in
+it** — the condition you are waiting for destroys the thing you are waiting on. `armDir` is stored
+beside the frozen zone so a direction flip mid-session cannot hand a bear zone to a long.
+
+⚠ **Two gates change meaning in that mode and both were adjusted rather than left to misfire**: the
+"limit must rest on the far side of the market" test (block 6) is about a RESTING order and does
+not apply to a market entry, and "maximum distance to the zone" is meaningless once price is inside
+it. ⚠ **The state panel splits the one gate into two waits** — *waiting on the zone* (a market fact)
+against *waiting* (a rule fact) — because they need opposite responses.
+
+🔴 **THE MOVE THAT ALMOST SHIPPED A COMPILE ERROR IS THE REUSABLE PART.** The new block was written
+into the LOCATION section, where the rest of the sweep state lives — and it reads the zone scan,
+which is defined further down the file. Pine resolves top-down, so that is `CE10272`, and it would
+only have appeared on the paste. **It was caught by a mechanical check, not by reading**: for every
+top-level global, assert its first textual use is not before its declaration line. 185 globals, run
+in seconds, and it is the same defect class `check_active_order.py` exists for arriving through a
+different door. ⚠ **Run both after any block move in a Pine file.** The organising instinct — put
+new state with the state it belongs to — is exactly what puts a read above its write.
+
 ### What this file does NOT have, and why
 
 ⚠ **`1 · Confirmation table`** — no JARVIS table, same as BOS, D and H4.

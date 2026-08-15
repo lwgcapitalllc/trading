@@ -47,6 +47,17 @@ had made by the time it opened.
 **A shift only counts after the sweep.** The sequence is location *then* confirmation; a
 1m flip before the sweep is a different setup wearing the same flag.
 
+🔴 **Whether the shift comes BEFORE or AT the zone is not decided, and is a switch
+(`pbConfWhen`, 2026-08-15).** The video lists direction → location → confirmation → point of
+interest, so the shipped default finds the zone *after* the shift and rests a limit in it. Aaron's
+objection is that the standard SMC sequence is the other way round — price reaches the zone, and
+the shift happens *inside* it — and on the mechanics he is right: under the listed order the lower
+timeframe turns against the move and price then has to push further to reach the order. **The note
+this was built from is a transcript, and its own header records that the chart walkthrough was
+largely missed, so the ORDER of the five steps is established and the mechanics are not.** Run both
+and let the tester decide. ⚠ At-the-zone freezes the zone at the sweep — the live scan would drop
+it the moment price traded into it — and enters at market.
+
 **The confirmation is a COUNTER, not a flag.** A change of character is an edge, and a
 flag read back through `request.security` is a level that stays true — so the engine
 returns how many shifts it has seen and the strategy compares it with its own previous
