@@ -240,6 +240,14 @@ Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
   a plain `pytest tests/` restarts the SSH tunnel and fires two scheduled tasks on the live VPS
 - Commit credentials (Telegram tokens, API keys, `.env`)
 - Add a prop firm without filling in `docs_url` — rules drift, the link is how you verify
+- Treat `pytest-xdist` in `requirements.txt` as optional tooling and drop it. It is a RUNTIME
+  dependency of `scripts/run_all_tests.sh`, which passes `-n auto --dist load` to both python
+  suites — this venv is the one that runs them BOTH, not just the backend's. Without it pytest
+  exits 4 on an unrecognised argument, which reads as a suite failure and sends the reader at the
+  tests; the script checks for it up front and refuses with the install line instead. **MEASURED:
+  this suite 150s → 52s.** ⚠ **A test added here must be parallel-safe** — per-test `tmp_path` DBs,
+  no fixed paths written. A test that writes a shared path breaks OTHER tests non-deterministically,
+  which is the worst failure shape a suite has
 - Re-read a bar cache, or re-replay an engine, once per TEST when the tests share a window.
   `tests/test_structure_internal_breaks.py` read the 31 MB / 559,035-row M5 cache once per window
   per test and replayed the structure engine six times for two distinct answers — **62s of a suite

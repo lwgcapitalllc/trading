@@ -3,6 +3,10 @@ uvicorn[standard]>=0.27.0
 pydantic>=2.6.0
 python-multipart>=0.0.9
 pytest>=8.0
+# Runs the suites across cores. NOT optional tooling — `scripts/run_all_tests.sh` passes `-n`,
+# and without this installed pytest exits on an unrecognised argument rather than degrading to
+# serial, so a clone missing it cannot run the tests at all.
+pytest-xdist>=3.8
 httpx>=0.27
 pandas>=2.0.0
 yfinance>=0.2.0

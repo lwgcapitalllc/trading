@@ -34,6 +34,31 @@ pass() { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 fail() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAILED="$FAILED
     $1"; }
 
+# ── Parallelism ───────────────────────────────────────────────────────────────
+#
+# Both python suites are single-core without this, on a box with 12 of them.
+# MEASURED 2026-08-15: root 202s -> 119s, backend 150s -> 45s.
+#
+# ⚠ **`--dist load`, not the default `--dist each`/`loadscope`.** Several test files build an
+# expensive artefact once at MODULE scope and share it across their tests — a 31 MB bar cache, a
+# two-year strategy replay, a 5-process cache collision. `loadfile` keeps a file on one worker and
+# preserves every one of those, which sounds right and MEASURED SLOWER (138s vs 119s): the two
+# heaviest files then become the whole critical path with eleven cores idle beside them. `load`
+# spreads them and rebuilds a cache per worker, which costs CPU and buys wall clock.
+#
+# ⚠ **REFUSE rather than fall back to serial.** pytest exits 4 on an unrecognised `-n`, which reads
+# as a suite failure and sends the reader at the tests; and a silent fall-back to serial is worse
+# still — it turns a missing package into "the tests are slow today" and nobody investigates.
+PYTEST_PARALLEL="${PYTEST_PARALLEL:--n auto --dist load}"
+if [ -n "$PYTEST_PARALLEL" ] && ! "$PYTHON" -c "import xdist" 2>/dev/null; then
+  echo ""
+  echo "  pytest-xdist is not installed in $PYTHON"
+  echo "  Install it:  $PYTHON -m pip install -r command-center/backend/requirements.txt"
+  echo "  Or run serially:  PYTEST_PARALLEL= $0"
+  echo ""
+  exit 1
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Test suite"
@@ -41,10 +66,15 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # ── 1. Engines, backtest, algos, strategies, smart-money ──────────────────────
-# ~4:45, 1,698 tests. `conftest.py` at the root puts `engines/` on sys.path so the canonical
-# engines import by bare name.
+# ~2:00 across 12 cores, 1,760 tests. `conftest.py` at the root puts `engines/` on sys.path so
+# the canonical engines import by bare name.
+#
+# ⚠ **`backtest/tests/test_reprice.py` is ~68s of that 2:00 on its own** — four full replays of
+# `mpc_sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
+# else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
+# conversation, and the lever is coverage rather than scheduling.
 echo "  [1/3] engines / backtest / algos / strategies / smart-money ..."
-if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q; then
+if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q $PYTEST_PARALLEL; then
   pass "root suite"
 else
   fail "root suite (engines / backtest / algos / strategies / smart-money)"
@@ -52,11 +82,11 @@ fi
 echo ""
 
 # ── 2. Command-center backend ─────────────────────────────────────────────────
-# ~2:20, 1,001 tests. MUST be run from its own directory: its pytest.ini carries the
+# ~45s across 12 cores, 1,051 tests. MUST be run from its own directory: its pytest.ini carries the
 # `-m "not integration"` interlock that keeps the destructive live-VPS suite deselected, and a
 # `-m` from anywhere else would replace it.
 echo "  [2/3] command-center backend ..."
-if (cd command-center/backend && ./.venv/bin/python -m pytest -q); then
+if (cd command-center/backend && ./.venv/bin/python -m pytest -q $PYTEST_PARALLEL); then
   pass "backend suite"
 else
   fail "backend suite (command-center/backend)"

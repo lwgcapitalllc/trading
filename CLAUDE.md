@@ -382,9 +382,38 @@ one hook.
 ⚠ **State the loss plainly rather than letting the next reader find it: a broken suite can now
 reach `main`, and the first to know is whoever pulls it.** `scripts/run_all_tests.sh` is still the
 one command — it is now a thing a PERSON runs, and both the hook's output and its header say so. If
-that bites twice, the answer is a FASTER suite (the three parts are independent and could run
-concurrently; the root suite is single-core on a 12-core box, and much of its time is full
-150k-bar replays) rather than a slower hook.
+that bites twice, the answer is a FASTER suite rather than a slower hook.
+
+✅ **That answer was taken on 2026-08-15 and the suite is ~2x faster: ~7 minutes → 3:16 end to end
+through `scripts/run_all_tests.sh` (frontend typecheck included), and 2,811 tests still run.** Nothing was deleted or excluded — an audit for dead, vacuous and duplicated
+tests found **none** (7 assertion-free tests, all deliberate "must never raise"; 0 tests for
+deleted code; 0 real duplicates). **The count was never the problem: 67 tests out of 2,811 were
+the entire runtime, and 2,744 of them finished in ~130s all along.** Full record and the
+per-file numbers: `docs/TEST_SUITE_PERFORMANCE.md`.
+
+The four things that made it fast, in the order they were worth doing:
+
+| | fix | measured |
+|---|---|---|
+| an N+1 **in production code** (`services/bot_versions.py` ran one `git show` per commit) | one `git log --name-only` | 1,080 subprocesses → 14; that file 53.7s → 8.7s |
+| the same 31 MB bar cache re-read and the same engine replayed once per TEST | `lru_cache` on the read, the slice and the replay | 62s → 21s |
+| eight strategy replays where four are needed; one cache collision fired per test | share them | 182s → 80s; 86s → 25s |
+| both suites single-core on a 12-core box | `pytest-xdist`, `-n auto --dist load` | root 202s → 119s, backend 150s → 45s |
+
+🔴 **The first row is the transferable one: a slow TEST is sometimes a defect in the code under
+it.** That git fan-out scaled with repo history, so it made the `/version` endpoint slower every
+time either of us pushed — and it had been invisible for as long as it existed, because its output
+was byte-identical either way. **Nothing in a result can show you a cost.**
+
+⚠ **`backtest/tests/test_reprice.py` is ~68s of the root suite's 119s, alone**, and it is four
+genuine two-year replays. Everything else runs in ~44s. **Any further speed is a COVERAGE decision,
+not a scheduling one** — say so out loud rather than quietly narrowing a window.
+
+⚠ **The suites are only parallel-safe because the shared state is per-test** (`tmp_path` DBs, the
+`_no_live_vps` interlock, scratch git indexes). A new test that writes a fixed path breaks other
+tests non-deterministically, which is the worst failure shape a suite has. ⚠ **`--dist load`, not
+`loadfile`** — see the reasoning in `scripts/run_all_tests.sh`, and note that the intuitive choice
+measured slower.
 
 **What `pre-push` does now costs ~3s and is still worth having**: `pre-commit` only ever sees
 STAGED files, so a `--no-verify` commit, a rebase that resurrected an old file, or an edit from
