@@ -247,19 +247,37 @@ export function useBacktestRun(runId: string | null) {
 // hardcoded copy here would drift the moment the terminal changed — and the drift would
 // show up as a run the UI accepts and the backend then rejects.
 // Long staleTime: it only changes when the broker does, and measuring costs a probe.
+// `params` is the run's OWN params, and passing it is not optional detail: a run can load MORE
+// than its chart timeframe (`exec_secondary` adds a 1m feed) and each feed has its own floor, so
+// the answer depends on the params. Omitting them asks the chart-only question and gets a floor
+// that is too EARLY — which is how run `50331c7cbe96` was offered 2018-09-13, accepted, and then
+// died at 8% on a 1m feed whose history starts 2018-09-14.
+//
+// ⚠ It sends every truthy param NAME and the backend keeps the ones that mean a feed. The frontend
+// deliberately carries no copy of that list: a copy here is the second claim about one rule that
+// this app keeps being bitten by, and a feed added tomorrow would simply never reach the picker.
 export function useHistoryLimit(
   instrument: string | null,
   barType = 'Minute',
   barValue = 15,
-  runner = 'python'
+  runner = 'python',
+  params?: Record<string, unknown> | null
 ) {
+  const flags = params
+    ? Object.keys(params)
+        .filter((k) => params[k] === true)
+        .sort()
+    : []
   return useQuery({
-    queryKey: ['lab', 'history-limit', instrument, barType, barValue, runner],
+    // `flags` is in the key: two runs of one strategy that differ only by `exec_secondary` have
+    // DIFFERENT floors, so they must not share a cache entry.
+    queryKey: ['lab', 'history-limit', instrument, barType, barValue, runner, flags.join(',')],
     queryFn: () =>
       api.get<HistoryLimit | null>(
         `/backtests/history-limit?instrument=${encodeURIComponent(instrument!)}` +
           `&bar_type=${encodeURIComponent(barType)}&bar_value=${barValue}` +
-          `&runner=${encodeURIComponent(runner)}`
+          `&runner=${encodeURIComponent(runner)}` +
+          flags.map((f) => `&flags=${encodeURIComponent(f)}`).join('')
       ),
     enabled: !!instrument,
     staleTime: 60 * 60_000,

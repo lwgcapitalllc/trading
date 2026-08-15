@@ -2369,6 +2369,36 @@ mid-flight.
 Full mechanism, the evidence table, and the probe's two-phase design: `backtest/CLAUDE.md` →
 *History floors*.
 
+### 🔴 THE FLOOR IS PER-RUN, NOT PER-CHART-TIMEFRAME (2026-08-15)
+
+**A run loads more than its chart.** `exec_secondary` replays a 1m feed alongside the 15m
+primary, and each feed has its own measured floor — so the window is bounded by the LATEST of
+them. Until this date everything here asked only about the chart timeframe, and a run with the
+secondary on sailed through a pre-flight that had never heard of the 1m floor: measured on run
+`50331c7cbe96`, Vantage XAUUSD reaches **2018-09-13 at M15 and only 2018-09-14 at M1**, so the
+picker offered a date this module blessed and the runner refused at 8%. **The pre-flight promise
+three bullets up was not being kept.** Story and the verification: `../docs/BACKEND_BUILD_NOTES.md`
+→ *The floor was per-CHART-TIMEFRAME*.
+
+- 🔴 **`services/run_feeds.py` is the ONE answer to which feeds a run loads, and BOTH the runner
+  and the floor check ask it.** The real defect was that two places decided that independently
+  and only one was ever updated; `exec_secondary` is just the flag that exposed it. **Adding a
+  feed is one row in `EXTRA_FEEDS`** — the runner loads it, the pre-flight bounds it, the picker
+  moves. Do not re-answer the question anywhere else.
+- ⚠ **PASS `params` AT EVERY CALL SITE.** Omitting it silently asks the chart-only question and
+  the answer looks perfectly correct — it is just too EARLY. The retry path passes the STORED
+  row's params, which is what makes Retry able to fix a run that failed on the floor; before
+  this it re-offered the same illegal date and failed identically, so the only way out was
+  deleting the run.
+- ⚠ **A STACK is checked per LEG.** Legs share a window, not their params, and the window is
+  legal only if EVERY leg can be served. A shared stack pins `exec_secondary` off before it
+  runs, so `_leg_param_sets` applies the same pin rather than refusing for a feed that path
+  never loads.
+- 🔴 **The runner must ask `run_feeds.uses_secondary(params)`, NEVER `1 in
+  required_timeframes(...)`.** The chart is always in the feed set, so a run whose CHART is 1m
+  makes the membership test true and would fire the dual replay with the secondary switched
+  OFF. Pinned by an AST test that also refuses a `getattr(config, "exec_secondary")` here.
+
 ## Comparing two runs — the BASIS before the result
 
 `scripts/run_diff.py <run_a> <run_b>` (read-only, stdlib, `--list` to find ids). Exit 0 when the

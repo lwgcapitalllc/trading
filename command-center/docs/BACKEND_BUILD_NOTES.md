@@ -156,3 +156,84 @@ MC (10k reshuffles + 1k bootstrap), walk-forward (IS/OOS windows), sensitivity (
 
 `services/history_limits.py` + `GET /backtests/history-limit`. Refuses (400) any backtest window starting before the broker's REAL history for that timeframe — MT5 silently substitutes coarser bars, which would produce a plausible but fictional run. Floor is MEASURED off the live terminal (probed by bar density, cached per broker) via the canonical `backtest/data/history.py`, so a broker swap re-measures instead of inheriting. Enforced at run / retry / sweep / optimization / stack, and again in `BarSource.load`. Python runner only.
 
+
+---
+
+## The floor was per-CHART-TIMEFRAME, and a run loads more than one feed (2026-08-15)
+
+**The report:** *"I am trying to run a backtest now under 50331c7cbe96 and I am getting this
+error… I just ran one yesterday under 2240fc689636 and there were no issues."* Then, after the
+diagnosis: *"you should just be able to hit re-run… having to delete this run and start a new
+one is not the best experience."*
+
+### What it was
+
+The two runs differ by ONE FLAG, not by date:
+
+| run | start | `exec_secondary` | result |
+|---|---|---|---|
+| `2240fc689636` | 2018-09-13 | **false** | complete |
+| `50331c7cbe96` | 2018-09-13 | **true** | `failed_error` at 8% |
+
+`exec_secondary` replays a 1m SECONDARY feed alongside the 15m primary (`strategy.run_dual`).
+Vantage XAUUSD history, MEASURED and cached in `backtest/cache/history_floors.json`:
+
+| timeframe | floor |
+|---|---|
+| M15 | 2018-09-13 |
+| **M1** | **2018-09-14** |
+
+`history_limits` only ever asked about the CHART timeframe. So the date picker offered
+2018-09-13, `validate_window` agreed, a run row was inserted, the python lock was taken, the
+15m frame loaded — and the run died on the 1m load, one day short, at `pct=8`.
+
+🔴 **The pre-flight's own docstring states the promise it was not keeping**: *"`BarSource.load`
+raises at FETCH time, by which point a run row exists, a job lock is held, and the user is
+watching a progress bar. This lets the router refuse with a 400 before any of that."* It could
+not, because it was asking a narrower question than the run would ask.
+
+⚠ **And Retry could not fix it, which is what made it a wall rather than a nuisance.** The
+rerun modal reads the same floor, so it re-offered the same illegal date and the retry failed
+identically — leaving deleting the run and rebuilding it by hand as the only way out.
+
+### The fix
+
+`services/run_feeds.py` is the ONE answer to *which bar feeds does this run load*. **Both the
+runner and the floor check ask it**, so they cannot drift again — which is the actual defect,
+`exec_secondary` merely being the flag that exposed it. Adding a feed is one row in
+`EXTRA_FEEDS`; the runner loads it, the pre-flight bounds it, the picker moves.
+
+`limits_for` returns the LATEST floor across every feed (a window is legal only if EVERY feed
+can serve it) and reports `timeframe_minutes` as the feed that SET it, with a `note` saying so
+— a picker that jumps a day has to explain itself or it reads as broken.
+
+Every call site now passes params: the run trigger (`req.params`), retry (the STORED row's
+params, which is what makes Retry work), sweeps, optimizations (via `base_params_for`, the same
+inheritance the grid itself uses), and stacks — **per LEG**, since legs share a window but not
+their params.
+
+### Three things caught while building it, none by a report
+
+- 🔴 **A 1m-CHART run would have taken the dual-replay branch with the secondary OFF.**
+  `required_timeframes` always includes the chart, so `1 in feeds` is true on its own. The
+  runner asks `run_feeds.uses_secondary(params)`; the question has a NAME so a test can hold it.
+- 🔴 **The test for that was VACUOUS and survived its own mutation.** It asserted on
+  `required_timeframes` / `enabled_feed_flags` — functions the defect could not reach — and
+  stayed green while `uses_secondary` was rewritten as the membership test. It asserts on the
+  function the RUNNER calls now.
+- 🔴 **The AST guard first went red on the COMMENT explaining the rule.** Same trap
+  `test_deploy_commit_gate.py` records for its `--no-verify` guard: the prose naming the old
+  code lives beside the new code. It walks the AST.
+
+### Verified
+
+- **Live endpoint, both ways:** no flags → `2018-09-13` / `15m`; `flags=exec_secondary` →
+  `2018-09-14` / `1m`.
+- **Live retry refused before touching anything:** `POST /backtests/runs/50331c7cbe96/retry`
+  with 2018-09-13 returns **400** naming 2018-09-14, and the run row is unchanged
+  (`failed_error`, same window) — the refusal happens before `reset_run_for_retry`.
+- **12 new tests** (`tests/test_run_feeds.py`), **1026 backend tests green**.
+  ⚠ **A clean fail-watch against HEAD is impossible** — `limits_for`/`validate_window` changed
+  signature, so HEAD fails with `TypeError` for reasons unrelated to the defect. Non-vacuity is
+  by **MUTATION**: making the floor ignore `params` (the exact pre-fix behaviour) turns **4**
+  tests red and leaves the three "nothing was narrowed" guards green.

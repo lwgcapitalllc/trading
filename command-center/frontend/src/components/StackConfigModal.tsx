@@ -84,8 +84,6 @@ export function StackConfigModal({
   const [start, setStart] = useState(initial?.start ?? yearsAgo(1))
   const [end, setEnd] = useState(initial?.end ?? today())
   const [barValue, setBarValue] = useState(initial?.barValue ?? 15)
-  // Stacks are python-only, so the runner is fixed.
-  const { data: historyLimit } = useHistoryLimit(instrument || null, 'Minute', barValue, 'python')
   // 0/0 matches the Pine strategies (all pinned commission=0, slippage=0). The Python fill engine
   // applies real cost via the account profile (vantage_demo = 0), so these display values stay honest.
   const [commPerSide, setCommPerSide] = useState(initial?.commPerSide ?? 0)
@@ -130,6 +128,30 @@ export function StackConfigModal({
     for (const id of selected) if (src[id]) out[id] = src[id]
     return out
   }, [initial?.paramsByStrategy, selected])
+
+  // The UNION of every selected leg's feed flags, which is exactly the floor a stack needs: the
+  // legs share one window, so it is legal only if EVERY leg can be served, and one leg loading a
+  // 1m feed bounds the whole stack. A SHARED stack pins `exec_secondary` off (the backend does the
+  // same before it runs), so it is not bounded by a feed that path never loads.
+  const feedParams = useMemo(() => {
+    const out: Record<string, unknown> = {}
+    for (const st of pyStrategies) {
+      if (!selected.has(st.id)) continue
+      const p = { ...(st.default_params ?? {}), ...(paramsByStrategy[st.id] ?? {}) }
+      for (const [k, v] of Object.entries(p)) if (v === true) out[k] = true
+    }
+    if (shared) delete out.exec_secondary
+    return out
+  }, [pyStrategies, selected, paramsByStrategy, shared])
+
+  // Stacks are python-only, so the runner is fixed.
+  const { data: historyLimit } = useHistoryLimit(
+    instrument || null,
+    'Minute',
+    barValue,
+    'python',
+    feedParams
+  )
 
   const previewBody = useMemo(
     () => ({

@@ -1384,6 +1384,39 @@ inside 30s (measured: the mocked route was hit exactly once), and **`page.goto` 
 load** that destroys the query cache entirely. Any test about *stale data still on screen* must
 therefore wait out the real poll — which is why one test is 65s and says so.
 
+## `useHistoryLimit` takes the run's PARAMS, and omitting them is the defect (2026-08-15)
+
+**A run can load more than its chart timeframe** — `exec_secondary` adds a 1m feed — and each
+feed has its own broker floor, so the earliest legal date depends on the PARAMS, not just the
+instrument and bar size. The hook takes them and sends the names of every truthy one as repeated
+`&flags=`; the backend keeps the ones that mean a feed. Backend rules and the incident:
+`../backend/CLAUDE.md` → *THE FLOOR IS PER-RUN*.
+
+- ⚠ **Omitting `params` asks the chart-only question and gets a floor that is too EARLY**, which
+  renders as a perfectly ordinary date picker offering a date the run will die on. Measured: run
+  `50331c7cbe96` was offered 2018-09-13, accepted, and failed at 8% on a 1m feed whose history
+  starts 2018-09-14.
+- ⚠ **The frontend deliberately carries NO copy of which flags mean a feed.** It sends every
+  truthy param name and lets the backend intersect. A copy here is the second claim about one
+  rule that this app keeps being bitten by, and a feed added tomorrow would simply never reach
+  the picker.
+- ⚠ **`flags` is part of the QUERY KEY.** Two runs of one strategy differing only by
+  `exec_secondary` have different floors and must not share a cache entry.
+- ⚠ **In `RunBacktestModal` the hook sits BELOW the params state**, not beside the other window
+  controls, because it depends on them — ticking the secondary moves the earliest date the
+  picker accepts.
+- ⚠ **`StackConfigModal` passes the UNION of the selected legs' truthy flags.** The legs share
+  one window, so it is legal only if EVERY leg can be served. It drops `exec_secondary` in
+  shared mode, because that path pins it off before running.
+
+🔴 **`RerunModal` MOVES an illegal start to the floor and SAYS SO** (`rerun-moved-to-floor`).
+This is the Retry path for a failed run, so the run in front of the reader may have failed ON
+the floor — and before this the modal re-offered the same illegal date, so Retry could only fail
+identically and the only way out was deleting the run. ⚠ **The move is announced, never silent**:
+a silent clamp runs a window the reader did not ask for, which is the narrowing this repo refuses
+everywhere else. They can type it back; the Rerun button stays disabled until the date is legal,
+so nothing is decided for them.
+
 ## The Backtests list and the Backtest detail page — audited 2026-08-06
 
 Aaron asked for an in-depth audit of both pages and then for the fixes. **27 findings; nine real

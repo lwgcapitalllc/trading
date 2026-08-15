@@ -19,6 +19,7 @@ from models import (
 )
 from services import history_limits, lab_db, runner_dispatch
 from services.optimization_runner import (
+    base_params_for,
     expand_grid,
     pick_search_method,
     retry_failed_runs,
@@ -72,7 +73,17 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
 
     try:
         history_limits.validate_window(
-            req.instrument, req.start_date, req.end_date, req.bar_type, req.bar_value, runner
+            req.instrument,
+            req.start_date,
+            req.end_date,
+            req.bar_type,
+            req.bar_value,
+            runner,
+            # Every combo in this grid inherits the SOURCE RUN's non-swept params (see
+            # `base_params_for`), so those are what decide which bar feeds the grid loads and
+            # therefore which history floor bounds it. Asking about the chart timeframe alone
+            # would clear a window every one of the combos then dies on.
+            params=base_params_for({"source_run_id": req.source_run_id}, strategy),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))

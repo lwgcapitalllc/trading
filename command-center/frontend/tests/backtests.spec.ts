@@ -334,9 +334,21 @@ test.describe('Backtest detail — captions and rules', () => {
     await expect(page.getByText(/came back unpriced/)).toBeVisible()
   })
 
-  test('a failed run offers Retry on its own banner', async ({ page }) => {
-    // `FailureBanner` declared `onRetry` and the page never passed one, so the button did not
-    // exist — on the one banner a reader is looking at because something failed.
+  test('a failed run offers exactly ONE Retry, and it is not on the banner', async ({ page }) => {
+    // 🔴 THIS CHECK IS THE REVERSE OF WHAT IT ASSERTED FROM 2026-08-06 TO 2026-08-15, and the
+    // history is why it still exists rather than being deleted.
+    //
+    // The original defect was that `FailureBanner` declared `onRetry` and the page never passed
+    // one, so the banner had NO button — on the one banner a reader is looking at because
+    // something failed. The fix added a button to the banner. That was right about the missing
+    // control and wrong about where it belonged: the page HEADER already carries a Retry firing
+    // the identical action, so the page ended up with two controls for one destructive action —
+    // two places for the disabled state and the period gate to drift apart. Aaron, from the
+    // screen: *"I don't need the double retry buttons, keep the one outside."*
+    //
+    // ⚠ Deleting this check would leave nothing stopping a future reader re-adding the banner
+    // button as a "fix" for the ORIGINAL defect, whose reasoning still reads as sound. It now
+    // pins the count, which is the property that actually matters.
     const run = await anyCompleteRun()
     const detail = await getJson<BacktestDetail>(`/backtests/runs/${run.run_id}`)
     await page.route(
@@ -350,15 +362,16 @@ test.describe('Backtest detail — captions and rules', () => {
     )
 
     await page.goto(`/backtests/runs/${run.run_id}`)
-    // ⚠ SCOPED TO THE BANNER. The first version of this asserted a page-wide `Retry` button and
-    // PASSED against the broken page — the page HEADER carries its own Retry, so the locator was
-    // matching a control that was never in question. That is the vacuous-pass trap this repo's
-    // own suites have hit twice (`svg`.first() is the sidebar logo; a chart label exists three
-    // times over), and a green new test proves nothing until you have seen it red for the right
-    // reason.
+
+    // The banner still RENDERS — it is what tells you the run failed and why.
     const banner = page.getByTestId('failure-banner')
     await expect(banner).toBeVisible()
-    await expect(banner.getByRole('button', { name: /Retry/ })).toBeVisible()
+    await expect(banner.getByRole('button', { name: /Retry/ })).toHaveCount(0)
+
+    // ⚠ And the surviving control is asserted to EXIST, not merely that the banner's is gone.
+    // Half of this rule alone would pass against a page with no way to retry at all — which is
+    // the original defect, restored by the fix for its own successor.
+    await expect(page.getByRole('button', { name: /Retry/ })).toHaveCount(1)
   })
 
   test('one log poll during a run, not two', async ({ page }) => {

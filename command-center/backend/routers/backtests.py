@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from models import (
     BacktestDetail,
@@ -31,7 +31,7 @@ from models import (
     RunRepriceReport,
     WorthinessScore,
 )
-from services import chart_spec, history_limits, lab_db, news_filter, runner_dispatch
+from services import chart_spec, history_limits, lab_db, news_filter, run_feeds, runner_dispatch
 from services.backtest_runner import (
     LAB_RESULTS_DIR,
     clear_progress,
@@ -333,6 +333,7 @@ def get_history_limit(
     bar_value: int = 15,
     runner: str = "python",
     refresh: bool = False,
+    flags: Optional[list[str]] = Query(default=None),
 ) -> Optional[HistoryLimit]:
     """The earliest date a backtest of this shape may start, or null if unbounded.
 
@@ -343,9 +344,25 @@ def get_history_limit(
     on a broker we cannot identify) — the UI then leaves the range open, because refusing
     on a guess would be worse than letting the data layer's spacing check catch it.
 
+    `flags` = the names of the run's params that are switched ON. A run can load more than
+    its chart timeframe (`exec_secondary` adds a 1m feed) and each feed has its own floor,
+    so the answer depends on the params, not just the timeframe. The UI sends every truthy
+    param name and `run_feeds` keeps the ones that mean a feed — so the frontend never
+    carries its own copy of that list, which is what would drift.
+
+    ⚠ Omitting `flags` answers the CHART-ONLY question, which is a real question and a
+    dangerous default: it is what shipped a floor one day too early on run `50331c7cbe96`.
+
     `refresh=true` re-probes (~15s) — use after a broker back-fills history.
     """
-    lim = history_limits.limits_for(instrument, bar_type, bar_value, runner, refresh=refresh)
+    lim = history_limits.limits_for(
+        instrument,
+        bar_type,
+        bar_value,
+        runner,
+        refresh=refresh,
+        params=run_feeds.feeds_from_flags(flags),
+    )
     return HistoryLimit(**lim) if lim else None
 
 
@@ -527,6 +544,9 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     # Refuse a window the broker has no real bars for BEFORE taking the lock or inserting
     # a row. MT5 answers a too-early request with coarser bars mislabelled as the
     # timeframe asked for, so this would otherwise complete as a plausible fiction.
+    # `params` is REQUIRED here, not decoration: a run with `exec_secondary` on also loads
+    # 1m, whose floor is later, and checking the chart alone is what let run `50331c7cbe96`
+    # through to die at 8%.
     try:
         history_limits.validate_window(
             req.instrument,
@@ -535,6 +555,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
             req.bar_type,
             req.bar_value,
             runner,
+            params=req.params or {},
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -681,6 +702,10 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         if row.get("sweep_id") or row.get("optimization_id"):
             raise HTTPException(400, "The period can only be changed on a standalone run")
         # Same broker-history floor the initial trigger enforces — a rerun is a new window.
+        # The STORED params decide which feeds this run loads, so they are what the floor is
+        # measured against; checking the chart timeframe alone is what made Retry unable to
+        # fix run `50331c7cbe96` (its `exec_secondary` needs 1m, whose history starts a day
+        # later) — the modal offered the same illegal date and the rerun failed identically.
         try:
             history_limits.validate_window(
                 row["instrument"],
@@ -689,6 +714,7 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
                 row.get("bar_type", "Minute"),
                 row.get("bar_value", 15),
                 runner,
+                params=row.get("params") or {},
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc))

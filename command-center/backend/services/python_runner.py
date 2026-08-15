@@ -31,7 +31,7 @@ import config as cfg
 
 # Stdlib-only, imports nothing from services — safe at module scope despite this module sitting
 # inside the runner_dispatch import cycle.
-from services import strategy_import
+from services import run_feeds, strategy_import
 
 _MONOREPO = Path(cfg.MONOREPO_ROOT)
 if str(_MONOREPO) not in sys.path:
@@ -157,14 +157,13 @@ def _cost_profile(spec: dict):
 
 
 def _timeframe_minutes(spec: dict) -> int:
-    """The NT8 job_spec's bar_type/bar_value in minutes — the same mapping `_nt8_to_mt5_spec` uses."""
-    bar_type = spec.get("bar_type", "Minute")
-    bar_value = int(spec.get("bar_value") or 15)
-    if bar_type == "Day":
-        return 1440
-    if bar_type != "Minute":
-        return 60
-    return max(1, bar_value)
+    """The NT8 job_spec's bar_type/bar_value in minutes — the same mapping `_nt8_to_mt5_spec` uses.
+
+    Delegates to `run_feeds` rather than repeating the mapping. It was a hand-copy shared
+    with `history_limits`, and while those two never disagreed, the FEED LIST beside it did
+    — which is the whole reason `run_feeds` exists.
+    """
+    return run_feeds.timeframe_minutes(spec.get("bar_type", "Minute"), spec.get("bar_value"))
 
 
 def _set(job_id: str, **fields) -> None:
@@ -264,7 +263,14 @@ def _execute(job_id: str, spec: dict) -> None:
         entry["strategy"], config, initial_capital=capital, cost_profile=_cost_profile(spec)
     )
 
-    if getattr(config, "exec_secondary", False):
+    # ONE question, asked of `run_feeds` by both this runner and the pre-flight floor check.
+    # It used to be `getattr(config, "exec_secondary", False)` right here and nowhere else,
+    # so `history_limits` bounded the chart timeframe alone and a run whose 1m feed could not
+    # reach the requested start date passed validation and died at 8%. Asked of the CONFIG,
+    # not the raw spec: a strategy default the spec never overrode is only visible post-merge.
+    # ⚠ The FLAG, not `1 in required_timeframes(...)` — a 1m-chart run puts 1 in the feed
+    # set by itself and would take this branch with the secondary off.
+    if run_feeds.uses_secondary(config):
         # Secondary (1m sniper) re-entry is on → replay 15m PRIMARY + 1m SECONDARY on one clock
         # (strategy.run_dual). Needs a 1m feed alongside the base frame.
         # ⚠ This used to say the broker serves ~35 days of M1 and to pick a recent window. That

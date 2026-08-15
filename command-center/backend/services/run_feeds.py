@@ -1,0 +1,128 @@
+"""Which BAR FEEDS a python run will actually load — the one place that decides.
+
+WHY THIS EXISTS
+---------------
+A python run loads its chart timeframe, and it may load MORE. `exec_secondary` turns on a
+1-minute sniper feed alongside the 15m primary, so the run touches two timeframes with two
+different broker history floors.
+
+That fact used to live in exactly one place — `python_runner`, at fetch time — and the
+pre-flight floor check knew nothing about it. Measured 2026-08-15 on run `50331c7cbe96`:
+Vantage XAUUSD M15 goes back to 2018-09-13 and M1 only to 2018-09-14. The date picker read
+the M15 floor, offered 2018-09-13, the router's `validate_window` agreed, a run row was
+inserted, the lock was taken, the 15m frame loaded — and the run died at 8% on the 1m load,
+one day short. The identical window with `exec_secondary` OFF had completed four days
+earlier, which made it look like a date bug. It was a FEED bug.
+
+🔴 The lesson is not about `exec_secondary`. Two places independently decided what a run
+loads, and only one of them was ever updated. So this module is the answer for BOTH: the
+runner asks it what to fetch, and the floor check asks it what to bound. They cannot drift
+apart, because there is nothing to keep in sync.
+
+Adding a feed is one row in `EXTRA_FEEDS`. Nothing else changes — the runner loads it, the
+pre-flight bounds it, the date picker moves, and the retry modal explains itself.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Iterable, Mapping, Optional
+
+# param flag -> the timeframe (minutes) it makes the run ALSO load.
+#
+# ⚠ Keyed on BOOLEAN params. A future feed selected by a string or a number ("bias_tf":
+# "H1") needs its own branch in `required_timeframes`, not a row here — and the frontend
+# sends only truthy flag NAMES, so a non-boolean would never arrive.
+EXTRA_FEEDS: dict[str, int] = {
+    # 1m sniper re-entry. `python_runner` replays 15m PRIMARY + 1m SECONDARY on one clock
+    # via `strategy.run_dual`, so the 1m floor bounds the window just as hard as the chart's.
+    "exec_secondary": 1,
+}
+
+# The one extra feed the runner knows how to LOAD (`strategy.run_dual`). Adding a row to
+# EXTRA_FEEDS gets that feed BOUNDED without teaching the runner to fetch it — the window
+# then narrows more than it needs to, which refuses honestly rather than replaying a feed
+# nobody loaded. Wire the runner in the same change; this is the name it keys off.
+#
+# ⚠ The runner must test THIS FLAG, never `1 in required_timeframes(...)`. A run whose
+# CHART is 1m puts 1 in the feed set on its own, so the membership test would fire the
+# dual-replay branch with the secondary switched off.
+SECONDARY_FLAG = "exec_secondary"
+
+
+def timeframe_minutes(bar_type: Optional[str], bar_value: Optional[int]) -> int:
+    """job_spec `bar_type`/`bar_value` -> minutes.
+
+    The ONE mapping. `python_runner._timeframe_minutes` and `history_limits._tf_minutes`
+    were two hand-copied versions of this; they happened to agree, which is not the same
+    as being one thing.
+    """
+    bt = bar_type or "Minute"
+    bv = int(bar_value or 15)
+    if bt == "Day":
+        return 1440
+    if bt != "Minute":
+        return 60
+    return max(1, bv)
+
+
+def _flag(params: Any, name: str) -> bool:
+    """Read one flag off a params dict OR a built config object.
+
+    Both shapes are real and they arrive from different ends: the routers hold the stored
+    `params` dict (pre-flight, before a config exists), and `python_runner` holds the built
+    config (post-merge, which is the more authoritative of the two — a strategy default
+    that the spec never overrode is only visible there).
+    """
+    if params is None:
+        return False
+    if isinstance(params, Mapping):
+        return bool(params.get(name, False))
+    return bool(getattr(params, name, False))
+
+
+def required_timeframes(
+    bar_type: Optional[str] = "Minute",
+    bar_value: Optional[int] = 15,
+    params: Any = None,
+) -> list[int]:
+    """Every timeframe this run will LOAD, ascending. Always includes the chart's.
+
+    `params` may be the stored params dict, a built config object, or None. None means
+    "no extra feeds declared" — it is not a claim that none are on, so a caller that HAS
+    params must pass them. Every call site in this repo does; the default exists so the
+    chart timeframe alone is still a valid question to ask.
+    """
+    minutes = {timeframe_minutes(bar_type, bar_value)}
+    for name, tf in EXTRA_FEEDS.items():
+        if _flag(params, name):
+            minutes.add(tf)
+    return sorted(minutes)
+
+
+def uses_secondary(params: Any) -> bool:
+    """Does this run replay a 1m SECONDARY feed alongside its chart?
+
+    The runner's dual-replay branch asks this and nothing else. It exists as a named
+    function rather than an inline test because the obvious inline test is WRONG in a way
+    that reads fine: `1 in required_timeframes(...)` is true for a run whose CHART is 1m,
+    so it would fire `run_dual` with the secondary switched off. Naming the question puts
+    that mistake somewhere a test can hold it.
+    """
+    return _flag(params, SECONDARY_FLAG)
+
+
+def enabled_feed_flags(params: Any) -> list[str]:
+    """The `EXTRA_FEEDS` flags that are ON, sorted — what the frontend sends back as
+    `flags` so the API can rebuild the same feed set without the UI shipping its own copy
+    of this table."""
+    return sorted(name for name in EXTRA_FEEDS if _flag(params, name))
+
+
+def feeds_from_flags(flags: Optional[Iterable[str]]) -> dict[str, bool]:
+    """`flags` query param -> a params-shaped mapping `required_timeframes` can read.
+
+    Unknown names are dropped rather than rejected: the UI sends every truthy param name
+    it happens to hold, so most of what arrives here is not a feed flag at all.
+    """
+    names = {f.strip() for f in (flags or []) if f and f.strip()}
+    return {name: True for name in EXTRA_FEEDS if name in names}

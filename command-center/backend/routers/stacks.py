@@ -153,14 +153,24 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
         if not lab_db.get_ruleset(rid):
             raise HTTPException(404, f"Ruleset '{rid}' not found")
 
-    # Broker-history floor. Stacks are python-only and every leg shares one window, so a
-    # single check covers the whole stack.
-    try:
-        history_limits.validate_window(
-            req.instrument, req.start_date, req.end_date, req.bar_type, req.bar_value, "python"
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
+    # Broker-history floor. Stacks are python-only and every leg shares one WINDOW — but not
+    # its params, and params are what decide which bar feeds a leg loads (`run_feeds`). So the
+    # check is per LEG: one leg with `exec_secondary` on needs 1m history the others do not,
+    # and the window is only legal if EVERY leg can be served. A single chart-timeframe check
+    # would clear a stack that then dies on whichever leg asked for the extra feed.
+    for _leg_params in _leg_param_sets(req, strategies):
+        try:
+            history_limits.validate_window(
+                req.instrument,
+                req.start_date,
+                req.end_date,
+                req.bar_type,
+                req.bar_value,
+                "python",
+                params=_leg_params,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
 
     stack_id = "st_" + uuid.uuid4().hex[:10]
     now = int(time.time())
@@ -295,6 +305,25 @@ _SHARED_LEG_PINS = {"exec_secondary": False}
 
 def _pin_for_shared(params: dict) -> dict:
     return {**params, **{k: v for k, v in _SHARED_LEG_PINS.items() if k in params}}
+
+
+def _leg_param_sets(req: StackRequest, strategies: list[dict]) -> list[dict]:
+    """What each leg will actually RUN with — the same resolution both trigger paths use.
+
+    Built for the history-floor check, which has to know each leg's feeds. It must mirror how
+    the legs are really built or the check bounds a stack nobody is going to run:
+
+    * the request's per-strategy override wins, else the strategy's stored defaults — the same
+      order `_resolve_leg` and `_trigger_shared_stack` apply;
+    * a SHARED stack pins `_SHARED_LEG_PINS` on top, so it is not refused for a feed that path
+      switches off anyway. Skipping the pin here would refuse a shared stack whose legs default
+      `exec_secondary` on — legal, because that path never loads the 1m feed.
+    """
+    out = []
+    for strat in strategies:
+        params = dict(req.params_by_strategy.get(strat["id"]) or strat.get("default_params") or {})
+        out.append(_pin_for_shared(params) if req.mode == "shared" else params)
+    return out
 
 
 def _trigger_shared_stack(

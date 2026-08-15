@@ -70,7 +70,13 @@ async def trigger_sweep(req: SweepRequest) -> SweepResponse:
     for _inst in req.instruments:
         try:
             history_limits.validate_window(
-                _inst, req.start_date, req.end_date, req.bar_type, req.bar_value, runner
+                _inst,
+                req.start_date,
+                req.end_date,
+                req.bar_type,
+                req.bar_value,
+                runner,
+                params=req.params or {},
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc))
