@@ -6,8 +6,11 @@ Strategy Tester, plus their instrumented `_export` twins.
 contract, the trade annotations, and the colour palette. It does NOT cover the `indicator()`
 sources those strategies were cut from — that is `indicators/engines/CLAUDE.md` — and it does
 not cover the Python ports, which own their own CLAUDE.md under `strategies/python/`.
-**Last reviewed:** 2026-08-13 — split out of `indicators/CLAUDE.md` when the Pine sources were
-divided into `strategies/` and `engines/`. The rules below moved verbatim; nothing was rewritten.
+**Last reviewed:** 2026-08-15 — `mpc_m15_playbook_strategy.pine` was brought onto the panel
+contract and the palette, then had two drawing bugs found on a chart (see *The playbook strategy* below; full narrative in `../docs/INDICATORS_BUILD_NOTES.md`). The `active =`
+declaration-order check this file has been asking for since 2026-08-12 now exists and has been
+run on all twelve files. 2026-08-13: split out of `indicators/CLAUDE.md` when the Pine sources
+were divided into `strategies/` and `engines/`; the rules below moved verbatim.
 
 ## What lives here, and the one thing that decides it
 
@@ -126,13 +129,13 @@ The other half of the standardisation: *"as I move to strategies, nothing seems 
 than the logic of the strategy."* Same blocked marker, same missed callout, same position box,
 same entry triangles, on every file.
 
-| annotation | A+ | B-LEG | BOS | D | H4 |
-|---|---|---|---|---|---|
-| position box / result bands | ✅ | ✅ | ✅ | ✅ | ✅ |
-| entry callout, recoloured on close | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **entry triangles** | ✅ | ✅ | ✅ | ✅ **new** | ✅ |
-| **blocked-setup tag (pink)** | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
-| missed-setup callout (2-of-3) | ✅ | ✅ | ❌ | ❌ | ❌ |
+| annotation | A+ | B-LEG | BOS | D | H4 | M15 |
+|---|---|---|---|---|---|---|
+| position box / result bands | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
+| entry callout, recoloured on close | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
+| **entry triangles** | ✅ | ✅ | ✅ | ✅ **new** | ✅ | ✅ **new** |
+| **blocked-setup tag (pink)** | ✅ | ✅ | ✅ | ✅ | ✅ **new** | ✅ |
+| missed-setup callout (2-of-3) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 **D gained the entry triangles.** `plotshape` is a GLOBAL-SCOPE call, so it cannot live inside
 the fill block and the fill edge is written out at top level instead — the SAME test the fill
@@ -270,10 +273,21 @@ compile error in its export, and only the parent gets pasted.** ✅ **The move s
 and needs no extra reset** — proven rather than assumed: the four inputs it crossed are all `bool`
 and it is a `string`, so every per-type ordinal, default and title is identical to before the fix.
 
-⚠ **The check is cheap and none of the five files was run through it.** For each `active =`, every
-identifier in it must be declared at a lower line number than the input carrying it — a ten-line
-script over `indicators/*.pine`. Run it after any panel edit; it found the export twin here, which
-nobody would have pasted until much later.
+✅ **THE CHECK NOW EXISTS AND HAS BEEN RUN — `indicators/tools/check_active_order.py`, 2026-08-14.**
+For each `active =`, every identifier in it must be declared at a lower line number than the input
+carrying it. **All twelve files in this folder pass.** Run it after any panel edit; it found the
+export twin above, which nobody would have pasted until much later.
+
+⚠ **Its first two versions BOTH reported four false failures, and the shape of them is the
+warning.** Version one ran the `active =` expression on past its own argument and swallowed the
+next one, so `step = 0.05` read as a dependency on an identifier called `step` — which a local
+variable 4,900 lines away happened to be. Version two stopped at the argument boundary and still
+failed, because `active = execRunnerTrail != "Fixed step"` puts the word inside a STRING. **A
+checker that flags the four biggest files while passing the small ones is one you conclude is
+broken and stop running** — and the second reading would have been right for the wrong reason,
+since the files really were clean. Strings are stripped before identifiers are extracted now.
+✅ **Watched RED by mutation rather than trusted**: swapping `execShowPosBox` and its own
+`active =` dependant in a throwaway copy reddens exactly that pair and nothing else.
 
 ### 🔴 "Trades on chart" CANNOT be defaulted from code, and it is the one thing on the Style tab that matters here
 
@@ -382,12 +396,80 @@ this is safe to paste onto a chart already carrying the panel rebuild.
 
 ---
 
+## The playbook strategy — the rules the 2026-08-14/15 pass left behind
+
+**Full narrative: `../docs/INDICATORS_BUILD_NOTES.md` → *the playbook joins the contract*.** What
+is here is the instruction; that file is the evidence. Six rules, each learned by something on a
+chart being wrong in a way nothing errored about.
+
+**1 · A drawing on a strategy chart is a CLAIM, and a claim about a PLAN must be withdrawn when
+the plan does not happen.** Reward bands are painted at the fill, entry → target, because that is
+what the trade is aiming at. Nothing removed them on the close, so a −1R stop-out left a
+full-height green band running to a price nothing went near — the chart said won, the result said
+−1R. On the close the target bands are deleted, the body band is repainted entry → the REAL exit,
+and the red band is clipped to the worst price the trade actually SAW rather than the stop it never
+reached. ⚠ `mpc_strategy.pine` already carried this in writing (*"every band comes from the
+strategy's own closed-trade log… never a fib level it merely aimed at"*) and the palette pass
+copied its COLOURS without copying the rule.
+
+**2 · A setup that never filled must not look like one that traded.** Most armed setups die — the
+session rolls, the direction flips, price never returns. Each used to leave a full-colour drawing
+identical to a real trade's, so a long setup that never happened sat beside a short that did.
+Cancelled setups fade to grey and take a `✕`. An armed setup draws no text at all; the `✕` is the
+only text a setup ever gets, because it is the only case with nothing else to speak for it.
+
+**3 · A label naming a precondition that every drawn setup already satisfies is noise.** Each setup
+carried `London sweep` / `Asia sweep`, overlapping the result label — and a setup here cannot arm
+without a sweep, so the words restated the drawing's own existence. Replaced by the thing the label
+alluded to: **a dashed double-width line at the price actually taken, from the bar it was taken
+on.** The precondition is noise; the level it fired on is information.
+
+**4 · A self-imposed cap that truncates history is indistinguishable from a bug.** Session boxes
+were capped at 30 — three a day, so ten trading days — and simply stopped mid-chart. Nothing here
+evicts anything now; TradingView's own 500-object ceiling is the only limit, and it drops the
+oldest object of a type. ⚠ That trades whole-drawing eviction for per-object, so the far-left edge
+can dissolve in pieces. ⚠ The families compete for that 500: **count trades in the Strategy
+Tester's list, never off the chart.**
+
+**5 · Never put two numbering systems on one panel.** Group headings carry the contract's numbers;
+input titles carried the video's five step numbers. Reading down, the panel counted 4, 1, 2, 3, 5,
+4, 6 and a strictly ordered model looked like it had none. ⚠ The tension is real and general: **the
+contract groups by what a setting CHANGES, and a sequential model's steps do not map onto that
+one-to-one.** Both orderings are right. Carry the group NUMBER and the step NAME — never both
+numbers. Worth checking on any strategy here whose rules are a named sequence.
+
+**6 · If a limit bounds what a reader can SEE, say so where it is seen.** Both affected tooltips
+state their own limit. A cap discovered on the chart reads as a defect; a cap stated in the panel
+reads as a boundary.
+
+### What this file does NOT have, and why
+
+⚠ **`1 · Confirmation table`** — no JARVIS table, same as BOS, D and H4.
+⚠ **`9 · Drawing: fibs`** — no fibs.
+⚠ **`12 · Debug`** — held one per-event Pine Logs line; cut on Aaron's call. What it reported is on
+the chart already, from the same state.
+🔴 **`2 · Market structure` — the one place "the same four toggles everywhere" cannot be honoured
+by porting.** Every other file runs its engine on the CHART frame, so drawing it is free; H4 ported
+~1,000 lines in on that basis. This one runs the engine inside `request.security` on the 15m and
+1m, and **Pine cannot draw from in there.** A chart-frame copy would paint the 5m's swings while
+the strategy trades the 15m's — a chart that disagrees with the file under it, which is worse than
+no drawing. The honest fix is a FEATURE (return the swing prices through the security call and draw
+those), not a port. **Open — Aaron's call.**
+
+⚠ **The six session strings are hardcoded, not inputs, and that is the exception to the collapse
+rule rather than an example of it** — they DECIDE trades (the sweep pool is read off them). It is
+safe only because every Pine file here has carried the identical DST-aware values since
+2026-07-31, so a divergence would be a bug and not a setting. **A change to them belongs in every
+file that carries the block.**
+
+---
+
 ## Key paths & entry points
 
 - `indicators/strategies/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
 - `indicators/strategies/mpc_d_strategy.pine` — **the D strategy ("D as in dog, the dirty one", Aaron 2026-08-06).** [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategypine)
 - `indicators/strategies/mpc_d_strategy_export.pine` — **the D strategy's decision-stream twin (2026-08-06).** `mpc_d_strategy.pine` + one appended block, body byte-identical apart from line 60's title; 48 transparent `plot()` columns. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategyexportpine)
-- `indicators/strategies/mpc_m15_playbook_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcm15playbookstrategypine)
+- `indicators/strategies/mpc_m15_playbook_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11; brought onto the panel contract and the palette 2026-08-14 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcm15playbookstrategypine)
 - `indicators/strategies/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
 - `indicators/strategies/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
 

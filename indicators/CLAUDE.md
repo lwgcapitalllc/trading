@@ -6,7 +6,7 @@ and the instrumented `_export` twins that are half of every parity gate.
 **Scope:** This file ROUTES and keeps the dated build narrative. The RULES live in the two child
 CLAUDE.md files next to the code they describe. It does not cover any Python port — those live
 under `engines/` and `strategies/python/`, each owning its own CLAUDE.md.
-**Last reviewed:** 2026-08-13 — the 28 `.pine` files were split into `strategies/` and `engines/`
+**Last reviewed:** 2026-08-15 — `tools/check_active_order.py` landed (see above). 2026-08-13: the 28 `.pine` files were split into `strategies/` and `engines/`
 and the rules that applied to only one half moved into that half's CLAUDE.md.
 
 ## The split — where a `.pine` file goes, and the one thing that decides it
@@ -29,6 +29,31 @@ how three files in this repo came to disagree about whether a bot was live.
 ⚠ **`CLAUDE.md` is the only file left at this level, and that is structural rather than tidy** —
 the commit hook finds a changed file's OWNING doc by walking up from its folder, so this file has
 to sit above both children to be the thing `strategies/` and `engines/` fall back to.
+
+## `tools/` — the panel checks, run by hand
+
+**`check_active_order.py` (2026-08-15).** An input's `active =` may only name inputs declared
+ABOVE it; Pine resolves top-down and a violation is `CE10272`, which **only appears on the paste**.
+`mpc_bos_strategy.pine` shipped exactly that in the 2026-08-12 panel reorder, and its export twin
+carried the same defect because a twin is a copy. Run it after ANY panel edit:
+
+```bash
+python3 indicators/tools/check_active_order.py indicators/strategies/*.pine
+```
+
+**All twelve strategy files pass as of 2026-08-15.** ⚠ **Its first two versions each reported four
+false failures and the shape of that is the warning, not a footnote.** Version one ran the
+`active =` expression past its own argument and swallowed the next one, so `step = 0.05` read as a
+dependency on an identifier called `step` — which a local 4,900 lines away happened to be. Version
+two stopped at the argument boundary and still failed, because `active = execRunnerTrail != "Fixed
+step"` puts the word inside a STRING. **A checker that flags the four biggest files while passing
+the small ones is one you conclude is broken and stop running**, and version two would have been
+"right" for entirely the wrong reason since those files really were clean. Strings are stripped
+before identifiers are extracted now. ✅ **Watched RED by mutation rather than trusted** — swapping
+an input with its own `active =` dependant in a throwaway copy reddens exactly that pair and
+nothing else. ⚠ **It is a PROMPT, not enforcement**: nothing runs it for you, and it reads Pine
+with regular expressions rather than parsing it, so a novel formatting of `active =` could slip
+past. It is a cheap check for a defect that otherwise costs a round trip to TradingView.
 
 **Everything else that is prose lives in [`docs/`](docs/):** `PINE_INPUT_DEFAULTS.md`,
 `BUG_exit_fill_price_mismatch.md`, `MARKET_STRUCTURE_GLOSSARY.md`, `STRUCTURE_OS_BUILD.md` and
