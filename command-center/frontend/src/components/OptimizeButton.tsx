@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Sliders, AlertTriangle, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
-import { ParamEditor, sweepChoices, type ParamValue } from '@/components/ParamEditor'
+import { ParamEditor, sweepChoices, fillTokens, type ParamValue } from '@/components/ParamEditor'
 import {
   useTriggerOptimization,
   useFirms,
@@ -199,7 +199,12 @@ function OptimizerModal({ run, onClose }: { run: BacktestDetail; onClose: () => 
   // for them too, so this is not the only guard).
   const listSweepOk = run.runner === 'python'
   const choicesOf = (name: string) => {
-    const p = strategy?.param_schema?.find((x) => x.name === name)
+    // Tokens filled against the RUN's inherited params — the same values <ParamEditor/> below is
+    // given. Reading the raw schema here would print a literal `{exec_sl_level}` on the chip.
+    const p = fillTokens(
+      strategy?.param_schema ?? [],
+      run.params as Record<string, ParamValue>
+    ).find((x) => x.name === name)
     return p ? sweepChoices(p) : []
   }
 

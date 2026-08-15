@@ -435,8 +435,84 @@ def _is_foundational(p: dict) -> bool:
     return p.get("category") == "foundational" or (p.get("name") or "").startswith("f_")
 
 
-def param_is_reachable(p: dict, base_params: dict) -> bool:
-    """False when the param's own `show_if` gate is OFF in this run's params.
+def _numeric(v):
+    """The value as a float, or None when it is not a number. Booleans are deliberately excluded —
+    `float(False)` is 0.0, so a numeric param sitting at 0 would satisfy a `{flag: false}` gate."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str) and v.strip():
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return None
+
+
+def _same_value(actual, want) -> bool:
+    """🔴 NUMBERS COMPARE AS NUMBERS.
+
+    A fib level is the string `"1.0"` in a dropdown and the number `1.0` in the Custom box, and
+    JS's `String(1.0)` is `"1"` — so a stringified compare says a Custom level of 1.0 is not 1.0.
+    Python's `str(1.0)` is `"1.0"`, so THIS side happened to be right while the editor was wrong:
+    two evaluators of one rule disagreeing in silence, which is the whole reason both now share
+    this function's shape. Anything non-numeric falls back to the stringified compare, which is
+    what `show_if` has always used and why `1` and `"1"` match.
+    """
+    a, b = _numeric(actual), _numeric(want)
+    if a is not None and b is not None:
+        return a == b
+    return str(actual) == str(want)
+
+
+def _cond_holds(cond: Optional[dict], read) -> bool:
+    """Every condition holds. Shared by `show_if` and `disable_if`, exactly as the editor's
+    `condHolds` shares it — the two evaluators must not drift, so they have one shape each side."""
+    if not cond:
+        return False
+    for key, want in cond.items():
+        actual = read(key)
+        if isinstance(want, list):
+            if not any(_same_value(actual, x) for x in want):
+                return False
+        elif not _same_value(actual, want):
+            return False
+    return True
+
+
+def _reader_for(schema: list, base_params: dict):
+    """Reads a param's EFFECTIVE value, resolving a dropdown's `custom_from` escape hatch.
+
+    Mirrors `ParamEditor.readerFor`. Without it a dropdown set to Custom = 1.0 and the same
+    dropdown set to 1.0 would gate differently, and the editor and the lab would disagree about
+    which params are live.
+    """
+    by_name = {p.get("name"): p for p in schema if p.get("name")}
+
+    def raw(name):
+        return base_params.get(name, (by_name.get(name) or {}).get("default"))
+
+    def visible(sib):
+        return not sib.get("show_if") or _cond_holds(sib["show_if"], raw)
+
+    def read(name):
+        p = by_name.get(name)
+        sib_name = (p or {}).get("custom_from")
+        if sib_name and sib_name != name:
+            sib = by_name.get(sib_name)
+            # The sibling is visible exactly when its typed value is the one in force. A sibling
+            # with no `show_if` is always in force — that is a schema error rather than a case to
+            # handle, and the editor reads it the same way, so the two never disagree.
+            if sib and visible(sib):
+                return raw(sib_name)
+        return raw(name)
+
+    return read
+
+
+def param_is_reachable(p: dict, base_params: dict, schema: Optional[list] = None) -> bool:
+    """False when this run's params leave the param unable to move the result.
 
     A setting behind a switch the run has turned off CANNOT move the result — shifting it books a
     guaranteed 0% change, which reads as "tested, rock solid" for a parameter the strategy never
@@ -444,20 +520,42 @@ def param_is_reachable(p: dict, base_params: dict) -> bool:
     schema rather than from arithmetic, and it is the one the value-equality dedupe cannot catch
     (the value really does change; only the outcome cannot).
 
-    Mirrors `ParamEditor.visible` exactly, including the stringified comparison and the "any of
-    these" array form, so the lab perturbs precisely the set the lab would let you edit.
+    THREE gates, and all three produce that same guaranteed 0% or an unactionable result:
+      - `show_if` OFF — the editor would not even display the row;
+      - `disable_if` HOLDING — the row is displayed and greyed, because its states cannot differ
+        in this configuration;
+      - SETTLED (`hidden` and still on its default) — the row is off the editor entirely. The
+        shift is not a no-op here, which is exactly why it has to be excluded: sensitivity would
+        rank a parameter high and send the reader looking for a control that no page renders.
+
+    ⚠ The settled gate mirrors `ParamEditor.settled`, NOT `p.hidden` — a hidden param sitting AWAY
+    from its default is shown on screen again, so it must be perturbed again too. Gating on
+    `hidden` alone would silently drop a param the reader can see and edit.
+
+    Mirrors `ParamEditor.visible` / `isInert` exactly, including the stringified comparison, the
+    "any of these" array form and the `custom_from` resolution, so the lab perturbs precisely the
+    set the lab would let you edit. ⚠ `schema` is what makes `custom_from` resolvable — omit it
+    and a dropdown reading Custom = 1.0 gates differently here than it does on screen.
     """
-    cond = p.get("show_if")
-    if not cond:
-        return True
-    for key, want in cond.items():
-        actual = str(base_params.get(key))
-        if isinstance(want, list):
-            if not any(str(x) == actual for x in want):
-                return False
-        elif actual != str(want):
-            return False
-    return True
+    read = _reader_for(schema or [], base_params) if schema else base_params.get
+    if p.get("show_if") and not _cond_holds(p["show_if"], read):
+        return False
+    if _is_settled(p, base_params):
+        return False
+    return not _cond_holds(p.get("disable_if"), read)
+
+
+def _is_settled(p: dict, base_params: dict) -> bool:
+    """`hidden` AND still on its default — the two halves of `ParamEditor.settled`."""
+    if not p.get("hidden"):
+        return False
+    default = p.get("default")
+    if default is None:
+        return False
+    name = p.get("name")
+    if name not in base_params:
+        return False
+    return _same_value(base_params[name], default)
 
 
 def perturbable_params(strategy: Optional[dict], base_params: dict) -> list[dict]:
@@ -470,7 +568,7 @@ def perturbable_params(strategy: Optional[dict], base_params: dict) -> list[dict
         if p.get("type") in ("int", "float", "double")
         and p.get("name") in base_params
         and not _is_foundational(p)
-        and param_is_reachable(p, base_params)
+        and param_is_reachable(p, base_params, schema)
     ]
 
 

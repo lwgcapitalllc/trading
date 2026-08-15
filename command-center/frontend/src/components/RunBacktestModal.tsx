@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, Play, Info } from 'lucide-react'
+import { X, Play, Info, ChevronDown, ChevronRight } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
 import {
   useFirms,
@@ -138,12 +138,50 @@ function InfoTooltip({ content, side = 'right' }: { content: string; side?: 'rig
 
 // ── Small UI pieces ───────────────────────────────────────────────────────────
 
-function SectionHead({ label, tooltip }: { label: string; tooltip?: string }) {
-  return (
-    <div className="flex items-center gap-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.7px] mb-3">
+/**
+ * A section title. With `onToggle` it becomes the section's collapse control.
+ *
+ * ⚠ A collapsed section MUST pass `summary` — the header is then the only thing standing for
+ * everything folded away, and a reader who cannot see what a hidden section is set to will open
+ * every one of them, which is worse than never having collapsed anything.
+ */
+function SectionHead({
+  label,
+  tooltip,
+  open,
+  onToggle,
+  summary,
+}: {
+  label: string
+  tooltip?: string
+  open?: boolean
+  onToggle?: () => void
+  summary?: string
+}) {
+  const head = (
+    <>
       {label}
       {tooltip && <InfoTooltip content={tooltip} />}
-    </div>
+    </>
+  )
+  const cls =
+    'flex items-center gap-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.7px]'
+  if (!onToggle) return <div className={`${cls} mb-3`}>{head}</div>
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={`${cls} w-full ${open ? 'mb-3' : 'mb-0'} hover:text-text-secondary transition-colors`}
+    >
+      {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+      {head}
+      {summary && (
+        <span className="ml-auto normal-case tracking-normal font-normal text-[11px] text-text-tertiary truncate">
+          {summary}
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -228,15 +266,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [5, 15, 30, 60, 240]
   const [barValue, setBarValue] = useState(isNt8 ? 5 : scope === 'python' ? 15 : 60)
 
-  // How far back this instrument + timeframe actually has bars. Depends on barValue, so it
-  // re-reads when the bar size changes — a broker can hold years of 15m and months of 1m.
-  const { data: historyLimit } = useHistoryLimit(
-    instrument || null,
-    'Minute',
-    barValue,
-    strategy.runner
-  )
-
   // ── Sizing mode — how the engine sizes each trade from the room left ───────────
   // A self-sizing strategy sizes its own trades off its own risk % param — the engine never
   // touches it, so there is no mode to pick and the whole section is hidden.
@@ -263,6 +292,21 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     }
     return init
   })
+
+  // How far back this instrument + timeframe actually has bars. Depends on barValue, so it
+  // re-reads when the bar size changes — a broker can hold years of 15m and months of 1m.
+  //
+  // ⚠ It also depends on the PARAMS, which is why it sits below them rather than beside the
+  // other window controls: a run with `exec_secondary` on loads a 1m feed too, and that feed's
+  // history is shallower. Ticking that switch moves the earliest date this picker will accept,
+  // and until 2026-08-15 it did not — the run was accepted here and refused at 8%.
+  const { data: historyLimit } = useHistoryLimit(
+    instrument || null,
+    'Minute',
+    barValue,
+    strategy.runner,
+    params
+  )
 
   // ── Firm grouping ────────────────────────────────────────────────────────────
   const firmsByBrand = useMemo(() => {
@@ -339,6 +383,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [brokerProfile, setBrokerProfile] = useState('vantage_demo')
   const { data: brokerProfiles } = useBrokerProfiles()
   const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
+  // Folded by default: nothing is charged unless you tick it, so the frictionless case — which
+  // is every run until somebody decides otherwise — costs one line instead of ~300px between
+  // the params editor and Advanced. It opens if anything is ticked, so a configured run is
+  // never hiding its own physics.
+  const [costsOpen, setCostsOpen] = useState(false)
 
   const toggleLayer = (layer: CostLayer) =>
     setCostLayers((prev) => {
@@ -389,6 +438,66 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         : 'buys transact at the ask',
     },
   ]
+
+  // The two typed cost figures, defined ONCE. A python run renders each under its own layer row
+  // (`costInputs`); NT8/MT5 have no layers and render both in their own Costs section. Two copies
+  // of an input is two places a tooltip or a step can drift.
+  const commissionInput = (
+    <>
+      <div className="flex items-center mb-1">
+        <label className={labelCls.replace(' mb-1', '')}>Commission / side ($)</label>
+        <InfoTooltip
+          content={
+            isPython
+              ? 'Dollars per LOT, per side — a lot being 100 units (100 oz of gold). Charged on the entry and on every exit rung. Leave at 0 for a demo account, which charges none; a live Vantage RAW ECN is $3.00/side/lot.'
+              : !isNt8
+                ? 'Commission per side in account currency. Applied to every fill.'
+                : 'Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill.'
+          }
+        />
+      </div>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={commPerSide}
+        onChange={(e) => setCommPerSide(parseFloat(e.target.value) || 0)}
+        className={inputCls}
+      />
+    </>
+  )
+  const slippageInput = (
+    <>
+      <div className="flex items-center mb-1">
+        <label className={labelCls.replace(' mb-1', '')}>Slippage (ticks)</label>
+        <InfoTooltip
+          content={
+            isPython
+              ? 'Ticks of adverse slippage on MARKET exits only — a stop, or a force-close. Entries and take-profit rungs are resting limits, which fill at your price or better or not at all, so they never slip. 1 tick = $0.01 on gold.'
+              : !isNt8
+                ? 'Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs.'
+                : 'Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks.'
+          }
+          side="left"
+        />
+      </div>
+      <input
+        type="number"
+        step="1"
+        min="0"
+        value={slippageTicks}
+        onChange={(e) => setSlippageTicks(parseInt(e.target.value, 10) || 0)}
+        className={inputCls}
+      />
+    </>
+  )
+  // Which layers carry a typed figure. A layer absent from here charges a MEASURED number off the
+  // broker profile and has nothing for anyone to type — which is the distinction the old Advanced
+  // section erased by putting all the numbers in one box regardless.
+  const costInputs: Partial<Record<CostLayer, React.ReactNode>> = {
+    commission: commissionInput,
+    slippage: slippageInput,
+  }
 
   useEffect(() => {
     if (primaryRuleset?.default_commission_per_side != null) {
@@ -951,130 +1060,121 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                 <SectionHead
                   label="Costs"
                   tooltip="Nothing is charged unless you tick it, so a bare run is frictionless and comparable to the TradingView Strategy Tester. Spread and swap are measured off the broker account below — they are facts, not settings."
+                  open={costsOpen}
+                  onToggle={() => setCostsOpen((o) => !o)}
+                  // Read off `costRows`, not a second list — the summary names exactly what the
+                  // rows below it offer, in their order, and cannot drift when a layer is added.
+                  summary={
+                    costLayers.size === 0
+                      ? 'frictionless'
+                      : `${costRows
+                          .filter((r) => costLayers.has(r.id))
+                          .map((r) => r.label.toLowerCase())
+                          .join(', ')} · ${brokerProfile}`
+                  }
                 />
 
-                <div className="flex items-center gap-2 mb-2.5">
-                  <label className="text-[11px] text-text-secondary flex-shrink-0">
-                    Broker account
-                  </label>
-                  <select
-                    value={brokerProfile}
-                    onChange={(e) => setBrokerProfile(e.target.value)}
-                    className={`${inputCls} max-w-[220px]`}
-                  >
-                    {(brokerProfiles ?? []).map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  {costRows.map((row) => {
-                    const on = costLayers.has(row.id)
-                    return (
-                      <button
-                        key={row.id}
-                        type="button"
-                        onClick={() => toggleLayer(row.id)}
-                        className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded border text-left transition-colors ${
-                          on
-                            ? 'border-accent/40 bg-accent/5'
-                            : 'border-border-subtle/50 bg-bg-sunken hover:border-border-default'
-                        }`}
+                {costsOpen && (
+                  <>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <label className="text-[11px] text-text-secondary flex-shrink-0">
+                        Broker account
+                      </label>
+                      <select
+                        value={brokerProfile}
+                        onChange={(e) => setBrokerProfile(e.target.value)}
+                        className={`${inputCls} max-w-[220px]`}
                       >
-                        <span
-                          className={`mt-[2px] w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center ${
-                            on ? 'border-accent bg-accent' : 'border-border-default'
-                          }`}
-                        >
-                          {on && (
-                            <span className="text-[9px] leading-none text-bg-base font-bold">
-                              ✓
-                            </span>
-                          )}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-[12px] text-text-primary">{row.label}</span>
-                            {row.tag && (
-                              <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
-                                {row.tag}
-                              </span>
-                            )}
-                          </span>
-                          <span className="block text-[11px] text-text-tertiary leading-snug">
-                            {row.detail}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
+                        {(brokerProfiles ?? []).map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                {costLayers.size === 0 && (
-                  <p className="mt-2 text-[11px] text-text-tertiary">
-                    Nothing ticked — this run charges no costs at all.
-                  </p>
+                    <div className="space-y-1">
+                      {costRows.map((row) => {
+                        const on = costLayers.has(row.id)
+                        return (
+                          <div key={row.id}>
+                            <button
+                              type="button"
+                              onClick={() => toggleLayer(row.id)}
+                              className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded border text-left transition-colors ${
+                                on
+                                  ? 'border-accent/40 bg-accent/5'
+                                  : 'border-border-subtle/50 bg-bg-sunken hover:border-border-default'
+                              }`}
+                            >
+                              <span
+                                className={`mt-[2px] w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center ${
+                                  on ? 'border-accent bg-accent' : 'border-border-default'
+                                }`}
+                              >
+                                {on && (
+                                  <span className="text-[9px] leading-none text-bg-base font-bold">
+                                    ✓
+                                  </span>
+                                )}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="text-[12px] text-text-primary">{row.label}</span>
+                                  {row.tag && (
+                                    <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                                      {row.tag}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="block text-[11px] text-text-tertiary leading-snug">
+                                  {row.detail}
+                                </span>
+                              </span>
+                            </button>
+                            {/* 🔴 The figure a layer charges sits UNDER THAT LAYER, and only while
+                                it is ticked. It lived in an "Advanced" section further down the
+                                modal — so the row read "charges the figure below" while pointing
+                                past a divider at a different heading, and an untick left that
+                                number on screen looking like it still applied. */}
+                            {on && costInputs[row.id] && (
+                              <div className="mt-1 mb-1.5 ml-[26px] max-w-[220px]">
+                                {costInputs[row.id]}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {costLayers.size === 0 && (
+                      <p className="mt-2 text-[11px] text-text-tertiary">
+                        Nothing ticked — this run charges no costs at all.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </>
           )}
 
-          <Divider />
-
-          {/* Advanced */}
-          <div>
-            <SectionHead label="Advanced" />
-            <div className="grid grid-cols-2 gap-3">
+          {/* 🔴 "Advanced" was these two fields and NOTHING ELSE, and both are costs — so on the
+              python runner they now live inside the Costs section, under the layer that charges
+              them. NT8 and MT5 have no layers at all (their tester charges these two directly, and
+              `cost_layers` is sent as null), so there is nowhere else for them to go and the
+              section stays exactly as it was for those runners. */}
+          {!isPython && (
+            <>
+              <Divider />
               <div>
-                <div className="flex items-center mb-1">
-                  <label className={labelCls.replace(' mb-1', '')}>Commission / side ($)</label>
-                  <InfoTooltip
-                    content={
-                      isPython
-                        ? 'Dollars per LOT, per side — a lot being 100 units (100 oz of gold). Charged on the entry and on every exit rung. Leave at 0 for a demo account, which charges none; a live Vantage RAW ECN is $3.00/side/lot.'
-                        : !isNt8
-                          ? 'Commission per side in account currency. Applied to every fill.'
-                          : 'Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill.'
-                    }
-                  />
+                <SectionHead label="Costs" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>{commissionInput}</div>
+                  <div>{slippageInput}</div>
                 </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={commPerSide}
-                  onChange={(e) => setCommPerSide(parseFloat(e.target.value) || 0)}
-                  className={inputCls}
-                />
               </div>
-              <div>
-                <div className="flex items-center mb-1">
-                  <label className={labelCls.replace(' mb-1', '')}>Slippage (ticks)</label>
-                  <InfoTooltip
-                    content={
-                      isPython
-                        ? 'Ticks of adverse slippage on MARKET exits only — a stop, or a force-close. Entries and take-profit rungs are resting limits, which fill at your price or better or not at all, so they never slip. 1 tick = $0.01 on gold.'
-                        : !isNt8
-                          ? 'Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs.'
-                          : 'Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks.'
-                    }
-                    side="left"
-                  />
-                </div>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={slippageTicks}
-                  onChange={(e) => setSlippageTicks(parseInt(e.target.value, 10) || 0)}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </form>
 
         {/* ── Footer ──────────────────────────────────────────────────────────── */}

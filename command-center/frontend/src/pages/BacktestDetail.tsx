@@ -14,7 +14,6 @@ import {
   Info,
   Square,
   RefreshCw,
-  RotateCcw,
   Activity,
   Play,
   Copy,
@@ -97,6 +96,7 @@ import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverla
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import type { ChartSpec } from '@/components/ChartPanel/types'
 import { OptimizeButton } from '@/components/OptimizeButton'
+import { isSettled, type ParamValue } from '@/components/ParamEditor'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
 import { useStickyBanner } from '@/components/StickyHeader'
@@ -3424,20 +3424,23 @@ function getFailureGuidance(status: string, runner: string): string {
     : 'An unexpected error occurred. Check the run logs below and the NT8 agent log for details.'
 }
 
-function FailureBanner({
-  run,
-  onRetry,
-  retrying,
-}: {
-  run: Run
-  onRetry?: () => void
-  retrying?: boolean
-}) {
+/** What failed, and what to do about it — NOT a control.
+ *
+ * ⚠ It deliberately takes no `onRetry`, and adding one back is a regression rather than a fix.
+ * It carried a Retry button from 2026-08-06 until 2026-08-15; the page HEADER has one too,
+ * firing the identical action, and two controls for one destructive action is two places for
+ * the disabled state and the period gate to drift apart. Removed at Aaron's request — *"I don't
+ * need the double retry buttons, keep the one outside."*
+ *
+ * ⚠ The props are GONE rather than left unused. A declared-and-never-passed `onRetry` is exactly
+ * what made this component look like it had a button when it did not, which is the defect the
+ * 2026-08-06 pass fixed — leaving the prop behind re-arms it.
+ */
+function FailureBanner({ run }: { run: Run }) {
   const guidance = getFailureGuidance(run.status, run.runner ?? 'ninjatrader')
   return (
-    // `data-testid` so a browser check can scope to THIS banner. Its Retry button and the page
-    // header's are two different controls; a page-wide `Retry` locator matches the header and
-    // passes against a banner that has no button at all.
+    // `data-testid` so a browser check can scope to THIS banner — including the check that it
+    // holds NO button, which a page-wide locator could never make (the header's would match).
     <div
       data-testid="failure-banner"
       className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4"
@@ -3455,16 +3458,6 @@ function FailureBanner({
           )}
           <div className="text-[12px] text-text-secondary">{guidance}</div>
         </div>
-        {onRetry && (
-          <button
-            onClick={onRetry}
-            disabled={retrying}
-            className="flex-shrink-0 flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-bg-surface border border-border-default text-text-secondary hover:text-text-primary hover:border-border-default/80 disabled:opacity-50 transition-colors"
-          >
-            <RotateCcw size={12} className={retrying ? 'animate-spin' : ''} />
-            {retrying ? 'Starting…' : 'Retry'}
-          </button>
-        )}
       </div>
     </div>
   )
@@ -4399,15 +4392,33 @@ function RerunModal({
 }) {
   const [start, setStart] = useState(run.start_date)
   const [end, setEnd] = useState(run.end_date)
+  const [movedToFloor, setMovedToFloor] = useState<string | null>(null)
   // Same measured floor the new-run modal uses — a rerun picks a new window, so it needs
   // the identical guard rather than inheriting the original run's (possibly wider) period.
+  // ⚠ `run.params` is REQUIRED here. This modal is the Retry path for a failed run, so the
+  // run in front of the reader may have failed ON the floor — and without the params the
+  // modal computes the chart-only floor, re-offers the same illegal date, and the rerun
+  // fails identically. That is exactly what happened to run `50331c7cbe96`.
   const { data: historyLimit } = useHistoryLimit(
     run.instrument || null,
     run.bar_type || 'Minute',
     run.bar_value ?? 15,
-    run.runner
+    run.runner,
+    run.params
   )
   const floor = historyLimit?.earliest_date ?? null
+
+  // The stored start is below the floor, so replaying this run as-is cannot work. Move it and
+  // SAY SO — a silent clamp would run a window the reader did not ask for, which is the
+  // narrowing this repo refuses everywhere else. They can still type it back; the Rerun button
+  // stays disabled until the date is legal, so nothing is decided for them.
+  useEffect(() => {
+    if (floor && start < floor) {
+      setStart(floor)
+      setMovedToFloor(floor)
+    }
+  }, [floor, start])
+
   const valid = !!start && !!end && start < end && !(floor && start < floor)
   const moved = start !== run.start_date || end !== run.end_date
 
@@ -4442,6 +4453,15 @@ function RerunModal({
             limit={historyLimit}
           />
         </div>
+
+        {movedToFloor && (
+          <p className="text-[11px] text-warn-text" data-testid="rerun-moved-to-floor">
+            Start moved to {fmtDate(movedToFloor)} — {run.instrument} has no{' '}
+            {historyLimit?.timeframe_minutes}m history before then on{' '}
+            {historyLimit?.broker || 'this broker'}, so {fmtDate(run.start_date)} cannot be
+            replayed.
+          </p>
+        )}
 
         {moved && (
           <p className="text-[11px] text-warn-text">
@@ -4504,9 +4524,20 @@ function ParamsSidePanel({
 }) {
   const schemaByName = new Map((paramSchema ?? []).map((s) => [s.name, s]))
   const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
+  // A SETTLED param is folded away here, never dropped. This panel is the record of what the run
+  // actually sent, and a run report that silently omits inputs is a worse defect than a long list
+  // — so the editor's rule (`isSettled`, imported rather than re-written) decides what folds, and
+  // the fold states its own count. Same escape as everywhere else: moved off its default, or
+  // differing from the tune baseline, and it is back in the main list.
+  const settledKey = (k: string, v: unknown) => {
+    const p = schemaByName.get(k)
+    if (!p || !isSettled(p, v as ParamValue)) return false
+    return baselineParams == null || String(v) === String(baselineParams[k])
+  }
   const entries = Object.entries(run.params || {})
   if (!entries.length) return null
-  const tunable = entries.filter(([k]) => !isFoundational(k))
+  const tunable = entries.filter(([k, v]) => !isFoundational(k) && !settledKey(k, v))
+  const settled = entries.filter(([k, v]) => !isFoundational(k) && settledKey(k, v))
   const foundational = entries.filter(([k]) => isFoundational(k))
   const changedCount = baselineParams
     ? tunable.filter(([k, v]) => String(v) !== String(baselineParams[k])).length
@@ -4585,6 +4616,31 @@ function ParamsSidePanel({
               </div>
             )
           })}
+          {settled.length > 0 && (
+            <details
+              data-testid="run-settled-params"
+              className="pt-2 mt-1 border-t border-border-subtle/40"
+            >
+              <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">
+                Settled · {settled.length}
+              </summary>
+              <p className="text-[10px] text-text-tertiary/80 px-2 mt-1 leading-snug">
+                Off the editor, still sent — this run charged these values.
+              </p>
+              <div className="mt-1.5 space-y-[3px]">
+                {settled.map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between gap-2 px-2">
+                    <span className="text-[10px] font-mono text-text-tertiary truncate" title={k}>
+                      {k}
+                    </span>
+                    <span className="text-[10px] font-mono text-text-secondary flex-shrink-0">
+                      {String(v)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           {foundational.length > 0 && (
             <details className="pt-2 mt-1 border-t border-border-subtle/40">
               <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">
@@ -6390,19 +6446,15 @@ export function BacktestDetail() {
                 }
               />
             )}
-            {/* `onRetry` was declared on FailureBanner and never passed, so the banner's Retry button
-              did not exist — on the one banner a reader is looking at because something failed.
-              A standalone run picks its window first (the same RerunModal the header Rerun opens);
-              a sweep child or optimizer combo inherits its set's period and re-fires directly. */}
-            {isFailed && (
-              <FailureBanner
-                run={run}
-                onRetry={ownsPeriod ? () => setShowRerun(true) : runFullBacktest}
-                /* Disabled while THIS platform holds a job too — the backend 409s on a busy
-                 platform, and a button whose only outcome is an error toast is not a button. */
-                retrying={retryBacktest.isPending || jobBusy}
-              />
-            )}
+            {/* ONE Retry on this page, and it is the HEADER's (2026-08-15, Aaron's call).
+              The banner carried a second one from 2026-08-06 to now — added because `onRetry` was
+              declared and never passed, so the banner had no button at all. That fix was right
+              about the missing control and wrong about where it belonged: the header's Retry was
+              already on screen a few inches above, fires the identical action (the RerunModal for
+              a standalone run, a direct re-fire for a sweep child or optimizer combo), and two
+              controls for one destructive action is two places for the disabled state and the
+              period gate to drift apart. The banner's job is to say what FAILED. */}
+            {isFailed && <FailureBanner run={run} />}
             {/* ── Evaluation + Performance ──────────────────────────────────── */}
             {/* One row of four question cards: Made, Risked, Trusted, Verdict. The evaluation used
               to be a fixed-height COLUMN beside a 6+6 KPI grid, then a full-width ribbon above

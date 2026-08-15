@@ -383,6 +383,19 @@ _PARAM_META_KEYS = (
     "widget",
     "options",
     "show_if",
+    # `disable_if` is show_if's OPPOSITE-POLARITY twin: the row is shown and GREYED when every
+    # condition holds, for a setting whose two states cannot differ in the current config.
+    # `disable_note` is the reason, and `custom_from` names the sibling holding a "Custom"
+    # dropdown's typed value so both gates resolve the value the strategy will actually use.
+    # ⚠ THIS TUPLE IS A WHITELIST — a meta key missing from it is dropped in silence and the
+    # editor behaves as though it were never written. Add the key here in the same commit.
+    "disable_if",
+    "disable_note",
+    "custom_from",
+    # `hidden` takes a SETTLED param off the editor without removing the field — it is still in
+    # the config, still sent, still sweepable from the API. Display only; nothing here or in the
+    # runner reads it.
+    "hidden",
     "guide",
     "group",
     "step",

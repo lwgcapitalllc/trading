@@ -39,7 +39,7 @@ import { RunnerBadge } from '@/components/RunnerBadge'
 import { runnerScope, runnerMarket, RUNNER_LABEL } from '@/lib/runner'
 import StickyHeader from '@/components/StickyHeader'
 import { toast } from 'sonner'
-import type { Strategy, StrategyFileSyncStatus } from '@/types'
+import type { Strategy, StrategyFileSyncStatus, ParamSchemaEntry } from '@/types'
 
 // ── An unreachable agent is a STATE, and states get rendered ──────────────────
 // Both file endpoints reach the VPS through the SSH tunnel, so they are the
@@ -451,6 +451,17 @@ function StrategiesTab() {
   )
 }
 
+/** "33 tunable · 26 settled · 3 foundational" — the whole schema, accounted for. */
+function paramCountTitle(schema: ParamSchemaEntry[]): string {
+  const foundational = schema.filter((p) => p.category === 'foundational').length
+  const settled = schema.filter((p) => p.category !== 'foundational' && p.hidden).length
+  const tunable = schema.length - foundational - settled
+  const parts = [`${tunable} tunable`]
+  if (settled) parts.push(`${settled} settled (still sent at their defaults)`)
+  if (foundational) parts.push(`${foundational} foundational`)
+  return parts.join(' · ')
+}
+
 function StrategyRow({
   strategy: s,
   sync,
@@ -538,7 +549,13 @@ function StrategyRow({
       <td className="px-4 py-3">
         <RunnerBadge runner={s.runner} />
       </td>
-      <td className="px-4 py-3 text-text-secondary">{s.param_schema.length}</td>
+      {/* The count of what you can actually TUNE, so it agrees with the detail page and the
+          editor. The rest — settled and foundational — are still in the strategy and still sent,
+          so the total is on the tooltip rather than dropped: a shrinking number with no
+          explanation reads as params having been deleted. */}
+      <td className="px-4 py-3 text-text-secondary" title={paramCountTitle(s.param_schema)}>
+        {s.param_schema.filter((p) => p.category !== 'foundational' && !p.hidden).length}
+      </td>
       <td className="px-4 py-3 tabular-nums">{s.run_count}</td>
       <td className="px-4 py-3">
         {/* Source changed since the last Scan — the param schema (and, for VPS runners, the

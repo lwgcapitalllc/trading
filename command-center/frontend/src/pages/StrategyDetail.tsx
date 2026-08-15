@@ -98,6 +98,10 @@ function groupParams(schema: ParamSchemaEntry[]): Group[] {
   const map = new Map<string, ParamSchemaEntry[]>()
   for (const p of schema) {
     if (p.category === 'foundational') continue
+    // ⚠ A SETTLED param is dropped here unconditionally, unlike in `ParamEditor` — this page
+    // describes the strategy rather than configuring a run, so there is no per-run value that
+    // could be sitting off its default and go unseen. The count is reported below the table.
+    if (p.hidden) continue
     const g = p.group || 'Parameters'
     if (!map.has(g)) {
       map.set(g, [])
@@ -344,7 +348,12 @@ export function StrategyDetail() {
   }
 
   const market = runnerMarket(strategy.runner)
-  const visibleParams = strategy.param_schema.filter((p) => p.category !== 'foundational')
+  const visibleParams = strategy.param_schema.filter(
+    (p) => p.category !== 'foundational' && !p.hidden
+  )
+  const settledParams = strategy.param_schema.filter(
+    (p) => p.category !== 'foundational' && p.hidden
+  )
   const essentialCount = visibleParams.filter((p) => p.core).length
   const essentials = visibleParams.filter((p) => p.core)
   const categoryLabel = strategy.category
@@ -692,6 +701,33 @@ export function StrategyDetail() {
             <p className="text-[13px] text-text-tertiary">
               This strategy exposes no tunable parameters.
             </p>
+          )}
+
+          {/* ⚠ NAMED, not just counted. This page is the reference for what the strategy IS, and
+              a settled param is still a rule the strategy applies — it is only the QUESTION that
+              is closed, not the behaviour. Listing them is what stops the next reader (or the
+              next port) concluding the strategy no longer has these levers. */}
+          {settledParams.length > 0 && (
+            <details className="mt-3 rounded-xl border border-border-subtle bg-bg-sunken/40 px-3.5 py-2.5">
+              <summary
+                data-testid="settled-params"
+                className="cursor-pointer text-[12px] text-text-secondary"
+              >
+                {settledParams.length} settled setting{settledParams.length > 1 ? 's' : ''} — still
+                in the strategy, still applied at{' '}
+                {settledParams.length > 1 ? 'their defaults' : 'its default'}, kept off this table
+              </summary>
+              <ul className="mt-2 space-y-1">
+                {settledParams.map((p) => (
+                  <li key={p.name} className="text-[11.5px] text-text-tertiary">
+                    <span className="text-text-secondary">{p.label || p.display_name}</span>{' '}
+                    <span className="opacity-70">
+                      ({p.name}) = {String(p.default)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
       </div>

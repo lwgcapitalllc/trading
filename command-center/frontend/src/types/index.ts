@@ -657,9 +657,28 @@ export interface ParamSchemaEntry {
   unit?: string // e.g. "× ATR", "pips", "R"
   core?: boolean // essential knob — shown in the Essentials card up front
   widget?: 'toggle' | 'switch' | 'time' | 'number' | 'text'
-  options?: { off: string; on: string } // labels for a bool rendered as a segmented toggle
+  // Labels for a bool rendered as a segmented toggle. `{other_param}` is substituted with that
+  // param's CURRENT value, so a label can state the setting it actually produces rather than
+  // hardcoding a second copy of a neighbouring default. See `fillTokens` in ParamEditor.
+  options?: { off: string; on: string }
   // show only when another param equals a value — or, with an array, equals ANY of them
   show_if?: Record<string, string | number | boolean | Array<string | number | boolean>>
+  // ⚠ OPPOSITE POLARITY TO `show_if`: the row is greyed out when EVERY condition here HOLDS.
+  // For a setting that still exists but cannot change anything in the current configuration —
+  // both of its states would produce the same result. Hiding it instead would make a setting
+  // that exists look like one that does not; the house rule is to show it and say why.
+  disable_if?: Record<string, string | number | boolean | Array<string | number | boolean>>
+  disable_note?: string // the reason, shown on the row whenever `disable_if` holds
+  // Settled — the field STAYS in the strategy and keeps being sent at its default; it just comes
+  // off the screen. For a question that has been answered, so the editor is the levers you are
+  // still testing rather than every lever that exists.
+  // ⚠ A hidden param sitting AWAY from its default is SHOWN anyway — see `settled` in ParamEditor.
+  hidden?: boolean
+  // For a dropdown carrying a "Custom" escape hatch: the sibling param holding the typed value.
+  // The sibling's own `show_if` is what decides WHEN it applies, so there is no second copy of
+  // the trigger to drift. Everything that reads a value for display or gating resolves through
+  // it — otherwise Custom = 1.0 and the dropdown's own 1.0 behave differently.
+  custom_from?: string
   guide?: [string, string] // [what lowering does, what raising does]
   step?: number // input step
 }

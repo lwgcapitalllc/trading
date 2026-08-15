@@ -1032,6 +1032,20 @@ reproduced the baseline exactly — 3 of 17 numeric non-foundational params on t
 `show_if` rules (single value or array, stringified comparison) and `perturbable_params` is the one
 roster, shared with the router's estimate so the two cannot drift.
 
+⚠ **It mirrors TWO gates since 2026-08-15, and the second has the opposite polarity.** `disable_if`
+holding means the editor shows the row and GREYS it — a setting whose two states cannot differ in
+this configuration — which produces the same guaranteed 0% as a hidden one. ⚠ **`schema` must be
+PASSED**: it is what makes `custom_from` resolvable, and without it a dropdown reading `Custom` =
+1.0 gates differently here than it does on screen. The default is `None`, so a caller that forgets
+it gets an answer that looks correct and is simply blind to the second gate. ⚠ **A THIRD gate landed the same day and it is NOT the same shape as the other two.** A SETTLED param (`hidden` in the meta AND still on its default, i.e. off the editor entirely) is excluded — but shifting one is not a no-op, the strategy really reads it and the result really moves. The reason to exclude it is that sensitivity would RANK a parameter no page renders, and a ranking that points at nothing is worse than a shorter one. ⚠ **`_is_settled` mirrors `ParamEditor.settled`, never `p.hidden` alone** — a hidden param MOVED off its default is back on screen, so it must be back in the ranking; gating on `hidden` would silently drop a param the reader can see and edit. Both are pinned by
+`tests/test_param_gates.py` (22, non-vacuous by eight run mutations); the editor side is in
+`../frontend/CLAUDE.md` → `ParamEditor.tsx`.
+
+⚠ **`strategy_scanner._PARAM_META_KEYS` IS A WHITELIST, and a key missing from it is dropped in
+SILENCE** — the meta states a rule, the scan reports success, and the editor behaves as though
+nobody wrote it. Add the key there in the same commit as the rule that uses it. (It is also why a
+meta-only edit needs a **Scan** before the UI moves.)
+
 🔴 **`shifted_value` REFUSES a shift past the param's own `min`/`max` rather than clamping it.** A
 clamped shift is a duplicate of the bound, scored as though it were the ±25% case — a measurement
 of a different question wearing the right label.
