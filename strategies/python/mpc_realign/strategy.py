@@ -58,6 +58,10 @@ class MpcRealignStrategy(MpcSosFadeStrategy):
                                           account=account, leg=leg)
         self.tracker = RealignTracker(self.config)
         self.htf = HtfStructure(self.config.realign_htf_minutes)
+        # The optional SLOWER trend context. Its own aggregator, because the false-break
+        # frame and the trend frame answer different questions and must not share state.
+        self.trend = (HtfStructure(self.config.realign_trend_minutes)
+                      if self.config.realign_trend_minutes else None)
         self.decisions: List[Decision] = []
         self.states: List = []
 
@@ -77,6 +81,18 @@ class MpcRealignStrategy(MpcSosFadeStrategy):
         if closed is not None:
             self.tracker.on_htf(closed, bar_time_ms,
                                 self.htf.broken_high, self.htf.broken_low)
+        if self.trend is not None:
+            # Same no-lookahead contract as the false-break frame: a slow bar is published
+            # only once its last chart bar has closed. ⚠ `None` here means the frame has
+            # not spoken YET (cold start), not "no trend" — the execution gate reads
+            # `trend_dir == 0` as unknown and REFUSES, because a filter that passes
+            # everything while it warms up is a filter reported as on and doing nothing.
+            slow = self.trend.update(bar_time_ms, b.open, b.high, b.low, b.close)
+            if slow is not None:
+                if slow.bull_bos or slow.bull_sos:
+                    self.execution.trend_dir = 1
+                elif slow.bear_bos or slow.bear_sos:
+                    self.execution.trend_dir = -1
         rs = self.tracker.update(bar_time_ms, b.high, b.low,
                                  state.structure.external, state.structure.internal)
         sig = self.signals.update(state)

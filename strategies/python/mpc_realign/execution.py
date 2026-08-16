@@ -53,6 +53,16 @@ class RealignExecution(Execution):
         if (d > 0 and not cfg.realign_longs) or (d < 0 and not cfg.realign_shorts):
             return
 
+        # ── the slower-trend gate ────────────────────────────────────────────────
+        # ⚠ `trend_dir == 0` means the slow frame has not spoken yet, NOT "no trend".
+        #   Refusing there is deliberate: passing everything during warm-up is a filter
+        #   that reports itself as on while doing nothing, which is the shape this repo
+        #   keeps getting bitten by. Off (`realign_trend_minutes is None`) never sets the
+        #   attribute at all, so nothing is gated.
+        if cfg.realign_trend_minutes is not None:
+            if getattr(self, "trend_dir", 0) != d:
+                return
+
         # The entry is THIS bar's close — the bar the realignment confirmed on.
         entry = sig.close
         sl = st.trigger_stop - d * cfg.realign_sl_buf_tk * cfg.mintick
@@ -74,6 +84,17 @@ class RealignExecution(Execution):
         target = st.trigger_target
         tp2 = target
         tp1 = entry + (target - entry) * 0.5
+
+        # ── the reward-to-risk floor ─────────────────────────────────────────────
+        # Stop and target are set INDEPENDENTLY here — the stop is the counter-move
+        # extreme, the target is the pre-deviation external high — so R:R at entry
+        # varies from -3.68 to 14.92 across the book and is known right here.
+        # ⚠ `None` means no filter and is NOT 0.0: at 0.0 this reproduces the Pine's
+        #   `tgtLong > close` guard, which this Python has never had. See the config.
+        if cfg.realign_min_rr is not None:
+            reward = (target - entry) * d
+            if reward < cfg.realign_min_rr * dist:
+                return
 
         pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,
                         sos_bar=None, fib=None)

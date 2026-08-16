@@ -22,6 +22,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 # strategies/python on path so `mpc_sos_fade` imports by bare name (the shim the tests use).
 _PYPKGS = Path(__file__).resolve().parents[1]
@@ -114,6 +115,57 @@ class RealignConfig(SosFadeConfig):
     realign_sl_buf_tk: int = 20
     """Ticks beyond the internal leg extreme the stop sits."""
 
+    realign_min_rr: Optional[float] = None
+    """Refuse a setup whose reward-to-risk at ENTRY is below this. `None` = no filter.
+
+    The stop is the counter-move extreme and the target is the pre-deviation external
+    high. **Those two are set independently, so R:R varies enormously per trade and is
+    KNOWN AT ENTRY** — which is what makes it a filter rather than a hindsight
+    observation. Measured over the 162-trade book: min **-3.68**, median 1.69, max 14.92.
+
+    🔴 **`None` IS NOT THE SAME AS 0.0, AND THE DIFFERENCE IS A PINE PARITY DEFECT.**
+    `mpc_realign_strategy.pine` guards its entry with `tgtLong > close` (and the short
+    mirror); **this Python has never had that check**, so it takes trades whose target is
+    already BEHIND the entry — 7 of 162, R:R down to -3.68. Those trades are not junk:
+    TP2 is satisfied on the entry bar, the ladder jumps to stage 2 and they run as pure
+    trailing trades, making **+5.67R between them (+0.81R average, against the book's
+    +0.221)**. So the Pine is refusing the better-performing tail of its own book.
+    **Which side is right is NOT settled here** — `0.0` reproduces the Pine, `None`
+    reproduces every Python figure measured before 2026-08-13, and the parity gate is what
+    decides. Default stays `None` so no historical number moves.
+
+    ⚠ Any positive value is a NEW filter that neither implementation has. Measure it by
+    REPLAY, never by dropping rows from a finished trade list: with one position slot a
+    refused setup FREES the slot and a different setup takes it, which is how the
+    minimum-stop guard's cheap estimate got its SIGN wrong (+1.84R estimated, -1.84R
+    replayed).
+    """
+
+    realign_trend_minutes: Optional[int] = None
+    """Refuse a trade against the structure direction of THIS slower frame. `None` = off.
+
+    🔴 **THE PROFITABLE DIRECTION FLIPS WITH GOLD'S OWN TREND, AND THAT IS THE ONE
+    STRUCTURAL FINDING IN THIS STRATEGY'S DATA.** Split the 162-trade book in half:
+
+        2020-01 -> 2023-04   shorts +17.18R (43 tr)   longs  -8.83R (39 tr)
+        2023-05 -> 2026-08   shorts  +2.90R (42 tr)   longs +24.55R (38 tr)
+
+    Gold over those halves: roughly flat-to-down through 2021 (-4.2%) and 2022 (-0.3%),
+    then +12.9% / +27.1% / +64.5% through 2023-2025. **The side that makes money is the
+    side aligned with the prevailing move, and it reverses when the move does.**
+
+    The mechanism is the setup's own logic rather than a pattern in a table: a false break
+    is a liquidity grab AGAINST a prevailing direction, and the realignment is the
+    resumption. Taken against the dominant trend, the same shape is a genuine reversal
+    being faded — which is a different trade with a different expectancy.
+
+    ⚠ **THIS HYPOTHESIS WAS DERIVED FROM THE SAME 162 TRADES IT WOULD BE TESTED ON, AND
+    THAT IS EXACTLY HOW A SECOND OVERFIT HAPPENS AFTER THE FIRST ONE IS CAUGHT.**
+    `realign_min_rr` looked excellent on the full history and was then shown to be a fit to
+    one half. Any value here must clear the same bar: it has to help in BOTH halves
+    separately, not in the total. Default is `None` until it does.
+    """
+
     # ── inherited defaults this fork must REFUSE ─────────────────────────────────
     exec_secondary: bool = False
     """PINNED OFF — the 1-minute re-entry needs a second bar stream through `run_dual`.
@@ -137,6 +189,18 @@ class RealignConfig(SosFadeConfig):
                 raise ValueError(f"{name} must be swing|internal, got {val!r}")
         if self.realign_window_hrs <= 0:
             raise ValueError("realign_window_hrs must be > 0")
+        if self.realign_trend_minutes is not None and self.realign_trend_minutes <= self.realign_htf_minutes:
+            # A "trend" frame at or below the frame the false break is read on is not a
+            # slower context, it is the same read under another name — and it would pass
+            # silently while filtering on something the setup already knows.
+            raise ValueError(
+                f"realign_trend_minutes ({self.realign_trend_minutes}) must be SLOWER than "
+                f"realign_htf_minutes ({self.realign_htf_minutes})")
+        if self.realign_min_rr is not None and self.realign_min_rr < 0:
+            # A negative floor is indistinguishable from `None` in effect but states
+            # something false — that a minimum was chosen. Refuse rather than accept it.
+            raise ValueError(
+                f"realign_min_rr must be >= 0 or None, got {self.realign_min_rr!r}")
         if self.exec_secondary:
             # Refuse rather than silently produce a primary-only book — the distinction
             # this repo has been bitten by twice.

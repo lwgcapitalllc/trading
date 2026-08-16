@@ -178,6 +178,64 @@ broke a new fork.
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
 
+## Two optional filters, both shipped OFF (`realign_min_rr`, `realign_trend_minutes`)
+
+Added 2026-08-13. **Both default to `None`, so no figure anywhere in this file moves.** They exist
+because the levers they turn are already implied by the data, not because either has earned a value.
+
+**`realign_min_rr` — refuse a setup whose reward-to-risk AT ENTRY is below this.** The stop is the
+counter-move extreme and the target is the pre-deviation external high, and those are set
+independently — so R:R varies from **−3.68 to 14.92** across the 162-trade book (median 1.69) and is
+known at the moment of entry. That is what makes it a filter rather than a hindsight observation.
+
+🔴 **`None` is NOT the same as `0.0`, and the gap between them is an unresolved Pine parity defect.**
+`mpc_realign_strategy.pine` guards its entry with `tgtLong > close` (and the short mirror). **This
+Python has never had that check**, so it takes trades whose target already sits behind the entry —
+7 of 162. Those trades are not junk: TP2 is satisfied on the entry bar, the ladder jumps to stage 2,
+and they run as pure trailing trades for **+5.67R between them (+0.81R average, against the book's
++0.221)**. So the Pine is refusing the better-performing tail of its own book. **Which side is right
+is not settled here** — `0.0` reproduces the Pine, `None` reproduces every Python figure measured
+before 2026-08-13, and the parity gate is what decides. The default stays `None` so nothing historic
+moves while that is open.
+
+**`realign_trend_minutes` — refuse a trade against the structure direction of a SLOWER frame.** It
+gets its own `HtfStructure` aggregator rather than sharing the false-break frame's, because the two
+answer different questions and must not share state. Construction REFUSES a value at or below
+`realign_htf_minutes`: a "trend" frame that is not slower is the same read under another name, and
+it would pass silently while filtering on something the setup already knows.
+
+⚠ **`trend_dir == 0` means the slow frame has not spoken yet, NOT "no trend", and the gate refuses
+there deliberately.** Passing everything during warm-up is a filter that reports itself as on while
+doing nothing — root rule 1, and the shape this repo keeps getting bitten by.
+
+🔴 **The reason it exists: the profitable DIRECTION flips with gold's own trend, and that is the one
+structural finding in this strategy's data.** Split the 162-trade book in half:
+
+| | shorts | longs |
+|---|---|---|
+| 2020-01 → 2023-04 | **+17.18R** (43 tr) | −8.83R (39 tr) |
+| 2023-05 → 2026-08 | +2.90R (42 tr) | **+24.55R** (38 tr) |
+
+Gold was roughly flat-to-down through 2021 (−4.2%) and 2022 (−0.3%), then +12.9% / +27.1% / +64.5%
+through 2023–2025. The side that makes money is the side aligned with the prevailing move, and it
+reverses when the move does. The mechanism is the setup's own logic rather than a pattern in a
+table: a false break is a liquidity grab AGAINST a prevailing direction and the realignment is the
+resumption, so taken against the dominant trend the same shape is a genuine reversal being faded —
+a different trade with a different expectancy.
+
+⚠ **THAT HYPOTHESIS WAS DERIVED FROM THE SAME 162 TRADES IT WOULD BE TESTED ON, WHICH IS EXACTLY HOW
+A SECOND OVERFIT HAPPENS AFTER THE FIRST ONE IS CAUGHT.** `realign_min_rr` looked excellent on the
+full history and was then shown to be a fit to one half. Any value here has to clear the same bar:
+**it must help in BOTH halves separately, not in the total.** Until it does, the default is `None`.
+
+⚠ **A positive `realign_min_rr` is a NEW filter that neither implementation has, and it must be
+measured by REPLAY — never by dropping rows from a finished trade list.** With one position slot a
+refused setup FREES the slot and a different setup takes it. That is precisely how the minimum-stop
+guard's cheap estimate got its SIGN wrong: **+1.84R estimated, −1.84R replayed.**
+
+⚠ **Neither input is covered by `tests/test_realign.py`** — the 15 tests there are green and none of
+them exercises either field. Both are untested beyond construction-time validation.
+
 ## The exit ladder is the parent's, unchanged
 
 Stop staging, the runner trail, TP rungs and the time stop all come from `mpc_sos_fade` and move
