@@ -174,6 +174,23 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/rso_scan.py`** (new 2026-08-16) — finds RETAIL SHAKE OUT (RSO) setups and draws them.
+  Drives the canonical `engines/market_structure/` rather than hand-rolled pivots: A = `bull_sos`,
+  B = a wick under the level that break left behind, C = the next aggressive `bull_sos`. Shorts
+  come from `invert()`, and 🟢 **the sign-symmetry that trick assumes is now CHECKED rather than
+  assumed** — `--verify-mirror` counts `bear_sos` on real bars against `bull_sos` on inverted bars
+  and they matched exactly (424 = 424). 🔴 **FIRST RUN, 186,759 M15 bars 2018-09-13 → 2026-08-13:
+  ZERO ENTRIES, and the tool exists to have found that.** Funnel: 847 A-breaks → 16 shake outs →
+  **0** real breaks. **The binding constraint is C**, which needs TWO `bull_sos` inside ~32 bars,
+  against a measured density of **one SOS per 220 bars** (external 847 / internal 575 over the same
+  frame — the internal stream is RARER, so the obvious fix makes it worse). ⚠ **`docs/MPC_FB_SPEC.md`
+  §4.6 has to be re-specified before any RSO code is written: Aaron's own
+  `indicators/engines/mss_sweeps_mpc.pine` fires on a RECLAIM — price wicks the level and closes
+  back — not on a second structure break, and that one substitution is the difference between an
+  indicator that signals and this scan's zero.** ⚠ **A trigger that never fires has not been
+  measured, it has been mis-specified** — do not read the zero as "RSO has no edge". ⚠ Trigger only:
+  no 4H bias and no discount filter, because `run_sweep` replays a single frame. No baseline moves —
+  this is a new tool and nothing consumed it before today.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when
