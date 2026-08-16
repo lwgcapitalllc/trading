@@ -66,6 +66,7 @@ import {
 } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
+import { DATE_INDICATOR_CLS } from '@/lib/inputs'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type {
@@ -2938,7 +2939,7 @@ function PeriodFilterChip({
                 min={dates.minDate}
                 max={dates.to || dates.maxDate}
                 onChange={(e) => dates.setRange(e.target.value, dates.to)}
-                className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1 text-[12px] font-mono text-text-primary"
+                className={`w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1 text-[12px] font-mono text-text-primary ${DATE_INDICATOR_CLS}`}
                 data-testid="period-from"
               />
             </label>
@@ -2952,7 +2953,7 @@ function PeriodFilterChip({
                 min={dates.from || dates.minDate}
                 max={dates.maxDate}
                 onChange={(e) => dates.setRange(dates.from, e.target.value)}
-                className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1 text-[12px] font-mono text-text-primary"
+                className={`w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1 text-[12px] font-mono text-text-primary ${DATE_INDICATOR_CLS}`}
                 data-testid="period-to"
               />
             </label>

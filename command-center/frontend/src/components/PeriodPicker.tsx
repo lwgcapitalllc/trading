@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { HistoryLimit } from '@/types'
+import { DATE_INDICATOR_CLS } from '@/lib/inputs'
 
 // Backtest period control — two date inputs plus the quick-range presets. Shared by the Run
 // Backtest modal (Strategies) and the Rerun modal (BacktestDetail) so a period is picked the
@@ -42,7 +43,10 @@ export function PresetBtn({
 
 const INPUT_CLS =
   'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
-const DATE_CLS = `${INPUT_CLS} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:cursor-pointer`
+
+// The calendar-indicator fix moved to `lib/inputs.ts` on 2026-08-16 — it was private here, and the
+// two `type="date"` inputs added elsewhere since never got it. See that file for why.
+const DATE_CLS = `${INPUT_CLS} ${DATE_INDICATOR_CLS}`
 
 export function PeriodPicker({
   start,

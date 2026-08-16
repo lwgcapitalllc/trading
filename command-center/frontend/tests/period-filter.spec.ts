@@ -272,4 +272,38 @@ test.describe('The period filter cuts a window and the whole page follows', () =
     await page.goto(`/backtests/runs/${run.run_id}`)
     await expect(page.getByTestId('period-filter-open')).toBeDisabled()
   })
+
+  test('the date inputs’ calendar button is actually visible', async ({ page }) => {
+    // 🔴 Reported off the screen the day this shipped: *"can't see the calendar icon."* Chrome
+    // draws `::-webkit-calendar-picker-indicator` as a near-black SVG, so on this theme the only
+    // route to a calendar was an invisible glyph on an invisible button. `PeriodPicker` had solved
+    // it privately in 2026-07 and neither date input added since had inherited the fix — hence
+    // `lib/inputs.ts`.
+    //
+    // ⚠ It does NOT assert on the class NAME. A Tailwind arbitrary-variant string is a spelling,
+    // and pinning it would go red on a refactor that kept the pixel identical while passing on a
+    // rule applied to the wrong pseudo-element. It strips the fix at runtime and requires the input
+    // to LOOK different — which is the property, and which is also why it cannot pass vacuously
+    // against an input that never had it.
+    const { run } = await runWithTrades()
+    await page.goto(`/backtests/runs/${run.run_id}`)
+    await page.getByTestId('period-filter-open').click()
+
+    const input = page.getByTestId('period-from')
+    await expect(input).toBeVisible()
+    const withFix = await input.screenshot()
+
+    await input.evaluate((el) => {
+      el.className = el.className
+        .split(' ')
+        .filter((c) => !c.startsWith('[&::-webkit-calendar-picker-indicator]'))
+        .join(' ')
+    })
+    const without = await input.screenshot()
+
+    expect(
+      Buffer.compare(withFix, without),
+      'the indicator styling must change what the input LOOKS like — without it the calendar button is a black glyph on a black field'
+    ).not.toBe(0)
+  })
 })

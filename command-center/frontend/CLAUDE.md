@@ -1020,6 +1020,16 @@ UTC, matching the emitter, or the edge shifts by the reader's offset. ⚠ Memois
   **A fail-watch against HEAD is vacuous for most of it** (the control did not exist, so a red
   proves the locator and nothing else) — **non-vacuity is by MUTATION, named per check**. The
   Breakdown and regime checks are the two watched red against HEAD for the right reason.
+- 🔴 **`lib/inputs.ts` → `DATE_INDICATOR_CLS`, and EVERY `<input type="date">` must carry it.**
+  Chrome draws `::-webkit-calendar-picker-indicator` as a near-black SVG, so on this theme the
+  calendar button is an invisible glyph on an invisible field — reported off the screen the day this
+  shipped (*"can't see the calendar icon"*). ⚠ **The fix already existed and had not travelled:**
+  `PeriodPicker` solved it privately when it was written, and the two date inputs added since
+  (`ChartPanel`'s Go-to-date, this popover's two) never inherited it. It is a shared constant now,
+  in `lib/` rather than in `PeriodPicker` — `ChartPanel` is strategy-agnostic and must not import
+  page furniture. ⚠ `invert`, never a colour, so it survives a theme swap. ⚠ The browser check
+  strips the class at runtime and requires the input to LOOK different; **it deliberately does not
+  assert the class NAME**, which is a spelling rather than the property.
 - 🔴 **TWO NEW SHAPES OF VACUOUS PASS, both found in one check** (full story:
   `../docs/FRONTEND_BUILD_NOTES.md` → *The period filter*). **Never assert a Recharts change by
   SCREENSHOT** — it animates on mount, so two loads differ by tween whatever the data is and

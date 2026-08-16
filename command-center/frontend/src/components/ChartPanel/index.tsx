@@ -27,6 +27,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { DATE_INDICATOR_CLS } from '@/lib/inputs'
 import {
   ActionType,
   DomPosition,
@@ -625,7 +626,7 @@ function GoToDate({ lo, hi, onGo }: { lo: number; hi: number; onGo: (ts: number)
                   setOpen(false)
                 }
               }}
-              className="flex-1 rounded-md border border-border-subtle bg-bg-sunken px-2 py-1 text-[11px] font-mono text-text-primary focus:border-accent focus:outline-none"
+              className={`flex-1 rounded-md border border-border-subtle bg-bg-sunken px-2 py-1 text-[11px] font-mono text-text-primary focus:border-accent focus:outline-none ${DATE_INDICATOR_CLS}`}
             />
             <button
               onClick={submit}

@@ -402,6 +402,12 @@ here**, so the chart shows exactly what the strategy saw.
 - **Go to date** (`GoToDate` in `index.tsx`, header pill next to the timeframe). Type a date, land on
   it — the answer to reach costing a long drag once history pages in. It sits by the timeframe because
   the two answer halves of one question: TF picks the bar SIZE, this picks WHERE.
+  - ⚠ **Its `<input type="date">` carries `DATE_INDICATOR_CLS` from `@/lib/inputs` (2026-08-16), and
+    that is the ONE thing this panel imports from outside its own tree.** Chrome draws the calendar
+    button as a near-black SVG, invisible on this theme; the rule and its incident live in
+    `../../CLAUDE.md` → *The period filter*. It is a class-name constant, not page furniture, which
+    is why it does not breach the strategy-agnostic rule — and it lives in `lib/` precisely so this
+    panel need not import it from `PeriodPicker`.
   - **It reuses the paging machinery above rather than adding a second one.** `goToDate` calls
     `loadOlder()` in a loop until the oldest loaded bar covers the target. klinecharts' own callback
     can't be asked to do this — it fires ONE page, and only when the viewport actually reaches the
