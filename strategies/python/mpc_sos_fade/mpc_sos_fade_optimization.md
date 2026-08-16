@@ -34,6 +34,11 @@ Standing rules for anything recorded here:
 | 12 | 2026-07-29 | *"what if I took the MISSED setups?"* — Aaron's question about the 2-of-3 misses that had sweep + SOS + the retrace but **no FVG in the zone**. Measured as an A/B on one input (`exec_req_fvg`), 2020-01-01 → 2026-07-29, plus a 3-level robustness sweep on the counterfactual entry price | **KEEP REQUIRING THE FVG.** 180 no-FVG misses, 173 would have filled at the 0.618 fallback: **50 win / 54 loss / 69 breakeven, +34.0R gross** — but they crowd out 17 real trades worth **+21.0R**, so the net is **+13.0R on 110.6R** while **drawdown goes 54.9% → 77.1%**. And it is not an edge: **40% of the +34R is ONE trade** (2020-01-02) and the sign **flips with the entry price** (+13.0R at fib 0.618, **−6.7R at 0.5**, −58.5R at 0.786). | **do not build it** — read the verdict |
 | 13 | 2026-07-31 | **NOT a sweep — a DEFECT, found from one chart.** Stop staging reads the ENTRY BAR's own high/low, so a limit that fills on the way down is credited with the move that happened *before* it filled — promoted to breakeven having never been in profit | **44 of 164 trades (27%) are staged by their own entry bar** — 34 to breakeven, 10 straight to the TP2 floor; 35 die within 3 bars. Staging only from the bar AFTER the fill: **110.65R → 125.56R (+14.91R)**, same 164 entries, 30 outcomes changed. **81% of the gain is 3 trades and drawdown is UNMEASURED**, so the case is correctness, not profit. Present in `mpc_strategy.pine` identically. | ✅ **FIXED & SHIPPED 2026-08-01** (commit `8143c05`) — see the banner below |
 
+| 18 | 2026-08-16 | **`exec_sl_deep` × `exec_secondary`, the full 2×2** — 4 full `run_dual` replays on ONE window (2018-09-14 → 2026-08-14, 186,910 M15 + 2,799,088 M1 bars, bar fills) | **`exec_sl_deep` stays OFF — it costs 24.0R with the secondary live and 23.0R without.** The shipped cell is the best of the four at **+164.4R / 189 trades**. The interaction is **1.0R against sd 15.06R**, i.e. the two levers are separable. Deep-ON does hold a shallower drawdown (−4.8 vs −5.5) and pays ~24R for it. | **measured — shipped default CONFIRMED** |
+
+⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
+Count the runs with `grep -c '^# Run ' `, never off this table.
+
 🔴 **READ THIS BEFORE QUOTING ANY NUMBER ABOVE. Run 13's defect SHIPPED on 2026-08-01, so every
 figure in Runs 1–12 was measured through a bug that no longer exists.** The fix (commit `8143c05`)
 changed 30 of 164 outcomes without touching a single entry, so a config's *ranking* is probably
@@ -2700,3 +2705,103 @@ Prime ECN.** Worth **+9.5R** against Standard over the same window (Run: `cost_t
   already costs 6.17R, so a finer grid would only locate a peak that is already known to be at 30.
 - **Anything below 30 ticks.** A narrower buffer moves the stop toward the entry, which is the
   direction the wrong-side-stop-fill limitation lives in.
+
+---
+
+# Run 18 — 2026-08-16 — **`exec_sl_deep` costs 24R and does not interact with the secondary. Leave it OFF.**
+
+**The question.** `exec_sl_deep` (an entry filling at or deeper than 0.786 puts its stop at the leg
+origin instead of `exec_sl_level`) shipped OFF on 2026-08-02 and had **never been swept**. The exit
+ladder register said *"Measure it."* Aaron asked for it measured together with `exec_secondary`,
+because the 1m re-entry changes which entries fill deep.
+
+## How it was measured
+
+Four full replays, one per cell of the 2×2, **all on ONE window: 2018-09-14 → 2026-08-14**
+(186,910 M15 bars + 2,799,088 M1 bars), `fill_model="bar"` (zero costs), shipped defaults otherwise,
+`run_dual` so the 1m secondary is genuinely live. Script: `dual_2x2.py` pattern —
+`StrategyCls(config=replace(cfg, exec_sl_deep=…, exec_secondary=…)).run_dual(df15, df1m, warmup=1000)`.
+
+⚠ **The window is 2018-09-**14**, not the M15 floor of 2018-09-13**, because the M1 cache starts a day
+later and every cell must see the same bars. That one day is worth **1 trade and 1.1R** — see the
+rule-11 note below before comparing anything here to a figure elsewhere in this file.
+
+## Result — the full 2×2
+
+| `exec_sl_deep` | `exec_secondary` | trades | **sum R** | maxDD (R) | secondary trades | secondary R |
+|---|---|---|---|---|---|---|
+| **OFF** | **ON** *(shipped)* | 189 | **+164.4** | −5.5 | 8 | +25.5 |
+| ON | ON | 192 | +140.4 | −4.8 | 9 | +24.5 |
+| OFF | OFF | 181 | +138.9 | −5.6 | 0 | — |
+| ON | OFF | 183 | +115.9 | −4.7 | 0 | — |
+
+**The effects are additive and the interaction is noise.**
+
+| effect | measured at | delta |
+|---|---|---|
+| `exec_sl_deep` ON | secondary ON | **−24.0R** |
+| `exec_sl_deep` ON | secondary OFF | **−23.0R** |
+| `exec_secondary` ON | sl_deep OFF | **+25.5R** |
+| `exec_secondary` ON | sl_deep ON | **+24.5R** |
+
+1.0R of interaction against this strategy's measured run-to-run spread of **sd 15.06R**
+(`jitter_audit.py`) is nothing. **The two levers can be reasoned about separately.**
+
+## What it means
+
+🔴 **`exec_sl_deep` stays OFF.** It buys 2–3 extra trades and ~0.8R of drawdown and pays ~24R for
+them. The mechanism is the one Run 11 already named from the other direction — **the targets are
+fibs and do not move, so a wider stop makes every winner worth fewer R while every loss is still
+−1R.** This is the first direct measurement of the SHIPPED narrow version (0.786-and-deeper only);
+the 2026-08-02 revert that `mpc_strategy.pine` records was of a WIDER version that also caught 0.702.
+Two independent measurements, same answer.
+
+✅ **The shipped configuration is the best of the four**, which was not guaranteed going in.
+
+⚠ **Deep-ON genuinely does hold a shallower drawdown in both rows** (−4.8 vs −5.5, −4.7 vs −5.6). If
+drawdown per R ever becomes the objective this is not worthless — it is simply very expensive.
+
+⚠ **The secondary's +25.5R rests on 8 trades**, and Run 12-era analysis of that feature already found
+its value concentrated in one 2023 fill. Nothing here re-opens that; the secondary was held at its
+shipped default and measured as a factor, not re-litigated.
+
+⚠ **Zero costs.** The MT5 agent was unreachable, so tick fills were unavailable. Same fill model as
+every other run in this file, so these numbers are comparable to the rest of it — but the costed
+confirmation was NOT run.
+
+## 🔴 The methodology finding, which outlived the result
+
+**`backtest/tools/run_report.py` could not replay `exec_secondary` at all, and said nothing.** It
+calls `strategy.run(df15)`; the secondary fills on 1m bars via `run_dual`. The first pass of this
+2×2 was run through that tool and returned **byte-identical trade lists for secondary ON and OFF** —
+which reads as a clean finding (*the 1m re-entry never fires here*) and was not one.
+
+**Byte-identical is what "no secondary signals fired" looks like AND what "the 1m feed was never
+wired" looks like.** Root rule 1, arriving through a replay path instead of through a null.
+
+⚠ **Therefore: every figure in this file produced by `run_report.py` at the default config is a
+PRIMARY-ONLY book**, because `exec_secondary` defaults **True**. They remain valid as MATCHED SETS —
+each combo in a sweep was missing the secondary equally, so rankings hold — and they understate
+absolute totals. Fixed the same day (the tool now loads the 1m frame, refuses what it cannot replay,
+and prints the secondary count); full record in `backtest/docs/BACKTEST_BUILD_NOTES.md` →
+*The secondary that never ran*.
+
+🔴 **And the verification pass caught a rule-11 slip in this run's own write-up.** The first draft
+quoted the secondary's value by pairing a dual run (from 09-14) against a 15m-only run (from 09-13)
+— two different windows. Confirmed by re-running the 15m-only path pinned to 09-14: **181 trades /
++138.9R, matching the dual `secondary=False` cell exactly.** That single check verified both the
+window explanation AND that `run_dual` with the secondary off is equivalent to `run()`.
+**The M15 and M1 cache floors differ by one day, so any 15m-vs-dual comparison on this symbol
+crosses windows unless both are pinned to the later date.** Nothing warns.
+
+## What was NOT measured
+
+- **Costs.** No tick fills; the agent was down.
+- **`exec_sl_deep` at any other boundary.** 0.786 is the shipped threshold and it has already been
+  wrong twice in the other direction (see `mpc_strategy.pine` ~line 509). This run holds it fixed.
+- **`exec_sl_deep` combined with `exec_sl_level` other than 0.886.** The toggle is inert at 1.0 by
+  construction; the shallower levels are unsupported (Run 4 / Run 11).
+- **Whether 0.886 should become a snap target.** Related and separate — `_fib_snap` excludes it
+  unconditionally, and `exec_sl_deep` would make it geometrically legal. A scan over the same
+  history found **132 of 386 setups (34.2%) saw a gap wholly inside 0.786–0.886**, so the
+  opportunity is not negligible. It is a CODE change on both sides plus a re-parity, not a sweep.
