@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Three Liquidity Models — Sequence Reference</title>
+<style>
+  @page { size: A4; margin: 14mm 13mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #1a1a1a; background: #fff;
+    font-size: 10.2pt; line-height: 1.45; margin: 0;
+  }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  h1 { font-size: 21pt; margin: 0 0 2mm; letter-spacing: -0.4px; }
+  h2 { font-size: 14pt; margin: 0 0 1mm; letter-spacing: -0.2px; }
+  h3 { font-size: 10.5pt; margin: 5mm 0 1.5mm; text-transform: uppercase;
+       letter-spacing: 0.8px; color: #6b7280; font-weight: 700; }
+  p  { margin: 0 0 2.5mm; }
+  .lede { font-size: 11pt; color: #374151; margin-bottom: 4mm; }
+  .sub  { color: #6b7280; font-size: 9.4pt; margin: 0 0 4mm; }
+
+  .rule { border: 0; border-top: 1.5px solid #1a1a1a; margin: 3mm 0 4mm; }
+  .hair { border: 0; border-top: 1px solid #e5e7eb; margin: 4mm 0; }
+
+  .tag { display: inline-block; font-size: 8pt; font-weight: 700; letter-spacing: 1px;
+         text-transform: uppercase; padding: 1mm 2.5mm; border-radius: 2mm;
+         background: #1a1a1a; color: #fff; vertical-align: 3px; margin-right: 2mm; }
+  .tag.b { background: #2563eb; }
+  .tag.g { background: #15803d; }
+  .tag.v { background: #6d28d9; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.2pt; margin: 2mm 0 3mm; }
+  th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.7px;
+       color: #6b7280; border-bottom: 1.5px solid #1a1a1a; padding: 1.5mm 2mm; vertical-align: bottom; }
+  td { border-bottom: 1px solid #e5e7eb; padding: 1.8mm 2mm; vertical-align: top; }
+  td.n { width: 7mm; font-weight: 700; color: #6b7280; }
+  td.k { width: 34mm; font-weight: 600; }
+  tr.hi td { background: #fffbeb; }
+
+  .seq { counter-reset: s; margin: 0; padding: 0; list-style: none; }
+  .seq li { position: relative; padding: 0 0 2mm 9mm; margin-bottom: 1.5mm; }
+  .seq li:before {
+    counter-increment: s; content: counter(s);
+    position: absolute; left: 0; top: 0.2mm;
+    width: 6mm; height: 6mm; border-radius: 50%;
+    background: #1a1a1a; color: #fff; font-size: 8pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .seq strong { font-weight: 700; }
+
+  .note { border-left: 3px solid #d97706; background: #fffbeb;
+          padding: 2.5mm 3mm; font-size: 9.2pt; margin: 3mm 0; }
+  .note b { color: #92400e; }
+  .kill { border-left: 3px solid #dc2626; background: #fef2f2;
+          padding: 2.5mm 3mm; font-size: 9.2pt; margin: 3mm 0; }
+  .kill b { color: #991b1b; }
+
+  svg { display: block; width: 100%; height: auto; margin: 2mm 0 1mm; }
+  .cap { font-size: 8.4pt; color: #6b7280; text-align: center; margin: 0 0 3mm; }
+
+  .grid2 { display: flex; gap: 6mm; }
+  .grid2 > div { flex: 1; }
+
+  .foot { position: running(f); }
+  .stat { font-size: 8.6pt; color: #6b7280; }
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 8.8pt;
+         background: #f3f4f6; padding: 0.3mm 1mm; border-radius: 1mm; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ PAGE 1 ══════════════════ -->
+<section class="page">
+  <h1>Three Liquidity Models</h1>
+  <p class="sub">Sequence reference · first draft</p>
+  <hr class="rule">
+
+  <p class="lede">All three models trade the same idea: <strong>price moves to where orders are
+  trapped, not to where a level looks pretty.</strong> They differ only in what they wait for
+  before committing.</p>
+
+  <table>
+    <tr><th>Model</th><th>Waits for</th><th>Entry</th><th>Target</th><th>Hold</th></tr>
+    <tr>
+      <td><strong>REV Setup</strong><br><span class="stat">Reversal fade</span></td>
+      <td>A sweep, then a <em>structure shift</em> against the move</td>
+      <td>Resting limit in the retracement band</td>
+      <td>Fib ladder off the entry leg</td>
+      <td>Hours to days</td>
+    </tr>
+    <tr>
+      <td><strong>Retail Shake&nbsp;Out</strong><br><span class="stat">Failed break</span></td>
+      <td>A break that <em>fails</em>, then a second real break</td>
+      <td>On the second break, or a pullback into it</td>
+      <td>Nearest un-swept higher-timeframe pool</td>
+      <td>Days to weeks</td>
+    </tr>
+    <tr>
+      <td><strong>Loaded Level</strong><br><span class="stat">Level lifecycle</span></td>
+      <td>A level to <em>fill with orders</em>, then get smashed</td>
+      <td>The instant the loaded level is stabbed</td>
+      <td>The engineered level on the other side</td>
+      <td>Hours</td>
+    </tr>
+  </table>
+
+  <h3>The one difference that matters</h3>
+  <p>Each model asks a different question before it will trade:</p>
+
+  <table>
+    <tr><th>Model</th><th>The question</th></tr>
+    <tr><td class="k">REV Setup</td><td>“Has the trend actually <strong>shifted</strong>?” — it needs a confirmed break in the new direction before it will look for an entry.</td></tr>
+    <tr><td class="k">Retail Shake Out</td><td>“Have <strong>both sides</strong> been proven wrong?” — it needs one group trapped, then the opposite group trapped, before it commits.</td></tr>
+    <tr><td class="k">Loaded Level</td><td>“<strong>Where is the money</strong> right now?” — it needs no structure shift at all, only a level it can prove holds orders.</td></tr>
+  </table>
+
+  <div class="note">
+    <b>Read this before teaching any of them.</b> These are not three ways of saying the same
+    thing. The REV Setup will refuse a trade the Loaded Level takes every day of the week, because
+    it is waiting for a shift the other model does not require. That is a feature — they are meant
+    to catch different parts of a move, and running all three is how you get frequency without
+    loosening any one of them.
+  </div>
+
+  <hr class="hair">
+  <h3>Build status — say this out loud to students</h3>
+  <table>
+    <tr><th>Model</th><th>State</th></tr>
+    <tr><td class="k">REV Setup</td><td><strong>Built, coded and validated.</strong> Runs live. Every rule in this document is reproduced by the bot and checked against the chart bar for bar.</td></tr>
+    <tr><td class="k">Retail Shake Out</td><td><strong>Written down, never tested.</strong> The rules below are a proposal. No result exists.</td></tr>
+    <tr><td class="k">Loaded Level</td><td><strong>Reverse-engineered from worked examples.</strong> Not coded, not measured, and no losing example has been studied yet.</td></tr>
+  </table>
+  <p class="stat">A model that has not been measured is a hypothesis with good presentation. Two of
+  these three are hypotheses.</p>
+</section>
+
+
+<!-- ══════════════════ PAGE 2 — VOCABULARY ══════════════════ -->
+<section class="page">
+  <h2>The shared vocabulary</h2>
+  <p class="sub">Three words. All three models use them. Learn these and the sequences read themselves.</p>
+  <hr class="rule">
+
+  <h3>1 · A level is a piggy bank</h3>
+  <p>Every high and low on the chart is a piggy bank. Price is greedy — it travels toward the ones
+  with coins in them. A level has exactly three states.</p>
+
+  <svg viewBox="0 0 800 250" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+    <!-- LOADED panel -->
+    <text x="20" y="20" font-size="13" font-weight="700" fill="#15803d">LOADED — full of coins</text>
+    <text x="20" y="36" font-size="11" fill="#6b7280">Price came back, respected it, and moved away.</text>
+    <line x1="88" y1="150" x2="360" y2="150" stroke="#15803d" stroke-width="2.5"/>
+    <polyline points="30,70 88,150 140,95 200,147 262,60 320,52"
+              fill="none" stroke="#1a1a1a" stroke-width="2.6" stroke-linejoin="round"/>
+    <circle cx="200" cy="147" r="7" fill="none" stroke="#15803d" stroke-width="2.5"/>
+    <text x="150" y="185" font-size="11.5" font-weight="700" fill="#15803d">bounced — did not break</text>
+    <text x="150" y="209" font-size="15" font-weight="700" fill="#15803d">$   $   $</text>
+    <text x="150" y="228" font-size="10" fill="#6b7280">orders resting under the line</text>
+
+    <line x1="400" y1="10" x2="400" y2="235" stroke="#e5e7eb" stroke-width="1.5"/>
+
+    <!-- EMPTY panel -->
+    <text x="424" y="20" font-size="13" font-weight="700" fill="#dc2626">EMPTY — already smashed</text>
+    <text x="424" y="36" font-size="11" fill="#6b7280">Price pushed through, took everything, and left.</text>
+    <line x1="492" y1="150" x2="770" y2="150" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="7 5"/>
+    <polyline points="434,70 492,150 544,95 606,205 668,80 730,60"
+              fill="none" stroke="#1a1a1a" stroke-width="2.6" stroke-linejoin="round"/>
+    <circle cx="606" cy="205" r="7" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+    <text x="548" y="238" font-size="11.5" font-weight="700" fill="#dc2626">broke through — coins gone</text>
+    <text x="652" y="178" font-size="10" fill="#6b7280">nothing resting here</text>
+  </svg>
+  <p class="cap">The only test: <strong>did it go past the level before it?</strong> Yes → empty. No, it stopped short and bounced → loaded.</p>
+
+  <table>
+    <tr><th>State</th><th>How it got there</th><th>What you do with it</th></tr>
+    <tr><td class="k">Fresh</td><td>Just printed. Never revisited.</td><td>Nothing yet. Wait.</td></tr>
+    <tr class="hi"><td class="k">Loaded</td><td>Price returned, respected it, moved away.</td><td><strong>Target it</strong>, or <strong>enter when it gets smashed</strong>.</td></tr>
+    <tr><td class="k">Empty</td><td>Price traded through and never came back.</td><td><strong>Hide your stop behind it.</strong></td></tr>
+  </table>
+
+  <h3>2 · The liquidity block — the empty one, and why it runs the trade</h3>
+  <p>A <strong>liquidity block</strong> is simply a level in the <em>empty</em> state: a low that
+  pushed below the low before it, took those orders, and was left behind. It looks like a spike
+  that never got revisited.</p>
+  <p>Students get stuck here because they expect it to be a signal. It is not. It is a
+  <strong>boundary</strong>, and it does three jobs:</p>
+
+  <table>
+    <tr><td class="n">1</td><td><strong>It is a safe floor.</strong> There is no money below it, so nothing is pulling price down there. That is what makes an entry just above it safe.</td></tr>
+    <tr><td class="n">2</td><td><strong>It is where the stop goes.</strong> Just past it — out of reach of a normal sweep.</td></tr>
+    <tr><td class="n">3</td><td><strong>It can cancel the trade.</strong> If it sits far below your entry, your stop is forced wide, the reward-to-risk collapses, and you skip — or drop to a lower timeframe and find a tighter version of the same idea.</td></tr>
+  </table>
+
+  <div class="kill">
+    <b>The most common student error.</b> Buying <em>above</em> a loaded low because the chart
+    “looks bullish”. All three models buy <strong>below</strong> lows and sell <strong>above</strong>
+    highs, without exception. If you are entering before the level is taken, you are the liquidity.
+  </div>
+
+  <h3>3 · Inducement</h3>
+  <p>The move that makes ordinary traders commit in the wrong direction just before the real move.
+  A high gets taken, buyers pile in, and price immediately drops through the low they were sitting
+  above. Their stops are the fuel. Every model below has an inducement step — they just arrive at
+  it differently.</p>
+</section>
+
+
+<!-- ══════════════════ PAGE 3 — REV ══════════════════ -->
+<section class="page">
+  <h2><span class="tag b">Model 1</span>REV Setup</h2>
+  <p class="sub">The reversal fade · trades the turn, not the trend · <em>built and validated</em></p>
+  <hr class="rule">
+
+  <p class="lede">Price runs a level, then <strong>proves the turn is real</strong> by breaking
+  structure the other way. Only then do we buy the pullback. The proof is what makes this the
+  strictest of the three — and the reason it trades roughly twice a month.</p>
+
+  <svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+    <!-- fib entry band -->
+    <rect x="330" y="150" width="250" height="58" fill="#fef3c7" stroke="#d97706" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="330" y="228" font-size="10" font-weight="700" fill="#b45309">RETRACEMENT BAND — the only place we buy</text>
+
+    <!-- prior low level -->
+    <line x1="120" y1="180" x2="300" y2="180" stroke="#6b7280" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <text x="256" y="173" font-size="10" fill="#6b7280">old low</text>
+    <!-- lower high (structure to break) -->
+    <line x1="185" y1="132" x2="345" y2="132" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <text x="250" y="126" font-size="10" fill="#2563eb">last lower high</text>
+    <!-- stop line -->
+    <line x1="255" y1="240" x2="770" y2="240" stroke="#dc2626" stroke-width="1.6"/>
+    <text x="700" y="255" font-size="10" font-weight="700" fill="#dc2626">STOP — leg origin</text>
+
+    <!-- price -->
+    <polyline points="40,95 120,180 185,132 255,232 300,175 345,120 400,92 460,170 520,150 600,110 690,72 760,42"
+              fill="none" stroke="#1a1a1a" stroke-width="2.8" stroke-linejoin="round"/>
+
+    <!-- markers -->
+    <circle cx="255" cy="232" r="8" fill="none" stroke="#15803d" stroke-width="2.5"/>
+    <text x="196" y="272" font-size="11" font-weight="700" fill="#15803d">1 · SWEEP</text>
+    <text x="330" y="72" font-size="11" font-weight="700" fill="#2563eb">2 · SHIFT</text>
+    <circle cx="460" cy="170" r="8" fill="#6d28d9"/>
+    <text x="418" y="197" font-size="11" font-weight="700" fill="#6d28d9">3 · ENTRY</text>
+    <text x="600" y="100" font-size="10" font-weight="700" fill="#15803d">TP1</text>
+    <text x="690" y="62" font-size="10" font-weight="700" fill="#15803d">TP2</text>
+    <text x="742" y="32" font-size="10" font-weight="700" fill="#15803d">runner</text>
+  </svg>
+  <p class="cap">Long shown. Short is the exact mirror.</p>
+
+  <h3>Sequence</h3>
+  <ol class="seq">
+    <li><strong>Arm — a sweep or a divergence.</strong> Price takes out a known low, or momentum diverges from price. A clock starts. If nothing follows within the window, the setup is dropped.</li>
+    <li><strong>Shift — structure breaks the other way.</strong> Price must break the last lower high <em>while the arm is still live</em>. This is the confirmation the other two models do not require, and it is what earns the high hit rate.</li>
+    <li><strong>Retrace — price pulls back into the band.</strong> Measured on the leg that just broke structure. Nothing is bought above the halfway point of that leg.</li>
+    <li><strong>Entry — a resting limit</strong> at the edge of a price gap inside the band. Set and forget: price either comes to it or the trade never happens.</li>
+    <li><strong>Stop</strong> at the origin of the leg — the low the whole move launched from.</li>
+    <li><strong>Targets</strong> step up the same leg. Partials at the first two, the rest runs on a trailing stop that follows structure.</li>
+  </ol>
+
+  <div class="kill">
+    <b>What kills it.</b> An opposite shift · the full target being reached · price closing back
+    below the leg origin · structure breaking <em>with</em> the old trend before the pullback ever
+    arrives. Any one of those and the setup is dead — you do not wait for it to come back.
+  </div>
+  <p class="stat"><strong>Character:</strong> few setups, high hit rate, moderate reward. The
+  edge lives in a small number of large winners, so cutting runners early destroys it.</p>
+</section>
+
+
+<!-- ══════════════════ PAGE 4 — SHAKE OUT ══════════════════ -->
+<section class="page">
+  <h2><span class="tag g">Model 2</span>Retail Shake Out Model</h2>
+  <p class="sub">The failed break · both sides wrong within a few bars · <em>proposal only, never tested</em></p>
+  <hr class="rule">
+
+  <p class="lede">The densest trap available is <strong>a break of structure that fails</strong>.
+  The break brings buyers in with stops just behind it. Price runs those stops. The traders stopped
+  out then flip short — and the real break takes them too. Both sides are wrong inside a handful
+  of bars, and that is the moment to enter.</p>
+
+  <svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+    <!-- HTF target pool -->
+    <line x1="30" y1="45" x2="775" y2="45" stroke="#15803d" stroke-width="2.5"/>
+    <text x="34" y="38" font-size="10.5" font-weight="700" fill="#15803d">UN-SWEPT HIGHER-TIMEFRAME POOL — the target, held for days</text>
+    <!-- break origin -->
+    <line x1="160" y1="205" x2="420" y2="205" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <text x="166" y="226" font-size="10" fill="#2563eb">origin of the first break</text>
+    <!-- swept low / stop -->
+    <line x1="320" y1="243" x2="775" y2="243" stroke="#dc2626" stroke-width="1.6"/>
+    <text x="773" y="264" font-size="10" font-weight="700" fill="#dc2626" text-anchor="end">STOP — under the swept low</text>
+    <!-- structure high broken by A -->
+    <line x1="110" y1="152" x2="250" y2="152" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4"/>
+
+    <polyline points="45,200 110,152 160,205 230,112 285,160 320,238 370,150 425,100 500,132 570,96 650,70 760,48"
+              fill="none" stroke="#1a1a1a" stroke-width="2.8" stroke-linejoin="round"/>
+
+    <circle cx="230" cy="112" r="8" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+    <text x="186" y="98" font-size="11" font-weight="700" fill="#2563eb">A · EARLY BREAK</text>
+    <text x="186" y="84" font-size="9.5" fill="#6b7280">buyers commit</text>
+
+    <circle cx="320" cy="238" r="8" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+    <text x="268" y="284" font-size="11" font-weight="700" fill="#dc2626">B · THE SWEEP</text>
+    <text x="268" y="272" font-size="9.5" fill="#6b7280">those buyers stopped out; sellers now commit</text>
+
+    <circle cx="425" cy="100" r="8" fill="#6d28d9"/>
+    <text x="404" y="78" font-size="11" font-weight="700" fill="#6d28d9">C · REAL BREAK = ENTRY</text>
+  </svg>
+  <p class="cap">Long shown. Short is the exact mirror.</p>
+
+  <h3>Sequence</h3>
+  <ol class="seq">
+    <li><strong>Bias.</strong> Read the higher timeframe. Trade only with it.</li>
+    <li><strong>Discount.</strong> Price must be in the cheap half of the higher-timeframe range. Buying is only allowed below the midpoint; selling only above it.</li>
+    <li><strong>Event A — the early break.</strong> Structure breaks up. Buyers commit with stops behind the low the break launched from. That low is now on the clock.</li>
+    <li><strong>Event B — the sweep.</strong> Price falls back and <em>wicks below</em> that low. The early buyers are out. Sellers read it as a reversal and commit. This is the failure that names the model.</li>
+    <li><strong>Event C — the real break.</strong> Price breaks up again, <strong>aggressively</strong>. The sellers from B are now trapped too. Enter here, or on a shallow pullback into this leg.</li>
+    <li><strong>Stop</strong> below the lowest point reached between A and C.</li>
+    <li><strong>Target</strong> the nearest un-swept higher-timeframe pool. Because the stop sits on a small-timeframe low and the target sits days away, the reward-to-risk is structurally large.</li>
+  </ol>
+
+  <div class="note">
+    <b>Stacking — and the rule that makes it safe.</b> Several positions may be added to one idea,
+    but <strong>only when every existing one is already at breakeven</strong>. At most one position
+    ever carries risk. This is why a very large combined result can come from ordinary individual
+    trades — and why it must never be quoted as a per-trade figure.
+  </div>
+  <div class="kill">
+    <b>What kills it.</b> The swept low being taken again · the stop coming out wider than the
+    ceiling · a target closer than the minimum reward-to-risk. And the expensive one:
+    <strong>failing to redraw the range once the target is reached</strong> — the old discount
+    becomes a premium, and you keep buying it.
+  </div>
+</section>
+
+
+<!-- ══════════════════ PAGE 5 — LOADED LEVEL ══════════════════ -->
+<section class="page">
+  <h2><span class="tag v">Model 3</span>Loaded Level Model</h2>
+  <p class="sub">Read which levels hold money · no structure shift required · <em>reverse-engineered, unmeasured</em></p>
+  <hr class="rule">
+
+  <p class="lede">This model does not wait for a trend to change. It <strong>looks left, works out
+  which levels are loaded and which are empty</strong>, and trades the moment a loaded one is
+  smashed. It starts by finding the empty one — the liquidity block — because that is what tells
+  you where risk can sit.</p>
+
+  <svg viewBox="0 0 800 305" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+    <!-- EL target -->
+    <line x1="78" y1="98" x2="775" y2="98" stroke="#15803d" stroke-width="2.5"/>
+    <text x="86" y="90" font-size="10.5" font-weight="700" fill="#15803d">ENGINEERED LEVEL — loaded, and therefore the target</text>
+    <!-- loaded low = entry -->
+    <line x1="228" y1="218" x2="600" y2="218" stroke="#6d28d9" stroke-width="2"/>
+    <text x="380" y="211" font-size="10" font-weight="700" fill="#6d28d9">LOADED LOW — the entry</text>
+    <!-- block -->
+    <line x1="150" y1="262" x2="775" y2="262" stroke="#dc2626" stroke-width="2" stroke-dasharray="7 5"/>
+    <text x="614" y="256" font-size="10" font-weight="700" fill="#dc2626">LIQUIDITY BLOCK — empty</text>
+    <text x="614" y="284" font-size="10" font-weight="700" fill="#dc2626">STOP goes just under it</text>
+    <!-- old low swept -->
+    <line x1="88" y1="196" x2="240" y2="196" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4"/>
+    <text x="84" y="199" font-size="9.5" fill="#6b7280" text-anchor="end">old low</text>
+
+    <polyline points="40,132 78,100 122,158 150,258 200,178 228,215 292,138 330,172 420,102 470,140 530,196 570,228 640,150 710,118 762,96"
+              fill="none" stroke="#1a1a1a" stroke-width="2.8" stroke-linejoin="round"/>
+
+    <circle cx="150" cy="258" r="8" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+    <text x="104" y="296" font-size="11" font-weight="700" fill="#dc2626">1 · ARM — old low taken, block created</text>
+
+    <circle cx="228" cy="215" r="7" fill="none" stroke="#6d28d9" stroke-width="2.5"/>
+    <text x="216" y="240" font-size="10.5" font-weight="700" fill="#6d28d9">2 · loads</text>
+
+    <text x="246" y="116" font-size="10.5" font-weight="700" fill="#b45309">3 · INDUCEMENT</text>
+    <text x="470" y="90" font-size="10.5" font-weight="700" fill="#15803d">4 · target built</text>
+
+    <circle cx="570" cy="228" r="8" fill="#6d28d9"/>
+    <text x="540" y="252" font-size="11" font-weight="700" fill="#6d28d9">5 · ENTRY</text>
+  </svg>
+  <p class="cap">Long shown. Short is the exact mirror.</p>
+
+  <h3>Sequence</h3>
+  <ol class="seq">
+    <li><strong>Look left. Arm on a sweep.</strong> Price trades below an old low and walks away. That extreme is now a <strong>liquidity block</strong> — empty, nothing to drag price back into it. From here we look for longs only, and we already know where the stop lives.</li>
+    <li><strong>A level loads.</strong> Price bounces and prints a low that <em>respects</em> an earlier low without breaking it. Buyers now sit above it with their stops below. This is the entry level — mark it and leave it.</li>
+    <li><strong>Inducement.</strong> Price rallies and takes out a minor high. More buyers commit. They are the fuel.</li>
+    <li><strong>The target is built.</strong> Price prints a high that respects earlier highs, then turns away. That high is now loaded — <strong>this is the step that makes it a trade</strong>. No loaded level above, no setup, however good the rest looks.</li>
+    <li><strong>Entry.</strong> Price sells back and stabs the loaded low from step 2. Buy the instant it is taken. No waiting for a candle to close, no refining inside the level.</li>
+    <li><strong>Stop</strong> just under the liquidity block from step 1.</li>
+    <li><strong>Target</strong> the loaded high from step 4. Hold most of the position to it.</li>
+  </ol>
+
+  <div class="note">
+    <b>Where the big reward-to-risk actually comes from.</b> Not from picking better targets — from
+    finding the same setup on a lower timeframe, where the block is closer and the stop is a third
+    of the size. The target does not move. The stop shrinks. Everything else is timing.
+  </div>
+  <div class="kill">
+    <b>What kills it.</b> No loaded level on the far side · the block so far below that the stop is
+    unaffordable · the loaded low breaking and price failing to recover. On a failed attempt the
+    direction is not wrong — wait for a new level to load and take it again.
+  </div>
+</section>
+
+
+<!-- ══════════════════ PAGE 6 — SIDE BY SIDE ══════════════════ -->
+<section class="page">
+  <h2>Side by side</h2>
+  <p class="sub">Same page, same order, every time.</p>
+  <hr class="rule">
+
+  <table>
+    <tr><th style="width:26mm"></th><th>REV Setup</th><th>Retail Shake Out</th><th>Loaded Level</th></tr>
+    <tr><td class="k">Starts with</td><td>A sweep or a divergence</td><td>A higher-timeframe bias and a discount</td><td>Looking left for the empty level</td></tr>
+    <tr><td class="k">Confirmation</td><td>Structure shifts against the old trend</td><td>A break fails, then a second break</td><td><strong>None required</strong></td></tr>
+    <tr class="hi"><td class="k">Entry trigger</td><td>Limit rests in the retracement band</td><td>The second break, or a pullback into it</td><td>The loaded level is stabbed</td></tr>
+    <tr><td class="k">Stop sits</td><td>At the origin of the shift leg</td><td>Under the swept low</td><td>Just past the liquidity block</td></tr>
+    <tr><td class="k">Target</td><td>Fib ladder on the same leg</td><td>Un-swept higher-timeframe pool</td><td>The loaded level opposite</td></tr>
+    <tr><td class="k">Positions</td><td>One at a time</td><td>Several, but only one at risk</td><td>One at a time</td></tr>
+    <tr><td class="k">Typical hold</td><td>Hours to days</td><td>Days to weeks</td><td>Hours</td></tr>
+    <tr><td class="k">Frequency</td><td>Low — a couple a month</td><td>Very low — a handful a year</td><td>Higher — several a week across instruments</td></tr>
+    <tr><td class="k">Where it fails</td><td>Waits for a shift that never comes and misses the move</td><td>Range-bound price makes every wiggle look like a failed break</td><td>Without a rule for what counts as “respecting”, every level looks loaded</td></tr>
+  </table>
+
+  <h3>How to teach them in order</h3>
+  <ol class="seq">
+    <li><strong>Loaded and empty, first and alone.</strong> Do not introduce a single model until a student can mark loaded and empty levels on a blank chart and defend each one. Everything downstream is this.</li>
+    <li><strong>REV Setup second.</strong> It is the strictest and the only one that has been proven, so a student can be corrected against a known answer.</li>
+    <li><strong>Loaded Level third.</strong> Same vocabulary, no confirmation step — it shows what the confirmation in the REV Setup was buying.</li>
+    <li><strong>Retail Shake Out last.</strong> It needs the most patience and the longest hold, and it is the easiest to see where it is not.</li>
+  </ol>
+
+  <div class="kill">
+    <b>The rule that outranks all three models.</b> Two of these have never been measured. Teach
+    them as reasoning, not as results, and do not quote a reward-to-risk figure from a worked
+    example as if it were an average — worked examples are chosen after the fact, and a model
+    shown only on its winners has no known hit rate at all.
+  </div>
+
+  <hr class="hair">
+  <p class="stat"><strong>Draft 1</strong> · Sequences drawn long; every short is the exact mirror.
+  Diagrams are schematic, not to scale.</p>
+</section>
+
+</body>
+</html>
