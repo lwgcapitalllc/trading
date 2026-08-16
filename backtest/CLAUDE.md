@@ -324,6 +324,21 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   narrower question than the one asked. When the agent is down the broker cannot be identified, so
   it refuses and asks for an explicit `--start` rather than guess. **Same rule as everywhere else in
   this package: never type a history depth, measure it.**
+  🔴 **A CONFIG THIS TOOL CANNOT REPLAY IS REFUSED, NEVER SILENTLY DOWNGRADED (2026-08-16).**
+  `exec_secondary` needs `run_dual(df15, df1m)`; calling `run(df15)` with the flag on produces a
+  primary-only book that looks exactly like a run where the feature never fired — `optimizer.py`
+  and `portfolio/legs.py` had already met this and refuse it. The tool now loads the 1m frame and
+  calls `run_dual`, refuses when there is no `run_dual` or no 1m bars, and always PRINTS the
+  secondary trade count so *0 secondaries* is a stated answer. ⚠ **`--no-secondary` SETS the flag
+  False rather than only picking the fast path** — the config that is reported must be the config
+  that RAN. ⚠ **THIS MOVED DOCUMENTED BASELINES**: every `mpc_sos_fade` figure this tool produced
+  at the default config before that date is primary-only, valid as a MATCHED SET (rankings stand)
+  but understating absolute totals — **MEASURED 2018-09-14 → 2026-08-14, bar fills, ONE window both sides: 189 trades /
+  +164.4R with the secondary against 181 / +138.9R without — the gap being 8 secondary trades
+  worth exactly +25.5R**. ⚠ **Dual costs ~50 min a
+  full-history replay against ~3 min.** Pinned by `tests/test_run_report_secondary.py` (7; 3
+  watched RED against HEAD, the behavioural pair killed by 2 mutations). Story:
+  `docs/BACKTEST_BUILD_NOTES.md` → *The secondary that never ran*.
 - **`archive/`** — committed, frozen `run_report.py` output. `backtest/reports/` is git-ignored
   per-run scratch, which meant multi-year trade data existed only on the machine with a warm cache
   and a live agent; `archive/<date>_<symbol>_<tf>_<scope>/` is the copy that travels with a clone, so

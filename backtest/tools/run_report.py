@@ -198,6 +198,28 @@ def _collect_legs(decisions) -> list[Leg]:
 # ── reporting ────────────────────────────────────────────────────────────────────
 
 
+def _choose_replay(cfg, no_secondary: bool):
+    """Decide which replay path the config actually needs. Returns `(cfg, wants_secondary, note)`.
+
+    Pure so it can be tested without bars, a terminal or a strategy.
+
+    🔴 The rule it enforces: **the config that gets REPORTED must be the config that RAN.**
+    `--no-secondary` does not merely pick the fast path, it sets `exec_secondary=False`, because
+    a run whose stored config says True while the 15m-only path executed is a run that lies about
+    itself — and that is precisely the state every `run_report.py` run was in before 2026-08-16.
+    """
+    wants = bool(getattr(cfg, "exec_secondary", False))
+    if not (wants and no_secondary):
+        return cfg, wants, ""
+    import dataclasses
+
+    return (
+        dataclasses.replace(cfg, exec_secondary=False),
+        False,
+        "--no-secondary: exec_secondary forced False (the 15m-only path is what runs)",
+    )
+
+
 def _assert_timeframe(df, tf: str) -> None:
     """Refuse to replay bars that are not the timeframe we asked for.
 
@@ -332,6 +354,12 @@ def main(argv=None) -> int:
         action="store_true",
         help="skip the regime tag (faster; drops the 'what market' answer)",
     )
+    ap.add_argument(
+        "--no-secondary",
+        action="store_true",
+        help="force the 15m-only replay even if the config wants the 1m secondary. It also "
+        "SETS exec_secondary=False, so the config that is reported is the one that ran.",
+    )
     args = ap.parse_args(argv)
 
     import importlib
@@ -381,14 +409,68 @@ def main(argv=None) -> int:
         import dataclasses
 
         cfg = dataclasses.replace(cfg, **patch)
+    # ── which REPLAY PATH ────────────────────────────────────────────────────────
+    # 🔴 `exec_secondary` fills and manages on real 1m bars through `run_dual(df15, df1m)`.
+    # `run(df15)` cannot execute one no matter what the flag says, and until 2026-08-16 this
+    # tool always called `run()` — so every run it has ever produced for `mpc_sos_fade` was
+    # primary-only while the config said `exec_secondary=True` (its DEFAULT). It printed
+    # "override exec_secondary = True" and exited 0. MEASURED on full history, 2018-09-14 →
+    # 2026-08-14: the dual path books 8 secondary trades worth +25.5R that the 15m-only path
+    # cannot see (189 trades / 164.4R vs 182 / 140.0R).
+    #
+    # ⚠ THIS MOVES DOCUMENTED BASELINES. Any figure in
+    # `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` produced by this tool at
+    # the default config is a PRIMARY-ONLY number. They are not wrong as a matched set — every
+    # combo in a sweep was missing the secondary equally, so the RANKINGS stand — but the
+    # absolute totals understate. Re-run before quoting one as this bot's result.
+    #
+    # The refusal shape is `portfolio/legs.py`'s, which already refuses `exec_secondary` for
+    # this exact reason. Here we can do better than refuse, because the 1m frame is loadable.
+    cfg, wants_secondary, note = _choose_replay(cfg, args.no_secondary)
+    if note:
+        print(f"  {note}")
+
     strat = StrategyCls(config=cfg, initial_capital=args.capital)
-    print(f"replaying {args.strategy} (warmup {args.warmup}) ...", flush=True)
-    strat.run(df, warmup=args.warmup)
+
+    if wants_secondary:
+        if not hasattr(strat, "run_dual"):
+            # Never silently downgrade to the primary-only path — that is the whole defect.
+            raise SystemExit(
+                f"{args.strategy} sets exec_secondary=True but has no run_dual(), so its 1m "
+                f"re-entries cannot be replayed. Pass --no-secondary to measure the primary "
+                f"alone (it will set the flag False so the reported config matches the run)."
+            )
+        print(f"loading {args.symbol} 1m for the secondary  {start} -> {end} ...", flush=True)
+        df1m = BarSource().load(args.symbol, 1, start, end)
+        if df1m.empty:
+            raise SystemExit(
+                "exec_secondary=True but no 1m bars came back for that window. Refusing rather "
+                "than running the 15m-only path, which would silently drop every re-entry. "
+                "Pass --no-secondary to measure the primary alone."
+            )
+        print(f"  {len(df1m):,} bars  {df1m.index[0]} -> {df1m.index[-1]}", flush=True)
+        _assert_timeframe(df1m, 1)
+        print(
+            f"replaying {args.strategy} DUAL 15m+1m (warmup {args.warmup}) ...",
+            flush=True,
+        )
+        strat.run_dual(df, df1m, warmup=args.warmup)
+    else:
+        print(f"replaying {args.strategy} (warmup {args.warmup}) ...", flush=True)
+        strat.run(df, warmup=args.warmup)
 
     trades = strat.execution.trades
     legs = _collect_legs(strat.decisions)
     band = getattr(cfg, "exec_scratch_r", 0.15)
-    print(f"  {len(trades)} trades, {len(legs)} A+ legs reached SOS", flush=True)
+    # Count the secondaries explicitly. "0 secondary trades" on a dual run is a real answer
+    # (the 1m SOS never armed); the absence of this line is what let a dead feed look the same.
+    n_sec = sum(1 for t in trades if getattr(t, "kind", "primary") == "secondary")
+    sec_note = (
+        f", {n_sec} of them secondary (1m re-entries)"
+        if wants_secondary
+        else ", primary only (no 1m secondary in this run)"
+    )
+    print(f"  {len(trades)} trades{sec_note}, {len(legs)} A+ legs reached SOS", flush=True)
 
     out = (
         Path(args.out)
