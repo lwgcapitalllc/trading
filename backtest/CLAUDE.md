@@ -174,6 +174,42 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
+  (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
+  `education/learned/`) and scores it against a matched random control. A level is *loaded* when
+  price returned to it, respected it and moved away; the entry is the sweep of that level, the stop
+  sits past an already-swept "empty" level, the target is the opposing pool. **MEASURED 2026-08-13
+  on XAUUSD M15, 186,759 bars (2018-09-13 → 2026-08-13): long 49 trades, 34.7% vs a matched random
+  22.9% — +11.8 points, z +1.96, +0.751R/trade (+0.633R net of spread). Short 80 trades, 21.2% vs
+  20.9% — z +0.09 and −0.137R net of spread.** Funnel across both sides: armed 2,198 → loaded 2,151
+  → inducement 1,879 → target built 1,444 → 129 entries; the three biggest drop causes are `rr below
+  floor` 819, `block broken` 717, `expired` 531, and they are instrumented rather than inferred.
+  🔴 **Two defects were found and fixed the day it was measured, and both are this repo's own
+  standing rules restating themselves.** `Setup.dir` was documented as `"long" | "short"` and
+  `dir="short"` was constructed **nowhere** — a declared field that was never assigned (root rule
+  10), so the tool was long-only while reporting both sides. The short side now comes from
+  `invert()`, which negates prices and swaps high/low so the *same* long code detects shorts, rather
+  than from a hand-written bearish branch where a sign error is invisible; `unmirror()` maps the
+  setup back. And it had **no control at all** — on an instrument that went 1,200 → 4,300 any
+  long-biased rule looks profitable, so `control()` matches direction, stop distance and target
+  distance and prints a z-score beside every row. The long baseline reproduced exactly after both
+  fixes. ⚠ **The z-score peaks at `min_rr = 2.0`, which is the tool's own pre-existing default**
+  (1.0 → +1.3 points z +0.29, i.e. NO edge; 1.5 → z +0.77; 2.0 → z +1.96; 2.5 → z +1.64; 3.0 → z
+  +1.02). A peak sitting exactly on the shipped default is a selection-effect candidate and stays
+  suspect until a walk-forward separates the two. ⚠ **H1 (n=13) and H4 (n=3) are too thin to
+  score**, which is awkward — the source videos teach the model on H4/H1 and above, so the only
+  frame with a usable sample is the one the author uses least. ⚠ **No parity gate and no Pine twin.
+  Every number here is a lab finding.**
+- **`tools/session_relay_scan.py`** + **`tools/sweep_confluence.py`** (new 2026-08-08) — the session
+  relay playbook (London sweeps Asia's low, NY sweeps London's, then structure flips back) and the
+  broader question underneath it: does a liquidity sweep carry a directional bias at all, and do
+  session + daily sweeps landing together carry more? Both compose `market_structure/`, `liquidity/`
+  and `sessions/`; neither invents an engine. ⚠ **`session_relay_scan.py` deliberately produces no
+  entry, stop or R** — it answers "how many are there", and a P&L number there would smuggle in a
+  dozen decisions nobody has made. `sweep_confluence.py` does take the crudest tradeable framing
+  (enter at the sweep bar's close, stop past the swept extreme, fixed-multiple target, a bar holding
+  both books the stop) **and prints a non-sweep `control` row in the same table** — every bucket is
+  read against that row, never on its own.
 - **`tools/internal_realign_scan.py`** (new 2026-08-13) — counts the INTERNAL REALIGNMENT setup in
   history and scores its geometry against a matched random control. A bullish 15m external trend is
   broken by a bearish SOS (a false break / structural liquidity grab); on a lower frame the internal
