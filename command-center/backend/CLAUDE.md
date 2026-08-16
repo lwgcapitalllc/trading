@@ -76,6 +76,16 @@ backend/
 │   ├── scripts/backfill_metrics.py  one-time, idempotent backfill of file-derivable metrics on old runs
 │   ├── scripts/backfill_regime_timeline.py  opt-in backfill of `regime_timeline.json` on old runs (`--force`, `--run-id`); kept OUT of backfill_metrics.py because it fetches OHLC
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
+│   ├── scripts/seed_stress_fixture.py  seeds ONE Monte-Carlo-only stress test so `frontend/tests/stress.spec.ts`
+│   │                      has a real payload to mutate. **It exists because that suite's eleven checks
+│   │                      silently switched themselves OFF on 2026-08-16 when `stress_tests` held zero
+│   │                      rows** — they mock states the live box cannot produce and build every one by
+│   │                      mutating a REAL detail response, so an empty table is a dead suite. MC only:
+│   │                      no child backtests, no VPS, no platform lock. ⚠ It drives the real
+│   │                      `run_stress_test_task` (a shortcut would be a hand-written fixture in a row's
+│   │                      clothes), refuses when the lab already holds one, and STUBS the Telegram
+│   │                      sender — a fixture is not a result, and an ops channel that pings for test
+│   │                      scaffolding is one people mute
 │   ├── scripts/run_diff.py          read-only: why do two runs disagree? Prints the MEASUREMENT BASIS
 │   │                      difference before the params and the results, and exits 1 when the two were
 │   │                      not measured on the same footing — see *Comparing two runs* below

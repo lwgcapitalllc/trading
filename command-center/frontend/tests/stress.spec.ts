@@ -19,11 +19,30 @@ import type { StressTestDetail, StressTest } from '../src/types'
 
 const API = 'http://localhost:8000'
 
+/**
+ * Any stress test at all — this suite mutates the shape, never a particular book.
+ *
+ * 🔴 The FIXTURE IS THE LAB, and on 2026-08-16 the lab held zero rows: all eleven checks below
+ * failed with `no stress tests in the lab to mutate`, which reads as a broken suite and is
+ * actually a missing input. **A whole feature's regression suite had switched itself off, on a
+ * page whose own audit found 24 defects.** The dependency is legitimate — mutating a real payload
+ * is what stops these mocks drifting into a shape the server never sends — so the answer is not to
+ * remove it but to make it one command to satisfy, and to say which command here rather than in a
+ * doc nobody opens while a test is red.
+ */
 async function anyStressTest(): Promise<StressTest> {
   const res = await fetch(`${API}/stress-tests`)
   if (!res.ok) throw new Error(`backend not answering (${res.status}) — is it running?`)
   const rows: StressTest[] = await res.json()
-  if (!rows.length) throw new Error('no stress tests in the lab to mutate')
+  if (!rows.length) {
+    throw new Error(
+      'NO FIXTURE, not a regression: the lab holds no stress test, and every check in this file ' +
+        'mocks its state by mutating a real one.\n' +
+        'Seed one (Monte Carlo only — seconds, no VPS, no child backtests, no Telegram):\n' +
+        '    cd command-center/backend && python3 scripts/seed_stress_fixture.py\n' +
+        'Any complete run with 100+ trades will do; nothing here reads WHICH run it came from.'
+    )
+  }
   return rows[0]
 }
 

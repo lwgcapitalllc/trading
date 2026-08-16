@@ -1395,6 +1395,25 @@ answers, chosen by what the check needs:
   question rather than answering it, and the next reader has to know it was the VOLUME on those bars
   that mattered. ✅ Proven against a dead id.
 
+### 🔴 …and a row is only ONE of the five things a spec drifts against (2026-08-16)
+
+**Sixteen checks were red across three specs nobody had touched, and every one was the page being
+RIGHT.** A database row is the version of this everybody sees; the other four are the same defect
+wearing different clothes, and each has its own fix. Full record: `../docs/FRONTEND_BUILD_NOTES.md`
+→ *The five things a browser spec drifts against*.
+
+| Pinned to | How it bit | The fix |
+|---|---|---|
+| a **row** | `chart-paging` (2), 7 specs at risk | resolve, or `requireRun` — above |
+| the **weekday** | `calendar.spec.ts` (2) — the fixture built Mon–Fri and **the page opens on TODAY**, so both checks were green five days in seven and failed on a Sunday | **the FIXTURE covers all seven days.** The file had already met this trap and written it down beside one `?day=1`; the next two tests walked straight in. **A trap named in a comment is one the next test still hits — fix it where it is GENERATED** |
+| the **calendar** | `overview.spec.ts` (1) — `?week=12 // US fall-back, 2026-11-01`, a fixed date written in an offset from today, so it named a different week every Monday and asserted 169h against a correct 168h | **derive the offset.** `nextDstWeek()` scans `getTimezoneOffset()` forward for the real changeover and expects 169h on a fall-back, 167h on a spring-forward. ⚠ It THROWS on a no-DST timezone — a silent skip and a pass are the same outcome |
+| the **registry's SIZE** | `overview.spec.ts` (2) — `1 of 1` / `1 of 2` not reporting, against a fleet that grew to 3 | **SET the fleet, don't add to it.** Trim the real snapshot to the bots the rule needs. ⚠ And STATE the reporting bot's balance rather than inheriting it — the live one is `null` whenever the terminal is quiet, which would make the check pass for the wrong reason on exactly the days it matters |
+| an **empty table** | `stress.spec.ts` (11) — the lab held ZERO stress tests, so a whole feature's suite had switched itself off | **make the fixture one command.** `backend/scripts/seed_stress_fixture.py` seeds a Monte-Carlo-only test (seconds, no VPS, no child backtests, Telegram stubbed), and the suite's own failure prints that command |
+
+⚠ **The generalisation is the repo's own rule one level out: a test may depend on the world, but it
+must not be able to fail SILENTLY-WRONGLY when the world moves.** Every one of these five failed
+loudly enough to be seen and quietly enough to be read as a regression, which is the expensive half.
+
 ⚠ **`tsc --noEmit` DOES NOT COVER `tests/`.** A spec's syntax error typechecks clean and surfaces
 only when Playwright loads the file. **`npx playwright test --list` is the parse check** — seconds,
 every file, and where the count above comes from.

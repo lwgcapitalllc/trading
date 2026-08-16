@@ -52,6 +52,50 @@ async function mockSnapshot(
   })
 }
 
+/** Monday 00:00 local of the week containing `d`. */
+function mondayOf(d: Date): Date {
+  const m = new Date(d)
+  m.setHours(0, 0, 0, 0)
+  m.setDate(m.getDate() - ((m.getDay() + 6) % 7))
+  return m
+}
+
+/**
+ * Find the next local DST changeover and return the `?week=` offset that lands on its week.
+ *
+ * Scans forward a day at a time for a change in `getTimezoneOffset()`, so it needs no table and no
+ * assumption about which country's rules this machine follows. The offset RISES on a fall-back
+ * (EDT 240 → EST 300), which is the 25-hour Sunday and the 169-hour week.
+ *
+ * ⚠ Node and the browser share the system timezone here — `playwright.config.ts` sets no
+ * `timezoneId`. Pin one there and this helper has to be evaluated in the page instead.
+ *
+ * ⚠ It THROWS on a timezone with no DST rather than returning something. A silent skip and a pass
+ * would be the same outcome, and the rule this test guards would go unwatched with the suite green.
+ */
+function nextDstWeek(): { weeks: number; hours: number; when: Date } {
+  const start = new Date()
+  start.setHours(12, 0, 0, 0)
+  let prev = start.getTimezoneOffset()
+  for (let i = 1; i <= 400; i++) {
+    const d = new Date(start)
+    d.setDate(d.getDate() + i)
+    const off = d.getTimezoneOffset()
+    if (off !== prev) {
+      const weeks = Math.round(
+        (mondayOf(d).getTime() - mondayOf(start).getTime()) / (7 * 86_400_000)
+      )
+      return { weeks, hours: off > prev ? 169 : 167, when: d }
+    }
+    prev = off
+  }
+  throw new Error(
+    `no DST changeover in the next 400 days — this machine's timezone ` +
+      `(${Intl.DateTimeFormat().resolvedOptions().timeZone}) has no daylight saving, so this check ` +
+      `cannot be run here. It is not passing; it never ran.`
+  )
+}
+
 const statCard = (page: Page, label: string) => page.locator(`button:has-text("${label}")`).first()
 /** The calendar rows, by their leading HH:MM — the stat row is also `grid-cols-2`. */
 const eventRows = (page: Page) => page.getByRole('button').filter({ hasText: /^\d{1,2}:\d{2}/ })
@@ -144,9 +188,21 @@ test.describe('Overview — states the live box cannot produce', () => {
     expect(cls).toContain('text-warn-text')
   })
 
+  // ⚠ BOTH of the next two SET the fleet rather than adding to it, and the reason is the one this
+  // file's first test already writes down about scheduled jobs: **a rendering rule must not be
+  // coupled to how many rows the registry happens to hold.** They read `1 of 1` and `1 of 2`
+  // against whatever the live box returned, so registering a second bot broke them on 2026-08-16 —
+  // received `2 of 2` and `2 of 3`, both of which are the page being RIGHT. The denominator is
+  // `bots.length` (`Overview.tsx`), so the fleet is the fixture and has to be stated.
+  // ⚠ Still built from a REAL bot object, per this file's rule — trimming a live payload cannot
+  // drift from the model the way a hand-written one does.
+
   test('a balance that could not be read is named, never summed as $0', async ({ page }) => {
     await mockSnapshot(page, (s) => {
-      s.bots[0].balance = null
+      expect(s.bots.length, 'need a registered bot to blind').toBeGreaterThan(0)
+      const only = JSON.parse(JSON.stringify(s.bots[0]))
+      only.balance = null
+      s.bots = [only]
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
@@ -157,12 +213,18 @@ test.describe('Overview — states the live box cannot produce', () => {
 
   test('a partly-reporting fleet flags the total as incomplete', async ({ page }) => {
     await mockSnapshot(page, (s) => {
-      const second = JSON.parse(JSON.stringify(s.bots[0]))
-      second.key = 'orb_live'
-      second.name = 'ORB'
-      second.balance = null
-      second.account_type = 'live'
-      s.bots.push(second)
+      expect(s.bots.length, 'need a registered bot to copy').toBeGreaterThan(0)
+      // ⚠ The reporting one states its balance instead of inheriting it. The live bot's own
+      // balance is `null` whenever the terminal is not answering, which would make this fleet
+      // 2-of-2 silent and the check green for the wrong reason on exactly the days it matters.
+      const reporting = JSON.parse(JSON.stringify(s.bots[0]))
+      reporting.balance = 9_996.99
+      const silent = JSON.parse(JSON.stringify(s.bots[0]))
+      silent.key = 'orb_live'
+      silent.name = 'ORB'
+      silent.balance = null
+      silent.account_type = 'live'
+      s.bots = [reporting, silent]
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
@@ -310,18 +372,28 @@ test.describe('Overview — the clock', () => {
   })
 
   test('a week containing a DST changeover spans a real 7 days', async ({ page }) => {
+    // 🔴 `?week=` is an offset from THIS week, so a literal here is a fixed calendar date written
+    // in a unit that moves — it names a different week every Monday. This read `?week=12 // US
+    // fall-back, 2026-11-01`, which was true the day it was written and false twelve weeks later:
+    // on 2026-08-16 week 12 began Nov 2, the changeover had fallen in week 11, and the check
+    // failed with 168 against a page doing exactly the right thing.
+    // The offset is DERIVED now, so it holds in any week and any year.
+    const { weeks, hours, when } = nextDstWeek()
     const asked: [string, string][] = []
     page.on('request', (r) => {
       const m = r.url().match(/\/api\/calendar\?from=([^&]+)&to=([^&]+)/)
       if (m) asked.push([decodeURIComponent(m[1]), decodeURIComponent(m[2])])
     })
-    await page.goto('/calendar?week=12') // US fall-back, 2026-11-01
+    await page.goto(`/calendar?week=${weeks}`)
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1000)
     const [from, to] = asked.at(-1)!
-    // 169h, not the 168h a flat `+ 7 * 86_400_000` gives — which silently dropped the last hour
-    // of that Sunday.
-    expect((new Date(to).getTime() - new Date(from).getTime()) / 3.6e6).toBe(169)
+    // 169h on a fall-back and 167h on a spring-forward — never the 168h a flat
+    // `+ 7 * 86_400_000` gives, which silently dropped (or invented) the last hour of that Sunday.
+    expect(
+      (new Date(to).getTime() - new Date(from).getTime()) / 3.6e6,
+      `week ${weeks} contains the changeover on ${when.toDateString()}`
+    ).toBe(hours)
   })
 })
 

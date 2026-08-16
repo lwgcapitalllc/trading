@@ -40,7 +40,15 @@ type Opts = {
   failAfter?: number
   /** Delay each response, to make the loading window observable. */
   delayMs?: number
-  /** Build the week's events from its Monday. Default: one event per weekday at noon. */
+  /** Build the week's events from its Monday. Default: one event on EVERY day at noon.
+   *
+   *  🔴 All SEVEN days, and the weekend rows are the whole point. **The page OPENS ON TODAY**
+   *  (`Calendar.tsx` → the mount effect that patches `?day=` to today's index), so a fixture that
+   *  stops at Friday renders an EMPTY LIST every Saturday and Sunday — and a check that reads a
+   *  row, or the now line, then fails on a day when nothing is wrong. It was Mon–Fri until
+   *  2026-08-16 and cost two checks that Sunday, in a file that had already been bitten once and
+   *  had written the trap down (see `?day=1` below) instead of removing it. **A trap named in a
+   *  comment is one the next test still walks into** — the fixture is where it gets fixed. */
   build?: (monday: Date) => CalendarEvent[]
   /** The roster `/calendar/currencies` serves. Deliberately NOT the real nine by default — a test
    *  that asserts the shipped list would pass just as well against a hardcoded copy of it. */
@@ -72,7 +80,7 @@ async function mockCalendar(page: Page, opts: Opts = {}) {
     const from = new Date(new URL(route.request().url()).searchParams.get('from')!)
     const events = opts.build
       ? opts.build(from)
-      : [0, 1, 2, 3, 4].map((i) => {
+      : [0, 1, 2, 3, 4, 5, 6].map((i) => {
           const d = new Date(from)
           d.setDate(d.getDate() + i)
           d.setHours(12, 0, 0, 0)
@@ -257,6 +265,15 @@ test.describe('Calendar — the now line', () => {
 
     await page.getByTitle('Next week').click()
     await page.waitForLoadState('networkidle')
+    // ⚠ Non-vacuity: an EMPTY next week has no now line either, and would pass this for the one
+    // reason the check is not about. `nowIdx` is `-2` on a week that is not the current one
+    // (`Calendar.tsx`), so the rule under test is "rows, and no line" — assert both.
+    // ⚠ A RETRYING assertion, not `await rows(page).count()`. `networkidle` can settle BEFORE
+    // React Query issues the new week's request — the click schedules it a render later — and the
+    // page renders an empty list while `isPlaceholderData` holds, so a one-shot count samples zero
+    // and fails on a page doing the right thing. It passed alone and failed once in 222; a guard
+    // that is itself racy is worse than no guard, because its red is read as the subject's.
+    await expect(rows(page)).not.toHaveCount(0)
     await expect(page.getByTestId('now-line')).toHaveCount(0)
   })
 })

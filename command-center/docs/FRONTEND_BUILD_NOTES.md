@@ -290,3 +290,128 @@ returned clean because the frontend's tsconfig does not include `tests/`, and pr
 nothing useful. `npx playwright test --list` parses all 20 files in seconds and is the check that
 catches it — it is also where the suite's headline count should be taken from rather than
 incremented by hand.
+
+---
+
+## The five things a browser spec drifts against (2026-08-16)
+
+Fixing `chart-paging` earlier the same day left **16 failures across three specs nobody had
+touched** — and every one of them was the page under test being RIGHT. They were reported as
+"pre-existing, not from this change", which was true and was also where the reasoning had stopped.
+Read together they are not three unrelated bits of rot. They are **one defect with five faces**,
+and the row-shaped face — pinning a spec to a lab RUN, fixed earlier the same day and written up
+above — is only the one that had a name. The other four are below.
+
+The rule that came out of it, and the reason it is worth a section: **a test may depend on the
+world, but it must not be able to fail SILENTLY-WRONGLY when the world moves.** Every one of these
+failed loudly enough to be seen and quietly enough to be read as a regression — which is the
+expensive half, because the next reader spends their afternoon in the feature.
+
+### 2. Pinned to the WEEKDAY — `calendar.spec.ts`, 2 checks
+
+`mockCalendar`'s default builder emitted one event per **weekday**, `[0,1,2,3,4]` from Monday. The
+Calendar page **opens on today** (`Calendar.tsx`, the mount effect that patches `?day=` to today's
+index). So on a Saturday or a Sunday the selected day held no events, the list rendered empty, and:
+
+- *never shows the previous week under the new week header* timed out for 60s on
+  `rows(page).first().textContent()` — there were no rows to read;
+- *is absent on a week that does not contain now* found no `now-line`, because the line renders
+  **inside the event list** and an empty day has no list to put it in.
+
+Both were green five days in seven. 2026-08-16 was a Sunday.
+
+🔴 **The file had already been bitten by this and had written it down** — the duplicate-events test
+carries a comment that says, in as many words, that the page opens on today and a fixture built on
+a fixed weekday renders empty on every other day. It then fixed **itself** with an explicit
+`?day=1` and left the trap standing in the generator. Two later tests walked into it.
+
+**A trap named in a comment is one the next test still hits.** The fix is `[0,1,2,3,4,5,6]` — the
+weekend rows are the whole point — and the reason now lives on the `build` option, where anyone
+adding a test reads it. The now-line check also gained the non-vacuity half it never had: an empty
+next week has no now-line *either*, so it asserts rows **and** no line.
+
+**Watched red by mutation.** `loadingWeek = isLoading` (placeholder week rendered again) reddens
+the paging check at the `Loading …` banner; dropping the `isCurrentWeek ?` guard on `nowIdx`
+reddens the now-line check with `unexpected value "1"`. Suite: 15 passed, and 1.6m → 36.8s, because
+two 60s timeouts went away.
+
+### 3. Pinned to the CALENDAR — `overview.spec.ts`, 1 check
+
+```ts
+await page.goto('/calendar?week=12') // US fall-back, 2026-11-01
+```
+
+`?week=` is an offset **from this week**, so that literal is a fixed calendar date written in a unit
+that moves: it names a different week every Monday. It was true when written (2026-08-05: week 12
+began Oct 26 and held Nov 1). By 2026-08-16 week 12 began **Nov 2**, the changeover had fallen into
+week 11, and the check reported `Expected: 169, Received: 168` against a `localWeekEnd` doing
+exactly the right thing.
+
+**This is the same class as a run id and it does not look like one** — nothing about it reads as a
+fixture. `nextDstWeek()` now scans `getTimezoneOffset()` forward a day at a time for the real
+transition, converts it to a week offset, and expects **169h on a fall-back and 167h on a
+spring-forward** (the offset RISES into standard time: EDT 240 → EST 300). No table, no country
+assumption, no year.
+
+⚠ It **throws** on a timezone with no DST, naming the resolved zone. A silent skip and a pass are
+the same outcome, and this check would then go unwatched with the suite green.
+⚠ It works because Node and the browser share the system timezone — `playwright.config.ts` sets no
+`timezoneId`. Pin one there and the helper has to be evaluated in the page.
+
+**Watched red:** `localWeekEnd` reduced to `fromMs + 7 * 86_400_000` gives 168 again.
+
+### 4. Pinned to the REGISTRY'S SIZE — `overview.spec.ts`, 2 checks
+
+```
+Expected pattern: /1 of 1 not reporting/    Received: "Balance›—2 of 2 not reporting"
+Expected pattern: /1 of 2 not reporting/    Received: "Balance›$9,996.992 of 3 not reporting"
+```
+
+Both mutated the real snapshot (`s.bots[0].balance = null`, or pushed a second bot) and then
+asserted a denominator that is `bots.length`. Registering a second bot broke them.
+
+🔴 **This file's own first test warns about exactly this, about a different noun.** Its comment
+reads: *"a rendering rule must not be coupled to which jobs the fleet happens to contain, or
+deleting a job silently deletes the guard with it."* That was written about `scheduled_jobs` in
+August and never generalised to `bots` three tests below it.
+
+The fix keeps the folder's discipline — **still built from a real bot object, so it cannot drift
+from the model** — and **sets** the fleet rather than adding to it: trim to the bots the rule needs.
+⚠ And the reporting bot **states** its balance instead of inheriting it: the live bot's balance is
+`null` whenever its terminal is quiet, which would make that fleet 2-of-2 silent and the check green
+for the wrong reason on precisely the days the Balance card matters.
+
+**Watched red:** `reportedBal = bots` (a null balance summed as $0) gives `"Balance›$0.00demo
+account"` — the original defect, verbatim.
+
+### 5. Pinned to an EMPTY TABLE — `stress.spec.ts`, 11 checks
+
+`stress_tests` held **zero rows**. Every check calls `anyStressTest()`, which threw
+`no stress tests in the lab to mutate` before a page was ever rendered. **A whole feature's
+regression suite had switched itself off** — on the page whose 2026-08-05 audit found 24 defects,
+not one of which showed an error.
+
+The dependency is **legitimate and was kept**: these eleven mock states the live box cannot produce
+(a compounding run graded on percent, a walk-forward that crashed, a shift whose child backtest
+failed), and they build every one by mutating a real `/stress-tests/{id}` response precisely so the
+mock cannot drift into a shape the server never sends. Hand-writing a base fixture would have
+traded a loud failure for a silent one.
+
+So the answer was not to remove the dependency but to make it **one command to satisfy**:
+`backend/scripts/seed_stress_fixture.py`. Monte Carlo only — no walk-forward, no sensitivity, so no
+child backtests, no VPS, no platform lock; seconds rather than the ~70 minutes a full test costs. It
+drives the **real** `run_stress_test_task` (a shortcut would be a hand-written fixture wearing a
+database row's clothes), refuses when the lab already holds one, and **stubs the Telegram sender** —
+completion notifies `notify.HEALTH`, and an ops channel that pings for test scaffolding is one
+people mute. `grade` comes back `None` with no ruleset, which is correct: every grade is a statement
+about drawdown against a limit and an unconstrained ruleset states none.
+
+**Proven from an empty table**, not from the seeded state it was written in: the row was deleted and
+the committed script re-ran it from scratch (322-trade run, `status=complete`), then 11 passed.
+The suite's own failure message now prints that command.
+
+### What this cost, and what it is worth watching
+
+The three specs had been red for an unknown number of days and nobody was reading them, because 16
+red checks on a green feature train you to scroll past. **The count is the symptom to watch, not
+the individual failure** — a suite that is normally 16-red has stopped being a suite.
