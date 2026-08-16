@@ -415,6 +415,38 @@ tests non-deterministically, which is the worst failure shape a suite has. ⚠ *
 `loadfile`** — see the reasoning in `scripts/run_all_tests.sh`, and note that the intuitive choice
 measured slower.
 
+### 🔴 If the tests will not START on this machine, it is the xdist dependency — fix it, do not work around it
+
+**The first pull after 2026-08-15 needs one install, and a fresh clone needs it too.**
+`scripts/run_all_tests.sh` passes `-n auto` to both python suites, and `pytest-xdist` was added to
+`command-center/backend/requirements.txt` in the same commit — but **nothing re-installs
+requirements on a `git pull`**, so a machine that had a working venv yesterday will not have the
+package today.
+
+**Symptom:** the script prints `pytest-xdist is not installed in …` and exits 1 before running a
+single test. **Fix, and it is the whole fix:**
+
+```bash
+command-center/backend/.venv/bin/python -m pip install -r command-center/backend/requirements.txt
+```
+
+⚠ **Do NOT "fix" it by dropping `-n auto`, by running bare `pytest`, or by exporting
+`PYTEST_PARALLEL=` permanently.** Those all work and they all hide the missing package while
+putting the suite back to one core on a twelve-core box — the exact state this change existed to
+leave. `PYTEST_PARALLEL=` is for a deliberate one-off serial run when you are debugging a suspected
+parallelism problem, and nothing else.
+
+⚠ **`./go` and `command-center/start.sh` DO install it** (they run `pip install -r
+requirements.txt`), so launching the app once is the other way out. **Nothing else does** — not
+`post-merge`, not `conftest.py`, not `install_dev_tools.sh`, which owns `.venv-lint/` and has no
+opinion about the backend venv.
+
+⚠ **The refusal is deliberate and must stay a refusal.** pytest exits **4** on an unrecognised
+`-n`, which reads as a suite failure and sends the reader at the tests rather than at the venv; and
+a silent fall-back to serial would turn a missing package into *"the tests are slow today"*, which
+nobody investigates. **This is the same rule as everywhere else here: never let *cannot run* and
+*ran and passed slowly* be the same outcome.**
+
 **What `pre-push` does now costs ~3s and is still worth having**: `pre-commit` only ever sees
 STAGED files, so a `--no-verify` commit, a rebase that resurrected an old file, or an edit from
 another tool reaches a branch unformatted. This is the repo-wide sweep that catches them.
