@@ -23,11 +23,18 @@
  * non-vacuous by construction — it measures the same pixels with the layer off and on.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 // A full-history B-LEG run: XAUUSD M15, 2020-01-01 → 2026-08-03, 99 trades. Every one of the 99
 // carries a ladder, because a B leg cannot be priced without one — which is what makes the count
 // assertion below a real number rather than "some".
 const RUN = '45795fcedf8c'
+
+// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
+// that never rendered and sending the reader at the feature. See `fixtures.ts`.
+test.beforeAll(async () => {
+  await requireRun(RUN, 'an mpc_bleg run whose trades carry a recorded fib leg')
+})
 const EXPECTED_FIBS = 99
 
 /** Total pixels drawn in the three factory fib colours the ladder uses — green (0.382/0.5), blue

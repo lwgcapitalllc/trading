@@ -27,7 +27,11 @@ Earlier: 🔴 **PRESSING M5 WHILE READING 2020 THREW THE CHART SIX YEARS FORWARD
 **Earlier the same day:** 🔴 **A DEEP "GO TO DATE" JUMP IS A REAL NINETY SECONDS, AND THE ONLY
 SIGN OF LIFE WAS A LABEL THAT NEVER CHANGED.** Aaron: *"if I'm trying to load back to six years ago,
 there's no intuitive indicator that something isn't broken."* **MEASURED end to end in a real
-browser on run `211384ddbea4` at M15: 90.3s and 14 pages to reach 2020-02-03.** The pill said
+browser on run `211384ddbea4` at M15: 90.3s and 14 pages to reach 2020-02-03.** ⚠ **That run is no
+longer in the lab (2026-08-16), and every `211384ddbea4` in this file is PROVENANCE rather than a
+dependency — the numbers stand, they simply cannot be re-run against that row.** Naming the subject
+of a measurement is correct; naming one in a TEST is not, and `chart-paging.spec.ts` had done the
+second (see `../../CLAUDE.md` → *A FIXTURE PINNED TO A DATABASE ROW*). The pill said
 `loading 2020-02-03…` for the whole of it — the DESTINATION, which does not move — and the on-chart
 `Loading earlier bars…` edge is no help because the view is still parked at the right edge while the
 jump runs. The jump now publishes `jumpAt` and the pill reports **the date already REACHED plus a

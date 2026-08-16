@@ -21,8 +21,18 @@
  * time axis into the canvas, so none of this is otherwise readable from the DOM.
  */
 import { test, expect, type Page } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 const RUN = '997c14cc53bc'
+
+// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
+// that never rendered and sending the reader at the feature. See `fixtures.ts`.
+test.beforeAll(async () => {
+  await requireRun(
+    RUN,
+    'a long M15 python run with 1m history behind it, so a drill-down has finer bars to fetch'
+  )
+})
 const DATE = '2020-08-05'
 const TARGET = new Date(`${DATE}T00:00:00Z`).getTime()
 const DAY = 86_400_000

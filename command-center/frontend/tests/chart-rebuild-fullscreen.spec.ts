@@ -18,8 +18,18 @@
  * stay green if the tab strip's copy came back.
  */
 import { expect, test } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 const RUN = '997c14cc53bc'
+
+// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
+// that never rendered and sending the reader at the feature. See `fixtures.ts`.
+test.beforeAll(async () => {
+  await requireRun(
+    RUN,
+    'a python run with a rebuildable ChartSpec (NT8/MT5 runs have no Rebuild button)'
+  )
+})
 
 test('Rebuild chart is on the chart itself, in both views, exactly once', async ({ page }) => {
   // A real rebuild re-fetches candles and replays every engine (~7.6s cold, measured). Serve the

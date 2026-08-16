@@ -25,10 +25,20 @@
  * "the menu row is ticked" would pass against a panel drawing nothing.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 // The longest python run in the lab: 2020-01-01 → 2026-08-06 at M15, ~156k candles, so the VWAP
 // series is a real full-history one rather than a handful of points.
 const RUN = '997c14cc53bc'
+
+// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
+// that never rendered and sending the reader at the feature. See `fixtures.ts`.
+test.beforeAll(async () => {
+  await requireRun(
+    RUN,
+    'a full-history M15 python run whose bars carry VOLUME — without it there is no Session VWAP layer to toggle at all'
+  )
+})
 
 const VWAP = 'Session VWAP'
 

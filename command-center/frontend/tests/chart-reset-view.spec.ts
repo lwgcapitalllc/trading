@@ -16,9 +16,19 @@
  * nothing to do with the view.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 // The longest python run in the lab — any run works here, this one is already the suite's fixture.
 const RUN = '997c14cc53bc'
+
+// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
+// that never rendered and sending the reader at the feature. See `fixtures.ts`.
+test.beforeAll(async () => {
+  await requireRun(
+    RUN,
+    'a long M15 python run whose applied window is a slice of a much larger spec'
+  )
+})
 
 type Box = { x: number; y: number; width: number; height: number }
 

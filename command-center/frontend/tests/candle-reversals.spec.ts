@@ -32,6 +32,7 @@
  * comment).
  */
 import { expect, test, type Page } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 // The longest python run in the lab: 2020-01-01 → 2026-08-06 at M15. Its anchor set is 159 trades
 // + 35 three-of-three misses = 194, and each anchor is a SPAN, so it draws ~820 marks — the layer
@@ -39,6 +40,15 @@ import { expect, test, type Page } from '@playwright/test'
 // setups were dropped, and 194 / 153 while each anchor drew a single candle; both on 2026-08-08.
 // See `services/chart_spec.reversal_anchors`.)
 const RUN = '997c14cc53bc'
+
+// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
+// that never rendered and sending the reader at the feature. See `fixtures.ts`.
+test.beforeAll(async () => {
+  await requireRun(
+    RUN,
+    'a python run whose spec carries candlestick-reversal marks AND missed setups — note its DATE_WITH_A_MARK constant is tied to that same run and does not travel'
+  )
+})
 
 // A date this run has a mark on — 2026-07-30 05:30, a Bearish Engulfing inside a trade's span.
 // Needed because the newest bars often carry none, and a pixel check on an empty viewport reads

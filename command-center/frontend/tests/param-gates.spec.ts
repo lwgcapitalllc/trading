@@ -20,6 +20,7 @@
  * `backend/tests/test_param_gates.py`.
  */
 import { test, expect, type Page } from '@playwright/test'
+import { requireRun } from './fixtures'
 
 const RUN_ID = 'paramgates01'
 
@@ -286,6 +287,16 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
   // A completed full-history mpc_sos_fade run. Every one of its params is at the shipped default,
   // which is what makes the count equal the whole settled set rather than "some".
   const DONE_RUN = '7a77391d6568'
+
+  // Fail by NAME if this pinned run has left the lab. Its `Settled · 26` assertion is tied to
+  // THIS run's params being all-default, so a replacement has to satisfy that too — which is
+  // exactly the sentence a bare 404 timeout cannot supply. See `fixtures.ts`.
+  test.beforeAll(async () => {
+    await requireRun(
+      DONE_RUN,
+      'a completed full-history mpc_sos_fade run with EVERY param at its shipped default — that is what makes the settled count the whole set rather than "some"'
+    )
+  })
 
   test('the settled ones are behind a fold that COUNTS them, and the values are still there', async ({
     page,

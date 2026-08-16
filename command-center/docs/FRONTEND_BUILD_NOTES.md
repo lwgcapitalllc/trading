@@ -252,3 +252,41 @@ have been found by reading the diff — the mutation had to actually be run.**
 **Left undone, deliberately.** The firm EVALUATION card is still graded server-side over every trade
 and wears its unfiltered chip; a windowed grade would mean re-evaluating prop rules against a
 rebased account, which is a backend question. Engine-sized runs refuse the filter outright.
+
+---
+
+## Fixtures pinned to a row — the three incidents (2026-08-16)
+
+**The rule and the two answers: `../frontend/CLAUDE.md` → *A FIXTURE PINNED TO A DATABASE ROW*.**
+This is the record of how it kept happening.
+
+1. **`backtests.spec.ts`** — a check asserting a money figure ran into the millions, true only while
+   one particular run sat at the top of the list.
+2. **`tuning.spec.ts`, 2026-08-15** — eight checks died the day their baseline run was deleted, and
+   every one of them pointed at the leaderboard, which was fine.
+3. **`chart-paging.spec.ts`, 2026-08-16** — `const RUN = '211384ddbea4'` had left the lab. The run
+   endpoint 404s, so the price chart renders "No price data", the `Go to date` pill never appears,
+   and both checks die on a 120-second `locator.click` timeout whose stack points at the paging
+   code. **Measured both ways**: the two lines this session added to `ChartPanel/index.tsx` were
+   reverted and the failure was byte-identical, which is what established it as pre-existing rather
+   than a regression from the period filter.
+
+**The third one is what forced the split.** Repointing `chart-paging` at another literal would have
+been the fourth instance waiting to happen — so it resolves now (longest-spanning intraday python
+run carrying trades and a built spec) and derives its jump target from whatever it resolved. Six
+other specs plus `param-gates` genuinely cannot resolve: they need a run carrying a VWAP series, a
+recorded fib leg, candle-reversal marks, or a params set sitting entirely at defaults, and "any
+completed run" supplies none of those. For those the pin stays and `requireRun` makes it speak.
+
+**Two implementation notes worth keeping.**
+
+`hasChartSpec` aborts after the response headers. The endpoint serves ~33 MB and the backend
+ignores `Range` — measured: a `curl -r 0-100` still downloaded 32,983,708 bytes — so reading the
+body just to learn a status code would pull it in full, per candidate.
+
+**A syntax error in a spec is invisible to `tsc`.** The first draft of the `requireRun` wiring put
+an apostrophe inside a single-quoted string in `candle-reversals.spec.ts`; `npx tsc --noEmit`
+returned clean because the frontend's tsconfig does not include `tests/`, and prettier reported
+nothing useful. `npx playwright test --list` parses all 20 files in seconds and is the check that
+catches it — it is also where the suite's headline count should be taken from rather than
+incremented by hand.

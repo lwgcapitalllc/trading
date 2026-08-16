@@ -1368,9 +1368,36 @@ than imposing one. Markdown is deliberately excluded; the measurement is in `.pr
 **Added 2026-08-05.** This folder had no test runner at all: the convention was "verify it in a
 real browser", done by hand, which is why the Overview's twelve defects each survived until
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
-**189 tests in 17 files** (counted 2026-08-14 with `npx playwright test --list`; the figure here had
+**222 tests in 20 files** (counted 2026-08-16 with `npx playwright test --list`; the figure here had
 been left at a stale "66 in 5" through several passes — re-count it rather than incrementing it),
 run with `npm test` from `frontend/`.
+
+### 🔴 A FIXTURE PINNED TO A DATABASE ROW — bitten three times now
+
+**A spec that asserts on which rows happen to be in the lab will fail on a day nothing is wrong, and
+that failure is indistinguishable from a regression until somebody reads it.** Third instance
+2026-08-16 (`chart-paging.spec.ts`, both checks, a 120s timeout pointing at paging code that was
+fine); the incidents are in `../docs/FRONTEND_BUILD_NOTES.md` → *Fixtures pinned to a row*. Two
+answers, chosen by what the check needs:
+
+- **RESOLVE when the check needs a SHAPE.** `chart-paging` wants "the longest intraday python run
+  with trades and a built spec", `period-filter` wants "any run with ≥20 dated trades". ⚠ **Derive
+  the DATE constants from the resolved run too** — a literal `TARGET` beside a resolved run moves
+  the expiry from the run id to the calendar instead of removing it. ⚠ **Keep the vacuity guard**
+  (here: the target really is outside the applied window); with the fixture no longer fixed, that
+  stops being self-evident.
+- **PIN, and make the pin ANNOUNCE ITSELF, when the check needs particular LAYERS.** Seven specs
+  legitimately name a run — they need a VWAP series, a recorded fib leg, candle-reversal marks, an
+  all-defaults param set. Each calls **`requireRun(RUN, '<what a replacement must carry>')`**
+  (`tests/fixtures.ts`) in a `beforeAll`. ⚠ **A DIAGNOSIS, not a repair**: the suite is still red
+  and still needs re-pointing by hand; what changes is that the failure lands in a second and names
+  the run. ⚠ **The `needs` sentence is the load-bearing half** — a bare "not found" moves the
+  question rather than answering it, and the next reader has to know it was the VOLUME on those bars
+  that mattered. ✅ Proven against a dead id.
+
+⚠ **`tsc --noEmit` DOES NOT COVER `tests/`.** A spec's syntax error typechecks clean and surfaces
+only when Playwright loads the file. **`npx playwright test --list` is the parse check** — seconds,
+every file, and where the count above comes from.
 
 ⚠ **The trade outcome chip's NAME still has no automated check, and that gap widened on 2026-08-08
 when the naming rule gained an outcome dimension.** The chip is canvas-drawn with no DOM and its
