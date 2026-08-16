@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -22,6 +22,8 @@ import {
   Minimize2,
   Newspaper,
   Coins,
+  CalendarRange,
+  X,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -76,6 +78,7 @@ import type {
   NewsTradeTag,
   SizingMode,
   CostLayer,
+  RegimeBreakdownRow,
 } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
@@ -1695,6 +1698,10 @@ export function PerfCollapseToggle({
     <button
       onClick={onToggle}
       title={collapsed ? 'Show the supporting metrics' : 'Hero numbers only'}
+      // A declared TEST SEAM. The suffix is the page's only statement of what the numbers under it
+      // count, and a page-wide text match for "N of M trades" also finds the news pill's own
+      // wording — the vacuous-pass trap this folder has recorded five times.
+      data-testid="perf-collapse-toggle"
       className="flex items-center gap-1.5 text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] transition-colors hover:text-text-primary"
     >
       <ChevronDown size={13} className={`transition-transform ${collapsed ? '-rotate-90' : ''}`} />
@@ -2819,6 +2826,193 @@ function personalStreakPass(ev: EvaluationDetail): boolean {
 // condensed sticky) so you can page firms without scrolling back to the eval card, and shows only
 // the SELECTED firm — listing all four overflowed into the action buttons. Chevrons appear only for
 // multi-firm runs; a single-firm run is just the name.
+// ── The period chip IS the control ───────────────────────────────────────────────────────────
+//
+// Aaron: *"I could just click on the date range that's in the top box, and I could filter. Maybe
+// there's, like, a little filter button, and the minute I filter the whole page adjusts."* So the
+// chip that already states the run's window is what opens the picker, rather than a new control
+// somewhere else on a page that has three of them already.
+//
+// ⚠ IT RENDERS IN BOTH HEADER STATES from one component. The header draws its chips twice — full
+// and condensed — and the period was a duplicated `<span>` in each. A second copy of a chip that is
+// now also a CONTROL is two places for the active styling and the disabled reason to drift apart.
+//
+// ⚠ ACTIVE STYLING IS NOT OPTIONAL. When a window is set, every number on the page below is about
+// that window; the chip is the only thing on screen saying so at a glance, which is why it takes
+// the accent treatment and a clear button rather than merely showing different dates. A page
+// showing a subset in the same colours as the whole run is the defect this control could most
+// easily introduce.
+function PeriodFilterChip({
+  dates,
+  blocked,
+  compact = false,
+}: {
+  dates: DateFilter
+  blocked: string | null
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const on = dates.active
+  const shownFrom = dates.from || dates.minDate
+  const shownTo = dates.to || dates.maxDate
+  const disabled = !!blocked || !dates.enabled
+
+  // Snap to the last N months of the TRADED span, not of today — a run that ended in 2024 must not
+  // resolve "last 12 months" to a window with nothing in it.
+  const preset = (months: number) => {
+    const end = dates.spanTo || dates.maxDate
+    if (!end) return
+    const d = new Date(`${end}T00:00:00Z`)
+    d.setUTCMonth(d.getUTCMonth() - months)
+    const start = d.toISOString().slice(0, 10)
+    dates.setRange(start < dates.minDate ? dates.minDate : start, end)
+  }
+
+  const reason = blocked
+    ? blocked
+    : !dates.enabled
+      ? 'This run stores no per-trade dates, so a period cannot be cut out of it.'
+      : undefined
+
+  return (
+    <div className="relative" ref={wrapRef} data-testid="period-filter">
+      <div
+        className={`inline-flex items-center rounded border font-mono ${compact ? 'text-[11px]' : 'text-[11px]'} ${
+          on
+            ? 'bg-accent/10 border-accent/30 text-accent'
+            : 'bg-bg-surface border-border-subtle text-text-secondary'
+        } ${disabled ? 'opacity-50' : ''}`}
+      >
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen((o) => !o)}
+          title={reason ?? (on ? 'Change the period this page reports on' : 'Filter to a period')}
+          className={`inline-flex items-center gap-1.5 px-2 ${compact ? 'py-[1px]' : 'py-[3px]'} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-80'}`}
+          data-testid="period-filter-open"
+        >
+          <CalendarRange size={11} className="flex-shrink-0" />
+          {fmtDate(shownFrom)} → {fmtDate(shownTo)}
+        </button>
+        {on && (
+          <button
+            type="button"
+            onClick={dates.clear}
+            title="Show the whole run again"
+            aria-label="Clear the period filter"
+            className="pr-1.5 pl-0.5 py-[3px] hover:opacity-70"
+            data-testid="period-filter-clear"
+          >
+            <X size={11} />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1.5 z-50 w-[320px] rounded-lg border border-border-default bg-bg-surface shadow-xl p-3 space-y-2.5">
+          <div className="text-[11px] font-semibold text-text-primary">Report on a period</div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-[0.5px] text-text-tertiary mb-1">
+                From
+              </span>
+              <input
+                type="date"
+                value={dates.from}
+                min={dates.minDate}
+                max={dates.to || dates.maxDate}
+                onChange={(e) => dates.setRange(e.target.value, dates.to)}
+                className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1 text-[12px] font-mono text-text-primary"
+                data-testid="period-from"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-[0.5px] text-text-tertiary mb-1">
+                To
+              </span>
+              <input
+                type="date"
+                value={dates.to}
+                min={dates.from || dates.minDate}
+                max={dates.maxDate}
+                onChange={(e) => dates.setRange(dates.from, e.target.value)}
+                className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1 text-[12px] font-mono text-text-primary"
+                data-testid="period-to"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              ['1Y', 12],
+              ['2Y', 24],
+              ['3Y', 36],
+              ['5Y', 60],
+            ].map(([label, months]) => (
+              <button
+                key={label as string}
+                type="button"
+                onClick={() => preset(months as number)}
+                className="px-2 py-[3px] rounded text-[11px] border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              >
+                Last {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={dates.clear}
+              className="px-2 py-[3px] rounded text-[11px] border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+            >
+              Whole run
+            </button>
+          </div>
+          {/* The rebase, stated where the window is chosen rather than discovered later from a
+              number that does not match the run. It is the one thing about this control that is not
+              self-evident, and it changes every dollar on the page. */}
+          <div className="text-[10px] leading-relaxed text-text-tertiary border-t border-border-subtle pt-2">
+            {dates.emptyWindow ? (
+              <span className="text-warn-text">
+                No trades in this period. The strategy stood still here — that is the answer, not an
+                empty page.
+              </span>
+            ) : dates.active ? (
+              <>
+                Reads as if you started with{' '}
+                <span className="text-text-secondary font-mono">{dollar(dates.openBalance)}</span>{' '}
+                on {fmtDate(dates.from || dates.spanFrom)}. The account really held{' '}
+                <span className="text-text-secondary font-mono">{dollar(dates.windowBalance)}</span>{' '}
+                entering it, so every dollar below is scaled by ×{dates.scale.toFixed(4)}. Ratios —
+                profit factor, win rate, R, drawdown % — are untouched by that. It is not a rerun:
+                the engines are still warmed up from {fmtDate(dates.spanFrom)}.
+              </>
+            ) : (
+              <>
+                Cuts a period out of this run and re-reads the whole page on it — no rerun. Dollars
+                are rebased so the window starts from the run&rsquo;s own opening balance.
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function HeaderRulesetChip({
   evals,
   selected,
@@ -3600,8 +3794,72 @@ function ChartLoadingSkeleton({ height }: { height: number }) {
 
 // Candlestick panel body (klinecharts). Lazy: the chart library and the run's ChartSpec (a heavy
 // candle fetch) load only when `active` — i.e. when the Price tab in the primary chart is selected.
+/**
+ * Clip a ChartSpec to a date window.
+ *
+ * 🔴 THE PRICE CHART FOLLOWS THE PERIOD FILTER BY BEING HANDED LESS DATA, not by ChartPanel
+ * learning about the filter. Everything in a spec is already timestamped, so the window is a
+ * `filter` on five arrays and a raised `historyStartMs` — which means the 4,300-line panel, its
+ * viewport maths, its drill-down paging and its layer roster are all untouched. A `range` prop
+ * threaded through that component would have been a second place for "what is on screen" to be
+ * decided, on the one chart that already owns its own viewport.
+ *
+ * ⚠ `historyStartMs` IS RAISED TO THE WINDOW. It is what draws the red "no earlier data" edge, and
+ * leaving it at the run's own start would let the reader page left out of the window they filtered
+ * to, into candles the page above them is no longer reporting on.
+ *
+ * ⚠ MEMOISE AT THE CALL SITE. `candles` is ~156k entries on a 6-year M15 run and `overlays` ~29k;
+ * rebuilding those arrays on every render of a chart that also repaints on hover is the difference
+ * between a filter and a stutter.
+ *
+ * ⚠ Drilled-down candles fetched AFTER the clip are not re-clipped, and that is deliberate — a
+ * drill is the reader explicitly asking for bars, and refusing them inside a window they chose
+ * would be the page arguing with them.
+ */
+function clipSpec(spec: ChartSpec, from: string, to: string): ChartSpec {
+  // Inclusive of the whole `to` day: a window ending 2023-12-31 must contain that day's trades.
+  // ⚠ Parsed as UTC, matching the emitter — every time in a spec is epoch ms and the run's own
+  // dates are calendar days, so a local-time parse would shift the edge by the reader's offset and
+  // put a trade in or out of the window depending on where they are sitting.
+  const lo = from ? Date.parse(`${from}T00:00:00Z`) : -Infinity
+  const hi = to ? Date.parse(`${to}T23:59:59.999Z`) : Infinity
+  const within = (ms: number | null | undefined) => ms != null && ms >= lo && ms <= hi
+  // A SPAN is kept when it overlaps the window at all — an order block opened before the window and
+  // still live inside it is a zone the trades in view are reacting to, and dropping it would leave
+  // a chart whose setups have nothing to point at.
+  const spans = (t0: number, t1: number) => t1 >= lo && t0 <= hi
+  return {
+    ...spec,
+    historyStartMs:
+      Number.isFinite(lo) && spec.historyStartMs != null
+        ? Math.max(spec.historyStartMs, lo)
+        : Number.isFinite(lo)
+          ? lo
+          : spec.historyStartMs,
+    candles: spec.candles.filter((c) => within(c.time)),
+    // A trade belongs to the window its ENTRY falls in, matching the KPI side exactly — the panel
+    // and the Performance grid must never disagree about which trades are in a period.
+    trades: spec.trades.filter((t) => within(t.entryTime)),
+    blocks: spec.blocks?.filter((b) => within(b.time)),
+    misses: spec.misses?.filter((m) => within(m.time)),
+    // ⚠ `missNoise` is NOT clipped: it is a list of REASON LABELS the Missed layer starts with
+    // unticked, not timestamped records. Filtering it would silently re-tick reasons the emitter
+    // recommended hiding.
+    missNoise: spec.missNoise,
+    overlays: spec.overlays.filter((o) =>
+      o.type === 'box' || o.type === 'hline' ? spans(o.t0, o.t1) : within(o.t)
+    ),
+    indicators: spec.indicators.map((ind) => ({
+      ...ind,
+      series: ind.series.filter((s) => within(s.time)),
+    })),
+  }
+}
+
 function PriceChartPanel({
   runId,
+  from,
+  to,
   height = 520,
   isFullscreen = false,
   onFullscreenClose,
@@ -3609,6 +3867,9 @@ function PriceChartPanel({
   rebuilding,
 }: {
   runId: string
+  /** The period filter's window, or empty strings for the whole run. */
+  from: string
+  to: string
   height?: number
   isFullscreen?: boolean
   onFullscreenClose?: () => void
@@ -3619,9 +3880,16 @@ function PriceChartPanel({
 }) {
   const { data: spec, isLoading, isError } = useChartSpec(runId)
   const requestCandles = useRunCandles(runId)
+  // With no window this is the fetched object itself, reference-identical — so an unfiltered page
+  // pays nothing for this feature and klinecharts is never asked to re-lay a spec that did not
+  // change.
+  const shown = useMemo(
+    () => (spec && (from || to) ? clipSpec(spec, from, to) : spec),
+    [spec, from, to]
+  )
   return (
     <PriceChartView
-      spec={spec}
+      spec={shown}
       isLoading={isLoading}
       isError={isError}
       requestCandles={requestCandles}
@@ -4771,7 +5039,103 @@ function buildFilteredRun(run: Run, kept: EquityPoint[], curve: EquityPoint[]): 
     // NOT recomputable, and not guessed: NT8/MT5's own Sharpe for the whole run has no filtered
     // version. Reads as "—" while filtered, which is the honest answer.
     platform_sharpe: null,
+    // Recomputed off the kept trades and the regrouped daily series, not carried over. The stored
+    // rows are the backend's, measured over every trade — leaving them here would put the raw run's
+    // per-regime table under a Performance panel labelled filtered, which is the exact defect the
+    // NULLING above exists to prevent. It had been stale under the Costs pill since that pill
+    // shipped, for the same reason.
+    regime_breakdown: computeRegimeBreakdown(kept, daily, kept.length),
   }
+}
+
+// ── Per-regime breakdown, client-side ────────────────────────────────────────
+// A FAITHFUL PORT of `services/metrics.compute_regime_breakdown`, and it exists for the one reason
+// this repo accepts a second evaluator: the stored rows are measured over every trade in the run,
+// and every filter on this page hands the panel a SUBSET. The same argument that made `dailySharpe`
+// a frontend function.
+//
+// ⚠ THE EQUALITY IS THE REGRESSION TEST. Handed a run's own full trade list and daily series this
+// must reproduce `run.regime_breakdown` exactly; `tests/backtests.spec.ts` asserts that against a
+// real run before it asserts anything about a window. Change one side and re-run it — a drifted
+// port is a table that disagrees with the Runs list and says nothing about why.
+//
+// ⚠ Day-level columns (days, net_pnl, worst_day) come from the DAILY series and trade-level ones
+// from the trades, exactly as the backend does. They are not interchangeable: summing trades for
+// net_pnl double-counts nothing but silently drops a day whose trades the filter removed.
+//
+// ⚠ The MT5 rescale is carried over deliberately. MT5 emits two direction-bearing rows per trade
+// (an entry at profit 0 and the exit), so the raw count is ~2x; rescaling to the authoritative
+// count is exact while points-per-trade is uniform. Dropping it here would make the table disagree
+// with the backend on every MT5 run.
+export function computeRegimeBreakdown(
+  trades: EquityPoint[],
+  daily: DailyPnlPoint[],
+  tradeCount: number | null
+): RegimeBreakdownRow[] {
+  if (!daily.length) return []
+  const UNKNOWN = 'UNKNOWN'
+
+  const dateToRegime = new Map<string, string>()
+  const dayAgg = new Map<string, { days: number; net: number; worst: number | null }>()
+  for (const d of daily) {
+    const regime = d.regime_tag || UNKNOWN
+    const day = (d.date ?? '').slice(0, 10)
+    if (day) dateToRegime.set(day, regime)
+    const a = dayAgg.get(regime) ?? { days: 0, net: 0, worst: null }
+    a.days += 1
+    a.net += d.pnl
+    a.worst = a.worst == null ? d.pnl : Math.min(a.worst, d.pnl)
+    dayAgg.set(regime, a)
+  }
+
+  const tradeAgg = new Map<
+    string,
+    { trades: number; net: number; wins: number; grossWin: number; grossLoss: number }
+  >()
+  for (const pt of trades) {
+    if (!pt.direction) continue
+    if (pt.profit == null) continue
+    const day = (pt.date ?? '').slice(0, 10)
+    const regime = day ? (dateToRegime.get(day) ?? UNKNOWN) : UNKNOWN
+    const t = tradeAgg.get(regime) ?? { trades: 0, net: 0, wins: 0, grossWin: 0, grossLoss: 0 }
+    t.trades += 1
+    t.net += pt.profit
+    if (pt.profit > 0) {
+      t.wins += 1
+      t.grossWin += pt.profit
+    } else if (pt.profit < 0) {
+      t.grossLoss += Math.abs(pt.profit)
+    }
+    tradeAgg.set(regime, t)
+  }
+
+  const totalPts = [...tradeAgg.values()].reduce((a, t) => a + t.trades, 0)
+  const scale = tradeCount && totalPts ? tradeCount / totalPts : 1
+
+  const rows: RegimeBreakdownRow[] = []
+  for (const regime of new Set([...dayAgg.keys(), ...tradeAgg.keys()])) {
+    const day = dayAgg.get(regime)
+    const t = tradeAgg.get(regime)
+    // Python's round() is banker's rounding and JS's is half-up; the counts here are small and the
+    // scale is 1 or 2, so no value lands on a .5 boundary. Stated because a drift would show up as
+    // an off-by-one trade count on an MT5 run and nowhere else.
+    const nTrades = t ? Math.round(t.trades * scale) : 0
+    const net = day ? day.net : (t?.net ?? 0)
+    rows.push({
+      regime,
+      days: day?.days ?? 0,
+      trades: nTrades,
+      net_pnl: Math.round(net * 100) / 100,
+      win_rate: t && nTrades ? t.wins / nTrades : null,
+      profit_factor: t && t.grossLoss > 0 ? t.grossWin / t.grossLoss : null,
+      worst_day: day && day.worst != null ? Math.round(day.worst * 100) / 100 : null,
+    })
+  }
+
+  rows.sort((a, b) => b.days - a.days || b.trades - a.trades)
+  const ui = rows.findIndex((r) => r.regime === UNKNOWN)
+  if (ui >= 0 && ui !== rows.length - 1) rows.push(rows.splice(ui, 1)[0])
+  return rows
 }
 
 // Average time in a position, over whatever trades are handed in. ALL of them must carry both
@@ -4842,6 +5206,181 @@ function ExcludeRule({
       {children && checked && <div className="mt-2 pl-[22px] space-y-1.5">{children}</div>}
     </div>
   )
+}
+
+export type DateFilter = ReturnType<typeof useDateFilter>
+
+// ── A PERIOD of a finished run, read as if it were the whole run ──────────────────────────────
+//
+// Aaron, 2026-08-16: *"Is there a way to not rerun a specific period… just have a filter on the
+// backtest details page where I could look at trades within a specific period? And once I select
+// that period, then everything on the page adjusts — the equity curve, all the KPIs, the price
+// chart, the breakdown, everything. Right now I'm just having to rerun different periods."*
+//
+// It is the third control on this page that reshapes the real numbers instead of shipping a second
+// set beside them, and it rebuilds through the SAME `buildFilteredRun` the other two do. What is
+// new here is the REBASE, and that is the part worth understanding before touching it.
+//
+// 🔴 THE REBASE IS EXACT ARITHMETIC, NOT A MODEL, AND THAT IS ONLY TRUE BECAUSE IT IS LINEAR.
+// Aaron asked for the window to read *"like I only traded from 10,000 from that specific point in
+// time"*. The tempting implementation is to replay each trade's R onto a fresh account and compound
+// it. That is unnecessary: a trade's dollar result is a fixed fraction of the balance it was taken
+// with, so scaling every profit in the window by one constant — the run's OPENING balance over the
+// balance the account actually held entering the window — reproduces that replay to the cent.
+// MEASURED on run `831ec44195ce`: replaying `balance *= 1 + r × (risk_usd / balance_before)` from
+// $10,000 over all 167 trades lands at $159,080,061 against a real $159,079,955 — 0.00007% apart,
+// i.e. floating point. So there is no second definition of the account here and nothing invented.
+//
+// ⚠ EVERY RATIO IS THEREFORE UNCHANGED BY THE REBASE — profit factor, win rate, R, Sharpe, max
+// drawdown PERCENT, concentration. Only the dollar labels move. If a ratio ever differs between
+// this and an unrebased window, the scale has stopped being a single constant and something is
+// wrong; do not "fix" it by special-casing the ratio.
+//
+// ⚠ IT IS STILL NOT A RE-RUN, AND THE DIFFERENCE IS REAL. A rerun of 2023→2026 warms its engines
+// up from 2023 and sizes from $10,000 the whole way; this window carries the full warm-up from 2020
+// and holds each trade's ACTUAL risk fraction, which drifted (5.9% → 66.4% on that run, because
+// risk is measured to the trade's current stop). So the two agree on the shape and on R and will
+// not agree trade-for-trade. That is a feature — the window is what the strategy really did with a
+// fully warmed engine — but it is not the number a rerun prints.
+//
+// ⚠ It is REFUSED under a firm's sized numbers, on the same guard as the news and cost filters.
+// Not for the path-dependence reason those two carry — slicing a sized curve by date is honest
+// arithmetic — but because a firm's account opened at ITS account_size and rebasing that to the
+// run's own deposit would state a prop account that never existed.
+function useDateFilter(run: Run | undefined) {
+  // Page-level view state lives in the URL, per the frontend's standing rule: a window you picked
+  // has to survive a refresh, a Back out of the price chart, and being sent to somebody else. Both
+  // writes MERGE — `setSearchParams({from})` alone drops every other param, which is how a tab
+  // switch silently clears a filter (already recorded on the Bots page).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const from = searchParams.get('from') || ''
+  const to = searchParams.get('to') || ''
+
+  const setRange = useCallback(
+    (nextFrom: string, nextTo: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (nextFrom) next.set('from', nextFrom)
+          else next.delete('from')
+          if (nextTo) next.set('to', nextTo)
+          else next.delete('to')
+          return next
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
+  const clear = useCallback(() => setRange('', ''), [setRange])
+
+  // The run's own bounds. `start_date`/`end_date` are what was REQUESTED; the trades are what
+  // arrived, and a run can trade neither on its first day nor its last. The picker is bounded by
+  // the requested window (that is the run's identity) while `spanFrom`/`spanTo` report the traded
+  // span, so "the whole run" and "the window I typed" cannot silently be different things.
+  const rawTrades = useMemo(
+    () => (run?.equity_curve ?? []).filter((p) => p.profit != null || p.direction),
+    [run?.equity_curve]
+  )
+  const minDate = run?.start_date ?? ''
+  const maxDate = run?.end_date ?? ''
+  const dateOf = (p: EquityPoint) => (p.date ?? '').slice(0, 10)
+
+  const enabled = rawTrades.length > 0 && rawTrades.every((p) => !!p.date)
+
+  const view = useMemo(() => {
+    if (!enabled || (!from && !to)) return { kept: rawTrades, narrowed: false }
+    const kept = rawTrades.filter((p) => {
+      const d = dateOf(p)
+      if (!d) return false
+      if (from && d < from) return false
+      if (to && d > to) return false
+      return true
+    })
+    return { kept, narrowed: kept.length !== rawTrades.length }
+  }, [enabled, rawTrades, from, to])
+
+  // The window rebuilt as a curve the main equity chart can draw, rebased onto the run's own
+  // opening deposit. Trades are renumbered so trade-# mode counts the trades actually shown.
+  //
+  // ⚠ THE LEADING BALANCE ANCHOR IS DROPPED, not carried through the way the news filter carries
+  // it. That point is the account at the run's START, and on a window opening in 2023 it belongs to
+  // a period that is no longer on screen — keeping it would draw the chart's left edge three years
+  // before the first trade. The rebased first point supplies the anchor instead.
+  const rebased = useMemo<{ curve: EquityPoint[]; scale: number } | null>(() => {
+    if (!enabled || !view.narrowed || !view.kept.length || !rawTrades.length) return null
+    const openBal = rawTrades[0].equity - (rawTrades[0].profit ?? 0)
+    const windowBal = view.kept[0].equity - (view.kept[0].profit ?? 0)
+    // A window whose entering balance is zero or negative cannot be rebased — the scale is
+    // undefined, and inventing one would be the "refuse, don't guess" rule broken on the one number
+    // every dollar on the page is then multiplied by. Refused, and the pill says so.
+    if (!(openBal > 0) || !(windowBal > 0)) return null
+    const scale = openBal / windowBal
+    let cum = 0
+    const curve = view.kept.map((p, i) => {
+      const profit = (p.profit ?? 0) * scale
+      cum += profit
+      return {
+        ...p,
+        index: i + 1,
+        equity: openBal + cum,
+        profit,
+        // Every dollar-denominated field on the point scales by the SAME constant, or the
+        // excursion halo stops containing its own net result — the exact shape the cost filter
+        // already had to clamp for. `r` is deliberately untouched: it is P&L over the risk the
+        // trade was sized to, so it is invariant under a change of account size, which is the
+        // whole reason this page leads with it.
+        ...(p.favorable != null ? { favorable: p.favorable * scale } : {}),
+        ...(p.adverse != null ? { adverse: p.adverse * scale } : {}),
+        ...(p.costs_usd != null ? { costs_usd: p.costs_usd * scale } : {}),
+      }
+    })
+    return { curve, scale }
+  }, [enabled, view.narrowed, view.kept, rawTrades])
+
+  const filteredRun = useMemo<Run | null>(() => {
+    if (!run || !rebased) return null
+    return {
+      ...buildFilteredRun(run, rebased.curve, rebased.curve),
+      // The window IS the run's period now. The header chip, the price chart's clamp and the
+      // cadence line all read these, and leaving the requested dates here would date a window by
+      // the run it was cut from.
+      start_date: from || dateOf(rebased.curve[0]),
+      end_date: to || dateOf(rebased.curve[rebased.curve.length - 1]),
+    }
+  }, [run, rebased, from, to])
+
+  // `active` = a window is set AND it actually narrows the run AND the rebase was possible. All
+  // three, because a window covering everything must leave the page reference-identical to the
+  // unfiltered run rather than routing it through a rebuild that changes nothing.
+  const active = filteredRun != null
+  return {
+    enabled,
+    from,
+    to,
+    setRange,
+    clear,
+    minDate,
+    maxDate,
+    // The TRADED span, which is what a preset like "last 12 months" should snap to.
+    spanFrom: rawTrades.length ? dateOf(rawTrades[0]) : '',
+    spanTo: rawTrades.length ? dateOf(rawTrades[rawTrades.length - 1]) : '',
+    kept: view.kept,
+    filteredCurve: rebased?.curve ?? null,
+    filteredRun,
+    scale: rebased?.scale ?? 1,
+    openBalance: rawTrades.length ? rawTrades[0].equity - (rawTrades[0].profit ?? 0) : null,
+    // What the account really held entering the window — stated on the pill beside the rebased
+    // figure, because "$10,000" on a 2023 window is a restatement and the reader has to be able to
+    // tell it from the balance that was actually there.
+    windowBalance: view.kept.length ? view.kept[0].equity - (view.kept[0].profit ?? 0) : null,
+    totalTrades: rawTrades.length,
+    set: !!from || !!to,
+    active,
+    // Set but produced nothing — a window with no trades in it. A real answer (the strategy stood
+    // still), and it must not read as the filter being off.
+    emptyWindow: enabled && (!!from || !!to) && view.kept.length === 0,
+  }
 }
 
 export type CostFilter = ReturnType<typeof useCostFilter>
@@ -5672,37 +6211,57 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
 function PerformanceHeader({
   news,
   costs,
+  dates,
   blocked,
   filtered,
+  dated,
   collapsed,
   onToggle,
 }: {
   news: NewsFilter
   costs: CostFilter
+  dates: DateFilter
   blocked: string | null
   filtered: boolean
+  dated: boolean
   collapsed: boolean
   onToggle: () => void
 }) {
+  // Every label here is a COUNT or a DATE, never a state word. "news filtered" told you a filter
+  // existed without saying what it did or how much it moved. The period follows the same rule and
+  // needs it more: a window's headline is a smaller number than the run's, and nothing else on this
+  // row would explain why.
+  //
+  // ⚠ The two denominators are DIFFERENT questions and both are stated. The period's is the whole
+  // run (how much of the backtest am I looking at); the news filter's is the WINDOW, because it was
+  // handed the dated book and can only remove trades from what is already on screen.
+  const suffix =
+    dated || filtered ? (
+      <span className="text-accent normal-case tracking-normal font-medium">
+        {dated && (
+          <>
+            {' '}
+            · {fmtDate(dates.from || dates.spanFrom)} → {fmtDate(dates.to || dates.spanTo)} ·{' '}
+            {dates.kept.length} of {dates.totalTrades} trades
+          </>
+        )}
+        {filtered && (
+          <>
+            {' '}
+            {dated ? '· then ' : '· '}
+            {news.totalTrades - news.excluded} of {news.totalTrades} counted
+          </>
+        )}
+      </span>
+    ) : null
+
   return (
     <div className="flex items-center justify-between gap-3 mb-2">
-      {/* The suffix names the SIZE of the exclusion, not the fact of it. "news filtered" told you a
-          filter existed without saying what it did or how much it moved — and it was wrong half the
-          time, since holidays are excluded whether or not the news rule is on. */}
-      <PerfCollapseToggle
-        collapsed={collapsed}
-        onToggle={onToggle}
-        suffix={
-          filtered && (
-            <span className="text-accent normal-case tracking-normal font-medium">
-              · {news.totalTrades - news.excluded} of {news.totalTrades} trades
-            </span>
-          )
-        }
-      />
-      {/* Two controls, one header, and they compose in one direction: costs re-price the trades,
-          then the news filter removes some of them. The reverse would be wrong — a cost is a
-          property of a trade, so it has to be charged before anything decides which trades count. */}
+      <PerfCollapseToggle collapsed={collapsed} onToggle={onToggle} suffix={suffix} />
+      {/* Three controls, one header, composing in ONE direction: costs re-price the trades, the
+          period cuts and rebases the window, then the news filter removes some of what is left. The
+          period's own control is the chip in the page header — it states the run's window whether
+          or not it is filtering, so a second copy here would be two claims about one span. */}
       <div className="flex items-center gap-2 shrink-0">
         {costs.enabled && <CostFilterPill costs={costs} blocked={blocked} />}
         {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
@@ -5783,8 +6342,17 @@ export function BacktestDetail() {
   // Costs first, then the news filter on top of the re-priced trades — see PerformanceHeader for
   // why that order is the only correct one. `costs.repricedRun ?? run` means the ordinary case
   // (nothing charged) hands the news filter the run's own object, reference-identical.
+  // Three view filters, composed in ONE order and it is the only correct one:
+  //   costs → period → news.
+  // A COST is a property of a trade, so it has to be charged before anything decides which trades
+  // count. The PERIOD then cuts the window and rebases it, because the rebase scale is read off the
+  // balance entering the window and that balance moves once costs are charged. NEWS comes last
+  // because it removes trades from whatever book the two above have settled on, and its own rebuild
+  // anchors on the first trade it is handed — which is already the rebased one.
+  // With nothing on, each `??` hands the next filter the run's own object, reference-identical.
   const costs = useCostFilter(run)
-  const news = useNewsFilter(costs.repricedRun ?? run)
+  const dates = useDateFilter(costs.repricedRun ?? run)
+  const news = useNewsFilter(dates.filteredRun ?? costs.repricedRun ?? run)
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('bt_params_panel') === 'collapsed'
@@ -5932,16 +6500,6 @@ export function BacktestDetail() {
 
   const [perfCollapsed, togglePerfCollapsed] = usePerfCollapsed()
 
-  // Calendar span of the run, for the ribbon's trades-per-month cadence.
-  const runSpanDays = useMemo(() => {
-    const daily = run?.daily_pnl ?? []
-    if (daily.length < 2) return null
-    const t0 = new Date(daily[0].date.slice(0, 10)).getTime()
-    const t1 = new Date(daily[daily.length - 1].date.slice(0, 10)).getTime()
-    const days = (t1 - t0) / 86_400_000
-    return days > 0 ? days : null
-  }, [run?.daily_pnl])
-
   // Engine-sized runs size the SAME strategy differently per firm (each firm's own contract
   // ladder / drawdown floor), so every firm has its OWN net P&L, daily P&L and sized timeline.
   // Swap the selected firm's sized results into a shallow copy so the KPI cards, the Sized-account
@@ -6016,18 +6574,46 @@ export function BacktestDetail() {
   // On the raw one-unit curve the charge is size-independent in R, which is the whole reason this
   // control can exist at all.
   const costOnKpis = costs.active && !newsBlocked && costs.repricedRun != null
+  // The period filter is refused under a firm's sizing on the SAME guard, for a different reason
+  // and it is worth stating: slicing a sized curve by date is honest arithmetic, but that account
+  // opened at the firm's own `account_size`, so rebasing it onto the run's deposit would report a
+  // prop account that never existed.
+  const dateOnKpis = dates.active && !newsBlocked && dates.filteredRun != null
   const costedRun = costOnKpis ? costs.repricedRun! : effRun
-  const kpiRun = newsOnKpis ? news.filteredRun! : costedRun
+  const datedRun = dateOnKpis ? dates.filteredRun! : costedRun
+  const kpiRun = newsOnKpis ? news.filteredRun! : datedRun
+
+  // Calendar span the Verdict card's cadence line divides by. It reads `kpiRun`, so it follows the
+  // PERIOD filter — a cadence is trades over a span, and dividing the window's trade count by the
+  // whole run's span understates it by exactly the part that was filtered out. Declared HERE rather
+  // than up with the other spans because it now depends on the filter chain above it.
+  const runSpanDays = useMemo(() => {
+    const daily = kpiRun?.daily_pnl ?? []
+    if (daily.length < 2) return null
+    const t0 = new Date(daily[0].date.slice(0, 10)).getTime()
+    const t1 = new Date(daily[daily.length - 1].date.slice(0, 10)).getTime()
+    const days = (t1 - t0) / 86_400_000
+    return days > 0 ? days : null
+  }, [kpiRun?.daily_pnl])
 
   const fallback = useMemo(() => computeFallbacks(kpiRun?.daily_pnl ?? []), [kpiRun?.daily_pnl])
-  // The unfiltered side of every card's "vs unfiltered" delta.
-  const rawFallback = useMemo(() => computeFallbacks(effRun?.daily_pnl ?? []), [effRun?.daily_pnl])
-  // Every card's "vs unfiltered" delta compares against the run AS IT WAS MEASURED, so it answers
-  // the question either pill was opened to ask — what did charging this cost, or removing those
-  // trades, actually do. Driven by EITHER control being on, not just the news one.
+  // The baseline every "vs unfiltered" delta is measured against.
+  //
+  // ⚠ IT FOLLOWS THE PERIOD, and it has to. With a window set, the question the news and cost pills
+  // are opened to ask is what they did INSIDE that window — comparing a windowed, rebased book
+  // against the whole run would put a delta on every row that is really the window, dressed as the
+  // effect of a checkbox.
+  // ⚠ The period itself deliberately shows NO delta. It is a different span, not a what-if over the
+  // same trades, so "Net −$140M vs the whole run" would be arithmetic between two things nobody
+  // wants compared. The chip states the window; that is the whole disclosure it needs.
+  const compareBase = dateOnKpis ? dates.filteredRun! : effRun
+  const rawFallback = useMemo(
+    () => computeFallbacks(compareBase?.daily_pnl ?? []),
+    [compareBase?.daily_pnl]
+  )
   const kpiCompare =
-    (newsOnKpis || costOnKpis) && effRun
-      ? { run: effRun, fallback: rawFallback, equity: effRun.equity_curve }
+    (newsOnKpis || costOnKpis) && compareBase
+      ? { run: compareBase, fallback: rawFallback, equity: compareBase.equity_curve }
       : null
 
   const hasRealRegimeTags = useMemo(
@@ -6044,8 +6630,12 @@ export function BacktestDetail() {
   // saying why. One switch drives both.
   // The costed curve is the fallback BENEATH the news-filtered one, so the chart follows whichever
   // controls are on and always matches the grid above it.
+  // The period sits between them for the same reason it does in the KPI chain: the news filter's
+  // curve is already built on the rebased window when both are on, so it wins; the rebased window
+  // wins over the merely re-priced one; and with nothing on this is the run's own array.
   const equityCurve =
     (newsOnKpis ? news.filteredCurve : null) ??
+    (dateOnKpis ? dates.filteredCurve : null) ??
     (costOnKpis ? costs.repricedCurve : null) ??
     run?.equity_curve ??
     []
@@ -6060,9 +6650,18 @@ export function BacktestDetail() {
     // One source of truth for "what regime was this date": the run's FULL-CALENDAR timeline when
     // it has one, else whatever tags its traded days carry (runs completed before the timeline
     // existed). Then project it onto whichever axis the chart is on.
+    // ⚠ The timeline is the FULL calendar of the run, so it has to be clipped to the window or the
+    // bands run three years to the left of the first trade on screen and the chart's own x-domain
+    // silently drops them. Clipped here rather than inside the band builders, which are shared with
+    // the tuning workbench and know nothing about this page's filters.
+    const lo = dateOnKpis ? (kpiRun?.start_date ?? '') : ''
+    const hi = dateOnKpis ? (kpiRun?.end_date ?? '') : ''
+    const inWindow = (d: string) => (!lo || d >= lo) && (!hi || d <= hi)
     const map = new Map<string, string>()
-    for (const d of run.regime_timeline ?? []) map.set(d.date, d.regime)
-    if (!map.size) for (const d of run.daily_pnl) if (d.regime_tag) map.set(d.date, d.regime_tag)
+    for (const d of run.regime_timeline ?? []) if (inWindow(d.date)) map.set(d.date, d.regime)
+    if (!map.size)
+      for (const d of run.daily_pnl)
+        if (d.regime_tag && inWindow(d.date)) map.set(d.date, d.regime_tag)
     if (!map.size) return []
     return xMode === 'trade'
       ? // Trade-# bands are indexed off the CURVE, so they must read the same curve the chart is
@@ -6070,7 +6669,16 @@ export function BacktestDetail() {
         // the first removal sits one trade to the right of the trade it describes.
         regimeBandsByIndex(equityCurve, map)
       : regimeBandsFromTimeline([...map.entries()].map(([date, regime]) => ({ date, regime })))
-  }, [overlayOn, xMode, run?.regime_timeline, equityCurve, run?.daily_pnl])
+  }, [
+    overlayOn,
+    xMode,
+    run?.regime_timeline,
+    equityCurve,
+    run?.daily_pnl,
+    dateOnKpis,
+    kpiRun?.start_date,
+    kpiRun?.end_date,
+  ])
 
   // Regime is a market property (same calendar days for every firm), so tag lookup uses the
   // primary run's tagged daily P&L; day positions come from the selected firm's sized timeline.
@@ -6213,9 +6821,9 @@ export function BacktestDetail() {
                   <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
                     {run.instrument}
                   </span>
-                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono flex-shrink-0 truncate max-[1100px]:hidden">
-                    {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
-                  </span>
+                  <div className="flex-shrink-0 max-[1100px]:hidden">
+                    <PeriodFilterChip dates={dates} blocked={newsBlocked} compact />
+                  </div>
                   {run.evaluations.length > 0 && (
                     <div className="max-[900px]:hidden">
                       <HeaderRulesetChip
@@ -6250,9 +6858,7 @@ export function BacktestDetail() {
                     <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
                       {run.instrument}
                     </span>
-                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
-                      {fmtDate(run.start_date)} → {fmtDate(run.end_date)}
-                    </span>
+                    <PeriodFilterChip dates={dates} blocked={newsBlocked} />
                     {run.evaluations.length > 0 && (
                       <HeaderRulesetChip
                         evals={run.evaluations}
@@ -6466,8 +7072,10 @@ export function BacktestDetail() {
                 <PerformanceHeader
                   news={news}
                   costs={costs}
+                  dates={dates}
                   blocked={newsBlocked}
                   filtered={newsOnKpis}
+                  dated={dateOnKpis}
                   collapsed={perfCollapsed}
                   onToggle={togglePerfCollapsed}
                 />
@@ -6519,8 +7127,19 @@ export function BacktestDetail() {
                 // Drawdown limit line follows the SELECTED firm (the chart plots that firm's sized
                 // curve). Personal/demo have no trailing EOD rule — firm_max_loss_eod is the 0 sentinel
                 // and must never render as a "$0 limit" reference line.
+                // ⚠ WITHDRAWN WHILE A PERIOD IS REBASED. The limit is a dollar figure written
+                // against a real prop account; the windowed curve is scaled onto the run's own
+                // deposit, so drawing the two together compares numbers measured on different
+                // accounts and would show a breach or a clearance that never happened. The news and
+                // cost filters do NOT withdraw it — neither rebases, so their dollars still belong
+                // to the same account the limit does.
                 const evalLimits: Array<{ limit: number; label: string; pass: boolean }> = []
-                if (selectedEval && !isPersonal(selectedEval) && selectedEval.firm_max_loss_eod) {
+                if (
+                  !dateOnKpis &&
+                  selectedEval &&
+                  !isPersonal(selectedEval) &&
+                  selectedEval.firm_max_loss_eod
+                ) {
                   evalLimits.push({
                     limit: selectedEval.firm_max_loss_eod,
                     label: selectedEval.ruleset_name,
@@ -6551,7 +7170,15 @@ export function BacktestDetail() {
                   price: 'Price',
                   breakdown: 'Breakdown',
                 }
-                const hasDirection = effRun!.equity_curve.some((p) => p.direction)
+                // 🔴 THE BREAKDOWN TAB READS `kpiRun`, NOT `effRun`, AND THAT IS A FIX RATHER THAN
+                // A SIDE EFFECT OF THE PERIOD FILTER. It read `effRun` until 2026-08-16, so the
+                // drawdown chart, the daily P&L and the long/short split did not follow the NEWS
+                // filter or the COSTS pill either — both of which have reshaped the Performance
+                // panel above and the equity curve beside it since the day they shipped. Three
+                // charts under a header reading "139 of 142 trades" were drawing all 142.
+                // ⚠ `kpiRun` IS `effRun` whenever no filter applies, including on every firm-sized
+                // run (where all three are refused), so nothing about sizing changes here.
+                const hasDirection = kpiRun!.equity_curve.some((p) => p.direction)
                 const primaryTabs: ReadonlyArray<readonly [string, string]> = [
                   ['equity', hasSized ? 'Strategy (1 unit)' : 'Equity'],
                   ...(hasSized ? [['sized', 'Sized account'] as const] : []),
@@ -6659,6 +7286,12 @@ export function BacktestDetail() {
                       return runId ? (
                         <PriceChartPanel
                           runId={runId}
+                          // The period filter, clipped into the spec rather than threaded into the
+                          // panel. Empty strings when nothing is filtered, and when it is refused
+                          // under a firm's sizing — the chart must show what the numbers above it
+                          // are reporting, and there they are the firm's unwindowed ones.
+                          from={dateOnKpis ? dates.from : ''}
+                          to={dateOnKpis ? dates.to : ''}
                           height={h}
                           isFullscreen={fullscreenChart === 'price'}
                           onFullscreenClose={() => setFullscreenChart(null)}
@@ -6678,7 +7311,7 @@ export function BacktestDetail() {
                           <div>
                             {subLabel('Drawdown from peak')}
                             <DrawdownChart
-                              equity={effRun!.equity_curve}
+                              equity={kpiRun!.equity_curve}
                               limitLines={evalLimits}
                               height={hDraw}
                             />
@@ -6687,15 +7320,15 @@ export function BacktestDetail() {
                             <div>
                               {subLabel('Daily P&L')}
                               <DailyPnlChart
-                                data={effRun!.daily_pnl}
-                                netPnl={effRun!.net_pnl}
+                                data={kpiRun!.daily_pnl}
+                                netPnl={kpiRun!.net_pnl}
                                 height={hRow}
                               />
                             </div>
                             {hasDirection && (
                               <div>
                                 {subLabel('Long vs Short')}
-                                <DirectionBreakdown equity={effRun!.equity_curve} />
+                                <DirectionBreakdown equity={kpiRun!.equity_curve} />
                               </div>
                             )}
                           </div>
@@ -6780,8 +7413,12 @@ export function BacktestDetail() {
                           }
                         />
 
-                        {/* Performance by Regime — permanent panel */}
-                        {hasRealRegimeTags && <PerformanceByRegimeTable run={run} />}
+                        {/* Performance by Regime — permanent panel. Reads `kpiRun`, whose
+                            `regime_breakdown` is recomputed off the kept trades by
+                            `computeRegimeBreakdown` (a faithful port of the backend's, see its
+                            comment). Handed the unfiltered run it is byte-identical to the stored
+                            rows, so nothing changes on a page with no filter on. */}
+                        {hasRealRegimeTags && <PerformanceByRegimeTable run={kpiRun!} />}
 
                         {/* Sizing timeline — engine's day-by-day audit; sized runs only */}
                         {hasSized && <SizedTimelineTable run={effRun!} />}

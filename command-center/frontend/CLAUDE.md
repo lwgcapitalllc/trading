@@ -917,6 +917,118 @@ Four things about the Run modal that would each silently mislead if changed:
 
 ---
 
+## The period filter — read a WINDOW of a finished run, with no rerun (2026-08-16)
+
+**`useDateFilter` + `PeriodFilterChip` in `BacktestDetail.tsx`.** Aaron: *"Is there a way to not
+rerun a specific period… just have a filter where I could look at trades within a specific period?
+And once I select that period, everything on the page adjusts — the equity curve, all the KPIs, the
+price chart, the breakdown, everything. Right now I'm just having to rerun different periods."*
+
+The third control that reshapes this page's REAL numbers instead of shipping a second set beside
+them, and it rebuilds through the same `buildFilteredRun` the other two do. **The period chip in
+the page header IS the control** — it already stated the run's window, so making it clickable was
+cheaper than a fourth pill, and there is deliberately no second copy on the Performance header.
+
+🔴 **THE REBASE IS EXACT ARITHMETIC, NOT A MODEL, AND EVERYTHING RESTS ON IT BEING LINEAR.** He
+asked for a window to read *"like I only traded from 10,000 from that specific point in time"*. The
+tempting implementation replays each trade's R onto a fresh account and compounds it. That is
+unnecessary: a trade's dollar result is a fixed fraction of the balance it was taken with, so
+**scaling every profit in the window by ONE constant — the run's opening balance over the balance
+entering the window — reproduces that replay to the cent.** ✅ MEASURED on run `831ec44195ce`,
+2023-01-01 → end: the scale is ×0.074876 and lands at **$11,911,347.71 against the R-replay's
+$11,911,354.78 — 0.000059% apart**, i.e. floating point.
+
+⚠ **EVERY RATIO IS THEREFORE UNCHANGED BY THE REBASE** — profit factor, win rate, R, Sharpe,
+peak-relative drawdown, concentration. ✅ Verified identical to 9 decimal places on that run
+(PF 3.010326545, win rate 0.673267327, max DD 45.259156%). **If a ratio ever differs, the scale has
+stopped being a single constant and the rebase is broken — do not "fix" it by special-casing the
+ratio.**
+
+⚠ **IT IS NOT A RERUN AND THE PICKER SAYS SO.** A rerun of 2023→2026 warms its engines from 2023
+and sizes from $10,000 the whole way; the window carries the full warm-up from 2020 and each
+trade's ACTUAL risk fraction, which drifted 5.9% → 66.4% on that run (risk is measured to the
+trade's current stop). They agree on shape and on R and will not agree trade-for-trade.
+
+⚠ **The picker states the rebase where the window is CHOSEN**, naming the balance it reads from,
+the balance the account really held, the scale, and that ratios are untouched. A silent rebase
+would put a balance nobody ever had under a headline that looks like the run's.
+
+### Composition, and the one correct order
+
+`costs → period → news`, in `BacktestDetail`. A **cost** is a property of a trade, so it is charged
+before anything decides which trades count. The **period** then cuts and rebases, because the scale
+is read off the balance entering the window and that balance moves once costs are charged. **News**
+is last: it removes trades from whatever book the two above settled on, and its own rebuild anchors
+on the first trade it is handed, which is already the rebased one. With nothing on, each `??` hands
+the next filter the run's own object, reference-identical.
+
+- ⚠ **The window lives in `?from=`/`?to=`** and both writes MERGE the existing params — house rule,
+  and `setSearchParams({from})` alone drops `?tab=` (already recorded on the Bots page).
+- ⚠ **`active` requires all three of** a window being set, it actually narrowing, and the rebase
+  being possible. A window covering everything must leave the page reference-identical, and a
+  window entering on a zero-or-negative balance is REFUSED rather than scaled by a made-up number.
+- ⚠ **An empty window says the strategy stood still.** A real answer, and the one most easily
+  mistaken for the filter being off.
+- ⚠ **The compare baseline follows the period.** With a window set, the news and cost deltas ask
+  what they did INSIDE it; comparing a windowed book against the whole run would put a delta on
+  every row that is really the window wearing a checkbox's name. **The period itself shows NO
+  delta** — it is a different span, not a what-if over the same trades.
+- ⚠ **Refused under a firm's sizing, on the same guard as the other two, for a DIFFERENT reason.**
+  Slicing a sized curve by date is honest arithmetic; the problem is that a firm's account opened
+  at ITS `account_size`, so rebasing onto the run's deposit would state a prop account that never
+  existed.
+- ⚠ **The drawdown chart's firm LIMIT LINE is withdrawn while a window is rebased**, and only then.
+  The limit is a dollar figure written against a real account; the windowed curve is scaled onto a
+  different one. News and costs do not rebase, so they keep it.
+
+### Two things it fixed that were NOT part of the ask
+
+🔴 **The Breakdown tab read `effRun`, so it followed neither the news filter nor the costs pill** —
+three charts under a header reading *"139 of 142 trades"* drawing all 142, since the day each pill
+shipped. It reads `kpiRun` now, which IS `effRun` whenever no filter applies, so sizing is
+unaffected.
+
+🔴 **`Performance by Regime` rendered the run's server-computed rows under an already-filtered
+panel.** `computeRegimeBreakdown` is a faithful port of `services/metrics.compute_regime_breakdown`
+— the second frontend evaluator this repo has accepted, on `dailySharpe`'s argument. ⚠ **THE
+EQUALITY IS THE REGRESSION TEST:** handed a run's own full trade list it must reproduce
+`run.regime_breakdown` exactly (✅ byte-identical on `831ec44195ce`). Change one side and re-run it.
+⚠ Keep the MT5 two-rows-per-trade rescale; dropping it makes the table disagree with the backend on
+every MT5 run.
+
+### The price chart follows by being handed LESS DATA
+
+`clipSpec` filters the five timestamped arrays and raises `historyStartMs`. **ChartPanel is
+untouched** — a `range` prop threaded through 4,300 lines would be a second place for "what is on
+screen" to be decided, on the chart that already owns its viewport. ⚠ A SPAN overlay (box/hline) is
+kept when it OVERLAPS the window: an order block opened earlier and still live is what the trades in
+view are reacting to. ⚠ `missNoise` is NOT clipped — reason LABELS, not records. ⚠ Times parse as
+UTC, matching the emitter, or the edge shifts by the reader's offset. ⚠ Memoised at the call site:
+156k candles and 29k overlays on a 6-year M15 run.
+
+### Proof
+
+- **`scripts/check_period_rebase.mjs`** — the arithmetic, outside the browser, because these are
+  numeric IDENTITIES and asserting them through `FitMoney`'s formatted text would be asserting on
+  the formatter. 5 checks + a guard that the dollars really moved. ✅ Green, ✅ proven by mutation
+  (`scale = 1` reddens the R identity, the drawdown invariance and the guard). ⚠ It reads the
+  STORED `equity_curve.json` for the R identity — `risk_usd` is on disk and NOT declared on the
+  backend's `EquityPoint`, so FastAPI drops it. This repo's "the model drops what it does not
+  declare" trap, met as a limit on what can be PROVEN rather than as a rendering bug; nothing in
+  the browser needs the field.
+- **`tests/period-filter.spec.ts`** — 9 checks, 8 green, 1 skipped (needs an engine-sized run). ⚠
+  **A fail-watch against HEAD is vacuous for most of it** (the control did not exist, so a red
+  proves the locator and nothing else) — **non-vacuity is by MUTATION, named per check**. The
+  Breakdown and regime checks are the two watched red against HEAD for the right reason.
+- 🔴 **TWO NEW SHAPES OF VACUOUS PASS, both found in one check** (full story:
+  `../docs/FRONTEND_BUILD_NOTES.md` → *The period filter*). **Never assert a Recharts change by
+  SCREENSHOT** — it animates on mount, so two loads differ by tween whatever the data is and
+  `not.toBe(0)` passes on noise. **Never read SVG tick text with `allInnerTexts()`** — it returns a
+  row of `null`, and nulls compare equal to nulls, so that passes too. Use `allTextContents()`
+  scoped to `.xAxis`, and assert a VALUE (`Jul '20` → `Jan 3 '23`), not merely that two rows differ.
+
+---
+
 ## What's built (status)
 
 | Module | Status | Notes |

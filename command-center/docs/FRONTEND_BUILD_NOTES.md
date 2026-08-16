@@ -201,3 +201,54 @@ Lazy klinecharts candlestick panel on BacktestDetail (`components/ChartPanel/`, 
 
 Stacks tab on Backtests + `StackDetail` page. Layer 2+ Python strategies over one shared instrument/timeframe/costs/window. **StackDetail renders like a single backtest on the combined portfolio** — reuses BacktestDetail's exported `PerformancePanel` + chart components + `PriceChartView` against a client-side `composeCombined` payload (identical three-question panel, Equity/Price/Breakdown tabs, full price chart with structure/fib/measurement). New + Rerun share `components/StackConfigModal.tsx` (prefilled for rerun) — and so does the **Strategies page**: ticking 2+ python rows there reveals a gold **Stack N strategies** button that opens the SAME modal prefilled with them, so a stack is configured identically wherever you start it (the checkbox column only appears when 2+ python strategies are listed, and a non-python row has no checkbox because stacking replays python only). Per-strategy toggles drive everything (same `enabled` set, ≥1 always on); a leg's Back returns to the stack. **Smart reuse** — `CreateStackModal` calls `useStackPreview` (POST `/backtests/stacks/preview`) to show per-leg Reuse/Run chips; a leg whose exact settings already have a completed standalone run is reused (opens the real run on View), the rest re-run fresh. Costs default 0/0 (comm 0 / slip 0 / 15m) to match the Pine strategies (all pinned commission=0, slippage=0); these fields are cosmetic for Python runs (real cost comes from the account profile), so 0/0 keeps the display honest. Match is STRICT (any settings difference re-runs)
 
+
+---
+
+## The period filter — the full record (2026-08-16)
+
+**Rules and the measured numbers: `../frontend/CLAUDE.md` → *The period filter*.** This is the part
+that is story rather than rule.
+
+**The ask.** Aaron: *"Is there a way to not rerun a specific period, and inside that period just
+have, like, a filter on the backtest details page where I could just look at trades within a
+specific period? And once I select that period, then everything on the page adjusts — the equity
+curve, all the KPIs, the performance KPIs, the price chart, the breakdown, everything. The way I'm
+thinking it will work is I could just click on the date range that's in the top box, and I could
+filter. Maybe there's, like, a little filter button, and the minute I filter the whole page adjusts.
+Right now I'm just having to rerun different periods."*
+
+**The one decision that was not mine to make**, put to him before any code: with a window set, are
+the dollars the ones the account really had at that date, or rebased? He picked rebased — *"it
+should be like I only traded from 10,000 from that specific point in time"* — which is why the
+window reads from the run's own opening deposit rather than from the $133,553 that was actually
+there entering 2023 on `831ec44195ce`.
+
+**The implementation was smaller than the design.** The page already had `buildFilteredRun` (a Run
+synthesized from a trade list) driving the news filter and the costs pill, so the period filter is a
+third caller. The rebase looked like it would need an R-replay and a compounding model; it collapsed
+to one multiplication once it was noticed that a trade's dollar result is a fixed fraction of the
+balance it was taken with, so the whole window scales by a single constant. That was checked rather
+than argued: the replay `balance *= 1 + r × (risk_usd / balance_before)` from $10,000 over the 101
+trades from 2023 lands at $11,911,354.78 and the scale lands at $11,911,347.71 — 0.000059% apart.
+
+**What the build found that nobody had asked about.** Two sections of this page had never followed
+ANY of its filters. The Breakdown tab (drawdown, daily P&L, long-vs-short) read `effRun`, and the
+Performance-by-Regime table rendered the backend's whole-run rows — both sitting under a
+Performance header that has said *"139 of 142 trades"* since the news filter shipped in July. That
+is the same class as the audit findings this page keeps producing: nothing rendered an error, and
+three charts confidently drew the wrong book under a heading that said so.
+
+**The test that would not bite, twice, and it is the useful half of the day.** The Breakdown check
+first compared SCREENSHOTS of the drawdown chart between a windowed and an unwindowed load, with
+`Buffer.compare(...).not.toBe(0)`. It passed against a mutation that reverted the fix, because
+Recharts animates on mount and two page loads differ by a few pixels of tween whatever the data is
+— **a `not.toBe(0)` on a screenshot is satisfied by noise.** Rewritten onto rendered text, it used
+`allInnerTexts()` on the SVG tick values, which returns `[null, null, …]` — and a row of nulls
+compares equal to another row of nulls, so it passed a second time. Only `allTextContents()` scoped
+to `.xAxis` gives real labels (`Jul '20`, `Jan 3 '23`), and only then does reverting the fix turn it
+red for its own reason. **Two more entries for this folder's vacuous-pass list, and neither would
+have been found by reading the diff — the mutation had to actually be run.**
+
+**Left undone, deliberately.** The firm EVALUATION card is still graded server-side over every trade
+and wears its unfiltered chip; a windowed grade would mean re-evaluating prop rules against a
+rebased account, which is a backend question. Engine-sized runs refuse the filter outright.
