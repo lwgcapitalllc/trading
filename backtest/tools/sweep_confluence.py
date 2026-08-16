@@ -65,9 +65,9 @@ for _p in (str(_ROOT), str(_ENGINES)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from liquidity import LiquidityEngine              # noqa: E402
+from liquidity import LiquidityEngine  # noqa: E402
 from market_structure import Bar, StructureEngine  # noqa: E402
-from sessions import SessionEngine                 # noqa: E402
+from sessions import SessionEngine  # noqa: E402
 
 CACHE = _ROOT / "backtest" / "cache"
 UTC = dt.timezone.utc
@@ -84,6 +84,7 @@ FAMILIES = ("session", "daily", "weekly", "h4")
 # --------------------------------------------------------------------------------------
 # Replay
 # --------------------------------------------------------------------------------------
+
 
 class Frame:
     """The bar arrays plus everything the three engines said, indexed by bar."""
@@ -116,14 +117,18 @@ def replay(symbol: str, tf: str) -> Frame:
     f = Frame()
     structure, liq, sess_eng = StructureEngine(), LiquidityEngine(), SessionEngine()
     prev_close: float | None = None
-    tr_run: float | None = None       # Wilder ATR(14), running
+    tr_run: float | None = None  # Wilder ATR(14), running
     direction = 0
 
     with path.open(newline="") as fh:
         for i, row in enumerate(csv.DictReader(fh)):
             stamp = dt.datetime.strptime(row["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-            o, h, l, c = (float(row["open"]), float(row["high"]),
-                          float(row["low"]), float(row["close"]))
+            o, h, l, c = (
+                float(row["open"]),
+                float(row["high"]),
+                float(row["low"]),
+                float(row["close"]),
+            )
             ts_ms = int(stamp.timestamp() * 1000)
 
             ext = structure.update(Bar(index=i, open=o, high=h, low=l, close=c)).external
@@ -131,7 +136,11 @@ def replay(symbol: str, tf: str) -> Frame:
             liq_ev = liq.update(i, ts_ms, h, l, c)
 
             # Wilder ATR(14) on true range. Seeded on the first bar with the bar range.
-            tr = h - l if prev_close is None else max(h - l, abs(h - prev_close), abs(l - prev_close))
+            tr = (
+                h - l
+                if prev_close is None
+                else max(h - l, abs(h - prev_close), abs(l - prev_close))
+            )
             tr_run = tr if tr_run is None else (tr_run * 13 + tr) / 14
             prev_close = c
 
@@ -140,7 +149,7 @@ def replay(symbol: str, tf: str) -> Frame:
             f.low.append(l)
             f.close.append(c)
             f.atr.append(tr_run)
-            f.struct_dir.append(direction)   # BEFORE this bar's break is applied
+            f.struct_dir.append(direction)  # BEFORE this bar's break is applied
 
             if ext.bull_sos:
                 f.sos[i].add("bull_sos")
@@ -149,11 +158,17 @@ def replay(symbol: str, tf: str) -> Frame:
                 f.sos[i].add("bear_sos")
                 direction = -1
 
-            f.sessions[i] = tuple(n for n, on in (("Asia", sess.in_asia),
-                                                  ("London", sess.in_london),
-                                                  ("NY", sess.in_ny)) if on)
+            f.sessions[i] = tuple(
+                n
+                for n, on in (
+                    ("Asia", sess.in_asia),
+                    ("London", sess.in_london),
+                    ("NY", sess.in_ny),
+                )
+                if on
+            )
             for lvl in liq_ev.mitigated:
-                if lvl.kind == "pwc":       # a reference close, never a swept level
+                if lvl.kind == "pwc":  # a reference close, never a swept level
                     continue
                 (f.swept_low if lvl.side == "low" else f.swept_high)[i].append(lvl)
     return f
@@ -162,6 +177,7 @@ def replay(symbol: str, tf: str) -> Frame:
 # --------------------------------------------------------------------------------------
 # Events
 # --------------------------------------------------------------------------------------
+
 
 def _families(frame: Frame, i: int, cluster: int, bullish: bool) -> tuple[set[str], list[str]]:
     """Which liquidity families were swept at bar `i` or in the `cluster` bars before it.
@@ -181,8 +197,15 @@ def _families(frame: Frame, i: int, cluster: int, bullish: bool) -> tuple[set[st
     return fams, names
 
 
-def _fade(frame: Frame, i: int, bullish: bool, cluster: int, horizon: int,
-          target_r: float, min_atr_frac: float) -> dict | None:
+def _fade(
+    frame: Frame,
+    i: int,
+    bullish: bool,
+    cluster: int,
+    horizon: int,
+    target_r: float,
+    min_atr_frac: float,
+) -> dict | None:
     """The crude fade. Returns None when the trade is unmeasurable rather than guessing.
 
     The stop sits beyond the swept EXTREME of the cluster window, so it is the price that
@@ -194,10 +217,10 @@ def _fade(frame: Frame, i: int, bullish: bool, cluster: int, horizon: int,
     entry = frame.close[i]
     lo = max(0, i - cluster)
     if bullish:
-        stop = min(frame.low[lo:i + 1])
+        stop = min(frame.low[lo : i + 1])
         risk = entry - stop
     else:
-        stop = max(frame.high[lo:i + 1])
+        stop = max(frame.high[lo : i + 1])
         risk = stop - entry
 
     if risk <= 0:
@@ -205,15 +228,15 @@ def _fade(frame: Frame, i: int, bullish: bool, cluster: int, horizon: int,
     if frame.atr[i] > 0 and risk < min_atr_frac * frame.atr[i]:
         return {"skipped": "risk_too_tight"}
     if i + horizon >= len(frame.close):
-        return None                      # not enough forward bars to resolve honestly
+        return None  # not enough forward bars to resolve honestly
 
     side = 1 if bullish else -1
     target = entry + side * risk * target_r
     for j in range(i + 1, i + horizon + 1):
         hit_stop = frame.low[j] <= stop if bullish else frame.high[j] >= stop
         hit_target = frame.high[j] >= target if bullish else frame.low[j] <= target
-        if hit_stop:                     # stop wins a bar holding both — the pessimistic
-            return {"r": -1.0, "outcome": "stop"}   # read, and the only honest one on bars
+        if hit_stop:  # stop wins a bar holding both — the pessimistic
+            return {"r": -1.0, "outcome": "stop"}  # read, and the only honest one on bars
         if hit_target:
             return {"r": target_r, "outcome": "target"}
     drift = side * (frame.close[i + horizon] - entry) / risk
@@ -227,7 +250,9 @@ def _sos_follows(frame: Frame, i: int, bullish: bool, window: int) -> bool:
     sweep that reliably produces the opposing SOS is a setup trigger.
     """
     want = "bull_sos" if bullish else "bear_sos"
-    return any(want in frame.sos.get(j, ()) for j in range(i + 1, min(i + window + 1, len(frame.close))))
+    return any(
+        want in frame.sos.get(j, ()) for j in range(i + 1, min(i + window + 1, len(frame.close)))
+    )
 
 
 def build_events(frame: Frame, args) -> tuple[list[dict], Counter]:
@@ -241,29 +266,32 @@ def build_events(frame: Frame, args) -> tuple[list[dict], Counter]:
             fams, names = _families(frame, i, args.cluster_bars, bullish)
             if not fams:
                 continue
-            res = _fade(frame, i, bullish, args.cluster_bars, args.horizon,
-                        args.target_r, args.min_atr_frac)
+            res = _fade(
+                frame, i, bullish, args.cluster_bars, args.horizon, args.target_r, args.min_atr_frac
+            )
             if res is None:
                 skips["unmeasurable"] += 1
                 continue
             if "skipped" in res:
                 skips[res["skipped"]] += 1
                 continue
-            events.append({
-                "time": frame.time[i],
-                "index": i,
-                "direction": "long" if bullish else "short",
-                "bucket": "+".join(sorted(fams, key=FAMILIES.index)),
-                "families": fams,
-                "levels": " ".join(sorted(set(names))),
-                "sessions": "+".join(frame.sessions.get(i, ())) or "none",
-                # Was the grab AGAINST the prevailing structure? A sell-side sweep in an
-                # up-trend is a pullback into demand; in a down-trend it is continuation.
-                "with_trend": (frame.struct_dir[i] == (1 if bullish else -1)),
-                "sos_follows": _sos_follows(frame, i, bullish, args.sos_bars),
-                "r": res["r"],
-                "outcome": res["outcome"],
-            })
+            events.append(
+                {
+                    "time": frame.time[i],
+                    "index": i,
+                    "direction": "long" if bullish else "short",
+                    "bucket": "+".join(sorted(fams, key=FAMILIES.index)),
+                    "families": fams,
+                    "levels": " ".join(sorted(set(names))),
+                    "sessions": "+".join(frame.sessions.get(i, ())) or "none",
+                    # Was the grab AGAINST the prevailing structure? A sell-side sweep in an
+                    # up-trend is a pullback into demand; in a down-trend it is continuation.
+                    "with_trend": (frame.struct_dir[i] == (1 if bullish else -1)),
+                    "sos_follows": _sos_follows(frame, i, bullish, args.sos_bars),
+                    "r": res["r"],
+                    "outcome": res["outcome"],
+                }
+            )
 
     # TWO controls, because one of them is not a fair comparison and it took a run to see it.
     #
@@ -291,21 +319,27 @@ def build_events(frame: Frame, args) -> tuple[list[dict], Counter]:
             # Did this bar itself make the window's extreme? That is what a sweep bar does,
             # and matching it is what makes the control a control rather than a different
             # trade with a different stop.
-            fresh = series[i] == pick(series[max(0, i - args.cluster_bars):i + 1])
-            res = _fade(frame, i, bullish, args.cluster_bars, args.horizon,
-                        args.target_r, args.min_atr_frac)
+            fresh = series[i] == pick(series[max(0, i - args.cluster_bars) : i + 1])
+            res = _fade(
+                frame, i, bullish, args.cluster_bars, args.horizon, args.target_r, args.min_atr_frac
+            )
             if res is None or "skipped" in res:
                 continue
-            events.append({
-                "time": frame.time[i], "index": i,
-                "direction": "long" if bullish else "short",
-                "bucket": "control-ext" if fresh else "control-any",
-                "families": set(), "levels": "",
-                "sessions": "+".join(frame.sessions.get(i, ())) or "none",
-                "with_trend": (frame.struct_dir[i] == (1 if bullish else -1)),
-                "sos_follows": _sos_follows(frame, i, bullish, args.sos_bars),
-                "r": res["r"], "outcome": res["outcome"],
-            })
+            events.append(
+                {
+                    "time": frame.time[i],
+                    "index": i,
+                    "direction": "long" if bullish else "short",
+                    "bucket": "control-ext" if fresh else "control-any",
+                    "families": set(),
+                    "levels": "",
+                    "sessions": "+".join(frame.sessions.get(i, ())) or "none",
+                    "with_trend": (frame.struct_dir[i] == (1 if bullish else -1)),
+                    "sos_follows": _sos_follows(frame, i, bullish, args.sos_bars),
+                    "r": res["r"],
+                    "outcome": res["outcome"],
+                }
+            )
 
     events.sort(key=lambda e: e["index"])
     return events, skips
@@ -314,6 +348,7 @@ def build_events(frame: Frame, args) -> tuple[list[dict], Counter]:
 # --------------------------------------------------------------------------------------
 # Reporting
 # --------------------------------------------------------------------------------------
+
 
 def _stats(rows: list[dict]) -> dict:
     rs = [r["r"] for r in rows]
@@ -334,8 +369,7 @@ def _split_exp(rows: list[dict], mid: dt.datetime) -> tuple[float, float]:
     and it is here because the table invites cherry-picking."""
     a = [r["r"] for r in rows if r["time"] < mid]
     b = [r["r"] for r in rows if r["time"] >= mid]
-    return (statistics.fmean(a) if a else float("nan"),
-            statistics.fmean(b) if b else float("nan"))
+    return (statistics.fmean(a) if a else float("nan"), statistics.fmean(b) if b else float("nan"))
 
 
 def report(frame: Frame, events: list[dict], skips: Counter, args) -> None:
@@ -347,21 +381,33 @@ def report(frame: Frame, events: list[dict], skips: Counter, args) -> None:
     print("=" * 96)
     print("LIQUIDITY SWEEP CONFLUENCE — does a grab carry a directional bias?")
     print("=" * 96)
-    print(f"  {args.symbol} {args.tf}  {len(frame.time):,} bars  "
-          f"({frame.time[0]:%Y-%m-%d} -> {frame.time[-1]:%Y-%m-%d}, UTC)")
-    print(f"  fade: entry at the sweep close, stop beyond the swept extreme, "
-          f"target {args.target_r:g}R, horizon {args.horizon} bars")
-    print(f"  cluster window {args.cluster_bars} bars   min risk {args.min_atr_frac:g}xATR14   "
-          f"SOS window {args.sos_bars} bars")
-    print(f"  sweep events {len(live):,}   controls {len(controls):,}   "
-          f"refused {sum(skips.values()):,} {dict(skips) or ''}")
+    print(
+        f"  {args.symbol} {args.tf}  {len(frame.time):,} bars  "
+        f"({frame.time[0]:%Y-%m-%d} -> {frame.time[-1]:%Y-%m-%d}, UTC)"
+    )
+    print(
+        f"  fade: entry at the sweep close, stop beyond the swept extreme, "
+        f"target {args.target_r:g}R, horizon {args.horizon} bars"
+    )
+    print(
+        f"  cluster window {args.cluster_bars} bars   min risk {args.min_atr_frac:g}xATR14   "
+        f"SOS window {args.sos_bars} bars"
+    )
+    print(
+        f"  sweep events {len(live):,}   controls {len(controls):,}   "
+        f"refused {sum(skips.values()):,} {dict(skips) or ''}"
+    )
     print(f"  history split at {mid:%Y-%m-%d} for the H1/H2 columns")
 
     h4_share = 100 * sum(1 for e in live if "h4" in e["families"]) / max(1, len(live))
-    print(f"  NOTE h4 levels are present in {h4_share:.0f}% of all sweeps — the previous-H4 "
-          f"target regenerates every 4h,")
-    print("       so treat 'h4' as background, not confluence. The MARGINAL block below "
-          "is what answers the question.")
+    print(
+        f"  NOTE h4 levels are present in {h4_share:.0f}% of all sweeps — the previous-H4 "
+        f"target regenerates every 4h,"
+    )
+    print(
+        "       so treat 'h4' as background, not confluence. The MARGINAL block below "
+        "is what answers the question."
+    )
 
     for direction in ("long", "short"):
         rows = [e for e in live if e["direction"] == direction]
@@ -371,10 +417,14 @@ def report(frame: Frame, events: list[dict], skips: Counter, args) -> None:
             buckets[e["bucket"]].append(e)
 
         print()
-        side = "sell-side grabs, faded LONG" if direction == "long" else "buy-side grabs, faded SHORT"
+        side = (
+            "sell-side grabs, faded LONG" if direction == "long" else "buy-side grabs, faded SHORT"
+        )
         print(f"  {direction.upper()}  ({side})")
-        print(f"    {'':<28}{'n':>7}{'win%':>7}{'exp R':>8}{'total R':>9}"
-              f"{'H1 exp':>8}{'H2 exp':>8}{'SOS%':>7}{'gap':>6}")
+        print(
+            f"    {'':<28}{'n':>7}{'win%':>7}{'exp R':>8}{'total R':>9}"
+            f"{'H1 exp':>8}{'H2 exp':>8}{'SOS%':>7}{'gap':>6}"
+        )
 
         def line(label: str, rs: list[dict]) -> None:
             if not rs:
@@ -382,8 +432,10 @@ def report(frame: Frame, events: list[dict], skips: Counter, args) -> None:
             s = _stats(rs)
             h1, h2 = _split_exp(rs, mid)
             thin = "  thin" if s["n"] < args.min_n else ""
-            print(f"    {label:<28}{s['n']:>7}{s['win']:>7.1f}{s['exp']:>8.3f}{s['tot']:>9.1f}"
-                  f"{h1:>8.3f}{h2:>8.3f}{s['sos']:>7.1f}{s['gap']:>6}{thin}")
+            print(
+                f"    {label:<28}{s['n']:>7}{s['win']:>7.1f}{s['exp']:>8.3f}{s['tot']:>9.1f}"
+                f"{h1:>8.3f}{h2:>8.3f}{s['sos']:>7.1f}{s['gap']:>6}{thin}"
+            )
 
         line("ALL sweeps", rows)
         for cname in ("control-ext", "control-any"):
@@ -394,7 +446,7 @@ def report(frame: Frame, events: list[dict], skips: Counter, args) -> None:
         # holding the session sweep fixed and toggling the daily one. A bucket table
         # cannot say it, because every bucket differs in more than one way at once.
         print(f"    {'-' * 78}")
-        print(f"    MARGINAL — does adding the daily level to a session grab change anything?")
+        print("    MARGINAL — does adding the daily level to a session grab change anything?")
         sess = [e for e in rows if "session" in e["families"]]
         line("session, NO daily", [e for e in sess if "daily" not in e["families"]])
         line("session + daily", [e for e in sess if "daily" in e["families"]])
@@ -412,27 +464,42 @@ def report(frame: Frame, events: list[dict], skips: Counter, args) -> None:
         # The valid comparison holds the trend state FIXED and varies the confluence.
         against = [e for e in rows if not e["with_trend"]]
         print(f"    {'-' * 78}")
-        print(f"    AGAINST-TREND ONLY — the stratum where an opposing SOS can actually fire.")
-        print(f"    Confluence varies, trend state held fixed, so SOS% is comparable down "
-              f"this block.")
+        print("    AGAINST-TREND ONLY — the stratum where an opposing SOS can actually fire.")
+        print(
+            "    Confluence varies, trend state held fixed, so SOS% is comparable down this block."
+        )
         line("h4 only (baseline)", [e for e in against if e["families"] == {"h4"}])
-        line("session, NO daily", [e for e in against
-                                   if "session" in e["families"] and "daily" not in e["families"]])
+        line(
+            "session, NO daily",
+            [e for e in against if "session" in e["families"] and "daily" not in e["families"]],
+        )
         line("session + daily", [e for e in against if {"session", "daily"} <= e["families"]])
 
         print(f"    {'-' * 78}")
-        print(f"    every bucket present (h4 is background — see the note above)")
+        print("    every bucket present (h4 is background — see the note above)")
         for name in sorted(buckets, key=lambda b: -_stats(buckets[b])["exp"]):
             line(name, buckets[name])
 
-    print(f"\n  {len({e['bucket'] for e in live})} distinct buckets tested per direction — "
-          f"read the table whole, not its top row.")
+    print(
+        f"\n  {len({e['bucket'] for e in live})} distinct buckets tested per direction — "
+        f"read the table whole, not its top row."
+    )
 
 
 def write_csv(events: list[dict], out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    cols = ["time", "index", "direction", "bucket", "levels", "sessions",
-            "with_trend", "sos_follows", "r", "outcome"]
+    cols = [
+        "time",
+        "index",
+        "direction",
+        "bucket",
+        "levels",
+        "sessions",
+        "with_trend",
+        "sos_follows",
+        "r",
+        "outcome",
+    ]
     with out.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
@@ -442,21 +509,40 @@ def write_csv(events: list[dict], out: Path) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="M15")
-    ap.add_argument("--cluster-bars", type=int, default=16,
-                    help="how many bars back still counts as 'together' (default 16 = 4h)")
-    ap.add_argument("--horizon", type=int, default=96, help="bars to resolve the fade (default 96 = 1 day)")
+    ap.add_argument(
+        "--cluster-bars",
+        type=int,
+        default=16,
+        help="how many bars back still counts as 'together' (default 16 = 4h)",
+    )
+    ap.add_argument(
+        "--horizon", type=int, default=96, help="bars to resolve the fade (default 96 = 1 day)"
+    )
     ap.add_argument("--target-r", type=float, default=2.0)
-    ap.add_argument("--min-atr-frac", type=float, default=0.25,
-                    help="refuse a fade whose stop is tighter than this x ATR(14)")
-    ap.add_argument("--sos-bars", type=int, default=48,
-                    help="bars in which an opposing SOS counts as 'structure confirmed'")
-    ap.add_argument("--control-every", type=int, default=97,
-                    help="sample one no-sweep control bar every N bars (97 is prime, so it "
-                         "does not lock onto the 96-bar day and sample one clock time)")
+    ap.add_argument(
+        "--min-atr-frac",
+        type=float,
+        default=0.25,
+        help="refuse a fade whose stop is tighter than this x ATR(14)",
+    )
+    ap.add_argument(
+        "--sos-bars",
+        type=int,
+        default=48,
+        help="bars in which an opposing SOS counts as 'structure confirmed'",
+    )
+    ap.add_argument(
+        "--control-every",
+        type=int,
+        default=97,
+        help="sample one no-sweep control bar every N bars (97 is prime, so it "
+        "does not lock onto the 96-bar day and sample one clock time)",
+    )
     ap.add_argument("--min-n", type=int, default=100, help="below this a bucket is flagged thin")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()

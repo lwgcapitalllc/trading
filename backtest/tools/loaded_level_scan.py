@@ -35,6 +35,7 @@ CACHE = ROOT / "backtest" / "cache"
 
 # ─────────────────────────────── bars ───────────────────────────────
 
+
 @dataclass
 class Bars:
     t: list
@@ -72,8 +73,11 @@ def atr(b: Bars, length: int = 50) -> list:
     out: list = [None] * len(b)
     trs, rma, alpha = [], None, 1.0 / length
     for i in range(len(b)):
-        tr = b.h[i] - b.l[i] if i == 0 else max(
-            b.h[i] - b.l[i], abs(b.h[i] - b.c[i - 1]), abs(b.l[i] - b.c[i - 1]))
+        tr = (
+            b.h[i] - b.l[i]
+            if i == 0
+            else max(b.h[i] - b.l[i], abs(b.h[i] - b.c[i - 1]), abs(b.l[i] - b.c[i - 1]))
+        )
         if rma is None:
             trs.append(tr)
             if len(trs) == length:
@@ -102,24 +106,25 @@ def pivots(b: Bars, n: int) -> tuple[list, list]:
 
 # ─────────────────────────────── setups ───────────────────────────────
 
+
 @dataclass
 class Setup:
-    dir: str                      # "long" | "short"
+    dir: str  # "long" | "short"
     arm_bar: int
     block_bar: int
-    block: float                  # the consumed extreme — where the stop hides
+    block: float  # the consumed extreme — where the stop hides
     loaded_bar: int = 0
-    loaded: float = 0.0           # the level the entry sweeps
+    loaded: float = 0.0  # the level the entry sweeps
     induce_bar: int = 0
     el_bar: int = 0
-    el: float = 0.0               # engineered level — the target
+    el: float = 0.0  # engineered level — the target
     entry_bar: int = 0
     entry: float = 0.0
     stop: float = 0.0
     exit_bar: int = 0
-    outcome: str = ""             # "target" | "stop" | "open"
+    outcome: str = ""  # "target" | "stop" | "open"
     rr: float = 0.0
-    stage: int = 1                # how far it got, for the funnel
+    stage: int = 1  # how far it got, for the funnel
     notes: list = field(default_factory=list)
 
 
@@ -146,14 +151,22 @@ def unmirror(s: Setup) -> Setup:
     return s
 
 
-def scan(b: Bars, *, pivot_len: int, tol_mult: float, buf_mult: float,
-         min_rr: float, expiry: int, max_hold: int) -> tuple[list, dict, dict]:
+def scan(
+    b: Bars,
+    *,
+    pivot_len: int,
+    tol_mult: float,
+    buf_mult: float,
+    min_rr: float,
+    expiry: int,
+    max_hold: int,
+) -> tuple[list, dict, dict]:
     a = atr(b, 50)
     ph, pl = pivots(b, pivot_len)
 
-    prev_ph: tuple | None = None      # most recent confirmed pivot high (bar, price)
+    prev_ph: tuple | None = None  # most recent confirmed pivot high (bar, price)
     prev_pl: tuple | None = None
-    loaded_lows: list = []            # (bar, price) levels holding sell-side liquidity
+    loaded_lows: list = []  # (bar, price) levels holding sell-side liquidity
     loaded_highs: list = []
 
     live: Setup | None = None
@@ -161,8 +174,13 @@ def scan(b: Bars, *, pivot_len: int, tol_mult: float, buf_mult: float,
     funnel = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     # WHY a setup died. Without this the funnel shows a collapse with no cause, and the first
     # reading of it was wrong — see the tool's docstring note on the stage-4 drop.
-    drops = {"expired": 0, "block broken": 0, "rr below floor": 0,
-             "risk <= 0": 0, "live at end of data": 0}
+    drops = {
+        "expired": 0,
+        "block broken": 0,
+        "rr below floor": 0,
+        "risk <= 0": 0,
+        "live at end of data": 0,
+    }
 
     for i in range(len(b)):
         tol = (a[i] or 0.0) * tol_mult
@@ -252,7 +270,7 @@ def scan(b: Bars, *, pivot_len: int, tol_mult: float, buf_mult: float,
                     live = None
                     continue
                 rr = (live.el - entry) / risk
-                if rr < min_rr:                       # the liquidity block's VETO
+                if rr < min_rr:  # the liquidity block's VETO
                     live.notes.append(f"rr {rr:.1f} below floor")
                     drops["rr below floor"] += 1
                     live = None
@@ -279,6 +297,7 @@ def scan(b: Bars, *, pivot_len: int, tol_mult: float, buf_mult: float,
 
 # ─────────────────────────────── control ───────────────────────────────
 
+
 def control(b: Bars, setups: list, *, seed: int = 7, reps: int = 40) -> dict:
     """Score a MATCHED RANDOM control against the real setups.
 
@@ -299,6 +318,7 @@ def control(b: Bars, setups: list, *, seed: int = 7, reps: int = 40) -> dict:
     Returns the control hit rate and expectancy, and the z of the real result against it.
     """
     import random
+
     rng = random.Random(seed)
     n = len(b)
 
@@ -321,32 +341,42 @@ def control(b: Bars, setups: list, *, seed: int = 7, reps: int = 40) -> dict:
             stop = e - risk if long_ else e + risk
             targ = e + reward if long_ else e - reward
             for j in range(i + 1, min(i + 400, n)):
-                if long_:
-                    if b.l[j] <= stop:
-                        trials += 1; exp_sum -= 1.0; break
-                    if b.h[j] >= targ:
-                        trials += 1; hits += 1; exp_sum += reward / risk; break
-                else:
-                    if b.h[j] >= stop:
-                        trials += 1; exp_sum -= 1.0; break
-                    if b.l[j] <= targ:
-                        trials += 1; hits += 1; exp_sum += reward / risk; break
+                stopped = b.l[j] <= stop if long_ else b.h[j] >= stop
+                hit = b.h[j] >= targ if long_ else b.l[j] <= targ
+                # Stop first: a bar holding both books the LOSS, same as the real scan.
+                if stopped:
+                    trials += 1
+                    exp_sum -= 1.0
+                    break
+                if hit:
+                    trials += 1
+                    hits += 1
+                    exp_sum += reward / risk
+                    break
 
     if not trials or not real_n:
         return {}
     p = hits / trials
     # z of the real win count against the control rate — the harness's own significance test
     import math
+
     sd = math.sqrt(max(real_n * p * (1 - p), 1e-12))
     z = (real_wins - real_n * p) / sd
-    return {"ctrl_hit": p, "ctrl_exp": exp_sum / trials, "trials": trials,
-            "real_hit": real_wins / real_n, "z": z}
+    return {
+        "ctrl_hit": p,
+        "ctrl_exp": exp_sum / trials,
+        "trials": trials,
+        "real_hit": real_wins / real_n,
+        "z": z,
+    }
 
 
 # ─────────────────────────────── chart ───────────────────────────────
 
+
 def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
@@ -360,10 +390,17 @@ def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
         up = b.c[i] >= b.o[i]
         col = "#111827" if up else "#dc2626"
         ax.plot([i, i], [b.l[i], b.h[i]], color=col, lw=0.7, zorder=2)
-        ax.add_patch(Rectangle((i - 0.34, min(b.o[i], b.c[i])), 0.68,
-                               max(abs(b.c[i] - b.o[i]), 1e-9),
-                               facecolor="#ffffff" if up else "#dc2626",
-                               edgecolor=col, lw=0.7, zorder=3))
+        ax.add_patch(
+            Rectangle(
+                (i - 0.34, min(b.o[i], b.c[i])),
+                0.68,
+                max(abs(b.c[i] - b.o[i]), 1e-9),
+                facecolor="#ffffff" if up else "#dc2626",
+                edgecolor=col,
+                lw=0.7,
+                zorder=3,
+            )
+        )
 
     def hline(y, c, label, ls="-"):
         ax.hlines(y, lo, hi, color=c, lw=1.6, linestyles=ls, zorder=4)
@@ -375,9 +412,17 @@ def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
     hline(s.stop, "#dc2626", f"STOP  {s.stop:.2f}", ls=":")
 
     def mark(bar, y, txt, c, dy):
-        ax.annotate(txt, (bar, y), xytext=(bar, y + dy), color=c, fontsize=8.5,
-                    fontweight="bold", ha="center",
-                    arrowprops=dict(arrowstyle="->", color=c, lw=1.2), zorder=6)
+        ax.annotate(
+            txt,
+            (bar, y),
+            xytext=(bar, y + dy),
+            color=c,
+            fontsize=8.5,
+            fontweight="bold",
+            ha="center",
+            arrowprops=dict(arrowstyle="->", color=c, lw=1.2),
+            zorder=6,
+        )
 
     rng = max(b.h[i] for i in xs) - min(b.l[i] for i in xs)
     mark(s.block_bar, b.l[s.block_bar], "1 · ARM\nblock created", "#dc2626", -rng * 0.09)
@@ -389,8 +434,7 @@ def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
     ax.scatter([s.entry_bar], [s.entry], s=55, color="#6d28d9", zorder=7)
 
     won = s.outcome == "target"
-    ax.axvspan(s.entry_bar, s.exit_bar,
-               color="#15803d" if won else "#dc2626", alpha=0.07, zorder=1)
+    ax.axvspan(s.entry_bar, s.exit_bar, color="#15803d" if won else "#dc2626", alpha=0.07, zorder=1)
 
     ticks = [i for i in xs if i % max(1, (hi - lo) // 9) == 0]
     ax.set_xticks(ticks)
@@ -403,13 +447,18 @@ def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
     ax.set_title(
         f"XAUUSD  ·  {b.t[s.arm_bar]:%Y-%m-%d %H:%M} → {b.t[s.exit_bar]:%d %b %H:%M}"
         f"   ·   {s.rr:.1f}R planned   ·   {s.outcome.upper()}",
-        fontsize=11, fontweight="bold", loc="left", pad=12)
+        fontsize=11,
+        fontweight="bold",
+        loc="left",
+        pad=12,
+    )
     fig.tight_layout()
     fig.savefig(out, facecolor="white")
     plt.close(fig)
 
 
 # ─────────────────────────────── cli ───────────────────────────────
+
 
 def main() -> None:
     p = argparse.ArgumentParser()
@@ -426,15 +475,25 @@ def main() -> None:
     p.add_argument("--chart", type=int, default=0, help="render the N best-RR winners")
     p.add_argument("--outdir", default="backtest/reports/loaded_level")
     p.add_argument("--side", choices=("long", "short", "both"), default="both")
-    p.add_argument("--control", type=int, default=0,
-                   help="reps per setup for the matched random control (try 40)")
+    p.add_argument(
+        "--control",
+        type=int,
+        default=0,
+        help="reps per setup for the matched random control (try 40)",
+    )
     args = p.parse_args()
 
     b = load(args.symbol, args.tf, args.start, args.end)
     print(f"{len(b):,} {args.tf} bars   {b.t[0]:%Y-%m-%d} → {b.t[-1]:%Y-%m-%d}")
 
-    kw = dict(pivot_len=args.pivot_len, tol_mult=args.tol_mult, buf_mult=args.buf_mult,
-              min_rr=args.min_rr, expiry=args.expiry, max_hold=args.max_hold)
+    kw = dict(
+        pivot_len=args.pivot_len,
+        tol_mult=args.tol_mult,
+        buf_mult=args.buf_mult,
+        min_rr=args.min_rr,
+        expiry=args.expiry,
+        max_hold=args.max_hold,
+    )
 
     longs, f_l, d_l = scan(b, **kw)
     # SHORTS are the same code on mirrored bars — see invert(). Never a hand-written branch.
@@ -452,8 +511,13 @@ def main() -> None:
         drops = {k: d_l[k] + d_s[k] for k in d_l}
 
     print(f"\nFUNNEL  (tol = ATR(50) x {args.tol_mult}, min RR {args.min_rr}, side {args.side})")
-    names = {1: "1 armed (loaded level consumed)", 2: "2 a level loaded past the block",
-             3: "3 inducement", 4: "4 target built", 5: "5 ENTRY taken"}
+    names = {
+        1: "1 armed (loaded level consumed)",
+        2: "2 a level loaded past the block",
+        3: "3 inducement",
+        4: "4 target built",
+        5: "5 ENTRY taken",
+    }
     for k in sorted(funnel):
         extra = ""
         if args.side == "both":
@@ -472,39 +536,52 @@ def main() -> None:
     losses = [s for s in setups if s.outcome == "stop"]
     opens = [s for s in setups if s.outcome == "open"]
     net = len(wins) * 0 + sum(s.rr for s in wins) - len(losses)
-    print(f"\nOUTCOMES  {len(setups)} trades"
-          f"  ({sum(1 for s in setups if s.dir=='long')}L / "
-          f"{sum(1 for s in setups if s.dir=='short')}S)")
+    print(
+        f"\nOUTCOMES  {len(setups)} trades"
+        f"  ({sum(1 for s in setups if s.dir == 'long')}L / "
+        f"{sum(1 for s in setups if s.dir == 'short')}S)"
+    )
     print(f"  target {len(wins):>4}   stop {len(losses):>4}   still open {len(opens):>4}")
     if wins or losses:
-        print(f"  hit rate {len(wins)/(len(wins)+len(losses))*100:.1f}%"
-              f"   ·   planned R sum {net:+.1f}   ·   median planned {sorted(s.rr for s in setups)[len(setups)//2]:.1f}R")
+        print(
+            f"  hit rate {len(wins) / (len(wins) + len(losses)) * 100:.1f}%"
+            f"   ·   planned R sum {net:+.1f}   ·   median planned {sorted(s.rr for s in setups)[len(setups) // 2]:.1f}R"
+        )
 
     if args.control:
-        for name, group in (("long", [s for s in setups if s.dir == "long"]),
-                            ("short", [s for s in setups if s.dir == "short"]),
-                            ("all", setups)):
+        for name, group in (
+            ("long", [s for s in setups if s.dir == "long"]),
+            ("short", [s for s in setups if s.dir == "short"]),
+            ("all", setups),
+        ):
             if not group:
                 continue
             c = control(b, group, reps=args.control)
             if not c:
                 continue
-            exp_real = (sum(s.rr for s in group if s.outcome == "target")
-                        - sum(1 for s in group if s.outcome == "stop"))
+            exp_real = sum(s.rr for s in group if s.outcome == "target") - sum(
+                1 for s in group if s.outcome == "stop"
+            )
             n_res = sum(1 for s in group if s.outcome in ("target", "stop"))
-            print(f"\nCONTROL · {name}   ({c['trials']:,} random entries, matched on "
-                  f"direction + stop distance + target distance)")
-            print(f"  real     hit {c['real_hit']*100:5.1f}%   expectancy {exp_real/n_res:+.3f}R")
-            print(f"  random   hit {c['ctrl_hit']*100:5.1f}%   expectancy {c['ctrl_exp']:+.3f}R")
-            print(f"  edge over control  {(c['real_hit']-c['ctrl_hit'])*100:+.1f} pts   z {c['z']:+.2f}")
+            print(
+                f"\nCONTROL · {name}   ({c['trials']:,} random entries, matched on "
+                f"direction + stop distance + target distance)"
+            )
+            print(
+                f"  real     hit {c['real_hit'] * 100:5.1f}%   expectancy {exp_real / n_res:+.3f}R"
+            )
+            print(f"  random   hit {c['ctrl_hit'] * 100:5.1f}%   expectancy {c['ctrl_exp']:+.3f}R")
+            print(
+                f"  edge over control  {(c['real_hit'] - c['ctrl_hit']) * 100:+.1f} pts   z {c['z']:+.2f}"
+            )
 
     if args.chart:
         out = ROOT / args.outdir
         out.mkdir(parents=True, exist_ok=True)
         # deliberately a MIX — a model shown only on its winners has no known hit rate
         n_w = max(1, args.chart // 2)
-        picks = sorted(wins, key=lambda s: -s.rr)[:n_w] + losses[:args.chart - n_w]
-        picks = picks or setups[:args.chart]
+        picks = sorted(wins, key=lambda s: -s.rr)[:n_w] + losses[: args.chart - n_w]
+        picks = picks or setups[: args.chart]
         for n, s in enumerate(picks, 1):
             f = out / f"setup_{n}_{b.t[s.entry_bar]:%Y%m%d_%H%M}_{s.outcome}.png"
             draw(b, s, f)

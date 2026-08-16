@@ -72,9 +72,9 @@ for _p in (str(_ROOT), str(_ENGINES)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from liquidity import LiquidityEngine            # noqa: E402
+from liquidity import LiquidityEngine  # noqa: E402
 from market_structure import Bar, StructureEngine  # noqa: E402
-from sessions import SessionEngine               # noqa: E402
+from sessions import SessionEngine  # noqa: E402
 
 CACHE = _ROOT / "backtest" / "cache"
 UTC = dt.timezone.utc
@@ -87,6 +87,7 @@ SESSION_ORDER = ("Asia", "London", "NY")
 # --------------------------------------------------------------------------------------
 # Pass 1 — replay
 # --------------------------------------------------------------------------------------
+
 
 class Bars:
     """The bar frame plus the three engines' per-bar output, held once and re-filtered.
@@ -144,9 +145,9 @@ def _sweep_row(index: int, stamp: dt.datetime, level, sess) -> dict:
     return {
         "index": index,
         "time": stamp,
-        "level": level.name,              # "Asia L", "London H", …
-        "owner": level.session_name,      # "Asia" | "London" | "NY"
-        "side": level.side,               # "high" | "low"
+        "level": level.name,  # "Asia L", "London H", …
+        "owner": level.session_name,  # "Asia" | "London" | "NY"
+        "side": level.side,  # "high" | "low"
         "created_index": level.created_index,
         "in_asia": sess.in_asia,
         "in_london": sess.in_london,
@@ -174,8 +175,12 @@ def replay(symbol: str, tf: str, start: dt.date | None, end: dt.date | None) -> 
     with path.open(newline="") as fh:
         for i, row in enumerate(csv.DictReader(fh)):
             stamp = dt.datetime.strptime(row["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-            o, h, l, c = (float(row["open"]), float(row["high"]),
-                          float(row["low"]), float(row["close"]))
+            o, h, l, c = (
+                float(row["open"]),
+                float(row["high"]),
+                float(row["low"]),
+                float(row["close"]),
+            )
             ts_ms = int(stamp.timestamp() * 1000)
 
             ext = structure.update(Bar(index=i, open=o, high=h, low=l, close=c)).external
@@ -203,6 +208,7 @@ def replay(symbol: str, tf: str, start: dt.date | None, end: dt.date | None) -> 
 def _trim(bars: Bars, start: dt.date | None, end: dt.date | None) -> None:
     """Drop EVENTS outside the reporting window. The bar arrays are left whole so an
     instance near the edge can still measure its own extremes."""
+
     def keep(stamp: dt.datetime) -> bool:
         d = stamp.date()
         return (start is None or d >= start) and (end is None or d <= end)
@@ -215,8 +221,8 @@ def _trim(bars: Bars, start: dt.date | None, end: dt.date | None) -> None:
 # Pass 2 — candidates
 # --------------------------------------------------------------------------------------
 
-def candidates(bars: Bars, bullish: bool, budget_bars: int,
-               max_age_bars: int = 0) -> list[dict]:
+
+def candidates(bars: Bars, bullish: bool, budget_bars: int, max_age_bars: int = 0) -> list[dict]:
     """Every structure flip-flop that fits the time budget, with its sweeps attached.
 
     Bullish reading (the chart): a bullish break sets the trend, a BEARISH SOS deviates
@@ -241,8 +247,7 @@ def candidates(bars: Bars, bullish: bool, budget_bars: int,
     # The sweep side the playbook wants: a bullish setup grabs sell-side liquidity
     # (session LOWS) on the way down; a bearish setup grabs buy-side (session HIGHS).
     want_side = "low" if bullish else "high"
-    sweeps = [s for s in bars.sweeps
-              if s["side"] == want_side and _fresh(s, max_age_bars)]
+    sweeps = [s for s in bars.sweeps if s["side"] == want_side and _fresh(s, max_age_bars)]
 
     rows: list[dict] = []
     for j in devs:
@@ -256,27 +261,30 @@ def candidates(bars: Bars, bullish: bool, budget_bars: int,
             continue
 
         window = [s for s in sweeps if i < s["index"] <= k]
-        rows.append({
-            "direction": "long" if bullish else "short",
-            "open_index": i,
-            "dev_index": j,
-            "end_index": k,
-            "open_time": bars.time[i],
-            "dev_time": bars.time[j],
-            "end_time": bars.time[k],
-            "span_bars": k - i,
-            "span_days": round((bars.time[k] - bars.time[i]).total_seconds() / 86400, 2),
-            # Was step 1 itself a trend flip, or a plain continuation break? Kept because
-            # the chart's step 1 is a plain BOS and we may want to require that later.
-            "sos_is_step1": i in sos_bars,
-            "sweeps": window,
-        })
+        rows.append(
+            {
+                "direction": "long" if bullish else "short",
+                "open_index": i,
+                "dev_index": j,
+                "end_index": k,
+                "open_time": bars.time[i],
+                "dev_time": bars.time[j],
+                "end_time": bars.time[k],
+                "span_bars": k - i,
+                "span_days": round((bars.time[k] - bars.time[i]).total_seconds() / 86400, 2),
+                # Was step 1 itself a trend flip, or a plain continuation break? Kept because
+                # the chart's step 1 is a plain BOS and we may want to require that later.
+                "sos_is_step1": i in sos_bars,
+                "sweeps": window,
+            }
+        )
     return rows
 
 
 # --------------------------------------------------------------------------------------
 # Pass 3 — the variant filters
 # --------------------------------------------------------------------------------------
+
 
 def _took(sweep: dict, session: str) -> bool:
     """Was `session` running when this level was swept?"""
@@ -337,6 +345,7 @@ VARIANTS = (
 # Reversal origin + reporting
 # --------------------------------------------------------------------------------------
 
+
 def reversal_origin(bars: Bars, row: dict) -> tuple[str, dt.datetime]:
     """Which session was running at the deviation's extreme — the bar the reversal turned on.
 
@@ -362,14 +371,20 @@ def report(bars: Bars, rows_by_dir: dict[str, list[dict]], out: Path | None, arg
     print("=" * 78)
     print("SESSION-SWEEP RELAY — how often the playbook appears")
     print("=" * 78)
-    print(f"  {args.symbol} {args.tf}   bars replayed {len(bars.time):,}  "
-          f"({bars.time[0]:%Y-%m-%d} -> {bars.time[-1]:%Y-%m-%d}, UTC)")
+    print(
+        f"  {args.symbol} {args.tf}   bars replayed {len(bars.time):,}  "
+        f"({bars.time[0]:%Y-%m-%d} -> {bars.time[-1]:%Y-%m-%d}, UTC)"
+    )
     print(f"  structure breaks{len(bars.breaks):>8,}     session sweeps {len(bars.sweeps):>7,}")
-    print(f"  budget {args.budget_bars} bars   swept level at most "
-          f"{args.max_level_age_hrs:g}h old"
-          f"{'  (freshness gate OFF)' if args.max_level_age_hrs <= 0 else ''}")
-    print(f"  candidates (structure flip-flops inside the budget):  "
-          f"long {len(rows_by_dir['long'])}   short {len(rows_by_dir['short'])}")
+    print(
+        f"  budget {args.budget_bars} bars   swept level at most "
+        f"{args.max_level_age_hrs:g}h old"
+        f"{'  (freshness gate OFF)' if args.max_level_age_hrs <= 0 else ''}"
+    )
+    print(
+        f"  candidates (structure flip-flops inside the budget):  "
+        f"long {len(rows_by_dir['long'])}   short {len(rows_by_dir['short'])}"
+    )
 
     for name, blurb, fn in VARIANTS:
         print()
@@ -380,7 +395,7 @@ def report(bars: Bars, rows_by_dir: dict[str, list[dict]], out: Path | None, arg
             years = (bars.time[-1] - bars.time[0]).days / 365.25
             origins = Counter(r["origin"] for r in hits)
             top = ", ".join(f"{k} {v}" for k, v in origins.most_common(3)) or "-"
-            print(f"  {direction:<10}{len(hits):>10}{len(hits)/years:>10.1f}   {top}")
+            print(f"  {direction:<10}{len(hits):>10}{len(hits) / years:>10.1f}   {top}")
 
     if out:
         _write_csv(rows_by_dir, out)
@@ -392,10 +407,24 @@ def _write_csv(rows_by_dir: dict[str, list[dict]], out: Path) -> None:
     rows every variant rejected — because the near-misses are what say whether a filter
     is doing real work or just narrowing."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    cols = ["direction", "open_time", "dev_time", "end_time", "span_bars", "span_days",
-            "sos_is_step1", "origin", "origin_time", "n_sweeps", "sweep_levels",
-            "leg1_time", "leg1_age_hrs", "leg2_time", "leg2_age_hrs",
-            "overlap_ambiguous"] + [n for n, _, _ in VARIANTS]
+    cols = [
+        "direction",
+        "open_time",
+        "dev_time",
+        "end_time",
+        "span_bars",
+        "span_days",
+        "sos_is_step1",
+        "origin",
+        "origin_time",
+        "n_sweeps",
+        "sweep_levels",
+        "leg1_time",
+        "leg1_age_hrs",
+        "leg2_time",
+        "leg2_age_hrs",
+        "overlap_ambiguous",
+    ] + [n for n, _, _ in VARIANTS]
 
     with out.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
@@ -412,38 +441,50 @@ def _write_csv(rows_by_dir: dict[str, list[dict]], out: Path) -> None:
                 for n, s in enumerate(hit, start=1):
                     legs[f"leg{n}_time"] = f"{s['time']:%Y-%m-%d %H:%M}"
                     legs[f"leg{n}_age_hrs"] = round(
-                        (s["index"] - s["created_index"]) * 15 / 60.0, 1)
-                w.writerow({
-                    "direction": r["direction"],
-                    "open_time": f"{r['open_time']:%Y-%m-%d %H:%M}",
-                    "dev_time": f"{r['dev_time']:%Y-%m-%d %H:%M}",
-                    "end_time": f"{r['end_time']:%Y-%m-%d %H:%M}",
-                    "span_bars": r["span_bars"],
-                    "span_days": r["span_days"],
-                    "sos_is_step1": r["sos_is_step1"],
-                    "origin": r["origin"],
-                    "origin_time": f"{r['origin_time']:%Y-%m-%d %H:%M}",
-                    "n_sweeps": len(r["sweeps"]),
-                    "sweep_levels": " > ".join(s["level"] for s in r["sweeps"]),
-                    "overlap_ambiguous": ambiguous,
-                    **legs,
-                    **marks,
-                })
+                        (s["index"] - s["created_index"]) * 15 / 60.0, 1
+                    )
+                w.writerow(
+                    {
+                        "direction": r["direction"],
+                        "open_time": f"{r['open_time']:%Y-%m-%d %H:%M}",
+                        "dev_time": f"{r['dev_time']:%Y-%m-%d %H:%M}",
+                        "end_time": f"{r['end_time']:%Y-%m-%d %H:%M}",
+                        "span_bars": r["span_bars"],
+                        "span_days": r["span_days"],
+                        "sos_is_step1": r["sos_is_step1"],
+                        "origin": r["origin"],
+                        "origin_time": f"{r['origin_time']:%Y-%m-%d %H:%M}",
+                        "n_sweeps": len(r["sweeps"]),
+                        "sweep_levels": " > ".join(s["level"] for s in r["sweeps"]),
+                        "overlap_ambiguous": ambiguous,
+                        **legs,
+                        **marks,
+                    }
+                )
     print(f"\n  wrote {out}")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="M15")
-    ap.add_argument("--budget-bars", type=int, default=288,
-                    help="max bars from the opening break to the resuming SOS "
-                         "(default 288 = 3 trading days of M15)")
-    ap.add_argument("--max-level-age-hrs", type=float, default=8.0,
-                    help="a swept level must have been made this many hours ago at most, "
-                         "i.e. by TODAY's run of that session (default 8; 0 disables). "
-                         "See _fresh() — the 8-18h band is measured empty.")
+    ap.add_argument(
+        "--budget-bars",
+        type=int,
+        default=288,
+        help="max bars from the opening break to the resuming SOS "
+        "(default 288 = 3 trading days of M15)",
+    )
+    ap.add_argument(
+        "--max-level-age-hrs",
+        type=float,
+        default=8.0,
+        help="a swept level must have been made this many hours ago at most, "
+        "i.e. by TODAY's run of that session (default 8; 0 disables). "
+        "See _fresh() — the 8-18h band is measured empty.",
+    )
     ap.add_argument("--start", type=dt.date.fromisoformat, default=None)
     ap.add_argument("--end", type=dt.date.fromisoformat, default=None)
     ap.add_argument("--out", type=Path, default=None, help="write the candidate CSV here")
