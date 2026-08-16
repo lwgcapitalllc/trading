@@ -1418,11 +1418,37 @@ file that carries the block.**
 
 ---
 
+## DELETED 2026-08-15 — the D strategy, and the lessons that outlive the file
+
+`mpc_d_strategy.pine`, `mpc_d_strategy_export.pine` and `docs/MPC_D_STRATEGY_SPEC.md` were
+removed at Aaron's instruction. Recover any of them from git history.
+
+**Two reasons, and the second is the one worth recording.**
+
+1. **It never earned its place.** `docs/STRATEGY_WORKFLOW.md` had it at stage 3 of 6 with the
+   verdict already written: its one measurement was *indistinguishable from zero*, and nothing
+   had moved on it since 2026-08-06.
+2. 🔴 **Its VOCABULARY was colliding.** D described its middle leg as a "shakeout"
+   (`dCtrBosMax` = "how much the shakeout may break before it stops being a shakeout"), and the
+   Retail Shake Out (RSO) model now owns that word. **Two setups sharing one term in one repo is
+   how a rule gets read backwards** — the same failure this file's palette and side-recording
+   sections were both written about. One word, one meaning.
+
+⚠ **Deleting the file does NOT delete what it taught, and three of its lessons are load-bearing
+elsewhere in this repo.** They are kept in place deliberately:
+
+- **The margin trap.** D's own tooltip said "10 BUSTS THE ACCOUNT". `mpc_realign_strategy.pine`
+  then had to learn it again from an empty Strategy Tester report — see its entry below.
+- **The palette rule.** D applied the TABLE palette to its TRADES, so a winner drew in the wrong
+  colour. That is why `## THE ANNOTATION PALETTE` exists.
+- **Record the side, never infer it.** `mpc_h4_sweep_strategy.pine` carries the block D paid for,
+  lifted byte-for-byte, and it stands on its own now.
+
+Every comment that pointed at the file was retargeted rather than left dangling.
+
 ## Key paths & entry points
 
 - `indicators/strategies/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
-- `indicators/strategies/mpc_d_strategy.pine` — **the D strategy ("D as in dog, the dirty one", Aaron 2026-08-06).** [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategypine)
-- `indicators/strategies/mpc_d_strategy_export.pine` — **the D strategy's decision-stream twin (2026-08-06).** `mpc_d_strategy.pine` + one appended block, body byte-identical apart from line 60's title; 48 transparent `plot()` columns. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcdstrategyexportpine)
 - `indicators/strategies/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `mpc_m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
 - `indicators/strategies/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
 - `indicators/strategies/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
