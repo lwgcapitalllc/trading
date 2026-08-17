@@ -15,6 +15,76 @@ stays behind in `indicators/CLAUDE.md`; this is the evidence, not the instructio
 
 ---
 
+## 2026-08-16 — a third of every strategy Pine was prose, and it moved to `strategies/docs/`
+
+Aaron: *"We frequently run out of tokens in our Pine strategies… these comments should not live
+in a Pine strategy file. They should live in a .md file related to the strategy file, that if AI
+needs to read it in any session, it reads that file instead of trying to get it out of the actual
+Pine strategy. That is just wasting tokens."*
+
+**He was right and the size of it was the surprise.** MEASURED across all twelve files in
+`indicators/strategies/` before any change:
+
+| | bytes | share |
+|---|---|---|
+| all twelve strategy Pines | 2,427,073 | 100% |
+| full-line comments | 809,890 | **33.4%** |
+| trailing comments | 28,526 | 1.2% |
+
+**What decided the 3-line threshold — it was measured, not picked.** The 2,155 comment blocks
+were binned by length: blocks of **3+ lines hold 673,782 bytes (88% of all comment bytes)**,
+while the 827 one-line blocks hold only 54,419 and the 239 two-line blocks 37,046. So the cut
+buys 88% of the win while leaving every inline label where it sits, and it happens to be exactly
+what Aaron asked for (*"maybe one or two comments"*).
+
+**Result: 2,378,408 → 1,817,898 bytes, 23.6% smaller, ~140,000 tokens off a full read of the
+set.** Per family, largest first: `mpc_strategy` 25.4% / 27.9% (parent / export),
+`mpc_d` 28.6% / 32.0%, `mpc_h4_sweep` 26.3% / 28.8%, `mpc_realign` 24.6%, `mpc_b_leg`
+20.1% / 21.0%, `mpc_bos` 19.0% / 20.4%. **`smc_session_sweep_strategy.pine` moved 1.3% and that
+is not a failure** — it was written recently and was already comment-light (16 comment lines
+against `mpc_strategy.pine`'s 1,435), which is the state this change is trying to get the rest to.
+
+574 entries across 7 family docs, deduped by content hash so the parent and its `_export` twin
+share one entry wherever the prose matched.
+
+### The three things that were checked rather than reasoned about
+
+🔴 **The proof is a DIFF, not the argument that comments cannot change behaviour.** That
+argument is true, and it is precisely the confident reasoning rule 22 exists so nobody has to
+trust. What actually ran: strip every full-line comment from the before and the after copy of
+each file, `diff` the two. **Twelve of twelve byte-identical.** The migration script asserts the
+same thing itself and exits without writing if it fails.
+
+⚠ **`git diff` looked alarming and was not.** It reported equal counts of non-comment lines added
+and removed on every clean file (17/17 on `mpc_strategy.pine`). All of them were BLANK lines
+re-anchoring across hunk boundaries — the byte-identity check above is what settled it. Worth
+remembering: a diff of a file whose line count dropped 25% cannot be read line-for-line.
+
+🔴 **Three tests read these Pine files directly, and they were found by grep before the run, not
+after it went red.** `strategies/python/mpc_bleg/tests/test_bleg.py` asserts on `bool lTimeUp =`
+lines, on `input.float` defaults against their own `minval`/`maxval`, and on tooltips matching
+`mpc_bleg.meta.json` verbatim. All three read CODE and tooltips, never comments. 355 tests across
+`mpc_bleg` + `mpc_sos_fade` + `mpc_bos` green afterwards.
+
+⚠ **Trailing comments were left on the table ON PURPOSE.** 28,526 bytes, 1.2%, and taking them
+means parsing `//` out of lines that also carry string literals containing `//` — a URL, a label.
+All of the win was in the full-line blocks and none of the risk was.
+
+⚠ **NO PARITY GATE WAS RE-RUN, and that is a gap rather than a pass.** Every gate needs a fresh
+TradingView CSV export, which only a human can take, and exports are git-ignored scratch. This is
+proof about the SOURCE and says nothing about a run — the same limitation the 2026-08-14 bulk
+reformat hit, from the same cause.
+
+⚠ **The anchor line is the load-bearing part.** `// [doc N] <title>  -> docs/<family>.md` is what
+tells the next reader an explanation exists at all. Strip the anchors and the md becomes 574
+entries nobody can find their way to, which is worse than the inline prose it replaced.
+
+Migration script (one-off, not committed): it grouped consecutive full-line comments into blocks,
+protected line 1 and `//@version`, kept the block's indentation on the anchor, and refused to
+write any file whose non-comment lines had moved.
+
+---
+
 ## 2026-08-14 — the playbook joins the contract, and section 2 is the one thing it cannot honestly have
 
 Aaron, reading `mpc_m15_playbook_strategy.pine` on a chart: *"I'm seeing, like, you know, ways to

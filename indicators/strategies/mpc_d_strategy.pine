@@ -1,105 +1,8 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-// MPC D STRATEGY — "D as in dog, the dirty one" (Aaron, 2026-08-06).
-//
-// A mature trend gets shaken out against itself and then resumes. Three steps:
-//   1. A trend is established and MATURE — an SOS opens it, then it prints at least one BOS.
-//   2. A COUNTER-trend SOS fires. This is the shakeout: price closes through the trend's
-//      last protected swing and prints a genuine LL (in an uptrend) or HH (in a downtrend).
-//   3. A WITH-trend SOS fires, straight back into the original direction. THAT IS THE ENTRY.
-// The stop sits beyond the extreme the counter leg reached. It is the only price in the
-// sequence that carries information: through it, the shakeout was a real reversal.
-//
-// ⚠ THE NON-OBVIOUS PART, AND IT IS THE WHOLE IMPLEMENTATION.
-// An SOS strictly ALTERNATES direction by construction — a bull SOS requires st.dir == -1
-// and sets it to 1, so the next SOS can only be a bear one. "An SOS then an opposite SOS"
-// is therefore ALWAYS true and can never be a trigger; every consecutive pair on every
-// chart satisfies it. What actually separates this sequence from ordinary structure is an
-// ASYMMETRY IN MATURITY between the two legs either side of the counter-SOS:
-//   the trend being RETURNED to must have printed >= dTrendBosMin BOS (it was a trend)
-//   the counter leg in between must have printed <= dCtrBosMax  BOS   (it was a shakeout)
-// Drop either test and this fires on every SECOND SOS on the chart. Those two numbers ARE
-// the strategy. See docs/MPC_D_STRATEGY_SPEC.md.
-//
-// ⚠ MEASURED ON AARON'S OWN FOUR EXAMPLES: entering at the return-SOS CLOSE with the stop
-// at the counter extreme gives roughly 0.5R to 1.2R. All four were directionally right and
-// only one cleared 1R. The cause is structural — an SOS confirms at the TOP of the reclaim
-// leg, so the entry is at the expensive end and the stop is the whole leg away. That is the
-// same problem A+ solves by resting a limit on the retrace instead of buying the break, so
-// "Retrace" is offered as an entry mode. Which one pays is a MEASUREMENT, not an argument.
-// 🔴 THE DEFAULT IS NOW "VWAP side" (Aaron, 2026-08-06), OFF A MARKED-UP CHART, AND IT
-// MOVES EVERY RESULT. He marked the trade this mode exists to catch — XAUUSD 19-23 Aug:
-// bullish structure, a bear SOS printing the LL at ~3,996 (the shakeout), price basing
-// along VWAP, then a close back above it at ~4,012, stop behind the LL, run to 4,166.
-// `execSlMode` stays "Sweep extreme", which is that stop. ⚠ Pin "SOS close" with rungs
-// 30/30/40 and TP3 = 3 to reproduce the 218-trade / +14.03R baseline of the same morning.
-//
-// The structure engine below (type SMCStructure through the external execution block) is
-// lifted BYTE-FOR-BYTE from indicators/engines/structure_engine.pine, itself the external half of
-// mpc_assistant.pine. It is not re-implemented here — a second structure engine is
-// forbidden by CLAUDE.md and would be the thing that silently drifts.
-//
-// ⚠ EVERYTHING BELOW THE ENGINE FOLLOWS mpc_strategy.pine's CONVENTIONS (Aaron, 2026-08-06).
-// Same five input groups — "D Setup" for the sequence gates (as A+ uses "A+ Setup"),
-// "Strategy Execution" for everything that decides what a trade DOES, plus "D Debug",
-// "Result Stats" and "Diagnostic Log". Same d-prefix / exec-prefix split, same "   ↳ " for a
-// sub-input with `active =` on its parent, same tooltip rule: what it does, what ON vs OFF
-// means, and the one fact that changes the decision — never a measurement essay, those live
-// in the CLAUDE.md files. The exit ladder is a PORT of that file's, not a lookalike:
-// f_dRatchet is f_swingRatchet unchanged, and the staged stop, the TP2 floor modes, the
-// three trail methods, the time stop and the close-on-opposite-SOS all keep their shapes and
-// their defaults. Anywhere this file deliberately diverges, the divergence is commented at
-// the site — see the exit-rung re-issue guard.
-// ⚠ THIS IS A strategy(), NOT AN indicator(). That is what puts a Properties tab and a
-// Strategy Tester on the chart; an indicator has neither, which is what the first build of
-// this file got wrong.
-// ⚠ process_orders_on_close is ON so the "SOS close" entry fills at the CLOSE of the bar
-// that confirmed the SOS — the price the marker draws and the price the four reference
-// examples were measured at. With it off the fill is the NEXT bar's open, and every R in
-// docs/MPC_D_STRATEGY_SPEC.md would then be describing a different trade.
-// ⚠ margin 0.2% = 500x, the same pin as mpc_strategy.pine. Gold near $4,000 under a
-// percent-of-equity risk model sizes past a cash account, and TradingView REJECTS an order
-// it cannot margin rather than shrinking it — so leverage set too low shows up as a strategy
-// that quietly takes fewer trades, never as an error.
-// ⚠ max_bars_back IS NOT COSMETIC AND MUST NOT BE DROPPED. `dVwapSlope` reads
-// `dVwap[execVwapSlopeBars]` — a history offset taken from an INPUT, not a literal — and Pine
-// sizes each series' history buffer by watching the offsets it sees on the first bars. At the
-// shipped 4 it would size for 4, so raising the slope input toward its own maxval of 200 would
-// throw "the requested historical offset is beyond the historical buffer's limit" AT RUNTIME,
-// on a knob a reader turns precisely while tuning. 300 covers the whole declared range.
-// The failure is the shape this repo keeps recording: correct at the default, broken the first
-// time somebody uses the lever the default exists to be tuned away from.
+// [doc 1] MPC D STRATEGY — "D as in dog, the dirty one" (Aaron, 2026-08-06).  -> docs/mpc_d_strategy.md
 strategy("MPC D Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, process_orders_on_close = true, margin_long = 0.2, margin_short = 0.2, max_bars_back = 300)
-//============================================================================
-//  THE INPUT PANEL — one consolidated block, twelve numbered sections
-//============================================================================
-// Every strategy Pine in this repo uses the SAME numbered sections in the SAME order,
-// so section 5 is Entry whichever file you open. A strategy with no fibs simply has no
-// `9 · Drawing: fibs`; the numbering does NOT close up, because the number is the address.
-//
-// THE RULE THAT DECIDES A SECTION: ask what a setting CHANGES, never what it is ABOUT.
-// It goes in 3-7 if it can move a trade, and 8-12 if it can only move a pixel.
-//
-// 🔴 THAT IS WHY THE FVG SETTINGS LIVE IN `5 · Entry` RATHER THAN AN "FVG" GROUP. Both
-// min-gap floors, the middle-bar close test, the max-active cap and keep-until-broken all
-// change WHICH GAPS EXIST, and therefore which entries fire — as does `eqExemptFvg`, which
-// used to sit under Liquidity Levels. Grouping by NAME would have demoted five
-// trade-deciding knobs to the bottom of the panel beside the fib colours, and nothing
-// would have errored. A group named for an OBJECT attracts anything that mentions it;
-// a group named for a JOB gives a new toggle exactly one honest home.
-//
-// ⚠ THIS BLOCK IS THE PANEL. Order here IS the order on screen: TradingView sorts groups
-// by where each group's first input is declared and sorts within a group by declaration
-// order. Do not scatter a new input back out to its use site — put it in its section here.
-//
-// ⚠ AN INPUT USED IN ANOTHER'S `active =` MUST BE DECLARED ABOVE IT. The section order
-// already satisfies every such pair; keep it that way when adding one.
-//
-// ⚠ ADDING, REMOVING OR REORDERING AN INPUT RESETS SAVED CHART VALUES — TradingView keys
-// them off declaration order within each type. `indicators/docs/PINE_INPUT_DEFAULTS.md` exists
-// so that a pass like this can be PROVEN cosmetic by re-dumping and diffing rather than
-// argued to be.
-//============================================================================
+// [doc 2] THE INPUT PANEL — one consolidated block, twelve numbered sections  -> docs/mpc_d_strategy.md
 var string G2 = "2 · Market structure"
 var string G3 = "3 · What trades"
 var string G4 = "4 · What arms it"
@@ -171,33 +74,25 @@ bool showBlockTag = input.bool(false, "Mark blocked setups on chart (pink)", gro
 bool showStatePanel = input.bool(true, "Show state panel", group = G8, tooltip = "Live read of the gates: how mature the current trend is, how far the sequence has progressed, and what it is waiting for. Use it to tell a genuinely quiet market apart from a gate set too tight — those need opposite responses.")
 int  debugDays = input.int(0, "   ↳ only tag the last N days (0 = all)", group = G8, minval = 0, maxval = 365, active = showBlockTag, tooltip = "Older tags are not drawn. Set 0 to tag the whole history. Applies ONLY to the blocked-setup tags — every real trade always keeps its callout, however old.")
 
-//============================================================
-//  SMC SETTINGS (hardcoded)
-//============================================================
+// [doc 3] SMC SETTINGS (hardcoded)  -> docs/mpc_d_strategy.md
 int   majorLength = 15
 color bullColor   = color.blue
 color bearColor   = color.red
 color iBullColor  = bullColor
 color iBearColor  = bearColor
 
-//============================================================
-//  MARKET STRUCTURE — input selection (mirrors mpc_assistant.pine's GRP_STRUCT)
-//============================================================
+// [doc 4] MARKET STRUCTURE — input selection (mirrors mpc_assistant.pine's GRP_STR  -> docs/mpc_d_strategy.md
 string structLabelSize  = "Small"
 float  pbBuffer         = 0.0
 
 f_structSize() =>
     not showExternal ? size.auto : structLabelSize == "Tiny" ? size.tiny : structLabelSize == "Normal" ? size.normal : structLabelSize == "Large" ? size.large : structLabelSize == "Huge" ? size.huge : size.small
 
-// Swing-point labels are hidden by making their text transparent, not by skipping
-// their creation. The label objects still exist and the engine's state is untouched,
-// so structure tracking, fibs, OBs and the table behave identically either way.
+// [doc 5] Swing-point labels are hidden by making their text transparent, not by s  -> docs/mpc_d_strategy.md
 f_swingCol(color c) =>
     showSwingLabels ? c : color(na)
 
-//============================================================
-//  SMC STRUCTURE TYPE
-//============================================================
+// [doc 6] SMC STRUCTURE TYPE  -> docs/mpc_d_strategy.md
 type SMCStructure
     int    length
     float  ash             = na
@@ -658,9 +553,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                 st.ash_lbl  := na
                 st.ash      := na
             else
-                // Neither an active pullback high nor a confirmed ASH was available to
-                // promote — use the actual highest point since the last confirmed low so
-                // a genuine swing high still gets confirmed instead of silently vanishing.
+                // [doc 7] Neither an active pullback high nor a confirmed ASH was available to  -> docs/mpc_d_strategy.md
                 bool   fallback_is_hh  = na(st.last_conf_high) or highest_val >= st.last_conf_high
                 string fallback_high_t = fallback_is_hh ? prefix + "HH" : prefix + "LH"
                 color  fallback_high_c = fallback_is_hh ? bull_col : bear_col
@@ -705,10 +598,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         if not na(st.asl_lbl)
             label.set_textcolor(st.asl_lbl, color(na))
 
-//============================================================
-//  EXECUTION — EXTERNAL STRUCTURE
-//============================================================
-// External structure engine — majorLength=15, blue/red, prefix ""
+// [doc 8] EXECUTION — EXTERNAL STRUCTURE  -> docs/mpc_d_strategy.md
 var st = SMCStructure.new(majorLength)
 ph = ta.pivothigh(high, majorLength, majorLength)
 pl = ta.pivotlow(low,  majorLength, majorLength)
@@ -732,10 +622,7 @@ if not na(st.ash_lbl)
 if not na(st.asl_lbl)
     label.set_textcolor(st.asl_lbl, showExternal ? f_swingCol(bullColor) : color(na))
 
-//============================================================
-//  EXECUTION — INTERNAL STRUCTURE
-//============================================================
-// Internal structure — Step 2: pullback tracking to confirm iSH / iSL
+// [doc 9] EXECUTION — INTERNAL STRUCTURE  -> docs/mpc_d_strategy.md
 
 // ── State ─────────────────────────────────────────────────
 var int   i_mode           = 0
@@ -1185,153 +1072,30 @@ if internalActive and i_mode != 0
 if internalActive and not na(i_sw_line)
     line.set_x2(i_sw_line, bar_index)
 
-//============================================================
-//  D SETUP — the sequence gates
-//============================================================
-// Named and grouped after mpc_strategy.pine: the SETUP owns its own group with a d-prefix
-// (as A+ uses aplus*), and everything that decides what a trade DOES lives under
-// "Strategy Execution" with an exec- prefix. Keeping the two apart is what lets a gate be
-// tuned without touching the trade, and read without hunting.
-// The two gates that ARE the strategy — see the header on why an opposite-direction SOS
-// pair is not a signal by itself.
-// Deliberately NOT 0. Two of the four reference examples show a counter leg that broke
-// structure in its own direction before turning back, so a zero refuses half of them.
-// In BARS, so it does NOT transfer between timeframes. 400 is ~4 days on 15m, ~33 hours on
-// 5m. The reference examples ran from about 3 hours to about 33.
+// [doc 10] D SETUP — the sequence gates  -> docs/mpc_d_strategy.md
 
-//============================================================
-//  STRATEGY EXECUTION
-//============================================================
-// ⚠ DECLARATION ORDER IS NOW FROZEN. TradingView keys a chart's saved input values off the
-// order of declaration within each TYPE, so inserting a string or a float above an existing
-// one silently resets every later input of that type on every chart running this script.
-// Add new inputs at the END of their type's run, never in the middle. mpc_strategy.pine
-// records the same trap at its own time-stop pair.
+// [doc 11] STRATEGY EXECUTION  -> docs/mpc_d_strategy.md
 
 
-// ── WHERE THE STOP GOES. Four anchors, and they are genuinely different trades. ──
-//   SWEEP EXTREME    — the high/low the shakeout reached. The honest invalidation: through
-//                      it, the shakeout was a real reversal. Widest, so the smallest
-//                      position and the fewest stop-outs.
-//   COUNTER-SOS LINE — the level the counter-trend SOS BROKE and price then reclaimed.
-//                      Tighter, and clean in its own right: back below it and the reclaim
-//                      is void. It sits INSIDE the shakeout, so a wick back in stops you
-//                      out where the sweep stop holds.
-//   BETWEEN THE TWO  — slide between them. 0% = the SOS line, 100% = the sweep extreme.
-//   % OF ENTRY-TO-SWEEP — ignores structure entirely. For when both structural stops are
-//                      simply too wide to size against.
-// ⚠ A tighter stop is NOT a better trade. It buys a bigger position on the same risk budget
-// and pays for it in stop-outs on setups that later worked, and those do not cancel at a
-// fixed rate — which wins is a measurement per instrument and timeframe.
+// [doc 12] ── WHERE THE STOP GOES. Four anchors, and they are genuinely different t  -> docs/mpc_d_strategy.md
 
-// ⚠ THE MINIMUM STOP GUARD IS ON BY DEFAULT AND MUST STAY THAT WAY WHILE ANY TIGHT STOP
-// ANCHOR IS REACHABLE. Size is risk DIVIDED BY stop distance, so a stop that collapses onto
-// the entry does not risk less — it builds an enormous position. This file ships three
-// anchors that can land arbitrarily close to the entry ('% of entry-to-sweep' at 5% is a
-// twentieth of the leg), which is exactly the shape that detonated A+ Run 4 and BOS Run 1
-// (worst trade -14.33R). It is an ENTRY FILTER: a refused setup is skipped, never resized.
+// [doc 13] ⚠ THE MINIMUM STOP GUARD IS ON BY DEFAULT AND MUST STAY THAT WAY WHILE A  -> docs/mpc_d_strategy.md
 
 
-// ⚠ A RUNG SIZED 0% IS SKIPPED, NEVER PLACED. strategy.exit() reads qty_percent = 0 as
-// "unspecified" and falls back to closing the WHOLE position at that limit — the exact
-// opposite of "bank nothing here", and it is REACHABLE now that these ship at 0 — the
-// guard is the only thing between this default and every trade closing whole at TP1.
-// 🔴 BOTH RUNGS WENT 30 → 0 AND TP3 3.0 → 0 (Aaron, 2026-08-06), because the ladder was
-// the binding constraint, not the entry. Measured over 8.3 years the largest winner was
-// +2.11R against the rungs' own arithmetic ceiling of 0.3x1 + 0.3x2 + 0.4x3 = 2.10, with
-// 16 trades sitting exactly on it. Re-measured on Aaron's own marked chart: 1R is $16,
-// the move was worth 9.62R, and the shipped ladder took 2.10R of it — 7.53R left on the
-// table on the one trade the strategy exists to catch. D pairs a CONTINUATION premise
-// with a scale-out exit; A+ ships 0/0 for exactly this reason, because its money is in
-// the tail. ⚠ The TP1 and TP2 PRICES still do their work at 0% — TP1 stages the stop to
-// breakeven and TP2 hands the runner to the trail — so execTp1R/execTp2R must stay > 0.
+// [doc 14] ⚠ A RUNG SIZED 0% IS SKIPPED, NEVER PLACED. strategy.exit() reads qty_pe  -> docs/mpc_d_strategy.md
 
-// ── THE RUNNER TRAIL, ported from mpc_strategy.pine's exit ladder ──
-// Same three methods and the same default. Structure alone parks the stop at the last
-// confirmed swing, which BREATHES with the trend but lags — in a strong leg the swing ends
-// up a long way behind and that is where a runner's give-back comes from. The ratchet keeps
-// the same anchor and climbs one step per step of favourable move, so it is never LOOSER
-// than the plain structure trail, only equal or tighter.
+// [doc 15] ── THE RUNNER TRAIL, ported from mpc_strategy.pine's exit ladder ──  -> docs/mpc_d_strategy.md
 
 
 
-//============================================================
-//  D DEBUG
-//============================================================
+// [doc 16] D DEBUG  -> docs/mpc_d_strategy.md
 
-//============================================================
-//  RESULT STATS
-//============================================================
+// [doc 17] RESULT STATS  -> docs/mpc_d_strategy.md
 
 
-//============================================================
-//  VWAP — the pro-trend side test
-//============================================================
-// ⚠ THE DECLARATION-SLOT NOTE THAT SAT HERE IS OBSOLETE. It said these inputs had to stay
-// at the end of the file — after `execDiagLog`, the last input of every type — because
-// moving them up into the exec panel would shift every later bool and int and silently
-// reset them on every tuned chart, so the paste needed no "Reset settings to defaults".
-// That was true until 2026-08-12, when every input in this file moved into one consolidated
-// panel block and `execDiagLog` was deleted with the diagnostic log. The pass resets saved
-// values once, knowingly; there is no slot left here to protect.
-//
-// WHAT THIS IS FOR (Aaron, 2026-08-06). The D sequence's entry is the with-trend SOS, and
-// an SOS confirms at the TOP of the reclaim leg — so the entry is at the expensive end and
-// the stop is the whole leg away. That is measured, not suspected: the four reference
-// examples returned 0.5R to 1.2R, and the first full-history run capped every winner at the
-// ladder's arithmetic ceiling of 2.11R against full -1R losers. VWAP is the proposed way in
-// EARLIER: after the shakeout, take the trade when the close is back on the pro-trend side
-// of VWAP, without waiting for the SOS to confirm it.
-//
-// ⚠ IT IS A STATE TEST, NOT A CROSS EVENT, AND THAT IS AARON'S EXPLICIT CALL. "If it is
-// already supported by the VWAP and the VWAP is pro-trend, and it does not have to cross
-// back over, take those trades." So a shakeout that dipped under VWAP and reclaimed it and
-// a shakeout that never lost it are the SAME signal — both are simply "the close is on the
-// trend's side of the line". Writing this as `ta.crossover` would silently refuse every
-// setup of the second kind, which is half of what was asked for.
-// Drawn by DEFAULT, and that is a decision rather than a convenience. The moment a rule reads
-// VWAP, "the VWAP" becomes a claim about a specific line, and this repo's most-repeated
-// defect is two places disagreeing about one number while both look right. Showing the exact
-// series the gate reads makes the two impossible to confuse on the chart.
-// ── THE RECLAIM (Aaron, 2026-08-06) — this is what makes it the setup on the chart ──
-// ⚠ THE "MUST STAY AT THE END OF THE FILE" NOTE HERE IS OBSOLETE, and is replaced rather
-// than deleted. `execVwapReclaim` was appended after the last `input.bool` so that adding
-// it shifted no saved chart value. Correct until 2026-08-12, when every input moved into
-// one consolidated panel block — it now lives in `5 · Entry`, with the entry mode it
-// modifies, and that pass resets saved values once by design.
-//
-// WHAT IT FIXES, and it is the difference between the picture and what the file shipped:
-// "VWAP side" tested only whether the close was CURRENTLY on the trend's side of the line.
-// A 15m shakeout SOS very often prints while price is still above VWAP, so the state was
-// already true on the bar after the counter-SOS and the trade opened THERE — no basing, no
-// reclaim, nothing that looks like the setup. Every bar for the next dCtrBarsMax got the
-// same free look, so a trade could also open a day later on an unrelated bar that happened
-// to close on the right side.
-// The setup is a ROUND TRIP: price must LOSE the line (base on it) and then CLOSE BACK
-// across it. That is two events on two different bars, so it needs a latch.
-//
-// ⚠ A LATCH, NOT ta.crossover, and the distinction is load-bearing. A crossover is true on
-// exactly ONE bar, so any other gate refusing that bar — a stop too tight, a position still
-// open — would lose the setup for good. The latch remembers that VWAP was lost and lets the
-// entry fire on the first bar the rest of the gates also agree, which is what "wait for the
-// reclaim" actually means.
+// [doc 18] VWAP — the pro-trend side test  -> docs/mpc_d_strategy.md
 
-//============================================================
-//  THE ANNOTATION PALETTE — copied from mpc_strategy.pine, never chosen here
-//============================================================
-// ⚠ EVERY COLOUR A TRADE IS DRAWN IN IS THE A+ BOT'S (Aaron, 2026-08-12): "all those colors
-// are not consistent across all the pines. They should be the same colors. Use MPC, the A+
-// strategy as a standard." One result means one colour on every chart in this repo, so a
-// reader moving between strategies never has to re-learn what green is. **Change a value
-// here only by changing `mpc_strategy.pine` first and copying it down.**
-//
-// 🔴 THIS FILE WAS USING THE WRONG ONE OF A+'s TWO PALETTES, WHICH IS THE WHOLE REASON IT
-// LOOKED DIFFERENT. A+ carries two and they are not interchangeable:
-//   the TABLE palette   #00E676 / #FF5252 — bright, for the status panel's bull/bear text
-//   the POSITION palette #26A69A / #EF5350 — every trade drawing
-// This file applied the TABLE palette to its TRADES, so a D winner drew in the green A+ uses
-// for a table row and never in the green A+ uses for a winner. Both palettes are still here;
-// what changed is only which one a TRADE reads.
+// [doc 19] THE ANNOTATION PALETTE — copied from mpc_strategy.pine, never chosen her  -> docs/mpc_d_strategy.md
 
 // ── Trade results. One hue per verdict, and the transparency is part of the standard. ──
 color POS_WIN   = color.new(#26A69A, 12)   // a closed winner's callout
@@ -1340,10 +1104,7 @@ color POS_LOSS  = color.new(#EF5350, 12)
 color POS_LOSSL = color.new(#EF5350, 0)
 color POS_BE    = color.new(#FF9800, 12)   // BREAKEVEN — orange. It was yellow here, and
 color POS_BEL   = color.new(#FF9800, 0)    // yellow is the panel's "Armed" colour.
-// ⚠ GREY WHILE THE TRADE IS STILL OPEN, and that is a rule rather than a spare colour: the
-// result is not known yet, and colouring the callout by DIRECTION — which this file used to
-// do — is a claim the chart cannot back up. Direction is already on the label in words and
-// under the candle as a triangle.
+// [doc 20] ⚠ GREY WHILE THE TRADE IS STILL OPEN, and that is a rule rather than a s  -> docs/mpc_d_strategy.md
 color POS_OPEN  = color.new(#787B86, 12)
 color POS_OPENL = color.new(#787B86, 0)
 
@@ -1353,15 +1114,10 @@ color POS_DD    = color.new(#EF5350, 88)   // risk / how far it went AGAINST you
 color POS_G1    = color.new(#26A69A, 55)   // one hue, three depths — the gradient IS the
 color POS_G2    = color.new(#26A69A, 70)   // legend, so no reward block needs a label
 color POS_G3    = color.new(#26A69A, 82)
-// ⚠ A+ HAS NO "TARGET NOT REACHED YET" STATE, because it draws its bands at real FILLS on
-// the close bar. This file draws all three upfront and brightens each one as it is reached,
-// which is extra information and is kept — so an unreached block is the same HUE, one step
-// fainter than any A+ rung. Faint = not reached; the three A+ depths = reached.
+// [doc 21] ⚠ A+ HAS NO "TARGET NOT REACHED YET" STATE, because it draws its bands a  -> docs/mpc_d_strategy.md
 color POS_GHOST  = color.new(#26A69A, 90)
 color TP_ANNOT   = color.new(#26A69A, 40)  // ONE colour for every TP tag and its line
-// A+'s solid entry-marker pair, and it is DRAWN here as of 2026-08-12 — the triangles under
-// each fill. Solid (@0), unlike every other trade colour, because these are the one annotation
-// that has to be findable when the result box is a thin scratch.
+// [doc 22] A+'s solid entry-marker pair, and it is DRAWN here as of 2026-08-12 — th  -> docs/mpc_d_strategy.md
 color POS_GREENB = color.new(#26A69A, 0)
 color POS_REDB   = color.new(#EF5350, 0)
 color POS_SHADE  = color.new(#787B86, 88)  // the shakeout — A+'s neutral grey, not #888888
@@ -1370,48 +1126,24 @@ color POS_SHADE  = color.new(#787B86, 88)  // the shakeout — A+'s neutral grey
 color BLK_PINK  = color.new(#FF2E9A, 12)
 color BLK_PINKL = color.new(#FF2E9A, 0)
 
-// ── The STATE PANEL palette — A+'s JARVIS table colours, and correct where they are used. ──
-// Deliberately kept APART from the trade colours: a table row is not a trade result, and
-// merging the two is the exact mistake this block exists to undo.
+// [doc 23] ── The STATE PANEL palette — A+'s JARVIS table colours, and correct wher  -> docs/mpc_d_strategy.md
 color D_LONG  = #00E676   // A+ JARVIS_SSL
 color D_SHORT = #FF5252   // A+ JARVIS_BSL
 color D_MUTED = #94A3B8   // A+ JARVIS_MUTED
 
-//============================================================
-//  D SEQUENCE — state machine
-//============================================================
-// dTrendDir / dTrendBos describe the trend the LAST SOS killed. At the moment the NEXT SOS
-// is checked they still hold that value, which is exactly the trend TWO SOS back — the one
-// the sequence would be returning to. That one-SOS lag is the whole trick; see the header.
+// [doc 24] D SEQUENCE — state machine  -> docs/mpc_d_strategy.md
 var int   dTrendDir = 0
 var int   dTrendBos = 0
 var int   dCurBos   = 0     // BOS printed since the current direction was established
 var int   dSosBar   = na    // bar of the most recent SOS
-// Running extremes of the leg since that SOS. dLegLo/dLegHi are the leg's own extreme (the
-// sweep anchor); dRclHi/dRclLo are the RECOVERY off it, and they RESET every time the
-// extreme is exceeded — so at the entry they describe the reclaim leg alone rather than the
-// whole swing, which is what a retrace entry has to be measured against.
+// [doc 25] Running extremes of the leg since that SOS. dLegLo/dLegHi are the leg's   -> docs/mpc_d_strategy.md
 var float dLegLo = na, var float dLegHi = na
 var float dRclHi = na, var float dRclLo = na
-// The PRICE the last SOS broke — the horizontal structure line drawn on the chart at that
-// break. Carried on the same one-SOS lag, so at the entry it still holds the level the
-// COUNTER-SOS took out, which is what the "Counter-SOS line" anchor uses. It is the
-// engine's own number (st.bull_bos_high / st.bear_bos_low), never re-derived from prices.
+// [doc 26] The PRICE the last SOS broke — the horizontal structure line drawn on th  -> docs/mpc_d_strategy.md
 var float dSosLvl = na
-// ⚠ ONE ENTRY PER SEQUENCE, AND WITHOUT THIS THE VWAP MODE TRADES THE SAME SHAKEOUT OVER
-// AND OVER. The SOS entry is self-limiting — an SOS fires on one bar, so it can only fire
-// once. The VWAP test is a STATE, true on every bar for as long as price stays on that side
-// of the line, so the only thing stopping a re-entry is `bBusy`, and `bBusy` goes false the
-// moment the trade closes. A sequence that stopped out would immediately re-enter at a worse
-// price, and keep doing it until the bar cap expired. Released only by the shift below.
+// [doc 27] ⚠ ONE ENTRY PER SEQUENCE, AND WITHOUT THIS THE VWAP MODE TRADES THE SAME  -> docs/mpc_d_strategy.md
 var bool dSeqTaken = false
-// Has price CLOSED on the WRONG side of VWAP since the counter-SOS — the first half of the
-// reclaim. Latched once, cleared only by the shift below, so the two halves may land any
-// number of bars apart: price loses the line on Monday's shakeout and takes it back on
-// Tuesday's open, and that is still one round trip. See execVwapReclaim for the reasoning.
-// It is tracked UNCONDITIONALLY, whatever execVwapReclaim is set to — a latch that only
-// runs while its own switch is on cannot be switched on mid-chart without lying about the
-// bars it never watched, and the state panel reads it either way.
+// [doc 28] Has price CLOSED on the WRONG side of VWAP since the counter-SOS — the f  -> docs/mpc_d_strategy.md
 var bool dVwapLost = false
 
 if not na(dSosBar)
@@ -1426,48 +1158,19 @@ if not na(dSosBar)
     else
         dRclLo := math.min(nz(dRclLo, low), low)
 
-// A BOS that is NOT an SOS. The engine sets bull_bos on every bull_sos bar as well, so this
-// guard is load-bearing — without it every SOS would count itself as a continuation of the
-// trend it just started, and dCurBos could never read 0.
+// [doc 29] A BOS that is NOT an SOS. The engine sets bull_bos on every bull_sos bar  -> docs/mpc_d_strategy.md
 if (st.bull_bos and not st.bull_sos) or (st.bear_bos and not st.bear_sos)
     dCurBos += 1
 
 float dAtr = ta.atr(14)
 
-// ⚠ THE SESSION VWAP, AND IT IS DELIBERATELY THE ONE ON AARON'S CHART.
-// `ta.vwap(hlc3)` is the single line mpc_assistant.pine draws (its line 2274) and the one
-// engines/vwap/ is the canonical Python port of — session-anchored, re-anchored at the
-// trading-day open, volume-weighted. Anchoring a private VWAP at the shakeout instead would
-// be a SECOND VWAP implementation, which CLAUDE.md forbids outright, and it would also not
-// be the line the request was about: "already supported by the VWAP" describes a level that
-// has been sitting under price, which an anchor placed at the shakeout cannot be.
-// ⚠ It needs the bar's VOLUME. On XAUUSD that is tick volume, which is what Pine reads, so
-// this is free here — but a symbol with no volume data makes ta.vwap raise rather than
-// return na, and the whole script dies with it.
-// ⚠ IT RESETS DAILY, AND THE SHAKEOUT CAN OUTLIVE THE RESET. dCtrBarsMax allows 133 bars
-// (~33h on 15m), so a sequence may straddle the 18:00 New York roll and be judged against a
-// VWAP anchored AFTER its own shakeout began. That is not a bug to be fixed here — it is
-// what the line on the chart actually does, and a filter that silently used a different
-// VWAP from the one being looked at would be the worse failure.
+// [doc 30] ⚠ THE SESSION VWAP, AND IT IS DELIBERATELY THE ONE ON AARON'S CHART.  -> docs/mpc_d_strategy.md
 float dVwap = ta.vwap(hlc3)
 
-// The pro-trend side test, as ONE helper so the entry mode and the filter can never come to
-// different answers about the same bar. `dir` is the trade's direction, not the chart's.
-// ⚠ A `na` VWAP (no volume yet on the session's first bar) returns FALSE, never true —
-// "cannot ask" and "no" must not be the same value, and of the two available answers the
-// safe one for a gate is the refusal. It costs at most the first bar of a session.
-// ⚠ THE SLOPE IS TAKEN OUT HERE, AT GLOBAL SCOPE, AND MUST NOT BE MOVED INSIDE THE HELPER.
-// `dVwap[execVwapSlopeBars]` is a history reference, and the helper is called from inside
-// two conditional blocks — a bar where neither runs would not evaluate it. Reading a series'
-// history on some bars and not others is the shape Pine gives inconsistent answers for, and
-// it fails as a wrong NUMBER rather than an error. Computed unconditionally, the helper is
-// left as pure arithmetic over globals and is safe to call from anywhere.
+// [doc 31] The pro-trend side test, as ONE helper so the entry mode and the filter   -> docs/mpc_d_strategy.md
 float dVwapSlope = dVwap - dVwap[execVwapSlopeBars]
 
-// ⚠ The line BREAKS at each trading-day anchor on its own — ta.vwap returns na across the
-// reset — which is correct and is why this is a plot() rather than a polyline. It is also
-// the visible proof of the daily-reset caveat noted above: where the line restarts is where
-// a shakeout's VWAP stopped being the one it began under.
+// [doc 32] ⚠ The line BREAKS at each trading-day anchor on its own — ta.vwap return  -> docs/mpc_d_strategy.md
 plot(execShowVwap ? dVwap : na, title = "VWAP", color = color.new(#00E5FF, 25), linewidth = 1)
 
 f_dVwapOk(int dir) =>
@@ -1475,17 +1178,7 @@ f_dVwapOk(int dir) =>
     bool slopeOk = not execVwapSlope ? true : (na(dVwapSlope) ? false : (dir == 1 ? dVwapSlope > 0 : dVwapSlope < 0))
     sideOk and slopeOk
 
-//============================================================
-//  DRAWING — object pools
-//============================================================
-// A FIXED STRIDE of five boxes and five labels per TRADE: the shakeout, the risk block and
-// three reward blocks; the entry callout and one marker per target, plus a leader line. An
-// object that is switched off or not yet earned is created TRANSPARENT rather than skipped,
-// because the fixed stride is what lets the oldest trade be evicted as one unit — a variable
-// one splits a trade across an eviction and leaves orphaned blocks explaining nothing.
-// ⚠ Everything is drawn at the FILL, not at the signal. Under "Retrace" the two are
-// different bars, and a position block starting before the position existed would be
-// drawing a trade nobody was in.
+// [doc 33] DRAWING — object pools  -> docs/mpc_d_strategy.md
 var array<box>   dBoxes = array.new<box>()
 var array<label> dLbls  = array.new<label>()
 var array<line>  dLines = array.new<line>()
@@ -1514,28 +1207,7 @@ f_dEvict() =>
         line.delete(array.shift(dLines))
     int _r = 0
 
-//============================================================
-//  D SEQUENCE — the fire, and why a setup was refused
-//============================================================
-// Reason PRECEDENCE — the first gate that would refuse the setup is the one reported, so a
-// tag can never blame a downstream gate for an upstream refusal.
-//   8 account bust (first — it refuses everything, so no later reason is the real one)
-//   1 direction off · 2 trend too young · 3 shakeout became a trend · 4 shakeout stale
-//   9 wrong side of VWAP · 5 stop too tight · 6 stop on the wrong side · 7 already in a position
-// ⚠ 9 is NUMBERED last and RANKED fifth, and the two are independent on purpose. The number
-// is a wire format — `px_blk` in the export twin and the B| log lines carry it, and an
-// archived export must keep decoding the way it did the day it was taken, so an existing
-// code can never be renumbered. Its POSITION in the chain is just which reason gets reported
-// when several apply, and VWAP belongs with the setup gates (2/3/4) rather than with the
-// sizing gates (5/6), because it describes the setup and not the order.
-// ⚠ Code 9 is raised by the FILTER only (execVwapReq, on the SOS-close and Retrace modes).
-// Under "VWAP side" the test is the TRIGGER rather than a gate, so a bar on the wrong side
-// is not a refused setup — it is a bar where no setup exists yet, and reporting it would
-// write one refusal per bar for the whole window and drown the log it was meant to serve.
-// ── Log formatters ──
-// `na` renders as an EMPTY field, never as "NaN" and never as 0. A parser has to be able to
-// tell "this value did not exist" from "this value was zero", and str.tostring(na) gives
-// "NaN" which reads as neither. Same rule the export columns follow.
+// [doc 34] D SEQUENCE — the fire, and why a setup was refused  -> docs/mpc_d_strategy.md
 f_dN(float v) => na(v) ? "" : str.tostring(v, format.mintick)
 f_dI(int v)   => na(v) ? "" : str.tostring(v)
 
@@ -1558,26 +1230,12 @@ float dEntry  = na
 float dStop   = na
 int   dBlk    = 0     // 0 = nothing refused it
 float dBlkPx  = na    // the entry the refused setup would have taken
-// The shakeout's own geometry, handed to the execution block so the shaded box can be drawn
-// at the FILL rather than here. Under "Retrace" the fill can be many bars later, by which
-// time dSosBar and the leg extremes have been reset by the next SOS.
+// [doc 35] The shakeout's own geometry, handed to the execution block so the shaded  -> docs/mpc_d_strategy.md
 int   dCtrBar = na
 float dCtrHi  = na
 float dCtrLo  = na
 float dCtrSos = na
-// ── The CANDIDATE record, set for EVERY candidate — fired or refused ──
-// These exist so the diagnostic log can carry, for each setup the sequence ever saw, the
-// three gate INPUTS and the geometry the entry was priced off. They are read at decision
-// time, before the unconditional shift at the bottom of the block overwrites them, and
-// they are per-bar (not `var`) so a stale one can never be logged against a later bar.
-// ⚠ Write-only bookkeeping: nothing below reads the six dCand* fields to make a decision.
-// dCandDir, added beside them, is the ONE exception and is read by the tag and the log.
-// ⚠ dCandDir REPLACES reading `st.bull_sos` to decide a candidate's direction, and that
-// substitution is load-bearing rather than tidy. The block tag and the B| log line both used
-// to infer the side from the SOS that fired on the same bar — which is correct only because
-// every candidate USED to arrive on an SOS bar. A VWAP-side candidate does not, so on those
-// bars `st.bull_sos` is false and every candidate, long or short, would have been drawn and
-// logged as a SHORT. Silent, and wrong in exactly the half of the cases nobody checks.
+// [doc 36] ── The CANDIDATE record, set for EVERY candidate — fired or refused ──  -> docs/mpc_d_strategy.md
 int   dCandDir  = 0     // +1 long / -1 short, for EVERY candidate, whatever triggered it
 int   dCandTBos = na    // BOS the returned-to trend had printed
 int   dCandCBos = na    // BOS the shakeout printed in its own direction
@@ -1592,20 +1250,10 @@ if st.bull_sos or st.bear_sos
     bool okDir   = dTrendDir == nDir
     float ctrExt = nDir == 1 ? dLegLo : dLegHi
     float rclExt = nDir == 1 ? dRclHi : dRclLo
-    // "Ready" is okDir ALONE — the one structural fact the sequence is built on, that this
-    // SOS returns to the trend from two SOS back. Every other gate is a CHOICE, and those
-    // are precisely what the block tag exists to report. Folding any of them into ready
-    // would hide the refusals worth seeing.
-    // ⚠ "VWAP side" takes the sequence OUT of this block entirely — it is a mode, not an
-    // extra chance. Letting the with-trend SOS fire as a fallback when the VWAP entry never
-    // triggered would blend two entry models into one column of results, and the whole
-    // reason both exist is to be measured against each other.
+    // [doc 37] "Ready" is okDir ALONE — the one structural fact the sequence is built o  -> docs/mpc_d_strategy.md
     if okDir and execEntryMode != "VWAP side" and not na(ctrExt) and not na(rclExt)
         float e = execEntryMode == "Retrace" ? (nDir == 1 ? rclExt - (rclExt - ctrExt) * execRetraceFib : rclExt + (ctrExt - rclExt) * execRetraceFib) : close
-        // The counter-SOS's own broken level, still un-overwritten at this instant. It is
-        // always on the far side of the entry and always inside the sweep — the counter-SOS
-        // bar closed THROUGH it and then went further — so "Between the two" interpolates
-        // in a known direction and cannot invert.
+        // [doc 38] The counter-SOS's own broken level, still un-overwritten at this instant  -> docs/mpc_d_strategy.md
         float sAnchor = na(dSosLvl) ? ctrExt : dSosLvl
         float sBase = switch execSlMode
             "Counter-SOS line"    => sAnchor
@@ -1614,9 +1262,7 @@ if st.bull_sos or st.bear_sos
             => ctrExt
         float s    = sBase - nDir * execSlBufTk * syminfo.mintick
         float dist = (e - s) * nDir
-        // The minimum stop floor. Computed from the COUNT of the distance rather than by
-        // sizing first and checking after — a guard that has to build the thing it guards
-        // against IS the event. ATR is read from a global series, never inside a branch.
+        // [doc 39] The minimum stop floor. Computed from the COUNT of the distance rather t  -> docs/mpc_d_strategy.md
         float minStop = switch execMinStopMode
             "% of price"  => e * execMinStopVal / 100.0
             "Fixed $"     => execMinStopVal
@@ -1629,29 +1275,15 @@ if st.bull_sos or st.bear_sos
         bool bSide  = dist <= 0
         bool bTight = not bSide and execMinStopMode != "Off" and dist < minStop
         bool bBusy  = strategy.position_size != 0
-        // ⚠ THE ACCOUNT CAN BE GONE, AND UNGUARDED THAT KILLS THE WHOLE RUN.
-        // Size is equity x risk% / distance. Once equity goes negative the quotient does
-        // too, and TradingView does not skip a negative-qty order — it ABORTS THE SCRIPT
-        // ("Invalid `qty` value (-0.1) in the `strategy.entry()` call"), so the Strategy
-        // Tester shows no report at all and the blow-up that caused it is invisible.
-        // Found 2026-08-06 on the first full-history run: at 10% risk from 2020 the account
-        // busts partway through, and the only symptom was an error banner about qty.
-        // Reported as a refusal instead, FIRST in the precedence chain — a bust account
-        // refuses every setup, so naming any later gate would be describing a decision that
-        // was never reached.
+        // [doc 40] ⚠ THE ACCOUNT CAN BE GONE, AND UNGUARDED THAT KILLS THE WHOLE RUN.  -> docs/mpc_d_strategy.md
         bool bBust  = execSizeMode == "Risk % of equity" and not (strategy.equity > 0)
-        // The VWAP FILTER. Read on the entry bar, because that is the bar whose close the
-        // question is about. Inert unless switched on, so the 2026-08-06 baseline is
-        // unmoved — and deliberately NOT applied when the mode is "VWAP side", where the
-        // same test is the trigger and this block does not run at all.
+        // [doc 41] The VWAP FILTER. Read on the entry bar, because that is the bar whose cl  -> docs/mpc_d_strategy.md
         bool bVwap  = execVwapReq and not f_dVwapOk(nDir)
         int  code   = bBust ? 8 : bDir ? 1 : bYoung ? 2 : bGrew ? 3 : bStale ? 4 : bVwap ? 9 : bTight ? 5 : bSide ? 6 : bBusy ? 7 : 0
         dBlk    := code
         dBlkPx  := e
         dCandDir := nDir
-        // Every candidate carries its gates and its geometry, whatever the verdict. A
-        // refusal with no numbers attached cannot be re-priced offline, and re-pricing the
-        // refusals is the whole reason the gates are tunable.
+        // [doc 42] Every candidate carries its gates and its geometry, whatever the verdict  -> docs/mpc_d_strategy.md
         dCandTBos := dTrendBos
         dCandCBos := dCurBos
         dCandBars := na(dSosBar) ? na : bar_index - dSosBar
@@ -1685,44 +1317,16 @@ if st.bull_sos or st.bear_sos
     // during the PREVIOUS shakeout says nothing about this one.
     dVwapLost := false
 
-// ── The first half of the reclaim: did price LOSE the line ──
-// Runs AFTER the shift on purpose, so on an SOS bar it reads the direction that bar just
-// established rather than the one it killed. That ordering is what lets the shakeout's own
-// SOS candle count as the start of losing VWAP, which is usually exactly where it starts.
-// Evaluated on EVERY bar, including SOS bars, because a round trip is a fact about price
-// and not about which bar happens to carry a structure event.
+// [doc 43] ── The first half of the reclaim: did price LOSE the line ──  -> docs/mpc_d_strategy.md
 if dTrendDir != 0 and not na(dVwap) and (dTrendDir == 1 ? close < dVwap : close > dVwap)
     dVwapLost := true
 
-// ── THE VWAP-SIDE ENTRY: the sequence taken WITHOUT waiting for the with-trend SOS ──
-// This is the only block in the file that can open a trade on an ORDINARY bar, and that is
-// the entire point of it — the with-trend SOS confirms at the top of the reclaim leg, so
-// waiting for it is what makes the entry expensive and the stop wide.
-//
-// ⚠ IT IS SKIPPED ON EVERY SOS BAR, and the reason is the shift directly above. By the time
-// this runs on such a bar the shift has already executed, so dTrendDir describes the trend
-// that SOS just KILLED — the opposite side — and the leg extremes have been reset to this
-// bar's own high and low. Evaluating here would arm a trade against the move that just
-// confirmed, sized off a one-bar leg. On every other bar the state is exactly what the SOS
-// path would read, which is what lets both paths share one gate chain.
-//
-// ⚠ WHAT KEEPS IT FROM ARMING BACKWARDS IS dTrendBosMin, not a check of its own. After a
-// with-trend SOS the shift sets dTrendBos to the SHAKEOUT's BOS count, which is 0 or 1 by
-// construction — so at the shipped dTrendBosMin = 1 a bare shakeout cannot pose as a mature
-// trend. At dTrendBosMin = 0 that protection is gone and this will happily arm counter to a
-// trend that has just resumed. That setting was already documented as loose; it is LOOSER
-// here than it is on the SOS path, because this path gets a fresh look every bar.
+// [doc 44] ── THE VWAP-SIDE ENTRY: the sequence taken WITHOUT waiting for the with-  -> docs/mpc_d_strategy.md
 if execEntryMode == "VWAP side" and not (st.bull_sos or st.bear_sos) and not dSeqTaken and dTrendDir != 0
     int   nDir   = dTrendDir
     float ctrExt = nDir == 1 ? dLegLo : dLegHi
     float rclExt = nDir == 1 ? dRclHi : dRclLo
-    // The trigger. Unlike the SOS path there is no event to hang a candidate on, so a bar on
-    // the wrong side of the line is simply not a candidate — see the note on code 9 above
-    // for why it is not reported as a refusal.
-    // ⚠ `dVwapLost` is the RECLAIM half and it is what makes this the setup on the chart
-    // rather than "the first bar after the shakeout that happens to close on the right side".
-    // A sequence that never loses VWAP now takes no trade at all, which is correct: there was
-    // no pullback, so there was nothing to enter on. See execVwapReclaim.
+    // [doc 45] The trigger. Unlike the SOS path there is no event to hang a candidate o  -> docs/mpc_d_strategy.md
     if (not execVwapReclaim or dVwapLost) and f_dVwapOk(nDir) and not na(ctrExt) and not na(rclExt)
         float e     = close
         float sAnch = na(dSosLvl) ? ctrExt : dSosLvl
@@ -1738,13 +1342,7 @@ if execEntryMode == "VWAP side" and not (st.bull_sos or st.bear_sos) and not dSe
             "Fixed $"     => execMinStopVal
             "x ATR(14)"   => na(dAtr) ? 0.0 : dAtr * execMinStopVal
             => 0.0
-        // ⚠ THE MINIMUM-STOP GUARD MATTERS MORE ON THIS PATH THAN ON ANY OTHER IN THE FILE,
-        // and it is worth being explicit about why. Entering early means entering CLOSE to
-        // the sweep extreme — that is the benefit — and the stop is anchored at that same
-        // extreme. So the better this entry is, the smaller `dist` gets, and `qty = risk /
-        // dist` grows without limit as it shrinks. On the SOS path the whole reclaim leg
-        // sits between the entry and the stop and the hazard is structurally rare; here it
-        // is the NORMAL case. Do not run this mode with execMinStopMode = "Off".
+        // [doc 46] ⚠ THE MINIMUM-STOP GUARD MATTERS MORE ON THIS PATH THAN ON ANY OTHER IN   -> docs/mpc_d_strategy.md
         bool bDir   = nDir == 1 ? not execLongs : not execShorts
         bool bYoung = dTrendBos < dTrendBosMin
         bool bGrew  = dCurBos > dCtrBosMax
@@ -1774,9 +1372,7 @@ if execEntryMode == "VWAP side" and not (st.bull_sos or st.bear_sos) and not dSe
             dCtrSos   := dSosLvl
             dSeqTaken := true
 
-// ── The blocked-setup tag ──
-// Bounded by debugDays so an old history does not become a wall of pink. Every real trade
-// keeps its callout however old — only these are trimmed.
+// [doc 47] ── The blocked-setup tag ──  -> docs/mpc_d_strategy.md
 bool dBlkRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
 if showBlockTag and dBlk != 0 and not na(dBlkPx) and dBlkRecent and not na(dAtr)
     // dCandDir, NOT st.bull_sos — a VWAP-side candidate arrives on a bar with no SOS on it,
@@ -1788,18 +1384,11 @@ if showBlockTag and dBlk != 0 and not na(dBlkPx) and dBlkRecent and not na(dAtr)
     line.new(bar_index, dBlkPx, bar_index, tagY, color = BLK_PINKL, style = line.style_dotted, width = 1)
     label.new(bar_index, tagY, (bLong ? "▲" : "▼") + " SETUP BLOCKED", tooltip = (bLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_dBlkWhy(dBlk) + "\n──────────────────\nEntry would have been " + str.tostring(dBlkPx, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = bLong ? label.style_label_up : label.style_label_down, size = size.small)
 
-// Plain ASCII, no quotes and no newlines, so it drops straight into a webhook body.
-// Fires on BAR CLOSE: the engine's break test reads the LIVE close, so an SOS can appear and
-// vanish intrabar, and an alert that did that would be worse than no alert at all.
+// [doc 48] Plain ASCII, no quotes and no newlines, so it drops straight into a webh  -> docs/mpc_d_strategy.md
 if dFired
     alert("MPC D " + syminfo.ticker + " " + (dDir == 1 ? "LONG" : "SHORT") + " entry " + str.tostring(dEntry, format.mintick) + " SL " + str.tostring(dStop, format.mintick), alert.freq_once_per_bar_close)
 
-//============================================================
-//  EXECUTION
-//============================================================
-// One position at a time (pyramiding = 0). The sequence fires a few times a month at the
-// default gates, so a second concurrent trade would almost always be the same swing read
-// twice rather than a genuinely separate setup.
+// [doc 49] EXECUTION  -> docs/mpc_d_strategy.md
 var int   tDir      = 0
 var float tE        = na
 var float tSL       = na    // the ORIGINAL stop. Never moves — every later stop is derived
@@ -1809,11 +1398,7 @@ var float tNpAt     = na    // net profit at the fill, so the trade's own R can 
 var int   tStage    = 0     // 0 = open, 1 = TP1 reached, 2 = TP2 reached
 var int   tMark     = 0     // how many target markers have been placed (drawing only)
 var float tMaxFav   = na    // the favourable extreme since the FILL — drives the trail
-// ⚠ tMaxAdv is the mirror of tMaxFav and is READ BY NOTHING except the log. It exists
-// because the trade list reports a trade's best and worst price but never their ORDER, and
-// the order is what decides whether an earlier stop would have clipped a winner or saved a
-// loser. Tracked on the same guarded bar range as tMaxFav for the same reason: the fill bar
-// of a resting limit is approached from the wrong side, so its extremes are not the trade's.
+// [doc 50] ⚠ tMaxAdv is the mirror of tMaxFav and is READ BY NOTHING except the log  -> docs/mpc_d_strategy.md
 var float tMaxAdv   = na
 var int   tTBos     = na    // the three gate inputs, frozen at the signal, for the log
 var int   tCBos     = na
@@ -1830,25 +1415,7 @@ var float tCtrSos   = na
 string D_L = "D-L"
 string D_S = "D-S"
 
-// ── The CLOSE: score the trade in R, repaint the callout, honour the keep filter ──
-// 🔴 THIS BLOCK MUST RUN BEFORE `if dFired`, AND IT USED TO RUN AFTER IT.
-// That ordering froze the strategy dead on 2020-05-07 and it stayed frozen for the
-// remaining SIX YEARS of an eight-year run — found 2026-08-06 in the trade list, not by
-// the code reading. The shape is a SAME-BAR FLIP: a position closes and the next sequence
-// fires on the very same bar. When that happened, `if dFired` set the new trade up first
-// (tDir := 1, entry placed), and then this block — sitting at the bottom of the file, and
-// correctly seeing `position_size == 0` — scored the OLD trade and finished by resetting
-// `tDir := 0`. That wiped the direction of a trade that had just been placed.
-// From the next bar the FILL block and the whole exit block are both gated on `tDir != 0`,
-// so NEITHER EVER RAN AGAIN: the position sat open with no stop, no targets and no time
-// stop, `bBusy` was permanently true, and every later setup was refused with code 7.
-// ⚠ It fired ONCE in eight years — exactly one same-bar flip in the entire history — and
-// that one occurrence cost 6 of the 8 years. A path taken on 1 bar in 200,000 is still a
-// path, and the ordering of two blocks is not a detail.
-// ⚠ Scoring must ALSO precede the setup for a second reason: `if dFired` overwrites
-// tRiskUsd and tNpAt, which are exactly what the R grade divides by. Run after it and the
-// closing trade is scored against the NEW trade's risk — a wrong number in the label, the
-// log and the Result Stats, silently.
+// [doc 51] ── The CLOSE: score the trade in R, repaint the callout, honour the keep  -> docs/mpc_d_strategy.md
 if strategy.position_size == 0 and not na(tFillBar)
     float rMade = na(tRiskUsd) or tRiskUsd == 0 ? na : (strategy.netprofit - nz(tNpAt)) / tRiskUsd
     bool  isBe  = not na(rMade) and math.abs(rMade) <= execBeBandR
@@ -1857,10 +1424,7 @@ if strategy.position_size == 0 and not na(tFillBar)
     // A+'s three verdict colours, transparency included — set on the label directly rather
     // than re-wrapped in color.new(), so the value here IS the value A+ paints.
     color  vcol    = isBe ? POS_BE : isWin ? POS_WIN : POS_LOSS
-    // The LEADER LINE is recoloured with the label, which this file did not do — it left the
-    // line grey on every closed trade while the label turned green or red. A+ repaints both,
-    // and it has to: the line is what ties the callout to the candle it belongs to, so a
-    // grey line running into a red label reads as two annotations rather than one.
+    // [doc 52] The LEADER LINE is recoloured with the label, which this file did not do  -> docs/mpc_d_strategy.md
     color  vcolL   = isBe ? POS_BEL : isWin ? POS_WINL : POS_LOSSL
     if not na(aEntry)
         // The keep filter deletes the annotation, never the position blocks — those are the
@@ -1875,15 +1439,7 @@ if strategy.position_size == 0 and not na(tFillBar)
             line.delete(aLead)
         aEntry := na
         aLead  := na
-    // ── The TRADE record. ONE line per trade, pipe-delimited, everything on it. ──
-    // It replaces the old ENTRY + RESULT pair, which is not tidying: Pine Logs keeps only
-    // the most recent N messages, so on an eight-year run the front of the paste is what
-    // gets dropped. Halving the lines halves how much history is lost, and the entry facts
-    // are worth nothing without the outcome anyway.
-    // ⚠ mfeR / maeR are the reason this exists. The Strategy Tester's trade list reports a
-    // trade's best and worst price but never their ORDER, and the order is exactly what
-    // decides whether staging the stop earlier would have protected a loser or clipped a
-    // winner. These two are measured from the FILL forward, so they answer it.
+    // [doc 53] ── The TRADE record. ONE line per trade, pipe-delimited, everything on i  -> docs/mpc_d_strategy.md
     float _mfeR = na(tMaxFav) or na(tDist) or tDist == 0 ? na : (tMaxFav - tE) * tDir / tDist
     float _maeR = na(tMaxAdv) or na(tDist) or tDist == 0 ? na : (tMaxAdv - tE) * tDir / tDist
     tFillBar  := na
@@ -1892,10 +1448,7 @@ if strategy.position_size == 0 and not na(tFillBar)
     tDir      := 0
 
 if dFired
-    // Clear any resting order first. A previous Retrace entry may still be on the book, and
-    // if this setup is the OTHER way round the two ids differ — so without this the strategy
-    // would sit with a live buy limit and a live sell limit at once and take whichever price
-    // reached first, which is not a decision anything in here made.
+    // [doc 54] Clear any resting order first. A previous Retrace entry may still be on   -> docs/mpc_d_strategy.md
     strategy.cancel(D_L)
     strategy.cancel(D_S)
     float q = execSizeMode == "Fixed contracts" ? execFixedQty : (strategy.equity * execRiskPct / 100.0) / ((dEntry - dStop) * dDir)
@@ -1917,25 +1470,14 @@ if dFired
     tTBos    := dCandTBos
     tCBos    := dCandCBos
     tBars    := dCandBars
-    // Retrace rests a LIMIT at the fib; SOS close is a market order that fills at this bar's
-    // close because of process_orders_on_close.
-    // ⚠ `q > 0` is belt-and-braces on top of block code 8, and it is not redundant: code 8
-    // only guards the "Risk % of equity" path, while "Fixed contracts" reaches here with a
-    // bust account, and a na equity would slip past a `>= 0` test. A non-positive qty does
-    // not skip the order — it ABORTS THE SCRIPT and destroys the whole report, so the cheap
-    // check is worth having twice.
+    // [doc 55] Retrace rests a LIMIT at the fib; SOS close is a market order that fills  -> docs/mpc_d_strategy.md
     if q > 0
         if execEntryMode == "Retrace"
             strategy.entry(dDir == 1 ? D_L : D_S, dDir == 1 ? strategy.long : strategy.short, qty = q, limit = dEntry)
         else
             strategy.entry(dDir == 1 ? D_L : D_S, dDir == 1 ? strategy.long : strategy.short, qty = q)
 
-// Kill a resting limit that never filled. Three ways it dies and all three matter: price ran
-// away and never came back, price reached the STOP first (the setup was invalidated before it
-// was ever entered), or a newer SOS superseded the sequence. Without these the order stays on
-// the book and can fill days later on a move that has nothing to do with this setup.
-// bar_index > tOrdBar excludes the bar the order was PLACED — under process_orders_on_close a
-// market entry has not filled yet when this runs on that bar.
+// [doc 56] Kill a resting limit that never filled. Three ways it dies and all three  -> docs/mpc_d_strategy.md
 if strategy.position_size == 0 and not na(tOrdBar) and tDir != 0 and bar_index > tOrdBar
     bool ordStale  = bar_index - tOrdBar > execLimitBars
     bool ordKilled = not na(tSL) and (tDir == 1 ? low <= tSL : high >= tSL)
@@ -1955,11 +1497,7 @@ if strategy.position_size != 0 and na(tFillBar) and tDir != 0
     float ftp1 = tE + tDir * tDist * execTp1R
     float ftp2 = tE + tDir * tDist * execTp2R
     float ftp3 = tE + tDir * tDist * execTp3R
-    // No `fdc` any more. The open callout was coloured by DIRECTION here and A+ paints it
-    // GREY until the result is known — see POS_OPEN. Direction is already in the label text.
-    // The shakeout spans the counter-SOS to the bar the sequence COMPLETED — not to the
-    // fill, which under "Retrace" is later and would stretch the box over the reclaim as
-    // well, drawing a shakeout that never happened.
+    // [doc 57] No `fdc` any more. The open callout was coloured by DIRECTION here and A  -> docs/mpc_d_strategy.md
     aShake := box.new(nz(tCtrBar, tSigBar), nz(tCtrHi, high), nz(tSigBar, bar_index), nz(tCtrLo, low), bgcolor = execShowPosBox and execShowShakeout ? POS_SHADE : color(na), border_color = execShowPosBox and execShowShakeout ? color.new(#787B86, 55) : color(na), border_width = 1, border_style = line.style_dotted)
     // The position. math.max/min rather than a per-direction branch, so a short is drawn by
     // the same four lines as a long and the two cannot drift apart.
@@ -1967,10 +1505,7 @@ if strategy.position_size != 0 and na(tFillBar) and tDir != 0
     aR1   := box.new(tFillBar, math.max(tE, ftp1), bar_index, math.min(tE, ftp1), bgcolor = execShowPosBox and execTp1R > 0 ? POS_GHOST : color(na), border_color = color(na))
     aR2   := box.new(tFillBar, math.max(ftp1, ftp2), bar_index, math.min(ftp1, ftp2), bgcolor = execShowPosBox and execTp2R > execTp1R ? POS_GHOST : color(na), border_color = color(na))
     aR3   := box.new(tFillBar, math.max(ftp2, ftp3), bar_index, math.min(ftp2, ftp3), bgcolor = execShowPosBox and execTp3R > execTp2R ? POS_GHOST : color(na), border_color = color(na))
-    // The callout. One line on the chart so it does not sit on the candles, and the whole
-    // breakdown in the TOOLTIP — every number the trade was built from, so a setup can be
-    // audited on hover instead of by re-deriving it. Pushed execLabelOff ATRs away with a
-    // leader line back, which is the only lever on where the tooltip opens.
+    // [doc 58] The callout. One line on the chart so it does not sit on the candles, an  -> docs/mpc_d_strategy.md
     float lblY = tE + tDir * nz(dAtr, tDist) * execLabelOff * -1
     string tip = "MPC D  " + (tDir == 1 ? "LONG" : "SHORT") + "\n"
     tip += "Entry   " + str.tostring(tE, format.mintick) + "\n"
@@ -1989,9 +1524,7 @@ if strategy.position_size != 0 and na(tFillBar) and tDir != 0
     // textcolor is A+'s near-black #101014, not white: every label in this repo is a bright
     // fill with dark text, and white on the orange breakeven fill is close to unreadable.
     aEntry := label.new(tFillBar, lblY, (tDir == 1 ? "D ▲ " : "D ▼ ") + str.tostring(tE, format.mintick), style = tDir == 1 ? label.style_label_up : label.style_label_down, color = execShowConfLabel ? POS_OPEN : color(na), textcolor = execShowConfLabel ? color.new(#101014, 0) : color(na), size = size.small, tooltip = tip)
-    // Created EMPTY and transparent, then filled in on the bar each target is reached. They
-    // exist from the start so the per-trade object count is fixed and the eviction can drop
-    // a whole trade as one unit.
+    // [doc 59] Created EMPTY and transparent, then filled in on the bar each target is   -> docs/mpc_d_strategy.md
     aTp1 := label.new(tFillBar, ftp1, "", style = label.style_label_left, color = color(na), textcolor = color(na), size = size.tiny)
     aTp2 := label.new(tFillBar, ftp2, "", style = label.style_label_left, color = color(na), textcolor = color(na), size = size.tiny)
     aTp3 := label.new(tFillBar, ftp3, "", style = label.style_label_left, color = color(na), textcolor = color(na), size = size.tiny)
@@ -1999,32 +1532,13 @@ if strategy.position_size != 0 and na(tFillBar) and tDir != 0
     array.push(dLbls, aEntry), array.push(dLbls, aTp1), array.push(dLbls, aTp2), array.push(dLbls, aTp3)
     array.push(dLines, aLead)
     f_dEvict()
-    // (The ENTRY log line was REMOVED 2026-08-06 and folded into the single T| record the
-    //  close block writes. Pine Logs retains only the most recent N messages, so on a
-    //  multi-year run the OLDEST lines are the ones silently dropped — two lines per trade
-    //  meant losing twice as much history, for facts that are useless without the outcome.)
+    // [doc 60] (The ENTRY log line was REMOVED 2026-08-06 and folded into the single T|  -> docs/mpc_d_strategy.md
 
-// ── Entry triangles — the always-visible marker at every fill (ported from mpc_strategy.pine)
-// A triangle under each long fill and over each short one, so you can never miss WHERE a trade
-// opened. That is the whole reason it exists and is not covered by the position blocks: a trade
-// that scratches paints a risk block a few pixels tall and reads as no trade at all.
-// ⚠ `plotshape` is a GLOBAL-SCOPE call and cannot live inside the fill block above — it is
-// declared once and evaluated on every bar, which is why the condition is written out here
-// rather than being set as a flag inside that `if`.
-// ⚠ It is the SAME edge test the fill block uses (`position_size != 0` while `[1] == 0`), so a
-// triangle can never appear on a bar the tracker did not treat as a fill.
-// ⚠ Gated on `execShowPosBox`, matching A+ — the triangles are part of the position drawing, so
-// switching the blocks off switches these off with them rather than leaving orphaned markers.
+// [doc 61] ── Entry triangles — the always-visible marker at every fill (ported fro  -> docs/mpc_d_strategy.md
 plotshape(execShowPosBox and strategy.position_size > 0 and strategy.position_size[1] == 0, title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
 plotshape(execShowPosBox and strategy.position_size < 0 and strategy.position_size[1] == 0, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB,   size = size.small)
 
-// ── f_dRatchet — ported from mpc_strategy.pine's f_swingRatchet, unchanged in behaviour.
-// Same anchor as the plain structure trail (last confirmed swing ± buffer), but from there
-// the stop climbs one pct-of-price step for every step of favourable move. The plain trail
-// sits at the swing however far price runs, and a swing is a LAGGING anchor — in a strong
-// leg it ends up a long way behind, which is where the runner's give-back comes from. Falls
-// back to the bare anchor until the move is one full step past it, so it is never LOOSER
-// than the structure trail, only equal or tighter.
+// [doc 62] ── f_dRatchet — ported from mpc_strategy.pine's f_swingRatchet, unchange  -> docs/mpc_d_strategy.md
 f_dRatchet(float swing, float maxFav, int dir, float buf, float pct) =>
     float anchor = dir > 0 ? swing - buf : swing + buf
     float step   = maxFav * pct / 100.0
@@ -2049,15 +1563,7 @@ if strategy.position_size != 0 and tDir != 0
     float tp2 = tE + tDir * tDist * execTp2R
     float tp3 = tE + tDir * tDist * execTp3R
     float beBuf = execBeBufTk * syminfo.mintick
-    // ⚠ THE FILL BAR MAY NOT STAGE THE STOP, AND MAY NOT FEED tMaxFav.
-    // A resting limit is reached by price coming to it from the WRONG side — a buy limit
-    // fills on the way down — so the fill bar's favourable extreme is where the market was
-    // before the trade existed, not profit the trade made. Staging off it lifts the stop to
-    // breakeven on a trade that has gone nowhere, which puts it through the market and
-    // market-closes every leg at the next bar's open at a price that is neither the stop nor
-    // any target. This is BUG_exit_fill_price_mismatch, fixed across five Pine files on
-    // 2026-08-01 — do not relax it. The exit orders are not live on the fill bar either, so
-    // nothing could have banked there.
+    // [doc 63] ⚠ THE FILL BAR MAY NOT STAGE THE STOP, AND MAY NOT FEED tMaxFav.  -> docs/mpc_d_strategy.md
     if bar_index > tFillBar
         tMaxFav := na(tMaxFav) ? (tDir == 1 ? high : low) : (tDir == 1 ? math.max(tMaxFav, high) : math.min(tMaxFav, low))
         tMaxAdv := na(tMaxAdv) ? (tDir == 1 ? low : high) : (tDir == 1 ? math.min(tMaxAdv, low) : math.max(tMaxAdv, high))
@@ -2076,15 +1582,10 @@ if strategy.position_size != 0 and tDir != 0
             trail := na(swing) ? na : swing - tDir * structBuf
         else
             trail := f_dFixedTrail(tMaxFav, tp2, tDir, execTrailStep)
-    // The TP2 stop FLOOR — the protective baseline the instant TP2 is reached, before the
-    // trail takes over. "One trail step behind" never drops below breakeven, so it cannot
-    // hand back a loss.
+    // [doc 64] The TP2 stop FLOOR — the protective baseline the instant TP2 is reached,  -> docs/mpc_d_strategy.md
     float floor2 = execTp2StopMode == "Breakeven" ? tE + tDir * beBuf : execTp2StopMode == "One trail step behind" ? (tDir == 1 ? math.max(tE + beBuf, tMaxFav - execTrailStep) : math.min(tE - beBuf, tMaxFav + execTrailStep)) : tp1
     float curStop = tStage >= 2 ? (na(trail) ? floor2 : (tDir == 1 ? math.max(floor2, trail) : math.min(floor2, trail))) : tStage >= 1 ? tE + tDir * beBuf : tSL
-    // ── The position drawing, updated live ──
-    // na-guarded and guarded SEPARATELY from the exits below: a drawing call on an na id is
-    // a runtime error that takes the whole script down, and an order that stopped being
-    // issued because a BOX could not be drawn would turn a chart bug into a trading bug.
+    // [doc 65] ── The position drawing, updated live ──  -> docs/mpc_d_strategy.md
     if not na(aRisk)
         box.set_right(aRisk, bar_index)
         box.set_top(aRisk, math.max(tE, curStop))
@@ -2107,19 +1608,12 @@ if strategy.position_size != 0 and tDir != 0
             label.set_xy(aTp3, bar_index, tp3), label.set_text(aTp3, " TP3"), label.set_textcolor(aTp3, TP_ANNOT)
             box.set_bgcolor(aR3, execShowPosBox ? POS_G3 : color(na))
     string eid = tDir == 1 ? D_L : D_S
-    // ⚠ A RUNG IS NOT RE-ISSUED ONCE ITS TARGET HAS BEEN TOUCHED. Calling strategy.exit with
-    // an id whose order already FILLED places a NEW order rather than modifying the old one,
-    // so a re-issued TP1 would bank another slice of the remainder every single bar after.
-    // ⚠ This is a DELIBERATE divergence from mpc_strategy.pine, which re-issues every bar
-    // unguarded. It gets away with it because it ships both rungs at 0% and the rung is then
-    // skipped entirely — the bug is unreachable at its defaults and reachable at these.
+    // [doc 66] ⚠ A RUNG IS NOT RE-ISSUED ONCE ITS TARGET HAS BEEN TOUCHED. Calling stra  -> docs/mpc_d_strategy.md
     if execTp1Pct > 0 and execTp1R > 0 and tStage < 1
         strategy.exit("D-TP1", from_entry = eid, qty_percent = execTp1Pct, limit = tp1, stop = curStop)
     if execTp2Pct > 0 and execTp2R > 0 and tStage < 2
         strategy.exit("D-TP2", from_entry = eid, qty_percent = execTp2Pct, limit = tp2, stop = curStop)
-    // The remainder. Declared as its own float rather than inlined as a ternary against na,
-    // which Pine will not always infer a type for. na = no limit, so the runner is resolved
-    // by the trailing stop alone when TP3 is switched off.
+    // [doc 67] The remainder. Declared as its own float rather than inlined as a ternar  -> docs/mpc_d_strategy.md
     float tp3Lim = execTp3R > 0 ? tp3 : na
     strategy.exit("D-RUN", from_entry = eid, limit = tp3Lim, stop = curStop)
     // The two clock/structure exits, in mpc_strategy's own precedence: an opposite SOS is
@@ -2133,19 +1627,7 @@ if strategy.position_size != 0 and tDir != 0
 // (The CLOSE block used to sit HERE, at the very bottom, and that ordering was a bug —
 //  see the note at its new home above `if dFired`. Do not move it back.)
 
-// ── The REFUSAL record. Same shape as the trade record, so one parser reads both. ──
-// It carries the gates and the geometry, which is what makes a refused setup RE-PRICEABLE:
-// with the sweep extreme, the reclaim extreme and the counter-SOS line you can compute
-// offline what any stop anchor and any retrace level would have given it. A refusal logged
-// as prose ("blocked: trend too young") can be counted and nothing else.
-// ⚠ The header is emitted ONCE, on the first bar, so a pasted log is self-describing and
-// cannot be read against the wrong column order six weeks from now.
-//============================================================
-//  STATE PANEL
-//============================================================
-// Reports the GATES, not just the outcome. A tool that only ever says "no setup" cannot tell
-// you whether the market is quiet or whether you have set a gate to refuse everything — and
-// those two need opposite responses.
+// [doc 68] ── The REFUSAL record. Same shape as the trade record, so one parser rea  -> docs/mpc_d_strategy.md
 var table dTbl = table.new(position.top_right, 2, 7, bgcolor = color.new(#0B0E14, 0), border_color = color.new(#17578e, 70), border_width = 1, frame_color = color.new(#17578e, 70), frame_width = 1)
 
 f_dCell(table t, int row, string k, string v, color c) =>
@@ -2160,24 +1642,14 @@ if showStatePanel and barstate.islast
     // The candidate is the trend TWO SOS back — the one a with-trend SOS would return to. If
     // it is not mature the sequence cannot fire whatever price does next.
     f_dCell(dTbl, 3, "Returns to", dTrendDir == 1 ? "Bullish" : dTrendDir == -1 ? "Bearish" : "—", dTrendBos >= dTrendBosMin ? (dTrendDir == 1 ? D_LONG : D_SHORT) : D_MUTED)
-    // The VWAP read, and it reports the ANSWER for the side the sequence would trade — not
-    // "price is above VWAP", which the reader would then have to combine with the direction
-    // themselves and would get wrong on exactly the short setups.
+    // [doc 69] The VWAP read, and it reports the ANSWER for the side the sequence would  -> docs/mpc_d_strategy.md
     bool vwapOkNow = dTrendDir == 0 ? false : f_dVwapOk(dTrendDir)
-    // "reclaimed" is the state the entry actually needs — price is on the trend's side AND
-    // it had lost the line first. "pro-trend" alone means the side is right but the round
-    // trip never happened, which under execVwapReclaim is NOT a trade. Naming them the same
-    // thing is what let the old build look armed when it had nothing to enter on.
+    // [doc 70] "reclaimed" is the state the entry actually needs — price is on the tren  -> docs/mpc_d_strategy.md
     string vwapTxt = na(dVwap) ? "no data" : dTrendDir == 0 ? "—" : (vwapOkNow ? (dVwapLost ? "reclaimed" : "pro-trend") : "wrong side")
     f_dCell(dTbl, 4, "VWAP", vwapTxt, na(dVwap) ? D_MUTED : dTrendDir == 0 ? D_MUTED : vwapOkNow ? D_LONG : D_SHORT)
-    // ⚠ The VWAP term is listed LAST in this chain and that mirrors the block-code
-    // precedence deliberately: the panel and the tag must never name different reasons for
-    // one refusal. It is also only shown when VWAP can actually refuse something — under the
-    // other two modes with the filter off, VWAP is being displayed, not consulted.
+    // [doc 71] ⚠ The VWAP term is listed LAST in this chain and that mirrors the block-  -> docs/mpc_d_strategy.md
     bool vwapGates = execEntryMode == "VWAP side" or execVwapReq
-    // The two VWAP waits are DIFFERENT states and the panel must not merge them: "lose" means
-    // the pullback has not happened yet, "reclaim" means it has and price has not come back.
-    // One of them is early in the setup and one is the bar before the entry.
+    // [doc 72] The two VWAP waits are DIFFERENT states and the panel must not merge the  -> docs/mpc_d_strategy.md
     bool needLose = execEntryMode == "VWAP side" and execVwapReclaim and not dVwapLost
     string dWait = dTrendDir == 0 ? "Warming up" : dTrendBos < dTrendBosMin ? "Trend too young" : dCurBos > dCtrBosMax ? "Shakeout became a trend" : not na(dSosBar) and bar_index - dSosBar > dCtrBarsMax ? "Shakeout stale" : needLose ? "Waiting for price to lose VWAP" : (vwapGates and not vwapOkNow) ? (dVwapLost ? "Waiting on VWAP reclaim" : "Waiting on VWAP") : dSeqTaken ? "Sequence already taken" : execEntryMode == "VWAP side" ? (dTrendDir == 1 ? "Armed - long on VWAP reclaim" : "Armed - short on VWAP reclaim") : dTrendDir == 1 ? "Armed - need bull SOS" : "Armed - need bear SOS"
     f_dCell(dTbl, 5, "State", dWait, str.startswith(dWait, "Armed") ? #ffde59 : D_MUTED)
