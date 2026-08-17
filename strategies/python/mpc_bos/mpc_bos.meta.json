@@ -45,18 +45,14 @@
       "label": "Which break after the shift",
       "group": "The break",
       "core": true,
-      "desc": "Which break after the turn to trade. The first break is the initial push; the rest are continuations. All is the default — taking every break tested better. Note a new break always cancels an older setup still waiting for its pullback.",
-      "choices": [
-        "1st only",
-        "1st + 2nd",
-        "All"
-      ]
+      "desc": "Which break after the turn to trade. The first is the initial push, the rest are continuations. A new break cancels an older setup still waiting.",
+      "choices": ["1st only", "1st + 2nd", "All"]
     },
     {
       "name": "bos_min_disp_atr",
       "label": "   Break must clear the swing by (x ATR)",
       "group": "The break",
-      "desc": "How far the breaking candle must close past the level it broke, measured in ATR. A one-tick poke through a high is a stop run, not a break. 0 = accept any break.",
+      "desc": "How far the breaking candle must close past the level, in ATR. A one-tick poke is a stop run, not a break. 0 = accept any break.",
       "min": 0,
       "max": 5,
       "step": 0.1
@@ -65,7 +61,7 @@
       "name": "bos_min_leg_atr",
       "label": "   Break leg must be at least (x ATR)",
       "group": "The break",
-      "desc": "The smallest move that counts as a break. A tiny move leaves a pullback inside the noise, with a stop too tight to survive and targets inside the spread. 0 = no minimum.",
+      "desc": "The smallest move that counts as a break, in ATR. 0 = no minimum.",
       "min": 0,
       "max": 10,
       "step": 0.25
@@ -74,7 +70,7 @@
       "name": "bos_max_days",
       "label": "   Drop an armed break after (days)",
       "group": "The break",
-      "desc": "How long a setup waits for its pullback before it is dropped. Counted in bars rather than clock time, so weekends and the daily close do not use it up.",
+      "desc": "How long a setup waits for its pullback before it is dropped. Counted in bars, so weekends and the daily close do not use it up.",
       "min": 0.25,
       "max": 10,
       "step": 0.25
@@ -83,7 +79,7 @@
       "name": "bos_max_per_regime",
       "label": "   Max trades between shifts",
       "group": "The break",
-      "desc": "Stop taking new trades after this many fills since the last turn, until the next one. 10 is effectively off. Lower it to 2 or 3 to stop losses stacking up in one choppy stretch.",
+      "desc": "Stop taking new trades after this many fills since the last turn. Lower it to stop losses stacking up in one choppy stretch.",
       "min": 1,
       "max": 20,
       "step": 1
@@ -92,41 +88,35 @@
       "name": "bos_req_hold",
       "label": "   Broken level must hold",
       "group": "The break",
-      "desc": "On = a candle closing back through the broken level kills the setup. Careful: with the entry this deep, price normally has to close back through that level to reach the order at all, so the setup usually dies just before it would have filled. It only makes sense with a much shallower entry."
+      "desc": "On = a close back through the broken level kills the setup. With an entry this deep that usually kills it just before it would have filled."
     },
     {
       "name": "bos_fib_anchor",
       "label": "Measure levels on",
       "group": "Entry",
       "core": true,
-      "desc": "Which move the entry, the stop and the targets are measured on. Break leg freezes them at the break. Expansion leg keeps measuring while price runs, so the levels move until the pullback starts. Break leg is the default because every tested number here was produced that way — the two have never been compared.",
-      "choices": [
-        "Expansion leg",
-        "Break leg"
-      ]
+      "desc": "Which move the entry, stop and targets are measured on. Break leg freezes them at the break; expansion leg keeps moving until the pullback starts.",
+      "choices": ["Expansion leg", "Break leg"]
     },
     {
       "name": "bos_entry_top",
       "label": "Shallowest the entry may rest",
       "group": "Entry",
-      "desc": "The shallowest pullback the strategy will accept. Shallow entries fill far more often and pay far less, because the stop stays where it is while the targets come closer, so the whole ladder compresses. The deep end does not move. Not measured — this is a lever to test.",
-      "choices": [
-        "0.5",
-        "0.382"
-      ]
+      "desc": "The shallowest pullback the strategy will accept. Shallow entries fill far more often and pay far less.",
+      "choices": ["0.5", "0.382"]
     },
     {
       "name": "bos_use_fvg",
       "label": "Price the entry off a gap",
       "group": "Entry",
       "core": true,
-      "desc": "On = the order is placed on a gap inside the pullback. Off is the default = a plain level, and the five settings below grey out. Off, because pricing the entry off a gap was the losing half of the book: the gap decides where the order rests, and it rests too shallow."
+      "desc": "On = the order is placed on a gap inside the pullback. Off = a plain level, and the settings below grey out."
     },
     {
       "name": "exec_req_fvg",
       "label": "   ↳ ...and require one (no gap = no trade)",
       "group": "Entry",
-      "desc": "On = if no gap qualifies, the setup does not trade at all. Off = it still trades, at the plain level further down. The shallow pocket counts as a gap here, so a setup that has one is not refused.",
+      "desc": "On = no qualifying gap means no trade. Off = it still trades, at the plain level below.",
       "show_if": {
         "bos_use_fvg": true
       }
@@ -135,7 +125,7 @@
       "name": "exec_fvg_deep_only",
       "label": "   ↳ ...gap must sit fully past the shallow end",
       "group": "Entry",
-      "desc": "On = the whole gap has to sit on the deep side of the shallow end set above. Off = a gap lying across that line also counts. Deeper entries are better prices but are reached less often.",
+      "desc": "On = the whole gap has to sit on the deep side of the shallow end. Better prices, reached less often.",
       "show_if": {
         "bos_use_fvg": true
       }
@@ -144,7 +134,7 @@
       "name": "exec_deep_fib",
       "label": "   ↳ ...deep gap enters at the nearest fib",
       "group": "Entry",
-      "desc": "For a gap sitting deeper than 0.618: rest the order at the nearest level just above the gap — the price you reach first — instead of chasing the gap's own edge, which price may never touch.",
+      "desc": "For a gap deeper than 0.618, rest the order at the nearest level above it - the price you reach first.",
       "show_if": {
         "bos_use_fvg": true
       }
@@ -153,7 +143,7 @@
       "name": "exec_conf_sz2",
       "label": "   ↳ ...Sniper Zone counts as a gap",
       "group": "Entry",
-      "desc": "Lets the shallow pocket of the break stand in for a gap on a setup that had none. Off = a real gap is strictly required. It can price a trade; it is never something the trade waits for.",
+      "desc": "Lets the shallow pocket of the break stand in for a gap on a setup that had none.",
       "show_if": {
         "bos_use_fvg": true
       }
@@ -162,7 +152,7 @@
       "name": "exec_fvg_50",
       "label": "   ↳ ...gap across the shallow end enters at it",
       "group": "Entry",
-      "desc": "Last resort: a gap lying across the shallow end of the band rests the order exactly on that line. Ranked below every other source, so it only ever prices a setup nothing better could.",
+      "desc": "Last resort: a gap lying across the shallow end rests the order exactly on that line.",
       "show_if": {
         "bos_use_fvg": true
       }
@@ -172,69 +162,49 @@
       "label": "Fallback entry level",
       "group": "Entry",
       "core": true,
-      "desc": "How deep in the pullback the order rests. This is what actually trades, since pricing off a gap is off by default — the name is left over. Deeper tested clearly better. Do not pair a deep entry with a tighter stop: the stop ends up so small that the spread eats most of the trade.",
-      "choices": [
-        "0.382",
-        "0.5",
-        "0.618",
-        "0.702",
-        "0.786",
-        "0.886"
-      ]
+      "desc": "How deep in the pullback the order rests. This is what actually trades while gap pricing is off.",
+      "choices": ["0.382", "0.5", "0.618", "0.702", "0.786", "0.886"]
     },
     {
       "name": "bos_respect_veto",
       "label": "Divergence blocks a new entry",
       "group": "Filters",
-      "desc": "On = a long will not open while a bearish divergence is live or momentum is extremely overbought, and the mirror for shorts. It is re-checked every bar, so a divergence appearing while the setup waits pulls the order, and the order can go back if it fades."
+      "desc": "On = a long will not open while a bearish divergence is live or momentum is very overbought, and the mirror for shorts."
     },
     {
       "name": "bos_vwap_req",
       "label": "Session VWAP filter",
       "group": "Filters",
       "core": true,
-      "desc": "Only trade while price is closing on the trend's own side of the session average price — above it for a long, below for a short. It asks which side price is on, not whether it crossed. It looked good in testing, but on a simplified version of this setup, so treat it as a hint.",
-      "choices": [
-        "Off",
-        "Trend's side"
-      ]
+      "desc": "Only trade while price is closing on the trend's own side of the session average price.",
+      "choices": ["Off", "Trend's side"]
     },
     {
       "name": "exec_no_late_day",
       "label": "No entries in the final hour (16:00-18:00 NY)",
       "group": "Filters",
-      "desc": "Blocks new entries in the last hour before the daily close. Gold closes at 17:00 New York and reopens at 18:00, so a trade opened late can be gapped out over the break. That is a fact about market hours rather than a strategy opinion."
+      "desc": "Blocks new entries in the last hour before the daily close, so a trade cannot be gapped out over the break."
     },
     {
       "name": "exec_htf_weekly",
       "label": "Weekly bias requirement",
       "group": "Filters",
-      "desc": "Whether the weekly trend has to agree with the trade. Ignore = no filter. Must agree = the weekly has to match. Must not oppose = neutral is fine, only an opposing weekly blocks. For a trend-following setup, Must agree is the natural one to try.",
-      "choices": [
-        "Ignore",
-        "Must agree",
-        "Must not oppose",
-        "Must oppose (reversal)"
-      ]
+      "desc": "Whether the weekly trend has to agree with the trade. Ignore = no filter.",
+      "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"]
     },
     {
       "name": "exec_htf_daily",
       "label": "Daily bias requirement",
       "group": "Filters",
       "desc": "The same four choices, judged on the daily trend. Ignore = off.",
-      "choices": [
-        "Ignore",
-        "Must agree",
-        "Must not oppose",
-        "Must oppose (reversal)"
-      ]
+      "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"]
     },
     {
       "name": "exec_risk_pct",
       "label": "Risk % per trade",
       "group": "Size & stop",
       "core": true,
-      "desc": "How much of the account each trade risks. Position size is worked out from this and the stop distance, so a wider stop automatically buys a smaller position.",
+      "desc": "How much of the account each trade risks. A wider stop automatically buys a smaller position.",
       "min": 0.1,
       "max": 100,
       "step": 0.1
@@ -244,7 +214,7 @@
       "label": "Stop model",
       "group": "Size & stop",
       "core": true,
-      "desc": "Where the stop sits. ATR is a fixed distance from the entry and is the default: it was the biggest improvement measured here, because a level-based stop shrinks with the move and can end up inside the spread. Broken swing level sits the wrong side of the entry, so it refuses almost every order.",
+      "desc": "Where the stop sits. ATR is a fixed distance from the entry and is the default.",
       "choices": [
         "Fib 1.0 (leg origin)",
         "Broken swing level",
@@ -258,7 +228,7 @@
       "label": "   ↳ ATR multiple",
       "group": "Size & stop",
       "core": true,
-      "desc": "How far the stop sits from the entry, in ATR, when the stop model above is ATR. Anything from about 1.2 to 1.5 gives the same answer, so read it as a range rather than an exact number. Below 1.0 the stop starts landing inside the spread again, which is the problem this stop model exists to remove.",
+      "desc": "How far the stop sits from the entry, in ATR. Anything from about 1.2 to 1.5 gives the same answer.",
       "min": 0.1,
       "max": 10,
       "step": 0.1,
@@ -270,7 +240,7 @@
       "name": "exec_sl_buf_tk",
       "label": "Extra room beyond the stop (ticks)",
       "group": "Size & stop",
-      "desc": "Pushes the stop this many ticks further away than the level chosen above, so a wick through it does not take you out.",
+      "desc": "Pushes the stop this many ticks further away, so a wick through it does not take you out.",
       "min": 0,
       "step": 1
     },
@@ -278,52 +248,36 @@
       "name": "exec_min_stop_mode",
       "label": "Minimum stop distance",
       "group": "Size & stop",
-      "desc": "Refuse a setup whose stop lands too close to the entry. Size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less — it buys an enormous position that ordinary noise runs straight through. With the ATR stop above it rarely fires, so treat it as a second line of defence.",
-      "choices": [
-        "Off",
-        "% of price",
-        "Fixed $",
-        "x ATR(14)"
-      ]
+      "desc": "Refuse a setup whose stop lands too close to the entry, which would buy an oversized position that noise runs straight through.",
+      "choices": ["Off", "% of price", "Fixed $", "x ATR(14)"]
     },
     {
       "name": "exec_min_stop_val",
       "label": "   ↳ Minimum stop floor (unit = mode above)",
       "group": "Size & stop",
-      "desc": "The floor itself. A percent in percent-of-price mode, dollars of price in fixed mode, a multiple in ATR mode.",
+      "desc": "The floor itself. A percent, dollars of price, or an ATR multiple, following the mode above.",
       "min": 0,
       "step": 0.05,
       "show_if": {
-        "exec_min_stop_mode": [
-          "% of price",
-          "Fixed $",
-          "x ATR(14)"
-        ]
+        "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"]
       }
     },
     {
       "name": "bos_move_stop",
       "label": "Moving stop (trails from entry)",
       "group": "Size & stop",
-      "desc": "A trailing stop that starts as soon as you are filled, instead of waiting for the second target. It follows the best price the trade has seen and can only ever tighten. Off = the stop stays put until the first target moves it to breakeven.",
-      "choices": [
-        "Off",
-        "$ of price",
-        "Structure (swing)"
-      ]
+      "desc": "A trailing stop that starts as soon as you are filled. It follows the best price seen and can only tighten.",
+      "choices": ["Off", "$ of price", "Structure (swing)"]
     },
     {
       "name": "bos_move_stop_val",
       "label": "   ↳ trail distance (unit = mode above)",
       "group": "Size & stop",
-      "desc": "How far the moving stop sits behind the best price seen. Dollars of price in dollar mode — on gold 1 pip is 10 cents, so 5.0 is 50 pips — or ticks behind the last swing in structure mode. Too tight and normal noise scratches every trade before it can work, so start wide and walk it in.",
+      "desc": "How far the moving stop sits behind the best price seen. Dollars of price in dollar mode, ticks behind the last swing in structure mode.",
       "min": 0.1,
       "step": 0.5,
       "show_if": {
-        "bos_move_stop": [
-          "$ of price",
-          "Structure (swing)"
-        ]
+        "bos_move_stop": ["$ of price", "Structure (swing)"]
       }
     },
     {
@@ -331,7 +285,7 @@
       "label": "TP1 size %",
       "group": "Targets",
       "core": true,
-      "desc": "How much of the position the first target banks. 0 is the default and banking here tested worse. Touching the target still moves the stop to breakeven whatever this is set to, so 0 keeps the protection and gives up only the partial.",
+      "desc": "How much of the position the first target banks. 0 = bank nothing. Touching it still moves the stop to breakeven.",
       "min": 0,
       "max": 100,
       "step": 5
@@ -341,7 +295,7 @@
       "label": "TP2 size %",
       "group": "Targets",
       "core": true,
-      "desc": "How much of the position the second target banks. 0 by default, for the same reason. Touching it still lifts the stop to its floor and hands the rest onward, so the targets drive the stop whatever the sizes are.",
+      "desc": "How much of the position the second target banks. 0 = bank nothing. Touching it still lifts the stop and hands the rest onward.",
       "min": 0,
       "max": 100,
       "step": 5
@@ -351,7 +305,7 @@
       "label": "TP3 size %",
       "group": "Targets",
       "core": true,
-      "desc": "How much of the position the last target banks. That target is the far end of the move. 100 is the default, so there is no runner: the whole position leaves there or at the stop climbing behind it, which tested best. Anything under 100 turns the rest into a runner again.",
+      "desc": "How much of the position the last target banks. 100 = the whole position leaves there, so there is no runner.",
       "min": 0,
       "max": 100,
       "step": 5
@@ -360,13 +314,13 @@
       "name": "bos_tp3_measured",
       "label": "TP3 = measured move",
       "group": "Targets",
-      "desc": "Replaces the last target with the classic continuation target: the size of the break projected forward from the level it broke. That sits further out than the end of the move. Ignored when it would land behind the second target. On a shallow entry it is what creates a last target at all."
+      "desc": "Replaces the last target with the size of the break projected forward from the level it broke. Ignored if it would land behind the second target."
     },
     {
       "name": "exec_be_buf_tk",
       "label": "Breakeven buffer (ticks)",
       "group": "Targets",
-      "desc": "The breakeven stop sits this far beyond the entry, so a scratch still covers costs instead of losing a few cents. It is also why TradingView reports no breakevens — those exits book a tiny profit, so it files them as wins. The trade label counts them honestly.",
+      "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs.",
       "min": 0,
       "step": 1
     },
@@ -374,17 +328,14 @@
       "name": "exec_runner_trail",
       "label": "Runner trail method",
       "group": "Runner",
-      "desc": "How the last part of the position is trailed once the second target is hit. Structure parks the stop at the last swing — it breathes with the trend and usually rides further, but a swing lags, so it hands some back at the turn. Fixed step ratchets on the grid set below.",
-      "choices": [
-        "Fixed step",
-        "Structure (swing)"
-      ]
+      "desc": "How the runner is trailed once the second target is hit. Structure parks the stop at the last swing; fixed step uses a dollar grid.",
+      "choices": ["Fixed step", "Structure (swing)"]
     },
     {
       "name": "exec_struct_trail_buf_tk",
       "label": "   ↳ Structure trail buffer (ticks)",
       "group": "Runner",
-      "desc": "Structure method only. The trailing stop sits this many ticks beyond the swing it is following, so a wick through it does not clip the trade.",
+      "desc": "Structure method only. The trailing stop sits this many ticks beyond the swing it is following.",
       "min": 0,
       "step": 1,
       "show_if": {
@@ -395,7 +346,7 @@
       "name": "exec_trail_step",
       "label": "Runner trail step ($ of price)",
       "group": "Runner",
-      "desc": "The step size in dollars. Read by two settings, so it is never greyed out: the fixed-step trail ratchets on this grid, and the one-step-behind floor sits this far under the best price seen. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
+      "desc": "The step size in dollars. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
       "min": 0.01,
       "step": 0.5
     },
@@ -403,18 +354,14 @@
       "name": "exec_tp2_stop_mode",
       "label": "TP2 → stop floor",
       "group": "Runner",
-      "desc": "Where the stop jumps to the moment the second target is hit, before the trail takes over. TP1 price is tight and can scratch the trade on the first pullback. Breakeven gives it the most room. The trail can still tighten past this, never loosen it.",
-      "choices": [
-        "TP1 price",
-        "Breakeven",
-        "One trail step behind"
-      ]
+      "desc": "Where the stop jumps to the moment the second target is hit. TP1 is tight and can scratch the trade; breakeven gives it the most room.",
+      "choices": ["TP1 price", "Breakeven", "One trail step behind"]
     },
     {
       "name": "bos_close_opp_div",
       "label": "Close an open trade on opposing divergence",
       "group": "Runner",
-      "desc": "On = close the trade when a divergence confirms against it, rather than waiting for the stop or a target — it says the move is overstretched and the next turn is building. It fires on a confirmed divergence only, never on a plain overbought reading."
+      "desc": "On = close the trade when a divergence confirms against it, rather than waiting for the stop or a target."
     }
   ]
 }

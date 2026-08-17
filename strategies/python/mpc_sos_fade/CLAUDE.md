@@ -32,6 +32,17 @@ so a mangled one fails to compile, it does not quietly change a trade.
 
 ### `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
 
+🔴 **39 `desc` fields were rewritten to plain English on 2026-08-16, and the trigger was the
+PINE side.** Every input tooltip in all 29 Pine files was cut to one or two plain sentences
+(rule: `indicators/strategies/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*), and because a `desc`
+IS that tooltip verbatim, this file had to move with it or the lab panel would have gone on
+teaching the old wording. ⚠ **Strings only — every param's `name`, `group`, `core`, `widget`
+and `options` is unchanged, verified by diffing and counting the changed lines that do not
+contain `"desc"`.** The measured detail those descs used to carry now lives in
+`indicators/strategies/docs/mpc_strategy.md` and the specs.
+
+
+
 Every `label` in the meta file is byte-identical to that input's title in
 `indicators/strategies/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
 input's tooltip **verbatim**. One parameter, one name, one explanation, two UIs.

@@ -16,15 +16,15 @@ groupStructure = "Internal Structure"
 groupDisplay = "Display"
 groupStyle = "Style"
 
-internalLengthInput = input.int(5, "Internal structure length", minval = 2, maxval = 50, group = groupStructure, tooltip = "Internal pivot length used by the SMC leg calculation. The SMC default is 5.")
-confluenceFilterInput = input.bool(false, "Confluence filter", group = groupStructure, tooltip = "Use the SMC internal candle confluence filter. Disabled by default to match the standard SMC setting.")
-showBosInput = input.bool(true, "Show BOS labels", group = groupDisplay, tooltip = "Display only BOS events that follow a hidden CHOCH.")
-showChochInput = input.bool(false, "Show CHOCH labels", group = groupDisplay, tooltip = "Display the first break against the current internal trend. Disabled by default.")
-showSignalInput = input.bool(true, "Show MSS sweeps", group = groupDisplay, tooltip = "Show only first-touch higher-low and lower-high sweeps that close in the BOS direction.")
-showProtectedLevelInput = input.bool(true, "Show protected level", group = groupDisplay, tooltip = "Extend the protected higher low or lower high after a visible BOS.")
-bullColorInput = input.color(BULL_COLOR, "Bullish color", group = groupStyle, tooltip = "Color used for bullish BOS and bullish MSS sweeps.")
-bearColorInput = input.color(BEAR_COLOR, "Bearish color", group = groupStyle, tooltip = "Color used for bearish BOS and bearish MSS sweeps.")
-levelColorInput = input.color(NEUTRAL_COLOR, "Protected level color", group = groupStyle, tooltip = "Color used for protected higher-low and lower-high levels.")
+internalLengthInput = input.int(5, "Internal structure length", minval = 2, maxval = 50, group = groupStructure, tooltip = "Pivot length for internal structure. The SMC default is 5.")
+confluenceFilterInput = input.bool(false, "Confluence filter", group = groupStructure, tooltip = "Adds the SMC internal candle confluence filter. Off by default.")
+showBosInput = input.bool(true, "Show BOS labels", group = groupDisplay, tooltip = "Shows only BOS events that follow a hidden CHOCH.")
+showChochInput = input.bool(false, "Show CHOCH labels", group = groupDisplay, tooltip = "Shows the first break against the current internal trend.")
+showSignalInput = input.bool(true, "Show MSS sweeps", group = groupDisplay, tooltip = "Shows only first-touch HL and LH sweeps that close in the BOS direction.")
+showProtectedLevelInput = input.bool(true, "Show protected level", group = groupDisplay, tooltip = "Extends the protected high or low after a visible BOS.")
+bullColorInput = input.color(BULL_COLOR, "Bullish color", group = groupStyle, tooltip = "Colour for bullish BOS and sweeps.")
+bearColorInput = input.color(BEAR_COLOR, "Bearish color", group = groupStyle, tooltip = "Colour for bearish BOS and sweeps.")
+levelColorInput = input.color(NEUTRAL_COLOR, "Protected level color", group = groupStyle, tooltip = "Colour for protected high and low levels.")
 
 // --- SMC internal leg calculation ---
 leg(int size) =>

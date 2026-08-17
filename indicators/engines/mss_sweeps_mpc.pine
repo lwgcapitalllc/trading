@@ -55,8 +55,8 @@ var GRP_STRUCT = "Market Structure"
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
-bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
-bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
+bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "On keeps internal labels from past swings. Off shows only the current swing's.", display = display.none)
+bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving just BOS and SOS. Nothing else changes.", display = display.none)
 float  pbBuffer         = 0.0
 
 f_structSize() =>
@@ -1083,47 +1083,47 @@ var string GRP_TREND = "MSS Trend Filter"
 var string GRP_MSSTY = "MSS Style"
 
 // ── Trigger shape ────────────────────────────────────────
-bool  msShow          = input.bool(true,  "Show MSS sweeps",                group = GRP_MSS, tooltip = "The signal itself. Off leaves the protected levels drawn but prints nothing.")
-bool  msShowLevel     = input.bool(true,  "Show protected level",           group = GRP_MSS, tooltip = "Extend the iHL/iLH the last iBOS left behind, until it is swept, failed, or invalidated.")
-bool  msShowFiltered  = input.bool(true,  "Show filtered-out sweeps (grey)",group = GRP_MSS, tooltip = "Draw the sweeps the trend filter REJECTED, in grey. This is how you judge whether the filter is helping or just cutting the sample. Turn it off once you have decided.")
-int   msMaxBars       = input.int(0, "Protected level expires after (bars)", minval = 0, maxval = 500, group = GRP_MSS, tooltip = "0 = never expire, which is now the default. Expiry matters much less since a level is also retired the moment price CLOSES through it, and at 60 bars it was throwing away a third of all levels untouched.")
-float msMaxDepthAtr   = input.float(0.0, "Max sweep depth (ATR)",  minval = 0.0, step = 0.1, group = GRP_MSS, tooltip = "How far price may WICK beyond the level and still count. 0 = no cap, which is now the default: a candle that closes back on the right side has reclaimed the level however deep the wick went, and a genuine breakdown is already caught by the close-through rule.")
-float msMinReclaimAtr = input.float(0.0, "Min reclaim beyond level (ATR)", minval = 0.0, step = 0.05, group = GRP_MSS, tooltip = "Extra distance the close must clear the level by. 0 = any close on the right side, which is now the default. Raise it if you get sweeps that close back over the level by a hair.")
+bool  msShow          = input.bool(true,  "Show MSS sweeps",                group = GRP_MSS, tooltip = "The sweep signal itself. Off leaves the levels drawn but marks nothing.")
+bool  msShowLevel     = input.bool(true,  "Show protected level",           group = GRP_MSS, tooltip = "Extends the level the last internal BOS left behind, until it is swept or invalidated.")
+bool  msShowFiltered  = input.bool(true,  "Show filtered-out sweeps (grey)",group = GRP_MSS, tooltip = "Draws the sweeps the trend filter rejected, in grey, so you can judge the filter.")
+int   msMaxBars       = input.int(0, "Protected level expires after (bars)", minval = 0, maxval = 500, group = GRP_MSS, tooltip = "Bars before an untouched level is dropped. 0 = never, which is the default.")
+float msMaxDepthAtr   = input.float(0.0, "Max sweep depth (ATR)",  minval = 0.0, step = 0.1, group = GRP_MSS, tooltip = "How far price may wick past the level and still count. 0 = no limit.")
+float msMinReclaimAtr = input.float(0.0, "Min reclaim beyond level (ATR)", minval = 0.0, step = 0.05, group = GRP_MSS, tooltip = "Extra distance the close must clear the level by. 0 = any close on the right side.")
 
 // ── Trend filter — the whole point of this fork ──────────
 // LuxAlgo's version has ONE degree of structure and therefore cannot ask this question.
 // Ours has two, so the filter is our own external engine rather than a bolted-on average.
-string msTrendMode = input.string("Trending market", "Trend filter", options = ["Off", "Trending market", "Trending + same direction"], group = GRP_TREND, tooltip = "Off = every sweep prints.\n\nTrending market (default) = the EXTERNAL structure must have continued at least once since its last change of character. Directionless on purpose: it asks whether the market is trending, not which way. In chop the external structure keeps flipping, the run never builds, and sweeps are refused.\n\nTrending + same direction ALSO demands the sweep point the same way as the last external break. 🔴 That was the old default and it refused ~100% of sweeps — our internal structure is rebuilt inside the PULLBACK of each external leg, so its first setup points against the external break by construction. Kept as an option, not a default, and only useful once you have measured it.")
-int    msMinBos    = input.int(0, "Min INTERNAL continuation breaks", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "⚠ 1 DOES NOTHING. A protected level only exists because a continuation break created it, so the count is already at least 1 by the time any sweep can happen — the gate was inert at its old default of 1 and looked like it was working. 2 or more is the first value that filters anything. 0 = off.")
-bool   msBlockOnExt = input.bool(true, "Disarm on opposing external SOS", group = GRP_TREND, tooltip = "An external change of character against the armed direction throws the level away. This is the case the LuxAlgo original gets wrong: there, only the opposite BOS disarms, so a stale level stays live through a whole counter-leg.")
+string msTrendMode = input.string("Trending market", "Trend filter", options = ["Off", "Trending market", "Trending + same direction"], group = GRP_TREND, tooltip = "Off = every sweep prints. Trending = structure must have continued at least once since its last reversal.")
+int    msMinBos    = input.int(0, "Min INTERNAL continuation breaks", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "Internal breaks needed before a sweep counts. 1 does nothing - there is always at least one.")
+bool   msBlockOnExt = input.bool(true, "Disarm on opposing external SOS", group = GRP_TREND, tooltip = "A reversal against the armed direction throws the level away.")
 
 // ── Style / diagnostics ──────────────────────────────────
 color msBullCol  = input.color(#089981, "Bullish sweep",  group = GRP_MSSTY)
 color msBearCol  = input.color(#f23645, "Bearish sweep",  group = GRP_MSSTY)
-color msLevelCol = input.color(#ff9800, "Protected level", group = GRP_MSSTY, tooltip = "Amber by default rather than pale blue, so the armed level does not read as another structure line. It turns the sweep colour on the bar it is taken.")
-bool  msShowStats = input.bool(true, "Show stats table", group = GRP_MSSTY, tooltip = "Counts raw sweeps against signalled ones. Read them together — 'signalled' alone says nothing about whether the filter earned its place.")
+color msLevelCol = input.color(#ff9800, "Protected level", group = GRP_MSSTY, tooltip = "Colour of the armed level. It changes to the sweep colour on the bar it is taken.")
+bool  msShowStats = input.bool(true, "Show stats table", group = GRP_MSSTY, tooltip = "Counts raw sweeps against signalled ones, so you can see what the filter cut.")
 
 // ⚠ These are declared LAST on purpose. TradingView keys a chart's saved input values off
 // declaration order WITHIN EACH TYPE, so anything new has to sit after every existing input of
 // its own type or it silently resets the ones below it on a chart that is already tuned.
-bool   msShowZone   = input.bool(true, "Shade the swept wick", group = GRP_MSSTY, tooltip = "Fill the gap between the protected level and the wick that took it. This is the part worth seeing — it is the liquidity grab itself.")
-bool   msShowBg     = input.bool(true, "Tint the signal bar", group = GRP_MSSTY, tooltip = "Colour the whole bar's background on a signal, so a sweep is findable when scrolled out.")
+bool   msShowZone   = input.bool(true, "Shade the swept wick", group = GRP_MSSTY, tooltip = "Shades the gap between the level and the wick that took it - the liquidity grab itself.")
+bool   msShowBg     = input.bool(true, "Tint the signal bar", group = GRP_MSSTY, tooltip = "Colours the whole bar on a signal, so sweeps are easy to find when zoomed out.")
 int    msLevelWidth = input.int(2, "Protected level thickness", minval = 1, maxval = 4, group = GRP_MSSTY)
-string msMarkSizeIn = input.string("Large", "Sweep marker size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = GRP_MSSTY, tooltip = "The marker is a solid triangle rather than a text label, so it cannot be mistaken for one of the structure tags.")
-bool   msRejectText  = input.bool(false, "Label rejected sweeps with the reason", group = GRP_MSSTY, tooltip = "Print the failing gate next to the grey cross. Useful while you are deciding whether the trend filter earns its place; noisy afterwards.")
-color  msRejectCol   = input.color(#787b86, "Rejected sweep", group = GRP_MSSTY, tooltip = "Rejected sweeps are deliberately a neutral grey — never a dimmed green or red, because a washed-out green reads as a weak BUY rather than as no trade at all.")
+string msMarkSizeIn = input.string("Large", "Sweep marker size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = GRP_MSSTY, tooltip = "Size of the sweep triangle.")
+bool   msRejectText  = input.bool(false, "Label rejected sweeps with the reason", group = GRP_MSSTY, tooltip = "Prints why each grey cross was rejected. Useful while tuning, noisy afterwards.")
+color  msRejectCol   = input.color(#787b86, "Rejected sweep", group = GRP_MSSTY, tooltip = "Colour for rejected sweeps. Grey on purpose, so it never reads as a weak signal.")
 string msRejectSizeIn = input.string("Small", "Rejected marker size", options = ["Tiny", "Small", "Normal", "Large"], group = GRP_MSSTY)
-bool   msShowLevelTag = input.bool(true, "Tag the armed level", group = GRP_MSSTY, tooltip = "Put a tag on the right end of every armed level reading direction, level type and price — e.g. \"▲ iHL 3891.20\". Without it a dashed line is just a line: you cannot tell a protected LOW waiting to be swept downward from a protected HIGH waiting to be swept upward.")
-color  msArmBullCol   = input.color(#26a69a, "Armed level — bullish (protected iHL)", group = GRP_MSSTY, tooltip = "A protected higher low. Price is expected to dip THROUGH it and close back above — a long.")
-color  msArmBearCol   = input.color(#ef5350, "Armed level — bearish (protected iLH)", group = GRP_MSSTY, tooltip = "A protected lower high. Price is expected to poke ABOVE it and close back below — a short.")
-color  msSweptBullCol = input.color(#7e57c2, "Taken level — was a protected iHL", group = GRP_MSSTY, tooltip = "Deliberately NOT a shade of the armed colour. WAITING and TAKEN are different states of the level, and a darker green reads as \"the same thing, dimmer\" rather than as \"this one is finished\".")
-color  msSweptBearCol = input.color(#ff9800, "Taken level — was a protected iLH", group = GRP_MSSTY, tooltip = "Same reasoning as the bullish one. Purple and amber sit far from the teal/red armed pair and far from each other, so all four states are separable at a glance.")
-string msLevelColMode = input.string("By direction", "Armed level colour", options = ["By direction", "Single colour"], group = GRP_MSSTY, tooltip = "By direction = green for a protected low, red for a protected high, so the line itself says which way the trade would be. Single colour falls back to the \"Protected level\" colour above.")
+bool   msShowLevelTag = input.bool(true, "Tag the armed level", group = GRP_MSSTY, tooltip = "Puts a tag on each armed level showing its direction, type and price.")
+color  msArmBullCol   = input.color(#26a69a, "Armed level — bullish (protected iHL)", group = GRP_MSSTY, tooltip = "A protected low. Price should dip through it and close back above - that is a long.")
+color  msArmBearCol   = input.color(#ef5350, "Armed level — bearish (protected iLH)", group = GRP_MSSTY, tooltip = "A protected high. Price should poke above it and close back below - that is a short.")
+color  msSweptBullCol = input.color(#7e57c2, "Taken level — was a protected iHL", group = GRP_MSSTY, tooltip = "Colour once a bullish level has been swept.")
+color  msSweptBearCol = input.color(#ff9800, "Taken level — was a protected iLH", group = GRP_MSSTY, tooltip = "Colour once a bearish level has been swept.")
+string msLevelColMode = input.string("By direction", "Armed level colour", options = ["By direction", "Single colour"], group = GRP_MSSTY, tooltip = "By direction = green for a low, red for a high. Single colour uses the one above.")
 
 // ⚠ Appended after every existing input of their own type, same reason as the block above.
-int   msMinExtBos = input.int(1, "Min EXTERNAL continuation breaks", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "This is the trending-versus-chopping measure. Counts how many times the EXTERNAL structure has continued in its own direction since its last change of character. In a trend that number builds; in chop the structure keeps reversing and it sits at 0. Directionless on purpose. Only read when the Trend filter is not Off.")
-bool  msOneShot   = input.bool(false, "Kill the level after one failed touch", group = GRP_MSS, tooltip = "🔴 This was HARDCODED ON and is the reason most levels never produced anything. The first candle to poke through decided, and a level that failed by a hair was deleted even though the next candle might have swept it perfectly. Off by default now: a level survives failed touches and keeps waiting. It is still retired the moment price CLOSES through it, which is a real break rather than a failed sweep.")
-bool  msReqGreen  = input.bool(false, "Sweep candle must close in its own direction", group = GRP_MSS, tooltip = "Was hardcoded ON. Demands a green candle on a bullish sweep, red on a bearish one. A genuine wick-and-reclaim often closes the other colour while still finishing back on the right side of the level, so this refused real sweeps. Off by default.")
+int   msMinExtBos = input.int(1, "Min EXTERNAL continuation breaks", minval = 0, maxval = 10, group = GRP_TREND, tooltip = "How many times structure must have continued since its last reversal. Higher = only strong trends.")
+bool  msOneShot   = input.bool(false, "Kill the level after one failed touch", group = GRP_MSS, tooltip = "On drops a level the first time price pokes through and fails. Off gives it more chances.")
+bool  msReqGreen  = input.bool(false, "Sweep candle must close in its own direction", group = GRP_MSS, tooltip = "On demands a green candle on a bullish sweep and a red one on a bearish sweep.")
 
 string msRejectSize = msRejectSizeIn == "Tiny" ? size.tiny : msRejectSizeIn == "Normal" ? size.normal : msRejectSizeIn == "Large" ? size.large : size.small
 
@@ -1532,7 +1532,7 @@ bgcolor(msShowBg and msSignalLow ? color.new(msBullCol, 85) : msShowBg and msSig
 //
 // ⚠ The input is declared HERE, at the very end of the file, so it sits after every existing
 // bool. TradingView keys saved values off declaration order within each type.
-bool showSessionsInput = input.bool(false, "Show Sessions", group = "10 · Drawing: sessions", display = display.none, tooltip = "Tokyo / London / New York session boxes, in the same windows, timezones and colours every other MPC Pine draws them. Draw-only: no signal, level or filter in this file reads a session.")
+bool showSessionsInput = input.bool(false, "Show Sessions", group = "10 · Drawing: sessions", display = display.none, tooltip = "Draws the Tokyo, London and New York session boxes. Drawing only - nothing reads them.")
 
 bool showSessions         = showSessionsInput
 bool showSessionNames     = false

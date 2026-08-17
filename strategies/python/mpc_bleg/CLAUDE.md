@@ -24,7 +24,11 @@ own axis: `exec_trail_pct` 1.0 → 0.05, `bleg_max_days` 1.25 → 4.0, `exec_tim
 See "The exit-ladder re-default".
 `indicators/strategies/mpc_b_leg_strategy.pine`.** All 11 params in `mpc_bleg.meta.json` carry that input's
 Pine title byte-for-byte and its tooltip verbatim as the `desc`; change one and change the Pine in
-the same commit. Two of them are deliberately the FORK's own wording, not the A+ parent's —
+the same commit. 🔴 **13 descs were rewritten to plain English on 2026-08-16 when every Pine tooltip
+was cut to one or two sentences, and `test_the_meta_descs_are_the_pine_tooltips_verbatim` WENT RED
+first — which is that test earning its place.** It is the only automated guard on this pairing, so
+treat a red there as the contract working rather than as a test to relax. Strings only: no name,
+default, min, max or step moved. Two of them are deliberately the FORK's own wording, not the A+ parent's —
 `exec_aplus` is "A+ has priority (stand the B-leg down)" because in this file A+ never places an
 order, and `exec_sl_buf_tk` says "beyond fib 1.0" because that is where this bot's stop always
 sits. Nothing behavioural moved: the only Python edits were two comment strings in `config.py`.

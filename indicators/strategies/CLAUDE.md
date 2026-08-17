@@ -72,6 +72,37 @@ Numbers, method and the three tests that read these files: `../docs/INDICATORS_B
 
 ---
 
+## 🔴 TOOLTIPS ARE PLAIN ENGLISH AND ONE OR TWO SENTENCES (2026-08-16, Aaron's call)
+
+**A tooltip says what the setting DOES, in words a person can read at a glance.** They had grown
+into paragraphs of measured history, parity warnings and rationale — hover one and you could not
+tell what the toggle was for. All 663 were rewritten on 2026-08-16; numbers and method are in
+`../docs/INDICATORS_BUILD_NOTES.md`.
+
+**The rule for writing one:**
+
+| do | do not |
+|---|---|
+| say what it does, and what Off does | recite what a sweep measured |
+| name the unit and what 0 means | warn about parity with another file |
+| one or two short sentences | explain why the default was chosen |
+
+⚠ **The evidence did not go in the bin — it moved.** Measured results, the reason a default is
+what it is, and every ⚠ about a sibling file belong in `docs/<family>.md` or the spec, which is
+where a reader looking for *why* is already going. A tooltip is for a reader looking for *what*.
+
+🔴 **A TOOLTIP IS HALF OF A CONTRACT — CHANGING ONE ALONE BREAKS A TEST.** The Pine tooltip and
+the lab panel's `desc` in `strategies/python/<bot>/<bot>.meta.json` are ONE explanation, and
+`test_bleg.py::test_the_meta_descs_are_the_pine_tooltips_verbatim` asserts four of them match
+byte for byte. **It went RED on this pass, which is the test working** — 90 `desc` fields across
+the three meta files were resynced in the same commit. Change a tooltip, change its `desc`.
+
+⚠ **`label.new()` tooltips were deliberately NOT touched** — nine of them, the chart hovers like
+TRADE BLOCKED that carry a live reason and a price. They are diagnostics, not settings, and
+shortening them would delete the only record of why a setup was refused.
+
+---
+
 ## THE INPUT PANEL CONTRACT — where a new toggle goes
 
 **Aaron's standing rule, 2026-08-12.** Every strategy Pine here uses the SAME numbered
@@ -457,6 +488,27 @@ happened, and rewriting it makes the record false.
 is here is the instruction; that file is the evidence. Six rules, each learned by something on a
 chart being wrong in a way nothing errored about.
 
+### 🔴 The TOOLTIPS are for Aaron, not for the next engineer (2026-08-16)
+
+**Aaron: *"all the tooltip explanations are way too long and way too technical. I can't read that."***
+Every tooltip on this file's 44 inputs was rewritten short and plain. They had grown into the same
+thing the comments had been — measured numbers, dates, file paths, incident history — except a
+tooltip renders in a small hover box on a settings panel, which is the worst possible place to put
+any of it.
+
+**The rule: a tooltip answers "what does this do and which way should I move it", in one or two
+sentences, in words a non-programmer uses.** No file paths, no dates, no variable names, no bar
+counts, no "block code 9". The evidence and the incidents live in this doc; the tooltip is the
+label on the dial.
+
+⚠ **This is the same lesson as the comment strip, one layer up: the content was not wrong, the
+PLACE was.** Deleting it would have been the mistake; it moved.
+
+⚠ **`showSetups` was also renamed** — it read *"Draw the zone, stop and targets"*, which named a
+thing (a "zone") that appears nowhere else in the UI and did not say the drawing belongs to trades
+that actually happened. It is now *"Show the gap the order sat in, plus entry, stop and targets"*.
+**Renaming a title is safe for saved settings; only insertion and reordering are not.**
+
 ### 🔴 The file's comments were STRIPPED 2026-08-16 — this doc is now the only copy
 
 **Aaron: *"realistically I will never read these comments. Unless they're for AI, they're
@@ -716,6 +768,83 @@ taken setup draws**: the gap as the identical grey borderless box, the entry it 
 at, and the stop it would have carried. The tooltip also prints the stop distance next to the floor
 that refused it.
 
+### The shift of structure is MARKED now, and a second timeframe is marked beside it (`showSosMark`, 2026-08-16)
+
+**Aaron: *"if we do take the one minute shift of structure, give me an indicator on the chart exactly
+where that happens… and add the equivalent on a five minute shift. I just want to see if five minute
+works better than one minute."*** The confirmation step was the one part of the model with no mark on
+the chart at all — every other step draws something — so *"the small timeframe turned"* was a claim
+with nothing to check it against.
+
+**A cyan triangle sits on the bar where the CONFIRMATION timeframe changed character**, pointing the
+way the shift went, drawn off the exact flag the entry logic reads (`newConfShift` + `confDir`) rather
+than a re-derivation. ⚠ **That matters more than it looks: a marker computed a second way would
+eventually disagree with the gate it is supposed to be showing, and the chart would be the thing that
+lies.**
+
+**A purple circle marks a SECOND timeframe** (`sosCmpTf`, default 5, `"Off"` available), plotted
+further from the bar so the two never sit on top of each other. ⚠ **It is MARKING ONLY and feeds
+nothing** — no gate, no arm, no order — which is what makes it usable as a comparison: it shows what
+a different confirmation timeframe would have said on the same bars, without changing the bars.
+
+⚠ **`plotshape`, not labels, deliberately.** This fires on every shift over the whole history and
+labels are capped at 500 per type — a label version would silently evict the MISSED and BLOCKED tags
+that share that budget. Plots have no ceiling.
+
+⚠ **Both inputs are appended AFTER the last existing input of their own type** (the bool after
+`pbShowSess`, the string after `execMinStopMode`) even though both display in group 8. Group is a
+display label; TradingView keys saved values off declaration order within each type, and the two are
+unrelated.
+
+⚠ **It adds a fifth `request.security` call.** The comparison timeframe is resolved to the
+confirmation timeframe when it is `"Off"` so the call always has a valid argument, and the drawing is
+gated instead — the call cost is paid either way.
+
+### 🔴 A GATE NAME IS NOT AN EXPLANATION — "too thin" read as "we got there and it was too thin"
+
+**Aaron, third round on the same tag: *"it says the gap is too thin. But price never got to it. All
+this time I was thinking we got to one and it was too thin. Your messages have to be very clear on
+exactly what happened."*** The gate name was accurate and the SENTENCE it formed was not. Nothing
+says a refusal happened BEFORE any order existed, so a reader supplies the missing half — that price
+arrived, then something went wrong there. It never arrived. No order was ever placed.
+
+**The tooltip is now a story with an ending, not a gate name plus loose numbers.** It reads: what
+lined up, then `WHY THERE WAS NO TRADE`, then a `THE GAP` block with the gap's location, height,
+distance from price and the stop maths.
+
+⚠ **The reason strings are now SENTENCES with full stops, not fragments.** A fragment gets read as
+the end of whatever sentence the reader started, and they do not all start the same one.
+
+🔴 **AND THE FIRST FIX WAS STILL NOT PRECISE — it appended "no order was ever placed" to a reason
+that still LED with "the gap is too thin".** Aaron, immediately: *"It should say why there was no
+trade. Point of interest was never met. That's it. Nothing more… only if we met it, and it was too
+thin, and I could see that."* A disclaimer under a wrong headline does not fix the headline.
+
+✅ **So the tag now KNOWS whether price ever traded into that gap, rather than inferring it.**
+`f_poiScan` returns the selected zone's own tap flag alongside its prices (`poiBullTap`/`poiBearTap`,
+`armTouched` on the at-the-zone path). `WHY THERE WAS NO TRADE` is then one line, chosen from the
+FACT rather than from the gate: no zone at all → *"There was no gap on this side of price."*; a zone
+price never entered → *"Price never reached the gap. The point of interest was never met."*; a zone
+price DID enter → the real gate sentence, which now opens *"Price reached the gap, but…"*.
+
+⚠ **With `pbPoiUntouched` ON — the shipped default — a tapped zone is excluded from selection, so
+the tag can only ever say "price never reached the gap".** That is not the message being lazy; it is
+the setting. The thin/target reasons become reachable only when untouched-only is turned off.
+
+⚠ **Code 7 (too far) is deliberately EXEMPT from the tap test and always states its own reason.**
+It is a filter the reader switched on, and by construction its gap is far away — routing it through
+"price never reached it" would hide the filter that actually did the refusing.
+
+⚠ **The stop maths is kept, one line, and it is worded as a HYPOTHETICAL when the zone was never
+entered** (*"Had price reached it: entry …, stop …, your floor is …"*). It is the only way to see
+whether a gap really was too thin, which is what Aaron asked for two rounds earlier — but it lives
+under `THE GAP`, never under `WHY`, because a fact and a cause are different things.
+
+**The standing lesson, and it is the sharper form of the section below: a first-refusal-wins ladder
+tells you which CHECK refused, and a reader is asking what HAPPENED. Those coincide only when the
+check ran on something real. When it ran on a hypothetical — an order that was never placed at a
+price never traded — the gate name is the wrong sentence no matter how much you append to it.**
+
 ### 🔴 A DISABLED GATE MAKES THE NEXT ONE LIE — the "too thin" that was really "too far"
 
 **Aaron, on a 2/3 MISSED tag: *"it says the gap is too thin. But we haven't even touched the gap
@@ -746,6 +875,15 @@ renders as literally nothing.** A border renders as a line at any height, so the
 talking about is now always visible at its true size. ⚠ **The borderless rule it appears to break
 exists for a DIFFERENT case**: a gap under a trade block, where the border would read as a second
 claim about the same thing. A refusal has no trade block over it, so there is no conflict.
+
+🔴 **THE LEADER LINE RUNS TO THE GAP, NOT TO THE CANDLE, AND THE FIRST FIX GOT THIS BACKWARDS.**
+Aaron, after the border landed: *"I still can't see it. Look at the chart. I can't see it
+literally."* A bordered box IS drawn — but the tag sits 1.5 ATR off the bar, the gap can be twenty
+dollars the other way, and the line between them stopped at the candle. So the tag pointed at
+nothing and the box was a grey line lost among the session shading. **The leader now ends on the
+gap's near edge**, so following it always arrives somewhere. ⚠ **This does NOT reintroduce the
+scale blow-up** — that came from padding the LABEL past the zone, and the label is still anchored to
+the bar. The leader only spans a range the box already forced onto the scale.
 
 ⚠ **The tooltip also prints the gap's HEIGHT and both edges.** A line tells you where; only a number
 tells you how thin, and "measure it by eye at this zoom" was never a real instruction.

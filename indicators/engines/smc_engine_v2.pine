@@ -11,18 +11,18 @@ indicator("SMC Engine", overlay = true, max_labels_count = 500, max_lines_count 
 // INPUTS — STRUCTURE  (panel parity with the original; some wired in later stages)
 // ─────────────────────────────────────────────
 g = "Structure"
-showSwing       = input.bool(true,  "Show Swing Structure",            group = g, tooltip = "Main swing highs/lows using the 3-candle pullback rule.")
-showBosLbl      = input.bool(true,  "Show BOS Labels",                 group = g, tooltip = "Break of Structure — continuation in the current trend direction.")          // Stage 2
-showChochLbl    = input.bool(true,  "Show CHoCH Labels",               group = g, tooltip = "Change of Character — reversal against the current trend.")                   // Stage 2
-showSwingPtLbl  = input.bool(true,  "Show Swing Point Labels",         group = g, tooltip = "HH, HL, LH, LL labels at confirmed swing points.")
-showSwingLines  = input.bool(true,  "Show Swing Level Lines",          group = g, tooltip = "Horizontal lines at active swing high/low levels.")
-showUnconfirmed = input.bool(true,  "Show Unconfirmed Levels",         group = g, tooltip = "Dotted line at candidate swing point before 3-candle confirmation.")
-showInternal    = input.bool(false, "Show Internal Structure",         group = g, tooltip = "Structure within the current swing range. Same 3-candle rule.")                // Stage 3
-showIntBos      = input.bool(true,  "Show Internal BOS",               group = g, tooltip = "Internal Break of Structure labels.")                                          // Stage 3
-showIntChoch    = input.bool(true,  "Show Internal CHoCH",             group = g, tooltip = "Internal Change of Character labels.")                                         // Stage 3
-showIntPtLbl    = input.bool(true,  "Show Internal Point Labels",      group = g, tooltip = "iHH, iHL, iLH, iLL labels at internal swing points.")                          // Stage 3
-showIntLines    = input.bool(true,  "Show Internal Level Lines",       group = g, tooltip = "Dashed lines at active internal high/low levels.")                             // Stage 3
-showHistInt     = input.bool(true,  "Show Historic Internal Structure",group = g, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.") // Stage 3
+showSwing       = input.bool(true,  "Show Swing Structure",            group = g, tooltip = "Draws the main swing highs and lows.")
+showBosLbl      = input.bool(true,  "Show BOS Labels",                 group = g, tooltip = "Tags breaks that continue the trend.")          // Stage 2
+showChochLbl    = input.bool(true,  "Show CHoCH Labels",               group = g, tooltip = "Tags breaks that reverse the trend.")                   // Stage 2
+showSwingPtLbl  = input.bool(true,  "Show Swing Point Labels",         group = g, tooltip = "Tags confirmed swings HH, HL, LH and LL.")
+showSwingLines  = input.bool(true,  "Show Swing Level Lines",          group = g, tooltip = "Draws lines at the active swing high and low.")
+showUnconfirmed = input.bool(true,  "Show Unconfirmed Levels",         group = g, tooltip = "Dotted line at a swing point before it is confirmed.")
+showInternal    = input.bool(false, "Show Internal Structure",         group = g, tooltip = "Draws the structure inside the current swing.")                // Stage 3
+showIntBos      = input.bool(true,  "Show Internal BOS",               group = g, tooltip = "Tags internal breaks that continue the move.")                                          // Stage 3
+showIntChoch    = input.bool(true,  "Show Internal CHoCH",             group = g, tooltip = "Tags internal breaks that reverse the move.")                                         // Stage 3
+showIntPtLbl    = input.bool(true,  "Show Internal Point Labels",      group = g, tooltip = "Tags internal swings iHH, iHL, iLH and iLL.")                          // Stage 3
+showIntLines    = input.bool(true,  "Show Internal Level Lines",       group = g, tooltip = "Draws dashed lines at the active internal high and low.")                             // Stage 3
+showHistInt     = input.bool(true,  "Show Historic Internal Structure",group = g, tooltip = "On keeps internal labels from past swings. Off shows only the current swing's.") // Stage 3
 
 gc = "Colors"
 bullColor = input.color(color.blue,  "Bullish", group = gc)

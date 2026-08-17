@@ -7,32 +7,32 @@ strategy("MPC REALIGN", overlay = true, initial_capital = 10000,
          commission_type = strategy.commission.cash_per_contract, commission_value = 0.0)
 
 // ── the setup ────────────────────────────────────────────────────────────────────
-htfTf       = input.timeframe("15",  "External timeframe",                group = "Setup", tooltip = "The frame the false break is read on. The chart frame is the trigger.")
-majorLength = input.int(10,          "Structure pivot length",  minval = 2, group = "Setup", tooltip = "Swing detection lookback, both frames.")
-windowHrs   = input.float(24.0,      "Hours the setup stays armed", minval = 0.5, group = "Setup", tooltip = "After the external false break. If the realignment has not fired by then the deviation is accepted as a real trend. Chosen, not measured.")
+htfTf       = input.timeframe("15",  "External timeframe",                group = "Setup", tooltip = "The timeframe the false break is read on. The chart frame is the trigger.")
+majorLength = input.int(10,          "Structure pivot length",  minval = 2, group = "Setup", tooltip = "Swing detection lookback, on both frames.")
+windowHrs   = input.float(24.0,      "Hours the setup stays armed", minval = 0.5, group = "Setup", tooltip = "How long the setup stays armed after the false break. Chosen, not measured.")
 tradeLongs  = input.bool(true,       "Trade longs",  group = "Setup")
 tradeShorts = input.bool(true,       "Trade shorts", group = "Setup")
 
 // ── risk / entry ─────────────────────────────────────────────────────────────────
-riskPct     = input.float(1.0, "Risk % per trade", minval = 0.01, maxval = 100, group = "Risk", tooltip = "Percent of equity risked to the stop; size is worked back from this and the stop distance. ⚠ MEASURE AT 1, NOT 10. R is scale-free — 1 and 10 give the identical R, drawdown-in-R, win rate and profit factor — but 10 compounds a losing stretch into a busted account, and a gap THROUGH the stop loses a multiple of the intended risk on a position that size. At 10 this strategy read -98.10% / PF 0.193 over 2009-2026 with the account dead in the first months, so every later trade was sized off nothing and the run measured almost none of the history. Size the account AFTER you know the R distribution.")
-slBufTk     = input.int(20,     "Stop buffer (ticks)", minval = 0, group = "Risk", tooltip = "Ticks beyond the structural low/high the stop sits.")
-minStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $"], group = "Risk", tooltip = "Refuse a setup whose stop is too close to the entry. Size is risk/distance, so a collapsing stop balloons the position.")
-minStopVal  = input.float(0.08, "Minimum stop value", minval = 0.0, group = "Risk", tooltip = "Percent of price, or dollars, depending on the mode.")
+riskPct     = input.float(1.0, "Risk % per trade", minval = 0.01, maxval = 100, group = "Risk", tooltip = "Percent of equity risked to the stop. Test at 1 - R is scale-free, so the R results come out identical.")
+slBufTk     = input.int(20,     "Stop buffer (ticks)", minval = 0, group = "Risk", tooltip = "How many ticks beyond the structural low or high the stop sits.")
+minStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $"], group = "Risk", tooltip = "Refuse a setup whose stop is too close to the entry, which would balloon the position.")
+minStopVal  = input.float(0.08, "Minimum stop value", minval = 0.0, group = "Risk", tooltip = "The floor itself - a percent of price or dollars, depending on the mode.")
 
 // ── the exit ladder (inherited from the A+ bot) ──────────────────────────────────
-tp1Pct        = input.float(0,   "TP1 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at TP1 but STILL stages the stop to breakeven when price touches it.")
-tp2Pct        = input.float(0,   "TP2 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at TP2 but STILL installs the floor and hands the rest to the trail.")
-beBufTk       = input.int(0,     "Breakeven buffer (ticks)", group = "Exit", tooltip = "Where the stop sits after TP1. Negative gives the trade room below entry.")
+tp1Pct        = input.float(0,   "TP1 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at the first target but still stages the stop to breakeven when price touches it.")
+tp2Pct        = input.float(0,   "TP2 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at the second target but still installs the floor and hands the rest to the trail.")
+beBufTk       = input.int(0,     "Breakeven buffer (ticks)", group = "Exit", tooltip = "Where the stop sits after the first target. Negative gives the trade room below the entry.")
 tp2StopMode   = input.string("TP1 price", "Stop floor after TP2", options = ["TP1 price", "Breakeven", "One trail step behind"], group = "Exit")
 runnerTrail   = input.string("Structure + % ratchet", "Runner trail", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = "Exit")
 trailPct      = input.float(1.0, "Ratchet step (% of price)", minval = 0.01, group = "Exit", tooltip = "Read only in Structure + % ratchet mode.")
 trailStep     = input.float(1.0, "Fixed trail step ($)", minval = 0.01, group = "Exit", tooltip = "Read only in Fixed step mode.")
 structTrailBuf= input.int(20,    "Structure trail buffer (ticks)", group = "Exit")
-timeStopMode  = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = "Exit", tooltip = "Close a position open this long. Before TP1 only never touches a trade that has reached TP1.")
+timeStopMode  = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = "Exit", tooltip = "Closes a position open this long. Before TP1 never touches a trade that has reached the first target.")
 timeStopHrs   = input.float(36.0, "Time stop (hours)", minval = 0.5, group = "Exit")
 
 showMarks   = input.bool(true, "Mark setups on the chart", group = "Display")
-showDiag    = input.bool(true, "Diagnostics in the Data Window", group = "Display", tooltip = "Running counts of every stage of the setup. Open the Data Window (Alt+D) and hover a bar: the FIRST counter that reads 0 is where the chain breaks.")
+showDiag    = input.bool(true, "Diagnostics in the Data Window", group = "Display", tooltip = "Running counts of every stage of the setup. Open the Data Window and hover a bar - the first counter reading 0 is where the chain breaks.")
 
 float pbBuffer = 0.0
 

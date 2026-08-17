@@ -40,8 +40,8 @@ var GRP_STRUCT = "Market Structure"
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, display = display.none)
-bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "Keep internal structure labels and lines from previous swing ranges on the chart. Off = only show current swing range internals.", display = display.none)
-bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
+bool   showHistoricalInternal = input.bool(false, "Show Historic Internal Structure", group = GRP_STRUCT, tooltip = "On keeps internal labels from past swings. Off shows only the current swing's.", display = display.none)
+bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving just BOS and SOS. Nothing else changes.", display = display.none)
 float  pbBuffer         = 0.0
 
 f_structSize() =>

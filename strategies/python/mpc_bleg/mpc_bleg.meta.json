@@ -31,7 +31,7 @@
       "unit": "days",
       "label": "Days to watch for the late retrace",
       "step": 0.25,
-      "desc": "How long the order waits at the frozen level for the late pullback before the setup is dropped. Set in days but counted in bars, so weekends and the daily close do not use it up. Lower means only quick pullbacks fill; four to five days tested best.",
+      "desc": "How long the order waits for the late pullback before the setup is dropped. Counted in bars, so weekends and the daily close do not use it up.",
       "guide": [
         "Only quick pullbacks fill",
         "Waits longer for a late return — 4 to 5 days tested best"
@@ -45,7 +45,7 @@
       "core": true,
       "unit": "%",
       "label": "Risk % per trade",
-      "desc": "How much of the account each trade risks. Position size is worked back from this and the stop distance, so a tighter stop buys a bigger position at the same risk."
+      "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk."
     },
     {
       "name": "exec_longs",
@@ -57,7 +57,7 @@
         "off": "No",
         "on": "Yes"
       },
-      "desc": "On = long setups may trade. Off = shorts only."
+      "desc": "Lets long setups trade. Off = shorts only."
     },
     {
       "name": "exec_shorts",
@@ -69,7 +69,7 @@
         "off": "No",
         "on": "Yes"
       },
-      "desc": "On = short setups may trade. Off = longs only."
+      "desc": "Lets short setups trade. Off = longs only."
     },
     {
       "name": "exec_no_late_day",
@@ -80,19 +80,15 @@
         "off": "Allow",
         "on": "Block 16:00–17:00 NY"
       },
-      "desc": "On = no new entries in the last hour before the daily close. Gold closes at 17:00 New York and reopens at 18:00, so a trade opened late can be gapped out over the break."
+      "desc": "On = no new entries in the last hour before the daily close, so a trade cannot be gapped out over the break."
     },
     {
       "name": "exec_runner_trail",
       "group": "Exit ladder",
       "core": true,
       "label": "Runner trail method",
-      "choices": [
-        "Fixed step",
-        "Structure (swing)",
-        "Structure + % ratchet"
-      ],
-      "desc": "How the stop follows the trade once the second target is hit, and which setting below is live. Fixed step is a plain dollar grid. Structure parks the stop at the last swing, which breathes with the trend but hands a lot back at the turn. Structure + ratchet is the default and banks more of each run.",
+      "choices": ["Fixed step", "Structure (swing)", "Structure + % ratchet"],
+      "desc": "How the stop follows the trade once the second target is hit. Fixed step is a plain dollar grid; structure parks it at the last swing.",
       "guide": [
         "Fixed step — simplest, and the worst of the three",
         "Structure + ratchet — best on the main bot, untested here"
@@ -103,7 +99,7 @@
       "group": "Exit ladder",
       "unit": "ticks",
       "label": "Structure trail buffer (ticks)",
-      "desc": "Used by both structure methods. The trailing stop sits this many ticks beyond the last swing, so a wick through it does not clip you.",
+      "desc": "How many ticks beyond the last swing the trailing stop sits, so a wick through it does not clip you.",
       "guide": [
         "Tight to the swing — clipped by wicks",
         "Wide of the swing — survives noise, gives back more"
@@ -119,7 +115,7 @@
       "show_if": {
         "exec_runner_trail": "Structure + % ratchet"
       },
-      "desc": "How big each step of the trailing stop is, as a percent of price. It has to be far smaller here than on the main bot: these trades risk very little of the price, so a big step is bigger than the whole trade and the stop never moves at all.",
+      "desc": "How big each trailing step is, as a percent of price. Keep it small here - these trades risk very little of the price.",
       "guide": [
         "Tighter — banks more of each run on this setup",
         "Too big and the stop never moves at all here"
@@ -134,7 +130,7 @@
       "show_if": {
         "exec_runner_trail": "Fixed step"
       },
-      "desc": "The step size in dollars. Read by two settings, so it is never greyed out: the fixed-step trail, and the one-step-behind stop floor. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
+      "desc": "The step size in dollars. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
       "guide": [
         "Tighter trail — banks sooner, cuts runners short",
         "Looser trail — lets winners breathe, gives back more"
@@ -144,12 +140,8 @@
       "name": "exec_tp2_stop_mode",
       "group": "Exit ladder",
       "label": "TP2 → stop floor",
-      "choices": [
-        "TP1 price",
-        "Breakeven",
-        "One trail step behind"
-      ],
-      "desc": "Where the stop jumps to the moment the second target is hit, before the trail takes over. TP1 price is tight and can scratch the trade on the first pullback. Breakeven gives it the most room. One trail step behind keeps it just under the best price seen. The trail can still tighten past this.",
+      "choices": ["TP1 price", "Breakeven", "One trail step behind"],
+      "desc": "Where the stop jumps to the moment the second target is hit. TP1 is tight and can scratch the trade; breakeven gives it the most room.",
       "guide": [
         "TP1 price — protects the gain, scratches runners",
         "Breakeven — maximum room for the runner"
@@ -159,33 +151,20 @@
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
-      "desc": "Close a trade that has been open longer than the hours set below. Before TP1 only fires while the trade has never reached the first target, so it cuts no winners. Always closes on the clock alone. Off closes nothing, and on this setup that tested worst.",
-      "choices": [
-        "Off",
-        "Before TP1 only",
-        "Always"
-      ],
-      "guide": [
-        "Off — the clock never closes a trade",
-        "Always — the clock closes winners too"
-      ]
+      "desc": "Closes a trade that has been open longer than the hours set below. Before TP1 only cuts trades that never reached the first target.",
+      "choices": ["Off", "Before TP1 only", "Always"],
+      "guide": ["Off — the clock never closes a trade", "Always — the clock closes winners too"]
     },
     {
       "name": "exec_time_stop_hrs",
       "group": "Exit ladder",
       "label": "Time stop (hours)",
-      "desc": "How long a trade may stay open, in hours, weekends included. Anything from about 4 to 12 hours gives the same answer here. What it buys is a smaller drawdown rather than more profit.",
+      "desc": "How long a trade may stay open, in hours, weekends included.",
       "step": 0.25,
       "show_if": {
-        "exec_time_stop_mode": [
-          "Before TP1 only",
-          "Always"
-        ]
+        "exec_time_stop_mode": ["Before TP1 only", "Always"]
       },
-      "guide": [
-        "Cuts winners as well as losers",
-        "Fires on almost nothing"
-      ]
+      "guide": ["Cuts winners as well as losers", "Fires on almost nothing"]
     },
     {
       "name": "exec_aplus",
@@ -196,7 +175,7 @@
         "off": "Every B leg trades",
         "on": "A+ stands the B leg down"
       },
-      "desc": "In this bot the main reversal setup never places an order — it only holds first claim. On = on a side where the main setup would have armed, this one stands down, which keeps results comparable with the parent. Off = every setup here trades on its own merit."
+      "desc": "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own."
     }
   ]
 }

@@ -3,8 +3,8 @@
 indicator("MPC- JARVIS", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000)
 
 var GRP_MASTER = "Display"
-bool showTradeTools = input.bool(true, "Show Chart Tools", group = GRP_MASTER, tooltip = "Master switch for the chart tools below. Off leaves a clean market-structure-only chart.", display = display.none)
-bool showFibTool    = input.bool(true, "Show Fibs", group = GRP_MASTER, tooltip = "Master switch for the fib tools.", display = display.none)
+bool showTradeTools = input.bool(true, "Show Chart Tools", group = GRP_MASTER, tooltip = "Turns every chart tool below on or off. Off leaves a clean structure-only chart.", display = display.none)
+bool showFibTool    = input.bool(true, "Show Fibs", group = GRP_MASTER, tooltip = "Turns all the fib tools on or off.", display = display.none)
 
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(true, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
@@ -58,10 +58,10 @@ color iBearColor  = bearColor
 var GRP_STRUCT = "Market Structure"
 bool   marketStructureOnly = not showTradeTools and not showFibTool
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
-bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, tooltip = "The major swing structure. ASH/ASL = Active Swing High/Low, the live level being watched. HH/HL = Higher High/Higher Low, LH/LL = Lower High/Lower Low. BOS = Break of Structure, a break that continues the trend. SOS = Shift of Structure, a break that reverses it (also called CHoCH, Change of Character).", display = display.none)
-bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, tooltip = "The smaller structure inside the current major swing. Same names with an i prefix: iSH/iSL = internal Swing High/Low, iHH/iHL/iLH/iLL, iBOS = internal Break of Structure, iSOS = internal Shift of Structure.", display = display.none)
-bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart.", display = display.none)
-bool   showHistoricalInternal = input.bool(true, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "On (default) keeps every past swing's internal labels and lines on the chart. Off wipes the internal structure each time the external structure breaks, so only the current swing's internals are drawn.", display = display.none)
+bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, tooltip = "Draws the main swing highs and lows. BOS = a break that continues the trend, SOS = a break that reverses it.", display = display.none)
+bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, tooltip = "Draws the smaller structure inside the current swing. Same labels with an i in front.", display = display.none)
+bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving just BOS and SOS on the chart.", display = display.none)
+bool   showHistoricalInternal = input.bool(true, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "On keeps the internal labels from past swings. Off shows only the current swing's.", display = display.none)
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
@@ -83,7 +83,7 @@ f_swingCol(color c) =>
   // the chart but can never change what a tool detects or how it looks.
 //============================================================
 var GRP_TOOLS = "Chart Tools"
-bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, tooltip = "FVG on the chart. A fair value gap is the price void left by a 3-candle imbalance, where the first and third candles do not overlap.", display = display.none)
+bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, tooltip = "Draws fair value gaps - the price void left when the first and third of three candles do not overlap.", display = display.none)
 // ── FVG-ONLY DIRECTION FILTER (Aaron, 2026-08-05) ──
 // Separate from "Trend-Aligned Zones Only" below, and it reads a DIFFERENT direction —
 // those are the two reasons it exists rather than being folded into the shared switch.
@@ -102,7 +102,7 @@ bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TO
 // gap from the CAP (it stays alive underneath); this just refuses to draw it.
 // ⚠ HIDES, never deletes — same as every other visibility rule here. The gap keeps
 // living and mitigating, and reappears if the fib flips direction.
-bool fvgBiasInput        = input.bool(false, "    ↳ Trend-Aligned FVGs Only", group = GRP_TOOLS, active = showFVGInput, tooltip = "Off (default) shows fair value gaps in both directions. On draws ONLY the gaps on the same side as the current External Fib's leg — bearish gaps on a bearish setup, bullish on a bullish one. This is the leg the trade is being taken on, so it holds steady for the whole setup instead of flipping with the chart's own structure. Applies to fair value gaps ONLY; order blocks are left alone. Hidden, not deleted: a gap comes back if the fib turns.", display = display.none)
+bool fvgBiasInput        = input.bool(false, "    ↳ Trend-Aligned FVGs Only", group = GRP_TOOLS, active = showFVGInput, tooltip = "On draws only the gaps pointing the same way as the current move.", display = display.none)
 // ── THE FVG COUNT IS LOCKED AGAIN (Aaron, 2026-08-03) ──
 // It was exposed on 2026-08-02 as "Max Active FVGs", for the same reason the order-block
 // count was exposed the day before: so the number could be tested against a real chart.
@@ -111,7 +111,7 @@ bool fvgBiasInput        = input.bool(false, "    ↳ Trend-Aligned FVGs Only", 
 // mpc_strategy.pine (see the FVG block below), the cap is settled at the strategy's 7 and
 // there is nothing left for the input to do except let a student set the chart out of step
 // with the bot again. Same reasoning, same outcome, same day of the week.
-bool showOBsInput        = input.bool(true,  "Order Blocks",      group = GRP_TOOLS, tooltip = "OB on the chart. An order block is the last opposing candle before the move that broke structure.", display = display.none)
+bool showOBsInput        = input.bool(true,  "Order Blocks",      group = GRP_TOOLS, tooltip = "Draws order blocks - the last opposing candle before a break of structure.", display = display.none)
 // ── THE COUNT IS LOCKED TOO NOW (Aaron, 2026-07-31) ──
 // It was the one order-block setting left on the panel, exposed on 2026-07-30 so the
 // number could be tested against a real chart. That test is done: TEN blocks per
@@ -134,8 +134,8 @@ int   maxActiveOB        = 10
 // structure flips back it is still there, still accurate. Deleting would mean a
 // counter-trend zone is destroyed the moment it prints, and the flip back would leave a
 // hole where a valid level used to be.
-bool dirOnlyInput        = input.bool(false, "Trend-Aligned Zones Only", group = GRP_TOOLS, tooltip = "Off (default) shows every fair value gap and order block, both directions. On hides the ones that oppose the current external structure — in an uptrend only bullish gaps and bullish blocks are drawn, in a downtrend only bearish. Hidden, not deleted: they come back if structure turns. Applies to Fair Value Gaps and Order Blocks together.", display = display.none)
-bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, tooltip = "Tagged EQH and EQL. EQH = Equal Highs, a pair of highs at the same price with buy-side liquidity resting above. EQL = Equal Lows, the mirror below.", display = display.none)
+bool dirOnlyInput        = input.bool(false, "Trend-Aligned Zones Only", group = GRP_TOOLS, tooltip = "On hides the gaps and blocks that point against the trend.", display = display.none)
+bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, tooltip = "Draws EQH and EQL - pairs of highs or lows at the same price, where stops rest.", display = display.none)
 // ── THE EQ DIALS ARE LOCKED AGAIN (Aaron, 2026-08-04) ──
 // Three inputs lived here for a few hours — sensitivity, count, and a line extension —
 // exposed for the same reason the FVG cap and the order-block count were exposed before
@@ -150,14 +150,14 @@ bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TO
 // the third time this file has run this exact loop.
 // The values now live in the EQUAL HIGHS / LOWS block below, next to the rest of the
 // locked EQ settings. See the note there for what each one drives.
-var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, tooltip = "The tags down the right edge. PDH/PDL = Previous Day High/Low. PWH/PWL = Previous Week High/Low. PWC = Previous Week Close. H4 H/L = the previous 4-hour candle High/Low. Asia/Ldn/NY H and L = that session High and Low. BSL = Buy-Side Liquidity (above a high), SSL = Sell-Side Liquidity (below a low).", display = display.none)
+var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, tooltip = "Draws the price tags down the right edge: previous day, week, 4-hour and session highs and lows.", display = display.none)
 bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
-bool showHistoricSessions = input.bool(true, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "On (default) draws every session in the chart's history. Off draws only the current week's session boxes, from Sunday 00:00 New York.", display = display.none)
-bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, tooltip = "KZ = Kill Zone, the high-activity window at a session open. NY = New York. NY Range = the opening range of the New York session.", display = display.none)
-bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off (default) draws the kill zones and NY range for the current New York day only. On draws them for every day in the chart's history — three green bands per day, stamped at the same clock time, so expect it to cover a lot of chart.", display = display.none)
-bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "The MV line — where the highest volume of trades occurred during the Asian session.", display = display.none)
-bool showVwapInput       = input.bool(true,  "VWAP",              group = GRP_TOOLS, tooltip = "VWAP = Volume Weighted Average Price. The average price paid so far in the session, weighted by how much traded at each price.", display = display.none)
-bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, tooltip = "RSI = Relative Strength Index, a momentum oscillator. Divergence = price and RSI disagreeing, one making a new extreme while the other does not. Tagged Bull Div / Bear Div.", display = display.none)
+bool showHistoricSessions = input.bool(true, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "On draws every session in the chart's history. Off draws only this week's.", display = display.none)
+bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, tooltip = "Draws the busy window at each session open, plus the New York opening range.", display = display.none)
+bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off draws today's kill zones only. On draws every day's, which gets crowded.", display = display.none)
+bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "Draws the MV line - the price with the most volume traded during the Asian session.", display = display.none)
+bool showVwapInput       = input.bool(true,  "VWAP",              group = GRP_TOOLS, tooltip = "Draws VWAP - the average price paid so far this session, weighted by volume.", display = display.none)
+bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, tooltip = "Tags Bull Div and Bear Div - where price makes a new extreme and momentum does not.", display = display.none)
 
 //============================================================
   // ORDER BLOCKS — appearance + cap locked, no panel inputs
@@ -628,7 +628,7 @@ bool i_showLabels      = true
 // laptop, Small for a large monitor.
 // ONE control for every price-level tag on the right-hand side, deliberately. Sizing
 // them per-tool is what makes that edge look ragged.
-string liqLabelSize    = input.string("Tiny", "Level tag size", options = ["Tiny", "Small"], group = GRP_TOOLS, tooltip = "One size for every price-level tag down the right-hand side: the Liquidity Levels (PDH/PDL, PWH/PWL, PWC, H4 H/L, session highs and lows), the MV line, and the EQH/EQL pools. Deliberately ONE control — sizing them separately is what makes the right edge look ragged.", display = display.none)
+string liqLabelSize    = input.string("Tiny", "Level tag size", options = ["Tiny", "Small"], group = GRP_TOOLS, tooltip = "Text size for every price tag down the right-hand side.", display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 
 // Two branches now the other three options are gone. The `else` also absorbs a chart
@@ -687,8 +687,8 @@ color i_nyHLColor     = drawLiq ? color.black : color(na)
   // on the chart) is gone.
 //============================================================
 var GRP_FIBO = "Fibs"
-bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, tooltip = "The retracement drawn on the current major swing leg. Its lines are tagged TP1/TP2/TP3 (Take Profit) and E1-E4 (Entry levels). FFT = the 0.5 line once price has traded back through it.", display = display.none)
-int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the External Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
+bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, tooltip = "Draws the fib retracement on the current swing. E1-E4 are entry levels, TP1-TP3 are targets.", display = display.none)
+int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the fib lines run past the last bar. Set it to suit your screen.", display = display.none)
 // Cycle Fib defaults BACK ON (Aaron, 2026-08-06). It was switched off on 2026-07-31
 // because it drew eight more lines over the External Fib's eight, permanently, so the two
 // ladders interleaved and the labels stacked down the right edge. The reason is spent:
@@ -697,10 +697,10 @@ int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", gro
 // move it spans — which is the window it was wanted for. ⚠ A changed default reaches a
 // FRESH paste and nothing else; an existing chart keeps whatever is already set, so check
 // the panel rather than assuming it is live.
-bool   showMacroFibInput = input.bool(false, "Show Cycle Fib  —  OFF (being refined)", group = GRP_FIBO, active = false, tooltip = "Disabled 2026-08-06 and greyed out. The whole Cycle Fib block is commented out in the source while the anchoring rule is refined — ticking this would do nothing, so it is greyed rather than left looking live. The input itself is kept only so TradingView's saved settings do not shift; see the banner above the engine block.", display = display.none)
-int    macroLineExtend = input.int(180, "   ↳ Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = false, tooltip = "Disabled with its parent — see above.", display = display.none)
-bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "SZ = Sniper Zone. A significant area that institutions come back to after a displacement.", display = display.none)
-bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "BLEG = B-Leg, a setup whose retrace arrives late. Shows the area it is waiting for price to come back to. 15m only.", display = display.none)
+bool   showMacroFibInput = input.bool(false, "Show Cycle Fib  —  OFF (being refined)", group = GRP_FIBO, active = false, tooltip = "Turned off while the anchoring rule is reworked. Ticking it does nothing.", display = display.none)
+int    macroLineExtend = input.int(180, "   ↳ Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = false, tooltip = "Off with its parent above.", display = display.none)
+bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "Draws the Sniper Zone - an area price tends to return to after a big move.", display = display.none)
+bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "Draws the area a late-retrace setup is waiting for price to come back to. 15m only.", display = display.none)
 
 bool hideFibsSub5m = true
 // 1m is the entry-view timeframe — the External Fib always shows there (its SOS-leg
@@ -713,7 +713,7 @@ bool _fibTfOk = timeframe.in_seconds() == 60 or not (hideFibsSub5m and timeframe
 bool showFibo   = _fibTfOk
 bool drawFibo   = showFibTool and showFiboInput and _fibTfOk
 bool drawSniper = showFibTool and showSniperInput
-string sharedLabelMode = input.string("TP/Entry", "Fib label style", options = ["TP/Entry", "Fib Value", "Both"], group = GRP_FIBO, tooltip = "What each fib line is tagged with, in front of its price. TP/Entry = the trade name (TP1, TP2, TP3, E1-E4). Fib Value = the ratio (0.5, 0.618). Both = the name and the ratio side by side. Applies to the External, Cycle and Internal fibs together.", display = display.none)
+string sharedLabelMode = input.string("TP/Entry", "Fib label style", options = ["TP/Entry", "Fib Value", "Both"], group = GRP_FIBO, tooltip = "What each fib line is tagged with: the trade name, the ratio, or both.", display = display.none)
 
 float fibo1Value     = 0.382
 color fibo1Color     = #4caf50

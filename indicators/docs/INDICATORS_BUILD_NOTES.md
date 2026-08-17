@@ -15,6 +15,53 @@ stays behind in `indicators/CLAUDE.md`; this is the evidence, not the instructio
 
 ---
 
+## 2026-08-16 — the tooltips were paragraphs, and nobody could read a toggle off one
+
+Aaron: *"All the tooltips, when you hover over them, they are long, technical, complicated, and
+just hard to get the gist of what the toggle or the setting is for."*
+
+He was describing a settings panel you cannot use. The worst offender ran **814 characters** —
+five sentences of measured history and parity warnings before it said what the checkbox did.
+
+**MEASURED across all 29 Pine files: 151,063 → 62,931 tooltip characters, 58% shorter.** 663
+rewritten from 341 unique strings (the parent/`_export` twins and the shared engine settings
+repeat), mean length 216 → 91 characters, longest 814 → 166, and **not one input tooltip is
+still over 200 characters**.
+
+**The content rule that came out of it is in `strategies/CLAUDE.md`** — say what it does and what
+Off does, name the unit and what 0 means, stop. The measured results and the reasons for defaults
+were not deleted, they moved to `strategies/docs/<family>.md` and the specs, which is where a
+reader after *why* is already heading.
+
+### The three things worth keeping from how it was done
+
+🔴 **A TOOLTIP TURNED OUT TO BE HALF OF A CONTRACT, AND THE TEST CAUGHT IT.**
+`test_bleg.py::test_the_meta_descs_are_the_pine_tooltips_verbatim` pins four Pine tooltips to the
+lab panel's `desc` in `mpc_bleg.meta.json`, byte for byte. It went **RED on the first run** — which
+is the test doing precisely the job its own docstring claims, catching a silent drift where the
+panel would have gone on describing settings in words the Pine no longer used. **90 `desc` fields
+across the three strategy meta files were resynced in the same commit**, so the lab panel got the
+plain English too rather than being left behind.
+
+⚠ **The first meta.json resync did cosmetic damage and it was caught by counting, not by reading.**
+Round-tripping through `json.dumps` reformatted every inline array — 177 changed lines in
+`mpc_sos_fade.meta.json` that had nothing to do with any description. The fix was to replace the
+`desc` strings in the RAW TEXT instead. **The check that found it is the one worth reusing: diff
+the file and count the changed lines that do NOT contain the field you meant to change.** It
+should be zero, and it was 177.
+
+⚠ **The safety proof is the same shape as the comment migration's**: strip every tooltip string
+out of the before and after copy of each file, replace it with a placeholder, and diff. **Zero
+files differed outside a tooltip across all 29.** 355 strategy tests green afterwards, and
+`tools/check_active_order.py` clean on all twelve strategy files.
+
+⚠ **The nine `label.new()` tooltips were deliberately left alone.** Those are chart hovers — the
+TRADE BLOCKED popup and its siblings — carrying a live reason and a price for a setup that was
+refused. They are diagnostics rather than settings, and they are the only record that a refusal
+happened at all, so shortening them would delete evidence rather than noise.
+
+---
+
 ## 2026-08-16 — a third of every strategy Pine was prose, and it moved to `strategies/docs/`
 
 Aaron: *"We frequently run out of tokens in our Pine strategies… these comments should not live

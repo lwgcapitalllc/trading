@@ -34,7 +34,7 @@
         "off": "Ignore",
         "on": "Arms setups"
       },
-      "desc": "Lets a momentum divergence start a setup. If this and the sweep trigger are both off, nothing ever trades. It does not control the veto — that has its own switch.",
+      "desc": "Lets a momentum divergence start a setup. If this and the sweep trigger are both off, nothing ever trades.",
       "hidden": true
     },
     {
@@ -47,14 +47,14 @@
         "off": "Ignore",
         "on": "Arms setups"
       },
-      "desc": "Lets a run on the stops past a recent high or low start a setup. Turn it off, leaving divergence on, to read divergence-started setups on their own."
+      "desc": "Lets a run on the stops past a recent high or low start a setup."
     },
     {
       "name": "aplus_window",
       "group": "What arms a setup",
       "label": "Max time: sweep → SOS (minutes)",
       "unit": "minutes",
-      "desc": "How long a stop run stays valid while it waits for structure to confirm. In practice a break the other way is what really cancels it, so this only clears out very old ones. 4320 = 3 days.",
+      "desc": "How long a stop run stays valid while it waits for structure to confirm. 4320 = 3 days.",
       "guide": [
         "Only fresh signals count — fewer setups",
         "An old signal can still trigger days later"
@@ -69,7 +69,7 @@
         "off": "No A+",
         "on": "A+ on"
       },
-      "desc": "On = the main reversal setup trades normally. Off = it never fires. Turn it off with B-Leg on to read the B leg on its own."
+      "desc": "On = the main reversal setup trades normally. Off = it never fires, so you can read the B leg on its own."
     },
     {
       "name": "exec_bleg",
@@ -80,7 +80,7 @@
         "off": "No B legs",
         "on": "B legs on"
       },
-      "desc": "Adds a second setup: when a reversal never gets its pullback and the market runs on instead, this waits for the pullback to arrive late and buys it there. The main setup has first claim. Off by default.",
+      "desc": "Adds a second setup: when a reversal never gets its pullback, this waits for the pullback to arrive late and buys it there.",
       "hidden": true
     },
     {
@@ -92,7 +92,7 @@
         "off": "No longs",
         "on": "Longs on"
       },
-      "desc": "On = long setups may trade. Off = shorts only.",
+      "desc": "Lets long setups trade. Off = shorts only.",
       "hidden": true
     },
     {
@@ -104,7 +104,7 @@
         "off": "No shorts",
         "on": "Shorts on"
       },
-      "desc": "On = short setups may trade. Off = longs only.",
+      "desc": "Lets short setups trade. Off = longs only.",
       "hidden": true
     },
     {
@@ -117,7 +117,7 @@
         "off": "0.618 limit",
         "on": "Gap required"
       },
-      "desc": "On = only trade when there is a gap in the pullback zone. Off = trade the pullback on its own, at the 0.618 level. Off does not switch off the gap rules below — a gap still prices the entry when there is one."
+      "desc": "On = only trade when there is a gap in the pullback zone. Off = trade the pullback on its own."
     },
     {
       "name": "exec_nogap_arm",
@@ -161,7 +161,7 @@
         "off": "Any gap",
         "on": "Past 0.5 only"
       },
-      "desc": "On = the whole gap must sit in the deep half of the pullback. Off = any gap touching the zone counts. On is stricter and takes fewer setups.",
+      "desc": "On = the whole gap must sit in the deep half of the pullback. Stricter, so fewer setups.",
       "hidden": true
     },
     {
@@ -173,7 +173,7 @@
         "off": "Any live gap",
         "on": "Only older gaps"
       },
-      "desc": "On = the gap only counts if it was already there before price pulled back this far. A gap left by the reversal candle itself is the move confirming itself.",
+      "desc": "On = the gap only counts if it was already there before price pulled back this far.",
       "hidden": true
     },
     {
@@ -185,7 +185,7 @@
         "off": "Gap edge",
         "on": "The fib level"
       },
-      "desc": "Fires when a fib level sits inside the gap. On = rest the order on that level instead of at the edge of the gap, so it sits inside the gap rather than in front of it.",
+      "desc": "On = when a fib level sits inside the gap, rest the order on that level instead of at the gap's edge.",
       "hidden": true
     },
     {
@@ -197,7 +197,7 @@
         "off": "Off",
         "on": "Gap's far edge"
       },
-      "desc": "For a gap that holds no fib level and sits deeper than 0.618. On = rest the order at the far edge of the gap. It is the one deep rule that always fills, and it tested worse than the rule below. It overrides the two rules below.",
+      "desc": "For a gap holding no fib level and sitting deeper than 0.618, rest the order at its far edge.",
       "hidden": true
     },
     {
@@ -210,7 +210,7 @@
         "off": "Off",
         "on": "Nearest either side"
       },
-      "desc": "Same gap as the rule above. On = rest on whichever fib level is closest, above or below. It fixes a gap just short of a level being entered way back at the one before. Not free: when the deeper level wins, the order sits past the gap and a setup that only tags the gap never fills."
+      "desc": "Same gap as the rule above, but rest on whichever fib level is closest, above or below."
     },
     {
       "name": "exec_deep_fib",
@@ -221,7 +221,7 @@
         "off": "Off",
         "on": "Shallower fib only"
       },
-      "desc": "The older, one-sided version of the two rules above, kept so old results still reproduce. It only ever looks at the level just above the gap, however much closer the one below is. Only used with both rules above off."
+      "desc": "The older one-sided version of the two rules above, kept so old results still reproduce."
     },
     {
       "name": "exec_conf_sz",
@@ -242,7 +242,7 @@
       "label": "Risk % per trade",
       "unit": "% of balance",
       "step": 0.5,
-      "desc": "How much of the account each trade risks. Position size is worked back from this and the stop distance, so a tighter stop buys a bigger position at the same risk.",
+      "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk.",
       "guide": ["Smaller swings, slower growth", "Bigger swings — 10% is already aggressive"]
     },
     {
@@ -251,7 +251,7 @@
       "core": true,
       "custom_from": "exec_sl_custom",
       "label": "Stop fib level (deep side of 0.5)",
-      "desc": "How far back the stop sits. 0.886 is the tested default. 1.0 is the widest and the safest. The three tighter levels can put the stop almost on top of the entry, which blows up the position size, so turn on the minimum stop distance first. Custom takes any level you type.",
+      "desc": "How far back the stop sits. 1.0 is the widest and safest; the tighter levels can put the stop almost on the entry.",
       "choices": ["0.618", "0.702", "0.786", "0.886", "1.0", "Custom"]
     },
     {
@@ -285,7 +285,7 @@
         "exec_sl_level": "1.0"
       },
       "disable_note": "No effect — the stop is already 1.0, so both states place it in the same spot.",
-      "desc": "On = an entry that fills at 0.786 or deeper puts its stop right back at the start of the move instead. That gives it room, because those entries otherwise have very little behind them, but it costs money on every trade it touches."
+      "desc": "On = an entry filling at 0.786 or deeper puts its stop right back at the start of the move, giving it more room."
     },
     {
       "name": "exec_sl_buf_tk",
@@ -300,14 +300,14 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Minimum stop distance",
-      "desc": "Skip a setup whose stop sits closer to the entry than the floor below. Size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less — it builds a huge position. Percent of price keeps scaling as gold rises; ATR is the wrong tool here, because the dangerous stops appear on quiet bars.",
+      "desc": "Skip a setup whose stop sits closer to the entry than the floor below.",
       "choices": ["Off", "% of price", "Fixed $", "x ATR(14)"]
     },
     {
       "name": "exec_min_stop_val",
       "group": "Risk & stop",
       "label": "Minimum stop floor (unit = mode above)",
-      "desc": "The floor itself. The unit follows the setting above — a percent, dollars of price, or an ATR multiple. Higher refuses more setups.",
+      "desc": "The floor itself, in whatever unit the setting above uses. Higher refuses more setups.",
       "step": 0.01,
       "show_if": {
         "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"]
@@ -319,7 +319,7 @@
       "group": "Exit ladder",
       "label": "TP1 size %",
       "unit": "% of position",
-      "desc": "How much of the position the first target banks. 0 = bank nothing and ride it all, which tested best. The target still matters at 0 — touching it is what moves the stop to breakeven.",
+      "desc": "How much of the position the first target banks. 0 = bank nothing and ride it all. Touching it still moves the stop to breakeven.",
       "guide": ["More size left for the runner", "Bank more early, smaller runner"]
     },
     {
@@ -335,7 +335,7 @@
       "group": "Exit ladder",
       "label": "Breakeven buffer (ticks)",
       "unit": "ticks",
-      "desc": "The breakeven stop sits this far past the entry, so a scratch still covers costs. It is also why TradingView reports no breakevens — those exits book a few cents, so it files them as wins. The trade label counts them honestly.",
+      "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs.",
       "guide": ["True breakeven", "Locks in more, stopped out sooner"],
       "hidden": true
     },
@@ -345,7 +345,7 @@
       "core": true,
       "label": "Runner trail method",
       "choices": ["Fixed step", "Structure (swing)", "Structure + % ratchet"],
-      "desc": "How the stop follows the trade once the second target is hit, and which setting below is live. Fixed step is a plain dollar grid. Structure parks the stop at the last swing, which breathes with the trend but hands a lot back at the turn. Structure + ratchet is the default and banks more of each run.",
+      "desc": "How the stop follows the trade once the second target is hit. Fixed step is a plain dollar grid; structure parks it at the last swing.",
       "guide": [
         "Fixed step — simplest, and the worst of the three",
         "Structure + ratchet — keeps more of each run"
@@ -356,7 +356,7 @@
       "group": "Exit ladder",
       "unit": "ticks",
       "label": "Structure trail buffer (ticks)",
-      "desc": "Used by both structure methods. The trailing stop sits this many ticks beyond the last swing, so a wick through it does not clip you.",
+      "desc": "How many ticks beyond the last swing the trailing stop sits, so a wick through it does not clip you.",
       "guide": [
         "Tight to the swing — clipped by wicks",
         "Wide of the swing — survives noise, gives back more"
@@ -373,7 +373,7 @@
       "show_if": {
         "exec_runner_trail": "Structure + % ratchet"
       },
-      "desc": "How big each step of the trailing stop is, as a percent of price. A percent rather than dollars, because gold has run from 1,500 to 3,400 and a fixed amount means something different at each end. Too small and it starts cutting winners short.",
+      "desc": "How big each trailing step is, as a percent of price rather than dollars, so it means the same at any price.",
       "guide": ["Too small — cuts winners short", "Too big — barely does anything"]
     },
     {
@@ -385,7 +385,7 @@
       "show_if": {
         "exec_runner_trail": "Fixed step"
       },
-      "desc": "The step size in dollars. Read by two settings, so it is never greyed out: the fixed-step trail, and the one-step-behind stop floor. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
+      "desc": "The step size in dollars. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
       "guide": [
         "Tighter trail — banks sooner, cuts runners short",
         "Looser trail — lets winners breathe, gives back more"
@@ -397,7 +397,7 @@
       "group": "Exit ladder",
       "label": "TP2 → stop floor",
       "choices": ["TP1 price", "Breakeven", "One trail step behind"],
-      "desc": "Where the stop jumps to the moment the second target is hit, before the trail takes over. TP1 price is tight and can scratch the trade on the first pullback. Breakeven gives it the most room. One trail step behind keeps it just under the best price seen. The trail can still tighten past this.",
+      "desc": "Where the stop jumps to the moment the second target is hit. TP1 is tight and can scratch the trade; breakeven gives it the most room.",
       "guide": [
         "TP1 price — protects the gain, scratches runners",
         "Breakeven — maximum room for the runner"
@@ -408,7 +408,7 @@
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
-      "desc": "Close a trade that has been open longer than the hours set below. Before TP1 only is the tested setting: it fires only while the trade has never reached the first target, so it never cuts a winner. Always closes on the clock alone, winners included. Off closes nothing.",
+      "desc": "Closes a trade open longer than the hours below. Before TP1 only fires while the trade has never reached the first target.",
       "choices": ["Off", "Before TP1 only", "Always"],
       "guide": ["Off — the clock never closes a trade", "Always — the clock closes winners too"]
     },
@@ -416,7 +416,7 @@
       "name": "exec_time_stop_hrs",
       "group": "Exit ladder",
       "label": "Time stop (hours)",
-      "desc": "How long a trade may stay open, in hours, weekends included. Anything from about 24 to 40 hours gives the same answer, so read it as a range rather than an exact number. Below 16 hours it starts cutting winners, because the losers here die faster than the winners do.",
+      "desc": "How long a trade may stay open, in hours, weekends included. About 24 to 40 hours all give the same answer.",
       "step": 0.25,
       "show_if": {
         "exec_time_stop_mode": ["Before TP1 only", "Always"]
@@ -432,7 +432,7 @@
         "off": "Hold",
         "on": "Exit on flip"
       },
-      "desc": "On = close the trade early if structure breaks back the other way, on the view that the reversal has failed. Off = let the stop or a target resolve every trade.",
+      "desc": "On = close the trade early if structure breaks back the other way. Off = let the stop or a target resolve it.",
       "hidden": true
     },
     {
@@ -482,7 +482,7 @@
         "off": "Off",
         "on": "Track"
       },
-      "desc": "Spots momentum running out: price makes a lower low while momentum makes a higher low from oversold, or the mirror at a high. It confirms a few bars after the actual turn. Entries need this — turning it off disables both the divergence trigger and the veto."
+      "desc": "Finds momentum running out - price makes a new extreme and RSI does not. Entries need this on."
     },
     {
       "name": "div_rsi_len",
@@ -523,7 +523,7 @@
         "off": "No veto",
         "on": "Veto"
       },
-      "desc": "On = block a long while a bearish divergence is live or momentum is extremely overbought, and the mirror for shorts. This is where the veto is built; the entry setting only decides whether entries obey it.",
+      "desc": "On = block a long while a bearish divergence is live or momentum is very overbought, and the mirror for shorts.",
       "show_if": {
         "show_div": true
       }
@@ -537,7 +537,7 @@
         "off": "Ignore veto",
         "on": "Obey veto"
       },
-      "desc": "On = entries obey the veto. The veto itself is built in the RSI divergence section — switch it off there and this has nothing to obey."
+      "desc": "On = entries obey the veto. The veto itself is switched on in the RSI divergence section."
     },
     {
       "name": "div_extreme_ob",
@@ -572,7 +572,7 @@
         "off": "Any hour",
         "on": "Skip 16–18 NY"
       },
-      "desc": "On = no new entries in the last hour before the daily close. Gold closes at 17:00 New York and reopens at 18:00, so a trade opened late can be gapped out over the break.",
+      "desc": "On = no new entries in the last hour before the daily close, so a trade cannot be gapped out over the break.",
       "hidden": true
     },
     {
@@ -602,7 +602,7 @@
       "group": "Higher-timeframe filter",
       "core": true,
       "label": "Weekly bias requirement",
-      "desc": "Whether the weekly trend has to agree with the trade. Ignore = no filter. Must agree = weekly matches the trade. Must not oppose = neutral is fine. Must oppose = weekly has to be against it.",
+      "desc": "Whether the weekly trend has to agree with the trade. Ignore = no filter.",
       "guide": ["Ignore = no filter, trade every setup", "Must agree = only with the weekly trend"],
       "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"],
       "hidden": true
@@ -624,14 +624,14 @@
         "off": "Any setup",
         "on": "Exhaustion"
       },
-      "desc": "On = skip a reversal that fights a fresh higher-timeframe breakout, while still taking one that fades an exhausted move. Off = no higher-timeframe filter, and the setting below greys out.",
+      "desc": "On = skip a reversal that fights a fresh higher-timeframe breakout, while still taking one that fades an exhausted move.",
       "hidden": true
     },
     {
       "name": "exec_htf_source",
       "group": "Higher-timeframe filter",
       "label": "HTF exhaustion source",
-      "desc": "Which higher timeframe the breakout check reads. Weekly blocks the fewest trades. Either blocks the most.",
+      "desc": "Which higher timeframe the breakout check reads. Weekly blocks the fewest trades.",
       "show_if": {
         "exec_htf_exhaust_only": true
       },
