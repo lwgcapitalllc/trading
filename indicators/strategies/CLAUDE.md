@@ -198,6 +198,39 @@ removed.
 
 ---
 
+### A `strategy()` ARGUMENT CANNOT BE AN INPUT — raise it permanently and gate it in code
+
+**2026-08-16, `mpc_strategy.pine` + its export twin.** The scale-in toggle (`execScaleIn`, default
+OFF) needs `pyramiding > 0` to place a second entry on an open position. `strategy()` is evaluated
+**once at compile time**, so `pyramiding` can never read an input — the only options are to raise it
+permanently or not to have the feature. It is **0 → 4** in both files (the base entry plus
+`execScaleAdds`, whose `maxval` is 3).
+
+🔴 **A RAISED CEILING IS SAFE ONLY IF SOMETHING ELSE REFUSES THE STACK, AND THAT WAS CHECKED RATHER
+THAN ASSUMED.** All four `strategy.entry` calls that OPEN a trade in that file (two A+, two B-LEG)
+are gated on `strategy.position_size == 0`, so the base entry cannot stack on itself whatever
+`pyramiding` says; the only other entries are the `L-ADD*` / `S-ADD*` ids, each gated on
+`execScaleIn`. **With the toggle off the file trades exactly as before** — verified on the Python
+side as a bit-identical OFF path, which is the half a paste cannot show you.
+
+⚠ **`strategy.exit` and `strategy.close` MATCH ONE ENTRY ID.** A pyramided position is N entries, so
+`from_entry = "Long"` protects the base and nothing else — every add needs its own exit AND its own
+close on each force-close path, or an add sits in the book with no stop while the base leaves on an
+opposite SOS. That is a naked pyramid against fresh opposite structure, and it is the worst state
+this class of feature can produce.
+
+⚠ **The three inputs are appended after the LAST input in the file and carry `group = G6`.** The
+group decides which panel BOX they display in; DECLARATION ORDER decides which saved chart value
+they inherit. Putting them beside the other stop settings would have re-keyed every later bool, int
+and float on Aaron's live chart. Prose: `docs/mpc_strategy.md` → `## [174]`–`## [178]`.
+
+⚠ **NOT COMPILED, and there is no `cfg_*` column for any of the three**, so `compare_strategy.py`
+cannot configure a scale-in run — the gate would go green while comparing two different strategies.
+Measured result and the open design question (the add trigger is arithmetic only — no BOS, no
+retest): `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 19.
+
+---
+
 ## PHASE 1 — the trade annotations, and the one piece that CANNOT be ported
 
 The other half of the standardisation: *"as I move to strategies, nothing seems different other

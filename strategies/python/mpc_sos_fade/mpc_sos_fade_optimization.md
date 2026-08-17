@@ -35,6 +35,7 @@ Standing rules for anything recorded here:
 | 13 | 2026-07-31 | **NOT a sweep — a DEFECT, found from one chart.** Stop staging reads the ENTRY BAR's own high/low, so a limit that fills on the way down is credited with the move that happened *before* it filled — promoted to breakeven having never been in profit | **44 of 164 trades (27%) are staged by their own entry bar** — 34 to breakeven, 10 straight to the TP2 floor; 35 die within 3 bars. Staging only from the bar AFTER the fill: **110.65R → 125.56R (+14.91R)**, same 164 entries, 30 outcomes changed. **81% of the gain is 3 trades and drawdown is UNMEASURED**, so the case is correctness, not profit. Present in `mpc_strategy.pine` identically. | ✅ **FIXED & SHIPPED 2026-08-01** (commit `8143c05`) — see the banner below |
 
 | 18 | 2026-08-16 | **`exec_sl_deep` × `exec_secondary`, the full 2×2** — 4 full `run_dual` replays on ONE window (2018-09-14 → 2026-08-14, 186,910 M15 + 2,799,088 M1 bars, bar fills) | **`exec_sl_deep` stays OFF — it costs 24.0R with the secondary live and 23.0R without.** The shipped cell is the best of the four at **+164.4R / 189 trades**. The interaction is **1.0R against sd 15.06R**, i.e. the two levers are separable. Deep-ON does hold a shallower drawdown (−4.8 vs −5.5) and pays ~24R for it. | **measured — shipped default CONFIRMED** |
+| 19 | 2026-08-16 | 🟢 **SCALE-IN** — add size to a runner the trail already protects, sized so an add's worst case equals the profit the stop guarantees. 2 stages (shadow ledger to search, real implementation to verify), XAUUSD 15m 2018-09-13 → 2026-08-14, **PU Prime ECN costs charged** | **+128.26R → +211.59R (+65%) at 2 adds / cap 1.0x**, ret/DD 21.27 → 24.26, **worst trade unchanged at −2.06R** and losers 65 → 67. Dropping the affordability test costs 8–13 extra losers, which is what the rule buys. **The trigger is arithmetic only — no structure, no retest; location has never been varied.** | **BUILT, toggle ships OFF — no parity gate has run** |
 
 ⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
 Count the runs with `grep -c '^# Run ' `, never off this table.
@@ -2805,3 +2806,130 @@ crosses windows unless both are pinned to the later date.** Nothing warns.
   unconditionally, and `exec_sl_deep` would make it geometrically legal. A scan over the same
   history found **132 of 386 setups (34.2%) saw a gap wholly inside 0.786–0.886**, so the
   opportunity is not negligible. It is a CODE change on both sides plus a re-parity, not a sweep.
+
+---
+
+# Run 19 — 2026-08-16 — 🟢 **SCALE-IN. +65% on a costed book, and the losing column barely moves.**
+
+**The question.** Aaron asked what exit families exist beyond the fixed TP1/TP2 + % runner trail.
+Three were proposed; two closed NEGATIVE the same day and are recorded below so they are not
+re-tried. The third — **adding SIZE to a runner the trail is already protecting** — is the first
+ADDITIVE lever ever measured on this bot. Every family swept before it was protective (Run 8 killed
+~50 tightening variants, Run 9 rejected banking in every form), and a grep for pyramid/scale-in
+across the repo returned nothing.
+
+## The rule
+
+```
+locked   = (stop - entry) * base_qty     profit the stop already guarantees
+per_unit = (price - stop)                what one extra unit risks to that SAME stop
+add_qty  = min(locked / per_unit, base_qty * exec_scale_cap_x)
+```
+
+Stop out right after adding and the two cancel — the base banks `locked`, the add gives back at most
+`locked`. **An add can shrink a winner; it cannot manufacture a loser.** The guarantee is arranged in
+advance by SIZE, never detected in real time, which is why no "get out of the late entry" rule is
+needed.
+
+🔴 **The trigger is the TRAIL (stage 2), not a target, and that is what makes it self-regulating.**
+At TP2 the stop is only at TP1, so `locked` is small while `price - stop` is large and the affordable
+add is a rounding error — the idea looks worthless if you test it there. Once the trail ratchets up
+near price the same arithmetic permits a LARGE add. A trending runner buys size; a stalling one buys
+nothing. **A ratchet check refuses the next add until the trail moves past the stop the last one was
+sized against** — without it a stalling runner re-adds every bar against the same locked profit and
+spends the guarantee several times over.
+
+## How it was measured
+
+Two stages. **Stage 1** a shadow ledger layered on an untouched replay (fast, used to search the
+2×2 of adds × cap). **Stage 2** the real implementation, replayed end to end. Both on **XAUUSD 15m,
+2018-09-13 → 2026-08-14**, `warmup=1000`, `exec_secondary=False`, and stage 2 with **PU Prime ECN
+costs charged** (`PROFILES["puprime_ecn"]`, commission $1.00/side/lot, measured spread $0.12,
+`bid_ask_fills=False`). Scripts: `scale_in.py`, `scale_in_costed.py`, `verify_scale_in.py`.
+
+## Result — costed, PU Prime ECN
+
+| | trades | **total R** | maxDD (R) | won | scratch | **losers** | worst | best | ret/DD |
+|---|---|---|---|---|---|---|---|---|---|
+| **off (shipped)** | 182 | **+128.26** | 6.03 | 70 | 47 | **65** | −2.06 | 24.64 | 21.27 |
+| 2 adds, cap 1.0x | 182 | **+211.59** | 8.72 | 50 | 65 | **67** | −2.06 | 57.75 | **24.26** |
+| 3 adds, cap 1.0x | 182 | +233.04 | 12.45 | 48 | 66 | 68 | −2.06 | 69.63 | 22.99 |
+
+**Free of costs the same pair is 140.00R → 224.84R with the losers BIT-IDENTICAL** (62, −60.19R,
+worst −1.98R), ret/DD 24.94 → 31.70. With costs "exactly zero" becomes slightly negative, which is
+the 65 → 67.
+
+🔴 **The affordability test is the whole feature, and dropping it is what proves it.** A naive
+variant that ignores `locked / per_unit` and adds a flat 1x cost **8–13 extra losing trades**
+depending on the cap. **The worst trade is unchanged at −2.06R in every safe row** — the rule does
+what it claims.
+
+⚠ **Trade count is identical at 182 in every row**, so the one-position-slot queue effect did not
+fire. An add does not consume the slot; it enlarges a position already in it.
+
+⚠ **2 adds is the pick on return-per-drawdown, not on total R.** 3 adds makes 21R more and gives
+back 3.7R more drawdown.
+
+## Verified two ways
+
+✅ **The OFF path is BIT-IDENTICAL to the costed control measured before the feature existed** —
+128.26R / 6.03 maxDD / 65 losers / −2.06R worst, all four. On a LIVE strategy this is the check that
+matters: a toggle whose OFF path moves the numbers has changed the shipped bot whatever its default
+says.
+
+✅ **ON at 2 adds reproduces the harness figure the decision was taken on: 211.59R vs 211.59R,
+diff −0.00R.** ⚠ **This was PREDICTED TO DIVERGE and did not, and the reason is worth keeping: R is
+scale-free.** Per-trade R is `pnl / risk_usd` with `risk_usd` frozen at entry, so scaling the
+position leaves R unchanged — the equity-path compounding that was expected to separate the two
+cannot show up in the R column. **The R numbers are trustworthy; dollar totals cannot be read off
+them.**
+
+## What is NOT settled
+
+🔴 **THERE IS NO STRUCTURAL TRIGGER IN IT AT ALL** (Aaron, same day: *"I don't know what market
+structures I'm looking at to add into"*). The rule asks only *can I afford this*, never *is this a
+good place*. Structure enters INDIRECTLY — the trail is parked on the last confirmed swing, so an add
+fires roughly when a new HL/LH confirms — but that is a side effect of the trail's anchor rather than
+a rule anyone chose, and **it enters at MARKET on the bar the trail moves, which is the worst price
+of the leg**, where the base entry rests a limit in a discount zone and waits. Three untested
+alternatives: add on a fresh BOS, add on a retest of the broken level, or rest a limit at the new
+leg's retrace. **Location has never been varied — this is the next thing to measure.**
+
+🔴 **NO PARITY GATE HAS RUN.** The Pine is built (`execScaleIn` / `execScaleAdds` / `execScaleCapX`;
+`pyramiding` raised 0 → 4, which is compile-time and cannot be an input), but there is **no `cfg_*`
+column for any of the three**, so `compare_strategy.py` cannot configure a scale-in run and would go
+green while comparing two different strategies — the exact shape this file records from
+`execRunnerTrail` (2026-07-26), `cfg_min_stop` (2026-07-30) and `eqExemptFvg` (2026-08-06). **An ON
+result is a LAB finding until the columns land and a fresh export is diffed.**
+
+⚠ **No account-level cap exists.** Net risk-to-stop is ≤ 0 by construction, but margin and
+`run_stack`'s risk budget both see the FULL position. **Must not go live before the allocator**
+(`docs/LIVE_TRADING_PIPELINE.md` → G10).
+
+⚠ **The guarantee holds to the STOP, not through a GAP.** Price jumping past the stop fills the whole
+combined size at the open, and 3x the size loses 3x.
+
+## The two families that closed NEGATIVE the same day
+
+**ATR-based stop DISTANCE — REJECTED.** Aaron's own idea, and he asked for it on the stop from the
+beginning rather than only on the runner. Control **140.00R / 5.61 maxDD / ret-DD 24.94**; the best
+pure ATR variant (2.5×) is **105.08R / 8.59 / 12.23**. 🔴 **The decisive row is `atr 3.0×`: median
+stop $9.27 against the control's $8.92 — essentially the same DISTANCE — yet 86.27R against 140.00R,
+with a near-identical outcome mix (69 winners both) and median winner 0.89R against 1.26R.** So it is
+not the width of the stop that pays. **The fib LEVEL is doing work as a LOCATION, not as a distance**
+— which contradicts what this log twice named as the only remaining route on stop placement. Floor
+variants (−2R to −10R) are all inside the 15.06R jitter. ✅ The minimum-stop guard worked as designed
+throughout (113 trades refused at k=0.5), so Run 4 did not repeat.
+
+**REGIME filtering — CLOSED, and it needed no new code.** `run_report.py` already tags every trade
+with the canonical `engines/regime` classifier at entry. **163 of 182 trades are TRENDING**, 18
+TRANSITIONING, 1 UNKNOWN — so the accuracy question Aaron raised is moot at this split: 90% of the
+book is one bucket. The differing bucket is **profitable** (+0.32 avgR, +5.7R), so filtering it costs
+money, and 5.7R is inside the jitter anyway. **Read it as: the A+ setup already selects for
+trending.** Session splits harder (London 51% / 1.00 avgR on n=43 against Asia 33% / 0.48 on n=45),
+but Asia is still +21.6R, so there is nothing to cut there either.
+
+**The pattern across all three families, and it is the same one Runs 6 and 12 found: every subgroup
+of this book is profitable and every exit variation left the LOSING column untouched. There is
+nothing here to filter — the only lever that moved anything was the one that added size to what
+already works.**

@@ -405,6 +405,49 @@
       "hidden": true
     },
     {
+      "name": "exec_scale_in",
+      "group": "Exit ladder",
+      "widget": "toggle",
+      "label": "Add to the runner (scale in)",
+      "options": {
+        "off": "Never grow",
+        "on": "Scale in"
+      },
+      "desc": "Buys more once the trailing stop is already locking in profit; Off means the position never grows after entry. The add is sized so that being stopped out costs at most the profit already locked in, so it can shrink a winner but never create a loser."
+    },
+    {
+      "name": "exec_scale_max_adds",
+      "group": "Exit ladder",
+      "label": "How many times it may add",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "The most times one trade may add. It only adds again once the trailing stop has moved up since the last add, so a stalling trade gets nothing.",
+      "guide": [
+        "Fewer adds — smaller position, shallower drawdown",
+        "More adds — bigger runners, more given back"
+      ]
+    },
+    {
+      "name": "exec_scale_cap_x",
+      "group": "Exit ladder",
+      "label": "Biggest add, as a multiple of the original size",
+      "min": 0.1,
+      "max": 5.0,
+      "step": 0.1,
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.",
+      "guide": [
+        "Lower — less margin and less gap exposure",
+        "Higher — the profit rule alone decides the size"
+      ]
+    },
+    {
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",

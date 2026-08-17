@@ -590,6 +590,12 @@ class Execution:
         self._legs: List[dict] = []        # per-rung exit ledger of the OPEN trade (reporting only)
         self._risk_usd = 0.0
         self._filled_qty = 0.0             # how much of the position has exited
+        # Scale-in lots: [entry_price, qty_still_open] per add. Separate LOTS rather than extra
+        # `_qty` because `_exit_portion` prices the position off one `_entry` — growing `_qty`
+        # would value the added units as if bought at the base entry and invent profit.
+        self._adds: List[List[float]] = []
+        self._add_stop = None              # the stop the last add was sized against
+        self._base_qty = 0.0               # size the trade OPENED with; every add sizes off it
         self._sos_bar_open: Optional[int] = None
         self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
@@ -711,6 +717,12 @@ class Execution:
         "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close",
+        # Scale-in lots, and they belong here for the reason the warning above gives: a
+        # restored position that dropped them would carry the base's stop while the adds it
+        # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
+        # sized against — without it a restored runner re-adds immediately at the same locked
+        # profit, which is exactly the over-spend the ratchet check exists to stop.
+        "_adds", "_add_stop", "_base_qty",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
@@ -1908,6 +1920,13 @@ class Execution:
         self._fib = pend.fib
         self._stage = 0
         self._filled_qty = 0.0
+        # Snapshot the OPENING size and clear the add ledger. Every add sizes off `_base_qty`
+        # rather than the live position: sizing off the live one would compound, so add #2
+        # would budget against base+add#1 and the "an add can never create a loser" guarantee
+        # would be spent several times over on a single trade.
+        self._adds = []
+        self._add_stop = None
+        self._base_qty = granted
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
         self._entry_equity = self._equity_realized      # R yardstick baseline
@@ -2064,6 +2083,23 @@ class Execution:
         # It defaults True because every caller that does not pass it is a force-close.
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
+        # 🔴 SCALE-IN LOTS CLOSE PRO-RATA WITH THE BASE, each at its OWN entry price. They are
+        # separate lots rather than extra `_qty` precisely because the line above prices
+        # everything off ONE `_entry` — folding an add into `_qty` would value units bought at
+        # the add price as if bought at the base entry, i.e. invent profit out of arithmetic.
+        # The fraction is taken against the BASE quantity, which is what `qty` is a portion of.
+        if self._adds and self._qty > 0:
+            frac = min(1.0, qty / self._qty)
+            for lot in self._adds:
+                closing = lot[1] * frac
+                if closing <= 1e-12:
+                    continue
+                pnl += (price - lot[0]) * d * closing * self._cfg.point_value
+                lot[1] -= closing
+                self._charge_commission(closing)   # the add pays its own exit side too
+                self._charge_spread(closing)
+                if market:
+                    self._charge_slippage(closing)
         self._equity_realized += pnl
         self._account.book_pnl(self._leg, pnl)   # realize onto the shared balance as it happens
         self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
@@ -2122,6 +2158,9 @@ class Execution:
         self._qty = 0.0
         self._filled_qty = 0.0
         self._stage = 0
+        self._adds = []
+        self._add_stop = None
+        self._base_qty = 0.0
         self._entry_equity = None
 
     def _equity_at_entry_delta(self) -> float:
@@ -2323,6 +2362,68 @@ class Execution:
         # calls strategy.exit, and that exit is active from the following bar).
         self._trail_swing_hi = sig.last_conf_high
         self._trail_swing_lo = sig.last_conf_low
+
+        self._maybe_scale_in(sig)
+
+    def _maybe_scale_in(self, sig) -> None:
+        """Add size to a runner the trail is already protecting (Pine `execScaleIn`).
+
+        The whole rule is a SIZING rule, not a timing one:
+
+            locked   = (stop - entry) * base_qty     profit the stop already guarantees
+            per_unit = (price - stop)                what one extra unit risks to that SAME stop
+            add_qty  = locked / per_unit             worst case == the locked profit
+
+        Stop out immediately after adding and the two cancel: the base banks `locked`, the add
+        gives back at most `locked`, the trade closes at worst flat. An add can shrink a winner;
+        it cannot manufacture a loser. That is the property that makes this different from every
+        protective rule Run 8 killed.
+
+        🔴 **The trigger is the TRAIL (stage 2), never a target.** At TP2 the stop is only at TP1,
+        so `locked` is small while `price - stop` is large and the affordable add is a rounding
+        error — measured, and it is why "add at TP2" looks worthless. Once the trail has ratcheted
+        up near price the same arithmetic permits a LARGE add. The rule therefore self-regulates:
+        a trending runner buys size, a stalling one buys nothing, and no separate "is this trade
+        still good?" test is needed.
+
+        ⚠ **The ratchet check is load-bearing.** Without it a stalling runner re-adds on every bar
+        against the same `locked`, spending the guarantee several times over.
+
+        ⚠ **Costs are charged on the way IN here** (commission + half the spread), exactly as
+        `_open_position` does for the base. The other half is charged per portion in
+        `_exit_portion`. An add that paid nothing to open is the flattery this was re-measured to
+        remove.
+
+        ⚠ **No account call.** The base went through `_account.grant`; an add's net risk to the
+        shared stop is <= 0 by construction, so there is nothing for a risk budget to reserve —
+        but MARGIN still sees the full position and the live allocator does not exist. That is a
+        reason this must not go live yet, and it is recorded on `exec_scale_in` in config.py.
+        """
+        cfg = self._cfg
+        if not getattr(cfg, "exec_scale_in", False) or self._pos_dir == 0:
+            return
+        if self._stage < 2 or len(self._adds) >= cfg.exec_scale_max_adds:
+            return
+        d, pv = self._pos_dir, cfg.point_value
+        stop = self._current_stop()
+        price = sig.close
+        # Refuse once the trail is already past price — that is not an add, it is a fill at a loss.
+        if (price - stop) * d <= 0:
+            return
+        # Only add again once the trail has moved PAST the stop the last add was sized against.
+        if self._add_stop is not None and (stop - self._add_stop) * d <= 0:
+            return
+        locked = (stop - self._entry) * d * self._base_qty * pv
+        per_unit = (price - stop) * d * pv
+        if locked <= 0 or per_unit <= 0:
+            return
+        add_qty = min(locked / per_unit, self._base_qty * cfg.exec_scale_cap_x)
+        if add_qty <= 1e-9:
+            return
+        self._adds.append([price, add_qty])
+        self._add_stop = stop
+        self._charge_commission(add_qty)
+        self._charge_spread(add_qty)    # half the round turn; `_exit_portion` pays the other half
 
     def _current_stop(self) -> float:
         cfg = self._cfg

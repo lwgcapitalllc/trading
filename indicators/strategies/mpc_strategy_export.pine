@@ -1,7 +1,8 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
 // [doc 1] MPC A+ STRATEGY — backtest wrapper around the MPC-JARVIS engine  -> docs/mpc_strategy.md
-strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
+// [doc 174] `pyramiding = 4` — the scale-in toggle's one compile-time cost  -> docs/mpc_strategy.md
+strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 4, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 // [doc 2] THE INPUT PANEL — one consolidated block, twelve numbered sections  -> docs/mpc_strategy.md
 var string G1 = "1 · Confirmation table"
 var string G2 = "2 · Market structure"
@@ -99,6 +100,11 @@ bool drawFibs = input.bool(false, "Draw the fib levels", group = G9, tooltip = "
 
 // ── 10 · Drawing: sessions ──────────────────────────────────────
 bool showSessionsInput         = input.bool(false,  "Show Sessions",      group = G10, display = display.none)
+
+// [doc 175] Scale-in inputs — declared LAST on purpose, displayed in group 6  -> docs/mpc_strategy.md
+bool  execScaleIn    = input.bool(false, "Add to the runner (scale in)", group = G6, tooltip = "Buys more once the trailing stop is already locking in profit; Off means the position never grows after entry. The add is sized so that being stopped out costs at most the profit already locked in, so it can shrink a winner but never create a loser.")
+int   execScaleAdds  = input.int(2, "   ↳ How many times it may add", minval = 1, maxval = 3, group = G6, active = execScaleIn, tooltip = "The most times one trade may add. It only adds again once the trailing stop has moved up since the last add, so a stalling trade gets nothing.")
+float execScaleCapX  = input.float(1.0, "   ↳ Biggest add, as a multiple of the original size", minval = 0.1, maxval = 5.0, step = 0.1, group = G6, active = execScaleIn, tooltip = "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.")
 
 // [doc 3] Four corners, not nine (Aaron, 2026-08-04) — synced from mpc_assistant.p  -> docs/mpc_strategy.md
 string tablePositionInput = "Top Right"
@@ -3391,6 +3397,11 @@ var int   lEntryTime = na, var int sEntryTime = na  // fill TIME of the open tra
 var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
 var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = BE trigger reached (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
 
+// [doc 176] Scale-in state — an add is sized off the OPENING qty, never the live one  -> docs/mpc_strategy.md
+var float lBaseQty = na, var float sBaseQty = na
+var int   lAddN    = 0,  var int   sAddN    = 0
+var float lAddStop = na, var float sAddStop = na
+
 var float openRiskUsd = na   // $ at risk on the open trade = 1R, used to grade the result
 var float netAtEntry  = na   // strategy.netprofit the moment the trade opened
 var string pendConfL = "", var string pendConfS = ""   // confluence summary snapshotted while armed, drawn on fill
@@ -3812,6 +3823,12 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     lEntryTime := time
     lStage     := 0
     lMaxFav    := lEntry
+    // Snapshot the OPENING size and clear the add counters. This block only runs on the
+    // flat->long transition, so an add can never re-enter it and re-anchor `lEntry`,
+    // `openRiskUsd` or `lBaseQty` onto a blended average.
+    lBaseQty   := math.abs(strategy.position_size)
+    lAddN      := 0
+    lAddStop   := na
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegL
@@ -3826,6 +3843,9 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     sEntryTime := time
     sStage     := 0
     sMaxFav    := sEntry
+    sBaseQty   := math.abs(strategy.position_size)
+    sAddN      := 0
+    sAddStop   := na
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegS
@@ -3983,6 +4003,29 @@ float sStage2Floor = execTp2StopMode == "Breakeven" ? sEntry - beBuf : execTp2St
 float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
+// [doc 177] ── SCALE-IN — add to a runner the trail is already protecting ──  -> docs/mpc_strategy.md
+if execScaleIn and strategy.position_size > 0 and strategy.position_size[1] > 0 and lStage >= 2 and lAddN < execScaleAdds and not na(lBaseQty) and not na(lStop) and not na(lEntry)
+    float _locked  = (lStop - lEntry) * lBaseQty
+    float _perUnit = close - lStop
+    bool  _ratchet = na(lAddStop) or lStop > lAddStop
+    if _ratchet and _locked > 0 and _perUnit > 0
+        float _addQty = math.min(_locked / _perUnit, lBaseQty * execScaleCapX)
+        if _addQty > 0
+            lAddN    := lAddN + 1
+            lAddStop := lStop
+            strategy.entry(lAddN == 1 ? "L-ADD1" : lAddN == 2 ? "L-ADD2" : "L-ADD3", strategy.long, qty = _addQty)
+
+if execScaleIn and strategy.position_size < 0 and strategy.position_size[1] < 0 and sStage >= 2 and sAddN < execScaleAdds and not na(sBaseQty) and not na(sStop) and not na(sEntry)
+    float _locked  = (sEntry - sStop) * sBaseQty
+    float _perUnit = sStop - close
+    bool  _ratchet = na(sAddStop) or sStop < sAddStop
+    if _ratchet and _locked > 0 and _perUnit > 0
+        float _addQty = math.min(_locked / _perUnit, sBaseQty * execScaleCapX)
+        if _addQty > 0
+            sAddN    := sAddN + 1
+            sAddStop := sStop
+            strategy.entry(sAddN == 1 ? "S-ADD1" : sAddN == 2 ? "S-ADD2" : "S-ADD3", strategy.short, qty = _addQty)
+
 // [doc 160] ── The TIME STOP — the one exit lever driven by the clock, not by price   -> docs/mpc_strategy.md
 
 bool lTimeUp = execTimeStopMode != "Off" and strategy.position_size > 0 and not na(lEntryTime) and (execTimeStopMode == "Always" or lStage == 0) and (time - lEntryTime) >= execTimeStopHrs * 3600000
@@ -3995,10 +4038,29 @@ if strategy.position_size > 0
     if execTp2Pct > 0
         strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
+    // [doc 178] Every add needs its OWN exit and close — `from_entry` matches one id  -> docs/mpc_strategy.md
+    if lAddN >= 1
+        strategy.exit("L-AX1", from_entry = "L-ADD1", stop = lStop)
+    if lAddN >= 2
+        strategy.exit("L-AX2", from_entry = "L-ADD2", stop = lStop)
+    if lAddN >= 3
+        strategy.exit("L-AX3", from_entry = "L-ADD3", stop = lStop)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
+        if lAddN >= 1
+            strategy.close("L-ADD1", comment = "opp SOS")
+        if lAddN >= 2
+            strategy.close("L-ADD2", comment = "opp SOS")
+        if lAddN >= 3
+            strategy.close("L-ADD3", comment = "opp SOS")
     else if lTimeUp
         strategy.close("Long", comment = "time stop")
+        if lAddN >= 1
+            strategy.close("L-ADD1", comment = "time stop")
+        if lAddN >= 2
+            strategy.close("L-ADD2", comment = "time stop")
+        if lAddN >= 3
+            strategy.close("L-ADD3", comment = "time stop")
 
 // ── Manage open short ──
 if strategy.position_size < 0
@@ -4007,10 +4069,28 @@ if strategy.position_size < 0
     if execTp2Pct > 0
         strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
+    if sAddN >= 1
+        strategy.exit("S-AX1", from_entry = "S-ADD1", stop = sStop)
+    if sAddN >= 2
+        strategy.exit("S-AX2", from_entry = "S-ADD2", stop = sStop)
+    if sAddN >= 3
+        strategy.exit("S-AX3", from_entry = "S-ADD3", stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
+        if sAddN >= 1
+            strategy.close("S-ADD1", comment = "opp SOS")
+        if sAddN >= 2
+            strategy.close("S-ADD2", comment = "opp SOS")
+        if sAddN >= 3
+            strategy.close("S-ADD3", comment = "opp SOS")
     else if sTimeUp
         strategy.close("Short", comment = "time stop")
+        if sAddN >= 1
+            strategy.close("S-ADD1", comment = "time stop")
+        if sAddN >= 2
+            strategy.close("S-ADD2", comment = "time stop")
+        if sAddN >= 3
+            strategy.close("S-ADD3", comment = "time stop")
 
 
 // [doc 162] PARITY EXPORT — per-bar DECISION STREAM  (for compare_strategy.py)  -> docs/mpc_strategy.md

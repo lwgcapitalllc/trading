@@ -316,6 +316,51 @@ class SosFadeConfig:
     #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop
     #   up to TP1; "Breakeven" holds at entry ± the BE buffer (most room); "One trail step behind"
     #   keeps it one `exec_trail_step` under the high-water mark, never below breakeven.
+    exec_scale_in: bool = False        # "Add to the runner (scale in)" (Pine execScaleIn)
+    #   Add SIZE to a trade the runner trail is already protecting. Every family ever swept on
+    #   this strategy before 2026-08-16 was PROTECTIVE (Run 8 alone killed ~50 tightening
+    #   variants); this is the first additive one, and a grep for pyramid/scale_in across the
+    #   repo returned nothing before it, so there is no prior art here to inherit.
+    #   THE RULE, and it is a SIZING rule rather than a timing one:
+    #       locked  = (stop - entry) * base_qty     profit the stop already guarantees
+    #       per_unit = (price - stop)               what one extra unit risks to that SAME stop
+    #       add_qty = locked / per_unit             worst case == the locked profit
+    #   Stop out right after adding and the two cancel: the base banks `locked`, the add gives
+    #   back at most `locked`, the trade closes at worst flat. An add can shrink a winner; it
+    #   cannot manufacture a loser.
+    #   🔴 THE TRIGGER IS THE TRAIL (stage 2), NOT A TARGET. At TP2 the stop is only at TP1, so
+    #   `locked` is small while `price - stop` is large and the affordable add is a rounding
+    #   error. Once the trail ratchets up near price the same arithmetic permits a LARGE add —
+    #   so a trending runner buys size and a stalling one buys nothing, with no extra test.
+    #   ⚠ ONE STOP FOR THE WHOLE POSITION. Adds are separate LOTS sharing the base's trail, and
+    #   `_exit_portion` closes them pro-rata with it. They are lots rather than extra `_qty`
+    #   because that method prices the whole position off ONE `_entry`, so growing `_qty` would
+    #   value the added units as if bought at the original entry and invent profit.
+    #   ⚠ `_entry`, `_risk_usd` and `stop_distance` stay anchored to the BASE fill, so R is still
+    #   measured against the original 1R and every row stays comparable to a run with this off.
+    #   A scaled trade's "3R" is therefore not 3x the capital an unscaled 3R had at work.
+    #   ⚠ THE GUARANTEE HOLDS TO THE STOP, NOT THROUGH A GAP. Price that jumps past the stop
+    #   fills the whole combined size at the open, and 3x the size loses 3x. Nothing here
+    #   protects against that.
+    #   ⚠ NO ACCOUNT-LEVEL CAP EXISTS. Net risk-to-stop is <= 0 by construction, but margin and
+    #   `run_stack`'s risk budget both see the FULL position. See docs/LIVE_TRADING_PIPELINE.md
+    #   → G10 — the live allocator is unbuilt, so this must not go live before it does.
+    #   MEASURED 2026-08-16, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs charged
+    #   (`backtest/fills.py` PROFILES["puprime_ecn"], commission $1.00/side/lot, spread $0.12):
+    #       off              128.26R  maxDD 6.03R  65 losers  worst -2.06R  ret/DD 21.27
+    #       2 adds, cap 1.0x 211.59R  maxDD 8.72R  67 losers  worst -2.06R  ret/DD 24.26
+    #   Dropping the affordability test and adding a flat 1x instead cost 11 extra LOSING
+    #   trades — that difference is what the `locked / per_unit` line buys.
+    exec_scale_max_adds: int = 2       # "↳ How many times it may add" (Pine execScaleAdds)
+    #   A ceiling, not a schedule: the next add is refused until the trail has ratcheted PAST
+    #   the stop the last one was sized against. Without that a stalling runner re-adds every
+    #   bar against the same locked profit and spends the guarantee several times over.
+    #   3 made more (233.04R) and gave back more drawdown (12.45R); 2 is the measured best on
+    #   return-per-drawdown. Above 2 the guarantee also starts to leak — see the cap note.
+    exec_scale_cap_x: float = 1.0      # "↳ Biggest add, as a multiple of the original size"
+    #   Per-add ceiling as a multiple of the BASE quantity. The affordability rule alone would
+    #   sometimes permit 4x or more. ⚠ Raising it raises margin and gap exposure, and the
+    #   profit rule protects against neither.
     exec_time_stop_mode: str = "Before TP1 only"   # "Time stop" (Pine execTimeStopMode)
     #   ∈ {"Off", "Before TP1 only", "Always"}. Close a position that has been open for
     #   `exec_time_stop_hrs` CALENDAR hours. An EXIT lever, and the only one here driven by the

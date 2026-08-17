@@ -2053,6 +2053,99 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // "One trail step behind" never drops below breakeven, so it can't hand back a loss.
 ```
 
+## [174] `pyramiding = 4` — the scale-in toggle's one unavoidable compile-time cost
+
+```
+// 🔴 `pyramiding = 4` IS THE SCALE-IN TOGGLE'S ONE UNAVOIDABLE COMPILE-TIME COST, and it
+// is 4 rather than 0 for one reason: the base entry plus `execScaleAdds` (max 3) adds.
+// It CANNOT be driven by an input — `strategy()` is evaluated once at compile time — so it
+// is raised permanently and the toggle is enforced in the add logic instead.
+// ⚠ WITH `execScaleIn` OFF NOTHING CHANGES, and that is checked rather than assumed: every
+// `strategy.entry` that opens a trade is gated on `strategy.position_size == 0` (see
+// `longArmed` / `shortArmed`), so the base entry cannot stack on itself whatever this says.
+// The only other entries are the L-ADD*/S-ADD* ids below, and each is gated on execScaleIn.
+```
+
+## [175] The three scale-in inputs are declared LAST on purpose, and belong to group 6
+
+```
+// 🔴 THESE THREE SIT AT THE END OF THE PANEL BLOCK RATHER THAN NEXT TO THE OTHER STOP
+// SETTINGS, AND MOVING THEM UP WOULD COST AARON HIS SAVED CHART. TradingView keys a saved
+// input value off DECLARATION ORDER within each type, not off the title or the group — so
+// inserting a bool beside the other exit toggles silently re-keys every bool declared
+// after it, and a live chart comes back with its checkboxes shuffled. `group = G6` puts
+// them in the right BOX on the panel regardless of where they are declared, so the display
+// is correct and nothing already saved moves. Append here; never insert above.
+```
+
+## [176] Scale-in state — every add is sized off the OPENING quantity, never the live one
+
+```
+// 🔴 `lBaseQty` IS THE SIZE THE TRADE OPENED WITH, AND EVERY ADD IS SIZED OFF IT rather
+// than off `strategy.position_size`. Sizing off the live position would compound: add #2
+// would budget against base+add#1, add #3 against base+add#1+add#2, and the "an add can
+// never create a loser" guarantee would be spent several times over on one trade.
+// ⚠ `lAddStop` is the stop the LAST add was sized against, and the next add is refused
+// until the trail has moved past it. Without that a stalling runner re-adds on every bar
+// at the same locked profit, which is the same over-spend by a slower route.
+```
+
+## [177] SCALE-IN — add to a runner the trail is already protecting
+
+```
+// The whole rule, and it is a SIZING rule rather than a timing one:
+//
+//     locked  = (stop - entry) * baseQty        profit the stop already guarantees
+//     perUnit = (close - stop)                  what one extra unit risks to that SAME stop
+//     addQty  = locked / perUnit                so the add's worst case == the locked profit
+//
+// Stop out immediately after adding and the two cancel: the base banks `locked`, the add
+// gives back at most `locked`, and the trade closes at worst flat. An add can shrink a
+// winner. It cannot manufacture a loser.
+//
+// 🔴 WHY THE TRAIL AND NOT A TARGET. At TP2 the stop is only at TP1, so `locked` is small
+// while `close - stop` is large — the affordable add is a rounding error and the idea looks
+// worthless. Once the trail has ratcheted up near price the same arithmetic permits a LARGE
+// add. So the rule self-regulates: a trending runner buys size, a stalling one buys nothing,
+// and no extra "is this trade still good" test is needed.
+//
+// 🔴 THERE IS NO STRUCTURAL TRIGGER IN HERE AT ALL, AND THAT IS AN OPEN DESIGN QUESTION
+// RATHER THAN AN OVERSIGHT (Aaron, 2026-08-16: "I don't know what market structures I'm
+// looking at to add into"). The rule asks only "can I afford this", never "is this a good
+// place". Structure does enter INDIRECTLY — the trail is parked on the last confirmed swing
+// (f_swingRatchet), so an add fires roughly when a new HL/LH confirms — but that is a side
+// effect of the trail's own anchor, not a rule anyone chose. It also enters at MARKET on the
+// bar the trail moves, which is the worst price of the leg, where the BASE entry rests a
+// limit in a discount zone and waits. Adding on a fresh BOS, on a retest of the broken
+// level, or at a limit on the new leg's retrace are all untested alternatives.
+//
+// ⚠ ONE STOP FOR EVERYTHING. Each add gets its own entry id purely so Pine can size it, and
+// every one of them exits on `lStop` — the same trail the base rides. Per-tranche stops would
+// make this two trades wearing one ticket and would destroy the R column.
+// ⚠ THE GUARANTEE HOLDS TO THE STOP, NOT THROUGH A GAP. Price that jumps straight past the
+// stop fills the whole combined size at the open, and 3x the size loses 3x. Nothing here
+// protects against that and nothing can.
+// ⚠ `strategy.position_size[1]` GUARDS THE FILL BAR: the bar a trade opens on has no trail
+// yet, and its favourable extreme is the approach to the limit rather than a move the trade
+// made — the same reason the stage machine above carries the identical guard.
+// ⚠ MEASURED 2026-08-16 (XAUUSD 15m, 2018-09-13 -> 2026-08-14, PU Prime ECN costs charged):
+// off 128.26R / 6.03R maxDD; 2 adds 211.59R / 8.72R maxDD, worst trade unchanged at -2.06R.
+// Removing the affordability test and adding a flat 1x instead cost 11 extra losing trades,
+// which is what the `locked / perUnit` line is buying.
+```
+
+## [178] Every add needs its OWN exit and its OWN close — `from_entry` matches one id
+
+```
+// 🔴 EVERY ADD RIDES THE SAME `lStop`, and each needs its OWN exit call because an add
+// carries its own entry id. `from_entry` is matched exactly, so `L-RUN` protects the
+// base and nothing else — without those lines an add would sit in the book with no stop
+// at all, which is the opposite of what this feature claims to do.
+// ⚠ `strategy.close` MATCHES ONE ENTRY ID TOO. The base leaving on an opposite SOS while
+// the adds stayed open would leave a naked pyramid running against a fresh bearish
+// structure — the single worst state this feature could produce. Same for the clock.
+```
+
 ## [160] ── The TIME STOP — the one exit lever driven by the clock, not by price 
 
 ```
