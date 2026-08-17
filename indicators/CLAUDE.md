@@ -24,7 +24,7 @@ binding on the survivors.
 
 | folder | declaration | count | owns |
 |---|---|---|---|
-| [`strategies/`](strategies/CLAUDE.md) | `strategy(` | 12 | the numbered input-panel contract, the trade annotations, the colour palette |
+| [`strategies/`](strategies/CLAUDE.md) | `strategy(` | 12 | the numbered input-panel contract, the trade annotations, the colour palette, and the `docs/<family>.md` prose rule |
 | [`engines/`](engines/CLAUDE.md) | `indicator()` | 17 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
 
 ⚠ **Ask the folder, then read that folder's CLAUDE.md — not this one.** A fact lives in exactly
@@ -64,6 +64,11 @@ past. It is a cheap check for a defect that otherwise costs a round trip to Trad
 `BUG_exit_fill_price_mismatch.md`, `MARKET_STRUCTURE_GLOSSARY.md`, `STRUCTURE_OS_BUILD.md` and
 `INDICATORS_BUILD_NOTES.md`. They were NOT split across the two children: each describes both
 halves, and splitting them would have made two half-true copies.
+
+⚠ **Not to be confused with [`strategies/docs/`](strategies/CLAUDE.md), which is a different
+thing with a different job:** one `<family>.md` per strategy holding the commentary that used to
+sit inline in that Pine, anchored from the source by `// [doc N]`. Prose ABOUT a strategy file
+goes there; prose about the indicators subsystem goes here.
 
 ---
 
