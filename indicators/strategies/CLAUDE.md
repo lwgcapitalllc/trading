@@ -488,6 +488,27 @@ happened, and rewriting it makes the record false.
 is here is the instruction; that file is the evidence. Six rules, each learned by something on a
 chart being wrong in a way nothing errored about.
 
+### 🔴 THE SHIPPED DEFAULTS ARE AARON'S CHART, NOT A MEASUREMENT (2026-08-17)
+
+**Six defaults were changed to whatever Aaron had dialled in on his own chart, at his request:
+confirmation OFF, first target 3.5R, 80% banked there, 4% risk per trade, minimum stop floor 0.07%,
+sessions drawn.** The gap requirement stays ON (`pbPoiTf = "5"`). Table and the reasoning per line:
+`../docs/SMC_SESSION_SWEEP_SPEC.md` → *The shipped defaults*.
+
+🔴 **NOT ONE OF THEM IS BACKED BY A RUN, and the reason to write that here is that a default is
+indistinguishable from a finding once it is in the file.** The previous set was equally unmeasured
+and read for two days as if the course had produced it — 5R was the course's number and 50% was
+nobody's. **A default is a CLAIM about what is best, made by whoever typed it last.** These are
+Aaron's live settings and they are the ones to reproduce when he reports a number; they are not a
+result and must never be quoted as one.
+
+⚠ **Three of the six move RISK, not display, and they compound: 4% per trade with a 0.07% stop
+floor sizes larger on a tighter stop than the old 1% / 0.03% pair did in both directions at once.**
+The floor is the only thing between the position sizer and a stop a few ticks wide.
+
+⚠ **Changing a default is what re-opens the cascade audit** — see *A CASCADE AUDIT* below for the
+`showSosMark` gate this reversed one day after it was written.
+
 ### 🔴 The TOOLTIPS are for Aaron, not for the next engineer (2026-08-16)
 
 **Aaron: *"all the tooltip explanations are way too long and way too technical. I can't read that."***
@@ -740,10 +761,23 @@ describes the strategy you are actually running"*. **A confluence tick-list is a
 config, so it has to be built from the config.** A hardcoded one is worse than no tick-list: it
 reads as a diagnostic and is a decoration, and it will be believed over the settings panel.
 
-**The score is still "one short of everything you require" by construction** — the gate chain cannot
-reach a point-of-interest refusal without the earlier steps passing — so the tag states the list as
-fact rather than recomputing which ones landed. That shortcut is only safe while the LADDER ORDER
-matches the list; reorder the gates and this becomes a lie again.
+🔴 **THE SCORE ITSELF WAS STILL ASSERTED, AND THAT COST A ROUND.** `cfMet` was
+`str.tostring(isMiss ? cfTot - 1 : cfTot)` — pure arithmetic off the gate code, reading none of
+`dirDir`, `sweptHi/Lo` or `confShort/Long`. The reasoning was sound (the ladder cannot reach a
+point-of-interest refusal without the earlier steps passing) and the OUTPUT was therefore correct,
+which is exactly why it survived. It failed the moment Aaron asked a question of it: a 3/4 MISSED
+tag claimed *"✓ Confirmation"* while the confirmation MARKER was absent from the chart, and there
+was **no way to tell which one was lying, because only one of them was measuring anything.**
+
+✅ **Every tick is now read from the live flag** (`okDir`/`okSwp`/`okConf`), the count is their sum,
+and a failed step prints ✗ rather than being omitted. The confirmation line also prints the price it
+broke at, so it ties to the cyan SOS line by number and not by eye. ⚠ **This will now DISAGREE with
+the ladder if the ladder is ever wrong — which is the point.** A tick list derived from the thing it
+is supposed to check can only ever agree with it.
+
+**The standing lesson, and this file has now hit it three times: a derived diagnostic is not a
+diagnostic.** It cannot catch the bug it sits next to, and its confidence is indistinguishable from
+evidence. The cost is a few extra reads of variables already in scope.
 
 🔴 **Code 8's wording named the CONSEQUENCE and hid the CAUSE.** *"The stop is too tight"* is what
 happens; *the gap is too thin* is why. Aaron read the old text as the strategy refusing a good
@@ -776,20 +810,92 @@ works better than one minute."*** The confirmation step was the one part of the 
 the chart at all — every other step draws something — so *"the small timeframe turned"* was a claim
 with nothing to check it against.
 
-**A cyan triangle sits on the bar where the CONFIRMATION timeframe changed character**, pointing the
-way the shift went, drawn off the exact flag the entry logic reads (`newConfShift` + `confDir`) rather
-than a re-derivation. ⚠ **That matters more than it looks: a marker computed a second way would
-eventually disagree with the gate it is supposed to be showing, and the chart would be the thing that
-lies.**
+🔴 **THE FIRST BUILD MARKED EVERY SHIFT AND WAS USELESS FOR EXACTLY THAT REASON.** Aaron:
+*"I only want to see the confirmation shift where there was either a missed trade, a blocked trade,
+or a successfully taken trade. I don't want to see any other shifts in between."* A structure engine
+on a 1-minute chart shifts constantly, so marking them all buries the handful that mattered under
+hundreds that did not — **a marker that fires on everything carries no information, and it is worse
+than none, because the chart now LOOKS annotated.** Same failure shape as the editor guard that
+warned on every large file.
 
-**A purple circle marks a SECOND timeframe** (`sosCmpTf`, default 5, `"Off"` available), plotted
-further from the bar so the two never sit on top of each other. ⚠ **It is MARKING ONLY and feeds
-nothing** — no gate, no arm, no order — which is what makes it usable as a comparison: it shows what
-a different confirmation timeframe would have said on the same bars, without changing the bars.
+**So the marker is drawn RETROSPECTIVELY, at the moment the setup resolves.** The shift that
+confirmed a setup is recorded when it happens (`cfBar`/`cfDir`/`cfPx`, set inside the same branch
+that latches `confShort`/`confLong`, so it is by construction the shift the gate consumed, never a
+re-derivation). Nothing is drawn then. The marker is placed back at that bar only once the setup
+becomes one of the three things worth looking at — `justFilled`, or the MISSED/BLOCKED tag firing.
+⚠ **A setup whose order was pulled before filling gets no marker**, by decision: it is not one of
+the three cases named.
 
-⚠ **`plotshape`, not labels, deliberately.** This fires on every shift over the whole history and
-labels are capped at 500 per type — a label version would silently evict the MISSED and BLOCKED tags
-that share that budget. Plots have no ceiling.
+🔴 **AN ARROW BESIDE THE BAR WAS ALSO WRONG, AND THE REASON IS THE ONE THAT MAKES THIS FEATURE WORTH
+HAVING.** Aaron: *"if we have a wick, I don't know which part of the wick the shift of structure
+happened at. Show me a horizontal line right where it happened."* An arrow says WHEN. On a long
+wick the question is WHERE — and a shift of structure has an exact price: **the swing level the
+close broke through.** So `f_pbStruct` now returns that level as a third value (`bull_bos_high` on a
+bull shift, `bear_bos_low` on a bear one, read straight from the engine's own fields), and the
+marker is a **horizontal line at that price** with an `SOS <tf>m` label on its right end. Solid
+cyan for the confirmation timeframe, dashed purple for the comparison one.
+
+⚠ **`dirLvl` is destructured and unused** — the direction call shares the function, so it returns
+the level too. Pine warns; it does not error.
+
+⚠ **The price is recorded at the shift bar, not looked up later.** Drawing at a past `bar_index`
+with `low[bar_index - cfBar]` would be a dynamic history offset — the class of bug that throws
+*"beyond the historical buffer's limit"* at runtime and only on some charts. Storing the price when
+the bar is current costs one float and cannot fail.
+
+🔴 **A HORIZONTAL LINE ANSWERS "AT WHAT PRICE" AND SAYS NOTHING ABOUT "ON WHICH CANDLE".** Aaron,
+on the next screenshot: *"the line runs across ten fifteen-minute candles. I don't know which one
+the shift was on."* Its left end IS the bar, but a reader does not measure a line's endpoint — they
+see a band. **The two questions need two marks.** The marker is now three objects: the flat line at
+the broken price running right, a **thick vertical stub on the shift bar itself**, and the label
+anchored to that stub with a pointer style (`label.style_label_up` on a bull shift,
+`_down` on a bear one) so it points at exactly one candle. The label also carries the price, so the
+candle and the level are both readable without hovering.
+
+⚠ **The stub is drawn AWAY from the break** — below the level on a bull shift, above on a bear one —
+because the candles right after a break sit on the other side and the marker would be buried in
+them.
+
+⚠ **The LINE is the level; the BAR is when we learned about it.** `request.security` reports on the
+chart bar where the higher timeframe's bar closed, so the break happened somewhere inside that bar.
+The price is exact, the x-position is *the bar the strategy could act on* — which is the honest one
+for a strategy chart, and would be the wrong one for a study of the engine.
+
+**The comparison timeframe** (`sosCmpTf`, default 5, `"Off"` available) marks the FIRST time it
+turned the sweep's way in that session leg — the earliest that timeframe could have confirmed.
+⚠ **It is MARKING ONLY and feeds nothing** — no gate, no arm, no order — which is what makes it
+usable as a comparison: it shows what a different confirmation timeframe would have said on the same
+bars, without changing the bars. ⚠ **It is not a verdict.** It says where and when the other
+timeframe turned, not whether turning there was better; that is a backtest.
+
+🔴 **AND IT ONLY EVER DREW ON TAKEN TRADES, BECAUSE THE RECORDING SAT INSIDE THE CONFIRMING
+BRANCH.** Aaron: *"you only show it on trades we actually took. I want it on missed and blocked
+too."* `cfBar`/`cfPx` were assigned in the same `if` that latches `confShort`/`confLong` — the
+branch that fires only when a shift genuinely confirms. **With `pbRequireConf` OFF, step 5 passes on
+the sweep alone (`confOkLong = sweptLo`), so a leg can reach a MISSED or BLOCKED refusal having
+never entered that branch: nothing recorded, nothing to draw, and no error.** The same hole opens
+under `"At the zone"`, where `placeOk` needs `armTouched` and a missed setup never touches the zone.
+
+✅ **Recording is now SPLIT from confirming.** Every confirmation-timeframe shift on the swept side
+is recorded, whatever the toggles say; a separate `cfUsed` flag records whether that shift was the
+one the gate consumed. ⚠ **The flag is not bookkeeping — it is what keeps the tooltip honest.** The
+same cyan line now means two different things, and it says which: *"this is the shift that confirmed
+the setup"* when `cfUsed`, and *"it did NOT confirm anything — you have confirmation switched off,
+or the setup was refused before it mattered"* when not. **A marker that looked identical in both
+cases would be the label-vs-code failure this file keeps recording, drawn instead of written.**
+
+⚠ **When no shift happened on that side at all there is still nothing to draw**, and that is
+correct rather than a gap — there is no price to put a line at.
+
+⚠ **The comparison draws NOTHING when it is set to the same timeframe as the confirmation.** Both
+lines would sit on one price and the purple one — drawn second — would hide the cyan. That is not
+hypothetical: a screenshot showing a lone purple `SOS 1m` and *"where is the confirmation
+indicator?"* is what found it. The suppression is named in the input's own tooltip, because a
+drawing that silently does not appear is the failure it is meant to prevent.
+
+⚠ **One line plus one label per marker, and the budget is why the toggle DEFAULTS OFF.** The labels
+share the 500-per-type ceiling with the MISSED/BLOCKED tags, the cancel ✕ and the trade labels, and
+eviction is per-type and silent.
 
 ⚠ **Both inputs are appended AFTER the last existing input of their own type** (the bool after
 `pbShowSess`, the string after `execMinStopMode`) even though both display in group 8. Group is a
@@ -799,6 +905,9 @@ unrelated.
 ⚠ **It adds a fifth `request.security` call.** The comparison timeframe is resolved to the
 confirmation timeframe when it is `"Off"` so the call always has a valid argument, and the drawing is
 gated instead — the call cost is paid either way.
+
+⚠ **With confirmation switched off there is no confirming shift and no cyan triangle**, which is
+correct rather than broken. The purple comparison one still draws.
 
 ### 🔴 A GATE NAME IS NOT AN EXPLANATION — "too thin" read as "we got there and it was too thin"
 
@@ -917,6 +1026,118 @@ and nothing else — guarded on the zone being non-`na` rather than assumed pres
 ⚠ **Inserting this bool shifted `pbShowSess` by one declaration slot**, so *Show sessions* resets on
 every saved chart. Both are draw-only; it was accepted rather than missed. It is the last bool in
 the file, which is why the damage stopped at one.
+
+### 🔴 "BLOCKED" beside a running trade reads as a bug, and the reason string was three reasons at once
+
+**Aaron, on a pink BLOCKED tag sitting under a trade that was clearly open: *"I don't understand
+what was blocked. I'm in a trade."*** He is describing the tag correctly and it still told him
+nothing. Code 10's string was *"You were already in a trade, already had an order waiting, or had
+already traded this session"* — **a list of the three things `busy` is made of, offered because the
+code did not know which one fired.** It does know: `strategy.position_size`, `pendDir` and `tookLeg`
+are all in scope at the tag, and they are mutually distinguishable.
+
+✅ **Four sentences now, picked from live state, and each one names the SECOND setup explicitly** —
+that is the missing noun. The tag is not about the trade you can see; it is about another setup that
+appeared while that trade held the only slot. ⚠ **The cross-session case is separated out**
+(`position_size != 0 and not tookLeg` — a trade from an EARLIER session leg still running), because
+that is a genuinely different fact about the strategy and gets read as the same one.
+
+🔴 **AND THE PLAN WAS NESTED INSIDE THE GAP BLOCK, SO A SETUP WITH NO GAP SHOWED NO PRICES AT ALL.**
+`tipGeom` was concatenated onto `tipGap`, which is `""` when there is no zone — invisible for every
+`pbPoiTf = "Off"` refusal, i.e. exactly the mode added the same day. It is its own `THE TRADE THAT
+DID NOT HAPPEN` section now. ⚠ **A string built by appending to a conditionally-empty string
+inherits that condition**, and nothing errors — the section simply is not there.
+
+### 🔴 The gap can be switched OFF entirely — `pbPoiTf = "Off"` (2026-08-16)
+
+**Aaron: *"I want an option where I don't require a point of interest. I'd still require the shift of
+structure confirmation."*** The course's third step is the gap; this drops it. Sweep, then the
+confirmation timeframe turns, then **enter at market on that bar**, stop behind the sweep extreme.
+
+🔴 **IT IS AN OPTION ON THE EXISTING DROPDOWN, NOT A NEW INPUT, AND THAT WAS THE DESIGN CONSTRAINT
+RATHER THAN A TIDINESS PREFERENCE.** A new `input.bool` has to be appended after the LAST bool in
+the file to avoid resetting saved values — which would have put "do I need a gap?" at the bottom of
+the panel, three groups away from the gap settings it governs. **Widening an existing dropdown moves
+nothing, resets nothing, and lands the control exactly where it belongs.** ⚠ **Reach for this before
+reaching for a new input**: ask whether an existing control of the right type already sits in the
+right place. ⚠ It also let `pbPoiUntouched` be gated on it, which a bottom-of-file input could never
+have done — `active =` may only name inputs declared above.
+
+⚠ **`"Off"` is not a timeframe**, so the scan's `request.security` resolves it to `"5"` and the
+result is discarded by the flag instead. The call cost is paid either way.
+
+🔴 **`poiOff` REQUIRES CONFIRMATION AND SILENTLY STAYS OFF WITHOUT IT** (`pbPoiTf == "Off" and
+pbRequireConf`). With both switched off nothing is left but the sweep, which is a different and much
+looser strategy that nobody asked for. ⚠ **The refusal is the safe direction but it IS silent** —
+the dropdown's own tooltip is the only place it is stated, because a greyed-out `active =` is a
+display hint and does not stop the value being read.
+
+**What changes downstream, and every one of these was a place the gap was assumed to exist:**
+the entry becomes `close` and the order goes in at MARKET rather than as a resting limit; the stop
+comes from the sweep extreme alone (`execStopFrom` is bypassed — there is no gap edge to choose
+between); gate 6 stops asking "is there a gap" and asks "is there a sweep extreme to stop behind";
+the grey zone box is skipped, so the setup drawing's update passes now key off the ENTRY LINE rather
+than the box; and the tag's tick list drops to 3 steps with the point-of-interest row reading
+*"not required"*.
+
+⚠ **The minimum-stop floor becomes the load-bearing guard in this mode.** A sweep extreme one tick
+from the entry is a huge position, and there is no gap height standing between the two any more.
+
+⚠ **NOT MEASURED.** This is a different entry model — market fill at the turn instead of a limit in
+a gap — so it pays the spread and gets no retrace. Run it against the shipped default before
+believing anything about it.
+
+### 🔴 A CASCADE AUDIT, and the three inputs that stayed editable while doing nothing (2026-08-16)
+
+**Aaron: *"why is 'mark the shift of structure' still editable when I have confirmation off? Is
+there anything else we are not disabling correctly from a cascading perspective?"*** The question is
+worth more than the one input that prompted it. **An input with no `active =` is a PROMISE that it
+does something**, and three here were breaking it — silently, because a control that changes nothing
+looks identical to one that works.
+
+| input | inert when | why |
+|---|---|---|
+| `execZoneEntry` | `"At the zone (enter at market)"` | the entry is `close`, so where the limit rests in the gap is never read |
+| `execTpFallbackR` | `execTp1Mode == "Fixed R"` | a fixed-R target is never `na`, so the `na(t1)` fallback is unreachable |
+| `pbPoiMaxAtr` | `"At the zone"` | its own gate is guarded by `not confAtZone` |
+| ~~`showSosMark`~~ | ~~confirmation off~~ | **REVERSED 2026-08-17 — see below** |
+
+⚠ **`execCancelBars` and `execCancelFlip` were CHECKED AND DELIBERATELY LEFT UNGATED.** They look
+inert at market — no resting limit — but Pine fills a market entry on the NEXT bar's open, so the
+order is pending for one bar and the session/window cancels can genuinely fire on it. **A control
+that acts once is not a control that acts never.**
+
+🔴 **THAT `showSosMark` GATE WAS WRONG AND WAS REVERSED ONE DAY LATER (2026-08-17), AND THE
+REVERSAL IS THE LESSON.** The trade-off was named honestly at the time — gating it made the
+confirmation-off mode unreachable from the panel — and the name was allowed to win anyway. Then
+`pbRequireConf` shipped defaulting **OFF**, and the control that answers *"what would requiring
+confirmation have cost me?"* was greyed out for every user on the default settings, at exactly the
+moment it was most useful. **A cascade gate is a claim about which settings are worth reaching, and
+it goes stale the instant a DEFAULT moves.** The input is now ungated and renamed *"Mark the shift
+of structure next to a setup"*, which is true in both modes. ⚠ **Re-read every `active =` in a file
+whenever you change a default in it** — nothing fails, nothing goes red, the control just quietly
+stops being available.
+
+🔴 **THE SAME AUDIT MISSED A GATE POINTING THE OTHER WAY: `pbConfTf` WAS GREYED WHILE THREE THINGS
+STILL READ IT.** Turning confirmation off does not stop the confirmation timeframe being consumed —
+`execBeOnShift` (breakeven when the small timeframe turns against the trade), `execCancelFlip`
+(pull a resting order on an opposite shift) and `showSosMark` all read `newConfShift`, which is
+derived from `pbConfTf` with no reference to `pbRequireConf`. So the panel greyed a live control and
+the user had no way to change a timeframe that was still deciding where their stop went. Now
+ungated, with the three consumers named in its tooltip. ⚠ **An audit that only asks "is this input
+inert?" finds half the defects. Ask the other direction too: "is anything still READING an input I
+have greyed?"** The first shape is a dead control; the second is a lie about what the strategy is
+doing, and it is the worse of the two.
+
+⚠ `pbConfWhen` was re-checked in the same pass and its gate is CORRECT — it is read only inside
+`confAtZone = pbRequireConf and ...`, so confirmation off makes it genuinely inert.
+
+⚠ **The grouping was done by CHANGING `group =` STRINGS, never by moving declarations.** A new
+`GS` group pulls the four confirmation inputs and the two marker inputs together, and TradingView
+places a group where its FIRST input is declared — so it lands second without a single `input.*`
+call changing position. **Moving the declarations would have reset every later input of that type
+on Aaron's charts; changing a group string resets nothing.** That is the only safe way to reorganise
+this panel and it should be the default move.
 
 ### 🔴 This file's panel is ordered by PROVENANCE, and it is the only one here that is
 

@@ -1,235 +1,79 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-// =============================================================================
-//  SMC SESSION SWEEP STRATEGY
-// =============================================================================
-//  Named `mpc_m15_playbook_strategy.pine` until 2026-08-15. The old name said
-//  where the direction is read and nothing about what the setup IS, and it
-//  carried the `mpc_` prefix of a Pine family this file is not part of. Grep the
-//  old name in HISTORY.md and the build notes — the diary entries keep it.
-// =============================================================================
-//  The five-step SMC continuation model from Lewis Kelly's "This SMC Strategy Is
-//  Too Simple to Ignore", written up in
-//  education/learned/2026-08-11-smc-strategy-too-simple-to-ignore-1150-trades.md,
-//  turned into something the Strategy Tester can score.
-//
-//    1. DIRECTION   — 15-minute swing structure only. Bearish = LH/LL, bullish
-//                     the mirror. Trade with it, never against it.
-//    2. LOCATION    — the current session sweeps the PREVIOUS session's high (for
-//                     shorts) or low (for longs). London sweeps Asia; New York
-//                     sweeps London. This replaces a fib retracement — the video
-//                     is explicit that premium/discount was tested and dropped.
-//    3. CONFIRMATION— the 1-minute must flip to AGREE with the 15-minute. After
-//                     the sweep, wait for a 1m change of character in the trend's
-//                     direction. He names this discrepancy as the edge itself.
-//    4. POINT OF INTEREST — the nearest UNTOUCHED 5-minute fair value gap on the
-//                     far side of price. Limit into it, stop beyond it.
-//    5. TARGETS     — TP1 previous day's low/high, TP2 previous week's low/high.
-//
-//  WHERE THE STRUCTURE ENGINE CAME FROM
-//  ------------------------------------
-//  The 15m / 1m structure engine below was lifted BYTE-FOR-BYTE from the
-//  drawing-free `MTFStruct` port of `SMCStructure.process()` that used to live in
-//  `../engines/mpc_m15_playbook.pine`. That indicator was DELETED on 2026-08-15
-//  (Aaron's call — it drew a dashboard nobody read and could not be scored), so
-//  the only remaining copies of that state machine are this file and the
-//  canonical `engines/market_structure/`. Do not paraphrase it; if it has to
-//  change, change it against the canonical engine and say so.
-//
-//  THE PANEL AND THE PALETTE ARE THE HOUSE STANDARD (2026-08-14)
-//  ------------------------------------------------------------
-//  Inputs use the numbered groups every strategy in this folder uses, so section
-//  5 is Entry whichever file you open. The contract, and the rule that decides
-//  which section a new toggle goes in, are in `indicators/strategies/CLAUDE.md`.
-//  Sections 1, 2, 9 and 12 are ABSENT and the numbering deliberately does not
-//  close up, because the number is the address:
-//
-//    * `1 · Confirmation table` — this strategy reads no JARVIS table. Same
-//      reason BOS, D and H4 do not have one.
-//    * `9 · Drawing: fibs` — no fibs.
-//    * `12 · Debug` — held one per-event Pine Logs line; cut 2026-08-14 on
-//      Aaron's call. Everything it said is on the chart, from the same state.
-//    * `2 · Market structure` — the four drawing toggles are NOT here, and this
-//      is the one honest gap in the standardisation. Every other file runs its
-//      engine on the CHART frame, so drawing it is free. This one runs the engine
-//      INSIDE `request.security` on the 15m and the 1m, and Pine cannot draw from
-//      in there. A chart-frame copy ported in for the drawing would paint the
-//      5m's swings while the strategy trades off the 15m's — a chart that
-//      disagrees with the file under it, which is worse than no drawing at all.
-//      Closing it properly means returning the swing PRICES through the security
-//      call and drawing those. That is a feature, not a port. Aaron's call.
-//
-//  Every colour a TRADE is drawn in is copied from `mpc_strategy.pine`. Change a
-//  value by changing it THERE and copying it down, never by picking one here.
-//
-//  ⚠ THE PANEL ORDER MOVED, SO THE FIRST PASTE COSTS ONE "Reset settings to
-//  defaults". TradingView keys saved input values off declaration order within
-//  each type, and this pass reordered, retitled and regrouped all of them.
-//  ⚠ IN THE SAME VISIT, untick Style → "Trades on chart". It cannot be defaulted
-//  from Pine (there is no `strategy()` argument for it) and it comes back ON
-//  after any reset. This file draws its own position box, entry triangles and
-//  result callout, so leaving TradingView's markers on puts two renderings of one
-//  trade on the same candles, at two different exit prices whenever TP1 filled.
-//
-//  STATUS — read before trusting a number
-//  --------------------------------------
-//  * Not compiled anywhere but TradingView; there is no local Pine compiler.
-//  * No export twin and no Python port, so no `compare_*.py` covers it.
-//  * The video's POI is "order block OR fair value gap". Only the GAP is modelled.
-//    A gap-only rule takes strictly FEWER setups than he does.
-//  * The 1m confirmation is read through `request.security`, so it is observed at
-//    the CHART bar's close — up to one chart bar late, never early. Run this on
-//    5m for fidelity; 15m buys you more history and a coarser trigger.
-//  * TradingView loads a limited amount of 1-minute history. With the confirmation
-//    ON, the far end of a long backtest may see no 1m structure at all and simply
-//    take no trades there. Check the trade list's FIRST date against the chart's,
-//    and read the tester's window as what you asked for, not what arrived.
-// =============================================================================
+// [doc 1] SMC SESSION SWEEP STRATEGY — five-step session-sweep continuation model,  -> docs/smc_session_sweep_strategy.md
 
 strategy("SMC Session Sweep Strategy", overlay = true, pyramiding = 0,
   initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
   margin_long = 0.2, margin_short = 0.2, slippage = 0,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 2000)
 
-//  THE DRAWING BUDGET — THERE IS NO BUDGET. NOTHING HERE CAPS ITSELF.
-//  ------------------------------------------------------------------
-//  Aaron, 2026-08-15: "don't cap it at all. It should just stop when it maxes out
-//  TradingView's drawing tools." So every object is drawn and NOTHING is ever
-//  deleted by this script. The only limit is the `max_*_count = 500` above, which
-//  is Pine's own ceiling and the largest it accepts — when it is reached
-//  TradingView drops the OLDEST drawing of that type to make room for the newest.
-//  The chart therefore extends back exactly as far as it can and then stops,
-//  which is the behaviour asked for.
-//
-//  ⚠ THIS REPLACED HAND-ROLLED PER-FAMILY CAPS AND THAT IS THE RIGHT TRADE, but
-//  it is a trade. Those caps evicted in whole drawings — a setup is 1 box + 4
-//  lines + 1 label and it left together — whereas TradingView evicts per OBJECT
-//  TYPE, oldest first, with no idea which drawing an object belonged to. So at
-//  the very left edge of a long chart a setup can dissolve in pieces: its box
-//  goes while its stop line is still there. That is the far edge running out, not
-//  a bug, and it is confined to the oldest thing on screen.
-//
-//  ⚠ THE FAMILIES SHARE THE 500 AND THEY COMPETE. Sessions draw 3 boxes a day
-//  whatever happens; trades draw 4 boxes each. On a chart with sessions ON, the
-//  sessions will be what pushes the oldest position boxes off. **Count trades in
-//  the Strategy Tester's list, never off the chart.**
+var string G1  = "1 · HIS MODEL — what arms the trade"
+var string GS  = "2 · THE SHIFT OF STRUCTURE — everything about it, in one place"
+var string G2  = "3 · HIS MODEL — the entry zone"
+var string G3  = "4 · HIS MODEL — targets"
+var string G4  = "5 · HIS MODEL — execution hours"
+var string G5  = "6 · OURS — what trades, and how big"
+var string G6  = "7 · OURS — choices his method leaves open"
+var string G7  = "8 · OURS — safety filters that REFUSE a setup"
+var string G8  = "9 · OURS — chart annotations"
+var string G9  = "10 · OURS — drawing: sessions"
 
+string pbDirTf       = input.string("15", "Direction — trend timeframe", options = ["5", "15", "30", "60", "240"], group = G1, tooltip = "Which timeframe decides long or short. Only trades that way. The video uses 15.")
+bool   pbTradeLdn    = input.bool(true, "Location — trade London (sweeps the Asian high/low)",   group = G1, tooltip = "London hunts Asia's high and low.")
+bool   pbTradeNy     = input.bool(true, "Location — trade New York (sweeps the London high/low)", group = G1, tooltip = "New York hunts London's high and low.")
+bool   pbRequireConf = input.bool(false, "Confirmation — require a lower-timeframe change of character", group = GS, tooltip = "On: after the level is taken, wait for the small timeframe to turn our way. Off: enter on the sweep alone, at worse prices. The course has this ON. It ships OFF because that is the setting being traded here - turn it on to compare.")
 
+string pbPoiTf        = input.string("5", "Point of interest — timeframe the zone is found on", options = ["Off", "1", "3", "5", "15"], group = G2, tooltip = "Which timeframe the entry gap is found on. The video uses 5. OFF means no gap is needed at all - you enter at market the moment the confirmation timeframe turns, with the stop behind the sweep. Off does nothing unless confirmation is required, or nothing would be left to trigger on.")
+bool   pbPoiUntouched = input.bool(true, "   ↳ Untouched zones only", group = G2, active = pbPoiTf != "Off", tooltip = "On: skip any gap price has already traded back into. Off takes more trades at worse prices.")
 
-//============================================================================
-//  INPUT PANEL — the numbered groups, in the order they appear
-//============================================================================
-// ⚠ GROUP ORDER IS THE ORDER EACH GROUP'S FIRST INPUT IS DECLARED. Retagging
-// `group =` alone cannot move a section; the declarations have to move.
-// ⚠ AN INPUT REFERENCED BY ANOTHER INPUT'S `active =` MUST BE DECLARED ABOVE IT.
-// `mpc_bos_strategy.pine` broke exactly that in the 2026-08-12 reorder and it
-// only showed up on the paste (CE10272). Re-check after any edit here.
-//
-// 🔴 THE STEP NUMBERS ARE OUT OF THE INPUT TITLES, AND THAT IS NOT COSMETIC.
-// The titles used to read "1 · Direction timeframe", "4 · Zone timeframe" and so
-// on — the VIDEO's five steps — while the group headings carry the house
-// contract's own numbers. Two numbering systems on one panel: reading down it
-// counted 4, 1, 2, 3, 5, 4, 6, which made a strictly ordered strategy look like
-// it had no order at all. Aaron, 2026-08-15, reading his own file: "I don't
-// understand the strategy that's laid out in this pine right now."
-// The step is spelled out in WORDS instead, so the sequence survives being split
-// across groups — which it must be, because the contract groups by what a setting
-// CHANGES and this model's five steps do not map onto that one-to-one:
-//
-//     Direction     step 1  → 4 · What arms it
-//     Location      step 2  → 4 · What arms it
-//     Confirmation  step 3  → 4 · What arms it
-//     Point of int. step 4  → 5 · Entry
-//     Targets       step 5  → 6 · Stop & targets
-//============================================================================
-var string G3  = "3 · What trades"
-var string G4  = "4 · What arms it"
-var string G5  = "5 · Entry"
-var string G6  = "6 · Stop & targets"
-var string G7  = "7 · Filters"
-var string G8  = "8 · Chart annotations"
-var string G10 = "10 · Drawing: sessions"
-var string G11 = "11 · Drawing: liquidity"
-// No `12 · Debug`. The only thing in it was a per-event Pine Logs line, and
-// Aaron cut it 2026-08-14: "for events, we don't need that." What it reported —
-// which gate refused a setup, and at what price — is on the chart already, in the
-// pink SETUP BLOCKED tooltip and the state panel, and those read the SAME
-// `sBlk`/`lBlk` the log did. ⚠ The numbering still does not close up: a future
-// debug toggle is 12, not 11b.
+string execTp1Mode     = input.string("Fixed R", "Target 1 — what the first target IS", options = ["Fixed R", "Nearest liquidity level"], group = G3, tooltip = "Fixed R puts the first target at a multiple of your risk, which is what the course does. Nearest level uses yesterday's or last week's high or low.")
+float  execTp1R        = input.float(3.5, "   ↳ First target (R)", minval = 0.5, maxval = 50.0, step = 0.5, group = G3, active = execTp1Mode == "Fixed R", tooltip = "How many times your risk the first target sits at. 5 is his number; this ships at 3.5, which is the setting being traded here.")
+float  execTp1Pct      = input.float(80, "   ↳ % banked at the first target", minval = 0, maxval = 100, step = 5, group = G3, tooltip = "How much you take off at the first target. 0 = take nothing and ride it all to the second. At 80 the runner is a fifth of the position, so the second target moves the result far less than the first one does.")
+bool   execUseTp1      = input.bool(true, "Previous day's low / high is a target", group = G3, tooltip = "Use yesterday's high or low as a target.")
+bool   execUseTp2      = input.bool(true, "Previous week's low / high is a target", group = G3, tooltip = "Use last week's high or low as a target.")
+bool   execBeOnShift   = input.bool(true, "Stop to breakeven when the confirmation timeframe shifts AGAINST the trade", group = GS, tooltip = "Moves the stop to your entry price as soon as the small timeframe turns against you.")
 
-// ── 3 · What trades ─────────────────────────────────────────────
-bool   pbTradeLongs  = input.bool(true,  "Trade longs",  group = G3, inline = "dir", tooltip = "On = long setups may trade. Off = shorts only. A refused side is block code 1, so a disabled direction stays countable rather than invisible.")
-bool   pbTradeShorts = input.bool(true,  "Trade shorts", group = G3, inline = "dir")
-string execSizeMode  = input.string("Risk % of equity", "Position sizing", options = ["Risk % of equity", "Fixed contracts"], group = G3, tooltip = "Risk % of equity = every trade risks the same FRACTION of the account, so every trade is exactly 1R and the results compound. Fixed contracts = the same quantity every time, whatever the stop distance. ⚠ Under Fixed, a trade with a $2 stop and one with a $20 stop count the same in the win rate and ten times apart in dollars — read R, never net, under that mode.")
-float  execRiskPct   = input.float(1.0, "   ↳ Risk % per trade", minval = 0.01, maxval = 100.0, step = 0.25, group = G3, active = execSizeMode == "Risk % of equity", tooltip = "Percent of equity risked to the stop, so every trade is 1R. R is scale-free — measure at a low value first, size after you know the R distribution. ⚠ 10 busts the account on a strategy that sizes by risk ÷ stop distance; that lesson has been learnt twice in this folder already.")
-float  execFixedQty  = input.float(1.0, "   ↳ Contracts", minval = 0.01, step = 0.01, group = G3, active = execSizeMode == "Fixed contracts")
+bool   execUseWindows  = input.bool(true, "Only execute inside the course's hours", group = G4, tooltip = "Only take trades during the hours below. Orders waiting outside them are cancelled.")
+string execWinLdn      = input.string("0200-0500", "   ↳ London hours (New York clock)", group = G4, active = execUseWindows, tooltip = "New York clock. Our London session starts at 3am, so this really means 3am to 5am.")
+string execWinNy       = input.string("0700-1000", "   ↳ New York hours (New York clock)", group = G4, active = execUseWindows, tooltip = "New York clock. Our New York session starts at 8am, so this really means 8am to 10am.")
 
-// ── 4 · What arms it ────────────────────────────────────────────
-// Steps 1-3 of the model: the direction that gates the side, the session whose
-// pool has to be taken, and the lower-timeframe shift that confirms it.
-string pbDirTf       = input.string("15", "Direction — trend timeframe", options = ["5", "15", "30", "60", "240"], group = G4, tooltip = "The timeframe whose swing structure sets the bias. Only setups in this timeframe's direction are taken. The video uses 15.")
-int    pbStructLen   = input.int(15, "   ↳ Structure pivot length", minval = 2, maxval = 50, group = G4, tooltip = "Seeds the structure engine's first swing. After the seed, swings come from the 3-candle pullback rule, so this mostly decides warm-up depth.")
-bool   pbTradeLdn    = input.bool(true, "Location — trade London (sweeps the Asian high/low)",   group = G4, tooltip = "London's pool is Asia's high and low, frozen at the London open.")
-bool   pbTradeNy     = input.bool(true, "Location — trade New York (sweeps the London high/low)", group = G4, tooltip = "New York's pool is London's high and low, frozen at the New York open. NY wins the overlap — it is the later session, and its pool is whatever London had made by the time it opened.")
-bool   pbRequireConf = input.bool(true, "Confirmation — require a lower-timeframe change of character", group = G4, tooltip = "ON: after the sweep, wait for the confirmation timeframe to shift into the direction timeframe's direction. This is the step the video calls the edge. OFF: enter on the sweep alone — expect to be run to the top of the move.")
-string pbConfTf      = input.string("1", "   ↳ Confirmation timeframe", options = ["1", "3", "5", "15"], group = G4, active = pbRequireConf, tooltip = "Where the change of character is read. 1 is the video's. Setting it to the chart timeframe removes the discrepancy the setup is built on.")
-string pbConfWhen    = input.string("Before the zone (rest a limit)", "   ↳ When the shift must happen", options = ["Before the zone (rest a limit)", "At the zone (enter at market)"], group = G4, active = pbRequireConf, tooltip = "The ORDER of steps 3 and 4, and it is an open question rather than a setting with a known answer. BEFORE = the video's five steps as listed: the shift happens on the retrace, then the nearest untouched zone is found above/below price and a limit rests in it. AT = the standard SMC sequence: the zone is frozen when the sweep completes, price has to travel INTO it, and only a shift that happens while price is inside it counts — then entry is at MARKET. ⚠ Before is odd on its face: the lower timeframe turns against the move and price then has to push FURTHER to reach your order. ⚠ The note this was built from is a transcript of what he SAID, and its own header records that the chart walkthrough was largely missed — so which one his chart actually does is not established. Run both and let the tester decide.")
+bool   pbTradeLongs  = input.bool(true,  "Trade longs",  group = G5, inline = "dir", tooltip = "Off means shorts only.")
+bool   pbTradeShorts = input.bool(true,  "Trade shorts", group = G5, inline = "dir")
+string execSizeMode  = input.string("Risk % of equity", "Position sizing", options = ["Risk % of equity", "Fixed contracts"], group = G5, tooltip = "Risk % makes every trade worth the same. Fixed uses the same size whatever the stop. Use Risk % unless you are copying another script.")
+float  execRiskPct   = input.float(4.0, "   ↳ Risk % per trade", minval = 0.01, maxval = 100.0, step = 0.25, group = G5, active = execSizeMode == "Risk % of equity", tooltip = "How much of the account you lose if the stop is hit. This ships at 4, which is an aggressive number - drop it to 1 if you want to read the shape of the equity curve rather than its size.")
+float  execFixedQty  = input.float(1.0, "   ↳ Contracts", minval = 0.01, step = 0.01, group = G5, active = execSizeMode == "Fixed contracts")
 
-// ── 5 · Entry ───────────────────────────────────────────────────
-// Everything that decides WHICH ZONES EXIST lives here with the entry rules that
-// consume them, not in a group named after the object. See the CLAUDE.md.
-string pbPoiTf        = input.string("5", "Point of interest — timeframe the zone is found on", options = ["1", "3", "5", "15"], group = G5, tooltip = "Where the entry zone is found. The video uses a 5-minute order block or fair value gap; only the GAP is modelled here, so this file takes strictly fewer setups than he does.")
-bool   pbPoiUntouched = input.bool(true, "   ↳ Untouched zones only", group = G5, tooltip = "ON: a gap price has already traded into is skipped — the video's rule (\"they've been traded, they're no longer of interest\"). OFF: any live gap qualifies, which takes more setups at worse prices.")
-string execZoneEntry  = input.string("Proximal edge", "Point of interest — where the limit rests in the zone", options = ["Proximal edge", "Midpoint", "Distal edge"], group = G5, tooltip = "Where the limit rests. Proximal = the edge price reaches first (fills most often, widest stop). Distal = the far edge (best price, fills least). Midpoint is the compromise.")
-int    execCancelBars = input.int(0, "Cancel an unfilled limit after N bars", minval = 0, maxval = 2000, group = G5, tooltip = "0 = keep it until the session that placed it ends. A resting order is always cancelled at the end of its own session, whatever this says.")
-bool   execCancelFlip = input.bool(true, "Cancel on a direction flip or an opposite shift", group = G5, tooltip = "Pulls a resting limit when the direction timeframe turns against it, or the confirmation timeframe shifts the other way. OFF leaves the order in the book against a setup that has stopped being true.")
-
-// ── 6 · Stop & targets ──────────────────────────────────────────
-int    execSlBufTk     = input.int(20, "Stop buffer beyond the zone (ticks)", minval = 0, maxval = 500, group = G6, tooltip = "How far past the zone's far edge the stop sits, so a wick through the gap does not take you out.")
-bool   execUseTp1      = input.bool(true, "Target 1 — previous day's low / high", group = G6)
-bool   execUseTp2      = input.bool(true, "Target 2 — previous week's low / high", group = G6)
-float  execTp1Pct      = input.float(50, "   ↳ % banked at the first target", minval = 0, maxval = 100, step = 5, group = G6, tooltip = "0 = bank nothing and ride the whole position to the second target. With only one valid target this is ignored and the whole position exits there. ⚠ Pine reads qty_percent = 0 as UNSPECIFIED and closes the WHOLE position, which is why the rung is skipped rather than issued at 0.")
-float  execTpFallbackR = input.float(3.0, "Fallback target (R) when no liquidity target is valid", minval = 0.0, maxval = 50.0, step = 0.5, group = G6, tooltip = "A target on the wrong side of the entry, or nearer than the minimum below, cannot be used. 0 = refuse the setup instead of substituting a fixed R.")
-float  execMinRr       = input.float(1.0, "Minimum reward:risk to the first target", minval = 0.0, maxval = 20.0, step = 0.25, group = G6, tooltip = "A target closer than this many R is treated as unusable. Entering a hair above the previous day's low is how a 6R model turns into a 0.2R one.")
+int    pbStructLen   = input.int(15, "   ↳ Structure pivot length", minval = 2, maxval = 50, group = G6, tooltip = "How the swing highs and lows are first found. Mostly affects warm-up. Leave it alone.")
+string pbConfTf      = input.string("1", "Confirmation timeframe", options = ["1", "3", "5", "15"], group = GS, tooltip = "The small timeframe we watch for a change of character. The video uses 1. It stays live even with confirmation switched off, because three other things read it: the breakeven-on-shift rule, the cancel-on-flip rule, and the SOS marker below.")
+string pbConfWhen    = input.string("Before the zone (rest a limit)", "   ↳ When the shift must happen", options = ["Before the zone (rest a limit)", "At the zone (enter at market)"], group = GS, active = pbRequireConf, tooltip = "Before: wait for the turn, then leave an order sitting in the gap. At: wait for price to reach the gap, then the turn, then buy at market.")
+string execZoneEntry  = input.string("Proximal edge", "Point of interest — where the limit rests in the zone", options = ["Proximal edge", "Midpoint", "Distal edge"], group = G6, active = not (pbRequireConf and pbConfWhen == "At the zone (enter at market)"), tooltip = "Where in the gap your order sits. Near edge fills most often; far edge gets a better price but often misses.")
+string execStopFrom   = input.string("The gap", "Stop sits behind…", options = ["The gap", "The sweep extreme"], group = G6, tooltip = "The gap puts the stop just past the gap. The sweep puts it past the high or low the session made, so gap size stops mattering.")
+int    execSlBufTk     = input.int(20, "Stop buffer beyond the zone (ticks)", minval = 0, maxval = 500, group = G6, tooltip = "How far past the edge the stop sits. On gold a tick is one cent, so 20 is twenty cents.")
+int    execCancelBars = input.int(0, "Cancel an unfilled limit after N bars", minval = 0, maxval = 2000, group = G6, tooltip = "0 keeps the order until the session ends. It is always cancelled at the end of its session anyway.")
+bool   execCancelFlip = input.bool(true, "Cancel on a direction flip or an opposite shift", group = G6, tooltip = "Pull a waiting order when the trend turns the other way.")
 bool   execBeAtTp1     = input.bool(true, "Stop to breakeven when the first target is reached", group = G6)
-int    execBeBufTk     = input.int(20, "   ↳ Breakeven buffer (ticks)", minval = 0, maxval = 500, group = G6, active = execBeAtTp1)
-float  execTimeStopHrs = input.float(0.0, "Time stop (hours, 0 = off)", minval = 0.0, maxval = 240.0, step = 1.0, group = G6, tooltip = "Close a trade that has been open this long and has NOT reached its first target. Trades past the first target are left alone — that gate is what stops a clock cutting the winners.")
+int    execBeBufTk     = input.int(20, "   ↳ Breakeven buffer (ticks)", minval = 0, maxval = 500, group = G6, active = execBeAtTp1 or execBeOnShift, tooltip = "How far past your entry the breakeven stop sits, so you bank a few ticks instead of exactly nothing.")
+float  execTpFallbackR = input.float(3.0, "Fallback target (R) when no liquidity target is valid", minval = 0.0, maxval = 50.0, step = 0.5, group = G6, active = execTp1Mode == "Nearest liquidity level", tooltip = "If no level works as a target, use this many times risk instead. 0 = skip the trade.")
+float  execMinRr       = input.float(1.0, "Minimum reward:risk to the first target", minval = 0.0, maxval = 20.0, step = 0.25, group = G6, tooltip = "A target nearer than this is treated as unusable.")
 
-// ── 7 · Filters — the things that REFUSE a setup ────────────────
-string execMinStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = G7, tooltip = "Refuse a setup whose stop lands too close to the entry. Size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less — it builds a huge position.")
-float  execMinStopVal  = input.float(0.08, "   ↳ Minimum stop floor (unit = mode above)", minval = 0.0, maxval = 100.0, step = 0.01, group = G7, active = execMinStopMode != "Off", tooltip = "The floor itself. The unit follows the setting above — a percent of price, dollars, or an ATR multiple. Higher refuses more setups.")
-float  pbPoiMaxAtr     = input.float(0.0, "Maximum distance to the zone (x ATR14)", minval = 0.0, maxval = 20.0, step = 0.5, group = G7, tooltip = "Refuse a zone further from price than this. 0 = no limit. A zone three ATR away is a setup you will rarely be filled on and never at a good stop.")
+string execMinStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = G7, tooltip = "Refuse a trade whose stop is too close to the entry. A tiny stop means a huge position, not small risk.")
+float  execMinStopVal  = input.float(0.07, "   ↳ Minimum stop floor (unit = mode above)", minval = 0.0, maxval = 100.0, step = 0.01, group = G7, active = execMinStopMode != "Off", tooltip = "The smallest stop allowed, in the unit you picked above. In % mode it moves with price: 0.07% is roughly two and a half dollars of gold at 3,500.")
+float  pbPoiMaxAtr     = input.float(0.0, "Maximum distance to the zone (x ATR14)", minval = 0.0, maxval = 20.0, step = 0.5, group = G7, active = not (pbRequireConf and pbConfWhen == "At the zone (enter at market)"), tooltip = "Refuse a gap further from price than this many average bar ranges. 0 = no limit.")
+float  execTimeStopHrs = input.float(0.0, "Time stop (hours, 0 = off)", minval = 0.0, maxval = 240.0, step = 1.0, group = G7, tooltip = "Close a trade open this long that has not reached its first target. 0 = off.")
 
-// ── 8 · Chart annotations ───────────────────────────────────────
-bool  execShowPosBox = input.bool(true, "Show position box (result)", group = G8, tooltip = "One box per trade, growing right while it is open, plus the entry triangle. On close it paints the result: green from entry to the exit on a winner, red to the stop fill on a loser, an orange line at entry on a breakeven. Replaces TradingView's built-in trade markers — untick Style → \"Trades on chart\" or you get both. ⚠ Trades are drawn as far back as the chart allows and then stop — TradingView keeps only the newest 500 drawings per script, and turning sessions on takes 3 boxes a day out of that same 500. Count trades in the Strategy Tester's list, never off the chart.")
-float execBeBandR    = input.float(0.15, "   ↳ Breakeven band (R)", minval = 0, step = 0.05, group = G8, active = execShowPosBox, tooltip = "A closed trade whose net result lands inside ± this many R counts as a BREAKEVEN rather than a win or a loss. The breakeven buffer books a few ticks, so without a band the Strategy Tester files every scratch as a winner.")
-bool  showSetups     = input.bool(true, "Draw the zone, stop and targets", group = G8, tooltip = "The setup itself, drawn when the limit is placed: the gap as a box, the entry dashed, the stop, and both targets. The stop line follows the LIVE stop, so a staged breakeven is visible on the chart.")
-bool  showBlockTag   = input.bool(true, "Mark blocked setups on chart (pink)", group = G8, tooltip = "Drops a pink SETUP BLOCKED tag whenever the sequence reached the zone and one of the gates refused it. Hover for the reason and the price the limit would have rested at. This is how you find out whether a gate is saving you money or costing it: count the tags, flip the gate, re-run, compare. Cosmetic — it never changes a trade.")
+bool  execShowPosBox = input.bool(true, "Draw the trade (entry, exit, drawdown, how far it ran)", group = G8, tooltip = "One drawing per trade. Dark green is what you made, light green how much further it went, red how far it went against you first.")
+bool  execShowLabels = input.bool(false, "   ↳ Label the trade (entry, exit, furthest, deepest, stop, result)", group = G8, active = execShowPosBox, tooltip = "Writes the prices and the R result on the chart. Handy when studying one trade; it also shortens how far the chart goes back.")
+float execBeBandR    = input.float(0.15, "   ↳ Breakeven band (R)", minval = 0, step = 0.05, group = G8, active = execShowPosBox, tooltip = "A trade finishing this close to zero is drawn as a breakeven instead of a win or a loss.")
+bool  showSetups     = input.bool(true, "Show the gap the order sat in, plus entry, stop and targets", group = G8, tooltip = "Draws the plan for trades that happened: the gap the order sat in, the entry, the stop and the targets.")
+bool  showBlockTag   = input.bool(true, "Mark missed setups (orange) and blocked ones (pink)", group = G8, tooltip = "Orange = everything lined up except the gap. Pink = everything lined up and one of your rules said no.")
+bool  showBlockDraw  = input.bool(true, "   ↳ Also draw the gap and the stop it was refused on", group = G8, active = showBlockTag, tooltip = "Draws the gap behind a missed or blocked tag, plus where the entry and stop would have been.")
 int   debugDays      = input.int(30, "   ↳ Only tag the last N days", minval = 1, maxval = 3650, group = G8, active = showBlockTag)
-bool  showStatePanel = input.bool(true, "Show the state panel", group = G8, tooltip = "A six-row read of where the sequence has got to. It reports the GATES rather than only the outcome — a quiet market and a rule set too tight look identical from a trade count alone, and they need opposite responses.")
 
-// ── 10 · Drawing: sessions ──────────────────────────────────────
-// ONE toggle, default OFF, sub-settings hidden. Aaron, 2026-08-12: "I don't even
-// need to see the time frame or the colors of the sessions. It could just be one
-// button that says show sessions… I'll never configure them."
-bool pbShowSess = input.bool(false, "Show sessions", group = G10, tooltip = "Boxes Tokyo, London and New York round their OWN high and low — not a full-height stripe, because the box's top and bottom ARE the pool the next session hunts. Draw-only: the session WINDOWS decide which pool a sweep is measured against and are frozen at the repo's DST-aware values, so this cannot move a trade. Intraday charts only. ⚠ Sessions are drawn as far back as the chart allows and then stop — TradingView keeps only the newest 500 drawings per script, and these compete with the trade boxes for that 500. The left edge is the limit, not a gap.")
+bool pbShowSess = input.bool(true, "Show sessions", group = G9, tooltip = "Boxes Tokyo, London and New York around their high and low - the levels the next session hunts. Intraday charts only.")
 
-// ── 11 · Drawing: liquidity ─────────────────────────────────────
-// ON by default, unlike the other draw toggles, and the reason is that this is
-// not decoration: it is STEP 2. The red line is the level a short is waiting to
-// see taken and the green one is the long's, so it is the single line that
-// explains why the strategy did or did not do anything on a given day.
-bool pbShowPool = input.bool(true, "Show the previous session's high / low (the sweep level)", group = G11, tooltip = "London's pool is Asia's high and low; New York's is London's. Frozen at the session open, so the level cannot move under the setup watching it, and drawn only for the session that is hunting it.")
+bool   showSosMark = input.bool(false, "Mark the shift of structure next to a setup", group = GS, tooltip = "Draws a line at the exact price the confirmation timeframe broke, labelled SOS. Only for setups that became a trade, a missed tag or a blocked tag. It works with confirmation switched OFF too - that is how you see what requiring it would have cost you.")
+string sosCmpTf    = input.string("5", "   ↳ Also mark this timeframe, to compare", options = ["Off", "1", "3", "5", "15"], group = GS, active = showSosMark, tooltip = "Purple dashed line where a second timeframe broke, so you can see if it would confirm better. Marking only - it never changes a trade. Set it to the SAME timeframe as your confirmation and it draws nothing, because it would be the same line twice.")
 
-//============================================================
-//  SESSION WINDOWS — frozen, not inputs
-//============================================================
-// The repo's DST-aware windows, identical in every Pine file here since
-// 2026-07-31. They are each session's own city clock rather than a fixed GMT
-// offset, so a changeover does not silently move the pool a sweep is measured
-// against. ⚠ They DECIDE trades — the pool is read from them — so they are
-// hardcoded rather than exposed, and a change to one belongs in every file that
-// carries this block, not just this one.
 string sessAsia = "0900-1800"
 string tzAsia   = "Asia/Tokyo"
 string sessLdn  = "0800-1700"
@@ -237,68 +81,44 @@ string tzLdn    = "Europe/London"
 string sessNy   = "0800-1700"
 string tzNy     = "America/New_York"
 
-//============================================================
-//  THE ANNOTATION PALETTE — copied from mpc_strategy.pine
-//============================================================
-// One result, one colour, on every chart in this folder. A+ is the standard and
-// carries TWO palettes on purpose: the POSITION palette below is every colour a
-// TRADE is drawn in, and the TABLE palette further down is the state panel's.
-// `mpc_d_strategy.pine` shipped with the table palette on its trades — a winner
-// drew in the green A+ uses for a table row — which is the drift this block
-// exists to stop. Change a value in A+ first and copy it down.
-color POS_WIN    = color.new(#26A69A, 12)  // closed winner — label
-color POS_WINL   = color.new(#26A69A, 0)   //              — leader line
+color POS_WIN    = color.new(#26A69A, 12)
+color POS_WINL   = color.new(#26A69A, 0)
 color POS_LOSS   = color.new(#EF5350, 12)
 color POS_LOSSL  = color.new(#EF5350, 0)
-color POS_BE     = color.new(#FF9800, 12)  // inside the band — ORANGE, never yellow
+color POS_BE     = color.new(#FF9800, 12)
 color POS_BEL    = color.new(#FF9800, 0)
-color POS_OPEN   = color.new(#787B86, 12)  // result not known yet
+color POS_OPEN   = color.new(#787B86, 12)
 color POS_OPENL  = color.new(#787B86, 0)
-color POS_OPENBG = color.new(#787B86, 80)  // the live box while the trade runs
-color POS_GREENB = color.new(#26A69A, 0)   // solid borders so even a thin box is visible
+color POS_OPENBG = color.new(#787B86, 80)
+color POS_GREENB = color.new(#26A69A, 0)
 color POS_REDB   = color.new(#EF5350, 0)
-color POS_G1     = color.new(#26A69A, 55)  // reward, by rung — one hue, three depths:
-color POS_G2     = color.new(#26A69A, 70)  // the gradient IS the legend, so nothing
-color POS_DD     = color.new(#EF5350, 88)  // has to be labelled by colour
-color TP_ANNOT   = color.new(#26A69A, 40)  // ONE colour for every target line
-color BLK_PINK   = color.new(#FF2E9A, 12)  // blocked setup
+color POS_G1     = color.new(#26A69A, 55)
+color POS_G2     = color.new(#26A69A, 70)
+color POS_DD     = color.new(#EF5350, 88)
+color TP_ANNOT   = color.new(#26A69A, 40)
+color FVG_ZONE   = color.new(color.gray, 80)
+color FVG_DEAD   = color.new(color.gray, 95)
+color FVG_EDGE   = color.new(color.gray, 35)
+color BLK_PINK   = color.new(#FF2E9A, 12)
 color BLK_PINKL  = color.new(#FF2E9A, 0)
-color TXT_DARK   = color.new(#101014, 0)   // dark text on every bright fill
+color MISS_ORN   = color.new(#FF9800, 12)
+color MISS_ORNL  = color.new(#FF9800, 0)
+color TXT_DARK   = color.new(#101014, 0)
 
-// The three session shades, also A+'s. Tokyo red, London blue, New York yellow.
+color SOS_CONF  = color.new(#00BCD4, 0)
+color SOS_CMP   = color.new(#AB47BC, 0)
+
 color SESS_ASIA = color.new(#FF5252, 92)
 color SESS_LDN  = color.new(#2962FF, 92)
 color SESS_NY   = color.new(#FFEB3B, 90)
 
-// The TABLE palette — the state panel only, and deliberately different greens and
-// reds from the position palette above. Do not cross them.
-color TBL_GOOD = #00E676
-color TBL_WARN = #ffde59
-color TBL_OFF  = color.new(color.gray, 30)
-
-//============================================================
-//  SHARED
-//============================================================
 float pbBuffer = 0.0
 float atr14    = ta.atr(14)
 float tickSz   = syminfo.mintick
 
-// Previous day / previous week extremes — the trade's targets. `lookahead_on` with a
-// [1] offset is the non-repainting idiom: it asks for the COMPLETED prior period.
 [pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
 [pwh, pwl] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
 
-//============================================================
-//  MARKET STRUCTURE ENGINE (drawing-free)
-//============================================================
-// Lifted BYTE-FOR-BYTE from the MTFStruct block of mpc_m15_playbook.pine (that
-// indicator was deleted 2026-08-15; see the header), itself a drawing-free port
-// of SMCStructure.process() — the same state machine as
-// engines/market_structure/, which is now the only other copy. It runs inside
-// request.security so each
-// timeframe is tracked on its own bars, independent of the chart timeframe.
-// Do not paraphrase or 'tidy' it: a swing map that disagrees with the chart is
-// a strategy trading a different market from the one being read.
 type MTFStruct
     int    length
     float  ash             = na
@@ -351,7 +171,6 @@ method mtfCreateAsl(MTFStruct st, float val, int loc) =>
     st.asl_loc  := loc
     st.asl_type := ""
 
-// Byte-for-byte the state logic of SMCStructure.process(); drawing removed.
 method processMTF(MTFStruct st, float ph_val, float pl_val) =>
     st.bull_bos := false
     st.bear_bos := false
@@ -645,44 +464,26 @@ method processMTF(MTFStruct st, float ph_val, float pl_val) =>
             st.pb_last_qualify_high  := na
             st.pb_started            := true
 
-//============================================================
-//  STEP 1 — DIRECTION, and STEP 3 — CONFIRMATION
-//============================================================
-// One wrapper over the engine above, run on two timeframes. The body executes on
-// EVERY bar of the requested timeframe — so on a 5m chart asking for "1", this
-// state machine steps through all five 1-minute bars inside each chart bar. What
-// crosses back is only the value as at the LAST of them.
-//
-// 🔴 WHICH IS WHY IT RETURNS A COUNTER AND NOT `mtf.bull_sos`. `processMTF` clears
-// that flag at the top of every bar and sets it only on the bar that shifted, so
-// sampling it once per chart bar reads the FIFTH 1-minute bar and nothing else —
-// a change of character on 1-minute bars one through four is invisible, which is
-// four fifths of them. The counter accumulates inside the chart bar, so diffing
-// it against the previous chart bar catches a shift wherever it happened.
-// ⚠ An earlier version of this comment justified the counter by saying a flag
-// "stays true" through `request.security`. That is the opposite of the real
-// failure — it goes STALE-FALSE, not stale-true — and the code was right for a
-// reason its own comment got wrong.
-// ⚠ The cost that remains: the shift is known at the chart bar's CLOSE. Up to one
-// chart bar late, never early, which is the safe direction.
 f_pbStruct(int len) =>
     var mtf = MTFStruct.new(length = len)
     var int shifts = 0
+    var float sosLvl = na
     float ph = ta.pivothigh(high, len, len)
     float pl = ta.pivotlow(low,  len, len)
     mtf.processMTF(ph, pl)
     if mtf.bull_sos or mtf.bear_sos
         shifts += 1
-    [mtf.dir, shifts]
+        sosLvl := mtf.bull_sos ? mtf.bull_bos_high : mtf.bear_bos_low
+    [mtf.dir, shifts, sosLvl]
 
-[dirDir,  dirShifts]  = request.security(syminfo.tickerid, pbDirTf,  f_pbStruct(pbStructLen))
-[confDir, confShifts] = request.security(syminfo.tickerid, pbConfTf, f_pbStruct(pbStructLen))
+[dirDir,  dirShifts,  dirLvl]  = request.security(syminfo.tickerid, pbDirTf,  f_pbStruct(pbStructLen))
+[confDir, confShifts, confLvl] = request.security(syminfo.tickerid, pbConfTf, f_pbStruct(pbStructLen))
 
 bool newConfShift = not na(confShifts) and not na(confShifts[1]) and confShifts > confShifts[1]
 
-//============================================================
-//  STEP 2 — LOCATION: the previous session's high or low, taken
-//============================================================
+[cmpDir, cmpShifts, cmpLvl] = request.security(syminfo.tickerid, sosCmpTf == "Off" ? pbConfTf : sosCmpTf, f_pbStruct(pbStructLen))
+bool newCmpShift = sosCmpTf != "Off" and sosCmpTf != pbConfTf and not na(cmpShifts) and not na(cmpShifts[1]) and cmpShifts > cmpShifts[1]
+
 bool inAsia = not na(time("", sessAsia, tzAsia))
 bool inLdn  = not na(time("", sessLdn,  tzLdn))
 bool inNy   = not na(time("", sessNy,   tzNy))
@@ -696,68 +497,69 @@ if inLdn
     ldnHi := (not inLdn[1] or na(ldnHi)) ? high : math.max(ldnHi, high)
     ldnLo := (not inLdn[1] or na(ldnLo)) ? low  : math.min(ldnLo, low)
 
-// New York wins the overlap — it is the later session, and its pool is whatever
-// London had made by the time it opened. The pool is FROZEN at the session open
-// rather than read live, so the level a sweep is measured against cannot move
-// under the setup that is watching it.
 int  rawSess     = inNy ? 2 : inLdn ? 1 : 0
 bool sessTradable = rawSess == 2 ? pbTradeNy : rawSess == 1 ? pbTradeLdn : false
 bool newLeg      = rawSess != rawSess[1]
 
 var float  poolHi = na, var float poolLo = na
-var string poolNm = ""
 var int    legId  = 0
 if newLeg
     legId += 1
     if rawSess == 1
         poolHi := asiaHi
         poolLo := asiaLo
-        poolNm := "Asia"
     else if rawSess == 2
         poolHi := ldnHi
         poolLo := ldnLo
-        poolNm := "London"
     else
         poolHi := na
         poolLo := na
-        poolNm := ""
 
 var bool sweptHi = false, var bool sweptLo = false
+var float swpHi = na, var float swpLo = na
 var bool confShort = false, var bool confLong = false
 var bool tookLeg = false
+var int   cfBar = na, var int cfDir = 0, var float cfPx = na
+var bool  cfUsed = false
+var int   cmBar = na, var int cmDir = 0, var float cmPx = na
 if newLeg
     sweptHi   := false
     sweptLo   := false
+    swpHi     := na
+    swpLo     := na
     confShort := false
     confLong  := false
     tookLeg   := false
+    cfBar     := na
+    cfDir     := 0
+    cfPx      := na
+    cfUsed    := false
+    cmBar     := na
+    cmDir     := 0
+    cmPx      := na
 
-// The BAR and the LEVEL are recorded at the moment the sweep latches, so the
-// chart can draw the level that was taken instead of writing its name. They are
-// captured on the first bar only — a level is taken once, and re-stamping it
-// every bar price stayed through would move the mark away from the event.
-var int   sweepHiBar = na, var float sweepHiLvl = na
-var int   sweepLoBar = na, var float sweepLoLvl = na
 if rawSess != 0
     if not na(poolHi) and high > poolHi
-        if not sweptHi
-            sweepHiBar := bar_index
-            sweepHiLvl := poolHi
         sweptHi := true
+        swpHi := na(swpHi) ? high : math.max(swpHi, high)
     if not na(poolLo) and low < poolLo
-        if not sweptLo
-            sweepLoBar := bar_index
-            sweepLoLvl := poolLo
         sweptLo := true
+        swpLo := na(swpLo) ? low : math.min(swpLo, low)
 
+if rawSess != 0 and newCmpShift and na(cmBar) and not na(cmpLvl)
+    if sweptHi and cmpDir == -1
+        cmBar := bar_index
+        cmDir := -1
+        cmPx  := cmpLvl
+    if sweptLo and cmpDir == 1
+        cmBar := bar_index
+        cmDir := 1
+        cmPx  := cmpLvl
 
-//============================================================
-//  STEP 4 — POINT OF INTEREST: the nearest untouched gap
-//============================================================
-// Runs the 3-candle imbalance rule on the zone timeframe and returns the nearest
-// LIVE gap on each side of price. "Untouched" is tracked explicitly: a gap price
-// has already traded into is still alive (it dies only on a close fully past it),
-// and the video skips exactly those.
+bool inWinLdn  = not na(time("", execWinLdn, tzNy))
+bool inWinNy   = not na(time("", execWinNy,  tzNy))
+bool inExecWin = not execUseWindows or inWinLdn or inWinNy
+
 f_poiScan(bool untouchedOnly) =>
     var array<float> zTop  = array.new<float>()
     var array<float> zBot  = array.new<float>()
@@ -804,6 +606,8 @@ f_poiScan(bool untouchedOnly) =>
     float bullB = na
     float bearT = na
     float bearB = na
+    bool  bullTapped = false
+    bool  bearTapped = false
     if array.size(zTop) > 0
         for i = 0 to array.size(zTop) - 1
             float t = array.get(zTop, i)
@@ -814,33 +618,18 @@ f_poiScan(bool untouchedOnly) =>
                     if na(bullT) or t > bullT
                         bullT := t
                         bullB := b
+                        bullTapped := array.get(zTap, i)
                 if not array.get(zBull, i) and b > close
                     if na(bearB) or b < bearB
                         bearT := t
                         bearB := b
-    [bullT, bullB, bearT, bearB]
+                        bearTapped := array.get(zTap, i)
+    [bullT, bullB, bearT, bearB, bullTapped, bearTapped]
 
-[poiBullTop, poiBullBot, poiBearTop, poiBearBot] = request.security(syminfo.tickerid, pbPoiTf, f_poiScan(pbPoiUntouched))
+[poiBullTop, poiBullBot, poiBearTop, poiBearBot, poiBullTap, poiBearTap] = request.security(syminfo.tickerid, pbPoiTf == "Off" ? "5" : pbPoiTf, f_poiScan(pbPoiUntouched))
 
-// ── STEPS 3 AND 4, IN EITHER ORDER ──────────────────────────────
-// `pbConfWhen` decides which happens first, and it is an OPEN QUESTION rather
-// than a setting with a right answer. Aaron, 2026-08-15: "why would I look for
-// the gap after a one-minute shift? Shouldn't I look for the point of interest
-// first, and then once price is in it, look for the shift?" He is describing the
-// standard SMC sequence, and the objection is a good one: under the video's
-// listed order the lower timeframe turns AGAINST the move and price then has to
-// push FURTHER to reach the resting order.
-// ⚠ The note this was built from is a transcript of what he SAID, and its own
-// header records that frame selection largely missed the chart walkthrough — so
-// the five steps' ORDER is established and the mechanics are not. Neither branch
-// here is the "correct" one. Run both.
-//
-// AT THE ZONE — the zone is FROZEN when the sweep completes, because the live
-// scan would drop it at the worst possible moment: a gap price has traded into is
-// marked touched, and with untouched-only on it stops being returned exactly as
-// price arrives. `armDir` is stored with it so a direction flip mid-session
-// cannot hand a bear zone to a long.
 bool confAtZone = pbRequireConf and pbConfWhen == "At the zone (enter at market)"
+bool poiOff     = pbPoiTf == "Off" and pbRequireConf
 
 var float armZTop = na, var float armZBot = na
 var int   armDir  = 0
@@ -864,28 +653,28 @@ if confAtZone and rawSess != 0
     if not na(armZTop) and high >= armZBot and low <= armZTop
         armTouched := true
 
-// A shift only counts as confirmation once the sweep has happened — the sequence
-// is location THEN confirmation, and a 1m flip before the sweep is a different
-// setup wearing the same flag. In AT-THE-ZONE mode it must ALSO happen while
-// price is inside the frozen zone.
+if rawSess != 0 and newConfShift and not na(confLvl)
+    if sweptHi and confDir == -1
+        cfBar := bar_index
+        cfDir := -1
+        cfPx  := confLvl
+    if sweptLo and confDir == 1
+        cfBar := bar_index
+        cfDir := 1
+        cfPx  := confLvl
+
 if rawSess != 0 and newConfShift
     bool placeOk = not confAtZone or armTouched
     if sweptHi and confDir == -1 and placeOk
         confShort := true
+        cfUsed := true
     if sweptLo and confDir == 1 and placeOk
         confLong := true
+        cfUsed := true
 
 bool confOkShort = pbRequireConf ? confShort : sweptHi
 bool confOkLong  = pbRequireConf ? confLong  : sweptLo
 
-//============================================================
-//  STEP 5 — TARGETS
-//============================================================
-// TP1 is the previous day's extreme, TP2 the previous week's. Which of the two is
-// nearer is a fact about the week, not a constant, so they are ORDERED by distance
-// rather than assumed. A target on the wrong side of the entry, or nearer than the
-// minimum reward, is not a target — it is refused or replaced by the fallback,
-// never quietly used.
 f_targets(int dir, float entry, float dist) =>
     float a = dir == 1 ? (execUseTp1 ? pdh : na) : (execUseTp1 ? pdl : na)
     float b = dir == 1 ? (execUseTp2 ? pwh : na) : (execUseTp2 ? pwl : na)
@@ -894,7 +683,15 @@ f_targets(int dir, float entry, float dist) =>
     bool bOk = not na(b) and (dir == 1 ? b - entry >= minDist : entry - b >= minDist)
     float t1 = na
     float t2 = na
-    if aOk and bOk
+    if execTp1Mode == "Fixed R"
+        t1 := dir == 1 ? entry + execTp1R * dist : entry - execTp1R * dist
+        float far = na
+        if aOk and (dir == 1 ? a > t1 : a < t1)
+            far := a
+        if bOk and (dir == 1 ? b > t1 : b < t1)
+            far := na(far) ? b : (dir == 1 ? math.max(far, b) : math.min(far, b))
+        t2 := far
+    else if aOk and bOk
         float da = math.abs(a - entry)
         float db = math.abs(b - entry)
         t1 := da <= db ? a : b
@@ -909,9 +706,6 @@ f_targets(int dir, float entry, float dist) =>
         t1 := dir == 1 ? entry + execTpFallbackR * dist : entry - execTpFallbackR * dist
     [t1, t2]
 
-//============================================================
-//  STATE
-//============================================================
 var int   pendDir   = 0
 var float pendEntry = na, var float pendStop = na
 var float pendT1    = na, var float pendT2   = na
@@ -926,56 +720,37 @@ var float posDist   = na, var float posQty  = na
 var int   posTime   = na
 var float pnlAtFill = 0.0
 var bool  t1Done    = false
-// The worst price the trade actually SAW. Not the stop — the stop is where it
-// would have died, and drawing that as if price went there is the same lie as
-// drawing a target it never reached.
+var bool  beShiftDone = false
 var float posWorst  = na
+var float posBest   = na
+var float posStop0  = na
 
 float minStopDist = execMinStopMode == "% of price" ? close * execMinStopVal / 100 : execMinStopMode == "Fixed $" ? execMinStopVal : execMinStopMode == "x ATR(14)" ? (na(atr14) ? 0.0 : atr14 * execMinStopVal) : 0.0
 
-//============================================================
-//  CANCEL A RESTING LIMIT
-//============================================================
-// Before arming, so a session that has just rolled cannot leave the previous
-// session's order sitting in the book against a pool nobody is watching.
-// `justCancelled` is carried down to the drawing section, which cannot be read
-// from up here: a cancelled setup that still looks exactly like a taken one is
-// how a chart ends up showing a sweep next to a trade that had nothing to do
-// with it.
 bool justCancelled = false
 if pendDir != 0 and strategy.position_size == 0
     bool cTtl  = execCancelBars > 0 and not na(pendBar) and bar_index - pendBar > execCancelBars
     bool cLeg  = newLeg
     bool cFlip = execCancelFlip and (pendDir == -1 ? dirDir != -1 : dirDir != 1)
     bool cOpp  = execCancelFlip and newConfShift and confDir == -pendDir
-    if cTtl or cLeg or cFlip or cOpp
+    bool cWin  = not inExecWin
+    if cTtl or cLeg or cFlip or cOpp or cWin
         strategy.cancel(pendDir == -1 ? "PB-S" : "PB-L")
         pendDir := 0
         justCancelled := true
 
-//============================================================
-//  THE SETUP — one gate chain per side, first refusal wins
-//============================================================
 bool flat = strategy.position_size == 0
 bool busy = not flat or pendDir != 0 or tookLeg
 
-// The PROXIMAL edge is the one price reaches first, which is the bottom of a zone
-// above price and the top of a zone below it — so this cannot be written without
-// the direction. Getting it the other way round rests every long at the far edge.
 f_zoneEntry(int dir, float zTop, float zBot) =>
     float prox = dir == 1 ? zTop : zBot
     float dist = dir == 1 ? zBot : zTop
     execZoneEntry == "Proximal edge" ? prox : execZoneEntry == "Distal edge" ? dist : (zTop + zBot) / 2
 
-// ── SHORT ─────────────────────────────────────────────────
-// In AT-THE-ZONE mode the zone is the FROZEN one and the entry is at MARKET:
-// price is already inside the zone, so a limit at its proximal edge would sit
-// behind the market and fill instantly anyway. `close` is the sizing estimate;
-// the real fill is read back off the position at `justFilled`.
-float sZTop  = confAtZone ? (armDir == -1 ? armZTop : na) : poiBearTop
-float sZBot  = confAtZone ? (armDir == -1 ? armZBot : na) : poiBearBot
-float sEntry = na(sZTop) ? na : confAtZone ? close : f_zoneEntry(-1, sZTop, sZBot)
-float sStop  = na(sZTop) ? na : sZTop + execSlBufTk * tickSz
+float sZTop  = poiOff ? na : confAtZone ? (armDir == -1 ? armZTop : na) : poiBearTop
+float sZBot  = poiOff ? na : confAtZone ? (armDir == -1 ? armZBot : na) : poiBearBot
+float sEntry = poiOff ? close : na(sZTop) ? na : confAtZone ? close : f_zoneEntry(-1, sZTop, sZBot)
+float sStop  = poiOff ? (na(swpHi) ? na : swpHi + execSlBufTk * tickSz) : na(sZTop) ? na : (execStopFrom == "The sweep extreme" and not na(swpHi) ? math.max(sZTop, swpHi) : sZTop) + execSlBufTk * tickSz
 float sDist  = na(sEntry) or na(sStop) ? na : sStop - sEntry
 [sT1, sT2]   = f_targets(-1, nz(sEntry, close), nz(sDist, close * 0.001))
 
@@ -986,11 +761,13 @@ else if dirDir != -1
     sBlk := 2
 else if rawSess == 0 or not sessTradable
     sBlk := 3
+else if not inExecWin
+    sBlk := 11
 else if not sweptHi
     sBlk := 4
 else if not confOkShort
     sBlk := 5
-else if na(sZTop) or na(sEntry) or (not confAtZone and sEntry <= close)
+else if na(sEntry) or na(sStop) or (not poiOff and not confAtZone and sEntry <= close)
     sBlk := 6
 else if not confAtZone and pbPoiMaxAtr > 0 and not na(atr14) and sEntry - close > pbPoiMaxAtr * atr14
     sBlk := 7
@@ -1001,11 +778,10 @@ else if na(sT1)
 else if busy
     sBlk := 10
 
-// ── LONG ──────────────────────────────────────────────────
-float lZTop  = confAtZone ? (armDir == 1 ? armZTop : na) : poiBullTop
-float lZBot  = confAtZone ? (armDir == 1 ? armZBot : na) : poiBullBot
-float lEntry = na(lZTop) ? na : confAtZone ? close : f_zoneEntry(1, lZTop, lZBot)
-float lStop  = na(lZBot) ? na : lZBot - execSlBufTk * tickSz
+float lZTop  = poiOff ? na : confAtZone ? (armDir == 1 ? armZTop : na) : poiBullTop
+float lZBot  = poiOff ? na : confAtZone ? (armDir == 1 ? armZBot : na) : poiBullBot
+float lEntry = poiOff ? close : na(lZTop) ? na : confAtZone ? close : f_zoneEntry(1, lZTop, lZBot)
+float lStop  = poiOff ? (na(swpLo) ? na : swpLo - execSlBufTk * tickSz) : na(lZBot) ? na : (execStopFrom == "The sweep extreme" and not na(swpLo) ? math.min(lZBot, swpLo) : lZBot) - execSlBufTk * tickSz
 float lDist  = na(lEntry) or na(lStop) ? na : lEntry - lStop
 [lT1, lT2]   = f_targets(1, nz(lEntry, close), nz(lDist, close * 0.001))
 
@@ -1016,11 +792,13 @@ else if dirDir != 1
     lBlk := 2
 else if rawSess == 0 or not sessTradable
     lBlk := 3
+else if not inExecWin
+    lBlk := 11
 else if not sweptLo
     lBlk := 4
 else if not confOkLong
     lBlk := 5
-else if na(lZTop) or na(lEntry) or (not confAtZone and lEntry >= close)
+else if na(lEntry) or na(lStop) or (not poiOff and not confAtZone and lEntry >= close)
     lBlk := 6
 else if not confAtZone and pbPoiMaxAtr > 0 and not na(atr14) and close - lEntry > pbPoiMaxAtr * atr14
     lBlk := 7
@@ -1038,32 +816,24 @@ f_blkWhy(int code) =>
         3  => "outside a session that trades"
         4  => "the previous session's level has not been taken"
         5  => "no change of character on the confirmation timeframe yet"
-        6  => "no untouched zone left on the far side of price"
-        7  => "the zone is further from price than the limit allows"
-        8  => "the stop is too tight for the minimum-distance guard"
-        9  => "no target far enough away to be worth taking"
-        10 => "already holding, already resting an order, or already traded this session"
+        6  => "There is no untouched gap left on this side of price."
+        7  => "The gap is further from price than your max-distance filter allows."
+        8  => "Price reached the gap, but it is too thin — the stop it needs is under your minimum-stop floor."
+        9  => "Price reached the gap, but no target was far enough away to be worth the risk."
+        10 => "You were already in a trade, already had an order waiting, or had already traded this session."
+        11 => "outside the execution hours"
         => ""
 
-//============================================================
-//  ENTRY — freeze the zone, then rest the limit
-//============================================================
-// Everything the trade is priced off is snapshotted HERE. A gap keeps its edges
-// but the SELECTION moves as price does, so re-reading it at the fill would rest
-// the order against one zone and stop it against another.
 bool armShort = sBlk == 0
 bool armLong  = lBlk == 0
 
-// Under `Risk % of equity` every trade is exactly 1R, which is what makes the R
-// column on the chart mean one thing across the whole run. `Fixed contracts` is
-// there to reproduce another script, not because it is better.
 f_qty(float dist) =>
     execSizeMode == "Fixed contracts" ? execFixedQty : dist > 0 ? (strategy.equity * execRiskPct / 100) / dist : 0.0
 
 if armShort
     float q = f_qty(sDist)
     if q > 0
-        if confAtZone
+        if confAtZone or poiOff
             strategy.entry("PB-S", strategy.short, qty = q)
         else
             strategy.entry("PB-S", strategy.short, qty = q, limit = sEntry)
@@ -1079,7 +849,7 @@ if armShort
 if armLong and pendDir == 0
     float q = f_qty(lDist)
     if q > 0
-        if confAtZone
+        if confAtZone or poiOff
             strategy.entry("PB-L", strategy.long, qty = q)
         else
             strategy.entry("PB-L", strategy.long, qty = q, limit = lEntry)
@@ -1092,9 +862,6 @@ if armLong and pendDir == 0
         pendZBot  := lZBot
         pendBar   := bar_index
 
-//============================================================
-//  FILL, STAGED STOP, EXITS
-//============================================================
 bool justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
 bool justClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
 
@@ -1111,31 +878,32 @@ if justFilled
     posTime   := time
     pnlAtFill := strategy.netprofit
     t1Done    := false
+    beShiftDone := false
     tookLeg   := true
     posWorst  := posEntry
+    posBest   := posEntry
+    posStop0  := pendStop
     pendDir   := 0
 
-// Track the real adverse excursion every bar the trade is open, including the
-// fill bar's own remainder.
 if strategy.position_size != 0 and not na(posWorst)
-    posWorst := posDir == 1 ? math.min(posWorst, low) : math.max(posWorst, high)
+    posWorst := posDir == 1 ? math.min(posWorst, low)  : math.max(posWorst, high)
+    posBest  := posDir == 1 ? math.max(posBest, high)  : math.min(posBest,  low)
 
-// The FILL BAR may not stage its own stop. A resting limit is reached by price
-// coming to it from the wrong side, so the fill bar's favourable extreme is the
-// approach to the order, not a move the trade made.
 if strategy.position_size != 0 and strategy.position_size[1] != 0 and not t1Done and not na(posT1)
     if posDir == 1 ? high >= posT1 : low <= posT1
         t1Done := true
         if execBeAtTp1
             posStop := posDir == 1 ? math.max(posStop, posEntry + execBeBufTk * tickSz) : math.min(posStop, posEntry - execBeBufTk * tickSz)
 
+if execBeOnShift and strategy.position_size != 0 and strategy.position_size[1] != 0 and not beShiftDone
+    if newConfShift and confDir == -posDir
+        beShiftDone := true
+        posStop := posDir == 1 ? math.max(posStop, posEntry + execBeBufTk * tickSz) : math.min(posStop, posEntry - execBeBufTk * tickSz)
+
 bool twoLegs  = not na(posT2) and execTp1Pct > 0 and execTp1Pct < 100
 float runTgt  = twoLegs ? posT2 : posT1
 bool  timeUp  = execTimeStopHrs > 0 and not t1Done and not na(posTime) and time - posTime >= execTimeStopHrs * 3600000
 
-// A rung is issued only while it is unfilled: calling strategy.exit again with an
-// id whose order has already FILLED places a NEW order rather than modifying it,
-// which banks another slice of the remainder every bar.
 if strategy.position_size > 0
     if twoLegs and not t1Done
         strategy.exit("L-TP1", from_entry = "PB-L", qty_percent = execTp1Pct, limit = posT1, stop = posStop)
@@ -1156,35 +924,12 @@ if justClosed
     float riskUsd = posDist * posQty
     closedR := riskUsd > 0 ? pnl / riskUsd : na
 
-//============================================================
-//  DRAWING — sessions and the pool
-//============================================================
-// 🔴 A SESSION IS A BOX ROUND ITS OWN RANGE, NEVER A FULL-HEIGHT STRIPE.
-// This shipped as `bgcolor()` on 2026-08-14 and Aaron caught it the same day:
-// "sessions take up the full vertical zone instead of tracking where the candles
-// are, like every other session setting I have." He is right, and it is not only
-// cosmetic — the box's TOP AND BOTTOM ARE THE POOL. What London sweeps is the top
-// of Asia's box, so a stripe hides the one thing the shading could have shown.
-// Same shape as `mpc_strategy.pine`'s SessionInfo: dotted border at @40 and the
-// fill at the session's own colour.
-// ⚠ NO NAME LABEL ON THE BOX. Aaron, 2026-08-15: "take off the names, I already
-// know what the colours are." Red is Asia, blue is London, yellow is New York —
-// the same three shades every strategy in this folder uses, so the colour IS the
-// name once you have seen one chart. Three labels a day was the single largest
-// source of text on this chart and none of it said anything the fill did not.
 type SessBox
     box   bx     = na
     float hi     = na
     float lo     = na
     bool  active = false
 
-// 🔴 NOTHING IS EVICTED HERE — see the drawing-budget note at the top of the
-// file. This block first shipped capped at 30 boxes, which is 3 a day and so TEN
-// TRADING DAYS: the sessions stopped dead at 2026-08-03 while every other drawing
-// ran back further, and Aaron found it by looking at the chart. **A self-imposed
-// cap that truncates history is indistinguishable from a bug in the thing being
-// drawn.** Raising it only moved the mystery, so it is gone: draw everything and
-// let TradingView's own 500-object ceiling be the edge.
 f_sessDraw(SessBox s, bool inSess, color col) =>
     if inSess
         if not s.active
@@ -1199,9 +944,6 @@ f_sessDraw(SessBox s, bool inSess, color col) =>
         box.set_top(s.bx, s.hi)
         box.set_bottom(s.bx, s.lo)
     else
-        // Only the LATCH is cleared. The box is left exactly as the session ended
-        // — it is the pool the next session will hunt, and deleting it here would
-        // erase the level the strategy is about to trade against.
         s.active := false
     int _r = 0
 
@@ -1213,227 +955,186 @@ if pbShowSess and timeframe.isintraday
     f_sessDraw(sbLdn,  inLdn,  SESS_LDN)
     f_sessDraw(sbNy,   inNy,   SESS_NY)
 
-plot(pbShowPool and rawSess != 0 ? poolHi : na, "Pool high", color = POS_REDB,   style = plot.style_linebr, linewidth = 1)
-plot(pbShowPool and rawSess != 0 ? poolLo : na, "Pool low",  color = POS_GREENB, style = plot.style_linebr, linewidth = 1)
+plot(newLeg or rawSess == 0 ? na : poolHi, "Pool high", color = POS_REDB,   style = plot.style_linebr, linewidth = 1)
+plot(newLeg or rawSess == 0 ? na : poolLo, "Pool low",  color = POS_GREENB, style = plot.style_linebr, linewidth = 1)
 
-//============================================================
-//  DRAWING — the setup, and the trade it became
-//============================================================
-// Two object families. Only the CURRENT one of each is held in a variable, and
-// that is all these handles are for — extending the box while the trade runs,
-// following the stop as it stages, recolouring the label on the close. Once a
-// drawing is finished it is never touched again and never deleted; TradingView's
-// 500-object ceiling is the only thing that removes anything. See the top of the
-// file for what that costs at the far-left edge.
 var box   curBox = na
 var line  curEnt = na
 var line  curStp = na
 var line  curT1  = na
 var line  curT2  = na
-var line  curSwp = na
-var box   pRisk = na
-var box   pRwd1 = na
-var box   pRwd2 = na
-var box   pBody = na
-var line  pLead = na
+var box   pDD   = na
+var box   pRan  = na
+var box   pGot  = na
+var line  pEnt  = na
+var line  pExt  = na
+var line  pSl   = na
 var label pLbl  = na
-// ── the setup, drawn on the bar the limit is placed ─────────────
 bool armedNow   = pendDir != 0 and pendBar == bar_index
 bool armedShort = armedNow and pendDir == -1
 if showSetups and armedNow
     float zt = pendZTop
     float zb = pendZBot
-    color c  = armedShort ? POS_REDB : POS_GREENB
-    curBox := box.new(bar_index, math.max(zt, zb), bar_index + 12, math.min(zt, zb), border_color = c, border_width = 1, bgcolor = color.new(c, 88))
+    curBox := na(zt) or na(zb) ? box(na) : box.new(bar_index, math.max(zt, zb), bar_index + 12, math.min(zt, zb), border_color = color(na), bgcolor = FVG_ZONE)
     curEnt := line.new(bar_index, pendEntry, bar_index + 12, pendEntry, color = POS_OPENL, style = line.style_dashed, width = 1)
     curStp := line.new(bar_index, pendStop,  bar_index + 12, pendStop,  color = POS_REDB,  style = line.style_solid, width = 1)
     curT1  := na(pendT1) ? line(na) : line.new(bar_index, pendT1, bar_index + 12, pendT1, color = TP_ANNOT, style = line.style_solid,  width = 1)
     curT2  := na(pendT2) ? line(na) : line.new(bar_index, pendT2, bar_index + 12, pendT2, color = TP_ANNOT, style = line.style_dotted, width = 1)
-    // 🔴 THE SWEPT LEVEL IS DRAWN, NOT NAMED. This used to be a label reading
-    // "London sweep" / "Asia sweep" on every armed setup, and it was pure noise:
-    // a trade can ONLY exist here if a sweep happened, so the words restated the
-    // trade's own existence, while stacking a second text box on top of the
-    // result label. Aaron, 2026-08-15: "if it took a long or a short, I'm
-    // assuming it's because there was a sweep — just draw the level swept, so I
-    // can understand why it won or lost."
-    // What replaces it carries information the label never did: WHICH price was
-    // taken and WHEN, drawn from the sweep bar across to the setup. Dashed and
-    // double width so it cannot be read as the stop, which is solid and thin.
-    float swLvl = armedShort ? sweepHiLvl : sweepLoLvl
-    int   swBar = armedShort ? sweepHiBar : sweepLoBar
-    curSwp := na(swLvl) or na(swBar) ? line(na) : line.new(swBar, swLvl, bar_index + 12, swLvl, color = armedShort ? POS_REDB : POS_GREENB, style = line.style_dashed, width = 2)
 
-// Extend the live setup while its order rests or its position is open.
-if showSetups and (pendDir != 0 or strategy.position_size != 0) and not na(curBox)
-    box.set_right(curBox, bar_index + 2)
-    line.set_x2(curEnt, bar_index + 2)
-    line.set_x2(curStp, bar_index + 2)
+if showSetups and justFilled
     if not na(curT1)
-        line.set_x2(curT1, bar_index + 2)
+        line.set_x1(curT1, bar_index)
     if not na(curT2)
-        line.set_x2(curT2, bar_index + 2)
-    if not na(curSwp)
-        line.set_x2(curSwp, bar_index + 2)
-    // The stop line follows the LIVE stop, so a staged breakeven is visible.
+        line.set_x1(curT2, bar_index)
+
+if showSetups and (pendDir != 0 or strategy.position_size != 0) and not na(curEnt)
+    if not na(curBox)
+        box.set_right(curBox, bar_index)
+    line.set_x2(curEnt, bar_index)
+    line.set_x2(curStp, bar_index)
+    if not na(curT1)
+        line.set_x2(curT1, bar_index)
+    if not na(curT2)
+        line.set_x2(curT2, bar_index)
     if strategy.position_size != 0 and not na(posStop)
         line.set_y1(curStp, posStop)
         line.set_y2(curStp, posStop)
 
-// 🔴 A CANCELLED SETUP IS GREYED AND RENAMED, AND NOT DOING THAT WAS THE SECOND
-// HALF OF THE SAME CONFUSION. Most armed setups never fill — the session rolls,
-// the direction flips, price never comes back to the zone — and every one of them
-// used to leave a full-colour "London sweep" label with its zone, stop and both
-// targets, identical in every way to a setup that traded. So a chart could show a
-// green LONG sweep sitting beside a red SHORT result and there was no way to see
-// that they were different setups and only one of them ever became a trade.
-// ⚠ THE ONLY TEXT A SETUP EVER GETS, AND IT APPEARS ONLY WHEN THE SETUP DIED.
-// An armed setup draws no label at all now — a filled one is already named by the
-// result label, and stacking a second box of text on the same candles is what
-// made this chart unreadable. A CANCELLED one has nothing else to speak for it,
-// so it gets a small grey mark and everything it drew is faded to match.
-if showSetups and justCancelled and not na(curBox)
-    box.set_bgcolor(curBox, color.new(color.gray, 95))
-    box.set_border_color(curBox, POS_OPENL)
+if showSetups and justClosed and not na(curEnt)
+    if not na(curBox)
+        box.set_right(curBox, bar_index)
+    line.set_x2(curEnt, bar_index)
+    line.set_x2(curStp, bar_index)
+    if not na(curT1)
+        line.set_x2(curT1, bar_index)
+    if not na(curT2)
+        line.set_x2(curT2, bar_index)
+
+if showSetups and justCancelled and not na(curEnt)
+    if not na(curBox)
+        box.set_bgcolor(curBox, FVG_DEAD)
     line.set_color(curEnt, POS_OPENL)
     line.set_color(curStp, POS_OPENL)
     if not na(curT1)
         line.set_color(curT1, POS_OPENL)
     if not na(curT2)
         line.set_color(curT2, POS_OPENL)
-    if not na(curSwp)
-        line.set_color(curSwp, POS_OPENL)
-    label.new(bar_index, curBox.get_top(), "✕", style = label.style_label_down, color = POS_OPEN, textcolor = TXT_DARK, size = size.tiny, tooltip = "This setup armed and the order was pulled before it filled.\nIt is NOT the trade drawn near it.")
+    label.new(bar_index, na(curBox) ? line.get_y1(curEnt) : curBox.get_top(), "✕", style = label.style_label_down, color = POS_OPEN, textcolor = TXT_DARK, size = size.tiny, tooltip = "This setup armed and the order was pulled before it filled.\nIt is NOT the trade drawn near it.")
 
-// ── the position, born on the fill and graded on the close ──────
-// Grey while it is open, because the result is not known yet. Direction is
-// already carried by the arrow, the word, and the entry triangle.
 if execShowPosBox and justFilled and not na(posEntry)
-    float lblY = posDir == 1 ? posEntry + nz(atr14, 0) * 1.5 : posEntry - nz(atr14, 0) * 1.5
-    pRisk := box.new(bar_index, math.max(posEntry, posStop), bar_index, math.min(posEntry, posStop), border_color = color(na), bgcolor = POS_DD)
-    // Written as `if` rather than a ternary on purpose: a ternary whose branches
-    // call a DRAWING function is the one shape in Pine where an unwanted object
-    // can be created by the branch you did not take.
-    pRwd1 := box(na)
-    pRwd2 := box(na)
-    if not na(posT1)
-        pRwd1 := box.new(bar_index, math.max(posEntry, posT1), bar_index, math.min(posEntry, posT1), border_color = color(na), bgcolor = POS_G1)
-    if not na(posT2)
-        pRwd2 := box.new(bar_index, math.max(posEntry, posT2), bar_index, math.min(posEntry, posT2), border_color = color(na), bgcolor = POS_G2)
-    pBody := box.new(bar_index, posEntry, bar_index, posEntry, border_color = POS_OPENL, border_width = 1, bgcolor = POS_OPENBG)
-    pLead := line.new(bar_index, posEntry, bar_index, lblY, color = POS_OPENL, width = 1)
-    pLbl  := label.new(bar_index, lblY, (posDir == 1 ? "▲ LONG" : "▼ SHORT"), color = POS_OPEN, textcolor = TXT_DARK, style = posDir == 1 ? label.style_label_up : label.style_label_down, size = size.small, tooltip = (posDir == 1 ? "▲ LONG" : "▼ SHORT") + " open\n──────────────────\nEntry " + str.tostring(posEntry, format.mintick) + "\nStop  " + str.tostring(posStop, format.mintick) + "\nTP1   " + str.tostring(posT1, format.mintick) + "\nTP2   " + str.tostring(posT2, format.mintick) + "\nRisk  " + str.tostring(posDist * posQty, "#.##"))
+    pRan  := box.new(bar_index, posEntry, bar_index, posEntry, border_color = color(na), bgcolor = POS_OPENBG)
+    pDD   := box.new(bar_index, posEntry, bar_index, posEntry, border_color = color(na), bgcolor = POS_DD)
+    pGot  := box(na)
+    pEnt  := line.new(bar_index, posEntry, bar_index, posEntry, color = POS_OPENL, width = 1)
+    pSl   := na(posStop0) ? line(na) : line.new(bar_index, posStop0, bar_index, posStop0, color = POS_REDB, style = line.style_dashed, width = 1)
+    pExt  := line(na)
+    pLbl  := label(na)
 
-if execShowPosBox and strategy.position_size != 0 and not na(pBody)
-    box.set_right(pRisk, bar_index)
-    box.set_right(pBody, bar_index)
-    box.set_top(pBody, math.max(posEntry, close))
-    box.set_bottom(pBody, math.min(posEntry, close))
-    if not na(pRwd1)
-        box.set_right(pRwd1, bar_index)
-    if not na(pRwd2)
-        box.set_right(pRwd2, bar_index)
-    // The risk block tracks the LIVE stop, so it visibly collapses at breakeven.
-    if not na(posStop)
-        box.set_top(pRisk, math.max(posEntry, posStop))
-        box.set_bottom(pRisk, math.min(posEntry, posStop))
+if execShowPosBox and strategy.position_size != 0 and not na(pRan)
+    box.set_right(pRan, bar_index)
+    box.set_right(pDD,  bar_index)
+    box.set_top(pRan,    math.max(posEntry, nz(posBest,  posEntry)))
+    box.set_bottom(pRan, math.min(posEntry, nz(posBest,  posEntry)))
+    box.set_top(pDD,     math.max(posEntry, nz(posWorst, posEntry)))
+    box.set_bottom(pDD,  math.min(posEntry, nz(posWorst, posEntry)))
+    line.set_x2(pEnt, bar_index)
+    if not na(pSl)
+        line.set_x2(pSl, bar_index)
 
-// 🔴 THE TARGET BANDS ARE TORN DOWN ON THE CLOSE, AND NOT DOING THAT WAS A REAL
-// BUG. They are painted at the FILL, from the entry all the way to the target,
-// because that is the trade's plan — and until 2026-08-15 nothing ever removed
-// them. So a trade that was stopped out for −1R after one bar left a full-height
-// GREEN column running down to a previous-week low that price never went near.
-// Aaron, reading his own chart: "price never goes down, but there is a big green
-// bar. I'm confused." The drawing was claiming profit the P&L does not have.
-// `mpc_strategy.pine` already had the rule in writing — *"every band comes from
-// the strategy's own closed-trade log, at the price the engine REALLY filled —
-// never a fib level it merely aimed at"* — and it was not carried across.
-// **A plan and a result are two different pictures, and only one of them may be
-// left on the chart.** What survives the close is the entry-to-real-exit band and
-// the entry-to-worst-price band, both measured, neither aimed at.
-// ⚠ WITH A PARTIAL, ONE BAND CANNOT DESCRIBE THE TRADE. The first target banks
-// half and the runner exits somewhere else, so the band drawn is the RUNNER's
-// exit and the first rung is not shown separately. A+ splits it into stacked
-// bands per rung; that is more machinery than this file has. Read the split off
-// the Strategy Tester's trade list.
-if execShowPosBox and justClosed and not na(pBody)
+if execShowPosBox and justClosed and not na(pRan)
     float exitPx = strategy.closedtrades > 0 ? strategy.closedtrades.exit_price(strategy.closedtrades - 1) : close
-    box.delete(pRwd1)
-    box.delete(pRwd2)
-    pRwd1 := box(na)
-    pRwd2 := box(na)
-    box.set_top(pBody, math.max(posEntry, exitPx))
-    box.set_bottom(pBody, math.min(posEntry, exitPx))
-    if not na(posWorst)
-        box.set_top(pRisk, math.max(posEntry, posWorst))
-        box.set_bottom(pRisk, math.min(posEntry, posWorst))
+    bool  won    = not na(closedR) and closedR > execBeBandR
+    bool  be     = not na(closedR) and math.abs(closedR) <= execBeBandR
+    color exCol  = be ? POS_BEL : won ? POS_WINL : POS_LOSSL
+    float best   = nz(posBest,  posEntry)
+    float worst  = nz(posWorst, posEntry)
 
-// One result, one colour. The band is what stops a two-tick scratch — which the
-// breakeven buffer books on purpose — being filed as a full win.
-if execShowPosBox and justClosed and not na(pLbl)
-    bool  won = not na(closedR) and closedR > execBeBandR
-    bool  be  = not na(closedR) and math.abs(closedR) <= execBeBandR
-    color lc  = be ? POS_BE  : won ? POS_WIN  : POS_LOSS
-    color ll  = be ? POS_BEL : won ? POS_WINL : POS_LOSSL
-    label.set_color(pLbl, lc)
-    label.set_text(pLbl, (posDir == 1 ? "▲ LONG " : "▼ SHORT ") + str.tostring(closedR, "#.##") + "R")
-    label.set_tooltip(pLbl, (posDir == 1 ? "▲ LONG" : "▼ SHORT") + (be ? " breakeven" : won ? " won" : " lost") + "\n──────────────────\nResult " + str.tostring(closedR, "#.##") + "R\nEntry  " + str.tostring(posEntry, format.mintick) + "\nStop   " + str.tostring(posStop, format.mintick) + "\nTP1    " + str.tostring(posT1, format.mintick) + "\nTP2    " + str.tostring(posT2, format.mintick))
-    line.set_color(pLead, ll)
-    box.set_bgcolor(pBody, be ? color.new(#FF9800, 80) : won ? color.new(#26A69A, 70) : color.new(#EF5350, 70))
-    box.set_border_color(pBody, ll)
+    box.set_right(pRan, bar_index)
+    box.set_right(pDD,  bar_index)
+    box.set_bgcolor(pRan, POS_G2)
+    box.set_top(pRan,    math.max(posEntry, best))
+    box.set_bottom(pRan, math.min(posEntry, best))
+    box.set_top(pDD,     math.max(posEntry, worst))
+    box.set_bottom(pDD,  math.min(posEntry, worst))
 
-// The entry triangles. `plotshape` is a GLOBAL-SCOPE call, so it cannot live in
-// the block above — the fill edge is re-derived here from the same test the
-// tracker uses, so a triangle can never appear on a bar the tracker did not treat
-// as a fill. ⚠ Not redundant with the boxes: a scratch paints a risk block a few
-// pixels tall and reads as no trade at all, which is exactly when you need to see
-// where it opened.
-plotshape(execShowPosBox and strategy.position_size > 0 and strategy.position_size[1] == 0, title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
-plotshape(execShowPosBox and strategy.position_size < 0 and strategy.position_size[1] == 0, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB,   size = size.small)
+    if posDir == 1 ? exitPx > posEntry : exitPx < posEntry
+        pGot := box.new(line.get_x1(pEnt), math.max(posEntry, exitPx), bar_index, math.min(posEntry, exitPx), border_color = color(na), bgcolor = POS_G1)
 
-//============================================================
-//  BLOCKED SETUPS
-//============================================================
-// Only refusals from the ZONE onward are tagged. Codes 1-5 are "the sequence has
-// not happened yet", which is the normal state of the market and would bury the
-// five that are actually decisions. The tag reads the SAME `sBlk`/`lBlk` the gate
-// chain wrote, so the tag and the diagnostic log can never disagree about why a
-// trade did not happen.
+    pExt  := line.new(line.get_x1(pEnt), exitPx, bar_index, exitPx, color = exCol, width = 2)
+    line.set_width(pEnt, 2)
+
+    if execShowLabels
+        int lx = line.get_x1(pEnt)
+        label.new(lx, posEntry, "Entry", style = label.style_label_right, color = POS_OPEN,  textcolor = TXT_DARK, size = size.tiny)
+        label.new(lx, exitPx,   "Exit",  style = label.style_label_right, color = be ? POS_BE : won ? POS_WIN : POS_LOSS, textcolor = TXT_DARK, size = size.tiny)
+        if math.abs(best - posEntry) > tickSz
+            label.new(lx, best,  "Furthest", style = label.style_label_right, color = POS_WIN,  textcolor = TXT_DARK, size = size.tiny)
+        if math.abs(worst - posEntry) > tickSz
+            label.new(lx, worst, "Deepest",  style = label.style_label_right, color = POS_LOSS, textcolor = TXT_DARK, size = size.tiny)
+        if not na(posStop0)
+            label.new(lx, posStop0, "SL", style = label.style_label_right, color = POS_LOSS, textcolor = TXT_DARK, size = size.tiny)
+
+        int mx = int(math.round((lx + bar_index) / 2.0))
+        pLbl := label.new(mx, best, (be ? "Breakeven " : won ? "Won " : "Lost ") + str.tostring(closedR, "#.##") + "R", style = posDir == 1 ? label.style_label_down : label.style_label_up, color = be ? POS_BE : won ? POS_WIN : POS_LOSS, textcolor = TXT_DARK, size = size.small, tooltip = "Entry    " + str.tostring(posEntry, format.mintick) + "\nExit     " + str.tostring(exitPx, format.mintick) + "\nStop     " + str.tostring(posStop0, format.mintick) + "\nFurthest " + str.tostring(best, format.mintick) + "\nDeepest  " + str.tostring(worst, format.mintick) + "\nResult   " + str.tostring(closedR, "#.##") + "R")
+
 var int lastTagKey = -1
 int   tagCode  = sBlk >= 6 and sBlk <= 10 ? sBlk : lBlk >= 6 and lBlk <= 10 ? lBlk : 0
 bool  tagShort = sBlk >= 6 and sBlk <= 10
 float tagEdge  = tagShort ? sEntry : lEntry
+float tagZTop  = tagShort ? sZTop : lZTop
+float tagZBot  = tagShort ? sZBot : lZBot
+float tagStop  = tagShort ? sStop : lStop
+float tagDist  = tagShort ? sDist : lDist
+bool  tagTap   = confAtZone ? armTouched : (tagShort ? poiBearTap : poiBullTap)
+bool  tagFired = false
 if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - debugDays * 86400000
-    // Deduped on the leg, the code and the side: a setup refused for twenty bars
-    // is one tag, but a CHANGED reason is a genuinely different refusal.
     int key = legId * 100 + tagCode * 2 + (tagShort ? 1 : 0)
     if key != lastTagKey
         lastTagKey := key
-        label bl = label.new(bar_index, tagShort ? high : low, (tagShort ? "▼" : "▲") + " SETUP BLOCKED", style = tagShort ? label.style_label_down : label.style_label_up, color = BLK_PINK, textcolor = TXT_DARK, size = size.small, tooltip = (tagShort ? "▼ SHORT" : "▲ LONG") + " blocked\n──────────────────\n" + f_blkWhy(tagCode) + "\n──────────────────\nLimit would have rested at " + str.tostring(tagEdge, format.mintick))
+        tagFired := true
+        float pad  = na(atr14) ? tickSz * 50 : atr14 * 1.5
+        float anch = tagShort ? high + pad : low - pad
+        bool  drawZ = showBlockDraw and not na(tagZTop) and not na(tagZBot)
+        float aim  = drawZ ? (tagShort ? math.min(tagZTop, tagZBot) : math.max(tagZTop, tagZBot)) : (tagShort ? high : low)
+        bool  isMiss = tagCode <= 9
+        color tagBg  = isMiss ? MISS_ORN  : BLK_PINK
+        color tagLn  = isMiss ? MISS_ORNL : BLK_PINKL
+        bool   okDir  = tagShort ? dirDir == -1 : dirDir == 1
+        bool   okSwp  = tagShort ? sweptHi : sweptLo
+        bool   okConf = tagShort ? confShort : confLong
+        int    cfTot = 2 + (pbRequireConf ? 1 : 0) + (poiOff ? 0 : 1)
+        int    cfHit = (okDir ? 1 : 0) + (okSwp ? 1 : 0) + (pbRequireConf and okConf ? 1 : 0) + (not poiOff and not isMiss ? 1 : 0)
+        string cfMet = str.tostring(cfHit) + " OF " + str.tostring(cfTot)
+        string head  = (tagShort ? "▼ SHORT" : "▲ LONG") + " · " + cfMet + (isMiss ? "" : ", NO SLOT")
+        if drawZ
+            box.new(bar_index, math.max(tagZTop, tagZBot), bar_index + 8, math.min(tagZTop, tagZBot), border_color = FVG_EDGE, border_width = 1, bgcolor = FVG_ZONE)
+            line.new(bar_index, tagEdge, bar_index + 8, tagEdge, color = tagBg, style = line.style_dotted, width = 1)
+            line.new(bar_index, tagStop, bar_index + 8, tagStop, color = tagLn, style = line.style_dashed, width = 1)
+        line.new(bar_index, anch, bar_index, aim, color = tagLn, style = line.style_dotted, width = 1)
+        string tipConf = not pbRequireConf ? "\n· Confirmation — not required, you have it switched off" : okConf ? "\n✓ Confirmation — the " + pbConfTf + "-minute changed character" + (na(cfPx) ? "" : " at " + str.tostring(cfPx, format.mintick)) : "\n✗ Confirmation — the " + pbConfTf + "-minute never changed character"
+        string tipMet  = (okDir ? "✓" : "✗") + " Direction — the " + pbDirTf + "-minute is on this side\n" + (okSwp ? "✓" : "✗") + " Sweep — the previous session's level was taken" + tipConf + (poiOff ? "\n· Point of interest — not required, you have it switched off" : "\n" + (isMiss ? "✗" : "✓") + " Point of interest — the " + pbPoiTf + "-minute gap")
+        bool   hasZone = not na(tagZTop) and not na(tagZBot)
+        string tipBusy = strategy.position_size != 0 and not tookLeg ? "A trade from an earlier session was still open, so this setup was refused." : strategy.position_size != 0 ? "This is a SECOND setup on the same session. The trade you can see was already running and holds the only slot, so this one was refused." : pendDir != 0 ? "This is a SECOND setup on the same session. An order from the first one was already waiting, so this one was refused." : "This is a SECOND setup on the same session. The session had already had its trade, so this one was refused."
+        string tipWhy  = tagCode == 10 ? tipBusy : poiOff and tagCode == 6 ? "The session never took the previous session's high or low, so there is no sweep extreme to put a stop behind." : not hasZone ? "There was no gap on this side of price." : (tagCode == 7 or tagTap) ? f_blkWhy(tagCode) : "Price never reached the gap. The point of interest was never met."
+        string tipFar  = na(tagEdge) ? "" : "\n" + str.tostring(math.abs(close - tagEdge), format.mintick) + " away from price" + (na(atr14) or atr14 <= 0 ? "" : " (" + str.tostring(math.abs(close - tagEdge) / atr14, "#.#") + " average bar ranges)") + "." + (pbPoiMaxAtr > 0 ? "" : "\nYour max-distance filter is OFF, so that distance was never checked.")
+        string tipGeom = na(tagStop) or na(tagDist) or na(tagEdge) ? "" : "\n\nTHE TRADE THAT DID NOT HAPPEN\n" + (poiOff ? "You would have gone in at market at " : tagTap ? "Entry would have been " : "Had price reached it: entry ") + str.tostring(tagEdge, format.mintick) + ", stop " + str.tostring(tagStop, format.mintick) + " — " + str.tostring(tagDist, format.mintick) + " apart. Your floor is " + str.tostring(minStopDist, format.mintick) + "."
+        string tipGap  = (not hasZone ? "" : "\n\nTHE GAP\n" + str.tostring(math.min(tagZTop, tagZBot), format.mintick) + " to " + str.tostring(math.max(tagZTop, tagZBot), format.mintick) + ", " + str.tostring(math.abs(tagZTop - tagZBot), format.mintick) + " tall." + tipFar) + tipGeom
+        label bl = label.new(bar_index, anch, (tagShort ? "▼ " : "▲ ") + (isMiss ? str.tostring(cfHit) + "/" + str.tostring(cfTot) + " MISSED" : "BLOCKED"), style = tagShort ? label.style_label_down : label.style_label_up, color = tagBg, textcolor = TXT_DARK, size = size.small, tooltip = head + "\n──────────────────\n" + tipMet + "\n──────────────────\nWHY THERE WAS NO TRADE\n" + tipWhy + tipGap)
 
-//============================================================
-//  STATE PANEL — what the sequence is waiting for
-//============================================================
-// It reports the GATES rather than only the outcome, so a quiet market can be told
-// apart from a rule set too tight — those need opposite responses.
-// ⚠ It uses the TABLE palette, not the position one. They are different greens on
-// purpose; `mpc_d_strategy.pine` crossed them and its winners drew in a table
-// colour for weeks.
-var table pbTbl = table.new(position.top_right, 2, 6, bgcolor = color.new(#1a1a1a, 10), border_color = color.new(color.gray, 70), border_width = 1)
-
-f_row(int r, string k, string v, color vc) =>
-    table.cell(pbTbl, 0, r, k, text_color = color.new(color.gray, 20), text_size = size.tiny, text_halign = text.align_left)
-    table.cell(pbTbl, 1, r, v, text_color = vc, text_size = size.tiny, text_halign = text.align_right)
-    int _r = 0
-
-if showStatePanel and barstate.islast
-    int sd = dirDir
-    f_row(0, "DIRECTION " + pbDirTf + "m", sd == 1 ? "bullish" : sd == -1 ? "bearish" : "none yet", sd == 0 ? TBL_OFF : TBL_GOOD)
-    f_row(1, "SESSION", rawSess == 2 ? "New York" : rawSess == 1 ? "London" : "off-hours", rawSess == 0 or not sessTradable ? TBL_OFF : TBL_GOOD)
-    f_row(2, "POOL " + (poolNm == "" ? "—" : poolNm), rawSess == 0 ? "—" : str.tostring(sd == 1 ? poolLo : poolHi, format.mintick), TBL_OFF)
-    f_row(3, "SWEPT", rawSess == 0 ? "—" : (sd == 1 ? sweptLo : sweptHi) ? "yes" : "waiting", (sd == 1 ? sweptLo : sweptHi) ? TBL_GOOD : TBL_WARN)
-    // In AT-THE-ZONE mode there are TWO waits behind one gate, and they need
-    // opposite responses: price never reached the zone is a market fact, no shift
-    // once it got there is a rule fact.
-    bool cOk = sd == 1 ? confOkLong : confOkShort
-    f_row(4, pbConfTf + "m SHIFT", not pbRequireConf ? "not required" : cOk ? "agreed" : confAtZone and not armTouched ? "waiting on the zone" : "waiting", cOk ? TBL_GOOD : TBL_WARN)
-    f_row(5, "ZONE", pendDir != 0 ? "order resting" : strategy.position_size != 0 ? "in a trade" : f_blkWhy(sd == 1 ? lBlk : sBlk) == "" ? "ready" : f_blkWhy(sd == 1 ? lBlk : sBlk), pendDir != 0 or strategy.position_size != 0 ? TBL_GOOD : TBL_WARN)
+var int cfDrawn = -1
+var int cmDrawn = -1
+bool sosResolved = justFilled or tagFired
+if showSosMark and sosResolved
+    float sosPad = na(atr14) ? tickSz * 40 : atr14 * 0.8
+    if not na(cfBar) and not na(cfPx) and cfBar != cfDrawn
+        cfDrawn := cfBar
+        float tip = cfDir == 1 ? cfPx - sosPad : cfPx + sosPad
+        line.new(cfBar, cfPx, cfBar + 10, cfPx, color = SOS_CONF, style = line.style_solid, width = 1)
+        line.new(cfBar, cfPx, cfBar, tip, color = SOS_CONF, style = line.style_solid, width = 2)
+        label.new(cfBar, tip, "SOS " + pbConfTf + "m " + str.tostring(cfPx, format.mintick), style = cfDir == 1 ? label.style_label_up : label.style_label_down, color = SOS_CONF, textcolor = TXT_DARK, size = size.tiny, tooltip = "THIS candle is where the " + pbConfTf + "-minute changed character, by closing through " + str.tostring(cfPx, format.mintick) + ".\n" + (cfUsed ? "It is the shift that confirmed the setup marked nearby." : "It did NOT confirm anything - you have confirmation switched off, or the setup was refused before it mattered. It is the last time this timeframe turned this way after the sweep.") + "\nThe flat line is the level that broke, so a wick cannot confuse it.")
+    if not na(cmBar) and not na(cmPx) and cmBar != cmDrawn
+        cmDrawn := cmBar
+        float tip = cmDir == 1 ? cmPx - sosPad * 2 : cmPx + sosPad * 2
+        line.new(cmBar, cmPx, cmBar + 10, cmPx, color = SOS_CMP, style = line.style_dashed, width = 1)
+        line.new(cmBar, cmPx, cmBar, tip, color = SOS_CMP, style = line.style_dashed, width = 2)
+        label.new(cmBar, tip, "SOS " + sosCmpTf + "m " + str.tostring(cmPx, format.mintick), style = cmDir == 1 ? label.style_label_up : label.style_label_down, color = SOS_CMP, textcolor = TXT_DARK, size = size.tiny, tooltip = "THIS candle is where the " + sosCmpTf + "-minute changed character, by closing through " + str.tostring(cmPx, format.mintick) + " - the first time it turned this way after the sweep.\nMarking only. It changed no trade.")

@@ -138,7 +138,29 @@ since 2026-07-31, so a divergence here would be a bug and not a setting. ⚠ **A
 belongs in every file that carries the block.**
 
 **Every colour a trade is drawn in is `mpc_strategy.pine`'s.** Change a value there and copy it
-down, never pick one here. The state panel deliberately keeps the separate TABLE palette.
+down, never pick one here. ⚠ **The TABLE palette is gone with the state panel** — if a table ever
+returns, copy A+'s table colours rather than reusing the position ones.
+
+**The panel trim, 2026-08-16** (Aaron: *"there are too many inputs now… so I could focus on the
+strategy"*). The **pool-line toggle** went and the LINE is now always drawn — it decides nothing,
+but it is step 2, and it is the one line that says why the strategy did or did not act on a given
+day. The **state panel** went with it. 43 inputs → 42.
+
+🔴 **The panel was removed, restored, and removed again inside one session, and the round trip is
+worth more than the feature was.** Aaron cut it, then said *"let's add it back — I just didn't
+understand how to read it"*, so it came back relabelled; then, seeing it: *"just the pool lines."*
+**The relabelling was still the right read of the middle step** — the original rows were named after
+the code (DIRECTION, POOL, SWEPT, SHIFT, ZONE), which is a dump of internal state rather than
+anything a person reads. ⚠ **The actual lesson is upstream of that: "add it back" arrived in a
+sentence whose first clause was about the POOL LINE, and it was read as being about the panel.**
+An ambiguous referent was resolved silently instead of asked about, and the cost was two rebuilds.
+⚠ **Second, standing: "I don't need this" and "I can't read this" look identical from outside and
+have opposite fixes** — ask which one before deleting a diagnostic.
+
+⚠ **What was lost with it, stated so it is a decision rather than a discovery.** The panel was the
+only place two things appeared on screen: a refusal caused by the **execution clock** (block code 11
+is deliberately untagged), and the split between *price never reached the zone* and *it got there
+and no shift came*. Both now have to be read off the trade list.
 
 ⚠ **The first paste costs one "Reset settings to defaults"** (every input moved), and in the same
 visit untick Style → **"Trades on chart"** — this file draws its own position box, entry triangles
@@ -171,6 +193,130 @@ already caught this twice in this repo.
 **The video's own numbers are two different books.** The 6.14 average win/loss and 3.07
 profit factor are the 230-trade subset; across all 1,154 trades it is 3.93 and 1.92. The
 title quotes one and the headline stats the other.
+
+---
+
+## Measured: six runs, and the course book they were compared against (2026-08-16)
+
+Six TradingView Strategy Tester exports, XAUUSD, 2023-01 → 2026-08, git-ignored scratch under
+`engines/*VANTAGE*.csv`. ⚠ **Which export used which settings is NOT recorded** — the inference
+that the two best runs had the confirmation OFF rests on their trade counts and is unconfirmed.
+
+| file | chart | trades | win rate | profit factor | net on $10k | max drawdown | payoff |
+|---|---|---|---|---|---|---|---|
+| `b6b58` | 15m | 224 | 20.1% | 1.02 | +$291 | 31.4% | 4.06 |
+| `9f31e` | 5m | 323 | 16.7% | 1.11 | +$2,586 | 47.7% | 5.53 |
+| `e5c52` | 5m | 287 | 19.5% | 0.91 | −$1,272 | 27.3% | 3.75 |
+| `de22c` | 15m | 288 | 19.8% | 0.85 | −$1,947 | 24.3% | 3.43 |
+| `8bf94` | 5m | 485 | 17.1% | 1.02 | +$791 | 59.5% | 4.93 |
+| `65746` | 15m | 354 | 19.8% | **1.15** | **+$4,820** | 33.2% | 4.67 |
+
+**The win rate never leaves 16.7-20.1% across six configurations.** Break-even at a 4.7 payoff is
+~17.6%, so every run straddles the line. Every run's profit is 1-3 trades — `b6b58` minus its
+single best trade is −$790. All six lean short (~170 short against ~120 long) in a market that
+tripled. The confirmation IS wired (switching it off moved the 15m count 288 → 354); it just does
+not move the hit rate.
+
+**The course book, for comparison** — `education/smc/05-my-full-trading-strategy/`, the data review
+in `transcripts/25-full-data-synopsis.txt`. ⚠ **`summaries/25-full-data-synopsis.md` is an empty
+`to-summarize` stub — the numbers are only in the transcript.** 2.5 years, 1% of the INITIAL
+balance per trade, no commission or swap: **230 trades — 62 wins, 126 losses, 42 breakeven.** ~33%
+wins excluding the scratches, average reward-to-risk 6.2, profit factor ~3.07, **worst drawdown
+6%**, average +9%/month, best month +25% (Apr 2024), worst −3.7%, max 7 losses in a row. He redid
+all of 2024 to strip a compounding skew.
+
+⚠ **The 1,154-trade figure is from the YouTube video, not the course.** The course book is 230.
+
+**His setup table, after he removed the miscounted 2024 data:**
+
+| setup | trades | win rate | note |
+|---|---|---|---|
+| London sweeps Asia | most traded | 30% | profit factor 3, payoff 6.8 — **the one this file implements** |
+| London sweeps Frankfurt | 60 | 26% | +31% return, payoff 5.85 |
+| NY continuation from the London POI | 19-20 | **63%** | his A+ |
+| NY sweep of the Lull | — | **55%** | |
+| NY sweeps Asia | 3 | — | his only losing setup |
+| Frankfurt sweep continuation | 2 | — | −1.5% |
+
+Strong points of interest beat weak ones (33% against 29%). New York setups are rarer and better
+(+105% against London's +93%).
+
+**Entry-hour distribution, pooled across all 1,961 trades in the six exports.** ⚠ The timezone is
+INFERRED as New York — London 08:00 local is 03:00 NY and the trades start at hour 3 — and ~2% (40
+trades at hours 18-19) is unexplained.
+
+Restricted to his execution hours: **490 trades, +$17,716.** The 1,471 trades outside them lost
+**−$12,448.** 🔴 **Read that as a lead, not a result.** It pools six overlapping configurations so
+trades are counted more than once; it is a slice chosen AFTER seeing the data, which is the exact
+overfitting trap the course itself warns about; and one hour carries +$21,753 of it, which is the
+same concentration problem the table above already flags. Hour 19's 14 trades at a 100% win rate
+look like an edge case rather than a result.
+
+### The minimum-stop floor, measured
+
+Read off the same six exports. A trade whose every exit slice is a loss exited at its stop, so
+`|entry − exit|` on those is the stop distance. **1,596 such trades**, entry prices $1,814-$5,432.
+
+| | in dollars of gold | as % of price |
+|---|---|---|
+| smallest | 0.28 | 0.0105% |
+| bottom tenth | 1.91 | 0.0851% |
+| lower quarter | 2.58 | 0.0961% |
+| median | 3.93 | 0.1293% |
+| upper quarter | 6.28 | 0.2094% |
+| top tenth | 10.90 | 0.3560% |
+
+🔴 **The distribution is sheared off almost exactly at the old 0.08% floor** — the bottom tenth sits
+at 0.085%. That is what a binding floor looks like. ⚠ **It is evidence the floor was CUTTING, and
+not evidence of what it cost**: a refused setup never reaches a trade list, so the cost cannot be
+recovered from this data by anyone.
+
+**Why 0.03% and not 0.** Vantage's measured XAUUSD spread is **$0.22** (`backtest/fills.py`,
+1,494,459 ticks) and these runs charge none of it. Spread as a share of risk: **6%** at the median
+$3.93 stop, **22%** at $1, **over half** at $0.40. Script:
+`scratchpad/stopdist.py` (session-local, not committed).
+
+**What changed in the file on 2026-08-16, and what did not:** three switches added
+(`execBeOnShift`, `execUseWindows`, `execTp1Mode = Fixed R`), all defaulted ON, all UNMEASURED.
+Four course rules still absent: order blocks as entry objects, POI quality grading, the news
+blackout, and six of his eight setups. Detail and the caveats on each:
+`indicators/strategies/CLAUDE.md` → *Three rules added from the course*.
+
+---
+
+## The shipped defaults (2026-08-17)
+
+Aaron's own chart settings, moved into the file at his request so a fresh paste starts where he is
+actually trading rather than where the course is.
+
+| input | was | now | what it means in English |
+|---|---|---|---|
+| `pbRequireConf` | `true` | **`false`** | No lower-timeframe change of character required. Entry rests in the gap on the sweep alone. |
+| `execTp1R` | `5.0` | **`3.5`** | First target at 3.5x risk. 5 is the course's number. |
+| `execTp1Pct` | `50` | **`80`** | Four fifths banked at the first target; the runner is a fifth. |
+| `execRiskPct` | `1.0` | **`4.0`** | 4% of equity lost if the stop is hit. |
+| `execMinStopVal` | `0.03` | **`0.07`** | Refuse a trade whose stop is nearer than 0.07% of price. |
+| `pbShowSess` | `false` | **`true`** | Session boxes drawn. |
+| `pbPoiTf` | `"5"` | `"5"` | **Unchanged** — the 5m gap is still required. |
+
+🔴 **NONE OF THESE IS MEASURED.** No sweep produced them and no run compares them to what they
+replaced. They are recorded here because a default in a file is indistinguishable from a finding
+six weeks later, and the set they replaced had already been read that way — `5.0` was the course's
+first target, but `50` was nobody's number and had been sitting there since the file was written.
+
+⚠ **Three of them are the risk path and they move together.** 4% per trade is four times the old
+figure, and the stop floor rising 0.03% → 0.07% cuts off the tightest stops — the ones that would
+have produced the largest positions. The two changes push size in opposite directions and the net
+effect on drawdown is unknown until someone runs it. **The floor is the only guard between the
+sizer and a stop a few ticks wide**, so it is the number to check first if a result looks wrong.
+
+⚠ **Turning confirmation off does NOT retire the confirmation timeframe.** `pbConfTf` still drives
+breakeven-on-shift, cancel-on-flip, and the SOS marker. Both it and `showSosMark` were ungated in
+the same pass for exactly that reason — see `indicators/strategies/CLAUDE.md` → *A CASCADE AUDIT*.
+
+⚠ **A default change resets nothing on an existing chart.** TradingView keeps whatever is saved
+there, so Aaron's chart already shows these and someone else's will keep the old ones until they
+press *Reset settings to defaults*.
 
 ---
 

@@ -15,6 +15,114 @@ the other one did.
 
 ## Latest
 
+### A default is a claim, and a cascade gate goes stale when one moves (2026-08-17)
+
+Six defaults on `smc_session_sweep_strategy.pine` were changed to Aaron's own chart settings —
+confirmation OFF, first target 3.5R, 80% banked there, 4% risk, minimum stop floor 0.07%, sessions
+drawn; the 5m gap requirement stays on. **Nothing here was measured.** The table and the risk note
+are in `docs/SMC_SESSION_SWEEP_SPEC.md` → *The shipped defaults*. It is written down because the set
+it replaced was equally unmeasured and had started reading as if the course produced it: 5R was the
+course's number, 50% was nobody's, and both sat in the file looking identical.
+
+**The finding is what the default change did to the input panel.** One day earlier a cascade audit
+had greyed out the SOS marker whenever confirmation was off, and named the cost honestly before
+choosing to accept it. Then confirmation shipped defaulting off — so the control that answers *"what
+would requiring confirmation have cost me?"* was unreachable for everyone on the default settings, at
+the moment it was most useful. **A cascade gate is a claim about which settings are worth reaching,
+and a default change silently invalidates it.** Nothing fails; the control just stops being there.
+
+The same pass found a gate pointing the other way that the audit had missed: `pbConfTf` was greyed
+when confirmation was off, while three live things still read it — breakeven-on-shift,
+cancel-on-flip and the marker. **An audit that only asks "is this input inert?" finds half the
+defects; ask "is anything still READING an input I have greyed?" as well.** A dead control wastes a
+click. A greyed live one hides where the stop is going. Both ungated; `pbConfWhen` was re-checked
+and its gate is correct. Detail: `indicators/strategies/CLAUDE.md` → *A CASCADE AUDIT*.
+
+### The setup was right and the RULES were missing — the course had its own backtest all along (2026-08-16)
+
+Six Strategy Tester exports of `smc_session_sweep_strategy.pine` came back flat: XAUUSD, 2023-01 →
+2026-08, win rate never leaving **16.7-20.1%** across six configurations, profit factors
+**0.85-1.15**, worst drawdowns **24-59%**, and every run's profit sitting in one to three trades —
+the best 15m run minus its single best trade is −$790. Break-even at its 4.7 payoff is ~17.6%, so
+all six straddle the line. All six leaned SHORT (~170 to ~120) in a market that tripled. My verdict
+at that point was *do not port*.
+
+Aaron: *"he was referring to his course… I have that course and we actually went out and pulled all
+the transcripts… see if any of these backtests align with this fifteen minute strategy."*
+
+They do, and the comparison inverted the verdict. `education/smc/05-my-full-trading-strategy/` is 24
+monthly backtest videos plus a data review, and the review is his own book: **230 trades over 2.5
+years — 62 wins, 126 losses, 42 BREAKEVEN**, ~6.2 average reward-to-risk, profit factor ~3.07,
+worst drawdown **6%**, ~+9% a month.
+
+🔴 **The setup was never the problem.** London-sweeps-Asia is his most traded AND most profitable
+play, and it is exactly the one this file implements. What was missing was RULES he has and the file
+did not — and the loudest one is countable: **42 of his 230 trades end flat; 0 of our 1,961 do.**
+This file had no way to scratch a trade at all.
+
+Three rules ported in, each behind its own switch, all defaulted ON and **all unmeasured**:
+breakeven on an opposite lower-timeframe shift, three one-hour execution windows a session instead
+of all nine hours, and a first target at a fixed 5R instead of the nearest liquidity level (his
+winners average 6.8x, ours 4.7x).
+
+**Four things worth keeping out of this pass:**
+
+**1 · The summary file was an empty stub and the numbers were only in the transcript.**
+`summaries/25-full-data-synopsis.md` is `status: to-summarize` with no body. A reader who trusted
+the summaries directory would have concluded the course contains no backtest data. **A folder of
+summaries is a claim that the summaries exist** — and this repo now has an instance where the one
+that mattered did not.
+
+**2 · Aaron remembered 1,150 trades; the course book is 230.** Both numbers are real and they are
+different books — 1,154 is the YouTube video's figure. Neither was wrong; they were never the same
+measurement, and nothing on either side said so.
+
+**3 · Both new execution windows have an INERT first hour, found before shipping rather than after.**
+His London window opens 2am New York; the London session here opens 08:00 London = **03:00** New
+York, so that hour dies on block code 3 before the clock is consulted. His 2am hour is the
+**Frankfurt** open, and Frankfurt is a session this file does not model. Same shape at 7-8am against
+an 08:00 New York session. Effective windows are 3-5am and 8-10am, and it is in both tooltips —
+otherwise it is a setting that looks like it does something for a third of its range.
+
+**4 · The panel-order contract and TradingView's persistence are in genuine conflict, and the
+contract won.** TradingView keys saved input values off declaration order per type, so inserting
+inputs voids every saved preset for the script. Appending them instead would have kept the presets
+and scrambled the panel — and this file already has an incident where Aaron could not read his own
+strategy off it (*"I don't understand the strategy that's laid out in this pine right now"*). The
+presets were spent. It is recorded in the file header, because a silent reset reads as a bug.
+
+⚠ **Nothing here is measured. Three switches went on at once, and reading one number off that says
+nothing about which one did the work** — that is why each is a switch. ⚠ Four course rules are still
+absent, and two of them gate his best setups by win rate: order blocks as entry objects, POI quality
+grading, the news blackout, and six of his eight named setups (*NY continuation from the London POI*
+at **63%**, *NY sweep of the Lull* at **55%**).
+
+**5 · Then the panel was re-cut by PROVENANCE, and one of our own filters was measured and moved.**
+Aaron, reading the blocked-setup tags: *"where did it come from? Is he doing it? Should we keep
+it?"* — about the minimum-stop guard. Answers: this repo (it is in all ten strategy files), no (he
+takes tight stops on purpose, and a tight stop is how a 6.8x average winner happens at all), and
+yes-but-smaller. **0.08% → 0.03%.**
+
+🔴 **The reason it is lowered rather than removed is the transferable one: a floor on stop distance
+is a proxy for a COST, so it has to be set from the measured cost.** These runs charge no spread and
+no commission; Vantage's XAUUSD spread is measured at $0.22. That is 6% of the median stop, 22% of a
+$1 stop, over half of a $0.40 one — **the tightest setups are exactly the ones a zero-cost backtest
+flatters most.** ⚠ And what the old floor COST cannot be recovered: a refused setup never appears in
+a trade list, so the only honest reading is the shape of what got through, which is sheared off
+almost exactly at 0.08%.
+
+That exchange is also what produced the panel re-cut — **groups 1-4 HIS MODEL, 5-10 OURS**, a
+deliberate break from the house contract the other five strategy files use. **Grouping by what a
+setting CHANGES had put his 5R target and our scar-tissue stop guard in one box called *Stop &
+targets*, so the panel itself could not tell you which was the model and which was ours.** ⚠ Do not
+propagate the layout — the other files are not ports of an outside model.
+
+Numbers, the per-run table, the stop-distance distribution and the pooled entry-hour read:
+`docs/SMC_SESSION_SWEEP_SPEC.md` → *Measured: six runs, and the course book they were compared
+against*.
+
+---
+
 ### The name said the timeframe, and the indicator half had never been scored (2026-08-15)
 
 Aaron, opening the session: *"I'm not seeming to make any money from the pine. I think we need to
