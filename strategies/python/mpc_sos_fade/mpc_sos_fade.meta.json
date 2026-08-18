@@ -416,6 +416,20 @@
       "desc": "Buys more once the trailing stop is already locking in profit; Off means the position never grows after entry. The add is sized so that being stopped out costs at most the profit already locked in, so it can shrink a winner but never create a loser."
     },
     {
+      "name": "exec_scale_mode",
+      "group": "Exit ladder",
+      "label": "Where it adds",
+      "choices": ["Trail", "BOS retest"],
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.",
+      "guide": [
+        "Trail — adds most often, worst price, most drawdown",
+        "BOS retest — fewer adds, better price, gentler drawdown"
+      ]
+    },
+    {
       "name": "exec_scale_max_adds",
       "group": "Exit ladder",
       "label": "How many times it may add",

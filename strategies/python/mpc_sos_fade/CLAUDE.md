@@ -975,6 +975,51 @@ no `cfg_*` column for these three yet. **Until both land, an ON result is a LAB 
 this file's own standing lesson, a trade-affecting input with no export column is invisible to the
 gate BY CONSTRUCTION, so the gate would go green while comparing two different strategies.
 
+### Scale-in gained a MODE, and the defaults moved (`exec_scale_mode`, 2026-08-17)
+
+`exec_scale_mode` ∈ {`"Trail"`, `"BOS retest"`}. **Trail** is Run 19's rule — market, on the bar
+the trail ratchets, the worst price of the leg. **BOS retest** waits for the next confirmed break
+of structure in the trade direction and rests a limit at the level that break cleared. The SIZE
+rule is untouched by this; only the moment and the price move.
+
+🔴 **THE DEFAULTS MOVED AND RUN 19's FIGURES NEED PINNING NOW.** Mode → `"BOS retest"`,
+`exec_scale_max_adds` 2 → 4, `exec_scale_cap_x` 1.0 → 2.0. ⚠ **`exec_scale_in` is still False, so
+the OFF path is byte-identical and NO documented figure in this file moves** — what changed is what
+the toggle DOES. Pin `mode="Trail", adds=2, cap=1.0` for 211.59R; the new defaults give **247.90R /
+9.00R maxDD** on the same window.
+
+⚠ **THE CASE IS CONSISTENCY, NOT RETURN-PER-DRAWDOWN.** On the full book BOS retest is THIRD on
+ret/DD (29.99) behind fib 23.6% (31.83) and FVG (30.02) — and fib 23.6% is the row that turned out
+to be **80% one year**. What it wins: the 2020-free gain (+56.5R vs the market rule's +41.7R), the
+most years, losses under 3.3R in each year it loses, positive in all four most-recent years, and
+9.10R drawdown against the market rule's 20.97R. ⚠ At the shipped cap the 2020-free ret/DD is 15.51
+against 15.34 for not scaling — **more money for proportionally more drawdown, not a free lunch.**
+
+⚠ **`exec_scale_mode` REFUSES an unrecognised value rather than falling back**, same standing as
+`exec_sl_custom`: a typed string silently becoming a different rule would replay a whole book
+against a mode nobody chose.
+
+✅ **Verified three ways: OFF 128.26R (bit-identical to the pre-feature control), Trail-pinned
+211.59R, and the new defaults 247.90R — each to the cent.** Two implementation bugs were caught by
+that check and are worth knowing because both were nearly invisible: a missing leg guard, and
+disarming the resting limit on any bar it was REACHED rather than on the bar it FILLED, which
+discarded setups the measurement kept alive. Together 0.68R — small, and still the shipped code
+running a different rule from the one the decision was taken on.
+
+🔴 **THE GATE CAN SEE IT NOW, AND COULD NOT BEFORE.** Four `cfg_*` columns landed in
+`mpc_strategy_export.pine` and are decoded here — absent ⇒ **off**, never the Python default, which
+matters more than usual now that the default is a live mode. ⚠ **Still NO parity run has happened**;
+that needs a fresh export. Until then an ON result is a LAB finding.
+
+⚠ **`algos/live/bridge.py` now REFUSES `exec_scale_in` outright.** It mirrors one entry limit and
+one ratcheting stop and has no path that places a second entry, so an unrefused scale-in config
+would have traded the base position, placed no adds, and said nothing. **This cannot go live until
+the bridge learns to place adds AND the account allocator exists** (margin sees the full stacked
+position even though risk-to-stop does not).
+
+Full grid, the per-year table that overturned the sweep's winner, and the two harness bugs:
+`mpc_sos_fade_optimization.md` → Run 20.
+
 ### The time stop (`exec_time_stop_mode` / `exec_time_stop_hrs`, 2026-08-05)
 
 Aaron's ask, and it started from the right question rather than from a rule: *"what number could we

@@ -105,6 +105,17 @@ def assert_supported(strategy_config) -> None:
             "exec_secondary needs a 1-minute bar stream alongside the 15m one (run_dual). The "
             "live runner drives a single timeframe. Turn it off, or build the dual feed."
         )
+    if getattr(strategy_config, "exec_scale_in", False):
+        raise UnsupportedStrategyConfig(
+            "exec_scale_in adds SIZE to a winning position, and this bridge mirrors ONE entry "
+            "limit and one ratcheting stop — it has no path that places a second entry. Left "
+            "unrefused the bot would trade the base position, place no adds, and say nothing: "
+            "the backtest would show a scaled book and the account would show an unscaled one, "
+            "which is the exact divergence this function exists to prevent. Turn it off, or "
+            "build the add path (and the account-level allocator it needs — margin sees the "
+            "full stacked position even though risk-to-stop does not). See "
+            "docs/LIVE_TRADING_PIPELINE.md G10."
+        )
     if getattr(strategy_config, "fill_model", "bar") != "bar":
         raise UnsupportedStrategyConfig(
             "fill_model must be 'bar' live. 'tick' is a BACKTEST cost model that resolves fills "

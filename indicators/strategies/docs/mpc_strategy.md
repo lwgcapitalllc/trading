@@ -2408,3 +2408,19 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //   dbg_fib_p2  = fiboP2 (0.5, shallow band edge)   dbg_fib_p6 = fiboP6 (0.886, deep edge)
 ```
 
+
+## [179] SCALE-IN (2026-08-17) — four columns, because an input with no column is invisible to the gate
+
+```
+// [doc 179] SCALE-IN (2026-08-17) — four columns, because a trade-affecting input with no
+// cfg_* column is invisible to compare_strategy.py BY CONSTRUCTION — and the gate does not go
+// quiet, it goes WRONG, diffing two different strategies and blaming whichever code the
+// symptom lands in. This repo has met that exact shape three times: execRunnerTrail
+// (2026-07-26), cfg_min_stop (2026-07-30) and eqExemptFvg (2026-08-06, three days and a
+// misdiagnosis). All FOUR inputs are carried, not just the on/off switch: the mode decides
+// WHERE the add rests, and adds/cap decide how much — configure the Python from any one of
+// them wrongly and the diff is drift reported as a bug.
+// ⚠ cfg_scale_adds and cfg_scale_cap are plotted RAW rather than packed. Any pack that fits
+// them into one float has to round, and a silently rounded cap mis-sizes every add — the same
+// reasoning the six exit numerics are already plotted raw for.
+```

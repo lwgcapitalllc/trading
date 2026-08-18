@@ -49,6 +49,24 @@ Think like one at all times:
 
 ---
 
+## 🔴 The bridge REFUSES `exec_scale_in` (2026-08-17)
+
+`assert_supported()` gained a fourth refusal. **`OrderBridge` mirrors ONE entry limit and one
+ratcheting stop — it has no path that places a second entry**, and `exec_scale_in` adds size to a
+winning position. Left unrefused the bot would have traded the base position, placed no adds, and
+reported nothing: the backtest would show a scaled book and the account an unscaled one, with
+nothing explaining the gap. That is the exact divergence this function exists to prevent, and it is
+why partial take-profits and the 1m secondary are already refused.
+
+✅ **Watched both ways rather than assumed** — scale-in ON is refused with a message naming the
+cause, and the SHIPPED config still starts. A guard that refuses everything is not a guard.
+
+⚠ **The refusal is not the whole fix and must not be read as one.** Making this live needs the add
+path in the bridge AND the account-level allocator (`docs/LIVE_TRADING_PIPELINE.md` → G10): risk to
+the shared stop is <= 0 by construction, but **margin sees the full stacked position**, and at the
+shipped 4 adds x 2.0x cap that is several times the base size.
+
+
 ## `markets/fx/accounts.json` — the broker accounts a bot can be put on
 
 **Added 2026-08-12, GIT-TRACKED, HOLDS NO SECRET.** One entry per broker account: its server, the

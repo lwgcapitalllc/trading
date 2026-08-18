@@ -36,6 +36,7 @@ Standing rules for anything recorded here:
 
 | 18 | 2026-08-16 | **`exec_sl_deep` × `exec_secondary`, the full 2×2** — 4 full `run_dual` replays on ONE window (2018-09-14 → 2026-08-14, 186,910 M15 + 2,799,088 M1 bars, bar fills) | **`exec_sl_deep` stays OFF — it costs 24.0R with the secondary live and 23.0R without.** The shipped cell is the best of the four at **+164.4R / 189 trades**. The interaction is **1.0R against sd 15.06R**, i.e. the two levers are separable. Deep-ON does hold a shallower drawdown (−4.8 vs −5.5) and pays ~24R for it. | **measured — shipped default CONFIRMED** |
 | 19 | 2026-08-16 | 🟢 **SCALE-IN** — add size to a runner the trail already protects, sized so an add's worst case equals the profit the stop guarantees. 2 stages (shadow ledger to search, real implementation to verify), XAUUSD 15m 2018-09-13 → 2026-08-14, **PU Prime ECN costs charged** | **+128.26R → +211.59R (+65%) at 2 adds / cap 1.0x**, ret/DD 21.27 → 24.26, **worst trade unchanged at −2.06R** and losers 65 → 67. Dropping the affordability test costs 8–13 extra losers, which is what the rule buys. **The trigger is arithmetic only — no structure, no retest; location has never been varied.** | **BUILT, toggle ships OFF — no parity gate has run** |
+| 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | **SHIPPED (mode default) — no parity gate has run** |
 
 ⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
 Count the runs with `grep -c '^# Run ' `, never off this table.
@@ -2933,3 +2934,120 @@ but Asia is still +21.6R, so there is nothing to cut there either.
 of this book is profitable and every exit variation left the LOSING column untouched. There is
 nothing here to filter — the only lever that moved anything was the one that added size to what
 already works.**
+
+---
+
+# Run 20 — 2026-08-17 — 🟢 **WHERE a scale-in adds. "BOS retest" ships; the sweep's own winner was 80% one year.**
+
+**The question.** Run 19 shipped the SIZE rule and left the LOCATION unexamined — the add fires at
+MARKET on the bar the trail happens to move, which is the worst price of the leg. Aaron: *"I don't
+know what market structures I'm looking at to add into."* Fifteen locations were tested, his and
+mine.
+
+## How it was measured
+
+One replay per variant, **XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs**, `warmup=1000`,
+`exec_secondary=False`. Two controls on every table: `off` must print 128.26R and the shipped market
+rule must print 211.59R. Both reproduced to the cent in every run below, which is what says the
+harness never moved the base strategy. Scripts: `scale_where.py`, `scale_sweep.py`,
+`scale_validate.py`, `scale_ceiling.py`.
+
+🔴 **THE FIRST TABLE WAS PINNED AT 2 ADDS / CAP 1.0x AND THAT MADE IT THE WRONG EXPERIMENT.** A cap
+that does not bind a rule firing 91 times strangles one firing 8 times, so it measured FREQUENCY and
+read as quality. Re-run at 4 adds / cap 3.0x, which no rule here can exhaust.
+
+## Result — the fair fight
+
+| variant | total R | maxDD | ret/DD | fills |
+|---|---|---|---|---|
+| **fib 23.6%** | **302.39** | 9.50 | **31.83** | 51 |
+| FVG | 191.23 | 6.37 | 30.02 | 26 |
+| BOS retest | 273.02 | 9.10 | 29.99 | 65 |
+| fib 38.2% | 261.19 | 9.25 | 28.23 | 37 |
+| fib 50% | 184.24 | 8.75 | 21.05 | 30 |
+| fib 61.8% | 113.88 | 7.78 | 14.63 | 20 |
+| fib 78.6% | 119.76 | 7.06 | 16.97 | 18 |
+| market (shipped) | 280.62 | 20.97 | 13.38 | 126 |
+| pullback 1.0 ATR | 399.60 | 20.80 | 19.21 | 128 |
+| off | 128.26 | 6.03 | 21.27 | — |
+
+🔴 **DEEPER IS WORSE, MONOTONICALLY, AND THIS IS THE FINDING WITH A MECHANISM.** 23.6% → 38.2% →
+50% → 61.8% → 78.6% falls 302 → 261 → 184 → 114 → 120, and the last two are **below not scaling at
+all** (R/add −0.72 and −0.47). A deep pullback means the runner has already handed the move back —
+the add lands on a dying trade just before the trail stops it out. ⚠ This reverses the prediction
+written down before the run: `add_qty = locked / (price − stop)` means a deeper fill permits a
+BIGGER add, so deep was expected to win. It does buy more size; it buys it into failure.
+
+## 🔴 The winner was an artefact, and only the PER-YEAR test caught it
+
+**2020 is 175R of fib 23.6%'s 302R.** Excluding 2020 and scoring each against no scaling:
+
+| | gain, 2020 removed | years beating `off` |
+|---|---|---|
+| **BOS retest** | **+56.5R** | 5/9 |
+| market (shipped) | +41.7R | 5/9 |
+| fib 23.6% | +35.0R | 4/9 |
+| FVG | +24.4R | 3/9 |
+| fib 38.2% | +7.2R | 2/9 |
+
+The ranking inverts and **fib 23.6% falls below the rule already shipped**. fib 38.2% is 95% one
+year. ⚠ **THE HALF-SPLIT PASSED EVERYTHING AND WAS USELESS HERE** — 2020 sits inside the first half,
+so the coarser robustness check this log has relied on twice could not see it. **Run the per-YEAR
+split before believing a sweep's top row; the halves are not enough.**
+
+## Where it tops out
+
+Adds saturate: 4 → 65 fills, 6 → 69, 8 → 71, and 12 and 20 are identical to 8. ⚠ **But 2020-free R
+PEAKS AT 4 AND FALLS**: 4 adds 185.06R, 6 and 8 both 175.16R. **Adds 5-8 pay only in 2020 and cost
+~10R everywhere else.** The cap never stops helping in-sample (1x → 8x keeps climbing, drawdown flat
+at 9.10 above cap 3.0) — **which is exactly where the backtest is blind, so it is NOT shipped at the
+cap it likes**: the affordability rule guarantees only down to the STOP, and a gap straight through
+it loses on the whole stacked position, ~33x base size at 4 adds × 8x.
+
+## Shipped
+
+`exec_scale_mode = "BOS retest"`, `exec_scale_max_adds = 4`, `exec_scale_cap_x = 2.0`.
+**`exec_scale_in` is still False, so no documented figure in this package moves** — what changed is
+what the toggle DOES. Pin `mode="Trail", adds=2, cap=1.0` to reproduce Run 19's 211.59R.
+
+⚠ **THE CASE IS CONSISTENCY, NOT RETURN-PER-DRAWDOWN, and saying otherwise repeats the mistake this
+run exists to record.** On the full book BOS retest is THIRD on ret/DD (29.99, behind fib 23.6% at
+31.83 and FVG at 30.02) — and fib 23.6% is the row that was 80% one year. The 2020-free ret/DD was
+never computed for the alternatives, so no claim that this wins it is supported. What it does win:
+the 2020-free gain, the most years, losses under 3.3R in every year it loses, positive in all four
+of the most recent years (fib 23.6% LOST money in 2025), and 9.10R drawdown against the market
+rule's 20.97R.
+
+⚠ **AND THE RISK-ADJUSTED GAIN AT THE SHIPPED CAP IS THIN**: 2020-free ret/DD 15.51 against 15.34
+for not scaling. This buys more money for proportionally more drawdown. It is not a free lunch, and
+the clear ratio win only appears at the caps that carry unpriceable gap risk.
+
+## Two harness bugs, both caught before they became conclusions
+
+🔴 **A DEAD FIELD READ THROUGH `getattr(..., False)`.** The internal-shift confirmation read
+`snapshot.int_bull_break`, which lives on `InternalEvents` and not on the snapshot — so it answered
+False on all 186,948 bars and Aaron's own design booked ZERO adds while reading as a strict rule
+that had been tested and lost. Probed: the snapshot pair is 0/0 and the real fields fire 765/657
+times. **Never `getattr` with a default in a check whose whole job is to notice absence** — the same
+rule this file already records from the `exit_name` probe.
+
+🔴 **AND THE ZERO THAT SURVIVED THE FIX IS STILL NOT A VERDICT.** After the field was corrected the
+rule confirmed 0 times on 375 waiting bars. At the internal break's own base rate (0.380%/bar, one
+direction) the EXPECTED count is **1.43**, and P(0) under Poisson is 24%. **Zero rejects nothing.**
+The binding gate is not the confirmation anyway — the funnel is 79 BOS → 40 with a valid zone → **8
+touched** → 0 confirmed, so the fib∩gap ZONE is what starves it. ⚠ **`fib AND gap` remains
+UNMEASURABLE at 13 fills even on a generous budget, and `order block` at 7. Neither lost; neither
+was tested.**
+
+## Mine, tested alongside his, and reported the same way
+
+**ATR pullback made the MOST money and is rejected** — 1.0 ATR is 399.60R, top of the table, at
+20.80R drawdown against 6.03R for doing nothing. Per unit of drawdown that is 19.21, **worse than
+not scaling at all** (21.27). It also adds 11 losing trades and pushes the worst trade to −2.98R.
+**New-high momentum is not a distinct idea**: 279.76R on 126 fills against the market rule's 280.62R
+on 126 — when the trail ratchets, price is usually making new highs, so it is the same rule renamed.
+
+**The standing lesson is the one the per-year table taught: a sweep hands you the row that scored
+best under the metric you wrote down, on the window you happened to have. The depth gradient
+survived every cut because it is five rows moving one way with a mechanism under it. The single
+best row did not survive one extra question.**

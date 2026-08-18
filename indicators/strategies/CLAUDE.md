@@ -231,6 +231,34 @@ retest): `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 1
 
 ---
 
+### The scale-in gained a MODE, and the export gained the columns it should have had first
+
+**2026-08-17.** `execScaleMode` ∈ {`Trail`, `BOS retest`}, defaulting **`BOS retest`**;
+`execScaleAdds` 2 → 4 (maxval 3 → 4) and `execScaleCapX` 1.0 → 2.0. `pyramiding` 4 → **5** (base
+entry + 4 adds), which is still compile-time and still cannot be an input. `L-ADD4`/`S-ADD4` carry
+their own `strategy.exit` AND their own `strategy.close` on both force-close paths — `from_entry`
+matches ONE id, so a missed close leaves a naked pyramid against fresh opposite structure.
+
+🔴 **THE FOUR `cfg_*` COLUMNS ARE THE POINT OF THIS PASS, NOT THE MODE.** The feature shipped on
+2026-08-16 with NO export column at all, so `compare_strategy.py` could not configure a scale-in run
+— and a trade-affecting input with no column does not make the gate quiet, it makes it **WRONG**,
+diffing two different strategies and blaming whichever code the symptom lands in. Three prior
+instances: `execRunnerTrail` (2026-07-26), `cfg_min_stop` (2026-07-30), `eqExemptFvg` (2026-08-06,
+three days and a misdiagnosis). All four inputs are carried, not just the on/off switch.
+⚠ **`cfg_scale_adds` / `cfg_scale_cap` are plotted RAW, never packed** — any pack has to round, and
+a silently rounded cap mis-sizes every add.
+
+⚠ **The new `input.string` is appended AFTER the last input of any type.** The file's last
+`input.string` is ~line 95, so nothing already saved is re-keyed and no chart needs a settings
+reset. ✅ `check_active_order.py` passes on all twelve strategy files; the export twin re-diffs to
+exactly line 5's title.
+
+⚠ **NOT COMPILED, and no parity gate has run** — that needs a fresh TradingView export, which only a
+human can take. Measured result and the two harness bugs behind it:
+`strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 20.
+
+---
+
 ## PHASE 1 — the trade annotations, and the one piece that CANNOT be ported
 
 The other half of the standardisation: *"as I move to strategies, nothing seems different other

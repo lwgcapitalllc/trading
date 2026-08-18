@@ -596,6 +596,8 @@ class Execution:
         self._adds: List[List[float]] = []
         self._add_stop = None              # the stop the last add was sized against
         self._base_qty = 0.0               # size the trade OPENED with; every add sizes off it
+        self._add_limit = None             # "BOS retest" mode: the price the next add rests at
+        self._add_armed = False            # a break has fired and we are waiting for the retest
         self._sos_bar_open: Optional[int] = None
         self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
@@ -722,7 +724,7 @@ class Execution:
         # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
         # sized against — without it a restored runner re-adds immediately at the same locked
         # profit, which is exactly the over-spend the ratchet check exists to stop.
-        "_adds", "_add_stop", "_base_qty",
+        "_adds", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
@@ -1927,6 +1929,8 @@ class Execution:
         self._adds = []
         self._add_stop = None
         self._base_qty = granted
+        self._add_limit = None
+        self._add_armed = False
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
         self._entry_equity = self._equity_realized      # R yardstick baseline
@@ -2161,6 +2165,8 @@ class Execution:
         self._adds = []
         self._add_stop = None
         self._base_qty = 0.0
+        self._add_limit = None
+        self._add_armed = False
         self._entry_equity = None
 
     def _equity_at_entry_delta(self) -> float:
@@ -2406,13 +2412,63 @@ class Execution:
             return
         d, pv = self._pos_dir, cfg.point_value
         stop = self._current_stop()
-        price = sig.close
-        # Refuse once the trail is already past price — that is not an add, it is a fill at a loss.
-        if (price - stop) * d <= 0:
-            return
+
         # Only add again once the trail has moved PAST the stop the last add was sized against.
+        # Checked BEFORE the mode branch because it is a property of the SIZE rule, not of where
+        # the add happens: without it a stalling runner re-adds every bar on one guarantee.
         if self._add_stop is not None and (stop - self._add_stop) * d <= 0:
             return
+
+        mode = getattr(cfg, "exec_scale_mode", "Trail")
+        if mode == "Trail":
+            # Run 19's rule: market, on the bar the trail ratcheted. The worst price of the leg
+            # by construction — it buys after the move, where the base entry rests a limit and
+            # waits — and it makes the most raw R purely because it fires most often.
+            price = sig.close
+        elif mode == "BOS retest":
+            # Wait for the next confirmed break of structure our way, then rest a limit at the
+            # level that break CLEARED and let price come back to it.
+            # ⚠ Re-arming on every fresh break is deliberate: a later break supersedes an older
+            # limit, because the older level stopped being the edge of structure the moment the
+            # newer one printed.
+            if (sig.bull_bos if d > 0 else sig.bear_bos):
+                hi = sig.bull_bos_high if d > 0 else sig.bear_bos_high
+                lo = sig.bull_bos_low if d > 0 else sig.bear_bos_low
+                # ⚠ BOTH endpoints are required and the leg must be well-formed, even though
+                # only one of them is the limit. It is the condition the measurement ran under
+                # (Run 20's harness), and dropping it arms on legs that run never saw — worth
+                # 0.68R when it was left out, which is small and is still the shipped code
+                # disagreeing with the code the decision was taken on.
+                if hi is not None and lo is not None and hi > lo:
+                    self._add_limit = hi if d > 0 else lo
+                    self._add_armed = True
+            if not self._add_armed or self._add_limit is None:
+                return
+            # A resting limit fills when the bar trades through it. Price that GAPPED past it
+            # fills at the open instead — the same wrong-side rule the exit ladder already uses,
+            # and the conservative direction.
+            reached = (sig.low <= self._add_limit) if d > 0 else (sig.high >= self._add_limit)
+            if not reached:
+                return
+            price = self._add_limit
+            if (sig.open - price) * d < 0:
+                price = sig.open
+        else:
+            # A typed value that is not a mode must never fall through to a default — that would
+            # replay a whole book against a rule nobody chose. Same standing as exec_sl_custom.
+            raise ValueError(
+                f"exec_scale_mode={mode!r} is not a mode. Use 'Trail' or 'BOS retest'."
+            )
+
+        # Refuse once the stop is already past the fill — that is not an add, it is a loss.
+        if (price - stop) * d <= 0:
+            return
+        # 🔴 DISARM HERE, NOT AT THE FILL TEST. A limit that price reached on a bar where the
+        # add was merely UNAFFORDABLE is still a live setup, and the measurement kept it alive
+        # for a later bar. Disarming earlier discards it and waits for a whole new break —
+        # worth 0.68R, i.e. small enough to shrug at and still the shipped code running a
+        # different rule from the one the decision was taken on.
+        self._add_armed = False
         locked = (stop - self._entry) * d * self._base_qty * pv
         per_unit = (price - stop) * d * pv
         if locked <= 0 or per_unit <= 0:

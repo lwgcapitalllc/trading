@@ -351,13 +351,48 @@ class SosFadeConfig:
     #       2 adds, cap 1.0x 211.59R  maxDD 8.72R  67 losers  worst -2.06R  ret/DD 24.26
     #   Dropping the affordability test and adding a flat 1x instead cost 11 extra LOSING
     #   trades — that difference is what the `locked / per_unit` line buys.
-    exec_scale_max_adds: int = 2       # "↳ How many times it may add" (Pine execScaleAdds)
+    exec_scale_mode: str = "BOS retest"  # "↳ Where it adds" (Pine execScaleMode)
+    #   ∈ {"Trail", "BOS retest"}. WHERE the add happens. The SIZE rule above is unchanged by
+    #   this — only the moment and the price move.
+    #   "Trail" is the rule Run 19 shipped: add at MARKET on the bar the trail ratchets. It is
+    #   the worst price of the leg by construction, and it makes the most raw R because it fires
+    #   most often (91 fills over the history).
+    #   "BOS retest" waits for the next confirmed break of structure in the trade direction, then
+    #   rests a limit at the level that break cleared. Fewer fills (65), better per fill, and much
+    #   gentler on drawdown.
+    #   🔴 MEASURED 2026-08-17 (Run 20), and READ THE 2020-FREE COLUMN. Over the full history
+    #   "Trail" looks stronger, but the shallow-fib family that beat it turned out to be 80% one
+    #   year. Excluding 2020 and comparing each against no scaling at all:
+    #       BOS retest  +56.5R      Trail  +41.7R      fib 23.6%  +35.0R      fib 38.2%  +7.2R
+    #   BOS retest also beats no-scaling in 5 of 9 years to Trail's 5, loses only 0.7/2.6/3.3R in
+    #   the years it loses, and is positive in every one of the last four. Max drawdown 9.10R
+    #   against Trail's 20.97R at the same budget.
+    #   🔴 THE DEFAULTS MOVED 2026-08-17 AND RUN 19's FIGURES NO LONGER REPRODUCE WITHOUT PINNING.
+    #   `exec_scale_mode` "Trail" -> "BOS retest", `exec_scale_max_adds` 2 -> 4, `exec_scale_cap_x`
+    #   1.0 -> 2.0. ⚠ NO SHIPPED BASELINE MOVES — `exec_scale_in` is still False, so the OFF path
+    #   is byte-identical and every documented figure in this package is unaffected. What changed
+    #   is what the toggle DOES when switched on. **Pin mode="Trail", adds=2, cap=1.0 to reproduce
+    #   Run 19's 211.59R.** At the new defaults the same window gives 247.90R / 9.00R maxDD.
+    #   ⚠ THE CASE FOR THIS DEFAULT IS CONSISTENCY, NOT RETURN-PER-DRAWDOWN, and saying otherwise
+    #   would repeat the mistake it exists to avoid. On the FULL book "BOS retest" is THIRD on
+    #   ret/DD (29.99) behind fib 23.6% (31.83) and FVG (30.02) — and fib 23.6% is the row that
+    #   turned out to be 80% one year. The 2020-free ret/DD was never computed for the
+    #   alternatives, so no claim that this wins it is supported.
+    #   ⚠ AND THE RISK-ADJUSTED GAIN AT THIS CAP IS THIN: 2020-free ret/DD is 15.51 against 15.34
+    #   for not scaling at all. The clear ratio improvement lives at cap 5-8x, which is NOT shipped
+    #   because the affordability rule guarantees only down to the STOP — a gap straight through it
+    #   loses on the whole stacked position, and at 4 adds x 8x that is ~33x the base size.
+    #   ⚠ DEEPER IS WORSE, MONOTONICALLY, and that is the finding with a mechanism behind it:
+    #   fib retrace 23.6% → 302R, 38.2% → 261R, 50% → 184R, 61.8% → 114R, 78.6% → 120R, the last
+    #   two BELOW not scaling at all. A deep pullback means the runner has already given the move
+    #   back — the add lands on a dying trade just before the trail stops it out.
+    exec_scale_max_adds: int = 4       # "↳ How many times it may add" (Pine execScaleAdds)
     #   A ceiling, not a schedule: the next add is refused until the trail has ratcheted PAST
     #   the stop the last one was sized against. Without that a stalling runner re-adds every
     #   bar against the same locked profit and spends the guarantee several times over.
     #   3 made more (233.04R) and gave back more drawdown (12.45R); 2 is the measured best on
     #   return-per-drawdown. Above 2 the guarantee also starts to leak — see the cap note.
-    exec_scale_cap_x: float = 1.0      # "↳ Biggest add, as a multiple of the original size"
+    exec_scale_cap_x: float = 2.0      # "↳ Biggest add, as a multiple of the original size"
     #   Per-add ceiling as a multiple of the BASE quantity. The affordability rule alone would
     #   sometimes permit 4x or more. ⚠ Raising it raises margin and gap exposure, and the
     #   profit rule protects against neither.

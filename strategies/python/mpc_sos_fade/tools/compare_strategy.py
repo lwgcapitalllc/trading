@@ -220,6 +220,28 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
     tsm = get("cfg_time_stop")
     vals["exec_time_stop_mode"] = "Off" if tsm is None else \
         _TIME_STOP.get(int(round(tsm)), vals["exec_time_stop_mode"])
+    # SCALE-IN (2026-08-17). Same shape and same reasoning as every decoder around it: an
+    # export with no `cfg_scale_in` column predates the feature, and the Pine shipped it OFF
+    # from the day it was added, so "absent ⇒ off" is a FACT about those exports rather than a
+    # guess. 🔴 Do NOT fall back on the base config: the Python default is now "BOS retest" at
+    # 4 adds / cap 2.0x, so falling back would scale a replay of an export whose Pine never
+    # placed a single add — and the diff would report the harness's own configuration as a
+    # logic bug, which is precisely how the eqExemptFvg window cost three days.
+    sc = get("cfg_scale_in")
+    vals["exec_scale_in"] = False if sc is None else bool(int(round(sc)))
+    if vals["exec_scale_in"]:
+        # Only read the three sub-values when the feature was actually ON in the export. With
+        # it off they are never consulted, and an older export can legitimately lack them.
+        sm = get("cfg_scale_mode")
+        if sm is not None:
+            vals["exec_scale_mode"] = "Trail" if int(round(sm)) == 0 else "BOS retest"
+        sa = get("cfg_scale_adds")
+        if sa is not None and int(round(sa)) > 0:
+            vals["exec_scale_max_adds"] = int(round(sa))
+        scap = get("cfg_scale_cap")
+        if scap is not None and float(scap) > 0:
+            vals["exec_scale_cap_x"] = float(scap)
+
     tsh = get("cfg_time_stop_hrs")
     if tsh is not None and float(tsh) > 0:
         # Guarded because the config REFUSES 0 hours behind a live mode (it would close every
