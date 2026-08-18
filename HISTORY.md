@@ -15,6 +15,66 @@ the other one did.
 
 ## Latest
 
+### The +180% was a description of the chart it was tuned on (2026-08-17)
+
+Aaron: *"I made 180% in three years with the strategy as it is. Does that mean it has an edge?"* Two
+TradingView trade-list exports of `smc_session_sweep_strategy.pine` were read — 214 positions,
+2020-08-20 → 2026-08-12 — and split at the date the tuned window begins.
+
+| | trades | gross | net of measured PU Prime ECN costs |
+|---|---|---|---|
+| before 2023-09-08 — never looked at | 118 | +2.7R | **−6.1R** |
+| after 2023-09-08 — the tuned window | 96 | +37.5R | +32.8R |
+
+**Same rules, same instrument, same settings. The edge is entirely inside the window whose chart was
+open while the settings were chosen.** Drop the best five of all 214 and six years is −5.0R. The
+Strategy Tester charged nothing: commission 0, slippage 0, commission load 0.00%, while the real
+spread and commission eat a third of the gross edge. **A backtest whose settings were picked while
+its chart was visible is a description of that chart, and no amount of arithmetic inside it can say
+otherwise.**
+
+🔴 **THE SECOND FINDING WAS BIGGER THAN THE FIRST, AND IT IS A UNITS PROBLEM WEARING A RISK LABEL.**
+The account's minimum-stop floor was `0.07% of price`. **That setting is a MAXIMUM-LEVERAGE setting
+written in units that hide what it says** — `leverage = riskPct × price / stop_distance`, so 0.07%
+at 4% risk permits **57x**. Measured on the run: median leverage **42x**, peak **83x**, and **26 of
+214 trades lost MORE than the 4% they were supposed to risk**. The worst, 2023-05-05, lost **44% of
+the account in one 15-minute bar** — 199 ounces on an $8,762 account, stop $1.76 away, price gone
+$19.32. ⚠ **A tight stop does not make risk small; it makes the POSITION large.** Risk stays 4%
+only while the stop fills where it was put, and it failed to on one trade in eight. ⚠ **Aaron's own
+objection was right and worth recording: while the stop works, leverage is irrelevant.** It is the
+only thing that matters when it does not, and "does not" was 12% of trades here.
+
+**What the fix actually bought, measured before it was applied.** All 150 losing positions bucketed
+by stop width: **under $4 averages −1.43R and holds every loss worse than −3R in six years; above $4
+it flattens at ≈−1.1R whatever you do.** So the floor became `Fixed $` `4.00` — the bend in the
+curve, not a round number — and a wider floor buys only fewer trades (an $8 floor leaves 32 trades
+in six years). ⚠ **Total return goes DOWN and that was predicted**: 214 trades → ~112, ~−9R. What
+improves is the per-trade margin, 3.9 → 6.1 points. ⚠ **It is a FILTER on a finished export, not a
+re-run** — with one position slot a refusal FREES the slot, so a real backtest can take trades this
+cannot see. The bias runs one way, so the −9R is an upper bound. ⚠ **It does not fix the leverage**:
+$4 at 4% risk is still 35x.
+
+**The number that frames all of it: the whole six-year edge is 3.9 percentage points of win rate —
+eight trades out of 214.** Average winner +3.60R against an average loser −1.27R, win rate 29.9%,
+break-even 26.1%. **The "lose small, win big" shape the course describes is already there; it is the
+MARGIN that is thin.** And the −1.27R is the largest single leak: holding losers to −1.00R drops
+break-even to 21.7% and more than doubles the margin without touching an entry rule.
+
+⚠ **A SIMPLER STRATEGY WAS BUILT AND ABANDONED THE SAME DAY**, on the reasoning that a candlestick
+pattern is not enough evidence that direction has changed after a sweep. **That objection is the
+argument FOR the shift-of-structure rule the file already has and had switched off** — not a dead
+end, a rediscovery. ⚠ **It was killed on an impression, never compiled and never run, which is the
+same move that kept the +180% alive**: one chart looked good so it was believed, another looked bad
+so it was not. Neither was a number. Detail: `indicators/strategies/CLAUDE.md`.
+
+**Where it stopped.** Aaron asked for a Python port and a parameter sweep. Two constraints were
+scouted rather than discovered later: the lab replays ONE bar frame and this strategy reads four, so
+the port has to be based on 1-minute bars with the rest derived (1m history is measured back to
+2018-09-14); and **"find the best combination" is the +180% again, automated** — so the sweep will
+train on 2018–2023, validate the winner ONCE, and report the MEDIAN combo beside the best, because
+a great best against a zero median is noise. `docs/STRATEGY_WORKFLOW.md` stages 3 and 4 did not
+exist for this file, so stage 3 — the export twin — landed tonight.
+
 ### A default is a claim, and a cascade gate goes stale when one moves (2026-08-17)
 
 Six defaults on `smc_session_sweep_strategy.pine` were changed to Aaron's own chart settings —

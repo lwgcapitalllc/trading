@@ -504,6 +504,71 @@ this is safe to paste onto a chart already carrying the panel rebuild.
 
 ---
 
+## The session sweep gets an EXPORT TWIN, stage 3 of six (2026-08-17)
+
+`smc_session_sweep_strategy_export.pine` — the parent byte-for-byte, plus one appended block of
+59 transparent `editable = false` plots. It draws nothing and trades identically; the series exist
+only to leave the chart through *Export chart data*. Built because Aaron asked for a Python port
+and a sweep, and **`docs/STRATEGY_WORKFLOW.md` stages 3 and 4 did not exist for this file** — the
+two CSVs already on disk are TRADE LISTS, which is the right idea and the wrong artifact: the gate
+compares per-bar DECISIONS, not fills.
+
+🔴 **PINE ALLOWS 64 PLOTS PER SCRIPT AND THE PARENT ALREADY SPENDS 2. The first draft was 70 and
+would not have compiled** — a ceiling you meet on Aaron's screen, one paste cycle later, not here.
+**What got cut is the rule worth keeping: only things that can MOVE A TRADE are exported.** The
+comparison-timeframe stream (`cmpDir`, `cmpShifts`, `sosCmpTf`), the SOS marker price and the
+confirmation LEVEL are annotation — a parity failure over any of them would be a failure over a
+chart drawing. Everything DERIVABLE went too: position size is quantity × direction, the leg id is
+the `newLeg` bit counted up. Small integer inputs are packed two to a plot, safe because each
+field's `minval`/`maxval` bounds it below its neighbour's multiplier.
+
+🔴 **THE REFUSED SIDE IS EXPORTED, NOT JUST THE TAKEN ONE** (`px_ent_l`/`px_ent_s`, `px_blk_l`/
+`px_blk_s`, both zone pairs, both distances). **A port that agrees on the trades and disagrees on
+the refusals will diverge the first time an input moves — which is exactly when a sweep is
+running.** Gating on fills alone would pass a port that is wrong everywhere the shipped config
+happens not to go.
+
+⚠ **A STRING CANNOT CROSS A CSV**, so the session and hour windows are exported as the DECISION
+they produced (`inAsia`, `inWinLdn`, … packed into `px_state`) rather than as their text. That is
+the better half of the trade: the port is gated on what the window DID, not on whether it parses
+`"0200-0500"` the same way, so a timezone bug shows up as a disagreeing bit instead of hiding
+behind two strings that match.
+
+⚠ **`*_shifts` IS A COUNTER AND THE TWIN EXPORTS IT AS ONE.** A boolean read back through
+`request.security` stays true, so "it JUST shifted" is only recoverable by comparing the count with
+its own previous bar. A port that exports or consumes a flag confirms on every bar after the first.
+
+⚠ **THE TWIN IS A SEPARATE TRADINGVIEW SCRIPT AND STARTS AT THE FILE'S DEFAULTS, not at whatever
+is saved on Aaron's chart.** That is why every trade-moving input is in the CSV: the harness reads
+`cfg_*` and states the config it was gated at rather than assuming one. ⚠ `execFixedQty` is
+deliberately absent — a sweep never leaves "Risk % of equity", and `cfg_enum1` carries the MODE, so
+a CSV taken in Fixed-contracts mode is DETECTABLE and can be refused rather than silently gated on
+a size the harness cannot see.
+
+## The sweep-reclaim strategy was BUILT AND ABANDONED on the same day (2026-08-17)
+
+`smc_sweep_reclaim_strategy.pine` — sweep the previous session's level, close back through it
+within three candles on a candle whose body agrees, target the session's other end. 347 lines,
+16 inputs, no `request.security`. **Deleted the day it was written, at Aaron's call, and recorded
+here so nobody proposes it a third time.**
+
+**Why it was killed, in his words:** *"it does not have much confirmation to know we're ready to
+change direction after the sweep. A pattern is not enough. Misleading candle patterns could print
+at highs all day long and simply blow past the sweep levels."*
+
+🔴 **THE OBJECTION IS THE ARGUMENT FOR THE SHIFT OF STRUCTURE, AND THAT IS THE FINDING WORTH
+KEEPING.** "A candle body is not enough evidence that direction has changed after a sweep" is
+precisely the job `pbRequireConf` does in `smc_session_sweep_strategy.pine`. The idea was not a
+dead end — it was a rediscovery of why the course's rule exists. ⚠ **It was abandoned on an
+impression, never compiled and never run**, which is the same move that kept the +180% alive: the
+chart looked good so it was believed, then another chart looked bad so it was not. Neither was a
+number. Say so if it comes back.
+
+⚠ **Two things in it are worth stealing rather than rebuilding.** The **leverage refusal** — an
+input in units of "times my account" instead of a percent-of-price stop floor, refusing rather than
+shrinking — and the **three-candle window** on a reclaim. Both are described in this file's git
+history at the commit that deleted them.
+
 ## The session sweep strategy — the rules the 2026-08-14/15 pass left behind
 
 **`smc_session_sweep_strategy.pine`, called `mpc_m15_playbook_strategy.pine` until 2026-08-15.**
@@ -528,7 +593,22 @@ confirmation OFF, first target 3.5R, 80% banked there, 4% risk per trade, minimu
 sessions drawn.** The gap requirement stays ON (`pbPoiTf = "5"`). Table and the reasoning per line:
 `../docs/SMC_SESSION_SWEEP_SPEC.md` → *The shipped defaults*.
 
-🔴 **NOT ONE OF THEM IS BACKED BY A RUN, and the reason to write that here is that a default is
+✅ **ONE OF THEM NOW IS: the minimum stop became `Fixed $` `4.00` on 2026-08-17 and it was
+MEASURED.** The target was the average LOSER, which is −1.27R over 214 positions where a stop that
+works gives −1.00R — and that 0.27R of overshoot is more than half the whole edge (break-even 26.1%
+against an actual 29.9%). **All 150 losers bucketed by stop width: everything under $4 averages
+−1.43R and holds every loss worse than −3R in six years; everything above averages ≈−1.1R whatever
+you do.** So $4 is the bend in the curve and a wider floor buys only fewer trades. ⚠ **The MODE
+changed too and that is half the fix** — `% of price` is not a constant, and 0.07% was $1.19 at gold
+1,700 against $2.80 at 4,000, i.e. loosest exactly where it was needed most. ⚠ **It is a FILTER on a
+finished export, not a re-run**: with one position slot a refusal frees the slot, so a real backtest
+can take trades this cannot see. **The bias only runs one way — the ~9R it appears to cost is an
+upper bound** — and the per-trade ratios are sound while the total-R figures are the approximation.
+⚠ **IT DOES NOT FIX THE LEVERAGE.** At 4% risk on gold at 3,500 a $4 stop is still **35x**; the
+floor and the risk percent set leverage together, and 20x would need risk near 2.3%. Full table:
+`../../docs/SMC_SESSION_SWEEP_SPEC.md` → *The minimum stop is $4*.
+
+🔴 **THE OTHER FIVE ARE STILL NOT BACKED BY A RUN, and the reason to write that here is that a default is
 indistinguishable from a finding once it is in the file.** The previous set was equally unmeasured
 and read for two days as if the course had produced it — 5R was the course's number and 50% was
 nobody's. **A default is a CLAIM about what is best, made by whoever typed it last.** These are

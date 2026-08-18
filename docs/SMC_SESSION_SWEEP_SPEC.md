@@ -295,7 +295,7 @@ actually trading rather than where the course is.
 | `execTp1R` | `5.0` | **`3.5`** | First target at 3.5x risk. 5 is the course's number. |
 | `execTp1Pct` | `50` | **`80`** | Four fifths banked at the first target; the runner is a fifth. |
 | `execRiskPct` | `1.0` | **`4.0`** | 4% of equity lost if the stop is hit. |
-| `execMinStopVal` | `0.03` | **`0.07`** | Refuse a trade whose stop is nearer than 0.07% of price. |
+| `execMinStopVal` | `0.03` | **`4.00`**, mode **Fixed $** | Refuse a trade whose stop is nearer than $4 of gold. ⚠ **Changed again 2026-08-17 and this one IS measured** — see below. |
 | `pbShowSess` | `false` | **`true`** | Session boxes drawn. |
 | `pbPoiTf` | `"5"` | `"5"` | **Unchanged** — the 5m gap is still required. |
 
@@ -320,13 +320,59 @@ press *Reset settings to defaults*.
 
 ---
 
+## 🔴 THE MINIMUM STOP IS $4 AND IT IS THE FIRST MEASURED DEFAULT IN THIS FILE (2026-08-17)
+
+**The problem it fixes is the AVERAGE LOSER, not the win rate.** Over 214 positions the average
+losing trade is **−1.27R**, when a stop that works makes it exactly −1.00R. That 0.27R of overshoot
+is more than half the strategy's entire edge: break-even needs a 26.1% win rate against the actual
+29.9%, a margin of **3.9 percentage points**. Hold losers to −1R and break-even drops to 21.7% — the
+margin **more than doubles to 8.2 points without touching a single entry rule.**
+
+**Where the overshoot lives, all 150 losing positions bucketed by how wide the stop was:**
+
+| stop distance | n | average loser | worst | broke −1R |
+|---|---|---|---|---|
+| under $2 | 6 | **−1.42R** | −2.94R | 33% |
+| $2 – $4 | 66 | **−1.43R** | **−10.97R** | 24% |
+| $4 – $6 | 37 | −1.08R | −2.01R | 16% |
+| $6 – $10 | 34 | −1.15R | −3.29R | 18% |
+| over $10 | 7 | −1.13R | −2.52R | 14% |
+
+🔴 **It flattens at $4 and does not keep improving.** Everything under $4 averages −1.43R and holds
+every loss worse than −3R in six years; everything above averages about −1.1R whatever you do. **So
+$4 is where the curve bends, and a bigger floor buys nothing but fewer trades** — at an $8 floor
+only 32 trades survive six years for +15.1R, against 214 for +40.2R.
+
+⚠ **THE MODE CHANGED TOO, AND THAT IS HALF THE FIX.** It was `% of price`, which is not a constant:
+0.07% is $1.19 with gold at 1,700 and $2.80 at 4,000. The whole 6-year window sat below the $4 bend
+at both ends, and the floor got *looser* in exactly the low-price years. `Fixed $` is the unit the
+measurement was taken in, so it is the unit the default is stated in. ⚠ **`x ATR(14)` is arguably
+more correct still** — the right stop scales with volatility rather than price — but no ATR multiple
+has been measured here, and a plausible one is a guess wearing a unit.
+
+🔴 **IT IS A FILTER ON A FINISHED RUN, NOT A RE-RUN, AND THE DIFFERENCE CUTS ONE WAY.** The table
+above was produced by dropping trades from an export. With ONE position slot a refused trade FREES
+that slot, so a real backtest can take trades this analysis cannot see — it can only ever remove.
+**The direction of the bias is knowable and it is optimistic about the cost:** the −9R the $4 floor
+appears to cost is an upper bound. ⚠ **The margin figures are the trustworthy half** (they are
+per-trade ratios); **the total-R figures are the approximation.** Re-run it properly before quoting
+either.
+
+⚠ **IT DOES NOT FIX THE LEVERAGE, and reading it as though it does is the trap.** At 4% risk on gold
+at 3,500, a $4 stop is still **35x** the account. The floor and the risk percent set leverage
+*together*: `leverage = riskPct × price / stop_distance`. To reach 20x with a $4 floor the risk has
+to come down to about **2.3%**. That is a separate decision and it has not been made.
+
+---
+
 ## What would make this trustworthy
 
 1. Compile it and run it. Read the tail of the trade list before anything else.
 2. Read a handful of setups on the chart against the indicator's own drawing — the state
    panel reports which gate the sequence is sitting on.
 3. A control run (`trigger_edge.py` shape) on the sweep-plus-confirmation trigger alone.
-4. Only then: an export twin, a Python port under `strategies/python/`, and a
+4. ✅ **The export twin landed 2026-08-17** (`smc_session_sweep_strategy_export.pine`, stage 3 of
+   six). Still needed: the bar-level CSV, the Python port under `strategies/python/`, and a
    `compare_*.py` gate. `docs/STRATEGY_WORKFLOW.md` has the six stages.
 
 ⚠ Step 4 is a real lift here and nothing else in the repo has needed it: this strategy

@@ -1138,3 +1138,121 @@ if showSosMark and sosResolved
         line.new(cmBar, cmPx, cmBar + 10, cmPx, color = SOS_CMP, style = line.style_dashed, width = 1)
         line.new(cmBar, cmPx, cmBar, tip, color = SOS_CMP, style = line.style_dashed, width = 2)
         label.new(cmBar, tip, "SOS " + sosCmpTf + "m " + str.tostring(cmPx, format.mintick), style = cmDir == 1 ? label.style_label_up : label.style_label_down, color = SOS_CMP, textcolor = TXT_DARK, size = size.tiny, tooltip = "THIS candle is where the " + sosCmpTf + "-minute changed character, by closing through " + str.tostring(cmPx, format.mintick) + " - the first time it turned this way after the sweep.\nMarking only. It changed no trade.")
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+// EXPORT TWIN — everything above this line is byte-identical to
+// `smc_session_sweep_strategy.pine`. Only this block is added, and it draws nothing: every
+// plot is fully transparent and `editable = false`, so the chart is unchanged and these
+// series exist only to come out of "Export chart data".
+//
+// 🔴 THE TWO FILES MOVE TOGETHER OR THE GATE IS COMPARING TWO STRATEGIES. Any edit to the
+// parent is copied here in the SAME commit — that is what the editor guard means when it says
+// a `.pine` is half of a parity gate.
+//
+// 🔴 PINE ALLOWS 64 PLOTS PER SCRIPT AND THE PARENT ALREADY SPENDS 2. The first draft of this
+// block was 70 and would have failed to compile — a limit you meet on Aaron's screen, not
+// here. What got cut is the rule worth keeping: **only things that can MOVE A TRADE are
+// exported.** The comparison-timeframe stream (`cmpDir`, `cmpShifts`, `sosCmpTf`), the SOS
+// marker price and the confirmation LEVEL are all annotation, so a parity failure over any of
+// them would be a failure over a chart drawing. Anything DERIVABLE went too — position size is
+// quantity × direction, and the leg id is the `newLeg` bit counted up.
+//
+// ⚠ A STRING CANNOT CROSS A CSV, so the session and hour windows are exported as the DECISION
+// they produced (`inAsia`, `inWinLdn`, …) rather than as their text. That is the better half of
+// the trade anyway: the port is gated on what the window DID, not on whether it parses
+// "0200-0500" the same way, and a timezone bug then shows up as a disagreeing bit instead of
+// hiding behind two strings that match.
+// ⚠ TIMEFRAME INPUTS ARE EXPORTED AS NUMBERS, 0 meaning "Off" (`pbPoiTf`).
+// ⚠ `execFixedQty` IS ABSENT because a sweep never leaves "Risk % of equity" — `cfg_enum1`
+// carries the MODE, so a CSV taken in Fixed-contracts mode is detectable and the harness can
+// refuse it rather than silently gate on a size it cannot see.
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// ── the two structure streams that decide trades. `*_shifts` is a COUNTER, not a flag, and
+//    that is load-bearing: a boolean read back through request.security stays true, so "it JUST
+//    shifted" is only recoverable by comparing the count with its own previous bar. The port
+//    must do the same or it will confirm on every bar after the first.
+plot(dirDir,      "px_dir",         _INV, editable = false)
+plot(dirShifts,   "px_dir_shifts",  _INV, editable = false)
+plot(confDir,     "px_conf_dir",    _INV, editable = false)
+plot(confShifts,  "px_conf_shifts", _INV, editable = false)
+
+// ── sessions, the pool, the sweep
+plot(rawSess, "px_sess",    _INV, editable = false)
+plot(poolHi,  "px_pool_hi", _INV, editable = false)
+plot(poolLo,  "px_pool_lo", _INV, editable = false)
+plot(swpHi,   "px_swp_hi",  _INV, editable = false)
+plot(swpLo,   "px_swp_lo",  _INV, editable = false)
+plot((inAsia ? 1 : 0) + (inLdn ? 2 : 0) + (inNy ? 4 : 0) + (sessTradable ? 8 : 0) + (newLeg ? 16 : 0) + (sweptHi ? 32 : 0) + (sweptLo ? 64 : 0) + (confShort ? 128 : 0) + (confLong ? 256 : 0) + (tookLeg ? 512 : 0) + (inWinLdn ? 1024 : 0) + (inWinNy ? 2048 : 0) + (inExecWin ? 4096 : 0) + (newConfShift ? 8192 : 0) + (confAtZone ? 16384 : 0) + (poiOff ? 32768 : 0) + (armTouched ? 65536 : 0) + (busy ? 131072 : 0) + (justCancelled ? 262144 : 0), "px_state", _INV, editable = false)
+
+// ── the point-of-interest scan, with the tap flags the refusal message reads
+plot(poiBullTop, "px_poi_bull_t", _INV, editable = false)
+plot(poiBullBot, "px_poi_bull_b", _INV, editable = false)
+plot(poiBearTop, "px_poi_bear_t", _INV, editable = false)
+plot(poiBearBot, "px_poi_bear_b", _INV, editable = false)
+plot((poiBullTap ? 1 : 0) + (poiBearTap ? 2 : 0) + (armDir == 1 ? 4 : 0) + (armDir == -1 ? 8 : 0), "px_poi_bits", _INV, editable = false)
+plot(armZTop, "px_arm_top", _INV, editable = false)
+plot(armZBot, "px_arm_bot", _INV, editable = false)
+
+// ── the geometry BOTH sides would have used, armed or not. Exporting the REFUSED side is the
+//    point: a port that agrees on the trades and disagrees on the refusals will diverge the
+//    first time an input moves, which is exactly when a sweep is running.
+plot(lEntry, "px_ent_l",  _INV, editable = false)
+plot(lStop,  "px_stp_l",  _INV, editable = false)
+plot(lDist,  "px_dist_l", _INV, editable = false)
+plot(lT1,    "px_t1_l",   _INV, editable = false)
+plot(lT2,    "px_t2_l",   _INV, editable = false)
+plot(sEntry, "px_ent_s",  _INV, editable = false)
+plot(sStop,  "px_stp_s",  _INV, editable = false)
+plot(sDist,  "px_dist_s", _INV, editable = false)
+plot(sT1,    "px_t1_s",   _INV, editable = false)
+plot(sT2,    "px_t2_s",   _INV, editable = false)
+plot(lBlk,   "px_blk_l",  _INV, editable = false)
+plot(sBlk,   "px_blk_s",  _INV, editable = false)
+plot(minStopDist, "px_min_stop", _INV, editable = false)
+
+// ── orders and the open position
+plot(pendDir, "px_pend_dir", _INV, editable = false)
+plot(posDir,  "px_pos_dir",  _INV, editable = false)
+plot(strategy.position_size != 0 ? posEntry : na, "px_fill",      _INV, editable = false)
+plot(strategy.position_size != 0 ? posStop  : na, "px_stop_live", _INV, editable = false)
+plot(strategy.position_size != 0 ? posStop0 : na, "px_sl",        _INV, editable = false)
+plot(strategy.position_size != 0 ? posT1    : na, "px_tp1",       _INV, editable = false)
+plot(strategy.position_size != 0 ? posT2    : na, "px_tp2",       _INV, editable = false)
+plot(strategy.position_size != 0 ? posQty   : na, "px_qty",       _INV, editable = false)
+plot((justFilled ? 1 : 0) + (justClosed ? 2 : 0) + (t1Done ? 4 : 0) + (beShiftDone ? 8 : 0) + (twoLegs ? 16 : 0) + (timeUp ? 32 : 0) + (armLong ? 64 : 0) + (armShort ? 128 : 0), "px_exec", _INV, editable = false)
+plot(closedR, "px_closed_r", _INV, editable = false)
+
+// ── context the port needs to reproduce the same numbers
+plot(atr14, "px_atr14", _INV, editable = false)
+plot(pdh,   "px_pdh",   _INV, editable = false)
+plot(pdl,   "px_pdl",   _INV, editable = false)
+plot(pwh,   "px_pwh",   _INV, editable = false)
+plot(pwl,   "px_pwl",   _INV, editable = false)
+
+// ── every input that can move a trade. Display-only toggles are absent on purpose: they cannot
+//    change the trade list, so carrying them would invite a parity failure over an annotation.
+plot((pbTradeLdn ? 1 : 0) + (pbTradeNy ? 2 : 0) + (pbRequireConf ? 4 : 0) + (pbPoiUntouched ? 8 : 0) + (execUseTp1 ? 16 : 0) + (execUseTp2 ? 32 : 0) + (execBeOnShift ? 64 : 0) + (execUseWindows ? 128 : 0) + (pbTradeLongs ? 256 : 0) + (pbTradeShorts ? 512 : 0) + (execCancelFlip ? 1024 : 0) + (execBeAtTp1 ? 2048 : 0), "cfg_bits", _INV, editable = false)
+plot(str.tonumber(pbDirTf),  "cfg_dir_tf",  _INV, editable = false)
+plot(str.tonumber(pbConfTf), "cfg_conf_tf", _INV, editable = false)
+plot(pbPoiTf == "Off" ? 0.0 : str.tonumber(pbPoiTf), "cfg_poi_tf", _INV, editable = false)
+plot((execTp1Mode == "Fixed R" ? 0 : 1)
+   + 10 * (execSizeMode == "Risk % of equity" ? 0 : 1)
+   + 100 * (pbConfWhen == "Before the zone (rest a limit)" ? 0 : 1)
+   + 1000 * (execZoneEntry == "Proximal edge" ? 0 : execZoneEntry == "Midpoint" ? 1 : 2)
+   + 10000 * (execStopFrom == "The gap" ? 0 : 1)
+   + 100000 * (execMinStopMode == "Off" ? 0 : execMinStopMode == "% of price" ? 1 : execMinStopMode == "Fixed $" ? 2 : 3), "cfg_enum1", _INV, editable = false)
+// ⚠ The small INTEGER inputs are packed two to a plot to stay under the 64-plot ceiling. Ranges
+//    are bounded by each input's own minval/maxval, so no field can overflow into its neighbour:
+//    struct_len ≤ 50, sl_buf ≤ 500, be_buf ≤ 500, tp1_pct ≤ 100, cancel_bars ≤ 2000.
+plot(pbStructLen + 100 * execSlBufTk + 100000 * execBeBufTk, "cfg_int1", _INV, editable = false)
+plot(execTp1Pct + 1000 * execCancelBars, "cfg_int2", _INV, editable = false)
+plot(execTp1R,        "cfg_tp1_r",        _INV, editable = false)
+plot(execRiskPct,     "cfg_risk_pct",     _INV, editable = false)
+plot(execTpFallbackR, "cfg_tp_fallback",  _INV, editable = false)
+plot(execMinRr,       "cfg_min_rr",       _INV, editable = false)
+plot(execMinStopVal,  "cfg_min_stop_val", _INV, editable = false)
+plot(pbPoiMaxAtr,     "cfg_poi_max_atr",  _INV, editable = false)
+plot(execTimeStopHrs, "cfg_time_stop",    _INV, editable = false)
