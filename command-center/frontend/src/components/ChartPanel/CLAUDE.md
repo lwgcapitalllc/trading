@@ -610,18 +610,40 @@ here**, so the chart shows exactly what the strategy saw.
   → `chart_spec` (which filters `legs` to real profit-takes beyond a 0.1R scratch band, so a
   breakeven-stop fill is never drawn as profit, and attaches each surviving leg's label). One on/off
   toggle for all trades (`tradesOn`), driven from BOTH the **Analysis** dropdown AND the right-click
-  chart menu — same state, either surface flips it. **Winners / Losers outcome filters** (`winnersOn` /
-  `losersOn`, both default ON) sit under it as INDENTED sub-rows in Analysis, each with its
-  count, so a run can be read as all-winners or all-losers without hunting trade by trade. They're
-  listed only while `tradesOn` — with trades hidden they'd be inert switches — and the win test is
-  `pnl > 0`, the SAME expression as the overlay's win/loss colour, so a trade's chip colour and the
-  filter that shows it can never disagree. A single **outcome chip** (`Won` green / `Lost` red, from `pnl`'s sign) sits
+  chart menu — same state, either surface flips it. **Winners / Scratches / Losers outcome filters**
+  (`winnersOn` / `scratchesOn` / `losersOn`, all default ON) sit under it as INDENTED sub-rows in
+  Analysis, each with its count, so a run can be read as all-winners or all-losers without hunting
+  trade by trade. They're listed only while `tradesOn` — with trades hidden they'd be inert switches
+  — and **Scratches is listed only when the run HAS any**, since a permanently-0 chip is a control
+  nobody can use. Every one of them, the box colour, the navigator pill and the chip read the SAME
+  `tradeOutcome(tr)`, so a trade's colour and the filter that shows it can never disagree. A single
+  **outcome chip** (`Won` green / `Scratch` grey / `Lost` red) sits
   horizontally **centred** over the trade, just BEYOND its **resolved extreme** — a win past the
   furthest favourable point (`mfePrice`), a loss past the furthest adverse point (`maePrice`, behind
   the stop) — so it always points the way the trade resolved (above a long win / below a long loss,
   mirrored for a short). Added because, once a winner also shows a red drawdown band, the result is no
   longer obvious from colour alone. It's a derived verdict, NOT the raw exit reason — no exit-reason
   text (`stop`/`S-RUN`/…) is ever drawn.
+
+  🔴 **SCRATCH is a third state and it landed 2026-08-18, because `pnl > 0` had been drawing a
+  trade that netted EXACTLY $0.00 as a loss.** On run `295a6ff29d21` the chart showed a SHORT
+  entered at 4098.60, exited at 4085.07 — visibly in profit — with a red `Lost` chip. Nothing on
+  screen could explain it and it read as a bug in the exit code. It was not: the base lot's profit
+  had gone to a scale-in ADD the chart never drew (below). ⚠ **The verdict is the BACKEND's**
+  (`trades[].outcome`, graded against the run's own median full loss — the same bar the run's
+  `scratch_count` KPI uses), so the chart and the KPI row cannot tell two stories about one trade.
+  ⚠ **The sign of the P&L is only the FALLBACK, for a run with no losing trade to scale against,
+  and the fallback never returns `scratch`** — an ungraded trade is not a measured flat one. ⚠ **A
+  run whose `chart_spec.json` was cached before this shipped keeps its old chips until that cache
+  is deleted**; nothing versions the file.
+
+  🔴 **A SCALE-IN ADD is drawn — one dotted `Add` line per lot (`trades[].adds`), in the entry's
+  own colour, because that is what it is: a further entry at a later price.** Without them the box
+  is unreadable in the literal sense — entry, exit and P&L describe arithmetic that does not close,
+  and the missing lot was in no field the chart received. Several lots at one price collapse to
+  `Add ×3` rather than stacking chips on one pixel row. ⚠ **No toggle**: they are not another view
+  of the trade, they are part of what it held. ⚠ **A run finished before the strategy recorded them
+  carries none and there is no backfill** — re-run the backtest.
 - **Blocked setups** (`BLOCK` overlay, spec `blocks[]`) — **the trades that never happened.** A setup
   the strategy had READY and one of its OWN rules refused places no order, so it appears in no trade
   list, no equity curve and no broker report; without this layer there is no way to judge whether a

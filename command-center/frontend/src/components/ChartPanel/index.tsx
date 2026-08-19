@@ -46,6 +46,8 @@ import type {
   ChartOverlay,
   ChartPage,
   ChartSpec,
+  ChartTrade,
+  TradeOutcome,
 } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
@@ -120,8 +122,27 @@ function fmtDiff(v: number): string {
 
 const CHART_HEIGHT = 520
 const DAY_MS = 24 * 60 * 60 * 1000
-const TRADE_WIN_COLOR = theme.pos // green box — trade reached target (pnl > 0)
-const TRADE_LOSS_COLOR = theme.neg // red box — trade hit its stop (pnl <= 0)
+const TRADE_WIN_COLOR = theme.pos // green box — trade won
+const TRADE_LOSS_COLOR = theme.neg // red box — trade lost
+// A SCRATCH is off the win/loss axis, like a blocked setup: neither green nor red, because the
+// trade did not resolve either way. Painting it red is what made a $0.00 trade read as a loss.
+const TRADE_SCRATCH_COLOR = theme.textSecondary
+
+/** WON / SCRATCH / LOST for one trade — the ONE place the chart decides, so the chip, the box
+ *  colour, the Step navigator and the Show filters can never grade the same trade differently.
+ *
+ *  The verdict is the BACKEND's when it graded the run (`outcome`, measured against the run's own
+ *  median full loss — the same bar its `scratch_count` KPI uses). A run it could not grade — no
+ *  losing trade to scale against — carries none, and the sign of the P&L is the fallback. ⚠ The
+ *  fallback never returns `scratch`: an ungraded trade is not a measured flat one. */
+function tradeOutcome(tr: Pick<ChartTrade, 'pnl' | 'outcome'>): TradeOutcome {
+  return tr.outcome ?? (tr.pnl > 0 ? 'won' : 'lost')
+}
+
+/** The colour that verdict is drawn in — box, chip, navigator pill. */
+function outcomeColor(v: TradeOutcome): string {
+  return v === 'won' ? TRADE_WIN_COLOR : v === 'scratch' ? TRADE_SCRATCH_COLOR : TRADE_LOSS_COLOR
+}
 // Profit-fill mint — deliberately LIGHTER than the candle up-colour (theme.pos) so the
 // profit-depth band never blends into the green candles inside it (Aaron 2026-07-20).
 const TRADE_PROFIT_FILL = '#8ef2b8'
@@ -416,14 +437,15 @@ function ToggleMenu({
 interface NavMarker {
   id: string // kind-prefixed, so a trade and a block can never collide on one id
   ts: number // the bar the chart parks on (a trade's ENTRY, a block/miss's own bar)
-  kind: 'win' | 'loss' | 'block' | 'miss'
-  label: string // the word the pill prints — "Win" / "Loss" / "Blocked" / "Missed"
+  kind: 'win' | 'scratch' | 'loss' | 'block' | 'miss'
+  label: string // the word the pill prints — "Win" / "Scratch" / "Loss" / "Blocked" / "Missed"
   color: string
   note: string // the extra line on hover (direction + P&L, or the refusing rule)
 }
 
 const NAV_KIND_LABEL: Record<NavMarker['kind'], string> = {
   win: 'Win',
+  scratch: 'Scratch',
   loss: 'Loss',
   block: 'Blocked',
   miss: 'Missed',
@@ -1611,14 +1633,31 @@ export default function ChartPanel({
   // Trades: one on/off toggle for all of them, driven from the right-click chart menu.
   const [tradesOn, setTradesOn] = useState(true)
 
-  // Outcome filters — winners and losers toggle independently, so the chart can show just the
-  // winners or just the losers. Both default ON (a run opens on every trade). Same win test as the
-  // overlay's colour rule (`pnl > 0`), so a trade's chip colour and its filter can never disagree.
+  // Outcome filters — winners, scratches and losers toggle independently, so the chart can show
+  // just one kind. All default ON (a run opens on every trade). Every one of them reads the SAME
+  // `tradeOutcome` the overlay's chip and colour read, so a trade's chip and its filter can never
+  // disagree — which is the whole reason the verdict is a function and not three inline `pnl > 0`
+  // tests. Scratches get their own chip rather than being folded in with the losers: a trade that
+  // netted $0.00 is not a loss, and the run's own KPI row has always counted it separately.
   const [winnersOn, setWinnersOn] = useState(true)
+  const [scratchesOn, setScratchesOn] = useState(true)
   const [losersOn, setLosersOn] = useState(true)
+  const outcomeVisible = useCallback(
+    (tr: ChartTrade) => {
+      const v = tradeOutcome(tr)
+      return v === 'won' ? winnersOn : v === 'scratch' ? scratchesOn : losersOn
+    },
+    [winnersOn, scratchesOn, losersOn]
+  )
   const outcomeCounts = useMemo(() => {
-    const wins = spec.trades.reduce((n, tr) => n + (tr.pnl > 0 ? 1 : 0), 0)
-    return { wins, losses: spec.trades.length - wins }
+    let wins = 0,
+      scratches = 0
+    for (const tr of spec.trades) {
+      const v = tradeOutcome(tr)
+      if (v === 'won') wins++
+      else if (v === 'scratch') scratches++
+    }
+    return { wins, scratches, losses: spec.trades.length - wins - scratches }
   }, [spec.trades])
 
   // Trade fibs — each trade's OWN fib leg, the ladder the strategy priced its entry, stop and
@@ -1894,17 +1933,18 @@ export default function ChartPanel({
     if (tradesOn) {
       for (const tr of spec.trades) {
         if (tr.layer && hiddenLayers.has(tr.layer)) continue
-        const win = tr.pnl > 0
-        if (!(win ? winnersOn : losersOn)) continue
+        const verdict = tradeOutcome(tr)
+        if (!outcomeVisible(tr)) continue
         out.push({
           // Layer-qualified: a stack merges several runs' trade lists, and two legs numbering their
           // own trades from 1 would otherwise share an id — which the step lookup reads as one
           // marker and walks in circles on.
           id: `t:${tr.layer ?? ''}:${tr.id}`,
           ts: tr.entryTime,
-          kind: win ? 'win' : 'loss',
-          label: NAV_KIND_LABEL[win ? 'win' : 'loss'],
-          color: win ? TRADE_WIN_COLOR : TRADE_LOSS_COLOR,
+          kind: verdict === 'won' ? 'win' : verdict === 'scratch' ? 'scratch' : 'loss',
+          label:
+            NAV_KIND_LABEL[verdict === 'won' ? 'win' : verdict === 'scratch' ? 'scratch' : 'loss'],
+          color: outcomeColor(verdict),
           note:
             `${tr.dir === 'long' ? '▲ Long' : '▼ Short'} · ${tr.pnl >= 0 ? '+' : '−'}${Math.abs(tr.pnl).toFixed(2)}` +
             (tr.layerName ? ` · ${tr.layerName}` : ''),
@@ -1941,8 +1981,7 @@ export default function ChartPanel({
   }, [
     spec.trades,
     tradesOn,
-    winnersOn,
-    losersOn,
+    outcomeVisible,
     hiddenLayers,
     blocks,
     blocksOn,
@@ -2733,7 +2772,7 @@ export default function ChartPanel({
       if (loadedLoTs == null || loadedHiTs == null) break
       if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
       if (tr.layer && hiddenLayers.has(tr.layer)) continue // isolated via the Strategies dropdown
-      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue // Winners/Losers filters (Analysis menu)
+      if (!outcomeVisible(tr)) continue // Winners / Scratches / Losers filters (Analysis menu)
       chart.createOverlay({
         name: TRADE,
         lock: true,
@@ -2745,7 +2784,11 @@ export default function ChartPanel({
           dir: tr.dir,
           kind: tr.kind,
           pnl: tr.pnl,
-          color: tr.pnl > 0 ? TRADE_WIN_COLOR : TRADE_LOSS_COLOR, // outcome (win green / loss red)
+          outcome: tradeOutcome(tr), // won / scratch / lost — the chip and the fallback box colour
+          // Scale-in lots. Without them the box can show a short exiting BELOW its entry for a
+          // P&L of zero, with nothing on the chart to say where the profit went.
+          adds: tr.adds,
+          color: outcomeColor(tradeOutcome(tr)), // fallback box (win green / scratch grey / loss red)
           dirColor: tr.dir === 'long' ? theme.pos : theme.neg, // entry arrow (buy green / sell red)
           // Profit-depth inputs — prices, converted to pixels in the overlay via the y-axis.
           // Absent fields make the overlay fall back to the plain entry→exit box.
@@ -2785,8 +2828,7 @@ export default function ChartPanel({
   }, [
     spec.trades,
     tradesOn,
-    winnersOn,
-    losersOn,
+    outcomeVisible,
     hiddenLayers,
     displayCandles,
     loadedLoTs,
@@ -2819,7 +2861,7 @@ export default function ChartPanel({
       if (loadedLoTs == null || loadedHiTs == null) break
       if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
       if (tr.layer && hiddenLayers.has(tr.layer)) continue
-      if (!(tr.pnl > 0 ? winnersOn : losersOn)) continue
+      if (!outcomeVisible(tr)) continue
       // The leg's start, clamped into the loaded bars: a leg that began before the oldest loaded
       // candle would otherwise have klinecharts clamp its left edge onto the plot boundary, which
       // draws the ladder across the no-data region as if the leg started there.
@@ -2841,8 +2883,7 @@ export default function ChartPanel({
   }, [
     spec.trades,
     tradeFibsOn,
-    winnersOn,
-    losersOn,
+    outcomeVisible,
     hiddenLayers,
     displayCandles,
     loadedLoTs,
@@ -3661,6 +3702,20 @@ export default function ChartPanel({
                             toggle: () => setWinnersOn((o) => !o),
                             count: outcomeCounts.wins,
                           },
+                          // Listed only when the run HAS any — a permanently 0 chip on a strategy
+                          // with no scratch band (or none in the band) is a control nobody can use,
+                          // and its absence is the honest statement that nothing landed there.
+                          ...(outcomeCounts.scratches > 0
+                            ? [
+                                {
+                                  key: 'scratches',
+                                  label: 'Scratches',
+                                  on: scratchesOn,
+                                  toggle: () => setScratchesOn((o) => !o),
+                                  count: outcomeCounts.scratches,
+                                },
+                              ]
+                            : []),
                           {
                             key: 'losers',
                             label: 'Losers',

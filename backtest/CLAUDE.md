@@ -116,6 +116,19 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   contract can't silently drift. Each equity-curve point also carries `favorable`/`adverse` (the
   trade's excursion, read from `Trade.mfe_usd`/`mae_usd` via `getattr` default 0.0, so a trade
   duck-type lacking them is fine) — the lab's TradingView-style equity chart reads them.
+  🔴 **A point's `size` is the BASE quantity, and a trade can hold more than that.** A strategy
+  that SCALES IN buys further lots at their own prices (`execution.py::_exit_portion` closes each
+  against its own entry), so `(exit_price - entry_price) * dir * size` stops reproducing `profit`
+  the moment one fills. Measured on lab run `295a6ff29d21`: eight trades booked **exactly $0.00**
+  with the exit BELOW the entry on a short, and the lot that took the profit back was in no field
+  of the point. Since 2026-08-18 the point carries `adds` — one `{price, ms, qty}` per FILLED lot,
+  so the row can account for its own P&L. ⚠ **Absent, not `[]`, on a trade that never added**: an
+  empty list on every trade of every strategy without the feature would read as a feature that ran.
+  ⚠ **No backfill exists and none can** — a stored run never recorded the lots; re-run it.
+  Two tests in `tests/test_output.py` pin both directions (the lots reach the point; a trade
+  without them omits the key), and deleting the emission reddens the first alone.
+  ⚠ **`build_engine_trades` deliberately omits them** — it is the unit-size contract the sizing
+  engine re-sizes from, and it cannot model a position that grew mid-trade.
   ⚠ **`costs_usd` on a point is SIGNED, and a positive value is a real outcome, not an error.**
   The convention is the broker's (`execution.py::_charge`): **negative = charged, positive =
   CREDITED**, because a short's gold swap genuinely pays you (+26.98 points/night on Vantage) and

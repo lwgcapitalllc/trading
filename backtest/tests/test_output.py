@@ -8,7 +8,7 @@ round-trip test at the bottom is what fails.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,6 +52,7 @@ class FakeTrade:
     mfe_usd: float = 0.0
     mae_usd: float = 0.0
     costs_usd: float = 0.0
+    adds: list = field(default_factory=list)
 
 
 def _t(
@@ -68,6 +69,7 @@ def _t(
     mfe=0.0,
     mae=0.0,
     costs=0.0,
+    adds=None,
 ) -> FakeTrade:
     return FakeTrade(
         dir=dir,
@@ -86,6 +88,7 @@ def _t(
         mfe_usd=mfe,
         mae_usd=mae,
         costs_usd=costs,
+        adds=adds or [],
     )
 
 
@@ -177,6 +180,24 @@ def test_equity_curve_carries_trade_excursion():
     curve = build_equity_curve([_t(100.0, mfe=250.0, mae=-40.0)])
     assert curve[0]["favorable"] == 250.0
     assert curve[0]["adverse"] == -40.0
+
+
+def test_equity_curve_carries_the_scale_in_lots_a_trade_bought():
+    """`size` is the BASE quantity, so without this the row cannot account for its own P&L.
+
+    Measured on run 295a6ff29d21: eight trades booked exactly $0.00 with the exit BELOW the entry
+    on a short — the profit had gone to a scale-in lot bought later and closed at the same exit,
+    and no field in the curve, the KPI row or the chart mentioned that lot existed."""
+    lots = [{"price": 106.5, "ms": 1_500, "qty": 0.75}]
+    point = build_equity_curve([_t(0.0, adds=lots)])[0]
+    assert point["adds"] == [{"price": 106.5, "ms": 1500, "qty": 0.75}]
+
+
+def test_a_trade_that_never_added_omits_the_key_rather_than_writing_an_empty_list():
+    """Same rule as `r` / `risk_usd` above: absent means "this run has no such thing", and every
+    trade of every strategy without scale-in is that. An empty list on all of them would read as a
+    feature that ran and bought nothing."""
+    assert "adds" not in build_equity_curve([_t(100.0)])[0]
 
 
 def test_equity_curve_excursion_defaults_to_zero_when_trade_lacks_it():

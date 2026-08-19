@@ -73,6 +73,17 @@ export interface ChartTradeFib {
   startTime?: EpochMs
 }
 
+/** How a closed trade is graded. `scratch` means it landed inside the run's scratch band — near
+ *  enough to flat that calling it a win or a loss says more than the trade did. */
+export type TradeOutcome = 'won' | 'scratch' | 'lost'
+
+/** One scale-in lot: the price it was bought at, when, and how much. */
+export interface ChartTradeAdd {
+  price: number
+  ms: EpochMs
+  qty: number
+}
+
 /** One round-trip trade: entry → exit, drawn as a profit-depth view.
  *
  *  Two shades of green show how far price went in the trade's favour: SOLID from entry to where
@@ -87,7 +98,21 @@ export interface ChartTrade {
   entryPrice: number
   exitTime: EpochMs
   exitPrice: number
-  pnl: number // trade net P&L — sign picks the outcome colour (win green / loss red)
+  pnl: number // trade net P&L — the fallback outcome test when `outcome` is absent
+  /** WON / SCRATCH / LOST as the BACKEND graded it, against the run's own median full loss — the
+   *  same bar the run's `scratch_count` KPI uses. OPTIONAL: a run with no losing trade cannot be
+   *  graded and carries none, and the chart then falls back to the sign of `pnl`.
+   *
+   *  A scratch is a THIRD state, not a nicer word for a small loss. `pnl > 0` alone calls a trade
+   *  that netted exactly $0.00 a LOSS — which is what a scale-in add handing back the profit its
+   *  stop had locked produces (8 trades on run 295a6ff29d21). */
+  outcome?: TradeOutcome
+  /** Scale-in lots bought AFTER the entry, one per fill. Absent on every trade that never added.
+   *
+   *  Load-bearing for reading the box, not decoration: `entryPrice`, `exitPrice` and `pnl` alone
+   *  can describe a short exiting BELOW its entry for a P&L of zero, and the missing half of that
+   *  arithmetic is these lots — bought further into profit, closed at the same exit. */
+  adds?: ChartTradeAdd[]
   kind?: 'primary' | 'secondary' // 15m primary vs 1m sniper re-entry; solid vs dashed border
   exitReason?: string // carried in data; never drawn on the chart
   // Profit-depth fields — all optional; absent ⇒ the trade falls back to the plain box.

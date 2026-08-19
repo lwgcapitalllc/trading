@@ -360,13 +360,69 @@ def scratch_count(equity_curve: Optional[list[dict]]) -> Optional[int]:
     honest answer, and 0 would read as "no scratches" — the opposite of "cannot tell".
     """
     weights, _ = _trade_weights(equity_curve)
+    scale = _scratch_scale(weights)
+    if scale is None:
+        return None
+    return sum(1 for w in weights if abs(w) < scale)
+
+
+def _scratch_scale(weights: list[float]) -> Optional[float]:
+    """The band, in the weights' own basis: `_SCRATCH_FRACTION` of the median FULL loss.
+
+    None when the run has no losing trade to measure against — with no scale there is no honest
+    answer, and 0 would read as "nothing is a scratch", which is the opposite of "cannot tell".
+    Split out of `scratch_count` so `trade_outcomes` grades against the identical bar: the run's
+    scratch COUNT and the chart's per-trade verdict disagreeing would be worse than either.
+    """
     losses = [abs(w) for w in weights if w < 0]
     if not losses:
         return None
     scale = float(np.median(losses))
-    if scale <= 0:
+    return scale * _SCRATCH_FRACTION if scale > 0 else None
+
+
+# The three verdicts `trade_outcomes` grades into. Strings rather than an enum because they cross
+# into a JSON chart spec and are read by the frontend.
+OUTCOME_WON = "won"
+OUTCOME_LOST = "lost"
+OUTCOME_SCRATCH = "scratch"
+
+
+def trade_outcomes(equity_curve: Optional[list[dict]]) -> Optional[list[str]]:
+    """One verdict per curve point — won / scratch / lost — or None when it cannot be graded.
+
+    Same bar as `scratch_count`, and that is the whole reason it exists: a run whose KPI row says
+    68 scratches while its chart calls every one of them a LOSS is one system telling two stories.
+    A trade that netted exactly $0.00 labelled "Lost" is what sent a reader hunting a bug in the
+    exit code on run 295a6ff29d21 — the exit was right and the label was not.
+
+    ⚠ **Aligned 1:1 with `equity_curve`, which is what `_trade_weights` is NOT** — that one drops
+    any point it cannot weight, so its indices stop matching the trades the moment one is dropped.
+    A point that cannot be weighted here is graded by SIGN and never as a scratch, because an
+    ungradeable trade is not a measured flat one.
+
+    Returns None (rather than an all-`won`/`lost` list) when the run carries no losing trade to
+    scale against, so a caller can tell "no scratch band" from "no scratches".
+    """
+    if not equity_curve:
         return None
-    return sum(1 for w in weights if abs(w) < scale * _SCRATCH_FRACTION)
+    weights, _ = _trade_weights(equity_curve)
+    scale = _scratch_scale(weights)
+    if scale is None:
+        return None
+    compounding = _equity_base(equity_curve) > 0
+    out: list[str] = []
+    for e in equity_curve:
+        profit = float(e.get("profit", 0.0) or 0.0)
+        weight = profit
+        if compounding:
+            before = float(e.get("equity", 0.0) or 0.0) - profit
+            weight = profit / before if before > 0 else None
+        if weight is not None and abs(weight) < scale:
+            out.append(OUTCOME_SCRATCH)
+        else:
+            out.append(OUTCOME_WON if profit > 0 else OUTCOME_LOST)
+    return out
 
 
 # How many trades "a handful" is. Small enough that hitting the threshold is a real finding.

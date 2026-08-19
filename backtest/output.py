@@ -147,6 +147,27 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                     }
                     for lg in getattr(t, "legs", []) or []
                 ],
+                # SCALE-IN lots this trade actually bought AFTER the entry, `{price, ms, qty}` each.
+                # Reporting-only and OPTIONAL — a strategy or runner with no scale-in carries none,
+                # and the key is then absent rather than an empty list claiming a feature ran.
+                # 🔴 It is what makes the row's P&L reconcilable: `size` is the BASE quantity, so a
+                # trade that added holds more than `size` says, and `profit` reflects lots this row
+                # would otherwise not mention at all. Run 295a6ff29d21 booked 8 trades at exactly
+                # $0.00 with an entry above the exit on a short and nothing in the record to say why.
+                **(
+                    {
+                        "adds": [
+                            {
+                                "price": _round(a.get("price", 0.0), 5),
+                                "ms": int(a.get("ms", 0)),
+                                "qty": a.get("qty", 0.0),
+                            }
+                            for a in getattr(t, "adds", []) or []
+                        ]
+                    }
+                    if getattr(t, "adds", None)
+                    else {}
+                ),
                 # TP TARGET ladder (the levels the trade aimed at, nearest→furthest) — lets the chart show
                 # an UNHIT next target so a near-miss of the following TP is visible. Empty for a trade
                 # duck-type that carries no targets. Reporting-only.

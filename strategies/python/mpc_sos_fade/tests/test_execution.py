@@ -1125,3 +1125,78 @@ def test_the_secondary_reentry_records_no_A_plus_ladder():
                           l_leg=1, s_armed=False, s_edge=None, s_sl=None,
                           s_tp1=None, s_tp2=None, s_leg=None)
     assert ex._secondary_pending(arm).fib is None
+
+
+# ------------------------------------------------------- scale-in reporting -----
+def test_a_filled_add_is_recorded_on_the_closed_trade():
+    """The closed trade must SAY it added, because nothing else in its record can.
+
+    `qty` is the BASE size and `legs` is the exit ladder, so a trade that bought more after the
+    entry looks — in every stored field — exactly like one that did not. That is not cosmetic:
+    on run 295a6ff29d21 eight trades booked exactly $0.00 with the exit BELOW the entry on a
+    short, and the lot that took the profit back appeared nowhere in the run, the equity curve or
+    the chart. It reads as a bug in the exit code and is not one.
+    """
+    cfg = _cfg(exec_scale_in=True, exec_scale_mode="Trail", exec_scale_max_adds=1)
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82
+    base_qty = ex._qty
+
+    # bar 2 clears TP1 (105) and TP2 (106.18): stage 2, floor = TP1 price = 105, and the add is
+    # PLACED against that stop, sized off the bar's close (106.5).
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    assert ex._add_pending is not None and not ex._add_lots      # placed, nothing bought yet
+
+    # bar 3 opens where bar 2 closed, so the market add fills at exactly the price it was sized
+    # against — then price falls back into the floor and the whole position leaves at 105.
+    ex.step(_sig(3, 106.5, 106.6, 104.9, 105.0), _seq_flat())
+    assert ex._pos_dir == 0 and len(ex.trades) == 1
+    t = ex.trades[0]
+
+    assert len(t.adds) == 1, "the add filled and the trade does not record it"
+    lot = t.adds[0]
+    assert abs(lot["price"] - 106.5) < 1e-9 and lot["qty"] > 0
+    assert lot["ms"] == 3 * 900_000
+
+
+def test_the_pnl_of_a_scaled_trade_reconciles_only_when_every_add_lot_is_read():
+    """The identity in `Trade`'s docstring, and the exact case it was wrong about.
+
+    Sized so the add's worst case equals the profit the stop had already locked (that IS the
+    scale-in rule), the trade closes at EXACTLY flat — a real winner that banks nothing. The
+    base-only arithmetic a reader would try first says it made money, and it is the `adds` ledger
+    that closes the gap. Both halves are asserted: drop `adds` from the record and the second one
+    is unprovable.
+    """
+    # `exec_scale_cap_x = 2` is the run's own setting and it matters: at the default 0.5 the cap
+    # binds first, the add is smaller than the offsetting size, and the trade still nets a profit.
+    # The exact-flat outcome is what the UNCAPPED affordability rule produces.
+    cfg = _cfg(exec_scale_in=True, exec_scale_mode="Trail", exec_scale_max_adds=1,
+               exec_scale_cap_x=2.0)
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.6, 104.9, 105.0), _seq_flat())
+    t = ex.trades[0]
+    pv = cfg.point_value
+
+    base_only = (t.exit_price - t.entry_price) * t.dir * t.qty * pv
+    assert base_only > 0, "the base leg exited in profit — that is what makes the $0 confusing"
+    assert abs(t.pnl_usd) < 1e-6, "the add hands back exactly what the stop locked"
+
+    whole = base_only + sum(
+        (t.exit_price - a["price"]) * t.dir * a["qty"] * pv for a in t.adds
+    )
+    assert abs(whole + t.costs_usd - t.pnl_usd) < 1e-6
+
+
+def test_a_trade_that_never_added_carries_an_empty_add_ledger():
+    """No add, no lots — an invented entry would be worse than none, and `exec_scale_in` is OFF by
+    default, so this is what every trade of every other run must look like."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    ex.step(_sig(2, 100.5, 101.0, 99.5, 99.8), _seq_flat())
+    assert ex.trades[0].adds == []

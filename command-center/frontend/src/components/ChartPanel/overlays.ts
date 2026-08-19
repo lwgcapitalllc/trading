@@ -206,6 +206,8 @@ interface TradeExtend {
   dir?: 'long' | 'short'
   kind?: 'primary' | 'secondary'
   pnl?: number
+  outcome?: 'won' | 'scratch' | 'lost' // graded by the backend; absent ⇒ fall back to `pnl > 0`
+  adds?: { price: number; ms: number; qty: number }[] // scale-in lots bought after the entry
   color?: string // outcome colour (win green / loss red) — the fallback box
   dirColor?: string // entry-arrow colour (long green / short red) — fallback box only
   favColor?: string // favourable-side green (the profit fill / lines — a LIGHT mint, kept
@@ -640,6 +642,23 @@ export function registerChartOverlays(): void {
         dot(lg.price, profitColor)
         addLabel(lg.price, lg.label, profitColor)
       }
+      // SCALE-IN adds: one dotted line + dot + `Add` per lot, in the ENTRY colour, because that is
+      // what they are — further entries, at a later price. Drawn whenever the trade carries them,
+      // with no toggle: they are not an extra view of the trade, they are part of what it held, and
+      // a box that hides them can show a short exiting BELOW its entry for a P&L of zero. Several
+      // lots at one price collapse to a single labelled line (`Add ×3`) rather than stacking three
+      // chips on the same pixel row.
+      const addRows = new Map<number, number>()
+      for (const a of d.adds ?? []) {
+        if (typeof a?.price !== 'number') continue
+        addRows.set(a.price, (addRows.get(a.price) ?? 0) + 1)
+      }
+      for (const [price, count] of addRows) {
+        crossLine(price, withAlpha(entryColor, 0.55))
+        dot(price, entryColor)
+        addLabel(price, count > 1 ? `Add ×${count}` : 'Add', entryColor)
+      }
+
       // Entry: NO line across — just a short tick where the green begins, a dot, and the label.
       figures.push({
         type: 'line',
@@ -723,15 +742,24 @@ export function registerChartOverlays(): void {
       // resolved extreme — a WIN past the furthest favourable point (`mfePrice`), a LOSS past the
       // furthest adverse point (`maePrice`, behind the stop) — so it always points the way the trade
       // resolved: above a long win / below a long loss, mirrored for a short.
-      if (typeof d.pnl === 'number') {
-        const won = d.pnl > 0
+      if (typeof d.pnl === 'number' || d.outcome) {
+        // THREE states, and the third is not a nicer word for a small loss. `pnl > 0` alone grades
+        // a trade that netted exactly $0.00 as a LOSS — which is precisely what a scale-in add
+        // handing back the profit its stop had locked produces (8 trades on run 295a6ff29d21, and
+        // the reason this state exists). The verdict is the BACKEND's, graded against the run's own
+        // median full loss, so the chip and the run's `scratch_count` KPI can never disagree; the
+        // sign is only the fallback for a run that could not be graded at all.
+        const verdict = d.outcome ?? ((d.pnl ?? 0) > 0 ? 'won' : 'lost')
+        const won = verdict === 'won'
+        // A scratch resolved by giving profit back, so it is parked on the ADVERSE side with the
+        // losses — the chip always points the way the trade ended up.
         const extY = won ? yMfe : (yOf(d.maePrice ?? d.stopPrice) ?? exit.y)
         const outPix = won ? -sign : sign // beyond the extreme, away from entry (px: up = −)
         // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several
         // strategies' trades on one chart, the outcome alone doesn't say whose trade it was.
         // A 1m re-entry says so here rather than at the entry — see `secTagFig`. It reads
         // "SEC · Won", so the fact that it IS a re-entry comes first and survives being skimmed.
-        const outcome = won ? 'Won' : 'Lost'
+        const outcome = won ? 'Won' : verdict === 'scratch' ? 'Scratch' : 'Lost'
         // …and the reversal candle at this trade's turn, BY NAME. ⚠ `undefined` prints NOTHING —
         // the layer is off, so the run has not been asked, and `no candle` there would state a
         // measurement nobody took.
@@ -741,7 +769,11 @@ export function registerChartOverlays(): void {
         const text = parts.join(' · ')
         const cx = (x0 + x1) / 2
         const cy = extY + outPix * 12
-        chip(cx, cy, text, won ? profitColor : stopColor, 'center', d.layerColor)
+        // A scratch is neither green nor red — it reads in the neutral colour the entry uses, so a
+        // flat trade stops being counted by eye as a loss when the run's own KPI row does not.
+        const verdictColor =
+          verdict === 'won' ? profitColor : verdict === 'scratch' ? entryColor : stopColor
+        chip(cx, cy, text, verdictColor, 'center', d.layerColor)
         // A filled dot in the strategy's colour just left of the chip — the same swatch the equity
         // chart and the toggle chips use, so the eye matches trade → strategy without reading text.
         if (d.layerName && d.layerColor) {

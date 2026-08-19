@@ -951,6 +951,33 @@ the new leg's retrace are all untested alternatives. **Location has never been v
 `_entry`, so growing `_qty` would value added units as if bought at the original entry and invent
 profit. Each lot closes pro-rata with the base and pays its own commission and spread.
 
+🔴 **AN ADD THAT HANDS THE WHOLE GUARANTEE BACK CLOSES THE TRADE AT EXACTLY $0.00 — and until
+2026-08-18 nothing in the run said an add had ever existed.** That is the affordability rule
+landing on its own worst case: `add_qty = locked / per_unit`, so a stop-out at the SAME stop the
+lot was sized against cancels to the cent. Run `295a6ff29d21` did it 8 times in 160 trades, and
+the reader saw a SHORT entered at 4098.60, exited at 4085.07 — visibly in profit — labelled `Lost`
+with a P&L of zero. **Every field that could have explained it describes the BASE lot only**:
+`qty`/`size` is the base size, `legs` is the exit ladder, `mfe_usd`/`mae_usd` are excursions on the
+base. So `Trade.adds` now records each FILLED lot (`{price, ms, qty}` — `_add_lots`, a report-only
+twin of `_adds`, which `_exit_portion` spends on the way out), `backtest/output.py` puts it on the
+equity-curve point, and the chart draws an `Add` line per lot. **The P&L identity in `Trade`'s
+docstring is now stated in full and it needs every lot** — base leg + each add + costs.
+
+**3 tests in `tests/test_execution.py`, all MUTATION-proven** — the lot is recorded, the P&L
+identity closes only when every lot is read, and a trade that never added carries an empty ledger.
+Deleting the one `_add_lots.append` line reddens exactly the first two. ⚠ **The exact-flat fixture
+needs `exec_scale_cap_x = 2.0`**: at the shipped 0.5 the CAP binds first, the add is smaller than
+the offsetting size, and the trade still books a profit — so the $0 outcome belongs to the
+UNCAPPED affordability rule, not to scale-in in general.
+
+⚠ **`_add_lots` is in `_POSITION_FIELDS`**, so a restarted live bot restores its own record of what
+it bought. ⚠ **The cost of that outcome is real and small: those 8 trades were worth +6.27R
+un-scaled, against +154.73R that the same toggle ADDED over the run** (`295a6ff29d21` 295.91R with
+scale-in on vs `1f98a36d063c` 141.18R with only that toggle flipped, same window, same params).
+**Do not read the $0 trades as an argument against the feature; read them as the guarantee being
+paid for.** ⚠ **They are also invisible to a win rate** — a scratch is neither, which is what
+`scratch_count` has always been for.
+
 ⚠ **`_entry`, `_risk_usd` and `stop_distance` stay anchored to the BASE fill, so R is scale-free and
 every row stays comparable to a run with this off.** A scaled trade's "3R" is NOT 3x the capital an
 unscaled 3R had at work. It is also why the real implementation reproduced the shadow-ledger harness

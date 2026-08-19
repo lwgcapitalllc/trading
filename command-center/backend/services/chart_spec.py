@@ -37,7 +37,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from services import history_limits, lab_db, ohlc_fetcher
+from services import history_limits, lab_db, metrics, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.candle_overlays import GROUP_CANDLES, build_candle_overlays
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
@@ -311,9 +311,15 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
             i = 0
         return candles[i]["close"]
 
+    # WON / SCRATCH / LOST per trade, graded against the run's own median full loss — the same bar
+    # `scratch_count` reports on the KPI row. None when the run has no loss to scale against; the
+    # chart then falls back to the sign of `pnl`, which is the honest degradation (an ungraded
+    # trade must not be drawn as a measured flat one).
+    outcomes = metrics.trade_outcomes(equity_curve)
+
     trades: list[dict] = []
     n = 0
-    for p in equity_curve:
+    for i, p in enumerate(equity_curve):
         if not p.get("direction"):  # skip any opening-balance / no-direction point
             continue
         entry_ms = p.get("entry_ms")
@@ -358,12 +364,36 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                 "exitTime": xt,
                 "exitPrice": xp,
                 "pnl": float(p.get("profit") or 0.0),
+                # The graded verdict, when the run could be graded. It is a THIRD state and not a
+                # nicer word for a small loss: `pnl > 0` alone calls a trade that netted exactly
+                # $0.00 a LOSS, which is what a scale-in add that hands the locked profit back
+                # produces (run 295a6ff29d21, 8 trades).
+                **({"outcome": outcomes[i]} if outcomes else {}),
                 "kind": p.get("kind") or "primary",
                 "exitReason": p.get("exit_name") or "",
                 "mfePrice": mfe_price,
                 "maePrice": mae_price,
                 "stopPrice": stop_price,
                 "profitLegs": profit_legs,
+                # SCALE-IN lots (`{price, ms, qty}`), absent on any trade that never added — which
+                # is every trade of every strategy without the feature. The chart draws one marker
+                # per lot, and it has to: `entryPrice`/`exitPrice`/`pnl` alone describe a short
+                # exiting BELOW its entry for a P&L of zero, which reads as a bug and is not one.
+                **(
+                    {
+                        "adds": [
+                            {
+                                "price": round(float(a["price"]), 5),
+                                "ms": int(a.get("ms") or 0),
+                                "qty": float(a.get("qty") or 0.0),
+                            }
+                            for a in (p.get("adds") or [])
+                            if isinstance(a, dict) and isinstance(a.get("price"), (int, float))
+                        ]
+                    }
+                    if p.get("adds")
+                    else {}
+                ),
                 # TP TARGET ladder (nearest→furthest) — the chart draws the first UNHIT one faintly so a
                 # runner's near-miss of the next TP is visible. Empty for a trade carrying no targets.
                 "tpTargets": [

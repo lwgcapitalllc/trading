@@ -65,7 +65,7 @@ backend/
 │   ├── trailing_drawdown.py  compute_trailing_mll() — EOD trailing max-loss engine (the drawdown check)
 │   ├── sizing_engine.py     dynamic sizing & risk engine — PURE (no DB/network). run_engine(mode="bullet"|"consistent") sizes each trade off the room left (bullet=max the rules allow; consistent=room÷7), reserves open-trade risk, applies halts, rounds-up-to-min-or-skip, detects breaches; emits size-correct daily_pnl (feeds evaluator) + the decision log. CORE BUILT, not yet wired to a runner — see "Dynamic sizing & risk engine" below
 │   ├── decision_log.py      the ONE reusable audit log — TradeDecision/DecisionLog. One JSONL record per signal (taken or not): idea + setup score, every gate's verdict in order, the sizing decision, and the full life of a taken trade. Extensible (new gate = decision.gate(...)); identical in backtest and live
-│   ├── metrics.py         shared metric helpers: daily_sharpe / apply_canonical_sharpe / profit_concentration_pct / compute_regime_breakdown (per-regime P&L table → BacktestDetail.regime_breakdown; rescales direction-point counts to trade_count — after the _normalize_mt5_results fix, MT5 equity curves have one point per trade so scale=1.0, but the rescale is kept for safety)
+│   ├── metrics.py         shared metric helpers: daily_sharpe / apply_canonical_sharpe / profit_concentration_pct / scratch_count + trade_outcomes (the SAME scratch band, per run and per trade — see "The same bar now grades EACH trade") / compute_regime_breakdown (per-regime P&L table → BacktestDetail.regime_breakdown; rescales direction-point counts to trade_count — after the _normalize_mt5_results fix, MT5 equity curves have one point per trade so scale=1.0, but the rescale is kept for safety)
 │   ├── backtest_runner.py background VPS polling task (single run)
 │   ├── sweep_runner.py    runs N backtests sequentially (semaphore = 1) for a sweep
 │   ├── optimization_runner.py  native NT8/MT5 optimizer (one VPS job, all CPU cores)
@@ -523,6 +523,21 @@ Three rules they share, and each is load-bearing:
   `max_drawdown_pct = -1.0` for a run whose curve is missing, for the same reason
   `_restamp_profit_concentration` stamps `'dollars'`: a row left NULL is re-read on every startup
   forever.
+
+**The same bar now grades EACH trade, for the chart — `metrics.trade_outcomes` (2026-08-18).** It
+returns `won` / `scratch` / `lost` per curve point and `chart_spec` stamps it on the trade as
+`outcome`, so the price chart's per-trade chip and the KPI row's `scratch_count` cannot tell two
+stories about the same trade. 🔴 **It exists because they did.** The chart graded on `pnl > 0`
+alone, which files a trade that netted **exactly $0.00** under LOSS — and on run `295a6ff29d21`
+eight trades did exactly that, one of them a short whose exit sat plainly BELOW its entry. That
+chip sent a reader looking for a bug in the exit code; the exit was right (the profit went to a
+scale-in add — see `strategies/python/mpc_sos_fade/CLAUDE.md` → *Scale-in*).
+
+⚠ **It is aligned 1:1 with the curve, which `_trade_weights` is NOT** — that one drops any point it
+cannot weight, so its indices stop matching the trades the moment one is dropped. ⚠ **A run with no
+losing trade carries NO verdict rather than an all-`won` list**, same rule as `scratch_count`
+returning `None`: the chart then falls back to the sign of the P&L, and its fallback never says
+`scratch`, because an ungraded trade is not a measured flat one.
 
 **A high `trade_concentration_pct` is not a verdict.** A runner-based strategy is supposed to be
 fat-tailed and this repo's stated design intent is few high-quality setups, so read it as "the
@@ -3261,6 +3276,41 @@ one thing worth checking here. ⚠ **Two fixtures were caught being wrong BY THE
 pattern" bar was itself a Hammer, and replacing it with a long bearish body made its neighbours an
 Evening Star — **a three-bar pattern is a property of the bars AROUND the one you are placing**, so
 the fixtures now assert their own quiet bars are quiet.
+
+## A trade that added — `trades[].adds`, and why a box could not account for its own P&L
+
+**2026-08-18.** The chart drew run `295a6ff29d21` trade T137 as a SHORT entered at 4098.60 and
+exited at 4085.07 — plainly in profit — with a "Lost" chip and a P&L of $0.00. Nothing about that
+box was reconcilable, and nothing in the record explained it.
+
+**Both halves were missing, and each is a different lesson.** The verdict was the sign test (see
+`metrics.trade_outcomes` above): $0.00 is not a loss. And the P&L was right all along — the base
+lot's profit had gone to a SCALE-IN ADD, a second lot bought later at a better price and closed at
+the same exit. 🔴 **Every field the chart had described the BASE lot only** — `size` is the base
+quantity, `legs` is the exit ladder, `favorable`/`adverse` are excursions on the base — so the one
+fact that closes the arithmetic appeared in no field of the equity curve, the KPI row or the spec.
+
+So `backtest/output.py` now carries the filled lots onto the curve point (`adds`) and this file
+passes them through to `trades[].adds`, one `{price, ms, qty}` per lot. The panel draws a dotted
+`Add` line per lot. ⚠ **The key is ABSENT on a trade that never added**, not `[]` — every trade of
+every strategy without scale-in is that trade, and an empty list on all of them reads as a feature
+that ran and bought nothing.
+
+⚠ **A run finished before this shipped carries none, and there is no backfill** — the lots were
+never recorded, so recovering them means replaying the strategy. Re-run the backtest. The
+`outcome` verdict needs no re-run (it is derived from the stored curve), but a run's
+`chart_spec.json` is CACHED and holds neither field until that file is deleted and rebuilt.
+
+Tests: `tests/test_chart_spec_trade_outcome.py` (6) — the $0.00 trade, the band's two edges
+($149 of a $1,000 median loss is a scratch, $151 is a loser), the ungraded run, and both halves of
+the `adds` passthrough. **Each was watched RED by mutation**: grading on the sign alone reddens the
+scratch cases and nothing else, and deleting the passthrough reddens only the lots test.
+
+⚠ **`build_engine_trades` deliberately does NOT carry them.** That is the unit-size contract the
+sizing engine re-sizes from, and it has no concept of a position that grew mid-trade — feeding it
+adds would not make it model them, it would make it double-count the base. A scaled run is
+therefore not something the sizing engine can currently re-size, and that is a known gap rather
+than a solved problem.
 
 ## Trade fibs — the leg each trade was actually priced off
 
