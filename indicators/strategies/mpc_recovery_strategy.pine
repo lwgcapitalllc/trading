@@ -29,9 +29,12 @@ var string G5 = "5 · Entry"
 var string G6 = "6 · Stop & targets"
 var string G7 = "7 · Filters"
 var string G8 = "8 · Chart annotations"
-var string G9 = "9 · Loss recovery"
 var string G9 = "9 · Drawing: fibs"
 var string G10 = "10 · Drawing: sessions"
+// [REC] the recovery group is numbered 11 rather than 9: G9 and G10 were already taken by the
+// two drawing groups, and renumbering THEM would silently move every existing input to a new
+// group in anyone's saved chart settings.
+var string G11 = "11 · Loss recovery"
 
 // ── 1 · Confirmation table ──────────────────────────────────────
 bool showConfTable = input.bool(false, "Show Confirmation Table", group = G1, display = display.none)
@@ -93,14 +96,14 @@ float execTimeStopHrs = input.float(36.0, "   ↳ Time stop (hours)", group = G6
 // After a primary trade is stopped out, take ONE trade in the opposite direction on the next
 // external CHoCH, and once it has paid the loss back, refuse to give it back.
 // Python twin + every measured number: strategies/python/loss_recovery/CLAUDE.md
-bool  recEnabled  = input.bool(false, "Take a recovery trade after a loss", group = G9, tooltip = "Off reproduces the plain A+ book exactly. On adds one counter-trade after each real stop-out, entered on the next opposite change of character.")
-float recRiskFrac = input.float(25.0, "   ↳ Size, % of a normal trade", group = G9, minval = 1, maxval = 100, step = 1, active = recEnabled, tooltip = "25 is the largest size that does not make the drawdown worse than the strategy already runs, and it is also the best value for money. Between 20 and 55 the answer barely moves.")
-bool  recBothDirs = input.bool(true,  "   ↳ Take it both ways", group = G9, active = recEnabled, tooltip = "On takes the recovery long or short. Off takes longs only — which scored better on past data, but only because it was chosen after looking. Leave it on.")
-float recLockAtR  = input.float(1.0,  "   ↳ Secure the loss back at (R)", group = G9, minval = 0.25, step = 0.25, active = recEnabled, tooltip = "How far the trade must travel before the stop is moved. At 1R you have made back exactly what you lost.")
-float recLockToR  = input.float(1.0,  "   ↳ Move the stop to (R)", group = G9, minval = 0.0, step = 0.25, active = recEnabled, tooltip = "Where the stop goes when it moves. 1 banks the recovery. 0 is plain breakeven, which protects you from losing but does not bank what you came for.")
-bool  recTrail    = input.bool(true,  "   ↳ Then trail behind each new swing", group = G9, active = recEnabled, tooltip = "After the stop has moved, keep pulling it up to each new confirmed swing. There is no profit target.")
-float recMaxDays  = input.float(30.0, "   ↳ Give up after (days)", group = G9, minval = 1, step = 1, active = recEnabled, tooltip = "A backstop against overnight financing, not a working rule. Nothing normally lasts this long.")
-float recScratchR = input.float(0.15, "   ↳ A loss counts below (R)", group = G9, minval = 0.0, step = 0.05, active = recEnabled, tooltip = "Trades that close near where they opened are scratches, not losses, and there is nothing to win back.")
+bool  recEnabled  = input.bool(false, "Take a recovery trade after a loss", group = G11, tooltip = "Off reproduces the plain A+ book exactly. On adds one counter-trade after each real stop-out, entered on the next opposite change of character.")
+float recRiskFrac = input.float(25.0, "   ↳ Size, % of a normal trade", group = G11, minval = 1, maxval = 100, step = 1, active = recEnabled, tooltip = "25 is the largest size that does not make the drawdown worse than the strategy already runs, and it is also the best value for money. Between 20 and 55 the answer barely moves.")
+bool  recBothDirs = input.bool(true,  "   ↳ Take it both ways", group = G11, active = recEnabled, tooltip = "On takes the recovery long or short. Off takes longs only — which scored better on past data, but only because it was chosen after looking. Leave it on.")
+float recLockAtR  = input.float(1.0,  "   ↳ Secure the loss back at (R)", group = G11, minval = 0.25, step = 0.25, active = recEnabled, tooltip = "How far the trade must travel before the stop is moved. At 1R you have made back exactly what you lost.")
+float recLockToR  = input.float(1.0,  "   ↳ Move the stop to (R)", group = G11, minval = 0.0, step = 0.25, active = recEnabled, tooltip = "Where the stop goes when it moves. 1 banks the recovery. 0 is plain breakeven, which protects you from losing but does not bank what you came for.")
+bool  recTrail    = input.bool(true,  "   ↳ Then trail behind each new swing", group = G11, active = recEnabled, tooltip = "After the stop has moved, keep pulling it up to each new confirmed swing. There is no profit target.")
+float recMaxDays  = input.float(30.0, "   ↳ Give up after (days)", group = G11, minval = 1, step = 1, active = recEnabled, tooltip = "A backstop against overnight financing, not a working rule. Nothing normally lasts this long.")
+float recScratchR = input.float(0.15, "   ↳ A loss counts below (R)", group = G11, minval = 0.0, step = 0.05, active = recEnabled, tooltip = "Trades that close near where they opened are scratches, not losses, and there is nothing to win back.")
 
 // ── 7 · Filters ─────────────────────────────────────────────────
 bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", group = G7, tooltip = "On = entries obey the veto. The veto itself is switched on in the RSI divergence section.")

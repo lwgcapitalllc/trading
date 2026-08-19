@@ -39,7 +39,19 @@ fixes on first paste. **Nothing here has been verified by anything.**
 | `posPrimary` replaces `strategy.position_size` | **30 sites** below the helpers, including all 13 arming gates, both open-transition detectors, the position box and the scale-in blocks |
 | `primaryNet` replaces `strategy.netprofit` | in `netAtEntry` and `closedR`, so the two legs cannot credit each other |
 | `f_primaryEntryPx()` replaces `strategy.position_avg_price` | it would blend the recovery's fill into `lEntry`/`sEntry` and therefore into `openRiskUsd` |
-| group 9 inputs | `recEnabled` (**default OFF**), size %, both-directions, lock-at / lock-to, trail, day cap, scratch band |
+| group **11** inputs | `recEnabled` (**default OFF**), size %, both-directions, lock-at / lock-to, trail, day cap, scratch band |
+
+🔴 **THE FIRST PASTE FAILED ON `CE10095: "G9" is already defined`, and the cause is worth keeping.**
+The recovery group was numbered 9 because the panel contract's own table lists 9 as *Drawing: Fibs*
+and this file has no fibs — so 9 read as free. It was not: `mpc_strategy.pine` declares **both**
+`G9 = "9 · Drawing: fibs"` and `G10 = "10 · Drawing: sessions"`, and the new declaration was
+inserted directly above the existing one. ⚠ **The contract's numbering is the ADDRESS, not an
+inventory of what a given file uses** — read the file's own `var string G*` block before claiming a
+number. The recovery group is **G11 / "11 · Loss recovery"**; renumbering the two drawing groups
+instead would have moved every existing input to a new group in anyone's saved chart settings.
+✅ Checked afterwards rather than assumed: all 24 new identifiers (`f_isRec`, `posPrimary`,
+`primaryNet`, `f_recSize`, every `rec*`) are absent from `mpc_strategy.pine`, and
+`indicators/tools/check_active_order.py` passes.
 
 🔴 **THE FIRST THING TO CHECK ON A CHART, BEFORE ANY RECOVERY NUMBER IS BELIEVED: with
 `recEnabled` OFF this file must reproduce `mpc_strategy.pine`'s book EXACTLY** — same trade count,
