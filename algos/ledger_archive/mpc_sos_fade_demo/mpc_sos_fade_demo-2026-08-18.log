@@ -1,0 +1,8 @@
+2026-08-18 05:45:09,216 [INFO] place SHORT limit 0.55L @ 4412.29 SL 4430.45658
+2026-08-18 05:45:09,312 [INFO] PENDING PLACED | ticket=332065221 | bearish 0.55L @ 4412.29 | SL=4430.46
+2026-08-18 14:45:06,217 [INFO] cancel SHORT limit T332065221
+2026-08-18 14:45:06,296 [INFO] PENDING CANCELLED | T332065221
+2026-08-18 22:15:09,447 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-08-18 22:15:09,452 [INFO] Sizing against account balance $9,996.99
+2026-08-18 22:15:12,715 [INFO] Warmed 5000 bars (2026-06-03 05:15:00+00:00 → 2026-08-18 22:00:00+00:00) in 3.1s
+2026-08-18 22:15:12,717 [INFO] Equity re-anchored to the account after warm-up: 20,424.36 → 9,996.99
