@@ -1,0 +1,92 @@
+"""loss_recovery/config.py — every knob, with the measured default and the reason for it.
+
+Defaults are the ones MEASURED on XAUUSD M15 2018-09-14 → 2026-08-14 over mpc_sos_fade's 62
+losses, both sides charged at `puprime_ecn`. Where a default was chosen rather than swept, the
+docstring says so.
+
+⚠ `enabled` defaults to **False**. Nothing that imports this package changes behaviour until a
+caller says so — the rule has never been traded and has no parity gate.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class RecoveryConfig:
+    enabled: bool = False
+    """Off until a caller opts in. See CLAUDE.md → Status."""
+
+    major_length: int = 15
+    """Structure engine's swing length. 15 because that is what mpc_sos_fade runs, and the
+    recovery trade must read the SAME structure the primary read — a recovery entry off a
+    different structure stream is a different rule that happens to share a trigger."""
+
+    scratch_r: float = 0.15
+    """Below this (signed, so `r < -scratch_r`) a primary trade counts as a real loss rather
+    than a scratch. Matches `SosFadeConfig.exec_scratch_r`; a scratch is not a loss to recover."""
+
+    both_directions: bool = True
+    """Take the counter-trade whichever way it points.
+
+    MEASURED: counter-longs +18.9R over 37, counter-shorts -2.9R over 25 — and both directions
+    together score 1.49x against the risk dial where longs alone score 1.48x, i.e. the shorts are
+    free. 🔴 **Setting this False is not a tuning choice, it is a FITTED one**: `long only` was
+    picked after seeing which direction won on this exact record, and it was the only fitted
+    element in the rule. Leaving it True is what removes that."""
+
+    risk_fraction: float = 0.25
+    """Recovery risk as a fraction of a normal trade's risk.
+
+    MEASURED by a 5% sweep: 0.25 is simultaneously the LARGEST size that does not raise max
+    drawdown above what the primary already runs (48.3% against 48.8%) and the peak of the
+    efficiency curve (1.53x against the risk dial). The curve is flat from 0.20 to 0.55, so this
+    is not a knife edge — see CLAUDE.md."""
+
+    lock_at_r: float = 1.0
+    """Move the stop once the trade has travelled this many R in favour.
+
+    1.0 is the whole idea rather than a swept parameter: +1R is the moment the original loss has
+    been paid back. MEASURED, the alternatives are worse — arming at +2R nets +11.5R and arming
+    at 0 (trail from the start) nets +2.4R, against +18.9R here."""
+
+    lock_to_r: float = 1.0
+    """Where the stop goes when it arms. 1.0 SECURES the recovery; 0.0 is plain breakeven.
+
+    MEASURED and the difference is the single biggest one in the whole rule: locking to +1R nets
+    +18.9R at a 70% win rate, moving to breakeven instead nets +9.5R at 54%. Breakeven protects
+    you from losing; it does not bank the thing you entered for."""
+
+    trail_swings: bool = True
+    """After arming, ratchet the stop to each new CONFIRMED swing level from the same structure
+    engine. False leaves the stop parked at `lock_to_r`."""
+
+    max_days: float = 30.0
+    """Hard close. A BACKSTOP, not a working rule — MEASURED, 30 / 60 / 90 days return the
+    identical result because the median hold is 4 days and nothing reaches the cap.
+
+    🔴 It exists because the earlier 10R-target version of this rule left trades open for 130+
+    days and paid -8.66R of overnight swap on one that made +1.25R. Gold swap is charged, not
+    free, and a rule with no time bound quietly turns a flat trade into a large loss."""
+
+    horizon_days: float = 90.0
+    """How far the simulator will walk before giving up and marking to market. Strictly a
+    measurement bound — it must stay LARGER than `max_days` or the time stop never fires and the
+    two limits silently become one."""
+
+    def __post_init__(self) -> None:
+        if self.risk_fraction <= 0:
+            raise ValueError("risk_fraction must be positive; 0 means 'do not trade it'")
+        if self.lock_to_r > self.lock_at_r:
+            raise ValueError(
+                f"lock_to_r ({self.lock_to_r}) cannot exceed lock_at_r ({self.lock_at_r}) — "
+                "the stop cannot be placed beyond a price the trade has not reached"
+            )
+        if self.horizon_days < self.max_days:
+            raise ValueError(
+                f"horizon_days ({self.horizon_days}) is below max_days ({self.max_days}), so the "
+                "time stop can never fire and the two limits are the same number wearing two names"
+            )
+        if self.scratch_r < 0:
+            raise ValueError("scratch_r is a magnitude; pass 0.15, not -0.15")

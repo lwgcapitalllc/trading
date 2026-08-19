@@ -1,0 +1,350 @@
+"""Tests for loss_recovery.
+
+RULE 12 — every test in this file was watched RED before it was watched green, and the mutation
+that reddens it is named in the test's own docstring. A test whose red state nobody has seen is
+a test that agrees with the bug.
+
+RULE 13 — the price fixture is 2,400 REAL XAUUSD M15 bars (`fixture_xauusd_m15.csv`), not a
+synthetic path. That is not laziness, it is the rule: hand-built ramps and sawtooths were tried
+first and the canonical structure engine emitted **zero** events on all of them, because pivot
+seeding plus 3-candle pullback confirmation needs price action a straight line does not contain.
+A fixture the engine cannot read would have let every assertion below pass vacuously on an empty
+list. The slice is committed so the tests do not depend on a bar cache being present, and it is
+known to contain 8 external CHoCHs at bars 134/436/527/588/628/783/1065/2084.
+"""
+
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+_ROOT = Path(__file__).resolve().parents[3]
+for _p in (str(_ROOT), str(_ROOT / "engines"), str(_ROOT / "strategies" / "python")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from loss_recovery import LossRecoveryEngine, RecoveryConfig  # noqa: E402
+from loss_recovery.engine import _bars_per_day  # noqa: E402
+
+
+@dataclass
+class FakeLoss:
+    """Satisfies the LossEvent protocol and nothing more — see rule 13 in the module docstring."""
+
+    dir: int
+    exit_index: int
+    r: float
+
+
+_FIXTURE = Path(__file__).with_name("fixture_xauusd_m15.csv")
+
+# Bars the fixture is known to print an external CHoCH on, and which way. Hardcoded so a change
+# in the structure engine reddens these tests LOUDLY rather than quietly moving what they assert.
+_BULL_CHOCH_BARS = (436, 588, 783, 2084)
+_BEAR_CHOCH_BARS = (134, 527, 628, 1065)
+
+# The break-leg FAR end the canonical engine reports at each of those bars — i.e. where the stop
+# belongs. Hardcoded from a real run so that swapping `bull_bos_low` for `bull_bos_price` (the
+# level that BROKE, a different price on a different bar) is caught by value rather than by a
+# sign check that both would pass.
+_EXPECTED_STOP = {
+    436: 2018.16,
+    588: 2023.86,
+    783: 2013.32,
+    2084: 2001.80,
+    134: 2067.46,
+    527: 2041.92,
+    628: 2040.20,
+    1065: 2062.19,
+}
+
+
+def real_bars():
+    df = pd.read_csv(_FIXTURE, index_col=0, parse_dates=True)
+    df.index = pd.DatetimeIndex(df.index)
+    return df
+
+
+def flat_bars(n=400, price=100.0):
+    """A dead-flat path. The canonical engine cannot print anything on it — which is the point:
+    it is the 'no signal' fixture, and it is honest about being one."""
+    idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz="UTC")
+    return pd.DataFrame({"open": price, "high": price, "low": price, "close": price}, index=idx)
+
+
+# ── config refusals ──────────────────────────────────────────────────────────────────────
+def test_lock_to_beyond_lock_at_is_refused():
+    """RED by deleting the lock_to_r/lock_at_r check in RecoveryConfig.__post_init__.
+
+    A stop placed at +2R the moment price touches +1R is a stop on the far side of a price the
+    trade has not reached — it would fill instantly at a price the market never offered, and the
+    backtest would print free money.
+    """
+    with pytest.raises(ValueError, match="cannot exceed"):
+        RecoveryConfig(lock_at_r=1.0, lock_to_r=2.0)
+
+
+def test_horizon_below_time_stop_is_refused():
+    """RED by deleting the horizon_days/max_days check.
+
+    If the walk gives up before the time cap, the time stop can never fire and two limits that
+    mean different things silently become one — the reader then believes a 30-day cap is being
+    enforced by a number that is never reached.
+    """
+    with pytest.raises(ValueError, match="below max_days"):
+        RecoveryConfig(max_days=90.0, horizon_days=30.0)
+
+
+def test_zero_risk_fraction_is_refused():
+    """RED by deleting the risk_fraction check. Zero size is not a setting, it is `enabled=False`
+    wearing a disguise, and a journal of `scaled_r == 0.0` reads as "traded and broke even"."""
+    with pytest.raises(ValueError, match="must be positive"):
+        RecoveryConfig(risk_fraction=0.0)
+
+
+# ── the gate ─────────────────────────────────────────────────────────────────────────────
+def test_disabled_by_default_returns_nothing():
+    """RED by defaulting `enabled` to True. This package is unproven and ungated; importing it
+    must not be able to change what anything trades."""
+    got = LossRecoveryEngine().run(real_bars(), [FakeLoss(dir=-1, exit_index=300, r=-1.0)])
+    assert got == []
+
+
+def test_scratches_do_not_arm():
+    """RED by changing the filter to `t.r < 0`.
+
+    A -0.05R scratch is not a loss to win back. Counting it would inflate the population with
+    trades that had nothing to recover, and every per-trade figure would then be diluted by
+    them rather than wrong in a way anybody would notice.
+    """
+    cfg = RecoveryConfig(enabled=True, scratch_r=0.15)
+    eng = LossRecoveryEngine(cfg)
+    assert eng.run(real_bars(), [FakeLoss(dir=-1, exit_index=300, r=-0.10)]) == []
+
+
+def test_a_loss_with_no_choch_produces_no_trade_and_shows_as_pending():
+    """RED by making `run` fall back to a market entry when no CHoCH is found.
+
+    'No signal' and 'signal, then a losing trade' must never be the same outcome — that is the
+    repo's standing rule about a value that means two things. `pending()` is how the difference
+    stays visible.
+    """
+    bars = flat_bars()  # dead flat: the structure engine can never print a CHoCH
+    cfg = RecoveryConfig(enabled=True)
+    eng = LossRecoveryEngine(cfg)
+    loss = FakeLoss(dir=-1, exit_index=50, r=-1.0)
+    assert eng.run(bars, [loss]) == []
+    assert [p.trigger_index for p in eng.pending(bars, [loss])] == [50]
+
+
+# ── the money arithmetic ─────────────────────────────────────────────────────────────────
+def _one_trade(cfg):
+    """Every counter-LONG the fixture can produce: one losing SHORT parked just before each known
+    bull CHoCH, so the engine has something to arm on and a signal to find."""
+    bars = real_bars()
+    losses = [FakeLoss(dir=-1, exit_index=b - 30, r=-1.0) for b in _BULL_CHOCH_BARS]
+    return bars, LossRecoveryEngine(cfg).run(bars, losses)
+
+
+def test_scaled_r_is_r_times_risk_fraction():
+    """RED by returning `scaled_r=r` in engine.run.
+
+    These are two different units and a journal adds up the second one. A recovery trade booked
+    at full size when it was taken at a quarter would overstate its contribution 4x — the same
+    class of unit error as handing MT5 ounces where it wanted lots.
+    """
+    cfg = RecoveryConfig(enabled=True, risk_fraction=0.25)
+    _, got = _one_trade(cfg)
+    assert got, "fixture produced no recovery trade; the test cannot say anything"
+    for t in got:
+        assert t.scaled_r == pytest.approx(t.r * 0.25)
+
+
+def test_stop_sits_on_the_far_end_of_the_break_leg_not_inside_the_move():
+    """RED by using `bull_bos_price` (the level that broke) instead of `bull_bos_low`.
+
+    The two differ by the whole impulse leg. Swapping them gives a much tighter stop, which makes
+    every R look bigger while describing a trade nobody placed.
+
+    ⚠ This asserts the stop PRICE, not just its sign. An earlier version checked only that the
+    stop sat on the correct side of entry — which the wrong level also satisfies, so the test
+    passed against its own bug. Caught by mutation, not by review.
+    """
+    cfg = RecoveryConfig(enabled=True)
+    _, got = _one_trade(cfg)
+    assert len(got) == len(_BULL_CHOCH_BARS)
+    for t in got:
+        assert (t.entry_price - t.stop_price) * t.direction > 0
+        assert t.risk == pytest.approx(abs(t.entry_price - t.stop_price))
+        assert t.stop_price == pytest.approx(_EXPECTED_STOP[t.signal_index], abs=0.01)
+
+
+def test_locking_caps_the_loss_at_the_locked_level():
+    """RED by never re-assigning `stop` when `fav >= lock_at_r`.
+
+    This is the load-bearing line of the whole rule: once the trade has paid the loss back, it
+    may not give it away again. If it armed, the outcome cannot be a full -1R.
+
+    ⚠ It runs the counter-SHORT set on purpose. The counter-LONG set contains NO trade that
+    reaches +1R, so the earlier version of this test looped over four trades, entered the `if`
+    zero times and passed while asserting nothing. The explicit `assert locked` below is what
+    stops that recurring.
+
+    ⚠ Trailing is switched OFF here, and that is also a mutation finding rather than a style
+    choice. With it on, deleting the lock made the one arming trade book MORE (+1.457 instead of
+    +1.000) because the swing trail rescued it — so the test passed against its own bug. Isolating
+    the lock is the only way this assertion can speak about the lock.
+    """
+    cfg = RecoveryConfig(enabled=True, lock_at_r=1.0, lock_to_r=1.0, trail_swings=False)
+    bars = real_bars()
+    losses = [FakeLoss(dir=1, exit_index=b - 30, r=-1.0) for b in _BEAR_CHOCH_BARS]
+    got = LossRecoveryEngine(cfg).run(bars, losses)
+    locked = [t for t in got if t.locked]
+    assert locked, "no trade armed; this test would assert nothing"
+    for t in locked:
+        assert t.r >= 1.0 - 1e-9, f"armed at +1R and still booked {t.r}"
+
+
+def test_a_bar_that_hits_both_the_stop_and_the_lock_books_the_stop():
+    """RED by moving the arm/track block ABOVE the stop check in `_manage`.
+
+    This drives `_manage` directly with a two-bar frame whose second bar spans the stop AND +1R,
+    because that is the only shape where the ordering is observable at all — and proving that was
+    the point. On 2,400 real bars the reordered walk returns BYTE-IDENTICAL results, since no bar
+    there both arms and stops. A test asserting the ordering against that fixture could never have
+    gone red, and would have been decoration.
+
+    ⚠ A synthetic frame is legitimate HERE and nowhere else in this file: `_manage` runs no
+    structure detection, so this is the production code path on chosen prices rather than a double
+    that can answer more than the real thing (rule 13).
+
+    Getting it wrong pays you for a bar that stopped you out, which is the most flattering
+    arithmetic error a bar-replay can make.
+    """
+    idx = pd.date_range("2024-01-01", periods=2, freq="15min", tz="UTC")
+    # long from 100, stop 99 (1R = 1.0). Bar 2 trades 98 → 102: through the stop AND past +1R.
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0],
+            "high": [100.2, 102.0],
+            "low": [99.8, 98.0],
+            "close": [100.0, 101.0],
+        },
+        index=idx,
+    )
+    eng = LossRecoveryEngine(RecoveryConfig(enabled=True))
+    exit_i, exit_px, r, reason, locked, mfe = eng._manage(bars, 0, 1, 100.0, 99.0, {}, {}, 96.0)
+    assert reason == "stop", f"a bar through the stop booked {reason!r}"
+    assert r == pytest.approx(-1.0)
+    assert not locked
+
+
+def test_no_trade_books_more_than_its_best_price_or_exits_by_a_route_that_does_not_exist():
+    """RED by giving `_manage` a take-profit branch.
+
+    This rule has NO target — it locks and trails. Any exit reason outside the closed set is a
+    code path nobody designed, and no trade may book more R than the best price it ever saw.
+    """
+    cfg = RecoveryConfig(enabled=True)
+    _, got = _one_trade(cfg)
+    assert got
+    for t in got:
+        assert t.r >= -1.0 - 1e-9
+        assert t.exit_reason in {"stop", "locked", "trail", "time", "horizon"}
+        assert t.r <= t.max_favourable_r + 1e-9
+
+
+def test_max_favourable_is_never_below_the_booked_result():
+    """RED by initialising `mfe` after the stop check instead of tracking every bar.
+
+    A trade cannot book more than the best price it ever saw.
+
+    ⚠ `mfe >= r` alone is vacuous on this fixture, where every counter-long books exactly -1R and
+    any non-negative mfe satisfies it. The assertion with teeth is that mfe is STRICTLY positive:
+    a mutation that only tracks excursion after arming leaves every unarmed trade reporting 0.0,
+    and a trade that moved in your favour at all cannot have peaked at zero.
+    """
+    cfg = RecoveryConfig(enabled=True)
+    _, got = _one_trade(cfg)
+    assert got
+    for t in got:
+        assert t.max_favourable_r >= t.r - 1e-9
+        assert t.max_favourable_r > 0.0, "excursion is not being tracked before the stop arms"
+
+
+def test_time_stop_bounds_the_hold():
+    """RED by dropping `time_cap` from the `end` calculation.
+
+    Without it a flat trade sits open for the full horizon. That is not a cosmetic difference:
+    the version of this rule with no time bound paid -8.66R of overnight swap on a single trade
+    that made +1.25R.
+    """
+    cfg = RecoveryConfig(enabled=True, max_days=2.0, horizon_days=90.0)
+    bars, got = _one_trade(cfg)
+    assert got
+    per_day = _bars_per_day(bars)
+    for t in got:
+        assert t.bars_held <= int(round(2.0 * per_day)) + 1
+
+
+def test_shorts_are_included_by_default_and_excludable():
+    """RED by hardcoding `both_directions` True in run().
+
+    Excluding shorts is the one FITTED choice available here, so it has to be a visible switch a
+    reader can see set rather than a silent default nobody knows they are relying on.
+    """
+    bars = real_bars()
+    # a LONG lost -> wants a counter-SHORT, so park it just before a known bear CHoCH
+    loss = FakeLoss(dir=1, exit_index=_BEAR_CHOCH_BARS[1] - 30, r=-1.0)
+    both = LossRecoveryEngine(RecoveryConfig(enabled=True, both_directions=True)).run(bars, [loss])
+    longs_only = LossRecoveryEngine(RecoveryConfig(enabled=True, both_directions=False)).run(
+        bars, [loss]
+    )
+    assert longs_only == []
+    assert all(t.direction == -1 for t in both)
+
+
+def test_two_runs_on_one_instance_agree():
+    """RED by memoising `_replay_structure` on `self` — the "this pass is slow, cache it" bug.
+
+    ⚠ Two weaker versions of this test were written first and BOTH were vacuous, which is worth
+    recording. Re-running the same frame twice cannot fail, because the canonical StructureEngine
+    tolerates being re-fed from index 0. Running real bars then FLAT bars cannot fail either — a
+    stale signal on a flat frame is refused downstream by the `risk <= 0` guard, so a second
+    guard masks the bug. What bites is two DIFFERENT real slices: the stale CHoCHs from slice A
+    land on real, tradeable prices in slice B and quietly produce trades that were never signalled.
+    """
+    cfg = RecoveryConfig(enabled=True)
+    bars = real_bars()
+    a, b = (
+        bars.iloc[:1200],
+        bars.iloc[1200:].reset_index(drop=False).set_index(bars.index.name or "index"),
+    )
+    b = bars.iloc[1200:]
+    loss_a = [FakeLoss(dir=-1, exit_index=100, r=-1.0)]
+    loss_b = [FakeLoss(dir=-1, exit_index=100, r=-1.0)]
+
+    shared = LossRecoveryEngine(cfg)
+    shared.run(a, loss_a)  # warm it up on a different frame
+    got_shared = shared.run(b, loss_b)
+    got_fresh = LossRecoveryEngine(cfg).run(b, loss_b)
+    assert got_fresh, "second slice produced nothing; the test cannot say anything"
+    assert got_shared == got_fresh
+
+
+def test_bars_per_day_is_calendar_not_session():
+    """RED by computing bars-per-day from the median inter-bar gap.
+
+    The gap says 96 bars/day for M15 and the calendar says fewer, because gold closes daily and
+    at weekends. `max_days` bounds SWAP, which is charged on calendar nights, so the session
+    figure would let a trade run about half as long again as the cap claims.
+    """
+    idx = pd.date_range("2024-01-01", periods=96 * 14, freq="15min", tz="UTC")
+    weekdays = idx[idx.dayofweek < 5]  # two weekends removed from a fortnight
+    bars = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=weekdays)
+    assert _bars_per_day(bars) < 96.0
+    assert _bars_per_day(real_bars()) < 96.0

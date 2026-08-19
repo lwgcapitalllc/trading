@@ -187,6 +187,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/recovery_report.py`** (new 2026-08-19) — replays a strategy, then replays the
+  **loss-recovery** rule over its losses and prices the addition against the only honest
+  alternative: turning `exec_risk_pct` up on the strategy you already own. The rule itself lives
+  in `strategies/python/loss_recovery/` and that CLAUDE.md is the one that explains it.
+  🔴 **It charges costs to BOTH sides, and that is load-bearing rather than tidy** — charging the
+  recovery leg alone is rule 11 broken, and it FLIPS the verdict: uncosted-primary said the risk
+  dial won, costing both says the recovery wins by 1.3–1.7x. The primary holds a median 0.3 days
+  and 100 of its 181 trades are SHORTS, which gold pays a swap CREDIT to hold, so it loses only
+  7% of gross to costs while the recovery leg loses far more.
+  ⚠ **Read the drawdown column, never the balance alone.** The rule buys RETURN, not safety —
+  MEASURED, max drawdown is 48.3% at 25% size against the primary's 48.8%, and it goes UP to
+  57.2% at full size. `--sweep` prints the whole size curve.
+  ⚠ Everything it prints is a LAB finding: no Pine twin, no parity gate, `enabled` defaults False.
+
 - **`tools/rso_scan.py`** (new 2026-08-16) — finds RETAIL SHAKE OUT (RSO) setups and draws them.
   Drives the canonical `engines/market_structure/` rather than hand-rolled pivots: A = `bull_sos`,
   B = a wick under the level that break left behind, C = the next aggressive `bull_sos`. Shorts
