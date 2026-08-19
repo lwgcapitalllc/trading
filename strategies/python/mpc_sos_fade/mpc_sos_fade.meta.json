@@ -425,8 +425,8 @@
       },
       "desc": "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.",
       "guide": [
-        "Trail — adds most often, worst price, most drawdown",
-        "BOS retest — fewer adds, better price, gentler drawdown"
+        "Trail — the measured choice; adds most often and makes the money",
+        "BOS retest — waits for a pullback that often never comes; loses money outside 2020"
       ]
     },
     {
@@ -457,8 +457,8 @@
       },
       "desc": "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.",
       "guide": [
-        "Lower — less margin and less gap exposure",
-        "Higher — the profit rule alone decides the size"
+        "Lower — this is the drawdown lever; 0.5 is the measured best",
+        "Higher — more return bought with much more drawdown, and more gap exposure"
       ]
     },
     {

@@ -1,7 +1,7 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
 // [doc 1] MPC A+ STRATEGY — backtest wrapper around the MPC-JARVIS engine  -> docs/mpc_strategy.md
-// [doc 174] `pyramiding = 4` — the scale-in toggle's one compile-time cost  -> docs/mpc_strategy.md
+// [doc 174] `pyramiding = 5` — the scale-in toggle's one compile-time cost  -> docs/mpc_strategy.md
 strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 5, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 // [doc 2] THE INPUT PANEL — one consolidated block, twelve numbered sections  -> docs/mpc_strategy.md
 var string G1 = "1 · Confirmation table"
@@ -103,9 +103,9 @@ bool showSessionsInput         = input.bool(false,  "Show Sessions",      group 
 
 // [doc 175] Scale-in inputs — declared LAST on purpose, displayed in group 6  -> docs/mpc_strategy.md
 bool  execScaleIn    = input.bool(false, "Add to the runner (scale in)", group = G6, tooltip = "Buys more once the trailing stop is already locking in profit; Off means the position never grows after entry. The add is sized so that being stopped out costs at most the profit already locked in, so it can shrink a winner but never create a loser.")
-int   execScaleAdds  = input.int(4, "   ↳ How many times it may add", minval = 1, maxval = 4, group = G6, active = execScaleIn, tooltip = "The most times one trade may add. It only adds again once the trailing stop has moved up since the last add, so a stalling trade gets nothing.")
-float execScaleCapX  = input.float(2.0, "   ↳ Biggest add, as a multiple of the original size", minval = 0.1, maxval = 5.0, step = 0.1, group = G6, active = execScaleIn, tooltip = "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.")
-string execScaleMode = input.string("BOS retest", "   ↳ Where it adds", options = ["Trail", "BOS retest"], group = G6, active = execScaleIn, tooltip = "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.")
+int   execScaleAdds  = input.int(3, "   ↳ How many times it may add", minval = 1, maxval = 4, group = G6, active = execScaleIn, tooltip = "The most times one trade may add. It only adds again once the trailing stop has moved up since the last add, so a stalling trade gets nothing.")
+float execScaleCapX  = input.float(0.5, "   ↳ Biggest add, as a multiple of the original size", minval = 0.1, maxval = 5.0, step = 0.1, group = G6, active = execScaleIn, tooltip = "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.")
+string execScaleMode = input.string("Trail", "   ↳ Where it adds", options = ["Trail", "BOS retest"], group = G6, active = execScaleIn, tooltip = "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.")
 
 // [doc 3] Four corners, not nine (Aaron, 2026-08-04) — synced from mpc_assistant.p  -> docs/mpc_strategy.md
 string tablePositionInput = "Top Right"
@@ -3404,6 +3404,7 @@ var int   lAddN    = 0,  var int   sAddN    = 0
 var float lAddStop = na, var float sAddStop = na
 var float lAddLim  = na, var float sAddLim  = na
 var bool  lAddArm  = false, var bool sAddArm = false
+var float lAddPStop = na, var float sAddPStop = na   // stop a RESTING add was sized against
 
 var float openRiskUsd = na   // $ at risk on the open trade = 1R, used to grade the result
 var float netAtEntry  = na   // strategy.netprofit the moment the trade opened
@@ -3834,6 +3835,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     lAddStop   := na
     lAddLim    := na
     lAddArm    := false
+    lAddPStop  := na
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegL
@@ -3853,6 +3855,7 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     sAddStop   := na
     sAddLim    := na
     sAddArm    := false
+    sAddPStop  := na
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegS
@@ -4011,41 +4014,64 @@ float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, 
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
 // [doc 177] ── SCALE-IN — add to a runner the trail is already protecting ──  -> docs/mpc_strategy.md
-if execScaleIn and strategy.position_size > 0 and strategy.position_size[1] > 0 and lStage >= 2 and lAddN < execScaleAdds and not na(lBaseQty) and not na(lStop) and not na(lEntry)
-    bool _ratchet = na(lAddStop) or lStop > lAddStop
-    if _ratchet
-        if execScaleMode == "BOS retest" and st.bull_bos and not na(st.bull_bos_high) and not na(st.bull_bos_low) and st.bull_bos_high > st.bull_bos_low
-            lAddLim := st.bull_bos_high
-            lAddArm := true
-        float _px = execScaleMode == "Trail" ? close : (lAddArm and not na(lAddLim) and low <= lAddLim ? (open < lAddLim ? open : lAddLim) : na)
-        if not na(_px)
+if execScaleIn and strategy.position_size > 0 and strategy.position_size[1] > 0 and not na(lBaseQty) and not na(lStop) and not na(lEntry)
+    // [doc 180] A resting add FILLED during this bar -> count it NOW  -> docs/mpc_strategy.md
+    if lAddArm and strategy.position_size > strategy.position_size[1]
+        lAddN    := lAddN + 1
+        lAddStop := lAddPStop
+        lAddArm  := false
+        lAddLim  := na
+    if lStage >= 2 and lAddN < execScaleAdds and (na(lAddStop) or lStop > lAddStop)
+        float _lim = execScaleMode == "Trail" ? close : (st.bull_bos and not na(st.bull_bos_high) and not na(st.bull_bos_low) and st.bull_bos_high > st.bull_bos_low ? st.bull_bos_high : na)
+        if not na(_lim)
             float _locked  = (lStop - lEntry) * lBaseQty
-            float _perUnit = _px - lStop
+            float _perUnit = _lim - lStop
             if _locked > 0 and _perUnit > 0
                 float _addQty = math.min(_locked / _perUnit, lBaseQty * execScaleCapX)
                 if _addQty > 0
-                    lAddN    := lAddN + 1
-                    lAddStop := lStop
-                    lAddArm  := false
-                    strategy.entry(lAddN == 1 ? "L-ADD1" : lAddN == 2 ? "L-ADD2" : lAddN == 3 ? "L-ADD3" : "L-ADD4", strategy.long, qty = _addQty)
+                    string _id = lAddN == 0 ? "L-ADD1" : lAddN == 1 ? "L-ADD2" : lAddN == 2 ? "L-ADD3" : "L-ADD4"
+                    lAddPStop := lStop
+                    lAddLim   := _lim
+                    lAddArm   := true
+                    // [doc 181] BOS retest RESTS a limit; Trail is market by nature  -> docs/mpc_strategy.md
+                    if execScaleMode == "Trail"
+                        strategy.entry(_id, strategy.long, qty = _addQty)
+                    else
+                        strategy.entry(_id, strategy.long, qty = _addQty, limit = _lim)
 
-if execScaleIn and strategy.position_size < 0 and strategy.position_size[1] < 0 and sStage >= 2 and sAddN < execScaleAdds and not na(sBaseQty) and not na(sStop) and not na(sEntry)
-    bool _ratchet = na(sAddStop) or sStop < sAddStop
-    if _ratchet
-        if execScaleMode == "BOS retest" and st.bear_bos and not na(st.bear_bos_high) and not na(st.bear_bos_low) and st.bear_bos_high > st.bear_bos_low
-            sAddLim := st.bear_bos_low
-            sAddArm := true
-        float _px = execScaleMode == "Trail" ? close : (sAddArm and not na(sAddLim) and high >= sAddLim ? (open > sAddLim ? open : sAddLim) : na)
-        if not na(_px)
+if execScaleIn and strategy.position_size < 0 and strategy.position_size[1] < 0 and not na(sBaseQty) and not na(sStop) and not na(sEntry)
+    if sAddArm and strategy.position_size < strategy.position_size[1]
+        sAddN    := sAddN + 1
+        sAddStop := sAddPStop
+        sAddArm  := false
+        sAddLim  := na
+    if sStage >= 2 and sAddN < execScaleAdds and (na(sAddStop) or sStop < sAddStop)
+        float _lim = execScaleMode == "Trail" ? close : (st.bear_bos and not na(st.bear_bos_high) and not na(st.bear_bos_low) and st.bear_bos_high > st.bear_bos_low ? st.bear_bos_low : na)
+        if not na(_lim)
             float _locked  = (sEntry - sStop) * sBaseQty
-            float _perUnit = sStop - _px
+            float _perUnit = sStop - _lim
             if _locked > 0 and _perUnit > 0
                 float _addQty = math.min(_locked / _perUnit, sBaseQty * execScaleCapX)
                 if _addQty > 0
-                    sAddN    := sAddN + 1
-                    sAddStop := sStop
-                    sAddArm  := false
-                    strategy.entry(sAddN == 1 ? "S-ADD1" : sAddN == 2 ? "S-ADD2" : sAddN == 3 ? "S-ADD3" : "S-ADD4", strategy.short, qty = _addQty)
+                    string _id = sAddN == 0 ? "S-ADD1" : sAddN == 1 ? "S-ADD2" : sAddN == 2 ? "S-ADD3" : "S-ADD4"
+                    sAddPStop := sStop
+                    sAddLim   := _lim
+                    sAddArm   := true
+                    if execScaleMode == "Trail"
+                        strategy.entry(_id, strategy.short, qty = _addQty)
+                    else
+                        strategy.entry(_id, strategy.short, qty = _addQty, limit = _lim)
+
+// [doc 182] A resting add must be CANCELLED when its trade ends  -> docs/mpc_strategy.md
+if execScaleIn
+    if lAddArm and strategy.position_size <= 0
+        strategy.cancel("L-ADD1"), strategy.cancel("L-ADD2"), strategy.cancel("L-ADD3"), strategy.cancel("L-ADD4")
+        lAddArm := false
+        lAddLim := na
+    if sAddArm and strategy.position_size >= 0
+        strategy.cancel("S-ADD1"), strategy.cancel("S-ADD2"), strategy.cancel("S-ADD3"), strategy.cancel("S-ADD4")
+        sAddArm := false
+        sAddLim := na
 
 // [doc 160] ── The TIME STOP — the one exit lever driven by the clock, not by price   -> docs/mpc_strategy.md
 
@@ -4060,14 +4086,10 @@ if strategy.position_size > 0
         strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
     // [doc 178] Every add needs its OWN exit and close — `from_entry` matches one id  -> docs/mpc_strategy.md
-    if lAddN >= 1
-        strategy.exit("L-AX1", from_entry = "L-ADD1", stop = lStop)
-    if lAddN >= 2
-        strategy.exit("L-AX2", from_entry = "L-ADD2", stop = lStop)
-    if lAddN >= 3
-        strategy.exit("L-AX3", from_entry = "L-ADD3", stop = lStop)
-    if lAddN >= 4
-        strategy.exit("L-AX4", from_entry = "L-ADD4", stop = lStop)
+    strategy.exit("L-AX1", from_entry = "L-ADD1", stop = lStop)
+    strategy.exit("L-AX2", from_entry = "L-ADD2", stop = lStop)
+    strategy.exit("L-AX3", from_entry = "L-ADD3", stop = lStop)
+    strategy.exit("L-AX4", from_entry = "L-ADD4", stop = lStop)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
         if lAddN >= 1
@@ -4096,14 +4118,10 @@ if strategy.position_size < 0
     if execTp2Pct > 0
         strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
-    if sAddN >= 1
-        strategy.exit("S-AX1", from_entry = "S-ADD1", stop = sStop)
-    if sAddN >= 2
-        strategy.exit("S-AX2", from_entry = "S-ADD2", stop = sStop)
-    if sAddN >= 3
-        strategy.exit("S-AX3", from_entry = "S-ADD3", stop = sStop)
-    if sAddN >= 4
-        strategy.exit("S-AX4", from_entry = "S-ADD4", stop = sStop)
+    strategy.exit("S-AX1", from_entry = "S-ADD1", stop = sStop)
+    strategy.exit("S-AX2", from_entry = "S-ADD2", stop = sStop)
+    strategy.exit("S-AX3", from_entry = "S-ADD3", stop = sStop)
+    strategy.exit("S-AX4", from_entry = "S-ADD4", stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
         if sAddN >= 1

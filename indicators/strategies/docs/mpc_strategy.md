@@ -2053,11 +2053,11 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // "One trail step behind" never drops below breakeven, so it can't hand back a loss.
 ```
 
-## [174] `pyramiding = 4` — the scale-in toggle's one unavoidable compile-time cost
+## [174] `pyramiding = 5` — the scale-in toggle's one unavoidable compile-time cost
 
 ```
-// 🔴 `pyramiding = 4` IS THE SCALE-IN TOGGLE'S ONE UNAVOIDABLE COMPILE-TIME COST, and it
-// is 4 rather than 0 for one reason: the base entry plus `execScaleAdds` (max 3) adds.
+// 🔴 `pyramiding = 5` IS THE SCALE-IN TOGGLE'S ONE UNAVOIDABLE COMPILE-TIME COST, and it
+// is 5 rather than 0 for one reason: the base entry plus `execScaleAdds` (max 4) adds.
 // It CANNOT be driven by an input — `strategy()` is evaluated once at compile time — so it
 // is raised permanently and the toggle is enforced in the add logic instead.
 // ⚠ WITH `execScaleIn` OFF NOTHING CHANGES, and that is checked rather than assumed: every
@@ -2423,4 +2423,52 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ⚠ cfg_scale_adds and cfg_scale_cap are plotted RAW rather than packed. Any pack that fits
 // them into one float has to round, and a silently rounded cap mis-sizes every add — the same
 // reasoning the six exit numerics are already plotted raw for.
+```
+
+## [180] A resting add is counted when it FILLS, not when it is placed
+
+```
+// 🔴 `lAddN` INCREMENTS ON THE FILL. A BOS-retest add is a RESTING LIMIT, so it can sit
+// unfilled for many bars, and counting it at placement would burn one of `execScaleAdds`
+// on an order the market never came back for.
+// The fill is detected by the position GROWING, which is unambiguous here: the block is
+// gated on `strategy.position_size[1] > 0` (so the base entry's own fill cannot reach it)
+// and on `lStage >= 2` (so TP1 and TP2 are already taken and no partial exit remains).
+// ⚠ Placing again while one rests re-uses the SAME entry id, which REPLACES the resting
+// order rather than adding a second. That is the "a fresher break supersedes an older
+// limit" rule, and Pine gives it for free.
+```
+
+## [181] The order TYPE is the guarantee — BOS retest rests a limit, Trail cannot
+
+```
+// 🔴 THE AFFORDABILITY RULE SIZES AN ADD AGAINST THE PRICE IT IS BOUGHT AT. A market order
+// is sized at one price and filled at the NEXT BAR'S OPEN, so anything that moves against
+// you in between is size the guarantee never covered.
+// MEASURED, and it broke the one property this feature was accepted for: as a market order
+// the adds turned winners of +3.41R and +1.34R into losses of -2.50R and -2.15R, against an
+// un-scaled worst of -2.06R over the same 182 trades.
+// A resting limit closes it. The fill price is known before the order is sent, so the size
+// is exact; and price that GAPS through a buy limit fills at the OPEN, i.e. BETTER than the
+// limit. Every error term points the safe way.
+// ⚠ The size is frozen at PLACEMENT and deliberately not refreshed while the order rests.
+// Also the safe direction: the stop only ratchets favourably, so by fill time `locked` has
+// grown and `perUnit` has shrunk and the resting size is smaller than what would now be
+// permitted, never larger.
+// ⚠ "Trail" is a MARKET rule by nature — its trigger is `close`, and a limit there would
+// wait for a pullback that is the opposite of what the mode means. So Trail still carries
+// the trigger-to-fill gap. It measured ZERO breaches over 182 trades because close-to-next-
+// open is small, and zero observed is not the same as zero possible. Say so rather than
+// letting the next reader inherit BOS retest's guarantee by association.
+```
+
+## [182] A resting add must be CANCELLED when its trade ends
+
+```
+// 🔴 A LIMIT ORDER OUTLIVES THE POSITION THAT PLACED IT. Leave one resting after the trade
+// closes and it fills later on its own, opening a NEW position with no entry logic behind
+// it, no stop sized for it and no setup that asked for it.
+// It is deliberately a positive check on being flat rather than a hook on each exit path:
+// this strategy closes on a stop, three ladder rungs, an opposite SOS and a time stop, and
+// an ignore-list of exits is one new exit away from being wrong.
 ```

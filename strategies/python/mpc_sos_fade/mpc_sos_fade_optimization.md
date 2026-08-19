@@ -36,7 +36,8 @@ Standing rules for anything recorded here:
 
 | 18 | 2026-08-16 | **`exec_sl_deep` × `exec_secondary`, the full 2×2** — 4 full `run_dual` replays on ONE window (2018-09-14 → 2026-08-14, 186,910 M15 + 2,799,088 M1 bars, bar fills) | **`exec_sl_deep` stays OFF — it costs 24.0R with the secondary live and 23.0R without.** The shipped cell is the best of the four at **+164.4R / 189 trades**. The interaction is **1.0R against sd 15.06R**, i.e. the two levers are separable. Deep-ON does hold a shallower drawdown (−4.8 vs −5.5) and pays ~24R for it. | **measured — shipped default CONFIRMED** |
 | 19 | 2026-08-16 | 🟢 **SCALE-IN** — add size to a runner the trail already protects, sized so an add's worst case equals the profit the stop guarantees. 2 stages (shadow ledger to search, real implementation to verify), XAUUSD 15m 2018-09-13 → 2026-08-14, **PU Prime ECN costs charged** | **+128.26R → +211.59R (+65%) at 2 adds / cap 1.0x**, ret/DD 21.27 → 24.26, **worst trade unchanged at −2.06R** and losers 65 → 67. Dropping the affordability test costs 8–13 extra losers, which is what the rule buys. **The trigger is arithmetic only — no structure, no retest; location has never been varied.** | **BUILT, toggle ships OFF — no parity gate has run** |
-| 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | **SHIPPED (mode default) — no parity gate has run** |
+| 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | 🔴 **VOID — broken fill model, superseded by Run 21** |
+| 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
 
 ⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
 Count the runs with `grep -c '^# Run ' `, never off this table.
@@ -2937,7 +2938,22 @@ already works.**
 
 ---
 
-# Run 20 — 2026-08-17 — 🟢 **WHERE a scale-in adds. "BOS retest" ships; the sweep's own winner was 80% one year.**
+# Run 20 — 2026-08-17 — 🔴 **VOID. Every number below was measured on a broken fill model. See Run 21.**
+
+> 🔴 **DO NOT QUOTE ANY FIGURE IN THIS ENTRY.** The harness booked each add at the price its RULE
+> TRIGGERED on, and Pine buys it somewhere else — a market order fills at the NEXT bar's open, a
+> resting limit fills when price comes back. That handed `BOS retest` the retest level itself on
+> every fill, which is exactly the price that mode has to WAIT for and frequently never gets. It
+> ranked first here on that. **On the corrected fill the ranking INVERTS and `BOS retest` loses
+> money outside 2020 at every budget above one add** (Run 21).
+>
+> ⚠ **The entry is kept rather than deleted, because the failure is the useful part.** The parity
+> gate caught it on 2025-10-21 (py 27.07R vs pine 22.03R) — nothing in this write-up looked
+> wrong, the grid was internally consistent, and the depth gradient it reports is still real.
+> **A backtest that prices a fill at the moment its rule fired is measuring a DECISION, not a
+> TRADE**, and no amount of reading the output can show you that.
+
+**Original heading:** *WHERE a scale-in adds. "BOS retest" ships; the sweep's own winner was 80% one year.*
 
 **The question.** Run 19 shipped the SIZE rule and left the LOCATION unexamined — the add fires at
 MARKET on the bar the trail happens to move, which is the worst price of the leg. Aaron: *"I don't
@@ -3051,3 +3067,160 @@ on 126 — when the trail ratchets, price is usually making new highs, so it is 
 best under the metric you wrote down, on the window you happened to have. The depth gradient
 survived every cut because it is five rows moving one way with a mechanism under it. The single
 best row did not survive one extra question.**
+
+---
+
+# Run 21 — 2026-08-18 — 🔴 **The fill model was wrong, every Run 20 number is void, and the ranking inverts.**
+
+**The question was not a new one.** Run 20 had already answered *where should a scale-in add?* and
+its answer — `BOS retest`, shipped as the mode default the same day — was produced by a harness
+that priced each add at the moment its RULE FIRED. That is not where Pine buys it. This run asks
+the same question of code that matches the Pine bar-for-bar.
+
+## What was wrong, and why nothing in the output showed it
+
+The Pine issues an add as `strategy.entry(qty = ...)`. With no `limit`, that is a **market order**,
+and TradingView fills a market order at the **next bar's open**. Run 20's harness — and the first
+Python implementation — booked it at the trigger price on the trigger bar.
+
+For `Trail` that gap is small: the trigger is `close`, and the next open is usually right beside it.
+For `BOS retest` it is enormous. That mode's whole premise is *wait for price to come back to the
+level the break cleared* — so crediting it with the level itself, on every fill, credits it with
+precisely the price it must wait for and frequently never gets.
+
+🔴 **THE PARITY GATE CAUGHT IT, AND NOTHING ELSE COULD HAVE.**
+
+```
+bar 1356  2025-10-21 15:00  px_closed_r:  py=27.068367  pine=22.032799
+```
+
+One trade, 5R apart, on the largest runner in the book. Every decision field before it agreed. The
+equity curve, the trade list and every R figure were internally consistent on both sides of the
+bug — **a backtest that prices a fill at the moment its rule fired is measuring a DECISION, not a
+TRADE, and no amount of reading the output can show you that.**
+
+## What was fixed
+
+| | before | after |
+|---|---|---|
+| `Trail` | sized at `close`, booked at `close` | sized at `close`, **filled at the next bar's open** (it is a market order) |
+| `BOS retest` | sized at the level, booked at the level | **rests a real limit** at the level; fills when price returns, or better on a gap through |
+| `lAddN` / add count | incremented at PLACEMENT | incremented at the **FILL** — a resting order can sit unfilled for many bars |
+| add exits | placed once `lAddN >= n` | placed unconditionally, so a limit that fills mid-bar is never unprotected |
+| stale orders | none | **cancelled when the trade ends** — a limit outlives the position that placed it |
+
+## The guarantee broke, and that is the finding under the finding
+
+The affordability rule promises an add can shrink a winner but never create a loser. That
+arithmetic is written against the price the add is BOUGHT at. A market order is sized at one price
+and filled at another, so whatever moves against you in between is size the guarantee never covered.
+
+**MEASURED, over the same 182 trades, un-scaled worst −2.06R:**
+
+```
+market-order add (sized at trigger, filled next open)   worst −2.50R   2 trades breached
+  +3.41R  →  −2.50R
+  +1.34R  →  −2.15R
+resting limit                                           worst −2.06R   0 breached
+```
+
+Two winners turned into losers — the one thing the rule says cannot happen. The resting limit
+closes it: the fill price is known before the order is sent, and price that GAPS through a buy
+limit fills at the open, i.e. BETTER. Every error term now points the safe way.
+
+⚠ **`Trail` is a market rule by nature and still carries a small version of the gap.** It measures
+ZERO breaches at 3 adds and below, and **−2.24R / −2.73R at 4 adds** — which is why the shipped add
+count is 3 and not 4. Zero observed is not zero possible.
+
+## The grid, re-run
+
+32 cells. Scored on the **2020-free** book, because 2020 is ~1/3 of the all-period figure and
+scaling roughly TRIPLES its contribution — a grid ranked on the ALL column is ranking one year.
+XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, `exec_secondary=False`, `warmup=1000`.
+
+```
+                    ALL R    dd  r/dd    EX20 R    dd  r/dd    gain  worst
+no scaling         128.26  6.03 21.27     92.51  6.03 15.34       -  -2.06
+Trail  1 x 0.5x    155.90  7.15 21.81    104.63  7.15 14.64  +12.12  -2.06
+Trail  2 x 0.5x    178.90  7.15 25.03    117.79  8.11 14.52  +25.28  -2.06
+Trail  3 x 0.5x    194.15  7.24 26.81    124.05 10.34 11.99  +31.54  -2.06   <- SHIPPED
+Trail  3 x 1.0x    233.01 12.46 18.71    145.48 17.02  8.55  +52.96  -2.06
+Trail  3 x 2.0x    260.09 17.60 14.78    165.73 22.99  7.21  +73.21  -2.06
+Trail  3 x 3.0x    266.57 18.53 14.39    166.40 24.56  6.78  +73.89  -2.06
+Trail  4 x 2.0x    275.02 20.07 13.70    174.94 25.46  6.87  +82.43  -2.73
+BOS retest 1 x 2.0x 137.01  6.58 20.83   101.36  6.58 15.41   +8.85  -2.06
+BOS retest 2 x 1.0x 140.34  7.78 18.04    93.15  7.78 11.97   +0.64  -2.06
+BOS retest 3 x 2.0x 161.90  9.20 17.60    82.50  9.20  8.97  -10.02  -2.06
+BOS retest 4 x 2.0x 180.44  9.20 19.61    80.90  9.20  8.79  -11.62  -2.06
+BOS retest 4 x 3.0x 193.38  9.27 20.85    78.36  9.27  8.45  -14.15  -2.06
+```
+
+### 1. `BOS retest` does not work
+
+Every cell above one add is flat or **negative** outside 2020, down to **−14.15R against not
+scaling at all**. Only 1 add scrapes positive and by less than the 15.06R jitter. It is kept as an
+option because it is implemented, gated and parity-green — **not because anything supports it.**
+
+The mechanism is the same one the bug was hiding: a limit only fills if price comes back. Structure
+breaks and runs away often enough that most of these orders never fill, and the ALL column climbs
+with add count purely because the few that do fill are 2020's.
+
+### 2. The CAP is the drawdown lever, not the add count
+
+Same 3 adds, cap alone: ex-2020 drawdown **10.34 → 17.02 → 22.99 → 24.56** across 0.5x / 1.0x /
+2.0x / 3.0x. Adds are nearly free; SIZE is what hurts. The previous default of 2.0x sat on the wrong
+side of that.
+
+### 3. Ladder SHAPE does not matter — and the intuition behind it is wrong here
+
+Aaron's proposal: each add smaller than the last (0.75x / 0.5x / 0.25x), because an add further from
+the original entry is bought at a worse price and is therefore riskier. Tested at a FIXED 1.5x total
+so only the distribution varies:
+
+```
+big first   0.75/0.5/0.25   ALL 199.27  dd 7.42   EX20 126.67  dd 11.04  r/dd 11.47
+flat        0.5/0.5/0.5     ALL 194.15  dd 7.24   EX20 124.05  dd 10.34  r/dd 11.99
+small first 0.25/0.5/0.75   ALL 183.96  dd 7.18   EX20 120.86  dd  9.05  r/dd 13.36
+```
+
+Big-first makes the most money and the spread is **inside the 15.06R jitter**, so the shape is not
+measurable. Repeated at a 2.25x total (225.21 vs 218.22) with the same verdict.
+
+🔴 **The premise is wrong, and the correction is worth more than the test.** Risk on an add is not
+measured from the ENTRY — it is measured to the STOP, and the stop trails up behind price. By the
+third add the stop is right underneath, so that add is the **cheapest** one, not the riskiest. The
+data agrees: small-first had the LOWEST drawdown and the best ratio. Flat ships because it is
+simpler and nothing measured argues against it.
+
+### 4. The honest caveat
+
+**No cell in the grid beats not-scaling's 2020-free return-per-drawdown of 15.34.** Scaling reliably
+buys raw return and reliably pays for it in drawdown. `Trail 3 × 0.5x` is the cell where that trade
+is closest to fair, and the only one better than baseline on **both** axes over the full book
+(194.15R vs 128.26R at 26.81 vs 21.27 ret/DD). Quote both halves.
+
+## What shipped
+
+`exec_scale_mode` `"BOS retest"` → **`"Trail"`**, `exec_scale_max_adds` 4 → **3**, `exec_scale_cap_x`
+2.0 → **0.5**, in lockstep across `config.py`, `mpc_strategy.pine` and `mpc_strategy_export.pine`.
+
+⚠ **`exec_scale_in` is still `False`.** The OFF path is byte-identical at 128.26R / 6.03 maxDD /
+worst −2.06R, so no other figure in this log moves. What changed is what the toggle DOES.
+
+✅ **PARITY GREEN** — `compare_strategy.py` exit 0 on a fresh 20,799-bar export taken at
+`cfg_scale_in=1 / cfg_scale_mode=1 / cfg_scale_adds=4 / cfg_scale_cap=2`, i.e. an export that
+genuinely exercises the feature rather than reading all zeros. **The same gate on the same schema
+was RED at bar 1356 before the fix**, which is what makes this green worth something.
+
+⚠ **Still not live-capable.** `algos/live/bridge.py` refuses `exec_scale_in` outright — it mirrors
+one entry limit and one ratcheting stop and has no path that places a second entry — and the
+account-level allocator remains unbuilt (`docs/LIVE_TRADING_PIPELINE.md` → G10). Margin sees the
+full stacked position even though risk-to-stop does not.
+
+## The open question this did not answer
+
+An add has no target. It rides the same trailing stop as the base, and the base earned that by
+being a reversal bought at a discount after a sweep and a structure shift — an add has none of that
+behind it. **Banking adds at a target, structural or otherwise, has never been tested.** The
+liquidity engine already emits previous day/week levels and session highs and lows; the strategy's
+execution layer reads none of it.

@@ -351,51 +351,60 @@ class SosFadeConfig:
     #       2 adds, cap 1.0x 211.59R  maxDD 8.72R  67 losers  worst -2.06R  ret/DD 24.26
     #   Dropping the affordability test and adding a flat 1x instead cost 11 extra LOSING
     #   trades — that difference is what the `locked / per_unit` line buys.
-    exec_scale_mode: str = "BOS retest"  # "↳ Where it adds" (Pine execScaleMode)
+    exec_scale_mode: str = "Trail"     # "↳ Where it adds" (Pine execScaleMode)
     #   ∈ {"Trail", "BOS retest"}. WHERE the add happens. The SIZE rule above is unchanged by
     #   this — only the moment and the price move.
-    #   "Trail" is the rule Run 19 shipped: add at MARKET on the bar the trail ratchets. It is
-    #   the worst price of the leg by construction, and it makes the most raw R because it fires
-    #   most often (91 fills over the history).
-    #   "BOS retest" waits for the next confirmed break of structure in the trade direction, then
-    #   rests a limit at the level that break cleared. Fewer fills (65), better per fill, and much
-    #   gentler on drawdown.
-    #   🔴 MEASURED 2026-08-17 (Run 20), and READ THE 2020-FREE COLUMN. Over the full history
-    #   "Trail" looks stronger, but the shallow-fib family that beat it turned out to be 80% one
-    #   year. Excluding 2020 and comparing each against no scaling at all:
-    #       BOS retest  +56.5R      Trail  +41.7R      fib 23.6%  +35.0R      fib 38.2%  +7.2R
-    #   BOS retest also beats no-scaling in 5 of 9 years to Trail's 5, loses only 0.7/2.6/3.3R in
-    #   the years it loses, and is positive in every one of the last four. Max drawdown 9.10R
-    #   against Trail's 20.97R at the same budget.
-    #   🔴 THE DEFAULTS MOVED 2026-08-17 AND RUN 19's FIGURES NO LONGER REPRODUCE WITHOUT PINNING.
-    #   `exec_scale_mode` "Trail" -> "BOS retest", `exec_scale_max_adds` 2 -> 4, `exec_scale_cap_x`
-    #   1.0 -> 2.0. ⚠ NO SHIPPED BASELINE MOVES — `exec_scale_in` is still False, so the OFF path
-    #   is byte-identical and every documented figure in this package is unaffected. What changed
-    #   is what the toggle DOES when switched on. **Pin mode="Trail", adds=2, cap=1.0 to reproduce
-    #   Run 19's 211.59R.** At the new defaults the same window gives 247.90R / 9.00R maxDD.
-    #   ⚠ THE CASE FOR THIS DEFAULT IS CONSISTENCY, NOT RETURN-PER-DRAWDOWN, and saying otherwise
-    #   would repeat the mistake it exists to avoid. On the FULL book "BOS retest" is THIRD on
-    #   ret/DD (29.99) behind fib 23.6% (31.83) and FVG (30.02) — and fib 23.6% is the row that
-    #   turned out to be 80% one year. The 2020-free ret/DD was never computed for the
-    #   alternatives, so no claim that this wins it is supported.
-    #   ⚠ AND THE RISK-ADJUSTED GAIN AT THIS CAP IS THIN: 2020-free ret/DD is 15.51 against 15.34
-    #   for not scaling at all. The clear ratio improvement lives at cap 5-8x, which is NOT shipped
-    #   because the affordability rule guarantees only down to the STOP — a gap straight through it
-    #   loses on the whole stacked position, and at 4 adds x 8x that is ~33x the base size.
-    #   ⚠ DEEPER IS WORSE, MONOTONICALLY, and that is the finding with a mechanism behind it:
-    #   fib retrace 23.6% → 302R, 38.2% → 261R, 50% → 184R, 61.8% → 114R, 78.6% → 120R, the last
-    #   two BELOW not scaling at all. A deep pullback means the runner has already given the move
-    #   back — the add lands on a dying trade just before the trail stops it out.
-    exec_scale_max_adds: int = 4       # "↳ How many times it may add" (Pine execScaleAdds)
+    #   "Trail" adds at MARKET on the bar the trail ratchets. "BOS retest" waits for the next
+    #   confirmed break of structure our way and RESTS A LIMIT at the level that break cleared.
+    #
+    #   🔴 EVERY RUN 20 NUMBER THAT ONCE STOOD HERE IS VOID, AND THE REASON IS THE ONE WORTH
+    #   KEEPING. Run 20 booked each add at the price its RULE TRIGGERED on. Pine buys it
+    #   somewhere else — a market order fills at the NEXT BAR'S OPEN, and a resting limit fills
+    #   when price comes back. So the harness credited "BOS retest" with the retest level itself
+    #   on every fill, which is exactly the price that mode has to WAIT for and often never
+    #   gets. It ranked first on that. The parity gate caught it on 2025-10-21 (py 27.07R vs
+    #   pine 22.03R) and the ranking INVERTED once the fill was modelled properly.
+    #   ⚠ The lesson is not about scaling: A BACKTEST THAT PRICES A FILL AT THE MOMENT ITS RULE
+    #   FIRED IS MEASURING A DECISION, NOT A TRADE. Nothing in the output looked wrong — the
+    #   equity curve, the trade list and the R figures were all internally consistent.
+    #
+    #   🔴 RE-MEASURED 2026-08-18 on the corrected fill, 32-cell grid, XAUUSD 15m
+    #   2018-09-13 → 2026-08-14, PU Prime ECN costs. Scored on the 2020-FREE book because 2020
+    #   is ~1/3 of the all-period figure and scaling roughly TRIPLES its contribution:
+    #       no scaling         ALL 128.26R dd 6.03  ret/DD 21.27   EX20  92.51R ret/DD 15.34
+    #       Trail 3 x 0.5x     ALL 194.15R dd 7.24  ret/DD 26.81   EX20 124.05R ret/DD 11.99
+    #       BOS retest 4 x 2.0 ALL 180.44R dd 9.20  ret/DD 19.61   EX20  80.90R ret/DD  8.79
+    #   ⚠ "BOS retest" LOSES MONEY outside 2020 at every budget above one add — down to -14.15R
+    #   against not scaling at all. It is kept as an option because it is implemented, gated and
+    #   parity-green, NOT because any measurement supports it.
+    #   ⚠ NO CELL IN THE GRID BEATS NOT-SCALING'S 2020-FREE ret/DD OF 15.34. Scaling reliably
+    #   buys raw return and reliably pays for it in drawdown. "Trail 3 x 0.5x" is the cell where
+    #   that trade is closest to fair and the only one better than baseline on BOTH axes over the
+    #   full book. Say that plainly rather than quoting the ALL column alone.
+    exec_scale_max_adds: int = 3       # "↳ How many times it may add" (Pine execScaleAdds)
     #   A ceiling, not a schedule: the next add is refused until the trail has ratcheted PAST
     #   the stop the last one was sized against. Without that a stalling runner re-adds every
     #   bar against the same locked profit and spends the guarantee several times over.
-    #   3 made more (233.04R) and gave back more drawdown (12.45R); 2 is the measured best on
-    #   return-per-drawdown. Above 2 the guarantee also starts to leak — see the cap note.
-    exec_scale_cap_x: float = 2.0      # "↳ Biggest add, as a multiple of the original size"
+    #   🔴 IT IS 3 RATHER THAN 4 FOR A SAFETY REASON, NOT A RETURN ONE. At 4 adds the worst
+    #   trade goes -2.24R and -2.73R against an un-scaled worst of -2.06R — i.e. the add turned
+    #   winners into losers, which is the one thing the affordability rule promises cannot
+    #   happen. "Trail" is a MARKET rule, so it still carries the trigger-to-fill gap that the
+    #   resting limit closed for "BOS retest". At 3 and below the worst trade never moves.
+    exec_scale_cap_x: float = 0.5      # "↳ Biggest add, as a multiple of the original size"
     #   Per-add ceiling as a multiple of the BASE quantity. The affordability rule alone would
-    #   sometimes permit 4x or more. ⚠ Raising it raises margin and gap exposure, and the
-    #   profit rule protects against neither.
+    #   sometimes permit 4x or more.
+    #   🔴 THIS IS THE DRAWDOWN LEVER, AND IT IS NOT THE ADD COUNT. Same 3 adds, cap alone:
+    #       0.5x  EX20 dd 10.34  ret/DD 11.99      2.0x  EX20 dd 22.99  ret/DD 7.21
+    #       1.0x  EX20 dd 17.02  ret/DD  8.55      3.0x  EX20 dd 24.56  ret/DD 6.78
+    #   Adds are nearly free; SIZE is what hurts. ⚠ Raising it raises margin and gap exposure,
+    #   and the profit rule protects against neither — it guarantees only down to the STOP.
+    #   ⚠ THE LADDER SHAPE DOES NOT MATTER AND WAS MEASURED RATHER THAN ARGUED (2026-08-18).
+    #   At a fixed 1.5x total, big-first (0.75/0.5/0.25) made 199.27R, flat 194.15R, small-first
+    #   183.96R — a spread inside this strategy's 15.06R jitter. ⚠ And the intuition that a
+    #   later add is riskier because it is further from the ENTRY is wrong here: risk is measured
+    #   to the STOP, which trails up behind price, so the LAST add is the cheapest one. Small-
+    #   first in fact had the lowest drawdown (9.05 vs 11.04). Flat is kept because it is simpler
+    #   and nothing measured argues against it.
     exec_time_stop_mode: str = "Before TP1 only"   # "Time stop" (Pine execTimeStopMode)
     #   ∈ {"Off", "Before TP1 only", "Always"}. Close a position that has been open for
     #   `exec_time_stop_hrs` CALENDAR hours. An EXIT lever, and the only one here driven by the

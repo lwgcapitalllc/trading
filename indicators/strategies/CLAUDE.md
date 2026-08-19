@@ -253,9 +253,46 @@ a silently rounded cap mis-sizes every add.
 reset. ✅ `check_active_order.py` passes on all twelve strategy files; the export twin re-diffs to
 exactly line 5's title.
 
-⚠ **NOT COMPILED, and no parity gate has run** — that needs a fresh TradingView export, which only a
-human can take. Measured result and the two harness bugs behind it:
-`strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 20.
+### The add is a RESTING LIMIT now, and the market order it replaced broke the guarantee
+
+🔴 **2026-08-18. The 2026-08-17 defaults above are REVERSED and Run 20 is VOID.** The add was
+issued as a plain `strategy.entry(qty = ...)` — **a market order, which TradingView fills at the
+NEXT bar's open** — while the Python booked it at the price its rule triggered on. The parity gate
+caught it on `px_closed_r` at bar 1356 (2025-10-21): py **27.07R** vs pine **22.03R**, one trade,
+the largest runner in the book, every decision field before it agreeing.
+
+**What changed in both Pine files:**
+
+| | before | after |
+|---|---|---|
+| `BOS retest` | detected the touch, fired a MARKET order | `strategy.entry(..., limit = _lim)` — a real resting limit |
+| `Trail` | market (correct, it has no level to rest at) | unchanged |
+| `lAddN` | incremented at PLACEMENT | incremented on the **FILL**, detected by `strategy.position_size` growing |
+| `L-AX*` / `S-AX*` | gated on `lAddN >= n` | placed **unconditionally**, so a limit filling mid-bar is never unprotected |
+| stale orders | — | **`strategy.cancel` on every add id once flat** ([doc 182]) |
+
+🔴 **A LIMIT ORDER OUTLIVES THE POSITION THAT PLACED IT**, which is why the cancel block is a
+positive check on being flat rather than a hook on each exit path — this strategy closes on a stop,
+three ladder rungs, an opposite SOS and a time stop, and an ignore-list of exits is one new exit
+away from being wrong.
+
+🔴 **The order TYPE was the guarantee.** The affordability rule sizes an add against the price it is
+BOUGHT at; a market order is sized at one price and filled at another. **MEASURED: as a market
+order the adds turned winners of +3.41R and +1.34R into losses of −2.50R and −2.15R, against an
+un-scaled worst of −2.06R over the same 182 trades.** A resting limit closes it — the fill price is
+known before the order is sent, and price that gaps through a buy limit fills BETTER.
+
+**Defaults now: `execScaleMode` `"Trail"`, `execScaleAdds` **3**, `execScaleCapX` **0.5**.** ⚠ The
+add count is 3 rather than 4 for a SAFETY reason — `Trail` is a market rule by nature and still
+carries a small trigger-to-fill gap, measuring zero breaches at 3 and −2.24R/−2.73R at 4. ⚠
+`execScaleAdds` keeps `maxval = 4` and `pyramiding` stays 5, so the ceiling is unchanged and only
+the default moved.
+
+✅ **PARITY GREEN, exit 0** on a fresh 20,799-bar export taken at `cfg_scale_in=1 /
+cfg_scale_mode=1 / cfg_scale_adds=4 / cfg_scale_cap=2` — one that genuinely exercises the feature
+rather than reading all zeros. **The same gate on the same schema was RED before the fix**, which is
+what makes the green worth something. Full grid and the void banner:
+`strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 21.
 
 ---
 

@@ -41,8 +41,8 @@ if str(_ROOT) not in sys.path:
 
 from backtest import fills as _fills
 from backtest.portfolio.account import SoloAccount
-from backtest.setups import (Confluence, DEAD, FILLED, RESTING, SetupSnapshot,
-                             WATCHING)
+from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSnapshot
+
 # The canonical ratio→price helper, and the only one allowed: `_sl_anchor`'s Custom branch has to
 # land on the exact float the fib engine would have produced for that ratio, and re-deriving
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
@@ -122,9 +122,21 @@ class Trade:
     no decision weight — they exist so `backtest.output` can build the lab's
     equity_curve / engine_trades without re-deriving them. `exit_price` is the
     qty-weighted mean of the ladder's partial exits, so
-    `(exit_price - entry_price) * dir * qty * point_value` reproduces `pnl_usd`.
-    `stop_distance` is entry→the stop frozen at PLACEMENT, i.e. the 1R the trade was
-    sized against — not the trailed stop it may have exited on.
+    `(exit_price - entry_price) * dir * qty * point_value` reproduces `pnl_usd`
+    ONLY on a trade that filled no scale-in add. 🔴 `qty` is the BASE size and an add
+    is a separate lot at its OWN entry price (see `_exit_portion`), so with adds the
+    identity needs every lot:
+
+        pnl_usd = (exit_price - entry_price) * dir * qty * point_value
+                + Σ over `adds` of (exit_price - add.price) * dir * add.qty * point_value
+                + costs_usd
+
+    That is why `adds` is carried rather than folded into `qty`: without it a reader
+    of the trade record — the chart included — sees a short exiting BELOW its entry and
+    a P&L of zero, with nothing in the record to explain it. Measured on run
+    295a6ff29d21: 8 trades booked exactly $0.00 and the add that took the profit back
+    appeared in no field. `stop_distance` is entry→the stop frozen at PLACEMENT, i.e.
+    the 1R the trade was sized against — not the trailed stop it may have exited on.
     """
 
     dir: int
@@ -161,6 +173,11 @@ class Trade:
     mfe_price: float = 0.0
     mae_price: float = 0.0
     legs: List[dict] = field(default_factory=list)
+    # Reporting-only SCALE-IN ledger — one `{"price", "ms", "qty"}` per add lot that actually
+    # FILLED, in fill order (a placed-but-unfilled add is not here; it bought nothing). Empty on
+    # every trade that never added, which is every trade with `exec_scale_in` off. It is the only
+    # record that the position was ever bigger than `qty` — see the P&L identity above.
+    adds: List[dict] = field(default_factory=list)
     # Reporting-only TP TARGET ladder — the fib levels the trade AIMED at, frozen at entry (NOT
     # where each rung actually closed; that's `legs`). Lets the chart draw an UNHIT next target so a
     # runner's near-miss of the following TP is visible. No decision reads them (parity-safe).
@@ -594,10 +611,16 @@ class Execution:
         # `_qty` because `_exit_portion` prices the position off one `_entry` — growing `_qty`
         # would value the added units as if bought at the base entry and invent profit.
         self._adds: List[List[float]] = []
+        # The same lots as they were BOUGHT, never consumed by the exit — `_adds` above is a live
+        # book and each lot's qty is decremented to zero on the way out, so it cannot answer "what
+        # did this trade actually hold?" once the trade is closed. Reporting only.
+        self._add_lots: List[dict] = []
         self._add_stop = None              # the stop the last add was sized against
         self._base_qty = 0.0               # size the trade OPENED with; every add sizes off it
         self._add_limit = None             # "BOS retest" mode: the price the next add rests at
         self._add_armed = False            # a break has fired and we are waiting for the retest
+        self._add_pending = None           # qty of a PLACED add order not yet filled
+        self._add_pend_stop = None         # the stop that order was sized against
         self._sos_bar_open: Optional[int] = None
         self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
@@ -724,7 +747,8 @@ class Execution:
         # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
         # sized against — without it a restored runner re-adds immediately at the same locked
         # profit, which is exactly the over-spend the ratchet check exists to stop.
-        "_adds", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
+        "_adds", "_add_lots", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
+        "_add_pending", "_add_pend_stop",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
@@ -743,8 +767,10 @@ class Execution:
                     "levels": [[float(r), float(p)] for r, p in value.levels],
                     "start_ms": value.start_ms,
                 }
-            elif name == "_legs":
-                value = [dict(leg) for leg in value]
+            elif name in ("_legs", "_add_lots"):
+                # Copied rather than handed over: both are ledgers the open trade keeps appending
+                # to, and a snapshot that aliases them would keep growing after it was taken.
+                value = [dict(row) for row in value]
             elif name == "_pending_close":
                 value = None if value is None else list(value)
             snap[name] = value
@@ -903,6 +929,13 @@ class Execution:
         self._charge_swap(sig)
 
         # ── Phase A: fill resting orders against THIS bar (placed last bar) ──
+        # An add TRIGGERED last bar is a market order, so it fills at THIS bar's open — ahead of
+        # any stop, target or force-close, exactly as TradingView fills a pending
+        # `strategy.entry` before the bar trades. It must come first: filling it after
+        # `_manage_open` would let a stop the market only reached mid-bar pre-empt a lot the
+        # broker had already bought.
+        if self._add_armed and self._pos_dir != 0:
+            self._fill_pending_add(sig)
         opened = False
         if self._pos_dir == 0:
             opened = self._try_entry_fill(sig, dec)
@@ -1927,10 +1960,13 @@ class Execution:
         # would budget against base+add#1 and the "an add can never create a loser" guarantee
         # would be spent several times over on a single trade.
         self._adds = []
+        self._add_lots = []
         self._add_stop = None
         self._base_qty = granted
         self._add_limit = None
         self._add_armed = False
+        self._add_pending = None
+        self._add_pend_stop = None
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
         self._entry_equity = self._equity_realized      # R yardstick baseline
@@ -2150,6 +2186,7 @@ class Execution:
             kind=self._entry_kind,
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
             mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
+            adds=[dict(lot) for lot in self._add_lots],
             tp1=round(self._tp1, 5), tp2=round(self._tp2, 5), fib=self._fib))
         dec.closed_r = r
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
@@ -2163,10 +2200,13 @@ class Execution:
         self._filled_qty = 0.0
         self._stage = 0
         self._adds = []
+        self._add_lots = []
         self._add_stop = None
         self._base_qty = 0.0
         self._add_limit = None
         self._add_armed = False
+        self._add_pending = None
+        self._add_pend_stop = None
         self._entry_equity = None
 
     def _equity_at_entry_delta(self) -> float:
@@ -2372,18 +2412,24 @@ class Execution:
         self._maybe_scale_in(sig)
 
     def _maybe_scale_in(self, sig) -> None:
-        """Add size to a runner the trail is already protecting (Pine `execScaleIn`).
+        """PLACE an add order on a runner the trail is already protecting (Pine `execScaleIn`).
 
-        The whole rule is a SIZING rule, not a timing one:
+        Placement only — `_fill_pending_add` fills it, and the split is load-bearing rather than
+        tidy. The whole rule is a SIZING rule, not a timing one:
 
             locked   = (stop - entry) * base_qty     profit the stop already guarantees
-            per_unit = (price - stop)                what one extra unit risks to that SAME stop
+            per_unit = (level - stop)                what one extra unit risks to that SAME stop
             add_qty  = locked / per_unit             worst case == the locked profit
 
         Stop out immediately after adding and the two cancel: the base banks `locked`, the add
         gives back at most `locked`, the trade closes at worst flat. An add can shrink a winner;
         it cannot manufacture a loser. That is the property that makes this different from every
         protective rule Run 8 killed.
+
+        🔴 **`level` HAS TO BE THE PRICE THE LOT IS ACTUALLY BOUGHT AT, or the guarantee above is
+        arithmetic about a trade nobody took.** It held here only once the add became a RESTING
+        LIMIT. See `_fill_pending_add` for what a market order cost it, and note that "Trail" is
+        a market order by nature and therefore still carries a small version of that gap.
 
         🔴 **The trigger is the TRAIL (stage 2), never a target.** At TP2 the stop is only at TP1,
         so `locked` is small while `price - stop` is large and the affordable add is a rounding
@@ -2408,6 +2454,8 @@ class Execution:
         cfg = self._cfg
         if not getattr(cfg, "exec_scale_in", False) or self._pos_dir == 0:
             return
+        # A RESTING order does NOT consume a slot: Pine's `lAddN` increments when the order
+        # FILLS, and re-placing while one rests re-uses the same entry id, which replaces it.
         if self._stage < 2 or len(self._adds) >= cfg.exec_scale_max_adds:
             return
         d, pv = self._pos_dir, cfg.point_value
@@ -2421,38 +2469,31 @@ class Execution:
 
         mode = getattr(cfg, "exec_scale_mode", "Trail")
         if mode == "Trail":
-            # Run 19's rule: market, on the bar the trail ratcheted. The worst price of the leg
+            # Run 19's rule: MARKET, on the bar the trail ratcheted. The worst price of the leg
             # by construction — it buys after the move, where the base entry rests a limit and
             # waits — and it makes the most raw R purely because it fires most often.
-            price = sig.close
+            # ⚠ A market order is sized off `close` and filled at the NEXT bar's open, so this
+            # mode alone still carries the trigger-to-fill gap the resting limit closed. Measured
+            # at ZERO breaches over 182 trades, because close-to-next-open is a small gap — but
+            # zero is what was observed, not a guarantee the arithmetic provides.
+            level = sig.close
         elif mode == "BOS retest":
-            # Wait for the next confirmed break of structure our way, then rest a limit at the
-            # level that break CLEARED and let price come back to it.
+            # Wait for the next confirmed break of structure our way, then REST A LIMIT at the
+            # level that break cleared and let price come back to it.
             # ⚠ Re-arming on every fresh break is deliberate: a later break supersedes an older
             # limit, because the older level stopped being the edge of structure the moment the
-            # newer one printed.
-            if (sig.bull_bos if d > 0 else sig.bear_bos):
-                hi = sig.bull_bos_high if d > 0 else sig.bear_bos_high
-                lo = sig.bull_bos_low if d > 0 else sig.bear_bos_low
-                # ⚠ BOTH endpoints are required and the leg must be well-formed, even though
-                # only one of them is the limit. It is the condition the measurement ran under
-                # (Run 20's harness), and dropping it arms on legs that run never saw — worth
-                # 0.68R when it was left out, which is small and is still the shipped code
-                # disagreeing with the code the decision was taken on.
-                if hi is not None and lo is not None and hi > lo:
-                    self._add_limit = hi if d > 0 else lo
-                    self._add_armed = True
-            if not self._add_armed or self._add_limit is None:
+            # newer one printed. Pine gets the same behaviour for free — re-issuing
+            # `strategy.entry` with the same id REPLACES the resting order.
+            if not (sig.bull_bos if d > 0 else sig.bear_bos):
                 return
-            # A resting limit fills when the bar trades through it. Price that GAPPED past it
-            # fills at the open instead — the same wrong-side rule the exit ladder already uses,
-            # and the conservative direction.
-            reached = (sig.low <= self._add_limit) if d > 0 else (sig.high >= self._add_limit)
-            if not reached:
+            hi = sig.bull_bos_high if d > 0 else sig.bear_bos_high
+            lo = sig.bull_bos_low if d > 0 else sig.bear_bos_low
+            # ⚠ BOTH endpoints are required and the leg must be well-formed, even though only
+            # one of them is the limit. It is the condition the measurement ran under, and
+            # dropping it arms on legs that run never saw.
+            if hi is None or lo is None or hi <= lo:
                 return
-            price = self._add_limit
-            if (sig.open - price) * d < 0:
-                price = sig.open
+            level = hi if d > 0 else lo
         else:
             # A typed value that is not a mode must never fall through to a default — that would
             # replay a whole book against a rule nobody chose. Same standing as exec_sl_custom.
@@ -2460,26 +2501,75 @@ class Execution:
                 f"exec_scale_mode={mode!r} is not a mode. Use 'Trail' or 'BOS retest'."
             )
 
-        # Refuse once the stop is already past the fill — that is not an add, it is a loss.
-        if (price - stop) * d <= 0:
+        # Refuse once the stop is already past the level — that is not an add, it is a loss.
+        if (level - stop) * d <= 0:
             return
-        # 🔴 DISARM HERE, NOT AT THE FILL TEST. A limit that price reached on a bar where the
-        # add was merely UNAFFORDABLE is still a live setup, and the measurement kept it alive
-        # for a later bar. Disarming earlier discards it and waits for a whole new break —
-        # worth 0.68R, i.e. small enough to shrug at and still the shipped code running a
-        # different rule from the one the decision was taken on.
-        self._add_armed = False
         locked = (stop - self._entry) * d * self._base_qty * pv
-        per_unit = (price - stop) * d * pv
+        per_unit = (level - stop) * d * pv
         if locked <= 0 or per_unit <= 0:
             return
         add_qty = min(locked / per_unit, self._base_qty * cfg.exec_scale_cap_x)
         if add_qty <= 1e-9:
             return
-        self._adds.append([price, add_qty])
-        self._add_stop = stop
-        self._charge_commission(add_qty)
-        self._charge_spread(add_qty)    # half the round turn; `_exit_portion` pays the other half
+        # PLACE the order; `_fill_pending_add` fills it. Nothing is bought here, so nothing is
+        # charged here and `_adds` does not grow — a placed-but-unfilled add must not read as a
+        # lot the position holds.
+        self._add_limit = level
+        self._add_pending = add_qty
+        self._add_pend_stop = stop
+        self._add_armed = True
+
+    def _fill_pending_add(self, sig) -> None:
+        """Fill an add order PLACED on an earlier bar. Called before anything can exit.
+
+        🔴 THE ORDER TYPE IS THE WHOLE POINT, AND GETTING IT WRONG COST THE FEATURE ITS ONE
+        GUARANTEE. The affordability rule sizes an add so that its worst case equals the profit
+        the stop already locked — arithmetic written against the price the add is bought at. A
+        MARKET order is sized at one price and filled at another (the next bar's open), so
+        whatever moves against you in between is size the guarantee never covered. Measured: a
+        market add turned two winners of +3.41R and +1.34R into losses of -2.50R and -2.15R,
+        against an un-scaled worst of -2.06R over the same 182 trades. The rule promised that
+        could not happen.
+
+        A RESTING LIMIT closes it. The fill price is known before the order is sent, so the size
+        is exact; and price that GAPS through a buy limit fills at the open, which is BELOW the
+        limit, i.e. BETTER. Every error term now points the safe way.
+
+        ⚠ The size is frozen at PLACEMENT and deliberately not refreshed while the order rests.
+        That is also the safe direction: the stop only ratchets favourably, so by the time the
+        order fills `locked` has grown and `per_unit` has shrunk — the resting size is smaller
+        than what the arithmetic would now permit, never larger.
+
+        ⚠ Costs are charged HERE. A lot that has not been bought has paid no commission and
+        crossed no spread.
+        """
+        cfg, d = self._cfg, self._pos_dir
+        qty = self._add_pending
+        if qty is None or qty <= 0 or d == 0:
+            self._add_armed = False
+            self._add_pending = None
+            return
+        if getattr(cfg, "exec_scale_mode", "Trail") == "Trail":
+            price = sig.open          # market: TradingView fills it at the next bar's open
+        else:
+            reached = (sig.low <= self._add_limit) if d > 0 else (sig.high >= self._add_limit)
+            if not reached:
+                return                # still resting — Pine leaves the order live too
+            price = self._add_limit
+            if (sig.open - price) * d < 0:
+                price = sig.open      # gapped through: filled BETTER than the limit
+        self._adds.append([price, qty])
+        # …and the same lot again for the RECORD. `_adds` is spent by `_exit_portion`; this one is
+        # not, so the closed trade can still say what it bought and at what price.
+        self._add_lots.append({"price": price, "ms": sig.time_ms, "qty": qty})
+        # The ratchet gate is the stop this lot was SIZED against, not the one live at the fill.
+        self._add_stop = self._add_pend_stop
+        self._add_armed = False
+        self._add_pending = None
+        self._add_pend_stop = None
+        self._add_limit = None
+        self._charge_commission(qty)
+        self._charge_spread(qty)    # half the round turn; `_exit_portion` pays the other half
 
     def _current_stop(self) -> float:
         cfg = self._cfg
