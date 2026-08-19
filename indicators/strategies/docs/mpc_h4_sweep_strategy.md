@@ -334,7 +334,8 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ════════════════════════════════════════════════════════════════════════════
 //  MARKET STRUCTURE — the canonical engine, DRAWING ONLY in this file
 // ════════════════════════════════════════════════════════════════════════════
-// Lifted BYTE-FOR-BYTE from indicators/strategies/mpc_d_strategy.pine, which lifted it from
+// Lifted BYTE-FOR-BYTE from the since-deleted indicators/strategies/mpc_d_strategy.pine
+// (removed 2026-08-15 — recover from git history), which lifted it from
 // indicators/engines/structure_engine.pine, itself the external+internal half of mpc_assistant.pine.
 // It is not re-implemented here — a second structure engine is forbidden by CLAUDE.md and
 // would be the thing that silently drifts.
@@ -620,10 +621,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // whichever one happens to be checked last.
 ```
 
-## [38] ⚠ THE SIDE HAS TO BE RECORDED RATHER THAN INFERRED, and `mpc_d_strategy.
+## [38] ⚠ THE SIDE HAS TO BE RECORDED RATHER THAN INFERRED, and the deleted `mpc_d_strategy.
 
 ```
-// ⚠ THE SIDE HAS TO BE RECORDED RATHER THAN INFERRED, and `mpc_d_strategy.pine` already paid for
+// ⚠ THE SIDE HAS TO BE RECORDED RATHER THAN INFERRED, and the deleted `mpc_d_strategy.pine` already paid for
 // learning that. Its blocked tag read the direction off the SOS that fired on the same bar, which
 // was correct only while every candidate arrived on one — and the moment a second entry mode
 // existed, every candidate drew as a SHORT. Here the equivalent shortcut would be reading
@@ -866,7 +867,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //
 // px_stage is read STRAIGHT off `tStage` rather than tracked separately here, and that is safe
 // in this file specifically: `tStage` is only ever reset at the next ENTRY, so it still holds
-// the final stage on the close bar. ⚠ `mpc_d_strategy_export.pine` tracks its own copy because
+// the final stage on the close bar. ⚠ The deleted `mpc_d_strategy_export.pine` tracked its own copy because
 // that parent zeroes its stage on the close bar — do not copy this shortcut across without
 // checking which shape the parent has.
 ```

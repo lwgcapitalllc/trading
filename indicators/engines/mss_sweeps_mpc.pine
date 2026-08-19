@@ -1136,7 +1136,7 @@ float msAtr = ta.atr(14)
 
 // ── Trend run tracking ───────────────────────────────────
 // An iSOS is a change of character, so it STARTS a run at zero. Each iBOS after it is one
-// continuation. This is the same shape as mpc_d_strategy.pine's dTrendBos and is deliberately
+// continuation. This is the same shape as the deleted mpc_d_strategy.pine's dTrendBos (removed 2026-08-15, see git history) and is deliberately
 // counted here rather than read off the engine, which does not expose a run length.
 var int msRunDir   = 0
 var int msRunCount = 0

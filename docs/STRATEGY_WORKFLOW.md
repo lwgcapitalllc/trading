@@ -104,7 +104,7 @@ commit. A lab row saying something different from the chart is how a rule gets r
 | **A+ SOS Fade** (`mpc_sos_fade`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **B-LEG** (`mpc_bleg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
-| **D** (`mpc_d`) | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | No — and its one measurement was indistinguishable from zero |
+| **D** (`mpc_d`) | ❌ deleted | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and it is GONE (2026-08-15).** Its one measurement was indistinguishable from zero and it was never going further. Both `.pine` files and `docs/MPC_D_STRATEGY_SPEC.md` removed; recover from git history. Its VOCABULARY was the second reason — "shakeout" now means one thing in this repo, and it belongs to RSO. |
 | **OB Fade** (`mpc_ob_fade`) | ❌ withdrawn | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and do not restart it.** Its spec was DELETED once the measurement closed the question — the record of what was tried is `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` |
 | **H4 sweep** | study only | ✅ | ❌ | ❌ | ❌ | ❌ | No |
 

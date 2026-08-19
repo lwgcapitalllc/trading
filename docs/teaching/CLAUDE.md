@@ -31,6 +31,7 @@ is the opposite of every other document in this repo, where the reader can open 
 |---|---|
 | `three_models.html` / `Three_Trading_Models.pdf` | Sequence reference for three liquidity models, at summary level. Model 3 is the Loaded Level model the other two files expand. |
 | `loaded_level_model.html` / `Loaded_Level_Model.pdf` | 8-page beginner handout for the Loaded Level model — written for first exposure, no prior SMC vocabulary assumed. Three inline SVG diagrams. |
+| `rso_and_els.svg` / `.png` | The two strategies this repo is actually building, side by side: **RSO — Retail Shake Out** (`docs/MPC_FB_SPEC.md`) and **ELS — Engineered Liquidity Sweep** (`docs/DAVINCI_MODEL_SPEC.md`). Schematic candles plus a checklist per strategy, each row naming the engine field behind it. The SVG is the editable master. |
 | `marco_vs_yours.svg` / `.png` / `Marco_vs_Yours.pdf` | 4-page comparison of the source author's entry (on the sweep) against Aaron's (on the pullback into the gap between two lower highs). Same arming event, different fill. Generated once by hand; the SVG is the editable master. |
 
 ## How a PDF gets made
@@ -53,6 +54,26 @@ image.
 Loaded Level render (text over a price line, a caption clipping a path, a label under the entry
 dot) and none was visible without rendering. Render to PNG and read it before calling a diagram
 done.
+
+## The naming, and why it is not cosmetic
+
+Two strategies, two fixed names. They are used in the handouts, the specs and the code, and they
+do **not** carry the name of whoever taught them.
+
+| Name | Code | Spec |
+|---|---|---|
+| **RSO — Retail Shake Out** | `mpc_fb` | `docs/MPC_FB_SPEC.md` |
+| **ELS — Engineered Liquidity Sweep** | `mpc_els` | `docs/DAVINCI_MODEL_SPEC.md` |
+
+🔴 **"Shakeout" now means exactly one thing in this repo, and getting there cost a deletion.**
+`mpc_d_strategy.pine` used the word for a different setup entirely — its middle leg, with an input
+literally documented as "how much the shakeout may break before it stops being a shakeout". Two
+setups sharing one term is how a rule gets read backwards, so D was removed on 2026-08-15 (see
+`indicators/strategies/CLAUDE.md`). **Do not reintroduce the word for anything but RSO.**
+
+⚠ **Aaron's own pullback entry is an ELS ENTRY MODE, not a third strategy.** He waits for
+RSO-style confirmation but takes an ELS level. Building it as a separate package would give one
+setup two names, which is the mistake above from the other direction.
 
 ## Rules
 

@@ -554,6 +554,10 @@ and the only column the reorder is expected to change.
 
 ## mpc_d_strategy.pine — 49 inputs
 
+🔴 **DELETED 2026-08-15 — the file no longer exists and this table describes nothing shippable.**
+Left in place so a reader who finds the name elsewhere lands here rather than nowhere. Recover from
+git history; reason in `indicators/strategies/CLAUDE.md` → *DELETED 2026-08-15*.
+
 | # | type | ord | group | title | default | var | line |
 |---|---|---|---|---|---|---|---|
 | 1 | string | 1 | Market Structure | Structure Label Size | `"Small"` | `structLabelSize` | 86 |
