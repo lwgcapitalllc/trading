@@ -201,6 +201,17 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   57.2% at full size. `--sweep` prints the whole size curve.
   ⚠ Everything it prints is a LAB finding: no Pine twin, no parity gate, `enabled` defaults False.
 
+- **`tools/recovery_smoothness.py`** (new 2026-08-19) — the companion question to the one above:
+  loss recovery does not reduce MAX drawdown, so does it at least smooth the curve? **No.** Average
+  drawdown 16.6% → 17.2%, median 11.4% → 12.2%, time under water 75% → 79%, longest underwater
+  stretch identical at 612 days, monthly mean/std unchanged at 0.314 → 0.318.
+  🔴 **It exists because max drawdown is ONE MOMENT and a single-number verdict hid the rest of the
+  curve.** The equal-drawdown comparison in `recovery_report.py` is matched on the max, so it can
+  read 1.53x while every broader measure is a wash — which it is.
+  ⚠ **Per-trade R volatility falls 3.32R → 2.88R and that is NOT smoothing**, it is dilution from
+  adding quarter-size trades; return per unit of it goes 0.215 → 0.190. Never quote a volatility
+  drop without the return beside it.
+
 - **`tools/rso_scan.py`** (new 2026-08-16) — finds RETAIL SHAKE OUT (RSO) setups and draws them.
   Drives the canonical `engines/market_structure/` rather than hand-rolled pivots: A = `bull_sos`,
   B = a wick under the level that break left behind, C = the next aggressive `bull_sos`. Shorts

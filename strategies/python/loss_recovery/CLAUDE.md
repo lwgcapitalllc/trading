@@ -76,6 +76,47 @@ prints both columns — read them together, never the balance alone.
 
 ---
 
+## 🔴 It does not smooth the equity curve either — and this qualifies the 1.53x headline
+
+**MEASURED 2026-08-19.** Max drawdown is one worst moment. Everything describing the REST of the
+curve is flat or marginally worse:
+
+| | primary alone | + recovery @25% |
+|---|---|---|
+| Max drawdown | 48.8% | **48.3%** |
+| **Average** drawdown | 16.6% | **17.2%** |
+| **Median** drawdown | 11.4% | **12.2%** |
+| % of trades under water | 75% | **79%** |
+| Longest time under water | 612d | **612d** |
+| Losing months | 37 / 86 | 40 / 88 |
+| Std dev of monthly R | 4.78R | 4.76R |
+| **Monthly mean / std** | **0.314** | **0.318** |
+
+Same cause as the drawdown answer: 62 extra trades losing 42% of the time, opening immediately
+after a primary loss — i.e. while the curve is already below its high. More small dips, not fewer.
+
+⚠ **One figure looks like smoothing and is not.** Per-trade R volatility falls 3.32R → 2.88R, but
+that is DILUTION from adding quarter-size trades, not a steadier curve. Return per unit of that
+volatility goes the other way: **0.215 → 0.190**. Never read a volatility drop without the return
+that came with it.
+
+🔴 **What this does to the 1.53x claim, stated plainly rather than left for the next reader to
+find.** In R the module adds **+4.1R on top of +129.0R — about 3%.** That compounds to 45% more
+money (1,913x → 2,772x) because the extra R lands early enough to lift everything after it. But
+**monthly risk-adjusted return is unchanged (0.314 → 0.318).** So "1.53x better than the risk
+dial" is true *at matched MAX drawdown*, and max drawdown is a single point on the curve. On every
+broader measure it is a wash.
+
+**The honest summary: this buys a small amount of extra R that happens to compound well. It is not
+a better-behaved strategy, it does not protect the account, and it does not smooth the ride.** Say
+that before quoting the balance.
+
+⚠ **If a smoother curve is the goal, this is the wrong lever** — the ones that would move it are
+fewer correlated positions or a second strategy on a different structure stream. See root
+CLAUDE.md → *The overlap audit*.
+
+---
+
 ## Why this is a package and not a flag on `mpc_sos_fade`
 
 The trigger is "a primary trade lost", which every strategy in this repo can state. Wiring it to
