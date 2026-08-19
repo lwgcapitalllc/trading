@@ -53,6 +53,34 @@ instead would have moved every existing input to a new group in anyone's saved c
 `primaryNet`, `f_recSize`, every `rec*`) are absent from `mpc_strategy.pine`, and
 `indicators/tools/check_active_order.py` passes.
 
+✅ **That acceptance test PASSED on 2026-08-19** — identical book with `recEnabled` off, so all
+30 `posPrimary` substitutions are right.
+
+🔴 **THE SECOND PASTE — recovery ON — DIED MID-RUN ON A DRAWING CALL, AND A HALT IS NOT A DRAWING
+BUG.** `Error on bar 70887: Bar index value of the 'left' argument (58907) in 'box.new()' is too
+far from the current bar index.` TradingView refuses a `bar_index` anchor past ~10,000 bars and
+**stops the script there**, so the trade list silently ENDS at that bar — the numbers under it are
+a partial run that looks like a finished one. ⚠ **Read a Pine "Caution!" as a truncated result,
+never as a cosmetic complaint.**
+
+The anchor was `PosBox.entryBar`, reached by elimination: with the defaults, sessions and the
+sniper zone draw nothing and every FVG box anchors at `bar_index - 1`, so the position box owns the
+only `box.new` in the file whose left edge can travel. Two fixes landed together, and the second is
+the real one:
+
+| | fix |
+|---|---|
+| `POSBOX_ORIGIN_CAP = 9000` | every left anchor is clamped, the same guard and the same reason as `EQ_ORIGIN_CAP`. A trade longer than the cap draws from the cap. Cosmetic loss; the alternative is the script dying. |
+| the STRANDED HANDLE | a primary can close and reopen on ONE bar — a stop and a resting limit filling together. Neither *flat now* nor *flat last bar* held, so **neither** the open branch nor the close branch fired: the box handle and `entryBar` stayed pinned to a dead trade, and each further same-bar flip pushed the anchor further back. `pbFlip` now makes a flip an explicit close **then** open, in that order. |
+| `f_isRec` in the fill loop | a recovery exit was being banked against the PRIMARY's `p.t1`, so a recovery closing in profit painted the primary green — the same blend `f_primarySize` exists to prevent. |
+
+⚠ **The stranded handle is a LATENT BUG IN `mpc_strategy.pine` TOO** — it is the shared drawing
+code, not anything the recovery leg added; the recovery leg only perturbed the run into reaching
+it. It has not been fixed there, because that file is LIVE-adjacent and the change deserves its own
+pass. ⚠ **The ordering inside `f_posBox` is now bank → close → open → grow, and that order is
+load-bearing**: with open running first, a same-bar exit was banked as a fill on the trade that had
+just replaced it.
+
 🔴 **THE FIRST THING TO CHECK ON A CHART, BEFORE ANY RECOVERY NUMBER IS BELIEVED: with
 `recEnabled` OFF this file must reproduce `mpc_strategy.pine`'s book EXACTLY** — same trade count,
 same net, same list. If it does not, one of those 30 substitutions is wrong and every recovery
@@ -296,6 +324,54 @@ Measured result and the open design question (the add trigger is arithmetic only
 retest): `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 19.
 
 ---
+
+### The adds got a TAKE PROFIT, and it is the one default here set AGAINST its measurement (2026-08-19)
+
+`execScaleTpMode` ∈ {`"Ride"`, `"Prev week H/L"`, `"Prev day H/L"`, `"H4 H/L"`}, default
+**`"Prev week H/L"`**. Until now the scale-in lots had no exit of their own — they rode `lStop` with
+the base trade and closed pro-rata with its ladder.
+
+**It rides the EXISTING per-add exits rather than adding new orders**, which is what keeps the
+change small:
+
+```
+strategy.exit("L-AX1", from_entry = "L-ADD1", stop = lStop, limit = lAddTp)
+```
+
+One extra argument makes each add a proper OCO bracket — stop or target, whichever price reaches
+first. **A `na` limit is no limit**, so `"Ride"` leaves all eight of those calls byte-identical to
+what they were.
+
+`lAddTp` / `sAddTp` require the level to be **unmitigated** (`not w_hMit` / `not d_hMit` /
+`not h4HighSwept` — a swept level is not somewhere to aim at, it is a price we are past) **and**
+beyond `lAddLastPx`, the price the newest add was bought at, so every lot it closes is closed in
+profit. `lAddLastPx` is latched from `strategy.opentrades.entry_price()` on the bar the add fills.
+
+⚠ **The NEWEST add, not the worst-priced one.** In `Trail` mode adds fill at successively higher
+prices because the ratchet only moves one way, so the two are the same level — and Pine can name the
+newest fill without keeping a running extreme. Measured equal on the full book rather than argued.
+
+🔴 **`lAddN` IS NOT DECREMENTED WHEN THE ADDS BANK.** The ladder is capped on adds BOUGHT, so
+handing the slot back would let a trade add again after banking — "scale in and out repeatedly",
+a different strategy that nothing has measured. The Python mirror zeroes its lots in place rather
+than emptying its list, for exactly this reason, and has a test pinning it.
+
+🔴 **EVERY TARGET LOST TO RIDING, AND IT SHIPS ON ONE ANYWAY.** Ride **194.15R**, prev week
+189.77R, prev day 168.51R, H4 166.49R, session 159.39R — an ordering that tracks how OFTEN the
+target fires, reproduced independently by a flat-risk-multiple control. **`"Prev week H/L"` is
+Aaron's explicit call (2026-08-19)**: the 4.38R gap is inside this strategy's 15.06R jitter, so
+weekly buys certainty for no measurable cost, and it is the only family that can say that. Full
+numbers: `strategies/python/mpc_sos_fade/CLAUDE.md` → *The adds got a TAKE PROFIT*.
+
+⚠ **A FIFTH `cfg_*` COLUMN LANDED WITH IT** (`cfg_scale_tp`), for the reason the four before it
+exist: a trade-affecting input with no column is invisible to `compare_strategy.py` **by
+construction** — the gate does not go quiet, it goes WRONG. ⚠ **The comparator decodes ABSENT as
+`"Ride"`, which is the opposite of how `cfg_scale_in` is read.** "Absent ⇒ off" is safe there
+because that feature shipped OFF; this one ships ACTIVE, so a config-default fallback would replay
+every older export with its adds banking at a weekly level the exported Pine never looked at.
+
+🔴 **NOT GATED YET.** No export carries `cfg_scale_tp`, so `compare_strategy.py` has never checked
+this path. Rule 22 is unsatisfied until a fresh export lands with the column and the gate passes.
 
 ### The scale-in gained a MODE, and the export gained the columns it should have had first
 

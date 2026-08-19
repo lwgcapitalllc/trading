@@ -3965,10 +3965,74 @@ f_tpBand(int x1, int x2, int lx, float yA, float yB, color c, string tag) =>
         line.new(x1, yB, lx, yB, color = TP_ANNOT, style = line.style_dashed, width = 1)
         label.new(lx, yB, " " + tag, color = color(na), textcolor = TP_ANNOT, style = label.style_label_left, size = size.small)
 
+// [REC] A box's LEFT anchor may never sit more than this many bars back. TradingView REFUSES
+// box.new beyond ~10,000 bars and HALTS THE WHOLE SCRIPT mid-run — so one unusually long trade
+// does not merely draw oddly, it kills the strategy and truncates the trade list from that bar
+// on. Same guard, and the same reason, as EQ_ORIGIN_CAP above.
+int POSBOX_ORIGIN_CAP = 9000
+
 f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =>
     if execShowPosBox
-        // 1. Fresh fill → open a neutral box anchored at the entry bar
-        if posPrimary != 0 and posPrimary[1] == 0
+        // [REC] A primary can close and REOPEN on the same bar — a stop and a resting limit
+        // filling together. Neither "flat now" nor "flat last bar" is true on that bar, so the
+        // open box handle used to be STRANDED: the next trade kept drawing from a dead trade's
+        // entry bar, and each further same-bar flip pushed the anchor further back until
+        // box.new was handed an index TradingView refuses. A flip is now an explicit close
+        // followed by an open, in that order.
+        bool pbFlip  = posPrimary != 0 and posPrimary[1] != 0 and (posPrimary > 0) != (posPrimary[1] > 0)
+        bool pbShut  = (posPrimary == 0 and posPrimary[1] != 0) or pbFlip
+        bool pbStart = (posPrimary != 0 and posPrimary[1] == 0) or pbFlip
+
+        // [doc 152] 1. Bank any exits that filled. They are RECORDED here and DRAWN on close  -> docs/mpc_strategy.md
+        if strategy.closedtrades > p.seen
+            for i = p.seen to strategy.closedtrades - 1
+                // [REC] A recovery exit is not this trade's target. Without this test a
+                // recovery closing in profit banks a "fill" against the primary's TP1 and
+                // paints the primary green — the same blend f_primarySize exists to prevent.
+                if not f_isRec(strategy.closedtrades.entry_id(i))
+                    float xPx  = strategy.closedtrades.exit_price(i)
+                    int   xDir = strategy.closedtrades.size(i) > 0 ? 1 : -1
+                    // Only a fill at or beyond TP1 counts as a banked target. This is what
+                    // stops a breakeven-stop exit (which fills just past entry) painting green.
+                    if not na(p.t1) and (xDir > 0 ? xPx >= p.t1 : xPx <= p.t1)
+                        p.fills := p.fills + 1
+                        if p.fills == 1
+                            p.f1 := xPx
+                        else if p.fills == 2
+                            p.f2 := xPx
+                        else
+                            p.f3 := xPx
+                    p.lastFill := xPx
+            p.seen := strategy.closedtrades
+        // 2. Closed this bar → drop the placeholder and paint the real thing.
+        //    [REC] Runs BEFORE the open below, so a same-bar flip paints the finished trade
+        //    with its own fills and entry bar before the new one overwrites them.
+        if pbShut and not na(p.bx)
+            box.delete(p.bx)
+            p.bx := na
+            int   xr  = bar_index
+            int   lx  = xr + 4
+            // [REC] clamped — see POSBOX_ORIGIN_CAP. A trade longer than the cap draws from
+            // the cap rather than from its entry, which is a cosmetic loss; the alternative is
+            // the script dying.
+            int   x0  = math.max(p.entryBar, bar_index - POSBOX_ORIGIN_CAP)
+            float net = primaryNet - p.openNet
+            // Drawdown first so the green bands sit on top of it
+            if p.dir > 0 ? p.worst < p.entry : p.worst > p.entry
+                box.new(x0, math.max(p.entry, p.worst), xr, math.min(p.entry, p.worst), bgcolor = POS_DD, border_color = color(na))
+            if not na(p.f1)
+                f_tpBand(x0, xr, lx, p.entry, p.f1, POS_G1, "TP1")
+                if not na(p.f2)
+                    f_tpBand(x0, xr, lx, p.f1, p.f2, POS_G2, "TP2")
+                if not na(p.f3)
+                    f_tpBand(x0, xr, lx, p.f2, p.f3, POS_G3, "TP3")
+            else if net < 0
+                float redTo = na(p.lastFill) ? p.sl : p.lastFill
+                box.new(x0, math.max(p.entry, redTo), xr, math.min(p.entry, redTo), bgcolor = POS_RED, border_color = POS_REDB)
+            else
+                line.new(x0, p.entry, xr, p.entry, color = POS_ORANGE, width = 2)
+        // 3. Fresh fill → open a neutral box anchored at the entry bar
+        if pbStart
             p.dir      := posPrimary > 0 ? 1 : -1
             p.entryBar := bar_index
             p.entry    := p.dir > 0 ? lE : sE
@@ -3982,50 +4046,12 @@ f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =
             p.fills    := 0
             p.worst    := p.dir > 0 ? low : high
             p.bx       := box.new(bar_index, math.max(p.entry, close), bar_index, math.min(p.entry, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
-        // [doc 152] 2. Bank any exits that filled. They are RECORDED here and DRAWN on close  -> docs/mpc_strategy.md
-        if strategy.closedtrades > p.seen
-            for i = p.seen to strategy.closedtrades - 1
-                float xPx  = strategy.closedtrades.exit_price(i)
-                int   xDir = strategy.closedtrades.size(i) > 0 ? 1 : -1
-                // Only a fill at or beyond TP1 counts as a banked target. This is what
-                // stops a breakeven-stop exit (which fills just past entry) painting green.
-                if not na(p.t1) and (xDir > 0 ? xPx >= p.t1 : xPx <= p.t1)
-                    p.fills := p.fills + 1
-                    if p.fills == 1
-                        p.f1 := xPx
-                    else if p.fills == 2
-                        p.f2 := xPx
-                    else
-                        p.f3 := xPx
-                p.lastFill := xPx
-            p.seen := strategy.closedtrades
-        // 3. While open → grow the box right and track the worst price seen
+        // 4. While open → grow the box right and track the worst price seen
         if posPrimary != 0 and not na(p.bx)
             p.worst := p.dir > 0 ? math.min(p.worst, low) : math.max(p.worst, high)
             box.set_right(p.bx, bar_index)
             box.set_top(p.bx, math.max(p.entry, close))
             box.set_bottom(p.bx, math.min(p.entry, close))
-        // 4. Closed this bar → drop the placeholder and paint the real thing
-        if posPrimary == 0 and posPrimary[1] != 0 and not na(p.bx)
-            box.delete(p.bx)
-            p.bx := na
-            int   xr  = bar_index
-            int   lx  = xr + 4
-            float net = primaryNet - p.openNet
-            // Drawdown first so the green bands sit on top of it
-            if p.dir > 0 ? p.worst < p.entry : p.worst > p.entry
-                box.new(p.entryBar, math.max(p.entry, p.worst), xr, math.min(p.entry, p.worst), bgcolor = POS_DD, border_color = color(na))
-            if not na(p.f1)
-                f_tpBand(p.entryBar, xr, lx, p.entry, p.f1, POS_G1, "TP1")
-                if not na(p.f2)
-                    f_tpBand(p.entryBar, xr, lx, p.f1, p.f2, POS_G2, "TP2")
-                if not na(p.f3)
-                    f_tpBand(p.entryBar, xr, lx, p.f2, p.f3, POS_G3, "TP3")
-            else if net < 0
-                float redTo = na(p.lastFill) ? p.sl : p.lastFill
-                box.new(p.entryBar, math.max(p.entry, redTo), xr, math.min(p.entry, redTo), bgcolor = POS_RED, border_color = POS_REDB)
-            else
-                line.new(p.entryBar, p.entry, xr, p.entry, color = POS_ORANGE, width = 2)
         // [doc 153] A function's LAST statement is its return value, and the three branches  -> docs/mpc_strategy.md
         int _pbDone = 0
 
