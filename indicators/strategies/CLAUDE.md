@@ -15,6 +15,60 @@ declaration-order check this file has been asking for since 2026-08-12 now exist
 run on all twelve files. 2026-08-13: split out of `indicators/CLAUDE.md` when the Pine sources
 were divided into `strategies/` and `engines/`; the rules below moved verbatim.
 
+
+## `mpc_recovery_strategy.pine` — the A+ book plus a LOSS RECOVERY leg (new 2026-08-19)
+
+**A FORK of `mpc_strategy.pine`, not an edit to it, and the reason is mechanical.** A recovery
+trade is open AT THE SAME TIME as a primary. That file's bookkeeping assumes one position:
+`strategy.position_size == 0` means *"the trade closed"* at **13 arming gates** and at the
+WIN/LOSS grader (`closedR`), while `strategy.netprofit`, `strategy.position_avg_price` and
+`math.abs(strategy.position_size)` are all TOTALS feeding `openRiskUsd` — the divisor every trade
+is graded in. Open a second position there and **the primary silently stops grading its own
+trades**; nothing errors and no plot changes shape. Forking is also what this directory already
+does for variants (`mpc_b_leg_strategy.pine`, `mpc_bos_strategy.pine`).
+
+⚠ **NOT COMPILED.** Written against the Pine v6 reference and never run on a chart. Expect syntax
+fixes on first paste. **Nothing here has been verified by anything.**
+
+### What differs from `mpc_strategy.pine` — 294 changed lines, every one marked `[REC]`
+
+| | |
+|---|---|
+| `pyramiding` 5 → 8 | primary + 4 adds already fills 5; the recovery needs its own slot |
+| `f_isRec` / `f_primarySize` / `f_primaryEntryPx` / `f_recSize` / `f_recEntryPx` | a recovery order is any entry id starting `Rec`; every global that was a TOTAL now has a primary-only twin |
+| `posPrimary` replaces `strategy.position_size` | **30 sites** below the helpers, including all 13 arming gates, both open-transition detectors, the position box and the scale-in blocks |
+| `primaryNet` replaces `strategy.netprofit` | in `netAtEntry` and `closedR`, so the two legs cannot credit each other |
+| `f_primaryEntryPx()` replaces `strategy.position_avg_price` | it would blend the recovery's fill into `lEntry`/`sEntry` and therefore into `openRiskUsd` |
+| group 9 inputs | `recEnabled` (**default OFF**), size %, both-directions, lock-at / lock-to, trail, day cap, scratch band |
+
+🔴 **THE FIRST THING TO CHECK ON A CHART, BEFORE ANY RECOVERY NUMBER IS BELIEVED: with
+`recEnabled` OFF this file must reproduce `mpc_strategy.pine`'s book EXACTLY** — same trade count,
+same net, same list. If it does not, one of those 30 substitutions is wrong and every recovery
+figure is measured on a primary that is no longer the primary.
+
+### The rule itself
+
+Loss → wait for the opposing external CHoCH → market in (fills next open) → stop at the far end of
+the break leg → **at +1R move the stop TO +1R** → trail each new confirmed swing → no target →
+30-day backstop. Sized at 25% of a normal trade.
+
+⚠ **`st.asl` / `st.ash` ARE the new swing's price on the bar `st.new_swing_low` / `new_swing_high`
+fires** — that is how the trail reads a level without a second engine.
+
+### Known divergences from the Python twin, to settle at parity time
+
+1. **Overlapping recoveries.** `loss_recovery` in Python processes each loss independently, so two
+   recovery trades CAN overlap. Pine has one `Rec` entry id, so a second loss while one is open is
+   dropped. Count how often that happens before treating the two as equivalent.
+2. **Fill model.** Python enters at the next bar's OPEN explicitly; Pine gets that from
+   `process_orders_on_close = false`. Same intent, and it needs to be confirmed rather than assumed.
+3. **`recWant` never expires**, matching Python. An arm with no CHoCH yet is a visible state, not
+   a trade that fires late on stale intent.
+
+**Everything measured about this rule, including that it does NOT reduce drawdown and does NOT
+smooth the equity curve, is in `strategies/python/loss_recovery/CLAUDE.md`.** Read that before
+quoting any figure off this chart.
+
 ## What lives here, and the one thing that decides it
 
 A file is in this folder if its declaration is `strategy(`, and in `../engines/` if it is
