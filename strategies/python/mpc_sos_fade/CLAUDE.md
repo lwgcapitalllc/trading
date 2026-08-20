@@ -1241,6 +1241,14 @@ configuration dropped **exactly 112 add lots**, worth up to **42.46R — 32% of 
 | 25 / 25 | 127.45R | 28.31R | **160.65R** | 21% |
 | 50 / 0 | 121.89R | 28.31R | **155.09R** | 21% |
 | 33 / 33 | 106.11R | 37.37R | **149.93R** | 29% |
+| 50 / 25 | 91.32R | 42.46R | **141.12R** | 35% |
+| 50 / 50 | 61.26R | 0.00R | **61.26R** | — |
+
+✅ **Exactly two rows came back UNCHANGED, and they are the two that should have.** `0/0` never
+slices (the runner closes 100% of the base, so the fraction was always 1.0) and `50/50` never
+creates an add at all — the ladder fully closes the position before `_stage` reaches 2, which is
+the gate `_maybe_scale_in` requires. Every row that could be wrong was, and no row that could not
+be moved. That is the regression check on the fix, not just on the shipped default.
 
 ⚠ **`discarded` and `re-run` are two different measurements and only the second one counts.** The
 discarded column valued each orphaned lot at the exit bar's CLOSE, while a trade ending on a stop
