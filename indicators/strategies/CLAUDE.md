@@ -382,7 +382,7 @@ retest): `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 1
 ### The adds got a TAKE PROFIT, and it is the one default here set AGAINST its measurement (2026-08-19)
 
 `execScaleTpMode` ∈ {`"Ride"`, `"Prev week H/L"`, `"Prev day H/L"`, `"H4 H/L"`}, default
-**`"Prev week H/L"`**. Until now the scale-in lots had no exit of their own — they rode `lStop` with
+**`"Ride"`** — i.e. no target, which is what the measurement says. Until now the scale-in lots had no exit of their own — they rode `lStop` with
 the base trade and closed pro-rata with its ladder.
 
 **It rides the EXISTING per-add exits rather than adding new orders**, which is what keeps the
@@ -412,10 +412,14 @@ than emptying its list, for exactly this reason, and has a test pinning it.
 
 🔴 **EVERY TARGET LOST TO RIDING, AND IT SHIPS ON ONE ANYWAY.** Ride **194.15R**, prev week
 168.51R, prev day 157.57R, H4 146.09R — an ordering that tracks how OFTEN the target fires (0, 16,
-25 and 47 banks), reproduced independently by a flat-risk-multiple control. **`"Prev week H/L"` is
-Aaron's explicit call (2026-08-19) and the default is UNDER REVIEW**: he chose it on a 4.38R gap
-said to be inside this strategy's 15.06R jitter, and the true gap is **25.64R, outside it**. He has
-been told and has not answered — confirm before quoting it as settled. Full numbers:
+25 and 47 banks), reproduced independently by a flat-risk-multiple control. ✅ **It shipped for ONE DAY on
+`"Prev week H/L"` and was reversed to `"Ride"` on 2026-08-19 (Aaron).** He picked the target
+deliberately, wanting certain money off the runners, and on the number he was given — a 4.38R gap,
+INSIDE this strategy's 15.06R jitter — that was a sound trade. That number came from the run with
+the live-bar bug in it; **the true gap is 25.64R, OUTSIDE the jitter**, and on the real figure he
+reversed within a minute. ⚠ **A wrong measurement does not arrive looking wrong — it arrives as a
+reasonable-looking number and quietly buys a judgement call, and the decision outlives the
+correction unless somebody goes back for it.** Full numbers:
 `strategies/python/mpc_sos_fade/CLAUDE.md` → *The adds got a TAKE PROFIT*.
 
 🔴 **THE `limit` MUST BE COMPUTED AT THE BAR'S CLOSE, NOT RE-RESOLVED AS PRICE TOUCHES IT.** Pine
