@@ -3480,7 +3480,12 @@ type TradeLbl
     string head = ""   // "▲ LONG" / "▼ SHORT" — always the top line of the box
     string body = ""
     bool   bLeg = false // this trade came from the B LEG — drawn BLUE, not by-result
+    bool   isRec = false // [REC] a recovery trade — same by-result colouring as a primary; only
+                         // the head text differs, so the chart reads identically
 var TradeLbl tlbl = TradeLbl.new()
+// [REC] the recovery leg's own label handle. A second instance rather than a second code path:
+// every function below takes the handle as an argument, so both legs are drawn by the SAME lines.
+var TradeLbl rlbl = TradeLbl.new(isRec = true)
 
 // B-LEG callout colour — blue, so B-leg trades stand out from the A+ grey/green/
 // red/orange scheme. Kept even after close (the R is still in the text).
@@ -3707,11 +3712,14 @@ float posPrimary = f_primarySize()
 
 // Running closed P&L of the PRIMARY only. Replaces `strategy.netprofit` in the grader; the
 // global would credit the primary with the recovery's result and vice versa.
-var float primaryNet  = 0.0
+var float primaryNet   = 0.0
+var float recoveryNet  = 0.0
 var int   recSeenClosed = 0
 if strategy.closedtrades > recSeenClosed
     for i = recSeenClosed to strategy.closedtrades - 1
-        if not f_isRec(strategy.closedtrades.entry_id(i))
+        if f_isRec(strategy.closedtrades.entry_id(i))
+            recoveryNet += strategy.closedtrades.profit(i)
+        else
             primaryNet += strategy.closedtrades.profit(i)
     recSeenClosed := strategy.closedtrades
 
@@ -3880,7 +3888,7 @@ float _cOff = ta.atr(14) * execLabelOff
 f_confOpen(TradeLbl t, int dir, float px, float off, string body, bool showIt) =>
     if execShowConfLabel and showIt
         float ly = dir > 0 ? px - off : px + off
-        t.head := dir > 0 ? "▲ LONG" : "▼ SHORT"
+        t.head := t.isRec ? (dir > 0 ? "▲ RECOVERY LONG" : "▼ RECOVERY SHORT") : (dir > 0 ? "▲ LONG" : "▼ SHORT")
         t.body := body
         t.ln   := line.new(bar_index, px, bar_index, ly, color = t.bLeg ? BLEG_BLUE_L : color.new(#787B86, 0), width = 1)
         t.lb   := label.new(bar_index, ly, t.head, tooltip = t.head + "\n" + body, color = t.bLeg ? BLEG_BLUE : color.new(#787B86, 12), textcolor = color.new(#101014, 0), style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small)
@@ -3982,29 +3990,35 @@ f_tpBand(int x1, int x2, int lx, float yA, float yB, color c, string tag) =>
 // on. Same guard, and the same reason, as EQ_ORIGIN_CAP above.
 int POSBOX_ORIGIN_CAP = 9000
 
-f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =>
+// [REC] ONE box implementation, called once per leg. `pos`/`posPrev` are that leg's size, `netNow`
+// its own running closed P&L, and `isRec` picks which closed trades belong to it. Nothing about
+// how a recovery trade is DRAWN differs from a primary — same bands, same drawdown shading, same
+// entry triangles. Only the label's head text says which leg it was.
+f_posBox(PosBox p, float pos, float posPrev, float netNow, bool isRec, float eA, float eB, float sA, float sB, float t1A, float t1B, string bandTag) =>
     if execShowPosBox
-        // [REC] A primary can close and REOPEN on the same bar — a stop and a resting limit
-        // filling together. Neither "flat now" nor "flat last bar" is true on that bar, so the
-        // open box handle used to be STRANDED: the next trade kept drawing from a dead trade's
-        // entry bar, and each further same-bar flip pushed the anchor further back until
-        // box.new was handed an index TradingView refuses. A flip is now an explicit close
+        // A leg can close and REOPEN on the same bar — a stop and a resting limit filling
+        // together. Neither "flat now" nor "flat last bar" is true on that bar, so the open box
+        // handle used to be STRANDED: the next trade kept drawing from a dead trade's entry bar,
+        // and each further same-bar flip pushed the anchor further back until box.new was handed
+        // an index TradingView refuses, which HALTS the script. A flip is now an explicit close
         // followed by an open, in that order.
-        bool pbFlip  = posPrimary != 0 and posPrimary[1] != 0 and (posPrimary > 0) != (posPrimary[1] > 0)
-        bool pbShut  = (posPrimary == 0 and posPrimary[1] != 0) or pbFlip
-        bool pbStart = (posPrimary != 0 and posPrimary[1] == 0) or pbFlip
+        bool pbFlip  = pos != 0 and posPrev != 0 and (pos > 0) != (posPrev > 0)
+        bool pbShut  = (pos == 0 and posPrev != 0) or pbFlip
+        bool pbStart = (pos != 0 and posPrev == 0) or pbFlip
 
         // [doc 152] 1. Bank any exits that filled. They are RECORDED here and DRAWN on close  -> docs/mpc_strategy.md
         if strategy.closedtrades > p.seen
             for i = p.seen to strategy.closedtrades - 1
-                // [REC] A recovery exit is not this trade's target. Without this test a
-                // recovery closing in profit banks a "fill" against the primary's TP1 and
-                // paints the primary green — the same blend f_primarySize exists to prevent.
-                if not f_isRec(strategy.closedtrades.entry_id(i))
+                // [REC] Only this leg's own exits. Without the test a recovery closing in profit
+                // banks a "fill" against the primary's TP1 and paints the primary green — the
+                // same blend f_primarySize exists to prevent.
+                if f_isRec(strategy.closedtrades.entry_id(i)) == isRec
                     float xPx  = strategy.closedtrades.exit_price(i)
                     int   xDir = strategy.closedtrades.size(i) > 0 ? 1 : -1
                     // Only a fill at or beyond TP1 counts as a banked target. This is what
                     // stops a breakeven-stop exit (which fills just past entry) painting green.
+                    // For the recovery leg `t1` is the LOCK price — the level that means the
+                    // loss has been made back — which is the same question TP1 asks.
                     if not na(p.t1) and (xDir > 0 ? xPx >= p.t1 : xPx <= p.t1)
                         p.fills := p.fills + 1
                         if p.fills == 1
@@ -4016,40 +4030,44 @@ f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =
                     p.lastFill := xPx
             p.seen := strategy.closedtrades
         // 2. Closed this bar → drop the placeholder and paint the real thing.
-        //    [REC] Runs BEFORE the open below, so a same-bar flip paints the finished trade
-        //    with its own fills and entry bar before the new one overwrites them.
+        //    Runs BEFORE the open below, so a same-bar flip paints the finished trade with its
+        //    own fills and entry bar before the new one overwrites them.
         if pbShut and not na(p.bx)
             box.delete(p.bx)
             p.bx := na
             int   xr  = bar_index
             int   lx  = xr + 4
-            // [REC] clamped — see POSBOX_ORIGIN_CAP. A trade longer than the cap draws from
-            // the cap rather than from its entry, which is a cosmetic loss; the alternative is
-            // the script dying.
+            // Clamped — see POSBOX_ORIGIN_CAP. A trade longer than the cap draws from the cap
+            // rather than from its entry: a cosmetic loss, against the script dying.
             int   x0  = math.max(p.entryBar, bar_index - POSBOX_ORIGIN_CAP)
-            float net = primaryNet - p.openNet
+            float net = netNow - p.openNet
             // Drawdown first so the green bands sit on top of it
             if p.dir > 0 ? p.worst < p.entry : p.worst > p.entry
                 box.new(x0, math.max(p.entry, p.worst), xr, math.min(p.entry, p.worst), bgcolor = POS_DD, border_color = color(na))
             if not na(p.f1)
-                f_tpBand(x0, xr, lx, p.entry, p.f1, POS_G1, "TP1")
+                f_tpBand(x0, xr, lx, p.entry, p.f1, POS_G1, bandTag + "1")
                 if not na(p.f2)
-                    f_tpBand(x0, xr, lx, p.f1, p.f2, POS_G2, "TP2")
+                    f_tpBand(x0, xr, lx, p.f1, p.f2, POS_G2, bandTag + "2")
                 if not na(p.f3)
-                    f_tpBand(x0, xr, lx, p.f2, p.f3, POS_G3, "TP3")
+                    f_tpBand(x0, xr, lx, p.f2, p.f3, POS_G3, bandTag + "3")
             else if net < 0
                 float redTo = na(p.lastFill) ? p.sl : p.lastFill
                 box.new(x0, math.max(p.entry, redTo), xr, math.min(p.entry, redTo), bgcolor = POS_RED, border_color = POS_REDB)
+            // [REC] A WINNER THAT NEVER CLEARED TP1 USED TO PAINT AS A FLAT ORANGE LINE, i.e. it
+            // read as a scratch. Every recovery win that trailed out below its lock landed here,
+            // and so does any primary whose runner stop caught it early. Green to the real exit.
+            else if net > 0 and not na(p.lastFill)
+                f_tpBand(x0, xr, lx, p.entry, p.lastFill, POS_G1, bandTag)
             else
                 line.new(x0, p.entry, xr, p.entry, color = POS_ORANGE, width = 2)
         // 3. Fresh fill → open a neutral box anchored at the entry bar
         if pbStart
-            p.dir      := posPrimary > 0 ? 1 : -1
+            p.dir      := pos > 0 ? 1 : -1
             p.entryBar := bar_index
-            p.entry    := p.dir > 0 ? lE : sE
-            p.sl       := p.dir > 0 ? lS : sS
-            p.t1       := p.dir > 0 ? l1 : s1
-            p.openNet  := primaryNet
+            p.entry    := p.dir > 0 ? eA : eB
+            p.sl       := p.dir > 0 ? sA : sB
+            p.t1       := p.dir > 0 ? t1A : t1B
+            p.openNet  := netNow
             p.lastFill := na
             p.f1       := na
             p.f2       := na
@@ -4058,7 +4076,7 @@ f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =
             p.worst    := p.dir > 0 ? low : high
             p.bx       := box.new(bar_index, math.max(p.entry, close), bar_index, math.min(p.entry, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
         // 4. While open → grow the box right and track the worst price seen
-        if posPrimary != 0 and not na(p.bx)
+        if pos != 0 and not na(p.bx)
             p.worst := p.dir > 0 ? math.min(p.worst, low) : math.max(p.worst, high)
             box.set_right(p.bx, bar_index)
             box.set_top(p.bx, math.max(p.entry, close))
@@ -4066,7 +4084,7 @@ f_posBox(PosBox p, float lE, float sE, float lS, float sS, float l1, float s1) =
         // [doc 153] A function's LAST statement is its return value, and the three branches  -> docs/mpc_strategy.md
         int _pbDone = 0
 
-f_posBox(pbx, lEntry, sEntry, lSL, sSL, lTP1, sTP1)
+f_posBox(pbx, posPrimary, posPrimary[1], primaryNet, false, lEntry, sEntry, lSL, sSL, lTP1, sTP1, "TP")
 
 // [doc 154] Always-visible entry markers (the long/short position indicator itself)   -> docs/mpc_strategy.md
 plotshape(execShowPosBox and posPrimary > 0 and posPrimary[1] <= 0, title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
@@ -4300,9 +4318,21 @@ var int   recTime    = na
 // multi-year chart every annotation older than a few weeks is gone — which is exactly what makes
 // an old trade impossible to eyeball. A plot is not a drawing and is never collected.
 var float recPlotStop = na
-bool recFillBar = false
+// [REC] Everything below mirrors the primary's own trade bookkeeping one-for-one, so the recovery
+// leg is graded and drawn by the SAME code rather than by a parallel one.
+var float recRiskUsd    = na   // $ at risk on the open recovery = its 1R, grades the result
+var float recNetAtEntry = na   // recoveryNet the moment it filled
+var float recLockPx     = na   // the +recLockToR price — this leg's TP1 for banding purposes
+var PosBox rbx = PosBox.new()
 
 float recSize = f_recSize()
+
+// [REC] ── grade it the bar it closes: WIN / LOSS / BREAKEVEN in R, exactly as the primary is
+// graded by `closedR`. Must run BEFORE step 0, which wipes the state it reads.
+float recClosedR = recSize == 0 and recSize[1] != 0 and not na(recRiskUsd) and recRiskUsd > 0 ? (recoveryNet - recNetAtEntry) / recRiskUsd : na
+if not na(recClosedR)
+    f_confClose(rlbl, recClosedR, execBeBandR)
+    recRiskUsd := na
 
 // ── 0. flat again → forget everything. Runs FIRST so an exit this bar cannot be re-managed. ──
 if not na(recEntry) and recSize == 0
@@ -4350,7 +4380,10 @@ if recPending and recSize != 0
     recPending := false
     recWant    := 0
     recPendSL  := na
-    recFillBar := true
+    recLockPx     := recEntry + (recSize > 0 ? 1 : -1) * recLockToR * recRisk
+    recRiskUsd    := math.abs(recSize) * recRisk
+    recNetAtEntry := recoveryNet
+    f_confOpen(rlbl, recSize > 0 ? 1 : -1, recEntry, _cOff, "──────────────\nLeg     Loss recovery\nEntry   external CHoCH   " + str.tostring(recEntry, format.mintick) + "\nStop    break-leg far end  " + str.tostring(recStop, format.mintick) + "\nSecure  +" + str.tostring(recLockAtR, "#.##") + "R → stop to +" + str.tostring(recLockToR, "#.##") + "R\nThen    trail behind each new swing\nSize    " + str.tostring(recRiskFrac, "#") + "% of a normal trade", execLabelWhich != "None")
 
 // ── 4. manage it ──
 if not na(recEntry) and recSize != 0 and recRisk > 0
@@ -4380,10 +4413,19 @@ if not na(recEntry) and recSize != 0 and recRisk > 0
     if not na(recTime) and (time - recTime) >= recMaxDays * 86400000
         strategy.close("Rec", comment = "rec time stop")
 
-// [REC] All three are PLOTS, so they are drawn on every recovery trade in history rather than
-// only on the newest 500 drawings. The entry markers fire on the FILL bar, not the signal bar —
-// the fill is the bar the trade's 1R is fixed on, and it is the bar you want to judge.
-plotshape(recEnabled and recFillBar and recSize > 0, title = "Recovery LONG entry",  text = "REC", style = shape.labelup,   location = location.belowbar, color = color.new(#FF9800, 0), textcolor = color.new(#101014, 0), size = size.small)
-plotshape(recEnabled and recFillBar and recSize < 0, title = "Recovery SHORT entry", text = "REC", style = shape.labeldown, location = location.abovebar, color = color.new(#FF9800, 0), textcolor = color.new(#101014, 0), size = size.small)
+// [REC] The recovery's position box — the SAME function, the same bands, the same drawdown
+// shading. `recLockPx` stands in for TP1: it is the level that means the loss has been made back,
+// which is the question TP1 asks on a primary.
+f_posBox(rbx, recSize, recSize[1], recoveryNet, true, recEntry, recEntry, recStop, recStop, recLockPx, recLockPx, "REC")
+
+// ...and the same entry triangles. Deliberately identical to the primary's: the label's head text
+// ("▲ RECOVERY LONG") is what tells the two apart, exactly as a B-Leg trade is told apart by its
+// label rather than by a different marker.
+plotshape(execShowPosBox and recEnabled and recSize > 0 and recSize[1] <= 0, title = "Recovery long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
+plotshape(execShowPosBox and recEnabled and recSize < 0 and recSize[1] >= 0, title = "Recovery short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB,   size = size.small)
+
+// [REC] The stop is the ONE addition the primary has no equivalent of, and it is here because it
+// is a PLOT: Pine deletes the oldest of 500 drawings, so on a multi-year chart every box and label
+// above is gone from an old trade, while this line survives. It is the only thing that shows where
+// an old recovery's stop was when it locked and where the trail carried it.
 plot(recEnabled ? recPlotStop : na, title = "Recovery stop", color = color.new(#FF9800, 0), style = plot.style_linebr, linewidth = 1)
-plotshape(recEnabled and recPending and not recPending[1], title = "Recovery armed (signal bar)", style = shape.diamond, location = location.belowbar, color = color.new(#FF9800, 55), size = size.tiny)

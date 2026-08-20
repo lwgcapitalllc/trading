@@ -110,6 +110,31 @@ collected, so they survive across all history; and the reliable way to inspect a
 Strategy Tester's **List of Trades** tab, where clicking a row makes TradingView mark that trade
 itself at no cost to the drawing budget.
 
+🔴 **THE RECOVERY LEG IS DRAWN BY THE SAME CODE AS THE PRIMARY, NOT BY A PARALLEL COPY (2026-08-19,
+Aaron: *"I want it to show just like how we show winning and losing trades... nothing should be
+different"*).** `f_posBox` now takes the leg's size, its own running closed P&L and an `isRec` flag,
+and is CALLED TWICE. Same bands, same drawdown shading, same entry triangles, same by-result
+recolouring on close. ⚠ **The two legs are told apart by the LABEL'S HEAD TEXT (`▲ RECOVERY LONG`),
+not by a different marker** — the same convention a B-Leg trade already follows. The recovery's
+`t1` is its **lock price**, because "did it get back to +1R" is the question TP1 asks on a primary.
+
+🔴 **THAT REWRITE ALSO CHANGED THE PRIMARY'S CHART, AND THE BUG IT FIXED WAS ALWAYS THERE: A WINNER
+THAT NEVER CLEARED TP1 PAINTED AS A FLAT ORANGE LINE — i.e. it read as a SCRATCH.** Nothing banks a
+band unless an exit price clears `p.t1`, and with `execTp1Pct`/`execTp2Pct` both at 0 (the shipped
+default) the only exit is the runner stop, so any trade the trail caught below TP1 was drawn as
+though it made nothing. It now paints green to its real exit. ⚠ **Expect the primary's chart to look
+different after this even though no trade changed** — the drawing was wrong, not the book.
+
+⚠ **A multi-year chart still cannot SHOW you an old trade, and giving the recovery the full
+treatment means it INHERITS that.** Pine caps labels, lines and boxes at 500 each and deletes the
+oldest, so over ~20,000 bars everything older than a few weeks is gone — primary trades included.
+Two ways through it, and they are the answer to *"I'm not seeing any trades on the chart"*: the
+Strategy Tester's **List of Trades** tab, where clicking a row makes TradingView mark that trade
+itself at no cost to the budget; and turning OFF the drawing hogs (external structure, missed
+setups, blocked-trade tags), which is what is consuming the 500. **The recovery's STOP is the one
+exception and is deliberately a `plot`** — plots are not drawings and are never collected, so it is
+the only thing that still shows where an old recovery locked and how far the trail carried it.
+
 🔴 **THE FIRST THING TO CHECK ON A CHART, BEFORE ANY RECOVERY NUMBER IS BELIEVED: with
 `recEnabled` OFF this file must reproduce `mpc_strategy.pine`'s book EXACTLY** — same trade count,
 same net, same list. If it does not, one of those 30 substitutions is wrong and every recovery
