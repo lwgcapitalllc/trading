@@ -106,6 +106,7 @@ bool  execScaleIn    = input.bool(false, "Add to the runner (scale in)", group =
 int   execScaleAdds  = input.int(3, "   ↳ How many times it may add", minval = 1, maxval = 4, group = G6, active = execScaleIn, tooltip = "The most times one trade may add. It only adds again once the trailing stop has moved up since the last add, so a stalling trade gets nothing.")
 float execScaleCapX  = input.float(0.5, "   ↳ Biggest add, as a multiple of the original size", minval = 0.1, maxval = 5.0, step = 0.1, group = G6, active = execScaleIn, tooltip = "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.")
 string execScaleMode = input.string("Trail", "   ↳ Where it adds", options = ["Trail", "BOS retest"], group = G6, active = execScaleIn, tooltip = "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.")
+string execScaleTpMode = input.string("Prev week H/L", "   ↳ Where the adds take profit", options = ["Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"], group = G6, active = execScaleIn, tooltip = "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade. The others rest them at the nearest level of that kind that price has not already taken, and only when it sits beyond the newest add so every lot banks in profit. MEASURED: riding beats all three; previous week is the only one whose cost is inside this strategy's run-to-run noise.")
 
 // [doc 3] Four corners, not nine (Aaron, 2026-08-04) — synced from mpc_assistant.p  -> docs/mpc_strategy.md
 string tablePositionInput = "Top Right"
@@ -3405,6 +3406,7 @@ var float lAddStop = na, var float sAddStop = na
 var float lAddLim  = na, var float sAddLim  = na
 var bool  lAddArm  = false, var bool sAddArm = false
 var float lAddPStop = na, var float sAddPStop = na   // stop a RESTING add was sized against
+var float lAddLastPx = na, var float sAddLastPx = na  // fill price of the NEWEST add
 
 var float openRiskUsd = na   // $ at risk on the open trade = 1R, used to grade the result
 var float netAtEntry  = na   // strategy.netprofit the moment the trade opened
@@ -3836,6 +3838,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     lAddLim    := na
     lAddArm    := false
     lAddPStop  := na
+    lAddLastPx := na
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegL
@@ -3856,6 +3859,7 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     sAddLim    := na
     sAddArm    := false
     sAddPStop  := na
+    sAddLastPx := na
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegS
@@ -4021,6 +4025,8 @@ if execScaleIn and strategy.position_size > 0 and strategy.position_size[1] > 0 
         lAddStop := lAddPStop
         lAddArm  := false
         lAddLim  := na
+        // [doc 183] The add's TP has to clear the price the add was BOUGHT at
+        lAddLastPx := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
     if lStage >= 2 and lAddN < execScaleAdds and (na(lAddStop) or lStop > lAddStop)
         float _lim = execScaleMode == "Trail" ? close : (st.bull_bos and not na(st.bull_bos_high) and not na(st.bull_bos_low) and st.bull_bos_high > st.bull_bos_low ? st.bull_bos_high : na)
         if not na(_lim)
@@ -4045,6 +4051,8 @@ if execScaleIn and strategy.position_size < 0 and strategy.position_size[1] < 0 
         sAddStop := sAddPStop
         sAddArm  := false
         sAddLim  := na
+        // [doc 183] The add's TP has to clear the price the add was BOUGHT at
+        sAddLastPx := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
     if sStage >= 2 and sAddN < execScaleAdds and (na(sAddStop) or sStop < sAddStop)
         float _lim = execScaleMode == "Trail" ? close : (st.bear_bos and not na(st.bear_bos_high) and not na(st.bear_bos_low) and st.bear_bos_high > st.bear_bos_low ? st.bear_bos_low : na)
         if not na(_lim)
@@ -4085,11 +4093,13 @@ if strategy.position_size > 0
     if execTp2Pct > 0
         strategy.exit("L-TP2", from_entry = "Long", qty_percent = execTp2Pct, limit = lTP2, stop = lStop)
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
+    // [doc 183] Where the adds BANK — a standing level beyond the newest add  -> docs/mpc_strategy.md
+    float lAddTp = execScaleTpMode == "Ride" or na(lAddLastPx) ? na : execScaleTpMode == "Prev week H/L" ? (not w_hMit and not na(w_hPrice) and w_hPrice > lAddLastPx ? w_hPrice : na) : execScaleTpMode == "Prev day H/L" ? (not d_hMit and not na(d_hPrice) and d_hPrice > lAddLastPx ? d_hPrice : na) : (not h4HighSwept and not na(h4TrackHigh) and h4TrackHigh > lAddLastPx ? h4TrackHigh : na)
     // [doc 178] Every add needs its OWN exit and close — `from_entry` matches one id  -> docs/mpc_strategy.md
-    strategy.exit("L-AX1", from_entry = "L-ADD1", stop = lStop)
-    strategy.exit("L-AX2", from_entry = "L-ADD2", stop = lStop)
-    strategy.exit("L-AX3", from_entry = "L-ADD3", stop = lStop)
-    strategy.exit("L-AX4", from_entry = "L-ADD4", stop = lStop)
+    strategy.exit("L-AX1", from_entry = "L-ADD1", stop = lStop, limit = lAddTp)
+    strategy.exit("L-AX2", from_entry = "L-ADD2", stop = lStop, limit = lAddTp)
+    strategy.exit("L-AX3", from_entry = "L-ADD3", stop = lStop, limit = lAddTp)
+    strategy.exit("L-AX4", from_entry = "L-ADD4", stop = lStop, limit = lAddTp)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
         if lAddN >= 1
@@ -4118,10 +4128,12 @@ if strategy.position_size < 0
     if execTp2Pct > 0
         strategy.exit("S-TP2", from_entry = "Short", qty_percent = execTp2Pct, limit = sTP2, stop = sStop)
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
-    strategy.exit("S-AX1", from_entry = "S-ADD1", stop = sStop)
-    strategy.exit("S-AX2", from_entry = "S-ADD2", stop = sStop)
-    strategy.exit("S-AX3", from_entry = "S-ADD3", stop = sStop)
-    strategy.exit("S-AX4", from_entry = "S-ADD4", stop = sStop)
+    // [doc 183] Mirror of the long side  -> docs/mpc_strategy.md
+    float sAddTp = execScaleTpMode == "Ride" or na(sAddLastPx) ? na : execScaleTpMode == "Prev week H/L" ? (not w_lMit and not na(w_lPrice) and w_lPrice < sAddLastPx ? w_lPrice : na) : execScaleTpMode == "Prev day H/L" ? (not d_lMit and not na(d_lPrice) and d_lPrice < sAddLastPx ? d_lPrice : na) : (not h4LowSwept and not na(h4TrackLow) and h4TrackLow < sAddLastPx ? h4TrackLow : na)
+    strategy.exit("S-AX1", from_entry = "S-ADD1", stop = sStop, limit = sAddTp)
+    strategy.exit("S-AX2", from_entry = "S-ADD2", stop = sStop, limit = sAddTp)
+    strategy.exit("S-AX3", from_entry = "S-ADD3", stop = sStop, limit = sAddTp)
+    strategy.exit("S-AX4", from_entry = "S-ADD4", stop = sStop, limit = sAddTp)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
         if sAddN >= 1

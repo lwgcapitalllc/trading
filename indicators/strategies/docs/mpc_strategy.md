@@ -2472,3 +2472,45 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // this strategy closes on a stop, three ladder rungs, an opposite SOS and a time stop, and
 // an ignore-list of exits is one new exit away from being wrong.
 ```
+
+## [183] Where the scale-in adds BANK — a standing level beyond the newest add
+
+```
+// The adds had no exit of their own: they rode the base trade's trailing stop and closed
+// pro-rata with its ladder. `execScaleTpMode` gives them a target of their own.
+//
+// TWO CONDITIONS, AND EACH IS LOAD-BEARING:
+//   * the level must be UNMITIGATED — a swept level is not somewhere to aim at, it is a
+//     price we are already past. Hence `not w_hMit` / `not d_hMit` / `not h4HighSwept`.
+//   * it must sit BEYOND `lAddLastPx`, the price the NEWEST add was bought at, so every lot
+//     the target closes is closed in profit. Banking one lot at a loss to bank another at a
+//     gain is not what this input is for.
+//
+// It is the NEWEST add rather than the worst-priced one because Trail-mode adds fill at
+// successively higher prices (the ratchet only moves one way), so the two are the same
+// level — and Pine can name the newest fill via `strategy.opentrades.entry_price` without
+// keeping a running extreme. MEASURED equal on the full book rather than argued.
+//
+// It rides on the EXISTING per-add `strategy.exit` calls as a `limit`, which makes each add
+// a proper OCO bracket: stop or target, whichever price reaches first. A `na` limit is no
+// limit at all, so "Ride" leaves those exits byte-identical to what they were.
+//
+// 🔴 `lAddN` IS NOT DECREMENTED WHEN THE ADDS BANK, and the Python side zeroes its lots in
+// place rather than emptying the list for the same reason. The ladder is capped on the
+// number of adds BOUGHT, so giving the slot back would let a trade add again after banking
+// — a different strategy ("scale in and out repeatedly") that nothing here has measured.
+//
+// ⚠ MEASURED 2026-08-19 (Run 22, re-measured after the resting-order fix): every target
+// LOSES to riding, in order of how often it fires — Ride 194.15R (0 banks), prev week
+// 168.51R (16), prev day 157.57R (25), H4 146.09R (47). It defaults to "Prev week H/L" on
+// Aaron's explicit call, and THAT DEFAULT IS UNDER REVIEW: he chose it on a 4.38R gap said
+// to sit inside the strategy's 15.06R jitter, and the true gap is 25.64R, outside it.
+// Session H/L is not offered — it measured worst and would need six more mirrored variables.
+//
+// 🔴 THE `limit` IS SET FROM THE BAR'S CLOSE AND IS LIVE ON THE NEXT BAR — which Pine gives
+// you for free, and which the Python mirror initially did not. Re-resolving the level as
+// price touches it made "Prev day H/L" and "H4 H/L" bank ZERO times in eight years: day and
+// H4 levels die on a WICK, so the level was already gone on the exact bar the order would
+// have filled. Week levels die on a CLOSE through and were immune, which is why only the
+// two modes nobody was watching were broken. Do not "simplify" this to a live lookup.
+```
