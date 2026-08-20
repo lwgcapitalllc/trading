@@ -63,6 +63,62 @@ The missing one is the one that fires on a WIN — `fibo7Touched`, price back at
 
 ---
 
+## 🔴 The tied-extreme duplicate label (fixed 2026-08-20) — one swing, two labels that never go away
+
+Aaron read an `LL` and an `HL` printed on the *same* 15m swing low and asked whether he had broken
+something recently. He had not. The logic is as old as the port and was byte-identical here and in
+`engines/market_structure/engine.py` — **rule 14 in the wild: the parity gate said the two agree,
+and both were wrong the same way for the engine's whole life.**
+
+**The mechanism, in one line:** when two bars print an identical extreme the post-break rescan (a
+strict `<` running newest-to-oldest) anchors on the **later** bar, while the label for that swing is
+already drawn on the **earlier** one — so `already_conf_low`, which compares bar index as well as
+price, reads it as a new swing and draws a second label. **Pine cannot delete those labels, so they
+stack forever.** The full trace, the before/after numbers and the reasoning live in
+`engines/market_structure/CLAUDE.md` → *The 2026-08-20 tied-extreme fix*, and are not repeated here.
+
+**What changed:** two guards, one per side, each keeping the original anchor when the rescan
+ties the last confirmed extreme. Applied to **all five** engine files carrying this state
+machine — `mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine`,
+`fib_export.pine`, `mss_sweeps_mpc.pine` — plus the ten files in `indicators/strategies/`.
+**Sixteen Pine files hold copies of one engine, and a fix applied to one of them is a fix that
+has diverged from fifteen.**
+
+🔴 **`structure_engine_export.pine` HAD TO MOVE WITH THE PYTHON, AND IT IS THE ONE THAT WOULD
+HAVE BITTEN SILENTLY.** It plots `px_bull_bos_l_ago` / `px_bear_bos_h_ago` — columns derived
+from the very bar indices this guard changes — and those columns are what `compare_tradingview.py`
+diffs. Fixing Python and leaving the export alone would make the next parity run go RED on tie
+bars and read as *"the fix broke parity"*, when the truth is the two sides were being asked
+different questions. ⚠ **When a fix touches a value the export EMITS, the export is part of the
+fix, not a follow-up.**
+
+⚠ **`fib_export.pine` runs its high-side steps in the OPPOSITE order to the other four** — it
+promotes and *then* rescans, where they rescan and then promote. The guard still lands in the
+same place (immediately before `st.bear_bos_high`), because in every file that anchor is the
+last of the three; but the ordering was CHECKED per file rather than assumed, and one file
+differing out of sixteen is the reason to check.
+
+⚠ **The high-side guard is NOT placed symmetrically with the low-side one, and that is deliberate.**
+The two sides run their steps in opposite order — the low side promotes then rescans, the high side
+rescans then promotes — so the high-side guard sits immediately before `st.bear_bos_high`. Placed
+beside its scan it reads a `last_conf_high` the promotion has not written yet and silently does
+nothing, which is exactly what the first attempt did. **It looked right and changed nothing.**
+
+⚠ **`processMTF` carries the same two guards and was left alone on purpose.** `f_mtfStruct` returns
+`[dir, sEv]` only, `dir` is decided by close-vs-price breaks, and no `*_loc` in that method has any
+consumer — checked, not assumed. **The 1m/15m/4H confirmation rows were never affected by this.** A
+comment at each site records that, so the next reader does not "fix" a no-op into a token-ceiling
+problem. See `mpc-assistant-token-ceiling`: this file has no room to spend on nothing.
+
+🔴 **NOT PARITY-GATED — the gate cannot run on this machine.** `compare_tradingview.py` needs an
+export carrying `px_ash`/`px_asl`/`px_dir`, and the only CSVs present are strategy exports. **Rule
+22 blocks the commit until `structure_engine_export.pine` is put on a chart and exported.** The
+Python half is covered by `engines/market_structure/tests/test_duplicate_swing_labels.py` (watched
+RED), but **that proves the Python, not the Pine** — the Pine change is unverified until the gate
+runs, and it has not been pasted into TradingView either, so it is not even known to compile.
+
+---
+
 ## Key paths & entry points
 
 - `indicators/engines/smc_engine_v2.pine` — the current pullback-only rewrite (v6 Pine Script), overlay indicator named "SMC Engine"

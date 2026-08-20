@@ -1156,6 +1156,19 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                         lowest_val := low[i]
                         lowest_loc := bar_index - i
 
+            // 🔴 KEEP THE ORIGINAL ANCHOR WHEN TWO BARS TIE FOR THE LOW.
+            // The scan above runs newest-to-oldest with a strict `<`, so when two bars print an
+            // IDENTICAL low it lands on the LATER one — while the label for that swing is
+            // already anchored on the EARLIER one. `already_conf_low` compares bar index as
+            // well as price, so it then reads this as a brand new swing and draws a SECOND
+            // label at the same price. Pine never deletes those, so they STACK: the LL sitting
+            // beside an HL that Aaron spotted on 2026-08-20.
+            // ⚠ This block ALREADY treats an equal price as the same swing — see
+            // `lowest_val != st.last_conf_low` below, which suppresses the ASL label on price
+            // ALONE. The two tests disagreed about what "the same swing" means; now they agree.
+            if lowest_val == st.last_conf_low and not na(st.last_conf_low_loc)
+                lowest_loc := st.last_conf_low_loc
+
             st.bull_bos_low   := lowest_val
             st.bull_bos_l_loc := lowest_loc
 
@@ -1289,6 +1302,17 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                     label.new(highest_loc, highest_val, fallback_high_t + "\n", color=color(na), textcolor=f_swingCol(fallback_high_c), style=label.style_label_down, size=f_structSize())
                     st.last_conf_high     := highest_val
                     st.last_conf_high_loc := highest_loc
+
+            // 🔴 Mirror of the low-side tie guard — see the comment there. This side stacks HH
+            // on HH rather than LL on HL, which is why it went unnoticed far longer despite
+            // being the MORE common of the two (17 vs 11 over 400,000 M1 bars).
+            // ⚠ IT MUST SIT HERE, NOT BESIDE THE SCAN. The two sides run their steps in
+            // OPPOSITE ORDER: the low side promotes the old swing and THEN rescans, this side
+            // rescans and THEN promotes. Placed next to the scan it reads a `last_conf_high`
+            // the promotion has not written yet, compares against the wrong swing and silently
+            // does nothing — which is exactly what the first attempt at this fix did.
+            if highest_val == st.last_conf_high and not na(st.last_conf_high_loc)
+                highest_loc := st.last_conf_high_loc
 
             st.bear_bos_high  := highest_val
             st.bear_bos_h_loc := highest_loc
@@ -1711,6 +1735,11 @@ method processMTF(MTFStruct st, float ph_val, float pl_val) =>
                         lowest_val := low[i]
                         lowest_loc := bar_index - i
 
+            // NOTE: the tie guard in processExternal above is deliberately NOT repeated here.
+            // f_mtfStruct returns [dir, sEv] only, and dir is driven by close-vs-price breaks —
+            // no *_loc field in this method has any consumer, so the tie cannot change what
+            // this method reports. Left out to spend no compile tokens on a no-op.
+
             st.bull_bos_low   := lowest_val
             st.bull_bos_l_loc := lowest_loc
 
@@ -1787,6 +1816,11 @@ method processMTF(MTFStruct st, float ph_val, float pl_val) =>
                 if highest_val != st.last_conf_high
                     st.last_conf_high     := highest_val
                     st.last_conf_high_loc := highest_loc
+
+            // NOTE: the tie guard in processExternal above is deliberately NOT repeated here.
+            // f_mtfStruct returns [dir, sEv] only, and dir is driven by close-vs-price breaks —
+            // no *_loc field in this method has any consumer, so the tie cannot change what
+            // this method reports. Left out to spend no compile tokens on a no-op.
 
             st.bear_bos_high  := highest_val
             st.bear_bos_h_loc := highest_loc

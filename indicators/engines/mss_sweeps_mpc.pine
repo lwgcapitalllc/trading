@@ -408,6 +408,14 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                         lowest_val := low[i]
                         lowest_loc := bar_index - i
 
+            // 🔴 KEEP THE ORIGINAL ANCHOR WHEN TWO BARS TIE FOR THE LOW. The scan above runs
+            // newest-to-oldest with a strict `<`, so on an identical low it lands on the LATER bar
+            // while this swing's label is already anchored on the EARLIER one — `already_conf_low`
+            // compares bar index as well as price, misses, and a SECOND label is drawn at the same
+            // price. Pine never deletes those, so they stack (the LL beside an HL, 2026-08-20).
+            // Full story + measurements: engines/market_structure/CLAUDE.md -> tied-extreme fix.
+            if lowest_val == st.last_conf_low and not na(st.last_conf_low_loc)
+                lowest_loc := st.last_conf_low_loc
             st.bull_bos_low   := lowest_val
             st.bull_bos_l_loc := lowest_loc
 
@@ -542,6 +550,12 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
                     st.last_conf_high     := highest_val
                     st.last_conf_high_loc := highest_loc
 
+            // 🔴 Mirror of the low-side tie guard above. This side stacks HH on HH rather than LL on
+            // HL, which is why it went unnoticed far longer despite being the MORE common of the two.
+            // ⚠ IT MUST SIT HERE, AFTER THE PROMOTION, NOT BESIDE THE SCAN — placed by the scan it
+            // reads a `last_conf_high` the promotion has not written yet and silently does nothing.
+            if highest_val == st.last_conf_high and not na(st.last_conf_high_loc)
+                highest_loc := st.last_conf_high_loc
             st.bear_bos_high  := highest_val
             st.bear_bos_h_loc := highest_loc
 

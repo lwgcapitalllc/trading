@@ -225,6 +225,76 @@ downstream engines (STALE-BY-INPUT, since the structure stream now fires more SO
 swings) re-validated off the same CSV — `compare_ob.py --warmup 548` and `compare_fib.py --warmup 368`,
 both exit 0.
 
+## The 2026-08-20 tied-extreme fix — one swing, two permanent labels
+
+Aaron spotted an `LL` and an `HL` printed side by side on the same 15m swing low and asked whether
+he had broken something recently. He had not: the defect is as old as the port (`3dfdfd9`) and was
+byte-identical in `mpc_assistant.pine` and here. **It is rule 14 in the wild — the parity gate said
+the two implementations AGREE, and both were wrong the same way for the engine's whole life.**
+
+**What happens.** When two bars print an *identical* extreme, the post-break rescan runs
+newest-to-oldest with a strict `<` (or `>`), so it lands on the **later** of the tied bars — while
+the label for that swing is already anchored on the **earlier** one. `already_conf_low` /
+`already_conf_high` then compare bar index *as well as* price, read the moved anchor as a brand new
+swing, and emit a second label at the same price. Pine never deletes those labels, so they stack.
+
+🔴 **The block already contained the answer and disagreed with itself.** Three lines below the
+guard, the ASL/ASH label is suppressed on `lowest_val != st.last_conf_low` — **price alone**. So one
+test in that block treats an equal price as the same swing and the other demands a matching bar
+index too. **The bug was not a missing rule, it was two rules for the same question.** The fix makes
+them agree: on a tie, keep the original anchor.
+
+⚠ **The two sides run their steps in OPPOSITE ORDER, and the first attempt at this fix was placed
+symmetrically and silently did nothing.** The low side promotes the old swing and *then* rescans;
+the high side rescans and *then* promotes. Put next to the scan, the high-side guard reads a
+`last_conf_high` the promotion has not written yet, compares against the wrong swing, and no test
+notices because the code is *there* and looks right. It sits immediately before `st.bear_bos_high`
+for that reason. **A guard that reads a value written later is indistinguishable from a guard that
+works, and only a red test told the two apart.**
+
+**MEASURED, replaying the real cache** (`backtest/cache/XAUUSD__M15.csv`, `__M1.csv`):
+
+| | before | after |
+|---|---|---|
+| stacked pairs, 186,759 M15 bars | 7 | **0** |
+| stacked pairs, 400,000 M1 bars | 28 | **0** |
+| labels emitted, M15 | 3,776 | 3,769 (−7) |
+| labels emitted, M1 | 8,392 | 8,362 (−30) |
+| labels that vanished leaving NO label at that price | — | **0** |
+| labels the fix ADDED | — | **0** |
+
+Every removal was a duplicate on a price that still carries a label; nothing new is invented. On M1
+two of the thirty removals were 32–57 bars from their twin rather than adjacent — same price, label
+retained, and stated here rather than rounded to "only duplicates".
+
+⚠ **The high side is the MORE common of the two (17 vs 11 on M1) and nobody had ever noticed it**,
+because a tie there prints `HH` beside `HH` — it just looks like a slightly bold label. The low side
+prints `LL` beside `HL`, a visible contradiction, which is the only reason this was ever reported.
+**Look for the silent twin of any defect whose sides are labelled by different rules.**
+
+⚠ **`>=` was left alone, deliberately.** `brk_is_hl = st.asl >= st.last_conf_low` calls an exactly
+equal low a *higher* low, which is what makes the second label read `HL`. With the anchor fixed the
+equal-price case never reaches it, so changing it would relabel swings nobody has complained about.
+It is a separate judgement, not part of this fix.
+
+⚠ **`processMTF` in `mpc_assistant.pine` carries the same two guards and was NOT changed.**
+`f_mtfStruct` returns `[dir, sEv]` only, direction is decided by close-vs-price breaks, and no
+`*_loc` in that method has a consumer — so the tie cannot change what it reports. That was checked,
+not assumed; the 1m/15m/4H confirmation rows were never affected. A comment at each site says so.
+
+🔴 **NOT PARITY-GATED, AND IT CANNOT BE ON THIS MACHINE.** `compare_tradingview.py` needs an export
+carrying `px_ash`/`px_asl`/`px_dir`; the only CSVs present are *strategy* exports, and a sweep of
+the machine found no structure export at all. **Rule 22 therefore blocks the commit** — this is the
+same "which gate you can run depends on what is sitting on that machine" problem the root CLAUDE.md
+records. To unblock: put `indicators/engines/structure_engine_export.pine` on a TradingView chart,
+export the CSV, run the tool, and only then commit.
+
+**The test is `tests/test_duplicate_swing_labels.py`.** Watched RED against the pre-fix engine — the
+three regression tests fail with the exact stacked pairs, on real inlined bars (the shortest
+cold-start replays that still reproduce: 130 bars and 200 bars; 120 and 180 do not). A fourth test
+asserts the tied bars are still present in the fixtures, so a fixture that silently loses its tie
+goes red instead of letting the other three pass for the wrong reason.
+
 ## References
 
 - Algorithm explained in plain English: `MARKET_STRUCTURE_ENGINE.md`

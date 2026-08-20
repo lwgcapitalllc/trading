@@ -726,6 +726,18 @@ class StructureEngine:
                         lowest_val = b.low
                         lowest_loc = bar_index - i
 
+            # Two bars can print an IDENTICAL low. The scan above runs newest-to-oldest with a
+            # strict `<`, so it lands on the LATER of them — but the label for that swing was
+            # already anchored on the EARLIER one. Re-anchoring makes `already_conf_low` below
+            # (which compares bar index as well as price) conclude this is a brand new swing,
+            # and the swing gets a SECOND label: the LL/HL pair Aaron spotted on 2026-08-20.
+            # Keep the original anchor. This block already treats an equal price as the same
+            # swing — see `unconfirmed_low_set` a few lines down, which suppresses the ASL
+            # label on `lowest_val != st.last_conf_low` alone, price only. The two tests
+            # disagreed about what "the same swing" means; now they agree.
+            if lowest_val == st.last_conf_low and st.last_conf_low_loc is not None:
+                lowest_loc = st.last_conf_low_loc
+
             st.bull_bos_low = lowest_val  # Pine: st.bull_bos_low  := lowest_val
             st.bull_bos_l_loc = lowest_loc  # Pine: st.bull_bos_l_loc := lowest_loc
 
@@ -854,6 +866,19 @@ class StructureEngine:
                     st.broken_high_index = highest_loc
                     st.last_conf_high = highest_val
                     st.last_conf_high_loc = highest_loc
+
+            # Mirror of the low-side re-anchor guard — see the comment there. This side stacks
+            # HH on HH rather than LL on HL, which is why it went unnoticed far longer despite
+            # being the MORE common of the two (17 vs 11 over 400,000 M1 bars).
+            # ⚠ IT MUST SIT HERE, NOT BESIDE THE SCAN. The two sides run their steps in
+            # OPPOSITE ORDER: the low side promotes the old swing and then rescans, while this
+            # side rescans and then promotes. Placed next to the scan it reads a `last_conf_high`
+            # the promotion has not written yet, compares against the wrong swing, and silently
+            # does nothing — which is exactly what it did on the first attempt at this fix.
+            # The fallback branch above is unaffected: it only runs when the prices DIFFER,
+            # so this guard is a no-op by construction on that path.
+            if highest_val == st.last_conf_high and st.last_conf_high_loc is not None:
+                highest_loc = st.last_conf_high_loc
 
             st.bear_bos_high = highest_val  # Pine: st.bear_bos_high  := highest_val
             st.bear_bos_h_loc = highest_loc  # Pine: st.bear_bos_h_loc := highest_loc

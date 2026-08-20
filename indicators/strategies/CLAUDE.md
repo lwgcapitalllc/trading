@@ -175,6 +175,35 @@ as predicted, and loses 14R** — the primary's entry is a price the market has 
 around, so the stop sits in fresh congestion; median MFE falls 1.01R → 0.89R, which a 2.4x smaller
 R should have RAISED. Full grid: `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` →
 Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
+## The tied-extreme structure fix (2026-08-20) — all ten strategy files
+
+Every `strategy(` file here embeds its own copy of the market-structure state machine, and all
+ten carried the same defect: when two bars print an identical extreme, the post-break rescan
+anchors on the LATER one while the label sits on the EARLIER one, so the swing gets a second
+permanent label. **The mechanism, the measurements and the reasoning live in ONE place —
+`engines/market_structure/CLAUDE.md` -> *The 2026-08-20 tied-extreme fix*. Do not restate them
+here.**
+
+What matters for THIS directory:
+
+⚠ **NO STRATEGY'S TRADE BEHAVIOUR CHANGES, and that was measured rather than argued.** The guard
+moves bar INDICES, never prices. Every consumer of those indices in these ten files was traced:
+label positions, `mid_x`, and `_snS` — the Sniper Zone box's left edge. All drawing. **And the
+one path that COULD have moved a price was checked and did not**: the guard also shifts
+`last_conf_*_loc`, which bounds the opposite side's rescan window, so a wider window could in
+principle find a new extreme. Replayed over 186,759 M15 and 400,000 M1 bars: **identical break
+counts and ZERO break-leg price differences.** The bars the window gains sit inside the swing
+base, between the two tied extremes, so their highs cannot beat an extreme already scanned.
+
+⚠ **The `_export` twins were changed in the same pass, deliberately.** A strategy and its export
+must stay byte-identical in logic or the export stops describing the strategy — and here the
+export is the only way the gate can ever see this code.
+
+🔴 **NONE OF THE TEN IS COMPILE-VERIFIED OR PARITY-GATED FOR THIS CHANGE.** `mpc_assistant.pine`
+was pasted into TradingView and confirmed by Aaron; these ten were not, and no `compare_*.py`
+has run on any of them. **Paste before trusting.**
+
+---
 
 ## What lives here, and the one thing that decides it
 
