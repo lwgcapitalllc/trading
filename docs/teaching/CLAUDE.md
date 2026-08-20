@@ -29,8 +29,8 @@ is the opposite of every other document in this repo, where the reader can open 
 
 | File | What it is |
 |---|---|
-| `three_models.html` / `Three_Trading_Models.pdf` | Sequence reference for three liquidity models, at summary level. Model 3 is the Loaded Level model the other two files expand. |
-| `loaded_level_model.html` / `Loaded_Level_Model.pdf` | 8-page beginner handout for the Loaded Level model — written for first exposure, no prior SMC vocabulary assumed. Three inline SVG diagrams. |
+| `three_models.html` / `Three_Trading_Models.pdf` | Sequence reference for three liquidity models, at summary level. Model 3 is the MPC Loaded Level strategy the other two files expand. ⚠ **Still carries the old naming** — it was not re-branded in the 2026-08-18 pass. |
+| `mpc_loaded_level_strategy.html` / `MPC_Loaded_Level_Strategy.pdf` | **10-page** beginner handout for the **MPC Loaded Level strategy** — written for first exposure, no prior SMC vocabulary assumed. **Four** inline SVG diagrams. Covers the sequence LONG and SHORT, plus a side-by-side page. |
 | `rso_and_els.svg` / `.png` | The two strategies this repo is actually building, side by side: **RSO — Retail Shake Out** (`docs/MPC_FB_SPEC.md`) and **ELS — Engineered Liquidity Sweep** (`docs/DAVINCI_MODEL_SPEC.md`). Schematic candles plus a checklist per strategy, each row naming the engine field behind it. The SVG is the editable master. |
 | `marco_vs_yours.svg` / `.png` / `Marco_vs_Yours.pdf` | 4-page comparison of the source author's entry (on the sweep) against Aaron's (on the pullback into the gap between two lower highs). Same arming event, different fill. Generated once by hand; the SVG is the editable master. |
 
@@ -50,10 +50,39 @@ embedded fonts, so a `grep` for a string you just added returns zero on a perfec
 that was tried, it read as a failed render, and it was not one. Screenshot the page and read the
 image.
 
+🔴 **The SHORT diagram is GENERATED from the long one by mirroring, never drawn by hand.** Every
+`y`/`y1`/`y2`/`cy` and every `polyline` point is reflected about the 330-unit viewBox, then the
+labels are word-swapped (low↔high, BUY→SELL). That is the same reasoning as `invert()` in
+`backtest/tools/loaded_level_scan.py`: **a bearish version written by hand is where a sign quietly
+goes missing**, and here the error would be silent — a mislabelled diagram teaches the mistake
+rather than crashing. ⚠ **A mirror is not free of collisions.** A caption sitting 14px ABOVE its
+number badge sits 14px BELOW it after flipping, which is inside the badge; three labels needed a
+manual nudge after the reflection. Re-render and read the image.
+
 ⚠ **SVG labels overlap in ways the markup does not reveal.** Three collisions shipped in the first
 Loaded Level render (text over a price line, a caption clipping a path, a label under the entry
 dot) and none was visible without rendering. Render to PNG and read it before calling a diagram
 done.
+
+## 🔴 The handouts carry NO personal attribution, and that was a deliberate pass
+
+**2026-08-18, Aaron's call: the Loaded Level handout is the MPC Loaded Level strategy and names
+nobody.** Twelve references to the source author and four VERBATIM quote blocks were removed.
+
+⚠ **A find-and-replace would have been the wrong fix and was refused.** Four of those blocks were
+the author's own words in quotation marks; deleting the name and leaving the quote presents one
+person's sentences as MPC's. Each was **rewritten as the rule it was making** — no quotation marks,
+no borrowed phrasing. If a passage cannot survive that rewrite, it is a quote and it needs a name,
+not a rebrand.
+
+⚠ **The provenance did not vanish from the repo, only from the handout.** `docs/DAVINCI_MODEL_SPEC.md`
+and `education/learned/` still record where the model came from, and they are where the question
+"who taught this" gets answered. **Do not strip it there** — a handout is a teaching artefact, a spec
+is a record, and the record is what stops the next person re-deriving it from scratch.
+
+⚠ `marco_vs_yours.svg` / `.png` / `Marco_vs_Yours.pdf` were **NOT** re-branded in that pass — the
+whole point of that file is that two named methods disagree, so it is the one place a name is
+load-bearing. Renaming it would destroy what it documents.
 
 ## The naming, and why it is not cosmetic
 

@@ -1,0 +1,1252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MPC Loaded Level Strategy</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 14mm 13mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+        color: #1a1a1a;
+        background: #fff;
+        font-size: 10.2pt;
+        line-height: 1.45;
+        margin: 0;
+      }
+      .page {
+        page-break-after: always;
+      }
+      .page:last-child {
+        page-break-after: auto;
+      }
+
+      h1 {
+        font-size: 21pt;
+        margin: 0 0 2mm;
+        letter-spacing: -0.4px;
+      }
+      h2 {
+        font-size: 14pt;
+        margin: 0 0 1mm;
+        letter-spacing: -0.2px;
+      }
+      h3 {
+        font-size: 10.5pt;
+        margin: 5mm 0 1.5mm;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: #6b7280;
+        font-weight: 700;
+      }
+      p {
+        margin: 0 0 2.5mm;
+      }
+      .lede {
+        font-size: 11pt;
+        color: #374151;
+        margin-bottom: 4mm;
+      }
+      .sub {
+        color: #6b7280;
+        font-size: 9.4pt;
+        margin: 0 0 4mm;
+      }
+
+      .rule {
+        border: 0;
+        border-top: 1.5px solid #1a1a1a;
+        margin: 3mm 0 4mm;
+      }
+      .hair {
+        border: 0;
+        border-top: 1px solid #e5e7eb;
+        margin: 4mm 0;
+      }
+
+      .tag {
+        display: inline-block;
+        font-size: 8pt;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding: 1mm 2.5mm;
+        border-radius: 2mm;
+        background: #1a1a1a;
+        color: #fff;
+        vertical-align: 3px;
+        margin-right: 2mm;
+      }
+      .tag.b {
+        background: #2563eb;
+      }
+      .tag.g {
+        background: #15803d;
+      }
+      .tag.v {
+        background: #6d28d9;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9.2pt;
+        margin: 2mm 0 3mm;
+      }
+      th {
+        text-align: left;
+        font-size: 8pt;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: #6b7280;
+        border-bottom: 1.5px solid #1a1a1a;
+        padding: 1.5mm 2mm;
+        vertical-align: bottom;
+      }
+      td {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 1.8mm 2mm;
+        vertical-align: top;
+      }
+      td.n {
+        width: 7mm;
+        font-weight: 700;
+        color: #6b7280;
+      }
+      td.k {
+        width: 34mm;
+        font-weight: 600;
+      }
+      tr.hi td {
+        background: #fffbeb;
+      }
+
+      .seq {
+        counter-reset: s;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .seq li {
+        position: relative;
+        padding: 0 0 2mm 9mm;
+        margin-bottom: 1.5mm;
+      }
+      .seq li:before {
+        counter-increment: s;
+        content: counter(s);
+        position: absolute;
+        left: 0;
+        top: 0.2mm;
+        width: 6mm;
+        height: 6mm;
+        border-radius: 50%;
+        background: #1a1a1a;
+        color: #fff;
+        font-size: 8pt;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .seq strong {
+        font-weight: 700;
+      }
+
+      .note {
+        border-left: 3px solid #d97706;
+        background: #fffbeb;
+        padding: 2.5mm 3mm;
+        font-size: 9.2pt;
+        margin: 3mm 0;
+      }
+      .note b {
+        color: #92400e;
+      }
+      .kill {
+        border-left: 3px solid #dc2626;
+        background: #fef2f2;
+        padding: 2.5mm 3mm;
+        font-size: 9.2pt;
+        margin: 3mm 0;
+      }
+      .kill b {
+        color: #991b1b;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin: 2mm 0 1mm;
+      }
+      .cap {
+        font-size: 8.4pt;
+        color: #6b7280;
+        text-align: center;
+        margin: 0 0 3mm;
+      }
+
+      .grid2 {
+        display: flex;
+        gap: 6mm;
+      }
+      .grid2 > div {
+        flex: 1;
+      }
+
+      .foot {
+        position: running(f);
+      }
+      .stat {
+        font-size: 8.6pt;
+        color: #6b7280;
+      }
+      code {
+        font-family: 'SF Mono', Menlo, monospace;
+        font-size: 8.8pt;
+        background: #f3f4f6;
+        padding: 0.3mm 1mm;
+        border-radius: 1mm;
+      }
+
+      .big {
+        font-size: 12.5pt;
+        line-height: 1.5;
+        color: #111;
+      }
+      .q {
+        border-left: 3px solid #9ca3af;
+        padding: 2mm 3mm;
+        color: #374151;
+        font-style: italic;
+        background: #f9fafb;
+        margin: 3mm 0;
+        font-size: 9.4pt;
+      }
+      .ok {
+        border-left: 3px solid #15803d;
+        background: #f0fdf4;
+        padding: 2.5mm 3mm;
+        font-size: 9.2pt;
+        margin: 3mm 0;
+      }
+      .ok b {
+        color: #166534;
+      }
+      .two {
+        display: flex;
+        gap: 5mm;
+      }
+      .two > div {
+        flex: 1;
+      }
+      .card {
+        border: 1px solid #e5e7eb;
+        border-radius: 2mm;
+        padding: 3mm;
+      }
+      .card h4 {
+        margin: 0 0 1.5mm;
+        font-size: 10pt;
+      }
+      .chk {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .chk li {
+        padding: 1.6mm 0 1.6mm 7mm;
+        border-bottom: 1px solid #f3f4f6;
+        position: relative;
+        font-size: 9.6pt;
+      }
+      .chk li:before {
+        content: '☐';
+        position: absolute;
+        left: 1mm;
+        font-size: 11pt;
+        color: #9ca3af;
+      }
+      .lbl {
+        font-size: 8pt;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: #6b7280;
+      }
+      .warnbox {
+        border: 1.5px solid #dc2626;
+        border-radius: 2mm;
+        padding: 3mm;
+        background: #fef2f2;
+        margin: 3mm 0;
+      }
+      .warnbox h4 {
+        margin: 0 0 1.5mm;
+        font-size: 10.5pt;
+        color: #991b1b;
+      }
+      ol.plain {
+        margin: 0 0 3mm;
+        padding-left: 5mm;
+      }
+      ol.plain li {
+        margin-bottom: 1.5mm;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ═══════════════ PAGE 1 ═══════════════ -->
+    <section class="page">
+      <h1>MPC Loaded Level Strategy</h1>
+      <p class="sub">
+        A beginner's guide &middot; no jargon assumed &middot; read the pages in order
+      </p>
+      <hr class="rule" />
+
+      <p class="big">
+        There is one idea underneath this whole method, and everything else is machinery built on
+        top of it.
+      </p>
+
+      <p class="big"><b>You are trading other traders' stop losses.</b></p>
+
+      <p>
+        Every trader who buys puts a stop loss somewhere below where they bought. Every trader who
+        sells puts one above. Those stops are real orders sitting in the market, waiting. When
+        enough of them pile up in one place, the market has a reason to go there and collect them
+        &mdash; and once it has, it very often turns around and goes the other way.
+      </p>
+
+      <p>So the whole skill is answering one question: <b>where are the stops?</b></p>
+
+      <h3>The mistake almost everyone makes</h3>
+
+      <p>
+        Most people are taught that there is money resting above every high and below every low. If
+        that were true your chart would have a hundred targets on it and you would have no idea
+        which to trade. The model refuses that assumption outright:
+      </p>
+
+      <div class="q">
+        <b
+          >If liquidity sat above every high and below every low, every level would be a target and
+          none of them would be.</b
+        >
+        That is where most people get stuck: a chart covered in highs and lows, and no way to choose
+        between them.
+      </div>
+
+      <p>
+        <b>Most highs and lows have nothing at them.</b> The market has to <i>show</i> you which
+        ones are worth anything. That test is the next page, and it is the single most important
+        thing in this document.
+      </p>
+
+      <div class="note">
+        <b>A word you will see everywhere here.</b> When we say a level is <b>LOADED</b>, we mean
+        traders have committed money there and their stops are sitting behind it. When we say a
+        level is <b>EMPTY</b>, we mean the market has already been there, taken those stops, and
+        left. Loaded and empty are the only two words you need.
+      </div>
+
+      <h3>What you will be able to do by the end</h3>
+      <ol class="plain">
+        <li>Look at a bare chart and mark the two or three levels that actually matter.</li>
+        <li>Recognise a complete setup as it builds, step by step.</li>
+        <li>
+          Know exactly where your entry, your stop and your target go &mdash; and why each is there.
+        </li>
+        <li>Know the six situations where the correct action is to do nothing.</li>
+      </ol>
+
+      <p class="stat">
+        The MPC Loaded Level strategy. The rules below are written to be followed exactly as stated;
+        the measurements on page 7 are our own and are early-stage.
+      </p>
+    </section>
+
+    <!-- ═══════════════ PAGE 2 ═══════════════ -->
+    <section class="page">
+      <h2>Loaded, or empty?</h2>
+      <p class="lede">This is the test. Everything else follows from it.</p>
+      <hr class="hair" />
+
+      <p><b>A level is LOADED when price came back to it, held it, and walked away.</b></p>
+
+      <p>
+        That is the whole test. Price has to <i>return</i>. If price made a high once and never went
+        back near it, nothing happened there &mdash; nobody committed money, so there are no stops.
+        It is just a high.
+      </p>
+
+      <svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg">
+        <!-- LEFT: loaded -->
+        <text x="20" y="20" font-size="13" font-weight="700" fill="#6d28d9">
+          LOADED &mdash; worth marking
+        </text>
+        <line x1="20" y1="170" x2="400" y2="170" stroke="#6d28d9" stroke-width="2.5" />
+        <polyline
+          points="30,60 90,165 140,100 200,168 250,95 320,150 390,45"
+          fill="none"
+          stroke="#1a1a1a"
+          stroke-width="2.2"
+        />
+        <circle cx="90" cy="165" r="6" fill="none" stroke="#6d28d9" stroke-width="2.5" />
+        <circle cx="200" cy="168" r="6" fill="none" stroke="#6d28d9" stroke-width="2.5" />
+        <text x="70" y="192" font-size="11" fill="#6d28d9">held</text>
+        <text x="182" y="192" font-size="11" fill="#6d28d9">held again</text>
+        <text x="20" y="222" font-size="11.5" fill="#374151">
+          Buyers got in here. Their stops are
+        </text>
+        <text x="20" y="238" font-size="11.5" fill="#374151">sitting just under this line.</text>
+
+        <!-- RIGHT: empty -->
+        <text x="470" y="20" font-size="13" font-weight="700" fill="#dc2626">
+          EMPTY &mdash; a "liquidity block"
+        </text>
+        <line
+          x1="470"
+          y1="150"
+          x2="880"
+          y2="150"
+          stroke="#dc2626"
+          stroke-width="2.5"
+          stroke-dasharray="7 5"
+        />
+        <polyline
+          points="480,55 540,145 590,95 650,190 700,205 780,120 870,60"
+          fill="none"
+          stroke="#1a1a1a"
+          stroke-width="2.2"
+        />
+        <circle cx="700" cy="205" r="6" fill="none" stroke="#dc2626" stroke-width="2.5" />
+        <text x="714" y="210" font-size="11" fill="#dc2626">smashed straight through</text>
+        <text x="470" y="222" font-size="11.5" fill="#374151">
+          Those stops are gone. Nothing is left
+        </text>
+        <text x="470" y="238" font-size="11.5" fill="#374151">here to pull price back.</text>
+      </svg>
+      <p class="cap">
+        Left: price returned and held &mdash; the level is loaded. Right: price went through and
+        kept going &mdash; the level is now empty.
+      </p>
+
+      <h3>Why you care about each one</h3>
+
+      <div class="two">
+        <div class="card">
+          <h4 style="color: #6d28d9">A LOADED level</h4>
+          <p style="font-size: 9.5pt">Has money behind it. You use it two ways:</p>
+          <p style="font-size: 9.5pt">
+            <b>Smash it &rarr; entry.</b> When price finally breaks a loaded level, all those
+            traders get stopped out at once. That is the fuel for the move. You join in the moment
+            it happens.
+          </p>
+          <p style="font-size: 9.5pt; margin: 0">
+            <b>Aim at it &rarr; target.</b> The stops sitting there are what pulls price toward it.
+            That is why your target is a level and not a round number.
+          </p>
+        </div>
+        <div class="card">
+          <h4 style="color: #dc2626">An EMPTY level</h4>
+          <p style="font-size: 9.5pt">
+            Has nothing behind it. You use it one way, and it is the most important job in the
+            model:
+          </p>
+          <p style="font-size: 9.5pt">
+            <b>Hide your stop behind it.</b> The market has already collected what was there. It has
+            no errand back down. So your stop, tucked just past it, is in the one place on the chart
+            the market is least interested in.
+          </p>
+          <p style="font-size: 9.5pt; margin: 0">
+            <b>Trust the highs and lows the market has already defended.</b> Those are the only ones
+            worth marking.
+          </p>
+        </div>
+      </div>
+
+      <div class="kill">
+        <b>The rule that keeps your chart clean.</b> If price never came back and held it, do not
+        draw a line on it. This one rule is the difference between a chart with three meaningful
+        levels on it and a chart with forty meaningless ones.
+      </div>
+    </section>
+
+    <!-- ═══════════════ PAGE 3 ═══════════════ -->
+    <section class="page">
+      <h2>The setup, step by step</h2>
+      <p class="lede">
+        Six steps. Shown as a buy. A sell is the exact mirror &mdash; turn the page upside down and
+        every word still applies.
+      </p>
+      <hr class="hair" />
+
+      <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg">
+        <!-- levels -->
+        <line x1="120" y1="248" x2="250" y2="248" stroke="#9ca3af" stroke-width="2" />
+        <text x="58" y="254" font-size="10" fill="#6b7280">an old low</text>
+
+        <line
+          x1="200"
+          y1="286"
+          x2="880"
+          y2="286"
+          stroke="#dc2626"
+          stroke-width="2"
+          stroke-dasharray="7 5"
+        />
+        <text x="700" y="302" font-size="10.5" font-weight="700" fill="#dc2626">
+          EMPTY &mdash; your stop goes below here
+        </text>
+
+        <line x1="320" y1="218" x2="880" y2="218" stroke="#6d28d9" stroke-width="2.2" />
+        <text x="700" y="212" font-size="10.5" font-weight="700" fill="#6d28d9">
+          LOADED &mdash; your entry
+        </text>
+
+        <line
+          x1="380"
+          y1="132"
+          x2="500"
+          y2="132"
+          stroke="#b45309"
+          stroke-width="1.6"
+          stroke-dasharray="4 3"
+        />
+
+        <line x1="500" y1="90" x2="880" y2="90" stroke="#15803d" stroke-width="2.2" />
+        <text x="700" y="84" font-size="10.5" font-weight="700" fill="#15803d">
+          LOADED &mdash; your target
+        </text>
+
+        <!-- price -->
+        <polyline
+          points="40,150 90,178 130,158 180,244 205,256 218,280 245,238 275,200 305,214
+                      332,220 362,188 392,148 422,128 452,162 482,120 512,96 532,90 562,122
+                      592,162 622,196 652,216 672,226 692,198 722,158 762,118 802,96 845,88"
+          fill="none"
+          stroke="#1a1a1a"
+          stroke-width="2.4"
+        />
+
+        <!-- step markers -->
+        <g font-size="11" font-weight="700">
+          <circle cx="218" cy="280" r="11" fill="#dc2626" />
+          <text x="214" y="284" fill="#fff">1</text>
+          <circle cx="332" cy="220" r="11" fill="#6d28d9" />
+          <text x="328" y="224" fill="#fff">2</text>
+          <circle cx="422" cy="128" r="11" fill="#b45309" />
+          <text x="418" y="132" fill="#fff">3</text>
+          <circle cx="532" cy="90" r="11" fill="#15803d" />
+          <text x="528" y="94" fill="#fff">4</text>
+          <circle cx="672" cy="226" r="11" fill="#6d28d9" />
+          <text x="668" y="230" fill="#fff">5</text>
+        </g>
+        <text x="150" y="318" font-size="10" fill="#dc2626">sweeps the old low, walks away</text>
+        <text x="352" y="252" font-size="10" fill="#6d28d9">a low that holds</text>
+        <text x="380" y="118" font-size="10" fill="#b45309">takes a minor high</text>
+        <text x="470" y="74" font-size="10" fill="#15803d">a high that holds, then turns</text>
+        <text x="640" y="250" font-size="10" font-weight="700" fill="#6d28d9">BUY here</text>
+      </svg>
+
+      <ul class="seq">
+        <li>
+          <b>Price sweeps an old low and walks away.</b> That low is now empty. Two things just
+          happened: you only look for buys from here on, and
+          <i>you already know where your stop will live</i>.
+        </li>
+        <li>
+          <b>A level loads.</b> Price bounces, then pulls back and makes a low that holds above an
+          earlier one. Buyers are now in, with stops underneath.
+          <b>Mark this level. This is where you will buy.</b> Then leave it alone.
+        </li>
+        <li>
+          <b>Inducement.</b> Price pushes up and takes out a small high. More buyers pile in, late.
+          They are fuel for what comes next.
+        </li>
+        <li>
+          <b>The target loads.</b> Price makes a high that holds against earlier highs, then turns
+          away. Sellers are now committed up there with stops above them.
+          <b>This step is the gate &mdash; see the box below.</b>
+        </li>
+        <li>
+          <b>Entry.</b> Price sells back down and stabs through your level from step 2. Buy the
+          moment it goes. Do not wait for the candle to close. Do not hunt a better price inside it.
+        </li>
+        <li>
+          <b>Stop and target.</b> Stop just below the empty level from step 1. Target the loaded
+          high from step 4.
+        </li>
+      </ul>
+
+      <div class="kill">
+        <b>Step 4 is the gate, and it is the step beginners skip.</b> If there is no loaded level
+        above to aim at, <b>there is no trade</b> &mdash; no matter how good steps 1 to 3 looked.
+        Say it as a rule: <b>no engineered liquidity, no setup.</b> Without step 4 you are just
+        buying a dip and hoping.
+      </div>
+    </section>
+
+    <section class="page">
+      <h2>The setup, step by step &mdash; <span style="color: #dc2626">SHORT</span></h2>
+      <p class="sub">
+        The same drawing turned upside down. Every step is mirrored; nothing else changes.
+      </p>
+      <hr class="rule" />
+      <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg">
+        <!-- levels -->
+        <line x1="120" y1="82" x2="250" y2="82" stroke="#9ca3af" stroke-width="2" />
+        <text x="58" y="76" font-size="10" fill="#6b7280">an old high</text>
+
+        <line
+          x1="200"
+          y1="44"
+          x2="880"
+          y2="44"
+          stroke="#dc2626"
+          stroke-width="2"
+          stroke-dasharray="7 5"
+        />
+        <text x="700" y="28" font-size="10.5" font-weight="700" fill="#dc2626">
+          EMPTY &mdash; your stop goes above here
+        </text>
+
+        <line x1="320" y1="112" x2="880" y2="112" stroke="#6d28d9" stroke-width="2.2" />
+        <text x="700" y="118" font-size="10.5" font-weight="700" fill="#6d28d9">
+          LOADED &mdash; your entry
+        </text>
+
+        <line
+          x1="380"
+          y1="198"
+          x2="500"
+          y2="198"
+          stroke="#b45309"
+          stroke-width="1.6"
+          stroke-dasharray="4 3"
+        />
+
+        <line x1="500" y1="240" x2="880" y2="240" stroke="#15803d" stroke-width="2.2" />
+        <text x="700" y="246" font-size="10.5" font-weight="700" fill="#15803d">
+          LOADED &mdash; your target
+        </text>
+
+        <!-- price -->
+        <polyline
+          points="40,180 90,152 130,172 180,86 205,74 218,50 245,92 275,130 305,116 332,110 362,142 392,182 422,202 452,168 482,210 512,234 532,240 562,208 592,168 622,134 652,114 672,104 692,132 722,172 762,212 802,234 845,242"
+          fill="none"
+          stroke="#1a1a1a"
+          stroke-width="2.4"
+        />
+
+        <!-- step markers -->
+        <g font-size="11" font-weight="700">
+          <circle cx="218" cy="50" r="11" fill="#dc2626" />
+          <text x="214" y="46" fill="#fff">1</text>
+          <circle cx="332" cy="110" r="11" fill="#6d28d9" />
+          <text x="328" y="106" fill="#fff">2</text>
+          <circle cx="422" cy="202" r="11" fill="#b45309" />
+          <text x="418" y="198" fill="#fff">3</text>
+          <circle cx="532" cy="240" r="11" fill="#15803d" />
+          <text x="528" y="236" fill="#fff">4</text>
+          <circle cx="672" cy="104" r="11" fill="#6d28d9" />
+          <text x="668" y="100" fill="#fff">5</text>
+        </g>
+        <text x="150" y="12" font-size="10" fill="#dc2626">sweeps the old high, walks away</text>
+        <text x="352" y="78" font-size="10" fill="#6d28d9">a high that holds</text>
+        <text x="380" y="226" font-size="10" fill="#b45309">takes a minor low</text>
+        <text x="470" y="268" font-size="10" fill="#15803d">a low that holds, then turns</text>
+        <text x="640" y="68" font-size="10" font-weight="700" fill="#6d28d9">SELL here</text>
+      </svg>
+      <p class="cap">
+        Drawn, not replayed &mdash; a teaching illustration. This is the long diagram on the
+        previous page, flipped, so the two are provably the same sequence.
+      </p>
+
+      <ol class="seq">
+        <li>
+          <strong>Price sweeps an old high and walks away.</strong> That spike is now
+          <strong>empty</strong>. There is nothing left above it to pull price back &mdash; which is
+          why it is safe to hide a stop there. From here you are looking for
+          <strong>sells only</strong>.
+        </li>
+        <li>
+          <strong>A level loads.</strong> Price pulls back and prints a high that comes up to an
+          earlier high, holds without breaking it, then moves away. Sellers are now positioned below
+          it with their stops above. Mark it and leave it alone.
+        </li>
+        <li>
+          <strong>Inducement.</strong> Price drops and takes out a minor low. More sellers pile in.
+          They are the fuel.
+        </li>
+        <li>
+          <strong>The target is built.</strong> Price prints a low that holds against earlier lows
+          and turns away. That low is now loaded.
+          <strong>No loaded level below, no trade</strong> &mdash; however good everything else
+          looks.
+        </li>
+        <li>
+          <strong>Entry.</strong> Price rallies back and stabs the loaded high from step 2.
+          <strong>Sell the moment it is taken.</strong> Stop just above the empty level from step 1;
+          target the loaded low from step 4.
+        </li>
+      </ol>
+
+      <div class="kill">
+        <b>The mistake to watch for.</b> Selling <em>below</em> a loaded high because the chart
+        already looks weak. This model sells <strong>above</strong> highs and buys
+        <strong>below</strong> lows. If you are in before the level is taken, you are the liquidity.
+      </div>
+    </section>
+
+    <section class="page">
+      <h2>Long and short, side by side</h2>
+      <p class="sub">One sequence, two directions. Learn it once.</p>
+      <hr class="rule" />
+      <table>
+        <tr>
+          <th style="width: 26mm">Step</th>
+          <th>Long</th>
+          <th>Short</th>
+        </tr>
+        <tr>
+          <td class="k">1 &middot; Arm</td>
+          <td>sweeps an old <strong>low</strong>, walks away &rarr; longs only</td>
+          <td>sweeps an old <strong>high</strong>, walks away &rarr; shorts only</td>
+        </tr>
+        <tr>
+          <td class="k">The empty level</td>
+          <td>the <strong>lowest</strong> point of that push</td>
+          <td>the <strong>highest</strong> point of that push</td>
+        </tr>
+        <tr class="hi">
+          <td class="k">2 &middot; Loads</td>
+          <td>a <strong>low</strong> holds against an earlier low, then moves away</td>
+          <td>a <strong>high</strong> holds against an earlier high, then moves away</td>
+        </tr>
+        <tr>
+          <td class="k">3 &middot; Inducement</td>
+          <td>a minor <strong>high</strong> is taken &mdash; buyers pile in</td>
+          <td>a minor <strong>low</strong> is taken &mdash; sellers pile in</td>
+        </tr>
+        <tr>
+          <td class="k">4 &middot; Target built</td>
+          <td>a <strong>high</strong> holds and turns &rarr; loaded above</td>
+          <td>a <strong>low</strong> holds and turns &rarr; loaded below</td>
+        </tr>
+        <tr class="hi">
+          <td class="k">5 &middot; Entry</td>
+          <td><strong>buy</strong> as the loaded low is stabbed</td>
+          <td><strong>sell</strong> as the loaded high is stabbed</td>
+        </tr>
+        <tr>
+          <td class="k">Stop</td>
+          <td><strong>below</strong> the empty level</td>
+          <td><strong>above</strong> the empty level</td>
+        </tr>
+        <tr>
+          <td class="k">Target</td>
+          <td>the loaded <strong>high</strong></td>
+          <td>the loaded <strong>low</strong></td>
+        </tr>
+      </table>
+
+      <div class="note">
+        <b>Where the big reward-to-risk actually comes from.</b> Not from picking better targets
+        &mdash; from finding the same setup on a smaller timeframe, where the empty level is closer
+        and the stop is a fraction of the size. The target does not move. The stop shrinks.
+        Everything else is timing.
+      </div>
+
+      <h3>How to practise it</h3>
+      <ol class="seq">
+        <li>
+          <strong>Mark loaded and empty on a blank chart.</strong> No entries at all. Say out loud
+          why each mark is what it is.
+        </li>
+        <li>
+          <strong>Find the empty level first, every time.</strong> If you cannot say where your stop
+          goes, you have not found the setup yet.
+        </li>
+        <li>
+          <strong>Then find the target.</strong> No loaded level on the far side means close the
+          chart. That is the step that turns a pattern into a trade.
+        </li>
+        <li>
+          <strong>The entry is last.</strong> It is the easiest part and the one everybody starts
+          with.
+        </li>
+      </ol>
+    </section>
+
+    <!-- ═══════════════ PAGE 4 ═══════════════ -->
+    <section class="page">
+      <h2>Reading strength</h2>
+      <p class="lede">All loaded levels are worth marking. Some are worth much more than others.</p>
+      <hr class="hair" />
+
+      <p>
+        Once you can spot a loaded level, the next skill is judging how <i>much</i> is sitting
+        behind it. Three things tell you, and all three are just careful looking &mdash; no
+        indicator required.
+      </p>
+
+      <h3>1 &middot; How long price spent on one side of it</h3>
+      <p>
+        The longer price hovers above a low without breaking it, the more people have bought there
+        and the more stops have stacked underneath. A level that price grinds above for five or six
+        hours has a far deeper pool beneath it than one that held for twenty minutes.
+      </p>
+      <div class="q">
+        <b>Time spent above a level is the measure of what is stacked beneath it.</b> A low that
+        price grinds above for five or six hours has been bought into over and over, and every one
+        of those buyers left a stop underneath.
+      </div>
+      <p>
+        <b>Judge it in candles, not in clock time.</b> Twenty candles of grinding is the same signal
+        on a 1-minute chart as on an hourly one. That is what makes this work on any timeframe.
+      </p>
+
+      <h3>2 &middot; How many times it held</h3>
+      <p>
+        Once is a level. Twice is a better level. Three or four times and a lot of people are
+        watching it. He counts out loud on the chart &mdash;
+        <i>"once, twice, three times"</i> &mdash; because each touch adds another layer of orders.
+      </p>
+
+      <h3>3 &middot; How violently it was taken</h3>
+      <p>
+        When the sweep finally comes, look at how fast it happened. Two big candles erasing thirteen
+        hours of patient grinding is a far stronger signal than a slow drift through.
+      </p>
+      <div class="q">
+        <b>The collection is fast and the build is slow.</b> Half a day of grinding gets swept by
+        one or two candles &mdash; which is why you must already be positioned when it happens, not
+        deciding.
+      </div>
+
+      <hr class="hair" />
+
+      <h3>Where these levels usually are</h3>
+      <p>You do not have to hunt randomly. Loaded levels cluster in predictable places:</p>
+      <table>
+        <tr>
+          <th style="width: 42mm">Level</th>
+          <th>Why traders are there</th>
+        </tr>
+        <tr>
+          <td class="k">Yesterday's high and low</td>
+          <td>Watched by almost everybody. Stops stack just past them.</td>
+        </tr>
+        <tr>
+          <td class="k">The previous session's high and low</td>
+          <td>Asia's range, then London's &mdash; each one becomes the next session's target.</td>
+        </tr>
+        <tr>
+          <td class="k">Equal highs / equal lows</td>
+          <td>Two or more touches at the same price. Obvious to everyone, which is the point.</td>
+        </tr>
+        <tr>
+          <td class="k">The previous candle's high or low</td>
+          <td>
+            On any timeframe. When a candle closes leaving the one before it un-swept, the next
+            candle often goes and takes it.
+          </td>
+        </tr>
+        <tr>
+          <td class="k">Round numbers</td>
+          <td>People place orders at tidy prices.</td>
+        </tr>
+      </table>
+
+      <div class="note">
+        <b>Sweeps like to happen at the start of something.</b> A new hourly candle, a session open,
+        the minutes after a news release. If your level gets taken right as London opens, that is
+        not a coincidence &mdash; it is the most common time for it.
+      </div>
+    </section>
+
+    <!-- ═══════════════ PAGE 5 ═══════════════ -->
+    <section class="page">
+      <h2>When to do nothing</h2>
+      <p class="lede">This deserves more of your attention than entries do.</p>
+      <hr class="hair" />
+
+      <p>
+        Most of the time, the right answer is that there is no trade. That is not you failing to
+        find one &mdash; it is the model working. Here are the six situations where you stand down.
+      </p>
+
+      <table>
+        <tr>
+          <th style="width: 6mm"></th>
+          <th style="width: 48mm">The situation</th>
+          <th>Why you stay out</th>
+        </tr>
+        <tr>
+          <td class="n">1</td>
+          <td class="k">Nothing to aim at</td>
+          <td>
+            No loaded level on the far side. You have no target, so you have no trade, however good
+            the entry looks. <i>"When you don't see liquidity, we wait."</i>
+          </td>
+        </tr>
+        <tr class="hi">
+          <td class="n">2</td>
+          <td class="k">Liquidity still sitting in the way</td>
+          <td>
+            There is an un-swept pool between you and your target &mdash; often off to the left of
+            the screen. Price will go and take that first. Wait until it has.
+          </td>
+        </tr>
+        <tr>
+          <td class="n">3</td>
+          <td class="k">Price is on the wrong side of the pool</td>
+          <td>
+            You want to buy below a low that has not been swept yet. Until price actually goes below
+            it, every rally is a trap. Do nothing and stop caring about the wiggles.
+          </td>
+        </tr>
+        <tr class="hi">
+          <td class="n">4</td>
+          <td class="k">The stop would be too wide</td>
+          <td>
+            If the empty level is far away, your stop is huge and the reward no longer justifies it.
+            First try dropping one timeframe to find a closer one. If you still cannot, skip the
+            trade.
+          </td>
+        </tr>
+        <tr>
+          <td class="n">5</td>
+          <td class="k">A quiet inside day</td>
+          <td>
+            After a day that swept both yesterday's high <i>and</i> its low, the next day often just
+            chops around inside that range. Poor conditions. Trade smaller or not at all.
+          </td>
+        </tr>
+        <tr class="hi">
+          <td class="n">6</td>
+          <td class="k">A move that came from nothing</td>
+          <td>
+            If a rally started at no level you had marked, it is not a real move &mdash; it is bait.
+            Do not chase it. If anything, it is a clue to trade the other way.
+          </td>
+        </tr>
+      </table>
+
+      <hr class="hair" />
+
+      <h3>Two traps worth naming</h3>
+
+      <div class="warnbox">
+        <h4>A reaction at your level is not a signal</h4>
+        <p style="margin: 0; font-size: 9.5pt">
+          Price will often bounce off a level <i>without</i> the setup completing. That bounce is
+          not the trade starting &mdash; it is more orders being built for later. Wait for the full
+          sequence, not the first flicker.
+        </p>
+      </div>
+
+      <div class="warnbox">
+        <h4>Do not buy toward liquidity that is still above you</h4>
+        <p style="margin: 0; font-size: 9.5pt">
+          If there is an un-swept high overhead, price wants to go and take it. Buying into that is
+          buying just before the market collects the stops of everyone who did the same. Let it get
+          taken first, <i>then</i> look.
+        </p>
+      </div>
+
+      <div class="ok">
+        <b>How often should this actually fire?</b> The really good ones come
+        <b>a couple of times a week at best, sometimes once or twice a month.</b> If you are finding
+        several a day, you have almost certainly loosened the rules without noticing.
+      </div>
+    </section>
+
+    <!-- ═══════════════ PAGE 6 ═══════════════ -->
+    <section class="page">
+      <h2>After you are in</h2>
+      <p class="lede">
+        The trade is <i>expected</i> to go against you. This page is why people lose on a setup that
+        eventually worked.
+      </p>
+      <hr class="hair" />
+
+      <p>Here is the sequence that plays out again and again after entry:</p>
+
+      <svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg">
+        <line x1="60" y1="160" x2="870" y2="160" stroke="#6d28d9" stroke-width="2" />
+        <text x="742" y="154" font-size="10.5" font-weight="700" fill="#6d28d9">
+          your entry level
+        </text>
+
+        <line
+          x1="60"
+          y1="212"
+          x2="870"
+          y2="212"
+          stroke="#dc2626"
+          stroke-width="2"
+          stroke-dasharray="7 5"
+        />
+        <text x="62" y="228" font-size="10.5" font-weight="700" fill="#dc2626">
+          your stop &mdash; leave it here
+        </text>
+
+        <line
+          x1="300"
+          y1="176"
+          x2="870"
+          y2="176"
+          stroke="#dc2626"
+          stroke-width="1.6"
+          stroke-dasharray="3 3"
+        />
+        <text x="600" y="171" font-size="10" fill="#dc2626">
+          where people move the stop to &mdash; and get taken out
+        </text>
+
+        <line x1="60" y1="52" x2="870" y2="52" stroke="#15803d" stroke-width="2" />
+        <text x="62" y="46" font-size="10.5" font-weight="700" fill="#15803d">target</text>
+
+        <polyline
+          points="90,160 150,120 210,96 260,130 320,168 370,192 400,198 440,150 500,110
+                      560,132 620,96 700,68 790,56 860,50"
+          fill="none"
+          stroke="#1a1a1a"
+          stroke-width="2.4"
+        />
+        <circle cx="90" cy="160" r="7" fill="#6d28d9" />
+        <text x="150" y="86" font-size="10.5" fill="#374151">1. quick profit</text>
+        <text x="330" y="222" font-size="10.5" fill="#374151">2. it comes all the way back</text>
+        <text x="640" y="120" font-size="10.5" fill="#374151">3. then the real move goes</text>
+      </svg>
+
+      <ol class="seq">
+        <li>
+          <b>You get a fast move in your favour.</b> You are in profit quickly. It feels great.
+        </li>
+        <li>
+          <b>Price comes all the way back</b> &mdash; often making a new extreme first. This is the
+          market inducing one last batch of traders before it goes. It is normal. It is expected.
+        </li>
+        <li><b>Then the real move happens</b> and runs to your target.</li>
+      </ol>
+
+      <div class="kill">
+        <b>The single most expensive mistake in this model.</b> At step 1, feeling clever, people
+        move their stop up to lock in the profit. At step 2, that new stop gets hit. Then they watch
+        step 3 happen without them.<br /><br />
+        <b>Do not move your stop because the trade went your way.</b> This is the single most common
+        way a good setup turns into a scratch, and it costs you the winners specifically.
+      </div>
+
+      <h3>So when <i>may</i> you move it?</h3>
+      <p>
+        When something actually happens on the chart &mdash; not when a certain amount of profit
+        appears. The trigger is <b>a level being taken</b>. Once price has run the next pool of
+        liquidity on the way to your target, that part of the job is done and you may protect the
+        trade.
+      </p>
+      <div class="q">
+        <b
+          >Once the level you were aiming at has actually been taken, the reason you were in the
+          trade is spent &mdash; manage the risk.</b
+        >
+        Put the other way: the stop only moves once the trade has run a meaningful distance your
+        way, never on a few points of drift.
+      </div>
+
+      <h3>Taking profit</h3>
+      <p>
+        Targets are levels, not numbers you invent. Take the first one at the nearest loaded level,
+        and if you want to hold a piece for a bigger one, aim at the loaded level on the higher
+        timeframe. Exactly how much you take at each is personal. The one firm rule: do not bother
+        banking at less than about <b>3 times</b> your risk.
+      </p>
+
+      <div class="ok">
+        <b>If it stops you out, the idea may still be right.</b> As long as your target is still
+        sitting there un-swept, the direction has not been proven wrong &mdash; you were just early.
+        Wait for a new level to load and take it again.
+      </div>
+    </section>
+
+    <!-- ═══════════════ PAGE 7 ═══════════════ -->
+    <section class="page">
+      <h2>What we actually measured</h2>
+      <p class="lede">Read this page before you risk money. It is the part no video gives you.</p>
+      <hr class="hair" />
+
+      <p>
+        Across sixteen videos teaching this model there is
+        <b>no win rate, no number of trades, and no equity curve</b> &mdash; not once. So we coded
+        the sequence ourselves and ran it over eight years of gold data to see what is actually
+        there.
+      </p>
+
+      <p class="stat">
+        XAUUSD, 15-minute bars, 186,759 bars, September 2018 to August 2026. Every setup is scored
+        against
+        <b
+          >random trades with the same direction, the same stop distance and the same target
+          distance</b
+        >
+        &mdash; because on a market that tripled in price, any buying rule looks clever unless you
+        check it against luck.
+      </p>
+
+      <table>
+        <tr>
+          <th style="width: 26mm">Side</th>
+          <th>Trades</th>
+          <th>Won</th>
+          <th>Random did</th>
+          <th>Edge</th>
+          <th>Verdict</th>
+        </tr>
+        <tr class="hi">
+          <td class="k">Buys</td>
+          <td>49</td>
+          <td>34.7%</td>
+          <td>22.9%</td>
+          <td>+11.8 pts</td>
+          <td>Real, but a small sample</td>
+        </tr>
+        <tr>
+          <td class="k">Sells</td>
+          <td>80</td>
+          <td>21.2%</td>
+          <td>20.9%</td>
+          <td>+0.4 pts</td>
+          <td>No better than random</td>
+        </tr>
+      </table>
+
+      <h3>What that means in plain English</h3>
+      <ol class="plain">
+        <li>
+          <b>The buy side showed a genuine edge</b> &mdash; it won noticeably more often than luck
+          with the same stop and target. After a realistic spread it still made money.
+        </li>
+        <li>
+          <b>The sell side showed nothing at all.</b> Identical detection, no edge. We do not yet
+          know whether that is the model or our code.
+        </li>
+        <li>
+          <b>49 trades in eight years is a very small sample.</b> That is about six a year. A result
+          this size is a hint, not a proof.
+        </li>
+        <li>
+          <b>The edge only appeared on the high-reward setups.</b> When we allowed trades with a
+          reward smaller than twice the risk, the advantage over random <b>vanished completely.</b>
+        </li>
+      </ol>
+
+      <div class="note">
+        <b>Point 4 is the useful one, and it matches the rule as written.</b> Wait for the
+        higher-probability setups and refuse anything under roughly 3:1. Our numbers agree: the
+        patience is not a preference, it appears to be where the whole edge lives.
+      </div>
+
+      <div class="warnbox">
+        <h4>Do not read this page as a green light</h4>
+        <p style="margin: 0; font-size: 9.5pt">
+          One instrument, one timeframe, one set of settings, a small number of trades, and a
+          simplified way of deciding whether the stop or the target was hit first. This is early
+          work. <b>Nobody should be sizing up on this yet.</b>
+        </p>
+      </div>
+
+      <h3>Things nobody has pinned down</h3>
+      <p>
+        Honest gaps, so you know what you are judging by eye rather than by rule: how many candles
+        of building is "enough"; how close a return counts as "holding" the level; how long a level
+        stays empty before it matters again; and what hours of the day to trade &mdash; the model
+        skips setups outside a defined trading window, and that window has never been pinned down.
+      </p>
+    </section>
+
+    <!-- ═══════════════ PAGE 8 ═══════════════ -->
+    <section class="page">
+      <h2>Your checklist</h2>
+      <p class="lede">Print this page. Work down it in order, every single time.</p>
+      <hr class="hair" />
+
+      <div class="two">
+        <div>
+          <h3>Before you look for a trade</h3>
+          <ul class="chk">
+            <li>Start on the higher timeframe. If nothing is there, do not drop lower.</li>
+            <li>Mark only levels that price <b>returned to and held</b>.</li>
+            <li>
+              Find the empty level &mdash; the one price smashed and left. That is where risk can
+              sit.
+            </li>
+            <li>Ask: is there a loaded level on the far side to aim at? If no, stop here.</li>
+            <li>Ask: is anything un-swept in the way? If yes, wait for it.</li>
+          </ul>
+
+          <h3>The setup</h3>
+          <ul class="chk">
+            <li>1 &middot; An old level was swept and price walked away.</li>
+            <li>2 &middot; A level has loaded. It is marked. I have not touched it since.</li>
+            <li>3 &middot; A minor high or low was taken &mdash; latecomers are in.</li>
+            <li>4 &middot; A level has loaded on the far side. <b>This is my target.</b></li>
+          </ul>
+        </div>
+        <div>
+          <h3>The trade</h3>
+          <ul class="chk">
+            <li>
+              Entry: the instant my level from step 2 is stabbed. No waiting, no better price.
+            </li>
+            <li>Stop: just past the empty level. Written down before I click.</li>
+            <li>Target: the loaded level from step 4.</li>
+            <li>Reward is at least 3&times; my risk &mdash; or I do not take it.</li>
+          </ul>
+
+          <h3>Once I am in</h3>
+          <ul class="chk">
+            <li>I expect it to come back against me. That is normal.</li>
+            <li>I will <b>not</b> move my stop because I am in profit.</li>
+            <li>I will only move it once a level has actually been taken.</li>
+            <li>
+              If I am stopped and the target is still un-swept, the idea stands. I wait for the next
+              one.
+            </li>
+          </ul>
+
+          <h3>Stop and walk away if&hellip;</h3>
+          <ul class="chk">
+            <li>There is nothing to aim at.</li>
+            <li>The stop would be too wide to justify.</li>
+            <li>It is a quiet inside day.</li>
+            <li>I am about to chase a move that started from nothing.</li>
+          </ul>
+        </div>
+      </div>
+
+      <hr class="rule" />
+      <p class="big" style="text-align: center; margin-top: 4mm">
+        <b>You are trading other traders' stop losses.</b><br />
+        <span style="font-size: 10.5pt; color: #374151"
+          >Smash a loaded level to get in. Hide behind an empty one. Aim at another loaded
+          one.</span
+        >
+      </p>
+
+      <p class="stat" style="text-align: center; margin-top: 6mm">
+        MPC Loaded Level Strategy. Measurements on page 7 are our own and are early-stage. Nothing
+        here is financial advice &mdash; test everything yourself before risking money.
+      </p>
+    </section>
+  </body>
+</html>
