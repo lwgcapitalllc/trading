@@ -63,9 +63,15 @@ class RecoveryConfig:
     """Where the recovery's stop goes, which is also what defines its 1R.
 
       `structural`  the far end of the CHoCH break leg. Every measured number here used this.
-      `loss_entry`  the LOSING trade's own entry price — Aaron's 2026-08-19 idea: the level the
-                    primary was wrong about, and a much nearer one, so the same 25% of risk buys
-                    a bigger position and +1R arrives sooner in price terms.
+      `loss_entry`  the LOSING trade's own entry price. MEASURED and it loses — see CLAUDE.md.
+      `leg_frac`    part of the way back down the break leg (`stop_leg_frac`). The plain
+                    "make the structural stop smaller" test, and unlike `soft_stop_r` it DOES
+                    move the sizing basis: 1R shrinks with it, so the position grows.
+      `swing`       the last CONFIRMED swing before the signal — the nearest structure the engine
+                    will actually name, rather than the far end of the impulse.
+      `signal_bar`  the extreme of the CHoCH bar itself, with `stop_pad_atr` of room.
+      `atr`         `stop_atr_mult` x ATR(14) at entry. Volatility-scaled and structure-blind,
+                    which is the point: it is the control for every structural answer above.
 
     ⚠ `loss_entry` needs a `LossEventWithEntry`. A loss event without `entry_price` is REFUSED,
     never silently given the structural stop — the two are ~4x apart, so the fallback would report
@@ -76,6 +82,35 @@ class RecoveryConfig:
     is ~$0.14 on `puprime_ecn`. Read the median stop in DOLLARS beside any result from this knob —
     `recovery_report.py --stops` prints it and the cost as a share of R.
     """
+
+    stop_leg_frac: float = 0.5
+    """`leg_frac` only: how much of the break leg to keep. 0.5 puts the stop halfway between the
+    entry and the far end. 1.0 is `structural` exactly."""
+
+    stop_atr_mult: float = 1.5
+    """`atr` only: stop distance in ATR(14) at the entry bar."""
+
+    stop_pad_atr: float = 0.1
+    """`swing` / `signal_bar` only: room beyond the level, in ATR(14). A stop resting exactly ON a
+    level the whole market can see is a stop that gets taken by the wick that tests it."""
+
+    partial_at_r: float = 0.0
+    """Bank part of the position at this many R and let the rest run. 0 = off.
+
+    🔴 **This is the answer to "why did it end at exactly +1R"**, and it is a different lever from
+    the lock. `lock_to_r = 1.0` secures the whole trade at +1R by putting the stop ON the market,
+    so the first wiggle ends it — on 2026-03-15 that closed the trade at +1.00R and price ran 2.9R
+    further the same week. A partial banks the loss back with a FILL instead, which leaves the
+    runner's stop free to sit somewhere the market has not already reached."""
+
+    partial_frac: float = 0.5
+    """How much of the position `partial_at_r` closes. The remainder keeps trailing."""
+
+    trail_atr_mult: float = 0.0
+    """Chandelier trail: stop at the best price since entry, minus this many ATR(14). 0 = off.
+
+    Unlike `trail_pct` this scales with volatility rather than with price level, which is the
+    objection that made the percent ratchet inert on a $38 stop at $4,000 gold."""
 
     trail_pct: float = 0.0
     """Ratchet the stop to a fixed percentage of PRICE behind the close, once locked. 0 = off,
@@ -146,11 +181,23 @@ class RecoveryConfig:
                 f"horizon_days ({self.horizon_days}) is below max_days ({self.max_days}), so the "
                 "time stop can never fire and the two limits are the same number wearing two names"
             )
-        if self.stop_mode not in ("structural", "loss_entry"):
+        modes = ("structural", "loss_entry", "leg_frac", "swing", "signal_bar", "atr")
+        if self.stop_mode not in modes:
             raise ValueError(
-                f"stop_mode {self.stop_mode!r} is not one of 'structural' / 'loss_entry' — a "
-                "typo here would otherwise pick the default and look like a setting that applied"
+                f"stop_mode {self.stop_mode!r} is not one of {modes} — a typo here would "
+                "otherwise pick the default and look like a setting that applied"
             )
+        if not 0.0 < self.stop_leg_frac <= 1.0:
+            raise ValueError(f"stop_leg_frac ({self.stop_leg_frac}) must be inside (0, 1]")
+        if self.stop_atr_mult <= 0 or self.stop_pad_atr < 0:
+            raise ValueError("stop_atr_mult must be positive and stop_pad_atr non-negative")
+        if self.partial_at_r < 0 or not 0.0 < self.partial_frac < 1.0:
+            raise ValueError(
+                "partial_at_r is a magnitude and partial_frac must be inside (0, 1) — a partial "
+                "of 0 or 1 is not a partial, it is off or a full exit and should say so"
+            )
+        if self.trail_atr_mult < 0:
+            raise ValueError("trail_atr_mult is a magnitude; pass 1.5, not -1.5")
         if self.trail_pct < 0:
             raise ValueError("trail_pct is a magnitude; pass 0.5, not -0.5")
         if self.soft_stop_r is not None and not 0.0 < self.soft_stop_r <= 1.0:

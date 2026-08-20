@@ -222,6 +222,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **A percent ratchet loses to the confirmed-swing trail on both stops**, and flatly across a
   20x range of steps: at 1% one step is $40 against a $38 median stop (inert — the `mpc_bleg`
   trap), at 0.05% it binds constantly and hands back the runners.
+  🔴 **`--search` (2026-08-19) is the stop sweep, and its best row is a trap worth knowing.**
+  A stop on the CHoCH BAR's own extreme scores **+24.4R against the shipped +16.2R** on a stop 7x
+  tighter with a LOWER drawdown — and **−7.4R once its five best trades are deleted**, where the
+  shipped stop survives the same deletion at +2.3R. Median hold 4 bars: a different, hour-long
+  rule that caught five big moves, not a better version of this one.
+  ⚠ **Every stop row is scored against a structure-BLIND ATR control at a matched distance**, and
+  that is what makes the table readable — the last confirmed swing scores −12.3R at almost exactly
+  the same stop SIZE as the signal bar's +24.4R. **Size is not the variable; where the level came
+  from is.**
+  🔴 **It also settles "the +1R lock gives up the runners": the runners are not reachable.** Of the
+  35 trades that lock, only **3 ever saw +2R while still open** (median MFE +1.06R), yet the median
+  trade was offered **+2.33R more within 30 days of closing**. Price tags +1R, takes the stop, then
+  runs — so every wider trail pays 32 trades of given-back R to catch 3, which is what the measured
+  alternatives all do. **That gap is a RE-ENTRY signal, not a trailing-stop problem.**
   ⚠ Everything it prints is a LAB finding: no Pine twin, no parity gate, `enabled` defaults False.
 
 - **`tools/recovery_smoothness.py`** (new 2026-08-19) — the companion question to the one above:

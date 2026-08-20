@@ -246,6 +246,68 @@ constantly and hands back the runners. **A percent of PRICE is not a percent of 
 rule's whole result lives in the trades that run.** A swing level is where the market says the
 move is still intact; a fixed percentage is where arithmetic says so.
 
+---
+
+## The stop search — six placements, and the one that beat the default was five trades
+
+**MEASURED 2026-08-19, after Aaron pointed out that the previous pass tested only the ideas he
+and I had already named and called that a search.** `recovery_report.py --search` is the actual
+sweep: every stop the engines can name, scored against a structure-BLIND ATR control.
+
+| stop | median stop | cost/R | net R | maxDD | net less its best 5 |
+|---|---|---|---|---|---|
+| **break leg (shipped)** | $37.91 | 0.4% | **+16.2R** | 48.3% | **+2.3R** |
+| the CHoCH bar's own extreme + 0.1 ATR | $5.18 | 2.6% | **+24.4R** | 46.3% | 🔴 **−7.4R** |
+| break leg x 0.25 | $9.55 | 1.5% | +2.7R | 48.8% | |
+| break leg x 0.5 | $19.09 | 0.7% | −3.1R | 51.2% | |
+| the last confirmed swing | $5.16 | 2.7% | −12.3R | 58.6% | |
+| the losing trade's entry | $16.05 | 0.9% | +1.8R | 51.3% | |
+| 1.5 / 2 / 3 x ATR(14) — **control** | $4.71 / $6.29 / $9.43 | 3.0% / 2.2% / 1.5% | +3.3R / +2.3R / −2.9R | | |
+
+🔴 **The signal-bar stop looked like the answer and is not. +24.4R with a LOWER drawdown on a
+stop 7x tighter — and deleting its five best trades takes it to −7.4R, where the shipped stop
+survives the same deletion at +2.3R.** Its median hold is **4 bars**, so it is not a better
+version of this rule; it is a different, hour-long rule that happened to catch five big moves in
+a record where gold ran. ⚠ **Its pad is a cliff too** — 0 ATR gives −2.2R and 1.0 ATR gives −5.4R,
+either side of a wide flat middle. **Two independent robustness checks failing on the row with the
+best headline is the whole reason to run them before reporting the headline.**
+
+✅ **The ATR control earned its place**: at a matched $5–6 stop it scores +3.3R against the signal
+bar's +24.4R, which is what says the structure is doing something rather than the tightness. It
+also says nothing else here is — every other structural placement loses to it or ties.
+
+⚠ **`swing` is the worst row on the board (−12.3R at a 58.6% drawdown)** at almost exactly the
+same stop SIZE as `signal_bar`. Size is not the variable. **Where the level came from is.**
+
+## 🔴 The +1R exit is not what costs the runners — and the money after it is a RE-ENTRY, not a trail
+
+Aaron's second objection was that locking at +1R gives up the continuation. **He is right that the
+move is there and wrong about how to collect it, and the two facts sit in the same table.**
+
+Of the **35 recoveries that reached +1R**:
+
+| | |
+|---|---|
+| median booked | **+1.00R** |
+| median MFE **while the trade was open** | **+1.06R** |
+| ever saw +2R while open | **3 of 35** |
+| ever saw +3R while open | 2 of 35 |
+| median extra R price offered **after the exit** (30d) | **+2.33R** |
+| offered more than 1R after the exit | **22 of 35** |
+| offered more than 3R after the exit | 15 of 35 |
+
+**Price ticks to +1R, takes the stop, and THEN runs.** So a wider trail cannot reach it: only 3
+of 35 trades were ever above +2R *while still open*, and every attempt to hold for them pays 32
+trades' worth of given-back R to catch 3. That is exactly what the measured alternatives do —
+lock to +0.5R **+7.9R**, lock to breakeven **+9.5R**, a 1–4 ATR chandelier **+8.3R to +10.4R**,
+banking 25/50/75% at +1R and running the rest to breakeven **+5.6R to +6.4R**, all against
+**+16.2R**.
+
+🔴 **The lead worth writing down: +2.33R median, on 22 of 35 trades, arriving AFTER the position
+closed is a RE-ENTRY signal, not a trailing-stop problem.** Nothing in this rule takes a second
+trade on the same premise. That is a new rule with its own spec and its own arming condition, and
+it is the only unexplored direction the numbers actually point at.
+
 ## Why this is a package and not a flag on `mpc_sos_fade`
 
 The trigger is "a primary trade lost", which every strategy in this repo can state. Wiring it to
@@ -309,7 +371,7 @@ version made +6.4R against +49.3R for letting it run.
 ## Tests
 
 `command-center/backend/.venv/bin/python -m pytest strategies/python/loss_recovery/tests/ -q`
-→ **26 passed.**
+→ **31 passed.**
 
 🔴 **Every one was watched RED by a named mutation, and the harness earned its keep: 5 of the
 first 15 were VACUOUS.** They passed against their own bugs. What the mutation pass found, kept
@@ -330,6 +392,8 @@ ordering is observable. **A test that cannot go red is decoration, and the hones
 so in the docstring or delete it.**
 
 ✅ **The five tests added 2026-08-19 for the tighter exits were watched RED the same way, and the pass caught a FALSE GREEN in its own harness**: the first mutation was written against a multi-line `if/else` that `ruff format` had already collapsed onto one line, so the string replacement silently matched nothing and the suite stayed green. ⚠ **A mutation that does not apply is indistinguishable from a test that survived it** — assert the replacement landed before believing the red.
+
+🔴 **The 2026-08-19 stop-search pass produced another VACUOUS test and it is the same shape as the original five.** `swing`'s refusal branch was tested by running the mode over the real fixture — where every signal HAS a usable swing, so the branch was never reached and a mutation making it borrow the structural stop passed. **A refusal is only testable by constructing the state that triggers it**; it is now a direct `_stop_for` call with an empty swing book.
 
 ⚠ **The price fixture is 2,400 REAL XAUUSD M15 bars** (`tests/fixture_xauusd_m15.csv`, committed
 so the tests need no bar cache). Hand-built ramps and sawtooths were tried first and the canonical
@@ -361,5 +425,5 @@ read would have let every assertion pass on an empty list.
 | `--exits` / `--soft-curve` | the exit grid and the soft-stop curve on `recovery_report.py` |
 | `types.py` | `LossEvent` protocol, `RecoveryTrade`, `ArmedSignal` |
 | `engine.py` | the state machine; consumes `engines/market_structure` public events only |
-| `tests/` | 26 tests + the real-bar fixture |
+| `tests/` | 31 tests + the real-bar fixture |
 | `backtest/tools/recovery_report.py` | the runner that produced every number above |

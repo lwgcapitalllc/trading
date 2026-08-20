@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -237,7 +238,9 @@ def test_a_bar_that_hits_both_the_stop_and_the_lock_books_the_stop():
         index=idx,
     )
     eng = LossRecoveryEngine(RecoveryConfig(enabled=True))
-    exit_i, exit_px, r, reason, locked, mfe = eng._manage(bars, 0, 1, 100.0, 99.0, {}, {}, {}, 96.0)
+    exit_i, exit_px, r, reason, locked, mfe = eng._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
+    )
     assert reason == "stop", f"a bar through the stop booked {reason!r}"
     assert r == pytest.approx(-1.0)
     assert not locked
@@ -421,7 +424,9 @@ def test_structural_invalidation_exits_at_the_next_bars_open():
     cfg = RecoveryConfig(enabled=True, invalidate_on_choch=True)
     eng = LossRecoveryEngine(cfg)
     # long from 100, stop 99 (1R = 1.0). A bear CHoCH closes on bar 0.
-    exit_i, exit_px, r, reason, _, _ = eng._manage(bars, 0, 1, 100.0, 99.0, {}, {}, {0: -1}, 96.0)
+    exit_i, exit_px, r, reason, _, _ = eng._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {0: -1}, np.zeros(len(bars)), 96.0
+    )
     assert reason == "choch", f"an opposing CHoCH booked {reason!r}"
     assert exit_i == 1 and exit_px == pytest.approx(100.3)
     assert r == pytest.approx(0.3)
@@ -446,7 +451,7 @@ def test_the_early_step_moves_the_stop_before_the_lock_does():
     )
     cfg = RecoveryConfig(enabled=True, be_at_r=0.5, be_to_r=0.0, trail_swings=False)
     exit_i, exit_px, r, reason, locked, _ = LossRecoveryEngine(cfg)._manage(
-        bars, 0, 1, 100.0, 99.0, {}, {}, {}, 96.0
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
     )
     assert reason == "be", f"the early step booked {reason!r}"
     assert exit_i == 1 and exit_px == pytest.approx(100.0)
@@ -568,7 +573,7 @@ def test_the_percent_ratchet_moves_a_locked_stop_past_where_the_lock_put_it():
     )
     cfg = RecoveryConfig(enabled=True, trail_pct=0.1, trail_swings=False)
     _, exit_px, r, reason, locked, _ = LossRecoveryEngine(cfg)._manage(
-        bars, 0, 1, 100.0, 99.0, {}, {}, {}, 96.0
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
     )
     assert locked and reason == "trail", f"the ratchet booked {reason!r}"
     assert exit_px == pytest.approx(101.4 * 0.999)
@@ -585,3 +590,138 @@ def test_an_unknown_stop_mode_and_a_negative_ratchet_are_refused():
         RecoveryConfig(stop_mode="loss-entry")
     with pytest.raises(ValueError, match="trail_pct"):
         RecoveryConfig(trail_pct=-0.5)
+
+
+# ── the stop search (2026-08-19) ─────────────────────────────────────────────────────────────
+# Six stop placements and two more ways to trail, built so the search could be run at all rather
+# than argued. `recovery_report.py --search` scores them; these pin what each one DOES.
+
+
+def test_each_stop_mode_places_the_stop_where_it_says_and_they_all_differ():
+    """RED by returning `break_leg_far_end` from any branch of `_stop_for`.
+
+    🔴 The failure this guards is silent: a mode that fell through to the structural stop would
+    produce a full, plausible result table with several rows secretly measuring one rule. The
+    distances here are 7x apart, so the assertion is not delicate.
+    """
+    bars = real_bars()
+    losses = [FakeLoss(dir=-1, exit_index=b - 30, r=-1.0) for b in _BULL_CHOCH_BARS]
+    got = {}
+    for mode in ("structural", "leg_frac", "swing", "signal_bar", "atr"):
+        cfg = RecoveryConfig(enabled=True, stop_mode=mode)
+        rs = LossRecoveryEngine(cfg).run(bars, losses)
+        assert rs, f"{mode} produced no trade; it cannot be compared"
+        got[mode] = {t.signal_index: t.stop_price for t in rs}
+
+    common = set.intersection(*(set(v) for v in got.values()))
+    assert common, "no signal is shared by every mode; the comparison is empty"
+    for sig in common:
+        assert len({round(got[m][sig], 6) for m in got}) == len(got), (
+            f"two stop modes placed the same stop at signal {sig}: "
+            f"{ {m: round(got[m][sig], 4) for m in got} }"
+        )
+
+    for sig in common:
+        # leg_frac 0.5 sits exactly halfway from the fill to the structural stop.
+        t = next(
+            t
+            for t in LossRecoveryEngine(RecoveryConfig(enabled=True)).run(bars, losses)
+            if t.signal_index == sig
+        )
+        assert got["leg_frac"][sig] == pytest.approx(
+            t.entry_price - 0.5 * (t.entry_price - t.stop_price)
+        )
+        # the CHoCH bar's low, minus its pad
+        assert got["signal_bar"][sig] < float(bars["low"].iloc[sig])
+
+
+def test_a_stop_mode_that_cannot_find_its_level_refuses_rather_than_borrowing_one():
+    """RED by `return break_leg_far_end` in place of `return None` in `_stop_for`.
+
+    ⚠ **This test replaced a VACUOUS one and the replacement is the lesson.** The first version
+    ran `swing` over the real fixture and compared its stops to the structural run — but every
+    signal in that fixture HAS a usable swing, so the refusal branch was never reached and the
+    mutation could not be observed. It passed against its own bug. The branch is only testable by
+    handing the mode a book with nothing in it, which is what this does.
+
+    `swing` needs a confirmed swing on the protective side of the fill and there is not always
+    one. Borrowing the structural stop would report a 4x wider trade inside a swing-stop row.
+    """
+    bars = real_bars()
+    eng = LossRecoveryEngine(RecoveryConfig(enabled=True, stop_mode="swing"))
+    atr = np.full(len(bars), 1.0)
+    assert eng._stop_for(None, bars, atr, {}, {}, 1, 200, 100.0, 90.0) is None, (
+        "an empty swing book must refuse, not fall back to the break leg"
+    )
+    # and with a usable level it does place one, so the None above is the branch and not a stub
+    assert eng._stop_for(None, bars, atr, {50: 98.0}, {}, 1, 200, 100.0, 90.0) == pytest.approx(
+        98.0 - 0.1
+    )
+    # a level on the WRONG side of the fill is not a stop for a long, and is also refused
+    assert eng._stop_for(None, bars, atr, {50: 101.0}, {}, 1, 200, 100.0, 90.0) is None
+
+
+def test_a_partial_blends_the_two_legs_and_never_books_the_runners_r_on_the_whole_position():
+    """RED by dropping `banked`/`live` from `_manage`'s returns (booking `live=1.0` throughout).
+
+    Taking half off at +1R and then stopping the rest at breakeven is +0.50R, not 0.00R and not
+    +1.00R. Booking the runner's result on the full position is the scale-in accounting error
+    `output.py` already carries a warning about.
+    """
+    idx = pd.date_range("2024-01-01", periods=3, freq="15min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 101.2, 100.4],
+            "high": [101.3, 101.3, 100.4],
+            "low": [99.5, 100.6, 99.6],
+            "close": [101.2, 100.9, 99.8],
+        },
+        index=idx,
+    )
+    cfg = RecoveryConfig(
+        enabled=True, partial_at_r=1.0, partial_frac=0.5, lock_to_r=0.0, trail_swings=False
+    )
+    _, exit_px, r, _, locked, _ = LossRecoveryEngine(cfg)._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
+    )
+    assert locked and exit_px == pytest.approx(100.0), "the runner should stop at breakeven"
+    assert r == pytest.approx(0.5), f"half banked at +1R then a breakeven runner is +0.5R, got {r}"
+
+
+def test_the_chandelier_trails_from_the_best_price_not_from_the_close():
+    """RED by using `cl[j]` instead of `best` in the chandelier.
+
+    A close-based trail gives ground back whenever price pulls in; a chandelier is a ratchet off
+    the extreme. This bar prints its high, then the next closes lower — the two disagree by
+    exactly that difference, which is the whole reason to prefer one.
+    """
+    idx = pd.date_range("2024-01-01", periods=3, freq="15min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 103.0, 102.0],
+            "high": [103.0, 103.0, 102.0],
+            "low": [99.5, 101.5, 100.0],
+            "close": [102.9, 101.6, 100.5],
+        },
+        index=idx,
+    )
+    atr = np.full(len(bars), 1.0)
+    cfg = RecoveryConfig(enabled=True, trail_atr_mult=1.0, trail_swings=False)
+    _, exit_px, r, reason, _, _ = LossRecoveryEngine(cfg)._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, atr, 96.0
+    )
+    assert reason == "trail"
+    assert exit_px == pytest.approx(102.0), "the stop should sit 1 ATR under the 103.0 high"
+    assert r == pytest.approx(2.0)
+
+
+def test_the_new_stop_and_partial_knobs_refuse_nonsense():
+    """RED by deleting the matching check in `RecoveryConfig.__post_init__`."""
+    with pytest.raises(ValueError, match="stop_leg_frac"):
+        RecoveryConfig(stop_leg_frac=1.5)
+    with pytest.raises(ValueError, match="stop_atr_mult"):
+        RecoveryConfig(stop_atr_mult=0.0)
+    with pytest.raises(ValueError, match="partial"):
+        RecoveryConfig(partial_frac=1.0)
+    with pytest.raises(ValueError, match="trail_atr_mult"):
+        RecoveryConfig(trail_atr_mult=-1.0)

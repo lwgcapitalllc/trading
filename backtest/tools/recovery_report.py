@@ -101,6 +101,12 @@ def main() -> int:
     )
     ap.add_argument("--sweep", action="store_true", help="sweep recovery size in 5%% steps")
     ap.add_argument(
+        "--search",
+        action="store_true",
+        help="the actual SEARCH: every stop placement the engines can name, then every way of "
+        "trailing what survives — including banking a partial at +1R and letting the rest run",
+    )
+    ap.add_argument(
         "--stops",
         action="store_true",
         help="where should the stop GO: the break leg, or the losing trade's own entry? Prints "
@@ -188,7 +194,7 @@ def main() -> int:
     locked = sum(1 for t in recs if t.locked)
     print(f"  {locked} of {len(recs)} reached +{rcfg.lock_at_r:g}R and locked the recovery in\n")
 
-    if args.stops:
+    if args.stops or args.search:
         cache = (rcfg.major_length, LossRecoveryEngine(rcfg)._replay_structure(bars))
         f = rcfg.risk_fraction
         # The round trip in PRICE units — what a stop has to clear before the signal says anything.
@@ -237,6 +243,86 @@ def main() -> int:
                 f"{m['net']:>+7.1f}R {m['win']:>4.0f}% {m['avg_loss']:>+8.2f}R {m['dd']:>6.1f}% "
                 f"{m['ratio']:>7.2f}x"
             )
+
+        if args.search:
+            print(f"1. WHERE THE STOP GOES — everything else shipped.  round trip = ${rt:.2f}\n")
+            print(hdr)
+            row("break leg  (shipped)", measure())
+            for f_ in (0.75, 0.5, 0.25):
+                row(f"break leg x {f_:g}", measure(stop_mode="leg_frac", stop_leg_frac=f_))
+            row("last confirmed swing", measure(stop_mode="swing"))
+            row("the CHoCH bar's own extreme", measure(stop_mode="signal_bar"))
+            for m_ in (1.0, 1.5, 2.0, 3.0):
+                row(f"{m_:g} x ATR(14)   [control]", measure(stop_mode="atr", stop_atr_mult=m_))
+            row("the losing trade's entry", measure(stop_mode="loss_entry"))
+
+            print("\n\n2. NOT ENDING AT EXACTLY +1R — on the shipped break-leg stop\n")
+            print(hdr)
+            row("lock 1R->1R + swings (shipped)", measure())
+            for fr in (0.25, 0.5, 0.75):
+                row(
+                    f"take {fr:.0%} at +1R, rest to breakeven",
+                    measure(partial_at_r=1.0, partial_frac=fr, lock_at_r=1.0, lock_to_r=0.0),
+                )
+            row(
+                "take 50% at +1R, rest keeps +1R stop",
+                measure(partial_at_r=1.0, partial_frac=0.5),
+            )
+            for fr in (0.5,):
+                for pa in (0.75, 1.5, 2.0):
+                    row(
+                        f"take {fr:.0%} at +{pa:g}R, rest to breakeven",
+                        measure(partial_at_r=pa, partial_frac=fr, lock_to_r=0.0),
+                    )
+            for m_ in (1.0, 2.0, 3.0, 4.0):
+                row(
+                    f"lock 1R->1R + {m_:g} ATR chandelier",
+                    measure(trail_atr_mult=m_, trail_swings=False),
+                )
+            row(
+                "take 50% at +1R + 3 ATR chandelier",
+                measure(
+                    partial_at_r=1.0,
+                    partial_frac=0.5,
+                    lock_to_r=0.0,
+                    trail_atr_mult=3.0,
+                    trail_swings=False,
+                ),
+            )
+
+            print("\n\n3. THE BEST STOPS x THE BEST EXITS\n")
+            print(hdr)
+            stops = {
+                "break leg": {},
+                "leg x0.5": dict(stop_mode="leg_frac", stop_leg_frac=0.5),
+                "swing": dict(stop_mode="swing"),
+                "2 ATR": dict(stop_mode="atr", stop_atr_mult=2.0),
+            }
+            exits = {
+                "lock+swings": {},
+                "50% at 1R -> BE + swings": dict(partial_at_r=1.0, partial_frac=0.5, lock_to_r=0.0),
+                "50% at 1R -> BE + 3ATR": dict(
+                    partial_at_r=1.0,
+                    partial_frac=0.5,
+                    lock_to_r=0.0,
+                    trail_atr_mult=3.0,
+                    trail_swings=False,
+                ),
+                "soft cut -0.3R + lock": dict(soft_stop_r=0.3),
+            }
+            out = []
+            for sn, sk in stops.items():
+                for en, ek in exits.items():
+                    out.append((f"{sn}  |  {en}", measure(**sk, **ek)))
+            for label, m in sorted(out, key=lambda x: -x[1]["net"]):
+                row(label, m)
+
+            print("\n🔴 `med stop` and `cost/R` come BEFORE the R column. R = profit / stop, so a")
+            print("   model that makes small stops inflates every R without earning a dollar.")
+            print("⚠ The ATR rows are the CONTROL — structure-blind by construction. A structural")
+            print("   stop that cannot beat them is not being paid for its structure.")
+            print("\n⚠ LAB ONLY — no Pine twin, no parity gate, not wired to any bot.")
+            return 0
 
         print(f"WHERE THE STOP GOES.  round trip = ${rt:.2f} in price\n")
         print(hdr)
