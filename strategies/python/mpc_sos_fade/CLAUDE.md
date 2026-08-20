@@ -1293,12 +1293,23 @@ sides AGREE, never that either is RIGHT, and says nothing at all about a branch 
 entered. ⚠ **The live bot was never exposed** (`exec_tp1_pct = exec_tp2_pct = 0`), and the fix is
 byte-identical there: the `(0,0)` row reproduced at **194.15R / 7.24 R-dd / 3,510.4x** after it.
 
-⚠ **STILL UNGATED, for the same reason as the section above.** `compare_strategy.py` ran GREEN on
-`engines/VANTAGE_XAUUSD, 15_49f80.csv` (warmup 1000) after the fix — but that export carries
-`cfg_tp1_pct=0, cfg_tp2_pct=0`, and **every** A+ export on this machine either has the rungs at
-zero or predates `cfg_scale_in` entirely. **No export in existence can exercise this branch.** The
-green run proves no REGRESSION on the paths it covers and nothing whatever about the one that was
-fixed. It needs a fresh export at `execTp1Pct > 0` with scale-in ON.
+✅ **GATED 2026-08-19 on a purpose-made export, and the COVERAGE is the point rather than the
+verdict.** `compare_strategy.py` GREEN on `engines/VANTAGE_XAUUSD, 15_4fef8.csv` (20,899 bars,
+2025-10 → 2026-08, `--warmup 1000`) at **`cfg_tp1_pct=50, cfg_scale_in=1, cfg_scale_tp=0`** — Aaron
+exported it specifically to reach this path.
+
+🔴 **A GREEN GATE IS WORTH WHAT ITS COVERAGE IS WORTH, AND THAT WAS MEASURED HERE RATHER THAN
+ASSUMED.** The run produced **25 trades, 24 add lots, and 11 exits that fired while an add was
+live — all 11 closing exactly HALF the base (`frac = 0.5`)**, which is the pro-rata path itself.
+Under the old code each of those 11 would have halved its add lots and binned the remainder. So
+this run had **11 genuine chances to disagree** and took none.
+
+⚠ **Contrast it with the run the day before**, which was equally GREEN on `49f80` and proved
+nothing: that export carried `cfg_tp1_pct=0`, so the runner closed 100% of the base, the fraction
+was always 1.0 and neither side ever entered the branch. **Same message, no information.** ⚠ **Do
+not read "PARITY OK" as coverage — count the entries into the path you changed.** The probe is four
+lines (wrap `_exit_portion`, count exits where `any(lot[1] > 0)` and `qty < _qty`); run it whenever
+a gate is asked to vouch for a specific branch.
 
 ⚠ **The test is `test_a_tp_rung_does_not_slice_the_adds`, WATCHED RED by mutation** (restore the
 pro-rata block → 121.4 vs 100.4 on P&L and on R). It carries no hand-computed constant: it runs the
