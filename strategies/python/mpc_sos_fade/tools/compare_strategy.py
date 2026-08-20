@@ -54,6 +54,7 @@ _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratc
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 _TIME_STOP = {0: "Off", 1: "Before TP1 only", 2: "Always"}
+_SCALE_TP = {0: "Ride", 1: "Prev week H/L", 2: "Prev day H/L", 3: "H4 H/L"}
 _NOGAP_ARM = {0: "Any", 1: "Sweep + RSI div"}
 # ⚠ A WIRE FORMAT, so codes are APPENDED and never renumbered — an export already on disk
 # carries the old number, and re-pointing it is silent: the file still reads, and now claims
@@ -241,6 +242,22 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         scap = get("cfg_scale_cap")
         if scap is not None and float(scap) > 0:
             vals["exec_scale_cap_x"] = float(scap)
+
+    # ...and where those adds BANK (2026-08-19).
+    # 🔴 THIS ONE IS DECODED THE OPPOSITE WAY ROUND FROM THE FOUR ABOVE, and the difference is
+    # the whole reason it gets its own paragraph. "Absent ⇒ off" works for `cfg_scale_in`
+    # because that feature shipped OFF, so the fallback and the exported Pine agree.
+    # `exec_scale_tp_mode` ships **"Prev week H/L"**, which is ACTIVE — so falling back on the
+    # config default would replay every pre-2026-08-19 export with its adds banking at a weekly
+    # level the exported Pine had no code to look at, and the diff would blame the strategy for
+    # the harness's own configuration. Absent ⇒ "Ride" is the only reading that reproduces
+    # those runs, and it is a FACT about them (the input did not exist) rather than a guess.
+    # ⚠ Assigned OUTSIDE the `exec_scale_in` block on purpose: an older export that had scaling
+    # ON still needs pinning to "Ride", and that is exactly the export this would misread.
+    vals["exec_scale_tp_mode"] = "Ride"
+    stp = get("cfg_scale_tp")
+    if stp is not None:
+        vals["exec_scale_tp_mode"] = _SCALE_TP.get(int(round(stp)), "Ride")
 
     tsh = get("cfg_time_stop_hrs")
     if tsh is not None and float(tsh) > 0:

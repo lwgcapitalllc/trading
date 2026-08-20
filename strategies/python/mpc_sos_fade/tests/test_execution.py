@@ -1200,3 +1200,156 @@ def test_a_trade_that_never_added_carries_an_empty_add_ledger():
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
     ex.step(_sig(2, 100.5, 101.0, 99.5, 99.8), _seq_flat())
     assert ex.trades[0].adds == []
+
+
+# ── scale-in TAKE PROFIT (`exec_scale_tp_mode`, 2026-08-19) ──────────────────────────────
+# Fixture shape shared by all of these, and it is the one the add tests above establish:
+#   bar 0 places, bar 1 fills the base @103.82, bar 2 clears TP1 (105) and TP2 (106.18) so the
+#   trade reaches stage 2 and PLACES an add sized off that bar's close, bar 3 opens at 106.5
+#   and the market add FILLS there. So from bar 4 on, `_add_last_px` is 106.5 and the only base
+#   bracket left is the runner, stopped at the TP1-price floor of 105.
+#
+# 🔴 THE TARGET IS RESTED AT A BAR'S CLOSE AND TRADES ON THE NEXT BAR, so every test here
+# needs TWO bars: one where the level is visible (the order goes on), one where price reaches
+# it (the order fills). Reading it from the live bar instead is the bug these were rewritten
+# for — see `test_a_target_swept_by_the_filling_bar_still_fills`.
+
+def _scaled_to_bar3(**cfgkw):
+    """Drive a long to 'one add filled at 106.5, runner still open'. Returns (ex, base_qty)."""
+    cfg = _cfg(exec_scale_in=True, exec_scale_mode="Trail", exec_scale_max_adds=1, **cfgkw)
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    base_qty = ex._qty
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert len(ex._adds) == 1 and abs(ex._add_last_px - 106.5) < 1e-9, "fixture did not add"
+    return ex, base_qty
+
+
+def _atp(ex):
+    return [g for g in ex._legs if g["reason"].endswith("-ATP")]
+
+
+def test_ride_never_banks_the_adds_however_far_price_runs():
+    """The control. On "Ride" the adds have no target, so bars straight through a weekly high
+    must leave them open — the behaviour every measurement before 2026-08-19 was taken on, and
+    the one `exec_scale_in`'s stored runs have to keep reproducing."""
+    ex, _ = _scaled_to_bar3(exec_scale_tp_mode="Ride")
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.8, liq_w_high=107.0), _seq_flat())
+    ex.step(_sig(5, 106.8, 107.5, 106.6, 107.2, liq_w_high=107.0), _seq_flat())
+    assert ex._pos_dir != 0, "the base should still be open — nothing here closes it"
+    assert ex._adds[0][1] > 0, "the add banked with the target switched off"
+    assert not _atp(ex)
+
+
+def test_a_standing_weekly_level_beyond_the_newest_add_banks_the_lots():
+    """The feature. The level is visible at bar 4's close (so the order rests), and bar 5
+    reaches it — so the added lot banks there, and ONLY the added lot."""
+    ex, base_qty = _scaled_to_bar3(exec_scale_tp_mode="Prev week H/L")
+    filled_before, qty_before = ex._filled_qty, ex._qty
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.8, liq_w_high=107.0), _seq_flat())
+    assert not _atp(ex), "banked on the bar the level appeared — the order was never rested"
+    ex.step(_sig(5, 106.8, 107.5, 106.6, 107.2, liq_w_high=107.0), _seq_flat())
+    atp = _atp(ex)
+    assert len(atp) == 1, "the add did not bank at the weekly high"
+    assert abs(atp[0]["price"] - 107.0) < 1e-9, "banked somewhere other than the level"
+    assert ex._adds[0][1] == 0.0, "the lot is still open after banking"
+    # 🔴 the BASE position is untouched — it is not one lot closer to finished
+    assert ex._pos_dir != 0 and ex._qty == qty_before and ex._filled_qty == filled_before
+
+
+def test_a_target_swept_by_the_filling_bar_still_fills():
+    """🔴 THE REGRESSION THIS WHOLE REWRITE EXISTS FOR.
+
+    A daily or H4 level is swept by a WICK, and the engine steps before the strategy sees the
+    bar — so on the exact bar price reaches the level, `signals.py` has already dropped it as
+    mitigated and reports None. Resolving the target from the LIVE bar therefore made the
+    target vanish precisely when it would have filled: `Prev day H/L` resolved 1,804 targets
+    across 8 years and filled ZERO, reproducing `Ride` byte-for-byte. Weekly hid it, because a
+    weekly level needs a CLOSE through and survives the spike that takes it.
+
+    Here bar 5 reports the level as GONE (swept) while trading through it. The order was rested
+    at bar 4's close, so it must still fill."""
+    ex, _ = _scaled_to_bar3(exec_scale_tp_mode="Prev day H/L")
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.8, liq_d_high=107.0), _seq_flat())
+    ex.step(_sig(5, 106.8, 107.5, 106.6, 107.2, liq_d_high=None), _seq_flat())
+    assert len(_atp(ex)) == 1, "the resting target vanished with the level that placed it"
+    assert ex._adds[0][1] == 0.0
+
+
+def test_a_level_that_does_not_clear_the_newest_add_is_not_a_target():
+    """Banking has to be profitable on every lot it closes. A weekly high BELOW the price the
+    add was bought at would close that lot at a loss, so it is never rested as a target even
+    though price trades through it repeatedly."""
+    ex, _ = _scaled_to_bar3(exec_scale_tp_mode="Prev week H/L")
+    # 106.0 is under the add's 106.5 entry; both bars trade right through it.
+    ex.step(_sig(4, 106.5, 106.9, 105.8, 106.4, liq_w_high=106.0), _seq_flat())
+    ex.step(_sig(5, 106.4, 106.9, 105.8, 106.4, liq_w_high=106.0), _seq_flat())
+    assert ex._adds[0][1] > 0, "banked at a level below the add's own entry"
+    assert not _atp(ex)
+
+
+def test_no_standing_level_leaves_the_adds_riding():
+    """`signals.py` reports only UNMITIGATED levels, so a swept weekly high arrives here as
+    None — and with none ever rested, None must ride: not crash, and not bank at some other
+    price. This is also the state of every run before its first week has completed."""
+    ex, _ = _scaled_to_bar3(exec_scale_tp_mode="Prev week H/L")
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.8, liq_w_high=None), _seq_flat())
+    ex.step(_sig(5, 106.8, 107.5, 106.6, 107.2, liq_w_high=None), _seq_flat())
+    assert ex._adds[0][1] > 0
+    assert not _atp(ex)
+
+
+def test_banking_an_add_does_not_hand_the_slot_back():
+    """🔴 The other regression worth pinning. The ladder is capped on how many adds were
+    BOUGHT (Pine's `lAddN` only counts up), so a banked add must not free its slot. If it did,
+    a trade would add again after banking — 'scale in and out repeatedly', which is a different
+    strategy from the one Run 22 measured and one nothing here has tested."""
+    ex, _ = _scaled_to_bar3(exec_scale_tp_mode="Prev week H/L")
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.8, liq_w_high=107.0), _seq_flat())
+    ex.step(_sig(5, 106.8, 107.5, 106.6, 107.2, liq_w_high=107.0), _seq_flat())
+    assert ex._adds[0][1] == 0.0, "fixture failed — the add did not bank"
+    # Bars that ratchet the trail further would otherwise be fresh add opportunities.
+    ex.step(_sig(6, 107.2, 108.5, 107.0, 108.4), _seq_flat())
+    ex.step(_sig(7, 108.4, 109.5, 108.2, 109.4), _seq_flat())
+    assert len(ex._adds) == 1, "banking freed the slot and the trade added again"
+    assert ex._add_pending is None, "a second add was even PLACED after banking"
+
+
+# ── the adds must not be SLICED by a TP rung (2026-08-19) ────────────────────────────────
+# Pine's `L-TP1`/`L-TP2` are `from_entry = "Long"`, so a rung can only ever close the BASE
+# entry; each add carries its own `L-AX1..4` exit at the same stop and dies with it. Python
+# closed the adds PRO-RATA with the base instead, then `_finalise_trade` wiped `_adds` and the
+# unclosed remainder vanished with its P&L never booked.
+#
+# 🔴 WATCHED RED 2026-08-19 against the pro-rata code: 121.4 != 100.4 (the dropped half of the
+# add lot), and the second assert failed on r too. It CANNOT go red at the shipped
+# `exec_tp1_pct = 0` — the runner closes 100% of the base, so the fraction was always 1.0 and
+# the divergence lived only on the settings nobody had run. That is the whole reason it
+# survived a green parity gate (rule 14).
+
+def test_a_tp_rung_does_not_slice_the_adds():
+    """Banking the base at 105 and stopping the rest at 105 is the same thing as stopping all
+    of it at 105 — so `exec_tp1_pct` 0 and 50 must produce an IDENTICAL trade.
+
+    No hand-computed constant: the two runs ARE each other's expected value. The only thing
+    that can separate them is the base being sliced, which is exactly the defect.
+    """
+    def run(tp1_pct):
+        ex, _ = _scaled_to_bar3(exec_tp1_pct=tp1_pct)
+        add_px, add_qty = ex._adds[0]
+        # Bar 4 takes out the stage-2 stop floor, which is the TP1 PRICE — 105, the level
+        # TP1 already banked at. Base and add both leave here.
+        ex.step(_sig(4, 106.0, 106.2, 104.0, 104.5), _seq_flat())
+        assert ex._pos_dir == 0, "fixture failed — the trade did not close"
+        return ex.trades[0], add_px, add_qty
+
+    ride, add_px, add_qty = run(0)
+    sliced, add_px2, add_qty2 = run(50)
+
+    assert (add_px, add_qty) == (add_px2, add_qty2), "the two runs did not buy the same add"
+    assert abs(sliced.pnl_usd - ride.pnl_usd) < 1e-6, (
+        f"a TP rung changed the trade's P&L: {sliced.pnl_usd} vs {ride.pnl_usd} — "
+        f"the add lot ({add_qty} @ {add_px}) was closed pro-rata and the rest discarded")
+    assert abs(sliced.r - ride.r) < 1e-9, f"...and its R: {sliced.r} vs {ride.r}"

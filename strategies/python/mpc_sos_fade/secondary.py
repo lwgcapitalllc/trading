@@ -129,6 +129,11 @@ class SecondaryArm:
     **Two eligibility rules beyond the zone (Aaron's spec):**
       - The PRIMARY must have reached breakeven — hit at least TP1 (`be_sos == *_sos_bar`). A
         primary that opened and got stopped at its initial stop leaves NO re-entry on that leg.
+        ⚠ Since 2026-08-19 this is the DEFAULT of `exec_sec_require` rather than the only rule —
+        "Any close", "Stopped only" and "None" are the looser doors, and the swept-stop case
+        (in at 0.618, stopped at 0.886, price reclaims and runs) is what "Stopped only" names.
+        The zone edges are likewise `exec_sec_zone_shallow` / `exec_sec_zone_deep` now. Every
+        default reproduces the shipped book exactly; see `_primary_gate` and `_zone_edges`.
       - The cascade continues across winners/scratches (re-enter on each fresh 1m shift while the
         setup lives), but a re-entry that hits its own initial stop KILLS the leg (`mark_dead`):
         no more re-entries until a new break of structure resets it.
@@ -160,13 +165,15 @@ class SecondaryArm:
         self._l_lo: Optional[float] = None
         self._l_traded: Optional[int] = None
         self._l_dead: Optional[int] = None      # 15m leg killed by a stopped re-entry (no more)
-        self._l_used: Optional[int] = None      # 15m leg that has had its one re-entry (the cap)
+        self._l_used: Optional[int] = None      # 15m leg the cap is counting re-entries on
+        self._l_used_n: int = 0                 # how many it has had (`exec_sec_max_per_setup`)
         self._s_leg: Optional[int] = None
         self._s_hi: Optional[float] = None
         self._s_lo: Optional[float] = None
         self._s_traded: Optional[int] = None
         self._s_dead: Optional[int] = None
         self._s_used: Optional[int] = None
+        self._s_used_n: int = 0
         # The 15m SOS bar each side is currently arming against, captured in `update()` because
         # `mark_traded` is called by the driver without `seq` in hand.
         self._l_sos: Optional[int] = None
@@ -174,7 +181,9 @@ class SecondaryArm:
 
     def update(self, m1: M1State, sig, seq, zone_close: float, ny_hour: int,
                flat: bool, be_sos_l: Optional[int],
-               be_sos_s: Optional[int]) -> SecArm:
+               be_sos_s: Optional[int],
+               closed_sos_l: Optional[int] = None, closed_sos_s: Optional[int] = None,
+               lost_sos_l: Optional[int] = None, lost_sos_s: Optional[int] = None) -> SecArm:
         cfg = self._cfg
 
         # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
@@ -188,19 +197,26 @@ class SecondaryArm:
             self._l_leg = self._l_hi = self._l_lo = None
             self._l_dead = None
             self._l_used = None
+            self._l_used_n = 0
         if seq.s_sos_bar is None:
             self._s_leg = self._s_hi = self._s_lo = None
             self._s_dead = None
             self._s_used = None
+            self._s_used_n = 0
 
         # 2. Zone (0.886..0.618 of the 15m fib) — a 15m gate: Pine reads the last-closed 15m bar
         #    `close`, so `zone_close` is that bar's close (NOT the live 1m close, which the 1m SOS
         #    has usually left by the time it confirms). See the class docstring.
         p3, p6 = sig.fibo_p3, sig.fibo_p6
-        zone_l = (sig.fibo_dir == 1 and p3 is not None and p6 is not None
-                  and zone_close <= p3 and zone_close >= p6)
-        zone_s = (sig.fibo_dir == -1 and p3 is not None and p6 is not None
-                  and zone_close >= p3 and zone_close <= p6)
+        # The zone EDGES (`exec_sec_zone_shallow` / `exec_sec_zone_deep`). At the shipped
+        # 0.618/0.886 these read `fibo_p3` / `fibo_p6` themselves rather than recomputing them
+        # from the leg, so the default path cannot move by a floating-point rounding step — the
+        # thing that would make a control run disagree with every stored figure for no reason.
+        z_lo, z_hi = self._zone_edges(sig)
+        zone_l = (sig.fibo_dir == 1 and z_lo is not None and z_hi is not None
+                  and zone_close <= z_lo and zone_close >= z_hi)
+        zone_s = (sig.fibo_dir == -1 and z_lo is not None and z_hi is not None
+                  and zone_close >= z_lo and zone_close <= z_hi)
 
         # 3. Latch a fresh 1m leg on a new same-side 1m SOS while the 15m setup + div are live.
         if (cfg.exec_secondary and m1.new_bull_sos and seq.l_sos_bar is not None
@@ -225,18 +241,30 @@ class SecondaryArm:
         long_veto, short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
         # The one-per-setup cap. Inert when off, so the OFF path is the original rule exactly.
         cap = cfg.exec_sec_once_per_setup
-        l_capped = cap and self._l_used is not None and seq.l_sos_bar == self._l_used
-        s_capped = cap and self._s_used is not None and seq.s_sos_bar == self._s_used
+        # How many re-entries one setup may have (`exec_sec_max_per_setup`, default 1 = the
+        # shipped cap). The dead-leg rule below is unaffected and is NOT a count: a re-entry that
+        # stops out ends the leg whatever this is, so a deeper cascade runs through SCRATCHES only.
+        depth = getattr(cfg, "exec_sec_max_per_setup", 1)
+        l_capped = (cap and self._l_used is not None and seq.l_sos_bar == self._l_used
+                    and self._l_used_n >= depth)
+        s_capped = (cap and self._s_used is not None and seq.s_sos_bar == self._s_used
+                    and self._s_used_n >= depth)
 
-        l_armed = (cfg.exec_secondary and cfg.exec_longs and flat
-                   and seq.l_sos_bar is not None and be_sos_l == seq.l_sos_bar
+        gate_l = self._primary_gate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l)
+        gate_s = self._primary_gate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s)
+        # The 1m engine's own DIRECTION, optionally required to agree (`exec_sec_req_m1_dir`).
+        # OFF by default = the shipped rule, which reads the 1m SOS events and ignores direction.
+        m1_ok_l = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == 1
+        m1_ok_s = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == -1
+        l_armed = (cfg.exec_secondary and cfg.exec_longs and flat and m1_ok_l
+                   and seq.l_sos_bar is not None and gate_l
                    and seq.l_sos_bar != self._l_dead and not l_capped
                    and sig.bull_div_active and sig.fibo_dir == 1 and fibs_ready
                    and self._l_hi is not None and self._l_lo is not None and self._l_hi > self._l_lo
                    and (self._l_traded is None or self._l_leg != self._l_traded)
                    and not late and (not long_veto or not respect_veto))
-        s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat
-                   and seq.s_sos_bar is not None and be_sos_s == seq.s_sos_bar
+        s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat and m1_ok_s
+                   and seq.s_sos_bar is not None and gate_s
                    and seq.s_sos_bar != self._s_dead and not s_capped
                    and sig.bear_div_active and sig.fibo_dir == -1 and fibs_ready
                    and self._s_hi is not None and self._s_lo is not None and self._s_hi > self._s_lo
@@ -259,6 +287,53 @@ class SecondaryArm:
             s_tp1=sig.fibo_p2, s_tp2=sig.fibo_p1, s_leg=self._s_leg,
         )
 
+    def _zone_edges(self, sig):
+        """(shallow, deep) prices of the 15m retrace zone the re-entry may arm in.
+
+        Returns `fibo_p3` / `fibo_p6` UNCHANGED at the shipped 0.618 / 0.886 — the levels the
+        signal already publishes — and only computes off the leg for any other ratio. Two ways of
+        producing the same number would otherwise differ in the last bits and make a control run
+        disagree with itself. The leg is `fibo_p7` (0.0, the extreme) → `fibo_p10` (1.0, origin),
+        which is the same anchor pair every other ratio here is priced from.
+        """
+        cfg = self._cfg
+        shallow = getattr(cfg, "exec_sec_zone_shallow", 0.618)
+        deep = getattr(cfg, "exec_sec_zone_deep", 0.886)
+        lo = sig.fibo_p3 if shallow == 0.618 else self._lvl(sig, shallow)
+        hi = sig.fibo_p6 if deep == 0.886 else self._lvl(sig, deep)
+        return lo, hi
+
+    @staticmethod
+    def _lvl(sig, ratio: float):
+        p7, p10 = sig.fibo_p7, sig.fibo_p10
+        if p7 is None or p10 is None:
+            return None
+        return p7 + (p10 - p7) * ratio
+
+    def _primary_gate(self, sos, be_sos, closed_sos, lost_sos) -> bool:
+        """What the PRIMARY on this 15m leg must have done — `exec_sec_require`.
+
+        "Breakeven" is the shipped rule and is byte-identical to the `be_sos == sos` test it
+        replaced. The other three are looser doors onto the same latch machinery: the dead-leg
+        rule and `exec_sec_once_per_setup` still bound every one of them.
+
+        ⚠ An unknown value REFUSES rather than falling through to the loosest reading. A typo
+        that quietly armed on every live setup would be indistinguishable, on the page, from the
+        strategy having found a lot of re-entries.
+        """
+        mode = getattr(self._cfg, "exec_sec_require", "Breakeven")
+        if mode == "Breakeven":
+            return be_sos == sos
+        if mode == "Any close":
+            return closed_sos == sos
+        if mode == "Stopped only":
+            return lost_sos == sos
+        if mode == "None":
+            return True
+        raise ValueError(
+            f"exec_sec_require must be one of ['Any close', 'Breakeven', 'None', "
+            f"'Stopped only'], got {mode!r}")
+
     def mark_traded(self, direction: int) -> None:
         """Retire the just-filled 1m leg (Pine `sec.lTraded := sec.lPend`) so it re-enters once.
 
@@ -267,9 +342,11 @@ class SecondaryArm:
         half-filled latch, and the OFF path simply never looks at it."""
         if direction > 0:
             self._l_traded = self._l_leg
+            self._l_used_n = (self._l_used_n + 1) if self._l_used == self._l_sos else 1
             self._l_used = self._l_sos
         else:
             self._s_traded = self._s_leg
+            self._s_used_n = (self._s_used_n + 1) if self._s_used == self._s_sos else 1
             self._s_used = self._s_sos
 
     def mark_dead(self, direction: int, seq) -> None:

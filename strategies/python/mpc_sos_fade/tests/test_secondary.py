@@ -10,6 +10,8 @@ to "never latched".
 
 import dataclasses
 import sys
+
+import pytest
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[4]        # repo root (…/trading)
@@ -446,3 +448,207 @@ def test_an_unknowable_floor_refuses_the_secondary_exactly_as_it_refuses_the_pri
     assert execu._min_stop_floor(102.618) is None
     assert execu._secondary_pending(_TIGHT_LONG) is None
     assert execu._secondary_pending(_TIGHT_SHORT) is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# The LOOSENED gates — `exec_sec_require` / `exec_sec_zone_deep` / `exec_sec_zone_shallow`
+# (2026-08-19). Aaron's case: in at 0.618, the stop at 0.886 gets swept, price reclaims and runs
+# the setup without you. The shipped rule refuses that leg forever, because the primary never
+# reached TP1. These pin the four doors and, first, that the DEFAULTS did not move.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_the_default_gate_is_the_breakeven_rule_and_ignores_the_new_latches():
+    """Watched RED by mutating `_primary_gate`'s "Breakeven" branch to `return True` — the
+    second half then arms. The new latches must not leak into the shipped path: a leg whose
+    primary closed (or was stopped) but never reached TP1 still arms NOTHING at the default."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    yes = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                        ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None,
+                        closed_sos_l=500, lost_sos_l=500)
+    assert yes.l_armed is True
+
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    no = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                       ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
+                       closed_sos_l=500, lost_sos_l=500)
+    assert no.l_armed is False
+
+
+def test_stopped_only_arms_the_leg_the_breakeven_rule_throws_away():
+    """The swept-stop case. Same bar, same setup: "Stopped only" arms it, "Breakeven" does not."""
+    m1, kw = _m1_bull_sos(103.0, 102.0), dict(
+        zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
+        closed_sos_l=500, lost_sos_l=500)
+    loose = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Stopped only"))
+    assert loose.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is True
+    shipped = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    assert shipped.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is False
+
+
+def test_stopped_only_refuses_a_leg_whose_primary_WON():
+    """"Stopped only" is not "Any close" — a primary that reached TP1 sets `be_sos`, never
+    `lost_sos`, so that leg is out of scope for this mode."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Stopped only"))
+    out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                        ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None,
+                        closed_sos_l=500, lost_sos_l=None)
+    assert out.l_armed is False
+
+
+def test_any_close_takes_both_outcomes_and_none_needs_no_primary_at_all():
+    kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None)
+    m1 = _m1_bull_sos(103.0, 102.0)
+    won = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Any close"))
+    assert won.update(m1, _SIG_LONG, _SEQ_LONG, closed_sos_l=500, lost_sos_l=None, **kw).l_armed
+    lost = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Any close"))
+    assert lost.update(m1, _SIG_LONG, _SEQ_LONG, closed_sos_l=500, lost_sos_l=500, **kw).l_armed
+    # ...and "None" arms with no primary record on the leg whatsoever
+    bare = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="None"))
+    assert bare.update(m1, _SIG_LONG, _SEQ_LONG, closed_sos_l=None, lost_sos_l=None, **kw).l_armed
+
+
+def test_an_unknown_require_mode_REFUSES_rather_than_arming_on_everything():
+    """A typo must not read as the loosest door. `None` (the string) is a real mode here, so a
+    misspelling has a plausible-looking inert reading available — and taking it would put a
+    re-entry on every live setup while the page still said "Breakeven"."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="breakeven"))
+    with pytest.raises(ValueError, match="exec_sec_require"):
+        arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                      ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+
+
+def test_the_default_zone_edges_are_the_PUBLISHED_fib_levels_not_a_recomputation():
+    """Identity, not near-equality. The signal already publishes 0.618 and 0.886, and computing
+    them a second time off the leg would differ in the last bits — which is how a control run
+    stops reproducing a stored book for no reason anybody can find."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    lo, hi = arm_sm._zone_edges(_SIG_LONG)
+    assert lo is _SIG_LONG.fibo_p3 and hi is _SIG_LONG.fibo_p6
+
+
+def test_the_deep_edge_at_1_0_arms_where_price_closed_past_the_entry_band():
+    """A 15m close of 100.5 is BEYOND 0.886 (101.14) — outside the shipped zone, inside a zone
+    whose deep edge is the leg origin (100.0). That close is what a swept stop looks like."""
+    m1, kw = _m1_bull_sos(103.0, 102.0), dict(
+        zone_close=100.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    shipped = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    assert shipped.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is False
+    deep = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_zone_deep=1.0))
+    assert deep.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# Cascade DEPTH (`exec_sec_max_per_setup`) and the secondary-only EXIT overrides
+# (`exec_sec_be_at`, `exec_sec_tp1_pct`, `exec_sec_req_m1_dir`), 2026-08-19. Aaron: "what if this
+# secondary re-entry also gets scratched — up to what number should we allow before settling into
+# losses, and what tells us to stop taking them?"
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def _rearm(arm_sm, leg_bar, seq=None):
+    """Fire a fresh 1m leg on the same 15m setup and return whether it armed."""
+    m1 = M1State(bull_sos_bar=leg_bar, bear_sos_bar=None, bull_leg_hi=103.0, bull_leg_lo=102.0,
+                 bear_leg_hi=None, bear_leg_lo=None, direction=1,
+                 new_bull_sos=True, new_bear_sos=False)
+    seq = seq or _SEQ_LONG
+    return arm_sm.update(m1, _SIG_LONG, seq, zone_close=102.5, ny_hour=10,
+                         flat=True, be_sos_l=seq.l_sos_bar, be_sos_s=None)
+
+
+def test_the_depth_default_is_one_and_is_the_shipped_cap():
+    """Watched RED with `depth` forced to 2 — the second leg then arms."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    assert _rearm(arm_sm, 1000).l_armed is True
+    arm_sm.mark_traded(1)
+    assert _rearm(arm_sm, 1001).l_armed is False
+
+
+def test_a_depth_of_three_allows_exactly_three_reentries_on_one_setup():
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=3))
+    for i, leg in enumerate((1000, 1001, 1002), start=1):
+        assert _rearm(arm_sm, leg).l_armed is True, f"re-entry {i} should arm"
+        arm_sm.mark_traded(1)
+    assert _rearm(arm_sm, 1003).l_armed is False       # the fourth is capped
+
+
+def test_the_depth_counter_is_per_SETUP_and_resets_on_a_new_break_of_structure():
+    """A deeper cap must not become a lifetime budget — a new 15m SOS bar starts a fresh count.
+
+    ⚠ The SECOND setup has to spend its FULL allowance for this to be worth anything. Checking
+    only that the new setup's first re-entry arms passes against a counter that never resets,
+    because the SOS-bar comparison alone already re-opens the door — that version of this test
+    survived the mutation that removed the reset entirely.
+    """
+    seq_new = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=2))
+    for leg in (1000, 1001):                       # setup 500 spends both of its re-entries
+        assert _rearm(arm_sm, leg).l_armed is True
+        arm_sm.mark_traded(1)
+    assert _rearm(arm_sm, 1002).l_armed is False
+
+    for leg in (1003, 1004):                       # setup 600 must get TWO of its own
+        assert _rearm(arm_sm, leg, seq_new).l_armed is True, f"leg {leg} on the new setup"
+        arm_sm.mark_traded(1)
+    assert _rearm(arm_sm, 1005, seq_new).l_armed is False
+
+
+def test_a_stopped_reentry_still_kills_the_leg_however_deep_the_cap_is():
+    """The depth counts SCRATCHES, never losses — the dead-leg rule sits underneath it."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=5))
+    assert _rearm(arm_sm, 1000).l_armed is True
+    arm_sm.mark_traded(1)
+    arm_sm.mark_dead(1, _SEQ_LONG)          # that re-entry hit its own initial stop
+    assert _rearm(arm_sm, 1001).l_armed is False
+
+
+def test_a_depth_below_one_refuses_rather_than_reading_as_unlimited():
+    with pytest.raises(ValueError, match="exec_sec_max_per_setup"):
+        SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=0)
+
+
+def test_the_1m_direction_filter_is_OFF_by_default_and_blocks_when_ON():
+    down = M1State(bull_sos_bar=1000, bear_sos_bar=None, bull_leg_hi=103.0, bull_leg_lo=102.0,
+                   bear_leg_hi=None, bear_leg_lo=None, direction=-1,
+                   new_bull_sos=True, new_bear_sos=False)
+    kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    off = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    assert off.update(down, _SIG_LONG, _SEQ_LONG, **kw).l_armed is True
+    on = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_req_m1_dir=True))
+    assert on.update(down, _SIG_LONG, _SEQ_LONG, **kw).l_armed is False
+
+
+def _open_secondary(**cfg_kw):
+    """A filled LONG secondary that has just touched TP1 (stage 1), so the stop question is live."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_be_buf_tk=30, **cfg_kw)
+    ex = Execution(cfg)
+    ex._entry_kind = "secondary"
+    ex._pos_dir = 1
+    ex._entry = 100.0
+    ex._sl = 99.0
+    ex._stage = 1
+    return ex
+
+
+def test_a_secondary_ratchets_to_breakeven_at_TP1_by_default():
+    assert _open_secondary()._current_stop() == 100.0 + 30 * SosFadeConfig().mintick
+
+
+def test_be_at_TP2_holds_the_secondarys_INITIAL_stop_through_TP1():
+    """The scratch mechanism, pinned: at TP1 the shipped ladder puts the stop $0.30 above entry
+    and price takes it back. "TP2" leaves the initial stop where it was."""
+    assert _open_secondary(exec_sec_be_at="TP2")._current_stop() == 99.0
+
+
+def test_be_at_TP2_does_NOT_touch_a_PRIMARY():
+    """Secondaries only — the primary's ladder is what the Pine parity gate checks."""
+    ex = _open_secondary(exec_sec_be_at="TP2")
+    ex._entry_kind = "primary"
+    assert ex._current_stop() == 100.0 + 30 * SosFadeConfig().mintick
+
+
+def test_the_secondary_banks_its_own_TP1_percentage_and_inherits_at_minus_one():
+    ex = _open_secondary()
+    assert ex._tp1_pct() == SosFadeConfig().exec_tp1_pct      # -1.0 = inherit
+    own = _open_secondary(exec_sec_tp1_pct=50.0)
+    assert own._tp1_pct() == 50.0
+    own._entry_kind = "primary"
+    assert own._tp1_pct() == SosFadeConfig().exec_tp1_pct     # a primary never reads it

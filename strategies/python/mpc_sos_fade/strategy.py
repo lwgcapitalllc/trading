@@ -259,7 +259,11 @@ class MpcSosFadeStrategy:
                     .astimezone(ny).hour
                 arm = arm_sm.update(m1, last_sig, last_seq, last_close15, ny_hour,
                                     self.execution.is_flat, self.execution.be_sos_l,
-                                    self.execution.be_sos_s)
+                                    self.execution.be_sos_s,
+                                    self.execution.prim_closed_sos_l,
+                                    self.execution.prim_closed_sos_s,
+                                    self.execution.prim_lost_sos_l,
+                                    self.execution.prim_lost_sos_s)
                 sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close,
                                   last_sig.last_conf_high, last_sig.last_conf_low)
                 filled = self.execution.step_secondary(sig1m, arm)

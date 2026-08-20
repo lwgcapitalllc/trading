@@ -462,6 +462,21 @@
       ]
     },
     {
+      "name": "exec_scale_tp_mode",
+      "group": "Exit ladder",
+      "label": "Where the adds take profit",
+      "choices": ["Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"],
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade, which is how every run before 2026-08-19 behaved. The other three rest them at the nearest level of that kind price has not already taken, and only when it sits beyond the newest add, so every lot banks in profit. It moves the ADDS only — the base trade's stop and partials are untouched.",
+      "guide": [
+        "Ride — measured best (194.15R); the adds earn on the few trades that run a long way",
+        "Prev week H/L — the default; costs 4.38R, which is inside the strategy's own noise",
+        "Prev day / H4 — measurably worse, and worse the more often the level gets hit"
+      ]
+    },
+    {
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
@@ -529,6 +544,93 @@
         "exec_secondary": true
       },
       "desc": "How deep the 1-minute re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
+    },
+    {
+      "name": "exec_sec_require",
+      "group": "Secondary re-entries (1m)",
+      "label": "Secondary needs the first trade to have…",
+      "choices": ["Breakeven", "Any close", "Stopped only", "None"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "What the first (15-minute) trade on that setup must have done before a 1-minute re-entry is allowed. Breakeven (default) = it reached TP1. Any close = it traded and is now closed, win or lose. Stopped only = it was stopped out without reaching TP1 — the case where your stop gets swept and price then runs without you. None = no first trade required. Lab only."
+    },
+    {
+      "name": "exec_sec_zone_deep",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "Secondary zone — deep edge",
+      "min": 0.5,
+      "max": 1.5,
+      "step": 0.001,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "How deep into the retrace the re-entry may still arm, as a fib ratio. 0.886 (default) is the entry band's own edge. 1.0 is the start of the leg, which lets it arm while price has closed BEYOND the band — the state a swept stop leaves behind. It does not move the re-entry's stop. Lab only."
+    },
+    {
+      "name": "exec_sec_zone_shallow",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "Secondary zone — shallow edge",
+      "min": 0.2,
+      "max": 0.886,
+      "step": 0.001,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "The shallow end of that same zone, as a fib ratio. 0.618 (default) is the entry band's edge. A smaller number lets the re-entry arm after price has already reclaimed part of the move — more chances, at a worse price relative to the targets. Lab only."
+    },
+    {
+      "name": "exec_sec_max_per_setup",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "   \u21b3 How many re-entries per setup",
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "show_if": {
+        "exec_secondary": true,
+        "exec_sec_once_per_setup": true
+      },
+      "desc": "Read only when One re-entry per primary is ON. How many times one setup may be re-entered before it is done. A re-entry that is STOPPED OUT still ends the setup whatever this says, so raising it only lets a setup be re-tried after a scratch. MEASURED over 6.6 years: 2, 3, 5 and unlimited all produce the same book \u2014 only one setup ever offered a second re-entry, and it lost. Lab only."
+    },
+    {
+      "name": "exec_sec_req_m1_dir",
+      "group": "Secondary re-entries (1m)",
+      "widget": "toggle",
+      "label": "1-minute trend must agree",
+      "options": {
+        "off": "Off",
+        "on": "Require"
+      },
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "On = a re-entry only arms while the 1-minute structure is already pointing the trade's way. This is the \"has structure shifted against me\" test on the lower timeframe. MEASURED: it drops 2 of 7 re-entries and does not filter the one full loss. Lab only."
+    },
+    {
+      "name": "exec_sec_be_at",
+      "group": "Secondary re-entries (1m)",
+      "label": "Re-entry moves to breakeven at",
+      "choices": ["TP1", "TP2"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "When a re-entry's stop jumps to breakeven. TP1 (default) is the same rule the first trade uses. TP2 holds the original stop for longer, giving the trade room to breathe. MEASURED: TP2 is WORSE \u2014 the three trades it saved from a breakeven scratch each became a full loss instead. Lab only."
+    },
+    {
+      "name": "exec_sec_tp1_pct",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "Re-entry banks this % at TP1",
+      "min": -1,
+      "max": 100,
+      "step": 1,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "How much of a re-entry is banked at the first target, separately from the first trade. -1 (default) means use the same setting as everything else. MEASURED: banking 25-75% turns the small re-entries from breakeven scratches into small wins, and cuts the one big winner by the same proportion. Lab only."
     },
     {
       "name": "show_div",

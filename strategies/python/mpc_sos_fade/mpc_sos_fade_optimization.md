@@ -38,6 +38,7 @@ Standing rules for anything recorded here:
 | 19 | 2026-08-16 | 🟢 **SCALE-IN** — add size to a runner the trail already protects, sized so an add's worst case equals the profit the stop guarantees. 2 stages (shadow ledger to search, real implementation to verify), XAUUSD 15m 2018-09-13 → 2026-08-14, **PU Prime ECN costs charged** | **+128.26R → +211.59R (+65%) at 2 adds / cap 1.0x**, ret/DD 21.27 → 24.26, **worst trade unchanged at −2.06R** and losers 65 → 67. Dropping the affordability test costs 8–13 extra losers, which is what the rule buys. **The trigger is arithmetic only — no structure, no retest; location has never been varied.** | **BUILT, toggle ships OFF — no parity gate has run** |
 | 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | 🔴 **VOID — broken fill model, superseded by Run 21** |
 | 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
+| 22 | 2026-08-19 | 🔴 **WHERE THE SCALE-IN ADDS TAKE PROFIT** — the adds had no exit of their own, so this asked whether banking them beats riding. Two independent target families: a flat multiple of base risk (1R…8R, the control) and real structure (prev day/week H/L, H4, session H/L, and combinations). 16 configurations, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5x | **EVERY TARGET LOSES TO RIDING**, and they lose in order of how OFTEN the target fires — Ride 194.15R (0 banks), prev week 168.51R (16), prev day 157.57R (25), H4 146.09R (47). The flat-risk control produced the same monotonic curve independently, and banking at 1R (126.76R) came out **below never scaling at all**. 🔴 **The first structural table was VOID and these are RE-MEASURED** — the harness resolved its target from the LIVE bar, so `Prev day`/`H4` banked ZERO times in 8 years while resolving 1,804 and 2,438 valid targets; day/H4 levels die on a WICK and the engine steps first, so the level was gone on the exact bar it would have filled. **Weekly dies on a CLOSE through and was immune, hiding it on the only mode being watched.** ⚠ Worst trade is −2.06R in every configuration — the affordability rule already prevents the giveback a target was asked for. ⚠ **Strip the top 20 trades and banking WINS on risk-adjusted return** (prev day 14.49, H4 14.60 vs Ride 11.99): it smooths the ordinary book and pays for it out of the tail. | **`exec_scale_tp_mode` SHIPPED defaulting to `"Prev week H/L"` — Aaron's call, AGAINST the measurement.** 🔴 **DEFAULT UNDER REVIEW** — he chose it on a 4.38R gap said to be inside the 15.06R jitter; the true gap is **25.64R, outside it**. 🔴 **NOT PARITY-GATED YET** |
 
 ⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
 Count the runs with `grep -c '^# Run ' `, never off this table.
@@ -3020,6 +3021,40 @@ at 9.10 above cap 3.0) — **which is exactly where the backtest is blind, so it
 cap it likes**: the affordability rule guarantees only down to the STOP, and a gap straight through
 it loses on the whole stacked position, ~33x base size at 4 adds × 8x.
 
+## 🔴 The bug that made two modes inert, and why the numbers above had to be taken twice
+
+The first build resolved the adds' target from the **live** bar. Verified against it, `"Prev day
+H/L"` and `"H4 H/L"` returned **194.15R — byte-identical to `Ride`**, meaning they banked **zero
+times in eight years**.
+
+The obvious theory (the levels are never there) was wrong, and counting said so: daily **resolved
+1,804** valid targets and banked 0; H4 **resolved 2,438** and banked 0; weekly resolved 2,390 and
+banked 11. The targets existed, stood unmitigated, and sat beyond the newest add. They just never
+filled.
+
+**The cause is an interaction between two correct components.** A daily or H4 level is mitigated by
+a **WICK** (`SWEEP_HIGH` / `SWEEP_LOW`), and `stack.step(bar)` runs **before** the strategy sees the
+bar. So on the exact bar price reached the level, the engine had already flagged it mitigated and
+the target evaluated to `None`. **The order disappeared precisely on the bar that would have filled
+it** — every time, for eight years.
+
+🔴 **WEEKLY WAS IMMUNE, AND THAT IS THE PART WORTH KEEPING.** A week level is mitigated by a
+**CLOSE** through (`BREAK_HIGH` / `BREAK_LOW`), so it survives the spike that fills it and banked
+normally. The default mode — the only one anybody was looking at — was the one mode the defect could
+not touch. **A feature verified on the option you are watching says nothing about the options you
+are not**, and here it produced two shipped-looking modes that did nothing at all.
+
+**The fix is not new machinery.** The target is now latched at the bar's close (`_add_tp_level`) and
+filled against on the next bar — the same one-bar order delay the base ladder already honoured, and
+what Pine does for free with `strategy.exit(..., limit=)`. The adds were the single path that
+skipped it. `test_a_target_swept_by_the_filling_bar_still_fills` pins it, and reverting the fix
+reddens that test and nothing else.
+
+⚠ **Every structural figure in the first table was taken through a throwaway harness carrying the
+same flaw**, so all of them were void — including the weekly row that agreed with the fixed code by
+coincidence. ⚠ **The flat-risk control was NOT affected**: its target is a fixed price off the base
+entry, with no level and nothing to mitigate.
+
 ## Shipped
 
 `exec_scale_mode = "BOS retest"`, `exec_scale_max_adds = 4`, `exec_scale_cap_x = 2.0`.
@@ -3224,3 +3259,332 @@ being a reversal bought at a discount after a sweep and a structure shift — an
 behind it. **Banking adds at a target, structural or otherwise, has never been tested.** The
 liquidity engine already emits previous day/week levels and session highs and lows; the strategy's
 execution layer reads none of it.
+
+---
+
+# Run 22 — 2026-08-19 — **THE ADDS HAD NO TAKE PROFIT. EVERY TARGET THAT GIVES THEM ONE LOSES TO RIDING.**
+
+## The question, and why it was a fair one to ask
+
+Scale-in lots had **no exit of their own**. They closed pro-rata whenever the base ladder banked a
+rung, and otherwise rode the base trade's trailing stop. Aaron's objection: an add is bought late
+and high, with almost none of the base entry's cushion, so a pullback should hand back what it just
+made — and the natural fix is to bank it at a level that means something (previous day/week high or
+low, H4, session extremes).
+
+## Two independent target families, because one would not have settled it
+
+**The control — bank at a flat multiple of the base 1R distance.** Deliberately not structural. If
+riding beats a plain target at every distance, structure is unlikely to rescue it.
+
+| bank the adds at | total | maxDD | ret/DD |
+|---|---|---|---|
+| no scaling at all | 128.26R | 6.03 | 21.27 |
+| **ride — no target (shipped before today)** | **194.15R** | 7.24 | **26.81** |
+| 1.0R | 126.76R | 6.00 | 21.14 |
+| 2.0R | 130.84R | 6.48 | 20.19 |
+| 3.0R | 134.19R | 7.15 | 18.77 |
+| 4.0R | 136.00R | 7.15 | 19.03 |
+| 6.0R | 141.24R | 7.24 | 19.50 |
+| 8.0R | 135.82R | 7.24 | 18.75 |
+
+🔴 **Banking at 1R is WORSE THAN NEVER SCALING AT ALL** — all the machinery, and it finishes behind
+where it started. And the curve climbs monotonically toward the ride as the target moves further
+away, which is the shape you get when the right answer is "no target".
+
+**The structural test — the levels Aaron actually named.** Every level comes from
+`engines/liquidity`, which builds each from a PREVIOUS completed period and never forecasts the
+current day's or week's extreme. That is what makes any of this tradeable live.
+
+🔴 **THE FIRST STRUCTURAL TABLE WAS WRONG AND IS VOID. These are the RE-MEASURED numbers**, taken
+on the shipped code after the resting-order fix (see *The bug that made two modes inert*, below).
+The harness that produced the first set resolved its target from the LIVE bar, so it described a
+rule neither implementation uses — including the weekly row that happened to look right.
+
+| bank the adds at | total | maxDD | ret/DD | banks | worst | excl. top 20 | its dd | ret/dd |
+|---|---|---|---|---|---|---|---|---|
+| scale-in OFF | 128.26R | 6.03 | 21.27 | — | −2.06 | 92.51R | 6.03 | 15.34 |
+| **ride — no target** | **194.15R** | 7.24 | **26.81** | 0 | −2.06 | 124.05R | 10.34 | 11.99 |
+| prev week H/L | 168.51R | 7.24 | 23.27 | 16 | −2.06 | 114.12R | 9.73 | 11.73 |
+| prev day H/L | 157.57R | 7.51 | 20.97 | 25 | −2.06 | 111.91R | 7.72 | **14.49** |
+| H4 H/L | 146.09R | 7.15 | 20.44 | 47 | −2.06 | 104.38R | 7.15 | **14.60** |
+
+⚠ **VOID, never re-measured on the fixed code:** `daily + weekly` 174.35R, `daily + weekly + H4`
+161.00R, `session H/L` 159.39R. None is a shipped option. Do not quote them.
+
+## 🔴 The ORDERING is the finding, not any single row
+
+Both tables sort by **how often the target fires**. Weekly levels sit far away and rarely bind, so
+that row is nearly the ride. Session highs and lows are close and get hit constantly, so that row is
+worst. Two unrelated target families, measured separately, produce the same monotonic curve. **The
+adds earn on the handful of trades that run a long way, and every target truncates exactly those.**
+
+⚠ **It rests on few events — 16 to 47 bank fills across the full eight years.** What carries the
+conclusion is that **every configuration agrees and orders itself by the same mechanism**, not the
+size of any one gap. ⚠ The flat-risk control is **unaffected by the bug** and still stands on its
+own: its target is a fixed price off the base entry, so there is no level and nothing to mitigate.
+
+🔴 **BANKING BUYS A SMOOTHER RIDE AND PAYS FOR IT OUT OF THE TAIL — the last three columns are the
+honest case FOR a target, and they were not visible in the first table.** Strip the top 20 trades
+and the ranking inverts on risk-adjusted return: prev day **14.49** and H4 **14.60** against Ride's
+11.99, with drawdown falling 10.34 → 7.15. **On the ordinary book a target is genuinely better.** It
+loses overall only because the extraordinary book is where this strategy earns.
+
+⚠ **Drawdown on the FULL book barely moves** (7.15–7.51 against the ride's 7.24). Measured across
+the whole sample, a target is not buying safety.
+
+⚠ **The worst trade is −2.06R in all 16 configurations — identical.** That is the direct answer to
+the concern that prompted the work. The affordability rule already sizes each add against its own
+distance to the trailing stop, so an add can shrink a winner but cannot create a loser. There was no
+giveback left for a target to prevent.
+
+## A verification worth recording, because the null looked like a bug
+
+`ALL structure` and `daily + weekly + H4` returned **byte-identical** numbers, which is what a scope
+that never binds also looks like. Counting the events directly: session levels **do** bind — they
+win the target pick 534 times — but they keep landing on the **same price** as a daily or H4 level,
+because the previous day's high WAS set during some session. Adding them shuffles which family gets
+credited (daily 346 → 56) without moving a single price. Real dominance, not a dead scope. ⚠ The
+general point: **a scope that silently matches nothing reports as "no effect" and reads exactly like
+"this does not help".**
+
+## Shipped
+
+**`exec_scale_tp_mode`, defaulting to `"Prev week H/L"` — Aaron's explicit call, AGAINST the
+measurement.** He chose it wanting certain money on the runners rather than the best expectancy,
+which is a legitimate preference. 🔴 **But the DEFAULT IS UNDER REVIEW, because he chose it on a
+number the live-bar bug had made wrong: he was quoted a 4.38R gap said to sit inside this
+strategy's 15.06R jitter, and the true gap is 25.64R — OUTSIDE it, and about 13% of total return.**
+"Certainty for no measurable cost" is not the trade-off on offer. He has been told and has not yet
+answered. ⚠ **Confirm before treating this default as settled.** Session H/L is not offered — worst
+measured, and six more mirrored Pine variables to add.
+
+⚠ **`"Ride"` reproduces 194.15R and scale-in OFF reproduces 128.26R exactly**, so nothing already
+stored moves.
+
+🔴 **NOT PARITY-GATED.** `cfg_scale_tp` is a new export column and no export carries it yet, so
+`compare_strategy.py` has never checked this path. Rule 22 is unsatisfied until a fresh export lands
+with the column present and the gate passes on it.
+
+
+# Run 23 — 2026-08-19 — **THE SECONDARY, END TO END. THE ENTRY GATES ARE ALREADY RIGHT; THE EXIT LADDER IS NOT.**
+
+**Three grids, 26 real replays, one question.** Part 1 loosens the ENTRY gates four ways and every
+one is worse. Part 2 asks how many times a setup may be re-entered and what the re-entry's own exit
+ladder should be — and finds the first change in this whole exercise that makes the small re-entries
+profitable. Part 3 combines the two survivors. ⚠ **Read all three: part 1's conclusion ("nothing
+helps") is true of the doors and false of the ladder, and stopping at part 1 was the wrong place to
+stop.**
+
+---
+
+## Part 1 — the entry gates, loosened four ways. Every one is worse.
+
+**The question, in Aaron's words:** *"I'm at a crossroad where I don't know if a secondary trade is
+still valid sometimes when price hits my stop loss also. Let's say I got in at 0.618, price went
+down, hit my 0.886, I literally swiped it, then came back, bounced on one of my higher fib levels
+and then went. Now I just missed the whole trade."* So: **find the best confluence for a re-entry,
+by running the loosened models.**
+
+## What was loosened, and what it cost to ask
+
+Three new config levers, all defaulting to the shipped rule so nothing historical moves:
+
+| lever | default | what the looser values do |
+|---|---|---|
+| `exec_sec_require` | `"Breakeven"` | `"Any close"` (the primary traded, any outcome) · `"Stopped only"` (**the swept-stop case** — it closed without reaching TP1) · `"None"` (no primary needed) |
+| `exec_sec_zone_deep` | `0.886` | `1.0` = arm while the 15m bar has closed BEYOND the entry band, which is the state a swept stop leaves behind |
+| `exec_sec_zone_shallow` | `0.618` | `0.5` = arm after price has already reclaimed part of the move |
+
+`Execution` grew the two latches the looser gates read (`prim_closed_sos_*`, `prim_lost_sos_*`),
+latched at finalise off the trade's final `_stage`. Nothing else reads them, so parity is untouched.
+
+## The grid — 9 real replays, 2020-01-01 → 2026-08-18, 156,543 M15 + 2,343,987 M1 bars each
+
+Forked off one bar load, no costs (matching lab run `fbfc89d71fb4`). **The CONTROL reproduced that
+stored run exactly — 160 primaries + 7 secondaries — which is what makes every delta attributable.**
+
+| variant | trades | sec | book R | sec R | its best | **ex-best** | W/L | ddR |
+|---|---|---|---|---|---|---|---|---|
+| **control** (breakeven, .618–.886) | 167 | 7 | **374.17** | +78.26 | +79.07 | **−0.81** | 1/1 | −15.01 |
+| any close | 174 | 14 | 373.49 | +77.58 | +79.07 | −1.49 | 3/5 | −16.09 |
+| breakeven + deep zone 1.0 | 169 | 9 | 372.17 | +76.26 | +79.07 | −2.81 | 1/3 | −17.00 |
+| no primary required | 176 | 16 | 371.66 | +75.75 | +79.07 | −3.32 | 3/7 | −18.01 |
+| any close + deep zone 1.0 | 176 | 16 | 371.49 | +75.58 | +79.07 | −3.49 | 3/7 | −18.08 |
+| any close + zone .5–1.0 | 177 | 17 | 369.28 | +73.37 | +79.07 | −5.70 | 3/9 | −18.07 |
+| **stopped only** | 167 | 7 | 295.23 | **−0.68** | +2.07 | −2.75 | 2/4 | −16.00 |
+| stopped only + deep zone 1.0 | 167 | 7 | 295.23 | −0.68 | +2.07 | −2.75 | 2/4 | −16.00 |
+| stopped only + zone .5–1.0 | 168 | 8 | 295.20 | −0.72 | +2.79 | −2.79 | 2/4 | −16.00 |
+
+🔴 **THE SHIPPED RULE WINS ON ALL THREE COLUMNS THAT MATTER — book R, ex-best R, and drawdown — and
+the ordering is MONOTONIC in how much was loosened.** Every door that was opened let in trades that
+lost. There is no cell where a looser gate paid for itself.
+
+🔴 **The swept-stop re-entry, asked in isolation, is a LOSER: 7 trades, −0.68R, 2 wins / 4 full
+−1.00R losses** (2021-03-15, 2024-08-26, 2025-02-19, 2025-12-15 all −1.000R). The two winners are
++1.32R and +2.07R. **So the pattern Aaron described is real — it happens seven times in 6.6 years —
+and taking it systematically loses money.** The stop got swept because the setup was failing, and
+re-entering is buying the same idea a second time at a worse place in its life.
+
+⚠ **The zone-deep lever does NOTHING on top of "Stopped only" — 1.0 and 0.886 give the identical
+book to the cent.** The swept-stop legs were never blocked by the zone; they were blocked by the
+breakeven gate alone. **Two levers that sound like the same story are not the same lever, and
+measuring them separately is what showed that one of them was inert here.**
+
+⚠ **ZERO primaries displaced in any of the nine cells** (0 lost / 0 gained against control), so
+none of this is the one-slot queue effect. The deltas are the re-entries themselves.
+
+⚠ **The differences are inside this strategy's own run-to-run jitter (sd 15.06R), so no single
+row's R is evidence.** What is not noise is the **direction** — nine of nine loosenings move the
+same way — and the **win/loss counts**, which go 1/1 at the control to 3/9 at the loosest.
+
+## The finding under the finding — the re-entries that DO fire mostly scratch
+
+Read the control's own seven: **+0.05, −0.09, +79.07, +0.08, +0.10, +0.05, −1.00.** Four of the
+seven land inside the ±0.15R scratch band, one is a full loss, one is a rounding error, and the
+whole case is 2023-04-03. The looser cells inherit the shape: of "any close"'s 14, **eleven are
+either ≈0 or exactly −1.00R.**
+
+**So the secondary's problem is not only how OFTEN it fires — it is what happens after it fills.**
+A 1-minute entry gets a 1-minute-tight stop and then hands the trade to the 15m structure trail,
+which ratchets to breakeven long before a 15m target is reached. The re-entry is being ticked out
+of its own scratch. **Entry confluence was the question asked and the answer is "none of the four
+doors"; the untested question is the EXIT ladder for a 1m entry**, which no run in this log has
+ever varied independently of the primary's.
+
+### Part 1 shipped
+
+**Nothing.** All three levers stay at their defaults, which reproduce the shipped book byte-for-byte.
+They stay in the code because the question will be asked again and the answer should cost one run.
+
+✅ 8 new tests in `tests/test_secondary.py`, **every one watched RED under 7 mutations** (the
+breakeven branch forced true; an unknown mode falling through to true; the zone edges recomputed
+instead of read; "Stopped only" and "Any close" reading the wrong latch; the deep edge pinned;
+"None" refusing). 262 strategy + 27 backend runner tests green.
+
+
+---
+
+---
+
+## Part 2 — how many re-entries, and what exit ladder. 10 replays, same bars, same control.
+
+**The question, in Aaron's words:** *"What if this secondary re-entry also gets scratched? Up to what
+number should we allow before settling into losses? Because at one point, if it keeps coming back,
+that means it's probably a shift of structure that happened, and we should not take the re-entry."*
+
+Four more levers, again all defaulting to the shipped rule:
+
+| lever | default | what it does |
+|---|---|---|
+| `exec_sec_max_per_setup` | `1` | how many re-entries one setup may spend, read only while `exec_sec_once_per_setup` is on |
+| `exec_sec_req_m1_dir` | `False` | on = only arm while the 1m structure already points the trade's way — the *"has structure shifted against me"* test, on the lower timeframe |
+| `exec_sec_be_at` | `"TP1"` | `"TP2"` holds the re-entry's ORIGINAL stop through TP1 instead of ratcheting to breakeven |
+| `exec_sec_tp1_pct` | `-1.0` (inherit) | the re-entry banks its own percentage at TP1, separately from the primary |
+
+| variant | trades | sec | book R | sec R | its best | **ex-best** | W/L | ddR |
+|---|---|---|---|---|---|---|---|---|
+| 1m trend must agree | 165 | 5 | **374.25** | +78.34 | +79.07 | −0.73 | 1/1 | **−14.92** |
+| **control** (1 re-entry, BE at TP1) | 167 | 7 | 374.17 | +78.26 | +79.07 | −0.81 | 1/1 | −15.01 |
+| depth 2 | 168 | 8 | 373.17 | +77.26 | +79.07 | −1.81 | 1/2 | −15.01 |
+| depth 3 | 168 | 8 | 373.17 | +77.26 | +79.07 | −1.81 | 1/2 | −15.01 |
+| depth 5 | 168 | 8 | 373.17 | +77.26 | +79.07 | −1.81 | 1/2 | −15.01 |
+| depth unlimited | 168 | 8 | 373.17 | +77.26 | +79.07 | −1.81 | 1/2 | −15.01 |
+| BE at TP2 (hold initial SL) | 167 | 7 | 370.93 | +75.02 | +79.07 | −4.04 | 1/4 | −15.01 |
+| depth 3 + BE at TP2 | 168 | 8 | 369.93 | +74.02 | +79.07 | −5.04 | 1/5 | −15.01 |
+| **bank 50% at TP1** | 167 | 7 | 339.41 | +43.50 | +42.79 | **+0.71** | **4/1** | −15.01 |
+| bank 100% at TP1 | 167 | 7 | 304.65 | +8.74 | +6.51 | **+2.23** | **4/1** | −15.01 |
+
+🔴 **DEPTH 2, 3, 5 AND UNLIMITED ARE BYTE-IDENTICAL, AND THE ANSWER TO "HOW MANY" IS ONE.** In 6.6
+years exactly **one** setup ever offered a second re-entry — 2024-01-16 L, and it was a full −1.00R.
+A third never existed at any depth. ⚠ **So the cascade question has a sample of n=1** and the table
+cannot rank 2 against 3 against 5; it can only say the second one that occurred lost.
+
+🔴 **AND THE RULE THAT ANSWERS IT ALREADY SHIPS.** A re-entry that closes at stage 0 (stopped
+without reaching TP1) sets `sec_stop_dir`, the driver calls `mark_dead`, and **that 15m leg is
+finished** — no depth setting overrides it. So a cascade can only ever continue through a SCRATCH,
+never through a loss. *"Up to what number before settling into losses"* is already answered in code
+as **the first real loss ends it**, and raising the depth only buys extra tries after a scratch.
+
+🔴 **BE-AT-TP2 IS WORSE, AND IT OVERTURNED THE PREDICTION THAT PROMPTED IT.** Part 1 ended by
+blaming the breakeven ratchet for ticking re-entries out of their own trades, so this cell holds the
+original stop through TP1. Result: **1 win / 4 losses, ex-best −4.04.** The three trades it rescued
+from a +0.05R scratch each became **exactly −1.00R** (2024-01-16, 2024-12-02, 2025-01-29). **The
+ratchet was protecting them, not robbing them** — the trade genuinely came back and the scratch was
+the good outcome. ⚠ **The plausible mechanism was the wrong one, and only the run said so.**
+
+🟢 **BANKING PART OF THE RE-ENTRY AT TP1 IS THE FIRST CHANGE IN THIS WHOLE EXERCISE THAT WORKS.**
+It converts the four scratches into small wins and flips the win/loss count **1/1 → 4/1**, and it
+is the first positive ex-best number anywhere in 26 replays. The diagnostic that led here: **three
+of the seven control re-entries exited at exactly +$0.30, which is `exec_be_buf_tk` (30 ticks) to
+the cent** — one of them $2.65 past TP1 with nothing banked.
+
+⚠ **AND IT COSTS THE TAIL, WHICH IS BIGGER THAN EVERYTHING ELSE COMBINED.** Banking 50% cuts
+2023-04-03 from **+79.07R to +42.79R**; banking 100% cuts it to **+6.51R**. The whole secondary book
+over 6.6 years is that one trade. **So this is not an optimisation, it is a bet about which kind of
+re-entry the next 6.6 years holds more of** — the four small ones, or the one that runs.
+
+⚠ **The 1m trend filter beats control on book R AND drawdown — by 0.08R and 0.09R.** That is
+nothing next to the 15.06R jitter band. What it actually does is drop **2 of 7** re-entries (both
+scratches: 2022-03-06, 2025-01-29) and **it does not filter the one full loss** (2025-08-21 survives
+every variant). It also nudges 2020-09-15 from +0.05R to +0.09R by arming on a later 1m bar.
+
+---
+
+## Part 3 — the two survivors together. 7 replays.
+
+| variant | trades | sec | book R | sec R | its best | **ex-best** | W/L | ddR |
+|---|---|---|---|---|---|---|---|---|
+| **control (shipped)** | 167 | 7 | **374.17** | +78.26 | +79.07 | −0.81 | 1/1 | −15.01 |
+| 1m dir + bank 25% | 165 | 5 | 358.07 | +62.16 | +60.93 | +1.23 | 4/1 | −14.92 |
+| bank 25% at TP1 | 167 | 7 | 356.79 | +60.88 | +60.93 | −0.05 | 4/1 | −15.01 |
+| **1m dir + bank 50%** | 165 | 5 | 341.89 | +45.98 | +42.79 | **+3.19** | **4/1** | **−14.92** |
+| 1m dir + bank 50% + depth 2 | 167 | 7 | 339.89 | +43.98 | +42.79 | +1.19 | 4/3 | −14.92 |
+| bank 50% at TP1 | 167 | 7 | 339.41 | +43.50 | +42.79 | +0.71 | 4/1 | −15.01 |
+| bank 75% at TP1 | 167 | 7 | 322.03 | +26.12 | +24.65 | +1.47 | 4/1 | −15.01 |
+
+🟢 **`exec_sec_req_m1_dir=True` + `exec_sec_tp1_pct=50` is the best re-entry configuration measured
+— on every column except the one that matters most.** 5 trades, **4 wins / 1 loss**, **+3.19R
+excluding the outlier** (the only cell above +2.23), best drawdown in all 26 replays (−14.92R).
+**Its total book R is 32.28R BELOW control**, because it halves the 2023-04-03 tail.
+
+🔴 **THE TWO FILTERS COMPOUND, WHICH NEITHER DID ALONE.** The 1m filter on its own moved ex-best by
++0.08R; banking 50% on its own moved it by +1.52R; together they move it by **+4.00R**. The reason
+is visible in the per-trade list: **the filter changes WHICH 1m bar arms 2020-09-15, and with 50%
+banked that trade goes +0.05R → +2.86R instead of +0.09R.** ⚠ **A filter that looks inert on the
+shipped exit ladder is not inert on a different one — measure a combination as a combination.**
+
+⚠ **Depth 2 on top of the best cell is strictly worse: it adds 2020-09-16 −1.00R and 2024-01-16
+−1.00R and takes the record to 4 wins / 3 losses.** Third independent confirmation that the answer
+to *"how many re-entries"* is **one**.
+
+⚠ **Zero primaries displaced in all 26 replays** (0 lost / 0 gained against control everywhere). The
+one-slot queue effect that killed the Run 12 loosenings is not in play here — a re-entry only ever
+fires on a leg whose primary is already closed.
+
+## Shipped
+
+**Nothing. Every one of the seven levers stays at its default, and the defaults reproduce the
+shipped book byte-for-byte.** The measured recommendation, if the re-entry is ever wanted live, is
+`exec_sec_req_m1_dir=True` + `exec_sec_tp1_pct=50` — **and it is a return-for-consistency trade
+Aaron has to make, not one a table can make.** It converts a book of scratches plus one 79R trade
+into a book of small wins plus one 43R trade. Against this repo's stated philosophy — *few
+high-quality setups, size over frequency, the tail is the point* — **the shipped default is the
+consistent choice, and that is why nothing changed.**
+
+⚠ **n=7 secondaries in 6.6 years.** Every conclusion here about the small trades rests on four of
+them, and every conclusion about return rests on one. **What the 26 replays DO establish, and what
+does not depend on the sample: which levers are inert (`exec_sec_zone_deep` on a swept stop),
+which are byte-identical (depth ≥ 2), and which direction each door moves the win/loss count.**
+
+🔴 **NOT PARITY-GATED, and it cannot be.** All seven levers are Python-only — there is no
+`exec_sec_*` twin in `mpc_strategy.pine` beyond the shipped ones, and `algos/live/bridge.py` refuses
+`exec_secondary` outright. **Every number in Run 23 is a lab finding about a path no chart and no
+bot has ever run.**
+
+✅ **20 new tests in `tests/test_secondary.py`** (8 for the gates, 12 for depth + exit ladder),
+**every one watched RED by mutation.** 🔴 **One mutation SURVIVED the first pass and the test was
+rewritten:** *"the depth counter never resets on a new setup"* reddened nothing, because the test
+only checked that the FIRST re-entry on a new setup armed — which the SOS-bar comparison already
+guarantees on its own. It now makes the new setup spend its **full** allowance of two, and the trap
+is written into its docstring. 285 strategy + 27 backend runner tests green.

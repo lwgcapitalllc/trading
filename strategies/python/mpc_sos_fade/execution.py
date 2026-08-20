@@ -621,6 +621,21 @@ class Execution:
         self._add_armed = False            # a break has fired and we are waiting for the retest
         self._add_pending = None           # qty of a PLACED add order not yet filled
         self._add_pend_stop = None         # the stop that order was sized against
+        # Fill price of the NEWEST add (Pine lAddLastPx / sAddLastPx). The scale-in target has
+        # to sit BEYOND it, so every lot the target closes is closed in profit. It is the newest
+        # rather than the worst-priced add because in "Trail" mode adds fill at successively
+        # better-for-us prices, making the two identical — and Pine can name the newest fill
+        # (`strategy.opentrades.entry_price`) without keeping a running extreme.
+        self._add_last_px = None
+        # The adds' target as it stood at the LAST bar's CLOSE -- i.e. the limit Pine
+        # already has resting. 🔴 NOT recomputed from the live bar, and that is the whole
+        # point: a daily or H4 level is swept by a WICK, and the engine steps before the
+        # strategy sees the bar, so the level is ALREADY flagged mitigated on the exact bar
+        # it would have filled. Reading it live made `Prev day H/L` resolve 1,804 targets
+        # and fill ZERO, reproducing `Ride` byte-for-byte -- a mode that answers
+        # confidently and does nothing. Weekly hid it: that one needs a CLOSE through, so a
+        # bar can spike past it and leave it standing.
+        self._add_tp_level = None
         self._sos_bar_open: Optional[int] = None
         self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
@@ -647,6 +662,15 @@ class Execution:
         # opened and got stopped at its initial stop (never reached TP1) leaves no re-entry.
         self._be_sos_l: Optional[int] = None
         self._be_sos_s: Optional[int] = None
+        # The looser secondary gates (`exec_sec_require`). `_prim_closed_sos_*` = a PRIMARY has
+        # traded this 15m leg and is now closed, whatever the outcome; `_prim_lost_sos_*` = it
+        # closed at stage 0, i.e. never reached TP1 (the swept-stop case). Both are latched at
+        # finalise, so they can only ever be read while flat — which is the only state that arms a
+        # re-entry. Nothing but `SecondaryArm` reads them, so parity is untouched.
+        self._prim_closed_sos_l: Optional[int] = None
+        self._prim_closed_sos_s: Optional[int] = None
+        self._prim_lost_sos_l: Optional[int] = None
+        self._prim_lost_sos_s: Optional[int] = None
         # set for one 1m step when a SECONDARY closes at its initial stop (stage 0 = never
         # reached TP1). The driver reads it to kill that 15m leg — a stopped re-entry ends the
         # cascade on that leg. +1/-1/None; reset at the top of every step_secondary.
@@ -748,7 +772,7 @@ class Execution:
         # sized against — without it a restored runner re-adds immediately at the same locked
         # profit, which is exactly the over-spend the ratchet check exists to stop.
         "_adds", "_add_lots", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
-        "_add_pending", "_add_pend_stop",
+        "_add_pending", "_add_pend_stop", "_add_last_px", "_add_tp_level",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
@@ -825,6 +849,22 @@ class Execution:
     @property
     def be_sos_s(self) -> Optional[int]:
         return self._be_sos_s
+
+    @property
+    def prim_closed_sos_l(self) -> Optional[int]:
+        return self._prim_closed_sos_l
+
+    @property
+    def prim_closed_sos_s(self) -> Optional[int]:
+        return self._prim_closed_sos_s
+
+    @property
+    def prim_lost_sos_l(self) -> Optional[int]:
+        return self._prim_lost_sos_l
+
+    @property
+    def prim_lost_sos_s(self) -> Optional[int]:
+        return self._prim_lost_sos_s
 
     @property
     def sec_stop_dir(self) -> Optional[int]:
@@ -974,6 +1014,10 @@ class Execution:
             if not opened:
                 self._advance_stage(sig)
             dec.stop = self._current_stop()
+            # Re-rest the adds' target for the NEXT bar, in the same slot the stop is
+            # staged in and for exactly the same reason: an exit order placed at THIS
+            # close is what the next bar trades against (TradingView's one-bar delay).
+            self._add_tp_level = self._add_tp_target(sig)
             dec.tp1, dec.tp2 = self._tp1, self._tp2
             # tell the account this leg's live stop + remaining size, so its reservation is
             # current for any other leg sizing on the next tick (drops to 0 once stop = BE).
@@ -1967,6 +2011,8 @@ class Execution:
         self._add_armed = False
         self._add_pending = None
         self._add_pend_stop = None
+        self._add_last_px = None
+        self._add_tp_level = None
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
         self._entry_equity = self._equity_realized      # R yardstick baseline
@@ -2059,6 +2105,17 @@ class Execution:
         targets_first = _intrabar_targets_first(sig.open, sig.high, sig.low)
         adj = self._exit_adj()      # a short exits by BUYING — test it against the ask
 
+        # ── the scale-in adds bank on their OWN target, ahead of / behind the base ladder ──
+        # Same intrabar convention as every bracket below: when a bar touches both the target
+        # and the stop, the path decides which came first. The adds are checked separately
+        # because they close on a level the BASE position knows nothing about.
+        add_tp = self._add_tp_level
+        add_hit = add_tp is not None and (
+            (d > 0 and sig.high >= add_tp) or (d < 0 and sig.low + adj <= add_tp))
+        add_px = self._fill_price(add_tp, sig.open + adj, True) if add_hit else None
+        if add_hit and targets_first:
+            self._bank_adds(sig, add_px, dec)
+
         # Build the remaining brackets (id, target-price-or-None, portion-qty).
         brackets = self._remaining_brackets()
         if not brackets:
@@ -2080,12 +2137,92 @@ class Execution:
             if self._pos_dir == 0:
                 return
 
+        # The path put the STOP first on this bar, so the adds bank only if the base position
+        # survived it — a stop that closed the trade has already taken them pro-rata.
+        if add_hit and not targets_first and self._pos_dir != 0:
+            self._bank_adds(sig, add_px, dec)
+
+    def _add_tp_target(self, sig) -> Optional[float]:
+        """Where the scale-in lots bank (Pine `lAddTp` / `sAddTp`), or None to ride them.
+
+        Two conditions, and each is doing a job:
+
+        * the level must be one price has NOT already taken — `signals.py` reports only
+          UNMITIGATED levels, because a swept level is not somewhere to aim at, it is a price
+          we are already past;
+        * it must sit BEYOND the newest add, so every lot this closes is closed in profit.
+          Banking one lot at a loss to bank another at a gain is not what the input is for.
+
+        "Ride", a trade with no live adds, and a run whose first week has not completed all
+        answer None — which is what keeps the shipped behaviour byte-identical with the input
+        on "Ride" and with `exec_scale_in` off.
+
+        ⚠ Two of the guards below are REDUNDANT and are kept deliberately, which is worth
+        saying so the next reader does not mistake them for the thing doing the work. The
+        `mode == "Ride"` clause is also caught by the closing `else`, and `lvl is None` by
+        `return lvl` returning None anyway — both were proven no-ops by mutation. They stay
+        because each names an intention the fallthrough only implements by accident, and a mode
+        added later could easily stop the fallthrough covering them.
+        """
+        mode = getattr(self._cfg, "exec_scale_tp_mode", "Ride")
+        if mode == "Ride" or self._add_last_px is None:
+            return None
+        if not any(lot[1] > 1e-12 for lot in self._adds):
+            return None
+        d = self._pos_dir
+        if mode == "Prev week H/L":
+            lvl = sig.liq_w_high if d > 0 else sig.liq_w_low
+        elif mode == "Prev day H/L":
+            lvl = sig.liq_d_high if d > 0 else sig.liq_d_low
+        elif mode == "H4 H/L":
+            lvl = sig.liq_h4_high if d > 0 else sig.liq_h4_low
+        else:
+            return None
+        if lvl is None or (lvl - self._add_last_px) * d <= 0:
+            return None
+        return lvl
+
+    def _bank_adds(self, sig, price, dec) -> None:
+        """Close every open add lot at `price`, leaving the BASE position untouched.
+
+        Each lot is valued against its OWN entry, which is the same arithmetic `_exit_portion`
+        does for the pro-rata case and for the same reason: the base position is priced off one
+        `_entry`, and an add was bought somewhere else.
+
+        🔴 `_adds` is NOT emptied — the lots are zeroed IN PLACE. `_maybe_scale_in` caps the
+        ladder on `len(self._adds)`, and Pine caps it on `lAddN`, which only ever counts up. An
+        emptied list would hand the slot back and let the trade add again after banking, which
+        is a different strategy from the one that was measured (Run 22) and one nothing here has
+        tested. ⚠ `_qty` and `_filled_qty` are untouched for the mirror-image reason: they
+        describe the BASE position, which is not one lot closer to finished because an add
+        banked.
+        """
+        d, pv = self._pos_dir, self._cfg.point_value
+        pnl, closed = 0.0, 0.0
+        for lot in self._adds:
+            q = lot[1]
+            if q <= 1e-12:
+                continue
+            pnl += (price - lot[0]) * d * q * pv
+            self._charge_commission(q)   # the add pays its own exit side, as on every other path
+            self._charge_spread(q)
+            lot[1] = 0.0
+            closed += q
+        if closed <= 1e-12:
+            return
+        self._add_last_px = None         # nothing live left for a target to clear
+        self._equity_realized += pnl
+        self._account.book_pnl(self._leg, pnl)
+        oid = ("L" if d > 0 else "S") + "-ATP"
+        dec.fills.append(Fill("exit", oid, price, closed, d))
+        self._legs.append({"reason": oid, "price": price, "ms": sig.time_ms, "qty": closed})
+
     def _remaining_brackets(self) -> List[Tuple[str, Optional[float], float]]:
         """The still-open exit brackets in TP1→TP2→runner order, with each portion's
         qty. Percentages are of the ORIGINAL position (Pine qty_percent)."""
         d = self._pos_dir
         prefix = "L" if d > 0 else "S"
-        p1 = self._qty * self._cfg.exec_tp1_pct / 100.0
+        p1 = self._qty * self._tp1_pct() / 100.0
         p2 = self._qty * self._cfg.exec_tp2_pct / 100.0
         out: List[Tuple[str, Optional[float], float]] = []
         remaining = self._qty - self._filled_qty
@@ -2123,19 +2260,35 @@ class Execution:
         # It defaults True because every caller that does not pass it is a force-close.
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
-        # 🔴 SCALE-IN LOTS CLOSE PRO-RATA WITH THE BASE, each at its OWN entry price. They are
-        # separate lots rather than extra `_qty` precisely because the line above prices
-        # everything off ONE `_entry` — folding an add into `_qty` would value units bought at
-        # the add price as if bought at the base entry, i.e. invent profit out of arithmetic.
-        # The fraction is taken against the BASE quantity, which is what `qty` is a portion of.
-        if self._adds and self._qty > 0:
-            frac = min(1.0, qty / self._qty)
+        # 🔴 A TP RUNG DOES NOT TOUCH THE ADDS; A STOP OR FORCE-CLOSE TAKES THEM IN FULL. That is
+        # what the Pine does and it is the reason this is not pro-rata: `L-TP1`/`L-TP2` are
+        # `from_entry = "Long"`, so they can only ever close the BASE entry, while each add
+        # carries its own `L-AX1..4` exit at the SAME stop and dies with it.
+        #
+        # 🔴 IT WAS PRO-RATA UNTIL 2026-08-19 AND THAT SILENTLY BINNED PROFIT. A rung closing
+        # half the base closed half of every add, then `_finalise_trade` did `self._adds = []`
+        # and the remainder vanished with its P&L never booked. MEASURED over 2018-09→2026-08:
+        # 112 add lots dropped per run, up to 42.46R — 32% of the result at `exec_tp1_pct = 50,
+        # exec_tp2_pct = 25`. It could not fire at the shipped `0/0` (the runner closes 100% of
+        # the base, so the fraction was always 1.0), which is exactly why it survived: the
+        # divergence lived only on the settings nobody had run. Rule 14 — a green parity gate
+        # says nothing about a branch neither implementation entered.
+        #
+        # `final` is here rather than trusting `market` alone: if a TP rung is what CLOSES the
+        # base (`exec_tp1_pct + exec_tp2_pct == 100`), the adds must still go with it. Nothing
+        # may outlive the trade that owns it.
+        #
+        # Each lot is valued against its OWN entry — the line above prices everything off one
+        # `_entry`, so folding an add into `_qty` would value units bought at the add price as
+        # if bought at the base entry, i.e. invent profit out of arithmetic.
+        final = (self._filled_qty + qty) >= self._qty - 1e-9
+        if self._adds and (market or final):
             for lot in self._adds:
-                closing = lot[1] * frac
+                closing = lot[1]
                 if closing <= 1e-12:
                     continue
                 pnl += (price - lot[0]) * d * closing * self._cfg.point_value
-                lot[1] -= closing
+                lot[1] = 0.0
                 self._charge_commission(closing)   # the add pays its own exit side too
                 self._charge_spread(closing)
                 if market:
@@ -2194,6 +2347,19 @@ class Execution:
         # cascade). A secondary that reached breakeven-or-better (stage >= 1) does NOT flag.
         if self._entry_kind == "secondary" and self._stage == 0:
             self._sec_stop_dir = self._pos_dir
+        # The PRIMARY's own record on this leg, for the looser `exec_sec_require` gates. `_stage`
+        # is still the trade's final stage here (it is reset a few lines below), so stage 0 means
+        # "closed without ever touching TP1" — a stop-out or a time stop, which is exactly the
+        # state the breakeven gate refuses.
+        if self._entry_kind == "primary":
+            if d > 0:
+                self._prim_closed_sos_l = self._sos_bar_open
+                if self._stage == 0:
+                    self._prim_lost_sos_l = self._sos_bar_open
+            else:
+                self._prim_closed_sos_s = self._sos_bar_open
+                if self._stage == 0:
+                    self._prim_lost_sos_s = self._sos_bar_open
         self._account.close_position(self._leg)   # P&L already booked; free the reservation
         self._pos_dir = 0
         self._qty = 0.0
@@ -2207,6 +2373,8 @@ class Execution:
         self._add_armed = False
         self._add_pending = None
         self._add_pend_stop = None
+        self._add_last_px = None
+        self._add_tp_level = None
         self._entry_equity = None
 
     def _equity_at_entry_delta(self) -> float:
@@ -2568,13 +2736,33 @@ class Execution:
         self._add_pending = None
         self._add_pend_stop = None
         self._add_limit = None
+        self._add_last_px = price   # the scale-in target has to clear this
         self._charge_commission(qty)
         self._charge_spread(qty)    # half the round turn; `_exit_portion` pays the other half
+
+    def _tp1_pct(self) -> float:
+        """The TP1 rung's percentage for the trade that is actually open.
+
+        A SECONDARY may bank its own percentage (`exec_sec_tp1_pct`); -1.0 means inherit the
+        shared `exec_tp1_pct`, which is what the shipped ladder does, so the default cannot move
+        a stored figure. A primary never reads the override."""
+        if self._entry_kind == "secondary":
+            own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
+            if own != -1.0:
+                return own
+        return self._cfg.exec_tp1_pct
 
     def _current_stop(self) -> float:
         cfg = self._cfg
         d = self._pos_dir
         be_buf = cfg.exec_be_buf_tk * cfg.mintick
+        # A SECONDARY may hold its INITIAL stop until TP2 instead of ratcheting to breakeven at
+        # TP1 (`exec_sec_be_at`). Three of the seven shipped re-entries exited at exactly the
+        # 30-tick buffer after touching TP1 — ticked out of their own trade. Secondaries only:
+        # the primary's ladder is what the Pine parity gate checks.
+        if (self._entry_kind == "secondary" and self._stage == 1
+                and getattr(cfg, "exec_sec_be_at", "TP1") == "TP2"):
+            return self._sl
         if self._stage >= 2:
             floor = self._stage2_floor()
             trail = self._trail()

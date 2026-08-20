@@ -181,6 +181,27 @@ class Signals:
     fibo_ash_ms: Optional[int] = None
     fibo_asl_ms: Optional[int] = None
 
+    # HTF liquidity levels usable as a SCALE-IN TARGET — the Pine `w_hPrice` / `w_lPrice`,
+    # `d_hPrice` / `d_lPrice` and `h4TrackHigh` / `h4TrackLow` variables, mirrored by name.
+    #
+    # 🔴 Mirrored as NAMED SCALARS rather than handed over as the engine's `active` list, and
+    # that is a parity decision rather than a style one. Pine holds exactly these six variables;
+    # a Python side that instead searched "the nearest active level" would be free to pick a
+    # level Pine has no variable for, and the two would diverge on a bar neither implementation
+    # looks wrong on. Mirror the variable, not the concept.
+    #
+    # Each carries the level's price only while it EXISTS and is still UNMITIGATED; None
+    # otherwise. A mitigated level is one price has already taken, so it is no longer somewhere
+    # to bank against — and `None` here means "no level to aim at", which is the same thing a
+    # fresh run says before its first week has completed. Nothing but `exec_scale_tp_mode`
+    # reads them, so with that input on "Ride" they cannot move `compare_strategy.py`.
+    liq_w_high: Optional[float] = None
+    liq_w_low: Optional[float] = None
+    liq_d_high: Optional[float] = None
+    liq_d_low: Optional[float] = None
+    liq_h4_high: Optional[float] = None
+    liq_h4_low: Optional[float] = None
+
 
 # Pine fib level name -> the engine's `levels` dict key (see fibonacci/engine.py _RATIO).
 # Prices coincide where a retrace and a target share a ratio (0.5, 0.382), so the key
@@ -293,6 +314,31 @@ class SignalAdapter:
                 return ("ny", side)
         return None
 
+    # The `Signals.liq_*` slot each level kind/side feeds. Session levels are deliberately
+    # ABSENT: they measured worst of every family as a scale-in target (Run 22), and Pine holds
+    # six separate session variables that would each need mirroring for a target nobody should
+    # pick. Adding them later is a Pine change, not just a Python one.
+    _TGT_SLOT = {("weekly", "high"): "w_high", ("weekly", "low"): "w_low",
+                 ("daily", "high"): "d_high", ("daily", "low"): "d_low",
+                 ("h4", "high"): "h4_high", ("h4", "low"): "h4_low"}
+
+    def _target_levels(self, liq_events) -> dict:
+        """The still-standing HTF levels, by `Signals.liq_*` slot name.
+
+        Only UNMITIGATED levels are reported: once price has taken a level it is no longer
+        somewhere to bank against, and Pine's own `w_hMit` / `d_hMit` / `h4HighSwept` flags gate
+        the mirror on the other side. A slot with no live level stays absent, and the caller
+        reads that as None — the same answer a run gives before its first week has completed.
+        """
+        out: dict = {}
+        for lvl in liq_events.active:
+            if lvl.mitigated:
+                continue
+            slot = self._TGT_SLOT.get((lvl.kind, lvl.side))
+            if slot is not None:
+                out[slot] = lvl.price
+        return out
+
     def _update_liquidity(self, index: int, t: int, liq_events) -> None:
         """Reproduce mpc_strategy.pine 3343-3374: latch each source's swept slot on
         the bar it is mitigated, then clear the H4 slots when the H4 level rolls."""
@@ -383,6 +429,10 @@ class SignalAdapter:
         self._update_liquidity(index, t, state.liquidity)
         recent_ssl, recent_ssl_bar, recent_ssl_time = self._resolve_recent(self._ssl)
         recent_bsl, recent_bsl_bar, recent_bsl_time = self._resolve_recent(self._bsl)
+        # ...and the same levels again as PRICES, for the scale-in target (see Signals.liq_*).
+        # A different question from the one above: `recent_*` asks which pool was last SWEPT,
+        # this asks which is still STANDING and therefore still somewhere to aim at.
+        liq_tgt = self._target_levels(state.liquidity)
 
         # RSI divergence: last confirmed pivot bar per side (Pine lastBull/BearDivBar)
         for d in state.rsi.detected:
@@ -476,6 +526,9 @@ class SignalAdapter:
             fibo_asl=(fib.asl if fib.active else None),
             fibo_half_reached=fibo_half, fibo_618_ever_reached=fibo_618_ever,
             fibo7_touched=fibo7_touched, fibo_half_bar=self._half_bar,
+            liq_w_high=liq_tgt.get("w_high"), liq_w_low=liq_tgt.get("w_low"),
+            liq_d_high=liq_tgt.get("d_high"), liq_d_low=liq_tgt.get("d_low"),
+            liq_h4_high=liq_tgt.get("h4_high"), liq_h4_low=liq_tgt.get("h4_low"),
             fvgs=fvgs, obs=obs, obs_available=obs_available,
             poi_long_now=poi_long, poi_short_now=poi_short,
             bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,

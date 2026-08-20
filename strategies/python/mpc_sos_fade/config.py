@@ -405,6 +405,64 @@ class SosFadeConfig:
     #   to the STOP, which trails up behind price, so the LAST add is the cheapest one. Small-
     #   first in fact had the lowest drawdown (9.05 vs 11.04). Flat is kept because it is simpler
     #   and nothing measured argues against it.
+    exec_scale_tp_mode: str = "Prev week H/L"   # "↳ Where the adds take profit" (execScaleTpMode)
+    #   ∈ {"Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"}. WHERE the scale-in lots bank.
+    #   "Ride" leaves them on the trailing stop, closing pro-rata with the base ladder — the
+    #   behaviour every measurement before 2026-08-19 was taken on. The other three rest the adds
+    #   on the nearest STANDING (unmitigated) level of that family beyond the NEWEST add — which
+    #   is beyond EVERY add, since scale-ins only fill as price moves in favour, so the newest
+    #   lot is always the extreme one. Every lot it closes is therefore closed in profit;
+    #   banking one lot at a loss to bank another at a gain is not what this is for.
+    #   ⚠ It moves the ADDS ONLY. The base position's stop, TP1 and TP2 are untouched, so with
+    #   `exec_scale_in` OFF (the default) this input cannot change a single trade.
+    #
+    #   🔴 MEASURED 2026-08-19 (Run 22), RE-MEASURED the same day after the resting-order fix
+    #   below. XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, Trail 3 x 0.5x, 182
+    #   trades. EVERY TARGET LOSES TO RIDING, in order of how OFTEN the target fires:
+    #                       ALL trades       banks    excluding the top 20 trades
+    #       scale OFF       128.26R dd 6.03     --     92.51R dd  6.03  ret/dd 15.34
+    #       Ride            194.15R dd 7.24      0    124.05R dd 10.34  ret/dd 11.99
+    #       Prev week H/L   168.51R dd 7.24     16    114.12R dd  9.73  ret/dd 11.73
+    #       Prev day H/L    157.57R dd 7.51     25    111.91R dd  7.72  ret/dd 14.49
+    #       H4 H/L          146.09R dd 7.15     47    104.38R dd  7.15  ret/dd 14.60
+    #   ⚠ THAT ORDERING IS THE FINDING, not any single row. A control run banking at a flat
+    #   multiple of base risk (1R … 8R) produced the same monotonic curve independently, and
+    #   banking at 1R (126.76R) came out BELOW never scaling at all. ⚠ The control is UNAFFECTED
+    #   by the bug below and still stands: its target is a fixed price off the base entry, with
+    #   no level and therefore nothing to mitigate.
+    #   🔴 THE TAIL IS THE WHOLE ARGUMENT, and the right-hand column is where you can see it.
+    #   Strip the top 20 trades and banking IMPROVES risk-adjusted return — ret/dd 14.49 (day)
+    #   and 14.60 (H4) against 11.99 for Ride. So a target really does smooth the ride; it just
+    #   pays for that out of the tail, and the tail is where this strategy makes its money.
+    #   ⚠ The worst trade is -2.06R in EVERY configuration, target or none. The affordability
+    #   rule already prevents an add turning a winner into a loser, so there is no giveback left
+    #   for a target to prevent — which was the reason one was asked for in the first place.
+    #
+    #   🔴 THE TARGET IS RESTED AT THE BAR'S CLOSE AND FILLS ON THE NEXT BAR. That is load-
+    #   bearing, not a detail. Resolved from the LIVE bar instead, "Prev day H/L" and "H4 H/L"
+    #   banked ZERO times in eight years while resolving 1,804 and 2,438 perfectly valid
+    #   targets — because a daily/H4 level dies on a WICK (SWEEP_HIGH/SWEEP_LOW) and the engine
+    #   steps BEFORE the strategy sees the bar, so the level was already flagged mitigated on
+    #   the exact bar the order would have filled. The target vanished precisely when it was
+    #   needed. ⚠ WEEKLY HID IT COMPLETELY: a week level dies on a CLOSE through (BREAK_HIGH/
+    #   BREAK_LOW), so it survives the spike that fills it and banked normally throughout — the
+    #   one family anybody was looking at was the one family that worked.
+    #   ⚠ This is the same one-bar order delay the base ladder already honoured: TradingView
+    #   places `strategy.exit(limit=)` at a bar's close and it is live on the NEXT bar. The adds
+    #   were the single path that skipped it. See `execution.py::_add_tp_level`.
+    #
+    #   🔴 THE DEFAULT IS UNDER REVIEW — DO NOT READ IT AS SETTLED (2026-08-19). Aaron chose
+    #   "Prev week H/L" over "Ride" deliberately, wanting certain money on the runners. But he
+    #   chose it on a number the live-bar bug had made wrong: HE WAS QUOTED A 4.38R GAP, INSIDE
+    #   this strategy's 15.06R jitter, and the true gap is 25.64R, OUTSIDE it. The trade-off he
+    #   accepted — "certainty for no measurable cost" — is not the one actually on offer. He has
+    #   been told and has not yet answered. ⚠ Confirm the default before quoting it as a
+    #   decision.
+    #   ⚠ Session H/L is deliberately NOT an option: it measured worst, and it would need six
+    #   more mirrored Pine variables to add. See `signals.py::_TGT_SLOT`.
+    #   ⚠ VOID — NEVER RE-MEASURED after the fix: session H/L 159.39R and the daily+wk+H4
+    #   combination 161.00R. Both came off the throwaway harness, which carried the same
+    #   live-bar flaw. Do not quote them; re-measure if they are ever needed.
     exec_time_stop_mode: str = "Before TP1 only"   # "Time stop" (Pine execTimeStopMode)
     #   ∈ {"Off", "Before TP1 only", "Always"}. Close a position that has been open for
     #   `exec_time_stop_hrs` CALENDAR hours. An EXIT lever, and the only one here driven by the
@@ -546,6 +604,70 @@ class SosFadeConfig:
     #   ⚠ Read ONLY when exec_secondary is on — a cap on a feature that never fires is inert, so
     #   the optimizer may sweep it behind an OFF secondary. That is a wasted grid, not an error.
 
+    exec_sec_max_per_setup: int = 1    # "Re-entries allowed per setup"
+    #   HOW DEEP THE CASCADE MAY GO on one 15m setup. Read ONLY when `exec_sec_once_per_setup` is
+    #   ON — that switch still decides whether there is a per-setup cap at all, and OFF is still
+    #   the original "one per 1-MINUTE leg" rule with no ceiling. 1 (default) is byte-identical to
+    #   the shipped cap.
+    #   ⚠ THE DEAD-LEG RULE SITS UNDER THIS AND IS NOT A COUNT. A re-entry that hits its own
+    #   initial stop kills the leg outright whatever this is set to, so raising it lets a cascade
+    #   run through SCRATCHES (a re-entry that touched TP1 and was ticked out at breakeven), never
+    #   through losses. That is the distinction Aaron asked about: coming back after a scratch and
+    #   coming back after a stop-out are different events and only one of them continues.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_be_at: str = "TP1"        # "Secondary moves to breakeven at" ∈ {TP1, TP2}
+    #   WHEN A SECONDARY'S STOP JUMPS TO BREAKEVEN. "TP1" (default) is the shared ladder and is
+    #   byte-identical to it. "TP2" holds the trade's INITIAL stop until TP2, so a re-entry that
+    #   pokes TP1 and pulls back is not ticked out of its own trade at `exec_be_buf_tk`.
+    #   ⚠ IT AFFECTS SECONDARIES ONLY — the primary's ladder is untouched, which is what keeps
+    #   every stored primary figure and the Pine parity gate valid.
+    #   ⚠ MEASURED because three of the seven shipped re-entries exited at EXACTLY +$0.30, the
+    #   30-tick breakeven buffer, after touching TP1 — one of them $2.65 past it.
+
+    exec_sec_tp1_pct: float = -1.0     # "Secondary banks at TP1 (%)"
+    #   A SECONDARY-ONLY take-profit percentage at TP1. -1.0 (default) = inherit `exec_tp1_pct`,
+    #   which is what the shared ladder does today, so the default cannot move a stored figure.
+    #   0-100 gives the re-entry its own rung: a 1m entry aiming at a 15m target spends a long time
+    #   in the trade, and banking part of it is the other answer to being ticked out at breakeven.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_req_m1_dir: bool = False  # "Re-entry needs the 1m trend to agree"
+    #   OFF (default) = the shipped rule, which reads the 1m engine's SOS events and ignores its
+    #   direction. ON = the 1-minute structure engine's own direction must also match the trade.
+    #   It is the 1m half of Aaron's question about which chart says "stop taking these" — the 15m
+    #   half is already covered, because a 15m shift of structure retires the setup and the arm
+    #   dies with it.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_require: str = "Breakeven"   # "Secondary needs the primary to have…"
+    #   WHAT THE PRIMARY ON THAT 15m LEG MUST HAVE DONE before a re-entry is allowed. Four values:
+    #     "Breakeven"   (default) — the primary reached TP1 (the 0.5 fib). The shipped rule, and
+    #                   byte-identical to the hardcoded `be_sos == *_sos_bar` test it replaced.
+    #     "Any close"   — the primary traded this leg and is now closed, whatever the outcome.
+    #     "Stopped only"— the primary traded and closed WITHOUT reaching TP1 (the swept-stop case:
+    #                   in at 0.618, stop taken at 0.886, price reclaims and runs without you).
+    #     "None"        — no primary required; a live 15m setup is enough.
+    #   ⚠ MEASURED before it was shipped, and the four are NOT interchangeable — each changes what
+    #   the feature IS, not just how often it fires. See `mpc_sos_fade_optimization.md` → the
+    #   secondary loosening grid. The dead-leg rule and `exec_sec_once_per_setup` still bound every
+    #   one of them, so a looser gate widens the door rather than removing the cap behind it.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_zone_deep: float = 0.886   # "Secondary zone — deep edge"
+    #   The DEEP edge of the 15m retrace zone the re-entry may arm in, as a fib ratio of the 15m
+    #   leg. 0.886 (default) reads `fibo_p6` itself, so the shipped path cannot move by a float
+    #   rounding step. 1.0 is the leg ORIGIN — it lets the setup arm while the 15m bar has closed
+    #   BEYOND the entry band, which is exactly the state a swept stop leaves behind.
+    #   ⚠ A deeper edge does NOT move the secondary's stop, which is the 1m leg origin either way.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_zone_shallow: float = 0.618   # "Secondary zone — shallow edge"
+    #   The SHALLOW edge of that same zone. 0.618 (default) reads `fibo_p3` itself, same reasoning.
+    #   A smaller number (0.5) lets the re-entry arm after price has already reclaimed part of the
+    #   move — more door time, and a worse price relative to the 15m targets.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
 
@@ -661,6 +783,21 @@ class SosFadeConfig:
                 f"{self.exec_nogap_arm!r}. It gates the no-FVG fallback entry and is read only "
                 "when exec_req_fvg is False."
             )
+        if self.exec_secondary and self.exec_sec_max_per_setup < 1:
+            # 0 would be "a cap of none", which reads as unlimited and means the opposite. The
+            # switch for no cap is `exec_sec_once_per_setup = False`, and having two ways to say it
+            # is how the two drift apart.
+            raise ValueError(
+                f"exec_sec_max_per_setup must be >= 1, got {self.exec_sec_max_per_setup!r}. "
+                "Switch exec_sec_once_per_setup OFF for an uncapped cascade.")
+        if self.exec_secondary and self.exec_sec_be_at not in ("TP1", "TP2"):
+            raise ValueError(
+                f"exec_sec_be_at must be 'TP1' or 'TP2', got {self.exec_sec_be_at!r}.")
+        if self.exec_secondary and not (
+                self.exec_sec_tp1_pct == -1.0 or 0.0 <= self.exec_sec_tp1_pct <= 100.0):
+            raise ValueError(
+                f"exec_sec_tp1_pct must be -1 (inherit exec_tp1_pct) or a percentage in "
+                f"[0, 100], got {self.exec_sec_tp1_pct!r}.")
         if self.exec_secondary and not (0.0 <= self.exec_sec_retrace < 1.0):
             # 1.0 is the leg ORIGIN, which is where the stop sits — an entry there has a zero stop
             # distance, so the order is cancelled and the feature silently does nothing. Past 1.0

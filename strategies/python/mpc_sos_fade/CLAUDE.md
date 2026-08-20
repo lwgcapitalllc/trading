@@ -761,6 +761,52 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   and the best total.** Drawdown is flat at 6.53R across all four, because it belongs to the primary
   book. ⚠ **So: do not enter on the SOS, and equally do not read this as a reason to move off
   0.382.** The lever does not change the verdict above; it changes the size of one fill.
+- 🔴 **THE GATES WERE LOOSENED FOUR WAYS ON 2026-08-19 AND EVERY DOOR IS WORSE. THE SWEPT-STOP
+  RE-ENTRY LOSES MONEY.** Aaron's case: *in at 0.618, price takes the 0.886, swipes the stop, comes
+  back, bounces off a higher fib and runs — the whole trade missed.* Three levers now exist to ask
+  that question (`exec_sec_require` ∈ Breakeven / Any close / **Stopped only** / None,
+  `exec_sec_zone_deep`, `exec_sec_zone_shallow`), all defaulting to the shipped rule. **9 real
+  replays over 156,543 M15 + 2,343,987 M1 bars (2020-01-01 → 2026-08-18), control reproducing lab
+  run `fbfc89d71fb4` exactly at 160 primaries + 7 secondaries.** The shipped rule wins on book R
+  (374.17), on R-with-its-best-trade-removed (−0.81 against −1.49 … −5.70) and on drawdown
+  (−15.01R against −18.08R), and the ordering is **monotonic in how much was loosened**. ⚠ **Asked
+  in isolation the swept-stop door is 7 trades / −0.68R / 2 wins / 4 full −1R losses** — the pattern
+  is real and taking it systematically loses. ⚠ **`exec_sec_zone_deep` is INERT on top of it** (1.0
+  and 0.886 give the identical book): those legs were blocked by the breakeven gate alone, never by
+  the zone, and only measuring the two separately showed it. ⚠ **Zero primaries displaced in any
+  cell**, so none of it is the one-slot queue effect. ⚠ **The R differences sit inside the 15.06R
+  jitter band — the DIRECTION (9 of 9) and the win/loss counts (1/1 → 3/9) are the signal.** 🔴 **The
+  finding under the finding: the re-entries that DO fire mostly SCRATCH** — four of the control's
+  seven land inside the ±0.15R band and eleven of "any close"'s fourteen are ≈0 or exactly −1R. A 1m
+  entry gets a 1m-tight stop and is then handed to the 15m structure trail, which ratchets to
+  breakeven long before a 15m target. **Entry confluence is answered; the EXIT ladder for a 1m entry
+  has never been varied independently of the primary's.** Full grid: `mpc_sos_fade_optimization.md`
+  → Run 23, part 1.
+- **MEASURED 2026-08-19 (Run 23, parts 2–3) — THE EXIT LADDER IS WHERE THE RE-ENTRY WAS BROKEN, AND
+  "HOW MANY RE-ENTRIES" IS ONE.** Four more levers, all defaulting to the shipped rule
+  (`exec_sec_max_per_setup`, `exec_sec_req_m1_dir`, `exec_sec_be_at`, `exec_sec_tp1_pct`), 17 more
+  replays on the same bars. 🔴 **Depth 2 / 3 / 5 / unlimited are BYTE-IDENTICAL** — in 6.6 years
+  exactly one setup ever offered a second re-entry (2024-01-16 L, −1.00R) and a third never existed,
+  so the cascade question has a sample of **n=1**. 🔴 **And the rule already ships**: a re-entry that
+  closes at stage 0 sets `sec_stop_dir` → `mark_dead`, so a cascade can only continue through a
+  SCRATCH, never through a loss — *"how many before settling into losses"* is answered in code as
+  **the first real loss ends it**. 🔴 **`exec_sec_be_at="TP2"` (hold the initial stop through TP1) is
+  WORSE and overturned the prediction that prompted it** — 1 win / 4 losses, and the three trades it
+  rescued from a +0.05R scratch each became exactly −1.00R. **The breakeven ratchet was protecting
+  them, not robbing them.** 🟢 **Banking part of the re-entry at TP1 (`exec_sec_tp1_pct`) is the
+  first change in 26 replays that works** — win/loss goes **1/1 → 4/1** and ex-best turns positive
+  for the first time. The diagnostic that found it: **three of the seven re-entries exited at exactly
+  +$0.30 = `exec_be_buf_tk` (30 ticks)**, one of them $2.65 past TP1 with nothing banked. ⚠ **It
+  costs the tail**: 50% banked cuts 2023-04-03 from +79.07R to +42.79R, and **that one trade IS the
+  secondary book**. 🟢 **Best configuration measured: `exec_sec_req_m1_dir=True` +
+  `exec_sec_tp1_pct=50`** — 5 trades, 4/1, **+3.19R ex-best**, best drawdown of all 26 replays
+  (−14.92R), **and 32.28R BELOW control on total book R.** ⚠ **The two levers COMPOUND (+0.08 and
+  +1.52 alone, +4.00 together) because the filter changes which 1m bar arms 2020-09-15 and banking
+  then makes that trade a winner — a filter that looks inert on one exit ladder is not inert on
+  another.** ⚠ **Zero primaries displaced in any of the 26 cells.** **Nothing shipped: this is a
+  return-for-consistency trade Aaron makes, not one a table makes, and the shipped default is the
+  choice consistent with this repo's stated philosophy.** Full grids:
+  `mpc_sos_fade_optimization.md` → Run 23.
 - **NOT USABLE LIVE** — `algos/live/bridge.py` REFUSES `exec_secondary` outright
   (`UnsupportedStrategyConfig`), because the live runner drives ONE timeframe and this needs the 1m
   stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
@@ -788,7 +834,7 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 🔴 **26 params are marked `hidden` in the meta (2026-08-15) — RETIRED FROM THE EDITOR, NOT REMOVED.** Every field is still in `SosFadeConfig`, still at its default, still sent on every run and still settable through the API; only the row is gone, so the editor is the levers still under test rather than every lever that exists. Aaron's call, and his framing is the rule: *"I don't want you to delete the configurations because I might talk to you, and you might be able to toggle it back on super easy."* **Ask and it comes back — one `hidden` flag.** The set: `exec_longs`/`exec_shorts`/`exec_bleg`/`exec_conf_sz`; `exec_arm_div` and the five RSI engine dials; `exec_poi_source`/`exec_ob_deepen`/`exec_fvg_pre_zone`/`exec_fib_overlap`/`exec_fib_deep_edge`; and the whole `Higher-timeframe filter` group. 🔴 **SEVEN MORE landed the same day under a STRICTER bar, and the bar is the part worth keeping.** The first batch above was chosen on "never moved across every stored run", and Aaron rejected that criterion outright: *"we did backtest with and we proved that they're not worthy or have another setting that beats it consistently. Keep that setting and hide the others."* **Never moved is the ABSENCE of the experiment, not its result.** So the seven each name a sweep in `mpc_sos_fade_optimization.md`: `exec_close_opp_sos` (Runs 5 AND 6 — *exactly 0 difference*, twice; an opposite SOS never fires before SL or TP has resolved), `exec_tp2_stop_mode` (Run 2's 525-combo grid — TP1 price wins at 70.7R, Breakeven is the harmful one), `exec_struct_trail_buf_tk` (Run 2 — 10→80 ticks moves it 0.4R, *"do not chase it"*), `exec_trail_step` (Run 2 — the fixed-step family loses by 8R with no exception, and its `show_if` means the row has never once rendered), `exec_be_buf_tk` (Run 17 — widening it costs 5R for every 1R it rescues on a charged book), and `exec_fvg_deep_only` + `exec_no_late_day` (Run 12 §3 and §4 — two of the four relax routes, all of which lost money or were noise). ⚠ **`exec_sl_buf_tk` is the case that shows the bar biting and it stays VISIBLE**: it WAS in a grid — Run 4 — and Run 4 is marked *INVALID, DO NOT USE THE NUMBERS*, which is worse than untested. ⚠ **The master switches (`exec_arm_sweep`, `exec_aplus`, `aplus_window`), the secondary mechanics and `flat_by_close` have ZERO mentions in the optimization log and therefore stay**, however long they have sat still. ⚠ **`exec_risk_pct` is never hidden on any criterion** — it decides position size on the strategy the LIVE bot runs. ⚠ **The divergence VETO is deliberately NOT in it** — `div_veto` and `exec_respect_veto` are ON and still refusing setups, so the ARM is settled and the behaviour is not; hiding those would take a live rule off the screen. ⚠ **`exec_conf_sz` is not a settled setting but a DEAD one** — declared in `config.py` and referenced only in a comment, so nothing reads it. ⚠ **`exec_req_fvg`, `exec_deep_fib`, `exec_sl_level` and `exec_secondary` stay visible because they have actually been moved on real runs**; a param somebody tunes is a live question whatever it defaults to. ⚠ **Only THREE of the first nineteen carry a sweep** (`exec_poi_source` and `exec_ob_deepen` off Run 15's order-block thread, `exec_htf_exhaust_only` off Run 5's zero-effect pair) — the rest are hidden on Aaron's direct instruction or because they are structural (longs/shorts), which is a legitimate reason and not a measured one. Say which is which rather than letting the next reader assume the whole set was proven. ⚠ **The "never moved" figures behind the first batch came from the 15 `mpc_sos_fade` runs then in the lab (19 now), and that is the whole sample** — older rows were deleted, so it means "nobody has touched these lately", never "never in this strategy's history". Mechanism, and the escape that shows a hidden param moved off its default: `command-center/frontend/CLAUDE.md` → `ParamEditor.tsx`.
 | **Minimum stop distance** | `exec_min_stop_mode` ∈ {**"Off"**, "% of price", "Fixed $", "x ATR(14)"} + `exec_min_stop_val` (0.10). An ENTRY filter, not an exit lever — it lives in this table only because it is the guard for the `exec_sl_level` hazard two rows up. A setup whose stop lands closer to the entry than the floor places no order and records block code 7. | **Yes** — dropdown + floor; ported 2026-07-30 |
 | **Time stop** | `exec_time_stop_mode` ∈ {**"Off"**, "Before TP1 only", "Always"} + `exec_time_stop_hrs` (36.0). Close a position open for that many CALENDAR hours. **"Before TP1 only" fires only at stage 0** — TP1 never touched, so the stop never staged to breakeven; touching TP1 makes a trade immune for the rest of its life. The exit leg books as `L-TIME` / `S-TIME`. Added 2026-08-05; **defaulted ON ("Before TP1 only", 36h) 2026-08-06 — the baseline moved.** | **Yes** — dropdown + hours; see `### The time stop` |
-| **Scale-in (ADD size)** | `exec_scale_in` (default **OFF**) + `exec_scale_mode` (**"Trail"**) + `exec_scale_max_adds` (**3**) + `exec_scale_cap_x` (**0.5**). Past TP2, adds to a runner the trail is already protecting, sized so the add's worst case equals the profit the stop already guarantees. **The only ADDITIVE lever here; every other one is protective.** Added 2026-08-16; defaults re-measured 2026-08-18 after the fill model was corrected. ✅ Four `cfg_*` columns, **parity green**. | **Yes** — toggle + mode + two numbers; see `### Scale-in` |
+| **Scale-in (ADD size)** | `exec_scale_in` (default **OFF**) + `exec_scale_mode` (**"Trail"**) + `exec_scale_max_adds` (**3**) + `exec_scale_cap_x` (**0.5**). Past TP2, adds to a runner the trail is already protecting, sized so the add's worst case equals the profit the stop already guarantees. **The only ADDITIVE lever here; every other one is protective.** Added 2026-08-16; defaults re-measured 2026-08-18 after the fill model was corrected. **Since 2026-08-19 the adds also carry their own TAKE PROFIT** — `exec_scale_tp_mode` (**"Prev week H/L"**), the one input here whose default goes AGAINST its own measurement, deliberately. ✅ **Five** `cfg_*` columns. ⚠ **The fifth is UNGATED until a fresh export carries `cfg_scale_tp`.** | **Yes** — toggle + mode + two numbers + where the adds bank; see `### Scale-in` |
 
 The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten
 it further, never loosen it. With Structure selected and no confirmed swing yet, the trail is
@@ -1074,6 +1120,172 @@ target, structural or otherwise, has never been tested; the liquidity engine alr
 day/week levels and session highs and lows and the execution layer reads none of it.
 
 Full grid, the ladder-shape test and the void banner: `mpc_sos_fade_optimization.md` → Run 21.
+
+### The adds got a TAKE PROFIT, and the measurement said not to (2026-08-19)
+
+`exec_scale_tp_mode` ∈ {`"Ride"`, `"Prev week H/L"`, `"Prev day H/L"`, `"H4 H/L"`}. Until now the
+scale-in lots had **no exit of their own**: they closed pro-rata whenever the base ladder banked a
+rung, and otherwise rode the base trade's trailing stop. Aaron's question was the right one to ask —
+an add is bought late and high, with almost none of the base entry's cushion, so a pullback ought to
+hand back what it just made.
+
+**It was measured before it was built, and every target lost to riding.** XAUUSD 15m 2018-09-13 →
+2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5×, 182 trades. 🔴 **These are the RE-MEASURED
+numbers, taken after the resting-order fix below — the first set was wrong and is void.**
+
+| where the adds bank | total | maxDD | banks | worst | excl. top 20 | its dd | ret/dd |
+|---|---|---|---|---|---|---|---|
+| scale-in OFF (shipped) | 128.26R | 6.03 | — | −2.06 | 92.51R | 6.03 | 15.34 |
+| **Ride** (no target) | **194.15R** | 7.24 | 0 | −2.06 | 124.05R | 10.34 | 11.99 |
+| Prev week H/L | 168.51R | 7.24 | 16 | −2.06 | 114.12R | 9.73 | 11.73 |
+| Prev day H/L | 157.57R | 7.51 | 25 | −2.06 | 111.91R | 7.72 | **14.49** |
+| H4 H/L | 146.09R | 7.15 | 47 | −2.06 | 104.38R | 7.15 | **14.60** |
+
+🔴 **THE ORDERING IS THE FINDING, NOT ANY SINGLE ROW.** That column sorts by how OFTEN the target
+fires: weekly levels are far away and rarely bind, H4 levels are near and bind constantly. A
+separate control run — banking at a flat multiple of base risk rather than at structure — produced
+the same monotonic curve independently (1R **126.76R**, 3R 134.19R, 6R 141.24R), and banking at 1R
+came out **below never scaling at all**. Two unrelated target families, one shape: the adds earn on
+the few trades that run a long way, and every target truncates exactly those. ⚠ **The control is
+untouched by the bug below and still stands** — its target is a fixed price off the base entry, so
+there is no level and nothing to mitigate.
+
+🔴 **BANKING BUYS A SMOOTHER RIDE AND PAYS FOR IT OUT OF THE TAIL — the last three columns are the
+honest case FOR a target.** Strip the top 20 trades and the ranking inverts on risk-adjusted return:
+prev day 14.49 and H4 14.60 against Ride's 11.99, with drawdown falling 10.34 → 7.15. On the
+ordinary book a target is genuinely better. It only loses because the extraordinary book is where
+this strategy earns, and truncating it costs more than the smoothing is worth.
+
+⚠ **Drawdown on the FULL book barely moves** (7.15–7.51 against Ride's 7.24). Read against the
+whole sample, a target is not buying safety.
+
+⚠ **VOID, NEVER RE-MEASURED:** `daily + weekly` 174.35R, `daily + weekly + H4` 161.00R and
+`session H/L` 159.39R. All three came off the throwaway harness that carried the live-bar flaw, and
+none is a shipped option. Do not quote them; re-measure if they are ever wanted.
+
+⚠ **The worst trade is −2.06R in all 16 configurations, identical.** That is the answer to the
+question that prompted the work: the affordability rule already stops an add turning a winner into
+a loser, so there is no giveback left for a target to prevent.
+
+🔴 **IT SHIPS ON `"Prev week H/L"` — AARON'S EXPLICIT CALL, AND THE DEFAULT IS UNDER REVIEW.**
+He chose it deliberately, wanting certain money on the runners rather than the best expectancy. But
+he chose it on a number the live-bar bug had made wrong: **he was quoted a 4.38R gap to `Ride`,
+INSIDE this strategy's 15.06R jitter — the true gap is 25.64R, OUTSIDE it.** "Certainty for no
+measurable cost" is therefore not the trade-off actually on offer; the cost is real and it is about
+13% of the strategy's total return. He has been told and has not yet answered. ⚠ **Confirm the
+default before quoting it as a settled decision.** ⚠ Session H/L is deliberately not an option:
+worst measured, and it would need six more mirrored Pine variables.
+
+**How it works, and the two things that are load-bearing.** The target is the nearest level of the
+chosen family that (a) price has **not already taken** — a swept level is not somewhere to aim at,
+it is a price we are past — and (b) sits **beyond the newest add**, so every lot it closes is closed
+in profit. On the Pine side it rides the existing per-add `strategy.exit` as a `limit`, which makes
+each add a proper OCO bracket; a `na` limit is no limit, so `"Ride"` leaves those calls
+byte-identical.
+
+🔴 **THE TARGET IS RESTED AT THE BAR'S CLOSE AND FILLS ON THE NEXT BAR (`_add_tp_level`), AND THAT
+IS THE WHOLE REASON TWO OF THE FOUR MODES WORK AT ALL.** Resolved from the LIVE bar instead —
+which is how this was first built — `"Prev day H/L"` and `"H4 H/L"` banked **ZERO times in eight
+years**, returning a figure byte-identical to `Ride`. They were not short of levels: daily resolved
+**1,804** valid targets and H4 **2,438**, every one of them standing and beyond the newest add.
+
+The cause is an interaction, which is why neither the tests nor the numbers caught it. A daily or H4
+level dies on a **WICK** (`SWEEP_HIGH` / `SWEEP_LOW`), and `stack.step(bar)` runs **before** the
+strategy sees that bar — so on the exact bar price reached the level, the engine had already flagged
+it mitigated and the target evaluated to `None`. **The order vanished precisely on the bar it would
+have filled**, every single time, for eight years.
+
+⚠ **WEEKLY HID IT COMPLETELY, AND THAT IS THE TRANSFERABLE PART.** A week level dies on a **CLOSE**
+through (`BREAK_HIGH` / `BREAK_LOW`), so it survives the spike that fills it and banked normally
+throughout. The one family anybody was looking at was the one family immune to the defect — the
+default looked healthy while two of its three alternatives were inert. **A feature that works on the
+option you are watching tells you nothing about the options you are not.**
+
+⚠ **The fix is not new machinery — it is the one-bar order delay the rest of this file already
+honoured.** TradingView places `strategy.exit(..., limit=)` at a bar's close and it is live on the
+NEXT bar; the base ladder stages `dec.stop = self._current_stop()` in Phase B for exactly this
+reason. The adds were the single path that skipped it. `test_a_target_swept_by_the_filling_bar_still_fills`
+pins it, and reverting the fix reddens that test and only that test.
+
+🔴 **BANKING DOES NOT HAND THE ADD SLOT BACK.** Pine's `lAddN` only counts up, and the Python side
+zeroes each lot **in place** rather than emptying `_adds`, because the ladder is capped on adds
+BOUGHT. Freeing the slot would let a trade add again after banking — "scale in and out repeatedly",
+which is a **different strategy** that nothing here has measured. There is a test pinning it.
+
+⚠ **The comparator decodes an absent `cfg_scale_tp` as `"Ride"`, and that is the opposite of how the
+four columns beside it are read.** "Absent ⇒ off" is safe for `cfg_scale_in` because that feature
+shipped OFF. This one ships **active**, so falling back on the config default would replay every
+pre-2026-08-19 export with its adds banking at a weekly level the exported Pine had no code to look
+at — and the diff would blame the strategy for the harness's own configuration.
+
+⚠ **UNGATED SO FAR.** `cfg_scale_tp` is new, so no export carries it yet and
+`compare_strategy.py` has never checked this path. Rule 22 is not satisfied until a fresh export
+lands with the column present and the gate passes on it.
+
+### 🔴 A TP RUNG WAS SLICING THE ADDS, AND `_finalise_trade` BINNED THE REST (fixed 2026-08-19)
+
+**Found while verifying the TP1/TP2 sweep, not by a test.** `_exit_portion` closed the scale-in
+lots **pro-rata** with the base: a rung taking 50% of the base took 50% of every add. Then
+`_finalise_trade` ends with `self._adds = []`, so the unclosed remainder vanished **with its P&L
+never booked**. The trade's R was short by whatever those lots were worth.
+
+**MEASURED, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN, `Trail` 3 × 0.5×:** every affected
+configuration dropped **exactly 112 add lots**, worth up to **42.46R — 32% of the result** at
+`exec_tp1_pct = 50, exec_tp2_pct = 25`.
+
+| tp1 / tp2 | booked (buggy) | discarded | re-run (fixed) | understated by |
+|---|---|---|---|---|
+| 0 / 0 | 194.15R | 0.00R | **194.15R** | — |
+| 0 / 25 | 163.59R | — | **180.19R** | 9% |
+| 25 / 0 | 158.02R | 14.15R | **174.62R** | 10% |
+| 25 / 25 | 127.45R | 28.31R | **160.65R** | 21% |
+| 50 / 0 | 121.89R | 28.31R | **155.09R** | 21% |
+| 33 / 33 | 106.11R | 37.37R | **149.93R** | 29% |
+
+⚠ **`discarded` and `re-run` are two different measurements and only the second one counts.** The
+discarded column valued each orphaned lot at the exit bar's CLOSE, while a trade ending on a stop
+or a limit would have filled it at that price instead — so it SIZES the defect and does not
+reconstruct the run. It is kept because the gap between the two columns is the point: adding it
+back to `booked` predicted 172.17R at 25/0 where the re-run measures 174.62R. **A defect this
+shape is re-measured, never corrected by arithmetic** — the missing P&L compounds, so it moves
+every later trade's size, and win%, sd and drawdown cannot be reconstructed from an aggregate at
+all.
+
+**The ranking survives the fix and Ride still wins**, but the penalty is smaller than the buggy
+table implied: `exec_tp1_pct = 50` costs 39R against Ride, not the 72R it was reading.
+
+⚠ **DIRECTION IS NOT FIXED, and the aggregate hides it.** Only **49 of the 112** dropped lots were
+in profit — by COUNT most were underwater. The net came out positive because the winners are far
+bigger, which is what lots added into a trend look like. On a single trade the bug can flatter just
+as easily: the unit test's fixture drops a LOSING lot, so there the old code read 21,073 against a
+true 11,257. **"It understates" was true of the eight-year total and of nothing smaller.**
+
+**The fix is Pine's rule, not a repair of the pro-rata one.** `L-TP1`/`L-TP2` are
+`from_entry = "Long"`, so a rung can only ever close the BASE entry; each add carries its own
+`L-AX1..4` exit at the same stop and dies with it. So: **a TP rung leaves the adds alone; a stop, a
+force-close, or whichever fill closes the last of the base takes them in FULL.** The `final` clause
+is why the second half is there — if `exec_tp1_pct + exec_tp2_pct == 100` a *limit* is what closes
+the base, and the adds must still go with it. Nothing may outlive the trade that owns it.
+
+🔴 **IT COULD NOT FIRE AT THE SHIPPED `0/0`, WHICH IS THE WHOLE REASON IT SURVIVED.** With both
+rungs at zero the runner closes 100% of the base, so the pro-rata fraction was always 1.0 and the
+two implementations agreed exactly. **The divergence existed only on settings nobody had ever
+run** — rule 14, stated as plainly as this repo can state it: a green parity gate says the two
+sides AGREE, never that either is RIGHT, and says nothing at all about a branch neither one
+entered. ⚠ **The live bot was never exposed** (`exec_tp1_pct = exec_tp2_pct = 0`), and the fix is
+byte-identical there: the `(0,0)` row reproduced at **194.15R / 7.24 R-dd / 3,510.4x** after it.
+
+⚠ **STILL UNGATED, for the same reason as the section above.** `compare_strategy.py` ran GREEN on
+`engines/VANTAGE_XAUUSD, 15_49f80.csv` (warmup 1000) after the fix — but that export carries
+`cfg_tp1_pct=0, cfg_tp2_pct=0`, and **every** A+ export on this machine either has the rungs at
+zero or predates `cfg_scale_in` entirely. **No export in existence can exercise this branch.** The
+green run proves no REGRESSION on the paths it covers and nothing whatever about the one that was
+fixed. It needs a fresh export at `execTp1Pct > 0` with scale-in ON.
+
+⚠ **The test is `test_a_tp_rung_does_not_slice_the_adds`, WATCHED RED by mutation** (restore the
+pro-rata block → 121.4 vs 100.4 on P&L and on R). It carries no hand-computed constant: it runs the
+same price path at `exec_tp1_pct` 0 and 50 where the rung banks at 105 and the stop sits at 105, so
+the two runs ARE each other's expected value and only a sliced base can separate them.
 
 ### The time stop (`exec_time_stop_mode` / `exec_time_stop_hrs`, 2026-08-05)
 
