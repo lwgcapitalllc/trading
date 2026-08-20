@@ -571,3 +571,54 @@ def test_engine_trades_feed_the_real_sizing_engine_RawTrade():
     )
     # 100→110 long at $2/point = $20 per contract gross.
     assert rt.gross_per_contract() == pytest.approx(20.0)
+
+
+def test_a_lots_own_excursion_and_exit_reach_the_curve_point():
+    """A lot is a POSITION: it runs its own distance, goes its own distance against, and comes off
+    somewhere. The three keys above say only that one was BOUGHT, which is all a reader could learn
+    from a scaled trade until 2026-08-20.
+
+    Watched RED by mutation: deleting the per-lot copy block from `build_equity_curve` leaves the
+    original three keys and this fails naming the six that vanished."""
+    lots = [
+        {
+            "price": 106.5,
+            "ms": 1_500,
+            "qty": 0.75,
+            "mfe_price": 108.25,
+            "mae_price": 105.0,
+            "exit_price": 107.0,
+            "exit_ms": 1_800,
+            "exit_reason": "L-ATP",
+            "pnl_usd": 0.375,
+        }
+    ]
+    assert build_equity_curve([_t(0.0, adds=lots)])[0]["adds"] == [
+        {
+            "price": 106.5,
+            "ms": 1500,
+            "qty": 0.75,
+            "mfe_price": 108.25,
+            "mae_price": 105.0,
+            "exit_price": 107.0,
+            "exit_ms": 1800,
+            "exit_reason": "L-ATP",
+            "pnl_usd": 0.38,
+        }
+    ]
+
+
+def test_a_lot_that_recorded_nothing_past_its_fill_is_not_given_zeroes():
+    """🔴 The rule the whole file keeps: absent must not become measured.
+
+    A strategy that adds without tracking its lots — and every run stored before 2026-08-20 —
+    carries `{price, ms, qty}`. Defaulting the rest to 0.0 puts the lot's exit at price ZERO and
+    its drawdown at zero, stated as confidently as a real reading. This is the bar cache recording
+    a REQUESTED range as received, one layer down.
+
+    Watched RED by mutation: changing the comprehension's `if a.get(k) is not None` guard to a
+    plain `a.get(k, 0.0)` makes all six keys appear at zero and this goes red."""
+    lots = [{"price": 106.5, "ms": 1_500, "qty": 0.75}]
+    assert build_equity_curve([_t(0.0, adds=lots)])[0]["adds"] == [
+        {"price": 106.5, "ms": 1500, "qty": 0.75}
+    ]

@@ -77,11 +77,27 @@ export interface ChartTradeFib {
  *  enough to flat that calling it a win or a loss says more than the trade did. */
 export type TradeOutcome = 'won' | 'scratch' | 'lost'
 
-/** One scale-in lot: the price it was bought at, when, and how much. */
+/** One scale-in lot — a POSITION in its own right, and shaped like one.
+ *
+ *  A lot is bought at its own price, runs its own distance, goes its own distance against, and
+ *  comes off somewhere. Until 2026-08-19 the record was the first three fields and the chart could
+ *  therefore draw only *a lot was bought here*; the questions a reader actually asks of a trade —
+ *  how far did it run, what was its drawdown, where did it exit — had no answer in the data.
+ *
+ *  ⚠ Everything past `qty` is OPTIONAL and absent together: a run stored before the strategy
+ *  recorded them carries the first three keys and nothing backfills it, so the `Scale-in detail`
+ *  layer stays empty for it and the plain `Add` line is all there is. **Absent is not zero** — a
+ *  lot with no `exitPrice` is one nothing closed, not one that exited at 0.00. */
 export interface ChartTradeAdd {
   price: number
   ms: EpochMs
   qty: number
+  mfePrice?: number // deepest FAVOURABLE price this lot reached, measured from ITS OWN fill
+  maePrice?: number // deepest ADVERSE price this lot reached — the lot's drawdown, not the base's
+  exitPrice?: number // where the lot came off
+  exitTime?: EpochMs // when it came off
+  exitReason?: string // the exit leg that took it (`L-ATP` = the adds' own target, `L-SL`, …)
+  pnl?: number // the lot's own P&L, in account currency
 }
 
 /** One round-trip trade: entry → exit, drawn as a profit-depth view.

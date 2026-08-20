@@ -180,6 +180,23 @@ class MpcSosFadeStrategy:
             dec = self.execution.step(sig, seq)
             if bar.index >= warmup:
                 self.decisions.append(dec)
+        return self.finalize(df)
+
+    def finalize(self, df) -> "MpcSosFadeStrategy":
+        """Every pass that needs the FINISHED book, rather than one bar. Today: loss recovery.
+
+        Cheap and safe when nothing is switched on — it returns immediately — and IDEMPOTENT, so
+        a driver that calls it and then hands the object to something that calls it again does
+        not get the book twice.
+
+        🔴 **Every driver of this strategy has to call this.** `run` and `run_dual` do. Anything
+        that steps bars itself — the lab's `python_runner`, a bespoke harness — must call it after
+        its loop, or `exec_recovery` silently does nothing and the run reports a book with its
+        recovery trades missing. That is rule 7 exactly: the toggle is a CLAIM about code
+        somewhere else, and this is the line that has to consume it.
+        """
+        from . import recovery
+        recovery.apply(self, df)
         return self
 
     def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
@@ -263,7 +280,9 @@ class MpcSosFadeStrategy:
                                     self.execution.prim_closed_sos_l,
                                     self.execution.prim_closed_sos_s,
                                     self.execution.prim_lost_sos_l,
-                                    self.execution.prim_lost_sos_s)
+                                    self.execution.prim_lost_sos_s,
+                                    self.execution._poi_edge_l,
+                                    self.execution._poi_edge_s)
                 sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close,
                                   last_sig.last_conf_high, last_sig.last_conf_low)
                 filled = self.execution.step_secondary(sig1m, arm)
@@ -283,4 +302,7 @@ class MpcSosFadeStrategy:
             if b15.index >= warmup:
                 self.decisions.append(dec)
             i15 += 1
-        return self
+        # df15, not df1m: the recovery replays 15m structure, the same stream the primary read.
+        # The cancel path above deliberately does NOT come here — a cancelled run has a partial
+        # book, and appending recovery trades to it would report a rule applied to half a record.
+        return self.finalize(df15)

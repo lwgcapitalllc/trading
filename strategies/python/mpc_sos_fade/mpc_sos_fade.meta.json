@@ -511,12 +511,12 @@
       "name": "exec_secondary",
       "group": "Secondary re-entries (1m)",
       "widget": "toggle",
-      "label": "Secondary re-entries (1m SOS)",
+      "label": "Secondary re-entries",
       "options": {
         "off": "Primary only",
         "on": "Secondary on"
       },
-      "desc": "Adds a second entry off the 1-minute chart: once the first trade is safe at breakeven and price falls back into the zone, it re-enters with a tighter stop for the same targets. It fires about eight times in eight years and nearly all of the result is one trade. Lab only, and slow to run."
+      "desc": "Adds a second entry off the 1-minute chart: once the first trade is safe at breakeven and price falls back into the zone, it re-enters for the same targets. On by default. MEASURED over 7.9 years on the settings that now ship: 54 re-entries, worth +13.9R on top of the first trades' +206.2R, and the first trades are untouched to the decimal. It is bought with drawdown — the worst peak-to-trough goes from 51.8% to 60.4% — and it leans hard on one trade, which is why it is sized at half. Lab only, and slow to run."
     },
     {
       "name": "exec_sec_once_per_setup",
@@ -544,6 +544,53 @@
         "exec_secondary": true
       },
       "desc": "How deep the 1-minute re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
+    },
+    {
+      "name": "exec_sec_trigger",
+      "group": "Secondary re-entries (1m)",
+      "label": "What triggers a re-entry",
+      "choices": ["1m shift", "FVG in zone"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Lab only."
+    },
+    {
+      "name": "exec_sec_stop",
+      "group": "Secondary re-entries (1m)",
+      "label": "Re-entry stop sits at",
+      "choices": ["1m leg", "swing low", "0.886", "1.0"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Where a re-entry's stop goes. 0.886 (default) is the same level the first trade stops at. 1m leg is the original rule and only works with the 1m shift trigger, which is the only one that creates a 1-minute move to measure — pairing it with the gap trigger is refused rather than quietly substituted. Swing low uses the last confirmed 1-minute swing; 1.0 is the start of the leg. MEASURED, and this is not a detail: on the 29 October 2025 case the same entry stopped at the gap's own edge was a loss two minutes later, and stopped 98 cents lower under the swing it ran to both targets for +16R. Lab only."
+    },
+    {
+      "name": "exec_sec_tp_r",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "Re-entry's first target, in R",
+      "min": -1,
+      "max": 10,
+      "step": 0.1,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Where a re-entry takes its first profit, measured as a multiple of its own risk. 1.25 (default) puts that first rung on the re-entry's own scale and leaves the later targets alone; how much banks there is set by \"Re-entry banks this % at TP1\". -1 uses the same 15-minute target the first trade uses, which was the rule until 20 August 2026. MEASURED over 7.9 years with the gap trigger on: without a rung of its own most re-entries finish flat — price moves in your favour and the breakeven stop takes you out before a 15-minute target is reached. Every rung from 0.5 to 2 was replayed and 1.25 won on the total with its single best trade removed. It also brings the move-to-breakeven point closer, so read it together with the banking percentage. Lab only."
+    },
+    {
+      "name": "exec_sec_req_div",
+      "group": "Secondary re-entries (1m)",
+      "widget": "toggle",
+      "label": "Re-entry needs a divergence",
+      "options": {
+        "off": "Not needed",
+        "on": "Require"
+      },
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Whether a re-entry also needs a live RSI divergence on the 15-minute chart, on top of the setup still being alive and price being back in the zone. Not needed (default). It is NOT the same question as what arms the first trade — the bot ships finding its trades from liquidity sweeps, so the divergence is usually absent and requiring it stops re-entries firing at all: MEASURED over the year to 2026-08-18, zero re-entries with it required. Lab only."
     },
     {
       "name": "exec_sec_require",
@@ -585,7 +632,7 @@
       "name": "exec_sec_max_per_setup",
       "group": "Secondary re-entries (1m)",
       "widget": "number",
-      "label": "   \u21b3 How many re-entries per setup",
+      "label": "   ↳ How many re-entries per setup",
       "min": 1,
       "max": 5,
       "step": 1,
@@ -593,7 +640,7 @@
         "exec_secondary": true,
         "exec_sec_once_per_setup": true
       },
-      "desc": "Read only when One re-entry per primary is ON. How many times one setup may be re-entered before it is done. A re-entry that is STOPPED OUT still ends the setup whatever this says, so raising it only lets a setup be re-tried after a scratch. MEASURED over 6.6 years: 2, 3, 5 and unlimited all produce the same book \u2014 only one setup ever offered a second re-entry, and it lost. Lab only."
+      "desc": "Read only when One re-entry per primary is ON. How many times one setup may be re-entered before it is done. A re-entry that is STOPPED OUT still ends the setup whatever this says, so raising it only lets a setup be re-tried after a scratch. MEASURED over 6.6 years: 2, 3, 5 and unlimited all produce the same book — only one setup ever offered a second re-entry, and it lost. Lab only."
     },
     {
       "name": "exec_sec_req_m1_dir",
@@ -617,7 +664,7 @@
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "When a re-entry's stop jumps to breakeven. TP1 (default) is the same rule the first trade uses. TP2 holds the original stop for longer, giving the trade room to breathe. MEASURED: TP2 is WORSE \u2014 the three trades it saved from a breakeven scratch each became a full loss instead. Lab only."
+      "desc": "When a re-entry's stop jumps to breakeven. TP1 (default) is the same rule the first trade uses. TP2 holds the original stop for longer, giving the trade room to breathe. MEASURED: TP2 is WORSE — the three trades it saved from a breakeven scratch each became a full loss instead. Lab only."
     },
     {
       "name": "exec_sec_tp1_pct",
@@ -630,7 +677,20 @@
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "How much of a re-entry is banked at the first target, separately from the first trade. -1 (default) means use the same setting as everything else. MEASURED: banking 25-75% turns the small re-entries from breakeven scratches into small wins, and cuts the one big winner by the same proportion. Lab only."
+      "desc": "How much of a re-entry is banked at its first target, separately from the first trade. 50 (default) takes half off and runs the rest. -1 uses the same setting as everything else, which ships at nothing off — the rule until 20 August 2026. MEASURED over 7.9 years: with nothing banked, 15 of 54 re-entries finished flat; banking half left none flat, 30 winners and 24 losers, and took the leg less its single best trade from -0.4R to +7.2R. It cuts the one big winner by the same proportion, which is the trade being made. Lab only."
+    },
+    {
+      "name": "exec_sec_risk_pct",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "Re-entry risk (% of the first trade's)",
+      "min": 1,
+      "max": 300,
+      "step": 1,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "How much a re-entry risks, as a percentage of what a first trade risks. 50 (default) is half; 100 is the same. It changes the SIZE only — entry, stop and targets are identical, so the R figure a re-entry reports does not move at all and must be scaled by this number before it is compared with a first trade's. MEASURED over 7.9 years: the re-entries add 6.9R at a quarter, 13.9R at half, 20.9R at three-quarters and 27.8R at full weight, and the worst peak-to-trough goes 56.2 / 60.4 / 64.4 / 68.1 per cent against 51.8 with them off — a straight line with no natural stopping place, so half was chosen because one trade is three quarters of the whole leg's profit. Zero is refused: use the on/off switch instead. Lab only."
     },
     {
       "name": "show_div",
@@ -846,6 +906,105 @@
         "fill_model": "tick"
       },
       "choices": ["XAUUSD"]
+    },
+    {
+      "name": "exec_recovery",
+      "group": "Loss recovery",
+      "widget": "toggle",
+      "label": "Loss recovery trades",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "After this bot loses a trade, take a smaller trade the other way to win the loss back. It waits for structure to break against the losing direction, then enters. Lab only — this is not on the TradingView chart and it has never been traded live.",
+      "guide": [
+        "Adds a second, smaller set of trades to the book",
+        "Off = the bot trades only its own setups"
+      ]
+    },
+    {
+      "name": "exec_recovery_risk_frac",
+      "group": "Loss recovery",
+      "show_if": {
+        "exec_recovery": true
+      },
+      "label": "↳ Size vs a normal trade",
+      "unit": "x",
+      "desc": "How big a recovery trade is next to a normal one. 0.25 means a quarter of the usual risk.",
+      "guide": [
+        "Bigger recovery trades, and a bigger drawdown with them",
+        "Smaller, safer, and worth less"
+      ]
+    },
+    {
+      "name": "exec_recovery_lock_at_r",
+      "group": "Loss recovery",
+      "show_if": {
+        "exec_recovery": true
+      },
+      "label": "↳ Secure the trade at",
+      "unit": "R",
+      "desc": "How far the recovery trade has to travel in your favour before the stop is moved up. 1 is the point where the original loss has been paid back.",
+      "guide": [
+        "Waits longer before protecting the trade",
+        "Protects sooner, and gets stopped out more"
+      ]
+    },
+    {
+      "name": "exec_recovery_lock_to_r",
+      "group": "Loss recovery",
+      "show_if": {
+        "exec_recovery": true
+      },
+      "label": "↳ Move the stop to",
+      "unit": "R",
+      "desc": "Where the stop goes once it moves. 1 banks the recovery. 0 is plain breakeven, which protects you from losing but does not bank the thing you entered for.",
+      "guide": [
+        "Locks in more, and is taken out by a smaller wobble",
+        "Locks in less, and gives the trade more room"
+      ]
+    },
+    {
+      "name": "exec_recovery_soft_stop_r",
+      "group": "Loss recovery",
+      "show_if": {
+        "exec_recovery": true
+      },
+      "label": "↳ Cut early at",
+      "unit": "R against",
+      "desc": "Give up once the trade is this far against you, instead of waiting for the full stop. 0 leaves the full stop in place. This is the only setting here that makes a losing recovery trade cost less.",
+      "guide": [
+        "Sits through more of the stop",
+        "Cuts sooner: smaller losses, but fewer winners survive"
+      ]
+    },
+    {
+      "name": "exec_recovery_both_dirs",
+      "group": "Loss recovery",
+      "show_if": {
+        "exec_recovery": true
+      },
+      "widget": "toggle",
+      "label": "↳ Take both directions",
+      "options": {
+        "off": "Recover longs only",
+        "on": "Both"
+      },
+      "desc": "Whether to take the recovery trade whichever way it points. Turning this off keeps only the direction that happened to win in the past, which is a decision made after seeing the answer."
+    },
+    {
+      "name": "exec_recovery_max_days",
+      "group": "Loss recovery",
+      "show_if": {
+        "exec_recovery": true
+      },
+      "label": "↳ Give up after",
+      "unit": "days",
+      "desc": "Close a recovery trade that has gone nowhere after this many days. A backstop — most trades finish in about four days. It exists because trades left open for months pay a lot of overnight interest.",
+      "guide": [
+        "Holds losing trades longer and pays more overnight interest",
+        "Cuts stale trades sooner"
+      ]
     }
   ]
 }

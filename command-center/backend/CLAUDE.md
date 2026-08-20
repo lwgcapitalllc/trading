@@ -3291,8 +3291,19 @@ quantity, `legs` is the exit ladder, `favorable`/`adverse` are excursions on the
 fact that closes the arithmetic appeared in no field of the equity curve, the KPI row or the spec.
 
 So `backtest/output.py` now carries the filled lots onto the curve point (`adds`) and this file
-passes them through to `trades[].adds`, one `{price, ms, qty}` per lot. The panel draws a dotted
-`Add` line per lot. ⚠ **The key is ABSENT on a trade that never added**, not `[]` — every trade of
+passes them through to `trades[].adds`, one record per lot. The panel draws a dotted `Add` line per
+lot.
+
+**Since 2026-08-20 a lot is TRADE-SHAPED** — `mfePrice`, `maePrice`, `exitPrice`, `exitTime`,
+`exitReason`, `pnl` alongside the original three — so the panel's `Scale-in detail` layer can draw a
+lot the way it draws a trade. Renamed to camelCase here because the chart defines that shape.
+⚠ **Every field past `qty` is OPTIONAL PER LOT and is copied only when the strategy recorded it.**
+🔴 **An absent field is never defaulted to `0.0`**, and this is the rule that matters: a lot reported
+as exiting at price zero is a *measurement*, stated with the same confidence as a real one, and the
+panel would draw a box from the fill price down to 0.00. Absent means nothing closed it. Same shape
+as the bar cache recording a REQUESTED range as received, and as the live bot reading an empty bar
+frame as a quiet market. Three tests in `tests/test_chart_spec_trade_outcome.py` pin it, including
+the two independent halves (a lot measured but never closed keeps its excursion and omits the exit). ⚠ **The key is ABSENT on a trade that never added**, not `[]` — every trade of
 every strategy without scale-in is that trade, and an empty list on all of them reads as a feature
 that ran and bought nothing.
 
@@ -3403,3 +3414,14 @@ Live behavior. Scanner reads from `strategies/` via `rglob("*.cs")`/`rglob("*.mq
 **`delete_strategy` cascades the FK chain.** Foreign keys are ON, and `backtest_runs`/`optimizations` reference `strategies` (and `evaluations`/`stress_tests` reference those runs), all `NO ACTION`. So `lab_db.delete_strategy()` purges the whole chain children-first in one transaction — evaluations + stress_tests (via the strategy's run_ids) → backtest_runs + optimizations → strategy_versions → the strategy — or deleting any strategy that has runs raises `FOREIGN KEY constraint failed` (this was an unhandled 500 on reconcile of a strategy with runs).
 
 **MT5 delete removes BOTH the `.mq5` and the `.ex5`.** MT5 loads the compiled `.ex5`, which outlives its source — deleting only the `.mq5` leaves the strategy in the Navigator and Strategy Tester. `mt5_agent_client.delete_strategy_file()` deletes both siblings (`_delete_one` per file; an already-absent sibling 404 is fine; fails only on a real error or if neither existed). NT8 has no analog — it compiles all `.cs` into one `NinjaTrader.Custom.dll`, so deleting the `.cs` + recompiling clears it.
+
+---
+
+## `python_runner` finalizes the strategy after `_replay` (2026-08-20)
+
+`_replay` reproduces `MpcSosFadeStrategy.run()`'s bar loop (it needs the progress + cancel seams
+`run()` has no room for), so it does not inherit `run()`'s end-of-book passes. `_execute` now calls
+`strategy.finalize(df)` after the loop and before `build_results`. Without it `exec_recovery` would
+be a toggle the form renders, the config carries, and **nothing consumes** — the run would simply
+report no recovery trades and look correct. `run_dual` finalizes itself and the pass is idempotent,
+so the call is safe on both paths. Guarded by `hasattr`: the runner serves every python strategy.

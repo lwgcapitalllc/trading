@@ -301,6 +301,15 @@ def _execute(job_id: str, spec: dict) -> None:
         _set(job_id, status="failed_cancelled", pct=100, message="cancelled")
         return
 
+    # Passes that need the FINISHED book, not one bar — today the loss recovery. `_replay` below
+    # reproduces the strategy's own bar loop rather than calling `run()`, so it does NOT get
+    # `run()`'s finalize for free: without this line `exec_recovery` would be a toggle the form
+    # renders, the config carries, and nothing consumes. `run_dual` finalizes itself, and the
+    # pass is idempotent, so calling it here is safe on both paths. Guarded because the runner
+    # serves every python strategy and only this one has the hook.
+    if hasattr(strategy, "finalize"):
+        strategy.finalize(df)
+
     _set(job_id, pct=95, message="building results…")
     # `blocks` / `misses` are optional on the execution layer — a strategy that records no
     # refusals or near-misses (or an older one) yields an empty list, never a missing key.

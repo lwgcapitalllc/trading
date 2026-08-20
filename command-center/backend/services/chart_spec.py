@@ -375,10 +375,19 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                 "maePrice": mae_price,
                 "stopPrice": stop_price,
                 "profitLegs": profit_legs,
-                # SCALE-IN lots (`{price, ms, qty}`), absent on any trade that never added — which
-                # is every trade of every strategy without the feature. The chart draws one marker
-                # per lot, and it has to: `entryPrice`/`exitPrice`/`pnl` alone describe a short
-                # exiting BELOW its entry for a P&L of zero, which reads as a bug and is not one.
+                # SCALE-IN lots, absent on any trade that never added — which is every trade of
+                # every strategy without the feature. The chart draws one marker per lot, and it
+                # has to: `entryPrice`/`exitPrice`/`pnl` alone describe a short exiting BELOW its
+                # entry for a P&L of zero, which reads as a bug and is not one.
+                #
+                # A lot is TRADE-SHAPED — entry, excursion, exit, P&L — so the panel can draw it
+                # the way it draws a trade: how far it ran, how far it went against, where it came
+                # off. ⚠ Everything past `qty` is OPTIONAL PER LOT and is emitted only when the
+                # strategy recorded it. A run whose trades were stored before 2026-08-19 carries
+                # `price`/`ms`/`qty` and no more, and nothing backfills it — the panel degrades to
+                # the plain `Add` line it drew before, which is the honest picture of a record that
+                # never held the rest. **An absent field is never defaulted to 0.0 here**: a lot
+                # reported as exiting at price zero is a measurement, and this one was not made.
                 **(
                     {
                         "adds": [
@@ -386,6 +395,30 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                                 "price": round(float(a["price"]), 5),
                                 "ms": int(a.get("ms") or 0),
                                 "qty": float(a.get("qty") or 0.0),
+                                **{
+                                    key: round(float(a[src]), 5)
+                                    for src, key in (
+                                        ("mfe_price", "mfePrice"),
+                                        ("mae_price", "maePrice"),
+                                        ("exit_price", "exitPrice"),
+                                    )
+                                    if isinstance(a.get(src), (int, float))
+                                },
+                                **(
+                                    {"exitTime": int(a["exit_ms"])}
+                                    if isinstance(a.get("exit_ms"), (int, float))
+                                    else {}
+                                ),
+                                **(
+                                    {"exitReason": str(a["exit_reason"])}
+                                    if a.get("exit_reason")
+                                    else {}
+                                ),
+                                **(
+                                    {"pnl": round(float(a["pnl_usd"]), 2)}
+                                    if isinstance(a.get("pnl_usd"), (int, float))
+                                    else {}
+                                ),
                             }
                             for a in (p.get("adds") or [])
                             if isinstance(a, dict) and isinstance(a.get("price"), (int, float))

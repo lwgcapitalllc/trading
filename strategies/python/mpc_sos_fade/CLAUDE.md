@@ -1232,6 +1232,62 @@ at — and the diff would blame the strategy for the harness's own configuration
 `compare_strategy.py` has never checked this path. Rule 22 is not satisfied until a fresh export
 lands with the column present and the gate passes on it.
 
+### An add lot is now a TRADE-SHAPED record (2026-08-20)
+
+**Aaron's ask:** see a scale-in add on the Command Center price chart the way any trade is seen —
+how far it ran, what its drawdown was, where it got exited — and be able to toggle it.
+
+**It was a data problem, not a chart one.** The record was `{price, ms, qty}`, so the only true
+statement the panel could make was *a lot was bought here* — one dotted `Add` line. Every question
+worth asking had no answer anywhere in the pipeline. Each lot now carries its own excursion and its
+own exit: `{price, ms, qty, mfe_price, mae_price, exit_price, exit_ms, exit_reason, pnl_usd}`.
+
+🔴 **The lot's excursion is measured FROM THE LOT and is not the trade's.** An add is bought later
+and further into the move, so it sits through a different part of it — on the fixture the base's
+drawdown reaches 103.5 on its entry bar, which happened *before the lot existed*. Copying the
+parent's numbers down would report the base's worst price as the add's, and the chart would draw a
+`Deepest` line at a price that lot never saw. MEASURED over 2018-09→2026-08: **110 of 112 lots have
+an excursion that differs from their parent's.** The two that match are lots that happened to ride
+the same extremes, not evidence of inheritance.
+
+⚠ **Seeded ASYMMETRICALLY on the fill bar, the same rule `_try_entry_fill` follows.** A `Trail` add
+is a market order at the bar's open, so the whole bar is genuinely the lot's. A `Limit` add is
+reached by price coming to it from the wrong side, so that bar's *favourable* extreme is the
+approach into the order — `_widen_add_excursions` skips the fill bar entirely for a limit lot, and
+would otherwise hand every one of them a run it never made.
+
+⚠ **`_adds` and `_add_lots` are INDEX-ALIGNED and that is now load-bearing.** The spent list says
+which lots are live; the record list says what each did. `_bank_adds` zeroes in place rather than
+popping, which is what keeps them aligned — a future edit that pops from either breaks the pairing
+**silently and in reporting only**, which is the shape of defect nothing here fails on.
+
+⚠ **`exit_price` is ABSENT, never `0.0`, on a lot nothing closed** — through `backtest/output.py`
+and `chart_spec.py` alike. A defaulted zero reports a lot as having exited at price zero, with the
+same confidence as a real measurement. Same rule as the bar cache's coverage and the terminal
+probe: *never let "not measured" and "measured zero" be the same value.*
+
+⚠ **There is no backfill and there cannot be one** — it would mean replaying the strategy. A run
+stored before this carries the three original keys, and the chart's `Scale-in detail` row simply
+does not appear for it.
+
+**TESTED:** 3 new strategy tests, each watched RED by its own mutation and each reddening only
+itself — inheriting the parent's window (reddens the excursion test at the parent's 103.5), dropping
+the `_close_add_record` call (reddens the exit test on a `KeyError`), returning `dict(lot)` from
+`_add_record` (reddens the bookkeeping test). Plus 3 backend tests on the passthrough.
+
+**MEASURED, full history, `Trail` 3 × 0.5× at rungs 50/25:** 66 trades with adds, 112 lots; **0**
+lots missing an exit, **0** whose window fails to bracket its own entry and exit, **0** whose
+stamped P&L disagrees with its own entry→exit arithmetic, and **0** trades where base + lots + costs
+fails to reconcile to `pnl_usd` to the cent.
+
+🔴 **The parity gate is GREEN and CANNOT COVER THIS, and saying so is the point.**
+`compare_strategy.py` diffs the **decision** stream; every field added here is reporting-only, so a
+green run means *my edits to `_exit_portion` and `_bank_adds` did not disturb the decisions* — which
+is worth having and is not the same claim. The claim that needed proving was proved directly
+instead: full-history replays across four configs, fingerprinted on entry/exit/qty/price/R/costs,
+**byte-identical to HEAD**. ⚠ Note the gate's own invocation is `--warmup 1000`; run without it and
+it reports a mismatch at bar 16 that is engine cold-start and nothing else.
+
 ### 🔴 A TP RUNG WAS SLICING THE ADDS, AND `_finalise_trade` BINNED THE REST (fixed 2026-08-19)
 
 **Found while verifying the TP1/TP2 sweep, not by a test.** `_exit_portion` closed the scale-in
@@ -2432,3 +2488,49 @@ Full context in `strategies/python/mpc_bleg/CLAUDE.md`.
 - Spec: `docs/MPC_SOS_FADE_SPEC.md`; build plan + order: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
 - Pine source of truth: `indicators/strategies/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.
+
+---
+
+## Loss recovery — the toggle, and the one property it must never break
+
+**Added 2026-08-20.** `exec_recovery` turns on a counter-trade after this bot loses. The RULE is
+not here — it lives in `strategies/python/loss_recovery/`, defined against a `LossEvent` protocol
+so any strategy can drive it, and that file owns every measurement. This section is the WIRING
+only: `recovery.py` (the adapter), the seven `exec_recovery_*` inputs, and the `finalize` hook.
+
+🔴 **Turning it on cannot move one A+ trade, and a test pins that.** The recovery reads A+'s
+finished losses and appends rows tagged `kind="recovery"`; it never gates, delays or re-sizes an
+A+ entry. That is what makes it safe to ship a lab-only toggle on the LIVE bot's config class — a
+feature that could rewrite the shipped book would put every parity number and every figure in
+`mpc_sos_fade_optimization.md` at the mercy of a switch. `test_turning_it_on_cannot_move_one_aplus_trade`
+is the one to keep green; it was watched red by having `apply` re-size a source trade.
+
+⚠ **The cost of that choice, stated because it is invisible in the output.** The recovery sizes
+off the RUNNING balance (every A+ and earlier recovery trade already closed is in it); A+ does not
+size off the recovery. **They share a balance in ONE direction only.** The curve therefore slightly
+understates a winning recovery's compounding. It is NOT a shared-account run — `backtest/portfolio/`
+is what one of those looks like.
+
+🔴 **`finalize(df)` is a hook three separate drivers have to call, and a missed one is silent.**
+`run()` and `run_dual()` call it. Anything that steps bars itself must too: the lab's
+`python_runner._replay` and `backtest/optimizer.py::_replay_one` both reproduce the bar loop rather
+than calling `run()`, so neither inherits it. A driver that forgets does not error — it reports a
+book with the recovery trades missing, which is rule 7 exactly (the toggle is a CLAIM about code
+somewhere else). Idempotent via a `_recovery_applied` flag on the strategy.
+
+⚠ **Idempotence is a FLAG, not "are there recovery rows in the book".** Inferring it from the rows
+made the `kind != "recovery"` source filter unreachable — a book carrying one returned before that
+line, so no test could redden it. Dead code that reads as load-bearing is worse than none.
+
+⚠ **`r` on a recovery Trade is that trade's own R**, so `pnl_usd / risk_usd` reproduces it exactly
+as on every other row. The quarter-sizing is carried in the DOLLARS (`risk_usd` is a quarter of a
+normal trade's), which is what makes the equity curve right without giving one row's R a different
+meaning from its neighbour's. Do not "fix" this to `scaled_r`.
+
+⚠ **No Pine twin exists**, so `compare_strategy.py` can never gate this. With the toggle OFF the
+bot is byte-identical to the gated one — which is why it defaults OFF, and why an export made with
+it ON is not a parity input.
+
+**11 tests in `tests/test_recovery.py`, all watched RED by a named mutation** (the mutation is in
+each docstring). MEASURED end to end on XAUUSD M15 2018-09-14 → 2026-08-14 at `puprime_ecn`: 181 A+
+trades unchanged, 65 recovery trades added, median recovery risk $2,050 against A+'s $10,127.

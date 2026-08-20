@@ -107,6 +107,15 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=Non
     for bar in iter_bars(df):
         strategy.step(stack.step(bar))
 
+    # This drives the bar loop itself rather than calling `run()`, so it does NOT inherit run()'s
+    # end-of-book passes. Without this a sweep over a finished-book feature (mpc_sos_fade's
+    # `exec_recovery` today) would grade every combo on a book missing those trades and rank them
+    # confidently — the combos would differ in a field nothing consumed. Guarded because this
+    # optimizer is strategy-agnostic and only some strategies have the hook; idempotent, so a
+    # strategy whose run() already finalized is unaffected.
+    if hasattr(strategy, "finalize"):
+        strategy.finalize(df)
+
     trades = strategy.execution.trades
     return {"params": dict(combo.params), "kpis": build_kpis(trades, initial_capital=capital)}
 

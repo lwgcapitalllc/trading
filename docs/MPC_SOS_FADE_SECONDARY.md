@@ -54,6 +54,18 @@ order in that fork, so there is no primary to re-enter behind, and its `run_dual
 - **Latch a long leg** when: `exec_secondary` ON, a new 1m **bull** SOS fired, the 15m long
   setup is live (`aplusL_sosBar` not None), `bullDivActive`, price is in the zone
   (`zoneL`), and `legHi > legLo`. Mirror for shorts (bear SOS, `bearDivActive`, `zoneS`).
+- 🔴 **The `bullDivActive` / `bearDivActive` test above is now `exec_sec_req_div`, default ON
+  (2026-08-20).** It came straight from the Pine WIP, which tests it in both the latch and the arm,
+  and the port copied both. **It is a different question from `exec_arm_div`, and that is what hid
+  it for a month:** `exec_arm_div` says what may arm the PRIMARY, and the shipped bot is
+  SWEEP-armed with it OFF — so the re-entry was demanding a divergence its own primary was never
+  required to have. On a sweep-armed book the feature cannot fire at all. MEASURED 2026-08-20 on
+  lab run `4fb168fe354f`'s params (XAUUSD 15m, 2025-08-20 → 2026-08-18, 23,530 M15 + 352,348 M1
+  bars), `exec_secondary` forced ON and nothing else touched: **0 re-entries in the year.** On the
+  2025-12-09 short every other gate passed — primary reached breakeven, price closed back inside
+  the zone for 433 one-minute bars, account flat, a 1m bear SOS inside the zone at 2025-12-11
+  01:15 — and this one test alone refused it. ⚠ **It stays default ON so every stored figure in
+  this file still reproduces**; the numbers for OFF are in `mpc_sos_fade_optimization.md`.
 - **Zone** (`zoneL`): `fibo_dir == 1` and price in `[fiboP6, fiboP3]` (0.886…0.618).
   Mirror `zoneS`: `fibo_dir == -1` and price in `[fiboP3, fiboP6]`.
 

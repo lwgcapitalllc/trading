@@ -147,13 +147,23 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                     }
                     for lg in getattr(t, "legs", []) or []
                 ],
-                # SCALE-IN lots this trade actually bought AFTER the entry, `{price, ms, qty}` each.
-                # Reporting-only and OPTIONAL — a strategy or runner with no scale-in carries none,
-                # and the key is then absent rather than an empty list claiming a feature ran.
+                # SCALE-IN lots this trade actually bought AFTER the entry. Reporting-only and
+                # OPTIONAL — a strategy or runner with no scale-in carries none, and the key is then
+                # absent rather than an empty list claiming a feature ran.
                 # 🔴 It is what makes the row's P&L reconcilable: `size` is the BASE quantity, so a
                 # trade that added holds more than `size` says, and `profit` reflects lots this row
                 # would otherwise not mention at all. Run 295a6ff29d21 booked 8 trades at exactly
                 # $0.00 with an entry above the exit on a short and nothing in the record to say why.
+                #
+                # Each lot is TRADE-SHAPED — its own entry, its own excursion, its own exit and its
+                # own P&L — because a lot IS a position and a reader asks it the same questions. See
+                # `mpc_sos_fade.execution.Trade.adds`.
+                # ⚠ Everything past `qty` is PER-LOT OPTIONAL and copied only when the strategy
+                # recorded it. A run stored before 2026-08-19, and any strategy that adds without
+                # tracking its lots, carries the three original keys — and a lot that nothing closed
+                # carries no `exit_price` at all. **A default of 0.0 here would report a lot as
+                # having exited at price zero**, which is the same "cannot ask reads as measured"
+                # shape the bar-cache and the terminal-liveness probe both broke on.
                 **(
                     {
                         "adds": [
@@ -161,6 +171,24 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                                 "price": _round(a.get("price", 0.0), 5),
                                 "ms": int(a.get("ms", 0)),
                                 "qty": a.get("qty", 0.0),
+                                **{
+                                    k: (
+                                        int(a[k])
+                                        if k == "exit_ms"
+                                        else a[k]
+                                        if k == "exit_reason"
+                                        else _round(a[k], 2 if k == "pnl_usd" else 5)
+                                    )
+                                    for k in (
+                                        "mfe_price",
+                                        "mae_price",
+                                        "exit_price",
+                                        "exit_ms",
+                                        "exit_reason",
+                                        "pnl_usd",
+                                    )
+                                    if a.get(k) is not None
+                                },
                             }
                             for a in getattr(t, "adds", []) or []
                         ]

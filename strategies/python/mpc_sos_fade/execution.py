@@ -173,10 +173,21 @@ class Trade:
     mfe_price: float = 0.0
     mae_price: float = 0.0
     legs: List[dict] = field(default_factory=list)
-    # Reporting-only SCALE-IN ledger — one `{"price", "ms", "qty"}` per add lot that actually
-    # FILLED, in fill order (a placed-but-unfilled add is not here; it bought nothing). Empty on
-    # every trade that never added, which is every trade with `exec_scale_in` off. It is the only
-    # record that the position was ever bigger than `qty` — see the P&L identity above.
+    # Reporting-only SCALE-IN ledger — one dict per add lot that actually FILLED, in fill order
+    # (a placed-but-unfilled add is not here; it bought nothing). Empty on every trade that never
+    # added, which is every trade with `exec_scale_in` off. It is the only record that the position
+    # was ever bigger than `qty` — see the P&L identity above.
+    #
+    # Each lot is a TRADE-SHAPED record, because a lot is a position and gets asked the same
+    # questions: `{"price", "ms", "qty", "mfe_price", "mae_price", "exit_price", "exit_ms",
+    # "exit_reason", "pnl_usd"}`. `mfe_price`/`mae_price` are the lot's OWN excursion, measured
+    # from its own fill and not inherited from the base — an add bought 40 points into a runner
+    # has a different best and worst price from the entry that started the trade, and reusing the
+    # base's would report the base's move as the lot's.
+    #
+    # ⚠ Everything past `qty` is OPTIONAL and a consumer must treat it that way. A run stored
+    # before 2026-08-19 carries the three original keys and nothing backfills it; `exit_price` is
+    # absent (never 0.0) on a lot nothing closed.
     adds: List[dict] = field(default_factory=list)
     # Reporting-only TP TARGET ladder — the fib levels the trade AIMED at, frozen at entry (NOT
     # where each rung actually closed; that's `legs`). Lets the chart draw an UNHIT next target so a
@@ -551,6 +562,12 @@ class Execution:
                  resolver=None, profile=None, bar_ms: int = 300_000,
                  account=None, leg: str = "strat") -> None:
         self._cfg = config
+        # The OPENING balance, kept because it cannot be recovered afterwards: `equity` is the
+        # closing one and subtracting the trades back off it silently assumes nothing else ever
+        # touched the ledger. Read by the loss-recovery pass, which sizes off the running
+        # balance and therefore has to start from the real one. Reporting-only — no decision
+        # reads it, so parity is unaffected.
+        self.initial_capital = float(initial_capital)
         self._equity_realized = initial_capital  # LEG-LOCAL ledger — R is measured against this
         # The shared account owns the budget and sizes entries. Default = a SoloAccount (no cap,
         # always grants full size), so a bot run alone is byte-identical to before the seam existed;
@@ -662,6 +679,11 @@ class Execution:
         # opened and got stopped at its initial stop (never reached TP1) leaves no re-entry.
         self._be_sos_l: Optional[int] = None
         self._be_sos_s: Optional[int] = None
+        # The last-closed 15m bar's PRIMARY entry edge per side — the secondary's gap trigger
+        # rests on it. None until the first 15m bar is stepped, and None whenever the setup has
+        # no qualifying gap, which is the honest reading: "no gap to enter on", never a price.
+        self._poi_edge_l: Optional[float] = None
+        self._poi_edge_s: Optional[float] = None
         # The looser secondary gates (`exec_sec_require`). `_prim_closed_sos_*` = a PRIMARY has
         # traded this 15m leg and is now closed, whatever the outcome; `_prim_lost_sos_*` = it
         # closed at stage 0, i.e. never reached TP1 (the swept-stop case). Both are latched at
@@ -935,15 +957,20 @@ class Execution:
         shipped "% of price" mode is a pure function of the entry price and does not care.
         """
         cfg = self._cfg
+        # A re-entry may risk a FRACTION of what the primary risks (`exec_sec_risk_pct`, 100 =
+        # the same). Applied to the %-risk, so it scales the LOT and nothing else — the minimum
+        # stop floor below still reads the raw stop distance, which is the right question (a leg
+        # too short to trade is too short whatever size you put on it).
+        risk_pct = cfg.exec_risk_pct * getattr(cfg, "exec_sec_risk_pct", 100.0) / 100.0
         if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
-                qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
+                qty = (self.equity * risk_pct / 100.0) / dist
                 return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg)
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
-                qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
+                qty = (self.equity * risk_pct / 100.0) / dist
                 return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg)
         return None
 
@@ -961,6 +988,13 @@ class Execution:
         self._sync_gap_latch(seq)
         long_edge, short_edge = self._entry_edges(sig, seq)
         dec.long_edge, dec.short_edge = long_edge, short_edge
+        # Latched for the SECONDARY's gap trigger (`exec_sec_trigger == "FVG in zone"`), which
+        # re-uses the PRIMARY's own point-of-interest price rather than computing a second one —
+        # Aaron's rule is *"follow the rules of fair value gap entry that we would take on a
+        # primary trade"*, and a second implementation of those rules is how the two silently
+        # diverge. Reporting-free: nothing reads these unless the gap trigger is on, so the
+        # shipped book cannot move. Cleared with the setup by `_sync_gap_latch`'s own caller.
+        self._poi_edge_l, self._poi_edge_s = long_edge, short_edge
         dec.l_stage, dec.s_stage = seq.l_stage, seq.s_stage
         dec.long_veto, dec.short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
 
@@ -1993,6 +2027,17 @@ class Execution:
         self._sl = pend.sl
         self._tp1 = pend.tp1
         self._tp2 = pend.tp2
+        # `exec_sec_tp_r` — a SECONDARY may put its first rung at a multiple of its own risk
+        # instead of the 15m 0.5 fib. Applied HERE, after `pend.tp1`, so the resting order still
+        # carries the fib rung it was priced on and only the open trade's ladder moves. Off by
+        # default (-1.0), so the shipped ladder is untouched and every stored figure reproduces.
+        # ⚠ Priced off the INITIAL stop, not the trailed one: 1R must mean the risk the trade was
+        # sized against, or the target would creep in as the stop ratchets.
+        if kind == "secondary":
+            tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
+            dist = abs(fill_price - pend.sl)
+            if tp_r > 0 and dist > 0:
+                self._tp1 = fill_price + (1 if pend.dir > 0 else -1) * tp_r * dist
         # The ladder those three came off, carried through to the closed Trade (reporting only).
         # Taken from the ORDER, not from `sig`: the fib is a live thing that keeps extending, so
         # reading it again at the fill would report a leg the resting limit was never priced on.
@@ -2060,9 +2105,37 @@ class Execution:
         adj = self._exit_adj()
         self._ext_high = max(self._ext_high, sig.high + adj)
         self._ext_low = min(self._ext_low, sig.low + adj)
+        self._widen_add_excursions(sig, adj)
         if self._resolver is not None:
             return self._manage_open_ticks(sig, dec)
         return self._manage_open_bar(sig, dec)
+
+    def _widen_add_excursions(self, sig, adj) -> None:
+        """Widen each OPEN scale-in lot's own high/low with this bar. Reporting only.
+
+        🔴 **`_adds` and `_add_lots` are INDEX-ALIGNED, and that is load-bearing here.** Both are
+        appended in one place (`_fill_pending_add`) on the same line of control flow, and neither
+        is ever reordered or shortened mid-trade — `_bank_adds` zeroes a spent lot IN PLACE
+        precisely so the ladder's cap keeps counting. That alignment is what lets the spent list
+        say which lots are still LIVE while the record list says what each one DID. A future edit
+        that pops from either list breaks this silently, in reporting only, which is the shape of
+        defect nothing here would fail on.
+
+        A lot filled on a LIMIT this bar is skipped whole: its adverse side was already seeded
+        from this bar at the fill, and widening the favourable side would hand it the approach
+        into the order — price that moved before the lot existed.
+        """
+        if not self._adds:
+            return
+        hi, lo = sig.high + adj, sig.low + adj
+        for i, lot in enumerate(self._adds):
+            if lot[1] <= 1e-12 or i >= len(self._add_lots):
+                continue
+            rec = self._add_lots[i]
+            if rec.get("_limit_fill") and rec.get("_fill_ms") == sig.time_ms:
+                continue
+            rec["ext_hi"] = max(rec["ext_hi"], hi)
+            rec["ext_lo"] = min(rec["ext_lo"], lo)
 
     def _manage_open_ticks(self, sig, dec) -> None:
         """Real-tick exits. Exiting transacts on the OPPOSITE side of the book from entering —
@@ -2198,24 +2271,76 @@ class Execution:
         banked.
         """
         d, pv = self._pos_dir, self._cfg.point_value
+        oid = ("L" if d > 0 else "S") + "-ATP"   # named before the loop; each lot's record takes it
         pnl, closed = 0.0, 0.0
-        for lot in self._adds:
+        for i, lot in enumerate(self._adds):
             q = lot[1]
             if q <= 1e-12:
                 continue
-            pnl += (price - lot[0]) * d * q * pv
+            lot_pnl = (price - lot[0]) * d * q * pv
+            pnl += lot_pnl
             self._charge_commission(q)   # the add pays its own exit side, as on every other path
             self._charge_spread(q)
             lot[1] = 0.0
             closed += q
+            self._close_add_record(i, price, sig.time_ms, oid, lot_pnl)
         if closed <= 1e-12:
             return
         self._add_last_px = None         # nothing live left for a target to clear
         self._equity_realized += pnl
         self._account.book_pnl(self._leg, pnl)
-        oid = ("L" if d > 0 else "S") + "-ATP"
         dec.fills.append(Fill("exit", oid, price, closed, d))
         self._legs.append({"reason": oid, "price": price, "ms": sig.time_ms, "qty": closed})
+
+    def _close_add_record(self, i, price, ms, reason, pnl) -> None:
+        """Stamp a scale-in lot's RECORD with where it came off and what it made. Reporting only.
+
+        This is what makes an add answerable the way a trade is. The record already said what was
+        bought and at what price; it said nothing about how the lot then behaved, so the chart
+        could draw an `Add` line and nothing else.
+
+        `mfe_price`/`mae_price` are resolved from the lot's own running high/low HERE rather than
+        at the fill, because which of the two is FAVOURABLE is a fact about the direction — the
+        same convention `_finalise_trade` uses for the base position.
+
+        ⚠ A lot is stamped ONCE. `_bank_adds` and `_exit_portion` both close adds and both call
+        this, and a lot already zeroed is skipped by each of them — but the re-entry guard is kept
+        anyway, because a second stamp would overwrite a real exit with a later price and there is
+        nothing in the output to say it happened.
+        """
+        if i >= len(self._add_lots):
+            return
+        rec = self._add_lots[i]
+        if "exit_price" in rec:
+            return
+        d = self._pos_dir
+        hi, lo = rec.get("ext_hi", price), rec.get("ext_lo", price)
+        rec["mfe_price"] = round(hi if d > 0 else lo, 5)
+        rec["mae_price"] = round(lo if d > 0 else hi, 5)
+        rec["exit_price"] = round(price, 5)
+        rec["exit_ms"] = int(ms)
+        rec["exit_reason"] = reason
+        rec["pnl_usd"] = round(pnl, 2)
+
+    def _add_record(self, lot: dict) -> dict:
+        """One scale-in lot as it LEAVES the strategy.
+
+        The running high/low and the fill-bar marks are bookkeeping: `_close_add_record` has
+        already resolved them into `mfe_price`/`mae_price`, and a consumer reading `ext_hi` would
+        be reading an un-directioned number as though it meant *favourable*.
+        """
+        drop = ("ext_hi", "ext_lo", "_fill_ms", "_limit_fill")
+        out = {k: v for k, v in lot.items() if k not in drop}
+        if "mfe_price" not in out:
+            # A lot still OPEN at finalise. Nothing should reach here — `_exit_portion` takes every
+            # add on the trade's last fill — so resolve the excursion rather than emit a half
+            # record, and leave `exit_price` ABSENT, which is the honest statement that nothing
+            # closed it. A zero there would read as an exit at price 0.00.
+            d = self._pos_dir
+            hi, lo = lot.get("ext_hi", lot["price"]), lot.get("ext_lo", lot["price"])
+            out["mfe_price"] = round(hi if d > 0 else lo, 5)
+            out["mae_price"] = round(lo if d > 0 else hi, 5)
+        return out
 
     def _remaining_brackets(self) -> List[Tuple[str, Optional[float], float]]:
         """The still-open exit brackets in TP1→TP2→runner order, with each portion's
@@ -2283,16 +2408,18 @@ class Execution:
         # if bought at the base entry, i.e. invent profit out of arithmetic.
         final = (self._filled_qty + qty) >= self._qty - 1e-9
         if self._adds and (market or final):
-            for lot in self._adds:
+            for i, lot in enumerate(self._adds):
                 closing = lot[1]
                 if closing <= 1e-12:
                     continue
-                pnl += (price - lot[0]) * d * closing * self._cfg.point_value
+                lot_pnl = (price - lot[0]) * d * closing * self._cfg.point_value
+                pnl += lot_pnl
                 lot[1] = 0.0
                 self._charge_commission(closing)   # the add pays its own exit side too
                 self._charge_spread(closing)
                 if market:
                     self._charge_slippage(closing)
+                self._close_add_record(i, price, sig.time_ms, oid, lot_pnl)
         self._equity_realized += pnl
         self._account.book_pnl(self._leg, pnl)   # realize onto the shared balance as it happens
         self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
@@ -2339,7 +2466,7 @@ class Execution:
             kind=self._entry_kind,
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
             mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
-            adds=[dict(lot) for lot in self._add_lots],
+            adds=[self._add_record(lot) for lot in self._add_lots],
             tp1=round(self._tp1, 5), tp2=round(self._tp2, 5), fib=self._fib))
         dec.closed_r = r
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
@@ -2729,7 +2856,30 @@ class Execution:
         self._adds.append([price, qty])
         # …and the same lot again for the RECORD. `_adds` is spent by `_exit_portion`; this one is
         # not, so the closed trade can still say what it bought and at what price.
-        self._add_lots.append({"price": price, "ms": sig.time_ms, "qty": qty})
+        #
+        # The lot also carries its OWN excursion window, seeded here and widened every bar by
+        # `_widen_add_excursions`, so an add can be asked what any trade is asked: how far did it
+        # run, how far did it go against, where did it come off. Until 2026-08-19 the record was
+        # the three fields above and a reader could see only that a lot was BOUGHT.
+        #
+        # Seeded the same ASYMMETRIC way the base entry is (`_try_entry_fill`) and for the same
+        # reason: a resting limit is reached by price coming to it from the WRONG side, so the fill
+        # bar's favourable extreme is the approach INTO the order and not the lot's own move. A
+        # "Trail" add is a MARKET order at this bar's open, so the whole bar is genuinely the
+        # lot's and both sides seed at the fill — `_manage_open` runs later in this same `step`
+        # and widens it with the bar. Reporting only; no decision reads any of it.
+        limit_fill = getattr(cfg, "exec_scale_mode", "Trail") != "Trail"
+        if not limit_fill:
+            ext_hi = ext_lo = price
+        elif d > 0:
+            ext_hi, ext_lo = price, sig.low
+        else:
+            ext_hi, ext_lo = sig.high, price
+        self._add_lots.append({
+            "price": price, "ms": sig.time_ms, "qty": qty,
+            "ext_hi": ext_hi, "ext_lo": ext_lo,
+            "_fill_ms": sig.time_ms, "_limit_fill": limit_fill,
+        })
         # The ratchet gate is the stop this lot was SIZED against, not the one live at the fill.
         self._add_stop = self._add_pend_stop
         self._add_armed = False

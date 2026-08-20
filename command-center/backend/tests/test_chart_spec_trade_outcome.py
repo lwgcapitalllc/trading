@@ -91,3 +91,79 @@ def test_a_trade_that_never_added_carries_no_adds_key():
     empty list on all of them would read as a feature that ran and found nothing."""
     trades = _build_trades(_curve(_point(500.0, 500.0)), _CANDLES)
     assert "adds" not in trades[-1]
+
+
+# ── the per-lot detail (2026-08-19) ───────────────────────────────────────────
+#
+# A lot is a POSITION: it has its own entry, runs its own distance, goes its own distance against,
+# and comes off somewhere. The three keys above say only that one was BOUGHT, which is why the
+# chart could draw a dotted `Add` line and nothing else. These carry the rest through so the panel
+# can draw a lot the way it draws a trade.
+
+
+def _lot(**over):
+    lot = {
+        "price": 102.5,
+        "ms": 1_500,
+        "qty": 3.0,
+        "mfe_price": 104.0,
+        "mae_price": 101.0,
+        "exit_price": 103.0,
+        "exit_ms": 1_800,
+        "exit_reason": "L-ATP",
+        "pnl_usd": 1.5,
+    }
+    lot.update(over)
+    return lot
+
+
+def test_a_lots_own_excursion_and_exit_reach_the_chart():
+    """Renamed to the panel's camelCase on the way through, because the chart defines this shape.
+
+    Watched RED by mutation: dropping the per-lot passthrough block from `_build_trades` leaves the
+    three original keys and this fails naming every missing one."""
+    trades = _build_trades(_curve(_point(0.0, 0.0, adds=[_lot()])), _CANDLES)
+    assert trades[-1]["adds"] == [
+        {
+            "price": 102.5,
+            "ms": 1500,
+            "qty": 3.0,
+            "mfePrice": 104.0,
+            "maePrice": 101.0,
+            "exitPrice": 103.0,
+            "exitTime": 1800,
+            "exitReason": "L-ATP",
+            "pnl": 1.5,
+        }
+    ]
+
+
+def test_a_lot_that_recorded_nothing_past_its_fill_gains_no_zeroes():
+    """🔴 THE RULE THIS FILE EXISTS TO KEEP: absent must not become measured.
+
+    A run stored before the strategy recorded per-lot detail carries `{price, ms, qty}` and nothing
+    backfills it. Defaulting the rest to 0.0 would put the lot's exit at price ZERO and its
+    drawdown at zero — a chart drawing a box from 102.5 down to 0.00, stated with the same
+    confidence as a real one. The honest output is the three keys it actually has, which is what
+    makes the panel's `Scale-in detail` row vanish for that run instead of lying in it.
+
+    This is the same shape as the bar cache recording a REQUESTED range as received, and as the
+    live bot reading an empty bar frame as a quiet market.
+
+    Watched RED by mutation: replacing the `isinstance(...)` guards with `a.get(src) or 0.0` makes
+    every one of these keys appear at 0.0 and this goes red."""
+    trades = _build_trades(
+        _curve(_point(0.0, 0.0, adds=[{"price": 102.5, "ms": 1_500, "qty": 3.0}])), _CANDLES
+    )
+    assert trades[-1]["adds"] == [{"price": 102.5, "ms": 1500, "qty": 3.0}]
+
+
+def test_a_lot_nothing_closed_keeps_its_excursion_and_omits_the_exit():
+    """The two halves are independent: a lot can have been MEASURED all the way and still never
+    have been closed. Reporting `exitPrice: 0.0` there would say it came off at zero; omitting it
+    says nothing closed it, which is true and is what the panel needs to skip drawing a box."""
+    lot = _lot()
+    del lot["exit_price"], lot["exit_ms"], lot["exit_reason"], lot["pnl_usd"]
+    got = _build_trades(_curve(_point(0.0, 0.0, adds=[lot])), _CANDLES)[-1]["adds"][0]
+    assert got["mfePrice"] == 104.0 and got["maePrice"] == 101.0
+    assert not {"exitPrice", "exitTime", "exitReason", "pnl"} & set(got)

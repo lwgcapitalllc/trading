@@ -121,8 +121,13 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   against its own entry), so `(exit_price - entry_price) * dir * size` stops reproducing `profit`
   the moment one fills. Measured on lab run `295a6ff29d21`: eight trades booked **exactly $0.00**
   with the exit BELOW the entry on a short, and the lot that took the profit back was in no field
-  of the point. Since 2026-08-18 the point carries `adds` — one `{price, ms, qty}` per FILLED lot,
-  so the row can account for its own P&L. ⚠ **Absent, not `[]`, on a trade that never added**: an
+  of the point. Since 2026-08-18 the point carries `adds` — one record per FILLED lot, so the row
+  can account for its own P&L — and since 2026-08-20 that record is TRADE-SHAPED: `mfe_price`,
+  `mae_price`, `exit_price`, `exit_ms`, `exit_reason`, `pnl_usd` beside the original three, so a lot
+  can be read the way a trade is. ⚠ **Everything past `qty` is optional PER LOT** and is copied only
+  where the strategy recorded it; 🔴 **an absent field is never defaulted to `0.0`** — a lot reported
+  as exiting at price zero is a measurement nobody took, and reads as one. Absent means nothing
+  closed it. ⚠ **Absent, not `[]`, on a trade that never added**: an
   empty list on every trade of every strategy without the feature would read as a feature that ran.
   ⚠ **No backfill exists and none can** — a stored run never recorded the lots; re-run it.
   Two tests in `tests/test_output.py` pin both directions (the lots reach the point; a trade
@@ -1132,3 +1137,15 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   proves the SIGNALS match bar-for-bar, it does not make the two summary reports directly comparable.
 - **If a real backtest must be run, the MT5 runner is much faster than NT8** (NT8's Strategy Analyzer
   is driven by slow pywinauto UI automation). Prefer an MT5-runner strategy/symbol when the goal allows.
+
+---
+
+## `optimizer.py::_replay_one` finalizes the strategy (2026-08-20)
+
+It drives the bar loop itself rather than calling `strategy.run()`, so it does **not** inherit
+`run()`'s end-of-book passes. Without the `hasattr(strategy, "finalize")` call after the loop, a
+sweep over a finished-book feature — `mpc_sos_fade`'s `exec_recovery` is the first — would grade
+every combo on a book missing those trades and rank them confidently, the combos differing in a
+field nothing consumed. Guarded because this optimizer is strategy-agnostic and only some
+strategies have the hook; idempotent, so a strategy whose `run()` already finalized is unaffected.
+⚠ **Any future runner that reproduces the bar loop needs the same line** — the failure is silent.

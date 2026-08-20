@@ -140,8 +140,23 @@ def _m1_bull_sos(hi, lo):
                    new_bull_sos=True, new_bear_sos=False)
 
 
+def _shift_cfg(**kw):
+    """A re-entry config PINNED to the 1-minute-shift shape, for the tests that hand-drive it.
+
+    ⚠ PINNED, NOT DEFAULTED, and the distinction is the point. The shift was the default until
+    2026-08-20 and is not any more — the gap trigger is. A test below that kept taking the default
+    would still RUN, and would arm on a completely different input (a resting price handed in from
+    the primary, not a 1m leg), so it would stop exercising the branch its name claims. That is the
+    same trap `test_run_dual_primary_is_identical_to_run_when_secondary_off` pins against one level
+    up. The tests that assert what the DEFAULTS ARE do not use this helper, by design.
+    """
+    kw.setdefault("exec_sec_trigger", "1m shift")
+    kw.setdefault("exec_sec_stop", "1m leg")
+    return SosFadeConfig(exec_secondary=True, **kw)
+
+
 def test_arm_fires_and_rests_the_right_limit():
-    cfg = SosFadeConfig(exec_secondary=True)
+    cfg = _shift_cfg()
     arm_sm = SecondaryArm(cfg)
     # a 1m leg 102.0→103.0 inside the zone; primary on this 15m leg reached BE (be_sos_l == l_sos_bar)
     out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
@@ -160,7 +175,7 @@ def test_arm_fires_and_rests_the_right_limit():
 
 
 def test_arm_blocked_until_primary_reached_breakeven():
-    cfg = SosFadeConfig(exec_secondary=True)
+    cfg = _shift_cfg()
     arm_sm = SecondaryArm(cfg)
     # the primary on this 15m leg has NOT reached breakeven (be_sos_l is None): a primary that
     # opened and got stopped at its initial stop leaves no re-entry.
@@ -172,7 +187,7 @@ def test_arm_blocked_until_primary_reached_breakeven():
 def test_dead_leg_blocks_further_reentries():
     """Once a re-entry on a 15m leg hits its initial stop, `mark_dead` kills the leg — no more
     re-entries on it (even on a fresh 1m shift) until a new break of structure resets it."""
-    cfg = SosFadeConfig(exec_secondary=True)
+    cfg = _shift_cfg()
     arm_sm = SecondaryArm(cfg)
     # arms normally on the first fresh 1m leg
     a = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
@@ -304,7 +319,7 @@ def _armed_and_traded(cfg):
 
 
 def test_the_cap_refuses_a_second_reentry_on_the_same_15m_setup():
-    arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=True))
+    arm_sm = _armed_and_traded(_shift_cfg(exec_sec_once_per_setup=True))
     again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                           ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert again.l_armed is False, (
@@ -317,7 +332,7 @@ def test_with_the_cap_OFF_a_fresh_1m_leg_re_arms_on_the_same_setup():
 
     Without this the cap could be made unconditional and every test above would still pass —
     the shipped default is ON, so nothing else exercises the other branch."""
-    arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=False))
+    arm_sm = _armed_and_traded(_shift_cfg(exec_sec_once_per_setup=False))
     again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                           ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert again.l_armed is True, "the un-capped rule is one re-entry per 1m LEG, not per setup"
@@ -326,7 +341,7 @@ def test_with_the_cap_OFF_a_fresh_1m_leg_re_arms_on_the_same_setup():
 def test_the_cap_is_per_SETUP_not_per_LIFETIME():
     """A new break of structure re-opens the door. The cap bounds a cascade; it does not retire
     the feature, and reading it as a kill switch would make the measured numbers meaningless."""
-    arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=True))
+    arm_sm = _armed_and_traded(_shift_cfg(exec_sec_once_per_setup=True))
     seq_new = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
     revived = arm_sm.update(_second_1m_leg(), _SIG_LONG, seq_new, zone_close=102.5,
                             ny_hour=10, flat=True, be_sos_l=600, be_sos_s=None)
@@ -345,7 +360,7 @@ def test_the_stop_out_latch_is_not_the_cap_latch():
     `exec_sec_once_per_setup` turns it red. ⚠ Note the neighbouring mutation — stamping `_dead`
     from `mark_traded` — is caught by `test_with_the_cap_OFF_...` instead, not by this. The pair
     covers the shortcut; neither test does alone."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=False)
+    cfg = _shift_cfg(exec_sec_once_per_setup=False)
     arm_sm = SecondaryArm(cfg)
     first = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                           ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
@@ -461,13 +476,13 @@ def test_the_default_gate_is_the_breakeven_rule_and_ignores_the_new_latches():
     """Watched RED by mutating `_primary_gate`'s "Breakeven" branch to `return True` — the
     second half then arms. The new latches must not leak into the shipped path: a leg whose
     primary closed (or was stopped) but never reached TP1 still arms NOTHING at the default."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    arm_sm = SecondaryArm(_shift_cfg())
     yes = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                         ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None,
                         closed_sos_l=500, lost_sos_l=500)
     assert yes.l_armed is True
 
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    arm_sm = SecondaryArm(_shift_cfg())
     no = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                        ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
                        closed_sos_l=500, lost_sos_l=500)
@@ -479,16 +494,16 @@ def test_stopped_only_arms_the_leg_the_breakeven_rule_throws_away():
     m1, kw = _m1_bull_sos(103.0, 102.0), dict(
         zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
         closed_sos_l=500, lost_sos_l=500)
-    loose = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Stopped only"))
+    loose = SecondaryArm(_shift_cfg(exec_sec_require="Stopped only"))
     assert loose.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is True
-    shipped = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    shipped = SecondaryArm(_shift_cfg())
     assert shipped.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is False
 
 
 def test_stopped_only_refuses_a_leg_whose_primary_WON():
     """"Stopped only" is not "Any close" — a primary that reached TP1 sets `be_sos`, never
     `lost_sos`, so that leg is out of scope for this mode."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Stopped only"))
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_require="Stopped only"))
     out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                         ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None,
                         closed_sos_l=500, lost_sos_l=None)
@@ -498,12 +513,12 @@ def test_stopped_only_refuses_a_leg_whose_primary_WON():
 def test_any_close_takes_both_outcomes_and_none_needs_no_primary_at_all():
     kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None)
     m1 = _m1_bull_sos(103.0, 102.0)
-    won = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Any close"))
+    won = SecondaryArm(_shift_cfg(exec_sec_require="Any close"))
     assert won.update(m1, _SIG_LONG, _SEQ_LONG, closed_sos_l=500, lost_sos_l=None, **kw).l_armed
-    lost = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="Any close"))
+    lost = SecondaryArm(_shift_cfg(exec_sec_require="Any close"))
     assert lost.update(m1, _SIG_LONG, _SEQ_LONG, closed_sos_l=500, lost_sos_l=500, **kw).l_armed
     # ...and "None" arms with no primary record on the leg whatsoever
-    bare = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="None"))
+    bare = SecondaryArm(_shift_cfg(exec_sec_require="None"))
     assert bare.update(m1, _SIG_LONG, _SEQ_LONG, closed_sos_l=None, lost_sos_l=None, **kw).l_armed
 
 
@@ -511,7 +526,7 @@ def test_an_unknown_require_mode_REFUSES_rather_than_arming_on_everything():
     """A typo must not read as the loosest door. `None` (the string) is a real mode here, so a
     misspelling has a plausible-looking inert reading available — and taking it would put a
     re-entry on every live setup while the page still said "Breakeven"."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_require="breakeven"))
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_require="breakeven"))
     with pytest.raises(ValueError, match="exec_sec_require"):
         arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                       ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
@@ -521,7 +536,7 @@ def test_the_default_zone_edges_are_the_PUBLISHED_fib_levels_not_a_recomputation
     """Identity, not near-equality. The signal already publishes 0.618 and 0.886, and computing
     them a second time off the leg would differ in the last bits — which is how a control run
     stops reproducing a stored book for no reason anybody can find."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    arm_sm = SecondaryArm(_shift_cfg())
     lo, hi = arm_sm._zone_edges(_SIG_LONG)
     assert lo is _SIG_LONG.fibo_p3 and hi is _SIG_LONG.fibo_p6
 
@@ -531,9 +546,9 @@ def test_the_deep_edge_at_1_0_arms_where_price_closed_past_the_entry_band():
     whose deep edge is the leg origin (100.0). That close is what a swept stop looks like."""
     m1, kw = _m1_bull_sos(103.0, 102.0), dict(
         zone_close=100.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
-    shipped = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    shipped = SecondaryArm(_shift_cfg())
     assert shipped.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is False
-    deep = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_zone_deep=1.0))
+    deep = SecondaryArm(_shift_cfg(exec_sec_zone_deep=1.0))
     assert deep.update(m1, _SIG_LONG, _SEQ_LONG, **kw).l_armed is True
 
 
@@ -556,14 +571,14 @@ def _rearm(arm_sm, leg_bar, seq=None):
 
 def test_the_depth_default_is_one_and_is_the_shipped_cap():
     """Watched RED with `depth` forced to 2 — the second leg then arms."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    arm_sm = SecondaryArm(_shift_cfg())
     assert _rearm(arm_sm, 1000).l_armed is True
     arm_sm.mark_traded(1)
     assert _rearm(arm_sm, 1001).l_armed is False
 
 
 def test_a_depth_of_three_allows_exactly_three_reentries_on_one_setup():
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=3))
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_max_per_setup=3))
     for i, leg in enumerate((1000, 1001, 1002), start=1):
         assert _rearm(arm_sm, leg).l_armed is True, f"re-entry {i} should arm"
         arm_sm.mark_traded(1)
@@ -579,7 +594,7 @@ def test_the_depth_counter_is_per_SETUP_and_resets_on_a_new_break_of_structure()
     survived the mutation that removed the reset entirely.
     """
     seq_new = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=2))
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_max_per_setup=2))
     for leg in (1000, 1001):                       # setup 500 spends both of its re-entries
         assert _rearm(arm_sm, leg).l_armed is True
         arm_sm.mark_traded(1)
@@ -593,7 +608,7 @@ def test_the_depth_counter_is_per_SETUP_and_resets_on_a_new_break_of_structure()
 
 def test_a_stopped_reentry_still_kills_the_leg_however_deep_the_cap_is():
     """The depth counts SCRATCHES, never losses — the dead-leg rule sits underneath it."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=5))
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_max_per_setup=5))
     assert _rearm(arm_sm, 1000).l_armed is True
     arm_sm.mark_traded(1)
     arm_sm.mark_dead(1, _SEQ_LONG)          # that re-entry hit its own initial stop
@@ -610,9 +625,9 @@ def test_the_1m_direction_filter_is_OFF_by_default_and_blocks_when_ON():
                    bear_leg_hi=None, bear_leg_lo=None, direction=-1,
                    new_bull_sos=True, new_bear_sos=False)
     kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
-    off = SecondaryArm(SosFadeConfig(exec_secondary=True))
+    off = SecondaryArm(_shift_cfg())
     assert off.update(down, _SIG_LONG, _SEQ_LONG, **kw).l_armed is True
-    on = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_req_m1_dir=True))
+    on = SecondaryArm(_shift_cfg(exec_sec_req_m1_dir=True))
     assert on.update(down, _SIG_LONG, _SEQ_LONG, **kw).l_armed is False
 
 
@@ -645,10 +660,335 @@ def test_be_at_TP2_does_NOT_touch_a_PRIMARY():
     assert ex._current_stop() == 100.0 + 30 * SosFadeConfig().mintick
 
 
-def test_the_secondary_banks_its_own_TP1_percentage_and_inherits_at_minus_one():
-    ex = _open_secondary()
-    assert ex._tp1_pct() == SosFadeConfig().exec_tp1_pct      # -1.0 = inherit
-    own = _open_secondary(exec_sec_tp1_pct=50.0)
-    assert own._tp1_pct() == 50.0
+def test_the_secondary_banks_HALF_by_default_and_inherits_at_minus_one():
+    """50 since 2026-08-20. It is the half of the pair that turns a favourable excursion into a
+    booked one — with nothing banked, 15 of 54 re-entries over 7.9 years finished flat."""
+    assert SosFadeConfig().exec_sec_tp1_pct == 50.0
+    assert _open_secondary()._tp1_pct() == 50.0
+    inherit = _open_secondary(exec_sec_tp1_pct=-1.0)
+    assert inherit._tp1_pct() == SosFadeConfig().exec_tp1_pct      # -1.0 = inherit
+    own = _open_secondary(exec_sec_tp1_pct=25.0)
+    assert own._tp1_pct() == 25.0
     own._entry_kind = "primary"
-    assert own._tp1_pct() == SosFadeConfig().exec_tp1_pct     # a primary never reads it
+    assert own._tp1_pct() == SosFadeConfig().exec_tp1_pct          # a primary never reads it
+
+
+# ── the 15m divergence requirement (exec_sec_req_div) ────────────────────────────
+# Watched RED against HEAD before the switch existed: with a no-divergence 15m signal the
+# ON case already passed (the hardcoded test refused it) and BOTH OFF cases failed, because
+# `sig.bull_div_active` was read directly and no config could reach it.
+
+_SIG_LONG_NODIV = SimpleNamespace(**{**vars(_SIG_LONG), "bull_div_active": False})
+
+
+def test_the_divergence_requirement_is_OFF_by_default_and_still_refuses_a_sweep_armed_leg_when_ON():
+    """Turned ON: no live 15m divergence, no re-entry — whatever else lines up. That was the rule
+    until 2026-08-20, and it is what made the feature unreachable on a sweep-armed book
+    (`exec_arm_div` off, which is still the default), so it now ships OFF. Both halves are asserted
+    here: the new default, and that the old behaviour is still reachable and still refuses."""
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_req_div=True))
+    assert SosFadeConfig().exec_sec_req_div is False
+    out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG_NODIV, _SEQ_LONG,
+                        zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert out.l_armed is False
+
+
+def test_with_the_requirement_OFF_the_same_leg_arms_and_prices_identically():
+    """OFF removes ONLY the divergence question — the limit, stop and targets are untouched."""
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_req_div=False))
+    out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG_NODIV, _SEQ_LONG,
+                        zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert out.l_armed is True
+    assert abs(out.l_edge - (103.0 - 1.0 * 0.382)) < 1e-9
+    assert out.l_sl == 102.0
+    assert out.l_tp1 == 105.0 and out.l_tp2 == 106.18
+
+
+def test_the_requirement_gates_the_LATCH_too_not_only_the_arm():
+    """Both halves, because the Pine tested it twice. Gating only the arm would leave a leg
+    latched from a divergence-less shift and let it fire on a LATER bar — a re-entry the ON
+    path never had, appearing on a config that claims to be the shipped one.
+
+    ⚠ This one CANNOT go red against HEAD — HEAD hardcodes the requirement, so the latch was
+    gated by construction. Proved by MUTATION instead: replacing the latch's divergence test
+    with `True` (arm-only gating) reddens exactly this test and none of the other 40."""
+    arm_sm = SecondaryArm(_shift_cfg(exec_sec_req_div=True))   # PINNED — ships OFF since 2026-08-20
+    # the 1m shift happens with no divergence → nothing may be latched…
+    arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG_NODIV, _SEQ_LONG,
+                  zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    # …so a later bar that DOES have a divergence, but no fresh shift, still has no leg to arm.
+    quiet = M1State(bull_sos_bar=1000, bear_sos_bar=None, bull_leg_hi=103.0, bull_leg_lo=102.0,
+                    bear_leg_hi=None, bear_leg_lo=None, direction=1,
+                    new_bull_sos=False, new_bear_sos=False)
+    assert arm_sm.update(quiet, _SIG_LONG, _SEQ_LONG, zone_close=102.5, ny_hour=10,
+                         flat=True, be_sos_l=500, be_sos_s=None).l_armed is False
+
+
+def test_the_requirement_is_NOT_exec_arm_div_and_neither_reads_the_other():
+    """The trap this switch exists for. `exec_arm_div` says what may arm the PRIMARY; this says
+    whether the RE-ENTRY needs a divergence. Turning the primary's divergence arming ON must not
+    silently satisfy the re-entry, and turning this OFF must not let the primary arm on one."""
+    cfg = _shift_cfg(exec_arm_div=True, exec_sec_req_div=True)
+    out = SecondaryArm(cfg).update(_m1_bull_sos(103.0, 102.0), _SIG_LONG_NODIV, _SEQ_LONG,
+                                   zone_close=102.5, ny_hour=10, flat=True,
+                                   be_sos_l=500, be_sos_s=None)
+    assert out.l_armed is False
+    assert _shift_cfg(exec_sec_req_div=False).exec_arm_div is False
+
+
+# ── the FVG-in-zone trigger + the stop anchor (exec_sec_trigger / exec_sec_stop) ─────
+# Watched RED against HEAD: every one fails on the missing config field or on the arm refusing,
+# because before this the ONLY way to arm was a 1m break of structure and the ONLY stop was the
+# 1m leg origin.
+
+def _m1_quiet(conf_low=None, conf_high=None):
+    """A 1m bar with NO structure event at all — the gap trigger must not need one."""
+    return M1State(bull_sos_bar=None, bear_sos_bar=None, bull_leg_hi=None, bull_leg_lo=None,
+                   bear_leg_hi=None, bear_leg_lo=None, direction=0,
+                   new_bull_sos=False, new_bear_sos=False,
+                   conf_high=conf_high, conf_low=conf_low)
+
+
+_GAP_KW = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+
+
+def test_the_gap_trigger_arms_with_no_1m_shift_at_all():
+    """The whole point: the 2025-10-29 long never got a usable 1m shift, so the trigger must not
+    require one. Entry is the PRIMARY's own point-of-interest price, passed in — not recomputed."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low")
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=102.8, **_GAP_KW)
+    assert out.l_armed is True
+    assert out.l_edge == 102.8          # the primary's edge, untouched by any retrace
+    assert out.l_sl == 101.5            # the 1m engine's last confirmed swing low
+    assert out.l_tp1 == 105.0 and out.l_tp2 == 106.18   # same 15m targets as always
+
+
+def test_the_gap_trigger_refuses_when_the_setup_has_no_gap_to_enter_on():
+    """No point-of-interest price means no gap qualified — which must be a REFUSAL, never a
+    fallback onto some other level. `None` here is 'nothing to enter on', not 'enter anywhere'."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low")
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=None, **_GAP_KW)
+    assert out.l_armed is False and out.l_edge is None
+
+
+def test_the_gap_trigger_refuses_when_the_1m_swing_has_not_confirmed_yet():
+    """No stop anchor is the same class of answer as no entry — refuse. Sizing is risk divided by
+    stop distance, so an unnoticed fallback here is the 54-lot defect wearing a different hat."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low")
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=None), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=102.8, **_GAP_KW)
+    assert out.l_armed is False
+
+
+def test_each_stop_anchor_prices_the_same_entry_differently():
+    """Stop placement flipped the sign on the first case measured, so each anchor is pinned."""
+    for mode, expected in (("swing low", 101.5), ("0.886", 101.14), ("1.0", 100.0)):
+        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                            exec_sec_stop=mode)
+        out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                       poi_edge_l=102.8, **_GAP_KW)
+        assert out.l_armed is True, mode
+        assert out.l_sl == expected, mode
+
+
+def test_an_entry_the_wrong_side_of_its_stop_refuses_rather_than_sizing_off_it():
+    """A long whose gap edge sits BELOW its stop is not a tight trade, it is a negative one, and
+    `qty = risk / distance` would happily divide by it."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low")
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=103.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=102.8, **_GAP_KW)
+    assert out.l_armed is False
+
+
+def test_the_gap_trigger_and_the_0_886_stop_are_the_DEFAULTS_since_2026_08_20():
+    """What ships. Both moved together on 2026-08-20 and they have to: the gap trigger has no 1m
+    leg to stop behind, and pairing it with the old anchor is refused at construction."""
+    assert SosFadeConfig().exec_sec_trigger == "FVG in zone"
+    assert SosFadeConfig().exec_sec_stop == "0.886"
+    assert SosFadeConfig().exec_sec_req_div is False    # the gate that kept it from ever firing
+
+
+def test_the_1m_shift_path_still_ignores_the_gap_edge_when_it_is_pinned_back_on():
+    """The pre-2026-08-20 rule, reachable and unchanged — a 1m shift, a 1m-leg stop, and no
+    interest in the primary's edge even when one is passed."""
+    out = SecondaryArm(_shift_cfg()).update(
+        _m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, poi_edge_l=999.0, **_GAP_KW)
+    assert out.l_armed is True
+    assert abs(out.l_edge - (103.0 - 1.0 * 0.382)) < 1e-9   # NOT 999.0
+    assert out.l_sl == 102.0
+
+
+def test_the_gap_trigger_with_a_1m_leg_stop_REFUSES_at_construction():
+    """That pair has no stop at all — the gap trigger latches no 1m leg. A silent no-trade would
+    read on the page as 'the gap trigger found nothing', which is a different finding entirely."""
+    with pytest.raises(ValueError, match="1m leg"):
+        SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                      exec_sec_stop="1m leg")
+
+
+def test_an_unknown_trigger_or_stop_REFUSES_rather_than_running_the_shipped_rule():
+    with pytest.raises(ValueError, match="exec_sec_trigger"):
+        SosFadeConfig(exec_secondary=True, exec_sec_trigger="fvg")
+    with pytest.raises(ValueError, match="exec_sec_stop"):
+        SosFadeConfig(exec_secondary=True, exec_sec_stop="swing")
+
+
+# ── the re-entry's own first target, in R (exec_sec_tp_r) ────────────────────────────
+# Watched RED against HEAD: the field did not exist, so every one fails at construction.
+
+def _fill_secondary(entry, sl, tp1, tp2, direction=1, **cfg_kw):
+    """Fill a secondary at `entry` through the real entry path, and hand back its ladder."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+    cfg = SosFadeConfig(exec_secondary=True, **cfg_kw)
+    ex = Execution(cfg)
+    pend = _Pending(direction, entry, 1.0, sl, tp1, tp2, 1000)
+    bar = SimpleNamespace(index=1, time_ms=0, open=entry, high=entry, low=entry, close=entry,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, entry, bar, Decision(index=1), kind="secondary")
+    return ex
+
+
+def test_the_R_target_DEFAULTS_to_1_25R_and_at_minus_one_the_ladder_is_the_15m_fib():
+    """1.25R since 2026-08-20 — measured, and it is half of a pair (the other half is how much
+    banks there). -1 restores the 15m fib rung the primary uses, and that path must still work."""
+    assert SosFadeConfig().exec_sec_tp_r == 1.25
+    shipped = _fill_secondary(entry=100.0, sl=98.0, tp1=105.0, tp2=106.0)
+    assert shipped._tp1 == 102.5 and shipped._tp2 == 106.0   # 1.25 x its own 2.00 risk
+    inherit = _fill_secondary(entry=100.0, sl=98.0, tp1=105.0, tp2=106.0, exec_sec_tp_r=-1.0)
+    assert inherit._tp1 == 105.0 and inherit._tp2 == 106.0
+
+
+def test_a_1R_target_replaces_the_first_rung_and_leaves_the_second_alone():
+    """1R for a long risking 2.00 from 100.00 is 102.00 — its OWN risk, not the 15m fib."""
+    ex = _fill_secondary(entry=100.0, sl=98.0, tp1=105.0, tp2=106.0, exec_sec_tp_r=1.0)
+    assert ex._tp1 == 102.0
+    assert ex._tp2 == 106.0          # untouched — this lever moves one rung
+
+
+def test_the_R_target_mirrors_for_a_short():
+    ex = _fill_secondary(entry=100.0, sl=102.0, tp1=95.0, tp2=94.0, direction=-1,
+                         exec_sec_tp_r=1.5)
+    assert ex._tp1 == 97.0           # 100 - 1.5 * 2.00
+
+
+def test_the_R_target_prices_off_the_INITIAL_stop_so_the_trail_cannot_drag_it_in():
+    """The target must mean the risk the trade was SIZED against. If it were re-derived from the
+    live stop, every ratchet would pull the target closer and 1R would stop meaning 1R."""
+    ex = _fill_secondary(entry=100.0, sl=98.0, tp1=105.0, tp2=106.0, exec_sec_tp_r=2.0)
+    assert ex._tp1 == 104.0
+    ex._sl = 99.5                    # the trail ratchets…
+    assert ex._tp1 == 104.0          # …and the target does not move
+
+
+def test_the_R_target_never_touches_a_PRIMARY():
+    """A primary keeps the 15m ladder whatever this says — it is a re-entry lever only, and the
+    shipped 164-trade book must be reproducible with it set."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_tp_r=1.0)
+    ex = Execution(cfg)
+    pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, None)
+    bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, 100.0, bar, Decision(index=1), kind="primary")
+    assert ex._tp1 == 105.0
+
+
+def test_a_zero_or_negative_R_target_REFUSES_rather_than_sitting_on_the_entry():
+    with pytest.raises(ValueError, match="exec_sec_tp_r"):
+        SosFadeConfig(exec_secondary=True, exec_sec_tp_r=0.0)
+    with pytest.raises(ValueError, match="exec_sec_tp_r"):
+        SosFadeConfig(exec_secondary=True, exec_sec_tp_r=-0.5)
+
+
+# ── the re-entry's own risk size (`exec_sec_risk_pct`) ────────────────────────────────
+#
+# Watched RED against HEAD on 2026-08-20 — every one of the six failed before
+# `exec_sec_risk_pct` existed (AttributeError on the default test, wrong lot on the rest).
+#
+# The lever exists because the re-entries deepen the PRIMARY's own drawdown rather than
+# diversifying it: 51.8% -> 68.1% for +27.8R over 7.9 years, both versions troughing in the
+# same 2023-04 -> 2024-10 stretch. Sizing is the only honest way to buy that back, because
+# nothing here changes WHICH bars a re-entry takes.
+
+
+def _sec_qty(**cfg_kw):
+    """Lot the real sizing path rests for the shared long arm, under `cfg_kw`."""
+    cfg = SosFadeConfig(exec_secondary=True, **cfg_kw)
+    ex = Execution(cfg, initial_capital=100_000.0)
+    arm = SecArm(l_armed=True, l_edge=102.618, l_sl=102.0, l_tp1=105.0, l_tp2=106.18, l_leg=1000)
+    pend = ex._secondary_pending(arm)
+    assert pend is not None, "the shared arm must rest an order — the fixture is the control"
+    return pend.qty
+
+
+def test_the_reentry_risk_knob_DEFAULTS_to_half_the_primarys_risk():
+    """50 since 2026-08-20, and the shipped lot must actually BE half — a default that reads 50
+    while still sizing full weight is exactly the failure this section exists to catch."""
+    assert SosFadeConfig().exec_sec_risk_pct == 50.0
+    assert _sec_qty() == pytest.approx(_sec_qty(exec_sec_risk_pct=100.0) / 2.0)
+
+
+def test_100_means_the_same_risk_as_the_primary():
+    """The identity the number is defined against, and what reproduces any figure measured before
+    2026-08-20: the whole account risk over the stop distance, with no re-entry discount at all."""
+    assert _sec_qty(exec_sec_risk_pct=100.0) == pytest.approx(
+        (100_000.0 * SosFadeConfig().exec_risk_pct / 100.0) / (102.618 - 102.0))
+
+
+def test_the_knob_is_a_PERCENTAGE_of_the_primary_risk_not_a_percentage_of_equity():
+    """The bug this pins: reading it as an absolute %-of-equity would make 50 mean *five times*
+    the shipped size when the primary risks 10%. It must compose with the primary's own number."""
+    base = _sec_qty(exec_risk_pct=10.0, exec_sec_risk_pct=100.0)
+    assert _sec_qty(exec_risk_pct=10.0, exec_sec_risk_pct=50.0) == pytest.approx(base / 2.0)
+    assert _sec_qty(exec_risk_pct=20.0, exec_sec_risk_pct=50.0) == pytest.approx(base)
+
+
+def test_a_bigger_reentry_is_allowed_because_the_knob_only_sizes():
+    assert _sec_qty(exec_sec_risk_pct=200.0) == pytest.approx(
+        _sec_qty(exec_sec_risk_pct=100.0) * 2.0)
+
+
+def _primary_qty(monkeypatch, **cfg_kw):
+    """Lot the real PRIMARY placer rests for one armed long, under `cfg_kw`.
+
+    `_place_entries` is driven directly with the arming, the block recorder, the stop anchor and
+    the fib freeze stubbed out. What is left running is the sizing expression itself, which is
+    the whole point — a test that stubbed the sizing too would pass against any wiring.
+    """
+    from strategies.python.mpc_sos_fade import execution as _ex_mod
+    cfg = SosFadeConfig(exec_secondary=True, **cfg_kw)
+    ex = Execution(cfg, initial_capital=100_000.0)
+    monkeypatch.setattr(ex, "_armed", lambda *a, **k: (True, False))
+    monkeypatch.setattr(ex, "_record_blocks", lambda *a, **k: None)
+    monkeypatch.setattr(ex, "_sl_anchor", lambda *a, **k: 102.0)
+    monkeypatch.setattr(_ex_mod, "_freeze_fib", lambda sig: None)
+    sig = SimpleNamespace(index=1, time_ms=0, fibo_p1=105.0, fibo_p2=104.0,
+                          fibo_p3=103.0, fibo_p7=106.0)
+    seq = SimpleNamespace(l_sos_bar=1000, s_sos_bar=None)
+    ex._place_entries(sig, seq, SimpleNamespace(long_veto=False, short_veto=False), 102.618, None)
+    assert ex._pend_long is not None, "the primary never rested an order — the fixture is broken"
+    return ex._pend_long.qty
+
+
+def test_the_knob_never_touches_a_PRIMARY(monkeypatch):
+    """Secondaries only — this is what keeps every stored primary figure valid, exactly as the
+    other re-entry-only levers do."""
+    full = _primary_qty(monkeypatch)
+    assert _primary_qty(monkeypatch, exec_sec_risk_pct=25.0) == pytest.approx(full)
+    assert _primary_qty(monkeypatch, exec_sec_risk_pct=400.0) == pytest.approx(full)
+
+
+def test_zero_or_negative_reentry_risk_is_REFUSED_not_clamped():
+    """A zero lot fills, closes and lands in the trade list at 0R — a trade that looks taken and
+    moved nothing. The honest way to stop taking re-entries is to switch them off."""
+    for bad in (0.0, -1.0, -50.0):
+        with pytest.raises(ValueError, match="exec_sec_risk_pct"):
+            SosFadeConfig(exec_secondary=True, exec_sec_risk_pct=bad)
+    # ...and it is not asked at all when re-entries are off, same as every other re-entry input.
+    assert SosFadeConfig(exec_secondary=False, exec_sec_risk_pct=0.0).exec_sec_risk_pct == 0.0

@@ -1353,3 +1353,82 @@ def test_a_tp_rung_does_not_slice_the_adds():
         f"a TP rung changed the trade's P&L: {sliced.pnl_usd} vs {ride.pnl_usd} — "
         f"the add lot ({add_qty} @ {add_px}) was closed pro-rata and the rest discarded")
     assert abs(sliced.r - ride.r) < 1e-9, f"...and its R: {sliced.r} vs {ride.r}"
+
+
+def test_an_add_records_its_own_excursion_and_not_the_trades():
+    """🔴 A LOT'S `mfe_price`/`mae_price` ARE MEASURED FROM THE LOT, NOT INHERITED FROM THE BASE.
+
+    This is the whole reason the per-lot record exists. An add is bought later and higher than the
+    entry that started the trade, so it sits through a different piece of the move: the base's
+    drawdown here reaches 103.5 on the entry bar, which happened before the lot existed and is not
+    the lot's drawdown by any reading. Copying the parent's numbers onto the lot would report the
+    base's worst price as the add's, and the chart would draw a `Deepest` line at a price the lot
+    never saw.
+
+    Fixture: base fills around 104, the add fills at bar 3's open (106.5), bar 3 ranges 106.0-106.8
+    and bar 4 falls to 104.0. So the LOT's window is [104.0, 106.8] and the TRADE's reaches down to
+    the entry bar's 103.5.
+
+    Watched RED by mutation: seeding the lot's window from `self._ext_low` / `self._ext_high`
+    instead of the fill turns both `!=` assertions red, and it is those two that carry the claim —
+    the bracket assertions below pass under that mutation, because the parent's window CONTAINS the
+    lot's.
+    """
+    ex, _ = _scaled_to_bar3()
+    ex.step(_sig(4, 106.0, 106.2, 104.0, 104.5), _seq_flat())
+    assert ex._pos_dir == 0, "fixture failed — the trade did not close"
+    t = ex.trades[0]
+    lot = t.adds[0]
+    # the lot's own window, and it is NOT the trade's
+    assert abs(lot["mae_price"] - 104.0) < 1e-9, f"lot drawdown is {lot['mae_price']}, want 104.0"
+    assert abs(lot["mfe_price"] - 106.8) < 1e-9, f"lot run is {lot['mfe_price']}, want 106.8"
+    assert lot["mae_price"] != t.mae_price, "the lot inherited the trade's drawdown"
+    assert lot["mfe_price"] != t.mfe_price, "the lot inherited the trade's run"
+    # …and it brackets the lot's own entry, which a window measured from anywhere else need not
+    assert lot["mae_price"] <= lot["price"] <= lot["mfe_price"]
+
+
+def test_an_add_records_where_it_came_off_and_what_it_made():
+    """A lot is a POSITION and the record has to close the arithmetic on it: where it exited, on
+    which leg, and what that was worth. Until 2026-08-19 the record was `{price, ms, qty}`, so the
+    chart could say a lot was BOUGHT and nothing else — an add carrying most of the size showed as
+    one dotted line.
+
+    The P&L is asserted against the lot's OWN entry rather than a hand-typed constant: a lot priced
+    off the base entry is exactly the bug `_exit_portion` was fixed for, and a literal here would
+    have to be recomputed by hand to notice it come back.
+
+    Watched RED by mutation: dropping the `_close_add_record` call from `_exit_portion` leaves the
+    lot with no `exit_price` at all and every assertion below fails on the KeyError.
+    """
+    ex, _ = _scaled_to_bar3()
+    ex.step(_sig(4, 106.0, 106.2, 104.0, 104.5), _seq_flat())
+    t = ex.trades[0]
+    lot = t.adds[0]
+    assert lot["exit_reason"].startswith("L-"), lot["exit_reason"]
+    assert lot["exit_ms"] > lot["ms"], "the lot exited before it was bought"
+    # it came off with the trade, so on the trade's own last leg and at that leg's price
+    last = t.legs[-1]
+    assert abs(lot["exit_price"] - last["price"]) < 1e-9
+    assert lot["exit_reason"] == last["reason"]
+    # …and its P&L is priced off ITS entry, never the base's
+    want = (lot["exit_price"] - lot["price"]) * t.dir * lot["qty"] * ex._cfg.point_value
+    assert abs(lot["pnl_usd"] - want) < 0.01, f"{lot['pnl_usd']} != {want}"
+    off_base = (lot["exit_price"] - t.entry_price) * t.dir * lot["qty"] * ex._cfg.point_value
+    assert abs(lot["pnl_usd"] - off_base) > 1.0, "the lot was priced off the BASE entry"
+
+
+def test_the_lot_record_carries_no_internal_bookkeeping():
+    """The running high/low and the fill-bar marks are how the excursion is ACCUMULATED; they are
+    not part of what a lot is. `ext_hi` is an un-directioned number, so a consumer reading it as
+    "favourable" would be right on longs and wrong on every short — the resolution into
+    `mfe_price`/`mae_price` is the only correct reading and it has already happened.
+
+    Watched RED by mutation: returning `dict(lot)` from `_add_record` (what it was before) leaks
+    all four keys and this goes red naming them.
+    """
+    ex, _ = _scaled_to_bar3()
+    ex.step(_sig(4, 106.0, 106.2, 104.0, 104.5), _seq_flat())
+    lot = ex.trades[0].adds[0]
+    leaked = {"ext_hi", "ext_lo", "_fill_ms", "_limit_fill"} & set(lot)
+    assert not leaked, f"internal bookkeeping reached the trade record: {sorted(leaked)}"

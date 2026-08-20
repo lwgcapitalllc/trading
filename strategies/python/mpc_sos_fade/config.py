@@ -542,7 +542,7 @@ class SosFadeConfig:
     #   on, rather than silently diffing against logic this bot does not have. Porting it means
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
-    exec_secondary: bool = True        # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
+    exec_secondary: bool = True        # "Secondary re-entries" — the 1m sniper re-entry
     #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
     #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from the 1m chart. It
     #   NEEDS run_dual and a 1m feed, which is the whole reason the default matters — see the
@@ -575,6 +575,20 @@ class SosFadeConfig:
     #   AttributeError. Any figure predating that fix describes a feature that could not run.
     #   ⚠ It was believed to be un-measurable because this repo's own docs said the broker served
     #   ~35 days of 1m. That was a guess and it is FALSE — real M1 runs back to 2018-09-14.
+    #
+    #   ✅ RE-MEASURED 2026-08-20 AND THE "ONE TRADE" VERDICT ABOVE NO LONGER DESCRIBES THE SHIPPED
+    #   FEATURE — leave it standing, because it describes the shape that was shipped between
+    #   2026-08-07 and 2026-08-20 and every figure from that fortnight came off it. Five defaults
+    #   moved on 2026-08-20 (`exec_sec_req_div` OFF, `exec_sec_trigger` to the gap, `exec_sec_stop`
+    #   to 0.886, `exec_sec_tp_r` 1.25, `exec_sec_tp1_pct` 50, `exec_sec_risk_pct` 50) and the leg
+    #   went from 10 re-entries to 54 over the same 7.9 years. 235 trades, primaries +206.20R
+    #   unchanged to the decimal, re-entries +27.84R at full weight and +13.92R at the shipped half
+    #   weight — and less its single best trade the leg is +7.16R rather than −1.77R. It is STILL
+    #   bought with drawdown (51.8% → 60.4% at half weight) and it is still concentrated. What
+    #   changed is that it is no longer one trade and a rounding error.
+    #   🔴 THE OLD DEFAULT COULD NOT FIRE ON THE BOOK IT SHIPS WITH, which is why it read as
+    #   marginal. It demanded a live 15m divergence while the primary arms on a SWEEP — over the
+    #   most recent year that produced 0 re-entries in 12 months, not 10 in 7.9 years.
 
     exec_sec_retrace: float = 0.382    # "Secondary entry retrace" — where the 1m limit rests
     #   How far back into the 1m leg the re-entry's resting limit sits, as a fib ratio of that leg.
@@ -633,11 +647,20 @@ class SosFadeConfig:
     #   ⚠ MEASURED because three of the seven shipped re-entries exited at EXACTLY +$0.30, the
     #   30-tick breakeven buffer, after touching TP1 — one of them $2.65 past it.
 
-    exec_sec_tp1_pct: float = -1.0     # "Secondary banks at TP1 (%)"
-    #   A SECONDARY-ONLY take-profit percentage at TP1. -1.0 (default) = inherit `exec_tp1_pct`,
-    #   which is what the shared ladder does today, so the default cannot move a stored figure.
-    #   0-100 gives the re-entry its own rung: a 1m entry aiming at a 15m target spends a long time
-    #   in the trade, and banking part of it is the other answer to being ticked out at breakeven.
+    exec_sec_tp1_pct: float = 50.0     # "Secondary banks at TP1 (%)"
+    #   A SECONDARY-ONLY take-profit percentage at TP1. 50.0 (default since 2026-08-20) banks half
+    #   the re-entry at `exec_sec_tp_r` and runs the rest. -1.0 restores the pre-2026-08-20 rule,
+    #   which inherited `exec_tp1_pct` — shipped at 0, i.e. bank NOTHING and only ratchet the stop
+    #   to breakeven.
+    #
+    #   🔴 THIS IS THE HALF OF THE PAIR THAT TURNS SCRATCHES INTO SOMETHING. MEASURED 2026-08-20,
+    #   7.9 years, rung at 1.25R: banking nothing left 15 of 54 re-entries finishing inside the
+    #   ±0.15R scratch band; banking half left ZERO scratches, 30 wins and 24 losses, and took the
+    #   leg less-its-best-trade from −0.36R to +7.16R. Aaron, same day: *"I read [the scratches]
+    #   altogether as wins — price went in my favour and came back. I don't want to make big money
+    #   on these. I just want to make something."*
+    #   ⚠ READ IT WITH `exec_sec_tp_r`, NEVER ALONE — one sets where the rung is and the other how
+    #   much comes off it, and at 0.5R banking half was the WORST run in the sweep (+0.14R).
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_req_m1_dir: bool = False  # "Re-entry needs the 1m trend to agree"
@@ -646,6 +669,133 @@ class SosFadeConfig:
     #   It is the 1m half of Aaron's question about which chart says "stop taking these" — the 15m
     #   half is already covered, because a 15m shift of structure retires the setup and the arm
     #   dies with it.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_tp_r: float = 1.25        # "Re-entry's first target, in R"
+    #   WHERE A RE-ENTRY'S FIRST TARGET SITS, as a multiple of its OWN risk (entry → its stop).
+    #   1.25 (default since 2026-08-20) puts the rung at `entry + dir * 1.25 * stop_distance` and
+    #   leaves TP2 and the runner exactly where they were. -1.0 restores the pre-2026-08-20 rule,
+    #   the 15m 0.5 fib — the same rung the primary uses. How MUCH banks there is `exec_sec_tp1_pct`.
+    #
+    #   🔴 1.25 WAS PICKED BY A SWEEP, NOT BY EYE, AND THE BEST FIGURE IS NOT THE HEADLINE ONE.
+    #   MEASURED 2026-08-20, 7.9 years, gap trigger + 0.886 stop, banking 50% at the rung. Re-entry
+    #   R, and the same total with its single best trade removed — the second column is the one that
+    #   chose it, because one trade is +20.7R of the whole leg:
+    #     rung   0.50R  +0.14R  (less best −5.35R)   |   1.25R  +27.84R  (less best +7.16R)  ← ship
+    #     rung   0.75R +22.03R  (less best +4.83R)   |   1.50R  +22.82R  (less best +1.32R)
+    #     rung   1.00R +24.43R  (less best +5.63R)   |   2.00R  +22.54R  (less best +0.79R)
+    #   Banking NOTHING at the rung (the old shape) scored +29.50R and −0.36R less its best trade —
+    #   i.e. the entire leg was one trade, which is the shape this pair of defaults exists to fix.
+    #
+    #   🔴 THIS EXISTS BECAUSE THE RE-ENTRIES SCRATCH RATHER THAN LOSE, WHICH IS A DIFFERENT
+    #   PROBLEM FROM A BAD ENTRY. MEASURED 2026-08-20 over 7.9 years with the gap trigger on: of 54
+    #   re-entries, 28 finished inside the ±0.15R scratch band at the 0.886 stop and 34 at the leg
+    #   origin — the biggest bucket in every configuration tried. A 1-minute entry gets a 1-minute
+    #   stop and is then handed a target set for a 15-minute position, so price moves in its favour
+    #   and the breakeven ratchet takes it out before the rung is reached. Aaron, same day: *"I read
+    #   [the scratches] altogether as wins — price went in my favour and came back. I don't want to
+    #   make big money on these. I just want to make something."* The lever turns a favourable
+    #   excursion into a booked one; where to set it is a MEASUREMENT, not a preference.
+    #   ⚠ It also moves the BREAKEVEN trigger, because the ratchet fires at stage 1 and stage 1 is
+    #   this rung. A nearer target therefore means an earlier breakeven on whatever is left, which
+    #   is the opposite of what a runner wants — read it with `exec_sec_tp1_pct` rather than alone.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_risk_pct: float = 50.0    # "Re-entry risk (% of the primary's)"
+    #   HOW MUCH A RE-ENTRY RISKS, as a percentage of `exec_risk_pct`. 50.0 (default since
+    #   2026-08-20) risks HALF what the primary risks; 100.0 is parity with it, 200.0 double. Sizing is `equity * (exec_risk_pct * this/100) / 100 /
+    #   stop_distance`, so it scales the LOT only — entry, stop, targets and every R figure are
+    #   untouched, because R is measured against the trade's own risk.
+    #
+    #   🔴 THIS EXISTS BECAUSE THE RE-ENTRIES DEEPEN THE PRIMARY'S OWN DRAWDOWN RATHER THAN
+    #   DIVERSIFYING IT. MEASURED 2026-08-20 over 7.9 years, gap trigger, 0.886 stop, first target
+    #   at 1.25R banking 50%: adding 54 re-entries took the worst closed-trade drawdown from
+    #   51.8% to 68.1% for +27.8R — return +13%, drawdown +31%, i.e. WORSE per unit of pain
+    #   (4.0 R-per-point becomes 3.4). It is the SAME drawdown made deeper, not a new one: both
+    #   versions trough in the same 2023-04 → 2024-10 stretch, where the primaries lose 6.3R and
+    #   the re-entries lose a further 4.7R. They come off the same setups the primaries just lost
+    #   on, so they fail together — the first hard number this repo has on the correlation the
+    #   trading-philosophy section has warned about in words.
+    #   ⚠ IT SIZES ONLY, IT DOES NOT SELECT. A smaller re-entry still enters and exits on exactly
+    #   the same bars, so it cannot fix a bad entry — read a change here as buying drawdown down,
+    #   never as improving the edge. The R column is deliberately unchanged for that reason.
+    #
+    #   🔴 50 WAS NOT CHOSEN OFF THE DRAWDOWN CURVE — THERE IS NO KNEE IN IT. MEASURED 2026-08-20,
+    #   same 7.9 years; the R total is IDENTICAL at every size (27.84R) because R is per-trade, so
+    #   the account-weighted contribution and the worst closed-trade drawdown are the only columns
+    #   that move:
+    #     off  —      206.20R  51.8%   |   half   +13.92R  220.12R  60.4%  ← ship
+    #     ¼    +6.96R 213.16R  56.2%   |   ¾      +20.88R  227.08R  64.4%
+    #     ⅓    +9.19R 215.39R  57.6%   |   full   +27.84R  234.04R  68.1%
+    #   Every step buys ~1.6R per extra drawdown point, at a near-constant rate — a straight line
+    #   with no natural stopping place, against ~4.0R per point for the primaries alone. So the
+    #   size was chosen on CONCENTRATION instead: one trade is +20.68R of the leg's +27.84R, the
+    #   next is +6.06R, and the whole thing less its best trade is +7.16R over 54 trades. A leg
+    #   leaning that hard on one trade earns a place on the book but not a full weight, because the
+    #   day that trade does not arrive you have paid full price for it.
+    #   ⚠ THE R FIGURES ABOVE ARE NOT COMPARABLE ACROSS SIZES WITHOUT THE WEIGHTING. A backtest
+    #   summary will report the same 27.84R at a quarter size as at full — halving the lot halves
+    #   the win and the loss together. Multiply by this field before comparing to a primary's R.
+    #   ⚠ Refuses 0 or a negative: zero risk is a trade nobody is in, and the honest way to stop
+    #   taking re-entries is `exec_secondary = False`, which also stops the arm doing the work.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry" ∈ {1m shift, FVG in zone}
+    #   WHAT HAS TO HAPPEN before a re-entry rests its order. Two values:
+    #     "1m shift"    — a 1-minute break of structure inside the zone, then a limit at
+    #                   `exec_sec_retrace` of that 1m leg. The only rule that existed before
+    #                   2026-08-20, and the default until that date.
+    #     "FVG in zone" (default since 2026-08-20) — no 1m structure event at all. While the setup
+    #                   is alive and price is back in the zone, rest the limit at the PRIMARY's own
+    #                   point-of-interest price
+    #                   (`Execution._poi_edge_l/_s`, i.e. whatever `_entry_edges` computed for this
+    #                   setup under `exec_poi_source` / `exec_fvg_deep_only` / `exec_fib_nearest`).
+    #   🔴 THE SECOND MODE RE-USES THE PRIMARY'S EDGE RATHER THAN RE-DERIVING IT. Aaron's rule was
+    #   *"follow the rules of fair value gap entry that we would take on a primary trade"* — two
+    #   implementations of those rules is how they silently diverge, and this repo has paid for that
+    #   four times. It also means every gap toggle keeps ONE meaning across both entries.
+    #   ⚠ MEASURED 2026-08-20, the case that prompted it (2025-10-29 long, primary scratched at
+    #   breakeven 02:00 on the 30th): the 1m shift did not confirm until 04:10, by which time price
+    #   had left; its limit rested at 3931.84 and the lowest price for the next 19 hours was 3939.86,
+    #   so it missed by $8.02 while price ran to 4046.22. A gap sat at 3916.47–3922.66, INSIDE the
+    #   zone, and price traded into it at 02:59.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {1m leg, swing low, 0.886, 1.0}
+    #   WHERE THE RE-ENTRY'S STOP GOES. Four values:
+    #     "0.886"      (default since 2026-08-20) — the same level the primary stops at (`fibo_p6`).
+    #     "1m leg"     — the 1-minute leg origin. The default until 2026-08-20, and it only EXISTS
+    #                   under the "1m shift" trigger; pairing it with the gap trigger is refused
+    #                   outright below rather than silently falling back.
+    #     "swing low"  — the 1m engine's last CONFIRMED swing (low for a long, high for a short).
+    #     "1.0"        — the 15m leg origin (`fibo_p10`).
+    #   ⚠ THE DEFAULT MOVED BECAUSE THE TRIGGER DID, and the two must be read together. The gap
+    #   trigger has no 1m leg to stop behind, so it needs a 15m anchor; 0.886 is the one the primary
+    #   already uses, which keeps one answer to "where does this setup stop out" across both entries.
+    #   🔴 STOP PLACEMENT IS NOT A DETAIL HERE AND IT FLIPPED THE SIGN ON THE FIRST CASE MEASURED.
+    #   On the 2025-10-29 long, a gap entry at 3922.66 stopped UNDER THE GAP (3916.47) was taken out
+    #   two minutes later for a loss; the same entry stopped under the swing low (3915.00 — 98 cents
+    #   further) ran to both targets, +16.1R. ⚠ A deeper entry at the gap's far edge measured +88R
+    #   on a $1.47 stop and is refused by the minimum-stop floor, which is the floor doing its job.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_req_div: bool = False     # "Re-entry needs a live 15m divergence"
+    #   WHETHER A RE-ENTRY ALSO DEMANDS A LIVE 15m RSI DIVERGENCE, on top of the setup being alive
+    #   and price being back in the zone. OFF (default since 2026-08-20). ON is the pre-2026-08-20
+    #   rule and is byte-identical to the hardcoded `sig.*_div_active` test it replaced — it gates
+    #   BOTH the 1m leg latch and the arm, because the Pine WIP `f_secArm` tested it in both places
+    #   and the port copied it.
+    #
+    #   🔴 IT IS A DIFFERENT QUESTION FROM `exec_arm_div`, AND THAT IS THE TRAP. The PRIMARY arms
+    #   on a sweep or a divergence, whichever `exec_arm_sweep` / `exec_arm_div` allow — shipped, it
+    #   is sweep-armed and `exec_arm_div` is OFF. The re-entry then asked for a divergence the
+    #   primary was never required to have, so on a sweep-armed book it could not fire at all.
+    #   MEASURED 2026-08-20 on run `4fb168fe354f`'s params (XAUUSD 15m, 2025-08-20 → 2026-08-18,
+    #   23,530 M15 + 352,348 M1 bars): with `exec_secondary` forced ON and nothing else changed,
+    #   **0 re-entries in the year**. On the 2025-12-09 short every other gate passed — the primary
+    #   reached breakeven, price closed back in the zone for 433 one-minute bars, the account was
+    #   flat, and a 1m bear SOS fired inside the zone at 2025-12-11 01:15 — and the divergence test
+    #   alone refused it. Aaron, same day: *"Secondary trades, I don't care about divergence."*
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_require: str = "Breakeven"   # "Secondary needs the primary to have…"
@@ -737,6 +887,51 @@ class SosFadeConfig:
     account_profile: str = "vantage_demo"   # a key of backtest.fills.PROFILES; used only for "tick"
     symbol: str = "XAUUSD"                   # Vantage broker symbol for the tick pull (no ".s" suffix)
 
+    # ── Loss recovery — a counter-trade after THIS bot loses (LAB ONLY, off by default) ──────
+    #
+    # The rule, the measurements behind every default here, and the reasons it is NOT a strategy
+    # of its own live in `strategies/python/loss_recovery/CLAUDE.md`. This block is the wiring
+    # that lets the lab and the Command Center turn it on; the engine is that package.
+    #
+    # 🔴 **Turning this ON cannot change one A+ trade.** The recovery reads A+'s finished losses
+    # and appends its own trades tagged `kind="recovery"`; it never gates, delays or re-sizes an
+    # A+ entry. That is deliberate — a lab-only feature that could move the shipped book would
+    # put every parity number at the mercy of a toggle. The cost of that choice is stated on
+    # `recovery.py::apply` and must not be quietly forgotten: A+ sizes as though the recovery did
+    # not exist, so the two share a balance in ONE direction only.
+    #
+    # ⚠ **No Pine twin exists for this**, so `compare_strategy.py` can never gate it. With the
+    # toggle OFF the bot is byte-identical to the gated one — which is why it defaults OFF and
+    # why an export made with it ON is not a parity input.
+    exec_recovery: bool = False        # "Loss recovery trades"
+    #   MEASURED over mpc_sos_fade's 62 real losses, XAUUSD M15 2018-09-14 → 2026-08-14, both
+    #   sides charged at puprime_ecn: +18.9R gross to the recovery's own risk, +4.8R scaled onto
+    #   the account. It is a SMALL addition, not a second strategy — see the CLAUDE.md before
+    #   reading anything into it.
+    exec_recovery_risk_frac: float = 0.25   # "  ↳ Size vs a normal trade"
+    #   MEASURED by a 5% sweep: 0.25 is the largest size that does not raise max drawdown above
+    #   what A+ already runs (48.3% vs 48.8%) and sits at the peak of the efficiency curve. The
+    #   curve is flat from 0.20 to 0.55, so this is a plateau rather than a knife edge.
+    exec_recovery_lock_at_r: float = 1.0    # "  ↳ Secure the trade at (R)"
+    exec_recovery_lock_to_r: float = 1.0    # "  ↳ Move the stop to (R)"
+    #   Locking to +1R nets +18.9R at a 70% win rate; moving to plain breakeven instead nets
+    #   +9.5R at 54%. Breakeven protects you from losing, it does not bank the thing you entered
+    #   for. +1R is the moment the original loss is paid back, which is the whole idea.
+    exec_recovery_soft_stop_r: float = 0.0  # "  ↳ Cut early at (R against), 0 = off"
+    #   0 keeps the structural stop, which is what every number above was measured on. Anything
+    #   from 0.25 to 1.0 lands inside a measured plateau (+12.9R to +18.5R against a run-to-run
+    #   jitter of 15.06R), so cutting early is FREE rather than better: what it actually buys is
+    #   a smaller average loss (-1.01R → -0.30R), paid for in win rate (58% → 37%).
+    #   ⚠ Below 0.25 it collapses. This is a float because it is a fraction of R, not a switch.
+    exec_recovery_both_dirs: bool = True    # "  ↳ Take both directions"
+    #   🔴 Setting this False is a FITTED choice, not a tuning one: counter-longs made +18.9R and
+    #   counter-shorts -2.9R on this exact record, so "longs only" is a rule picked after seeing
+    #   the answer. Leaving it True is what removes that.
+    exec_recovery_max_days: float = 30.0    # "  ↳ Give up after (days)"
+    #   A BACKSTOP, not a working rule — 30/60/90 days return the identical book because the
+    #   median hold is 4 days. It exists because an earlier version left trades open 130+ days
+    #   and paid -8.66R of swap on one that made +1.25R.
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -752,6 +947,36 @@ class SosFadeConfig:
         the time stop is Off; every combo is then identical and inert, which is a wasted sweep
         but not an error, and raising on it would kill an otherwise valid grid.
         """
+        if self.exec_recovery:
+            # Validated ONLY when the feature is on, matching how `exec_sl_custom` and
+            # `exec_time_stop_hrs` are treated here: an optimizer may sweep a recovery knob
+            # while the toggle is fixed off, and every combo is then inert — a wasted sweep,
+            # not an error. Refusing there would kill an otherwise valid grid.
+            if not self.exec_recovery_risk_frac > 0.0:
+                raise ValueError(
+                    f"exec_recovery_risk_frac must be positive, got "
+                    f"{self.exec_recovery_risk_frac!r}. 0 means 'do not trade it', which is what "
+                    "exec_recovery=False says — one way to express a thing, not two."
+                )
+            if self.exec_recovery_lock_to_r > self.exec_recovery_lock_at_r:
+                raise ValueError(
+                    f"exec_recovery_lock_to_r ({self.exec_recovery_lock_to_r}) cannot exceed "
+                    f"exec_recovery_lock_at_r ({self.exec_recovery_lock_at_r}) — the stop cannot "
+                    "be placed beyond a price the trade has not reached."
+                )
+            if not 0.0 <= self.exec_recovery_soft_stop_r <= 1.0:
+                raise ValueError(
+                    f"exec_recovery_soft_stop_r must be in [0, 1.0], got "
+                    f"{self.exec_recovery_soft_stop_r!r}. 0 is off (keep the structural stop); "
+                    "above 1.0 it sits BEYOND that stop and can never fire, which is a knob that "
+                    "reads as set and does nothing."
+                )
+            if not self.exec_recovery_max_days > 0.0:
+                raise ValueError(
+                    f"exec_recovery_max_days must be positive, got "
+                    f"{self.exec_recovery_max_days!r}. 0 would close every recovery trade on the "
+                    "bar after its fill, which is not 'no time limit'."
+                )
         if not 0.0 < self.alert_resting_fib < 0.5:
             # 🔴 Not a style rule. The whole safety property of this gate is that 0.236 is
             # SHALLOWER than the 0.5 entry band, so every fill must cross it — which is what
@@ -798,6 +1023,35 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_sec_max_per_setup must be >= 1, got {self.exec_sec_max_per_setup!r}. "
                 "Switch exec_sec_once_per_setup OFF for an uncapped cascade.")
+        if self.exec_secondary and not (self.exec_sec_tp_r == -1.0 or self.exec_sec_tp_r > 0):
+            raise ValueError(
+                f"exec_sec_tp_r must be -1 (use the 15m 0.5 fib) or a positive R multiple, got "
+                f"{self.exec_sec_tp_r!r}. Zero would put the first target ON the entry.")
+        if self.exec_secondary and not self.exec_sec_risk_pct > 0:
+            # Refuse rather than clamp to a floor. Zero (or negative) risk sizes a lot of zero,
+            # which fills, closes and lands in the trade list at 0R — a trade that looks taken and
+            # moved nothing. "Stop taking re-entries" is exec_secondary = False.
+            raise ValueError(
+                f"exec_sec_risk_pct must be a positive percentage of the primary's risk, got "
+                f"{self.exec_sec_risk_pct!r}. Switch exec_secondary OFF to stop taking re-entries.")
+        if self.exec_secondary and self.exec_sec_trigger not in ("1m shift", "FVG in zone"):
+            # Refuse rather than fall through to the shipped trigger: a typo that silently ran the
+            # 1m shift would be indistinguishable, on the page, from the gap trigger finding nothing.
+            raise ValueError(
+                f"exec_sec_trigger must be '1m shift' or 'FVG in zone', got "
+                f"{self.exec_sec_trigger!r}.")
+        if self.exec_secondary and self.exec_sec_stop not in ("1m leg", "swing low", "0.886", "1.0"):
+            raise ValueError(
+                f"exec_sec_stop must be one of ['0.886', '1.0', '1m leg', 'swing low'], got "
+                f"{self.exec_sec_stop!r}.")
+        if (self.exec_secondary and self.exec_sec_trigger == "FVG in zone"
+                and self.exec_sec_stop == "1m leg"):
+            # The gap trigger never latches a 1m leg, so this pair has no stop at all. Refusing is
+            # the only honest answer — a fallback would price the trade off an anchor the operator
+            # did not choose, and a silent no-trade would read as "the gap trigger found nothing".
+            raise ValueError(
+                "exec_sec_stop='1m leg' has no meaning under exec_sec_trigger='FVG in zone' — "
+                "that trigger latches no 1m leg. Pick 'swing low', '0.886' or '1.0'.")
         if self.exec_secondary and self.exec_sec_be_at not in ("TP1", "TP2"):
             raise ValueError(
                 f"exec_sec_be_at must be 'TP1' or 'TP2', got {self.exec_sec_be_at!r}.")

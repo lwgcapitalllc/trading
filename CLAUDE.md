@@ -1,6 +1,7 @@
 ## Communication Rules — Non-Negotiable
 
 - Plain English only. Short sentences.
+- **Never write a code name in a reply to ANYONE — no variable, parameter, config field, function or class names.** Say what the thing DOES: "the setting that decides what triggers the trade", not its name. If the reader needs to find it themselves, quote the label shown in the Command Center. File paths and file links are fine — those are places, not code. Write a real name only when they ask for it or ask to see the code. *(Aaron, 2026-08-20: "you keep using it as though I'm reading code." A sentence built round a raw name carries no information to the person reading it, so it hides the answer instead of supporting it. It applies to every person working this repo, not just the one who asked — nobody here reads as a compiler.)*
 - Never use bullet points to explain a simple thing.
 - No preamble. No "Great question." No "Sure, I can help with that."
 - Spawn subagents for routine tasks. Work sequentially unless the task explicitly requires parallel execution.

@@ -9,11 +9,21 @@ import {
   type OverlayFigure,
 } from 'klinecharts'
 
+/** What `registerOverlay` accepts. Named because the trade template is held in a CONST before it
+ *  is registered (twice, under two names) — and a template written inline is contextually typed
+ *  by that call, while one assigned to a bare const is not: its callback params silently become
+ *  `any`. The annotation is what keeps the extraction type-safe. */
+type OverlayTemplateArg = Parameters<typeof registerOverlay>[0]
+
 /** A rectangle hugging the candles inside a session window (Step 3). */
 export const SESSION_BOX = 'lwgSessionBox'
 
 /** Entry arrow + dashed line to exit + exit dot for one trade (Step 4). */
 export const TRADE = 'lwgTrade'
+/** A SCALE-IN LOT, drawn by the trade renderer itself — same box, same `Furthest`/`Deepest`/
+ *  exit labels, same outcome colouring. A separate overlay NAME rather than a separate
+ *  template, so the `Scale-in detail` toggle can clear it without touching the trades. */
+export const TRADE_ADD = 'lwgTradeAdd'
 
 /** Generic strategy-structure overlays (Step 5), driven entirely by spec.overlays. */
 export const BOX = 'lwgBox'
@@ -208,7 +218,17 @@ interface TradeExtend {
   pnl?: number
   outcome?: 'won' | 'scratch' | 'lost' // graded by the backend; absent ⇒ fall back to `pnl > 0`
   adds?: { price: number; ms: number; qty: number }[] // scale-in lots bought after the entry
+  addsDetailed?: boolean // the `Scale-in detail` layer is drawing each lot as its own box, so the
+  // plain `Add` lines below are suppressed — two labels on one pixel row read as two fills
+  addColor?: string // scale-in AMBER. An add used to draw in the entry's own colour on the grounds
+  // that it IS an entry — true, and it made the one line on the box that is not the trade you
+  // opened look exactly like the line that is (Aaron's call, 2026-08-20). Falls back to
+  // `entryColor` so a host that never sets it keeps the old picture rather than losing the lines.
   color?: string // outcome colour (win green / loss red) — the fallback box
+  scratchColor?: string // the SCRATCH verdict's colour, for the outcome chip. Passed in rather
+  // than picked here so `index.tsx`'s `outcomeColor` stays the ONE place the chart grades a colour
+  // — the box, the Step navigator pill and the Show filters all read it, and a literal here would
+  // let the chip disagree with them about the same trade.
   dirColor?: string // entry-arrow colour (long green / short red) — fallback box only
   favColor?: string // favourable-side green (the profit fill / lines — a LIGHT mint, kept
   // distinct from the candle up-colour so the band never blends into green candles)
@@ -268,11 +288,6 @@ const MARKER_ENTRY_LINE_FWD = 46
 // How wide the blank strip must be before the "loading" label goes INSIDE it. Below this the label
 // sits just inside the data instead, where there is always room for it.
 const LOADING_LABEL_MIN_GAP = 190
-
-// Draw the next UNHIT take-profit only when the trade got at least this far toward it (mfe covered
-// this fraction of the gap from the last hit level) — the "close enough to the next TP" filter, so a
-// trade that barely nudged past TP1 doesn't sprout a far-away TP2 line.
-const NEXT_TP_SHOW_FRAC = 0.33
 
 /** '#rrggbb' / '#rgb' → 'rgba(r,g,b,a)'. Non-hex input is returned unchanged. */
 export function withAlpha(color: string, a: number): string {
@@ -360,7 +375,12 @@ export function registerChartOverlays(): void {
   // line at each real profit-take; entry / stop / deepest are guide lines. When the rich fields are
   // absent it degrades to the plain entry→exit outcome box, so it works for any runner/strategy.
   // Prices → pixels via the callback's `yAxis`; the two overlay points give the entry/exit x-span.
-  registerOverlay({
+  // ⚠ Registered TWICE, under two names, from ONE template — the same trick `VLINE`/`DAY_BREAK`/
+  // `FOCUS` use below. A scale-in lot is drawn by the identical renderer because a lot IS a
+  // trade: it has an entry, an excursion, an exit and a P&L, and drawing it any other way would
+  // be a SECOND implementation of the profit-depth view, free to drift from this one. The two
+  // names exist only so the panel can add and remove the two layers independently.
+  const tradeTemplate: OverlayTemplateArg = {
     name: TRADE,
     totalStep: 2,
     lock: true,
@@ -648,15 +668,18 @@ export function registerChartOverlays(): void {
       // a box that hides them can show a short exiting BELOW its entry for a P&L of zero. Several
       // lots at one price collapse to a single labelled line (`Add ×3`) rather than stacking three
       // chips on the same pixel row.
+      // …unless the `Scale-in detail` layer is on, in which case every lot is already drawn as a
+      // full box with its own `Entry` label at exactly this price, and these would double it.
       const addRows = new Map<number, number>()
-      for (const a of d.adds ?? []) {
+      for (const a of d.addsDetailed ? [] : (d.adds ?? [])) {
         if (typeof a?.price !== 'number') continue
         addRows.set(a.price, (addRows.get(a.price) ?? 0) + 1)
       }
+      const addColor = d.addColor ?? entryColor
       for (const [price, count] of addRows) {
-        crossLine(price, withAlpha(entryColor, 0.55))
-        dot(price, entryColor)
-        addLabel(price, count > 1 ? `Add ×${count}` : 'Add', entryColor)
+        crossLine(price, withAlpha(addColor, 0.55))
+        dot(price, addColor)
+        addLabel(price, count > 1 ? `Add ×${count}` : 'Add', addColor)
       }
 
       // Entry: NO line across — just a short tick where the green begins, a dot, and the label.
@@ -674,23 +697,29 @@ export function registerChartOverlays(): void {
       dot(entryP, entryColor)
       addLabel(entryP, 'Entry', entryColor)
 
-      // Next UNHIT take-profit (near-miss view): the trade banked its earlier rungs but never tagged
-      // the FOLLOWING target — draw that target as a FAINT dashed line + a faint label, so you can
-      // see how far the runner still had to go. Only when it got CLOSE (NEXT_TP_SHOW_FRAC of the gap).
+      // The TP LADDER — every target the trade aimed at, drawn as a FAINT line + dot + `TP1`/`TP2`/…
+      // whether or not price ever reached it. Reading how far the runner still had to go is the whole
+      // point of the layer, and it has to be answerable on EVERY trade.
+      //
+      // 🔴 It used to be gated: only the NEXT unhit target, and only when `mfePrice` had covered ≥ 33%
+      // of the gap to it (`NEXT_TP_SHOW_FRAC`), the reasoning being that a far-away target clutters a
+      // trade that barely moved. What that actually produced was two trades on ONE run, both shorts,
+      // both "hit TP1 → armed breakeven → came back → scratched at BE", where one showed `TP2` and the
+      // other showed nothing — and nothing on the chart said which of "the target was miles away" and
+      // "this trade carries no targets" you were looking at. **A layer that draws itself only
+      // sometimes cannot be read as absence-means-something**, so the reader has to go and check
+      // anyway, which is the cost the gate was supposed to save. Aaron's call, 2026-08-20.
+      //
+      // ⚠ A target a real profit LEG already draws is skipped — that line is solid and says something
+      // stronger (it BANKED there), and two figures on one pixel row read as two fills. The `1e-9` is
+      // a float-equality guard, NOT a "near enough" band: a leg price and its target are the same
+      // strategy field, so they either match exactly or the leg belongs somewhere else.
       const targets = (d.tpTargets ?? []).filter((t) => typeof t === 'number')
-      if (targets.length && typeof entryP === 'number' && typeof mfePrice === 'number') {
-        const favOf = (p: number) => (p - entryP) * sign // favourable distance from entry
-        const mfeFav = favOf(mfePrice)
-        const nextIdx = targets.findIndex((t) => favOf(t) > mfeFav + 1e-9) // first the mfe didn't reach
-        if (nextIdx >= 0) {
-          const refFav = nextIdx > 0 ? favOf(targets[nextIdx - 1]) : 0 // last hit target, else entry
-          const covered = (mfeFav - refFav) / (favOf(targets[nextIdx]) - refFav)
-          if (covered >= NEXT_TP_SHOW_FRAC) {
-            crossLine(targets[nextIdx], withAlpha(profitColor, 0.5))
-            dot(targets[nextIdx], withAlpha(profitColor, 0.5))
-            addLabel(targets[nextIdx], `TP${nextIdx + 1}`, withAlpha(profitColor, 0.7))
-          }
-        }
+      for (let i = 0; i < targets.length; i++) {
+        if (legPrices.some((p) => Math.abs(p - targets[i]) < 1e-9)) continue
+        crossLine(targets[i], withAlpha(profitColor, 0.5))
+        dot(targets[i], withAlpha(profitColor, 0.5))
+        addLabel(targets[i], `TP${i + 1}`, withAlpha(profitColor, 0.7))
       }
 
       // De-collide the labels top→down (min 15px apart), then draw each as a compact rounded chip
@@ -769,10 +798,19 @@ export function registerChartOverlays(): void {
         const text = parts.join(' · ')
         const cx = (x0 + x1) / 2
         const cy = extY + outPix * 12
-        // A scratch is neither green nor red — it reads in the neutral colour the entry uses, so a
-        // flat trade stops being counted by eye as a loss when the run's own KPI row does not.
+        // A scratch is neither green nor red — it gets its OWN colour (orange), so a flat trade
+        // stops being counted by eye as a loss when the run's own KPI row does not, and stays
+        // findable in a run full of wins and losses. ⚠ It used to fall back to `entryColor`, which
+        // on a single-run spec is the same grey as the entry marker and every unlayered chip — a
+        // third verdict drawn in the chart's default neutral does not read as a third verdict.
+        // `scratchColor` is absent on an older cached spec, and that grey is still the right thing
+        // to degrade to.
         const verdictColor =
-          verdict === 'won' ? profitColor : verdict === 'scratch' ? entryColor : stopColor
+          verdict === 'won'
+            ? profitColor
+            : verdict === 'scratch'
+              ? (d.scratchColor ?? entryColor)
+              : stopColor
         chip(cx, cy, text, verdictColor, 'center', d.layerColor)
         // A filled dot in the strategy's colour just left of the chip — the same swatch the equity
         // chart and the toggle chips use, so the eye matches trade → strategy without reading text.
@@ -789,7 +827,9 @@ export function registerChartOverlays(): void {
 
       return figures
     },
-  })
+  }
+  registerOverlay(tradeTemplate)
+  registerOverlay({ ...tradeTemplate, name: TRADE_ADD })
 
   // ── Fibonacci retracement (USER-DRAWN) ────────────────────────────────────────
   // Two anchor points (swing A → swing B) define the price range, and the DIRECTION matters:

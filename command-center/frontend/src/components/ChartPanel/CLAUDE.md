@@ -635,15 +635,55 @@ here**, so the chart shows exactly what the strategy saw.
   ⚠ **The sign of the P&L is only the FALLBACK, for a run with no losing trade to scale against,
   and the fallback never returns `scratch`** — an ungraded trade is not a measured flat one. ⚠ **A
   run whose `chart_spec.json` was cached before this shipped keeps its old chips until that cache
-  is deleted**; nothing versions the file.
+  is deleted**; nothing versions the file. 🔴 **A scratch is ORANGE (`#ff5c00`) since 2026-08-20,
+  and it was `theme.textSecondary` before that.** Grey is off the win/loss axis, which was the point
+  — but it is also the chart's DEFAULT neutral, worn by body text, the entry marker and every chip
+  with no layer colour, so the third verdict did not read as a verdict at all, it read as a chip
+  nobody had coloured in. ⚠ **`TRADE_SCRATCH_COLOR` → `outcomeColor()` is the one place it is
+  decided**, feeding the fallback box, the outcome chip (via the overlay's `scratchColor`), the Step
+  navigator pill and the Show filters; a literal anywhere else lets two of them grade one trade in
+  two colours. ⚠ **The overlay falls back to `entryColor` when `scratchColor` is absent** — an older
+  cached spec keeps the grey rather than picking an orange the rest of the page did not agree to.
+  ⚠ **It is NOT `theme.warn`, and that is the part worth keeping**: the obvious token (#ffb300) is
+  **ΔE 15.8** in Lab from `MISS_COLOR` (#ff9800), i.e. the same colour on a 10px chip — a scratched
+  trade and a setup that never finished would have been one signal. The shipped #ff5c00 measures
+  **31.4** from the miss amber, **49.3** from the loss red, **80.9** from the blocked pink and
+  **101.5** from the grey it replaces. **Re-measure before adding any warm colour to this chart** —
+  a palette collision is invisible in the code and obvious on the screen.
 
   🔴 **A SCALE-IN ADD is drawn — one dotted `Add` line per lot (`trades[].adds`), in the entry's
   own colour, because that is what it is: a further entry at a later price.** Without them the box
   is unreadable in the literal sense — entry, exit and P&L describe arithmetic that does not close,
   and the missing lot was in no field the chart received. Several lots at one price collapse to
-  `Add ×3` rather than stacking chips on one pixel row. ⚠ **No toggle**: they are not another view
-  of the trade, they are part of what it held. ⚠ **A run finished before the strategy recorded them
-  carries none and there is no backfill** — re-run the backtest.
+  `Add ×3` rather than stacking chips on one pixel row. 🔴 **AMBER since 2026-08-20** (`theme.warn`, via `addColor`), Aaron's call on seeing a real two-add trade: an add IS an entry, which is why it drew in the entry's own colour — and that made the one line on the box which is NOT the trade you opened indistinguishable from the line that is. ⚠ It shares a family with `TRADE_SCRATCH_COLOR` (#ffb300 amber vs #ff5c00 orange-red); they never share a pixel row, but move either AWAY from the other, never toward it. ⚠ **No toggle on the LINES**: they are not
+  another view of the trade, they are part of what it held. ⚠ **A run finished before the strategy
+  recorded them carries none and there is no backfill** — re-run the backtest.
+- **Scale-in detail** (`TRADE_ADD` overlay, `trades[].adds[]` with per-lot exits) — **every add lot
+  drawn as the trade it is** (Aaron's ask, 2026-08-20). The `Add` line above says a lot was BOUGHT
+  and stops there; this answers the questions a reader actually has of it — how far it ran, what its
+  drawdown was, where it came off — because a lot is a position and often carries most of the size.
+  🔴 **It is the SAME overlay template, registered a second time under a second name**, so a lot gets
+  the identical profit-depth view: two-tone green run, `Furthest`, `Deepest`, exit line, outcome
+  chip. A bespoke renderer would have been a second implementation of the trade box, free to drift
+  about what *how far it ran* means. The two names exist only so the layers clear independently.
+  ⚠ **Extracting that template to a const cost it its typing** and the params silently became `any`
+  — a template written inline is contextually typed by the `registerOverlay` call and one assigned
+  to a bare const is not. `OverlayTemplateArg` is the annotation that keeps the extraction safe;
+  `tsc` caught it, which is the only reason it is not still `any`.
+  ⚠ **Default OFF, and it requires Trades ON** (unlike Fibs, which is a true peer): an add box with
+  no parent trade under it reads as a trade the run never took. With it on, the parent's plain `Add`
+  lines are SUPPRESSED via `addsDetailed` — each lot now draws its own `Entry` label on that exact
+  pixel row, and two labels for one fill reads as two fills.
+  ⚠ **No `stopPrice` and no `tpTargets` on a lot, deliberately.** A lot dies on the base's stop *as
+  trailed*, which is neither the base's initial 1R nor anything recorded per lot; and the adds bank
+  on their own `L-ATP` target, not the base's fib ladder. Either line would be drawn from a number
+  the lot never had, and a wrong line does not announce itself. The overlay degrades without them.
+  ⚠ **The chip reads `Add · Won` / `Add · Lost` and has only two states.** The backend grades whole
+  trades against the run's median full loss; a lot has no such scale, so its verdict is the sign of
+  its own P&L. There is no `scratch` here — a third state would claim a measurement never made.
+  ⚠ **The row is counted on `exitPrice`, not on `adds.length`**, so it vanishes for a run stored
+  before the strategy recorded per-lot detail rather than sitting there toggling nothing. The count
+  is LOTS, since that is how many extra boxes the toggle puts on the chart.
 - **Blocked setups** (`BLOCK` overlay, spec `blocks[]`) — **the trades that never happened.** A setup
   the strategy had READY and one of its OWN rules refused places no order, so it appears in no trade
   list, no equity curve and no broker report; without this layer there is no way to judge whether a
@@ -970,12 +1010,16 @@ here**, so the chart shows exactly what the strategy saw.
   stack's legs are a different kind of thing from a run's own trades) and hides one strategy's trades
   (`hiddenLayers`), for when overlapping trades need isolating. **The roster is DERIVED from the
   trades themselves**, so the panel stays strategy-agnostic — it sees layers as data, exactly like
-  overlay groups, and needs no new props and no knowledge of stacks. A **near-miss next-TP** guide: if the trade banked its earlier
-  rungs but never tagged the FOLLOWING target, that target (`tpTargets`, the full TP ladder — emitted
-  by `execution.py` → `output.py` `tp_targets` → `chart_spec`, reporting-only/parity-safe) is drawn as
-  a FAINT dashed line + faint label, but ONLY when the furthest favourable run (`mfePrice`) covered
-  ≥ `NEXT_TP_SHOW_FRAC` (0.33) of the gap to it — so you can see how close a runner came to the next TP
-  without a far-away target cluttering a trade that barely moved. Supported figure types are
+  overlay groups, and needs no new props and no knowledge of stacks. The **TP ladder**: every target the trade
+  aimed at (`tpTargets` — emitted by `execution.py` → `output.py` `tp_targets` → `chart_spec`,
+  reporting-only/parity-safe) is drawn as a FAINT line + dot + `TP1`/`TP2`/…, hit or not, **skipping
+  any price a real profit LEG already draws** (that line is solid and says it BANKED there; two
+  figures on one pixel row read as two fills). 🔴 **It was gated until 2026-08-20** — next-unhit only,
+  and only when `mfePrice` had covered ≥ 33% of the gap to it — which put two shorts from ONE run side
+  by side, both "hit TP1 → armed breakeven → scratched at BE", one showing `TP2` and one showing
+  nothing. ⚠ **A layer that draws itself only sometimes cannot be read as absence-means-something**:
+  a blank chart could not be told from a trade with no targets, so the reader had to go and check
+  anyway — which is the cost the gate existed to save. Aaron's call. Supported figure types are
   `circle/line/polygon/rect/text` (verified via `getSupportedFigures`). **Chart price marks:** the
   candle `priceMark.high`/`.low` (highest/lowest-visible-price tags) are turned OFF in `chartStyles.ts`
   — they render on the exact visual extreme, which is where the outcome chip sits, so they collided;

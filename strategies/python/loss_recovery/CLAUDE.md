@@ -427,3 +427,22 @@ read would have let every assertion pass on an empty list.
 | `engine.py` | the state machine; consumes `engines/market_structure` public events only |
 | `tests/` | 31 tests + the real-bar fixture |
 | `backtest/tools/recovery_report.py` | the runner that produced every number above |
+
+---
+
+## It is drivable from the Command Center (2026-08-20)
+
+Until now this package could only be run from `backtest/tools/recovery_report.py`, a terminal tool
+— there was no config field, so the lab's form (built from `dataclasses.fields` of a strategy's
+config) had nothing to render, and `build_results` reads `strategy.execution.trades`, which never
+contained a recovery row.
+
+`mpc_sos_fade` now carries seven `exec_recovery_*` inputs and a `recovery.py` adapter that maps
+them onto `RecoveryConfig`, runs this engine over that bot's finished losses, and appends the
+result as `Trade(kind="recovery")`. Everything downstream — KPIs, equity curve, trades table,
+chart — then works with no change. **Defaults are unchanged and `exec_recovery` is OFF**; nothing
+measured in this file moved.
+
+⚠ **The wiring's facts live in `strategies/python/mpc_sos_fade/CLAUDE.md`**, not here — including
+the one that matters (turning it on cannot move an A+ trade) and the one approximation it buys
+(the two share a balance in one direction only). This file stays the owner of the RULE.

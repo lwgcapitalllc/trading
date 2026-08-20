@@ -71,6 +71,7 @@ import {
   STRUCTURE_GROUPS,
   STRUCTURE_GROUP_COLOR,
   TRADE,
+  TRADE_ADD,
   TRADE_FIB,
   VLINE,
   registerChartOverlays,
@@ -126,7 +127,21 @@ const TRADE_WIN_COLOR = theme.pos // green box — trade won
 const TRADE_LOSS_COLOR = theme.neg // red box — trade lost
 // A SCRATCH is off the win/loss axis, like a blocked setup: neither green nor red, because the
 // trade did not resolve either way. Painting it red is what made a $0.00 trade read as a loss.
-const TRADE_SCRATCH_COLOR = theme.textSecondary
+// 🔴 It was `theme.textSecondary` until 2026-08-20 and that was the wrong kind of neutral — the
+// SAME grey the chart already uses for body text, the entry marker and every unlayered chip, so a
+// scratch chip did not read as a THIRD verdict, it read as a chip nobody had coloured in. Orange
+// is off the green/red axis just as cleanly AND is findable by eye in a run full of wins and
+// losses (Aaron's call).
+// ⚠ NOT `theme.warn` (#ffb300), which was the obvious pick and is wrong: `MISS_COLOR` below is
+// already amber (#ff9800) and the two are ΔE 15.8 apart in Lab — the same colour on a 10px chip,
+// so a scratched trade and a setup that never finished would have been one signal. MEASURED across
+// every colour this chart puts on screen; #ff5c00 is ΔE 31.4 from the miss amber, 49.3 from the
+// loss red, 80.9 from the blocked pink and 101.5 from the grey it replaces. **Re-run that check
+// before adding any warm colour here** — the collision is invisible in code and obvious on screen.
+// ⚠ Change it HERE and nowhere else: this constant feeds the box, the outcome chip (through the
+// overlay's `scratchColor`), the Step navigator pill and the Show filters via `outcomeColor`, and
+// a second literal would let two of them grade the same trade in two colours.
+const TRADE_SCRATCH_COLOR = '#ff5c00'
 
 /** WON / SCRATCH / LOST for one trade — the ONE place the chart decides, so the chip, the box
  *  colour, the Step navigator and the Show filters can never grade the same trade differently.
@@ -1670,6 +1685,31 @@ export default function ChartPanel({
     [spec.trades]
   )
 
+  // SCALE-IN DETAIL — every add lot drawn as the trade it is (Aaron's call, 2026-08-19). A lot has
+  // its own entry, its own excursion and its own exit, and the panel could previously say only that
+  // one was BOUGHT: a dotted `Add` line at its fill price and nothing else. So the questions a
+  // reader asks of any trade — how far did it run, what was its drawdown, where did it come off —
+  // had no answer for the part of the position that often carries most of the size.
+  //
+  // Default OFF, for the same reason Fibs is: a runner with four adds becomes five overlapping
+  // boxes, and the run reads fine without it. It is a peer row rather than a sub-toggle of Trades —
+  // it is its own reading of the chart — but it does NOT draw with Trades off, because an add box
+  // floating with no parent trade under it is unreadable in a way a fib leg is not.
+  //
+  // ⚠ Counted on `exitPrice`, NOT on `adds.length`. A run stored before the strategy recorded the
+  // per-lot fields carries the bare `{price, ms, qty}`, which has nothing to draw a box from — so
+  // the row vanishes for it rather than sitting there toggling nothing. Same rule the Fibs row
+  // follows, and there is no backfill: re-run the backtest.
+  const [tradeAddsOn, setTradeAddsOn] = useState(false)
+  const tradeAddCount = useMemo(
+    () =>
+      spec.trades.reduce(
+        (n, tr) => n + (tr.adds ?? []).filter((a) => typeof a.exitPrice === 'number').length,
+        0
+      ),
+    [spec.trades]
+  )
+
   // Blocked setups — the trades that never happened. Default OFF: they are a diagnostic view
   // ("is this rule protecting me or costing me?"), not part of reading the run's result, and on a
   // long run there are more of them than there are trades.
@@ -2788,7 +2828,20 @@ export default function ChartPanel({
           // Scale-in lots. Without them the box can show a short exiting BELOW its entry for a
           // P&L of zero, with nothing on the chart to say where the profit went.
           adds: tr.adds,
-          color: outcomeColor(tradeOutcome(tr)), // fallback box (win green / scratch grey / loss red)
+          // …but not while the DETAIL layer is drawing them: each lot then gets a full box with its
+          // own `Entry` label on the same pixel row, and two labels for one fill is noise that
+          // reads as two fills.
+          addsDetailed: tradeAddsOn && tradeAddCount > 0,
+          // AMBER, not the entry's colour (Aaron's call, 2026-08-20). An add IS an entry, which is
+          // why it used to share that colour — and the result was that the one line on the box
+          // which is NOT the trade you opened looked identical to the line that is. `theme.warn` is
+          // the palette's amber and already the third series colour, so it reads as its own thing
+          // against the green/red the box is built from without adding a hue the chart lacks.
+          // ⚠ Close in family to `TRADE_SCRATCH_COLOR` (#ff5c00) on the outcome chip; they are
+          // #ffb300 amber vs orange-red and never share a pixel row, but if either moves, move it
+          // AWAY from the other rather than toward it.
+          addColor: theme.warn,
+          color: outcomeColor(tradeOutcome(tr)), // fallback box (win green / scratch orange / loss red)
           dirColor: tr.dir === 'long' ? theme.pos : theme.neg, // entry arrow (buy green / sell red)
           // Profit-depth inputs — prices, converted to pixels in the overlay via the y-axis.
           // Absent fields make the overlay fall back to the plain entry→exit box.
@@ -2806,6 +2859,7 @@ export default function ChartPanel({
           // Portfolio stack: the entry marker takes the strategy's layer colour so overlapping
           // strategies read apart; a single-run trade has no layer → neutral, unchanged.
           entryColor: tr.layerColor ?? theme.textSecondary,
+          scratchColor: TRADE_SCRATCH_COLOR, // orange outcome chip — a scratch is a THIRD verdict
           layerColor: tr.layerColor, // outcome-chip border + dot accent (stack only)
           layerName: tr.layerName, // named in the outcome chip: "SOS Fade · Won" (stack only)
           chipBg: theme.bgSurface, // dark chip behind the side labels (legible over candles)
@@ -2837,6 +2891,105 @@ export default function ChartPanel({
     tradePattern,
     groupsOn,
     atBaseTf,
+    tradeAddsOn,
+    tradeAddCount,
+  ])
+
+  // SCALE-IN DETAIL — one full trade box per add lot. Same overlay template as a trade (registered
+  // a second time as `TRADE_ADD`), so a lot gets the identical profit-depth view: the two-tone
+  // green run, `Furthest`, `Deepest`, the exit line, the outcome chip. That reuse is the point —
+  // a bespoke renderer here would be a second implementation of the trade box, free to disagree
+  // with the real one about what "how far it ran" means.
+  //
+  // It reuses the TRADES effect's own predicates — the loaded-candle clip, the layer isolation, the
+  // Winners/Losers filters — so the two layers can never disagree about which trades are of
+  // interest, the same rule Trade fibs and the Step navigator follow. The lot is clipped on the
+  // PARENT's entry rather than its own, for the same reason: a lot whose parent is off-screen has
+  // nothing to sit under.
+  //
+  // ⚠ Unlike Trade fibs it DOES require `tradesOn` — an add box with no parent trade under it
+  // reads as a trade the run never took.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.removeOverlay({ name: TRADE_ADD })
+    if (!tradeAddsOn || !tradesOn) return
+    for (const tr of spec.trades) {
+      if (loadedLoTs == null || loadedHiTs == null) break
+      if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
+      if (tr.layer && hiddenLayers.has(tr.layer)) continue
+      if (!outcomeVisible(tr)) continue
+      for (const a of tr.adds ?? []) {
+        // A lot with no recorded exit is one this run never measured — an older spec, or a
+        // strategy that adds without tracking its lots. There is no box to draw from a fill price
+        // alone, and inventing one from the parent's exit would report the BASE's exit as the
+        // lot's. It keeps the plain `Add` line the parent draws and nothing more.
+        if (typeof a.exitPrice !== 'number' || typeof a.exitTime !== 'number') continue
+        // The lot's verdict is the SIGN of its own P&L and nothing better exists: the backend
+        // grades whole trades against the run's median full loss, and a lot has no such scale of
+        // its own. So there is no `scratch` here — three states would claim a measurement that was
+        // never made. The chip says `Add · Won` / `Add · Lost` so it can never be mistaken for the
+        // graded verdict on the trade it sits inside.
+        const won = (a.pnl ?? 0) > 0
+        const verdict: TradeOutcome = won ? 'won' : 'lost'
+        chart.createOverlay({
+          name: TRADE_ADD,
+          lock: true,
+          points: [
+            { timestamp: a.ms, value: a.price },
+            { timestamp: a.exitTime, value: a.exitPrice },
+          ],
+          extendData: {
+            dir: tr.dir,
+            pnl: a.pnl,
+            outcome: verdict,
+            color: outcomeColor(verdict),
+            dirColor: tr.dir === 'long' ? theme.pos : theme.neg,
+            precision: pricePrecision,
+            showPrices: chartSettings.tradeLabelPrices,
+            entryPrice: a.price,
+            exitPrice: a.exitPrice,
+            mfePrice: a.mfePrice,
+            maePrice: a.maePrice,
+            // ⚠ NO `stopPrice`, and its absence is deliberate. A lot dies on the BASE's stop as the
+            // base has trailed it, which is neither the base's initial 1R (what `tr.stopPrice`
+            // holds) nor anything recorded per lot — so any line drawn here would be a stop the lot
+            // never had. The overlay degrades without it; a wrong one would not announce itself.
+            //
+            // `tpTargets` is left out for the same reason: the adds bank on their OWN target
+            // (`L-ATP`), not on the base's fib ladder, so the base's targets would draw a near-miss
+            // against a level this lot was never aiming at.
+            profitLegs: [{ price: a.exitPrice, label: a.exitReason?.split('-').pop() || 'Exit' }],
+            favColor: TRADE_PROFIT_FILL,
+            advColor: TRADE_LOSS_COLOR,
+            // The lot's own `Entry` label takes the SAME amber the `Add` lines use, so one colour
+            // means "this is an add" whichever of the two layers you are reading. On a stack the
+            // parent trade still tints its entry by strategy; a lot does not, because which
+            // strategy it belongs to is already stated by the trade box it sits inside.
+            entryColor: theme.warn,
+            // ⚠ Carried but UNREACHABLE for a lot, and deliberately so: `verdict` above is
+            // `won ? 'won' : 'lost'`, because the backend grades whole trades against the run's
+            // median full loss and a lot has no such scale of its own. Kept so the two layers pass
+            // the same shape; if a lot ever gains a real third verdict, this is already right.
+            scratchColor: TRADE_SCRATCH_COLOR,
+            layerName: 'Add',
+            chipBg: theme.bgSurface,
+            neutralColor: theme.textTertiary,
+          },
+        })
+      }
+    }
+  }, [
+    spec.trades,
+    tradeAddsOn,
+    tradesOn,
+    outcomeVisible,
+    hiddenLayers,
+    displayCandles,
+    loadedLoTs,
+    loadedHiTs,
+    chartSettings,
+    pricePrecision,
   ])
 
   // Trade fibs — the leg each trade was priced off. Rebuilt on data change like every other
@@ -3858,6 +4011,24 @@ export default function ChartPanel({
                           },
                         ]
                       : []
+                  // Scale-in detail — every add lot as its own trade box. Listed only when the run's
+                  // trades actually carry per-lot exits: a strategy that never adds has none, and a
+                  // run finished before the strategy recorded them carries a fill price and nothing
+                  // to draw a box from. The count is LOTS, not trades — it is how many extra boxes
+                  // the toggle puts on the chart, which is the thing a reader is deciding about.
+                  const scaleIns: MenuItem[] =
+                    tradeAddCount > 0
+                      ? [
+                          {
+                            key: 'tradeadds',
+                            label: 'Scale-in detail',
+                            color: theme.textSecondary,
+                            on: tradeAddsOn,
+                            toggle: () => setTradeAddsOn((o) => !o),
+                            count: tradeAddCount,
+                          },
+                        ]
+                      : []
                   // The zone layers — gaps, order blocks, the candle repaint. Each is drawn only
                   // where a trade was taken, refused or missed, so each is "and show me what this
                   // looked like there". Default OFF; the count is how many the run produced.
@@ -3897,7 +4068,7 @@ export default function ChartPanel({
                       ...row(g, g.name.slice(LIQ.length)),
                       ...(i === 0 ? { section: 'Liquidity' } : {}),
                     }))
-                  const ctx = [...fibs, ...zones, ...liq]
+                  const ctx = [...fibs, ...scaleIns, ...zones, ...liq]
                   // The caption opens the section, so it belongs on whichever row happens to be
                   // first — and never on top of a caption that is already there (a run carrying
                   // nothing but liquidity keeps "Liquidity", which is the more specific answer).
