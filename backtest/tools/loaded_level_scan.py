@@ -160,6 +160,7 @@ def scan(
     min_rr: float,
     expiry: int,
     max_hold: int,
+    away_mult: float = 0.0,
 ) -> tuple[list, dict, dict]:
     a = atr(b, 50)
     ph, pl = pivots(b, pivot_len)
@@ -226,7 +227,14 @@ def scan(
 
         # ── step 2 · a level loads above the block ───────────────────
         if live.stage == 1:
-            fresh = [lv for lv in loaded_lows if lv[0] > live.arm_bar and lv[1] > live.block]
+            need = (a[i] or 0.0) * away_mult
+            fresh = [
+                lv
+                for lv in loaded_lows
+                if lv[0] > live.arm_bar
+                and lv[1] > live.block
+                and max(b.h[lv[0] : i + 1], default=lv[1]) - lv[1] >= need
+            ]
             if fresh:
                 live.loaded_bar, live.loaded = fresh[-1]
                 live.stage = 2
@@ -249,7 +257,14 @@ def scan(
                 drops["block broken"] += 1
                 live = None
                 continue
-            above = [lv for lv in loaded_highs if lv[0] >= live.loaded_bar and lv[1] > b.c[i]]
+            need = (a[i] or 0.0) * away_mult
+            above = [
+                lv
+                for lv in loaded_highs
+                if lv[0] >= live.loaded_bar
+                and lv[1] > b.c[i]
+                and lv[1] - min(b.l[lv[0] : i + 1], default=lv[1]) >= need
+            ]
             if above:
                 live.el_bar, live.el = above[-1]
                 live.stage = 4
@@ -375,12 +390,21 @@ def control(b: Bars, setups: list, *, seed: int = 7, reps: int = 40) -> dict:
 
 
 def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
+    """Render one setup. DIRECTION-AWARE — a short is not a long with different numbers.
+
+    Every anchor and every label offset flips with `s.dir`. Drawing a short with the long
+    layout put "LOADED LOW" on a high and stacked four markers on top of each other, which
+    is the same class of error `invert()` exists to prevent one level up: a bearish branch
+    written by hand is where the sign quietly goes missing.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
 
+    up_dir = s.dir == "long"
+    sd = 1.0 if up_dir else -1.0  # flips every label offset
     lo = max(0, s.arm_bar - pad)
     hi = min(len(b) - 1, s.exit_bar + 15)
     xs = range(lo, hi + 1)
@@ -402,20 +426,35 @@ def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
             )
         )
 
-    def hline(y, c, label, ls="-"):
-        ax.hlines(y, lo, hi, color=c, lw=1.6, linestyles=ls, zorder=4)
-        ax.text(hi, y, f"  {label}", color=c, fontsize=8.5, va="center", fontweight="bold")
+    rng = max(b.h[i] for i in xs) - min(b.l[i] for i in xs)
 
-    hline(s.el, "#15803d", f"TARGET  {s.el:.2f}")
-    hline(s.loaded, "#6d28d9", f"LOADED LOW / ENTRY  {s.entry:.2f}")
-    hline(s.block, "#dc2626", f"BLOCK  {s.block:.2f}", ls="--")
-    hline(s.stop, "#dc2626", f"STOP  {s.stop:.2f}", ls=":")
+    # The four levels routinely sit within a fraction of an ATR of each other — entry, block
+    # and stop are a tight cluster by CONSTRUCTION, since the whole model puts the stop just
+    # past the block. So the right-edge labels are STACKED apart rather than drawn at their
+    # own y: an unreadable label is the same as no label.
+    lvl = "LOADED LOW" if up_dir else "LOADED HIGH"
+    rows = [
+        (s.el, "#15803d", f"TARGET  {s.el:.2f}", "-"),
+        (s.loaded, "#6d28d9", f"{lvl} / ENTRY  {s.entry:.2f}", "-"),
+        (s.block, "#dc2626", f"BLOCK (empty)  {s.block:.2f}", "--"),
+        (s.stop, "#dc2626", f"STOP  {s.stop:.2f}", ":"),
+    ]
+    for y, c, _lab, ls in rows:
+        ax.hlines(y, lo, hi, color=c, lw=1.6, linestyles=ls, zorder=4)
+    gap = rng * 0.045
+    placed: list = []
+    for y, c, lab, _ls in sorted(rows, key=lambda r: r[0]):
+        ty = y if not placed else max(y, placed[-1] + gap)
+        placed.append(ty)
+        if abs(ty - y) > 1e-9:  # leader line back to the level it names
+            ax.plot([hi + 0.5, hi + 1.8], [y, ty], color=c, lw=0.8, zorder=4)
+        ax.text(hi + 2.0, ty, f" {lab}", color=c, fontsize=8.5, va="center", fontweight="bold")
 
     def mark(bar, y, txt, c, dy):
         ax.annotate(
             txt,
             (bar, y),
-            xytext=(bar, y + dy),
+            xytext=(bar, y + rng * dy * sd),
             color=c,
             fontsize=8.5,
             fontweight="bold",
@@ -424,29 +463,40 @@ def draw(b: Bars, s: Setup, out: Path, pad: int = 40) -> None:
             zorder=6,
         )
 
-    rng = max(b.h[i] for i in xs) - min(b.l[i] for i in xs)
-    mark(s.block_bar, b.l[s.block_bar], "1 · ARM\nblock created", "#dc2626", -rng * 0.09)
-    mark(s.loaded_bar, b.l[s.loaded_bar], "2 · loads", "#6d28d9", -rng * 0.05)
+    # anchors swap sides with direction: a long arms on a LOW, a short arms on a HIGH
+    ext = b.l if up_dir else b.h  # the extremes the setup is built from
+    opp = b.h if up_dir else b.l  # the opposite side (inducement, target)
+    mark(s.block_bar, ext[s.block_bar], "1 · ARM\nblock created", "#dc2626", -0.11)
+    mark(s.loaded_bar, ext[s.loaded_bar], "2 · loads", "#6d28d9", -0.05)
     if s.induce_bar:
-        mark(s.induce_bar, b.h[s.induce_bar], "3 · inducement", "#b45309", rng * 0.06)
-    mark(s.el_bar, b.h[s.el_bar], "4 · target built", "#15803d", rng * 0.05)
-    mark(s.entry_bar, s.entry, "5 · ENTRY", "#6d28d9", -rng * 0.13)
+        mark(s.induce_bar, opp[s.induce_bar], "3 · inducement", "#b45309", +0.07)
+    mark(s.el_bar, opp[s.el_bar], "4 · target built", "#15803d", +0.05)
+    mark(s.entry_bar, s.entry, "5 · ENTRY", "#6d28d9", -0.17)
     ax.scatter([s.entry_bar], [s.entry], s=55, color="#6d28d9", zorder=7)
 
-    won = s.outcome == "target"
-    ax.axvspan(s.entry_bar, s.exit_bar, color="#15803d" if won else "#dc2626", alpha=0.07, zorder=1)
+    ax.axvspan(
+        s.entry_bar,
+        s.exit_bar,
+        color="#15803d" if s.outcome == "target" else "#dc2626",
+        alpha=0.07,
+        zorder=1,
+    )
 
     ticks = [i for i in xs if i % max(1, (hi - lo) // 9) == 0]
     ax.set_xticks(ticks)
     ax.set_xticklabels([b.t[i].strftime("%d %b\n%H:%M") for i in ticks], fontsize=7.5)
-    ax.set_xlim(lo - 1, hi + 1)
+    ax.set_xlim(lo - 1, hi + int((hi - lo) * 0.20))
+    # headroom so the step-1 callout cannot collide with the title
+    ylo = min(b.l[i] for i in xs)
+    yhi = max(b.h[i] for i in xs)
+    ax.set_ylim(ylo - rng * (0.24 if up_dir else 0.10), yhi + rng * (0.10 if up_dir else 0.26))
     ax.tick_params(axis="y", labelsize=7.5)
     ax.grid(axis="y", color="#e5e7eb", lw=0.5)
     for sp in ("top", "right", "left"):
         ax.spines[sp].set_visible(False)
     ax.set_title(
-        f"XAUUSD  ·  {b.t[s.arm_bar]:%Y-%m-%d %H:%M} → {b.t[s.exit_bar]:%d %b %H:%M}"
-        f"   ·   {s.rr:.1f}R planned   ·   {s.outcome.upper()}",
+        f"XAUUSD  ·  {s.dir.upper()}  ·  {b.t[s.arm_bar]:%Y-%m-%d %H:%M} → "
+        f"{b.t[s.exit_bar]:%d %b %H:%M}   ·   {s.rr:.1f}R planned   ·   {s.outcome.upper()}",
         fontsize=11,
         fontweight="bold",
         loc="left",
@@ -469,6 +519,15 @@ def main() -> None:
     p.add_argument("--pivot-len", type=int, default=2)
     p.add_argument("--tol-mult", type=float, default=0.5, help="ATR(50) x this = 'respects'")
     p.add_argument("--buf-mult", type=float, default=0.10)
+    # DEFAULT 0.0 = OFF, so the documented 2026-08-13 baseline in backtest/CLAUDE.md
+    # (long 49 trades / 34.7% / z +1.96) reproduces exactly. This is the "and moves away"
+    # half of the loaded rule, which the first cut dropped; sweep it, do not silently ship it.
+    p.add_argument(
+        "--away-mult",
+        type=float,
+        default=0.0,
+        help="ATR(50) x this that price must TRAVEL AWAY before a level counts loaded",
+    )
     p.add_argument("--min-rr", type=float, default=2.0)
     p.add_argument("--expiry", type=int, default=200)
     p.add_argument("--max-hold", type=int, default=400)
@@ -493,6 +552,7 @@ def main() -> None:
         min_rr=args.min_rr,
         expiry=args.expiry,
         max_hold=args.max_hold,
+        away_mult=args.away_mult,
     )
 
     longs, f_l, d_l = scan(b, **kw)

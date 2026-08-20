@@ -276,6 +276,19 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   20.9% — z +0.09 and −0.137R net of spread.** Funnel across both sides: armed 2,198 → loaded 2,151
   → inducement 1,879 → target built 1,444 → 129 entries; the three biggest drop causes are `rr below
   floor` 819, `block broken` 717, `expired` 531, and they are instrumented rather than inferred.
+  ⚠ **`--away-mult` (added 2026-08-18) is the "and MOVES AWAY" half of the loaded rule, which the
+  first cut silently dropped** — ATR(50) × this that price must TRAVEL from a level before it counts
+  as loaded. **It DEFAULTS TO 0.0 and is provably inert there**: `need` is zero and both tests
+  reduce to `max(highs) − low ≥ 0` and `high − min(lows) ≥ 0`, which always hold — so the shipped
+  baseline above reproduces exactly and nothing in this entry moves. **It is a knob to SWEEP, not a
+  value to ship**: raising it tightens what counts as loaded and every number here would have to be
+  re-measured at the new setting. Same reasoning as an unmeasured cost tier — a plausible default is
+  a hardcode with better manners.
+  ⚠ The setup DIAGRAM renderer is now direction-aware. It drew a short with the long layout, which
+  put "LOADED LOW" on a high and stacked four markers on one line — **the same class of error
+  `invert()` exists to prevent one level up, and silent both times.** Right-edge labels are also
+  stacked apart on purpose: entry, block and stop are a tight cluster BY CONSTRUCTION (the model
+  puts the stop just past the block), and an unreadable label is the same as no label.
   🔴 **Two defects were found and fixed the day it was measured, and both are this repo's own
   standing rules restating themselves.** `Setup.dir` was documented as `"long" | "short"` and
   `dir="short"` was constructed **nowhere** — a declared field that was never assigned (root rule
