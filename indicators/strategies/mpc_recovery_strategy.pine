@@ -5,8 +5,18 @@
 // ═══════════════════════════════════════════════════════════════════════════════════════
 // FORK of mpc_strategy.pine — adds the LOSS RECOVERY leg (group 9).
 //
-// 🔴 WHY A FORK RATHER THAN AN EDIT TO mpc_strategy.pine: a recovery trade is open AT THE SAME
-// TIME as a primary, and that file's whole bookkeeping assumes one position. `strategy.position_size
+// 🔴 TRADINGVIEW CANNOT RUN THIS RULE FAITHFULLY, AND ITS P&L IS NOT THE RULE'S P&L. A Pine
+// strategy holds ONE NET POSITION and cannot hedge: when a recovery is open and the primary
+// enters the other way, Pine CLOSES THE RECOVERY to make room. The primary is untouched (verified
+// 2026-08-19: 25 entries on identical bars with the leg on and off) — the recovery is the leg
+// that dies, cut at the primary's entry price instead of at its own stop or trail. On Aaron's
+// Sept-2025→Aug-2026 chart, 5 of 8 recovery trades met an opposite primary and 2 of those inside
+// 2 days, against a 4-day median hold. Use this file to SEE the entries; use
+// strategies/python/loss_recovery/ for any number. MT5 does not have this limit — separate
+// processes, separate magic numbers — so the Python model is the one that matches live.
+//
+// 🔴 WHY A FORK RATHER THAN AN EDIT TO mpc_strategy.pine: the recovery leg is a SECOND set of
+// orders, and that file's whole bookkeeping assumes one. `strategy.position_size
 // == 0` means "the trade closed" at 13 arming gates and at the WIN/LOSS grader; `strategy.netprofit`
 // and `strategy.position_avg_price` are global. Add a second position and the PRIMARY silently
 // stops grading its own trades. Everything below marked `[REC]` is the separation of primary
@@ -14,6 +24,7 @@
 // every `[REC]` marker is a place the two now differ on purpose.
 //
 // ⚠ pyramiding 5 -> 8: primary + 4 adds is already 5, and the recovery needs its own slot.
+//   (Pyramiding only ever admits SAME-DIRECTION entries. It does not buy you a hedge — see above.)
 // ⚠ The recovery leg is OFF by default. With `recEnabled` false this file must reproduce
 //   mpc_strategy.pine's book EXACTLY — that is the first thing to check on a chart, before any
 //   recovery number is believed.
@@ -96,7 +107,7 @@ float execTimeStopHrs = input.float(36.0, "   ↳ Time stop (hours)", group = G6
 // After a primary trade is stopped out, take ONE trade in the opposite direction on the next
 // external CHoCH, and once it has paid the loss back, refuse to give it back.
 // Python twin + every measured number: strategies/python/loss_recovery/CLAUDE.md
-bool  recEnabled  = input.bool(false, "Take a recovery trade after a loss", group = G11, tooltip = "Off reproduces the plain A+ book exactly. On adds one counter-trade after each real stop-out, entered on the next opposite change of character.")
+bool  recEnabled  = input.bool(false, "Take a recovery trade after a loss", group = G11, tooltip = "Off reproduces the plain A+ book exactly. On adds one counter-trade after each real stop-out, entered on the next opposite change of character.\n\nUSE THIS TO SEE THE ENTRIES, NOT TO READ THE PROFIT. TradingView can only hold one position, so when the main strategy trades the other way it closes the recovery early. The profit figure here is therefore worse than the rule really is.")
 float recRiskFrac = input.float(25.0, "   ↳ Size, % of a normal trade", group = G11, minval = 1, maxval = 100, step = 1, active = recEnabled, tooltip = "25 is the largest size that does not make the drawdown worse than the strategy already runs, and it is also the best value for money. Between 20 and 55 the answer barely moves.")
 bool  recBothDirs = input.bool(true,  "   ↳ Take it both ways", group = G11, active = recEnabled, tooltip = "On takes the recovery long or short. Off takes longs only — which scored better on past data, but only because it was chosen after looking. Leave it on.")
 float recLockAtR  = input.float(1.0,  "   ↳ Secure the loss back at (R)", group = G11, minval = 0.25, step = 0.25, active = recEnabled, tooltip = "How far the trade must travel before the stop is moved. At 1R you have made back exactly what you lost.")
@@ -4285,7 +4296,11 @@ var float recStop    = na
 var float recRisk    = na
 var bool  recLocked  = false
 var int   recTime    = na
-var line  recSLLine  = na
+// [REC] The stop is a PLOT, not a line.new. Pine deletes the oldest of 500 drawings, so on a
+// multi-year chart every annotation older than a few weeks is gone — which is exactly what makes
+// an old trade impossible to eyeball. A plot is not a drawing and is never collected.
+var float recPlotStop = na
+bool recFillBar = false
 
 float recSize = f_recSize()
 
@@ -4296,9 +4311,7 @@ if not na(recEntry) and recSize == 0
     recRisk   := na
     recLocked := false
     recTime   := na
-    if not na(recSLLine)
-        line.set_x2(recSLLine, bar_index)
-        recSLLine := na
+    recPlotStop := na
 
 // ── 1. a PRIMARY loss arms the module ──
 // `closedR` is the primary's own graded result and is already primary-only (see [REC] above),
@@ -4337,8 +4350,7 @@ if recPending and recSize != 0
     recPending := false
     recWant    := 0
     recPendSL  := na
-    if execShowExitLines
-        recSLLine := line.new(bar_index, recStop, bar_index, recStop, color = color.new(#FF9800, 0), style = line.style_dotted, width = 1)
+    recFillBar := true
 
 // ── 4. manage it ──
 if not na(recEntry) and recSize != 0 and recRisk > 0
@@ -4360,11 +4372,7 @@ if not na(recEntry) and recSize != 0 and recRisk > 0
             recStop := recLvl
 
     strategy.exit("RecX", from_entry = "Rec", stop = recStop)
-
-    if not na(recSLLine)
-        line.set_x2(recSLLine, bar_index)
-        line.set_y1(recSLLine, recStop)
-        line.set_y2(recSLLine, recStop)
+    recPlotStop := recStop
 
     // 4c. the day cap. A backstop against overnight financing, not a working rule — nothing
     //     normally reaches it. It exists because an earlier version of this rule held trades for
@@ -4372,4 +4380,10 @@ if not na(recEntry) and recSize != 0 and recRisk > 0
     if not na(recTime) and (time - recTime) >= recMaxDays * 86400000
         strategy.close("Rec", comment = "rec time stop")
 
-plotshape(recEnabled and recPending and not recPending[1], title = "Recovery armed", style = shape.diamond, location = location.belowbar, color = color.new(#FF9800, 0), size = size.tiny)
+// [REC] All three are PLOTS, so they are drawn on every recovery trade in history rather than
+// only on the newest 500 drawings. The entry markers fire on the FILL bar, not the signal bar —
+// the fill is the bar the trade's 1R is fixed on, and it is the bar you want to judge.
+plotshape(recEnabled and recFillBar and recSize > 0, title = "Recovery LONG entry",  text = "REC", style = shape.labelup,   location = location.belowbar, color = color.new(#FF9800, 0), textcolor = color.new(#101014, 0), size = size.small)
+plotshape(recEnabled and recFillBar and recSize < 0, title = "Recovery SHORT entry", text = "REC", style = shape.labeldown, location = location.abovebar, color = color.new(#FF9800, 0), textcolor = color.new(#101014, 0), size = size.small)
+plot(recEnabled ? recPlotStop : na, title = "Recovery stop", color = color.new(#FF9800, 0), style = plot.style_linebr, linewidth = 1)
+plotshape(recEnabled and recPending and not recPending[1], title = "Recovery armed (signal bar)", style = shape.diamond, location = location.belowbar, color = color.new(#FF9800, 55), size = size.tiny)

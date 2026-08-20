@@ -81,6 +81,35 @@ pass. ⚠ **The ordering inside `f_posBox` is now bank → close → open → gr
 load-bearing**: with open running first, a same-bar exit was banked as a fill on the trade that had
 just replaced it.
 
+🔴 **AND THEN THE ANSWER TO THAT CHECK CHANGED WHAT THIS FILE IS FOR. TRADINGVIEW CANNOT RUN THE
+RECOVERY RULE, AND ITS P&L IS NOT THE RULE'S P&L.** A Pine strategy holds **one net position** and
+has no hedge mode: an entry opposite the open position REVERSES it. So when a recovery is open and
+the primary enters the other way, Pine closes the recovery to make room. ⚠ **The direction of the
+damage is the opposite of what it sounds like — the PRIMARY is never blocked; the RECOVERY is the
+leg that dies**, cut at the primary's entry price instead of at its own stop or trail. That was the
+first thing asked and the first thing checked.
+
+MEASURED on Aaron's Sept-2025 → Aug-2026 M15 chart, from the two chart-data exports in `engines/`
+(`VANTAGE_XAUUSD, 15_09390.csv` recovery off, `…_adf26.csv` on): **25 primary entries on identical
+bars in both runs** (7 long, 18 short — the leg disturbs nothing), **8 recovery trades**, and **5
+of the 8 meet an opposite primary entry — two of them inside 2 days, against a 4-day median hold.**
+
+🔴 **The design error was mine and it was an ASSUMPTION, not a slip: this file's header asserted the
+two legs could be open at once, and nobody checked the platform before the work was commissioned.**
+The Python twin runs the recovery as its own independent book (`LossRecoveryEngine.run()` takes the
+bars and the loss list and never asks whether the primary is in a trade), which is why its numbers
+are better and why they are the ones to quote. ⚠ **MT5 does NOT have this limit** — separate OS
+processes, separate magic numbers — so the Python model is the one that matches the live path.
+**TradingView is the odd one out, not the reference.**
+
+⚠ **A multi-year chart also cannot SHOW you an old trade.** Pine caps labels, lines and boxes at
+500 each and deletes the oldest, so over ~20,000 bars of structure annotation everything older than
+a few weeks is gone — primary trades included. Two consequences, both acted on 2026-08-19: the
+recovery's entry markers and its stop are now **plots**, which are not drawings and are never
+collected, so they survive across all history; and the reliable way to inspect any old trade is the
+Strategy Tester's **List of Trades** tab, where clicking a row makes TradingView mark that trade
+itself at no cost to the drawing budget.
+
 🔴 **THE FIRST THING TO CHECK ON A CHART, BEFORE ANY RECOVERY NUMBER IS BELIEVED: with
 `recEnabled` OFF this file must reproduce `mpc_strategy.pine`'s book EXACTLY** — same trade count,
 same net, same list. If it does not, one of those 30 substitutions is wrong and every recovery
@@ -357,11 +386,20 @@ a different strategy that nothing has measured. The Python mirror zeroes its lot
 than emptying its list, for exactly this reason, and has a test pinning it.
 
 🔴 **EVERY TARGET LOST TO RIDING, AND IT SHIPS ON ONE ANYWAY.** Ride **194.15R**, prev week
-189.77R, prev day 168.51R, H4 166.49R, session 159.39R — an ordering that tracks how OFTEN the
-target fires, reproduced independently by a flat-risk-multiple control. **`"Prev week H/L"` is
-Aaron's explicit call (2026-08-19)**: the 4.38R gap is inside this strategy's 15.06R jitter, so
-weekly buys certainty for no measurable cost, and it is the only family that can say that. Full
-numbers: `strategies/python/mpc_sos_fade/CLAUDE.md` → *The adds got a TAKE PROFIT*.
+168.51R, prev day 157.57R, H4 146.09R — an ordering that tracks how OFTEN the target fires (0, 16,
+25 and 47 banks), reproduced independently by a flat-risk-multiple control. **`"Prev week H/L"` is
+Aaron's explicit call (2026-08-19) and the default is UNDER REVIEW**: he chose it on a 4.38R gap
+said to be inside this strategy's 15.06R jitter, and the true gap is **25.64R, outside it**. He has
+been told and has not answered — confirm before quoting it as settled. Full numbers:
+`strategies/python/mpc_sos_fade/CLAUDE.md` → *The adds got a TAKE PROFIT*.
+
+🔴 **THE `limit` MUST BE COMPUTED AT THE BAR'S CLOSE, NOT RE-RESOLVED AS PRICE TOUCHES IT.** Pine
+gets this right for free — `strategy.exit(..., limit=)` rests an order that is live on the NEXT bar
+— and the Python mirror did not, which made `"Prev day H/L"` and `"H4 H/L"` bank **zero times in
+eight years** while resolving 1,804 and 2,438 valid targets. Day and H4 levels die on a **WICK**,
+the engine steps before the strategy sees the bar, so the level was already mitigated on the exact
+bar the order would have filled. ⚠ **Week levels die on a CLOSE through, so weekly was immune and
+the defect was invisible on the only mode anybody was watching.**
 
 ⚠ **A FIFTH `cfg_*` COLUMN LANDED WITH IT** (`cfg_scale_tp`), for the reason the four before it
 exist: a trade-affecting input with no column is invisible to `compare_strategy.py` **by
