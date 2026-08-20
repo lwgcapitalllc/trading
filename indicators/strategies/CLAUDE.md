@@ -175,16 +175,23 @@ as predicted, and loses 14R** — the primary's entry is a price the market has 
 around, so the stop sits in fresh congestion; median MFE falls 1.01R → 0.89R, which a 2.4x smaller
 R should have RAISED. Full grid: `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` →
 Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
-## The tied-extreme structure fix (2026-08-20) — all ten strategy files
+## The tied-extreme structure fix (2026-08-20) — all ELEVEN strategy files
 
 Every `strategy(` file here embeds its own copy of the market-structure state machine, and all
-ten carried the same defect: when two bars print an identical extreme, the post-break rescan
+eleven carried the same defect: when two bars print an identical extreme, the post-break rescan
 anchors on the LATER one while the label sits on the EARLIER one, so the swing gets a second
 permanent label. **The mechanism, the measurements and the reasoning live in ONE place —
 `engines/market_structure/CLAUDE.md` -> *The 2026-08-20 tied-extreme fix*. Do not restate them
 here.**
 
 What matters for THIS directory:
+
+🔴 **`mpc_recovery_strategy.pine` DEMONSTRATED THE HAZARD WHILE THE FIX WAS BEING WRITTEN.** It
+was forked from `mpc_strategy.pine` on 2026-08-19 — one day before the fix — on the other machine,
+so it arrived carrying the defect and had to be patched on the way in. **A fork-per-strategy layout
+means a bug fixed in sixteen files can walk back in through a seventeenth that was cut from the
+pre-fix source, and nothing fails when it does.** ⚠ **Before calling a cross-cutting fix done,
+re-run the sweep AFTER pulling** — `grep -rl 'lowest_val' --include='*.pine' .` and count guards.
 
 ⚠ **NO STRATEGY'S TRADE BEHAVIOUR CHANGES, and that was measured rather than argued.** The guard
 moves bar INDICES, never prices. Every consumer of those indices in these ten files was traced:
