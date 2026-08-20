@@ -30,6 +30,19 @@ class LossEvent(Protocol):
     r: float
 
 
+@runtime_checkable
+class LossEventWithEntry(LossEvent, Protocol):
+    """A `LossEvent` that also knows where the primary trade got IN.
+
+    Required only by `stop_mode="loss_entry"`, which puts the recovery's stop on the losing
+    trade's own entry. ⚠ A loss event without it is REFUSED rather than quietly falling back to
+    the structural stop — the fallback would report a rule nobody ran, and the two stops are ~4x
+    apart. `mpc_sos_fade.execution.Trade` satisfies this unchanged.
+    """
+
+    entry_price: float
+
+
 @dataclass(frozen=True)
 class RecoveryTrade:
     """One recovery trade, fully resolved.

@@ -160,6 +160,13 @@ class LossRecoveryEngine:
                 stage = "lock"
                 locked = True
 
+            if locked and cfg.trail_pct > 0:
+                # A percent of PRICE, which is a different unit from R — see the config's warning.
+                pct = cl[j] * (1.0 - d * cfg.trail_pct / 100.0)
+                if (pct - stop) * d > 0:
+                    stop = pct
+                    trailed = True
+
             if locked and cfg.trail_swings:
                 level = swing_low.get(j) if d > 0 else swing_high.get(j)
                 # Only ratchet FORWARD, and never to a level the bar has already traded through —
@@ -209,7 +216,8 @@ class LossRecoveryEngine:
             )
             if sig is None:
                 continue
-            signal_index, _, stop_price = sig
+            signal_index, _, break_leg_far_end = sig
+            stop_price = _loss_entry(loss) if cfg.stop_mode == "loss_entry" else break_leg_far_end
             entry_index = signal_index + 1
             if entry_index >= len(bars):
                 continue
@@ -252,6 +260,34 @@ class LossRecoveryEngine:
             )
         return out
 
+    def refused(self, bars: pd.DataFrame, trades: Iterable[LossEvent]) -> List[ArmedSignal]:
+        """Losses whose CHoCH DID arrive but whose stop was unusable — it sat on the wrong side of
+        the fill, or on it.
+
+        🔴 A third state, and it has to be countable separately. `run` returning 40 trades where
+        another config returns 62 could mean the signal never came (`pending`) or that the stop was
+        refused, and those say opposite things about the rule. Under `stop_mode="loss_entry"` this
+        is the one that moves: the primary's entry is only a valid stop if price is still on the
+        far side of it when the CHoCH prints.
+        """
+        cfg = self.config
+        if not cfg.enabled:
+            return []
+        chochs, _, _ = self._replay_structure(bars)
+        op = bars["open"].to_numpy(dtype=float)
+        out: List[ArmedSignal] = []
+        for loss in sorted((t for t in trades if t.r < -cfg.scratch_r), key=lambda t: t.exit_index):
+            want = -loss.dir
+            if not cfg.both_directions and want < 0:
+                continue
+            sig = next((s for s in chochs if s[0] > loss.exit_index and s[1] == want), None)
+            if sig is None or sig[0] + 1 >= len(bars):
+                continue
+            stop = _loss_entry(loss) if cfg.stop_mode == "loss_entry" else sig[2]
+            if (float(op[sig[0] + 1]) - stop) * want <= 0:
+                out.append(ArmedSignal(loss.exit_index, want, sig[0]))
+        return out
+
     def pending(self, bars: pd.DataFrame, trades: Iterable[LossEvent]) -> List[ArmedSignal]:
         """Losses that armed but never got their CHoCH. For a live runner's status line, and for
         answering "why did nothing fire" without re-reading the whole run."""
@@ -267,6 +303,24 @@ class LossRecoveryEngine:
             if not any(s[0] > loss.exit_index and s[1] == want for s in chochs):
                 pend.append(ArmedSignal(loss.exit_index, want, None))
         return pend
+
+
+def _loss_entry(loss) -> float:
+    """The losing trade's own entry price, or a refusal naming what is missing.
+
+    ⚠ Deliberately not `getattr(loss, "entry_price", <structural>)`. A loss event that cannot
+    answer and one whose stop happens to sit at the break leg are different facts, and the two
+    stops are ~4x apart — collapsing them reports a rule nobody ran, which is this repo's most
+    expensive recurring defect.
+    """
+    px = getattr(loss, "entry_price", None)
+    if px is None:
+        raise AttributeError(
+            "stop_mode='loss_entry' needs a LossEventWithEntry, and this loss event carries no "
+            "`entry_price`. Pass the strategy's own trade objects, or use stop_mode='structural' "
+            "— it will not be substituted for you"
+        )
+    return float(px)
 
 
 def _bars_per_day(bars: pd.DataFrame) -> float:

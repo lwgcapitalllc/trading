@@ -59,6 +59,34 @@ class RecoveryConfig:
     +18.9R at a 70% win rate, moving to breakeven instead nets +9.5R at 54%. Breakeven protects
     you from losing; it does not bank the thing you entered for."""
 
+    stop_mode: str = "structural"
+    """Where the recovery's stop goes, which is also what defines its 1R.
+
+      `structural`  the far end of the CHoCH break leg. Every measured number here used this.
+      `loss_entry`  the LOSING trade's own entry price — Aaron's 2026-08-19 idea: the level the
+                    primary was wrong about, and a much nearer one, so the same 25% of risk buys
+                    a bigger position and +1R arrives sooner in price terms.
+
+    ⚠ `loss_entry` needs a `LossEventWithEntry`. A loss event without `entry_price` is REFUSED,
+    never silently given the structural stop — the two are ~4x apart, so the fallback would report
+    a rule nobody ran.
+
+    🔴 **A stop model is never ranked on R.** R = profit / stop, so a model that produces small
+    stops inflates every R in the book without one extra dollar being made, and gold's round trip
+    is ~$0.14 on `puprime_ecn`. Read the median stop in DOLLARS beside any result from this knob —
+    `recovery_report.py --stops` prints it and the cost as a share of R.
+    """
+
+    trail_pct: float = 0.0
+    """Ratchet the stop to a fixed percentage of PRICE behind the close, once locked. 0 = off,
+    leaving `trail_swings` in charge.
+
+    🔴 **A percent of price is not a percent of risk, and this repo has already shipped that bug.**
+    `mpc_bleg` inherited `exec_trail_pct = 1.0` while a B leg's whole 1R is 0.13%-1.25% of price —
+    one step was larger than the entire risk, so the ratchet was INERT and the runner handed back
+    everything past +1R on 9 of 50 trades. Compare the step against the trade's own R before
+    believing a number from this."""
+
     soft_stop_r: Optional[float] = None
     """Cut the trade this many R against, instead of waiting for the structural stop.
 
@@ -118,6 +146,13 @@ class RecoveryConfig:
                 f"horizon_days ({self.horizon_days}) is below max_days ({self.max_days}), so the "
                 "time stop can never fire and the two limits are the same number wearing two names"
             )
+        if self.stop_mode not in ("structural", "loss_entry"):
+            raise ValueError(
+                f"stop_mode {self.stop_mode!r} is not one of 'structural' / 'loss_entry' — a "
+                "typo here would otherwise pick the default and look like a setting that applied"
+            )
+        if self.trail_pct < 0:
+            raise ValueError("trail_pct is a magnitude; pass 0.5, not -0.5")
         if self.soft_stop_r is not None and not 0.0 < self.soft_stop_r <= 1.0:
             raise ValueError(
                 f"soft_stop_r ({self.soft_stop_r}) must be inside (0, 1] — above 1 it sits beyond "

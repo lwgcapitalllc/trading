@@ -101,6 +101,12 @@ def main() -> int:
     )
     ap.add_argument("--sweep", action="store_true", help="sweep recovery size in 5%% steps")
     ap.add_argument(
+        "--stops",
+        action="store_true",
+        help="where should the stop GO: the break leg, or the losing trade's own entry? Prints "
+        "the stop in DOLLARS beside every result, plus a percent-ratchet sweep",
+    )
+    ap.add_argument(
         "--soft-curve",
         action="store_true",
         help="the soft stop alone, in fine steps, split into halves — is the best value a "
@@ -181,6 +187,83 @@ def main() -> int:
     )
     locked = sum(1 for t in recs if t.locked)
     print(f"  {locked} of {len(recs)} reached +{rcfg.lock_at_r:g}R and locked the recovery in\n")
+
+    if args.stops:
+        cache = (rcfg.major_length, LossRecoveryEngine(rcfg)._replay_structure(bars))
+        f = rcfg.risk_fraction
+        # The round trip in PRICE units — what a stop has to clear before the signal says anything.
+        rt = (
+            0.0
+            if prof is None
+            else prof.spread + 2.0 * prof.commission_per_side_per_lot / prof.swap.contract_size
+        )
+
+        def measure(**kw):
+            v = dataclasses.replace(rcfg, **kw)
+            eng = CachedStructure(v, cache)
+            rs = eng.run(bars, trades)
+            ref = eng.refused(bars, trades)
+            cs = [
+                (idx[t.exit_index], t.r + cost_r(t.direction, t.entry_index, t.exit_index, t.risk))
+                for t in rs
+            ]
+            vals = [r for _, r in cs]
+            stops = sorted(t.risk for t in rs)
+            med = stops[len(stops) // 2] if stops else float("nan")
+            lv = [r for r in vals if r < 0]
+            seq = [r for _, r in sorted(base + [(ts, r * f) for ts, r in cs])]
+            e, b, dd = curve(seq, args.risk_pct)
+            _, bb = risk_for_dd(bseq, dd)
+            return {
+                "n": len(rs),
+                "ref": len(ref),
+                "stop": med,
+                "cost": 100.0 * rt / med if med else float("nan"),
+                "net": sum(vals),
+                "win": 100.0 * sum(1 for r in vals if r > 0) / max(len(vals), 1),
+                "avg_loss": sum(lv) / max(len(lv), 1),
+                "dd": dd,
+                "ratio": b / bb,
+            }
+
+        hdr = (
+            f"  {'variant':<34} {'took':>5} {'refused':>8} {'med stop':>9} {'cost/R':>7} "
+            f"{'net R':>8} {'win':>5} {'avg loss':>9} {'maxDD':>7} {'vs dial':>8}"
+        )
+
+        def row(label, m):
+            print(
+                f"  {label:<34} {m['n']:>5} {m['ref']:>8} ${m['stop']:>8.2f} {m['cost']:>6.1f}% "
+                f"{m['net']:>+7.1f}R {m['win']:>4.0f}% {m['avg_loss']:>+8.2f}R {m['dd']:>6.1f}% "
+                f"{m['ratio']:>7.2f}x"
+            )
+
+        print(f"WHERE THE STOP GOES.  round trip = ${rt:.2f} in price\n")
+        print(hdr)
+        row("break leg  (shipped)", measure())
+        row("losing trade's entry", measure(stop_mode="loss_entry"))
+        print()
+        for sv in (0.5, 0.3):
+            row(f"break leg + soft cut -{sv:g}R", measure(soft_stop_r=sv))
+            row(f"loss entry + soft cut -{sv:g}R", measure(stop_mode="loss_entry", soft_stop_r=sv))
+
+        print("\n\nTHE PERCENT RATCHET, on each stop\n")
+        print(hdr)
+        for mode in ("structural", "loss_entry"):
+            tag = "break leg" if mode == "structural" else "loss entry"
+            row(f"{tag} + swing trail (shipped)", measure(stop_mode=mode))
+            for pct in (0.05, 0.1, 0.25, 0.5, 1.0):
+                row(
+                    f"{tag} + {pct:g}% ratchet, no swings",
+                    measure(stop_mode=mode, trail_pct=pct, trail_swings=False),
+                )
+            print()
+
+        print("🔴 Read `med stop` and `cost/R` BEFORE the R column. R = profit / stop, so a model")
+        print("   that makes small stops inflates every R in the book without earning a dollar.")
+        print("⚠ `refused` is not `pending` — the CHoCH DID arrive; the stop was unusable.")
+        print("\n⚠ LAB ONLY — no Pine twin, no parity gate, not wired to any bot.")
+        return 0
 
     if args.soft_curve:
         cache = (rcfg.major_length, LossRecoveryEngine(rcfg)._replay_structure(bars))

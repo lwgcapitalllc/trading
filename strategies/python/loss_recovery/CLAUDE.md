@@ -191,6 +191,61 @@ file was measured on the structural stop, and moving the default would restate a
 a difference the jitter cannot resolve. It is Aaron's call, and the evidence for making it is the
 loss-size column above, not the balance.
 
+---
+
+## 🔴 The stop on the LOSING TRADE'S ENTRY — Aaron's idea, and it loses 14R
+
+**MEASURED 2026-08-19.** The reasoning was: the primary's entry is much nearer than the break
+leg, so the same 25% of risk buys a bigger position, +1R arrives sooner, breakeven arrives sooner,
+and a ratchet takes it from there. **Every step of that mechanism is CORRECT and the result is
+still much worse.** `stop_mode="loss_entry"` exists so this stays re-runnable rather than
+remembered.
+
+`python backtest/tools/recovery_report.py --start 2018-09-14 --end 2026-08-14 --stops`
+
+| stop | took | refused | median stop | cost/R | net R | win | maxDD | vs dial |
+|---|---|---|---|---|---|---|---|---|
+| break leg (shipped) | 62 | 0 | **$38.18** | 0.4% | **+16.2R** | 58% | 48.3% | 1.53x |
+| the losing trade's entry | 57 | 5 | **$16.05** | 0.9% | **+1.8R** | 49% | 51.3% | 0.78x |
+
+**The mechanism did exactly what it promised.** The stop is **2.4x tighter**, so the same risk
+buys 2.4x the position, and the median trade now resolves in **43 bars against 294** — eleven
+hours instead of three days. **Cost is not the objection either**: at $16 the round trip is still
+only 0.9% of R.
+
+🔴 **What broke it is WHERE that stop sits.** The primary's entry is a price the market has just
+been trading around — it went there, filled an order, and reversed through it. It is the single
+most likely level to be revisited. So the recovery rests its stop in the middle of fresh
+congestion, and the tell is in the excursion rather than the P&L: **median MFE falls 1.01R →
+0.89R**. Shrinking the stop 2.4x should have made every dollar of travel worth 2.4x more R; it
+made it worth LESS, which can only mean the trades are dying before the move they were entered
+for. `locked` falls 56% → 49% for the same reason.
+
+⚠ **5 of 62 are REFUSED outright** — by the time the CHoCH prints, price is back on the wrong side
+of the primary's entry and a stop there would be above a long's fill. Refusing is correct (rule
+17) and `refused()` counts them separately from `pending()`, because *the signal never came* and
+*the stop was unusable* say opposite things about a rule.
+
+⚠ **It does not combine with the soft cut either** — `loss_entry` + a −0.3R cut is **−1.7R**,
+the only negative variant measured on this rule.
+
+### The percent ratchet loses to the swing trail on BOTH stops
+
+| trail | on the break leg | on the loss entry |
+|---|---|---|
+| confirmed swings (shipped) | **+16.2R** | +1.8R |
+| 0.05% of price | +8.5R | +4.3R |
+| 0.1% | +8.3R | **+4.7R** |
+| 0.5% | +9.7R | +4.6R |
+| 1% | +9.2R | +5.3R |
+
+⚠ **Read the flatness, not the ranking.** A 20x range of step sizes returns the same answer on
+each stop, and the reason is the `mpc_bleg` trap from both ends: at 1% the step is **$40 against a
+$38 median stop**, so the ratchet cannot bind until the trade is already 2R out; at 0.05% it binds
+constantly and hands back the runners. **A percent of PRICE is not a percent of RISK, and this
+rule's whole result lives in the trades that run.** A swing level is where the market says the
+move is still intact; a fixed percentage is where arithmetic says so.
+
 ## Why this is a package and not a flag on `mpc_sos_fade`
 
 The trigger is "a primary trade lost", which every strategy in this repo can state. Wiring it to
@@ -254,7 +309,7 @@ version made +6.4R against +49.3R for letting it run.
 ## Tests
 
 `command-center/backend/.venv/bin/python -m pytest strategies/python/loss_recovery/tests/ -q`
-→ **21 passed.**
+→ **26 passed.**
 
 🔴 **Every one was watched RED by a named mutation, and the harness earned its keep: 5 of the
 first 15 were VACUOUS.** They passed against their own bugs. What the mutation pass found, kept
@@ -306,5 +361,5 @@ read would have let every assertion pass on an empty list.
 | `--exits` / `--soft-curve` | the exit grid and the soft-stop curve on `recovery_report.py` |
 | `types.py` | `LossEvent` protocol, `RecoveryTrade`, `ArmedSignal` |
 | `engine.py` | the state machine; consumes `engines/market_structure` public events only |
-| `tests/` | 21 tests + the real-bar fixture |
+| `tests/` | 26 tests + the real-bar fixture |
 | `backtest/tools/recovery_report.py` | the runner that produced every number above |

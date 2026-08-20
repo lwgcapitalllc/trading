@@ -211,6 +211,17 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   the loss SIZE (−1.01R → −0.30R) bought with win rate (58% → 37%).
   ⚠ **Read `--soft-curve`'s `less top 5` column, not its ranking** — below −0.25R the rule goes
   negative once its five best trades are deleted, which is the only place the cliff is visible.
+  🔴 **`--stops` (2026-08-19) answers WHERE the stop goes, and killed the strongest-sounding
+  idea yet**: resting it on the LOSING trade's entry price. It is 2.4x tighter ($38.18 → $16.05
+  median), so the same risk buys 2.4x the position and the trade resolves in 43 bars against 294
+  — every step of the mechanism works — and net R goes **+16.2R → +1.8R** with max drawdown UP.
+  The primary's entry is a price the market has just been trading around, so the stop sits in
+  fresh congestion; **median MFE falls 1.01R → 0.89R, which a 2.4x smaller R should have RAISED.**
+  ⚠ **That excursion column is the diagnostic, not the P&L** — it is what distinguishes "the stop
+  was unlucky" from "the trades are dying before their move".
+  ⚠ **A percent ratchet loses to the confirmed-swing trail on both stops**, and flatly across a
+  20x range of steps: at 1% one step is $40 against a $38 median stop (inert — the `mpc_bleg`
+  trap), at 0.05% it binds constantly and hands back the runners.
   ⚠ Everything it prints is a LAB finding: no Pine twin, no parity gate, `enabled` defaults False.
 
 - **`tools/recovery_smoothness.py`** (new 2026-08-19) — the companion question to the one above:

@@ -469,3 +469,119 @@ def test_an_unreachable_soft_stop_and_a_backwards_early_step_are_refused():
         RecoveryConfig(be_at_r=0.5, be_to_r=0.75)
     with pytest.raises(ValueError, match="be_at_r"):
         RecoveryConfig(be_at_r=1.5, be_to_r=0.5)
+
+
+# ── where the stop GOES (2026-08-19) ─────────────────────────────────────────────────────────
+# Aaron's idea: put the recovery's stop on the LOSING trade's entry. Much nearer, so the same
+# 25% of risk buys a bigger position and +1R arrives sooner. These pin the mechanics; whether it
+# PAYS is measured by `recovery_report.py --stops`, not asserted here.
+
+
+@dataclass
+class FakeLossWithEntry:
+    """A LossEvent that also knows where the primary got in."""
+
+    dir: int
+    exit_index: int
+    r: float
+    entry_price: float
+
+
+def _losses_with_entry(bars, offset):
+    """One losing SHORT before each known bull CHoCH, its entry placed `offset` from the bar's
+    low — below the eventual counter-long fill when negative, above it when positive."""
+    return [
+        FakeLossWithEntry(
+            dir=-1,
+            exit_index=b - 30,
+            r=-1.0,
+            entry_price=float(bars["low"].iloc[b - 30]) + offset,
+        )
+        for b in _BULL_CHOCH_BARS
+    ]
+
+
+def test_the_loss_entry_stop_is_the_primarys_entry_and_not_the_break_leg():
+    """RED by leaving `stop_price = break_leg_far_end` in `run` regardless of `stop_mode`.
+
+    The two are ~4x apart (measured: median $38.18 against $16.05), so a mode that silently kept
+    the structural stop would report the shipped rule under a new name.
+    """
+    bars = real_bars()
+    losses = _losses_with_entry(bars, -50.0)
+    cfg = RecoveryConfig(enabled=True, stop_mode="loss_entry")
+    got = LossRecoveryEngine(cfg).run(bars, losses)
+    assert got, "fixture produced no recovery trade; the test cannot say anything"
+    wanted = {ls.exit_index: ls.entry_price for ls in losses}
+    for t in got:
+        assert t.stop_price == pytest.approx(wanted[t.trigger_index])
+        assert t.risk == pytest.approx(abs(t.entry_price - t.stop_price))
+
+
+def test_a_loss_event_with_no_entry_price_is_refused_never_given_the_structural_stop():
+    """RED by `getattr(loss, "entry_price", break_leg_far_end)` in `run`.
+
+    🔴 The fallback shape this repo keeps paying for: *cannot ask* and *the answer is the break
+    leg* becoming the same value. It would report a rule nobody ran, on a stop 4x the size, and
+    nothing would error.
+    """
+    bars = real_bars()
+    plain = [FakeLoss(dir=-1, exit_index=b - 30, r=-1.0) for b in _BULL_CHOCH_BARS]
+    eng = LossRecoveryEngine(RecoveryConfig(enabled=True, stop_mode="loss_entry"))
+    with pytest.raises(AttributeError, match="entry_price"):
+        eng.run(bars, plain)
+
+
+def test_a_stop_on_the_wrong_side_is_counted_as_refused_and_not_as_pending():
+    """RED by folding `refused` into `pending`, or by returning [] from it.
+
+    ⚠ Two ways to take no trade that mean opposite things. `pending` = the CHoCH never came, so
+    the market did not offer the setup. `refused` = it came and the stop was unusable, which is a
+    fact about THIS config. A count of trades alone cannot tell them apart, and under
+    `loss_entry` it is `refused` that moves.
+    """
+    bars = real_bars()
+    # Entries placed ABOVE the eventual counter-long fill: a long cannot rest its stop up there.
+    losses = _losses_with_entry(bars, +500.0)
+    eng = LossRecoveryEngine(RecoveryConfig(enabled=True, stop_mode="loss_entry"))
+    assert eng.run(bars, losses) == [], "an upside-down stop produced a trade"
+    assert len(eng.refused(bars, losses)) == len(_BULL_CHOCH_BARS)
+    assert eng.pending(bars, losses) == [], "a refused stop is not a missing signal"
+
+
+def test_the_percent_ratchet_moves_a_locked_stop_past_where_the_lock_put_it():
+    """RED by deleting the `trail_pct` block in `_manage`.
+
+    Without it the stop stays at `lock_to_r` and this bar books exactly +1.000R. ⚠ The step is a
+    percent of PRICE, so it is NOT in R — see the config warning and the `mpc_bleg` trail that was
+    inert for months because one step exceeded the whole risk.
+    """
+    idx = pd.date_range("2024-01-01", periods=2, freq="15min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 101.4],
+            "high": [101.5, 101.4],
+            "low": [99.5, 101.0],
+            "close": [101.4, 101.1],
+        },
+        index=idx,
+    )
+    cfg = RecoveryConfig(enabled=True, trail_pct=0.1, trail_swings=False)
+    _, exit_px, r, reason, locked, _ = LossRecoveryEngine(cfg)._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, 96.0
+    )
+    assert locked and reason == "trail", f"the ratchet booked {reason!r}"
+    assert exit_px == pytest.approx(101.4 * 0.999)
+    assert r > 1.0, f"the ratchet left the stop at the lock ({r:.4f}R)"
+
+
+def test_an_unknown_stop_mode_and_a_negative_ratchet_are_refused():
+    """RED by deleting either validation in `RecoveryConfig.__post_init__`.
+
+    An unrecognised `stop_mode` string would otherwise fall through to the structural branch and
+    read as a setting that applied — a typo that silently selects the default.
+    """
+    with pytest.raises(ValueError, match="stop_mode"):
+        RecoveryConfig(stop_mode="loss-entry")
+    with pytest.raises(ValueError, match="trail_pct"):
+        RecoveryConfig(trail_pct=-0.5)
