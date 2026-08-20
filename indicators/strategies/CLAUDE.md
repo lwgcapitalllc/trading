@@ -163,6 +163,19 @@ fires** — that is how the trail reads a level without a second engine.
 smooth the equity curve, is in `strategies/python/loss_recovery/CLAUDE.md`.** Read that before
 quoting any figure off this chart.
 
+
+🔴 **THE RULE THIS FORK DRAWS WAS SEARCHED ON 2026-08-19 AND NOTHING CHANGED — so the fork's
+inputs are still the measured ones.** Nine stop placements and six exit ladders were replayed over
+A+'s 62 real losses on 186,910 M15 bars, both legs costed. The shipped rule (break-leg stop, lock
++1R at +1R, trail confirmed swings) won. ⚠ **The one challenger that beat it on the headline — a
+stop on the CHoCH BAR's own extreme, +24.4R against +16.2R on a 7x tighter stop — goes to −7.4R
+once its five best trades are deleted, and holds for four bars.** ⚠ **Aaron's own idea (rest the
+stop on the LOSING trade's entry) is 2.4x tighter and resolves in 43 bars instead of 294, exactly
+as predicted, and loses 14R** — the primary's entry is a price the market has just been trading
+around, so the stop sits in fresh congestion; median MFE falls 1.01R → 0.89R, which a 2.4x smaller
+R should have RAISED. Full grid: `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` →
+Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
+
 ## What lives here, and the one thing that decides it
 
 A file is in this folder if its declaration is `strategy(`, and in `../engines/` if it is

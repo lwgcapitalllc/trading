@@ -39,6 +39,8 @@ Standing rules for anything recorded here:
 | 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | 🔴 **VOID — broken fill model, superseded by Run 21** |
 | 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
 | 22 | 2026-08-19 | 🔴 **WHERE THE SCALE-IN ADDS TAKE PROFIT** — the adds had no exit of their own, so this asked whether banking them beats riding. Two independent target families: a flat multiple of base risk (1R…8R, the control) and real structure (prev day/week H/L, H4, session H/L, and combinations). 16 configurations, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5x | **EVERY TARGET LOSES TO RIDING**, and they lose in order of how OFTEN the target fires — Ride 194.15R (0 banks), prev week 168.51R (16), prev day 157.57R (25), H4 146.09R (47). The flat-risk control produced the same monotonic curve independently, and banking at 1R (126.76R) came out **below never scaling at all**. 🔴 **The first structural table was VOID and these are RE-MEASURED** — the harness resolved its target from the LIVE bar, so `Prev day`/`H4` banked ZERO times in 8 years while resolving 1,804 and 2,438 valid targets; day/H4 levels die on a WICK and the engine steps first, so the level was gone on the exact bar it would have filled. **Weekly dies on a CLOSE through and was immune, hiding it on the only mode being watched.** ⚠ Worst trade is −2.06R in every configuration — the affordability rule already prevents the giveback a target was asked for. ⚠ **Strip the top 20 trades and banking WINS on risk-adjusted return** (prev day 14.49, H4 14.60 vs Ride 11.99): it smooths the ordinary book and pays for it out of the tail. | **`exec_scale_tp_mode` SHIPPED defaulting to `"Prev week H/L"` — Aaron's call, AGAINST the measurement.** 🔴 **DEFAULT UNDER REVIEW** — he chose it on a 4.38R gap said to be inside the 15.06R jitter; the true gap is **25.64R, outside it**. 🔴 **NOT PARITY-GATED YET** |
+| 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
+| 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every A+ loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is A+'s 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
 ⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
 Count the runs with `grep -c '^# Run ' `, never off this table.
@@ -3588,3 +3590,206 @@ rewritten:** *"the depth counter never resets on a new setup"* reddened nothing,
 only checked that the FIRST re-entry on a new setup armed — which the SOS-bar comparison already
 guarantees on its own. It now makes the new setup spend its **full** allowance of two, and the trap
 is written into its docstring. 285 strategy + 27 backend runner tests green.
+
+
+---
+
+# Run 24 — 2026-08-19 — **THE LOSS-RECOVERY LEG. NINE STOPS, SIX EXIT LADDERS, AND THE DEFAULT WON.**
+
+⚠ **This is not a sweep of `SosFadeConfig`. No parameter of this bot moves, and no figure
+elsewhere in this log or in its CLAUDE.md changes.** The subject is
+`strategies/python/loss_recovery/` — a separate lab package that replays a **25%-size
+counter-trade after every A+ loss**, and is what Aaron's *"can I win the loss back the other way"*
+question turned into. It is filed here because its entire population is **this bot's 62 real
+stop-outs**, so a change to A+'s entry rule re-populates it and this run goes stale.
+
+**Setup for every row below:** `python backtest/tools/recovery_report.py --start 2018-09-14
+--end 2026-08-14 [--exits | --soft-curve | --stops | --search]`, XAUUSD M15, **186,910 bars**,
+`mpc_sos_fade` at shipped defaults with `exec_secondary=False`, warmup 1000, bar fills, **both
+legs costed at `puprime_ecn`**. The shipped recovery rule is: stop at the far end of the CHoCH
+break leg, lock +1R at +1R, then trail confirmed swings.
+
+## The question
+
+Aaron, off the 2026-05-11 chart: *"the stop loss is the previous shift of structure — that's
+almost the same distance from where it entered … if we're only trading 25%, we need some kind of
+tight stop-loss strategy so that if we're wrong we just get out of the trade."* And separately,
+off 2026-03-15: the trade closed at exactly +1R and price then ran another 2.9R.
+
+🔴 **The first pass tested only the four ideas already named in conversation and reported that as
+a search. Aaron rejected that, correctly** — *"I told you to go find strategies … but you never
+went and did that, you only listened to what I told you."* Part 2 is the actual search, and the
+rejection is recorded because the first pass looked complete: five variants, a plateau check, a
+commit. **A search bounded by the conversation is not a search, and nothing in its output says so.**
+
+## Part 1 — the four named ideas (one lever at a time, everything else shipped)
+
+| lever | net R | win | avg loss | vs the risk dial |
+|---|---|---|---|---|
+| **shipped** — structural stop, lock +1R→+1R | +16.2R | 58% | −1.01R | 1.53x |
+| **soft cut at −0.3R** (stop unchanged, exit early) | **+18.5R** | 37% | **−0.30R** | **1.90x** |
+| exit on the opposing CHoCH | +9.7R | 52% | −0.61R | 1.23x |
+| early breakeven step at +0.5R | +4.2R | 47% | −0.68R | 0.90x |
+| lock later — arm +2R, stop to +1R | −2.3R | 37% | −1.04R | 0.53x |
+
+🔴 **Three of the four lose, and two of them were the assistant's own suggestions, made before
+anything was measured.** Recorded rather than dropped:
+
+- **Structural invalidation costs 6.5R.** An external CHoCH against a trade that is WORKING is a
+  normal pullback, so the rule cuts winners to save losers the lock had already capped.
+- **An early breakeven step is the worst lever on the board.** The structural stop is ~4x a normal
+  one, so +0.5R is inside the noise of the leg and the step gets tagged on the retrace that
+  precedes the run.
+- **Splitting the lock's trigger from its destination loses monotonically.** The shipped 1→1 is
+  not a placeholder somebody forgot to separate.
+
+### The soft cut is a PLATEAU, and it buys nothing
+
+`--soft-curve`, 0.05 steps, with both halves and the five best trades deleted:
+
+| cut at | net R | 1st half | 2nd half | less top 5 | win | maxDD |
+|---|---|---|---|---|---|---|
+| −0.15R | +8.5R | +4.1R | +4.4R | **−4.7R** | 15% | 49.6% |
+| −0.2R | +11.8R | +6.4R | +5.3R | **−1.4R** | 23% | 48.7% |
+| −0.25R | +17.1R | +9.5R | +7.7R | +3.3R | 32% | 46.5% |
+| **−0.3R** | **+18.5R** | +12.1R | +6.5R | +4.7R | 37% | 47.0% |
+| −0.5R | +13.8R | +9.2R | +4.6R | +0.0R | 40% | 49.1% |
+| −0.75R | +18.0R | +10.6R | +7.4R | +4.1R | 53% | 47.4% |
+| structural | +16.2R | +7.5R | +8.6R | +2.3R | 58% | 48.3% |
+
+🔴 **Every value from −0.25R to structural lands between +12.9R and +18.5R, against this
+strategy's measured run-to-run spread of 15.06R** (`jitter_audit.py`). **That is one flat region,
+so the honest claim is that cutting early is FREE — never that it earns more.** What moves
+monotonically is the SIZE of a loss (avg −1.01R → −0.30R, worst −1.27R → −0.44R), bought with win
+rate (58% → 37%). A preference about how a wrong trade feels, not a return decision.
+
+⚠ **It collapses below −0.25R** — at −0.2R and −0.15R the rule goes negative once its five best
+trades are removed, i.e. the stop is now inside the noise of the entry bar and the winners are the
+only thing holding it up.
+
+🔴 **The mechanism matters, and the intuitive version is wrong.** `soft_stop_r` works ONLY because
+it leaves `risk` at the STRUCTURAL distance. A position is sized off its stop, so moving the stop
+nearer buys a bigger position and the loss in money is unchanged; this does not move the stop that
+SIZED the trade, it refuses to sit through more than a fraction of it. **"Tighter stop" and
+"smaller loss" are different things and only one of them is available.**
+
+## Part 2 — the actual search: nine stop placements, scored against an ATR control
+
+`--stops` and `--search`.
+
+| stop | took | refused | median stop | cost/R | net R | maxDD | net less its best 5 |
+|---|---|---|---|---|---|---|---|
+| **break leg (shipped)** | 62 | 0 | $37.91 | 0.4% | **+16.2R** | 48.3% | **+2.3R** |
+| the CHoCH bar's extreme + 0.1 ATR | 62 | 0 | $5.18 | 2.6% | **+24.4R** | 46.3% | 🔴 **−7.4R** |
+| break leg × 0.25 | 62 | 0 | $9.55 | 1.5% | +2.7R | 48.8% | |
+| break leg × 0.5 | 62 | 0 | $19.09 | 0.7% | −3.1R | 51.2% | |
+| the last confirmed swing | 62 | 0 | $5.16 | 2.7% | −12.3R | 58.6% | |
+| the losing trade's own entry | 57 | **5** | $16.05 | 0.9% | +1.8R | 51.3% | |
+| 1.5 × ATR(14) — **CONTROL** | 62 | 0 | $4.71 | 3.0% | +3.3R | 52.6% | |
+| 2 × ATR(14) — **CONTROL** | 62 | 0 | $6.29 | 2.2% | +2.3R | 47.8% | |
+| 3 × ATR(14) — **CONTROL** | 62 | 0 | $9.43 | 1.5% | −2.9R | 55.8% | |
+
+🔴 **The signal-bar stop looked like the answer and is not.** +24.4R with a LOWER drawdown on a
+stop 7x tighter — and **−7.4R once its five best trades are deleted**, where the shipped stop
+survives the same deletion at +2.3R. Its median hold is **4 bars**: it is not a better version of
+this rule, it is a different hour-long rule that caught five big moves in a record where gold ran.
+⚠ **Its pad is a cliff too** — 0 ATR gives −2.2R and 1.0 ATR gives −5.4R, either side of a wide
+flat middle. **Two independent robustness checks failing on the row with the best headline is the
+whole reason to run them before reporting the headline.**
+
+✅ **The ATR control earned its place.** At a matched $5–6 stop it scores +3.3R against the signal
+bar's +24.4R, which is what says the STRUCTURE is doing the work rather than the tightness. It
+also says nothing else here is: every other structural placement loses to it or ties.
+
+⚠ **`swing` is the worst row on the board (−12.3R at a 58.6% drawdown) at almost exactly the same
+stop SIZE as `signal_bar`. Size is not the variable — where the level came from is.**
+
+### Aaron's own idea: the stop on the LOSING TRADE'S ENTRY
+
+*"the stop loss is the entry of the original trade that lost … otherwise gonna increase the lot
+size because the stop loss is shorter. However, we will hit 1R quicker, and then we can move to
+breakeven faster."* **Every step of that mechanism is correct and it still loses 14R.**
+
+The stop is **2.4x tighter** ($37.91 → $16.05), so the same risk buys 2.4x the position, and the
+median trade resolves in **43 bars against 294** — eleven hours instead of three days. Cost is not
+the objection either (0.9% of R at $16).
+
+🔴 **What breaks it is WHERE that stop sits.** The primary's entry is a price the market has just
+been trading around — it went there, filled an order, and reversed through it — so it is the most
+likely level in the area to be revisited. The tell is the EXCURSION, not the P&L: **median MFE
+falls 1.01R → 0.89R.** Shrinking the stop 2.4x should have made every dollar of travel worth 2.4x
+more R; it made it worth LESS, which can only mean the trades are dying before the move they were
+entered for. `locked` falls 56% → 49% for the same reason.
+
+⚠ **5 of 62 are REFUSED outright** — by the time the CHoCH prints, price is back on the wrong side
+of the primary's entry and a stop there would sit above a long's fill. Refusing is correct (rule
+17), and `refused()` counts them separately from `pending()`, because *the signal never came* and
+*the stop was unusable* say opposite things about a rule.
+
+⚠ **It does not combine with the soft cut either** — `loss_entry` + a −0.3R cut is **−1.7R**, the
+only negative variant measured on this rule.
+
+## Part 3 — "the +1R lock gives up the continuation"
+
+Answered with the EXCURSION rather than with more variants. Of the **35 recoveries that reach
++1R**:
+
+| | |
+|---|---|
+| median booked | **+1.00R** |
+| median MFE **while the trade was open** | **+1.06R** |
+| ever saw +2R while open | **3 of 35** |
+| ever saw +3R while open | 2 of 35 |
+| median extra R offered **after the exit** (30d window) | **+2.33R** |
+| offered more than 1R after the exit | **22 of 35** |
+| offered more than 3R after the exit | 15 of 35 |
+
+🔴 **Price tags +1R, takes the stop, and THEN runs — so no trail can reach it.** Only 3 of 35
+trades were ever above +2R while still open, and every attempt to hold for them pays 32 trades of
+given-back R to catch 3. Which is exactly what the alternatives measure:
+
+| exit | net R |
+|---|---|
+| **lock +1R→+1R + confirmed swings (shipped)** | **+16.2R** |
+| bank 25 / 50 / 75% at +1R, rest to breakeven | +6.4 / +6.0 / +5.6R |
+| bank 50% at +1R, rest keeps the +1R stop | +11.3R |
+| bank 50% at +0.75 / +1.5 / +2R, rest to breakeven | +2.5 / +8.1 / +7.0R |
+| lock +1R→+1R + 1 / 2 / 3 / 4 ATR chandelier | +9.0 / +8.3 / +8.4 / +10.4R |
+| lock to +0.5R instead of +1R | +7.9R |
+| lock to breakeven instead of +1R | +9.5R |
+
+⚠ **A percent-of-price ratchet loses to the swing trail on BOTH stops, and flatly across a 20x
+range of steps** (0.05% +8.5R … 1% +9.2R on the break-leg stop). At 1% one step is **$40 against a
+$38 median stop** — inert, the `mpc_bleg` trap — and at 0.05% it binds constantly and hands back
+the runners. **A swing level is the market saying the move is still intact; a percentage is
+arithmetic saying so.**
+
+🔴 **THE ONE UNEXPLORED LEAD, and it is the biggest number here: +2.33R median on 22 of 35 trades,
+arriving AFTER the position closed, is a RE-ENTRY signal rather than a trailing-stop problem.**
+Nothing in this rule takes a second trade on the same premise. It is a new rule with its own spec
+and its own arming condition, and it is the only direction these numbers actually point at.
+
+## Status
+
+**Nothing adopted. `loss_recovery` still ships `enabled=False`, `stop_mode="structural"`,
+`soft_stop_r=None`, `trail_pct=0`, `partial_at_r=0`, `trail_atr_mult=0`** — so every number
+elsewhere in this log stands unchanged, and `soft_stop_r=-0.3` is available as a one-line change
+if the smaller losses are wanted.
+
+⚠ **No parity gate exists and none can yet** — there is no Pine twin of `loss_recovery`, so every
+figure above is a LAB finding. `indicators/strategies/mpc_recovery_strategy.pine` is a FORK for
+eyeballing entries on a chart and **its P&L is not this rule's P&L**: TradingView holds ONE net
+position, so it closes the recovery when the primary enters the other way.
+
+⚠ **This run's whole population is A+'s 62 stop-outs at the shipped defaults with
+`exec_secondary=False`. Any change to A+'s entry rule re-populates it and this run goes stale** —
+same standing as `overlap_audit.py`.
+
+✅ **31 tests in `strategies/python/loss_recovery/tests/`, every one watched RED by a named
+mutation.** 🔴 **Two were caught VACUOUS by that pass, and both failure modes are general.** One
+refusal branch was tested by running the mode over the real fixture — where every signal HAS a
+usable swing, so the branch was never reached and a mutation making it borrow the structural stop
+passed; a refusal is only testable by CONSTRUCTING the state that triggers it. And one mutation
+string failed to match after `ruff format` had collapsed the block it targeted, leaving a green
+run that proved nothing: **a mutation that does not apply is indistinguishable from a test that
+survived it — assert the replacement landed before believing the red.**

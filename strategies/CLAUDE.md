@@ -19,7 +19,10 @@ strategies/
 │   └── LondonBreakout.mq5
 ├── python/         ← Python strategy packages — run LOCALLY by the lab's python runner (no VPS)
 │   ├── mpc_sos_fade/        (MPC SOS Fade bot; own CLAUDE.md inside)
-│   └── mpc_bleg/            (MPC B-LEG bot — the late-retrace setup, split out to run parallel to A+; own CLAUDE.md)
+│   ├── mpc_bleg/            (MPC B-LEG bot — the late-retrace setup, split out to run parallel to A+; own CLAUDE.md)
+│   └── loss_recovery/       (NOT a strategy — a RULE that replays a counter-trade over another
+│                             strategy's losses. LAB ONLY, `enabled` defaults False, no Pine twin
+│                             and therefore no parity gate. Own CLAUDE.md)
 └── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
     ├── london_breakout.pine
     └── ny_orb.pine

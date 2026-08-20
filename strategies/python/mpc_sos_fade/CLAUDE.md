@@ -2374,6 +2374,22 @@ default — and moot now: the default flipped to sweep-arm on 2026-07-23, in loc
 files and `config.py`, so parity holds. Flip toggles freely per run; just keep the two Pine files and
 `config.py` defaults identical when you change a DEFAULT.)
 
+## This bot's LOSSES are another package's population — `strategies/python/loss_recovery/`
+
+`loss_recovery` replays a **25%-size counter-trade after every A+ stop-out**. It is not a config
+of this bot and changes nothing here — but its entire trade population is **this bot's 62 real
+losses**, so it is coupled in one direction: ⚠ **any change to A+'s entry rule re-populates it and
+every figure it has produced goes stale**, the same standing `overlap_audit.py` has. Re-run
+`backtest/tools/recovery_report.py` after one.
+
+**The rule, its measurements and every caveat live in that package's own CLAUDE.md.** What belongs
+here is only what a reader of THIS file needs: the recovery leg adds **+4.1R on top of +129.0R
+(~3%)**, it does **not** reduce max drawdown (48.3% against 48.8%) and does not smooth the curve —
+and the 2026-08-19 search of nine stop placements and six exit ladders **adopted nothing**, so the
+shipped rule is unchanged and no number in this file moves. Full grid: `mpc_sos_fade_optimization.md`
+→ Run 24.
+
+
 ## Tests
 
 ```
