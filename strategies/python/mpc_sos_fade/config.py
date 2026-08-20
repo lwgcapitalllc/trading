@@ -405,7 +405,7 @@ class SosFadeConfig:
     #   to the STOP, which trails up behind price, so the LAST add is the cheapest one. Small-
     #   first in fact had the lowest drawdown (9.05 vs 11.04). Flat is kept because it is simpler
     #   and nothing measured argues against it.
-    exec_scale_tp_mode: str = "Prev week H/L"   # "↳ Where the adds take profit" (execScaleTpMode)
+    exec_scale_tp_mode: str = "Ride"   # "↳ Where the adds take profit" (execScaleTpMode)
     #   ∈ {"Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"}. WHERE the scale-in lots bank.
     #   "Ride" leaves them on the trailing stop, closing pro-rata with the base ladder — the
     #   behaviour every measurement before 2026-08-19 was taken on. The other three rest the adds
@@ -451,13 +451,21 @@ class SosFadeConfig:
     #   places `strategy.exit(limit=)` at a bar's close and it is live on the NEXT bar. The adds
     #   were the single path that skipped it. See `execution.py::_add_tp_level`.
     #
-    #   🔴 THE DEFAULT IS UNDER REVIEW — DO NOT READ IT AS SETTLED (2026-08-19). Aaron chose
-    #   "Prev week H/L" over "Ride" deliberately, wanting certain money on the runners. But he
-    #   chose it on a number the live-bar bug had made wrong: HE WAS QUOTED A 4.38R GAP, INSIDE
-    #   this strategy's 15.06R jitter, and the true gap is 25.64R, OUTSIDE it. The trade-off he
-    #   accepted — "certainty for no measurable cost" — is not the one actually on offer. He has
-    #   been told and has not yet answered. ⚠ Confirm the default before quoting it as a
-    #   decision.
+    #   ✅ SETTLED 2026-08-19: "Ride" (Aaron). It shipped as "Prev week H/L" for one day and the
+    #   reversal is the part worth keeping. Aaron picked the target deliberately, wanting certain
+    #   money off the runners, and at the cost he was quoted — 4.38R, INSIDE this strategy's
+    #   15.06R jitter — "certainty for no measurable cost" was a sound trade. The 4.38R came from
+    #   the run with the live-bar bug in it. The true cost is 25.64R, OUTSIDE the jitter, and on
+    #   the real number he chose the other way within a minute.
+    #
+    #   🔴 THE LESSON IS ABOUT THE DECISION, NOT THE DIAL. A wrong measurement does not announce
+    #   itself as wrong — it arrives as a REASONABLE-LOOKING NUMBER and quietly buys a decision.
+    #   Nothing about "4.38R" looked suspicious; it was small, it was plausible, and it made a
+    #   preference cheap. The defect was two layers away in a mitigation flag, and the only
+    #   symptom it ever produced at this level was a default nobody would otherwise have picked.
+    #   ⚠ So when a measurement is what tips a judgement call, the judgement is only as settled
+    #   as the measurement — go back and re-ask it when the number moves, rather than treating
+    #   the earlier answer as a decision already made.
     #   ⚠ Session H/L is deliberately NOT an option: it measured worst, and it would need six
     #   more mirrored Pine variables to add. See `signals.py::_TGT_SLOT`.
     #   ⚠ VOID — NEVER RE-MEASURED after the fix: session H/L 159.39R and the daily+wk+H4

@@ -471,9 +471,9 @@
       },
       "desc": "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade, which is how every run before 2026-08-19 behaved. The other three rest them at the nearest level of that kind price has not already taken, and only when it sits beyond the newest add, so every lot banks in profit. It moves the ADDS only — the base trade's stop and partials are untouched.",
       "guide": [
-        "Ride — measured best (194.15R); the adds earn on the few trades that run a long way",
-        "Prev week H/L — the default; costs 4.38R, which is inside the strategy's own noise",
-        "Prev day / H4 — measurably worse, and worse the more often the level gets hit"
+        "Ride — the default, and measured best (194.15R); the adds earn on the few trades that run a long way",
+        "Prev week H/L — costs 25.64R (168.51R), OUTSIDE this strategy's own 15.06R noise",
+        "Prev day / H4 — worse again (157.57R / 146.09R), and worse the more often the level gets hit"
       ]
     },
     {
