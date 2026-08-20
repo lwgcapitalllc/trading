@@ -55,7 +55,7 @@ class RecoveryTrade:
     exit_price: float
     r: float
     scaled_r: float
-    exit_reason: str  # "stop" | "locked" | "trail" | "time" | "horizon"
+    exit_reason: str  # stop | soft | be | locked | trail | choch | time | horizon
     locked: bool  # did it ever reach the lock threshold?
     max_favourable_r: float
     bars_held: int

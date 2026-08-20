@@ -237,7 +237,7 @@ def test_a_bar_that_hits_both_the_stop_and_the_lock_books_the_stop():
         index=idx,
     )
     eng = LossRecoveryEngine(RecoveryConfig(enabled=True))
-    exit_i, exit_px, r, reason, locked, mfe = eng._manage(bars, 0, 1, 100.0, 99.0, {}, {}, 96.0)
+    exit_i, exit_px, r, reason, locked, mfe = eng._manage(bars, 0, 1, 100.0, 99.0, {}, {}, {}, 96.0)
     assert reason == "stop", f"a bar through the stop booked {reason!r}"
     assert r == pytest.approx(-1.0)
     assert not locked
@@ -254,7 +254,16 @@ def test_no_trade_books_more_than_its_best_price_or_exits_by_a_route_that_does_n
     assert got
     for t in got:
         assert t.r >= -1.0 - 1e-9
-        assert t.exit_reason in {"stop", "locked", "trail", "time", "horizon"}
+        assert t.exit_reason in {
+            "stop",
+            "soft",
+            "be",
+            "locked",
+            "trail",
+            "choch",
+            "time",
+            "horizon",
+        }
         assert t.r <= t.max_favourable_r + 1e-9
 
 
@@ -348,3 +357,115 @@ def test_bars_per_day_is_calendar_not_session():
     bars = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=weekdays)
     assert _bars_per_day(bars) < 96.0
     assert _bars_per_day(real_bars()) < 96.0
+
+
+# ── the tighter exits (2026-08-19) ───────────────────────────────────────────────────────────
+# Aaron's question was "the structural stop is nearly as far as the whole move — can I get out
+# for a small loss instead". These four pin the answer's mechanics; whether it PAYS is measured
+# by `backtest/tools/recovery_report.py --soft-curve`, not asserted here.
+
+
+def test_a_soft_stop_books_a_fraction_of_r_and_never_a_full_one():
+    """RED by dropping the `soft_stop_r` branch that seeds `stop` in `_manage`.
+
+    Without it the working stop is the structural one again and the losers book −1.00R, which is
+    the entire thing this knob exists to stop.
+    """
+    plain = RecoveryConfig(enabled=True)
+    tight = RecoveryConfig(enabled=True, soft_stop_r=0.3)
+    _, base = _one_trade(plain)
+    _, cut = _one_trade(tight)
+    assert base and cut, "fixture produced no recovery trade; the test cannot say anything"
+    assert any(t.r < -0.3 for t in base), (
+        "no trade in the plain run loses more than 0.3R, so a 0.3R cut cannot be observed and "
+        "this test would pass against a knob that does nothing"
+    )
+    for t in cut:
+        assert t.r >= -0.3 - 1e-9, f"a 0.3R cut booked {t.r:.3f}R"
+
+
+def test_a_soft_stop_does_not_move_the_number_the_trade_was_sized_on():
+    """RED by recomputing `risk` from the soft stop (`risk = abs(entry - stop)` after seeding).
+
+    🔴 This is the load-bearing one and it is the thing that makes the knob honest. A position is
+    sized off its stop distance, so re-deriving 1R from a nearer stop would buy a bigger position
+    and the loss in money would be UNCHANGED — the exact opposite of what was asked for. 1R must
+    stay the structural distance; only the willingness to sit through it changes.
+    """
+    _, base = _one_trade(RecoveryConfig(enabled=True))
+    _, cut = _one_trade(RecoveryConfig(enabled=True, soft_stop_r=0.3))
+    assert len(base) == len(cut), "a soft stop changed which trades were TAKEN; it is an exit only"
+    for a, b in zip(base, cut):
+        assert a.entry_index == b.entry_index
+        assert b.stop_price == pytest.approx(a.stop_price)
+        assert b.risk == pytest.approx(a.risk)
+
+
+def test_structural_invalidation_exits_at_the_next_bars_open():
+    """RED by deleting the `cut_at_open` early return in `_manage`.
+
+    The CHoCH is only known when its bar CLOSES, so the fill is the next open. Acting on the same
+    bar's close would be reading a decision off the bar it was made on — the look-ahead this repo
+    has already paid for once in `trigger_edge.py`.
+    """
+    idx = pd.date_range("2024-01-01", periods=3, freq="15min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.3, 100.3],
+            "high": [100.5, 100.4, 100.4],
+            "low": [99.5, 100.1, 100.1],
+            "close": [100.2, 100.2, 100.2],
+        },
+        index=idx,
+    )
+    cfg = RecoveryConfig(enabled=True, invalidate_on_choch=True)
+    eng = LossRecoveryEngine(cfg)
+    # long from 100, stop 99 (1R = 1.0). A bear CHoCH closes on bar 0.
+    exit_i, exit_px, r, reason, _, _ = eng._manage(bars, 0, 1, 100.0, 99.0, {}, {}, {0: -1}, 96.0)
+    assert reason == "choch", f"an opposing CHoCH booked {reason!r}"
+    assert exit_i == 1 and exit_px == pytest.approx(100.3)
+    assert r == pytest.approx(0.3)
+
+
+def test_the_early_step_moves_the_stop_before_the_lock_does():
+    """RED by deleting the `be_at_r` block in `_manage`.
+
+    Without it the stop sits at its opening level until `lock_at_r` fires, which on a structural
+    stop is a long way and — measured — several days. This bar reaches +0.6R and comes back; the
+    step is the only thing that can be out at breakeven rather than still carrying full risk.
+    """
+    idx = pd.date_range("2024-01-01", periods=2, freq="15min", tz="UTC")
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.4],
+            "high": [100.6, 100.4],
+            "low": [99.9, 99.5],
+            "close": [100.5, 99.6],
+        },
+        index=idx,
+    )
+    cfg = RecoveryConfig(enabled=True, be_at_r=0.5, be_to_r=0.0, trail_swings=False)
+    exit_i, exit_px, r, reason, locked, _ = LossRecoveryEngine(cfg)._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, 96.0
+    )
+    assert reason == "be", f"the early step booked {reason!r}"
+    assert exit_i == 1 and exit_px == pytest.approx(100.0)
+    assert r == pytest.approx(0.0)
+    assert not locked, "the trade never reached +1R and must not report itself locked"
+
+
+def test_an_unreachable_soft_stop_and_a_backwards_early_step_are_refused():
+    """RED by deleting either validation in `RecoveryConfig.__post_init__`.
+
+    A `soft_stop_r` above 1 sits BEYOND the structural stop, so it can never fire — a knob that
+    reads as set and does nothing, which is worse than one that is off. `be_to_r > be_at_r` puts
+    the stop past a price the trade has not reached.
+    """
+    with pytest.raises(ValueError, match="soft_stop_r"):
+        RecoveryConfig(soft_stop_r=1.5)
+    with pytest.raises(ValueError, match="soft_stop_r"):
+        RecoveryConfig(soft_stop_r=0.0)
+    with pytest.raises(ValueError, match="be_to_r"):
+        RecoveryConfig(be_at_r=0.5, be_to_r=0.75)
+    with pytest.raises(ValueError, match="be_at_r"):
+        RecoveryConfig(be_at_r=1.5, be_to_r=0.5)

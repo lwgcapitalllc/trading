@@ -11,6 +11,7 @@ caller says so — the rule has never been traded and has no parity gate.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,35 @@ class RecoveryConfig:
     +18.9R at a 70% win rate, moving to breakeven instead nets +9.5R at 54%. Breakeven protects
     you from losing; it does not bank the thing you entered for."""
 
+    soft_stop_r: Optional[float] = None
+    """Cut the trade this many R against, instead of waiting for the structural stop.
+
+    🔴 **This is the only knob here that makes a LOSS smaller, and the reason is worth stating
+    because the intuitive one is wrong.** A position is sized off its stop distance, so moving the
+    stop nearer buys a bigger position and the loss in money is unchanged. This does not move the
+    stop that SIZED the trade — `risk` stays the structural distance, so 1R stays 1R and the
+    position stays the same — it just refuses to sit through more than a fraction of it. A trade
+    cut at 0.4 books −0.4R, i.e. 40% of what it would otherwise have cost.
+
+    None keeps the structural stop, which is what every number in CLAUDE.md was measured on."""
+
+    invalidate_on_choch: bool = False
+    """Exit at the next bar's open when an external CHoCH prints AGAINST the trade.
+
+    The reason for entering was a CHoCH; structure breaking back the other way says that reason
+    is gone. Independent of `soft_stop_r` — one is a price bound, this is a structural one, and a
+    trade can be wrong in either without being wrong in the other."""
+
+    be_at_r: float = 0.0
+    """Move the stop to `be_to_r` once the trade has travelled this many R in favour. 0 = off.
+
+    An EARLIER step than the lock, so full risk is not carried for days while the trade works.
+    Without it the stop sits at its opening level until `lock_at_r` fires — which on a structural
+    stop is a long way and a long time."""
+
+    be_to_r: float = 0.0
+    """Where the early step puts the stop. 0.0 is plain breakeven; a small positive pays costs."""
+
     trail_swings: bool = True
     """After arming, ratchet the stop to each new CONFIRMED swing level from the same structure
     engine. False leaves the stop parked at `lock_to_r`."""
@@ -87,6 +117,22 @@ class RecoveryConfig:
             raise ValueError(
                 f"horizon_days ({self.horizon_days}) is below max_days ({self.max_days}), so the "
                 "time stop can never fire and the two limits are the same number wearing two names"
+            )
+        if self.soft_stop_r is not None and not 0.0 < self.soft_stop_r <= 1.0:
+            raise ValueError(
+                f"soft_stop_r ({self.soft_stop_r}) must be inside (0, 1] — above 1 it sits beyond "
+                "the structural stop and can never fire, which is a knob that reads as set and "
+                "does nothing"
+            )
+        if self.be_to_r > self.be_at_r:
+            raise ValueError(
+                f"be_to_r ({self.be_to_r}) cannot exceed be_at_r ({self.be_at_r}) — the stop "
+                "cannot be placed beyond a price the trade has not reached"
+            )
+        if self.be_at_r > self.lock_at_r:
+            raise ValueError(
+                f"be_at_r ({self.be_at_r}) is above lock_at_r ({self.lock_at_r}), so the early "
+                "step fires after the lock it is meant to precede and one of the two is dead"
             )
         if self.scratch_r < 0:
             raise ValueError("scratch_r is a magnitude; pass 0.15, not -0.15")

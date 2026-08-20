@@ -4,6 +4,8 @@
       -> arm, wanting an EXTERNAL CHoCH in the opposite direction
       -> it prints; enter at the next bar's open
       -> stop at the far end of the break leg  (that distance IS this trade's 1R)
+      -> optionally cut at -soft_stop_r, or when structure breaks back, before that stop is reached
+      -> price reaches +be_at_r; step the stop to +be_to_r   (optional, off by default)
       -> price reaches +lock_at_r; move the stop to +lock_to_r  (the loss is now banked)
       -> trail the stop to each new confirmed swing level
       -> exit on the stop, or on the time cap
@@ -90,6 +92,7 @@ class LossRecoveryEngine:
         stop_price: float,
         swing_low: Dict[int, float],
         swing_high: Dict[int, float],
+        choch_dir: Dict[int, int],
         bars_per_day: float,
     ) -> Tuple[int, float, float, str, bool, float]:
         """Walk bars from `entry_index`. Returns (exit_index, exit_price, r, reason, locked, mfe).
@@ -98,33 +101,63 @@ class LossRecoveryEngine:
         both, that books the loss — the pessimistic read, and the same one every fill model in
         this repo uses. It makes the result slightly worse than reality, which is the safe
         direction.
+
+        ⚠ `risk` is always the STRUCTURAL distance, whatever `soft_stop_r` does to the working
+        stop. That is what makes a soft stop a smaller loss rather than a bigger position: 1R is
+        the number the trade was sized on, and cutting early books a fraction of it.
         """
         cfg = self.config
         d = direction
         risk = abs(entry_price - stop_price)
+        op = bars["open"].to_numpy(dtype=float)
         hi = bars["high"].to_numpy(dtype=float)
         lo = bars["low"].to_numpy(dtype=float)
         cl = bars["close"].to_numpy(dtype=float)
 
-        stop = stop_price
+        stop = (
+            entry_price - d * cfg.soft_stop_r * risk if cfg.soft_stop_r is not None else stop_price
+        )
+        stage = "init"
+        trailed = False
         locked = False
         mfe = 0.0
+        cut_at_open = False
         time_cap = entry_index + int(round(cfg.max_days * bars_per_day))
         horizon = entry_index + int(round(cfg.horizon_days * bars_per_day))
         end = min(len(hi), time_cap, horizon)
 
+        def _reason() -> str:
+            if stage == "lock":
+                return "trail" if trailed else "locked"
+            if stage == "be":
+                return "be"
+            return "soft" if cfg.soft_stop_r is not None else "stop"
+
         for j in range(entry_index, end):
+            # The open comes first in the bar, so an invalidation raised on the PREVIOUS close is
+            # settled before this bar's range is read.
+            if cut_at_open:
+                return j, float(op[j]), ((op[j] - entry_price) * d) / risk, "choch", locked, mfe
+
             hit_stop = (lo[j] <= stop) if d > 0 else (hi[j] >= stop)
             if hit_stop:
                 r = ((stop - entry_price) * d) / risk
-                reason = "locked" if locked and r > 0 else ("trail" if locked else "stop")
-                return j, stop, r, reason, locked, mfe
+                return j, stop, r, _reason(), locked, mfe
 
             fav = ((hi[j] - entry_price) if d > 0 else (entry_price - lo[j])) / risk
             mfe = max(mfe, fav)
 
+            if stage == "init" and cfg.be_at_r > 0 and fav >= cfg.be_at_r:
+                be = entry_price + d * cfg.be_to_r * risk
+                if (be - stop) * d > 0:
+                    stop = be
+                stage = "be"
+
             if not locked and fav >= cfg.lock_at_r:
-                stop = entry_price + d * cfg.lock_to_r * risk
+                lock = entry_price + d * cfg.lock_to_r * risk
+                if (lock - stop) * d > 0:
+                    stop = lock
+                stage = "lock"
                 locked = True
 
             if locked and cfg.trail_swings:
@@ -134,6 +167,10 @@ class LossRecoveryEngine:
                 # at a price it never actually offered.
                 if level is not None and (level - stop) * d > 0 and (level - cl[j]) * d < 0:
                     stop = level
+                    trailed = True
+
+            if cfg.invalidate_on_choch and choch_dir.get(j, 0) == -d:
+                cut_at_open = True
 
         j = max(entry_index, end - 1)
         r = ((cl[j] - entry_price) * d) / risk
@@ -157,6 +194,7 @@ class LossRecoveryEngine:
             return []
 
         chochs, swing_low, swing_high = self._replay_structure(bars)
+        choch_dir: Dict[int, int] = {i: dirn for i, dirn, _ in chochs}
         op = bars["open"].to_numpy(dtype=float)
         bars_per_day = _bars_per_day(bars)
         out: List[RecoveryTrade] = []
@@ -190,6 +228,7 @@ class LossRecoveryEngine:
                 stop_price,
                 swing_low,
                 swing_high,
+                choch_dir,
                 bars_per_day,
             )
             out.append(

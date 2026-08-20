@@ -199,6 +199,18 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **Read the drawdown column, never the balance alone.** The rule buys RETURN, not safety —
   MEASURED, max drawdown is 48.3% at 25% size against the primary's 48.8%, and it goes UP to
   57.2% at full size. `--sweep` prints the whole size curve.
+  🔴 **`--exits` and `--soft-curve` (2026-08-19) grid the EXIT rules, and three of the four
+  candidates LOSE** — structural invalidation on the opposing CHoCH +16.2R → +9.7R, an early
+  breakeven step → +4.2R, and splitting the lock's trigger from its destination → −2.3R at 2R→1R.
+  The one that survives is `soft_stop_r`, which cuts at a fraction of R **without moving the
+  distance the trade was SIZED on** — the whole point, since a nearer stop otherwise just buys a
+  bigger position and costs the same money.
+  ⚠ **Its curve is a PLATEAU and the tool prints it as one.** Everything from −0.25R to the
+  structural stop lands between +12.9R and +18.5R against a measured run-to-run sd of 15.06R, so
+  the finding is that cutting early is FREE, not that it earns more; what moves monotonically is
+  the loss SIZE (−1.01R → −0.30R) bought with win rate (58% → 37%).
+  ⚠ **Read `--soft-curve`'s `less top 5` column, not its ranking** — below −0.25R the rule goes
+  negative once its five best trades are deleted, which is the only place the cliff is visible.
   ⚠ Everything it prints is a LAB finding: no Pine twin, no parity gate, `enabled` defaults False.
 
 - **`tools/recovery_smoothness.py`** (new 2026-08-19) — the companion question to the one above:

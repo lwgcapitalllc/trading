@@ -27,10 +27,30 @@ for _p in (str(_ROOT), str(_ROOT / "engines"), str(_ROOT / "strategies" / "pytho
         sys.path.insert(0, _p)
 
 
+import itertools  # noqa: E402
+
 from loss_recovery import LossRecoveryEngine, RecoveryConfig  # noqa: E402
 
 from backtest.data.source import BarSource  # noqa: E402
 from backtest.fills import PROFILES  # noqa: E402
+
+
+class CachedStructure(LossRecoveryEngine):
+    """The engine with its structure replay done once for a whole grid.
+
+    Every variant in a sweep shares `major_length`, so the canonical engine would return
+    byte-identical events on each pass and 144 replays of 186,910 bars buy nothing. ⚠ The shared
+    length is ASSERTED rather than assumed — a variant that changed it would otherwise be handed
+    another config's structure and score a rule nobody ran.
+    """
+
+    def __init__(self, config, cache):
+        super().__init__(config)
+        self._cache = cache
+
+    def _replay_structure(self, bars):
+        assert self.config.major_length == self._cache[0], "grid changed major_length"
+        return self._cache[1]
 
 
 def curve(seq, risk_pct):
@@ -80,6 +100,18 @@ def main() -> int:
         help="⚠ FITTED: this cut was chosen after seeing which direction won",
     )
     ap.add_argument("--sweep", action="store_true", help="sweep recovery size in 5%% steps")
+    ap.add_argument(
+        "--soft-curve",
+        action="store_true",
+        help="the soft stop alone, in fine steps, split into halves — is the best value a "
+        "plateau or a spike?",
+    )
+    ap.add_argument(
+        "--exits",
+        action="store_true",
+        help="grid the EXIT rules instead: soft stop, structural invalidation, early "
+        "breakeven step, and the lock trigger/destination split",
+    )
     args = ap.parse_args()
 
     from strategies.python.mpc_sos_fade import LAB_STRATEGY
@@ -149,6 +181,130 @@ def main() -> int:
     )
     locked = sum(1 for t in recs if t.locked)
     print(f"  {locked} of {len(recs)} reached +{rcfg.lock_at_r:g}R and locked the recovery in\n")
+
+    if args.soft_curve:
+        cache = (rcfg.major_length, LossRecoveryEngine(rcfg)._replay_structure(bars))
+        f = rcfg.risk_fraction
+        mid = idx[len(bars) // 2]
+
+        print("THE SOFT STOP ALONE — everything else shipped\n")
+        print(
+            f"  {'cut at':>8} {'net R':>8} {'1st half':>9} {'2nd half':>9} {'less top 5':>11} "
+            f"{'win':>6} {'balance':>9} {'maxDD':>7} {'vs dial':>7}"
+        )
+        steps = [None] + [x / 100 for x in range(15, 105, 5)]
+        for sv in steps:
+            v = dataclasses.replace(rcfg, soft_stop_r=sv)
+            rs = CachedStructure(v, cache).run(bars, trades)
+            cs = [
+                (idx[t.exit_index], t.r + cost_r(t.direction, t.entry_index, t.exit_index, t.risk))
+                for t in rs
+            ]
+            vals = [r for _, r in cs]
+            h1 = sum(r for ts, r in cs if ts < mid)
+            h2 = sum(r for ts, r in cs if ts >= mid)
+            seq = [r for _, r in sorted(base + [(ts, r * f) for ts, r in cs])]
+            e, b, dd = curve(seq, args.risk_pct)
+            _, bb = risk_for_dd(bseq, dd)
+            label = "structural" if sv is None else f"-{sv:g}R"
+            # Delete the five biggest winners. A rule whose whole result is a handful of trades
+            # has been measured on those trades, not on the rule.
+            top5 = sum(vals) - sum(sorted(vals)[-5:])
+            print(
+                f"  {label:>8} {sum(vals):>+7.1f}R {h1:>+8.1f}R {h2:>+8.1f}R {top5:>+10.1f}R "
+                f"{100.0 * sum(1 for r in vals if r > 0) / max(len(vals), 1):>5.0f}% "
+                f"{b:>8,.0f}x {dd:>6.1f}% {b / bb:>6.2f}x"
+            )
+        print("\n  Both halves positive at every step is the thing to look for. A single tall")
+        print("  step between two short ones is a coincidence this record happens to contain.")
+        print("\n⚠ LAB ONLY — no Pine twin, no parity gate, not wired to any bot.")
+        return 0
+
+    if args.exits:
+        cache = (rcfg.major_length, LossRecoveryEngine(rcfg)._replay_structure(bars))
+        f = rcfg.risk_fraction
+
+        def score(**kw):
+            v = dataclasses.replace(rcfg, **kw)
+            rs = CachedStructure(v, cache).run(bars, trades)
+            cs = [
+                (idx[t.exit_index], t.r + cost_r(t.direction, t.entry_index, t.exit_index, t.risk))
+                for t in rs
+            ]
+            vals = [r for _, r in cs]
+            losses_v = [r for r in vals if r < 0]
+            seq = [r for _, r in sorted(base + [(ts, r * f) for ts, r in cs])]
+            e, b, dd = curve(seq, args.risk_pct)
+            _, bb = risk_for_dd(bseq, dd)
+            return {
+                "n": len(rs),
+                "net": sum(vals),
+                "win": 100.0 * sum(1 for r in vals if r > 0) / max(len(vals), 1),
+                "avg_loss": sum(losses_v) / max(len(losses_v), 1),
+                "worst": min(vals) if vals else 0.0,
+                "bal": b,
+                "dd": dd,
+                "ratio": b / bb,
+            }
+
+        def row(label, m):
+            print(
+                f"  {label:<34} {m['net']:>+7.1f}R {m['win']:>5.0f}% {m['avg_loss']:>+7.2f}R "
+                f"{m['worst']:>+7.2f}R {m['bal']:>9,.0f}x {m['dd']:>6.1f}% {m['ratio']:>6.2f}x"
+            )
+
+        hdr = (
+            f"  {'variant':<34} {'net R':>8} {'win':>6} {'avg loss':>8} {'worst':>8} "
+            f"{'balance':>9} {'maxDD':>7} {'vs dial':>7}"
+        )
+        shipped = score()
+        print("ONE LEVER AT A TIME — everything else at the shipped default\n")
+        print(hdr)
+        row("shipped  (structural, lock 1→1)", shipped)
+        print()
+        for v in (0.75, 0.5, 0.4, 0.3, 0.25):
+            row(f"soft stop  cut at -{v:g}R", score(soft_stop_r=v))
+        print()
+        row("exit on opposite CHoCH", score(invalidate_on_choch=True))
+        print()
+        for a, t in ((0.5, 0.0), (0.5, 0.25), (0.75, 0.0), (1.0, 0.5)):
+            row(f"early step  at +{a:g}R → +{t:g}R", score(be_at_r=a, be_to_r=t))
+        print()
+        for a, t in ((1.5, 1.0), (2.0, 1.0), (2.0, 1.5), (1.0, 0.5)):
+            row(f"lock  at +{a:g}R → +{t:g}R", score(lock_at_r=a, lock_to_r=t))
+
+        print("\n\nEVERY COMBINATION — top 15 by return per unit of drawdown\n")
+        soft = [None, 0.75, 0.5, 0.4, 0.3, 0.25]
+        inval = [False, True]
+        bes = [(0.0, 0.0), (0.5, 0.0), (0.5, 0.25), (0.75, 0.0)]
+        locks = [(1.0, 1.0), (1.5, 1.0), (2.0, 1.0)]
+        out = []
+        for sv, iv, (ba, bt), (la, lt) in itertools.product(soft, inval, bes, locks):
+            m = score(
+                soft_stop_r=sv,
+                invalidate_on_choch=iv,
+                be_at_r=ba,
+                be_to_r=bt,
+                lock_at_r=la,
+                lock_to_r=lt,
+            )
+            label = (
+                f"{'struct' if sv is None else f'-{sv:g}R':>6} "
+                f"{'choch' if iv else '  ·  ':>5} "
+                f"{'·' if ba == 0 else f'be {ba:g}→{bt:g}':>8} "
+                f"lock {la:g}→{lt:g}"
+            )
+            out.append((m["ratio"], label, m))
+        out.sort(key=lambda x: -x[0])
+        print(hdr)
+        for _, label, m in out[:15]:
+            row(label, m)
+        print(f"\n  {len(out)} combinations. Shipped scores {shipped['ratio']:.2f}x.")
+        print("\n⚠ LAB ONLY — no Pine twin, no parity gate, not wired to any bot.")
+        print("⚠ Every row above is FITTED to this record by construction — a grid picks its own")
+        print("  winner. Read the LEVER table for what each rule does; read the grid for whether")
+        print("  the best combination is a cliff or a plateau.")
+        return 0
 
     sizes = [x / 100 for x in range(5, 105, 5)] if args.sweep else [rcfg.risk_fraction]
     print(

@@ -117,6 +117,80 @@ CLAUDE.md → *The overlap audit*.
 
 ---
 
+## 🔴 A tighter stop does not make the loss smaller. Holding 1R FIXED is what does.
+
+**MEASURED 2026-08-19, from Aaron's question — "the structural stop is nearly as far as the whole
+entry travel; can I get out for a small loss instead of a whole R?"**
+
+**The trap first, because the intuitive answer is wrong and expensive.** A position is sized off
+its stop distance, so halving the stop buys twice the position and the loss in money is
+IDENTICAL. Moving a stop nearer changes how OFTEN you are stopped, never how much it costs.
+
+`soft_stop_r` works because it does not move the stop that SIZED the trade. `risk` stays the
+structural distance — 1R stays 1R, the position stays the same — and the rule simply refuses to
+sit through more than a fraction of it. That is the only shape in which "take a smaller loss"
+means anything. `test_a_soft_stop_does_not_move_the_number_the_trade_was_sized_on` is the guard,
+and its named mutation is exactly the mistake above.
+
+### What each of the four candidates actually did
+
+`python backtest/tools/recovery_report.py --start 2018-09-14 --end 2026-08-14 --exits`
+(186,910 M15 bars, both sides costed at `puprime_ecn`, 62 recoveries, one lever at a time)
+
+| lever | net R | win | avg loss | vs the risk dial |
+|---|---|---|---|---|
+| **shipped** — structural stop, lock +1R→+1R | +16.2R | 58% | −1.01R | 1.53x |
+| **soft stop, cut at −0.3R** | **+18.5R** | 37% | **−0.30R** | **1.90x** |
+| exit on the opposing CHoCH | +9.7R | 52% | −0.61R | 1.23x |
+| early breakeven step at +0.5R | +4.2R | 47% | −0.68R | 0.90x |
+| lock later — arm +2R, stop to +1R | −2.3R | 37% | −1.04R | 0.53x |
+
+🔴 **Three of the four LOSE, and two of them were my own suggestions to Aaron before anything was
+measured.** Recorded rather than quietly dropped:
+
+- **Structural invalidation costs 6.5R.** "Structure broke back, the reason for the trade is
+  gone" is a good sentence and it is wrong here: an external CHoCH against a trade that is
+  WORKING is a normal pullback, so the rule cuts winners to save losers it had already capped.
+- **An early breakeven step is the worst lever on the board** — +16.2R → +4.2R. A structural stop
+  is ~4x a normal one, so +0.5R is well inside the noise of the leg, and the step gets tagged on
+  the retrace that precedes the run.
+- **Separating the lock's trigger from its destination loses monotonically** (1.5→1 gives +3.1R,
+  2→1 gives −2.3R). The shipped 1→1 is not a placeholder anyone forgot to split.
+
+### The soft stop is a PLATEAU, not a peak — and it buys nothing
+
+`--soft-curve` prints it in 0.05 steps with both halves and the top five winners deleted:
+
+| cut at | net R | 1st half | 2nd half | less top 5 | win | maxDD |
+|---|---|---|---|---|---|---|
+| −0.15R | +8.5R | +4.1R | +4.4R | **−4.7R** | 15% | 49.6% |
+| −0.2R | +11.8R | +6.4R | +5.3R | **−1.4R** | 23% | 48.7% |
+| −0.25R | +17.1R | +9.5R | +7.7R | +3.3R | 32% | 46.5% |
+| **−0.3R** | **+18.5R** | +12.1R | +6.5R | +4.7R | 37% | 47.0% |
+| −0.5R | +13.8R | +9.2R | +4.6R | +0.0R | 40% | 49.1% |
+| −0.75R | +18.0R | +10.6R | +7.4R | +4.1R | 53% | 47.4% |
+| structural | +16.2R | +7.5R | +8.6R | +2.3R | 58% | 48.3% |
+
+🔴 **Read the net-R column before the ranking: every value from −0.25R to structural sits between
++12.9R and +18.5R.** That is one flat region, not a curve with a winner in it, and the run-to-run
+spread on this strategy is **sd 15.06R** (`jitter_audit.py`). **So the honest claim is that
+cutting early is FREE, never that it earns more.** The `vs dial` column ranks them 1.90x against
+1.53x and that ratio is driven by max drawdown, which is one moment.
+
+**What DOES move monotonically is the size of a loss** — avg −1.01R → −0.30R, worst −1.27R →
+−0.44R — **paid for in win rate**, 58% → 37%. That is the whole trade, and it is a preference
+about how a losing recovery should feel rather than a return decision.
+
+⚠ **It collapses below −0.25R and the top-5 column is what shows it.** At −0.2R and −0.15R the
+rule goes NEGATIVE once its five best trades are removed — the stop is now inside the noise of
+the entry bar and the winners are the only thing holding it up. **−0.25R is one step from the
+cliff; −0.3R is the shallowest value with room under it.**
+
+⚠ **The defaults are UNCHANGED and `soft_stop_r` ships as `None`.** Every number elsewhere in this
+file was measured on the structural stop, and moving the default would restate all of them to buy
+a difference the jitter cannot resolve. It is Aaron's call, and the evidence for making it is the
+loss-size column above, not the balance.
+
 ## Why this is a package and not a flag on `mpc_sos_fade`
 
 The trigger is "a primary trade lost", which every strategy in this repo can state. Wiring it to
@@ -180,7 +254,7 @@ version made +6.4R against +49.3R for letting it run.
 ## Tests
 
 `command-center/backend/.venv/bin/python -m pytest strategies/python/loss_recovery/tests/ -q`
-→ **16 passed.**
+→ **21 passed.**
 
 🔴 **Every one was watched RED by a named mutation, and the harness earned its keep: 5 of the
 first 15 were VACUOUS.** They passed against their own bugs. What the mutation pass found, kept
@@ -199,6 +273,8 @@ the stop check against the arm block returns **byte-identical** results over 2,4
 because no bar there both arms and stops. It is now a direct two-bar test of `_manage` where the
 ordering is observable. **A test that cannot go red is decoration, and the honest move is to say
 so in the docstring or delete it.**
+
+✅ **The five tests added 2026-08-19 for the tighter exits were watched RED the same way, and the pass caught a FALSE GREEN in its own harness**: the first mutation was written against a multi-line `if/else` that `ruff format` had already collapsed onto one line, so the string replacement silently matched nothing and the suite stayed green. ⚠ **A mutation that does not apply is indistinguishable from a test that survived it** — assert the replacement landed before believing the red.
 
 ⚠ **The price fixture is 2,400 REAL XAUUSD M15 bars** (`tests/fixture_xauusd_m15.csv`, committed
 so the tests need no bar cache). Hand-built ramps and sawtooths were tried first and the canonical
@@ -227,7 +303,8 @@ read would have let every assertion pass on an empty list.
 | | |
 |---|---|
 | `config.py` | every knob, with the measured default and why |
+| `--exits` / `--soft-curve` | the exit grid and the soft-stop curve on `recovery_report.py` |
 | `types.py` | `LossEvent` protocol, `RecoveryTrade`, `ArmedSignal` |
 | `engine.py` | the state machine; consumes `engines/market_structure` public events only |
-| `tests/` | 16 tests + the real-bar fixture |
+| `tests/` | 21 tests + the real-bar fixture |
 | `backtest/tools/recovery_report.py` | the runner that produced every number above |
