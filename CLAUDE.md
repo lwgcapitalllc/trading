@@ -250,6 +250,54 @@ That is the honest trade for not blocking the lab, and it is the part that will 
 ---
 
 
+## The trading-box server — a fixed menu instead of an SSH prompt
+
+**Added 2026-08-21.** `.claude/mcp/tradingbox_server.py`, wired up in `.mcp.json`, gives Claude
+seven named trading-box operations instead of an open shell. Read the bots, read a version,
+tail a log, read a day's decisions, preview a promote — and two guarded writes.
+
+🔴 **The point is what is ABSENT.** No hard kill. No fleet kill. No lock deletion. No account
+edit, no password change, no user management, no agent start, no restart. `taskkill /f /im
+python.exe` killed the live bot for three days and is forbidden by a rule in a document —
+which is a rule that lives in somebody's memory. **It is not on the menu, so it cannot be
+reached by a typo, a bad quote, or a confused agent.**
+
+⚠ **It is NOT a second implementation of anything, and that was the constraint that shaped it.**
+Every live fact comes from the Command Center backend, which already owns the SSH, the MT5
+reads and the promote logic. The one thing read locally is the committed decision ledger,
+because that is a file in this repo. ⚠ **So the app must be RUNNING for six of the seven
+tools** — the ledger one keeps working without it, which is the right half to keep.
+
+**Every reply carries whether the question was actually ASKED.** A tool that cannot reach the
+app returns no payload at all, never a `running: false` — that is rule 1, and it is the defect
+that let a dead terminal read as a quiet market for 50 minutes with every dashboard green.
+
+⚠ **The two writes take a confirmation phrase naming the bot and the action** (`stop <bot>`,
+`promote <bot>`). **Say plainly what that is worth: a speed bump against a slip, not a wall
+against intent** — same honesty as the browser guard. Its value is that neither can happen as
+a side effect of a call that looked like a read. It is proven to refuse *before* the network,
+because a refusal that had already fired the request would be theatre and nothing in the
+returned text would show it.
+
+**Prove it rather than trusting it:** `python3 .claude/mcp/check_tradingbox.py`, and it is step
+5 of `run_all_tests.sh`. Watched RED by mutation three ways — dropping the stop guard reddens
+exactly the 18 stop assertions, making the cannot-ask reply leak a `running: false` reddens
+exactly the 4 unreachable cases, and slipping a kill tool onto the menu reddens exactly the two
+menu assertions.
+
+⚠ **Two labelling traps it exists to stop repeating, both MEASURED 2026-08-21.** The app's
+health payload reports an MT5 account that is the **data agent's** terminal, not the live
+bot's — read one as the other and you conclude the live bot changed accounts. And the Bots
+page shows every watchdog as **STOPPED** while the box reports `Ready / Enabled / Last Result
+0`: the snapshot collapses schtasks' "Ready" onto the same word as a stopped task, so a
+healthy dead-man switch reads as an off one. 🔴 **The page is still wrong — only this server's
+answer is corrected.** Fixing the page is an open decision, not something this change did.
+
+⚠ **The MCP wire is hand-rolled on the standard library**, because the official SDK needs
+Python 3.10 and every interpreter here is 3.9.6. Adding a tool must not mean adding a runtime.
+
+---
+
 ## VPS Deploy Workflow
 
 **Pulling does NOT change what a bot trades — promoting does.** Since 2026-08-03 a live bot

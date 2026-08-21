@@ -73,7 +73,7 @@ echo ""
 # `mpc_sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
 # else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
 # conversation, and the lever is coverage rather than scheduling.
-echo "  [1/4] engines / backtest / algos / strategies / smart-money ..."
+echo "  [1/5] engines / backtest / algos / strategies / smart-money ..."
 if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q $PYTEST_PARALLEL; then
   pass "root suite"
 else
@@ -85,7 +85,7 @@ echo ""
 # ~45s across 12 cores, 1,051 tests. MUST be run from its own directory: its pytest.ini carries the
 # `-m "not integration"` interlock that keeps the destructive live-VPS suite deselected, and a
 # `-m` from anywhere else would replace it.
-echo "  [2/4] command-center backend ..."
+echo "  [2/5] command-center backend ..."
 if (cd command-center/backend && ./.venv/bin/python -m pytest -q $PYTEST_PARALLEL); then
   pass "backend suite"
 else
@@ -101,7 +101,7 @@ echo ""
 # gate takes the half that needs nothing running — `tsc`, which is the check that would actually
 # have caught a broken build — and the browser tests stay a deliberate `./start.sh` then
 # `npm test` in `command-center/frontend`.
-echo "  [3/4] frontend typecheck ..."
+echo "  [3/5] frontend typecheck ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && npx --no-install tsc --noEmit); then
     pass "frontend typecheck (tsc --noEmit)"
@@ -122,7 +122,7 @@ echo ""
 # under it, deploying a strategy or rewriting a broker account row. It is in the suite because
 # a check nobody runs is not a check — and because the guard is a DENY-list, so a new live route
 # is allowed until somebody adds it here.
-echo "  [4/4] browser guard ..."
+echo "  [4/5] browser guard ..."
 if command -v node >/dev/null 2>&1; then
   if node .claude/mcp/check_browser_guard.js; then
     pass "browser guard (34 cases, refusals and allowances)"
@@ -131,6 +131,20 @@ if command -v node >/dev/null 2>&1; then
   fi
 else
   fail "browser guard - node not found on PATH"
+fi
+
+echo ""
+
+# ── 5. Trading-box server ─────────────────────────────────────────────────────
+# Milliseconds. `.claude/mcp/tradingbox_server.py` is the fixed menu of trading-box operations
+# Claude is given instead of an open SSH prompt. This asserts the dangerous forms are still
+# absent from that menu, that a guarded operation refuses BEFORE touching the network, and
+# that an unreachable Command Center reads as "cannot ask" rather than as "the bot is stopped".
+echo "  [5/5] trading-box server ..."
+if "$PYTHON" .claude/mcp/check_tradingbox.py; then
+  pass "trading-box server (menu, refusals, cannot-ask)"
+else
+  fail "trading-box server (menu, refusals, cannot-ask)"
 fi
 
 echo ""
