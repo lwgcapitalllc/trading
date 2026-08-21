@@ -16,14 +16,20 @@ Two groups.
 WATCHED RED BY MUTATION — the measured map, which mutation reddens which cases
 -----------------------------------------------------------------------------
 Rule 12: a test proves nothing until it has been watched go red for the right reason. All
-19 cases below were, and every one of them is covered. ⚠ THE MAP WAS RUN, NOT REASONED —
-three of the entries first written here from inspection were WRONG, each in the direction
-of claiming a mutation was more surgical than it is.
+21 cases below were. ⚠ THE MAP WAS RUN, NOT REASONED — several entries first written here
+from inspection were WRONG, each in the direction of claiming a mutation was more surgical
+than it is.
 
   PreToolUse half
-    drop its ceiling test (`size <= CEILING`)     -> 1 red: under the ceiling + big addition
-    drop its growth test (`delta <= 0`)           -> 3 red: the three "must stay silent" edits
-    make `edit_delta` always report 0             -> 2 red: the Edit and Write that GROW
+    drop the ceiling test (`after <= CEILING`)    -> 1 red: under the ceiling + big addition
+    drop the growth test (`delta <= 0`)           -> 2 red: the Edit shrink and the neutral edit
+    make `edit_delta` always report 0             -> 4 red: both GROW cases, the crossing,
+                                                     and the create
+    revert the crossing fix (judge the size the
+      file IS rather than the size it will be)    -> 2 red: the crossing and the create — the
+                                                     two shapes that were silent until
+                                                     2026-08-21
+    skip a missing file instead of counting 0     -> 1 red: the create
     remove the `/deployed/` escalation            -> 1 red: deployed snapshot
     empty `REMINDERS`                             -> 5 red: live path, both Pine cases, the
                                                      real engine, the real strategy
@@ -31,14 +37,21 @@ of claiming a mutation was more surgical than it is.
   PostToolUse half
     remove the dispatch (the half never runs)     -> 4 red: heredoc growth, ceiling crossing,
                                                      no-nag, new file
-    drop its growth test (`s > head[p]`)          -> 4 red: sed shrink, under-ceiling Bash,
+    drop the growth test (`s > head[p]`)          -> 4 red: sed shrink, under-ceiling Bash,
                                                      touched-nothing, AND the new-file case.
                                                      The fixture's oversized file is
                                                      unchanged in all four, so warning on
                                                      size alone fires on it every time
-    drop its ceiling test                         -> 1 red: under-ceiling Bash
+    drop the ceiling test                         -> 1 red: under-ceiling Bash
     drop the session memory (`p not in seen`)     -> 1 red: no-nag
     count a missing HEAD version as huge, not 0   -> 1 red: the new oversized file
+
+⚠ ONE CASE IS DOUBLE-GUARDED and no SINGLE mutation reddens it: "oversized + Write that
+SHRINKS it". Dropping the growth test alone leaves it silent, because the replacement is
+tiny and the ceiling test then catches it; dropping the ceiling test alone leaves it silent
+because the delta is negative. Dropping BOTH reddens it (measured, along with three other
+silences). It is kept rather than deleted because a full-file replacement reaches
+`edit_delta` down a different branch from an Edit, and that branch is worth pinning.
 
 Both directions are asserted throughout, so a guard that always warned dies on the silence
 cases and a guard that never warned dies on the warning ones. Neither can pass this file.
@@ -100,6 +113,22 @@ CASES = [
         "under the ceiling + big addition — must stay silent",
         {"file_path": SMALL, "old_string": "x", "new_string": "x" * 5000},
         lambda s: "ceiling" not in s,
+    ),
+    # Added 2026-08-21 with the crossing fix. Until then the check read the size BEFORE the
+    # edit, so both of these were silent — and every one of the 11 oversized docs got over
+    # the line through exactly this shape.
+    (
+        "under the ceiling + an edit that CROSSES it — warns at the one preventable moment",
+        {"file_path": SMALL, "old_string": "x", "new_string": "x" * 40_000},
+        lambda s: "CROSSING" in s and "still be prevented" in s,
+    ),
+    (
+        "a Write that CREATES an oversized CLAUDE.md",
+        {
+            "file_path": "/Users/alwg/trading/engines/vwap/nosuchdir/CLAUDE.md",
+            "content": "q" * 50_000,
+        },
+        lambda s: "CREATES" in s and "already over" in s,
     ),
     (
         "live path still gets its own reminder",

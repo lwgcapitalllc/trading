@@ -94,22 +94,55 @@ def oversized_claude_md(path: str, tool_input: dict) -> str:
     guard people learn to dismiss, and a dismissed guard is worth less than none, because
     the next reader assumes silence means checked. So a trim now passes in silence and only
     an edit that ADDS bytes to an already-oversized file has to justify itself.
+
+    🔴 It judges the size the file is ABOUT TO BE, not the size it is, and that changed on
+    2026-08-21 after an audit of all 33 CLAUDE.md files over their full history. Until then
+    it read the size BEFORE the edit — so on the edit that took a doc OVER the ceiling the
+    doc was still under it, and this said nothing. **It only ever complained about files
+    that were already a problem, which is the moment it can do least good.** MEASURED: every
+    one of the 11 oversized docs crossed from below and NOT ONE was warned at the crossing;
+    two of those crossings happened with this guard live and silent (the Pine strategy
+    sources 38,766 -> 69,605 in one commit on 2026-08-16, and loss_recovery 26,745 -> 41,391
+    on 2026-08-21). Adding the pending edit's own bytes is the whole fix, and it costs no
+    extra nagging: a file well under the ceiling still has to be handed an edit big enough
+    to cross before it hears anything.
+
+    ⚠ A file that does not exist yet counts as 0 bytes rather than being skipped, so a Write
+    that CREATES an oversized CLAUDE.md warns. That matches what the PostToolUse half does
+    with a doc that has no committed version, deliberately — the two halves disagreeing
+    about what a new file means is how somebody ends up trusting the quieter one.
     """
     if os.path.basename(path) != "CLAUDE.md":
         return ""
     try:
         size = os.path.getsize(path)
     except OSError:
-        return ""  # a new file, or unreadable — nothing to complain about
-    if size <= CLAUDE_MD_CEILING_BYTES:
-        return ""
+        size = 0  # does not exist yet — this edit is creating it
     delta = edit_delta(tool_input)
     if delta <= 0:
         return ""  # shrinking or neutral — this is the direction we want, say nothing
+    after = size + delta
+    if after <= CLAUDE_MD_CEILING_BYTES:
+        return ""
+    ceiling = CLAUDE_MD_CEILING_BYTES // 1000
+    if size > CLAUDE_MD_CEILING_BYTES:
+        opening = (
+            f"This CLAUDE.md is already {size // 1000} KB, over the {ceiling} KB ceiling, "
+            f"and this edit adds roughly {delta} more bytes."
+        )
+    elif size == 0:
+        opening = (
+            f"This edit CREATES a CLAUDE.md of roughly {after // 1000} KB, already over the "
+            f"{ceiling} KB ceiling."
+        )
+    else:
+        opening = (
+            f"This CLAUDE.md is {size // 1000} KB and this edit would take it to roughly "
+            f"{after // 1000} KB, CROSSING the {ceiling} KB ceiling. This is the one moment "
+            "the crossing can still be prevented."
+        )
     return (
-        f"This CLAUDE.md is already {size // 1000} KB, over the "
-        f"{CLAUDE_MD_CEILING_BYTES // 1000} KB ceiling, and this edit adds roughly "
-        f"{delta} more bytes. Every one of them loads into context whenever anyone works in "
+        opening + " Every byte of it loads into context whenever anyone works in "
         "this subsystem. Before adding: is what you are writing a RULE, or is it the story "
         "of what happened today? The story belongs in the sibling BUILD_NOTES/HISTORY file "
         "with a pointer left behind. Two hard rules if you drain some while you are here — "

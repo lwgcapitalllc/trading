@@ -158,9 +158,9 @@ echo ""
 # rewritten by any other means.
 echo "  [6/7] documentation-size guard ..."
 if "$PYTHON" .claude/hooks/check_guard.py; then
-  pass "documentation-size guard (19 cases, warnings and silences)"
+  pass "documentation-size guard (21 cases, warnings and silences)"
 else
-  fail "documentation-size guard (19 cases, warnings and silences)"
+  fail "documentation-size guard (21 cases, warnings and silences)"
 fi
 
 echo ""
