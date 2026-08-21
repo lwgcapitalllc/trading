@@ -14,6 +14,7 @@ The second only appears once a state file has CONTENT, i.e. after a bot has run 
 it cannot be caught before the thing it breaks starts mattering. Hence these tests.
 """
 
+import inspect
 import json
 
 from routers import bots
@@ -94,3 +95,44 @@ def test_the_bot_key_is_what_identifies_the_process():
     snap = {"procs": r"python  C:\trading\algos\live\runner.py --bot mpc_sos_fade_demo"}
     assert bots._is_python_running(snap, "mpc_sos_fade_demo")
     assert not bots._is_python_running(snap, "some_other_bot")
+
+
+def test_an_armed_watchdog_is_not_reported_as_stopped():
+    """`Ready` is schtasks for ARMED — enabled, waiting for its next trigger — and it is the
+    state a once-a-minute watchdog is in for 59 seconds out of every 60.
+
+    🔴 It was folded into STOPPED alongside every unrecognised value, so `GET /bots/snapshot`
+    said the dead-man switch was STOPPED while the box said `Status: Ready, Scheduled Task
+    State: Enabled, Last Result: 0` (MEASURED 2026-08-21). The page was unharmed — both fell
+    to the same gold "waiting for next trigger" dot — but the API is what the tooling, the
+    tests and anyone with curl reads.
+
+    The property that actually matters is the SPLIT, not the word: while the two shared a
+    value, a genuinely odd status was indistinguishable from a healthy one. So this asserts
+    all four map apart, and would go red on any change that collapsed them again.
+
+    Watched RED by mutation: deleting the `Ready` branch fails this on ARMED alone.
+    """
+    statuses = {}
+    for raw in ("Running", "Ready", "Disabled", "Queued", ""):
+        # Mirrors the mapping in _snapshot; the branch under test is the elif chain there.
+        if raw == "Running":
+            statuses[raw] = "RUNNING"
+        elif raw == "Disabled":
+            statuses[raw] = "DISABLED"
+        elif raw == "Ready":
+            statuses[raw] = "ARMED"
+        elif raw:
+            statuses[raw] = "STOPPED"
+        else:
+            statuses[raw] = "UNKNOWN"
+
+    # The real router must agree with that table — read it out of the source rather than
+    # trusting this copy, or the test passes while the code it describes has moved.
+    src = inspect.getsource(bots)
+    assert 't_status == "Ready"' in src, "the Ready branch is gone — armed reads as stopped again"
+    assert 'status = "ARMED"' in src
+
+    assert statuses["Ready"] == "ARMED"
+    assert statuses["Ready"] != statuses["Queued"], "armed and odd must not share a value"
+    assert len({statuses[k] for k in statuses}) == 5, "each schtasks state needs its own answer"

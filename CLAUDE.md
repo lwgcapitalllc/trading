@@ -285,13 +285,17 @@ exactly the 18 stop assertions, making the cannot-ask reply leak a `running: fal
 exactly the 4 unreachable cases, and slipping a kill tool onto the menu reddens exactly the two
 menu assertions.
 
-⚠ **Two labelling traps it exists to stop repeating, both MEASURED 2026-08-21.** The app's
-health payload reports an MT5 account that is the **data agent's** terminal, not the live
-bot's — read one as the other and you conclude the live bot changed accounts. And the Bots
-page shows every watchdog as **STOPPED** while the box reports `Ready / Enabled / Last Result
-0`: the snapshot collapses schtasks' "Ready" onto the same word as a stopped task, so a
-healthy dead-man switch reads as an off one. 🔴 **The page is still wrong — only this server's
-answer is corrected.** Fixing the page is an open decision, not something this change did.
+⚠ **One labelling trap it exists to stop repeating, MEASURED 2026-08-21.** The app's health
+payload reports an MT5 account that is the **data agent's** terminal, not the live bot's —
+read one as the other and you conclude the live bot changed accounts. This server labels
+both; the payload still names neither.
+
+⚠ **A second trap was found the same day and FIXED rather than documented around** — see
+`command-center/backend/CLAUDE.md`. ⚠ **The correction to how it was first written down is
+the part worth keeping**: it was reported here as *"the Bots page shows every watchdog as
+STOPPED"*, and the page never did. Both values fell to the same gold *"waiting for next
+trigger"* dot, so nothing a person looked at was wrong. **The API was the only thing saying
+it, and "what the page shows" and "what the endpoint returns" had been read as one claim.**
 
 ⚠ **The MCP wire is hand-rolled on the standard library**, because the official SDK needs
 Python 3.10 and every interpreter here is 3.9.6. Adding a tool must not mean adding a runtime.

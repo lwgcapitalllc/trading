@@ -153,7 +153,16 @@ def test_every_change_names_the_tree_it_touched():
     trees = bv.trees_for("mpc_sos_fade")
     r = bv.compare("mpc_sos_fade", "HEAD~50", {})
     assert r["changes"], "no changes to check — widen the range"
+    assert any(not c.get("merge") for c in r["changes"]), "only merges in range — widen it"
     for c in r["changes"]:
+        if c.get("merge"):
+            # A merge prints no file list under `--name-only`, so it names no tree BY
+            # CONSTRUCTION. It stays in the list because the headline count includes it, and
+            # it carries `merge: True` so an empty `areas` here is a stated fact rather than a
+            # failed read. ⚠ Asserting the flag, not just skipping: without it this branch
+            # would also swallow the widened-pathspec bug the test below exists to catch.
+            assert c["areas"] == [], f"{c['commit']} is flagged a merge but named trees"
+            continue
         assert c["areas"], f"{c['commit']} names no tree: {c['subject']}"
         assert set(c["areas"]) <= set(trees), f"{c['commit']} names a foreign tree: {c['areas']}"
 

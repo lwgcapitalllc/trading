@@ -669,6 +669,71 @@ its only route back. A merely **stale** tunnel (ports bound, agents silent) is n
 reading has a real false positive: an agent driving a heavy backtest stops answering `/health` while
 working perfectly. The NT8 agent does exactly this under pywinauto.
 
+### A merge commit named no tree, and the fix that was BACKED OUT is the useful half (2026-08-21)
+
+`git log --name-only` prints **no file list for a merge commit**, so a merge in range reached the
+change list with `areas == []`. That field is what separates *this bot's own rules changed* from
+*a shared engine moved underneath it*, and an empty one reads as the second. It surfaced as an
+intermittent suite failure rather than a report, because whether it fires depends on a merge
+happening to sit inside the 50-commit window — it entered on 2026-08-20 and would have left on
+its own.
+
+🔴 **The first fix was `--no-merges`, and it was WRONG in a way nothing in this service could
+show.** Excluding merges from the change list made the list disagree with the headline count, so
+`version_at` needed the same flag — and that is where it stops being a tidy-up.
+**`algos/tools/promote.py` stamps `strategy_version` into a live bot's frozen `deployed.json`
+using the same `rev-list --count`.** Changing what counts as a version HERE and not THERE would
+have put two different numbers for "the version" into the product, one of them baked onto a
+running bot. MEASURED across the live bot's trees: 516 commits, 512 excluding merges.
+
+⚠ **The standing lesson is about where a definition lives.** This module's own docstring already
+warned that `trees_for` mirrors `promote.py::repo_trees` and the two must not drift — the
+counting RULE is the same kind of shared definition and had no such warning. A change that looks
+local because it is one line in one file is not local when another program computes the same
+number from the same git history.
+
+**What shipped instead:** the record carries `merge: true`, derived from `%p` in the log format.
+Merges stay in the list, so the count and the list still agree; the one row allowed to name no
+tree now says why, rather than leaving a reader to infer it from an empty field. The test asserts
+a flagged merge names NO tree and that at least one non-merge is in range — so it cannot be
+satisfied by flagging everything, and still catches the widened-pathspec bug it was written for.
+Watched RED by mutation: forcing the flag false reddens exactly the original assertion.
+
+### An ARMED watchdog stopped reporting itself as STOPPED (2026-08-21)
+
+`schtasks` answers **`Ready`** for a task that is enabled and waiting for its next trigger — the
+state a once-a-minute watchdog is in for 59 seconds out of every 60. The snapshot's status chain
+handled `Running` and `Disabled` by name and swept **everything else into `STOPPED`**, so
+`GET /bots/snapshot` reported the dead-man switch as STOPPED. MEASURED the same day, the box said
+`Status: Ready, Scheduled Task State: Enabled, Last Run 5 min ago, Last Result: 0`.
+
+⚠ **Nothing a person looked at was wrong, and that is the part worth being precise about.** Both
+`STOPPED` and any other unrecognised value fell to the same gold *"waiting for next trigger"* dot
+in `JobDot` and `JobPill`, with the correct tooltip. **The API was the only thing saying it** — and
+the API is what the tooling, the tests and anyone with `curl` reads. This was first written down as
+*"the Bots page shows the watchdog as STOPPED"*, which was false; *what the page shows* and *what
+the endpoint returns* had been read as one claim.
+
+🔴 **The defect was the SHARED VALUE, not the word.** While a healthy armed task and a genuinely odd
+one both answered `STOPPED`, no reader could tell them apart — this repo's oldest failure shape,
+one step down from *never let "no" and "cannot ask" be the same value*. `Ready` now maps to its own
+`ARMED`, and `STOPPED` means something unrecognised and worth a look.
+
+⚠ **Every visual is deliberately UNCHANGED.** `ARMED` falls through the same branch `STOPPED` did,
+onto the same gold dot; `allJobsOk` still counts only `RUNNING`, so the tile reads exactly as it did
+yesterday. This was a correctness fix to the payload, and rendering it differently is a separate
+decision nobody has made.
+
+Pinned by `tests/test_bots_snapshot_parse.py::test_an_armed_watchdog_is_not_reported_as_stopped`,
+which asserts all five states map apart AND reads the branch out of the router's own source — so it
+goes red if the mapping moves rather than passing against a copy of itself. Watched RED by mutation:
+deleting the `Ready` branch fails it on that assertion alone.
+
+**Also corrected that day:** two docstrings on `POST /bots/{bot_name}/stop` still described the
+`wmic` hard kill it stopped performing on 2026-08-07. `_kill_bot` asks via `stop.request` and
+escalates only for a bot that ignored it — the docstrings said otherwise for two weeks, and a reader
+would reasonably have avoided the route in favour of the graceful path it already was.
+
 **`schtasks /run` is not evidence.** It reports SUCCESS for a task Windows refuses to launch (see
 `algos/CLAUDE.md` → the stored-password trap), so every fire is followed by a re-probe and the
 outcome is logged either way — `nt8-started` or `nt8-fired-but-still-down`. Silence after a fire

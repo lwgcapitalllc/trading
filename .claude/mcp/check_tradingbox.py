@@ -154,8 +154,12 @@ check("a missing ledger day reports no records count", "records" not in out)
 
 # ── 5. the watchdog word is explained, never passed through bare ─────────────
 check(
-    "an armed watchdog is not reported as simply stopped",
-    "armed" in tb._WATCHDOG_MEANING["STOPPED"],
+    "an armed watchdog has its own answer",
+    "healthy" in tb._WATCHDOG_MEANING.get("ARMED", ""),
+)
+check(
+    "armed and odd do not share an explanation",
+    tb._WATCHDOG_MEANING.get("ARMED") != tb._WATCHDOG_MEANING.get("STOPPED"),
 )
 check(
     "a switched-off watchdog is called out",

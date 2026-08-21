@@ -190,7 +190,7 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
     # contain a stray separator.
     out = _git(
         "log",
-        "--format=%x1e%h\x1f%s\x1f%cs",
+        "--format=%x1e%h\x1f%s\x1f%cs\x1f%p",
         "--name-only",
         f"{from_commit}..{to_commit}",
         "--",
@@ -205,9 +205,19 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
             continue
         header, _, files = record.partition("\n")
         parts = header.split("\x1f")
-        if len(parts) != 3:
+        if len(parts) != 4:
             continue
-        sha, subject, date = parts
+        sha, subject, date, parents = parts
+        # 🔴 A MERGE prints no file list under `--name-only`, so it reached this list naming no
+        # tree — and `areas` is the field the banner uses to separate *this bot's own rules
+        # changed* from *a shared engine moved underneath it*. An empty one reads as the second.
+        # It is flagged rather than dropped: the count beside this list comes from `version_at`,
+        # which counts merges, and silently removing rows here would make the headline number
+        # and the list disagree. ⚠ **Excluding merges from BOTH was tried and backed out** —
+        # `algos/tools/promote.py` stamps `strategy_version` into a live bot's frozen snapshot
+        # using the same `rev-list --count`, so changing what counts as a version here alone
+        # would have put two different numbers for "the version" into the product.
+        is_merge = len(parents.split()) > 1
         # ⚠ The `tree + "/"` test is KEPT even though the pathspec above already filters git's
         # output. A pathspec of `engines` also matches a top-level FILE named `engines`, which
         # this test excludes — dropping it would quietly widen what counts as touching a tree.
@@ -224,6 +234,9 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
                 "subject": subject,
                 "date": date,
                 "areas": areas,
+                # The ONLY row allowed to name no tree, and it says so rather than leaving the
+                # reader to infer it from an empty list.
+                "merge": is_merge,
             }
         )
     return changes

@@ -20,7 +20,7 @@ Global control actions (all bots):
 
 Per-bot control actions:
   POST /bots/{bot_name}/start          — schtasks /run /tn {task_name}
-  POST /bots/{bot_name}/stop           — wmic terminate by commandline match
+  POST /bots/{bot_name}/stop           — ASKS via stop.request, escalates only if ignored
   POST /bots/{bot_name}/restart        — per-bot stop + 3s + start
 """
 
@@ -815,6 +815,18 @@ def get_snapshot():
             status = "RUNNING"
         elif t_status == "Disabled":
             status = "DISABLED"
+        elif t_status == "Ready":
+            # 🔴 "Ready" is schtasks for ARMED — enabled, and waiting for its next trigger.
+            # It is the normal state of a once-a-minute watchdog for 59 seconds out of every
+            # 60, and it used to be folded into STOPPED with every other unrecognised value.
+            # The UI was unharmed (both fell to the same gold "waiting for next trigger" dot),
+            # but the API said the dead-man switch was STOPPED, and the API is what every
+            # other reader gets: the tooling, the tests, and anyone who curls it.
+            # ⚠ The cost was not cosmetic — folding them together meant a genuinely ODD
+            # status was indistinguishable from a healthy one, which is this repo's oldest
+            # defect shape. MEASURED 2026-08-21: SYS_DEADMAN reported STOPPED here while the
+            # box reported `Status: Ready, Scheduled Task State: Enabled, Last Result: 0`.
+            status = "ARMED"
         elif t_status:
             status = "STOPPED"
         else:
@@ -2196,7 +2208,13 @@ def start_bot(bot_name: str):
 
 @router.post("/{bot_name}/stop")
 def stop_bot(bot_name: str):
-    """Kill only the python.exe process whose commandline contains this bot's key."""
+    """Stop ONE bot by ASKING — see `_kill_bot`, which is named for what it used to do.
+
+    ⚠ This docstring said "kill only the python.exe process" until 2026-08-21, describing the
+    hard kill this route stopped performing on 2026-08-07. It is the exact shape of rule 7 —
+    a label is a claim about code somewhere else — and it reads as a reason to avoid the
+    route in favour of the graceful path it already is.
+    """
     _, bot_key = _resolve_bot(bot_name)
     try:
         _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert

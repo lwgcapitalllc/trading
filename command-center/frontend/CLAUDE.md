@@ -3133,3 +3133,18 @@ Each row in `StrategiesTab` has a Deploy/Compile/Run action driven by the **cont
 
 **"Needs scan" pill (2026-07-23).** Separate from the deploy/compile sync above — it reads `Strategy.needs_scan` (on the strategy row itself, not `StrategyFileSyncStatus`), which the backend computes live (source hash / meta mtime vs last scan). When true, `StrategyRow`'s Status cell shows a clickable amber **● Needs scan** pill (calls `onScan` → `useScanStrategies().mutate()`, spins while pending) ABOVE the deploy/compile pills. It renders for ALL runners, and for a Python strategy — which has no deploy/compile step, so its Status cell was otherwise empty — it's the only status pill. `RunBacktestModal` shows a matching amber banner when `strategy.needs_scan` ("Parameters may be out of date … click Scan Strategies, then reopen"): the panel form is built from the last-scanned schema, so editing a Python `config.py`/meta without re-scanning silently runs on the OLD params (the bug that ran mpc_sos_fade on stale divergence-armed defaults). This is the Python analog of the MT5/NT8 deploy/compile badges.
 
+---
+
+## The scheduled-job status gained an ARMED value (2026-08-21)
+
+`JobStatus.status` now carries `ARMED` alongside `RUNNING` / `STOPPED` / `DISABLED` / `UNKNOWN`.
+It is what the backend returns for a scheduled task that is enabled and waiting for its next
+trigger — the normal state of a once-a-minute watchdog. Full story, and why the payload was wrong
+while the page was right, in `command-center/backend/CLAUDE.md`.
+
+⚠ **No component changed, and that is deliberate.** `ARMED` falls through the same else-branch
+`STOPPED` did in both `JobDot` (Bots) and `JobPill` (Overview), onto the same gold *"waiting for
+next trigger"* dot with the same tooltip — which was already the correct thing to show. `allJobsOk`
+still counts only `RUNNING`, so the summary tile is unchanged too. **The type learned a value the
+UI already handled correctly**; rendering armed differently from unrecognised is a separate decision
+nobody has made.

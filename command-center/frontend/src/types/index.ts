@@ -149,7 +149,11 @@ export interface JobStatus {
   name: string
   schedule: string
   /** DISABLED is distinct from STOPPED: switched off deliberately, not broken. */
-  status: 'RUNNING' | 'STOPPED' | 'DISABLED' | 'UNKNOWN'
+  /** ARMED = enabled and waiting for its next trigger (schtasks "Ready") — the normal
+   *  state of a once-a-minute watchdog. It renders exactly like STOPPED did, on the same
+   *  gold "waiting for next trigger" dot; the split exists so a genuinely odd status is
+   *  no longer indistinguishable from a healthy one. */
+  status: 'RUNNING' | 'ARMED' | 'STOPPED' | 'DISABLED' | 'UNKNOWN'
 }
 
 export interface ProcessStatus {

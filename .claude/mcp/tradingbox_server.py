@@ -130,11 +130,12 @@ def _api(path: str, method: str = "GET", timeout: int = TIMEOUT_FAST, body=None)
 # Reporting that word onward unexplained would tell a reader their dead-man switch is off.
 _WATCHDOG_MEANING = {
     "RUNNING": "executing right now",
+    "ARMED": "enabled and waiting for its next trigger - the healthy state",
     "DISABLED": "SWITCHED OFF - somebody disabled it; this is the one that needs attention",
     "STOPPED": (
-        "armed, or stopped - the app cannot tell these apart. It maps schtasks' 'Ready' "
-        "(enabled and waiting for its next run) onto the same word as a stopped task. A "
-        "healthy watchdog shows this. Only DISABLED means switched off."
+        "an unrecognised schtasks state - not armed, not running, not disabled. Worth "
+        "looking at, and impossible to see before 2026-08-21 because a healthy armed task "
+        "reported the same word."
     ),
     "UNKNOWN": "the app could not read the task list",
 }
