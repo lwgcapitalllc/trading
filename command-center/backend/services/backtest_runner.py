@@ -715,8 +715,15 @@ async def run_backtest_job(
         }
     )
 
+    # A python run happens IN THIS PROCESS — there is no agent to be polite to, and `job_status`
+    # is a dict read behind a lock. Polling it every 5s meant the progress bar could only move
+    # 5 seconds at a time however finely the runner reported, so a smooth number arrived at the
+    # screen in steps. Everything else here is an HTTP call to a machine over a tunnel and keeps
+    # the original interval.
+    poll_interval = 1 if runner == "python" else _POLL_INTERVAL
+
     while True:
-        await asyncio.sleep(_POLL_INTERVAL)
+        await asyncio.sleep(poll_interval)
 
         # Stop pressed (or the row ended some other way) — leave the row and the progress file
         # exactly as the canceller wrote them. Anything written from here would be a report on

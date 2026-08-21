@@ -412,4 +412,72 @@ test.describe('Backtest detail — captions and rules', () => {
 
     expect([...logUrls], 'two distinct line counts means two polls of one endpoint').toHaveLength(1)
   })
+  /**
+   * 🔴 THE PROGRESS BAR MAY NEVER FALL BACKWARDS ON A RUN THAT DID NOT SLOW DOWN.
+   *
+   * `/lab/progress` is ONE file for the whole app — it describes whatever job wrote it last. So a
+   * second backtest, an optimization or a sweep starting anywhere overwrites it, this page stops
+   * recognising the job id, and it used to substitute a zero: the bar emptied, the message fell
+   * back to "Starting…" and the elapsed clock restarted, on a run still going at full speed.
+   *
+   * WATCHED RED (2026-08-20): against the old `progressMatches ? pct : 0`, the third step below
+   * reported `0%`. It reports the held `40%` now. MUTATION: delete the `ownProgressRef` block in
+   * BacktestDetail and put the ternary back, and this goes red on that step alone.
+   *
+   * ⚠ It asserts the page holds THIS RUN'S last report — never that it invents progress. The
+   * fourth step is the other half: a real new number for this run still lands immediately.
+   */
+  test('🔴 another job stealing the shared progress file cannot empty this bar', async ({
+    page,
+  }) => {
+    const run = await anyCompleteRun()
+    const detail = await getJson<BacktestDetail>(`/backtests/runs/${run.run_id}`)
+    await page.route(
+      (u) => u.pathname === `/api/backtests/runs/${run.run_id}`,
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ...detail, status: 'running' }),
+        })
+    )
+
+    // Driven explicitly rather than by a self-advancing list: the page fires several progress
+    // polls while it settles, and a per-request series is consumed before the first assertion.
+    let served = { pct: 20, mine: true }
+    await page.route(
+      (u) => u.pathname.endsWith('/lab/progress'),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            job_id: served.mine ? run.run_id : 'someone_elses_job',
+            status: 'running',
+            pct: served.pct,
+            message: 'Testing bar 84,384 of 156,721',
+            started_at: String(Date.now() / 1000 - 95),
+            updated_at: String(Date.now() / 1000),
+            heartbeat_age_seconds: 0,
+          }),
+        })
+    )
+
+    await page.goto(`/backtests/runs/${run.run_id}`)
+    const pct = page.getByTestId('run-progress-pct')
+    await expect(pct).toHaveText('20%', { timeout: 15_000 })
+
+    served = { pct: 40, mine: true }
+    await expect(pct).toHaveText('40%', { timeout: 15_000 })
+
+    // Another job owns the file. This page has nothing new to say about its own run.
+    served = { pct: 0, mine: false }
+    await page.waitForTimeout(5_000)
+    await expect(pct, "held this run's last report rather than showing another job's").toHaveText(
+      '40%'
+    )
+
+    served = { pct: 55, mine: true }
+    await expect(pct).toHaveText('55%', { timeout: 15_000 })
+  })
 })

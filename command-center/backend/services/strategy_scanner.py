@@ -377,6 +377,11 @@ def _mql5_display_name(stem: str, source: str) -> str:
 # These drive the editor UI only — never the compiled strategy or the source hash.
 _PARAM_META_KEYS = (
     "label",
+    # `short` is the SAME setting named in as few words as possible, for surfaces that RECORD a
+    # run rather than teach it — today the finished-run params panel, in a 248px rail. `label`
+    # stays the teaching name the editor shows. ⚠ Optional: a param without one falls back to
+    # `label`, so a strategy that never writes any is unaffected.
+    "short",
     "desc",
     "unit",
     "core",

@@ -653,6 +653,9 @@ export interface ParamSchemaEntry {
   choices?: string[]
   // Editor metadata overlaid from a strategy's companion <Strategy>.meta.json (optional).
   label?: string // friendly label, preferred over display_name
+  // The same setting in as few words as possible, for surfaces that RECORD a run rather
+  // than teach it — the finished-run params panel. Falls back to `label`.
+  short?: string
   desc?: string // plain-English explanation for the explainer panel
   unit?: string // e.g. "× ATR", "pips", "R"
   core?: boolean // essential knob — shown in the Essentials card up front

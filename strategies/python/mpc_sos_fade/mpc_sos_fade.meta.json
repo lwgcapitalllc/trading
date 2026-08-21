@@ -30,6 +30,7 @@
       "core": true,
       "widget": "toggle",
       "label": "Arm on RSI divergence",
+      "short": "Arm on divergence",
       "options": {
         "off": "Ignore",
         "on": "Arms setups"
@@ -43,6 +44,7 @@
       "core": true,
       "widget": "toggle",
       "label": "Arm on liquidity sweep",
+      "short": "Arm on sweep",
       "options": {
         "off": "Ignore",
         "on": "Arms setups"
@@ -53,6 +55,7 @@
       "name": "aplus_window",
       "group": "What arms a setup",
       "label": "Max time: sweep → SOS (minutes)",
+      "short": "Sweep → SOS window",
       "unit": "minutes",
       "desc": "How long a stop run stays valid while it waits for structure to confirm. 4320 = 3 days.",
       "guide": [
@@ -65,6 +68,7 @@
       "group": "What arms a setup",
       "widget": "toggle",
       "label": "Trade A+ setups",
+      "short": "A+ setups",
       "options": {
         "off": "No A+",
         "on": "A+ on"
@@ -76,6 +80,7 @@
       "group": "What arms a setup",
       "widget": "toggle",
       "label": "Trade B-Leg setups",
+      "short": "B-Leg setups",
       "options": {
         "off": "No B legs",
         "on": "B legs on"
@@ -88,6 +93,7 @@
       "group": "What arms a setup",
       "widget": "toggle",
       "label": "Trade longs",
+      "short": "Longs",
       "options": {
         "off": "No longs",
         "on": "Longs on"
@@ -100,6 +106,7 @@
       "group": "What arms a setup",
       "widget": "toggle",
       "label": "Trade shorts",
+      "short": "Shorts",
       "options": {
         "off": "No shorts",
         "on": "Shorts on"
@@ -113,6 +120,7 @@
       "core": true,
       "widget": "toggle",
       "label": "Require an FVG in the zone",
+      "short": "Require an FVG",
       "options": {
         "off": "0.618 limit",
         "on": "Gap required"
@@ -128,6 +136,7 @@
       },
       "choices": ["Any", "Sweep + RSI div"],
       "label": "↳ No-FVG entries need",
+      "short": "No-FVG entries",
       "desc": "Which no-gap setups may still trade when a gap is not required. Any = all of them. Sweep + RSI div = only the ones with both signals behind the turn. Lab only — this setting is not on the TradingView chart."
     },
     {
@@ -136,6 +145,7 @@
       "core": true,
       "choices": ["FVG", "Order block", "Either", "FVG first", "Order block (no FVG)"],
       "label": "Zone the entry reads (lab only)",
+      "short": "Zone source",
       "desc": "Which kind of zone the entry price is read off. FVG is the shipped rule. The order-block modes were tested and did not earn their place; they are kept so anyone can re-check that. Lab only — only FVG exists on the TradingView chart.",
       "hidden": true
     },
@@ -144,6 +154,7 @@
       "group": "Entry zone",
       "widget": "toggle",
       "label": "Order block deeper than the entry → rest on the block",
+      "short": "Deeper order block",
       "options": {
         "off": "Off",
         "on": "Re-price deeper"
@@ -157,6 +168,7 @@
       "core": true,
       "widget": "toggle",
       "label": "Gap must sit fully past 0.5",
+      "short": "Gap past 0.5",
       "options": {
         "off": "Any gap",
         "on": "Past 0.5 only"
@@ -169,6 +181,7 @@
       "group": "Entry zone",
       "widget": "toggle",
       "label": "Gap must pre-date the zone",
+      "short": "Gap pre-dates zone",
       "options": {
         "off": "Any live gap",
         "on": "Only older gaps"
@@ -181,6 +194,7 @@
       "group": "Entry zone",
       "widget": "toggle",
       "label": "Gap on a fib → enter on the fib",
+      "short": "Gap on a fib",
       "options": {
         "off": "Gap edge",
         "on": "The fib level"
@@ -193,6 +207,7 @@
       "group": "Entry zone",
       "widget": "toggle",
       "label": "Floating gap → its own deep edge",
+      "short": "Gap deep edge",
       "options": {
         "off": "Off",
         "on": "Gap's far edge"
@@ -206,6 +221,7 @@
       "core": true,
       "widget": "toggle",
       "label": "Floating gap → nearest fib (either side)",
+      "short": "Nearest fib",
       "options": {
         "off": "Off",
         "on": "Nearest either side"
@@ -217,6 +233,7 @@
       "group": "Entry zone",
       "widget": "toggle",
       "label": "Floating gap → nearest fib shallower",
+      "short": "Nearest fib shallower",
       "options": {
         "off": "Off",
         "on": "Shallower fib only"
@@ -228,6 +245,7 @@
       "group": "Entry zone",
       "widget": "toggle",
       "label": "Allow Sniper Zone as entry confirmation (not supported)",
+      "short": "Sniper Zone entry",
       "options": {
         "off": "Off",
         "on": "On"
@@ -240,6 +258,7 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Risk % per trade",
+      "short": "Risk per trade",
       "unit": "% of balance",
       "step": 0.5,
       "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk.",
@@ -251,6 +270,7 @@
       "core": true,
       "custom_from": "exec_sl_custom",
       "label": "Stop fib level (deep side of 0.5)",
+      "short": "Stop fib level",
       "desc": "How far back the stop sits. 1.0 is the widest and safest; the tighter levels can put the stop almost on the entry.",
       "choices": ["0.618", "0.702", "0.786", "0.886", "1.0", "Custom"]
     },
@@ -259,6 +279,7 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Custom stop fib level",
+      "short": "Custom stop fib",
       "unit": "fib",
       "step": 0.001,
       "min": 0.001,
@@ -277,6 +298,7 @@
       "group": "Risk & stop",
       "widget": "toggle",
       "label": "Entries at 0.786 or deeper stop at 1.0",
+      "short": "Deep entry stop",
       "options": {
         "off": "Stop {exec_sl_level}",
         "on": "Stop 1.0"
@@ -291,6 +313,7 @@
       "name": "exec_sl_buf_tk",
       "group": "Risk & stop",
       "label": "Stop buffer beyond the level (ticks)",
+      "short": "Stop buffer",
       "unit": "ticks",
       "desc": "Extra room beyond the stop level, in ticks, so a wick through it does not take you out.",
       "guide": ["Stop sits exactly on the level", "More room for wicks, wider risk per trade"]
@@ -300,6 +323,7 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Minimum stop distance",
+      "short": "Min stop mode",
       "desc": "Skip a setup whose stop sits closer to the entry than the floor below.",
       "choices": ["Off", "% of price", "Fixed $", "x ATR(14)"]
     },
@@ -307,6 +331,7 @@
       "name": "exec_min_stop_val",
       "group": "Risk & stop",
       "label": "Minimum stop floor (unit = mode above)",
+      "short": "Min stop floor",
       "desc": "The floor itself, in whatever unit the setting above uses. Higher refuses more setups.",
       "step": 0.01,
       "show_if": {
@@ -318,6 +343,7 @@
       "name": "exec_tp1_pct",
       "group": "Exit ladder",
       "label": "TP1 size %",
+      "short": "TP1 size",
       "unit": "% of position",
       "desc": "How much of the position the first target banks. 0 = bank nothing and ride it all. Touching it still moves the stop to breakeven.",
       "guide": ["More size left for the runner", "Bank more early, smaller runner"]
@@ -326,6 +352,7 @@
       "name": "exec_tp2_pct",
       "group": "Exit ladder",
       "label": "TP2 size %",
+      "short": "TP2 size",
       "unit": "% of position",
       "desc": "How much of the position the second target banks. 0 = bank nothing. Touching it still lifts the stop and hands the rest to the trail.",
       "guide": ["Bigger runner", "Bank more at TP2, smaller runner"]
@@ -334,6 +361,7 @@
       "name": "exec_be_buf_tk",
       "group": "Exit ladder",
       "label": "Breakeven buffer (ticks)",
+      "short": "Breakeven buffer",
       "unit": "ticks",
       "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs.",
       "guide": ["True breakeven", "Locks in more, stopped out sooner"],
@@ -344,6 +372,7 @@
       "group": "Exit ladder",
       "core": true,
       "label": "Runner trail method",
+      "short": "Runner trail",
       "choices": ["Fixed step", "Structure (swing)", "Structure + % ratchet"],
       "desc": "How the stop follows the trade once the second target is hit. Fixed step is a plain dollar grid; structure parks it at the last swing.",
       "guide": [
@@ -356,6 +385,7 @@
       "group": "Exit ladder",
       "unit": "ticks",
       "label": "Structure trail buffer (ticks)",
+      "short": "Structure trail buffer",
       "desc": "How many ticks beyond the last swing the trailing stop sits, so a wick through it does not clip you.",
       "guide": [
         "Tight to the swing — clipped by wicks",
@@ -368,6 +398,7 @@
       "group": "Exit ladder",
       "core": true,
       "label": "Runner ratchet step (% of price)",
+      "short": "Ratchet step",
       "unit": "% of price",
       "step": 0.05,
       "show_if": {
@@ -380,6 +411,7 @@
       "name": "exec_trail_step",
       "group": "Exit ladder",
       "label": "Runner trail step ($ of price)",
+      "short": "Trail step",
       "unit": "$ of price",
       "step": 0.5,
       "show_if": {
@@ -396,6 +428,7 @@
       "name": "exec_tp2_stop_mode",
       "group": "Exit ladder",
       "label": "TP2 → stop floor",
+      "short": "TP2 stop floor",
       "choices": ["TP1 price", "Breakeven", "One trail step behind"],
       "desc": "Where the stop jumps to the moment the second target is hit. TP1 is tight and can scratch the trade; breakeven gives it the most room.",
       "guide": [
@@ -409,6 +442,7 @@
       "group": "Exit ladder",
       "widget": "toggle",
       "label": "Add to the runner (scale in)",
+      "short": "Scale in",
       "options": {
         "off": "Never grow",
         "on": "Scale in"
@@ -419,6 +453,7 @@
       "name": "exec_scale_mode",
       "group": "Exit ladder",
       "label": "Where it adds",
+      "short": "Where it adds",
       "choices": ["Trail", "BOS retest"],
       "show_if": {
         "exec_scale_in": true
@@ -433,6 +468,7 @@
       "name": "exec_scale_max_adds",
       "group": "Exit ladder",
       "label": "How many times it may add",
+      "short": "Max adds",
       "min": 1,
       "max": 3,
       "step": 1,
@@ -449,6 +485,7 @@
       "name": "exec_scale_cap_x",
       "group": "Exit ladder",
       "label": "Biggest add, as a multiple of the original size",
+      "short": "Biggest add",
       "min": 0.1,
       "max": 5.0,
       "step": 0.1,
@@ -465,6 +502,7 @@
       "name": "exec_scale_tp_mode",
       "group": "Exit ladder",
       "label": "Where the adds take profit",
+      "short": "Add take profit",
       "choices": ["Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"],
       "show_if": {
         "exec_scale_in": true
@@ -480,6 +518,7 @@
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
+      "short": "Time stop",
       "desc": "Closes a trade open longer than the hours below. Before TP1 only fires while the trade has never reached the first target.",
       "choices": ["Off", "Before TP1 only", "Always"],
       "guide": ["Off — the clock never closes a trade", "Always — the clock closes winners too"]
@@ -488,6 +527,7 @@
       "name": "exec_time_stop_hrs",
       "group": "Exit ladder",
       "label": "Time stop (hours)",
+      "short": "Time stop length",
       "desc": "How long a trade may stay open, in hours, weekends included. About 24 to 40 hours all give the same answer.",
       "step": 0.25,
       "show_if": {
@@ -500,6 +540,7 @@
       "group": "Exit ladder",
       "widget": "toggle",
       "label": "Close on opposite SOS",
+      "short": "Close on opposite SOS",
       "options": {
         "off": "Hold",
         "on": "Exit on flip"
@@ -512,6 +553,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "toggle",
       "label": "Secondary re-entries",
+      "short": "Secondary re-entries",
       "options": {
         "off": "Primary only",
         "on": "Secondary on"
@@ -523,6 +565,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "toggle",
       "label": "One re-entry per primary",
+      "short": "One per primary",
       "options": {
         "off": "One per 1m leg",
         "on": "One per primary"
@@ -537,6 +580,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "Secondary entry retrace",
+      "short": "Entry retrace",
       "min": 0.0,
       "max": 0.999,
       "step": 0.001,
@@ -549,6 +593,7 @@
       "name": "exec_sec_trigger",
       "group": "Secondary re-entries (1m)",
       "label": "What triggers a re-entry",
+      "short": "Trigger",
       "choices": ["1m shift", "FVG in zone"],
       "show_if": {
         "exec_secondary": true
@@ -559,6 +604,7 @@
       "name": "exec_sec_stop",
       "group": "Secondary re-entries (1m)",
       "label": "Re-entry stop sits at",
+      "short": "Stop sits at",
       "choices": ["1m leg", "swing low", "0.886", "1.0"],
       "show_if": {
         "exec_secondary": true
@@ -570,6 +616,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "Re-entry's first target, in R",
+      "short": "First target",
       "min": -1,
       "max": 10,
       "step": 0.1,
@@ -583,6 +630,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "toggle",
       "label": "Re-entry needs a divergence",
+      "short": "Needs divergence",
       "options": {
         "off": "Not needed",
         "on": "Require"
@@ -596,6 +644,7 @@
       "name": "exec_sec_require",
       "group": "Secondary re-entries (1m)",
       "label": "Secondary needs the first trade to have…",
+      "short": "First trade must have",
       "choices": ["Breakeven", "Any close", "Stopped only", "None"],
       "show_if": {
         "exec_secondary": true
@@ -607,6 +656,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "Secondary zone — deep edge",
+      "short": "Zone deep edge",
       "min": 0.5,
       "max": 1.5,
       "step": 0.001,
@@ -620,6 +670,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "Secondary zone — shallow edge",
+      "short": "Zone shallow edge",
       "min": 0.2,
       "max": 0.886,
       "step": 0.001,
@@ -633,6 +684,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "   ↳ How many re-entries per setup",
+      "short": "Max per setup",
       "min": 1,
       "max": 5,
       "step": 1,
@@ -647,6 +699,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "toggle",
       "label": "1-minute trend must agree",
+      "short": "1m trend must agree",
       "options": {
         "off": "Off",
         "on": "Require"
@@ -660,6 +713,7 @@
       "name": "exec_sec_be_at",
       "group": "Secondary re-entries (1m)",
       "label": "Re-entry moves to breakeven at",
+      "short": "Breakeven at",
       "choices": ["TP1", "TP2"],
       "show_if": {
         "exec_secondary": true
@@ -671,6 +725,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "Re-entry banks this % at TP1",
+      "short": "TP1 size",
       "min": -1,
       "max": 100,
       "step": 1,
@@ -684,6 +739,7 @@
       "group": "Secondary re-entries (1m)",
       "widget": "number",
       "label": "Re-entry risk (% of the first trade's)",
+      "short": "Risk",
       "min": 1,
       "max": 300,
       "step": 1,
@@ -697,6 +753,7 @@
       "group": "Divergence veto",
       "widget": "toggle",
       "label": "Track RSI divergence (REQUIRED — arms setups + veto)",
+      "short": "Track divergence",
       "options": {
         "off": "Off",
         "on": "Track"
@@ -707,6 +764,7 @@
       "name": "div_rsi_len",
       "group": "Divergence veto",
       "label": "RSI length",
+      "short": "RSI length",
       "unit": "bars",
       "desc": "The momentum lookback. 14 is standard. Shorter reacts faster and finds more signals.",
       "guide": ["Twitchier RSI, more divergences", "Smoother RSI, fewer but cleaner"],
@@ -716,6 +774,7 @@
       "name": "div_pivot_len",
       "group": "Divergence veto",
       "label": "Pivot width (bars)",
+      "short": "Pivot width",
       "unit": "bars",
       "desc": "How many bars either side of a turn confirm it. This is also the delay — nothing can print until that many bars after the turn. Wider means fewer and cleaner signals.",
       "guide": ["Confirms sooner, more noise", "Confirms later, only real pivots"],
@@ -725,6 +784,7 @@
       "name": "div_valid_bars",
       "group": "Divergence veto",
       "label": "Divergence valid for (bars)",
+      "short": "Valid for",
       "unit": "bars",
       "desc": "How long a divergence keeps counting once it prints.",
       "show_if": {
@@ -738,6 +798,7 @@
       "group": "Divergence veto",
       "widget": "toggle",
       "label": "Veto setups on extreme/divergence",
+      "short": "Veto on divergence",
       "options": {
         "off": "No veto",
         "on": "Veto"
@@ -752,6 +813,7 @@
       "group": "Divergence veto",
       "widget": "toggle",
       "label": "Respect divergence/extreme veto",
+      "short": "Respect the veto",
       "options": {
         "off": "Ignore veto",
         "on": "Obey veto"
@@ -762,6 +824,7 @@
       "name": "div_extreme_ob",
       "group": "Divergence veto",
       "label": "Extreme overbought",
+      "short": "Extreme overbought",
       "desc": "Momentum at or above this counts as extremely overbought, which blocks longs. Higher blocks less often.",
       "show_if": {
         "show_div": true,
@@ -774,6 +837,7 @@
       "name": "div_extreme_os",
       "group": "Divergence veto",
       "label": "Extreme oversold",
+      "short": "Extreme oversold",
       "desc": "Momentum at or below this counts as extremely oversold, which blocks shorts. Lower blocks less often.",
       "show_if": {
         "show_div": true,
@@ -787,6 +851,7 @@
       "group": "Sessions & time",
       "widget": "toggle",
       "label": "No entries in the final hour (16:00-17:00 NY)",
+      "short": "No final-hour entries",
       "options": {
         "off": "Any hour",
         "on": "Skip 16–18 NY"
@@ -799,6 +864,7 @@
       "group": "Sessions & time",
       "widget": "toggle",
       "label": "Flat by close",
+      "short": "Flat by close",
       "options": {
         "off": "Overnight",
         "on": "Force flat"
@@ -809,6 +875,7 @@
       "name": "flat_by_close_min",
       "group": "Sessions & time",
       "label": "Flatten this early",
+      "short": "Flatten this early",
       "unit": "minutes before close",
       "desc": "How many minutes before the daily close to force everything flat.",
       "show_if": {
@@ -821,6 +888,7 @@
       "group": "Higher-timeframe filter",
       "core": true,
       "label": "Weekly bias requirement",
+      "short": "Weekly bias",
       "desc": "Whether the weekly trend has to agree with the trade. Ignore = no filter.",
       "guide": ["Ignore = no filter, trade every setup", "Must agree = only with the weekly trend"],
       "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"],
@@ -830,6 +898,7 @@
       "name": "exec_htf_daily",
       "group": "Higher-timeframe filter",
       "label": "Daily bias requirement",
+      "short": "Daily bias",
       "desc": "The same four choices, judged on the daily trend. Ignore = off.",
       "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"],
       "hidden": true
@@ -839,6 +908,7 @@
       "group": "Higher-timeframe filter",
       "widget": "toggle",
       "label": "Only fade HTF exhaustion, not breakouts",
+      "short": "Exhaustion only",
       "options": {
         "off": "Any setup",
         "on": "Exhaustion"
@@ -850,6 +920,7 @@
       "name": "exec_htf_source",
       "group": "Higher-timeframe filter",
       "label": "HTF exhaustion source",
+      "short": "Exhaustion source",
       "desc": "Which higher timeframe the breakout check reads. Weekly blocks the fewest trades.",
       "show_if": {
         "exec_htf_exhaust_only": true
@@ -861,6 +932,7 @@
       "name": "exec_scratch_r",
       "group": "Reporting",
       "label": "Scratch band",
+      "short": "Scratch band",
       "unit": "R",
       "step": 0.05,
       "desc": "Reporting only — it never changes a trade. A trade that finishes this close to breakeven is counted as a scratch instead of a win or a loss. It matters because this bot scratches a lot.",
@@ -870,6 +942,7 @@
       "name": "alert_resting_fib",
       "group": "Reporting",
       "label": "Announce a resting limit at fib",
+      "short": "Announce resting limit",
       "step": 0.05,
       "desc": "Reporting only — it never changes a trade, and the order is still placed the moment the setup arms. It decides WHEN the signals channel tells you a limit is pending: price has to retrace this far back down the leg first. At the default the order is announced once price has given back 23.6% of the move, instead of the moment it is placed — which can be hours and tens of dollars before price could reach it. Must stay under 0.5, because every fill happens at 0.5 or deeper and the message has to go out before any trade can.",
       "guide": ["Told sooner, further from the entry", "Told later, closer to the entry"]
@@ -878,6 +951,7 @@
       "name": "fill_model",
       "group": "Fill & costs",
       "label": "Fill model",
+      "short": "Fill model",
       "desc": "How fills are priced. Bar matches the TradingView chart and charges nothing, which is the mode used to check the two against each other. Tick uses real bid and ask prices with real costs. Use tick for any number you want to trust.",
       "choices": ["bar", "tick"]
     },
@@ -885,6 +959,7 @@
       "name": "account_profile",
       "group": "Fill & costs",
       "label": "Account profile",
+      "short": "Account profile",
       "desc": "Whose costs to charge in tick mode. vantage_demo is the broker the backtests are measured on, so results line up with the TradingView chart. The puprime ones are the live broker, kept for reference. Ignored in bar mode.",
       "show_if": {
         "fill_model": "tick"
@@ -901,6 +976,7 @@
       "name": "symbol",
       "group": "Fill & costs",
       "label": "Broker symbol",
+      "short": "Broker symbol",
       "desc": "The symbol the price data is pulled from. Vantage gold is XAUUSD, with no suffix. Ignored in bar mode.",
       "show_if": {
         "fill_model": "tick"
@@ -912,6 +988,7 @@
       "group": "Loss recovery",
       "widget": "toggle",
       "label": "Loss recovery trades",
+      "short": "Loss recovery",
       "options": {
         "off": "Off",
         "on": "On"
@@ -929,6 +1006,7 @@
         "exec_recovery": true
       },
       "label": "↳ Size vs a normal trade",
+      "short": "Size vs normal",
       "unit": "x",
       "desc": "How big a recovery trade is next to a normal one. 0.25 means a quarter of the usual risk.",
       "guide": [
@@ -943,6 +1021,7 @@
         "exec_recovery": true
       },
       "label": "↳ Secure the trade at",
+      "short": "Secure at",
       "unit": "R",
       "desc": "How far the recovery trade has to travel in your favour before the stop is moved up. 1 is the point where the original loss has been paid back.",
       "guide": [
@@ -957,6 +1036,7 @@
         "exec_recovery": true
       },
       "label": "↳ Move the stop to",
+      "short": "Move stop to",
       "unit": "R",
       "desc": "Where the stop goes once it moves. 1 banks the recovery. 0 is plain breakeven, which protects you from losing but does not bank the thing you entered for.",
       "guide": [
@@ -971,6 +1051,7 @@
         "exec_recovery": true
       },
       "label": "↳ Cut early at",
+      "short": "Cut early at",
       "unit": "R against",
       "desc": "Give up once the trade is this far against you, instead of waiting for the full stop. 0 leaves the full stop in place. This is the only setting here that makes a losing recovery trade cost less.",
       "guide": [
@@ -986,6 +1067,7 @@
       },
       "widget": "toggle",
       "label": "↳ Take both directions",
+      "short": "Both directions",
       "options": {
         "off": "Recover longs only",
         "on": "Both"
@@ -999,6 +1081,7 @@
         "exec_recovery": true
       },
       "label": "↳ Give up after",
+      "short": "Give up after",
       "unit": "days",
       "desc": "Close a recovery trade that has gone nowhere after this many days. A backstop — most trades finish in about four days. It exists because trades left open for months pay a lot of overnight interest.",
       "guide": [

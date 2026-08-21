@@ -215,6 +215,34 @@ Smart-money `/run` is the canonical pattern:
 
 Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
 
+### The percentage IS the fraction of the bars done (2026-08-20)
+
+🔴 **Any split of the 0–100 range is a CLAIM about how long each part takes, and the UI draws that
+claim.** `python_runner._execute` used to report 5 while loading, 15 on entering the bar loop,
+15–94 across the loop and 95 while building results — and the run page drew three evenly-spaced
+stages over it, so a few seconds of loading owned half the bar and a 156,721-bar loop crawled
+through the other half. The split is now **loading 0–2, the bar loop 2–98, results the rest**, so
+the number is near enough bars-done ÷ bars-total to say so out loud and the bar moves at one speed
+end to end. MEASURED on a 3-month `mpc_sos_fade` run with the 1m re-entry on: 1 → 2 → a straight
+climb 2→96 in step with the bars, never once backwards.
+
+⚠ **Reported every 1/500th of the run, not every 1/100th** (`_replay`'s `step`). `_set` is a dict
+update behind a lock, so the cost is nothing; the granularity is the whole of what the person
+watching sees, and at 1% steps a long run looked frozen between jumps.
+
+⚠ **`run_backtest_job` polls a python run every 1s, everything else every 5s.** A python run
+happens IN THIS PROCESS — there is no agent to be polite to and `job_status` is a dict read — so
+the 5s interval was capping how often the bar could move however finely the runner reported.
+Everything else there is an HTTP call to a machine over a tunnel and keeps the original interval.
+
+⚠ **The messages are sentences a person reads** (*Testing bar 84,384 of 156,721*), because the run
+page shows them verbatim and *replaying* is internal vocabulary for stepping the strategy over the
+bars. Nothing parses them — checked before changing them.
+
+⚠ **`/lab/progress` is ONE FILE for the whole app**, so it describes whatever job wrote it last and
+a page watching one run can be handed another job's numbers. What the run page does about that is
+in `frontend/CLAUDE.md` → *The running banner*.
+
 ---
 
 ## Config
@@ -1086,6 +1114,11 @@ it gets an answer that looks correct and is simply blind to the second gate. ⚠
 SILENCE** — the meta states a rule, the scan reports success, and the editor behaves as though
 nobody wrote it. Add the key there in the same commit as the rule that uses it. (It is also why a
 meta-only edit needs a **Scan** before the UI moves.)
+
+⚠ **`short` joined it 2026-08-20** — the same setting named in as few words as possible, for
+surfaces that RECORD a run rather than teach it (the finished-run params panel, in a 248px rail).
+`label` stays the teaching name the editor and the Pine input title share. Optional: a param
+without one falls back to `label`.
 
 🔴 **`shifted_value` REFUSES a shift past the param's own `min`/`max` rather than clamping it.** A
 clamped shift is a duplicate of the bound, scored as though it were the ±25% case — a measurement

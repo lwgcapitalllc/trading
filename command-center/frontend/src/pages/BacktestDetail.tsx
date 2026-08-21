@@ -1,9 +1,11 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ChevronUp,
   ChevronLeft,
   ChevronRight,
@@ -80,6 +82,7 @@ import type {
   SizingMode,
   CostLayer,
   RegimeBreakdownRow,
+  LabProgress,
 } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
@@ -100,7 +103,15 @@ import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverla
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import type { ChartSpec } from '@/components/ChartPanel/types'
 import { OptimizeButton } from '@/components/OptimizeButton'
-import { isSettled, type ParamValue } from '@/components/ParamEditor'
+import {
+  fillTokens,
+  isOutOfPlay,
+  isSettled,
+  shortLabelOf,
+  prettyName,
+  valueLabel,
+  type ParamValue,
+} from '@/components/ParamEditor'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
 import { useStickyBanner } from '@/components/StickyHeader'
@@ -3356,27 +3367,26 @@ function UnscoredRibbon({
 
 // ── Running banner ────────────────────────────────────────────────────────────
 
-const NT8_RUN_STEPS = [
-  { label: 'Connect', startPct: 0 },
-  { label: 'Configure', startPct: 20 },
-  { label: 'Run', startPct: 30 },
-  { label: 'Results', startPct: 70 },
-  { label: 'Evaluate', startPct: 95 },
-  { label: 'Tagging', startPct: 97 },
-]
-
-const PYTHON_RUN_STEPS = [
-  { label: 'Load bars', startPct: 0 },
-  { label: 'Replay', startPct: 15 },
-  { label: 'Results', startPct: 95 },
-]
-
-const MT5_RUN_STEPS = [
-  { label: 'Launch', startPct: 0 },
-  { label: 'Testing', startPct: 10 },
-  { label: 'Results', startPct: 90 },
-  { label: 'Tagging', startPct: 95 },
-]
+/**
+ * 🔴 ONE BAR, AND ITS FILL IS THE FRACTION OF THE WORK DONE. Nothing else.
+ *
+ * What was here until 2026-08-20: a row of named stages (`Load bars` / `Replay` / `Results` for a
+ * python run, five more for NT8) drawn as evenly-spaced dots with the bar drawn in the connectors
+ * between them. Two defects, and the second is the one that matters.
+ *
+ * 1. The stage names were internal vocabulary. "Replay" is what the code calls stepping the
+ *    strategy over the bars; it says nothing to the person watching a backtest run.
+ * 2. **Equal WIDTHS carried unequal WORK.** Loading bars was 0–15% of the run and got half the
+ *    bar; stepping 156,721 bars was 15–94% and got the other half. So the fill sprinted to the
+ *    middle of the screen in a few seconds and then crawled for minutes — and every stage change
+ *    snapped one connector full and started the next at zero, which reads as the bar falling
+ *    back. A progress bar whose speed is unrelated to the progress is worse than no bar: it
+ *    teaches you that the number on it means nothing.
+ *
+ * The replacement is a straight fill of `pct`, and `pct` is now very nearly bars-done ÷ bars-total
+ * (`python_runner._execute` — loading owns 0–2%, the bars own 2–98%, writing results owns the
+ * rest). The words go in the message line underneath, where a sentence has room to be a sentence.
+ */
 
 function useElapsed(startedAt: string | null): string {
   const [secs, setSecs] = useState(0)
@@ -3480,7 +3490,6 @@ function RunningBanner({
   onStop,
   runId,
   runner,
-  steps = NT8_RUN_STEPS,
 }: {
   pct: number
   message: string
@@ -3488,10 +3497,13 @@ function RunningBanner({
   onStop: () => void
   runId: string
   runner: string
-  steps?: typeof NT8_RUN_STEPS
 }) {
   const elapsed = useElapsed(startedAt)
-  const activeIdx = steps.reduce((best, step, i) => (pct >= step.startPct ? i : best), 0)
+  // ⚠ `pct` is displayed as handed over. The guard against it falling backwards lives at the
+  // SOURCE (`ownProgressRef` on this page), where it also holds the message and the elapsed
+  // clock — the three fall over together, because they come from the one shared progress file.
+  // A second hold HERE made both untestable: either one alone kept the bar full, so reverting
+  // the real fix left every assertion green.
   // ⚠ 200 lines, the SAME argument `LogsSection` uses. `lines` is part of the query key, so asking
   // for 500 here made this a second cache entry and a second `/log` request every 2 seconds for
   // the whole run — two polls of one endpoint on one page. The milestones are parsed out of the
@@ -3501,68 +3513,29 @@ function RunningBanner({
   const milestones = useMemo(() => parseMilestones(logText, runner), [logText, runner])
 
   return (
-    <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 pt-4 pb-4 space-y-4">
+    <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 pt-4 pb-4 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold text-accent uppercase tracking-[0.6px]">
           Running
         </span>
-        <span className="text-[11px] font-mono text-accent tabular-nums">{Math.round(pct)}%</span>
+        <span
+          data-testid="run-progress-pct"
+          className="text-[11px] font-mono text-accent tabular-nums"
+        >
+          {Math.round(pct)}%
+        </span>
       </div>
 
-      {/* Stage pipeline — connectors are the progress bar */}
-      <div className="flex items-start">
-        {steps.map((step, i) => {
-          const done = i < activeIdx
-          const active = i === activeIdx
-          const isLast = i === steps.length - 1
-          const segFill = isLast
-            ? 0
-            : Math.min(
-                1,
-                Math.max(0, (pct - step.startPct) / (steps[i + 1].startPct - step.startPct))
-              )
-          return (
-            <Fragment key={step.label}>
-              <div className="flex flex-col items-center gap-[6px]">
-                <span
-                  className={[
-                    'w-[9px] h-[9px] rounded-full flex-shrink-0 transition-all duration-300',
-                    done || active ? 'bg-accent' : 'border border-border-default bg-transparent',
-                  ].join(' ')}
-                  style={
-                    active
-                      ? {
-                          boxShadow:
-                            '0 0 0 4px rgba(0,229,255,0.15), 0 0 12px rgba(0,229,255,0.45)',
-                        }
-                      : undefined
-                  }
-                />
-                <span
-                  className={[
-                    'text-[9px] whitespace-nowrap uppercase tracking-wide leading-none',
-                    done
-                      ? 'text-accent/60'
-                      : active
-                        ? 'text-accent font-semibold'
-                        : 'text-text-tertiary/50',
-                  ].join(' ')}
-                >
-                  {step.label}
-                </span>
-              </div>
-              {!isLast && (
-                <div className="flex-1 h-[3px] mt-[3.75px] bg-bg-sunken rounded-full overflow-hidden relative">
-                  <div
-                    className="absolute inset-y-0 left-0 bg-accent rounded-full transition-all duration-700 ease-out"
-                    style={{ width: `${segFill * 100}%` }}
-                  />
-                </div>
-              )}
-            </Fragment>
-          )
-        })}
+      {/* One bar. Its width IS the progress — see the note above the constants that used to be
+        here. `duration-500 linear` because the updates arrive at a steady cadence and an
+        ease-out per step makes a constant rate look like it is stalling between them. */}
+      <div className="h-[6px] bg-bg-sunken rounded-full overflow-hidden">
+        <div
+          data-testid="run-progress-fill"
+          className="h-full bg-accent rounded-full transition-[width] duration-500 ease-linear"
+          style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+        />
       </div>
 
       {/* Milestone log */}
@@ -4770,6 +4743,33 @@ function RerunModal({
 
 // ── Parameters side panel ─────────────────────────────────────────────────────
 
+/**
+ * 🔴 THREE TIERS, AND EACH DIFFERS FROM THE ONE ABOVE IT IN MORE THAN ONE WAY.
+ *
+ * Aaron, 2026-08-20: *"I need the parameter categories and keys to stand out from the values…
+ * right now everything is very flat."* The first pass at this panel got the WORDS right and left
+ * every one of them at roughly one weight and one colour, so a category heading, a setting and
+ * its value all read as the same kind of thing and the eye had nothing to climb.
+ *
+ * Category → gold, bold, uppercase, tracked, with a rule above it. The same treatment
+ * `ParamEditor`'s compact group headers carry, deliberately: this panel and the editor describe
+ * the same settings, and a reader who learns the shape in one should recognise it in the other.
+ * Gold is this app's section-title colour and is used for nothing else here.
+ *
+ * Setting → small, tertiary, regular weight. It is the QUESTION, and it should recede once you
+ * have found the row you were looking for.
+ *
+ * Value → the largest text on the row, semibold, full-contrast primary, and TABULAR — the
+ * answer, and the only thing on the row that differs run to run. `tabular-nums` also lines the
+ * digits up down the column, which is what makes two runs comparable side by side.
+ *
+ * ⚠ Size alone would not carry it at these sizes — 10px against 12px is nearly invisible in a
+ * 248px rail. Every tier changes colour AND weight AND size, and the category changes shape too.
+ */
+const TIER_CATEGORY = 'text-[10px] font-bold uppercase tracking-[0.8px] text-gold-text leading-none'
+const TIER_SETTING = 'text-[10.5px] text-text-tertiary leading-tight'
+const TIER_VALUE = 'text-[12.5px] font-semibold text-text-primary tabular-nums leading-tight'
+
 function ParamsSidePanel({
   run,
   paramSchema,
@@ -4791,7 +4791,42 @@ function ParamsSidePanel({
   onBalanceChange?: (v: number | null) => void
   headerH?: number
 }) {
-  const schemaByName = new Map((paramSchema ?? []).map((s) => [s.name, s]))
+  // Option labels carry `{other_param}` tokens, so they are filled ONCE against this run's own
+  // values before anything is read off them — otherwise a toggle reads `{exec_sl_level}` here
+  // while the editor two clicks away reads `0.886`.
+  // 🔴 TRACKS WHAT IS SHUT, NEVER WHAT IS OPEN. A set of open groups starts EMPTY, which
+  // renders every section collapsed on arrival — the opposite of a panel whose whole job is
+  // showing you at a glance what ran. Collapsing is for putting a section you have finished with
+  // out of the way, so the empty set has to mean "nothing hidden yet". `ParamEditor`'s compact
+  // layout tracks its groups the same way and for the same reason.
+  const [shutGroups, setShutGroups] = useState<Set<string>>(new Set())
+  const toggleGroup = (group: string) =>
+    setShutGroups((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(group)) next.add(group)
+      return next
+    })
+  // ⚠ Declared HERE, above this component's `if (!entries.length) return null` — a `useState`
+  // below an early return is a CONDITIONAL hook call. It sat below one for exactly as long as
+  // it took to click the button: *Cannot access 'shutGroups' before initialization*.
+
+  const filledSchema = useMemo(
+    () => fillTokens(paramSchema ?? [], (run.params ?? {}) as Record<string, ParamValue>),
+    [paramSchema, run.params]
+  )
+  const schemaByName = new Map(filledSchema.map((s) => [s.name, s]))
+  // 🔴 This panel is the answer to "what settings ran this?", and it printed FIELD NAMES —
+  // `exec_nogap_arm`, `exec_sl_buf_tk`. That is only readable with the source open, so the one
+  // surface that records a finished run's inputs was useless to the person reading the result.
+  // Words come from the same helper the editor uses, so the two cannot drift apart.
+  const nameOf = (k: string) => {
+    const p = schemaByName.get(k)
+    return p ? shortLabelOf(p) : prettyName(k)
+  }
+  const valueOf = (k: string, v: unknown) => valueLabel(schemaByName.get(k), v)
+  // The group a param belongs to, from the strategy's own metadata. An unmapped param lands in
+  // "Other" rather than vanishing — the record must stay complete.
+  const groupOf = (k: string) => schemaByName.get(k)?.group || 'Other'
   const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
   // A SETTLED param is folded away here, never dropped. This panel is the record of what the run
   // actually sent, and a run report that silently omits inputs is a worse defect than a long list
@@ -4803,14 +4838,45 @@ function ParamsSidePanel({
     if (!p || !isSettled(p, v as ParamValue)) return false
     return baselineParams == null || String(v) === String(baselineParams[k])
   }
+  // 🔴 A SETTING WHOSE PARENT IS OFF DID NOTHING ON THIS RUN, so it does not belong in the list
+  // you read to see what the run did. Fifteen secondary re-entry rows sat in the main list on
+  // every run with the secondary switched off (*"you DON'T need to show all the params related
+  // to it… same goes for anything cascading"*). ⚠ FOLDED, never dropped — same rule as a settled
+  // param: this panel is the RECORD of what was sent, and a run report that silently omits
+  // inputs is a worse defect than a long list. ⚠ Asked of `isOutOfPlay`, imported rather than
+  // re-written, so the panel and the editor cannot disagree about which cascade is live.
+  const runValues = (run.params ?? {}) as Record<string, ParamValue>
+  const outOfPlayKey = (k: string, v: unknown) => {
+    const p = schemaByName.get(k)
+    if (!p || !isOutOfPlay(p, filledSchema, runValues)) return false
+    // The same escape the settled fold carries: a value differing from the tune BASELINE stays
+    // in the main list, or the "N changed" count names a row the reader cannot find.
+    return baselineParams == null || String(v) === String(baselineParams[k])
+  }
+  const foldedKey = (k: string, v: unknown) => settledKey(k, v) || outOfPlayKey(k, v)
+
   const entries = Object.entries(run.params || {})
   if (!entries.length) return null
-  const tunable = entries.filter(([k, v]) => !isFoundational(k) && !settledKey(k, v))
-  const settled = entries.filter(([k, v]) => !isFoundational(k) && settledKey(k, v))
+  const tunable = entries.filter(([k, v]) => !isFoundational(k) && !foldedKey(k, v))
+  const settled = entries.filter(([k, v]) => !isFoundational(k) && foldedKey(k, v))
   const foundational = entries.filter(([k]) => isFoundational(k))
   const changedCount = baselineParams
     ? tunable.filter(([k, v]) => String(v) !== String(baselineParams[k])).length
     : 0
+  // Grouped in the metadata's OWN order — the order params appear in the schema is the order the
+  // strategy decides things in, and re-sorting alphabetically would scramble that back into a
+  // list you have to hunt through. A Map preserves insertion order.
+  const groupOrder = new Map<string, [string, unknown][]>()
+  for (const [k, v] of tunable) {
+    const g = groupOf(k)
+    if (!groupOrder.has(g)) groupOrder.set(g, [])
+    groupOrder.get(g)!.push([k, v])
+  }
+  const tunableGroups = [...groupOrder.entries()]
+  // ⚠ Derived from the groups that EXIST, never from a count held alongside the set — a stale
+  // total would leave the button offering to expand a panel that is already open.
+  const everyGroup = tunableGroups.map(([g]) => g)
+  const allShut = everyGroup.length > 0 && everyGroup.every((g) => shutGroups.has(g))
 
   // The outer column is the full page-height surface (flush against the nav sidebar,
   // divided from the content by border-r). The inner block is sticky so the params
@@ -4856,55 +4922,113 @@ function ParamsSidePanel({
               </span>
             )}
           </div>
-          <button
-            onClick={onToggle}
-            title="Collapse"
-            className="text-text-tertiary hover:text-text-secondary flex-shrink-0"
-          >
-            <ChevronLeft size={14} />
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⚠ ONE control, and its icon states which way it will go — two buttons (an Expand
+              and a Collapse) puts a dead one on screen at each extreme, and a control that does
+              nothing when clicked reads as broken rather than as already-done. It is an icon
+              with a `title` because this header is 248px wide and already carries the panel's
+              own collapse; a worded button here would crowd both. */}
+            <button
+              onClick={() => setShutGroups(allShut ? new Set() : new Set(everyGroup))}
+              title={allShut ? 'Expand all sections' : 'Collapse all sections'}
+              aria-label={allShut ? 'Expand all sections' : 'Collapse all sections'}
+              className="text-text-tertiary hover:text-text-secondary"
+            >
+              {allShut ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+            </button>
+            <button
+              onClick={onToggle}
+              title="Collapse"
+              className="text-text-tertiary hover:text-text-secondary"
+            >
+              <ChevronLeft size={14} />
+            </button>
+          </div>
         </div>
         <div className="overflow-y-auto px-2.5 py-2 space-y-[4px]">
-          {tunable.map(([k, v]) => {
-            const changed = baselineParams != null && String(v) !== String(baselineParams[k])
-            return (
-              <div
-                key={k}
-                className={`flex items-center justify-between gap-2 px-2 py-[5px] rounded ${changed ? 'bg-accent/5 border border-accent/30' : ''}`}
-                title={schemaByName.get(k)?.description}
+          {/* Rows are STACKED — the words own one line, the value the next. Side-by-side is what
+            forced the old field-name column: a sentence like "Max time: sweep to SOS" has no
+            chance in the ~120px a right-aligned value leaves in a 248px rail, and a truncated
+            label is the same problem as a field name. Group headings come from the strategy's
+            own metadata, so the list reads in the order the setups are actually decided. */}
+          {tunableGroups.map(([group, rows]) => (
+            <div
+              key={group}
+              className="space-y-[3px] border-t border-border-subtle/60 pt-3 mt-3 first:border-t-0 first:pt-0 first:mt-0"
+            >
+              {/* The heading IS the control — a separate hit target in a 248px rail is a target
+                you miss. ⚠ A shut section still states its COUNT: a collapsed group with no
+                number reads as a group with nothing in it, which is the one thing this panel
+                must never imply about a run's inputs. */}
+              <button
+                onClick={() => toggleGroup(group)}
+                aria-expanded={!shutGroups.has(group)}
+                className={`flex w-full items-center gap-1 px-2 pb-1.5 text-left hover:text-gold-text/75 ${TIER_CATEGORY}`}
               >
-                <span className="text-[11px] font-mono text-text-tertiary truncate">{k}</span>
-                <span className="text-[12px] font-mono font-semibold text-text-primary flex-shrink-0 text-right">
-                  {changed && (
-                    <span className="text-[10px] text-text-tertiary line-through mr-1">
-                      {String(baselineParams![k])}
-                    </span>
-                  )}
-                  {String(v)}
-                </span>
-              </div>
-            )
-          })}
+                <ChevronDown
+                  size={11}
+                  className={`flex-shrink-0 transition-transform duration-150 ${
+                    shutGroups.has(group) ? '-rotate-90' : ''
+                  }`}
+                />
+                <span className="min-w-0 flex-1 truncate">{group}</span>
+                {shutGroups.has(group) && (
+                  <span className="flex-shrink-0 font-normal text-text-tertiary">
+                    {rows.length}
+                  </span>
+                )}
+              </button>
+              {!shutGroups.has(group) &&
+                rows.map(([k, v]) => {
+                  const changed = baselineParams != null && String(v) !== String(baselineParams[k])
+                  return (
+                    <div
+                      key={k}
+                      className={`px-2 py-[5px] rounded ${changed ? 'bg-accent/5 border border-accent/30' : ''}`}
+                      title={schemaByName.get(k)?.desc || schemaByName.get(k)?.description}
+                    >
+                      <div className={TIER_SETTING}>{nameOf(k)}</div>
+                      <div className={`mt-[3px] ${TIER_VALUE}`}>
+                        {changed && (
+                          <span className="text-[10px] font-normal text-text-tertiary line-through mr-1">
+                            {valueOf(k, baselineParams![k])}
+                          </span>
+                        )}
+                        {valueOf(k, v)}
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          ))}
           {settled.length > 0 && (
             <details
               data-testid="run-settled-params"
               className="pt-2 mt-1 border-t border-border-subtle/40"
             >
-              <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">
-                Settled · {settled.length}
+              <summary
+                className={`cursor-pointer select-none px-2 hover:text-gold-text/80 ${TIER_CATEGORY}`}
+              >
+                Already decided · {settled.length}
               </summary>
+              {/* ⚠ It was headed "Settled" with the caption "Off the editor, still sent", and
+                Aaron asked *"what does the settled section even mean?"* — both halves were
+                internal vocabulary. The editor still says "settled" on its own count; that one
+                can follow if it reads badly there too.
+                ⚠ The caption names BOTH reasons a row lands here, because the fold now holds
+                two different sets: a question past testing closed, and a setting whose parent
+                is switched off. Naming only one would make the other look mis-filed. */}
               <p className="text-[10px] text-text-tertiary/80 px-2 mt-1 leading-snug">
-                Off the editor, still sent — this run charged these values.
+                Nothing to decide here — a parent setting is off, or testing settled it. All still
+                sent with the run.
               </p>
               <div className="mt-1.5 space-y-[3px]">
                 {settled.map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between gap-2 px-2">
-                    <span className="text-[10px] font-mono text-text-tertiary truncate" title={k}>
-                      {k}
-                    </span>
-                    <span className="text-[10px] font-mono text-text-secondary flex-shrink-0">
-                      {String(v)}
-                    </span>
+                  <div key={k} className="px-2">
+                    <div className={TIER_SETTING}>{nameOf(k)}</div>
+                    <div className="mt-[2px] text-[11px] font-semibold text-text-secondary tabular-nums leading-tight">
+                      {valueOf(k, v)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -4912,18 +5036,24 @@ function ParamsSidePanel({
           )}
           {foundational.length > 0 && (
             <details className="pt-2 mt-1 border-t border-border-subtle/40">
-              <summary className="text-[10px] text-text-tertiary cursor-pointer select-none px-2">
-                Foundational · {foundational.length}
+              <summary
+                className={`cursor-pointer select-none px-2 hover:text-gold-text/80 ${TIER_CATEGORY}`}
+              >
+                Instrument &amp; broker · {foundational.length}
               </summary>
+              {/* Not strategy rules — the contract and the fills: symbol, tick size, point
+                value, fill model, account profile, daily close hour. "Foundational" is the
+                schema's word for that and means nothing to a reader of the run. */}
+              <p className="text-[10px] text-text-tertiary/80 px-2 mt-1 leading-snug">
+                What was traded and how it filled, not how it decided.
+              </p>
               <div className="mt-1.5 space-y-[3px]">
                 {foundational.map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between gap-2 px-2">
-                    <span className="text-[10px] font-mono text-text-tertiary truncate" title={k}>
-                      {k}
-                    </span>
-                    <span className="text-[10px] font-mono text-text-secondary flex-shrink-0">
-                      {String(v)}
-                    </span>
+                  <div key={k} className="px-2">
+                    <div className={TIER_SETTING}>{nameOf(k)}</div>
+                    <div className="mt-[2px] text-[11px] font-semibold text-text-secondary tabular-nums leading-tight">
+                      {valueOf(k, v)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -6752,14 +6882,28 @@ export function BacktestDetail() {
     [run, retryBacktest]
   )
 
-  const progressMatches = progress?.job_id === run?.run_id
-  const runPct = isRunning ? (progressMatches ? (progress?.pct ?? 0) : 0) : 0
-  const runMessage = isRunning
-    ? progressMatches
-      ? (progress?.message ?? 'Starting…')
-      : 'Starting…'
-    : ''
-  const runStartedAt = isRunning ? (progressMatches ? (progress?.started_at ?? null) : null) : null
+  // 🔴 `/lab/progress` is ONE FILE for the whole app, so it describes whatever job wrote it last.
+  // A second backtest, an optimization or a sweep starting anywhere overwrites it, and this page
+  // stops recognising the job id — at which point it used to substitute zeros: the bar emptied,
+  // the message fell back to "Starting…" and the elapsed clock restarted from zero, on a run
+  // that had not slowed down at all. That is where the bar "shoots back down" from.
+  //
+  // ⚠ The fix is to keep the last report that BELONGED to this run, never to invent one. When
+  // another job owns the file this page has nothing new to say about its own run, and the last
+  // thing that run actually said is the honest answer — a zero is a statement about somebody
+  // else's job wearing this run's banner.
+  //
+  // ⚠ Held per RUN, and cleared when a rerun gives the same id a new start time.
+  const ownProgressRef = useRef<{ runId: string; data: LabProgress } | null>(null)
+  if (progress && run && progress.job_id === run.run_id) {
+    ownProgressRef.current = { runId: run.run_id, data: progress }
+  } else if (run && ownProgressRef.current && ownProgressRef.current.runId !== run.run_id) {
+    ownProgressRef.current = null
+  }
+  const ownProgress = ownProgressRef.current?.data
+  const runPct = isRunning ? (ownProgress?.pct ?? 0) : 0
+  const runMessage = isRunning ? (ownProgress?.message ?? 'Starting…') : ''
+  const runStartedAt = isRunning ? (ownProgress?.started_at ?? null) : null
 
   const backLabel = fromStack
     ? 'Stack'
@@ -7044,13 +7188,6 @@ export function BacktestDetail() {
                 onStop={() => stopBacktest.mutate(run.run_id)}
                 runId={run.run_id}
                 runner={run.runner ?? 'ninjatrader'}
-                steps={
-                  scope === 'mt5'
-                    ? MT5_RUN_STEPS
-                    : scope === 'python'
-                      ? PYTHON_RUN_STEPS
-                      : NT8_RUN_STEPS
-                }
               />
             )}
             {/* ONE Retry on this page, and it is the HEADER's (2026-08-15, Aaron's call).

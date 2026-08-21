@@ -306,15 +306,141 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
     await page.goto(`/backtests/runs/${DONE_RUN}`)
     const panel = page.getByTestId('run-settled-params')
     await expect(panel).toBeVisible({ timeout: 30_000 })
-    await expect(panel).toContainText('Settled · 26')
+    // ⚠ 31, not the 26 this pinned for its whole life: the fold gained the settings a run could
+    // not act on (this run has the secondary OFF) alongside the ones past testing settled. The
+    // number is pinned on purpose — it is what makes this a check on the RULE rather than on
+    // "some params are folded", and a change to either rule has to come here and say why.
+    await expect(panel).toContainText('Already decided · 31')
 
+    // ⚠ Asserted on the WORDS, because the words are what the panel shows. It printed field
+    // names until 2026-08-20 — `div_rsi_len` for this row — which made the one surface that
+    // records what a run charged unreadable without the source open. Every param in this
+    // strategy's metadata carries a unique label, so a label still identifies a row exactly.
     // Exactly ONE copy on the page — the fold's. A settled key that is ALSO still in the main
     // list is the mutation this catches; scoping the check to the fold alone would not see it.
-    await expect(page.getByText('div_rsi_len', { exact: true })).toHaveCount(1)
-    await expect(panel.getByText('div_rsi_len', { exact: true })).not.toBeVisible()
+    await expect(page.getByText('RSI length', { exact: true })).toHaveCount(1)
+    await expect(panel.getByText('RSI length', { exact: true })).not.toBeVisible()
     // ...and one click puts the value back on screen. Nothing was dropped.
-    await panel.getByText(/^Settled · /).click()
-    await expect(panel.getByText('div_rsi_len', { exact: true })).toBeVisible()
+    await panel.getByText(/^Already decided · /).click()
+    await expect(panel.getByText('RSI length', { exact: true })).toBeVisible()
+  })
+  /**
+   * 🔴 EVERY SECTION IS OPEN ON ARRIVAL, AND COLLAPSING IS THE READER'S CHOICE.
+   *
+   * The panel's whole job is showing at a glance what a run charged, so a shut section is a
+   * question the reader has to click to answer. The state therefore tracks what is SHUT, never
+   * what is open — a set of OPEN groups starts empty, which renders every section collapsed on
+   * first paint, and that is the exact inversion this pins. `ParamEditor`'s compact layout
+   * carries the same rule for the same reason.
+   *
+   * MUTATION: flip `shutGroups` to an `openGroups` set and the first assertion goes red.
+   *
+   * ⚠ A shut section still states its COUNT. A collapsed group showing no number reads as a
+   * group with nothing in it, which is the one thing a record of a run's inputs may never imply.
+   */
+  test('🔴 sections start OPEN, collapse one at a time, and a shut one still counts', async ({
+    page,
+  }) => {
+    await page.goto(`/backtests/runs/${DONE_RUN}`)
+    const zone = page.getByRole('button', { name: /Entry zone/ })
+    await expect(zone).toBeVisible({ timeout: 30_000 })
+
+    // Open on arrival — a setting inside the section is on screen without a click.
+    await expect(zone).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByText('Require an FVG', { exact: true })).toBeVisible()
+
+    await zone.click()
+    await expect(zone).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByText('Require an FVG', { exact: true })).toHaveCount(0)
+    await expect(zone, 'a shut section that states no count reads as an empty one').toContainText(
+      /\d+$/
+    )
+
+    // Its neighbours are untouched — this collapses ONE section, not the panel.
+    await expect(page.getByRole('button', { name: /Risk & stop/ })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+
+    await zone.click()
+    await expect(page.getByText('Require an FVG', { exact: true })).toBeVisible()
+  })
+
+  /**
+   * One icon, and it offers the action the panel is NOT already in.
+   *
+   * ⚠ Two buttons would leave a dead one on screen at each extreme, and a control that does
+   * nothing when clicked reads as broken rather than as already-done. So the assertion that
+   * matters is that the label FLIPS — a single fixed "Collapse all" would pass a test that only
+   * checked the sections.
+   */
+  /**
+   * 🔴 A SETTING WHOSE PARENT IS OFF DID NOTHING ON THIS RUN, AND IS FOLDED AWAY.
+   *
+   * Fourteen secondary re-entry rows sat in the main list on every run with the secondary
+   * switched off, and the same shape repeats through every cascade in the schema. Aaron:
+   * *"if secondary trades is off in the strategy you DON'T need to show all the params related
+   * to it… same goes for anything cascading."*
+   *
+   * ⚠ FOLDED, never dropped — this panel is the RECORD of what a run sent, so the values stay
+   * one click away. That is the assertion the second half makes, and it is the one that stops
+   * this from becoming a page unable to show what it submitted.
+   *
+   * ⚠ The PARENT toggle itself stays in the main list. A section that empties completely reads
+   * as a section that does not apply to this strategy; leaving the switch visible says WHY the
+   * rest is gone. That is what the first assertion pins.
+   *
+   * MUTATION: drop the `show_if` arm of `isOutOfPlay` and the dependants come back into the
+   * main list, reddening the first two assertions.
+   */
+  test('🔴 the secondary is off, so its dependants fold away — parent and values still there', async ({
+    page,
+  }) => {
+    // The pinned run has `exec_secondary: false`, which is what makes this case real rather
+    // than mocked. `requireRun` above already fails by NAME if it leaves the lab.
+    await page.goto(`/backtests/runs/${DONE_RUN}`)
+    const secondary = page.getByRole('button', { name: /Secondary re-entries/ })
+    await expect(secondary).toBeVisible({ timeout: 30_000 })
+
+    // The switch itself is on the list...
+    await expect(page.getByText('Secondary re-entries', { exact: true }).first()).toBeVisible()
+
+    // ...and the settings it governs are not ON SCREEN. ⚠ Asserted on VISIBILITY, not on a DOM
+    // count: a closed `<details>` still renders its children, so `toHaveCount(0)` would be red
+    // against a correct page — and `getByText` matches a wrapper as well as the row, so the
+    // count is not 1 either. What this panel promises is about what you can SEE.
+    // ⚠ These two params, because they are what THIS run actually stored — it predates the rest
+    // of the secondary block. Asserting on one the run never sent would pass for the wrong
+    // reason: folded away and never there look identical.
+    const oncePer = page.getByText('One per primary', { exact: true }).first()
+    const retrace = page.getByText('Entry retrace', { exact: true }).first()
+    await expect(oncePer).not.toBeVisible()
+    await expect(retrace).not.toBeVisible()
+
+    // Folded, NOT dropped — one click and this run's values are on screen.
+    const panel = page.getByTestId('run-settled-params')
+    await panel.getByText(/^Already decided · /).click()
+    await expect(oncePer).toBeVisible()
+    await expect(retrace).toBeVisible()
+  })
+
+  test('the expand/collapse-all icon flips, and moves every section', async ({ page }) => {
+    await page.goto(`/backtests/runs/${DONE_RUN}`)
+    const collapseAll = page.getByRole('button', { name: 'Collapse all sections' })
+    await expect(collapseAll).toBeVisible({ timeout: 30_000 })
+
+    await collapseAll.click()
+    for (const g of [/What arms a setup/, /Entry zone/, /Risk & stop/]) {
+      await expect(page.getByRole('button', { name: g })).toHaveAttribute('aria-expanded', 'false')
+    }
+
+    // The same control now offers the opposite, and performs it.
+    const expandAll = page.getByRole('button', { name: 'Expand all sections' })
+    await expect(expandAll).toBeVisible()
+    await expandAll.click()
+    for (const g of [/What arms a setup/, /Entry zone/, /Risk & stop/]) {
+      await expect(page.getByRole('button', { name: g })).toHaveAttribute('aria-expanded', 'true')
+    }
   })
 })
 

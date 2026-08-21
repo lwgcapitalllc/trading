@@ -118,6 +118,33 @@ export function isInert(
   return condHolds(p.disable_if, readerFor(schema, values).read)
 }
 
+/**
+ * True when a param could not have affected this configuration AT ALL.
+ *
+ * Two ways that happens, and they are the same fact from opposite ends: its `show_if` does not
+ * hold (the editor would not even draw the row — the secondary re-entry settings when the
+ * secondary is off), or its `disable_if` does (the row is drawn and greyed).
+ *
+ * ⚠ Exported for the finished-run params panel. The EDITOR must not use it to drop rows: there,
+ * `show_if` hides and `disable_if` greys, and the difference between those two is deliberate.
+ * Here there is only one question — did this setting do anything on this run — and both answers
+ * are no. Aaron, 2026-08-20: *"if secondary trades is off in the strategy you DON'T need to show
+ * all the params related to it… same goes for anything cascading."*
+ *
+ * ⚠ Resolved through `readerFor`, so a `custom_from` sibling's value is the one compared — a
+ * gate that reads the raw dropdown instead of the Custom number it resolves to gets exactly the
+ * cascading case wrong.
+ */
+export function isOutOfPlay(
+  p: ParamSchemaEntry,
+  schema: ParamSchemaEntry[],
+  values: Record<string, ParamValue>
+): boolean {
+  const { read } = readerFor(schema, values)
+  if (p.show_if && !condHolds(p.show_if, read)) return true
+  return condHolds(p.disable_if, read)
+}
+
 // `{param_name}` in an option label → that param's current (custom-resolved) value. An unknown
 // name is left ON SCREEN as `{typo}` rather than blanked: a label that silently loses half its
 // sentence is the failure this whole mechanism exists to stop.
@@ -352,7 +379,54 @@ interface Props {
 
 type Widget = 'toggle' | 'switch' | 'time' | 'number' | 'text' | 'select'
 
-const labelOf = (p: ParamSchemaEntry) => p.label || p.display_name || p.name
+/**
+ * The words a HUMAN reads for a param, never the field name.
+ *
+ * ⚠ Exported because the finished-run params panel asks the same question. It used to print the
+ * raw field name, so the record of what a run charged was unreadable to anyone not holding the
+ * code open — see `ParamsSidePanel` in BacktestDetail.
+ */
+export const labelOf = (p: ParamSchemaEntry) => p.label || p.display_name || p.name
+
+/**
+ * The SHORTEST correct name for a setting — for surfaces that RECORD a run rather than teach it.
+ *
+ * `label` is written to explain (*Max time: sweep → SOS (minutes)*, *Stop buffer beyond the level
+ * (ticks)*), which is right on the run form and far too long for a 248px rail, where it wraps to
+ * three lines and buries the value. Aaron, 2026-08-20: *"don't be too verbose and try to explain
+ * params in the side bar… they just have to be simple english names."*
+ *
+ * ⚠ The short name is authored in the strategy's own metadata, never derived — stripping
+ * parentheses and units mechanically produces a name nobody chose. ⚠ Optional everywhere: a
+ * strategy that writes none falls straight back to `labelOf`, which is what `mpc_bleg` and
+ * `mpc_bos` do today. ⚠ Units belong to the VALUE, not the name — the value already renders
+ * `4320 minutes`, so repeating it in the label says it twice.
+ */
+export const shortLabelOf = (p: ParamSchemaEntry) => p.short || labelOf(p)
+
+/** A raw field name with no schema entry, made readable: `exec_sl_buf_tk` -> `Sl buf tk`. */
+export function prettyName(name: string): string {
+  const words = name
+    .replace(/^(exec|aplus|bleg)_/, '')
+    .replace(/_/g, ' ')
+    .trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : name
+}
+
+/**
+ * A param's VALUE in the same words the editor shows — a bool as its two option labels, a number
+ * with its unit. `String(v)` gave `true` / `false`, which says nothing about which way is on.
+ * Pass a schema entry whose option tokens are already filled (`fillTokens`), or none at all.
+ */
+export function valueLabel(p: ParamSchemaEntry | undefined, v: unknown): string {
+  if (typeof v === 'boolean' || v === 'true' || v === 'false') {
+    const on = v === true || v === 'true'
+    if (p?.options) return String(on ? p.options.on : p.options.off)
+    return on ? 'On' : 'Off'
+  }
+  const s = String(v)
+  return p?.unit ? `${s} ${p.unit}` : s
+}
 // Rows are STACKED: the label (plus any tune "was X" tag) owns one line, the control owns the
 // next. Side-by-side put the label in whatever width the fixed-width control left over, so in a
 // narrow rail every label truncated to "Arm on di..." and a "was on" tag cropped it further —

@@ -47,6 +47,19 @@ Every `label` in the meta file is byte-identical to that input's title in
 `indicators/strategies/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
 input's tooltip **verbatim**. One parameter, one name, one explanation, two UIs.
 
+🔴 **`short` IS THE ONE KEY WITH NO PINE TWIN, AND IT IS EXEMPT FROM THE SYNC RULE BELOW
+(2026-08-20).** All 83 params gained one. It is the same setting named in as few words as
+possible — *Sweep → SOS window* against the label's *Max time: sweep → SOS (minutes)* — and it
+exists because `label` is byte-identical to a Pine input TITLE, which is written to teach and
+wraps to three lines in the command center's 248px run-report rail. ⚠ **Do NOT push a `short`
+back into the Pine**: there is no input title for it, and adding one would break the byte-identity
+that makes the sync checkable at all. ⚠ **It is a NAME, never an explanation** — the `desc` is
+where an explanation goes (Aaron, 2026-08-20: *"they just have to be simple english names"*), and
+⚠ **it carries no unit**, because the reader's value already renders `4320 minutes`. ⚠ **A param
+added later without one is not an error** — the panel falls back to `label`; it just reads long.
+⚠ **`strategy_scanner._PARAM_META_KEYS` is a whitelist and `short` is in it** — a key missing
+there is dropped in silence and the UI behaves as though nobody wrote it.
+
 **Change a label or a desc and change the Pine in the same commit.** Otherwise the lab and
 TradingView start teaching different things about the same setting, which is exactly how the
 old `exec_deep_fib` row came to be labelled "nearest fib ABOVE" — true for a long, wrong for a

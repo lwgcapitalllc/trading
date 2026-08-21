@@ -250,7 +250,14 @@ def _execute(job_id: str, spec: dict) -> None:
         raise ValueError("job_spec.instrument is required")
     tf = _timeframe_minutes(spec)
 
-    _set(job_id, pct=5, message=f"loading {symbol} {tf}m bars…")
+    # 🔴 THE PERCENTAGE IS THE FRACTION OF THE BARS DONE, near enough to say so out loud.
+    # Loading owns 0–2, the bar loop owns 2–98, writing results owns the rest. It used to be
+    # 5 / 15 / 15–94 / 95, and the UI drew three evenly-spaced stages over it — so the first
+    # fifteen points (a few seconds of loading) took half the bar's width and the 156,721-bar
+    # loop crawled through the other half. Any split here is a claim about how long each part
+    # takes; keeping loading down to two points means the claim is roughly true and the bar
+    # moves at one speed from end to end.
+    _set(job_id, pct=1, message=f"Loading {symbol} {tf}m bars…")
     df = BarSource().load(symbol, tf, spec["start_date"], spec["end_date"])
     if df.empty:
         raise ValueError(
@@ -279,7 +286,7 @@ def _execute(job_id: str, spec: dict) -> None:
         # cost of the wrong figure was not a bad run, it was that this feature went unmeasured
         # for three weeks because the only windows anyone believed reachable were too short for a
         # setup this rare to fire in. A 1m window is SLOW to load and replay, not unavailable.
-        _set(job_id, pct=8, message=f"loading {symbol} 1m bars for the secondary…")
+        _set(job_id, pct=2, message=f"Loading {symbol} 1m bars for the re-entry…")
         df1m = BarSource().load(symbol, 1, spec["start_date"], spec["end_date"])
         if df1m.empty:
             raise ValueError(
@@ -287,14 +294,18 @@ def _execute(job_id: str, spec: dict) -> None:
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves 1m history "
                 f"for this window (or turn the secondary off)."
             )
-        _set(job_id, pct=15, message=f"replaying {len(df):,} × 15m + {len(df1m):,} × 1m…")
+        _set(job_id, pct=2, message=f"Testing {len(df):,} × 15m + {len(df1m):,} × 1m bars…")
 
         def _prog(i: int, n: int) -> None:
-            _set(job_id, pct=min(94, 15 + int(i / n * 79)), message=f"1m bar {i:,} / {n:,}")
+            _set(
+                job_id,
+                pct=min(98, 2 + int(i / n * 96)),
+                message=f"Testing 1m bar {i:,} of {n:,}",
+            )
 
         strategy.run_dual(df, df1m, progress=_prog, should_cancel=lambda: _cancelled(job_id))
     else:
-        _set(job_id, pct=15, message=f"replaying {len(df):,} bars…")
+        _set(job_id, pct=2, message=f"Testing {len(df):,} bars…")
         _replay(job_id, strategy, df, len(df))
 
     if _cancelled(job_id):
@@ -310,7 +321,7 @@ def _execute(job_id: str, spec: dict) -> None:
     if hasattr(strategy, "finalize"):
         strategy.finalize(df)
 
-    _set(job_id, pct=95, message="building results…")
+    _set(job_id, pct=99, message="Building results…")
     # `blocks` / `misses` are optional on the execution layer — a strategy that records no
     # refusals or near-misses (or an older one) yields an empty list, never a missing key.
     results = build_results(
@@ -343,15 +354,18 @@ def _replay(job_id: str, strategy, df, total: int) -> None:
         strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
     stack = EngineStack(strategy.engine_config())
-    step = max(1, total // 100)
+    # ⚠ 1/500th of the run, not 1/100th. `_set` is a dict update under a lock, so the cost is
+    # nothing; the granularity is what the person watching sees. At 1% steps a 156,721-bar run
+    # moved the bar 100 times over several minutes and looked frozen between jumps.
+    step = max(1, total // 500)
     for bar in iter_bars(df):
         if bar.index % step == 0:
             if _cancelled(job_id):
                 return
             _set(
                 job_id,
-                pct=min(94, 15 + int(bar.index / total * 79)),
-                message=f"bar {bar.index:,} / {total:,}",
+                pct=min(98, 2 + int(bar.index / total * 96)),
+                message=f"Testing bar {bar.index:,} of {total:,}",
             )
         strategy.step(stack.step(bar))
 
