@@ -18,6 +18,10 @@
     "tradingbox": {
       "command": "python3",
       "args": [".claude/mcp/tradingbox_server.py"]
+    },
+    "lab": {
+      "command": "python3",
+      "args": [".claude/mcp/lab_server.py"]
     }
   }
 }

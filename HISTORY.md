@@ -15,6 +15,80 @@ the other one did.
 
 ## Latest
 
+### The MCP servers arrive, and each one moves a rule out of memory (2026-08-20/21)
+
+Aaron asked which MCP servers were worth installing. The honest answer was two off the shelf and
+two worth building, and the reasoning that produced it is the transferable part: **a server is
+worth it when it removes a way to be wrong, not when it saves typing.**
+
+**browser (Playwright).** Installed because rules 7 and 9 are about features nobody ever RAN —
+the Deploy button dead eight days, six Telegram commands reporting success, 24 defects in a page
+never driven end to end. Until this, the page could only be read and inferred.
+
+The design question was what stops a click on Stop. The answer was NOT to trust the agent: an init
+script is injected ahead of the app's own code and rejects the live actions inside the browser.
+🔴 **The failure mode that had to be designed out was a MISSING guard reading as a working one** —
+measured, and the server exits with *"Init script file does not exist"* rather than opening an
+unguarded browser. The path is relative so it resolves on either clone.
+
+⚠ **Two things the first version got wrong, both found by driving it rather than reasoning about
+it.** The origin lock blocked Google's font hosts, so the page rendered and screenshotted happily
+in fallback fonts with a single console error as the only sign — *a screenshot that looks
+plausible and is subtly wrong is worse than one that fails*, when judging a page by eye is the
+whole point. And the candle chart takes ~20s to paint on a multi-year run while the page looks
+finished, which is precisely how a test that passes on one machine and fails on another gets
+written.
+
+⚠ **Headless was MEASURED, not assumed**: same layout, real fonts, 762 KB screenshots, working
+clicks, six painted canvases. The only loss is watching it live. ⚠ **The browser does NOT beat
+Cloudflare** — tested against the prop-firm doc pages, which matters because the rules audit needs
+them (see below).
+
+**tradingbox.** Seven named operations replacing an open SSH prompt. The value is the absence:
+`taskkill /f /im python.exe` is forbidden by a rule in a document, and a rule in a document is
+what failed for three days. ⚠ **The guarded writes are proven to refuse BEFORE the network** —
+a refusal that had already fired the request would be theatre and nothing in the returned text
+would show it.
+
+⚠ **Building it found two labelling traps, and one of them was then WRITTEN DOWN WRONG.** The
+health payload's MT5 account is the DATA agent's terminal, not the live bot's — read one as the
+other and you conclude the live bot changed brokers. The second was reported as *"the Bots page
+shows every watchdog as STOPPED"*, and **the page never did**: both values already rendered the
+correct gold *"waiting for next trigger"* dot. Only the API said it. *What the page shows* and
+*what the endpoint returns* had been collapsed into one claim, in the same paragraph that was
+congratulating itself for finding the bug.
+
+**The `--no-merges` fix that was BACKED OUT is the most useful thing here.** A merge commit
+prints no file list, so it reached the version-comparison list naming no tree. Excluding merges
+fixed that and then required the same flag on the version COUNT to keep the headline agreeing
+with the list — at which point it stops being local, because `algos/tools/promote.py` stamps
+`strategy_version` onto a live bot's frozen snapshot using that same `rev-list`. MEASURED: 516
+commits touch the live bot's trees, 512 excluding merges. 🔴 **A one-line change in one file is
+not local when another program computes the same number from the same history.** What shipped
+instead was a `merge` flag on the record: the one row allowed to name no tree now says why.
+
+**lab.** The comparison refuses when the two runs were not measured the same way. Rule 11 has
+been broken four times in this app and the shape is always the same — the difference column
+becomes the thing that lies. 🔴 **The basis is READ OFF the request contract rather than chosen**,
+by parsing `BacktestRunRequest` out of this repo: adding an input to a run turns the check red
+until somebody decides whether it changes what the run is measured on. A hand-maintained list
+would have been the same defect one layer up. ⚠ **It caught a real pair on its first live run** —
+two runs identical in the list view (same strategy, same start, similar trade counts) and ending
+two days apart.
+
+**Perplexity and Firecrawl were asked about and answered differently.** Perplexity: no. Its
+output is a synthesised third-party summary, and `/prop-firm-rules-audit` explicitly forbids
+exactly that as authoritative. Firecrawl: worth a free-tier test, for one measured reason —
+**of the four prop firms' doc pages, one is readable.** Tradeify and Apex return 403 to both
+plain fetching and a real browser; LucidTrading loads without its rule text. So three of four
+firms' stored rules are currently checked against nothing, and those rules decide whether a
+strategy passes an evaluation.
+
+⚠ **All three servers are front doors onto the Command Center backend, never second
+implementations**, and the MCP wire is hand-rolled on the standard library because the official
+SDK needs Python 3.10 while every interpreter here is 3.9.6. **Adding a tool must not mean adding
+a runtime.**
+
 ### The +180% was a description of the chart it was tuned on (2026-08-17)
 
 Aaron: *"I made 180% in three years with the strategy as it is. Does that mean it has an edge?"* Two

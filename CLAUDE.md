@@ -232,121 +232,74 @@ slower every time either of us pushed, and it was avoided here on purpose.
 
 **`skills/` — `learn/` (2026-08-11)**: `/learn <video-url> [focus]` watches a video and files a durable note to **`education/learned/`** (dated markdown, source link, what it covers with timestamps, what is worth acting on). It drives the third-party `watch` skill for the watching — captions first, `ffmpeg` frames second, Whisper API only when a video has no captions — and adds the note. ⚠ **The note is the deliverable and the chat reply is deliberately short**: a note that lists the TOPICS a video mentioned is worthless, so it records what the thing actually IS. ⚠ **The notes are COMMITTED and the videos are not re-watched** — a note already on disk for a URL is read rather than regenerated, because the frames are the whole token cost. ⚠ **No speech-to-text key is configured** (`~/.config/watch/.env`, per machine, git-ignored by living outside the repo): captions cover most of YouTube, and a caption-less source — a Loom, a TikTok, your own screen recording — comes back frames-only and says so. A free Groq key retires that.
 
-## The browser server — Claude can drive the Command Center, and cannot press the live buttons
+## The MCP servers — what Claude is handed instead of a shell
 
-**Added 2026-08-20.** `.mcp.json` at the repo root wires up Playwright's MCP server, so it
-arrives with a clone and works the same on both machines. Nothing to install: it uses the
-Chromium the frontend tests already downloaded. Each of us approves the project server once,
-on the first session after pulling it.
+**Added 2026-08-20/21.** `.mcp.json` at the repo root wires up three servers, so they arrive
+with a clone and behave the same on both machines. Each of us approves them once, on the first
+session after pulling. Full build story, measurements and one fix that was backed out:
+`HISTORY.md` → *The MCP servers arrive*.
 
-**Why it is here.** Rule 7 and rule 9 are about features that were never RUN — the Deploy
-button dead for eight days, six Telegram commands reporting success, 24 defects in one page
-nobody had driven end to end. Until now Claude could read the page's code and infer; it could
-not open the page. This closes that.
+| Server | What it is for |
+|---|---|
+| **browser** | Opens the Command Center in a real browser — the answer to rules 7 and 9, which are about features nobody ever RAN |
+| **tradingbox** | Seven named trading-box operations instead of an open SSH prompt |
+| **lab** | Backtests, and a comparison that refuses when the two runs were not measured the same way |
 
-🔴 **The backend talks to the live trading box, so a click is a real action** — stop the armed
-bot, promote code under it, deploy a strategy, rewrite a broker account row. "The agent will be
-careful" is a rule living in somebody's memory, and this repo's standing lesson is that such a
-rule is not one the next command respects. So the refusal lives in the PAGE:
-`.claude/mcp/browser_guard.js` is injected before any of the app's own scripts and rejects
-those requests inside the browser. They never reach the backend.
+**The one idea behind all three: a rule that lives in somebody's memory is a rule that gets
+broken on a Friday.** Each server moves a rule this repo keeps re-learning into something that
+cannot be talked out of it.
 
-⚠ **The read-only twins stay allowed on purpose** — a promote PREVIEW changes nothing, and lab
-writes (backtests, sweeps, stacks, stress tests, optimizations) cost compute, never money.
-Blocking those would make the tool useless and teach everyone to switch the guard off.
+🔴 **browser — the page can be clicked, and the live buttons cannot.** The backend talks to the
+trading box, so a click is a real action. `.claude/mcp/browser_guard.js` is injected ahead of
+the app's own scripts and rejects bot start/stop/restart, promote, strategy deploy and delete,
+account writes and agent starts INSIDE the browser; they never reach the backend. Promote
+PREVIEW and every lab write stay allowed — those cost compute, never money, and a guard that
+blocks the useful half gets switched off. ✅ **A missing guard file makes the server refuse to
+start**, so there is no unguarded state. ⚠ **Not a security boundary** — it makes an accident
+impossible, not an attack. ⚠ **It runs headless, which MEASURED costs nothing** except being
+able to watch. ⚠ **Google's font hosts are allowed deliberately**: blocked, the page still
+rendered and screenshotted happily in the wrong typeface with one console error as the only
+sign, and a screenshot that looks plausible and is subtly wrong is worse than one that fails.
 
-⚠ **It is NOT a security boundary and must not be sold as one.** It runs inside the page.
-It makes an ACCIDENT impossible, not an attack. Live safety is still the promote/stop workflow
-below.
+🔴 **tradingbox — the point is what is ABSENT.** No hard kill, no fleet kill, no lock deletion,
+no account edit, no password change, no user management, no agent start, no restart.
+`taskkill /f /im python.exe` killed the live bot for three days; it is not on the menu, so a
+typo or a bad quote cannot reach it. ⚠ **The two writes take a phrase naming the bot and the
+action** — a speed bump against a slip, not a wall against intent, and it refuses *before* the
+network. ⚠ **Every reply says whether the question was ASKED**: unreachable returns no payload,
+never a `running: false`. That is rule 1.
 
-✅ **A missing guard file makes the server REFUSE TO START** — measured, not assumed: the
-process exits with *"Init script file does not exist"* and no browser ever opens. There is no
-state where the browser is driving unguarded, which is the one failure this design could not
-have tolerated. The init-script path is RELATIVE for exactly this reason: it resolves against
-the repo root on either clone.
+🔴 **lab — the comparison refuses when the basis differs.** Rule 11 has been broken four times
+in this app, always the same way: the difference column becomes the thing that lies. Window,
+timeframe, instrument, costs, broker, sizing — if any of them moved, the tool refuses and names
+the field. ⚠ **The basis is READ OFF the request contract, not chosen** — `check_lab.py` parses
+`BacktestRunRequest` out of this repo, so adding an input to a run turns red until somebody
+decides whether it changes what the run is measured on. ⚠ **Net dollars are reported under the
+unit-free numbers, never above** (rule 6), and the breakeven-scratch count always travels with
+the win rate.
 
-**Prove the guard rather than trusting it.** `node .claude/mcp/check_browser_guard.js` runs 34
-cases and asserts refusals AND allowances, so a guard that blocks everything and a guard that
-blocks nothing both fail it. Watched RED by mutation: emptying the rule list reddens exactly
-the 20 refusals and nothing else; widening the promote rule by one character reddens exactly
-the two preview cases. In a live page, ask the console for the guard's own handle — it reports
-whether it is active and will tell you what it would refuse, without firing anything.
+⚠ **All three are FRONT DOORS onto the Command Center backend, never second implementations** —
+so the app must be running, and each says so plainly when it is not. The one exception is the
+trading box's ledger tool, which reads committed files and keeps working regardless.
 
-⚠ **The version is PINNED**, same reasoning as ruff: an unpinned tool means two machines behave
-differently and neither knows why. ⚠ **The browser is started clean each time** (nothing saved
-to disk) and reaches only the two local ports plus Google's font hosts — it cannot wander onto
-the internet or onto the VPS.
+⚠ **The MCP wire is hand-rolled on the standard library**, because the official SDK needs Python
+3.10 and every interpreter here is 3.9.6. Adding a tool must not mean adding a runtime.
 
-**It runs HEADLESS, and MEASURED 2026-08-20 that costs nothing.** A headless run of the backtest
-detail page returned the same layout, the real fonts, full-quality screenshots, console errors,
-working clicks, and the candle chart drawn on its canvas. The only thing headless gives up is
-being able to watch it live. ⚠ **The two font hosts are allowed for a reason worth keeping**: with
-them blocked the page still rendered and screenshotted happily in fallback fonts, one console
-error the only sign. **A screenshot that looks plausible and is subtly wrong is worse than one
-that fails** — the whole point of the tool is judging a page by eye.
+**Prove them rather than trusting them** — they are steps 4, 5 and 7 of `scripts/run_all_tests.sh`,
+and every one was watched RED by mutation:
 
-⚠ **The candle chart takes ~20s to paint on a multi-year run** and the page looks finished long
-before it does — it sits on *"Loading chart..."*. Wait for the drawing surface to EXIST rather
-than for the page to load, or you write a test that passes on timing.
+```
+node   .claude/mcp/check_browser_guard.js
+python3 .claude/mcp/check_tradingbox.py
+python3 .claude/mcp/check_lab.py
+```
 
-⚠ **When a new route that touches money or the live box is added, it must be added to the guard
-in the same change.** The guard is a deny-list, so a route it has never heard of is ALLOWED.
-That is the honest trade for not blocking the lab, and it is the part that will go stale.
-
----
-
-
-## The trading-box server — a fixed menu instead of an SSH prompt
-
-**Added 2026-08-21.** `.claude/mcp/tradingbox_server.py`, wired up in `.mcp.json`, gives Claude
-seven named trading-box operations instead of an open shell. Read the bots, read a version,
-tail a log, read a day's decisions, preview a promote — and two guarded writes.
-
-🔴 **The point is what is ABSENT.** No hard kill. No fleet kill. No lock deletion. No account
-edit, no password change, no user management, no agent start, no restart. `taskkill /f /im
-python.exe` killed the live bot for three days and is forbidden by a rule in a document —
-which is a rule that lives in somebody's memory. **It is not on the menu, so it cannot be
-reached by a typo, a bad quote, or a confused agent.**
-
-⚠ **It is NOT a second implementation of anything, and that was the constraint that shaped it.**
-Every live fact comes from the Command Center backend, which already owns the SSH, the MT5
-reads and the promote logic. The one thing read locally is the committed decision ledger,
-because that is a file in this repo. ⚠ **So the app must be RUNNING for six of the seven
-tools** — the ledger one keeps working without it, which is the right half to keep.
-
-**Every reply carries whether the question was actually ASKED.** A tool that cannot reach the
-app returns no payload at all, never a `running: false` — that is rule 1, and it is the defect
-that let a dead terminal read as a quiet market for 50 minutes with every dashboard green.
-
-⚠ **The two writes take a confirmation phrase naming the bot and the action** (`stop <bot>`,
-`promote <bot>`). **Say plainly what that is worth: a speed bump against a slip, not a wall
-against intent** — same honesty as the browser guard. Its value is that neither can happen as
-a side effect of a call that looked like a read. It is proven to refuse *before* the network,
-because a refusal that had already fired the request would be theatre and nothing in the
-returned text would show it.
-
-**Prove it rather than trusting it:** `python3 .claude/mcp/check_tradingbox.py`, and it is step
-5 of `run_all_tests.sh`. Watched RED by mutation three ways — dropping the stop guard reddens
-exactly the 18 stop assertions, making the cannot-ask reply leak a `running: false` reddens
-exactly the 4 unreachable cases, and slipping a kill tool onto the menu reddens exactly the two
-menu assertions.
-
-⚠ **One labelling trap it exists to stop repeating, MEASURED 2026-08-21.** The app's health
-payload reports an MT5 account that is the **data agent's** terminal, not the live bot's —
-read one as the other and you conclude the live bot changed accounts. This server labels
-both; the payload still names neither.
-
-⚠ **A second trap was found the same day and FIXED rather than documented around** — see
-`command-center/backend/CLAUDE.md`. ⚠ **The correction to how it was first written down is
-the part worth keeping**: it was reported here as *"the Bots page shows every watchdog as
-STOPPED"*, and the page never did. Both values fell to the same gold *"waiting for next
-trigger"* dot, so nothing a person looked at was wrong. **The API was the only thing saying
-it, and "what the page shows" and "what the endpoint returns" had been read as one claim.**
-
-⚠ **The MCP wire is hand-rolled on the standard library**, because the official SDK needs
-Python 3.10 and every interpreter here is 3.9.6. Adding a tool must not mean adding a runtime.
+⚠ **When a new route touches money or the live box, it goes in the browser guard and the trading
+box in the SAME change.** Both are deny-lists by design — a route they have never heard of is
+allowed. That is the honest trade for not blocking the lab, and it is the part that goes stale.
 
 ---
+
 
 ## VPS Deploy Workflow
 
