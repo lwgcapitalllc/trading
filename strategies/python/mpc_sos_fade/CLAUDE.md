@@ -2680,6 +2680,32 @@ bot's offline tests stay green) and must not be reverted:
 
 Full context in `strategies/python/mpc_bleg/CLAUDE.md`.
 
+## `Trade.tp_rungs` — the closed record says how much each rung TAKES OFF (2026-08-21)
+
+`Trade.tp1` / `tp2` say only WHERE a rung sits. At the shipped `exec_tp1_pct = exec_tp2_pct = 0`
+nothing is ever sold at either one — the position rides the runner and the rungs only stage the
+stop — so a chart reading two prices off a closed trade drew two profit targets that had no orders
+behind them, on every trade of every run. `tp_rungs` carries the same two rungs as
+`(price, banks_pct)` pairs beside the prices. Full finding, and the two `TP1` chips on one trade
+that started it: `command-center/backend/CLAUDE.md` → *The exit ladder*.
+
+⚠ **The percentage is resolved for the trade that was actually OPEN, not read off the config.**
+A re-entry may bank its own (`exec_sec_tp1_pct`, 50 by default) and the reclaim half a different
+one again (`exec_rec_tp1_pct`, 100), so it goes through `_tp1_pct()` exactly as the live ladder
+does. Reading `cfg.exec_tp1_pct` here would report a primary's percentage for every re-entry.
+
+⚠ **REPORTING ONLY**, the same standing as `mfe_usd` / `tp1` / `tp2` / `fib` — nothing reads it
+back, so no decision can move and `compare_strategy.py` diffs the same `px_*` stream.
+
+🔴 **A re-entry's rungs are NOT in distance order, and that is worth knowing beyond the chart.**
+Rung 1 is priced off risk (`exec_sec_tp_r`, 1.25R below a short's entry) while rung 2 stays the 15m
+fib it was armed on, so **rung 2 is routinely the NEARER of the two — 182 of 205 trades on run
+`687c8df2a523`.** `_advance_stage` tests rung 1 before rung 2, so on such a trade the stop can go
+straight from stage 0 to stage 2 without ever arming breakeven. **Not changed here** — it moves
+what the bot trades and needs its own measurement, not a drive-by fix alongside a labelling one.
+
+Tests: `tests/test_execution.py` (2, both watched RED against HEAD).
+
 ## Do / Never
 
 - **Do** port any change to `mpc_strategy.pine`'s A+ block or execution layer here line-for-line, then

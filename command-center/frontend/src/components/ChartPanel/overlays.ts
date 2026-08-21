@@ -261,7 +261,10 @@ interface TradeExtend {
   maePrice?: number
   profitLegs?: Array<number | { price: number; label: string }> // {price,label}; bare number tolerated
   stopPrice?: number
-  tpTargets?: number[] // TP ladder nearest→furthest; first UNHIT one drawn faintly (near-miss view)
+  // The exit ladder in the STRATEGY's own order — NOT nearest-first. `{price, banks}`; a bare
+  // number is tolerated (a run stored before the banking flag existed). `banks === false` marks a
+  // rung the trade places no order at, which is not a target — see the ladder block below.
+  tpTargets?: Array<number | { price: number; banks?: boolean }>
 }
 
 /** What a WOULD-BE-ENTRY marker (BLOCK / MISS) reads. The `text` is decided by the host, not
@@ -735,12 +738,38 @@ export function registerChartOverlays(): void {
       // stronger (it BANKED there), and two figures on one pixel row read as two fills. The `1e-9` is
       // a float-equality guard, NOT a "near enough" band: a leg price and its target are the same
       // strategy field, so they either match exactly or the leg belongs somewhere else.
-      const targets = (d.tpTargets ?? []).filter((t) => typeof t === 'number')
+      //
+      // 🔴 A rung that banks NOTHING is not a target and is not drawn as one. It carries no order —
+      // no part of the position is ever sold at that price — and the only thing a touch does is step
+      // the stop. It keeps its line, because it is a real level that really moved the stop and a
+      // line that vanishes in some configurations cannot be read as absence-means-something, but the
+      // chip says what happens there instead of naming a target the trade never had. At the shipped
+      // settings BOTH rungs of a primary bank 0%, so `TP1`/`TP2` on a primary named two targets that
+      // placed no orders on any trade of any run.
+      // ⚠ `banks === false` ONLY — `undefined` is a run stored before the strategy reported it, and
+      // reading that as "banks nothing" would relabel every historical chart off a measurement
+      // nobody made.
+      // ⚠ Numbering is by LADDER POSITION, which is the strategy's order and not nearest-first: a
+      // re-entry prices its first rung off risk and its second off a fib, so `TP2` legitimately sits
+      // nearer the entry than `TP1`. Sorting them here would renumber the strategy's own rungs.
+      const targets = (d.tpTargets ?? [])
+        .map((t) => (typeof t === 'number' ? { price: t } : t))
+        .filter((t) => t && typeof t.price === 'number')
       for (let i = 0; i < targets.length; i++) {
-        if (legPrices.some((p) => Math.abs(p - targets[i]) < 1e-9)) continue
-        crossLine(targets[i], withAlpha(profitColor, 0.5))
-        dot(targets[i], withAlpha(profitColor, 0.5))
-        addLabel(targets[i], `TP${i + 1}`, withAlpha(profitColor, 0.7))
+        const { price, banks } = targets[i]
+        if (legPrices.some((p) => Math.abs(p - price) < 1e-9)) continue
+        const dead = banks === false
+        // A stop step is neither profit nor risk — it is a trigger — so it drops the mint and takes
+        // the neutral level colour rather than borrowing the stop's red, which on a winner reads as
+        // a second stop sitting in front of price.
+        const color = dead ? withAlpha(entryColor, 0.45) : withAlpha(profitColor, 0.5)
+        crossLine(price, color)
+        dot(price, color)
+        addLabel(
+          price,
+          dead ? 'Stop tightens' : `TP${i + 1}`,
+          dead ? withAlpha(entryColor, 0.7) : withAlpha(profitColor, 0.7)
+        )
       }
 
       // De-collide the labels top→down (min 15px apart), then draw each as a compact rounded chip

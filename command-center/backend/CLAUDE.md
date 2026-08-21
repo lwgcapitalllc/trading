@@ -3519,6 +3519,56 @@ fibs toggle is listed off whether any trade carries one, so
 absence removes the switch instead of offering an empty layer. Existing runs need **Reload charts**
 (`chart_spec.json` is cached). Tests: `tests/test_chart_spec_trade_fib.py` (12).
 
+## The exit ladder — a rung is only a TARGET if the trade places an order at it (2026-08-21)
+
+`chart_spec._tp_targets` + `_leg_label`, feeding `trades[].tpTargets` and `trades[].profitLegs`.
+
+**The picture that found it.** Run `687c8df2a523`, the re-entry short of 2026-05-21 (T198): the
+price chart drew **two chips reading `TP1`**, at 4,507.04 and at 4,491.99, on one trade. Neither
+was a drawing glitch — they came from two independent naming schemes over the same record, and
+nothing reconciled them.
+
+**Defect 1 — a leg was named after the ORDER that carried it, not the price it closed at.** The
+upper chip came from a leg whose exit-order id was `S-TP1`. The trade's TRAIL closed that rung at
+4,507.04 while its first target sat 15 points further away at 4,491.99, and price never reached it
+(deepest favourable of the whole hold: 4,504.09). A rung keeps its order id when something else
+closes it — a trail, a time stop, a flip — so an order named for the first target routinely comes
+off nowhere near that target. **13 of 205 trades on that run carried a green target chip sitting
+short of the target it was named after.** `_leg_label` now treats the id as a CLAIM and checks it
+against the rung it names: a leg that did not reach its own target price is `Exit`, whatever the
+order was called. ⚠ **Reached is at-or-BEYOND, never equality** — a limit the bar opens past fills
+at the open, i.e. better than its own price, and that is still the target filling. ⚠ **A rung the
+trade reports no target for keeps its id**: absent evidence is not evidence against, and inventing
+an `Exit` there would relabel every run stored before rungs existed.
+
+**Defect 2 — a price with no order behind it was drawn as a target.** The same picture carried a
+`TP2` chip at 4,505.43 for a rung that places no order at all. At mpc_sos_fade's shipped settings
+`exec_tp2_pct` is 0 — nothing is ever sold there and a touch only steps the stop. Across all 205
+trades of that run there is **not one second-rung fill**; every trade closed on the runner, the
+first rung, or time. So `tpTargets` is no longer a bare price list: each rung is `{price, banks?}`,
+and the chart draws a non-banking rung under its own name rather than a target's.
+
+🔴 **`banks` ABSENT is not `banks: false`.** Every run stored before 2026-08-21 carries bare
+prices, and defaulting those to "banks nothing" would redraw every historical chart's targets as
+stop steps off a measurement nobody made. `_tp_targets` emits the key only when the strategy
+reported it. This is the same rule as the dead terminal reading as a quiet market.
+
+⚠ **Ladder order is the STRATEGY's, and is NOT nearest-first** — the old comment here claimed it
+was. A re-entry prices its first rung off risk (`exec_sec_tp_r`) and its second off a fib, so the
+second is routinely the NEARER of the two: **182 of 205 trades on that run.** Numbering is by
+ladder position, so `TP2` legitimately sits closer to the entry than `TP1`; sorting here would
+renumber the strategy's own rungs.
+
+⚠ **Two rungs closed by ONE event at ONE price are ONE chip.** A trail takes every still-open
+bracket at the same price on the same bar, so the record holds one leg per bracket — drawing both
+de-collides the second 15px below the first and reads as two separate fills.
+
+⚠ **Existing runs need a RERUN, not *Reload charts*** — `banks` comes from the strategy's own
+record, so a run replayed before this landed has bare prices and keeps the old (unknown) rendering.
+
+Tests: `tests/test_chart_spec_tp_rungs.py` (8, all watched RED — 5 against HEAD, 3 by mutating the
+target check to always relabel).
+
 ## News filter (post-run)
 
 The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time gate: the lab runs every backtest RAW (news is never wired into the C#/MQL5 strategy), so removing news-window trades is pure arithmetic on the finished trade list — instant, no VPS re-run. Design decision (Aaron 2026-07-05): **run raw + toggle after.** Window default **15 min before / 30 min after** a high-impact USD release (asymmetric — liquidity dies only in the last minutes before; the spike/reversal/move run 15–30 min after). **Two rules, both switchable, and BOTH DEFAULT OFF** (2026-08-01, Aaron's call): the page opens on the run exactly as traded, so every number on it is the backtest's own and turning a rule on is a deliberate what-if. That replaced two different defaults for one reason — a filtered default means the headline figure on screen is not the run's result, and no checkbox further down the page makes that obvious. Holidays had defaulted ON (hardcoded always-excluded with no control at all until 2026-07-30, when they became a visible checkbox but stayed ticked), and news followed the strategy's own `avoid_news`, so the default silently DIFFERED BETWEEN STRATEGIES — two runs over the same window could open on different trade counts with nothing on screen explaining why. The backend reports `in_news` and `in_holiday` separately and always has; every default here has been a frontend-only decision.

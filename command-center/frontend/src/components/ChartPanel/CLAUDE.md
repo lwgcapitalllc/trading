@@ -1082,7 +1082,23 @@ here**, so the chart shows exactly what the strategy saw.
   by side, both "hit TP1 → armed breakeven → scratched at BE", one showing `TP2` and one showing
   nothing. ⚠ **A layer that draws itself only sometimes cannot be read as absence-means-something**:
   a blank chart could not be told from a trade with no targets, so the reader had to go and check
-  anyway — which is the cost the gate existed to save. Aaron's call. Supported figure types are
+  anyway — which is the cost the gate existed to save. Aaron's call.
+  🔴 **A rung that BANKS NOTHING is not a target and is no longer drawn as one (2026-08-21).**
+  `tpTargets` is now `{price, banks?}` per rung. `banks === false` means the trade places no order
+  at that price — nothing is ever sold there and a touch only steps the stop — so the chip reads
+  `Stop tightens` in the neutral level colour instead of `TP1`/`TP2` in mint. It KEEPS its line:
+  it is a real level that really moved the stop, and by the paragraph above a line that vanishes in
+  some configurations cannot be read as absence-means-something. At mpc_sos_fade's shipped settings
+  BOTH rungs of a primary bank 0%, so the old rendering named two targets that placed no orders on
+  any trade of any run. ⚠ **`banks === false` ONLY — `undefined` renders the old way**, because a
+  run stored before the flag existed reported nothing and "cannot ask" must not read as "no".
+  ⚠ **The colour is neutral rather than the stop's red**: on a winner a red line sitting in front
+  of price reads as a second stop. ⚠ **Numbering is by LADDER POSITION, which is the strategy's
+  order and NOT nearest-first** — a re-entry prices rung 1 off risk and rung 2 off a fib, so `TP2`
+  legitimately sits nearer the entry than `TP1` (182 of 205 trades on run `687c8df2a523`). Sorting
+  here would renumber the strategy's own rungs. Full finding, including the two `TP1` chips on one
+  trade that started it: `command-center/backend/CLAUDE.md` → *The exit ladder*.
+  Supported figure types are
   `circle/line/polygon/rect/text` (verified via `getSupportedFigures`). **Chart price marks:** the
   candle `priceMark.high`/`.low` (highest/lowest-visible-price tags) are turned OFF in `chartStyles.ts`
   — they render on the exact visual extreme, which is where the outcome chip sits, so they collided;

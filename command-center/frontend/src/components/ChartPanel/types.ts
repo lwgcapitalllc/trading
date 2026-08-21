@@ -46,6 +46,17 @@ export interface ChartProfitLeg {
   label: string
 }
 
+/** One rung of a trade's exit ladder: the price it sits at, plus whether the trade actually
+ *  places an ORDER there. `banks: false` means nothing is ever sold at that price and touching it
+ *  only steps the stop — so it is not a target and must not be drawn with a target's name.
+ *  ⚠ `banks` ABSENT means the strategy did not report it, which is not the same as `false`: every
+ *  run stored before 2026-08-21 carries bare prices, and reading those as "banks nothing" would
+ *  relabel every historical chart off a measurement nobody made. */
+export interface ChartTpRung {
+  price: number
+  banks?: boolean
+}
+
 /** One rung of a trade's own fib leg: a ratio and the price the STRATEGY read for it. */
 export interface ChartFibLevel {
   ratio: number
@@ -145,7 +156,9 @@ export interface ChartTrade {
   maePrice?: number // deepest ADVERSE price the hold reached (drives a loser's red depth)
   profitLegs?: ChartProfitLeg[] // where profit was actually taken → one labelled dotted line each
   stopPrice?: number // initial 1R stop → a bubble + dotted risk line
-  tpTargets?: number[] // TP target ladder (nearest→furthest); first UNHIT one drawn faintly
+  // The exit ladder in the STRATEGY's own order — never sorted by distance. A re-entry prices its
+  // first rung off risk and its second off a fib, so the second is routinely the nearer of the two.
+  tpTargets?: Array<number | ChartTpRung> // bare number tolerated (a run stored before 2026-08-21)
   fib?: ChartTradeFib // the fib leg this trade was priced off → the Trade fibs layer
   // Portfolio-stack layering — OPTIONAL, absent on a single-run spec. `layer` names the strategy the
   // trade belongs to (so a host can filter to the toggled-on strategies); `layerColor` tints the

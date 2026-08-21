@@ -1432,3 +1432,35 @@ def test_the_lot_record_carries_no_internal_bookkeeping():
     lot = ex.trades[0].adds[0]
     leaked = {"ext_hi", "ext_lo", "_fill_ms", "_limit_fill"} & set(lot)
     assert not leaked, f"internal bookkeeping reached the trade record: {sorted(leaked)}"
+
+
+# ------------------------------------------------ the exit RUNGS a trade reports ---
+# A rung PRICE alone does not say whether the trade places an order there. At the shipped 0/0
+# default nothing is ever sold at either rung — they only stage the stop — so a chart reading two
+# prices off a closed trade drew two profit targets that had no orders behind them, on every trade
+# of every run, until 2026-08-21. The closed record now carries the percentage each rung takes off
+# beside its price. Reporting-only: no decision reads it, so parity is untouched.
+
+
+def test_a_closed_trade_reports_how_much_each_rung_actually_takes_off():
+    ex = Execution(_cfg(exec_tp1_pct=30.0, exec_tp2_pct=40.0))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())
+    t = ex.trades[0]
+    assert [pct for _, pct in t.tp_rungs] == [30.0, 40.0]
+    assert [price for price, _ in t.tp_rungs] == [t.tp1, t.tp2]
+
+
+def test_at_the_shipped_default_BOTH_rungs_report_that_they_bank_nothing():
+    """🔴 The picture the bug produced. At 0/0 the position rides the runner and neither rung ever
+    sells anything — so a chart must be able to tell that these two prices are not targets."""
+    cfg = _cfg()
+    assert (cfg.exec_tp1_pct, cfg.exec_tp2_pct) == (0.0, 0.0)  # the shipped default under test
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())
+    assert [pct for _, pct in ex.trades[0].tp_rungs] == [0.0, 0.0]

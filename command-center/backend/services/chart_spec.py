@@ -35,7 +35,7 @@ import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from services import history_limits, lab_db, metrics, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
@@ -221,12 +221,61 @@ def _fetch_candles(
     return rows, None
 
 
-def _leg_label(reason: str) -> str:
-    """A generic display label for a profit-take rung, from its exit-order id. `*-TP1/2/3` →
-    `TP1/2/3`; anything else (a runner/trail/close) → `Exit`. Strategy-agnostic — the chart
-    only ever shows TP1…TP3 / Exit, never a strategy's raw order names."""
+def _leg_label(reason: str, price: float, dir_sign: float, targets: list) -> str:
+    """A generic display label for a profit-take rung, from its exit-order id and where it
+    actually closed. `*-TP1/2/3` → `TP1/2/3`; anything else (a runner/trail/close) → `Exit`.
+    Strategy-agnostic — the chart only ever shows TP1…TP3 / Exit, never a strategy's raw
+    order names.
+
+    🔴 The order id alone is NOT enough, and reading it alone put two `TP1` chips at two
+    different prices on one trade (run 687c8df2a523, the re-entry short of 2026-05-21). A
+    rung keeps its order id when something ELSE closes it — a trail, a time stop, a flip —
+    so an order named for the first target routinely comes off nowhere near that target.
+    That trade banked half at 4,507.04 on the trail while its first target sat at 4,491.99,
+    and the chart drew a green `TP1` at each, one of them claiming a target hit that never
+    happened.
+
+    So the id is treated as a CLAIM and checked against the rung it names: a leg that did not
+    reach its own target price did not fill there, whatever it is called, and is labelled
+    `Exit`. A better-than-target fill still counts — a limit that gaps fills past its price.
+    A rung the trade reports no target for cannot be checked, so its id stands: absent
+    evidence is not evidence against.
+    """
     m = re.search(r"TP\s*([123])", (reason or "").upper())
-    return f"TP{m.group(1)}" if m else "Exit"
+    if not m:
+        return "Exit"
+    i = int(m.group(1)) - 1
+    target = targets[i]["price"] if i < len(targets) else None
+    if target is not None and (price - target) * dir_sign < -1e-9:
+        return "Exit"
+    return f"TP{m.group(1)}"
+
+
+def _tp_targets(raw: Any) -> list:
+    """A stored trade's `tp_targets` → the chart's rung list, one `{price, banks?}` each.
+
+    Accepts both shapes `backtest/output.py::_tp_targets` emits, and the distinction is the
+    whole reason this function exists: `banks` present says the strategy REPORTED whether the
+    rung places an order, and `banks` absent says nobody asked. A rung with no order is not a
+    profit target — nothing is ever sold there and touching it only steps the stop — so the
+    chart must not draw it with a target's name. **A missing `banks` must never be read as
+    `False`**: every run stored before 2026-08-21 carries bare prices, and defaulting those to
+    "banks nothing" would relabel every target on every historical chart off a measurement that
+    was never made.
+    """
+    out = []
+    for t in raw or []:
+        if isinstance(t, bool):
+            continue
+        if isinstance(t, (int, float)):
+            if t:
+                out.append({"price": round(float(t), 5)})
+        elif isinstance(t, dict) and isinstance(t.get("price"), (int, float)) and t["price"]:
+            rung = {"price": round(float(t["price"]), 5)}
+            if isinstance(t.get("banks"), bool):
+                rung["banks"] = t["banks"]
+            out.append(rung)
+    return out
 
 
 def _trade_fib(p: dict, entry_price: float, mae_price: Optional[float]) -> Optional[dict]:
@@ -345,15 +394,24 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
         # filled at the stop / breakeven (≈ entry) is not a profit-take and gets no green line —
         # this is what keeps a breakeven exit from being drawn as if it took profit.
         scratch = 0.1 * abs(ep - stop_price) if stop_price else 0.0
-        profit_legs = [
-            {
-                "price": round(float(lg["price"]), 5),
-                "label": _leg_label(str(lg.get("reason") or "")),
+        tp_targets = _tp_targets(p.get("tp_targets"))
+        # Two rungs closed by the SAME event land at the same price with the same label — a
+        # trail taking the whole position gives one leg per still-open bracket, all at one
+        # price. They are one line on the chart, so they are one chip: drawing the second
+        # stacks a duplicate 15px below and reads as two separate fills.
+        profit_legs: list = []
+        for lg in p.get("legs") or []:
+            if not isinstance(lg.get("price"), (int, float)):
+                continue
+            lp = float(lg["price"])
+            if (lp - ep) * dir_sign <= max(scratch, 1e-9):
+                continue
+            leg = {
+                "price": round(lp, 5),
+                "label": _leg_label(str(lg.get("reason") or ""), lp, dir_sign, tp_targets),
             }
-            for lg in (p.get("legs") or [])
-            if isinstance(lg.get("price"), (int, float))
-            and (float(lg["price"]) - ep) * dir_sign > max(scratch, 1e-9)
-        ]
+            if leg not in profit_legs:
+                profit_legs.append(leg)
         fib = _trade_fib(p, ep, mae_price)
         trades.append(
             {
@@ -427,13 +485,14 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                     if p.get("adds")
                     else {}
                 ),
-                # TP TARGET ladder (nearest→furthest) — the chart draws the first UNHIT one faintly so a
-                # runner's near-miss of the next TP is visible. Empty for a trade carrying no targets.
-                "tpTargets": [
-                    round(float(t), 5)
-                    for t in (p.get("tp_targets") or [])
-                    if isinstance(t, (int, float)) and t
-                ],
+                # The trade's exit RUNGS in the strategy's own ladder order, one `{price, banks?}`
+                # each — see `_tp_targets`. The chart draws an unhit target faintly so a runner's
+                # near-miss is visible, and draws a rung that banks NOTHING under a different name
+                # because it is not a target. ⚠ Ladder order is the strategy's, NOT nearest-first:
+                # a re-entry prices its first rung off risk and its second off a fib, so the second
+                # is routinely the nearer of the two (182 of 205 trades on run 687c8df2a523).
+                # Empty for a trade carrying no rungs.
+                "tpTargets": tp_targets,
                 # The fib LEG the trade was priced off, plus where the entry and the deepest adverse
                 # price sat ON it. OPTIONAL: absent for any runner or strategy that doesn't record one
                 # (NT8/MT5, older Python runs, the B-LEG fork), which is what makes the chart's Trade

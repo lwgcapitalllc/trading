@@ -622,3 +622,57 @@ def test_a_lot_that_recorded_nothing_past_its_fill_is_not_given_zeroes():
     assert build_equity_curve([_t(0.0, adds=lots)])[0]["adds"] == [
         {"price": 106.5, "ms": 1500, "qty": 0.75}
     ]
+
+
+# ── the exit RUNGS a trade reports ────────────────────────────────────────────
+# A rung price alone does not say whether the trade places an ORDER there. At mpc_sos_fade's
+# shipped settings the second rung banks 0% of the position on every trade — nothing is ever sold
+# at that price and a touch only steps the stop — yet the chart drew it as `TP2` on every trade of
+# every run until 2026-08-21. See `command-center/backend/tests/test_chart_spec_tp_rungs.py` for
+# the picture that found it.
+
+
+def _targets(**extra):
+    """A minimal closed trade, plus whatever rung fields the case is about."""
+    t = FakeTrade(
+        dir=1,
+        entry_index=0,
+        entry_price=100.0,
+        exit_index=1,
+        qty=1.0,
+        risk_usd=10.0,
+        pnl_usd=1.0,
+        r=0.1,
+        entry_ms=_ms(2026, 1, 1),
+        exit_ms=_ms(2026, 1, 2),
+        exit_price=101.0,
+        stop_distance=10.0,
+        exit_reason="RUN",
+    )
+    for k, v in extra.items():
+        setattr(t, k, v)
+    return build_equity_curve([t])[0]["tp_targets"]
+
+
+def test_a_reported_rung_says_whether_it_actually_banks():
+    assert _targets(tp_rungs=((110.0, 50.0), (120.0, 0.0))) == [
+        {"price": 110.0, "banks": True},
+        {"price": 120.0, "banks": False},
+    ]
+
+
+def test_a_strategy_that_reports_only_PRICES_says_nothing_about_banking():
+    """🔴 "no" and "cannot ask" must not be one value. Every run stored before rungs existed
+    carries bare prices, and emitting `banks: False` for them would tell the chart to redraw
+    their targets as stop steps off a measurement nobody made."""
+    out = _targets(tp1=110.0, tp2=120.0)
+    assert out == [110.0, 120.0]
+    assert not any(isinstance(t, dict) for t in out)
+
+
+def test_a_strategy_that_reports_neither_ships_no_ladder_rather_than_an_invented_one():
+    assert _targets() == []
+
+
+def test_an_unset_rung_is_dropped_rather_than_reported_at_price_zero():
+    assert _targets(tp_rungs=((110.0, 50.0), (0.0, 0.0))) == [{"price": 110.0, "banks": True}]

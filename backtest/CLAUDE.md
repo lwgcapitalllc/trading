@@ -1236,6 +1236,34 @@ either the cap biting (and then it is in the refusal log) or a decision moved. I
 found one: A+ shifts −0.10R on the shrink path, unexplained, 0.08% of the book and far under the
 15.06R jitter floor. Written down rather than rounded away.
 
+## `output.py::_tp_targets` — a rung PRICE does not say whether an order sits there (2026-08-21)
+
+The equity point's `tp_targets` used to be two bare prices copied off `t.tp1` / `t.tp2`. A price
+alone cannot tell a profit target from a level that places no order at all and only steps the stop
+— and at mpc_sos_fade's shipped `exec_tp1_pct = exec_tp2_pct = 0` **neither rung sells anything on
+any trade**, so the price chart drew two targets that had never carried an order. Full finding:
+`command-center/backend/CLAUDE.md` → *The exit ladder*.
+
+Each rung is now `{"price", "banks"}` when the strategy reports how much it takes off (the
+`tp_rungs` duck-type: `(price, banks_pct)` pairs), and a bare price when it does not.
+
+🔴 **The two shapes must stay distinguishable, and `banks: false` may NEVER stand in for "not
+reported".** Every run on disk before this date carries bare prices; emitting `false` for them
+would tell the chart to redraw their targets as stop steps off a measurement nobody made. This is
+rule 1 in the root file, one field further down the pipe.
+
+⚠ **Duck-typed both ways, like every other rich field here.** `tp_rungs` is preferred, the
+`tp1`/`tp2` pair is the fallback, and a strategy carrying neither ships `[]` rather than an
+invented ladder. A rung priced at 0 is unset and is dropped in both shapes. Nothing here knows
+which strategy produced the ladder or what its rungs mean.
+
+⚠ **Ladder order is the STRATEGY's and is not sorted here.** A re-entry prices rung 1 off risk and
+rung 2 off a fib, so rung 2 is routinely the nearer of the two — sorting would renumber the
+strategy's own rungs.
+
+Tests: `tests/test_output.py` (4, watched RED — 2 against HEAD, 2 by mutating the fallback to claim
+`banks: False`).
+
 ## `portfolio/account.py` — the entry floor carries `_GRANT_EPS` (2026-08-20)
 
 🔴 **The floor test was a bare `<` while the shrink test beside it had a tolerance, and setting a

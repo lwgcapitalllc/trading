@@ -196,14 +196,9 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                     if getattr(t, "adds", None)
                     else {}
                 ),
-                # TP TARGET ladder (the levels the trade aimed at, nearest→furthest) — lets the chart show
-                # an UNHIT next target so a near-miss of the following TP is visible. Empty for a trade
-                # duck-type that carries no targets. Reporting-only.
-                "tp_targets": [
-                    _round(v, 5)
-                    for v in (getattr(t, "tp1", 0.0), getattr(t, "tp2", 0.0))
-                    if isinstance(v, (int, float)) and v
-                ],
+                # The trade's exit RUNGS, in the strategy's own ladder order — see `_tp_targets`.
+                # Empty for a trade duck-type that carries none. Reporting-only.
+                "tp_targets": _tp_targets(t),
                 # The fib LEG this trade was priced off, exactly as the strategy read it when it
                 # placed the order — `{start_ms, levels: [[ratio, price], ...]}`, or absent. See
                 # `_trade_fib`. Reporting-only, and optional like every other rich field here.
@@ -211,6 +206,49 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
             }
         )
     return curve
+
+
+def _tp_targets(t: Any) -> list:
+    """A trade's exit RUNGS → the equity point's `tp_targets`, in the strategy's ladder order.
+
+    Two shapes, and which one you get is a statement about what the strategy was able to tell us:
+
+      {"price": p, "banks": bool}   the strategy reported how much each rung takes off, so a
+                                    consumer knows whether `p` is a profit target the trade
+                                    placed an order at, or a level that banks nothing and only
+                                    steps the stop.
+      p                             a bare price. The strategy reports rung PRICES and nothing
+                                    about orders, so nobody downstream knows which it is.
+
+    🔴 The two must stay distinguishable, and `banks: false` may never stand in for "not
+    reported". A chart that renders an unknown rung the same as a known-dead one is claiming a
+    measurement nobody made — the same shape as a dead terminal reading as a quiet market. The
+    price chart drew both prices as `TP1`/`TP2` until 2026-08-21, which put a green `TP2` chip on
+    every trade of a run whose second rung placed no order at all, on any trade.
+
+    Duck-typed like everything else here: `tp_rungs` is the rich form (`(price, banks_pct)` pairs)
+    and the `tp1`/`tp2` pair is the fallback, so a strategy that carries neither ships `[]` rather
+    than an invented ladder. A rung priced at 0 is unset and is dropped either way.
+    """
+    rungs = getattr(t, "tp_rungs", None)
+    if rungs:
+        out = []
+        for rung in rungs:
+            try:
+                price, pct = rung
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(price, (int, float)) or not price:
+                continue
+            if not isinstance(pct, (int, float)):
+                continue
+            out.append({"price": _round(price, 5), "banks": pct > 0})
+        return out
+    return [
+        _round(v, 5)
+        for v in (getattr(t, "tp1", 0.0), getattr(t, "tp2", 0.0))
+        if isinstance(v, (int, float)) and v
+    ]
 
 
 def _trade_fib(t: Any) -> Optional[dict]:

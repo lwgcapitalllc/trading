@@ -194,6 +194,24 @@ class Trade:
     # runner's near-miss of the following TP is visible. No decision reads them (parity-safe).
     tp1: float = 0.0
     tp2: float = 0.0
+    # The same two rungs as `(price, banks_pct)` pairs, in ladder order — how much of the position
+    # each one actually TAKES OFF. `tp1`/`tp2` alone say only where a rung sits, and a chart reading
+    # them has no way to tell a real profit target from a level that places no order at all and only
+    # steps the stop. At the shipped settings BOTH rungs on a primary bank 0% (it runs on the trail
+    # and banks nothing), and a chart drawing those two prices as "TP1"/"TP2" is claiming targets
+    # the trade never had — which is exactly what it did until 2026-08-21.
+    #
+    # ⚠ The percentage is resolved for the trade that was actually OPEN, not read off the config:
+    # a re-entry may bank its own percentage, and the reclaim half a different one again.
+    #
+    # REPORTING ONLY, the same standing as `mfe_usd` / `tp1` / `tp2` — no decision reads it back.
+    # Empty rather than a guessed pair on any fork that prices its exits some other way, because
+    # "this strategy does not report rungs" and "these rungs bank nothing" must not be one value.
+    tp_rungs: Tuple[Tuple[float, float], ...] = ()
+    # The fib LEG this trade was priced off, frozen at order placement — see `TradeFib`. Optional
+    # for the same reason every other reporting field here is: a fork that prices its entries some
+    # other way (`mpc_bleg` overrides `_place_entries` and works off band prices, not this ladder)
+    # simply carries None, and the chart draws no fib for it rather than an invented one.
     # The fib LEG this trade was priced off, frozen at order placement — see `TradeFib`. Optional
     # for the same reason every other reporting field here is: a fork that prices its entries some
     # other way (`mpc_bleg` overrides `_place_entries` and works off band prices, not this ladder)
@@ -2498,7 +2516,10 @@ class Execution:
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
             mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
             adds=[self._add_record(lot) for lot in self._add_lots],
-            tp1=round(self._tp1, 5), tp2=round(self._tp2, 5), fib=self._fib))
+            tp1=round(self._tp1, 5), tp2=round(self._tp2, 5),
+            tp_rungs=((round(self._tp1, 5), self._tp1_pct()),
+                      (round(self._tp2, 5), self._cfg.exec_tp2_pct)),
+            fib=self._fib))
         dec.closed_r = r
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
         # hold"). Flag its direction so the driver kills that 15m leg (a stopped re-entry ends the
