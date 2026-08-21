@@ -12,6 +12,18 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"$(git rev-parse --show-toplevel 2>/dev/null)\"; [ -n \"$d\" ] && [ -f \"$d/.claude/hooks/guard_sensitive_paths.py\" ] && python3 \"$d/.claude/hooks/guard_sensitive_paths.py\" || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
@@ -122,7 +134,7 @@
       "Read(//Users/alwg/**)",
       "Bash(git -C /Users/alwg/trading status --short)",
       "Bash(git -C /Users/alwg/trading add docs/MPC_BOS_SPEC.md)",
-      "Bash(git -C /Users/alwg/trading commit -m 'docs\\(mpc_bos\\): spec the BOS continuation strategy — the SOS fade with the arm swapped *)",
+      "Bash(git -C /Users/alwg/trading commit -m 'docs\\(mpc_bos\\): spec the BOS continuation strategy \u2014 the SOS fade with the arm swapped *)",
       "Bash(git -C /Users/alwg/trading push origin main)",
       "Bash(git push *)",
       "Bash(npx vite *)",

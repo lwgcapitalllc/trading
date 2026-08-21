@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""PreToolUse guard — speak up before Claude edits a file where a mistake is expensive.
+"""Guard — speak up when Claude touches a file where a mistake is expensive.
+
+Two halves, two hook events, and the split is the point.
+
+  * PreToolUse (Edit|Write|NotebookEdit) — the original. Reads the pending edit's own
+    delta out of the tool call and warns BEFORE it lands, while the file is open and the
+    context is loaded. That timing is the only reason it ever changes what happens.
+  * PostToolUse (any tool) — the backstop, added 2026-08-21. Measures the FILE: current
+    bytes on disk against bytes at HEAD. It sees an edit made ANY way at all, including
+    the ways the first half is structurally blind to. See the block above `STATE_DIR`.
 
 Why this exists
 ---------------
@@ -15,13 +24,17 @@ Nothing here blocks ordinary work. `deployed/` asks first, because it is the one
 the right answer is almost always "you meant to promote instead". Everything else just puts
 the relevant rule in front of Claude at the moment it matters, rather than 40,000 words away.
 
-Wired from `.claude/settings.json` → hooks → PreToolUse (Edit|Write|NotebookEdit).
+Wired from `.claude/settings.json` → hooks → PreToolUse (Edit|Write|NotebookEdit) and
+PostToolUse (*). Proven by `.claude/hooks/check_guard.py`.
 Fails OPEN: any error here allows the edit. A broken guard must not stop the work.
 """
 
 import json
 import os
+import re
+import subprocess
 import sys
+import tempfile
 
 # A CLAUDE.md over this many bytes gets a "drain it into HISTORY.md" reminder.
 #
@@ -177,13 +190,202 @@ REMINDERS = [
 ]
 
 
-def main() -> None:
-    raw = sys.stdin.read()
+# ---------------------------------------------------------------------------
+# The PostToolUse backstop — measure the FILE, never the tool call.
+# ---------------------------------------------------------------------------
+#
+# 🔴 THE HOLE THIS CLOSES, and it was found by the guard firing on NOTHING.
+# `oversized_claude_md` above reads its delta out of the tool call, so it can only see an
+# edit made THROUGH Edit or Write. On 2026-08-21 `algos/CLAUDE.md` grew 103,804 -> 106,667
+# bytes and `strategies/python/loss_recovery/CLAUDE.md` grew to 41,391 — both already over
+# the ceiling — and the guard was silent, because both edits arrived through Bash: a heredoc
+# and an in-place rewrite. Nothing failed. The only symptom was silence, and this repo's own
+# standing lesson is that the next reader takes silence for checked.
+#
+# ⚠ THE FIX IS DELIBERATELY NOT A PATTERN MATCH ON THE COMMAND. Sniffing Bash for `>`,
+# `sed -i` or a python one-liner is a deny-list against an infinite space of ways to write a
+# file: it is wrong quietly, and it goes stale the first time somebody reaches for a tool it
+# has never heard of. This measures the FILE — current bytes on disk against the bytes at
+# HEAD — which cannot be fooled by HOW the edit was made. That is the whole point.
+#
+# ⚠ It is a BACKSTOP, not a replacement. The PreToolUse path fires BEFORE the edit, while
+# the file is open and the context is loaded, and that timing is the only reason it ever
+# changes what happens. This one arrives after the fact, which is worth less — but it is the
+# only thing that can see the edits the other path is blind to.
+
+STATE_DIR = os.path.join(tempfile.gettempdir(), "lwg-claude-md-size-guard")
+
+
+def _git(root: str, *args: str, stdin: str = "") -> str:
+    """Run a read-only git command and return stdout, or "" on any failure.
+
+    Every caller treats "" as "cannot ask", and every caller then stays silent — this whole
+    path FAILS OPEN. Not a git repo, git missing, no HEAD yet, a timeout: all of them allow
+    the action with nothing printed.
+    """
     try:
-        event = json.loads(raw)
-    except (ValueError, TypeError):
+        p = subprocess.run(
+            ["git", "-C", root, *args],
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return ""  # git missing, or it hung past the timeout — both mean "cannot ask"
+    return p.stdout if p.returncode == 0 else ""
+
+
+def claude_md_paths(root: str) -> list:
+    """Every CLAUDE.md git knows about — tracked AND untracked-but-not-ignored.
+
+    Untracked is included on purpose; see `head_sizes` for what a file with no HEAD version
+    is taken to mean.
+    """
+    out = _git(root, "ls-files", "-c", "-o", "--exclude-standard", "*CLAUDE.md")
+    paths = []
+    for line in out.splitlines():
+        if line and os.path.basename(line) == "CLAUDE.md" and line not in paths:
+            paths.append(line)
+    return paths
+
+
+def head_sizes(root: str, paths: list) -> dict:
+    """Byte size of each path at HEAD. A path with no HEAD version counts as 0.
+
+    ⚠ THE NEW-FILE DECISION, stated rather than left to be discovered: a CLAUDE.md that has
+    never been committed has no previous size, so growth from zero is what it is — a doc
+    born over the ceiling costs the next reader exactly the same context a long-bloated one
+    does, and "it is new" is not a reason for it to arrive at 50 KB unremarked. So it warns,
+    once, the same as any other. The alternative — stay silent until the first commit — puts
+    the warning at the one moment the repo has already measured to be useless, when the work
+    is finished and nobody stops to refactor a doc.
+
+    One `git cat-file --batch-check` for the whole set, not one call per file. That is not
+    tidiness: this runs after EVERY tool call, and a per-file fan-out is the shape that made
+    a version endpoint slower every time anybody pushed.
+    """
+    if not paths:
+        return {}
+    payload = "".join("HEAD:%s\n" % p for p in paths)
+    lines = _git(root, "cat-file", "--batch-check", stdin=payload).splitlines()
+    if len(lines) != len(paths):
+        return {}  # cannot ask — say nothing rather than guess
+    sizes = {}
+    for path, line in zip(paths, lines):
+        parts = line.split()
+        sizes[path] = int(parts[2]) if len(parts) == 3 and parts[1] == "blob" else 0
+    return sizes
+
+
+def _state_file(session_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "nosession")
+    return os.path.join(STATE_DIR, "%s.json" % safe)
+
+
+def already_warned(session_id: str) -> set:
+    try:
+        with open(_state_file(session_id), encoding="utf-8") as fh:
+            return set(json.load(fh))
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def remember_warned(session_id: str, warned: set) -> None:
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(_state_file(session_id), "w", encoding="utf-8") as fh:
+            json.dump(sorted(warned), fh)
+    except (OSError, TypeError):
+        pass  # fail open — a guard that cannot remember must not start nagging instead
+
+
+def grown_oversized_files(root: str, session_id: str) -> list:
+    """(path, size_now, size_at_head) for every oversized CLAUDE.md that has GROWN.
+
+    ⚠ GROWTH, never size alone — the same rule the PreToolUse path follows since 2026-08-13.
+    A double-figure count of files legitimately sits above the ceiling; warning on size would
+    fire on every one of them after every command, including on a trim. A guard that fires on work it should not be
+    criticising is one people learn to dismiss.
+
+    ⚠ ONCE PER FILE PER SESSION. This runs after every tool call, so the naive version says
+    the same sentence forty times before the file is committed, which is nagging with extra
+    steps. The first time is the one that can change anything; the rest is noise. The
+    PreToolUse path is still there for every later Edit or Write.
+    """
+    paths = claude_md_paths(root)
+    live = {}
+    for path in paths:
+        try:
+            size = os.path.getsize(os.path.join(root, path))
+        except OSError:
+            continue
+        if size > CLAUDE_MD_CEILING_BYTES:
+            live[path] = size
+    if not live:
+        return []
+    head = head_sizes(root, list(live))
+    if not head:
+        return []
+    seen = already_warned(session_id)
+    return [(p, s, head[p]) for p, s in sorted(live.items()) if s > head[p] and p not in seen]
+
+
+def post_tool_use(event: dict) -> None:
+    """Report any oversized CLAUDE.md that grew, whatever tool did it."""
+    cwd = event.get("cwd") or os.getcwd()
+    root = _git(cwd, "rev-parse", "--show-toplevel").strip()
+    if not root:
+        return
+    session_id = event.get("session_id") or "nosession"
+    grown = grown_oversized_files(root, session_id)
+    if not grown:
         return
 
+    # A never-committed file gets its OWN sentence. Telling somebody a brand-new doc is
+    # "N bytes bigger than the committed version" when there is no committed version is the
+    # kind of correct-arithmetic-wrong-conclusion line this repo has been bitten by before.
+    lines = []
+    for path, size, was in grown:
+        kb, ceiling = size // 1000, CLAUDE_MD_CEILING_BYTES // 1000
+        if was == 0:
+            lines.append(
+                "%s is NEW and already %d KB, over the %d KB ceiling — there is no committed "
+                "version to compare it against." % (path, kb, ceiling)
+            )
+        else:
+            lines.append(
+                "%s is now %d KB, over the %d KB ceiling, and %d bytes bigger than the "
+                "committed version." % (path, kb, ceiling, size - was)
+            )
+    remember_warned(session_id, already_warned(session_id) | {p for p, _, _ in grown})
+
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": (
+                        "Documentation size check (this measures the FILE, so it sees edits made "
+                        "any way at all — a heredoc, an in-place rewrite, a script):\n\n- "
+                        + "\n- ".join(lines)
+                        + "\n\nEvery byte loads into context whenever anyone works in that "
+                        "subsystem. Before you finish: is what you added a RULE, or is it the "
+                        "story of what happened today? The story belongs in the sibling "
+                        "BUILD_NOTES/HISTORY file with a pointer left behind. Two hard rules if "
+                        "you drain some while you are here — (1) a fact lives in exactly ONE "
+                        "CLAUDE.md, the one next to the code it describes; (2) the rule and the "
+                        "reason it exists stay together, or the next reader tidies it away. "
+                        "Said once per file per session, deliberately — it will not repeat."
+                    ),
+                }
+            }
+        )
+    )
+
+
+def pre_tool_use(event: dict) -> None:
+    """The original path: warn BEFORE an Edit/Write, from the tool call's own delta."""
     tool_input = event.get("tool_input") or {}
     path = tool_input.get("file_path") or ""
     if not path:
@@ -235,6 +437,25 @@ def main() -> None:
             }
         )
     )
+
+
+def main() -> None:
+    """One script, two hook events — dispatched on which one fired.
+
+    They are deliberately NOT two files. The ceiling, the "is it a rule or a story" advice
+    and the growth rule are one set of facts, and a second copy of any of them is how this
+    repo's docs came to disagree with each other in the first place.
+    """
+    try:
+        event = json.loads(sys.stdin.read())
+    except (ValueError, TypeError):
+        return
+    if not isinstance(event, dict):
+        return
+    if event.get("hook_event_name") == "PostToolUse":
+        post_tool_use(event)
+        return
+    pre_tool_use(event)
 
 
 if __name__ == "__main__":
