@@ -135,6 +135,41 @@ he would not be trading into in the first place.
 
 ---
 
+## MEASURED 2026-08-21 — and the answer is PROBABLY DON'T BUILD IT
+
+The first step below was taken immediately. A+ solo, 186,910 M15 bars 2018-09-14 → 2026-08-14,
+`puprime_ecn`:
+
+| | |
+|---|---|
+| trades / rollovers actually charged | **181 / 127** |
+| financing PAID (longs) | **−$334,196** |
+| financing CREDITED (shorts) | **+$122,572** |
+| financing NET | **−$211,624** |
+| commission | −$24,368 |
+| spread | −$146,207 |
+| **financing ÷ GROSS profit** | **1.56%** |
+| financing ÷ all costs | 55.4% |
+
+🔴 **Financing is the single biggest COST line — and 1.56% of gross profit.** Both are true and the
+second one decides it. A nightly trim spends from the column carrying the return (a handful of very
+large winners; one trade alone is +22.7R) to protect one that barely registers. **On this evidence
+the trim rule is not worth building.**
+
+⚠ **SHORTS ARE PAID TO WAIT.** Longs paid $334,196; shorts were CREDITED $122,572. "Carrying costs
+money" is true in ONE direction only, and a rule blind to that would shave winning shorts to save a
+cost they do not incur. Any future version of this idea is direction-aware or it is wrong.
+
+⚠ **Most trades never see a night: 181 trades, 127 rollovers in total.** The $12,586.52 booking that
+started this is a handful of enormous positions, not the normal case — the cost is CONCENTRATED, not
+spread. That also means a rule aimed at the average would miss it entirely.
+
+⚠ **This measures A+ ALONE.** The loss-recovery leg holds a median 4.3 days and up to 29.3, so its
+own carry share is plausibly much higher as a fraction of its own small P&L. NOT MEASURED. If that
+rule is ever run for real, measure its carry separately before concluding anything about it.
+
+---
+
 ## First step, whenever this is picked up
 
 Measure before designing. Total financing paid across a full run, split by leg and by
