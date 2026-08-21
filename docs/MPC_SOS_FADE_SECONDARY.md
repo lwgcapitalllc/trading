@@ -1,7 +1,8 @@
 # MPC SOS Fade — Secondary (1m sniper) re-entry
 
-**Status:** BUILT, committed (`c962601`) and unit-tested; **default OFF and never yet measured on
-real data** — see *Verification* below for what that means and what closes it. The Python is the *exact* version of a
+**Status:** BUILT, unit-tested, measured over the full 7.9 years, and **ON by default since
+2026-08-07**. 🔴 **Six of its defaults moved together on 2026-08-20 and the feature is a different
+one after that date — read *The 2026-08-20 reshape* at the bottom before any figure above it.** The Python is the *exact* version of a
 feature Aaron prototyped in `mpc_strategy.pine` (that Pine WIP is stashed:
 `git stash list` → "secondary-trade pine WIP"). Pine can only sample the 1m engine once per
 15m bar via `request.security`, so its timing is approximate; the Pine tooltip itself says
@@ -64,8 +65,10 @@ order in that fork, so there is no primary to re-enter behind, and its `run_dual
   bars), `exec_secondary` forced ON and nothing else touched: **0 re-entries in the year.** On the
   2025-12-09 short every other gate passed — primary reached breakeven, price closed back inside
   the zone for 433 one-minute bars, account flat, a 1m bear SOS inside the zone at 2025-12-11
-  01:15 — and this one test alone refused it. ⚠ **It stays default ON so every stored figure in
-  this file still reproduces**; the numbers for OFF are in `mpc_sos_fade_optimization.md`.
+  01:15 — and this one test alone refused it. 🔴 **It was flipped OFF by default on 2026-08-20** —
+  keeping it ON kept the feature unreachable on the book it ships with, which is a stored figure
+  worth less than a working feature. Pin it back ON to reproduce anything dated 2026-08-07 →
+  2026-08-20; those numbers are also in `mpc_sos_fade_optimization.md`.
 - **Zone** (`zoneL`): `fibo_dir == 1` and price in `[fiboP6, fiboP3]` (0.886…0.618).
   Mirror `zoneS`: `fibo_dir == -1` and price in `[fiboP3, fiboP6]`.
 
@@ -167,8 +170,10 @@ That drill-down is why the chart work happened first.
    end-to-end re-entry.
 2. **Visual** — a real run with `exec_secondary=True`, opened in the lab's price chart, drilled to
    1m at a re-entry: the 1m SOS, the retrace to 38.2%, the fill marker, the 15m TP levels.
-3. **Parity guard** — `compare_strategy.py` stays exit 0 with `exec_secondary` OFF (the default),
-   proving the secondary is purely additive and the primary never moved.
+3. **Parity guard** — `compare_strategy.py` stays exit 0. ⚠ **It is a 15-minute harness: it drives
+   `.run()`, never `run_dual`, so NO re-entry setting can reach it at all** — that is why six of
+   them could be changed at once on 2026-08-20. It proves the primary never moved; it can say
+   nothing whatever about the re-entry, and reading a green gate as covering one is rule 14.
 
 ### Where it actually stands (2026-08-06)
 
@@ -225,10 +230,47 @@ A+ is designed tail-heavy, but the primary stays positive without any single tra
 not. Ten trades cannot tell a small edge from a small negative one — the same verdict, for the same
 reason, as B-LEG.
 
-**Stays default OFF.** What would change the answer is a reason to expect more than ten fires, not a
-better number from these ten.
+**That verdict was overturned on 2026-08-20, and the reason was in the last sentence of it:** what
+would change the answer is a reason to expect more than ten fires, and there was one — the feature
+was gated on a divergence its own primary never needed, so it was firing on a fraction of the
+setups it was written for. See *The 2026-08-20 reshape*.
 
 ⚠ **Every figure above post-dates a fix on the same day.** `run_dual` built its 1m signal without
 `last_conf_high`/`last_conf_low`, which the shared `_advance_stage` reads on every managed bar, so
 the first 1m bar after any fill raised `AttributeError` — **the re-entry had never once opened a
 position on real data.** Any earlier claim about this feature describes code that could not run.
+
+
+---
+
+## The 2026-08-20 reshape — five defaults, one new setting, and the feature this doc now describes
+
+Everything above this line describes the shape shipped between 2026-08-07 and 2026-08-20. Five
+defaults moved on 2026-08-20 and a sixth setting was added, and the leg went from **10 re-entries to
+54** over the same 7.9 years.
+
+| what | was | is | why |
+|---|---|---|---|
+| needs a live 15m divergence | ON | **OFF** | it demanded what the primary never needed — **0 re-entries in the most recent 12 months** |
+| what triggers it | a 1m shift of structure | **a fair-value gap in the zone** | the shift confirms late; on 2025-10-29 it missed by $8.02 and price ran 114 points |
+| where the stop sits | the 1m leg origin | **the 0.886 fib** | the gap trigger has no 1m leg to stop behind |
+| its first target | the 15m 0.5 fib | **1.25 × its own risk** | a 1m entry handed a 15m target scratches — 15 of 54 finished flat |
+| how much banks there | nothing | **half** | banking half left zero scratches, 30 wins, 24 losses |
+| what it risks | the same as a primary | **half a primary** | one trade is +20.68R of the leg's +27.84R |
+
+**The two numbers that decided it.** Re-entry total, and the same total with its single best trade
+removed: the old shape **+29.50R / −0.36R**, the new shape **+27.84R / +7.16R** at full weight and
+**+13.92R** at the shipped half weight. **The headline column would have kept the old shape.**
+
+**What it costs.** Worst closed-trade drawdown on a $10k start: primaries alone **51.8%**, plus
+re-entries at half weight **60.4%**, at full weight **68.1%**. It is the SAME drawdown made deeper —
+both trough in the 2023-04-05 → 2024-10-29 stretch, inside which the primaries lose 6.34R and the
+re-entries lose a further 4.70R off the same setups. 🔴 **They fail together: this is the first hard
+number in the repo on the correlation the root philosophy warns about in words.**
+
+⚠ **The size lever is invisible in every R table.** It scales the lot only, so the re-entries report
+**27.84R at a quarter weight and at full weight alike** — R is measured against each trade's own
+risk. Multiply by the size setting before comparing a re-entry's R with a primary's.
+
+⚠ **Not usable live, unchanged.** The live runner drives one timeframe and refuses this config
+outright.

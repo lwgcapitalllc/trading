@@ -60,6 +60,20 @@ Verify with a diff, not by eye — the check is mechanical: pull every `input.*`
 Pine, join on the field name, and compare. As of 2026-08-02 that is **42 of 43 shared params
 identical** and **43 of 43 descs identical**.
 
+⚠ **THE WHOLE SECONDARY GROUP IS PYTHON-ONLY AND IS EXEMPT FROM THIS RULE — CHECKED, NOT ASSUMED.**
+`mpc_strategy.pine` declares 71 inputs and not one of them is a re-entry input (`grep -c "input\."`
+then grep for the group); the Pine WIP that prototyped the feature was never merged. So a new
+re-entry field — `exec_sec_risk_pct`, added 2026-08-20 — takes a label and a desc written for the
+lab alone, and no Pine edit is owed in the same commit. ⚠ **Confirm with the grep before adding any
+OTHER param**: the exemption is about which inputs the Pine happens to declare, not about the
+prefix, and it flips the moment somebody ports the group across. ⚠ **Grep the GROUP, never
+the word "sniper" — it means two different things across the two files.** The Pine's
+"Allow Sniper Zone as entry confirmation" (G5) is a 15m confirmation zone on the PRIMARY
+trade and has nothing to do with the 1m re-entry this section calls the sniper. It has been
+there all along and it is the one line a keyword search hits, so the search reports a
+re-entry input that does not exist. The ten group labels are the reliable check: none of
+them is a re-entry group.
+
 ⚠ **Rename titles, never reorder an `input.*` call.** TradingView keys a chart's saved input
 values off declaration order, so a rename carries Aaron's settings forward and a reorder silently
 resets them to defaults on every chart he has the script on.
@@ -807,6 +821,76 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   return-for-consistency trade Aaron makes, not one a table makes, and the shipped default is the
   choice consistent with this repo's stated philosophy.** Full grids:
   `mpc_sos_fade_optimization.md` → Run 23.
+- 🟢 **SHIPPED 2026-08-20 — FIVE DEFAULTS MOVED TOGETHER, A SIXTH SETTING IS NEW, AND THE
+  FEATURE IS A DIFFERENT ONE AFTER IT.**
+  `exec_sec_req_div` OFF, `exec_sec_trigger` = `FVG in zone`, `exec_sec_stop` = `0.886`,
+  `exec_sec_tp_r` = 1.25, `exec_sec_tp1_pct` = 50, and a new `exec_sec_risk_pct` = 50. Over the same
+  7.9 years (2018-09-14 → 2026-08-18, 155,807 M15 + 2.74M M1) the leg goes from **10 re-entries to
+  54**, and less its single best trade from **−1.77R to +7.16R**. ✅ **Primaries are +206.20R in
+  every cell to the decimal and zero were displaced**, so all of it is the re-entries.
+  🔴 **THE OLD DEFAULT COULD NOT FIRE ON THE BOOK IT SHIPPED WITH, WHICH IS WHY IT READ AS
+  MARGINAL** — it demanded a live 15m divergence while the primary arms on a SWEEP (`exec_arm_div`
+  OFF, shipped). Measured over the most recent year: **0 re-entries in 12 months.** The "ten trades
+  cannot tell a small edge from a small negative one" verdict above was therefore measured on a
+  gate, not on a setup, and it stands as a description of that fortnight rather than of this
+  feature. ⚠ **Pin the old six to reproduce anything measured 2026-08-07 → 2026-08-20.**
+- **THE EXIT LADDER WAS THE FIX, AND THE COLUMN THAT CHOSE IT WAS *LESS THE BEST TRADE*.** With the
+  gap trigger on, **72% of re-entries reach +0.25R, 56% reach +0.5R, 37% reach +1R and 20% reach
+  +2R; the median excursion is +0.56R** — so the scratches were never bad entries, they were a 1m
+  entry handed a 15m target with a breakeven ratchet in front of it. Twelve replays of the rung and
+  what banks there (re-entry R, then the same figure with its best trade removed): 0.5R/half
+  **+0.14 / −5.35**, 0.75R/half **+22.03 / +4.83**, 1R/half **+24.43 / +5.63**, **1.25R/half +27.84
+  / +7.16 ← ship**, 1.5R/half **+22.82 / +1.32**, 2R/half **+22.54 / +0.79**, and the old shape
+  (no rung, nothing banked) **+29.50 / −0.36**. ⚠ **The headline column would have kept the old
+  shape.** ⚠ **The rung also moves BREAKEVEN**, because the ratchet fires at stage 1 and stage 1 is
+  this rung — the two are one decision, and 1.25R/half was the pair that won, not either alone.
+- ⚠ **THE TRAIL AND THE SECOND RUNG WERE ASKED AND THE ANSWER WAS: CHANGE NOTHING.** Six more
+  replays at 1.25R/half. The shipped 1% swing trail gives the best re-entry total (**+27.84R**) and
+  by a distance the best PRIMARY book (**+206.20R** against +102.08R at 0.5% and +138.88R at 2%),
+  because the trail is shared. Banking half at the SECOND rung as well collapses the leg to
+  **+5.98R**. 🔴 **A re-entry-only trail at 0.5% has the best ex-best figure of anything measured
+  (+10.12R) and is UNBUILT** — it is worth ~3R over eight years and would need its own lever, which
+  is why it was left as a note rather than a build.
+- 🔴 **THE RE-ENTRIES DEEPEN THE PRIMARY'S OWN DRAWDOWN RATHER THAN DIVERSIFYING IT — the first hard
+  number this repo has on the correlation the root philosophy warns about in words.** Worst
+  closed-trade drawdown on a $10k start: primaries alone **51.8%** (181 trades, +206.20R), with the
+  re-entries at full weight **68.1%** (235 trades, +234.04R). **It is the SAME drawdown made
+  deeper** — both trough in the same 2023-04-05 → 2024-10-29 stretch, inside which the primaries
+  lose 6.34R and the re-entries lose a further 4.70R. They come off the setups the primaries just
+  lost on, so they fail together. ⚠ Risk-adjusted it is WORSE, and that is the honest reading:
+  4.0 R-per-drawdown-point becomes 3.4.
+- **`exec_sec_risk_pct` (new 2026-08-20) IS THE ANSWER TO THAT, AND 50 WAS NOT CHOSEN OFF THE
+  CURVE.** It scales the re-entry's LOT only — same bars, same entries, same exits — so **the R
+  total is IDENTICAL at every size (27.84R)** and only the account-weighted contribution moves:
+  ¼ **+6.96R / 56.2%**, ⅓ **+9.19R / 57.6%**, **half +13.92R / 60.4% ← ship**, ¾ **+20.88R / 64.4%**,
+  full **+27.84R / 68.1%**, against **51.8%** with the feature off. Every step buys ~**1.6R per extra
+  drawdown point** at a near-constant rate — a straight line with no knee, against ~**4.0R per
+  point** for the primaries. **So the size was chosen on CONCENTRATION: one trade is +20.68R of the
+  leg's +27.84R, the next is +6.06R, and the whole thing less its best is +7.16R over 54 trades.**
+  ⚠ 🔴 **A BACKTEST SUMMARY WILL REPORT THE SAME R AT A QUARTER SIZE AS AT FULL** — halving the lot
+  halves the win and the loss together. Multiply by this field before comparing a re-entry's R with
+  a primary's, or the sizing decision is invisible in every table this repo prints.
+  ⚠ It refuses 0 or a negative rather than clamping: a zero lot fills, closes and lands in the trade
+  list at 0R — a trade that looks taken and moved nothing. The way to stop taking re-entries is the
+  feature switch.
+- ✅ **THE SUSPECTED CROSS-TALK BUG IS NOT REAL, CHECKED AND CLOSED 2026-08-20.** Aaron's report was
+  that a stopped re-entry looked like it was retiring whichever setup was CURRENT rather than its
+  own. Every setup-shutdown across seven full-history replays was traced to the trade that caused
+  it: **zero mismatches, zero orphans.** ⚠ **What IS true and reads like it**: the shutdown fires
+  whenever a re-entry closes before reaching its first rung, INCLUDING small winners — 31 shutdowns
+  from 13 stop-outs in one run. That only changes a book if the one-per-setup cap is turned off, so
+  it is a doc/code wording mismatch to tidy on the next pass, not a defect.
+- ⚠ **THE PARITY GATE CANNOT SEE ANY OF THIS, AND AN EARLIER NOTE IN THIS SESSION SAID THE OPPOSITE.**
+  `compare_strategy.py` replays 15-minute bars through `.run()`; every re-entry lever lives on the
+  1-minute path behind `run_dual`. **No `exec_sec_*` default can move the gate**, which is why six of
+  them could change at once. It was still RUN rather than reasoned about, because that is what
+  rule 22 asks for: GREEN (exit 0) on `engines/VANTAGE_XAUUSD, 15_4fef8.csv` and `…_49f80.csv` at
+  `--warmup 1000`, both before the change and after it. ⚠ **Two other exports sitting on this
+  machine (`a9c92` at bar 1356 on closed R, `a9caa` at bar 20608 on the short stage) are RED — and
+  were RED in the identical place before this change**, so they are not it; their provenance is
+  undocumented (neither is named anywhere in the repo) and a pre-existing red is still a red, so
+  they are worth chasing on their own. ⚠ **Warm-up is not optional**: at the default warm-up all four report a
+  mismatch on bar 16, which is the engines still filling.
 - **NOT USABLE LIVE** — `algos/live/bridge.py` REFUSES `exec_secondary` outright
   (`UnsupportedStrategyConfig`), because the live runner drives ONE timeframe and this needs the 1m
   stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
