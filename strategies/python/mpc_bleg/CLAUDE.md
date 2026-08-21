@@ -580,3 +580,15 @@ deepest-band migration, BLEG_MAX conversion) + end-to-end driver run + longs/sho
   execution ~4429-4506).
 - The A+ bot it reuses: `strategies/python/mpc_sos_fade/CLAUDE.md`.
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.
+
+## ⚠ The parent's 1m re-entry now defaults OFF (2026-08-21)
+
+`mpc_sos_fade` shipped `exec_secondary` ON on 2026-08-07 and reverted it to OFF on 2026-08-21
+(Aaron — every optional entry path ships off). **This fork's own pin is unchanged and still False.**
+
+🔴 **The pin is now REDUNDANT rather than load-bearing, and it stays.** A fork that leans on its
+parent's default is one flip away from breaking, and this field has flipped TWICE in a fortnight.
+The fork's own value is asserted first because that is what protects this bot; the parent's value is
+pinned after it so a flip back to True surfaces in B-LEG's own test rather than as a
+crash on a NotImplementedError.
+

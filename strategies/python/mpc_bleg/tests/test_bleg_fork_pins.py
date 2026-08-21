@@ -65,7 +65,16 @@ def test_the_fork_pins_the_secondary_OFF():
     from strategies.python.mpc_bleg.config import BLegConfig
     from strategies.python.mpc_sos_fade.config import SosFadeConfig
 
-    assert SosFadeConfig().exec_secondary is True, (
-        "the parent no longer defaults this ON — if it was deliberately reverted, this pin is "
-        "now redundant rather than load-bearing; say which in the same commit")
+    # ⚠ ANSWERING THIS TEST'S OWN QUESTION (2026-08-21): the parent's default WAS deliberately
+    # reverted to False — Aaron's call, every optional entry path now ships OFF. So this fork's pin
+    # is REDUNDANT rather than load-bearing today.
+    #
+    # 🔴 It is kept, and the fork's own value below is the point of the test now. A fork that leans
+    # on its parent's default is one flip away from breaking, and this field has flipped TWICE (ON
+    # 2026-08-07, OFF 2026-08-21). What must stay true is that THIS fork is False whatever the
+    # parent does — an inherited True kills every B-LEG lab run on a NotImplementedError, which is
+    # a crash rather than a mis-priced trade.
+    assert SosFadeConfig().exec_secondary is False, (
+        "the parent defaults this ON again — then this fork's pin is LOAD-BEARING once more and "
+        "the note above is stale; say which in the same commit")
     assert BLegConfig().exec_secondary is False

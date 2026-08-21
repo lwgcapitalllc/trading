@@ -49,7 +49,14 @@ def test_the_pins_that_would_move_trades_if_inherited():
     parent, cfg = SosFadeConfig(), BosConfig()
     assert parent.exec_fib_nearest is True and cfg.exec_fib_nearest is False
     assert parent.exec_deep_fib is False and cfg.exec_deep_fib is True
-    assert parent.exec_secondary is True and cfg.exec_secondary is False
+    # ⚠ 2026-08-21: the parent reverted this to False (Aaron — every optional entry path ships
+    # OFF), so the inheritance hazard this line guarded is dormant rather than gone. The fork's own
+    # False is asserted first because that is what protects this bot; the parent's value is pinned
+    # after it so a future flip back to True surfaces HERE rather than as a refused BOS sweep.
+    assert cfg.exec_secondary is False
+    assert parent.exec_secondary is False, (
+        "the parent defaults the 1m re-entry ON again — this fork's pin is load-bearing once more, "
+        "and run_sweep still cannot supply a second bar stream")
     assert parent.exec_time_stop_mode != "Off" and cfg.exec_time_stop_mode == "Off"
     assert parent.exec_runner_trail != cfg.exec_runner_trail
 
