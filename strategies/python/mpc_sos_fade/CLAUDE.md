@@ -2158,6 +2158,31 @@ costs you drawdown, which is the number a risk budget is actually set against.
 worth, never whether it happened. Only `bid_ask_fills` moves the trade list. A re-priced run
 showing the same trade count as its source is working correctly.
 
+### 🔴 THE RE-ENTRY NOW SHIPS **OFF** (Aaron's call, 2026-08-21 — reverses 2026-08-07)
+
+**Every optional entry path is now OFF by default: the 1m re-entry, loss recovery, scale-in and
+B-Leg. The shipped book is the PRIMARY book.** MEASURED over 2018-09-14 → 2026-08-14: **181 trades
+on the new defaults, against 235 with the re-entry on.**
+
+⚠ **This MOVES every historical figure in this repo that was produced on the defaults**, exactly as
+turning it on did in August. A number quoted from before this date may be a 235-trade book. Check
+which before comparing anything to it.
+
+⚠ **The once-per-setup CAP stays ON, deliberately.** It only means anything while the re-entry is
+enabled, and anyone who switches the re-entry on should get the capped rule with it rather than the
+uncapped book by accident. Turning a feature off is not a reason to unpin the rule that governs it.
+
+⚠ **It cannot move `compare_strategy.py`, and that was VERIFIED rather than argued.** The re-entry
+needs a 1m stream through `run_dual` while the gate replays the export's own single frame, so no
+re-entry has ever fired inside it — exit 0 at warmups 100 / 500 / 1000 on
+`VANTAGE_XAUUSD, 15_bfe65.csv`, before and after the flip.
+
+⚠ **A pull does NOT move the live bot.** It imports from its frozen `deployed/` snapshot, so this
+default reaches an armed bot only through `promote.py`. Until then the live bot keeps whatever it
+was promoted with.
+
+---
+
 ### A SHRUNK entry paid its costs on the size it ASKED for (fixed 2026-08-21)
 
 **Only reachable when a second leg competes for one budget**, so it was invisible for as long as it

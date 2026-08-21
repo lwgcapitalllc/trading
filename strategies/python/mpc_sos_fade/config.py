@@ -542,7 +542,7 @@ class SosFadeConfig:
     #   on, rather than silently diffing against logic this bot does not have. Porting it means
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
-    exec_secondary: bool = True        # "Secondary re-entries" — the 1m sniper re-entry
+    exec_secondary: bool = False       # "Secondary re-entries" — the 1m sniper re-entry
     #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
     #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from the 1m chart. It
     #   NEEDS run_dual and a 1m feed, which is the whole reason the default matters — see the

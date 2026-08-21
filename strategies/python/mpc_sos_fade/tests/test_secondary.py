@@ -372,13 +372,24 @@ def test_the_stop_out_latch_is_not_the_cap_latch():
         "a stopped-out leg re-armed with the cap off — the stop-out rule is not a preference")
 
 
-def test_the_secondary_and_its_cap_ship_ON():
-    """Aaron's call, 2026-08-07, and it MOVES every historical figure in this repo.
+def test_the_secondary_ships_OFF_and_its_cap_stays_ON():
+    """Aaron's call, 2026-08-21, REVERSING his 2026-08-07 call that shipped it ON.
 
-    Both are asserted here rather than in a general defaults test because the pair is what
-    describes the shipped book: the secondary alone is the uncapped 190-trade run."""
+    ⚠ **This moves every historical figure in this repo that was produced on the defaults**, the
+    same way turning it on did. The shipped book is now the PRIMARY book: 181 trades over
+    2018-09-14 -> 2026-08-14, where the pair shipped ON gave 235.
+
+    ⚠ **The CAP stays ON and that is not an oversight.** It only has meaning while the secondary
+    is enabled, and a reader who turns the secondary on gets the once-per-setup rule with it rather
+    than the uncapped book by accident. Flipping the feature off is not a reason to unpin a rule
+    that governs it.
+
+    ⚠ **It cannot move `compare_strategy.py`**: the re-entry needs a 1m stream through `run_dual`
+    and the gate replays the export's own single frame, so no re-entry has ever fired inside it.
+    Verified rather than argued - exit 0 at warmups 100/200/500/1000 on the same export, before and
+    after this flip."""
     cfg = SosFadeConfig()
-    assert cfg.exec_secondary is True
+    assert cfg.exec_secondary is False
     assert cfg.exec_sec_once_per_setup is True
 
 
