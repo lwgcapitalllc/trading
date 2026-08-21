@@ -2699,8 +2699,13 @@ back, so no decision can move and `compare_strategy.py` diffs the same `px_*` st
 
 🔴 **A re-entry's rungs are NOT in distance order, and that is worth knowing beyond the chart.**
 Rung 1 is priced off risk (`exec_sec_tp_r`, 1.25R below a short's entry) while rung 2 stays the 15m
-fib it was armed on, so **rung 2 is routinely the NEARER of the two — 182 of 205 trades on run
-`687c8df2a523`.** `_advance_stage` tests rung 1 before rung 2, so on such a trade the stop can go
+fib it was armed on, so **rung 2 can be the NEARER of the two — 23 of the 45 re-entries on run
+`687c8df2a523`. The 160 main entries are all correctly ordered, and the Pine's own ladder
+(0.5 then 0.382) is too — the flip is created by this Python-only risk-multiple override and
+exists nowhere in `mpc_strategy.pine`.** ⚠ **A first count published as 182 of 205 was WRONG**
+and made this look repo-wide; it measured *nearer* with the sign inverted (corrected
+2026-08-21). Distance is measured FROM the entry in the FAVOURABLE direction — on a short the
+nearer target is the HIGHER price — and a bare price comparison is backwards on one side. `_advance_stage` tests rung 1 before rung 2, so on such a trade the stop can go
 straight from stage 0 to stage 2 without ever arming breakeven. **Not changed here** — it moves
 what the bot trades and needs its own measurement, not a drive-by fix alongside a labelling one.
 

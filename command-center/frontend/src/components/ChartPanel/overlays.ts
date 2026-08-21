@@ -750,8 +750,9 @@ export function registerChartOverlays(): void {
       // reading that as "banks nothing" would relabel every historical chart off a measurement
       // nobody made.
       // ⚠ Numbering is by LADDER POSITION, which is the strategy's order and not nearest-first: a
-      // re-entry prices its first rung off risk and its second off a fib, so `TP2` legitimately sits
-      // nearer the entry than `TP1`. Sorting them here would renumber the strategy's own rungs.
+      // re-entry prices its first rung off risk and its second off a fib, so `TP2` can legitimately
+      // sit nearer the entry than `TP1` (23 of the 45 re-entries on run 687c8df2a523; every main
+      // entry is correctly ordered). Sorting them here would renumber the strategy's own rungs.
       const targets = (d.tpTargets ?? [])
         .map((t) => (typeof t === 'number' ? { price: t } : t))
         .filter((t) => t && typeof t.price === 'number')

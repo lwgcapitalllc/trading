@@ -1095,7 +1095,10 @@ here**, so the chart shows exactly what the strategy saw.
   ⚠ **The colour is neutral rather than the stop's red**: on a winner a red line sitting in front
   of price reads as a second stop. ⚠ **Numbering is by LADDER POSITION, which is the strategy's
   order and NOT nearest-first** — a re-entry prices rung 1 off risk and rung 2 off a fib, so `TP2`
-  legitimately sits nearer the entry than `TP1` (182 of 205 trades on run `687c8df2a523`). Sorting
+  legitimately sit nearer the entry than `TP1` — **23 of the 45 RE-ENTRIES on run
+  `687c8df2a523`; all 160 main entries are correctly ordered** (corrected 2026-08-21: the
+  first count published here read 182 of 205 and had the direction of *nearer* inverted).
+  Sorting
   here would renumber the strategy's own rungs. Full finding, including the two `TP1` chips on one
   trade that started it: `command-center/backend/CLAUDE.md` → *The exit ladder*.
   Supported figure types are

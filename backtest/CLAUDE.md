@@ -1258,7 +1258,7 @@ invented ladder. A rung priced at 0 is unset and is dropped in both shapes. Noth
 which strategy produced the ladder or what its rungs mean.
 
 ⚠ **Ladder order is the STRATEGY's and is not sorted here.** A re-entry prices rung 1 off risk and
-rung 2 off a fib, so rung 2 is routinely the nearer of the two — sorting would renumber the
+rung 2 off a fib, so rung 2 can be the nearer of the two — sorting would renumber the
 strategy's own rungs.
 
 Tests: `tests/test_output.py` (4, watched RED — 2 against HEAD, 2 by mutating the fallback to claim

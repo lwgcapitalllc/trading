@@ -3555,7 +3555,13 @@ reported it. This is the same rule as the dead terminal reading as a quiet marke
 
 ⚠ **Ladder order is the STRATEGY's, and is NOT nearest-first** — the old comment here claimed it
 was. A re-entry prices its first rung off risk (`exec_sec_tp_r`) and its second off a fib, so the
-second is routinely the NEARER of the two: **182 of 205 trades on that run.** Numbering is by
+second can be the NEARER of the two: **23 of the 45 RE-ENTRIES on that run; all 160 main
+entries are correctly ordered.** ⚠ **The first count published here said 182 of 205 and was
+WRONG** — the check had the direction of *nearer* inverted, so it counted every correct trade
+as broken and read as a repo-wide defect instead of a re-entry one (corrected 2026-08-21).
+A distance is measured FROM the entry in the favourable direction, and on a short that means
+the nearer target is the HIGHER price; a bare price comparison gets it backwards on one side
+and looks fine on the other. Numbering is by
 ladder position, so `TP2` legitimately sits closer to the entry than `TP1`; sorting here would
 renumber the strategy's own rungs.
 

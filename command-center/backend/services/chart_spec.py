@@ -490,8 +490,8 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                 # near-miss is visible, and draws a rung that banks NOTHING under a different name
                 # because it is not a target. ⚠ Ladder order is the strategy's, NOT nearest-first:
                 # a re-entry prices its first rung off risk and its second off a fib, so the second
-                # is routinely the nearer of the two (182 of 205 trades on run 687c8df2a523).
-                # Empty for a trade carrying no rungs.
+                # can be the nearer of the two (23 of the 45 re-entries on run 687c8df2a523; all
+                # 160 main entries are correctly ordered). Empty for a trade carrying no rungs.
                 "tpTargets": tp_targets,
                 # The fib LEG the trade was priced off, plus where the entry and the deepest adverse
                 # price sat ON it. OPTIONAL: absent for any runner or strategy that doesn't record one
