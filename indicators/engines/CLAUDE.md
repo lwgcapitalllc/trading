@@ -92,11 +92,44 @@ bars and read as *"the fix broke parity"*, when the truth is the two sides were 
 different questions. ⚠ **When a fix touches a value the export EMITS, the export is part of the
 fix, not a follow-up.**
 
-⚠ **`fib_export.pine` runs its high-side steps in the OPPOSITE order to the other four** — it
-promotes and *then* rescans, where they rescan and then promote. The guard still lands in the
-same place (immediately before `st.bear_bos_high`), because in every file that anchor is the
-last of the three; but the ordering was CHECKED per file rather than assumed, and one file
-differing out of sixteen is the reason to check.
+✅ **`fib_export.pine` USED TO run its high-side steps in the OPPOSITE order to the other four**
+— it promoted and *then* rescanned, where they rescan and then promote. **Re-synced 2026-08-20 to
+the reference order (rescan, then promote); it is no longer the odd one out.** The note above was
+correct and is kept because the check it describes is the right one: the guard did land in the
+same place (immediately before `st.bear_bos_high`), the ordering WAS checked per file rather than
+assumed, and one file differing out of sixteen is exactly why you check.
+
+🔴 **But the per-file ordering check did not catch what was actually wrong with this file, and
+that is the lesson worth keeping.** `fib_export.pine` has **never** carried the fallback-promotion
+`else` branch that landed in the 2026-07-08 structure re-sync (`f2a8411`) and that
+`mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine` and the canonical
+Python engine all have — `git log -S'fallback_is_hh'` on that path returns nothing, so this is
+drift from birth, not a regression from the tied-extreme fix. ⚠ **The guard was NOT inert** — the
+normal path promotes before it, so on any bar with an active swing high it behaved correctly.
+**The divergence was the `st.ash IS na` path alone**: the reference promotes `last_conf_high` to
+the rescanned high and prints an HH/LH label there, and this file promoted nothing and printed
+nothing, leaving a stale value behind. **A guard COUNT proves presence; an ORDERING check proves
+placement; neither one can see a branch that was never there at all.** The only thing that found
+it was diffing the whole method against the reference.
+
+**The re-sync (2026-08-20):** fallback branch added, and the block reordered so the extreme scan
+runs before the promotion — the fallback reads `highest_val`/`highest_loc` and cannot see them
+otherwise. ⚠ **The reorder is behaviour-preserving, CHECKED not argued**: the scan reads only
+`high[i]` and `st.last_conf_low_loc`, and the promotion block writes neither, so the normal path
+is bit-identical. The two `process()` methods now diff to **zero logic differences** — all that
+remains is the `f_swingCol` colour helper and the `showExternal` display toggle, neither of which
+exists in this harness by design. ✅ **COMPILED AND GATED 2026-08-20** — Aaron pasted it into
+TradingView and exported 20,990 M15 bars (`VANTAGE_XAUUSD, 15_b201e.csv`); `compare_fib.py
+--warmup 900` exits **0** across Structure + Sniper + Internal. **The re-sync did not move a
+single fib output on 20,991 bars, which is the evidence that the reorder is harmless** — it
+changes the normal path on every bar, so a green across all of them is a real result.
+⚠ **The ADDED fallback branch is a different matter: instrumented, it was reached 0 times in
+those 20,991 bars.** It is present and correct-by-construction against the reference, and it is
+UNTESTED by this export. ✅ **Macro fib closed the same night** — a 5m export
+(`VANTAGE_XAUUSD, 5_84d6c.csv`, 20,376 bars) drove `compare_fib.py --warmup 900` to **0** at
+scope Structure + Sniper + Macro + Internal. **All four fibs green against the re-synced
+harness.** ⚠ **The added fallback branch was reached 0 times on that export too** — 41,368 bars
+across two timeframes have now failed to enter it.
 
 ⚠ **The high-side guard is NOT placed symmetrically with the low-side one, and that is deliberate.**
 The two sides run their steps in opposite order — the low side promotes then rescans, the high side
