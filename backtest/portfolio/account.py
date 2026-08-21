@@ -96,6 +96,8 @@ class PortfolioAccount:
         risk_cap_pct: float,
         entry_floor_pct: float = 0.0,
         all_or_nothing: bool = False,
+        leg_priority: Optional[dict] = None,
+        leg_risk_pct: Optional[dict] = None,
     ) -> None:
         self.balance = float(balance)
         self.risk_cap_pct = float(risk_cap_pct)
@@ -114,6 +116,18 @@ class PortfolioAccount:
         # ⚠ Defaults OFF. Every run recorded before this existed used shrink-to-fit, and a
         # default that changed them would re-write history rather than add an option.
         self.all_or_nothing = bool(all_or_nothing)
+        # LEG PRECEDENCE. `leg_priority` ranks the legs (LOWER number = higher precedence) and
+        # `leg_risk_pct` says how much of the balance each one wants when it trades.
+        #
+        # 🔴 It cannot be "the better leg wins the clash". By the time the priority leg asks, the
+        # other one is already holding the budget, and the only way to take it back is closing a
+        # live trade — which this repo refuses on principle. So precedence acts BEFORE the clash:
+        # a priority leg's risk stays RESERVED while it is flat, and lower legs get only what is
+        # genuinely spare. See `_headroom_for`.
+        #
+        # ⚠ Both default empty, which makes the headroom zero and every stored run identical.
+        self.leg_priority: dict = dict(leg_priority or {})
+        self.leg_risk_pct: dict = dict(leg_risk_pct or {})
         self._positions: dict[str, Position] = {}
         self._peak = self.balance
         self.halted = False
@@ -142,6 +156,34 @@ class PortfolioAccount:
     def room(self) -> float:
         return max(0.0, self.cap() - self.reserved())
 
+    def _headroom_for(self, leg: str) -> float:
+        """Budget that is SPOKEN FOR by higher-precedence legs which are not holding yet.
+
+        ⚠ Only legs strictly ABOVE `leg` in precedence, and only while they are FLAT — a leg that
+        is already holding has its real reservation inside `reserved()`, and counting it here too
+        would subtract its risk twice. That double count is the mutation the tests pin.
+
+        ⚠ A leg with no declared risk contributes nothing, so an unknown leg cannot silently
+        shrink somebody else's room.
+        """
+        if not self.leg_priority:
+            return 0.0
+        mine = self.leg_priority.get(leg)
+        if mine is None:
+            return 0.0
+        total = 0.0
+        for other, rank in self.leg_priority.items():
+            if other == leg or rank >= mine:
+                continue
+            if self.has_position(other):
+                continue  # its real reservation is already in reserved()
+            total += self.leg_risk_pct.get(other, 0.0) * self.balance
+        return total
+
+    def room_for(self, leg: str) -> float:
+        """The room THIS leg may use — the shared room less anything reserved for its betters."""
+        return max(0.0, self.room() - self._headroom_for(leg))
+
     def _floor(self) -> float:
         return self.entry_floor_pct * self.balance
 
@@ -158,7 +200,7 @@ class PortfolioAccount:
         (0.0 = blocked). The gate runs at FILL, so a resting order that never fills holds
         nothing. The desired qty is SCALED to the room, never recomputed."""
         desired_risk = self._risk_of(desired_qty, entry, stop, point_value)
-        granted_risk = min(desired_risk, self.room())
+        granted_risk = min(desired_risk, self.room_for(leg))
         # a zero grant (no room) is a block, not a zero-size fill — even when the floor is 0.
         # `_MIN_GRANT_USD` makes "essentially zero" a block too: see its note, one dust fill
         # silently retired a leg for five and a half years.
@@ -180,6 +222,13 @@ class PortfolioAccount:
         """Several legs fill on the SAME bar. Split the room in proportion to each leg's
         desired risk (one split, no re-split), then floor-check each. Each request dict:
         {leg, dir, entry, stop, desired_qty, point_value}."""
+        # 🔴 With precedence declared, a same-bar tie is settled BY RANK, not by proportion — the
+        # better leg takes what it needs first and the rest split what is left. Splitting
+        # proportionally would let a lower leg dilute the one it is supposed to defer to, on the
+        # one bar where they arrive together. With no precedence declared this is skipped entirely
+        # and the original proportional split runs, so no stored run moves.
+        if self.leg_priority:
+            return self._request_fills_by_rank(requests)
         room = self.room()
         risks = [
             self._risk_of(r["desired_qty"], r["entry"], r["stop"], r["point_value"])
@@ -210,6 +259,23 @@ class PortfolioAccount:
                 desired_risk,
                 granted_risk,
                 r["point_value"],
+            )
+        return out
+
+    def _request_fills_by_rank(self, requests: Sequence[dict]) -> dict:
+        """Same-bar fills settled in precedence order — better legs first, each taking
+        `min(desired, its own room)`, with every grant reducing what the next one sees.
+
+        ⚠ Each leg is still asked through `room_for`, so a lower leg keeps deferring to any
+        higher leg that is FLAT and has not filled on this bar either.
+        """
+        out: dict = {}
+        ordered = sorted(
+            requests, key=lambda r: self.leg_priority.get(r["leg"], len(self.leg_priority))
+        )
+        for r in ordered:
+            out[r["leg"]] = self.request_fill(
+                r["leg"], r["dir"], r["entry"], r["stop"], r["desired_qty"], r["point_value"]
             )
         return out
 

@@ -216,6 +216,16 @@ def main() -> int:
         "log; neither is silent.",
     )
     ap.add_argument(
+        "--priority",
+        action="store_true",
+        help="give A+ PRECEDENCE: its risk stays reserved even while it is flat, and the "
+        "recovery leg gets only what is genuinely spare. Without this the legs are equals "
+        "and whoever asks first takes the budget — which under --on-contention refuse cost "
+        "A+ 176 refusals and a third of its edge. 🔴 With A+ at the cap there IS no spare "
+        "room, so the recovery leg never trades: that is the honest answer to 'is it worth "
+        "taking room off A+', and the way to run it is to raise the cap instead.",
+    )
+    ap.add_argument(
         "--size",
         type=float,
         default=None,
@@ -307,6 +317,15 @@ def main() -> int:
         risk_cap_pct=args.risk_cap_pct / 100.0,
         entry_floor_pct=0.0,
         all_or_nothing=refuse,
+        leg_priority={PRIMARY: 0, RECOVERY: 1} if args.priority else None,
+        leg_risk_pct=(
+            {
+                PRIMARY: cfg.exec_risk_pct / 100.0,
+                RECOVERY: cfg.exec_risk_pct * rule.risk_fraction / 100.0,
+            }
+            if args.priority
+            else None
+        ),
     )
     lp, lr = build_legs(
         cfg, rule, df, account=account, capital=cap, profile=profile, strategy_cls=S
@@ -346,6 +365,7 @@ def main() -> int:
         print(f"  {name:9} shared {total_r(sh):+8.2f}R vs solo {total_r(so):+8.2f}R   {verdict}")
 
     print(
+        f"\nPRECEDENCE: {'A+ FIRST (its risk stays reserved while flat)' if args.priority else 'NONE — the legs are equals, first to ask wins'}"
         f"\nCONCURRENCY RULE: {args.on_contention.upper()}"
         + (
             "  (an entry that cannot be granted in FULL is refused outright)"

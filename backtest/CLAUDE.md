@@ -859,6 +859,34 @@ years** locks out the one carrying the return. ⚠ **The account has no notion o
 whoever asks first takes the budget and the legs are treated as equals, which they are not. **Do not
 enable this rule on a real comparison until precedence exists.**
 
+🔴 **LEG PRECEDENCE, and it is what makes `all_or_nothing` usable at all.**
+`PortfolioAccount(leg_priority=..., leg_risk_pct=...)` — lower rank number = higher precedence.
+**It cannot be "the better leg wins the clash"**: by the time the priority leg asks, the other one
+is already holding the budget, and the only way to take it back is closing a live trade. So
+precedence acts BEFORE the clash — **a priority leg's declared risk stays RESERVED while it is
+FLAT**, and lower legs get only what is genuinely spare (`room_for`, `_headroom_for`).
+⚠ **A priority leg that is already HOLDING does not also get headroom** — its real reservation is
+in `reserved()` and counting it twice would halve the room; that double count is pinned by test.
+⚠ **A same-bar tie is settled BY RANK, not proportionally**, or a junior leg dilutes the one it
+defers to on the one bar they arrive together. ⚠ **Both default empty**, so every stored run is
+untouched.
+
+🔴 **MEASURED, same window and tier, and it flips the verdict on the whole rule:**
+
+| cap | precedence | A+ | recovery | combined | maxDD |
+|---|---|---|---|---|---|
+| 10% | none | 85.05R, 176 refused | 60 trades | **$1,043,054** | 55.2% |
+| 10% | A+ first | **127.11R, 0 refused** | **0 trades, 65 refused** | $13,199,534 | 50.2% |
+| 12.5% | A+ first | 127.11R, 0 refused | 60 trades, 0 refused | **$17,074,731 (+29.4%)** | 50.4% |
+
+**At a 10% cap with A+ risking 10% there is NO spare room, so a deferring leg never trades — and
+that is the honest answer to "is the recovery worth taking room off A+", not a bug to soften.**
+The rule only earns its place given headroom of its OWN. ⚠ **And the gain is +14.77R against A+'s
+own ~15R jitter floor, so the COMBINED improvement is not distinguishable from noise on this
+history** — the recovery leg's own 60-trade book having positive expectancy is a separate and
+weaker claim. ⚠ Dollar columns rank runs against each other and are NOT a forecast: the largest
+position in these runs is 1,821 lots and the lab models no broker maximum.
+
 ⚠ **Neither contention rule touches the peak open risk, and that was checked rather than assumed.**
 The peak is set by the balance FALLING under a reservation already granted — overnight financing is
 the big one — not by contention. MEASURED: **A+ alone with no second leg in the run reproduces the

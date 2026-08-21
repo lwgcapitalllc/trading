@@ -436,3 +436,155 @@ def test_all_or_nothing_defaults_OFF_so_no_stored_run_moves():
     qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
     assert abs(qty - 80.0) < 1e-9  # shrunk, exactly as before
     assert SoloAccount(balance=10_000.0).all_or_nothing is False
+
+
+# ── leg PRECEDENCE: reserved headroom for a leg that is not holding yet ──────────
+#
+# 🔴 WHY IT CANNOT BE "THE BETTER LEG WINS THE CLASH". By the time the priority leg asks, the
+# other one is already holding the budget, and the only way to take it back is closing a live
+# trade — which this repo refuses on principle (a resized order is not the trade the strategy is
+# holding). So precedence has to act BEFORE the clash: a priority leg's risk stays reserved even
+# while it is FLAT, and lower legs may only use what is genuinely spare.
+#
+# 🔴 MEASURED, and it is why this exists: under `all_or_nothing` with no precedence, A+ was
+# refused 176 times and lost a third of its edge (127.11R → 85.05R) because a leg worth $14,025
+# standalone over eight years got to the budget first. Whoever asked first won, and the legs were
+# treated as equals. They are not.
+#
+# ⚠ The consequence is deliberate and must not be "fixed" later by someone who finds it harsh:
+# with A+ at 10% under a 10% cap there is NO spare room, so a lower leg never trades at all. That
+# is the correct answer to "is it worth taking room off A+" — the honest way to run a second leg
+# is to give it headroom of its own (raise the cap), not to let it bite into the first.
+#
+# ⚠ No double counting: a priority leg that is ALREADY holding has its real reservation in
+# `reserved()`, so it must not also get headroom. RED by mutation: drop the `has_position` test in
+# `_headroom_for` and the third test below fails with the room halved twice.
+
+
+def _prio_acct(balance=10_000.0, cap=0.10):
+    return PortfolioAccount(
+        balance=balance,
+        risk_cap_pct=cap,
+        leg_priority={"aplus": 0, "recovery": 1},
+        leg_risk_pct={"aplus": 0.10, "recovery": 0.025},
+    )
+
+
+def test_a_lower_leg_is_held_out_of_the_headroom_reserved_for_a_FLAT_priority_leg():
+    """A+ is flat and risks the whole 10% cap, so nothing is spare. The recovery leg asks for
+    2.5% and is refused — not because the budget is in use, but because it is SPOKEN FOR."""
+    a = _prio_acct()
+    qty = a.request_fill(
+        "recovery", +1, entry=100.0, stop=95.0, desired_qty=5.0, point_value=1.0
+    )  # wants 25 risk
+    assert qty == 0.0
+    assert not a.has_position("recovery")
+    assert a.contention[-1]["blocked"] is True
+
+
+def test_the_priority_leg_is_never_held_out_by_its_OWN_headroom():
+    """The reservation exists FOR A+. If A+ were made to respect it, the rule would lock out the
+    leg it is protecting — which is the failure it exists to prevent, wearing the opposite mask."""
+    a = _prio_acct()
+    qty = a.request_fill(
+        "aplus", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0
+    )  # the full 1000 = 10%
+    assert qty == 200.0
+    assert a.reserved() == 1000.0
+
+
+def test_a_priority_leg_that_is_ALREADY_holding_does_not_also_get_headroom():
+    """No double counting. A+ holds 600 of the 1000 cap, so 400 is genuinely spare and the
+    recovery leg may have its 25. RED by mutation: drop the `has_position` test in `_headroom_for`
+    and this is refused, because A+'s risk is subtracted twice."""
+    a = _prio_acct()
+    a.request_fill("aplus", +1, entry=100.0, stop=97.0, desired_qty=200.0, point_value=1.0)  # 600
+    qty = a.request_fill("recovery", +1, entry=100.0, stop=95.0, desired_qty=5.0, point_value=1.0)
+    assert qty == 5.0, qty
+    assert a.reserved() == 625.0
+
+
+def test_headroom_is_released_once_the_priority_leg_closes_for_good():
+    """Precedence is about the budget, not about punishing the other leg forever — when A+ is
+    flat again the reservation is back, and when the cap has room beyond it the lower leg trades."""
+    a = PortfolioAccount(
+        balance=10_000.0,
+        risk_cap_pct=0.125,  # 1250: 1000 for A+, 250 spare
+        leg_priority={"aplus": 0, "recovery": 1},
+        leg_risk_pct={"aplus": 0.10, "recovery": 0.025},
+    )
+    qty = a.request_fill(
+        "recovery", +1, entry=100.0, stop=95.0, desired_qty=50.0, point_value=1.0
+    )  # wants 250, exactly the spare
+    assert qty == 50.0, qty  # granted in full
+
+
+def test_precedence_applies_on_the_same_bar_tie_path_too():
+    """Both legs fill on the SAME bar. The tie splits the room, and the room the LOWER leg sees
+    must already have A+'s headroom taken out of it."""
+    a = _prio_acct()
+    out = a.request_fills(
+        [
+            {
+                "leg": "recovery",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 95.0,
+                "desired_qty": 5.0,
+                "point_value": 1.0,
+            },
+        ]
+    )
+    assert out == {"recovery": 0.0}
+
+
+def test_no_priority_declared_means_behaviour_is_exactly_as_before():
+    """Opt-in. Every run recorded before precedence existed had none, and a default would
+    re-write them."""
+    a = _acct()
+    assert a.leg_priority == {}
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=120.0, point_value=1.0)
+    qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    assert abs(qty - 80.0) < 1e-9  # shrunk, exactly as before
+
+
+def test_a_same_bar_tie_is_settled_BY_RANK_not_split_proportionally():
+    """🔴 The two paths must be made to DISAGREE or this test proves nothing — and the first
+    version of it proved nothing, because its numbers fitted inside the cap where proportional
+    splitting and rank ordering give the identical answer. It passed with the branch deleted.
+
+    Here the legs want 1500 against a 1250 cap, so the split has to bite. Proportional gives A+
+    833 of its 1000 (diluted by the leg that defers to it). By rank A+ takes its full 1000 and the
+    recovery leg gets the genuine 250 remainder.
+
+    WATCHED RED by mutation: replace `if self.leg_priority:` in `request_fills` with `if False:`
+    and A+ comes back 166.67 instead of 200.0."""
+    a = PortfolioAccount(
+        balance=10_000.0,
+        risk_cap_pct=0.125,  # cap 1250
+        leg_priority={"aplus": 0, "recovery": 1},
+        leg_risk_pct={"aplus": 0.10, "recovery": 0.025},
+    )
+    out = a.request_fills(
+        [
+            {
+                "leg": "recovery",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 95.0,  # listed FIRST
+                "desired_qty": 100.0,
+                "point_value": 1.0,
+            },  # wants 500
+            {
+                "leg": "aplus",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 95.0,
+                "desired_qty": 200.0,
+                "point_value": 1.0,
+            },  # wants 1000
+        ]
+    )
+    assert out["aplus"] == 200.0, out  # full size, though listed second
+    assert out["recovery"] == 50.0, out  # the real remainder, 250 of the 500 it wanted
+    assert a.reserved() == 1250.0
