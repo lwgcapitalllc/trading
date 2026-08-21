@@ -21,9 +21,45 @@
       }
       .page {
         page-break-after: always;
+        position: relative;
       }
       .page:last-child {
         page-break-after: auto;
+      }
+
+      /* MentorPeak watermark — one per .page section, and each section is
+         exactly one printed page, so this lands once per page of the PDF.
+
+         ⚠ `print-color-adjust: exact` is REQUIRED. Without it Chrome DROPS
+         background images when printing: the browser looks right and the PDF
+         comes out clean. Verify by rasterising the PDF, never by looking at
+         the HTML in a browser.
+
+         ⚠ It sits IN FRONT of the content (z-index), which looks wrong until
+         you try it behind. Behind, every box with a solid background — the
+         two-column panels on page 2, the callouts, the tables — punches a
+         rectangular hole through the mark, and a watermark chopped into
+         fragments reads as a rendering bug rather than as branding. In front
+         at 0.07 it is uniform on all nine pages and the text under it is
+         still fully legible. */
+      .page::after {
+        content: '';
+        position: absolute;
+        /* Anchored in mm from the TOP of the section, NOT as a %. Every section
+           starts at the top of a printed page, so a fixed offset puts the mark
+           in the same spot on all of them; a % is relative to the section's own
+           height and drifts page to page as the content length changes. */
+        top: 128mm;
+        left: 50%;
+        width: 122mm;
+        height: 36mm;
+        transform: translate(-50%, -50%) rotate(-24deg);
+        background: url('assets/mpc_logo.png') center / contain no-repeat;
+        opacity: 0.07;
+        z-index: 5;
+        pointer-events: none;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
 
       h1 {
@@ -367,8 +403,7 @@
       </ol>
 
       <p class="stat">
-        The MPC Loaded Level strategy. The rules below are written to be followed exactly as stated;
-        the measurements on page 7 are our own and are early-stage.
+        The MPC Loaded Level strategy. The rules below are written to be followed exactly as stated.
       </p>
     </section>
 
@@ -1081,101 +1116,6 @@
 
     <!-- ═══════════════ PAGE 7 ═══════════════ -->
     <section class="page">
-      <h2>What we actually measured</h2>
-      <p class="lede">Read this page before you risk money. It is the part no video gives you.</p>
-      <hr class="hair" />
-
-      <p>
-        Across sixteen videos teaching this model there is
-        <b>no win rate, no number of trades, and no equity curve</b> &mdash; not once. So we coded
-        the sequence ourselves and ran it over eight years of gold data to see what is actually
-        there.
-      </p>
-
-      <p class="stat">
-        XAUUSD, 15-minute bars, 186,759 bars, September 2018 to August 2026. Every setup is scored
-        against
-        <b
-          >random trades with the same direction, the same stop distance and the same target
-          distance</b
-        >
-        &mdash; because on a market that tripled in price, any buying rule looks clever unless you
-        check it against luck.
-      </p>
-
-      <table>
-        <tr>
-          <th style="width: 26mm">Side</th>
-          <th>Trades</th>
-          <th>Won</th>
-          <th>Random did</th>
-          <th>Edge</th>
-          <th>Verdict</th>
-        </tr>
-        <tr class="hi">
-          <td class="k">Buys</td>
-          <td>49</td>
-          <td>34.7%</td>
-          <td>22.9%</td>
-          <td>+11.8 pts</td>
-          <td>Real, but a small sample</td>
-        </tr>
-        <tr>
-          <td class="k">Sells</td>
-          <td>80</td>
-          <td>21.2%</td>
-          <td>20.9%</td>
-          <td>+0.4 pts</td>
-          <td>No better than random</td>
-        </tr>
-      </table>
-
-      <h3>What that means in plain English</h3>
-      <ol class="plain">
-        <li>
-          <b>The buy side showed a genuine edge</b> &mdash; it won noticeably more often than luck
-          with the same stop and target. After a realistic spread it still made money.
-        </li>
-        <li>
-          <b>The sell side showed nothing at all.</b> Identical detection, no edge. We do not yet
-          know whether that is the model or our code.
-        </li>
-        <li>
-          <b>49 trades in eight years is a very small sample.</b> That is about six a year. A result
-          this size is a hint, not a proof.
-        </li>
-        <li>
-          <b>The edge only appeared on the high-reward setups.</b> When we allowed trades with a
-          reward smaller than twice the risk, the advantage over random <b>vanished completely.</b>
-        </li>
-      </ol>
-
-      <div class="note">
-        <b>Point 4 is the useful one, and it matches the rule as written.</b> Wait for the
-        higher-probability setups and refuse anything under roughly 3:1. Our numbers agree: the
-        patience is not a preference, it appears to be where the whole edge lives.
-      </div>
-
-      <div class="warnbox">
-        <h4>Do not read this page as a green light</h4>
-        <p style="margin: 0; font-size: 9.5pt">
-          One instrument, one timeframe, one set of settings, a small number of trades, and a
-          simplified way of deciding whether the stop or the target was hit first. This is early
-          work. <b>Nobody should be sizing up on this yet.</b>
-        </p>
-      </div>
-
-      <h3>Things nobody has pinned down</h3>
-      <p>
-        Honest gaps, so you know what you are judging by eye rather than by rule: how many candles
-        of building is "enough"; how close a return counts as "holding" the level; how long a level
-        stays empty before it matters again; and what hours of the day to trade &mdash; the model
-        skips setups outside a defined trading window, and that window has never been pinned down.
-      </p>
-    </section>
-
-    <!-- ═══════════════ PAGE 8 ═══════════════ -->
-    <section class="page">
       <h2>Your checklist</h2>
       <p class="lede">Print this page. Work down it in order, every single time.</p>
       <hr class="hair" />
@@ -1244,8 +1184,8 @@
       </p>
 
       <p class="stat" style="text-align: center; margin-top: 6mm">
-        MPC Loaded Level Strategy. Measurements on page 7 are our own and are early-stage. Nothing
-        here is financial advice &mdash; test everything yourself before risking money.
+        MPC Loaded Level Strategy. Nothing here is financial advice &mdash; test everything yourself
+        before risking money.
       </p>
     </section>
   </body>

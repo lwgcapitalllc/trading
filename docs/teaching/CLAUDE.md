@@ -30,7 +30,8 @@ is the opposite of every other document in this repo, where the reader can open 
 | File | What it is |
 |---|---|
 | `three_models.html` / `Three_Trading_Models.pdf` | Sequence reference for three liquidity models, at summary level. Model 3 is the MPC Loaded Level strategy the other two files expand. ⚠ **Still carries the old naming** — it was not re-branded in the 2026-08-18 pass. |
-| `mpc_loaded_level_strategy.html` / `MPC_Loaded_Level_Strategy.pdf` | **10-page** beginner handout for the **MPC Loaded Level strategy** — written for first exposure, no prior SMC vocabulary assumed. **Four** inline SVG diagrams. Covers the sequence LONG and SHORT, plus a side-by-side page. |
+| `mpc_loaded_level_strategy.html` / `MPC_Loaded_Level_Strategy.pdf` | **9-page** beginner handout for the **MPC Loaded Level strategy** — written for first exposure, no prior SMC vocabulary assumed. **Four** inline SVG diagrams. Covers the sequence LONG and SHORT, plus a side-by-side page. Carries the MentorPeak watermark on every page. ⚠ **It no longer carries the measurement page** — see *The measurement page was removed* below. |
+| `assets/mpc_logo.png` | The MentorPeak Consulting logo (blue-on-transparent, 770×228), master copy for the watermark. Referenced by relative path from the HTML so the PDF embeds it; the source is `~/Documents/MPC-Logo/With Tagline/`, which is on Aaron's machine and not in the repo. |
 | `rso_and_els.svg` / `.png` | The two strategies this repo is actually building, side by side: **RSO — Retail Shake Out** (`docs/MPC_FB_SPEC.md`) and **ELS — Engineered Liquidity Sweep** (`docs/DAVINCI_MODEL_SPEC.md`). Schematic candles plus a checklist per strategy, each row naming the engine field behind it. The SVG is the editable master. |
 | `marco_vs_yours.svg` / `.png` / `Marco_vs_Yours.pdf` | 4-page comparison of the source author's entry (on the sweep) against Aaron's (on the pullback into the gap between two lower highs). Same arming event, different fill. Generated once by hand; the SVG is the editable master. |
 
@@ -106,9 +107,60 @@ setup two names, which is the mistake above from the other direction.
 
 ## Rules
 
-- **Never publish a handout for a model whose measurement contradicts it without saying so.** The
-  Loaded Level handout carries a "what we actually measured" page for this reason, including the
-  side that did NOT beat its control.
+- **Never publish a handout for a model whose measurement contradicts it without saying so.**
+  ⚠ **The Loaded Level handout no longer satisfies this and the exception is recorded below** —
+  do not read the rule as describing that file any more, and do not restore the page silently.
 - **Keep the artwork's master format editable.** `marco_vs_yours.svg` is the source; the PNG and PDF
   are derived. Do not hand-edit the derived files.
 - **These files are committed.** They are the deliverable, not scratch output.
+
+## 🔴 The measurement page was removed from the Loaded Level handout — 2026-08-21, Aaron's call
+
+Page 7, *"What we actually measured"*, is gone, along with the two sentences elsewhere in the
+document that pointed a reader at it. The handout is 10 pages → **9**.
+
+⚠ **Say what left the document, because it is not just numbers.** The page carried four things
+and three of them were cautions, not results:
+
+1. The **sell side measured no edge at all** (80 trades, 21.2% against 20.9% random) on identical
+   detection. A reader of the 9-page file is now taught the short sequence with no indication that
+   it has never beaten a coin flip here.
+2. **n=49 over eight years** — about six trades a year — was stated plainly as a hint rather than
+   a proof.
+3. The **edge vanished below a 2R floor**. That is the measured justification for the "refuse
+   anything under roughly 3:1" rule, and **that rule is still in the handout with its reason now
+   removed.** It reads as preference; it was the one thing the scan actually supported.
+4. A "do not read this as a green light" box.
+
+⚠ **What was kept:** the footer still says nothing here is financial advice and that the reader
+should test everything before risking money. That is the only remaining caution in the file.
+
+⚠ **The measurements themselves were NOT deleted from the repo** — `docs/DAVINCI_MODEL_SPEC.md`
+→ *MEASURED 2026-08-13* is still the record, and it is where the question "what do we actually
+know about this model" gets answered. **Do not strip it there.** Same split as the attribution
+pass above: a handout is a teaching artefact, a spec is a record.
+
+## The watermark
+
+`.page::after` on every section, `assets/mpc_logo.png` rotated −24°, 122mm wide, opacity **0.07**.
+
+🔴 **`print-color-adjust: exact` is REQUIRED and its absence is silent.** Chrome drops background
+images when printing, so the HTML looks correct in a browser and the PDF comes out clean. **Verify
+a watermark by rasterising the PDF, never by opening the HTML.**
+
+🔴 **It sits IN FRONT of the content, and behind was tried first.** Behind, every element with a
+solid background — the two-column panels on page 2, the callout boxes, the tables — punches a
+rectangular hole through the mark. A watermark chopped into fragments reads as a rendering bug,
+not as branding. In front at 0.07 it is uniform on all nine pages and the text under it stays
+fully legible.
+
+⚠ **Anchored `top: 128mm` from the top of the section, NOT a percentage.** Every section starts at
+the top of a printed page, so a fixed offset lands in the same spot on all of them; a percentage is
+relative to the section's own height and drifts page to page as content length changes. That was
+the first version and it wandered.
+
+🔴 **A verification probe that renders the HTML from OUTSIDE `docs/teaching/` cannot see the
+watermark at all, and its blank result looks exactly like a broken watermark.** The logo is
+referenced by a relative path, so a copy of the HTML in a scratch directory silently loses it.
+Nine pages were checked that way first and every one came back clean. **Write probe files into
+`docs/teaching/` so the relative path resolves, then delete them.** Root rule 2, in miniature.
