@@ -1,3 +1,5 @@
+import inspect
+
 """
 Ruleset seeding + CRUD.
 
@@ -193,3 +195,151 @@ def test_unconstrained_still_states_no_limit(client):
     """The new row is an ADDITION, not an edit. `unconstrained`'s whole purpose is having none."""
     rs = client.get("/rulesets/unconstrained").json()
     assert rs["max_drawdown_from_peak_pct"] is None
+
+
+# ── The phantom daily loss cap (2026-08-21) ──────────────────────────────────
+
+_PHANTOM_CAP_ROWS = (
+    "tradeify_50k_funded",
+    "tradeify_100k_funded",
+    "fundednext_flex_50k_funded",
+    "fundednext_flex_100k_funded",
+    "lucidflex_50k_funded",
+    "lucidflex_100k_funded",
+)
+
+
+def test_no_funded_row_carries_a_daily_loss_cap_its_firm_does_not_impose(client):
+    """🔴 An early migration ran `SET daily_loss_cap = max_loss_eod WHERE daily_loss_cap IS NULL`,
+    which turned *this firm has no daily loss limit* into *its daily loss limit is its entire
+    drawdown* on every row at once. The eval half was cleared on 2026-07-xx with the note
+    "clear the phantom cap that fed a false grading rule" and explicitly stopped there —
+    "funded/personal untouched" — so the funded rows carried it for three more months.
+
+    Verified against each firm's own documentation on 2026-08-21:
+      * Tradeify Select FLEX — "Daily Loss Limit | None | None | None | None"
+      * FundedNext Futures Flex — "no daily loss limits, and no buffer rules"
+      * LucidFlex funded — "Optional", chosen per account at purchase
+
+    It graded in the direction that costs money: a cap that does not exist fails days the firm
+    would have allowed, so a strategy is rejected for breaking a rule it cannot break.
+
+    ⚠ This pins the OUTCOME of a fresh build, NOT the seed constant. The clearing statement runs
+    inside `init_db()`, so it repairs a bad seed before any test can observe it — MEASURED by
+    mutation: putting the phantom back into the seed leaves this test GREEN. The seed itself is
+    pinned separately by `test_the_seed_itself_carries_no_phantom_cap`, which reads the constant
+    rather than the database. Two tests because there are two ways to reintroduce this.
+    """
+    rows = {r["id"]: r for r in client.get("/rulesets").json()}
+    for rid in _PHANTOM_CAP_ROWS:
+        assert rid in rows, f"{rid} vanished from the seed"
+        assert rows[rid]["daily_loss_cap"] is None, (
+            f"{rid} carries a daily loss cap of {rows[rid]['daily_loss_cap']}; its firm "
+            f"publishes none (max_loss_eod is {rows[rid]['max_loss_eod']} — if those match, "
+            "the phantom is back)"
+        )
+
+
+def test_apex_keeps_the_daily_loss_limit_it_really_has(client):
+    """The control, and the reason the fix above could be targeted at all.
+
+    Apex's daily loss limit is REAL and published ($1,000 on the 50K, $1,500 on the 100K), and
+    it is a different number from the drawdown — which is exactly what distinguishes it from a
+    phantom. A blanket "prop rows have no daily cap" rule would have deleted a true rule, so
+    this test exists to make that failure loud.
+    """
+    rows = {r["id"]: r for r in client.get("/rulesets").json()}
+    for rid, cap in (("apex_eod_50k_eval", 1000), ("apex_eod_100k_eval", 1500)):
+        assert rows[rid]["daily_loss_cap"] == cap, f"{rid} lost its real daily loss limit"
+        assert rows[rid]["daily_loss_cap"] != rows[rid]["max_loss_eod"], (
+            f"{rid}'s cap now equals its drawdown — that is the phantom's signature, and the "
+            "guard keys on it"
+        )
+
+
+def test_lucidflex_funded_carries_the_published_profit_split(client):
+    """ "90/10 profit split", stated on Lucid's funded article. The field had never been
+    populated — not wrong, absent, which reads as "unknown" everywhere downstream."""
+    rows = {r["id"]: r for r in client.get("/rulesets").json()}
+    for rid in ("lucidflex_50k_funded", "lucidflex_100k_funded"):
+        assert rows[rid]["profit_split_pct"] == 90.0, f"{rid} lost its published profit split"
+
+
+def test_the_phantom_clear_spares_a_deliberately_set_cap(fresh_db):
+    """The guard, and it is the half that could quietly cost you a rule.
+
+    🔴 The clearing statement runs on EVERY startup, and LucidFlex's daily loss limit is
+    genuinely OPTIONAL — the trader chooses at purchase. An unguarded `SET daily_loss_cap =
+    NULL WHERE id IN (...)` would therefore wipe a real, deliberately configured limit on the
+    first restart after somebody set one, silently.
+
+    So the statement keys on the phantom's SIGNATURE — a cap equal to that row's `max_loss_eod`,
+    which is what the copying migration produced. Both halves are asserted here: the phantom
+    goes, and a cap that differs stays.
+
+    Watched RED by mutation: dropping `AND daily_loss_cap = max_loss_eod` from the statement
+    fails the second half and leaves the first passing.
+    """
+    from services import lab_db
+
+    def cap(rid):
+        with lab_db._connect() as conn:
+            row = conn.execute(
+                "SELECT daily_loss_cap, max_loss_eod FROM rulesets WHERE id=?", (rid,)
+            ).fetchone()
+        return row[0], row[1]
+
+    rid = "lucidflex_50k_funded"
+    _, drawdown = cap(rid)
+
+    # 1. A phantom — a cap equal to the drawdown — is cleared on the next startup.
+    with lab_db._connect() as conn:
+        conn.execute("UPDATE rulesets SET daily_loss_cap=? WHERE id=?", (drawdown, rid))
+    assert cap(rid)[0] == drawdown, "setup failed — the phantom was not written"
+    lab_db.init_db()
+    assert cap(rid)[0] is None, "the phantom survived a restart"
+
+    # 2. A DELIBERATE cap — any value that is not the drawdown — must survive it.
+    deliberate = drawdown - 500
+    assert deliberate != drawdown
+    with lab_db._connect() as conn:
+        conn.execute("UPDATE rulesets SET daily_loss_cap=? WHERE id=?", (deliberate, rid))
+    lab_db.init_db()
+    assert cap(rid)[0] == deliberate, (
+        "a deliberately configured daily loss limit was wiped by the phantom clear — "
+        "LucidFlex's DLL is optional per account, so this is a real setting being deleted"
+    )
+
+
+def test_the_seed_itself_carries_no_phantom_cap():
+    """Reads the seed CONSTANT, not the database.
+
+    🔴 Written because the fresh-build test above cannot see this: `init_db()` clears the
+    phantom, so a seed that still contains one produces a correct database and a green suite.
+    MEASURED by mutation — restoring `"daily_loss_cap": 2000` to the Tradeify funded seed row
+    left every other test in this file passing.
+
+    That matters beyond tidiness: the clearing statement is guarded on `daily_loss_cap =
+    max_loss_eod`, so a seeded phantom is only ever one guard-change away from becoming real
+    data, and nothing else here would notice.
+    """
+    from services import lab_db
+
+    src = inspect.getsource(lab_db)
+    start = src.index("_PROP_SEED_ROWS = [")
+    seed = src[start : src.index("\n    ]", start)]
+
+    for rid in _PHANTOM_CAP_ROWS:
+        block_start = seed.index(f'"id": "{rid}"')
+        nxt = seed.find('"id": "', block_start + 10)
+        block = seed[block_start : nxt if nxt != -1 else len(seed)]
+        assert '"daily_loss_cap": None' in block, (
+            f"the {rid} seed row no longer sets daily_loss_cap to None — a fresh build would "
+            "carry the phantom, and only the migration would be hiding it"
+        )
+
+    for rid in ("lucidflex_50k_funded", "lucidflex_100k_funded"):
+        block_start = seed.index(f'"id": "{rid}"')
+        nxt = seed.find('"id": "', block_start + 10)
+        block = seed[block_start : nxt if nxt != -1 else len(seed)]
+        assert '"profit_split_pct": 90.0' in block, f"{rid} lost its seeded profit split"

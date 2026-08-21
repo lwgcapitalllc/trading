@@ -699,6 +699,55 @@ a flagged merge names NO tree and that at least one non-merge is in range — so
 satisfied by flagging everything, and still catches the widened-pathspec bug it was written for.
 Watched RED by mutation: forcing the flag false reddens exactly the original assertion.
 
+### The phantom daily loss cap, second half (2026-08-21)
+
+Six FUNDED prop rows carried a daily loss limit their firm does not impose. **It was never typed
+in.** An early migration ran `SET daily_loss_cap = max_loss_eod WHERE daily_loss_cap IS NULL`,
+turning *this firm has no daily loss limit* into *its limit equals its entire drawdown* on every
+row at once. A later migration recognised it — its own comment reads *"None of these firms has a
+daily loss limit — clear the phantom cap that fed a false grading rule"* — cleared the six EVAL
+rows, and stopped: *"funded/personal untouched"*. The funded half survived three more months.
+
+🔴 **It graded in the direction that costs money.** A cap that does not exist fails days the firm
+would have allowed, so a strategy is rejected for breaking a rule it cannot break.
+
+⚠ **The signature is that each wrong value EQUALS that row's `max_loss_eod`.** Apex is the control:
+its cap is a real, published number, DIFFERENT from its drawdown, and is deliberately untouched. A
+blanket *"prop rows have no daily cap"* would have deleted a true rule.
+
+Verified against each firm's own documentation (readable for the first time — see `CLAUDE.md` →
+*The MCP servers*): Tradeify Select **Flex** publishes "Daily Loss Limit | None" across all sizes
+— and these rows are the Flex product, so even the Daily policy's $1,000/$1,250 would be the wrong
+number; FundedNext Futures Flex publishes "no daily loss limits, and no buffer rules"; LucidFlex
+funded publishes **"Optional"**, chosen per account at purchase.
+
+🔴 **That last one forced the fix to be GUARDED, and the guard is the part that could have cost a
+real setting.** The clearing statement runs on every startup. Lucid's limit being optional means a
+trader may genuinely set one — and an unguarded `SET daily_loss_cap = NULL WHERE id IN (…)` would
+wipe it on the next restart, silently. So it keys on the phantom's signature,
+`AND daily_loss_cap = max_loss_eod`. A deliberate cap differs from the drawdown and survives.
+
+**Also landed:** both LucidFlex funded rows gained the published 90/10 profit split — the field had
+never been populated, which reads as *unknown* rather than *wrong* everywhere downstream. And the
+LucidFlex daily-loss TODO open since 2026-05-31 is closed: the eval article says there is no such
+limit, the funded article says it is optional. ⚠ The related *60%-of-highest-EOD-profit LucidScale*
+claim is on NEITHER article and stays unverified.
+
+⚠ **Both the SEED and a MIGRATION were changed, and one test each — because they fail differently.**
+The migration repairs an existing database; the seed is what a fresh clone inserts. 🔴 **The
+fresh-build test cannot see a bad seed**: `init_db()` clears the phantom before any test observes
+it, so restoring `"daily_loss_cap": 2000` to the seed left the whole file GREEN. MEASURED, not
+reasoned. `test_the_seed_itself_carries_no_phantom_cap` therefore reads the seed CONSTANT via
+`inspect.getsource` rather than the database. Both watched RED by mutation.
+
+⚠ **The notes update is PARAMETERISED rather than inlined in the migration list**, because the old
+and new text both contain apostrophes and quoted citations. Hand-escaping them into a literal SQL
+string is not hypothetical: an unescaped quote in that very note took the backend down while it was
+being written.
+
+⚠ **`PATCH /rulesets/{id}` refuses prop rows** ("Firm rules — not editable"), which is correct and
+was confirmed the hard way. A migration is the only channel for a correction like this.
+
 ### An ARMED watchdog stopped reporting itself as STOPPED (2026-08-21)
 
 `schtasks` answers **`Ready`** for a task that is enabled and waiting for its next trigger — the

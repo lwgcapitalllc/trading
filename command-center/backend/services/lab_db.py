@@ -609,6 +609,45 @@ def init_db() -> None:
             "daily_profit_goal = NULL "
             "WHERE id IN ('personal_forex_demo','personal_futures_demo') "
             "AND max_drawdown_from_peak_pct IS NULL",
+            # 2026-08-21 — the OTHER HALF of the phantom daily-loss-cap clear above.
+            #
+            # 🔴 The cap was never typed in: an early migration ran
+            # `SET daily_loss_cap = max_loss_eod WHERE daily_loss_cap IS NULL`, which turned
+            # "this firm has no daily loss limit" into "its daily loss limit equals its whole
+            # drawdown" on every row at once. The eval half was cleared later with the note
+            # *"clear the phantom cap that fed a false grading rule"* — and stopped there,
+            # saying "funded/personal untouched". The funded rows kept it for three months.
+            #
+            # ⚠ The tell is that each wrong value EQUALS that row's `max_loss_eod`. Apex is the
+            # control: its cap is a genuinely different number from its drawdown, it is real,
+            # and it is deliberately NOT cleared here.
+            #
+            # Verified against each firm's own documentation 2026-08-21:
+            #   Tradeify Select FLEX — "Daily Loss Limit | None | None | None | None". (The
+            #     separate Select DAILY policy does have one, $1,000/$1,250 — a different
+            #     product from these rows, and not this number either.)
+            #   FundedNext Futures Flex — "no daily loss limits, and no buffer rules".
+            #   LucidFlex funded — "Optional"; the trader chooses at purchase. A fixed number
+            #     is wrong in both directions, so NULL is the only honest default.
+            #
+            # It grades in the direction that costs you: a cap that does not exist fails days
+            # the firm would have allowed, so a strategy is rejected for breaking a rule it
+            # cannot break.
+            # ⚠ Guarded on `daily_loss_cap = max_loss_eod`, which is the phantom's SIGNATURE —
+            # the value the copying migration produced. This runs on every startup, and
+            # LucidFlex's DLL is genuinely OPTIONAL per account: without the guard, the first
+            # restart after somebody deliberately set one would silently wipe it. A deliberate
+            # cap will differ from the drawdown, exactly as Apex's real one does.
+            "UPDATE rulesets SET daily_loss_cap = NULL "
+            "WHERE id IN ('tradeify_50k_funded','tradeify_100k_funded',"
+            "'fundednext_flex_50k_funded','fundednext_flex_100k_funded',"
+            "'lucidflex_50k_funded','lucidflex_100k_funded') "
+            "AND daily_loss_cap = max_loss_eod",
+            # LucidFlex publishes "90/10 profit split" on its funded article; the field was
+            # never populated. Guarded so a later manual edit survives a restart.
+            "UPDATE rulesets SET profit_split_pct = 90.0 "
+            "WHERE id IN ('lucidflex_50k_funded','lucidflex_100k_funded') "
+            "AND profit_split_pct IS NULL",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -619,6 +658,39 @@ def init_db() -> None:
         # covers both live and fresh DBs). Do NOT insert them here in the migration section —
         # that runs before _seed_rulesets and would make the table non-empty, tripping the
         # legacy `COUNT(*) == 0` guard on the LucidFlex seed block and dropping LucidFlex.
+
+        # 2026-08-21 — close the LucidFlex daily-loss-limit TODO that had been open since
+        # 2026-05-31, unresolved because nothing here could read the firm's articles.
+        #
+        # ⚠ Parameterised rather than inlined in the migration list above: both the old text
+        # and the new one contain apostrophes and quoted citations, and hand-escaping them into
+        # a literal SQL string is how this file gets broken by a note. (It was: an unescaped
+        # quote in this very note took the backend down for two minutes while it was written.)
+        #
+        # `replace()` is a no-op once the old text is gone, so this is safe on every startup,
+        # and it edits only the sentence it names — any other correction somebody has added to
+        # these notes survives.
+        _LUCID_DLL_TODO = (
+            "TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT "
+            "in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL "
+            "above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the "
+            "DLL dollar amounts against Lucid's DLL article and backfill if real."
+        )
+        _LUCID_DLL_RESOLVED = (
+            "RESOLVED 2026-08-21 from the firm's own articles: the eval article states there is "
+            "no DLL on LucidFlex evaluation accounts; the funded article states the DLL is "
+            "OPTIONAL, chosen per account at purchase -- so a fixed number is wrong in both "
+            "directions and daily_loss_cap is NULL on both. Funded profit split 90/10, published "
+            "on the funded article, backfilled the same day (the field had never been "
+            "populated). STILL UNVERIFIED: the 60%-of-highest-EOD-profit LucidScale DLL above "
+            "the Initial Trail Balance appears on NEITHER article -- it needs Lucid's separate "
+            "DLL page. The scaling bands on the funded rows are likewise unverified against the "
+            "scaling article."
+        )
+        conn.execute(
+            "UPDATE rulesets SET notes = replace(notes, ?, ?) WHERE notes LIKE ?",
+            (_LUCID_DLL_TODO, _LUCID_DLL_RESOLVED, "%LucidScale DLL%"),
+        )
 
         # Backfill runner on backtest_runs for rows created before the runner column existed.
         # The column defaulted to 'ninjatrader', so MT5 strategy runs got the wrong value.
@@ -1416,7 +1488,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "platform_support": '["NinjaTrader", "Tradovate"]',
             "account_tier": "eval",
             "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
-            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. RESOLVED 2026-08-21 from the firm's own articles: eval says 'There is no DLL on LucidFlex evaluation accounts'; funded says the DLL is OPTIONAL, chosen per account at purchase -- so a fixed number is wrong in both directions and daily_loss_cap is NULL on both. Funded profit split 90/10, published on the funded article, backfilled the same day (the field had never been populated). STILL UNVERIFIED: the 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance appears on NEITHER article -- it needs Lucid's separate DLL page. Scaling bands here are likewise unverified against the scaling article.",
             "eval_cost_usd": None,
             "activation_fee_usd": None,
             "profit_split_pct": None,
@@ -1457,7 +1529,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "platform_support": '["NinjaTrader", "Tradovate"]',
             "account_tier": "eval",
             "docs_url": "https://support.lucidtrading.com/en/articles/12945790-lucidflex-evaluation-account",
-            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. RESOLVED 2026-08-21 from the firm's own articles: eval says 'There is no DLL on LucidFlex evaluation accounts'; funded says the DLL is OPTIONAL, chosen per account at purchase -- so a fixed number is wrong in both directions and daily_loss_cap is NULL on both. Funded profit split 90/10, published on the funded article, backfilled the same day (the field had never been populated). STILL UNVERIFIED: the 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance appears on NEITHER article -- it needs Lucid's separate DLL page. Scaling bands here are likewise unverified against the scaling article.",
             "eval_cost_usd": None,
             "activation_fee_usd": None,
             "profit_split_pct": None,
@@ -1498,12 +1570,12 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "platform_support": '["NinjaTrader", "Tradovate"]',
             "account_tier": "funded",
             "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
-            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. RESOLVED 2026-08-21 from the firm's own articles: eval says 'There is no DLL on LucidFlex evaluation accounts'; funded says the DLL is OPTIONAL, chosen per account at purchase -- so a fixed number is wrong in both directions and daily_loss_cap is NULL on both. Funded profit split 90/10, published on the funded article, backfilled the same day (the field had never been populated). STILL UNVERIFIED: the 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance appears on NEITHER article -- it needs Lucid's separate DLL page. Scaling bands here are likewise unverified against the scaling article.",
             "eval_cost_usd": None,
             "activation_fee_usd": None,
-            "profit_split_pct": None,
+            "profit_split_pct": 90.0,
             "ruleset_type": "prop_funded",
-            "daily_loss_cap": 2000,
+            "daily_loss_cap": None,
             "weekly_loss_cap": None,
             "daily_profit_goal": None,
             "description": None,
@@ -1539,12 +1611,12 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "platform_support": '["NinjaTrader", "Tradovate"]',
             "account_tier": "funded",
             "docs_url": "https://support.lucidtrading.com/en/articles/12945795-lucidflex-funded-account",
-            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. TODO/VERIFY: sources conflict on whether 50k/100k carry a fixed DAILY LOSS LIMIT in eval + early funded (converting to a 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance). max_loss_intraday left UNCHANGED -- confirm the DLL dollar amounts against Lucid's DLL article and backfill if real.",
+            "notes": "Verified from docs_url on 2026-05-29 CORRECTED 2026-05-31: drawdown_type -> trailing_eod (was flat); force_flat_time_et -> 16:45 (was 15:30); eval contracts set to fixed full size (50k 4/40, 100k 6/60); funded contract scaling added. Drawdown is EOD trailing, floor max-loss distance below highest EOD close, trails up never down, locks once account clears Initial Trail Balance; EXACT LOCK VALUE UNVERIFIED (confirm at support.lucidtrading.com). Funded scaling is BIDIRECTIONAL (limits rise AND fall with EOD simulated-profit band; can drop after payouts). Microscalping flag threshold is 5 SECONDS. Auto-close 4:45pm ET, no overnight. RESOLVED 2026-08-21 from the firm's own articles: eval says 'There is no DLL on LucidFlex evaluation accounts'; funded says the DLL is OPTIONAL, chosen per account at purchase -- so a fixed number is wrong in both directions and daily_loss_cap is NULL on both. Funded profit split 90/10, published on the funded article, backfilled the same day (the field had never been populated). STILL UNVERIFIED: the 60%-of-highest-EOD-profit LucidScale DLL above the Initial Trail Balance appears on NEITHER article -- it needs Lucid's separate DLL page. Scaling bands here are likewise unverified against the scaling article.",
             "eval_cost_usd": None,
             "activation_fee_usd": None,
-            "profit_split_pct": None,
+            "profit_split_pct": 90.0,
             "ruleset_type": "prop_funded",
-            "daily_loss_cap": 3000,
+            "daily_loss_cap": None,
             "weekly_loss_cap": None,
             "daily_profit_goal": None,
             "description": None,
@@ -1667,7 +1739,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "activation_fee_usd": 0,
             "profit_split_pct": 80.0,
             "ruleset_type": "prop_funded",
-            "daily_loss_cap": 1500,
+            "daily_loss_cap": None,
             "weekly_loss_cap": None,
             "daily_profit_goal": None,
             "description": None,
@@ -1708,7 +1780,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "activation_fee_usd": 0,
             "profit_split_pct": 80.0,
             "ruleset_type": "prop_funded",
-            "daily_loss_cap": 2500,
+            "daily_loss_cap": None,
             "weekly_loss_cap": None,
             "daily_profit_goal": None,
             "description": None,
@@ -1831,7 +1903,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "activation_fee_usd": 0,
             "profit_split_pct": 90.0,
             "ruleset_type": "prop_funded",
-            "daily_loss_cap": 2000,
+            "daily_loss_cap": None,
             "weekly_loss_cap": None,
             "daily_profit_goal": None,
             "description": None,
@@ -1872,7 +1944,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
             "activation_fee_usd": 0,
             "profit_split_pct": 90.0,
             "ruleset_type": "prop_funded",
-            "daily_loss_cap": 3000,
+            "daily_loss_cap": None,
             "weekly_loss_cap": None,
             "daily_profit_goal": None,
             "description": None,
