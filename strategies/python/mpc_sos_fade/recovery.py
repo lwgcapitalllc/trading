@@ -15,10 +15,35 @@ share a balance in one direction only.
 That is a deliberate trade, not an oversight. Making A+ size off the recovery would mean a
 lab-only toggle silently moved every A+ trade, every parity number and every figure in the
 optimization log — a feature that can rewrite the shipped book is worth more care than this one
-earns. The cost is that the equity curve slightly UNDERSTATES a winning recovery's compounding
-and overstates a losing one's, by the amount A+ would have re-sized. With the recovery at a
-quarter size and +4.8R over eight years, that is small — but it is not zero, and nobody should
-read this curve as a shared-account run. See `backtest/portfolio/` for what a real one is.
+earns.
+
+🔴 **The cost is NOT small, and this paragraph said it was until it was measured (2026-08-20, run
+`236e206d0142`).** Recovery profit sits BESIDE the curve instead of lifting it, so it never
+compounds — and over a run that grows several thousand times, an early gain is rounding by the
+end. Identical trades, added up two ways: **+3.8% as this module runs it, +59.9% on one shared
+compounding balance.** The leg is worth +5.04R account-weighted either way; only whether that R
+compounds differs.
+
+⚠ **Neither figure settles anything, and do not quote the second as this rule's worth.** The 59.9%
+also assumes one balance carrying NO risk budget. Put a 10% account cap on it — the number this
+bot already runs — and 23 of that run's 160 A+ entries opened while a recovery was still holding
+risk, which turns the leg NEGATIVE. The honest range is +45% to -15%, decided by an allocator that
+does not exist on the live side. Full bracket, and what would settle it:
+`strategies/python/loss_recovery/CLAUDE.md`.
+
+**What a recovery row carries for the CHART, and what it honestly cannot.** It carries the
+entry, the exit, the 1R stop, and both excursion extremes — which is everything the price chart's
+profit-depth view needs, so a recovery trade is drawn with the same figures as any other trade
+rather than degrading to a bare outcome rectangle. 🔴 **That degradation is not a styling choice
+and was never meant to distinguish anything** — the chart falls back to a plain box for a record
+too thin to draw (an NT8/MT5 trade with no fill prices), so a recovery row missing its excursion
+looked like a DIFFERENT KIND OF TRADE when it was really a thinner record of the same kind. The
+lesson is the general one: **an absence rendered as a distinct shape becomes a claim**, and a
+reader has no way to tell "this is different" from "we recorded less".
+
+It carries no take-profit ladder and no fib leg, and those absences are real: this rule has no
+targets (it locks at +1R and trails) and prices nothing off a fib. The chart therefore draws no
+TP lines on a recovery trade, which is the correct picture and not a missing field.
 
 ⚠ **`r` on a recovery Trade is the trade's OWN R**, exactly as on every other Trade here, so
 `pnl_usd / risk_usd` reproduces it. The quarter-sizing is carried in the DOLLARS — `risk_usd` is
@@ -32,7 +57,6 @@ from __future__ import annotations
 
 import heapq
 import sys
-from datetime import timedelta
 from pathlib import Path
 from typing import List
 
@@ -43,6 +67,7 @@ if str(_PY_ROOT) not in sys.path:
     sys.path.insert(0, str(_PY_ROOT))
 
 from loss_recovery import LossRecoveryEngine, RecoveryConfig  # noqa: E402
+from loss_recovery.costs import hold_cost_r  # noqa: E402
 
 from .execution import Trade  # noqa: E402
 
@@ -77,26 +102,18 @@ def recovery_config(cfg) -> RecoveryConfig:
 
 
 def _cost_r(profile, index, direction: int, i0: int, j: int, risk_price: float) -> float:
-    """Swap + spread + commission for one recovery trade, in R. Lot size cancels out of the ratio.
+    """Swap + spread + commission for one recovery trade, in R.
 
-    Returns an honest 0.0 when no cost profile is configured — meaning "nothing was priced",
-    never a claim that trading was free. The recovery engine models price only, so unlike an A+
-    trade (whose costs are charged inside `Execution` as it goes) these have to be priced here.
+    A thin shim over `loss_recovery.costs.hold_cost_r` — the arithmetic lives there because the
+    shared-account leg prices the same trade and two copies is how they come to disagree. This
+    end owns only the translation from bar INDEX to timestamp.
     """
-    swap = getattr(profile, "swap", None)
-    if profile is None or swap is None or risk_price <= 0:
-        return 0.0
-    nights, day = 0, index[i0].date()
-    while day < index[j].date():
-        day += timedelta(days=1)
-        if day.weekday() >= 5:      # the broker books no rollover at the weekend
-            continue
-        nights += 3 if day.weekday() == swap.triple_weekday else 1
-    return (
-        (swap.per_lot_per_night(direction) * nights) / (risk_price * swap.contract_size)
-        - getattr(profile, "spread", 0.0) / risk_price
-        - 2.0 * getattr(profile, "commission_per_side_per_lot", 0.0)
-        / (risk_price * swap.contract_size)
+    return hold_cost_r(
+        profile,
+        int(index[i0].timestamp() * 1000),
+        int(index[j].timestamp() * 1000),
+        direction,
+        risk_price,
     )
 
 
@@ -153,6 +170,14 @@ def apply(strategy, df) -> List[Trade]:
         costs_usd = _cost_r(ex._profile, index, rt.direction,
                             rt.entry_index, rt.exit_index, rt.risk) * risk_usd
         pnl_usd = rt.r * risk_usd + costs_usd
+        # Excursion, carried as both PRICES and DOLLARS so a recovery row answers the same
+        # questions on the chart and the equity view that a primary row does — `Furthest`,
+        # `Deepest`, and the excursion band. Both are stepped off the engine's OWN R figures
+        # rather than re-read from the bars: the engine already measured them, on the same bars,
+        # with the exit-bar caps that keep them inside what the trade actually lived through, and
+        # a second reading here would be a second answer free to disagree with the first.
+        mfe_price = rt.entry_price + rt.direction * rt.max_favourable_r * rt.risk
+        mae_price = rt.entry_price - rt.direction * rt.max_adverse_r * rt.risk
         out.append(Trade(
             dir=rt.direction,
             entry_index=rt.entry_index,
@@ -169,6 +194,11 @@ def apply(strategy, df) -> List[Trade]:
             stop_distance=rt.risk,
             exit_reason=rt.exit_reason,
             kind=RECOVERY_KIND,
+            mfe_price=mfe_price,
+            mae_price=mae_price,
+            # Same sign convention as every other Trade here: favourable ≥ 0, adverse ≤ 0.
+            mfe_usd=rt.max_favourable_r * risk_usd,
+            mae_usd=-rt.max_adverse_r * risk_usd,
         ))
         heapq.heappush(closes, (rt.exit_index, pnl_usd))
 

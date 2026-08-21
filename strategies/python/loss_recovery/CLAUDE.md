@@ -74,6 +74,214 @@ prints both columns — read them together, never the balance alone.
 
 **If the goal is a smaller drawdown, the lever is `exec_risk_pct`, not this module.**
 
+### ⚠ Re-measured 2026-08-20 from a real lab run, and the drawdown answer is WEAKER than "unchanged"
+
+Aaron ran the toggle from the Command Center (run `236e206d0142`) and got a 37.8% drawdown where
+this section said to expect ~48%. The run was right; the comparison was not. Same settings
+(`exec_risk_pct` 10, quarter size), one variable at a time, drawdown on the strategy's own
+compounding dollar balance:
+
+| window | costs | A+ alone | + recovery | change |
+|---|---|---|---|---|
+| 2018-09-14 → 2026-08-14 | none | 45.6% | 44.2% | −1.4 pt |
+| 2018-09-14 → 2026-08-14 | `puprime_ecn` | 50.2% | 50.3% | **+0.1 pt** |
+| 2020-01-01 → 2026-08-20 | none *(Aaron's run)* | 45.6% | **37.8%** | **−7.8 pt** |
+| 2020-01-01 → 2026-08-20 | `puprime_ecn` | 50.2% | 48.7% | −1.5 pt |
+
+🔴 **Same rule, four defensible framings, answers from +0.1 to −7.8 points. The drawdown effect is
+NOISE, not an effect that happens to be small** — which is a stronger statement than the "it does
+not reduce drawdown" above and replaces it. ⚠ **The run that looks best is the one charging
+NOTHING**: `cost_layers` was `[]`, so $0.00 of spread, commission or swap across 213 trades. Costed,
+the same window makes $22.5M instead of $51.1M. **Ask what a run priced before reading its drawdown.**
+
+⚠ **Do not compare a lab page's drawdown with the ones above it in this file either.** Those come
+from `recovery_report.py`, which compounds a sequence of R at a fixed risk %; the lab walks the
+strategy's own dollar sizing, where a trade is sized when its limit is PLACED. Two honest methods,
+two different numbers on identical trades.
+
+### 🔴 The 1.53x headline needs ONE ACCOUNT, and the shipped toggle does not give it one
+
+**MEASURED 2026-08-20 on run `236e206d0142`'s own trades, and it is the most important correction
+in this file.** The same book, added up two ways:
+
+| | balance multiple | maxDD |
+|---|---|---|
+| A+ alone, as the lab runs it | 4,921x | 45.6% |
+| **+ recovery, as the lab runs it** | **5,107x (+3.8%)** | 37.8% |
+| A+ alone, one shared compounding balance | 6,026x | 45.6% |
+| **+ recovery, one shared compounding balance** | **9,636x (+59.9%)** | 42.2% |
+
+**+3.8% against +59.9% for the identical trades.** The recovery leg is worth **+5.04R
+account-weighted** either way; what differs is whether that R gets to COMPOUND.
+
+🔴 **The cause is a deliberate design choice in the wiring, not a bug** —
+`mpc_sos_fade/recovery.py` sizes the recovery off the running balance but never lets A+ size off
+the recovery, so a lab toggle cannot move a parity-gated book. The cost is that recovery profit
+sits BESIDE the curve instead of lifting it, and over a run that grows 5,000x an early gain is
+rounding by the end. ⚠ **That adapter's own note called this understatement "small". It is not —
+it is most of the result, and this table is the correction.**
+
+⚠ **Neither column is the answer.** The 3.8% is what the lab prints today and is the number to
+quote for anything measured through the Command Center. The 59.9% is what the same trades are worth
+if the profit compounds — but it also assumes **one balance with NO risk budget on it**, and that
+is the assumption that turns out to decide everything.
+
+### 🔴 Put ONE RISK BUDGET on that balance and the sign flips. This is the real state of the question.
+
+**MEASURED 2026-08-20, same run, re-priced onto one balance at a 10% account cap.** A recovery
+holds risk for a median of ~4 days, and **23 of this run's 160 A+ entries opened while one was
+already holding**. A+ risks the full 10% and the cap IS 10%, so every one of those 23 competes.
+
+| | multiple | maxDD | vs A+ alone |
+|---|---|---|---|
+| A+ alone, one balance | 4,921x | 45.6% | — |
+| + recovery, every entry granted in full | 7,125x | 42.1% | **+44.8%** |
+| + recovery, A+ shrunk to the room left | 4,191x | 39.9% | **−14.8%** |
+| + recovery, A+ refused outright | 116x | 43.3% | −97.6% |
+
+🔴 **The plausible range spans +45% to −15%, and which end you land on is decided entirely by an
+allocator that DOES NOT EXIST on the live side.** MEASURED on this run: an A+ trade averages
+**+0.882R** and a recovery averages **+0.095R account-weighted** — **9.3x** — so giving budget to
+the second at the first's expense is a bad swap the moment the cap binds. **"How would
+this have behaved?" has no answer yet, and the width of that range IS the finding.**
+
+⚠ **All three rows are RE-PRICES, not replays, and this repo has been bitten by exactly that** — an
+entry-side filter estimated at +1.84R replayed at −1.84R, because shrinking or refusing an entry
+frees the position slot and a freed slot admits a setup the book does not contain. The −97.6% row
+in particular is an artifact of deleting compounding winners, not a forecast. Read the three as a
+BRACKET on how much the contention matters, never as results.
+
+⚠ **The middle row is PESSIMISTIC on its own terms**: reservations fall to zero at breakeven, A+
+reaches breakeven in a median of one bar, and a recovery reserves nothing once it locks at +1R. So
+the real shrink binds far less often than 23 times. **That is a reason to go and measure it, not a
+reason to assume the top row.**
+
+### ✅ BUILT AND RUN 2026-08-20 — `leg.py` + `backtest/tools/recovery_stack.py`
+
+The rule now runs as a real LEG through `backtest/portfolio/` — one balance both legs size against,
+one live risk budget they compete for, one merged clock, a refusal log. **It is not a second copy
+of the rule**: trade management lives in `position.ManagedPosition`, which `engine._manage` also
+drives, and the extraction was proved byte-identical over ten configs on real bars. Only the
+ARMING side is new, because a stepped driver has to answer bar by bar what the batch engine
+pre-computes.
+
+**The sizing defect is closed, and it was CHECKED rather than declared.** Recover the balance each
+trade believed it had (its booked risk ÷ its own risk rate) and score it against both models:
+
+| | before (the lab toggle) | after (the leg) |
+|---|---|---|
+| median gap to the JOINT balance | — | **0.000%** |
+| median gap to the SPLIT balance | ~0 (149 of 155 matched it) | **4.947%** |
+| trades nearer the JOINT model | — | **206 of 212** |
+
+⚠ **Neither model is exact to the cent and that is not the fix leaking.** A resting limit is SIZED
+WHEN PLACED and the balance moves before it fills — on closes, on partial exits, and on costs
+booked as they happen. So the test is which model each trade TRACKS, and it flipped completely.
+
+**MEASURED, 186,910 M15 bars 2018-09-14 → 2026-08-14, `puprime_ecn`, A+ 10%, recovery 25% of that:**
+
+| account cap | A+ alone | + recovery leg | verdict |
+|---|---|---|---|
+| **10%** (A+ alone already fills it) | $13,199,534 · 50.2% | **$9,251,114 · 50.4%** | **−29.9%** |
+| **12.5%** (room made for it) | $13,199,534 · 50.2% | **$17,074,731 · 50.4%** | **+29.4%** |
+
+🔴 **The recovery leg is not the variable — HEADROOM is.** A+ risks the full 10% and the cap is
+10%, so the two legs at full size want 12.5% of a 10% budget: **every overlap shrinks A+ by
+construction, and 25 of its 181 entries were shrunk.** An A+ trade averages 9.3x a recovery trade's
+account-weighted R, so trading one for the other is a bad swap. Give the recovery its own 2.5% on
+top and the same trades add +29.4%. **The question is not "is the recovery worth taking" — it is
+"is it worth 2.5% of account risk that A+ is not already using".**
+
+**The concurrency rule is SHARE, and it is stated in the run's own output.** `PortfolioAccount`
+grants `min(desired, room)`; that is the canonical account in this repo and a second allocator is
+forbidden. ⚠ **`--on-contention refuse` REFUSES TO RUN rather than fake it**: the account carries
+ONE entry floor for every leg while these legs risk different amounts, so any floor that makes A+
+all-or-nothing also bans every 2.5% recovery entry outright — measured, 64 refusals and 0 trades,
+identical at a 10% and a 12.5% cap. A refusal rule needs a PER-LEG floor on the shared account.
+
+⚠ **Peak open risk 10.9% against a 10% cap, and it is not a hole.** The cap binds AT FILL against
+the balance at that moment; the reservation is then a fixed dollar figure while the balance keeps
+moving, so a later loss shrinks the denominator under a grant already made. Nothing was ever
+granted over the cap.
+
+⚠ **A+'s R moved −0.10R (127.11 → 127.01) on the shrink path and is UNEXPLAINED.** R is normalised
+to each trade's own risk, so a pure sizing change must leave it byte-identical — the recovery leg's
+R does, to the cent. 0.10R is 0.08% of the book and far under this strategy's 15.06R jitter floor,
+so it changes no conclusion, but it is a real disagreement with an invariant and it is written down
+rather than rounded away. It appears only where entries are shrunk. **Scale-in is OFF by default,
+so the obvious candidate is ruled out.**
+
+⚠ **Three limits of the leg, each refused or counted rather than absorbed**: one position at a time
+(the account keys one per leg; 5 setups skipped over 7.9 years, counted separately from budget
+refusals), no ATR (a config needing one is refused, naming the batch tool), and no look-ahead by
+construction.
+
+### 🔴 THE SPLIT SWEEP — measured 2026-08-20 under a hard 10% exposure ceiling, and it settles the question
+
+Aaron's constraint, verbatim: *"I dont want my exposed risk ever over 10% at a time."* So this
+sweep holds TOTAL risk at 10% and moves only the SPLIT, rather than sweeping a recovery size
+against a fixed A+. 186,910 M15 bars, 2018-09-14 → 2026-08-14, `puprime_ecn`, rule SHARE. Every
+`A+ alone` row is that same run's own solo control, so no two rows come from different code paths.
+
+| plan | final balance | maxDD |
+|---|---|---|
+| A+ 6% alone | $1,720,547 | 32.4% |
+| A+ 7% alone | $3,088,653 | 37.2% |
+| A+ 6% + recovery 4% | $2,589,198 | 38.4% |
+| A+ 7% + recovery 3% | $4,223,442 | 40.5% |
+| A+ 8% alone | $5,256,114 | 41.7% |
+| **A+ 8% + recovery 2%** | **$6,506,262** | **42.5%** |
+| A+ 9% + recovery 1% | $9,502,543 | 45.8% |
+| A+ 9% alone | $8,518,854 | 46.1% |
+| A+ 10% alone | $13,199,534 | 50.2% |
+
+**Two pairs DOMINATE outright — more money AND less drawdown — so they read without interpolation,
+without a risk-adjusted metric, and without arguing about which axis matters:**
+
+- **A+ 9% + recovery 1% beats A+ 9% alone**: $9.50M vs $8.52M, at 45.8% vs 46.1%.
+- **A+ 7% alone beats A+ 6% + recovery 4%**: $3.09M vs $2.59M, at 37.2% vs 38.4%.
+
+🔴 **So the recovery earns its place as a SMALL slice and destroys value as a large one, and the
+turn is between 2% and 3%.** A quarter-size recovery under A+ at 8% is on the good side of that
+turn; **1% under A+ at 9% is better still.**
+
+🔴 **The headline is that the recovery is not the big lever, and this table is how you see it.**
+Under a fixed 10% ceiling A+'s own risk rate moves the result far harder than anything the recovery
+does: taking A+ ALONE from 8% to 10% goes $5,256,114 → $13,199,534, while bolting a whole 2%
+recovery leg onto the 8% version reaches $6,506,262. **The recovery buys EFFICIENCY at a given
+drawdown; it cannot buy HEADROOM.** The most money available under a hard 10% ceiling is A+ alone
+at 10% — which is what the live bot already does — so every split here is a decision to spend money
+on drawdown, not a decision about whether the recovery rule works.
+
+⚠ **Do NOT read the per-cell "+X% against its own control" figure ACROSS cells.** It climbs
+monotonically as the plan gets worse — **+11.5%, +23.8%, +36.7%, +50.5%** at 9/1, 8/2, 7/3, 6/4 —
+purely because the control it divides by is shrinking. **The best-looking uplift in the sweep sits
+on the worst plan in it.** Compare the absolute column, or compare dominance pairs.
+
+⚠ **The whole table is inside the noise band in R, and that caveat outranks every row above it.**
+Put the legs in comparable units (R × that leg's risk rate, i.e. percent of balance): the recovery
+contributes **14.8 / 29.5 / 44.3 / 59.1** at 9/1, 8/2, 7/3, 6/4, against an A+ jitter floor of
+15.06R × the A+ rate = **136 / 120 / 105 / 90**. That is **0.11 to 0.66 of ONE standard deviation
+of A+'s own run-to-run noise, in every cell.** The efficiency gain is real arithmetic on this
+history; its SIGN is not established, and 60 recovery trades over 7.9 years will not establish it
+soon.
+
+⚠ **The 3% and 4% cells trip the tool's own headroom warning (both legs at full size want 10% of a
+10% budget) and still report 0 shrunk, 0 refused.** That is not the warning being wrong — it is
+reservations falling to zero at breakeven, which A+ reaches in a median of one bar. **A warning
+about what COULD contend is not a measurement of what DID**, and the run prints both on purpose.
+
+⚠ **Peak open risk reads 10.1% against a 10% cap in every cell**, for the reason already recorded
+above: the cap binds AT FILL, and a later loss shrinks the balance under a grant already made.
+Nothing was ever granted over the cap. **Holding the RATIO under 10% at every instant would mean
+part-closing a live position because the account dipped — a different and worse strategy, and not
+what the ceiling was asked for.**
+
+⚠ **Adopting any of these splits is a LIVE change, and three things about the live cap differ from
+this lab.** They are in `algos/CLAUDE.md`, not here — the short version is that the live side
+refuses where this shrinks, counts a RESTING order where this reserves at fill, and compares
+without a rounding tolerance, which puts a split summing exactly to the cap on a knife edge.
+
 ---
 
 ## 🔴 It does not smooth the equity curve either — and this qualifies the 1.53x headline
@@ -371,7 +579,7 @@ version made +6.4R against +49.3R for letting it run.
 ## Tests
 
 `command-center/backend/.venv/bin/python -m pytest strategies/python/loss_recovery/tests/ -q`
-→ **31 passed.**
+→ **32 passed.**
 
 🔴 **Every one was watched RED by a named mutation, and the harness earned its keep: 5 of the
 first 15 were VACUOUS.** They passed against their own bugs. What the mutation pass found, kept
@@ -425,7 +633,7 @@ read would have let every assertion pass on an empty list.
 | `--exits` / `--soft-curve` | the exit grid and the soft-stop curve on `recovery_report.py` |
 | `types.py` | `LossEvent` protocol, `RecoveryTrade`, `ArmedSignal` |
 | `engine.py` | the state machine; consumes `engines/market_structure` public events only |
-| `tests/` | 31 tests + the real-bar fixture |
+| `tests/` | 32 tests + the real-bar fixture |
 | `backtest/tools/recovery_report.py` | the runner that produced every number above |
 
 ---
@@ -446,3 +654,17 @@ measured in this file moved.
 ⚠ **The wiring's facts live in `strategies/python/mpc_sos_fade/CLAUDE.md`**, not here — including
 the one that matters (turning it on cannot move an A+ trade) and the one approximation it buys
 (the two share a balance in one direction only). This file stays the owner of the RULE.
+
+**A resolved trade now reports how far it went AGAINST as well as how far it ran** — `max_adverse_r`
+beside `max_favourable_r`, both non-negative magnitudes in the trade's own R, both reporting-only.
+Added 2026-08-20 because the lab's price chart draws a trade's deepest point and had nothing to draw
+it from.
+
+🔴 **`max_adverse_r` is CAPPED at the exit on the closing bar, and that cap is the whole care in
+it.** The stop check runs before the range is read, so the bar that stops a trade out can trade far
+past the stop — but the position was already gone at the stop. Measuring the full bar would report a
+drawdown the trade never lived through, and a chart would then draw its deepest point BEYOND its own
+stop, which is not a thing that can happen. ⚠ **It is only testable on a SYNTHETIC frame**: every
+recovery in the real fixture exits locked and in profit, so the reordered walk returns identical
+numbers there. A wiring-level version of the test was written, watched still-green, and deleted —
+same trap as the five vacuous tests above, found the same way.

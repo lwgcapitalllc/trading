@@ -594,11 +594,11 @@
       "group": "Secondary re-entries (1m)",
       "label": "What triggers a re-entry",
       "short": "Trigger",
-      "choices": ["1m shift", "FVG in zone"],
+      "choices": ["1m shift", "Deep-edge reclaim", "FVG in zone"],
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Lab only."
+      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Deep-edge reclaim is the only one of the three built for a trade that LOST: the first trade is stopped at the deep edge of the entry band, price does not go on to break the move, and instead comes back up through that level — an order then waits AT the level for the retest, stopping at the far end of the move. Because those two levels sit close together the risk is a fraction of the first trade's, so the same cash buys a much bigger position. It needs \"What the first trade must have done\" set to Stopped only; on any other setting it can never fire. MEASURED: waiting for the retest earned +43R over 7.9 years while chasing the reclaim earned nothing, so the wait is the whole edge. Lab only."
     },
     {
       "name": "exec_sec_stop",

@@ -238,7 +238,7 @@ def test_a_bar_that_hits_both_the_stop_and_the_lock_books_the_stop():
         index=idx,
     )
     eng = LossRecoveryEngine(RecoveryConfig(enabled=True))
-    exit_i, exit_px, r, reason, locked, mfe = eng._manage(
+    exit_i, exit_px, r, reason, locked, mfe, _ = eng._manage(
         bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
     )
     assert reason == "stop", f"a bar through the stop booked {reason!r}"
@@ -424,7 +424,7 @@ def test_structural_invalidation_exits_at_the_next_bars_open():
     cfg = RecoveryConfig(enabled=True, invalidate_on_choch=True)
     eng = LossRecoveryEngine(cfg)
     # long from 100, stop 99 (1R = 1.0). A bear CHoCH closes on bar 0.
-    exit_i, exit_px, r, reason, _, _ = eng._manage(
+    exit_i, exit_px, r, reason, _, _, _ = eng._manage(
         bars, 0, 1, 100.0, 99.0, {}, {}, {0: -1}, np.zeros(len(bars)), 96.0
     )
     assert reason == "choch", f"an opposing CHoCH booked {reason!r}"
@@ -450,7 +450,7 @@ def test_the_early_step_moves_the_stop_before_the_lock_does():
         index=idx,
     )
     cfg = RecoveryConfig(enabled=True, be_at_r=0.5, be_to_r=0.0, trail_swings=False)
-    exit_i, exit_px, r, reason, locked, _ = LossRecoveryEngine(cfg)._manage(
+    exit_i, exit_px, r, reason, locked, _, _ = LossRecoveryEngine(cfg)._manage(
         bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
     )
     assert reason == "be", f"the early step booked {reason!r}"
@@ -572,7 +572,7 @@ def test_the_percent_ratchet_moves_a_locked_stop_past_where_the_lock_put_it():
         index=idx,
     )
     cfg = RecoveryConfig(enabled=True, trail_pct=0.1, trail_swings=False)
-    _, exit_px, r, reason, locked, _ = LossRecoveryEngine(cfg)._manage(
+    _, exit_px, r, reason, locked, _, _ = LossRecoveryEngine(cfg)._manage(
         bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
     )
     assert locked and reason == "trail", f"the ratchet booked {reason!r}"
@@ -681,7 +681,7 @@ def test_a_partial_blends_the_two_legs_and_never_books_the_runners_r_on_the_whol
     cfg = RecoveryConfig(
         enabled=True, partial_at_r=1.0, partial_frac=0.5, lock_to_r=0.0, trail_swings=False
     )
-    _, exit_px, r, _, locked, _ = LossRecoveryEngine(cfg)._manage(
+    _, exit_px, r, _, locked, _, _ = LossRecoveryEngine(cfg)._manage(
         bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
     )
     assert locked and exit_px == pytest.approx(100.0), "the runner should stop at breakeven"
@@ -707,7 +707,7 @@ def test_the_chandelier_trails_from_the_best_price_not_from_the_close():
     )
     atr = np.full(len(bars), 1.0)
     cfg = RecoveryConfig(enabled=True, trail_atr_mult=1.0, trail_swings=False)
-    _, exit_px, r, reason, _, _ = LossRecoveryEngine(cfg)._manage(
+    _, exit_px, r, reason, _, _, _ = LossRecoveryEngine(cfg)._manage(
         bars, 0, 1, 100.0, 99.0, {}, {}, {}, atr, 96.0
     )
     assert reason == "trail"
@@ -725,3 +725,38 @@ def test_the_new_stop_and_partial_knobs_refuse_nonsense():
         RecoveryConfig(partial_frac=1.0)
     with pytest.raises(ValueError, match="trail_atr_mult"):
         RecoveryConfig(trail_atr_mult=-1.0)
+
+
+def test_the_adverse_excursion_is_capped_at_the_stop_the_trade_exited_on():
+    """RED by moving the `mae = max(mae, ...)` line ABOVE the `hit_stop` check in `_manage`.
+
+    Same shape, and the same justification, as the stop-vs-lock ordering test above: a synthetic
+    two-bar frame, because `_manage` runs no structure detection, so this is the production path
+    on chosen prices rather than a double that can answer more than the real thing.
+
+    ⚠ It has to be synthetic for a second reason, and that one was learned by writing the test
+    the easy way first: the real fixture's recoveries all exit LOCKED, in profit, so the reordered
+    walk returns identical numbers on it and the test could never have gone red. A wiring-level
+    version of this assertion was written, watched STILL-GREEN, and deleted.
+
+    The bar the trade exits on can trade far beyond the stop, but the position was gone at the
+    stop. Reading the whole bar reports a drawdown the trade never lived through — and a chart
+    then draws its deepest point BEYOND its own stop, which is not a thing that can happen.
+    """
+    idx = pd.date_range("2024-01-01", periods=2, freq="15min", tz="UTC")
+    # long from 100, stop 99 (1R = 1.0). Bar 2 collapses to 98 — a full R past the stop.
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 100.0],
+            "high": [100.2, 100.2],
+            "low": [99.8, 98.0],
+            "close": [100.0, 98.5],
+        },
+        index=idx,
+    )
+    eng = LossRecoveryEngine(RecoveryConfig(enabled=True))
+    _, _, r, reason, _, _, mae = eng._manage(
+        bars, 0, 1, 100.0, 99.0, {}, {}, {}, np.zeros(len(bars)), 96.0
+    )
+    assert reason == "stop" and r == pytest.approx(-1.0)
+    assert mae == pytest.approx(1.0), f"read {mae}R against, but the trade was out at 1.0R"

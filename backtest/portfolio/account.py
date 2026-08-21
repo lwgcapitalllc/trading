@@ -143,7 +143,7 @@ class PortfolioAccount:
         # a zero grant (no room) is a block, not a zero-size fill — even when the floor is 0.
         # `_MIN_GRANT_USD` makes "essentially zero" a block too: see its note, one dust fill
         # silently retired a leg for five and a half years.
-        if granted_risk < _MIN_GRANT_USD or granted_risk < self._floor():
+        if granted_risk < _MIN_GRANT_USD or self._below_floor(granted_risk):
             self._log_contention(leg, dir, desired_risk, 0.0, blocked=True)
             return 0.0
         if self._is_shrunk(desired_risk, granted_risk):
@@ -167,7 +167,7 @@ class PortfolioAccount:
         out: dict[str, float] = {}
         for r, desired_risk in zip(requests, risks):
             granted_risk = desired_risk * factor
-            if granted_risk < _MIN_GRANT_USD or granted_risk < self._floor():
+            if granted_risk < _MIN_GRANT_USD or self._below_floor(granted_risk):
                 self._log_contention(r["leg"], r["dir"], desired_risk, 0.0, blocked=True)
                 out[r["leg"]] = 0.0
                 continue
@@ -189,6 +189,27 @@ class PortfolioAccount:
     def _is_shrunk(desired_risk: float, granted_risk: float) -> bool:
         """Did the budget actually take size away? See `_GRANT_EPS` for why this is not `<`."""
         return granted_risk < desired_risk * (1.0 - _GRANT_EPS)
+
+    def _below_floor(self, granted_risk: float) -> bool:
+        """Is this grant under the entry floor? Carries `_GRANT_EPS`, for the reason that
+        constant already documents one method up — and it was MISSING here until 2026-08-20.
+
+        🔴 The floor is a fraction of the BALANCE and a leg's own risk % is too, so the natural way
+        to express *risk is never layered* — set the floor to the leg's full risk, so anything the
+        budget shrinks is refused instead — puts `granted` and `floor` on exactly the same number.
+        `granted = min(desired, cap - reserved)` reaches it by a different arithmetic route (a leg
+        DIVIDES by the stop distance to get a qty, the account re-MULTIPLIES), so the two differ in
+        the last bit and a bare `<` refuses an entry nothing was competing for.
+
+        MEASURED before this existed: A+ at 10% under a 10% cap with the floor at 10% was refused
+        **3,650 times over 7.9 years and took 31 trades instead of 181** — a book that reads like a
+        savage allocator and is a rounding error. The shrink test has carried this tolerance since
+        the same defect was found there; the floor test was left on `<`, and nobody had set a floor
+        equal to a leg's own risk until now. ⚠ **No stored run moves**: `entry_floor_pct` defaults
+        to 0.0, and with a zero floor both forms answer identically.
+        """
+        floor = self._floor()
+        return floor > 0.0 and granted_risk < floor * (1.0 - _GRANT_EPS)
 
     def _log_contention(
         self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool

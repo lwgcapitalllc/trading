@@ -67,6 +67,44 @@ the shared stop is <= 0 by construction, but **margin sees the full stacked posi
 shipped 4 adds x 2.0x cap that is several times the base size.
 
 
+
+## ⚠ Before splitting the 10% cap between two strategies — three live-side facts the lab cannot show you (2026-08-20)
+
+`backtest/tools/recovery_stack.py` now replays the loss-recovery rule as a LEG sharing this bot's
+balance and its account budget. The measured sweep lives in
+`strategies/python/loss_recovery/CLAUDE.md` and is not restated here. **What belongs here is that
+adopting any such split is a LIVE change to an ARMED bot, and the live cap differs from the lab cap
+in three ways that all push the same direction — live contention is MORE frequent and MORE
+punishing than any stack backtest predicts.**
+
+🔴 **1. The cap comparison here carries NO ROUNDING TOLERANCE.** `shared/account_risk.py`
+(`check_account_cap`) tests the new order's risk against the remaining room on a bare `>`. **That is
+the same defect shape found and fixed in `backtest/portfolio/account.py` on 2026-08-20**, where an
+entry floor set equal to a leg's own risk rate refused **3,650 entries over 7.9 years** — because a
+granted amount and a threshold were reached by different arithmetic (one side divides by the stop
+distance to get a quantity, the other re-multiplies) and disagreed in the last bit. **A split
+summing EXACTLY to the cap — 8% + 2% against a 10% cap — puts the second order on precisely that
+edge.** ⚠ **Live it is strictly worse than the lab, and the lab CANNOT reproduce it**: the lab's
+arithmetic is exact, while real open risk here is computed from the broker's ROUNDED lot size and
+its actual stop, so an "8%" position is never 8.000%. Land the tolerance before adopting a split
+that sums to the cap, or leave slack in the split.
+
+⚠ **2. This side REFUSES; the lab side SHRINKS.** Refusing is correct (rule 17 — a resized order is
+not the trade the strategy is holding) and it is not changing. But it means every lab cell reporting
+*0 refused, 0 shrunk* is describing an allocator that WOULD have shrunk had it needed to. **The live
+book of a split config is a SUBSET of the lab's book, never a rescaled copy of it**, so a lab result
+does not transfer trade-for-trade.
+
+⚠ **3. A RESTING order counts against this budget; the lab reserves at FILL.** A+ places a limit and
+waits, sometimes for a long time. So live contention starts EARLIER and lasts LONGER than the
+replay. **A stack backtest is a FLOOR on how often a split contends, never an estimate of it.**
+
+⚠ **The starting point is also not what a split assumes.** `exec_risk_pct` is **10.0** in both
+`config.json` and `deployed.json` today, so this bot's per-trade risk already equals the entire
+account cap and there is no room to give a second strategy without lowering it first.
+⚠ **`_account_risk_cap_pct` is NOT runtime-reloadable** — changing the cap needs a RESTART, so it
+arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than on its own.
+
 ## `markets/fx/accounts.json` — the broker accounts a bot can be put on
 
 **Added 2026-08-12, GIT-TRACKED, HOLDS NO SECRET.** One entry per broker account: its server, the

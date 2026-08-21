@@ -740,8 +740,9 @@ class SosFadeConfig:
     #   taking re-entries is `exec_secondary = False`, which also stops the arm doing the work.
     #   ⚠ Read ONLY when exec_secondary is on.
 
-    exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry" ∈ {1m shift, FVG in zone}
-    #   WHAT HAS TO HAPPEN before a re-entry rests its order. Two values:
+    exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry"
+    #   ∈ {1m shift, Deep-edge reclaim, FVG in zone}
+    #   WHAT HAS TO HAPPEN before a re-entry rests its order. Three values:
     #     "1m shift"    — a 1-minute break of structure inside the zone, then a limit at
     #                   `exec_sec_retrace` of that 1m leg. The only rule that existed before
     #                   2026-08-20, and the default until that date.
@@ -759,6 +760,27 @@ class SosFadeConfig:
     #   had left; its limit rested at 3931.84 and the lowest price for the next 19 hours was 3939.86,
     #   so it missed by $8.02 while price ran to 4046.22. A gap sat at 3916.47–3922.66, INSIDE the
     #   zone, and price traded into it at 02:59.
+    #     "Deep-edge reclaim" (added 2026-08-20) — the SWEPT-STOP case, and the only trigger of the
+    #                   three built for a primary that LOST. The primary is stopped at the deep edge
+    #                   (`exec_sec_zone_deep`, the 0.886 by default); price does not go on to break
+    #                   the leg but instead trades back up through that level; a limit then rests AT
+    #                   the deep edge for the retest. Risk is the deep-edge-to-stop gap, not the
+    #                   primary's full stop distance — a median 0.43R of it, so the same cash risk
+    #                   buys a ~2.3x position. Pair it with `exec_sec_require = "Stopped only"`;
+    #                   under the default "Breakeven" gate it can never fire, because a primary that
+    #                   reached breakeven is not one that was stopped at the deep edge.
+    #   🔴 THE THIRD MODE WAITS FOR A RETEST AND THAT WAIT IS THE ENTIRE EDGE. MEASURED 2026-08-20
+    #   over 7.9 years on the 1m stream, offline against the primary's own stop-outs: a resting
+    #   limit back at the level earned +43.0R over 53 re-entries; entering at the reclaim bar's
+    #   CLOSE instead earned +0.0R over 56. Same setups, same stop, same target — only the wait
+    #   differs. It is not a fill-quality refinement and must not be relaxed into a market entry.
+    #   ⚠ IT IGNORES THE ZONE GATE ON PURPOSE. The zone reads the last-closed 15m bar's CLOSE, and a
+    #   primary is stopped at the deep edge precisely BY a 15m bar closing through it — so the zone
+    #   is usually false at the only moment this trigger could fire. The reclaim is itself the
+    #   statement that price is back at the zone's deep edge, which is what the zone was asking.
+    #   ⚠ IT NEEDS THE 1m BAR'S HIGH/LOW, which the other two triggers do not. `SecondaryArm.update`
+    #   takes them as optional arguments and a caller that omits them gets NO re-entries rather than
+    #   a different rule — see the driver in `strategy.py`.
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {1m leg, swing low, 0.886, 1.0}
@@ -1034,16 +1056,29 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_sec_risk_pct must be a positive percentage of the primary's risk, got "
                 f"{self.exec_sec_risk_pct!r}. Switch exec_secondary OFF to stop taking re-entries.")
-        if self.exec_secondary and self.exec_sec_trigger not in ("1m shift", "FVG in zone"):
+        if self.exec_secondary and self.exec_sec_trigger not in (
+                "1m shift", "FVG in zone", "Deep-edge reclaim"):
             # Refuse rather than fall through to the shipped trigger: a typo that silently ran the
             # 1m shift would be indistinguishable, on the page, from the gap trigger finding nothing.
             raise ValueError(
-                f"exec_sec_trigger must be '1m shift' or 'FVG in zone', got "
-                f"{self.exec_sec_trigger!r}.")
+                f"exec_sec_trigger must be one of ['1m shift', 'Deep-edge reclaim', "
+                f"'FVG in zone'], got {self.exec_sec_trigger!r}.")
         if self.exec_secondary and self.exec_sec_stop not in ("1m leg", "swing low", "0.886", "1.0"):
             raise ValueError(
                 f"exec_sec_stop must be one of ['0.886', '1.0', '1m leg', 'swing low'], got "
                 f"{self.exec_sec_stop!r}.")
+        if (self.exec_secondary and self.exec_sec_trigger == "Deep-edge reclaim"
+                and self.exec_sec_stop in ("1m leg", "swing low")):
+            # Same reasoning as the gap trigger below: this trigger latches no 1m leg, so those two
+            # anchors have nothing to read. It is stricter about "swing low" than the gap trigger is
+            # because the entry here is a FIXED price (the deep edge) — a 1m swing can sit on either
+            # side of it, and a stop on the wrong side of the entry is a position sized off a
+            # negative distance. Refusing names the pair; a fallback would price it off an anchor
+            # nobody chose.
+            raise ValueError(
+                "exec_sec_stop must be '0.886' or '1.0' under "
+                "exec_sec_trigger='Deep-edge reclaim' — that trigger latches no 1m leg and its "
+                f"entry is a fixed price, got {self.exec_sec_stop!r}.")
         if (self.exec_secondary and self.exec_sec_trigger == "FVG in zone"
                 and self.exec_sec_stop == "1m leg"):
             # The gap trigger never latches a 1m leg, so this pair has no stop at all. Refusing is

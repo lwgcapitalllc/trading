@@ -28,6 +28,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import pandas as pd
 
 from .config import RecoveryConfig
+from .position import ManagedPosition
 from .types import ArmedSignal, LossEvent, RecoveryTrade
 
 try:  # the engines/ shim layout differs between the repo root and a bot's deployed snapshot
@@ -95,8 +96,19 @@ class LossRecoveryEngine:
         choch_dir: Dict[int, int],
         atr,
         bars_per_day: float,
-    ) -> Tuple[int, float, float, str, bool, float]:
-        """Walk bars from `entry_index`. Returns (exit_index, exit_price, r, reason, locked, mfe).
+    ) -> Tuple[int, float, float, str, bool, float, float]:
+        """Walk bars from `entry_index`.
+
+        Returns (exit_index, exit_price, r, reason, locked, mfe, mae).
+
+        `mfe` and `mae` are both NON-NEGATIVE magnitudes in this trade's own R — the furthest
+        it ever ran in favour, and the deepest it ever sat against. They are reporting-only
+        and no decision reads either, which is what keeps them parity-safe.
+
+        ⚠ `mae` is capped at the EXIT on the bar that closes the trade, and that is the whole
+        care in it: the stop bar's low can sit far below the stop, but the position was gone
+        at the stop, so reading the bar's full range would report an excursion this trade
+        never experienced — and a chart would then draw its deepest point BEYOND its own stop.
 
         The stop is checked BEFORE the favourable excursion on every bar. On a bar that holds
         both, that books the loss — the pessimistic read, and the same one every fill model in
@@ -107,103 +119,40 @@ class LossRecoveryEngine:
         stop. That is what makes a soft stop a smaller loss rather than a bigger position: 1R is
         the number the trade was sized on, and cutting early books a fraction of it.
         """
-        cfg = self.config
-        d = direction
-        risk = abs(entry_price - stop_price)
         op = bars["open"].to_numpy(dtype=float)
         hi = bars["high"].to_numpy(dtype=float)
         lo = bars["low"].to_numpy(dtype=float)
         cl = bars["close"].to_numpy(dtype=float)
 
-        stop = (
-            entry_price - d * cfg.soft_stop_r * risk if cfg.soft_stop_r is not None else stop_price
+        pos = ManagedPosition(
+            self.config,
+            entry_index=entry_index,
+            direction=direction,
+            entry_price=entry_price,
+            stop_price=stop_price,
+            bars_per_day=bars_per_day,
+            last_index=len(hi) - 1,
         )
-        stage = "init"
-        trailed = False
-        locked = False
-        mfe = 0.0
-        cut_at_open = False
-        banked = 0.0  # R already taken off the table by a partial
-        live = 1.0  # fraction of the position still open
-        best = entry_price  # best price seen, for the chandelier
-        time_cap = entry_index + int(round(cfg.max_days * bars_per_day))
-        horizon = entry_index + int(round(cfg.horizon_days * bars_per_day))
-        end = min(len(hi), time_cap, horizon)
-
-        def _reason() -> str:
-            if stage == "lock":
-                return "trail" if trailed else "locked"
-            if stage == "be":
-                return "be"
-            return "soft" if cfg.soft_stop_r is not None else "stop"
-
-        for j in range(entry_index, end):
-            # The open comes first in the bar, so an invalidation raised on the PREVIOUS close is
-            # settled before this bar's range is read.
-            if cut_at_open:
-                r = banked + live * ((op[j] - entry_price) * d) / risk
-                return j, float(op[j]), r, "choch", locked, mfe
-
-            hit_stop = (lo[j] <= stop) if d > 0 else (hi[j] >= stop)
-            if hit_stop:
-                r = banked + live * ((stop - entry_price) * d) / risk
-                return j, stop, r, _reason(), locked, mfe
-
-            fav = ((hi[j] - entry_price) if d > 0 else (entry_price - lo[j])) / risk
-            mfe = max(mfe, fav)
-
-            if stage == "init" and cfg.be_at_r > 0 and fav >= cfg.be_at_r:
-                be = entry_price + d * cfg.be_to_r * risk
-                if (be - stop) * d > 0:
-                    stop = be
-                stage = "be"
-
-            # Bank part of it with a FILL rather than by parking the stop on the market. This is
-            # the lever that lets the runner keep a stop somewhere price has not already been.
-            if live == 1.0 and cfg.partial_at_r > 0 and fav >= cfg.partial_at_r:
-                banked = cfg.partial_frac * cfg.partial_at_r
-                live = 1.0 - cfg.partial_frac
-
-            if not locked and fav >= cfg.lock_at_r:
-                lock = entry_price + d * cfg.lock_to_r * risk
-                if (lock - stop) * d > 0:
-                    stop = lock
-                stage = "lock"
-                locked = True
-
-            best = max(best, hi[j]) if d > 0 else min(best, lo[j])
-
-            if locked and cfg.trail_atr_mult > 0:
-                # Chandelier: a fixed distance behind the BEST price, scaled by volatility rather
-                # than by price level — the objection that made the percent ratchet inert.
-                chand = best - d * cfg.trail_atr_mult * float(atr[j])
-                if (chand - stop) * d > 0 and (chand - cl[j]) * d < 0:
-                    stop = chand
-                    trailed = True
-
-            if locked and cfg.trail_pct > 0:
-                # A percent of PRICE, which is a different unit from R — see the config's warning.
-                pct = cl[j] * (1.0 - d * cfg.trail_pct / 100.0)
-                if (pct - stop) * d > 0:
-                    stop = pct
-                    trailed = True
-
-            if locked and cfg.trail_swings:
-                level = swing_low.get(j) if d > 0 else swing_high.get(j)
-                # Only ratchet FORWARD, and never to a level the bar has already traded through —
-                # a swing on the wrong side of the close would stop the trade out on the next tick
-                # at a price it never actually offered.
-                if level is not None and (level - stop) * d > 0 and (level - cl[j]) * d < 0:
-                    stop = level
-                    trailed = True
-
-            if cfg.invalidate_on_choch and choch_dir.get(j, 0) == -d:
-                cut_at_open = True
-
-        j = max(entry_index, end - 1)
-        r = banked + live * ((cl[j] - entry_price) * d) / risk
-        reason = "time" if end == time_cap else "horizon"
-        return j, float(cl[j]), r, reason, locked, mfe
+        book = swing_low if direction > 0 else swing_high
+        for j in range(entry_index, pos.end):
+            done = pos.on_bar(
+                j,
+                op[j],
+                hi[j],
+                lo[j],
+                cl[j],
+                atr=float(atr[j]),
+                swing=book.get(j),
+                choch=choch_dir.get(j, 0),
+            )
+            if done is not None:
+                return done.index, done.price, done.r, done.reason, done.locked, done.mfe, done.mae
+        # `end <= entry_index` — the trade was opened on or past its own time cap. Unreachable
+        # with any shipped config (the cap is days and the entry is one bar after its signal),
+        # and kept because the alternative is falling off the end of the function returning None.
+        j = max(entry_index, pos.end - 1)
+        done = pos.expire(j, float(cl[j]))
+        return done.index, done.price, done.r, done.reason, done.locked, done.mfe, done.mae
 
     def _stop_for(
         self,
@@ -309,7 +258,7 @@ class LossRecoveryEngine:
             if risk <= 0 or (entry_price - stop_price) * want <= 0:
                 continue
 
-            exit_index, exit_price, r, reason, locked, mfe = self._manage(
+            exit_index, exit_price, r, reason, locked, mfe, mae = self._manage(
                 bars,
                 entry_index,
                 want,
@@ -337,6 +286,7 @@ class LossRecoveryEngine:
                     exit_reason=reason,
                     locked=locked,
                     max_favourable_r=mfe,
+                    max_adverse_r=mae,
                     bars_held=exit_index - entry_index,
                 )
             )

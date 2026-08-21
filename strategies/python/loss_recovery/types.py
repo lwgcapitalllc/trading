@@ -70,7 +70,13 @@ class RecoveryTrade:
     scaled_r: float
     exit_reason: str  # stop | soft | be | locked | trail | choch | time | horizon
     locked: bool  # did it ever reach the lock threshold?
+    # Excursion, both NON-NEGATIVE magnitudes in THIS trade's own R: the furthest it ever ran in
+    # favour, and the deepest it ever sat against. Reporting-only — nothing decides on either, so
+    # they cannot move a fill. `max_adverse_r` is capped at the exit price on the closing bar, so
+    # it can never describe a move made after the position was already gone. Multiply either by
+    # `risk` and step it off `entry_price` to get the PRICE a chart draws.
     max_favourable_r: float
+    max_adverse_r: float
     bars_held: int
 
     @property

@@ -1140,6 +1140,54 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 
 ---
 
+## `tools/recovery_stack.py` — the loss-recovery rule as a LEG of a shared account (2026-08-20)
+
+Runs `mpc_sos_fade` and `strategies/python/loss_recovery/` through `backtest/portfolio/` — one
+balance both size against, one budget they compete for, one merged clock, one refusal log. It
+exists because the lab's own `exec_recovery` toggle is a POST-PASS: the recovery sizes off the
+running balance and the primary never sizes off the recovery, so recovery profit sits BESIDE the
+curve instead of lifting it. Identical trades, **+3.8% that way against +44.8% on one compounding
+balance**. The toggle is not wrong to be built that way — it is what stops a lab switch moving a
+parity-gated A+ trade — but **it cannot answer "what would this have done on my account", and a
+run made with it must not be read as if it did.**
+
+🔴 **The answer is decided by HEADROOM, not by the rule.** A+ risks 10% and the default cap is 10%,
+so the two legs at full size want 12.5% of a 10% budget and every overlap shrinks A+ by
+construction. MEASURED over 186,910 M15 bars at `puprime_ecn`: **−29.9% at a 10% cap (25 A+ entries
+shrunk), +29.4% at 12.5%.** `--aplus-risk-pct` and `--risk-cap-pct` are the levers; the tool prints
+a warning when the two legs cannot both fit.
+
+⚠ **The sweep that actually answers the question holds TOTAL risk fixed and moves the SPLIT**, and
+its table lives in `strategies/python/loss_recovery/CLAUDE.md` rather than here. One result from it
+belongs with the tool though: **the per-cell "+X% against its own control" line this tool prints is
+NOT comparable across cells** — it rose +11.5% → +50.5% across four splits purely because the solo
+control it divides by was shrinking, so the best-looking uplift in the sweep sat on the worst plan
+in it. Read the absolute balances, or read pairs where one plan beats another on BOTH axes.
+
+⚠ **`--on-contention refuse` REFUSES TO RUN.** `entry_floor_pct` is ONE number for the whole
+account and these legs risk different amounts, so any floor making A+ all-or-nothing also bans
+every 2.5% recovery entry — 64 refusals, 0 trades, the same output at two different caps. A real
+refusal rule needs a PER-LEG floor. Never let *cannot express this* and *here are the numbers for
+it* be the same output.
+
+⚠ **It prints total R per leg, shared vs solo, and that check is the point.** R is normalised to
+each trade's own risk, so a pure sizing change must leave it byte-identical — a difference is
+either the cap biting (and then it is in the refusal log) or a decision moved. It has already
+found one: A+ shifts −0.10R on the shrink path, unexplained, 0.08% of the book and far under the
+15.06R jitter floor. Written down rather than rounded away.
+
+## `portfolio/account.py` — the entry floor carries `_GRANT_EPS` (2026-08-20)
+
+🔴 **The floor test was a bare `<` while the shrink test beside it had a tolerance, and setting a
+floor equal to a leg's own risk % is what exposed it.** That is the natural way to express *risk is
+never layered* — refuse anything the budget would shrink — and it puts `granted` and `floor` on
+exactly the same number, reached by different arithmetic (a leg DIVIDES by the stop distance to get
+a qty, the account re-MULTIPLIES). They differ in the last bit, so an entry nothing was competing
+for was refused. **MEASURED: A+ at 10% under a 10% cap with a 10% floor was refused 3,650 times
+over 7.9 years and took 31 trades instead of 181** — a book that reads like a savage allocator and
+is a rounding error. ⚠ **No stored run moves**: `entry_floor_pct` defaults to 0.0 and both forms
+answer identically at zero. Two tests at the boundary, both watched RED by their own mutation.
+
 ## `optimizer.py::_replay_one` finalizes the strategy (2026-08-20)
 
 It drives the bar loop itself rather than calling `strategy.run()`, so it does **not** inherit

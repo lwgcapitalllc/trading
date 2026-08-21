@@ -909,6 +909,72 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
   is a live-pipeline item, and it is correctly gated behind this being measured first.
 
+### The deep-edge reclaim trigger, and the full replay that would not let it ship ON
+
+**Added 2026-08-21.** A third value for `exec_sec_trigger` alongside `1m shift` and `FVG in zone`.
+It exists because of a geometry fact this file already records: **the `1.0` sits a median 0.43R past
+the `0.886`**, so a primary stopped at the `0.886` that then turns can be re-entered AT the `0.886`
+with the stop at the `1.0` — the level that genuinely kills the leg — for roughly 0.43x the original
+risk. The trigger waits for a 1-minute bar to trade back THROUGH the `0.886` (never the stop-out
+bar's own wick — `_l_seen`/`_s_seen` require a later bar), then rests the entry at that level. It
+voids for the setup if the `1.0` prints first.
+
+⚠ **It DISPLACES the shipped gap trigger, it does not compose with it** — `exec_sec_trigger` is one
+choice. Making the two composable is an unbuilt follow-up, and the numbers below are the reason it
+may be worth building.
+
+⚠ **`exec_sec_stop` of `1m leg` or `swing low` is REFUSED under it** (stricter than the gap
+trigger's rule), because the entry is a FIXED price and a 1-minute swing can land either side of it.
+That refusal is also what lets section 2c read the stop anchor BEFORE the 1m leg latch — both legal
+anchors are pure reads of the 15m fib. ⚠ **Do not hoist that lookup for the other triggers**: under
+`1m leg` the anchor IS the leg assigned by that latch, and moving it reddened 23 tests in
+`tests/test_secondary.py`.
+
+**MEASURED 2026-08-21 — six books, `run_dual` over 187,102 M15 / 2,801,964 M1 bars, 2018-09-14 →
+2026-08-18, `fill_model='bar'`.** Every book is one account, one position slot: **0 of 54
+re-entries overlapped a primary in time and 0 primaries were displaced in any book**, so the R
+columns are comparable. Risk % is solved per book to a matched drawdown ceiling.
+
+| book | trades | re-entries | R | re-entry R | risk at −55% | x at −55% |
+|---|---|---|---|---|---|---|
+| primary only | 181 | 0 | 138.9 | — | **12.5%** | **13,972** |
+| reclaim, exit all at 3x | 235 | 54 | **156.9** | **+18.0** | 9.25% | 7,342 |
+| reclaim, exit all at 2x | 235 | 54 | 147.9 | +9.0 | 9.5% | 4,827 |
+| reclaim, half at 3x | 235 | 54 | 144.9 | +6.0 | 9.25% | 2,898 |
+| reclaim, half at 1.25x | 235 | 54 | 137.6 | −1.3 | 10.0% | 2,781 |
+| shipped gap trigger | 235 | 54 | 152.0 | +13.1 | 7.5% | 1,986 |
+
+🔴 **THE HEADLINE IS THE LAST TWO COLUMNS, NOT THE R COLUMN, AND THEY DISAGREE.** The best reclaim
+book adds **+18.0R** and still finishes at **half** the primary-only multiple, because it can only
+carry **9.25%** risk where primary-only carries **12.5%**. Re-entries fire immediately after a
+stop-out, i.e. INSIDE a drawdown, so they deepen exactly the holes that set the risk ceiling. **A
+book that adds R and loses money is the normal case, not a paradox** — this is rule 6 arriving from
+a new direction, and any future re-entry idea has to clear matched drawdown rather than R.
+
+🔴 **It MOVED the deepest hole rather than removing it.** Primary-only's worst drawdown is −45.6%,
+2023-07-07 → 2024-09-19. The reclaim book's is −58.1%, **2018-11-23 → 2020-05-07** — a stretch where
+8 re-entries lost −4.0R between them, seven of those consecutive. ⚠ **Not an artifact of
+unrealistic stops: 0 of 54 re-entries sit below the live 0.08%-of-price minimum** (median 0.211%),
+so those losses are trades the broker would have taken.
+
+✅ **It DOES do the job it was designed for, in both periods Aaron named.** Window A (2021-09-07 →
+2023-01-12): primary-only +2.6R → **+8.6R**. Window B (2023-03-31 → 2024-09-19): primary-only
+**−3.6R → +7.4R**, the re-entries adding +11.0R and flipping a losing stretch to a winning one.
+⚠ **The shipped gap trigger made window B WORSE** (−4.1R, its re-entries −0.5R), which is the
+sharpest argument for the new trigger existing at all.
+
+⚠ **Its edge is second-half only and that is a real caveat, not a sample-size objection.** Split at
+2022-09-01: **+1.0R over 23 re-entries** in the first half, **+17.0R over 31** in the second. The
+gap trigger is the mirror image (+11.0R then +2.1R). ✅ **Neither is carried by one trade** — the
+reclaim's best is +3.0R (the target caps it) and removing it still leaves +15.0R, where the gap
+trigger's +13.1R is +9.74R from a single trade and +3.4R from the other 53.
+
+**So it ships OFF.** `exec_sec_trigger` still defaults to the gap trigger and the shipped path is
+byte-identical: both control books were re-run from a git worktree at HEAD and every field of all
+181 and all 235 trades matched exactly.
+
+⚠ **NOT USABLE LIVE either way** — the bridge refusal below applies to the whole re-entry layer.
+
 ## The exit ladder — every TP/SL lever, and which ones are switchable
 
 The register of how this bot (and `mpc_bleg`, which reuses the whole ladder) decides where the
@@ -2602,10 +2668,17 @@ feature that could rewrite the shipped book would put every parity number and ev
 `mpc_sos_fade_optimization.md` at the mercy of a switch. `test_turning_it_on_cannot_move_one_aplus_trade`
 is the one to keep green; it was watched red by having `apply` re-size a source trade.
 
-⚠ **The cost of that choice, stated because it is invisible in the output.** The recovery sizes
-off the RUNNING balance (every A+ and earlier recovery trade already closed is in it); A+ does not
-size off the recovery. **They share a balance in ONE direction only.** The curve therefore slightly
-understates a winning recovery's compounding. It is NOT a shared-account run — `backtest/portfolio/`
+🔴 **The cost of that choice was called "slight" here until it was measured, and it is most of
+the result (2026-08-20, run `236e206d0142`).** The recovery sizes off the RUNNING balance (every
+A+ and earlier recovery trade already closed is in it); A+ does not size off the recovery. **They
+share a balance in ONE direction only**, so recovery profit sits BESIDE the curve instead of
+lifting it and never compounds. Identical trades, added up two ways: **+3.8% as the lab runs it
+against +59.9% on one shared compounding balance.** ⚠ **Neither is this rule's worth.** The
+larger figure also assumes one balance with NO risk budget on it; at the 10% account cap this bot
+already runs, 23 of that run's 160 A+ entries opened while a recovery was still holding risk and
+the leg turns NEGATIVE. **The honest range is +45% to −15%, decided by an allocator that does not
+exist on the live side.** Full bracket: `strategies/python/loss_recovery/CLAUDE.md` → *Put ONE RISK
+BUDGET on that balance*. It is NOT a shared-account run — `backtest/portfolio/`
 is what one of those looks like.
 
 🔴 **`finalize(df)` is a hook three separate drivers have to call, and a missed one is silent.**
@@ -2624,10 +2697,49 @@ as on every other row. The quarter-sizing is carried in the DOLLARS (`risk_usd` 
 normal trade's), which is what makes the equity curve right without giving one row's R a different
 meaning from its neighbour's. Do not "fix" this to `scaled_r`.
 
+🔴 **A recovery row carries its EXCURSION, and it had to be added — the chart was drawing these
+as bare rectangles (2026-08-20).** Every reporting field a chart reads is optional by design, so a
+trade that carries none degrades to a plain entry→exit box; that fallback exists for an NT8/MT5
+trade with no fill prices in it at all. The first version of this adapter left `mfe_price` and
+`mae_price` at their `0.0` defaults, so **every recovery trade took that path** and appeared beside
+a normal loser — which was wearing entry, stop, both excursion bands and its outcome chip — as a
+featureless green block. **It read as a different KIND of trade and it was the same kind of trade
+with a thinner record.** The general rule, and it is the one this repo keeps relearning from the
+other direction: **an absence rendered as a distinct shape becomes a claim.** A missing measurement
+must degrade into something that reads as *less information*, never as *a different answer*.
+
+✅ **The outcome CHIP grades a recovery correctly, checked rather than assumed.** The verdict comes
+from the run's scratch band, which is scaled to a full-size loss — so a quarter-size trade could
+plausibly have been painted orange all the way down. It is not: over the **62 recoveries of the
+UNCOSTED run** on the window below — see the cost-tier note under it before comparing that count
+with the 65 — **26 of 26 losers grade `Lost` and none grades `Scratch`**, because the band is a
+fraction of the run's median loss rather than a fixed dollar figure. ⚠ Worth re-checking if the size
+knob is ever taken far below a quarter.
+
+⚠ **Both excursion prices are stepped off the recovery engine's OWN R figures, never re-read from
+the bars.** The engine already measured them, on the same bars, with the exit-bar cap that keeps
+them inside what the trade lived through — a second reading here would be a second answer free to
+disagree with the first. `max_adverse_r` was added to that engine for this; `max_favourable_r` was
+already there. **A recovery row carries no target ladder and no fib leg, and both absences are
+real** — the rule has no targets and prices nothing off a fib — so the chart correctly draws no
+`TP1`/`TP2` on one.
+
 ⚠ **No Pine twin exists**, so `compare_strategy.py` can never gate this. With the toggle OFF the
 bot is byte-identical to the gated one — which is why it defaults OFF, and why an export made with
 it ON is not a parity input.
 
-**11 tests in `tests/test_recovery.py`, all watched RED by a named mutation** (the mutation is in
-each docstring). MEASURED end to end on XAUUSD M15 2018-09-14 → 2026-08-14 at `puprime_ecn`: 181 A+
-trades unchanged, 65 recovery trades added, median recovery risk $2,050 against A+'s $10,127.
+**13 tests in `tests/test_recovery.py`, all watched RED by a named mutation** (the mutation is in
+each docstring). ⚠ **A fourteenth was written for the excursion cap, watched STILL-GREEN, and
+deleted** — every recovery in the synthetic fixture exits LOCKED and in profit, so the mutation it
+named changed nothing. The assertion now lives in `loss_recovery/tests/test_engine.py` as a direct
+two-bar `_manage` call, which is the only shape where the ordering is observable.
+
+MEASURED end to end on XAUUSD M15 2018-09-14 → 2026-08-14 at `puprime_ecn`: 181 A+ trades
+unchanged, 65 recovery trades added, median recovery risk $2,050 against A+'s $10,127. **All 65
+reach the chart's full profit-depth view; none falls back to the plain box.**
+
+⚠ **Quote the COST TIER with the recovery count or the number looks like a regression.** The rule
+arms on a real loss, and a cost tier moves a borderline scratch across that line — same bars, same
+window, same settings: **uncosted gives 62 recovery trades and `puprime_ecn` gives 65**, because
+the primary's real-loss population goes 62 → 65 with the friction charged. Nothing changed in the
+rule between those two runs.

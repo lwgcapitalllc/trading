@@ -199,3 +199,46 @@ def test_recovery_knobs_are_only_validated_when_the_feature_is_on():
     cfg = SosFadeConfig(exec_recovery=False, exec_recovery_soft_stop_r=1.5,
                         exec_recovery_risk_frac=-1.0)
     assert cfg.exec_recovery_soft_stop_r == 1.5
+
+
+# ── what the chart needs to draw one ─────────────────────────────────────────────────────
+def test_a_recovery_carries_the_excursion_the_chart_draws_it_from():
+    """RED by mutation: drop `mfe_price=` / `mae_price=` from the Trade built in recovery.apply.
+
+    Without them the price chart's profit-depth view has nothing to size the favourable band or
+    the `Deepest` marker against, and it degrades to a bare outcome rectangle — the same fallback
+    it uses for an NT8 trade that has no fill prices at all. That reads as a DIFFERENT KIND of
+    trade rather than as a thinner record, which is the failure this whole pass exists to fix.
+    """
+    st = _with_losses(exec_recovery=True)
+    st.finalize(BARS)
+    got = _recoveries(st)
+    assert got, "no recovery trades; the test cannot say anything"
+    for t in got:
+        assert t.mfe_price > 0.0 and t.mae_price > 0.0
+        # Favourable is on the trade's own side of entry, adverse on the other. `>=` because a
+        # trade that never moved either way has an excursion of exactly zero, and zero excursion
+        # is a measurement — not the same thing as never having asked.
+        assert (t.mfe_price - t.entry_price) * t.dir >= 0.0
+        assert (t.mae_price - t.entry_price) * t.dir <= 0.0
+
+
+def test_the_excursion_prices_agree_with_the_excursion_dollars():
+    """RED by mutation: build `mfe_usd` from `rt.r` instead of `rt.max_favourable_r`.
+
+    Two fields describing one measurement in two units, and two consumers read them separately —
+    the price chart takes the prices, the equity view takes the dollars. If they can disagree,
+    one of the two pictures is wrong and neither says which.
+    """
+    st = _with_losses(exec_recovery=True)
+    st.finalize(BARS)
+    got = _recoveries(st)
+    assert got, "no recovery trades; the test cannot say anything"
+    for t in got:
+        assert t.mfe_usd >= 0.0 and t.mae_usd <= 0.0
+        assert t.mfe_usd == pytest.approx(
+            abs(t.mfe_price - t.entry_price) / t.stop_distance * t.risk_usd, rel=1e-9
+        )
+        assert -t.mae_usd == pytest.approx(
+            abs(t.mae_price - t.entry_price) / t.stop_distance * t.risk_usd, rel=1e-9
+        )

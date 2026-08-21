@@ -299,3 +299,48 @@ def test_a_REAL_shrink_is_still_granted():
     assert abs(qty - 80.0) < 1e-9, qty  # 400 of the 1000 left
     assert a.contention[-1]["blocked"] is False
     assert a.contention[-1]["granted_risk"] == 400.0
+
+
+def test_a_floor_equal_to_the_legs_own_risk_does_not_refuse_an_uncontested_entry():
+    """RED by mutation: drop the `_GRANT_EPS` tolerance in `_below_floor` — i.e. put it back to
+    `granted_risk < floor`.
+
+    The natural way to express *risk is never layered* is to set the entry floor to the leg's own
+    full risk, so any entry the budget has to shrink is refused outright instead. That puts the
+    granted risk and the floor on EXACTLY the same number — and they are reached by different
+    arithmetic (the leg divides by the stop distance to get a qty, the account re-multiplies), so
+    they differ in the last bit. A bare `<` then refuses an entry that nothing was competing for.
+
+    MEASURED before the tolerance existed: A+ at 10% under a 10% cap with a 10% floor was refused
+    3,650 times over 7.9 years and took 31 trades instead of 181. Nothing was open; the whole
+    budget was free.
+    """
+    acct = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10, entry_floor_pct=0.10)
+    # Deliberately a stop distance that does NOT divide the balance exactly, so the round trip
+    # through qty cannot be exact in binary — the shape the real legs hit.
+    dist, pv = 7.3, 100.0
+    qty = (10_000.0 * 0.10) / (dist * pv)
+    granted = acct.request_fill("solo", 1, 2000.0, 2000.0 - dist, qty, pv)
+    assert granted > 0.0, "an uncontested entry at exactly the cap was refused"
+    assert acct.contention == []
+
+
+def test_a_floor_still_refuses_an_entry_the_budget_genuinely_shrank():
+    """RED by mutation: make `_below_floor` return False always.
+
+    The tolerance must not turn the floor off. This is the other side of the boundary — a real
+    contest, where the room left is a fraction of what the leg asked for — and it has to be
+    refused outright rather than trickled in, which is the whole point of setting a floor.
+    """
+    # Cap 15%, floor 10%, both legs asking 10%. The first is granted in full and leaves 5% —
+    # a real, non-zero room that is still under the floor, which is the case the floor exists
+    # for. (A first leg asking LESS than the floor would itself be refused, which is what the
+    # first draft of this test did — it then measured nothing.)
+    acct = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.15, entry_floor_pct=0.10)
+    dist, pv = 7.3, 100.0
+    qty = (10_000.0 * 0.10) / (dist * pv)
+    assert acct.request_fill("first", 1, 2000.0, 2000.0 - dist, qty, pv) > 0.0
+    assert acct.room() > 0.0, "no room left at all, so the FLOOR is not what refuses the second"
+    granted = acct.request_fill("second", 1, 2000.0, 2000.0 - dist, qty, pv)
+    assert granted == 0.0, "an entry with only half its risk available was not refused"
+    assert any(c["blocked"] for c in acct.contention)

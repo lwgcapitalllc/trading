@@ -194,6 +194,14 @@ class SecondaryArm:
         self._s_dead: Optional[int] = None
         self._s_used: Optional[int] = None
         self._s_used_n: int = 0
+        # The RECLAIM trigger's per-side state (`exec_sec_trigger == "Deep-edge reclaim"`).
+        # `_seen` = the primary gate was already open on an EARLIER 1m bar, so a reclaim needs a
+        # bar of its own rather than firing on the stop-out bar's own upper wick. `_rec` = price
+        # has since traded back through the deep edge. `_void` = price reached the stop anchor
+        # first, so this setup's re-entry is finished. All three clear with the setup.
+        self._l_seen = self._s_seen = False
+        self._l_rec = self._s_rec = False
+        self._l_void = self._s_void = False
         # The 15m SOS bar each side is currently arming against, captured in `update()` because
         # `mark_traded` is called by the driver without `seq` in hand.
         self._l_sos: Optional[int] = None
@@ -205,9 +213,13 @@ class SecondaryArm:
                closed_sos_l: Optional[int] = None, closed_sos_s: Optional[int] = None,
                lost_sos_l: Optional[int] = None, lost_sos_s: Optional[int] = None,
                poi_edge_l: Optional[float] = None,
-               poi_edge_s: Optional[float] = None) -> SecArm:
+               poi_edge_s: Optional[float] = None,
+               bar_high: Optional[float] = None,
+               bar_low: Optional[float] = None) -> SecArm:
         cfg = self._cfg
-        gap_trigger = getattr(cfg, "exec_sec_trigger", "1m shift") == "FVG in zone"
+        _trig = getattr(cfg, "exec_sec_trigger", "1m shift")
+        gap_trigger = _trig == "FVG in zone"
+        rec_trigger = _trig == "Deep-edge reclaim"
 
         # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
         #    A new break of structure also resets the dead-leg flag (the leg is fresh again).
@@ -221,11 +233,13 @@ class SecondaryArm:
             self._l_dead = None
             self._l_used = None
             self._l_used_n = 0
+            self._l_seen = self._l_rec = self._l_void = False
         if seq.s_sos_bar is None:
             self._s_leg = self._s_hi = self._s_lo = None
             self._s_dead = None
             self._s_used = None
             self._s_used_n = 0
+            self._s_seen = self._s_rec = self._s_void = False
 
         # 2. Zone (0.886..0.618 of the 15m fib) — a 15m gate: Pine reads the last-closed 15m bar
         #    `close`, so `zone_close` is that bar's close (NOT the live 1m close, which the 1m SOS
@@ -249,6 +263,75 @@ class SecondaryArm:
         req_div = getattr(cfg, "exec_sec_req_div", True)
         div_l = sig.bull_div_active or not req_div
         div_s = sig.bear_div_active or not req_div
+
+
+        # What the PRIMARY on this leg must have done (`exec_sec_require`). Computed HERE rather
+        # than at the arm because the RECLAIM trigger below keys its whole state machine off the
+        # moment this gate opens — under the shipped "Breakeven" default it is read once, at the
+        # arm, exactly as before.
+        gate_l = self._primary_gate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l)
+        gate_s = self._primary_gate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s)
+
+        # 2c. THE RECLAIM TRIGGER — no 1m structure event and no gap. The case it names is the one
+        #     the geometry points at: the primary was stopped at the deep edge, price did NOT go on
+        #     to break the leg, and instead came back through that level. The re-entry is then a
+        #     resting limit AT the deep edge with the stop at whatever `exec_sec_stop` names, so
+        #     the risk is the deep-edge-to-stop gap rather than the primary's full stop distance.
+        #
+        #     🔴 THE WAIT IS THE WHOLE EDGE, NOT AN IMPLEMENTATION DETAIL. Measured over 7.9 years
+        #     on the 1m stream: resting a limit back at the level earned +43.0R over 53 re-entries,
+        #     while entering on the reclaim bar's close earned +0.0R over 56. Same setups, same
+        #     stop, same target — only the wait differs. Do not "improve" this into a market entry.
+        #
+        #     ⚠ THREE THINGS IT DELIBERATELY DOES NOT DO, each of which would silence it:
+        #     - It does NOT require the zone. The zone reads the last-closed 15m bar's close, and a
+        #       primary is stopped at the deep edge precisely by a 15m bar closing THROUGH it, so
+        #       the zone gate is usually false at the only moment this trigger can fire.
+        #     - It does NOT fire on the bar the gate opens (`_seen`). On the stop-out bar price is
+        #       at the level by definition, and that bar's own wick back through it is the stop
+        #       being hit, not a reclaim.
+        #     - It arms ONCE per setup and then voids on the stop anchor. If price reaches the stop
+        #       level before the retest fills, the leg is finished — a resting limit whose stop is
+        #       already breached is not a trade anyone would take.
+        if rec_trigger:
+            deep_l, deep_s = z_hi, z_hi
+            # ⚠ Read HERE rather than from the shared `l_stop`/`s_stop` below, and the difference
+            # is not cosmetic. That pair is computed AFTER the 1m leg latch because the shipped
+            # "1m leg" anchor reads the leg latched on THIS bar — hoisting it broke every 1m-shift
+            # test in this file. This trigger needs its anchor one step early, and may only ask
+            # for it because config validation refuses "1m leg" and "swing low" against it, so
+            # both of its legal anchors are pure reads of the 15m fib.
+            rec_stop_l, rec_stop_s = self._stop_anchor(m1, sig)
+            for side in (1, -1):
+                sos = seq.l_sos_bar if side > 0 else seq.s_sos_bar
+                gate = gate_l if side > 0 else gate_s
+                deep = deep_l if side > 0 else deep_s
+                stop = rec_stop_l if side > 0 else rec_stop_s
+                if sos is None or not gate or deep is None:
+                    continue
+                seen = self._l_seen if side > 0 else self._s_seen
+                if seen and bar_high is not None and bar_low is not None:
+                    # Voided by the stop anchor, else reclaimed by trading back through the edge.
+                    if stop is not None and ((bar_low <= stop) if side > 0 else (bar_high >= stop)):
+                        if side > 0:
+                            self._l_void = True
+                        else:
+                            self._s_void = True
+                    elif (bar_high > deep) if side > 0 else (bar_low < deep):
+                        if side > 0:
+                            self._l_rec = True
+                        else:
+                            self._s_rec = True
+                if side > 0:
+                    self._l_seen = True
+                else:
+                    self._s_seen = True
+            # The "leg" is the SETUP, keyed on its 15m SOS bar, so `_traded` / `_dead` / `_used`
+            # all keep working unchanged — the same shape the gap trigger uses.
+            if seq.l_sos_bar is not None and div_l and self._l_rec and not self._l_void:
+                self._l_leg, self._l_hi, self._l_lo = seq.l_sos_bar, None, None
+            if seq.s_sos_bar is not None and div_s and self._s_rec and not self._s_void:
+                self._s_leg, self._s_hi, self._s_lo = seq.s_sos_bar, None, None
 
         # 3. Latch a fresh 1m leg on a new same-side 1m SOS while the 15m setup (+ div) are live.
         if (cfg.exec_secondary and m1.new_bull_sos and seq.l_sos_bar is not None
@@ -278,7 +361,14 @@ class SecondaryArm:
         # Whether the arm has a usable leg. The 1m trigger needs its latched leg to be valid and
         # pointing the right way; the gap trigger needs an entry price and a stop, and asks the
         # SAME question of both so a missing anchor can never read as "no setup".
-        if gap_trigger:
+        if rec_trigger:
+            # The entry price IS the deep edge, so the same question the other two ask: is there
+            # an entry, is there a stop, and is the stop on the correct side of it.
+            l_leg_ok = (z_hi is not None and l_stop is not None
+                        and self._l_leg is not None and z_hi > l_stop)
+            s_leg_ok = (z_hi is not None and s_stop is not None
+                        and self._s_leg is not None and z_hi < s_stop)
+        elif gap_trigger:
             l_leg_ok = (poi_edge_l is not None and l_stop is not None
                         and self._l_leg is not None and poi_edge_l > l_stop)
             s_leg_ok = (poi_edge_s is not None and s_stop is not None
@@ -309,13 +399,12 @@ class SecondaryArm:
         s_capped = (cap and self._s_used is not None and seq.s_sos_bar == self._s_used
                     and self._s_used_n >= depth)
 
-        gate_l = self._primary_gate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l)
-        gate_s = self._primary_gate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s)
         # The 1m engine's own DIRECTION, optionally required to agree (`exec_sec_req_m1_dir`).
         # OFF by default = the shipped rule, which reads the 1m SOS events and ignores direction.
         m1_ok_l = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == 1
         m1_ok_s = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == -1
         l_armed = (cfg.exec_secondary and cfg.exec_longs and flat and m1_ok_l
+                   and not (rec_trigger and self._l_void)
                    and seq.l_sos_bar is not None and gate_l
                    and seq.l_sos_bar != self._l_dead and not l_capped
                    and div_l and sig.fibo_dir == 1 and fibs_ready
@@ -323,6 +412,7 @@ class SecondaryArm:
                    and (self._l_traded is None or self._l_leg != self._l_traded)
                    and not late and (not long_veto or not respect_veto))
         s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat and m1_ok_s
+                   and not (rec_trigger and self._s_void)
                    and seq.s_sos_bar is not None and gate_s
                    and seq.s_sos_bar != self._s_dead and not s_capped
                    and div_s and sig.fibo_dir == -1 and fibs_ready
@@ -335,7 +425,12 @@ class SecondaryArm:
         # unchanged). 0.0 rests at the leg extreme, which is entering on the 1m SOS itself. The stop
         # is the leg ORIGIN either way, so a shallower ratio is a WIDER stop and a smaller position.
         ratio = cfg.exec_sec_retrace
-        if gap_trigger:
+        if rec_trigger:
+            # The deep edge itself — the level the primary was stopped at and price has since
+            # reclaimed. No retrace of anything, because there is no 1m leg.
+            l_edge = z_hi if l_armed else None
+            s_edge = z_hi if s_armed else None
+        elif gap_trigger:
             # The primary's own resting price — no retrace of anything, because there is no 1m leg.
             l_edge = poi_edge_l if l_armed else None
             s_edge = poi_edge_s if s_armed else None

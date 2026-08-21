@@ -282,7 +282,8 @@ class MpcSosFadeStrategy:
                                     self.execution.prim_lost_sos_l,
                                     self.execution.prim_lost_sos_s,
                                     self.execution._poi_edge_l,
-                                    self.execution._poi_edge_s)
+                                    self.execution._poi_edge_s,
+                                    b1.high, b1.low)
                 sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close,
                                   last_sig.last_conf_high, last_sig.last_conf_low)
                 filled = self.execution.step_secondary(sig1m, arm)

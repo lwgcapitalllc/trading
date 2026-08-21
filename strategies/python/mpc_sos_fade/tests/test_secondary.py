@@ -992,3 +992,157 @@ def test_zero_or_negative_reentry_risk_is_REFUSED_not_clamped():
             SosFadeConfig(exec_secondary=True, exec_sec_risk_pct=bad)
     # ...and it is not asked at all when re-entries are off, same as every other re-entry input.
     assert SosFadeConfig(exec_secondary=False, exec_sec_risk_pct=0.0).exec_sec_risk_pct == 0.0
+
+
+# ── The DEEP-EDGE RECLAIM trigger — the swept-stop re-entry ──────────────────────────────
+# The only trigger of the three built for a primary that LOST: stopped at the deep edge, price
+# reclaims that level instead of breaking the leg, and a limit rests back AT it for the retest.
+# Every test below drives `SecondaryArm.update` one 1m bar at a time, because the whole feature is
+# a state machine over bars — a single-call test could not tell "reclaimed" from "was never below".
+
+def _rec_cfg(**kw):
+    """A re-entry config PINNED to the reclaim shape.
+
+    ⚠ PINNED for the same reason `_shift_cfg` is: the shipped trigger is the gap one, so a test
+    that took the default would still run and would arm on a completely different input.
+    ⚠ `exec_sec_require="Stopped only"` is part of the SHAPE, not a variation. Under the default
+    breakeven gate this trigger cannot fire at all — a primary that reached breakeven is not one
+    that was stopped at the deep edge — and `test_reclaim_cannot_fire_under_the_breakeven_gate`
+    is the test that says so out loud.
+    """
+    kw.setdefault("exec_sec_trigger", "Deep-edge reclaim")
+    kw.setdefault("exec_sec_stop", "1.0")
+    kw.setdefault("exec_sec_require", "Stopped only")
+    return SosFadeConfig(exec_secondary=True, **kw)
+
+
+def _m1_no_event():
+    """A 1m bar with NO structure event — what the reclaim trigger runs on. It reads price, not
+    structure, so every one of its bars looks like this."""
+    return M1State(bull_sos_bar=None, bear_sos_bar=None, bull_leg_hi=None, bull_leg_lo=None,
+                   bear_leg_hi=None, bear_leg_lo=None, direction=0,
+                   new_bull_sos=False, new_bear_sos=False)
+
+
+def _feed(arm_sm, bars, sig=_SIG_LONG, seq=_SEQ_LONG, lost_l=500, lost_s=None, zone_close=99.0):
+    """Run (high, low) 1m bars through the arm. `zone_close` defaults to 99.0 — BELOW the whole
+    retrace zone, which is where a stopped-out primary actually leaves the last 15m close. If the
+    reclaim ever starts depending on the zone gate, every one of these tests goes red."""
+    out = []
+    for hi, lo in bars:
+        out.append(arm_sm.update(_m1_no_event(), sig, seq, zone_close=zone_close, ny_hour=10,
+                                 flat=True, be_sos_l=None, be_sos_s=None,
+                                 closed_sos_l=None, closed_sos_s=None,
+                                 lost_sos_l=lost_l, lost_sos_s=lost_s,
+                                 bar_high=hi, bar_low=lo))
+    return out
+
+
+def test_reclaim_arms_at_the_deep_edge_with_the_leg_origin_stop():
+    """The whole design in one pass: stopped at the 0.886 (101.14), price stays under it, then
+    trades back through — and a limit rests AT 101.14 with the stop at the 1.0 (100.0)."""
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(101.0, 100.6),     # gate opens; still under the deep edge
+                         (101.1, 100.8),     # still under
+                         (101.5, 100.9)])    # RECLAIM — high pushes back through 101.14
+    assert out[0].l_armed is False
+    assert out[1].l_armed is False
+    assert out[2].l_armed is True
+    assert out[2].l_edge == pytest.approx(101.14)   # the limit rests AT the deep edge
+    assert out[2].l_sl == pytest.approx(100.0)      # stop = the 1.0, the level that kills the leg
+    assert out[2].l_leg == 500                      # the "leg" is the SETUP, so the caps still work
+
+
+def test_reclaim_does_not_fire_on_the_bar_the_gate_opens():
+    """On the stop-out bar price is AT the deep edge by definition, and that bar's own wick back
+    through it is the stop being hit — not a reclaim. Firing here would enter every stopped trade
+    immediately, which is the opposite of the rule."""
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(105.0, 100.5)])    # first bar, high far above the deep edge
+    assert out[0].l_armed is False
+
+
+def test_reclaim_never_arms_while_price_stays_below_the_level():
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(101.0, 100.9)] * 30)
+    assert all(o.l_armed is False for o in out)
+
+
+def test_reclaim_is_voided_by_the_stop_level_and_stays_voided():
+    """Price reaching the 1.0 before the retest ends the setup's re-entry. A resting limit whose
+    stop is already breached is not a trade anyone would take, and a later reclaim is a different
+    leg's move."""
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(101.0, 100.6),
+                         (101.0, 99.9),      # touches the 1.0 → voided
+                         (101.5, 100.9),     # a reclaim AFTER the void must not resurrect it
+                         (102.0, 101.5)])
+    assert [o.l_armed for o in out] == [False, False, False, False]
+
+
+def test_reclaim_ignores_the_zone_gate():
+    """The zone reads the last-closed 15m CLOSE, and a primary is stopped at the deep edge BY a
+    15m bar closing through it — so the zone is usually false at the only moment this can fire.
+    Pinned at a close of 99.0, below the entire zone."""
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(101.0, 100.6), (101.5, 100.9)], zone_close=99.0)
+    assert out[1].l_armed is True
+
+
+def test_reclaim_cannot_fire_under_the_breakeven_gate():
+    """The shipped `exec_sec_require` default. A primary that reached breakeven is not one that was
+    stopped at the deep edge, so the pair is inert — and it must be inert SILENTLY rather than
+    arming off some other gate."""
+    arm_sm = SecondaryArm(_rec_cfg(exec_sec_require="Breakeven"))
+    out = _feed(arm_sm, [(101.0, 100.6), (101.5, 100.9), (102.0, 101.2)])
+    assert all(o.l_armed is False for o in out)
+
+
+def test_reclaim_without_the_bar_extremes_takes_no_trades():
+    """A caller that does not pass the 1m bar's high/low gets NO re-entries — never a different
+    rule. The other two triggers do not need them, so this is the one way the feature can be
+    half-wired, and a silent fallback would report it as 'the reclaim found nothing'."""
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = [arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, zone_close=99.0, ny_hour=10,
+                         flat=True, be_sos_l=None, be_sos_s=None,
+                         closed_sos_l=None, closed_sos_s=None,
+                         lost_sos_l=500, lost_sos_s=None) for _ in range(5)]
+    assert all(o.l_armed is False for o in out)
+
+
+def test_reclaim_short_side_mirrors_the_long():
+    """A down-leg: 0.0 = 100 (the low, the target), 1.0 = 110 (the origin). The 0.886 sits at
+    108.86, and a reclaim is price trading back DOWN through it."""
+    sig = SimpleNamespace(
+        fibo_dir=-1, fibo_p7=100.0, fibo_p10=110.0, fibo_p3=106.18, fibo_p6=108.86,
+        fibo_p2=105.0, fibo_p1=103.82, bull_div_active=False, bear_div_active=True,
+        veto_on=False, veto_rsi_ob=False, veto_rsi_os=False)
+    seq = SimpleNamespace(l_sos_bar=None, s_sos_bar=700)
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(109.4, 109.0), (109.3, 108.5)], sig=sig, seq=seq,
+                lost_l=None, lost_s=700, zone_close=111.0)
+    assert out[0].s_armed is False
+    assert out[1].s_armed is True
+    assert out[1].s_edge == pytest.approx(108.86)
+    assert out[1].s_sl == pytest.approx(110.0)
+
+
+def test_reclaim_setup_death_clears_the_latch():
+    """A new break of structure must start the state machine over. Carrying a reclaim across
+    setups would arm the next one off the last one's move."""
+    arm_sm = SecondaryArm(_rec_cfg())
+    _feed(arm_sm, [(101.0, 100.6), (101.5, 100.9)])          # reclaimed
+    dead = SimpleNamespace(l_sos_bar=None, s_sos_bar=None)
+    _feed(arm_sm, [(101.5, 100.9)], seq=dead, lost_l=None)   # setup dies
+    fresh = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
+    out = _feed(arm_sm, [(101.5, 100.9)], seq=fresh, lost_l=600)
+    assert out[0].l_armed is False                            # needs its own reclaim, on a later bar
+
+
+def test_reclaim_arms_once_per_setup():
+    arm_sm = SecondaryArm(_rec_cfg())
+    out = _feed(arm_sm, [(101.0, 100.6), (101.5, 100.9)])
+    assert out[1].l_armed is True
+    arm_sm.mark_traded(1)
+    after = _feed(arm_sm, [(101.6, 100.9)])
+    assert after[0].l_armed is False
