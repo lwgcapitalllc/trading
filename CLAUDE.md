@@ -228,8 +228,20 @@ whether it is active and will tell you what it would refuse, without firing anyt
 
 ⚠ **The version is PINNED**, same reasoning as ruff: an unpinned tool means two machines behave
 differently and neither knows why. ⚠ **The browser is started clean each time** (nothing saved
-to disk) and ⚠ **can only reach the two local ports** — it cannot wander onto the internet or
-onto the VPS.
+to disk) and reaches only the two local ports plus Google's font hosts — it cannot wander onto
+the internet or onto the VPS.
+
+**It runs HEADLESS, and MEASURED 2026-08-20 that costs nothing.** A headless run of the backtest
+detail page returned the same layout, the real fonts, full-quality screenshots, console errors,
+working clicks, and the candle chart drawn on its canvas. The only thing headless gives up is
+being able to watch it live. ⚠ **The two font hosts are allowed for a reason worth keeping**: with
+them blocked the page still rendered and screenshotted happily in fallback fonts, one console
+error the only sign. **A screenshot that looks plausible and is subtly wrong is worse than one
+that fails** — the whole point of the tool is judging a page by eye.
+
+⚠ **The candle chart takes ~20s to paint on a multi-year run** and the page looks finished long
+before it does — it sits on *"Loading chart..."*. Wait for the drawing surface to EXIST rather
+than for the page to load, or you write a test that passes on timing.
 
 ⚠ **When a new route that touches money or the live box is added, it must be added to the guard
 in the same change.** The guard is a deny-list, so a route it has never heard of is ALLOWED.
