@@ -594,11 +594,64 @@
       "group": "Secondary re-entries (1m)",
       "label": "What triggers a re-entry",
       "short": "Trigger",
-      "choices": ["1m shift", "Deep-edge reclaim", "FVG in zone"],
+      "choices": [
+        "1m shift",
+        "Deep-edge reclaim",
+        "FVG in zone",
+        "FVG in zone + Deep-edge reclaim"
+      ],
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Deep-edge reclaim is the only one of the three built for a trade that LOST: the first trade is stopped at the deep edge of the entry band, price does not go on to break the move, and instead comes back up through that level — an order then waits AT the level for the retest, stopping at the far end of the move. Because those two levels sit close together the risk is a fraction of the first trade's, so the same cash buys a much bigger position. It needs \"What the first trade must have done\" set to Stopped only; on any other setting it can never fire. MEASURED: waiting for the retest earned +43R over 7.9 years while chasing the reclaim earned nothing, so the wait is the whole edge. Lab only."
+      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Deep-edge reclaim is the only one of the three built for a trade that LOST: the first trade is stopped at the deep edge of the entry band, price does not go on to break the move, and instead comes back up through that level — an order then waits AT the level for the retest, stopping at the far end of the move. Because those two levels sit close together the risk is a fraction of the first trade's, so the same cash buys a much bigger position. It reads its OWN four settings below rather than the shared ones, so it means the same thing whether it runs alone or alongside the gap. MEASURED: waiting for the retest earned +43R over 7.9 years while chasing the reclaim earned nothing, so the wait is the whole edge. The fourth choice runs the gap and the reclaim TOGETHER. That is safe because they cover opposite outcomes — a first trade either reaches breakeven or is stopped out, never both — so they can never want the same setup. MEASURED over 7.9 years: 107 re-entries between them, none sharing a setup and none overlapping another in time, and the two together are exactly the two apart. It requires the gap half set to Breakeven and the reclaim half to Stopped only, and refuses any other pairing. Lab only."
+    },
+    {
+      "name": "exec_rec_require",
+      "group": "Secondary re-entries (1m)",
+      "label": "Reclaim needs the first trade to have…",
+      "short": "Reclaim needs",
+      "choices": ["Any close", "Breakeven", "None", "Stopped only"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "What the first trade on this setup must have done before the deep-edge reclaim may re-enter. Stopped only (default) is the whole point of that trigger — it re-enters a setup whose first trade was stopped out at the deep edge. It is separate from the shared setting above so the gap trigger and the reclaim can run together wanting opposite things of the same trade; when they do, this must stay on Stopped only and the shared one on Breakeven, because those are the only two that cannot both be true of one setup. Lab only."
+    },
+    {
+      "name": "exec_rec_stop",
+      "group": "Secondary re-entries (1m)",
+      "label": "Reclaim stop sits at",
+      "short": "Reclaim stop",
+      "choices": ["0.886", "1.0"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Where the deep-edge reclaim's stop goes. Only these two, because the reclaim enters at a fixed price and a 1-minute swing can land on either side of it — a stop that is sometimes above and sometimes below the thing it protects is not a stop, so the 1-minute anchors are refused rather than substituted. 1.0 is the default and is the reason the trigger exists: the start of the move sits a median 0.43 of the original risk past the deep edge, so the same cash buys a much bigger position. Lab only."
+    },
+    {
+      "name": "exec_rec_tp_r",
+      "group": "Secondary re-entries (1m)",
+      "label": "Reclaim's first target, in R",
+      "short": "Reclaim target",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "guide": ["Banks sooner, gives up the runs", "Waits for a bigger move, more of them fail"],
+      "desc": "Where the deep-edge reclaim's first target sits, as a multiple of its own risk. -1 uses the halfway fib instead, like the first trade. MEASURED over 7.9 years and the ladder matters as much as the number: taking the whole position off at 3x made 7,225x, where banking half at 1.25x — the gap trigger's ladder — made 3,111x, which is worse than taking no re-entry at all. A re-entry priced this tight has to be allowed to pay for the ones that fail. Lab only."
+    },
+    {
+      "name": "exec_rec_tp1_pct",
+      "group": "Secondary re-entries (1m)",
+      "label": "Reclaim banks at its first target (%)",
+      "short": "Reclaim banks",
+      "unit": "%",
+      "step": 5,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "guide": ["Keeps a runner, gives up certainty", "Takes it all off at the target"],
+      "desc": "How much of the deep-edge reclaim comes off at its first target. 100 (default) is the whole position, leaving no runner, and that is the configuration the numbers on the setting above were measured at. -1 inherits the shared first-target size. MEASURED: taking only half off measured strictly worse, twice. Lab only."
     },
     {
       "name": "exec_sec_stop",

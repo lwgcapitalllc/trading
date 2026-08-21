@@ -741,8 +741,8 @@ class SosFadeConfig:
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry"
-    #   ∈ {1m shift, Deep-edge reclaim, FVG in zone}
-    #   WHAT HAS TO HAPPEN before a re-entry rests its order. Three values:
+    #   ∈ {1m shift, Deep-edge reclaim, FVG in zone, FVG in zone + Deep-edge reclaim}
+    #   WHAT HAS TO HAPPEN before a re-entry rests its order. Four values:
     #     "1m shift"    — a 1-minute break of structure inside the zone, then a limit at
     #                   `exec_sec_retrace` of that 1m leg. The only rule that existed before
     #                   2026-08-20, and the default until that date.
@@ -766,9 +766,17 @@ class SosFadeConfig:
     #                   the leg but instead trades back up through that level; a limit then rests AT
     #                   the deep edge for the retest. Risk is the deep-edge-to-stop gap, not the
     #                   primary's full stop distance — a median 0.43R of it, so the same cash risk
-    #                   buys a ~2.3x position. Pair it with `exec_sec_require = "Stopped only"`;
-    #                   under the default "Breakeven" gate it can never fire, because a primary that
-    #                   reached breakeven is not one that was stopped at the deep edge.
+    #                   buys a ~2.3x position.
+    #     "FVG in zone + Deep-edge reclaim" (added 2026-08-21) — BOTH of the above, live at once.
+    #                   See the block below on why that is safe and what it measured.
+    #   🔴 THE RECLAIM HALF READS ITS OWN SETTINGS — `exec_rec_*`, NOT `exec_sec_*`. It reads them
+    #   under the combined value and under the plain "Deep-edge reclaim" value alike, so the trigger
+    #   means one thing in both. That is what makes the combined mode possible at all: the two
+    #   halves want different preconditions, different stops and different ladders, and a single
+    #   set of fields can only hold one of each. ⚠ It also means `exec_sec_stop`, `exec_sec_tp_r`,
+    #   `exec_sec_tp1_pct` and `exec_sec_require` are DEAD under the plain reclaim value — setting
+    #   them there changes nothing, which is why validation refuses the pairing that used to be
+    #   required rather than leaving it to look effective.
     #   🔴 THE THIRD MODE WAITS FOR A RETEST AND THAT WAIT IS THE ENTIRE EDGE. MEASURED 2026-08-20
     #   over 7.9 years on the 1m stream, offline against the primary's own stop-outs: a resting
     #   limit back at the level earned +43.0R over 53 re-entries; entering at the reclaim bar's
@@ -782,6 +790,54 @@ class SosFadeConfig:
     #   takes them as optional arguments and a caller that omits them gets NO re-entries rather than
     #   a different rule — see the driver in `strategy.py`.
     #   ⚠ Read ONLY when exec_secondary is on.
+
+    # ── The RECLAIM half's own settings ────────────────────────────────────────────────────────
+    # Read whenever `exec_sec_trigger` names the reclaim — alone or combined — and ignored
+    # otherwise. Their defaults ARE the configuration measured on 2026-08-21 (below), so selecting
+    # the trigger and touching nothing else reproduces that book exactly; that equivalence is a
+    # test in `tests/test_secondary.py` rather than a claim.
+    #
+    # 🔴 WHY THE TWO TRIGGERS MAY SHARE ONE POSITION SLOT AND ONE LATCH, WHICH IS THE ONLY REASON
+    # THE COMBINED MODE IS NOT A REWRITE: they fire on DISJOINT setups, structurally rather than by
+    # luck. A primary either reaches TP1 — which stamps the breakeven latch and can never stamp the
+    # loss latch — or closes at stage 0, which does the reverse (`execution.py`, `_finalise_trade`
+    # and the stage-1 latch). No setup can satisfy both gates, so at most one half can arm on a
+    # side and the shared `_l_leg` / `_traded` / `_dead` / `_used` machinery keeps working untouched.
+    # ⚠ THAT ARGUMENT DEPENDS ENTIRELY ON THE TWO PRECONDITIONS BEING DISJOINT, so validation
+    # REFUSES any other pairing under the combined value rather than letting the halves race for the
+    # latch — a race whose symptom would be a plausible re-entry at the wrong price, not an error.
+    # ⚠ MEASURED 2026-08-21 and it is 0 rather than "rare": across the 108 re-entries the two
+    # triggers produce over 187,102 M15 bars, ZERO overlap in time, ZERO share an entry stamp, and
+    # neither ever blocks a primary. Re-run `overlap.py`-style checks if either gate is loosened.
+
+    exec_rec_require: str = "Stopped only"   # "Reclaim needs the primary to have…"
+    #   ∈ {Any close, Breakeven, None, Stopped only} — the same four as `exec_sec_require`, read by
+    #   the RECLAIM half only. "Stopped only" is the whole point of the trigger: it re-enters a
+    #   setup whose primary was stopped at the deep edge. ⚠ Under the combined value this must stay
+    #   "Stopped only" while the gap half stays "Breakeven", or the halves are refused (above).
+
+    exec_rec_stop: str = "1.0"         # "Reclaim stop sits at" ∈ {0.886, 1.0}
+    #   ONLY the two 15m fib anchors, and `1m leg` / `swing low` are refused rather than accepted
+    #   and quietly reinterpreted. The reclaim latches no 1m leg and its entry is a FIXED price
+    #   (the deep edge), so a 1m swing can land on either side of the entry — a stop that is
+    #   sometimes above and sometimes below the thing it protects is not a stop.
+    #   ⚠ "1.0" is the default because the geometry is the reason the trigger exists: the leg origin
+    #   sits a median 0.43R past the deep edge, so this is a much tighter stop than the primary's.
+    #   ⚠ It is also what lets the arm read this anchor BEFORE the 1m leg latch — both legal values
+    #   are pure reads of the 15m fib. Do not widen this set without reading that note in
+    #   `secondary.py` section 2c.
+
+    exec_rec_tp_r: float = 3.0         # "Reclaim's first target, in R"
+    #   -1 = use the 15m 0.5 fib like the primary; a positive number is a multiple of the RECLAIM's
+    #   own (much tighter) risk. ⚠ 3.0 is the measured default and the ladder below matters as much
+    #   as the number: MEASURED 2026-08-21 over 7.9 years, all-out at 3x made 6,740x while the
+    #   shipped bank-half-at-1.25x ladder made 3,111x — WORSE than taking no re-entry at all
+    #   (3,582x). A re-entry this tight has to be allowed to pay for the ones that fail.
+
+    exec_rec_tp1_pct: float = 100.0    # "Reclaim banks at its first target (%)"
+    #   -1 = inherit `exec_tp1_pct`. 100 = the whole position comes off at `exec_rec_tp_r`, which is
+    #   the measured configuration and leaves NO runner. ⚠ See the R figures on the field above
+    #   before reducing it — half-off measured strictly worse, twice.
 
     exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {1m leg, swing low, 0.886, 1.0}
     #   WHERE THE RE-ENTRY'S STOP GOES. Four values:
@@ -1057,36 +1113,71 @@ class SosFadeConfig:
                 f"exec_sec_risk_pct must be a positive percentage of the primary's risk, got "
                 f"{self.exec_sec_risk_pct!r}. Switch exec_secondary OFF to stop taking re-entries.")
         if self.exec_secondary and self.exec_sec_trigger not in (
-                "1m shift", "FVG in zone", "Deep-edge reclaim"):
+                "1m shift", "FVG in zone", "Deep-edge reclaim",
+                "FVG in zone + Deep-edge reclaim"):
             # Refuse rather than fall through to the shipped trigger: a typo that silently ran the
             # 1m shift would be indistinguishable, on the page, from the gap trigger finding nothing.
             raise ValueError(
                 f"exec_sec_trigger must be one of ['1m shift', 'Deep-edge reclaim', "
-                f"'FVG in zone'], got {self.exec_sec_trigger!r}.")
+                f"'FVG in zone', 'FVG in zone + Deep-edge reclaim'], got "
+                f"{self.exec_sec_trigger!r}.")
         if self.exec_secondary and self.exec_sec_stop not in ("1m leg", "swing low", "0.886", "1.0"):
             raise ValueError(
                 f"exec_sec_stop must be one of ['0.886', '1.0', '1m leg', 'swing low'], got "
                 f"{self.exec_sec_stop!r}.")
-        if (self.exec_secondary and self.exec_sec_trigger == "Deep-edge reclaim"
-                and self.exec_sec_stop in ("1m leg", "swing low")):
-            # Same reasoning as the gap trigger below: this trigger latches no 1m leg, so those two
-            # anchors have nothing to read. It is stricter about "swing low" than the gap trigger is
-            # because the entry here is a FIXED price (the deep edge) — a 1m swing can sit on either
-            # side of it, and a stop on the wrong side of the entry is a position sized off a
-            # negative distance. Refusing names the pair; a fallback would price it off an anchor
-            # nobody chose.
+        # ── the RECLAIM half's own fields, checked whenever the trigger names it ──────────────
+        rec_on = self.exec_secondary and self.exec_sec_trigger in (
+            "Deep-edge reclaim", "FVG in zone + Deep-edge reclaim")
+        gap_on = self.exec_secondary and self.exec_sec_trigger in (
+            "FVG in zone", "FVG in zone + Deep-edge reclaim")
+        if rec_on and self.exec_rec_stop not in ("0.886", "1.0"):
+            # The reclaim latches no 1m leg, so "1m leg" has nothing to read; and it is stricter
+            # than the gap trigger about "swing low" because its entry is a FIXED price (the deep
+            # edge) — a 1m swing can sit on either side of it, and a stop on the wrong side of the
+            # entry is a position sized off a negative distance. Refusing names the pair; a
+            # fallback would price the trade off an anchor nobody chose.
             raise ValueError(
-                "exec_sec_stop must be '0.886' or '1.0' under "
-                "exec_sec_trigger='Deep-edge reclaim' — that trigger latches no 1m leg and its "
-                f"entry is a fixed price, got {self.exec_sec_stop!r}.")
-        if (self.exec_secondary and self.exec_sec_trigger == "FVG in zone"
-                and self.exec_sec_stop == "1m leg"):
+                f"exec_rec_stop must be '0.886' or '1.0', got {self.exec_rec_stop!r}. The reclaim "
+                "latches no 1m leg and its entry is a fixed price, so a 1m anchor has nothing to "
+                "read and could land on either side of the entry.")
+        if rec_on and self.exec_rec_require not in (
+                "Any close", "Breakeven", "None", "Stopped only"):
+            raise ValueError(
+                f"exec_rec_require must be one of ['Any close', 'Breakeven', 'None', "
+                f"'Stopped only'], got {self.exec_rec_require!r}.")
+        if rec_on and not (self.exec_rec_tp_r == -1.0 or self.exec_rec_tp_r > 0):
+            raise ValueError(
+                f"exec_rec_tp_r must be -1 (use the 15m 0.5 fib) or a positive R multiple, got "
+                f"{self.exec_rec_tp_r!r}. Zero would put the first target ON the entry.")
+        if rec_on and not (self.exec_rec_tp1_pct == -1.0
+                           or 0.0 <= self.exec_rec_tp1_pct <= 100.0):
+            raise ValueError(
+                f"exec_rec_tp1_pct must be -1 (inherit exec_tp1_pct) or a percentage in [0, 100], "
+                f"got {self.exec_rec_tp1_pct!r}.")
+        if rec_on and gap_on and not (self.exec_sec_require == "Breakeven"
+                                      and self.exec_rec_require == "Stopped only"):
+            # 🔴 THE ONLY THING KEEPING THE TWO HALVES OUT OF EACH OTHER'S WAY. They share one
+            # position slot and one per-side latch, and that is safe ONLY because no setup can
+            # satisfy both gates — a primary either reaches TP1 (breakeven latch) or closes at
+            # stage 0 (loss latch), never both. Any other pairing lets them race for the latch,
+            # and the symptom is not an error: it is a re-entry resting at the other half's price
+            # with the other half's stop, which looks entirely plausible on the page.
+            raise ValueError(
+                "exec_sec_trigger='FVG in zone + Deep-edge reclaim' requires "
+                "exec_sec_require='Breakeven' (the gap half) and exec_rec_require='Stopped only' "
+                f"(the reclaim half), got {self.exec_sec_require!r} and "
+                f"{self.exec_rec_require!r}. Those are the only two preconditions that cannot both "
+                "be true of one setup, and the halves share a latch.")
+        if gap_on and self.exec_sec_stop == "1m leg":
             # The gap trigger never latches a 1m leg, so this pair has no stop at all. Refusing is
             # the only honest answer — a fallback would price the trade off an anchor the operator
             # did not choose, and a silent no-trade would read as "the gap trigger found nothing".
+            # ⚠ Reads `gap_on`, so it covers the COMBINED value too: under it the gap half is still
+            # the gap trigger and still has no leg to stop behind.
             raise ValueError(
-                "exec_sec_stop='1m leg' has no meaning under exec_sec_trigger='FVG in zone' — "
-                "that trigger latches no 1m leg. Pick 'swing low', '0.886' or '1.0'.")
+                f"exec_sec_stop='1m leg' has no meaning under exec_sec_trigger="
+                f"{self.exec_sec_trigger!r} — that trigger latches no 1m leg. Pick 'swing low', "
+                "'0.886' or '1.0'.")
         if self.exec_secondary and self.exec_sec_be_at not in ("TP1", "TP2"):
             raise ValueError(
                 f"exec_sec_be_at must be 'TP1' or 'TP2', got {self.exec_sec_be_at!r}.")

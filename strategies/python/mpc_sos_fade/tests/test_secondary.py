@@ -1011,8 +1011,12 @@ def _rec_cfg(**kw):
     is the test that says so out loud.
     """
     kw.setdefault("exec_sec_trigger", "Deep-edge reclaim")
-    kw.setdefault("exec_sec_stop", "1.0")
-    kw.setdefault("exec_sec_require", "Stopped only")
+    # The reclaim half reads its OWN fields (`exec_rec_*`) rather than the shared `exec_sec_*`
+    # ones, so that the gap half can be live alongside it wanting the opposite precondition and a
+    # different stop. These setdefaults are the shipped defaults restated, so a test that overrides
+    # nothing is testing the shipped configuration.
+    kw.setdefault("exec_rec_stop", "1.0")
+    kw.setdefault("exec_rec_require", "Stopped only")
     return SosFadeConfig(exec_secondary=True, **kw)
 
 
@@ -1090,10 +1094,13 @@ def test_reclaim_ignores_the_zone_gate():
 
 
 def test_reclaim_cannot_fire_under_the_breakeven_gate():
-    """The shipped `exec_sec_require` default. A primary that reached breakeven is not one that was
-    stopped at the deep edge, so the pair is inert — and it must be inert SILENTLY rather than
-    arming off some other gate."""
-    arm_sm = SecondaryArm(_rec_cfg(exec_sec_require="Breakeven"))
+    """A primary that reached breakeven is not one that was stopped at the deep edge, so the pair
+    is inert — and it must be inert SILENTLY rather than arming off some other gate.
+
+    ⚠ It moves `exec_rec_require`, NOT `exec_sec_require`. The shared field is the GAP half's and
+    the reclaim stopped reading it when the two became combinable; a test still pointed at the
+    shared one would pass whatever this half did."""
+    arm_sm = SecondaryArm(_rec_cfg(exec_rec_require="Breakeven"))
     out = _feed(arm_sm, [(101.0, 100.6), (101.5, 100.9), (102.0, 101.2)])
     assert all(o.l_armed is False for o in out)
 
@@ -1146,3 +1153,198 @@ def test_reclaim_arms_once_per_setup():
     arm_sm.mark_traded(1)
     after = _feed(arm_sm, [(101.6, 100.9)])
     assert after[0].l_armed is False
+
+
+# ── the COMBINED trigger — both halves live at once ─────────────────────────────────────────────
+#
+# The whole design rests on one structural fact: a primary either reaches TP1 (stamping the
+# breakeven latch) or closes at stage 0 (stamping the loss latch), never both. So the two halves
+# fire on disjoint setups and can share one position slot, one latch and one `_traded` stamp.
+# These tests drive that fact directly — each feeds a setup that is stopped or is at breakeven,
+# never one that is somehow both, because the execution layer cannot produce one.
+
+
+def _both_cfg(**kw):
+    """The combined trigger at its shipped-adjacent defaults: the gap half on `Breakeven`, the
+    reclaim half on `Stopped only`. Config validation refuses any other pairing, so these two are
+    not a choice this helper is making."""
+    kw.setdefault("exec_sec_trigger", "FVG in zone + Deep-edge reclaim")
+    kw.setdefault("exec_sec_require", "Breakeven")
+    kw.setdefault("exec_rec_require", "Stopped only")
+    return SosFadeConfig(exec_secondary=True, **kw)
+
+
+def _feed_both(arm_sm, bars, be_l=None, lost_l=None, zone_close=99.0, poi=103.0):
+    """Feed 1m (high, low) bars with BOTH halves' inputs supplied on every bar.
+
+    `be_l` / `lost_l` are the two mutually exclusive primary outcomes; passing one leaves the
+    other half's gate shut, which is what the real execution layer does. `poi` is the primary's
+    own resting price, the only thing the gap half enters on.
+    """
+    out = []
+    for hi, lo in bars:
+        out.append(arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, zone_close=zone_close,
+                                 ny_hour=10, flat=True, be_sos_l=be_l, be_sos_s=None,
+                                 closed_sos_l=None, closed_sos_s=None,
+                                 lost_sos_l=lost_l, lost_sos_s=None,
+                                 poi_edge_l=poi, poi_edge_s=None,
+                                 bar_high=hi, bar_low=lo))
+    return out
+
+
+def test_combined_arms_the_reclaim_on_a_stopped_setup_with_the_reclaims_own_stop():
+    """A STOPPED primary is the reclaim's case. It must rest at the deep edge with the reclaim's
+    own leg-origin stop — not at the primary's resting price with the gap half's 0.886."""
+    out = _feed_both(SecondaryArm(_both_cfg()),
+                     [(101.0, 100.6), (101.5, 100.9)], lost_l=500)
+    assert out[1].l_armed is True
+    assert out[1].l_src == "reclaim"
+    assert out[1].l_edge == pytest.approx(101.14)   # the deep edge, not the 103.0 POI
+    assert out[1].l_sl == pytest.approx(100.0)      # the 1.0, not the gap half's 0.886
+
+
+def test_combined_arms_the_gap_on_a_breakeven_setup_with_the_gaps_own_stop():
+    """A BREAKEVEN primary is the gap half's case, and it is unchanged by the reclaim being live
+    beside it: the limit rests at the primary's own price with the shared 0.886 stop."""
+    out = _feed_both(SecondaryArm(_both_cfg()),
+                     [(103.5, 102.0)], be_l=500, zone_close=102.5)
+    assert out[0].l_armed is True
+    assert out[0].l_src == "gap"
+    assert out[0].l_edge == pytest.approx(103.0)    # the primary's resting price
+    assert out[0].l_sl == pytest.approx(101.14)     # the 0.886
+
+
+def test_combined_never_lets_the_gap_half_latch_a_setup_the_primary_LOST():
+    """🔴 The one that would be silent. Every other gap condition is satisfied here — the setup is
+    live, the last 15m close sits INSIDE the zone, a resting price exists — and only the
+    precondition separates the halves. Without the gate on the gap latch this arms at 103.0 with a
+    101.14 stop: a plausible-looking order at the wrong price, on a setup that belongs to the
+    reclaim. Nothing raises, and the R column simply reads differently."""
+    out = _feed_both(SecondaryArm(_both_cfg()),
+                     [(101.0, 100.6), (101.5, 100.9)], lost_l=500, zone_close=102.5)
+    assert all(o.l_src != "gap" for o in out)
+    # 🔴 THE FIRST BAR IS THE ASSERTION THAT MATTERS AND IT WAS MISSING. Price has not reclaimed
+    # yet, so nothing may be armed — but the gap block latches the same 15m SOS bar the reclaim
+    # would, and the reclaim expresses "price has come back" THROUGH that latch. Without the gate
+    # on the gap latch the side is latched here, the reclaim is judged to own it, and the order
+    # rests at the deep edge one bar before price ever returned to it. The mutation harness found
+    # this: removing the guard reddened nothing at all until this line existed.
+    assert out[0].l_armed is False
+    assert out[1].l_src == "reclaim"
+    assert out[1].l_edge == pytest.approx(101.14)
+
+
+def test_combined_leaves_a_setup_that_did_neither_alone():
+    """No breakeven latch and no loss latch = a primary still open, or one that never traded.
+    Neither half may arm off it."""
+    out = _feed_both(SecondaryArm(_both_cfg()),
+                     [(101.0, 100.6), (101.5, 100.9), (103.5, 102.0)], zone_close=102.5)
+    assert all(o.l_armed is False for o in out)
+    assert all(o.l_src is None for o in out)
+
+
+def test_the_reclaim_alone_reads_its_own_fields_not_the_shared_ones():
+    """The reclaim half reads `exec_rec_*` under the plain value exactly as under the combined
+    one, so the trigger means the same thing in both. Moving the SHARED stop must not move it."""
+    out = _feed(SecondaryArm(_rec_cfg(exec_sec_stop="0.886")),
+                [(101.0, 100.6), (101.5, 100.9)])
+    assert out[1].l_armed is True
+    assert out[1].l_sl == pytest.approx(100.0)      # the reclaim's own 1.0, not the shared 0.886
+
+
+def test_the_combined_trigger_refuses_a_precondition_pairing_that_can_overlap():
+    """Breakeven/Stopped-only is the ONLY pairing that cannot both be true of one setup, and it is
+    what lets the halves share a latch. Anything else is refused at construction rather than
+    racing at run time."""
+    for sec, rec in (("Any close", "Stopped only"), ("Breakeven", "None"),
+                     ("None", "None"), ("Stopped only", "Stopped only")):
+        with pytest.raises(ValueError, match="cannot both be true"):
+            _both_cfg(exec_sec_require=sec, exec_rec_require=rec)
+
+
+def test_the_reclaim_refuses_a_stop_anchor_it_cannot_price():
+    """Its entry is a FIXED price, so a 1m swing can land on either side of it. Refused for the
+    plain value and the combined one alike."""
+    for trigger in ("Deep-edge reclaim", "FVG in zone + Deep-edge reclaim"):
+        for anchor in ("1m leg", "swing low"):
+            with pytest.raises(ValueError, match="exec_rec_stop"):
+                SosFadeConfig(exec_secondary=True, exec_sec_trigger=trigger,
+                              exec_sec_require="Breakeven", exec_rec_require="Stopped only",
+                              exec_rec_stop=anchor)
+
+
+def test_the_combined_trigger_still_refuses_the_gap_halfs_impossible_stop():
+    """`1m leg` has nothing to read under the gap half whichever value selected it — the guard
+    reads "is the gap half live", not the literal string."""
+    with pytest.raises(ValueError, match="1m leg"):
+        _both_cfg(exec_sec_stop="1m leg")
+
+
+def test_the_gap_trigger_prices_off_the_gap_even_when_a_1m_SHIFT_latched_the_side():
+    """🔴 The regression the control replay caught, and no unit test saw it.
+
+    The 1-minute latch (section 3) runs under EVERY single-value trigger, including the two that
+    have no 1m leg to price off. So on a bar carrying a 1m structure event the side is latched
+    "1m shift" while the operator has selected the gap. Which rule prices the order is the
+    CONFIGURED trigger's, always — key it off whichever block latched last and this bar arms at a
+    38.2% retrace of a 1-minute leg, a rule nobody switched on.
+
+    Nothing raises when it is wrong. On the shipped book it silently added 4 re-entries and 4.9R,
+    and the only way it surfaced was re-running the unchanged configuration and finding it moved.
+
+    ⚠ THIS TEST CANNOT FAIL FOR THAT REASON AND THE SIBLING BELOW IS THE ONE THAT PINS IT — said
+    out loud rather than left for the next reader to assume. On a bar carrying BOTH a 1m event and
+    a gap price the gap block runs second and overwrites the shift latch, so the two rules agree
+    here and only the sibling's no-gap-price case can tell them apart. What this one pins is the
+    positive: a gap arm reports itself as the gap and rests at the gap price.
+    """
+    # The SHIPPED 0.886 stop, not `swing low`: the shared 1m-SOS helper carries no confirmed swing,
+    # so that anchor would refuse for a reason unrelated to what this test is about.
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="0.886")
+    arm_sm = SecondaryArm(cfg)
+    # A real 1m shift of structure, 101.0 → 103.0, on a bar that also carries a gap price.
+    out = arm_sm.update(_m1_bull_sos(103.0, 101.0), _SIG_LONG, _SEQ_LONG,
+                        poi_edge_l=102.8, **_GAP_KW)
+    assert out.l_armed is True
+    assert out.l_src == "gap"
+    assert out.l_edge == 102.8          # the gap price — NOT 103.0 - (2.0 * 0.382) = 102.236
+    assert out.l_sl == pytest.approx(101.14)
+
+
+def test_the_gap_trigger_refuses_a_1m_SHIFT_latch_when_no_gap_price_exists():
+    """The other half of the same rule, and the half that actually moved the book. With no gap
+    price the gap trigger has nothing to enter on and must refuse — even though a 1-minute leg is
+    sitting right there, fully valid, and the previous line of code was happy to use it."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="0.886")
+    out = SecondaryArm(cfg).update(_m1_bull_sos(103.0, 101.0), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=None, **_GAP_KW)
+    assert out.l_armed is False and out.l_edge is None
+
+
+def test_the_combined_value_prices_by_the_precondition_even_when_a_1m_shift_latched():
+    """A 1m structure event may move the shared latch — it always has, under every trigger — but it
+    must not change WHICH half prices the side. Ownership is the open precondition, so a stopped
+    setup stays the reclaim's however many 1-minute events land on it.
+
+    ⚠ This test was originally called "…turns the 1m shift latch OFF", which is what the code did
+    for one iteration. Suppressing that latch made the combined book's halves behave differently
+    from the same halves run alone, so the rule changed and the name had to change with it — a
+    test whose name outlives its rule is the next reader's wrong answer."""
+    arm_sm = SecondaryArm(_both_cfg())
+    # ⚠ `zone_close` sits INSIDE the retrace band here, unlike every other reclaim test. That is
+    # deliberate and it is what makes the test able to fail: the 1m latch requires the zone, so at
+    # the reclaim's realistic below-the-band close it would not fire whatever this rule said, and
+    # the test would pass against a broken guard. Measured — it did, until this line changed.
+    # The reclaim itself ignores the zone, so moving it changes nothing about what is being tested.
+    kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
+              closed_sos_l=None, closed_sos_s=None, lost_sos_l=500, lost_sos_s=None,
+              poi_edge_l=103.0, poi_edge_s=None)
+    # bar 1 opens the reclaim's gate; bar 2 reclaims AND carries a 1m shift of structure.
+    arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, bar_high=101.0, bar_low=100.6, **kw)
+    out = arm_sm.update(_m1_bull_sos(103.0, 101.0), _SIG_LONG, _SEQ_LONG,
+                        bar_high=101.5, bar_low=100.9, **kw)
+    assert out.l_armed is True
+    assert out.l_src == "reclaim"
+    assert out.l_edge == pytest.approx(101.14)   # the deep edge, not a 1-minute retrace

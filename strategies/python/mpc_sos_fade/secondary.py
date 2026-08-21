@@ -128,6 +128,13 @@ class SecArm:
     s_tp1: Optional[float] = None
     s_tp2: Optional[float] = None
     s_leg: Optional[int] = None
+    # WHICH trigger latched this side — "1m shift" | "gap" | "reclaim", or None when nothing is
+    # latched. Carried because the halves can be live together and want DIFFERENT exit ladders, so
+    # the execution has to know which one it just filled. ⚠ Naming the source rather than testing
+    # the config at the ladder is deliberate: the config can be read at any time, but the question
+    # is what armed THIS trade, and a fourth trigger added later answers it the same way.
+    l_src: Optional[str] = None
+    s_src: Optional[str] = None
 
 
 class SecondaryArm:
@@ -194,7 +201,8 @@ class SecondaryArm:
         self._s_dead: Optional[int] = None
         self._s_used: Optional[int] = None
         self._s_used_n: int = 0
-        # The RECLAIM trigger's per-side state (`exec_sec_trigger == "Deep-edge reclaim"`).
+        # The RECLAIM half's per-side state — live whenever `exec_sec_trigger` names it, alone
+        # or combined with the gap.
         # `_seen` = the primary gate was already open on an EARLIER 1m bar, so a reclaim needs a
         # bar of its own rather than firing on the stop-out bar's own upper wick. `_rec` = price
         # has since traded back through the deep edge. `_void` = price reached the stop anchor
@@ -218,8 +226,12 @@ class SecondaryArm:
                bar_low: Optional[float] = None) -> SecArm:
         cfg = self._cfg
         _trig = getattr(cfg, "exec_sec_trigger", "1m shift")
-        gap_trigger = _trig == "FVG in zone"
-        rec_trigger = _trig == "Deep-edge reclaim"
+        # Both may be true at once under the combined value. They stay two independent booleans
+        # rather than one mode, so every block below reads the question it actually cares about
+        # ("is the gap half live") instead of enumerating which combined values include it — the
+        # shape that would need editing again the next time a value is added.
+        gap_trigger = _trig in ("FVG in zone", "FVG in zone + Deep-edge reclaim")
+        rec_trigger = _trig in ("Deep-edge reclaim", "FVG in zone + Deep-edge reclaim")
 
         # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
         #    A new break of structure also resets the dead-leg flag (the leg is fresh again).
@@ -271,6 +283,16 @@ class SecondaryArm:
         # arm, exactly as before.
         gate_l = self._primary_gate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l)
         gate_s = self._primary_gate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s)
+        # The RECLAIM half asks its OWN question (`exec_rec_require`, default "Stopped only"), so
+        # the two halves can be live together wanting opposite things of the primary. Under the
+        # combined value config validation has already refused any pairing but Breakeven/Stopped
+        # only, which is what makes the shared latch below safe.
+        if rec_trigger:
+            rmode = getattr(cfg, "exec_rec_require", "Stopped only")
+            rgate_l = self._primary_gate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l, rmode)
+            rgate_s = self._primary_gate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s, rmode)
+        else:
+            rgate_l = rgate_s = False
 
         # 2c. THE RECLAIM TRIGGER — no 1m structure event and no gap. The case it names is the one
         #     the geometry points at: the primary was stopped at the deep edge, price did NOT go on
@@ -301,10 +323,11 @@ class SecondaryArm:
             # test in this file. This trigger needs its anchor one step early, and may only ask
             # for it because config validation refuses "1m leg" and "swing low" against it, so
             # both of its legal anchors are pure reads of the 15m fib.
-            rec_stop_l, rec_stop_s = self._stop_anchor(m1, sig)
+            rec_stop_l, rec_stop_s = self._stop_anchor(
+                m1, sig, getattr(cfg, "exec_rec_stop", "1.0"))
             for side in (1, -1):
                 sos = seq.l_sos_bar if side > 0 else seq.s_sos_bar
-                gate = gate_l if side > 0 else gate_s
+                gate = rgate_l if side > 0 else rgate_s
                 deep = deep_l if side > 0 else deep_s
                 stop = rec_stop_l if side > 0 else rec_stop_s
                 if sos is None or not gate or deep is None:
@@ -334,6 +357,14 @@ class SecondaryArm:
                 self._s_leg, self._s_hi, self._s_lo = seq.s_sos_bar, None, None
 
         # 3. Latch a fresh 1m leg on a new same-side 1m SOS while the 15m setup (+ div) are live.
+        #
+        #    🔴 IT RUNS UNDER EVERY TRIGGER, INCLUDING THE ONES THAT DO NOT USE A 1m LEG, AND THAT
+        #    IS THE SHIPPED BEHAVIOUR — do not "tidy" it behind a trigger test. Under the gap or the
+        #    reclaim this latch still moves `_l_leg`, which `_traded` / `_dead` / `_used` all read,
+        #    so gating it changes which setups may re-enter. It was gated twice during this build
+        #    and the control replay caught both: the shipped book went 54 re-entries to 58 the first
+        #    time, and the second time it left the combined book's two halves behaving differently
+        #    from the same halves run alone. What this latch does NOT do is decide the PRICE.
         if (cfg.exec_secondary and m1.new_bull_sos and seq.l_sos_bar is not None
                 and div_l and zone_l
                 and m1.bull_leg_hi is not None and m1.bull_leg_lo is not None
@@ -349,6 +380,15 @@ class SecondaryArm:
         #     last-closed 15m bar sits in the zone, the "leg" is the SETUP (keyed on its 15m SOS
         #     bar, so `_traded` / `_dead` / `_used` all keep working unchanged) and the entry is
         #     the PRIMARY's own point-of-interest price. Nothing here recomputes the gap rules.
+        #
+        #
+        #     ⚠ UNGATED, exactly as it ships, and under the combined value too. Gating it on the
+        #     gap half's own precondition was tried — to stop it latching a stopped setup out from
+        #     under the reclaim — and it works, but it costs the gap half 7 of its 54 re-entries
+        #     when the reclaim is switched on, because a latch that arrives later shifts the
+        #     one-per-setup bookkeeping. The reclaim protects itself instead, by asking whether
+        #     price actually reclaimed rather than whether something latched (see `_leg_ok`), which
+        #     leaves BOTH halves behaving exactly as they do alone.
         if gap_trigger:
             if seq.l_sos_bar is not None and div_l and zone_l and poi_edge_l is not None:
                 self._l_leg, self._l_hi, self._l_lo = seq.l_sos_bar, None, None
@@ -358,26 +398,82 @@ class SecondaryArm:
         # The stop anchor (`exec_sec_stop`). "1m leg" is the shipped rule and reads the latched 1m
         # leg origin; the other three are 15m/1m anchors the gap trigger needs, since it has no leg.
         l_stop, s_stop = self._stop_anchor(m1, sig)
+        # Everything from here is keyed on WHICH half OWNS this side, resolved just below. Under
+        # a single trigger that is the trigger; under the combined value it is whichever
+        # precondition is open, and `None` when neither is.
+        # 🔴 WHICH RULE PRICES A SIDE IS DECIDED BY THE CONFIGURED TRIGGER — and when both halves
+        # are configured, by WHICH PRECONDITION IS OPEN. Never by whichever block latched last.
+        #
+        # Two control replays were needed to arrive at that. Keying it off the latch let a 1m
+        # structure event price a GAP book at a 1-minute retrace (+4 re-entries and +4.9R on the
+        # SHIPPED book). Suppressing the 1m latch to stop that then made the combined book's halves
+        # behave differently from the same halves run alone — 22 gap re-entries and 9 reclaims
+        # moved to a different minute, which reads as "combining changed things" when it was the
+        # fix that changed them.
+        #
+        # The precondition answers it cleanly because at most one gate can be open on a setup: a
+        # primary either reached TP1 or closed at stage 0. So each half prices exactly the setups
+        # it would have priced alone, and the shared latch is left doing only what it always did.
+        def _src_for(rgate, gate):
+            if gap_trigger and rec_trigger:
+                # Validation has already refused any pairing where both could be true at once.
+                return "reclaim" if rgate else ("gap" if gate else None)
+            if rec_trigger:
+                return "reclaim"
+            if gap_trigger:
+                return "gap"
+            return "1m shift"
+
+        l_src = _src_for(rgate_l, gate_l)
+        s_src = _src_for(rgate_s, gate_s)
+        l_from_rec = l_src == "reclaim"
+        s_from_rec = s_src == "reclaim"
+        if l_from_rec or s_from_rec:
+            # The reclaim's stop is its OWN anchor (`exec_rec_stop`), which under the combined
+            # value is a different level from the gap half's. Resolved per side so one half's
+            # setting can never price the other half's trade.
+            r_stop_l, r_stop_s = self._stop_anchor(m1, sig, getattr(cfg, "exec_rec_stop", "1.0"))
+            if l_from_rec:
+                l_stop = r_stop_l
+            if s_from_rec:
+                s_stop = r_stop_s
         # Whether the arm has a usable leg. The 1m trigger needs its latched leg to be valid and
-        # pointing the right way; the gap trigger needs an entry price and a stop, and asks the
-        # SAME question of both so a missing anchor can never read as "no setup".
-        if rec_trigger:
-            # The entry price IS the deep edge, so the same question the other two ask: is there
-            # an entry, is there a stop, and is the stop on the correct side of it.
-            l_leg_ok = (z_hi is not None and l_stop is not None
-                        and self._l_leg is not None and z_hi > l_stop)
-            s_leg_ok = (z_hi is not None and s_stop is not None
-                        and self._s_leg is not None and z_hi < s_stop)
-        elif gap_trigger:
-            l_leg_ok = (poi_edge_l is not None and l_stop is not None
-                        and self._l_leg is not None and poi_edge_l > l_stop)
-            s_leg_ok = (poi_edge_s is not None and s_stop is not None
-                        and self._s_leg is not None and poi_edge_s < s_stop)
-        else:
-            l_leg_ok = (self._l_hi is not None and self._l_lo is not None
-                        and self._l_hi > self._l_lo and l_stop is not None)
-            s_leg_ok = (self._s_hi is not None and self._s_lo is not None
-                        and self._s_hi > self._s_lo and s_stop is not None)
+        # pointing the right way; the other two need an entry price and a stop, and ask the SAME
+        # question of both so a missing anchor can never read as "no setup".
+        #
+        # ⚠ Resolved PER SIDE, never once for both. Under the combined value the long side can be
+        # owned by the reclaim while the short side is owned by the gap, and one shared branch
+        # would price one of them off the other's rule. `sig.fibo_dir` means only one side can arm
+        # at a time, so today that could not reach a fill — which is exactly the kind of "cannot
+        # happen yet" that stops being true quietly.
+        def _leg_ok(src, leg, hi, lo, stop, poi, side):
+            if leg is None or stop is None or src is None:
+                # `src is None` = both halves live and NEITHER precondition is open. Refuse rather
+                # than fall through to the 1m rule below, which would enter at a retrace of a
+                # 1-minute leg — a trigger nobody selected.
+                return False
+            if src == "reclaim":
+                # The entry price IS the deep edge: is there an entry, and is the stop the right
+                # side of it — AND has price actually come back through the level.
+                #
+                # 🔴 THAT LAST CLAUSE READS THE RECLAIM'S OWN STATE RATHER THAN "SOMETHING LATCHED
+                # THIS SIDE", AND THE DISTINCTION IS THE WHOLE RULE. `_l_leg` is shared bookkeeping
+                # that three different blocks write, so treating a latch as proof of a reclaim lets
+                # any of them arm this half a bar before price returned. It was guarded at the gap
+                # latch first, which worked and cost the gap half 7 of its 54 re-entries under the
+                # combined value — a fix in the wrong place, paid for by the other half.
+                rec = (self._l_rec if side > 0 else self._s_rec)
+                void = (self._l_void if side > 0 else self._s_void)
+                return (rec and not void and z_hi is not None
+                        and (z_hi > stop if side > 0 else z_hi < stop))
+            if src == "gap":
+                return poi is not None and (poi > stop if side > 0 else poi < stop)
+            return hi is not None and lo is not None and hi > lo
+
+        l_leg_ok = _leg_ok(l_src, self._l_leg, self._l_hi, self._l_lo,
+                           l_stop, poi_edge_l, 1)
+        s_leg_ok = _leg_ok(s_src, self._s_leg, self._s_hi, self._s_lo,
+                           s_stop, poi_edge_s, -1)
 
         # 4. Arm — flat, the PRIMARY on this 15m leg reached breakeven (be_sos == l_sos_bar; a
         #    primary stopped at its initial stop leaves no re-entry), the leg is not dead (no prior
@@ -403,17 +499,22 @@ class SecondaryArm:
         # OFF by default = the shipped rule, which reads the 1m SOS events and ignores direction.
         m1_ok_l = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == 1
         m1_ok_s = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == -1
+        # The precondition the ARM checks follows the source too: a reclaim-latched side is
+        # answerable to `exec_rec_require`, everything else to the shared one. Under every
+        # single-trigger value these are the same object, so nothing shipped moves.
+        arm_gate_l = rgate_l if l_from_rec else gate_l
+        arm_gate_s = rgate_s if s_from_rec else gate_s
         l_armed = (cfg.exec_secondary and cfg.exec_longs and flat and m1_ok_l
-                   and not (rec_trigger and self._l_void)
-                   and seq.l_sos_bar is not None and gate_l
+                   and not (l_from_rec and self._l_void)
+                   and seq.l_sos_bar is not None and arm_gate_l
                    and seq.l_sos_bar != self._l_dead and not l_capped
                    and div_l and sig.fibo_dir == 1 and fibs_ready
                    and l_leg_ok
                    and (self._l_traded is None or self._l_leg != self._l_traded)
                    and not late and (not long_veto or not respect_veto))
         s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat and m1_ok_s
-                   and not (rec_trigger and self._s_void)
-                   and seq.s_sos_bar is not None and gate_s
+                   and not (s_from_rec and self._s_void)
+                   and seq.s_sos_bar is not None and arm_gate_s
                    and seq.s_sos_bar != self._s_dead and not s_capped
                    and div_s and sig.fibo_dir == -1 and fibs_ready
                    and s_leg_ok
@@ -425,18 +526,21 @@ class SecondaryArm:
         # unchanged). 0.0 rests at the leg extreme, which is entering on the 1m SOS itself. The stop
         # is the leg ORIGIN either way, so a shallower ratio is a WIDER stop and a smaller position.
         ratio = cfg.exec_sec_retrace
-        if rec_trigger:
-            # The deep edge itself — the level the primary was stopped at and price has since
-            # reclaimed. No retrace of anything, because there is no 1m leg.
-            l_edge = z_hi if l_armed else None
-            s_edge = z_hi if s_armed else None
-        elif gap_trigger:
-            # The primary's own resting price — no retrace of anything, because there is no 1m leg.
-            l_edge = poi_edge_l if l_armed else None
-            s_edge = poi_edge_s if s_armed else None
-        else:
-            l_edge = (self._l_hi - (self._l_hi - self._l_lo) * ratio) if l_armed else None
-            s_edge = (self._s_lo + (self._s_hi - self._s_lo) * ratio) if s_armed else None
+        # Per side off the SOURCE, same reasoning as `_leg_ok` above.
+        #   "reclaim" — the deep edge itself, the level the primary was stopped at and price has
+        #               since reclaimed. No retrace of anything, because there is no 1m leg.
+        #   "gap"     — the primary's own resting price, likewise no leg to retrace.
+        def _edge(src, armed, hi, lo, poi, side):
+            if not armed or src is None:
+                return None
+            if src == "reclaim":
+                return z_hi
+            if src == "gap":
+                return poi
+            return (hi - (hi - lo) * ratio) if side > 0 else (lo + (hi - lo) * ratio)
+
+        l_edge = _edge(l_src, l_armed, self._l_hi, self._l_lo, poi_edge_l, 1)
+        s_edge = _edge(s_src, s_armed, self._s_hi, self._s_lo, poi_edge_s, -1)
         return SecArm(
             l_armed=l_armed, l_edge=l_edge,
             l_sl=(l_stop - buf) if l_armed else None,
@@ -444,16 +548,22 @@ class SecondaryArm:
             s_armed=s_armed, s_edge=s_edge,
             s_sl=(s_stop + buf) if s_armed else None,
             s_tp1=sig.fibo_p2, s_tp2=sig.fibo_p1, s_leg=self._s_leg,
+            l_src=l_src if l_armed else None,
+            s_src=s_src if s_armed else None,
         )
 
-    def _stop_anchor(self, m1: M1State, sig):
+    def _stop_anchor(self, m1: M1State, sig, mode=None):
         """(long stop, short stop) before the buffer — `exec_sec_stop`.
+
+        `mode` overrides the config field, which is how the RECLAIM half reads its own anchor
+        (`exec_rec_stop`) while the gap half reads the shared one. None = read the config.
 
         Returns None on a side whose anchor does not exist yet (no latched 1m leg, no confirmed 1m
         swing, no fib). ⚠ None must stay None: falling back to another anchor would price the trade
         off a level the operator did not choose, and this repo's sizing is `risk / stop_distance`.
         """
-        mode = getattr(self._cfg, "exec_sec_stop", "1m leg")
+        if mode is None:
+            mode = getattr(self._cfg, "exec_sec_stop", "1m leg")
         if mode == "1m leg":
             return self._l_lo, self._s_hi
         if mode == "swing low":
@@ -488,8 +598,12 @@ class SecondaryArm:
             return None
         return p7 + (p10 - p7) * ratio
 
-    def _primary_gate(self, sos, be_sos, closed_sos, lost_sos) -> bool:
+    def _primary_gate(self, sos, be_sos, closed_sos, lost_sos, mode=None) -> bool:
         """What the PRIMARY on this 15m leg must have done — `exec_sec_require`.
+
+        `mode` overrides the config field, which is how the RECLAIM half asks its own question
+        (`exec_rec_require`) while the gap half asks the shared one. None = read the config, which
+        is every caller that existed before the combined trigger.
 
         "Breakeven" is the shipped rule and is byte-identical to the `be_sos == sos` test it
         replaced. The other three are looser doors onto the same latch machinery: the dead-leg
@@ -499,7 +613,8 @@ class SecondaryArm:
         that quietly armed on every live setup would be indistinguishable, on the page, from the
         strategy having found a lot of re-entries.
         """
-        mode = getattr(self._cfg, "exec_sec_require", "Breakeven")
+        if mode is None:
+            mode = getattr(self._cfg, "exec_sec_require", "Breakeven")
         if mode == "Breakeven":
             return be_sos == sos
         if mode == "Any close":

@@ -909,71 +909,115 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
   is a live-pipeline item, and it is correctly gated behind this being measured first.
 
-### The deep-edge reclaim trigger, and the full replay that would not let it ship ON
+### The deep-edge reclaim trigger — and the combined value that runs it beside the gap
 
-**Added 2026-08-21.** A third value for `exec_sec_trigger` alongside `1m shift` and `FVG in zone`.
-It exists because of a geometry fact this file already records: **the `1.0` sits a median 0.43R past
-the `0.886`**, so a primary stopped at the `0.886` that then turns can be re-entered AT the `0.886`
-with the stop at the `1.0` — the level that genuinely kills the leg — for roughly 0.43x the original
-risk. The trigger waits for a 1-minute bar to trade back THROUGH the `0.886` (never the stop-out
-bar's own wick — `_l_seen`/`_s_seen` require a later bar), then rests the entry at that level. It
-voids for the setup if the `1.0` prints first.
+**Added 2026-08-21.** Two new values for `exec_sec_trigger`: **`Deep-edge reclaim`** and
+**`FVG in zone + Deep-edge reclaim`**, which runs it alongside the shipped gap trigger.
 
-⚠ **It DISPLACES the shipped gap trigger, it does not compose with it** — `exec_sec_trigger` is one
-choice. Making the two composable is an unbuilt follow-up, and the numbers below are the reason it
-may be worth building.
+The reclaim exists because of a geometry fact this file already records: **the `1.0` sits a median
+0.43R past the `0.886`**, so a primary stopped at the `0.886` that then turns can be re-entered AT
+the `0.886` with the stop at the `1.0` — the level that genuinely kills the leg — for roughly 0.43x
+the original risk. It waits for a 1-minute bar to trade back THROUGH the `0.886` (never the
+stop-out bar's own wick — `_l_seen`/`_s_seen` require a later bar), rests the entry at that level,
+and voids for the setup if the `1.0` prints first.
 
-⚠ **`exec_sec_stop` of `1m leg` or `swing low` is REFUSED under it** (stricter than the gap
-trigger's rule), because the entry is a FIXED price and a 1-minute swing can land either side of it.
-That refusal is also what lets section 2c read the stop anchor BEFORE the 1m leg latch — both legal
-anchors are pure reads of the 15m fib. ⚠ **Do not hoist that lookup for the other triggers**: under
-`1m leg` the anchor IS the leg assigned by that latch, and moving it reddened 23 tests in
-`tests/test_secondary.py`.
+🔴 **THE RECLAIM HALF READS ITS OWN SETTINGS — `exec_rec_require` / `exec_rec_stop` /
+`exec_rec_tp_r` / `exec_rec_tp1_pct` — UNDER BOTH VALUES, AND THE SHARED `exec_sec_*` FIELDS ARE
+DEAD TO IT.** That is what makes the combined value possible at all: the two halves want opposite
+preconditions, different stops and different ladders, and one set of fields can only hold one of
+each. Their defaults ARE the measured configuration, so selecting the trigger and touching nothing
+else reproduces the book below.
 
-**MEASURED 2026-08-21 — six books, `run_dual` over 187,102 M15 / 2,801,964 M1 bars, 2018-09-14 →
-2026-08-18, `fill_model='bar'`.** Every book is one account, one position slot: **0 of 54
-re-entries overlapped a primary in time and 0 primaries were displaced in any book**, so the R
-columns are comparable. Risk % is solved per book to a matched drawdown ceiling.
+**Why the two halves may share one position slot, one latch and one `_traded` stamp.** They fire on
+DISJOINT setups structurally: a primary either reaches TP1 (stamping the breakeven latch, never the
+loss latch) or closes at stage 0, which does the reverse. ⚠ **That is the whole safety case, so
+validation REFUSES any pairing but `Breakeven`/`Stopped only`** rather than letting them race for
+the latch. ✅ **MEASURED as 0, not "rare": of the 107 re-entries the two produce, ZERO share a
+setup, ZERO overlap in time, and neither ever blocks a primary.**
 
-| book | trades | re-entries | R | re-entry R | risk at −55% | x at −55% |
-|---|---|---|---|---|---|---|
-| primary only | 181 | 0 | 138.9 | — | **12.5%** | **13,972** |
-| reclaim, exit all at 3x | 235 | 54 | **156.9** | **+18.0** | 9.25% | 7,342 |
-| reclaim, exit all at 2x | 235 | 54 | 147.9 | +9.0 | 9.5% | 4,827 |
-| reclaim, half at 3x | 235 | 54 | 144.9 | +6.0 | 9.25% | 2,898 |
-| reclaim, half at 1.25x | 235 | 54 | 137.6 | −1.3 | 10.0% | 2,781 |
-| shipped gap trigger | 235 | 54 | 152.0 | +13.1 | 7.5% | 1,986 |
+#### The numbers — `run_dual` over 187,102 M15 / 2,801,964 M1 bars, 2018-09-14 → 2026-08-18
 
-🔴 **THE HEADLINE IS THE LAST TWO COLUMNS, NOT THE R COLUMN, AND THEY DISAGREE.** The best reclaim
-book adds **+18.0R** and still finishes at **half** the primary-only multiple, because it can only
-carry **9.25%** risk where primary-only carries **12.5%**. Re-entries fire immediately after a
-stop-out, i.e. INSIDE a drawdown, so they deepen exactly the holes that set the risk ceiling. **A
-book that adds R and loses money is the normal case, not a paradox** — this is rule 6 arriving from
-a new direction, and any future re-entry idea has to clear matched drawdown rather than R.
+One account, one position slot, `fill_model='bar'`, no costs. **All 181 primaries are byte-identical
+to the primary-only book in every row**, so every difference is the re-entries.
 
-🔴 **It MOVED the deepest hole rather than removing it.** Primary-only's worst drawdown is −45.6%,
-2023-07-07 → 2024-09-19. The reclaim book's is −58.1%, **2018-11-23 → 2020-05-07** — a stretch where
-8 re-entries lost −4.0R between them, seven of those consecutive. ⚠ **Not an artifact of
-unrealistic stops: 0 of 54 re-entries sit below the live 0.08%-of-price minimum** (median 0.211%),
-so those losses are trades the broker would have taken.
+| book | trades | re-ent | R | re-ent R | x at 10% | worst dd | risk / x at a −50% ceiling |
+|---|---|---|---|---|---|---|---|
+| no re-entry | 181 | 0 | 138.9 | — | 3,582 | −45.6% | 11.00% / 7,188 |
+| after-breakeven only (**ships today**) | 235 | 54 | 152.0 | +13.1 | 5,490 | −53.5% | 8.50% / 2,981 |
+| after-a-loss only (the reclaim) | 234 | 53 | 157.9 | +19.0 | 7,225 | −46.3% | 11.00% / 15,509 |
+| **both** | 288 | 107 | **171.0** | **+32.1** | **11,072** | −49.0% | 10.25% / **17,142** |
 
-✅ **It DOES do the job it was designed for, in both periods Aaron named.** Window A (2021-09-07 →
-2023-01-12): primary-only +2.6R → **+8.6R**. Window B (2023-03-31 → 2024-09-19): primary-only
-**−3.6R → +7.4R**, the re-entries adding +11.0R and flipping a losing stretch to a winning one.
-⚠ **The shipped gap trigger made window B WORSE** (−4.1R, its re-entries −0.5R), which is the
-sharpest argument for the new trigger existing at all.
+🔴 **THE COMBINED BOOK IS EXACTLY THE TWO HALVES — matched trade for trade on entry price, R summing
+to the cent (13.09 + 19.00 = 32.09), 54 + 53 = 107, and 0 trades in one book and not the other.**
+That is the claim the build had to earn, and it was earned on the third attempt; the two failures
+are below because each is a rule.
 
-⚠ **Its edge is second-half only and that is a real caveat, not a sample-size objection.** Split at
-2022-09-01: **+1.0R over 23 re-entries** in the first half, **+17.0R over 31** in the second. The
-gap trigger is the mirror image (+11.0R then +2.1R). ✅ **Neither is carried by one trade** — the
-reclaim's best is +3.0R (the target caps it) and removing it still leaves +15.0R, where the gap
-trigger's +13.1R is +9.74R from a single trade and +3.4R from the other 53.
+⚠ **The last column is the one to read, not R** — a book that adds R and loses money is the normal
+case here, because re-entries fire inside drawdowns and deepen the holes that set the risk ceiling.
+The shipped gap trigger is the example: it adds 13.1R and finishes at **2,981** against
+primary-only's **7,188**, because it can only carry 8.5% risk. The reclaim does not have that
+problem (11.00%, the same as no re-entry at all).
 
-**So it ships OFF.** `exec_sec_trigger` still defaults to the gap trigger and the shipped path is
-byte-identical: both control books were re-run from a git worktree at HEAD and every field of all
-181 and all 235 trades matched exactly.
+✅ **It does the job it was built for, in both periods Aaron named.** Sep 2021 – Jan 2023:
++2.6R → **+9.8R** combined. Mar 2023 – Sep 2024: **−3.6R → +6.9R**, the re-entries adding +10.5R and
+flipping a losing stretch. ⚠ **The gap trigger alone made that second window WORSE** (−4.1R), which
+is the sharpest argument for the reclaim existing.
 
-⚠ **NOT USABLE LIVE either way** — the bridge refusal below applies to the whole re-entry layer.
+⚠ **The two halves are out-of-sample mirror images, and combining is what fixes that.** Split at
+2022-09-01, re-entries only: the gap is **+11.0R then +2.1R**, the reclaim **+2.0R then +17.0R**,
+and both together **+13.0R then +19.1R** — positive in both halves where each alone leans on one.
+✅ Neither is carried by a single trade on the reclaim side (its best is +3.0R, the target caps it).
+
+**It all ships OFF.** `exec_sec_trigger` still defaults to the gap alone, and the shipped path is
+byte-identical: the control book reproduces 235 trades / 54 re-entries / 152.0R / +13.1R exactly.
+
+#### 🔴 Two control replays, two rules — the story is in the build notes, the rules are here
+
+**Neither failure was found by a test.** The suite was green, the parity gate was green, and the
+only thing that caught either was re-running the UNCHANGED configuration on the changed code and
+finding it had moved. Full narrative and the numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The
+combined re-entry value*.
+
+**1. Which rule prices a side is the CONFIGURED TRIGGER's, never whichever block latched last.**
+Section 3's 1-minute latch runs under EVERY trigger, including the two with no 1m leg to price off,
+because it moves `_l_leg`, which `_traded` / `_dead` / `_used` all read. Keying the entry price off
+the latch let a 1m structure event price a GAP book at a 38.2% retrace of a 1-minute leg: **the
+shipped book silently gained 4 re-entries and 4.9R.** Under the combined value ownership falls to
+**which precondition is open**, which is well-defined precisely because the gates are disjoint.
+⚠ **Do NOT gate section 3 behind a trigger test to "tidy" this** — tried twice, and both attempts
+are the two rules on this list.
+
+**2. A fix belongs in the half that has the problem — protect at the READER with the requirement,
+never at every WRITER.** The reclaim must not arm off a latch another block wrote, but guarding it
+at the GAP LATCH **cost the gap half 7 of its 54 re-entries whenever the reclaim was switched on**,
+so the combined book stopped being the two halves. The guard belongs in `_leg_ok`, where the reclaim
+asks its own question — *has price come back through the level* (`_l_rec`) — rather than *did
+something latch this side*.
+
+✅ **Rule 2 found a real defect rather than only restoring additivity.** It removed one reclaim
+re-entry that had armed at the deep edge **without price ever reclaiming**, worth **+1.0R**.
+⚠ **Every reclaim figure quoted before this is the pre-fix book — 156.9R over 54, not 157.9R over
+53.**
+
+⚠ **`exec_rec_stop` of `1m leg` or `swing low` is REFUSED**, stricter than the gap trigger's rule,
+because the entry is a FIXED price and a 1-minute swing can land either side of it. That refusal is
+also what lets section 2c read the stop anchor BEFORE the 1m leg latch — both legal anchors are pure
+reads of the 15m fib. ⚠ **Do not hoist that lookup for the other triggers**: under `1m leg` the
+anchor IS the leg assigned by that latch.
+
+⚠ **The exit ladder is not a detail on this half.** All-out at 3x its own risk is the default and is
+why the numbers hold; the shipped bank-half-at-1.25x ladder gives **3,111x, worse than taking no
+re-entry at all** (3,582x). A re-entry priced this tight has to be allowed to pay for the ones that
+fail.
+
+**TESTED:** 350 strategy tests green (24 new), 11 rules each watched RED by a named mutation —
+detail in the build notes. **PARITY:** `compare_strategy.py` exit 0 on `4fef8` and `49f80` at
+`--warmup 1000`, before and after. ⚠ **The gate is structurally blind to all of this** — it replays
+15-minute bars through `.run()` and every re-entry lever lives on the 1-minute path behind
+`run_dual`, so a green run means the primary is untouched and nothing more.
+
+⚠ **NOT USABLE LIVE, and no new refusal was needed** — `algos/live/bridge.py` already refuses
+`exec_secondary` outright, so the whole re-entry layer including both new values is covered.
 
 ## The exit ladder — every TP/SL lever, and which ones are switchable
 

@@ -515,6 +515,10 @@ class _Pending:
     sos_bar: Optional[int]
     # The whole fib ladder those levels came off, frozen on the same bar (reporting only).
     fib: Optional[TradeFib] = None
+    # For a SECONDARY, which trigger armed it ("1m shift" | "gap" | "reclaim"). NOT reporting-only:
+    # the reclaim half carries its own exit ladder, so the open trade has to remember what it came
+    # from. None on every primary and on any secondary from a caller that does not set it.
+    src: Optional[str] = None
 
 
 def _intrabar_targets_first(o: float, h: float, l: float) -> bool:
@@ -589,6 +593,9 @@ class Execution:
         # flat), so the tag is all that keeps each stream off the other's position. When flat it is
         # ignored, so with `exec_secondary` OFF (no secondary ever opens) `step()` is unchanged.
         self._entry_kind = "primary"
+        # Which re-entry trigger armed the open secondary (see `_open_position`). None on a primary
+        # and while flat.
+        self._entry_src: Optional[str] = None
         # A force-close DECIDED at this bar's close and FILLED at the next bar's open, held as
         # (reason, leg tag) or None. Pine's `strategy.close()` is a MARKET order, and a market
         # order in this fill model is subject to the same one-bar delay every other order is —
@@ -795,6 +802,10 @@ class Execution:
         # profit, which is exactly the over-spend the ratchet check exists to stop.
         "_adds", "_add_lots", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
         "_add_pending", "_add_pend_stop", "_add_last_px", "_add_tp_level",
+        # Which re-entry trigger armed the open secondary. It DECIDES the exit ladder — the
+        # reclaim half carries its own first target and its own bank percentage — so a restored
+        # trade that lost it would manage against the other half's rungs, silently.
+        "_entry_src",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
@@ -966,12 +977,18 @@ class Execution:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
                 qty = (self.equity * risk_pct / 100.0) / dist
-                return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg)
+                # `getattr`, because `arm` is a duck-typed record here and several tests build a
+                # bare stand-in for it. A missing field means "no trigger named itself", which the
+                # ladder reads as the shared settings — the behaviour every caller had before the
+                # reclaim half existed.
+                return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg,
+                                src=getattr(arm, "l_src", None))
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
                 qty = (self.equity * risk_pct / 100.0) / dist
-                return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg)
+                return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg,
+                                src=getattr(arm, "s_src", None))
         return None
 
     # ── main step ───────────────────────────────────────────────────────────────
@@ -988,7 +1005,7 @@ class Execution:
         self._sync_gap_latch(seq)
         long_edge, short_edge = self._entry_edges(sig, seq)
         dec.long_edge, dec.short_edge = long_edge, short_edge
-        # Latched for the SECONDARY's gap trigger (`exec_sec_trigger == "FVG in zone"`), which
+        # Latched for the SECONDARY's gap half (any `exec_sec_trigger` naming the gap), which
         # re-uses the PRIMARY's own point-of-interest price rather than computing a second one —
         # Aaron's rule is *"follow the rules of fair value gap entry that we would take on a
         # primary trade"*, and a second implementation of those rules is how the two silently
@@ -2015,6 +2032,12 @@ class Execution:
             return False
         self._pos_dir = pend.dir
         self._entry_kind = kind
+        # Which re-entry trigger armed this trade, frozen from the ORDER. Read by the ladder below
+        # and by `_tp1_pct`, because the reclaim half carries its own first target and its own bank
+        # percentage. ⚠ Taken from the pending order rather than re-derived from the config at exit
+        # time: the config answers "which triggers are enabled", and the question here is which one
+        # produced THIS trade — two different questions the moment both halves are live.
+        self._entry_src = pend.src
         self._qty = granted
         self._entry = fill_price
         self._entry_index = sig.index
@@ -2034,7 +2057,15 @@ class Execution:
         # ⚠ Priced off the INITIAL stop, not the trailed one: 1R must mean the risk the trade was
         # sized against, or the target would creep in as the stop ratchets.
         if kind == "secondary":
-            tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
+            # The RECLAIM half reads its own rung (`exec_rec_tp_r`), because under the combined
+            # trigger the two halves are different trades: the reclaim enters at the deep edge with
+            # a stop a median 0.43R away, so a rung that suits the gap entry is the wrong distance
+            # here. MEASURED 2026-08-21: all-out at 3x made 6,740x over 7.9 years where the shipped
+            # bank-half-at-1.25x ladder made 3,111x — worse than taking no re-entry at all.
+            if pend.src == "reclaim":
+                tp_r = getattr(self._cfg, "exec_rec_tp_r", 3.0)
+            else:
+                tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
             dist = abs(fill_price - pend.sl)
             if tp_r > 0 and dist > 0:
                 self._tp1 = fill_price + (1 if pend.dir > 0 else -1) * tp_r * dist
@@ -2897,7 +2928,13 @@ class Execution:
         shared `exec_tp1_pct`, which is what the shipped ladder does, so the default cannot move
         a stored figure. A primary never reads the override."""
         if self._entry_kind == "secondary":
-            own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
+            # The RECLAIM half banks its own percentage — see the note on the first-target rung in
+            # `_open_position`. Its default is 100 (the whole position off at its target, no
+            # runner), which is the configuration that measured 6,740x.
+            if self._entry_src == "reclaim":
+                own = getattr(self._cfg, "exec_rec_tp1_pct", 100.0)
+            else:
+                own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
             if own != -1.0:
                 return own
         return self._cfg.exec_tp1_pct
