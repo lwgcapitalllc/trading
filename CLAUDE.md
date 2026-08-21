@@ -186,6 +186,58 @@ Repo-shipped Claude configuration — available to every clone, unlike `~/.claud
 
 **`skills/` — `learn/` (2026-08-11)**: `/learn <video-url> [focus]` watches a video and files a durable note to **`education/learned/`** (dated markdown, source link, what it covers with timestamps, what is worth acting on). It drives the third-party `watch` skill for the watching — captions first, `ffmpeg` frames second, Whisper API only when a video has no captions — and adds the note. ⚠ **The note is the deliverable and the chat reply is deliberately short**: a note that lists the TOPICS a video mentioned is worthless, so it records what the thing actually IS. ⚠ **The notes are COMMITTED and the videos are not re-watched** — a note already on disk for a URL is read rather than regenerated, because the frames are the whole token cost. ⚠ **No speech-to-text key is configured** (`~/.config/watch/.env`, per machine, git-ignored by living outside the repo): captions cover most of YouTube, and a caption-less source — a Loom, a TikTok, your own screen recording — comes back frames-only and says so. A free Groq key retires that.
 
+## The browser server — Claude can drive the Command Center, and cannot press the live buttons
+
+**Added 2026-08-20.** `.mcp.json` at the repo root wires up Playwright's MCP server, so it
+arrives with a clone and works the same on both machines. Nothing to install: it uses the
+Chromium the frontend tests already downloaded. Each of us approves the project server once,
+on the first session after pulling it.
+
+**Why it is here.** Rule 7 and rule 9 are about features that were never RUN — the Deploy
+button dead for eight days, six Telegram commands reporting success, 24 defects in one page
+nobody had driven end to end. Until now Claude could read the page's code and infer; it could
+not open the page. This closes that.
+
+🔴 **The backend talks to the live trading box, so a click is a real action** — stop the armed
+bot, promote code under it, deploy a strategy, rewrite a broker account row. "The agent will be
+careful" is a rule living in somebody's memory, and this repo's standing lesson is that such a
+rule is not one the next command respects. So the refusal lives in the PAGE:
+`.claude/mcp/browser_guard.js` is injected before any of the app's own scripts and rejects
+those requests inside the browser. They never reach the backend.
+
+⚠ **The read-only twins stay allowed on purpose** — a promote PREVIEW changes nothing, and lab
+writes (backtests, sweeps, stacks, stress tests, optimizations) cost compute, never money.
+Blocking those would make the tool useless and teach everyone to switch the guard off.
+
+⚠ **It is NOT a security boundary and must not be sold as one.** It runs inside the page.
+It makes an ACCIDENT impossible, not an attack. Live safety is still the promote/stop workflow
+below.
+
+✅ **A missing guard file makes the server REFUSE TO START** — measured, not assumed: the
+process exits with *"Init script file does not exist"* and no browser ever opens. There is no
+state where the browser is driving unguarded, which is the one failure this design could not
+have tolerated. The init-script path is RELATIVE for exactly this reason: it resolves against
+the repo root on either clone.
+
+**Prove the guard rather than trusting it.** `node .claude/mcp/check_browser_guard.js` runs 34
+cases and asserts refusals AND allowances, so a guard that blocks everything and a guard that
+blocks nothing both fail it. Watched RED by mutation: emptying the rule list reddens exactly
+the 20 refusals and nothing else; widening the promote rule by one character reddens exactly
+the two preview cases. In a live page, ask the console for the guard's own handle — it reports
+whether it is active and will tell you what it would refuse, without firing anything.
+
+⚠ **The version is PINNED**, same reasoning as ruff: an unpinned tool means two machines behave
+differently and neither knows why. ⚠ **The browser is started clean each time** (nothing saved
+to disk) and ⚠ **can only reach the two local ports** — it cannot wander onto the internet or
+onto the VPS.
+
+⚠ **When a new route that touches money or the live box is added, it must be added to the guard
+in the same change.** The guard is a deny-list, so a route it has never heard of is ALLOWED.
+That is the honest trade for not blocking the lab, and it is the part that will go stale.
+
+---
+
+
 ## VPS Deploy Workflow
 
 **Pulling does NOT change what a bot trades — promoting does.** Since 2026-08-03 a live bot

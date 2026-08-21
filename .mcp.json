@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.79",
+        "--isolated",
+        "--allowed-origins",
+        "http://localhost:5173;http://localhost:8000;http://127.0.0.1:5173;http://127.0.0.1:8000",
+        "--init-script",
+        ".claude/mcp/browser_guard.js",
+        "--viewport-size",
+        "1440x900"
+      ]
+    }
+  }
+}
