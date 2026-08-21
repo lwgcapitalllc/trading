@@ -16,7 +16,7 @@ Two groups.
 WATCHED RED BY MUTATION — the measured map, which mutation reddens which cases
 -----------------------------------------------------------------------------
 Rule 12: a test proves nothing until it has been watched go red for the right reason. All
-18 cases below were, and every one of them is covered. ⚠ THE MAP WAS RUN, NOT REASONED —
+19 cases below were, and every one of them is covered. ⚠ THE MAP WAS RUN, NOT REASONED —
 three of the entries first written here from inspection were WRONG, each in the direction
 of claiming a mutation was more surgical than it is.
 
@@ -29,7 +29,8 @@ of claiming a mutation was more surgical than it is.
                                                      real engine, the real strategy
 
   PostToolUse half
-    remove the dispatch (the half never runs)     -> 3 red: heredoc growth, no-nag, new file
+    remove the dispatch (the half never runs)     -> 4 red: heredoc growth, ceiling crossing,
+                                                     no-nag, new file
     drop its growth test (`s > head[p]`)          -> 4 red: sed shrink, under-ceiling Bash,
                                                      touched-nothing, AND the new-file case.
                                                      The fixture's oversized file is
@@ -175,6 +176,7 @@ for name, tool_input, want in CASES:
 # written, and a synthetic tool payload would prove nothing about a heredoc.
 
 BIG_LINES = 1000  # ~62 KB — comfortably over the ceiling
+MID_LINES = 560  # ~34 KB — UNDER the ceiling, and one good session away from crossing it
 SMALL_LINES = 80  # ~5 KB — comfortably under it
 
 
@@ -189,7 +191,12 @@ def fixture():
     case grows it. A fixture that started dirty would make every silence case vacuous.
     """
     root = tempfile.mkdtemp(prefix="guard-fixture-")
-    for sub, body in (("big", _lines(BIG_LINES, "line")), ("small", _lines(SMALL_LINES, "line"))):
+    built = (
+        ("big", _lines(BIG_LINES, "line")),
+        ("mid", _lines(MID_LINES, "line")),
+        ("small", _lines(SMALL_LINES, "line")),
+    )
+    for sub, body in built:
         os.makedirs(os.path.join(root, sub))
         with open(os.path.join(root, sub, "CLAUDE.md"), "w", encoding="utf-8") as fh:
             fh.write(body)
@@ -244,6 +251,7 @@ GROW_BIG = "cat >> big/CLAUDE.md <<'EOF'\n" + _lines(200, "added") + "EOF\n"
 # a shrink that dropped it under the ceiling would pass for the wrong reason.
 SHRINK_BIG = "sed -i.bak '/line 09/d' big/CLAUDE.md && rm -f big/CLAUDE.md.bak"
 GROW_SMALL = "cat >> small/CLAUDE.md <<'EOF'\n" + _lines(30, "added") + "EOF\n"
+CROSS_MID = "cat >> mid/CLAUDE.md <<'EOF'\n" + _lines(200, "added") + "EOF\n"
 BORN_BIG = (
     "mkdir -p brandnew && cat > brandnew/CLAUDE.md <<'EOF'\n" + _lines(BIG_LINES, "line") + "EOF\n"
 )
@@ -264,6 +272,12 @@ def case_shrinks(session):
 def case_small(session):
     root = fixture()
     shell(root, GROW_SMALL)
+    return root, [run_post(root, session)]
+
+
+def case_crosses(session):
+    root = fixture()
+    shell(root, CROSS_MID)
     return root, [run_post(root, session)]
 
 
@@ -304,6 +318,11 @@ POST_CASES = [
         "Bash edit to a CLAUDE.md UNDER the ceiling — must stay silent",
         case_small,
         lambda out: out[0] == "",
+    ),
+    (
+        "an edit that CROSSES the ceiling in one go — the hole the pre-edit check never saw",
+        case_crosses,
+        lambda out: GREW in out[0] and "mid/CLAUDE.md" in out[0],
     ),
     (
         "Bash command touching no CLAUDE.md at all — must stay silent",
