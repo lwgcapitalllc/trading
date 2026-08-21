@@ -246,3 +246,49 @@ def test_bid_ask_fills_leaves_a_longs_exits_alone():
     assert ex._pos_dir == 1, "bid low 99.10 never reached the 99.00 stop, spread or no spread"
     ex._manage_open(Sig(o=100.0, h=100.5, l=99.00), Dec())
     assert ex._pos_dir == 0 and ex.trades[-1].exit_price == 99.0
+
+
+# ── a SHRUNK entry: costs follow the size the account granted ─────────────────────
+#
+# 🔴 These two exist because the defect they pin was invisible for as long as it lived. On a solo
+# account the granted size ALWAYS equals the requested size, so both readings agree and no stored
+# run, no live trade and no parity export can tell them apart. It only separates when a second leg
+# competes for one budget — which is why it surfaced the week `backtest/portfolio/` gained a second
+# leg, and not before.
+#
+# The symptom was not a wrong dollar figure. It was the R INVARIANT disagreeing: R's denominator
+# follows the grant, so billing the entry on the un-granted size drags a shrunk trade's R below the
+# same trade run alone. MEASURED over 186,910 M15 bars: 25 shrunk trades, every one negative,
+# -0.0954R total, and the predicted error matched the observed one to five decimal places on all
+# 25. That invariant is the shared account's own test for "a sizing change stayed a sizing change",
+# so leaving this in place made it cry wolf on every shared run.
+#
+# WATCHED RED by restoring the defect — bill either line on `pend.qty` instead of `granted`:
+#   commission → -3.0 against the expected -1.5 (the full lot, on half a position)
+#   spread     → -11.0 against the expected -5.5
+
+def _shrinking_account(cap_usd):
+    """A shared account with `cap_usd` of room and nothing else holding any — so the next entry
+    is granted exactly that much risk and scaled down to fit it."""
+    from backtest.portfolio.account import PortfolioAccount
+    return PortfolioAccount(balance=10_000.0, risk_cap_pct=cap_usd / 10_000.0, entry_floor_pct=0.0)
+
+
+def test_a_shrunk_entry_pays_commission_on_the_size_it_GOT():
+    """Asks for 100 units risking $50 (0.5 of price × 100 × pv 1.0); the budget holds $25, so it
+    gets half the position. Commission is $3/side/lot and 50 units is half a lot → $1.50."""
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_lab_profile(3.0), account=_shrinking_account(25.0))
+    _long_in(ex, qty=100.0)
+    assert ex._qty == 50.0                             # the account halved it
+    assert ex._risk_usd == 25.0                        # risk followed the grant
+    assert ex._costs_usd == -1.5                       # ...and so must the commission
+
+
+def test_a_shrunk_entry_pays_spread_on_the_size_it_GOT():
+    """Same shrink, priced with a 0.22 spread instead. Half a spread on 50 units = $5.50."""
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_spread_profile(0.22), account=_shrinking_account(25.0))
+    _long_in(ex, qty=100.0)
+    assert ex._qty == 50.0
+    assert round(ex._costs_usd, 6) == -5.5

@@ -1046,8 +1046,9 @@
         "off": "Off",
         "on": "On"
       },
-      "desc": "After this bot loses a trade, take a smaller trade the other way to win the loss back. It waits for structure to break against the losing direction, then enters. Lab only — this is not on the TradingView chart and it has never been traded live.",
+      "desc": "\u26a0 THIS SWITCH DOES NOT MODEL ONE ACCOUNT, and the number it gives you is not the one you want. After this bot loses a trade, it takes a smaller trade the other way to win the loss back. But those recovery trades are added AFTER the main book is finished, so their profit never compounds into the main trades - it sits beside the curve instead of lifting it. The same trades are worth +3.8% that way against +44.8% on one real balance. It also cannot block or shrink a main trade, so it will never show you whether the recovery would have taken room the main bot needed. For the real answer run backtest/tools/recovery_stack.py, which puts both on ONE balance with ONE risk budget. Lab only - this is not on the TradingView chart and it has never been traded live.",
       "guide": [
+        "\u26a0 Answers a different question than the one you are asking - see the description",
         "Adds a second, smaller set of trades to the book",
         "Off = the bot trades only its own setups"
       ]

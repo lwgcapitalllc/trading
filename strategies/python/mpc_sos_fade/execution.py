@@ -2114,8 +2114,8 @@ class Execution:
         # own P&L (and its R) rather than being quietly excluded from it.
         self._costs_usd = 0.0
         self._last_roll_ms = None
-        self._charge_commission(pend.qty)
-        self._charge_spread(pend.qty)       # half the round turn; the exits pay the other half
+        self._charge_commission(granted)
+        self._charge_spread(granted)        # half the round turn; the exits pay the other half
         # Seeded from the ENTRY PRICE, not the entry bar's extreme (Pine `lMaxFav := lEntry`).
         # The bar's FAVOURABLE extreme is where price was on its way INTO the resting limit,
         # i.e. before the trade existed — see the fill-bar note in `step`.
@@ -2730,17 +2730,18 @@ class Execution:
         adj = self._exit_adj()
         if self._max_fav is None:
             self._max_fav = sig.high if d > 0 else sig.low + adj
+        near, far = self._stage_rungs()
         if d > 0:
             self._max_fav = max(self._max_fav, sig.high)
-            if self._stage < 1 and sig.high >= self._tp1:
+            if self._stage < 1 and sig.high >= near:
                 self._stage = 1
-            if self._stage < 2 and sig.high >= self._tp2:
+            if self._stage < 2 and sig.high >= far:
                 self._stage = 2
         else:
             self._max_fav = min(self._max_fav, sig.low + adj)
-            if self._stage < 1 and sig.low + adj <= self._tp1:
+            if self._stage < 1 and sig.low + adj <= near:
                 self._stage = 1
-            if self._stage < 2 and sig.low + adj <= self._tp2:
+            if self._stage < 2 and sig.low + adj <= far:
                 self._stage = 2
         # Latch the 15m leg once its PRIMARY reaches TP1 (stage >= 1 = moved to breakeven) — the
         # secondary's eligibility gate. Idempotent; only a primary sets it (a secondary reaching
@@ -2942,6 +2943,37 @@ class Execution:
         self._charge_commission(qty)
         self._charge_spread(qty)    # half the round turn; `_exit_portion` pays the other half
 
+    def _stage_rungs(self) -> Tuple[float, float]:
+        """The two rung prices ORDERED BY DISTANCE from the entry — (nearer, further).
+
+        🔴 **The stop ladder has to climb in the order price actually reaches the rungs**, and on a
+        re-entry it did not. `_tp1` is priced off RISK (`exec_sec_tp_r`, 1.25R) while `_tp2` stays
+        the 15m fib it was armed on, so nothing keeps the first beyond the second — MEASURED on run
+        687c8df2a523, **23 of 45 re-entries came out flipped** (all 160 primaries were correctly
+        ordered, and so is the Pine's own 0.5→0.382 ladder). On a flipped trade `_advance_stage`
+        tested the FURTHER price for stage 1 and the NEARER one for stage 2, so price armed the
+        TRAIL without ever arming BREAKEVEN — the trade skipped the step that makes it unloseable
+        and went straight to the one that assumes it already had. Trade T198 of that run is the
+        picture: stage 0 → 2 in one bar, breakeven never armed.
+
+        ⚠ **SECONDARIES ONLY, and that is a parity decision, not caution.** The flip is created by
+        `exec_sec_tp_r`, which is a Python-only override that exists nowhere in `mpc_strategy.pine`
+        — the Pine has no re-entry at all. Ordering a PRIMARY's rungs would be an unparity-able
+        edit to the ported path for a case that has never occurred, so the primary ladder is passed
+        through untouched and `compare_strategy.py` sees the same decisions it always did.
+
+        ⚠ **This orders the STOP LADDER only. It does NOT move where profit banks** —
+        `_remaining_brackets` still rests the first rung's order at `_tp1` for `_tp1_pct()` of the
+        position, wherever that price sits (Aaron's call, 2026-08-21). The 1.25R rung was chosen by
+        measurement; reordering the stop steps is a fix, moving the bank is a different decision.
+        """
+        if self._entry_kind != "secondary":
+            return self._tp1, self._tp2
+        d = self._pos_dir
+        if (self._tp2 - self._entry) * d < (self._tp1 - self._entry) * d:
+            return self._tp2, self._tp1
+        return self._tp1, self._tp2
+
     def _tp1_pct(self) -> float:
         """The TP1 rung's percentage for the trade that is actually open.
 
@@ -2997,7 +3029,10 @@ class Execution:
                 return be
             step = cfg.exec_trail_step
             return max(be, self._max_fav - step) if d > 0 else min(be, self._max_fav + step)
-        return self._tp1                          # "TP1 price" (default)
+        # "TP1 price" (default) — the FIRST rung price, i.e. the nearer one. Reaching the second
+        # rung pulls the stop back to the first; naming `_tp1` directly would, on a flipped
+        # re-entry, pull it to the price price just reached and close the trade there.
+        return self._stage_rungs()[0]
 
     def _trail(self) -> Optional[float]:
         """The runner's trailing stop past TP2, or None when it hasn't engaged yet
@@ -3031,7 +3066,8 @@ class Execution:
         step = cfg.exec_trail_step
         if self._max_fav is None:
             return None
-        run = (self._max_fav - self._tp2) if d > 0 else (self._tp2 - self._max_fav)
+        far = self._stage_rungs()[1]              # the rung that ARMED stage 2 — see `_stage_rungs`
+        run = (self._max_fav - far) if d > 0 else (far - self._max_fav)
         if run < step:
             return None
         steps = int((run - step) // step)

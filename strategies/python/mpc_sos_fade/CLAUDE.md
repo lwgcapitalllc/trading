@@ -2158,6 +2158,40 @@ costs you drawdown, which is the number a risk budget is actually set against.
 worth, never whether it happened. Only `bid_ask_fills` moves the trade list. A re-priced run
 showing the same trade count as its source is working correctly.
 
+### A SHRUNK entry paid its costs on the size it ASKED for (fixed 2026-08-21)
+
+**Only reachable when a second leg competes for one budget**, so it was invisible for as long as it
+existed. On a solo account the granted size ALWAYS equals the requested size, so both readings agree
+and no stored run, no live trade and no parity export can tell them apart.
+
+**The defect.** When the shared account shrinks an entry to fit the budget, the position, its risk
+and its R yardstick all follow the GRANT — but the entry commission and half-spread were billed on
+`pend.qty`, the size the leg merely asked for. Those costs are booked inside the trade's own P&L on
+purpose, so the overcharge landed inside its R.
+
+🔴 **The symptom was not a wrong dollar figure — it was the R INVARIANT disagreeing.** R's
+denominator followed the shrink and one piece of its numerator did not, so a shrunk trade's R came
+back BELOW the same trade run solo. That invariant is the shared account's own test for *"a sizing
+change stayed a sizing change"*, and leaving this in place made it cry wolf on every shared run.
+⚠ **The tool offers two explanations for a moved R — the cap bit, or a decision changed — and this
+was a THIRD it had no name for.** The refusal log showed ZERO refusals, which is what pointed at it.
+
+**MEASURED, 186,910 M15 bars 2018-09-14 → 2026-08-14, `puprime_ecn`:** 25 shrunk trades, every one
+negative, **−0.0954R** total. Predicted error (shrink factor × entry cost ÷ risk) matched the
+observed to five decimal places on **all 25**, and no other trade moved. Fixed: bill both on
+`granted`. A+ shared then reads **+127.11R against +127.11R solo** — exact.
+
+⚠ **Nothing already recorded moves**, and that was checked rather than assumed: `compare_strategy.py`
+is **exit 0 at warmups 100 / 200 / 500 / 1000** on `VANTAGE_XAUUSD, 15_bfe65.csv` (21,052 bars,
+2025-10-01 →). ⚠ **That export ran Require-FVG ON, so the no-gap fallback branch was never entered
+and the green says nothing about it** — the standing rule that a gate speaks only about code both
+sides executed.
+
+⚠ **It is the ONLY charge site that used the requested size.** The TP rungs, the exits and the
+scale-in adds all bill against the real position; checked, not assumed.
+
+---
+
 ### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
 
 **Read this before reporting "the exit price matches no stop and no target" again.** That symptom
