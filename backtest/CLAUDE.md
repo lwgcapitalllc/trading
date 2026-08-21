@@ -833,6 +833,38 @@ R is unchanged (it is normalised) and the closing balance falls $204.9M → $4.7
 shrink-to-fit design working, and it is a different lever from the one Aaron asked for; **blocking
 only happens when a leg asks while the budget is genuinely full.**
 
+🔴 **THE CONTENTION RULE IS NOW A CHOICE, AND IT IS STATED RATHER THAN IMPLIED.**
+`PortfolioAccount(all_or_nothing=...)`. **False (default) = shrink-to-fit**, the behaviour every
+stored run used. **True = *risk is never layered***: an entry that cannot be granted in FULL is
+refused outright and the budget stays with whoever already holds it. ⚠ **Both obey the cap** — the
+rule decides WHICH TRADE you end up in, never how much is at risk. ⚠ **It defaults OFF on purpose**;
+a default that changed it would re-write every recorded run rather than add an option.
+
+⚠ **It is deliberately NOT an entry floor, and the floor route was tried and abandoned.** A floor is
+ONE number for the whole account while legs risk different amounts, so any floor high enough to make
+a 10% leg all-or-nothing also bans a 2.5% leg outright whatever the room — MEASURED at **64 refusals
+and 0 trades**, identical at a 10% and a 12.5% cap, which reads like an allocator verdict and is a
+size ban. Asking the account *"was this granted in full?"* needs no per-leg number and holds for any
+number of legs. ⚠ It rides on `_is_shrunk`, so it inherits that method's tolerance ON PURPOSE — a leg
+whose own risk equals the cap misses by a float's last bit, and without it the rule would refuse
+every uncontested entry.
+
+🔴 **MEASURED, and the result is the argument for building PRIORITY next.** 186,910 M15 bars,
+`puprime_ecn`, A+ 10% under a 10% cap with the loss-recovery leg (`recovery_stack.py
+--on-contention refuse`): **176 A+ entries refused, 0 shrunk, A+ 127.11R → 85.05R, and the account
+ends $13.2M → $1.0M (−92%) with drawdown 50.2% → 55.2%.** The cause is structural rather than a
+tuning miss: **A+ risks the cap in full, so it needs the ENTIRE budget to trade at all, and the
+moment the other leg holds anything A+ is refused.** A leg worth **$14,025 standalone over eight
+years** locks out the one carrying the return. ⚠ **The account has no notion of leg PRECEDENCE** —
+whoever asks first takes the budget and the legs are treated as equals, which they are not. **Do not
+enable this rule on a real comparison until precedence exists.**
+
+⚠ **Neither contention rule touches the peak open risk, and that was checked rather than assumed.**
+The peak is set by the balance FALLING under a reservation already granted — overnight financing is
+the big one — not by contention. MEASURED: **A+ alone with no second leg in the run reproduces the
+identical 2,984 over-cap ticks and the identical 10.9140% peak.** See
+`docs/CARRY_COST_AND_THE_DAILY_RISK_RESET.md`.
+
 ⚠ **This is the BACKTEST side. The live side is unbuilt** (`docs/LIVE_TRADING_PIPELINE.md` → G10)
 and cannot reuse this object — live bots are separate OS processes, so the live allocator has to
 read the broker's real exposure across magic numbers. **Whatever rule is tuned here has to be the

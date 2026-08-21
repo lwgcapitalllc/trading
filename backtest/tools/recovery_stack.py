@@ -284,30 +284,29 @@ def main() -> int:
     # it to the leg's own full risk and "shrunk" becomes impossible — every contested entry is
     # either granted in full or refused, which is *risk is never layered*. Left at 0 it is
     # shrink-to-fit. **No second allocator is written here**: the account is the canonical one.
-    if args.on_contention == "refuse":
-        # 🔴 REFUSED, rather than answered wrongly. `entry_floor_pct` is ONE number for the whole
-        # account, and the two legs risk different amounts — A+ 10%, the recovery 2.5%. A floor
-        # high enough to make A+ all-or-nothing (10%) is also higher than everything the recovery
-        # ever asks for, so it refuses the recovery on EVERY setup whatever the room. MEASURED:
-        # 64 recovery refusals, 0 recovery trades, identical output at a 10% and a 12.5% cap —
-        # a table that looks like an allocator verdict and is a floor banning one leg outright.
-        # Expressing "refuse the later one when the budget is full" needs a PER-LEG floor, which
-        # is a change to the shared account the lab also drives. Not a default to slip in at the
-        # end of an afternoon.
-        raise SystemExit(
-            "--on-contention refuse is NOT IMPLEMENTED and will not be faked.\n"
-            "  The account carries one entry floor for every leg, and these legs risk different\n"
-            "  amounts (A+ 10%, recovery 2.5%). Any floor that makes A+ all-or-nothing also\n"
-            "  refuses every recovery entry outright, so the run reports an allocator decision\n"
-            "  that is really a size ban — 64 refusals, 0 trades, and the same answer at a 10%\n"
-            "  and a 12.5% cap.\n"
-            "  It needs a per-leg floor on PortfolioAccount. Use --on-contention share, and read\n"
-            "  the shrink counts in its refusal log as the size of what a refusal rule would\n"
-            "  instead have blocked."
-        )
-    floor = 0.0
+    # 🔴 THE CONCURRENCY RULE, and it is a CHOICE this tool makes visible rather than a default
+    # nobody can see. 'share' grants a contested entry whatever room is left (shrink-to-fit).
+    # 'refuse' is *risk is never layered*: an entry that cannot be granted in FULL is refused
+    # outright and the budget stays with whoever already holds it. Both obey the cap — the rule
+    # decides WHICH TRADE you end up in, not how much is at risk.
+    #
+    # ⚠ This was previously expressed as an entry FLOOR and could not be made to work: the floor
+    # is one number for the whole account while these legs risk different amounts (A+ 10%,
+    # recovery 2.5%), so any floor high enough to make A+ all-or-nothing also refused every
+    # recovery entry whatever the room — measured at 64 refusals, 0 trades, and the same table at
+    # a 10% and a 12.5% cap, which reads like an allocator verdict and is a size ban. Asking the
+    # account "was this granted in full?" needs no per-leg number at all.
+    #
+    # ⚠ **Neither rule touches the peak open risk.** That number is set by the balance FALLING
+    # under a reservation already granted, and MEASURED: A+ alone with no second leg in the run
+    # produces the identical 2,984 over-cap ticks and the identical 10.9140% peak. A contention
+    # rule cannot move it, because it is not about contention.
+    refuse = args.on_contention == "refuse"
     account = PortfolioAccount(
-        balance=cap, risk_cap_pct=args.risk_cap_pct / 100.0, entry_floor_pct=floor
+        balance=cap,
+        risk_cap_pct=args.risk_cap_pct / 100.0,
+        entry_floor_pct=0.0,
+        all_or_nothing=refuse,
     )
     lp, lr = build_legs(
         cfg, rule, df, account=account, capital=cap, profile=profile, strategy_cls=S
@@ -349,9 +348,9 @@ def main() -> int:
     print(
         f"\nCONCURRENCY RULE: {args.on_contention.upper()}"
         + (
-            "  (a contested entry takes whatever room is left)"
-            if floor == 0.0
-            else f"  (an entry that cannot be granted in full is REFUSED; floor {100 * floor:g}%)"
+            "  (an entry that cannot be granted in FULL is refused outright)"
+            if refuse
+            else "  (a contested entry takes whatever room is left)"
         )
     )
     for leg_name in (PRIMARY, RECOVERY):

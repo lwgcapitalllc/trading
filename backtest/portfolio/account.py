@@ -90,11 +90,30 @@ class PortfolioAccount:
     `entry_floor_pct` of balance in risk is skipped rather than trickled in."""
 
     def __init__(
-        self, *, balance: float, risk_cap_pct: float, entry_floor_pct: float = 0.0
+        self,
+        *,
+        balance: float,
+        risk_cap_pct: float,
+        entry_floor_pct: float = 0.0,
+        all_or_nothing: bool = False,
     ) -> None:
         self.balance = float(balance)
         self.risk_cap_pct = float(risk_cap_pct)
         self.entry_floor_pct = float(entry_floor_pct)
+        # THE CONTENTION RULE, stated rather than implied. False = shrink-to-fit: a contested
+        # entry takes whatever room is left. True = *risk is never layered*: an entry that cannot
+        # be granted in FULL is refused outright and the budget stays with whoever already holds
+        # it. Both obey the cap — this decides WHICH TRADE you end up in, not how much is at risk.
+        #
+        # ⚠ It is deliberately not an entry floor. A floor is one number for the whole account
+        # while legs risk different amounts, so any floor high enough to make a 10% leg
+        # all-or-nothing also bans a 2.5% leg outright whatever the room (measured: 64 refusals,
+        # 0 trades). "Was this granted in full?" needs no per-leg number and holds for any
+        # number of legs.
+        #
+        # ⚠ Defaults OFF. Every run recorded before this existed used shrink-to-fit, and a
+        # default that changed them would re-write history rather than add an option.
+        self.all_or_nothing = bool(all_or_nothing)
         self._positions: dict[str, Position] = {}
         self._peak = self.balance
         self.halted = False
@@ -147,6 +166,11 @@ class PortfolioAccount:
             self._log_contention(leg, dir, desired_risk, 0.0, blocked=True)
             return 0.0
         if self._is_shrunk(desired_risk, granted_risk):
+            if self.all_or_nothing:
+                # Refused, not "granted and then dropped" — the log records 0.0 granted so a
+                # reader cannot mistake this for a shrink that happened to be discarded.
+                self._log_contention(leg, dir, desired_risk, 0.0, blocked=True)
+                return 0.0
             self._log_contention(leg, dir, desired_risk, granted_risk, blocked=False)
         return self._open(
             leg, dir, entry, stop, desired_qty, desired_risk, granted_risk, point_value
@@ -172,6 +196,10 @@ class PortfolioAccount:
                 out[r["leg"]] = 0.0
                 continue
             if self._is_shrunk(desired_risk, granted_risk):
+                if self.all_or_nothing:
+                    self._log_contention(r["leg"], r["dir"], desired_risk, 0.0, blocked=True)
+                    out[r["leg"]] = 0.0
+                    continue
                 self._log_contention(r["leg"], r["dir"], desired_risk, granted_risk, blocked=False)
             out[r["leg"]] = self._open(
                 r["leg"],

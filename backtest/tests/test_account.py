@@ -344,3 +344,95 @@ def test_a_floor_still_refuses_an_entry_the_budget_genuinely_shrank():
     granted = acct.request_fill("second", 1, 2000.0, 2000.0 - dist, qty, pv)
     assert granted == 0.0, "an entry with only half its risk available was not refused"
     assert any(c["blocked"] for c in acct.contention)
+
+
+# ── all-or-nothing: refuse a contested entry rather than shrink it ───────────────
+#
+# 🔴 THE RULE THIS EXPRESSES: *risk is never layered*. Shrink-to-fit takes a smaller version of
+# the trade; this refuses it outright and leaves the budget to whoever already holds it. Both stay
+# under the cap — this is a preference about WHICH trade you end up in, not a tighter limit.
+#
+# ⚠ It is deliberately NOT expressed as an entry floor. A floor is one number for the whole
+# account while legs risk different amounts, so any floor high enough to make a 10% leg
+# all-or-nothing also bans a 2.5% leg outright whatever the room — MEASURED at 64 refusals and 0
+# trades. Asking "was this granted in full?" needs no per-leg number and works for any number of
+# legs, which is why the policy lives on the grant rather than on a size.
+#
+# ⚠ It rides on `_is_shrunk`, so it inherits that method's tolerance ON PURPOSE. A leg whose own
+# risk equals the cap lands exactly on the boundary and misses by a float's last bit; without the
+# tolerance this policy would refuse every uncontested entry — the same defect the floor test
+# below already pins, and the reason that one exists.
+
+
+def test_all_or_nothing_refuses_the_entry_the_budget_would_have_shrunk():
+    """RED by mutation: drop the `all_or_nothing` branch in `request_fill`, and the contested leg
+    is granted 80.0 (shrunk) instead of refused."""
+    a = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10, all_or_nothing=True)
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=120.0, point_value=1.0)  # 600
+    qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    assert qty == 0.0  # would have been shrunk to 80 → refused
+    assert not a.has_position("B")
+    assert a.contention[-1]["blocked"] is True
+    assert a.contention[-1]["granted_risk"] == 0.0  # refused, not "granted 400 and dropped"
+    assert a.reserved() == 600.0  # A keeps the whole budget it was using
+
+
+def test_all_or_nothing_still_grants_an_entry_that_fits_in_full():
+    """The policy must only fire on CONTENTION. An entry with room for its full size is untouched,
+    or the rule is a size ban wearing an allocator's clothes."""
+    a = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10, all_or_nothing=True)
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=100.0, point_value=1.0)  # 500
+    qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=100.0, point_value=1.0)
+    assert qty == 100.0  # 500 + 500 = the 1000 cap exactly
+    assert a.reserved() == 1000.0
+
+
+def test_all_or_nothing_does_not_refuse_a_leg_sized_exactly_at_the_cap():
+    """🔴 The boundary that has already broken the floor test once. A lone leg risking exactly the
+    cap reaches `granted` and `desired` by different arithmetic and they differ in the last bit.
+    RED by mutation: change `_is_shrunk` back to a bare `granted_risk < desired_risk`."""
+    a = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10, all_or_nothing=True)
+    qty = a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    assert qty == 200.0, qty  # 1000 risk against a 1000 cap
+    assert a.contention == []  # nothing contended; nothing logged
+
+
+def test_all_or_nothing_applies_on_the_same_bar_tie_path_too():
+    """Two legs filling on the SAME bar split the room, so both get shrunk — and under this policy
+    both must be refused. RED by mutation: drop the branch in `request_fills` only, and this fails
+    while the single-fill test above still passes."""
+    a = PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10, all_or_nothing=True)
+    out = a.request_fills(
+        [
+            {
+                "leg": "A",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 95.0,
+                "desired_qty": 150.0,
+                "point_value": 1.0,
+            },  # 750
+            {
+                "leg": "B",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 95.0,
+                "desired_qty": 150.0,
+                "point_value": 1.0,
+            },  # 750, total 1500 vs 1000 room
+        ]
+    )
+    assert out == {"A": 0.0, "B": 0.0}
+    assert a.reserved() == 0.0
+    assert all(c["blocked"] is True for c in a.contention)
+
+
+def test_all_or_nothing_defaults_OFF_so_no_stored_run_moves():
+    """The policy is opt-in. Every run recorded before it existed used shrink-to-fit, and a default
+    that quietly changed them would re-write history rather than add an option."""
+    a = _acct()
+    assert a.all_or_nothing is False
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=120.0, point_value=1.0)
+    qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    assert abs(qty - 80.0) < 1e-9  # shrunk, exactly as before
+    assert SoloAccount(balance=10_000.0).all_or_nothing is False
