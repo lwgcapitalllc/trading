@@ -48,14 +48,24 @@ interface Props {
  * **Extend the existing control before inventing one** — the house rule, and the reason this looked
  * off in a panel where everything else looked native.
  */
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
+function Toggle({
+  on,
+  onClick,
+  disabled,
+}: {
+  on: boolean
+  onClick: () => void
+  disabled?: boolean
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      aria-disabled={disabled}
+      disabled={disabled}
       onClick={onClick}
-      className="inline-flex flex-shrink-0 items-center gap-2"
+      className="inline-flex flex-shrink-0 items-center gap-2 disabled:opacity-40"
     >
       <span
         className={`relative h-[23px] w-10 rounded-full transition-colors ${
@@ -85,6 +95,11 @@ export default function ChartSettingsPanel({
     (k) => settings[k] === DEFAULT_CHART_SETTINGS[k]
   )
 
+  // A row whose parent setting is off changes nothing on the chart, so it is shown greyed and
+  // refuses the click rather than moving a switch with no effect. ⚠ It keeps its VALUE — the parent
+  // coming back on must restore the child exactly as the reader left it, so this never writes.
+  const inert = (def: SettingDef) => def.dependsOn != null && !settings[def.dependsOn]
+
   const row = (def: SettingDef) => {
     // One branch per widget kind. `kind` is a union, so adding a kind without handling it here is a
     // type error rather than a silently missing control.
@@ -93,6 +108,7 @@ export default function ChartSettingsPanel({
         return (
           <Toggle
             on={settings[def.key] as boolean}
+            disabled={inert(def)}
             onClick={() => onChange({ ...settings, [def.key]: !settings[def.key] })}
           />
         )
@@ -138,13 +154,21 @@ export default function ChartSettingsPanel({
             : section.items!.map((def) => (
                 <div
                   key={def.key}
+                  // A declared TEST SEAM, one per setting. A row is a label, an ⓘ and a control in
+                  // three sibling elements, so a locator built from the visible words lands on the
+                  // label's own wrapper and never sees the switch beside it.
+                  data-setting={def.key}
                   className="flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-bg-sunken"
                 >
                   {/* The explanation is BEHIND the ⓘ, not under the label. A settings list is read by
                       scanning names, and a paragraph under every row triples the height of a panel
                       that has to fit beside a chart. `InfoTip` is the app's shared one — portalled to
                       <body>, so this panel's scroll box cannot crop it. */}
-                  <div className="flex min-w-0 flex-1 items-center text-[11px] font-medium text-text-primary">
+                  <div
+                    className={`flex min-w-0 flex-1 items-center text-[11px] font-medium text-text-primary ${
+                      inert(def) ? 'opacity-40' : ''
+                    }`}
+                  >
                     <span className="truncate">{def.label}</span>
                     {def.help && <InfoTip text={def.help} />}
                   </div>

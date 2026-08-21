@@ -189,11 +189,48 @@ every setting of that kind that will ever exist.
   TYPE is dropped rather than trusted (the blob is editable by hand and by any older build). Same
   rule `reconcileToggles` follows for overlay groups, and it fails the same silent way if broken:
   the reader's chart quietly loses a control they never turned off.
+- 🔴 **`tradeLabels`** → `TradeExtend.showLabels` (2026-08-20, Aaron's ask). Off drops every
+  ANNOTATION a trade draws — the `Entry` / `SL` / `TP1` / `Furthest` / `Deepest` / `Add` chips down
+  the side, and the `Won` / `Lost` verdict over the end — and leaves the DRAWING: the bands, the
+  level lines and their dots. His reason, and it is the design: *"I will just be able to eye it off
+  of the colour of the drawdown filters and the TP zone."* On a chart with several trades in view
+  the words are most of what is painted (MEASURED: **11,959 pixels**, ~4% of the panel's frame, on
+  one parked trade) and the green/red already say which way it went.
+  - 🔴 **WHATEVER NAMES THE TRADE SURVIVES, AND THAT IS THE WHOLE EXCEPTION** — a stack's strategy,
+    the `SEC` / `REC` book tag, an add lot's `Add`. Aaron: *"leave the name of the trade in there if
+    it has a name."* Which trade this IS cannot be read off the drawing at all: the colours grade
+    the outcome and say nothing about whether this is the setup, its 1m re-entry or the recovery
+    that followed it. The verdict word goes with the side chips, because a win is already the green.
+  - ⚠ **The chip is DROPPED ENTIRELY when nothing is left to say** — a single-run trade has no
+    layer name and no kind tag, so it draws no chip at all. An empty one still paints its dark
+    rounded box, which on a chart stripped of every other label is the only thing left to look at.
+  - ⚠ **The pattern NAME goes too**, though it has its own setting one section down. It is an
+    annotation about what happened at the turn, in the same family as `Furthest` and `Deepest` —
+    keeping it while dropping `Won` would be arbitrary, and it is one toggle away.
+  - ⚠ **The gate is ONE choke point (`addLabel`), never one per call site.** A trade grew its
+    annotations one call at a time — `SL`, then the legs, then `Furthest`/`Deepest`, then the adds,
+    then the TP ladder — and a flag wired at each would be a list the NEXT annotation is free to be
+    left off, silently, because nothing fails when a label keeps drawing.
+  - ⚠ **Undefined means ON**, same rule as `showPrices` below: a caller that has not been updated
+    keeps the shipped reading.
 - **`tradeLabelPrices`** → `TradeExtend.showPrices`. Off drops the number from every side label,
   leaving `Entry` / `SL` / `TP1`. **Undefined means ON**, so a caller that has not been updated keeps
   the shipped reading. It became a setting because a 1m re-entry's box is short by construction and
-  the price is most of each chip's width.
+  the price is most of each chip's width. **It now declares `dependsOn: 'tradeLabels'`** — see below.
 - **`candleMarkLabels`** → the Candlestick Reversals tag. See the layer's own section below.
+- **`dependsOn` — a row that is INERT is greyed, never hidden** (2026-08-20). A setting whose parent
+  is off changes nothing on the chart, so the panel shows it at 40% and refuses the click. ⚠ **It is
+  PRESENTATION ONLY, and the parent must still be honoured where the setting is READ** — greying a
+  control the drawing code ignores would be a second claim about one behaviour, free to disagree
+  with the first. ⚠ **Greyed rather than hidden**, the house rule `ParamEditor`'s `disable_if` and
+  `AccountsTab`'s unassignable account both follow: a setting that vanishes reads as one that does
+  not exist. ⚠ **The inert row KEEPS ITS VALUE** — the panel never writes on its behalf, so
+  switching the parent back on restores the reader's own answer rather than a default.
+- **`data-setting="<key>"` on every row is a declared TEST SEAM** (2026-08-20), beside
+  `data-applied-lo/-hi` and `data-indicators-on` on the panel root. A row is a label, an ⓘ and a
+  control in three SIBLING elements, so a locator built from the visible words lands on the label's
+  own wrapper and never sees the switch beside it — and the check then fails as *element not found*,
+  which reads as a missing setting rather than as a bad locator. It cost two suites a run each.
 - **The `help` text renders behind an ⓘ, never under the label** (2026-08-08, Aaron's ask). A
   settings list is read by SCANNING NAMES, and a paragraph under every row triples the height of a
   panel that has to fit beside a chart — two settings already filled the box above the fib ladder.
@@ -496,6 +533,11 @@ here**, so the chart shows exactly what the strategy saw.
   - **← / → work only while the pointer is over the panel** (`hoveredRef`, set on the ROOT div so the
     keys keep working after clicking an arrow). The arrow keys belong to the page everywhere else, and
     a chart that swallowed them globally would be a bug on every host that embeds two of these.
+  - ⚠ **A later overlay rebuild REPAINTS the focus line under the trade boxes it crosses**, because
+    klinecharts draws overlays in creation order and the trade effects re-create theirs on any
+    change (a Chart setting, a filter). MEASURED while proving the annotations toggle: 127 pixels of
+    that one dashed column, and nothing else on the frame. Cosmetic, pre-existing, recorded here so
+    the next reader does not chase it as a bug in whatever they just changed.
   - **Both arrows disable while `jumping`** and `stepMarker` bails on `jumpingRef` — `goToDate`
     refuses to start a second jump, so without the guard the readout would advance while the chart
     stood still.
@@ -563,7 +605,10 @@ here**, so the chart shows exactly what the strategy saw.
   each profit-take, the entry) is a **thin dotted line** with a **small dot** at the left edge and a
   compact **rounded label** (`SL`/`TP1`/`TP2`/`TP3`/`Exit`/`Entry`/`Deepest`/`Furthest`; the TP/Exit
   label comes from the leg's exit id via `chart_spec._leg_label`, one style for every rung — no
-  per-TP colours). **Every label states its own PRICE** (`SL 4031.84`, not `SL`) as of 2026-08-03,
+  per-TP colours). 🔴 **Every one of these words can be switched
+  off whole** — Chart settings → Trades → *Annotate trades* (2026-08-20): the lines, the dots and the
+  bands stay, and only what NAMES the trade survives in the chip. See *Chart settings* above.
+  **Every label states its own PRICE** (`SL 4031.84`, not `SL`) as of 2026-08-03,
   Aaron's call: these are the trade's record of what happened, so each carries the number it
   happened at instead of making you read it off the axis — `precision` rides in on `extendData`.
   **`Deepest` (`maePrice`) and `Furthest` (`mfePrice`) landed with it** — how far the trade ran each
@@ -605,7 +650,25 @@ here**, so the chart shows exactly what the strategy saw.
   though an NT8/MT5 trade cannot be a secondary today**: a marker that appeared only on the rich path
   would read as *not a re-entry* rather than as *this renderer had less to work with*, and an absence that
   looks like an answer is this repo's most-repeated defect. **The standing lesson is small and this folder
-  has recorded it before: a placement can be right in principle and wrong on the data — render it.** The rich fields are emitted by
+  has recorded it before: a placement can be right in principle and wrong on the data — render it.**
+  🔴 **The tag GENERALISED on 2026-08-20, and the reason is the standing lesson rather than the
+  feature.** A trade now states which BOOK it came from — the strategy's own setup, the 1m re-entry,
+  or a RECOVERY (the counter-trade the loss-recovery rule takes after a loss) — and any non-primary
+  kind wears its own three-letter tag in the same slot (`REC · Won`). **The bug that prompted it was
+  NOT a missing tag.** Recovery trades reached the chart with no `mfe_price`/`mae_price` on them, so
+  every one took the DEGRADED path and drew as a bare rectangle with a direction triangle and nothing
+  else — no `Entry`, no `SL`, no bands, no chip. Screenshotted beside a normal loser wearing its full
+  profit-depth view, it read as *a different kind of thing on this chart*, which is the wrong
+  conclusion twice over: same kind of thing, thinner record. **A fallback is not a style. Rendering an
+  absence as a distinct SHAPE turns "we recorded less" into "this is different", and nothing on the
+  chart lets a reader tell the two apart** — the same defect as the `SEC`-only-on-the-rich-path one
+  just above, arriving from the DATA side instead of the drawing side. ⚠ **The fix was entirely on the
+  data side and not one line of the drawing changed**: `mpc_sos_fade/recovery.py` now carries the
+  excursion, and the identical figures render it. ⚠ **A recovery trade legitimately shows NO
+  `TP1`/`TP2`** — that rule has no target ladder, it locks at +1R and trails — so that absence IS the
+  picture rather than another thin record. ⚠ **A run STORED before this lands keeps the thin record**:
+  `_build_trades` reads the run's saved `equity_curve`, nothing backfills it, so an old run still
+  draws bare rectangles and only a re-run fixes it. The rich fields are emitted by
   `backtest/output.py` (`mfe_price`/`mae_price`/`stop_price`/`legs`, all reporting-only — parity-safe)
   → `chart_spec` (which filters `legs` to real profit-takes beyond a 0.1R scratch band, so a
   breakeven-stop fill is never drawn as profit, and attaches each surviving leg's label). One on/off

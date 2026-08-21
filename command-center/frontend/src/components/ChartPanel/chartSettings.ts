@@ -21,6 +21,9 @@
  */
 
 export interface ChartSettings {
+  /** Trades are annotated at all — the `Entry` / `SL` / `TP1` chips down the side and the
+   *  `Won` / `Lost` verdict over the extreme. Off leaves the drawing: bands, lines, dots. */
+  tradeLabels: boolean
   /** Trade annotations carry their PRICE (`Entry 2635.58`) as well as their name. */
   tradeLabelPrices: boolean
   /** A repainted candlestick-reversal candle names its pattern (`Bearish Engulfing`). */
@@ -30,6 +33,14 @@ export interface ChartSettings {
 }
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  // Default ON — it is how a trade has read since the layer shipped, and a chart that annotated
+  // nothing by default would hide the record rather than declutter it.
+  //
+  // ⚠ **OFF still keeps whatever NAMES the trade** — a stack's strategy name, the `SEC`/`REC` book
+  // tag, an add lot's `Add` — because those answer WHICH trade this is, which is not something the
+  // colours can say (Aaron, 2026-08-20: *"leave the name of the trade in there if it has a name"*).
+  // The verdict word goes with the rest: won and lost are already the green and the red.
+  tradeLabels: true,
   // Default ON — it is how the annotations have read since 2026-08-03, when the prices were added
   // deliberately: a bare `SL` says a level exists and makes you read it off the axis. It is a
   // setting now because a 1m re-entry's box is short enough that the chips stack on top of each
@@ -57,6 +68,14 @@ export interface SettingDef {
   /** One line under the label. Say what the OFF state looks like — that is the part a reader
    *  cannot guess from the name. */
   help?: string
+  /** This row does nothing while the named setting is OFF, so the panel greys it out and refuses
+   *  the click.
+   *
+   *  ⚠ It is presentation only — the parent still has to be honoured where the setting is READ.
+   *  Greying a control that the drawing code ignores would be a second claim about the same
+   *  behaviour, free to disagree with the first, which is this repo's most-repeated defect. The
+   *  panel is the label; the renderer is the code that consumes it. */
+  dependsOn?: keyof ChartSettings
 }
 
 /** A section is EITHER a list of registry-driven controls or one named custom block the host
@@ -80,9 +99,19 @@ export const SECTIONS: SettingSection[] = [
     title: 'Trades',
     items: [
       {
+        key: 'tradeLabels',
+        label: 'Annotate trades',
+        kind: 'toggle',
+        help:
+          'Off = the drawing only — the bands, the level lines and their dots, with no Entry /' +
+          ' SL / TP chips down the side and no Won / Lost over the end. A trade that carries a' +
+          ' NAME keeps it: the strategy on a stack, a re-entry or recovery tag, an add lot.',
+      },
+      {
         key: 'tradeLabelPrices',
         label: 'Show prices in labels',
         kind: 'toggle',
+        dependsOn: 'tradeLabels',
         help: 'Off = just Entry / SL / TP1, with no number beside them.',
       },
     ],

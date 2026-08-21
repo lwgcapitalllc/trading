@@ -129,7 +129,16 @@ export interface ChartTrade {
    *  can describe a short exiting BELOW its entry for a P&L of zero, and the missing half of that
    *  arithmetic is these lots — bought further into profit, closed at the same exit. */
   adds?: ChartTradeAdd[]
-  kind?: 'primary' | 'secondary' // 15m primary vs 1m sniper re-entry; solid vs dashed border
+  /** Which BOOK this trade belongs to. `primary` is the strategy's own setup; `secondary` is the
+   *  1m sniper re-entry; `recovery` is a counter-trade the loss-recovery rule took after a loss.
+   *
+   *  ⚠ It changes the TAG in the outcome chip and nothing else. Every kind is drawn with the same
+   *  profit-depth figures off the same fields, because a recovery trade is a trade — it has an
+   *  entry, an excursion, an exit and a P&L, and drawing it any other way would be a second
+   *  rendering of the same thing, free to drift. A kind that arrived here without its excursion
+   *  fields used to degrade to a bare rectangle, which read as a different KIND of thing rather
+   *  than as a thinner record. */
+  kind?: 'primary' | 'secondary' | 'recovery'
   exitReason?: string // carried in data; never drawn on the chart
   // Profit-depth fields — all optional; absent ⇒ the trade falls back to the plain box.
   mfePrice?: number // deepest FAVOURABLE price the hold reached (bottom of the green for a short)

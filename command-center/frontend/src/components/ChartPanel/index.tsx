@@ -2847,6 +2847,10 @@ export default function ChartPanel({
           // Absent fields make the overlay fall back to the plain entry→exit box.
           precision: pricePrecision, // every side label prints its own price
           showPrices: chartSettings.tradeLabelPrices, // reader preference — Chart settings → Trades
+          // …and whether the annotations are drawn AT ALL. Off leaves the bands, the level lines
+          // and their dots — the trade is read by shape and colour — and cuts the outcome chip
+          // down to whatever NAMES this trade. See `Chart settings` in this folder's CLAUDE.md.
+          showLabels: chartSettings.tradeLabels,
           entryPrice: tr.entryPrice,
           exitPrice: tr.exitPrice,
           mfePrice: tr.mfePrice,
@@ -2947,6 +2951,9 @@ export default function ChartPanel({
             dirColor: tr.dir === 'long' ? theme.pos : theme.neg,
             precision: pricePrecision,
             showPrices: chartSettings.tradeLabelPrices,
+            // With annotations off a lot keeps its `Add` chip — that is its NAME, and it is the
+            // only thing separating a lot's box from the trade's own box drawn around it.
+            showLabels: chartSettings.tradeLabels,
             entryPrice: a.price,
             exitPrice: a.exitPrice,
             mfePrice: a.mfePrice,

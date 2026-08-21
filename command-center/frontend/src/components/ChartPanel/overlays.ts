@@ -214,7 +214,7 @@ export interface LabelItem {
  *  degrades to the plain outcome box when the rich fields (mfe / legs) are absent. */
 interface TradeExtend {
   dir?: 'long' | 'short'
-  kind?: 'primary' | 'secondary'
+  kind?: 'primary' | 'secondary' | 'recovery'
   pnl?: number
   outcome?: 'won' | 'scratch' | 'lost' // graded by the backend; absent ⇒ fall back to `pnl > 0`
   adds?: { price: number; ms: number; qty: number }[] // scale-in lots bought after the entry
@@ -245,6 +245,11 @@ interface TradeExtend {
   // preference (Chart settings), NOT a data change — the levels drawn are identical either way.
   // Undefined means ON, so a caller that has not been updated keeps the shipped behaviour.
   showPrices?: boolean
+  // `false` drops every ANNOTATION: the side chips and the verdict word. What NAMES the trade
+  // survives — see the outcome chip. Same rule as `showPrices`: a reader preference, and the
+  // figures the labels sat beside are drawn identically either way, so nothing here changes what
+  // the chart is saying about the trade, only how much of it is spelled out.
+  showLabels?: boolean
   /** The candlestick reversal at this trade's turn, BY NAME (`Hammer`), or `no candle`. `undefined`
    *  = the layer is off, i.e. NOT ASKED — and it must not render as "no candle". Same rule as
    *  `mt5_link` everywhere else here: never let "no" and "cannot ask" be the same value.
@@ -396,7 +401,11 @@ export function registerChartOverlays(): void {
       const outcome = d.color ?? favColor
       const arrowColor = d.dirColor ?? outcome
       const isLong = d.dir !== 'short'
-      const secondary = d.kind === 'secondary'
+      // The tag a non-primary trade wears. A trade's SHAPE cannot say which book it came from,
+      // and that is the one fact worth stating on it; everything else about how it is drawn is
+      // identical, deliberately. `null` for a primary (and for an unknown kind — a tag nobody
+      // can read is worse than none).
+      const kindTag = d.kind === 'secondary' ? 'SEC' : d.kind === 'recovery' ? 'REC' : null
       const sign = isLong ? 1 : -1 // favourable ⇔ (price − entry) * sign > 0
 
       const x0 = Math.min(entry.x, exit.x)
@@ -423,11 +432,12 @@ export function registerChartOverlays(): void {
         ignoreEvent: true,
       })
 
-      // A SECONDARY trade is the 1m sniper RE-ENTRY on a leg the primary already traded, and it is
-      // the one fact about a trade that its shape on the chart cannot state. It has been drawn with
-      // a dashed box border since the layer shipped, which is invisible in practice: a dashed border
-      // only reads as "different" when a solid one is next to it, and re-entries are rare enough
-      // that there usually isn't one on screen.
+      // Which BOOK a trade came from is the one fact about it that its shape cannot state — a
+      // SECONDARY is the 1m sniper RE-ENTRY on a leg the primary already traded, a RECOVERY is the
+      // counter-trade the loss-recovery rule took after a loss. Both have also been drawn with a
+      // dashed box border, which is invisible in practice: a dashed border only reads as
+      // "different" when a solid one is next to it, and neither kind is common enough for there
+      // usually to be one on screen.
       //
       // Tagged at the ENTRY rather than folded into the Won/Lost chip, deliberately. The question a
       // reader has is "why is there a SECOND trade on this leg", which is a question about the
@@ -445,7 +455,7 @@ export function registerChartOverlays(): void {
         attrs: {
           x: entry.x,
           y: isLong ? entry.y + GAP + HEIGHT + 9 : entry.y - GAP - HEIGHT - 9,
-          text: 'SEC',
+          text: kindTag ?? '',
           align: 'center',
           baseline: 'middle',
         },
@@ -510,16 +520,16 @@ export function registerChartOverlays(): void {
               color: withAlpha(outcome, 0.16),
               borderColor: withAlpha(outcome, 0.9),
               borderSize: 1,
-              borderStyle: secondary ? 'dashed' : 'solid',
+              borderStyle: kindTag ? 'dashed' : 'solid',
               borderDashedValue: [4, 4],
             },
             ignoreEvent: true,
           },
           arrowFig(),
-          // Tagged on the data-poor path too. An NT8/MT5 trade cannot be a secondary today, but a
-          // marker that only appears on the rich path would read as "not a re-entry" rather than
-          // as "this renderer had less to work with" — the absence would be a claim.
-          ...(secondary ? [secTagFig()] : []),
+          // Tagged on the data-poor path too. An NT8/MT5 trade carries no kind today, but a
+          // marker that only appears on the rich path would read as "primary" rather than as
+          // "this renderer had less to work with" — the absence would be a claim.
+          ...(kindTag ? [secTagFig()] : []),
         ]
       }
 
@@ -576,8 +586,19 @@ export function registerChartOverlays(): void {
       // shipped reading is unchanged for anything that has not been updated to pass it.
       const px = (p: number) => p.toFixed(d.precision ?? 2)
       const withPrice = d.showPrices !== false
+      // …and the whole annotation layer is itself a setting (Chart settings → Trades, 2026-08-20).
+      // Aaron's ask, in his words: *"I will just be able to eye it off of the colour."* Every level
+      // keeps its LINE and its DOT — only the words go — so the trade is read by shape and colour,
+      // which is what a chart full of them is read by anyway once you know the layout.
+      //
+      // ⚠ It is collected at ONE choke point on purpose. A trade grew its annotations one call at a
+      // time (`SL`, then the legs, then `Furthest`/`Deepest`, then the adds, then the TP ladder),
+      // and a toggle wired at each call site would be a list that the NEXT annotation is free to be
+      // left off — silently, because nothing fails when a label keeps drawing.
+      const withLabels = d.showLabels !== false
       const labels: { y: number; text: string; color: string }[] = []
       const addLabel = (p: number | undefined, text: string, color: string) => {
+        if (!withLabels) return
         const y = yOf(p)
         if (y == null) return
         labels.push({ y, text: withPrice ? `${text} ${px(p as number)}` : text, color })
@@ -792,10 +813,22 @@ export function registerChartOverlays(): void {
         // …and the reversal candle at this trade's turn, BY NAME. ⚠ `undefined` prints NOTHING —
         // the layer is off, so the run has not been asked, and `no candle` there would state a
         // measurement nobody took.
-        const parts = [d.layerName, secondary ? 'SEC' : null, outcome, d.patternName].filter(
-          Boolean
-        )
-        const text = parts.join(' · ')
+        //
+        // 🔴 **With annotations off this chip is cut to what NAMES the trade, and is dropped
+        // entirely when there is no name.** The verdict word goes with the side chips — a win is
+        // already the green and a loss the red, which is the reading Aaron asked for — but WHICH
+        // trade this is cannot be read off the drawing at all: on a stack that is the strategy, and
+        // on a single run it is the `SEC` / `REC` book tag that separates a re-entry or a recovery
+        // from the setup it followed. The pattern name goes too: it is an annotation about what
+        // happened at the turn, in the same family as `Furthest` and `Deepest`, and it has its own
+        // control one section down in the same panel.
+        const parts = withLabels
+          ? [d.layerName, kindTag, outcome, d.patternName]
+          : [d.layerName, kindTag]
+        const text = parts.filter(Boolean).join(' · ')
+        // Nothing left to say ⇒ no chip. An empty one still draws its dark rounded box, which on a
+        // chart stripped of every other label is the only thing left to look at.
+        if (!text) return figures
         const cx = (x0 + x1) / 2
         const cy = extY + outPix * 12
         // A scratch is neither green nor red — it gets its OWN colour (orange), so a flat trade

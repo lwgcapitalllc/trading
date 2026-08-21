@@ -1368,7 +1368,7 @@ than imposing one. Markdown is deliberately excluded; the measurement is in `.pr
 **Added 2026-08-05.** This folder had no test runner at all: the convention was "verify it in a
 real browser", done by hand, which is why the Overview's twelve defects each survived until
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
-**222 tests in 20 files** (counted 2026-08-16 with `npx playwright test --list`; the figure here had
+**229 tests in 21 files** (counted 2026-08-20 with `npx playwright test --list`; the figure here had
 been left at a stale "66 in 5" through several passes — re-count it rather than incrementing it),
 run with `npm test` from `frontend/`.
 
@@ -1469,6 +1469,21 @@ from 179.** ⚠ **Its "every score starts shown" assertion is what makes it non-
 mutation defaulting `2/3` hidden PASSED.** ⚠ The Chart settings gear is a TOGGLE —
 a second click closes the panel — and closing it via `.getByRole('button').last()` inside the panel
 picks up the fib editor's own delete buttons instead.
+
+**`tests/chart-trade-labels.spec.ts` (3, ~17s) — added 2026-08-20 with the *Annotate trades*
+setting.** ⚠ **A fail-watch against HEAD is VACUOUS for all three** — the setting did not exist, so a
+red only proves the row is absent. **Every one is watched red by MUTATION, named in its own comment**;
+the middle one is also non-vacuous BY CONSTRUCTION, measuring the same pixels three times (on → off →
+on). ⚠ **The drawing is measured in PIXELS and the diff is computed IN THE PAGE**: a trade annotation
+is painted into klinecharts' canvas with no element of its own, so a check reading the toggle would
+be asserting the toggle — and a full frame is millions of bytes, so a copy is parked on `window` and
+only the count of differing pixels crosses into Node. 🔴 **Its first version PASSED VACUOUSLY at a
+diff of 0**: the chart opens at the right edge, so every marker is BEHIND the viewport centre and
+`Next marker` is enabled with nothing to step to — **an empty viewport is pixel-identical to a
+setting that removed everything.** It steps `Previous marker` and asserts the Step pill is PARKED
+before it measures anything. ⚠ **The restore is asserted as ~1% of the change, not as byte
+equality**, and the residue was MEASURED rather than tolerated — 127 pixels in one dashed column,
+the Step focus line repainted under a rebuilt trade box.
 
 **`tests/chart-paging.spec.ts` (2, ~45s) — added 2026-08-06 with the go-to-date progress readout,
 both watched RED against `HEAD`.** ⚠ **It drives the REAL backend rather than intercepting the
