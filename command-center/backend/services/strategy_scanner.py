@@ -686,6 +686,11 @@ def _parse_python_package(
         # the gated-layer rule forbids them from baking risk management in — so they are always
         # sized by the engine and there is deliberately no meta.json escape hatch for it.
         "self_sizing": bool(spec.get("self_sizing", False)),
+        # 🔴 A rule that has no setups of its own and arms off ANOTHER leg's closed trades
+        # (`loss_recovery`). Every picker filters on it: run it alone and it is handed nothing,
+        # which produces a book indistinguishable from a rule that found nothing. Only a python
+        # package may declare it, and only the stack builder can create one.
+        "requires_source": bool(spec.get("requires_source", False)),
     }, None
 
 

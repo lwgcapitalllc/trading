@@ -1,6 +1,6 @@
 # Building the loss-recovery leg into the Command Center
 
-**Status:** planned 2026-08-21, shape approved by Aaron. Not built yet.
+**Status:** BUILT 2026-08-21, all five stages. Shape approved by Aaron.
 **Owner of the rule:** `strategies/python/loss_recovery/CLAUDE.md`.
 **Owner of the shared account:** `backtest/portfolio/`.
 
@@ -57,7 +57,7 @@ trade list, its own row and KPIs. Only how it is CREATED changes.
 
 ## The five stages
 
-### 1. A leg may declare a SOURCE
+### ✅ 1. A leg may declare a SOURCE — `LegSpec.source`
 
 `LegSpec` gains one field naming the leg whose losses this one reads. `run_stack` then orders the
 build so a source exists before its dependent, hands over the source's **live trade list object**,
@@ -69,7 +69,7 @@ on nothing produces an empty book that reads exactly like a rule that found no s
 
 ⚠ A source that names a leg not in the stack must refuse at build, not at the first bar.
 
-### 2. The solo control needs a private source
+### ✅ 2. The solo control needs a private source
 
 `run_stack` replays every leg alone as a control — that is what makes the shared/solo delta
 attributable. **A recovery leg alone has nothing to recover.** It needs a private copy of its
@@ -80,17 +80,20 @@ needs the same.
 ⚠ Without this the control is an empty book, and an empty control makes the shared result look
 like the whole of the leg's worth.
 
-### 3. Three refusals, all loud
+### ✅ 3. Refusals, all loud
 
-1. **The parent's own `exec_recovery` must be OFF.** Left on, the run books recovery trades TWICE
-   — once bolted onto the finished book, once as a real leg — and nothing errors. Same shape as
-   the existing `exec_secondary` refusal in `backtest/portfolio/legs.py`.
+1. **The parent's own `exec_recovery` is PINNED OFF by the router and REFUSED by `legs.py`** —
+   and what shipped is narrower than this stage first assumed. The switch does not double-count
+   in a stack; it does NOTHING, because it runs from a `finalize` hook the simulator never calls,
+   so the leg came back with its recovery trades silently missing. It joins `_SHARED_LEG_PINS`
+   (pinned, and STORED as pinned so the leg's row says so) with the refusal as the backstop —
+   the same arrangement `exec_secondary` already has.
 2. **ATR-based stop modes refuse**, as `RecoveryLeg.__init__` already does: a stack has no
    canonical volatility source and a private copy would be a second implementation of an
    indicator this repo keeps exactly one of.
 3. **A recovery leg with no source refuses**, so the tick box cannot be routed round via the API.
 
-### 4. The settings and the screen
+### ✅ 4. The settings and the screen
 
 The rule has ~20 settings; the seven that matter already have plain-English descriptions written
 for the strategy-page switch. Reuse that wording, add a description file for the leg, and it
@@ -100,11 +103,16 @@ renders like any other leg.
 *bolted on afterwards* in one place and *a real competing leg* in the other, which is how somebody
 compares two runs that were never measured the same way.
 
-### 5. Retire the old switch
+### ⏳ 5. Retire the old switch — NOT DONE, and deliberately left
 
 Once the leg works, the strategy-page switch is the worse answer to the same question. Hide it
 from the editor (`hidden`, the existing mechanism — the field stays, still settable, one flag
 brings it back) and keep its corrected warning.
+
+⚠ **Held back on purpose.** The switch is the only way to see recovery trades on a SINGLE run's
+chart, and a stack is a different page with a different reader. Hiding it is a product call worth
+making on its own rather than riding along with the build — and its warning is now correct, so it
+no longer misleads while it waits.
 
 ---
 

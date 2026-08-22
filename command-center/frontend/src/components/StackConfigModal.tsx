@@ -74,12 +74,25 @@ export function StackConfigModal({
   const { data: runningJob } = useRunningVpsJob()
   const pythonBusy = !!runningJob?.python?.running
 
+  // 🔴 A strategy flagged `requires_source` has NO SETUPS of its own — it arms off another leg's
+  // closed trades. Picking it here would build a stack with nothing to read, which returns an
+  // empty book that looks exactly like a rule that found no setups. It is added by ticking it
+  // under its parent instead (see `recoveryFor`), never chosen from this list.
   const pyStrategies = useMemo(
-    () => (strategies ?? []).filter((s) => s.runner === 'python'),
+    () => (strategies ?? []).filter((s) => s.runner === 'python' && !s.requires_source),
+    [strategies]
+  )
+  const recoveryRule = useMemo(
+    () => (strategies ?? []).find((s) => s.id === 'loss_recovery'),
     [strategies]
   )
 
   const [selected, setSelected] = useState<Set<string>>(new Set(initial?.strategyIds ?? []))
+  // At most ONE recovery leg per stack, so this is the PARENT's id rather than a set. The
+  // shared account keys an open position by leg NAME, and two recovery legs would both be
+  // `loss_recovery` — a duplicate silently overwrites a live reservation and the cap
+  // under-counts the open risk while reporting itself enforced.
+  const [recoveryFor, setRecoveryFor] = useState<string | null>(null)
   const [instrument, setInstrument] = useState(initial?.instrument ?? '')
   const [start, setStart] = useState(initial?.start ?? yearsAgo(1))
   const [end, setEnd] = useState(initial?.end ?? today())
@@ -107,6 +120,10 @@ export function StackConfigModal({
     setSelected((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
+      // Unticking a leg must take its recovery with it. Left behind, the request names a parent
+      // that is not in the stack — the backend refuses it, but only after the reader has filled
+      // the rest of the form, and the refusal reads as a bug rather than as a stale tick.
+      if (!next.has(id)) setRecoveryFor((cur) => (cur === id ? null : cur))
       return next
     })
 
@@ -207,6 +224,10 @@ export function StackConfigModal({
         ...(shared
           ? { account_size: accountSize, risk_cap_pct: riskCapPct, entry_floor_pct: entryFloorPct }
           : {}),
+        // The recovery leg, if one was ticked. SHARED ONLY — on a screen every leg trades its own
+        // full account, so a recovery could never take room off its parent, which is the entire
+        // question it exists to answer. The backend refuses it there; this never sends it.
+        ...(shared && recoveryFor ? { recovery_parent: recoveryFor } : {}),
       },
       {
         onSuccess: (res) => {
@@ -358,6 +379,54 @@ export function StackConfigModal({
                     </button>
                   )
                 })}
+                {/* 🔴 THE RECOVERY LEG IS ADDED HERE, UNDER ITS PARENT, AND NOWHERE ELSE. It has
+                    no setups of its own, so a picker row for it could build a stack with nothing
+                    to read — an empty book that looks exactly like a rule that found nothing.
+                    Nesting it under the leg whose losses it follows makes the dependency
+                    impossible to get wrong rather than something the backend has to refuse. */}
+                {shared && recoveryRule && selected.size > 0 && (
+                  <div className="pl-6 pt-0.5">
+                    <button
+                      onClick={() => {
+                        const parent = recoveryFor
+                          ? null
+                          : (Array.from(selected).find((id) =>
+                              pyStrategies.some((p) => p.id === id)
+                            ) ?? null)
+                        setRecoveryFor(parent)
+                      }}
+                      data-testid="recovery-toggle"
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg border text-left transition-colors ${
+                        recoveryFor
+                          ? 'border-accent/40 bg-accent/5'
+                          : 'border-border-subtle bg-bg-sunken hover:border-border-default'
+                      }`}
+                    >
+                      <span
+                        className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${recoveryFor ? 'bg-accent border-accent' : 'border-border-default'}`}
+                      >
+                        {recoveryFor && (
+                          <span className="text-bg-base text-[10px] font-bold">✓</span>
+                        )}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="text-[12px] text-text-secondary">
+                          Also run loss recovery on{' '}
+                          {pyStrategies.find(
+                            (p) => p.id === (recoveryFor ?? Array.from(selected)[0])
+                          )?.name ?? 'the first leg'}
+                          &apos;s losses
+                        </span>
+                      </span>
+                      <span
+                        className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5"
+                        title="It has no setups of its own — after that strategy loses, it takes a smaller trade the other way. It competes for the same risk budget, so it can shrink or block the leg it follows."
+                      >
+                        Extra leg
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

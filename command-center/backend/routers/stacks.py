@@ -148,6 +148,7 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
 async def trigger_stack(req: StackRequest) -> StackResponse:
     ids = list(dict.fromkeys(req.strategy_ids))  # dedupe, keep order
     strategies = _validate_stack_strategies(ids)
+    _validate_recovery_leg(req, ids)
 
     for rid in req.ruleset_ids:
         if not lab_db.get_ruleset(rid):
@@ -287,6 +288,58 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     return StackResponse(stack_id=stack_id, run_ids=run_ids, status=status)
 
 
+# The registered id of the loss-recovery rule. It is a strategy ROW so a leg run can reference
+# it (and carry its own params, KPIs and chart), and it is flagged `requires_source` so no picker
+# offers it — the only thing that may create one is the tick box on a parent.
+_RECOVERY_ID = "loss_recovery"
+
+
+def _validate_recovery_leg(req: StackRequest, ids: list[str]) -> None:
+    """Refuse every recovery request the runner could not honestly answer.
+
+    Each of these is silent or late if it is not caught here:
+
+    * **On a SCREEN** every leg has its own full account, so a recovery leg could never take room
+      off its parent — which is the whole question. It would produce a plausible page answering
+      something nobody asked.
+    * **A parent not in the stack** leaves the leg reading nothing: an empty book, which is
+      indistinguishable from a rule that found no setups.
+    * **A parent that is itself a dependent** is the chain `run_stack` refuses, caught here so the
+      refusal arrives before the replay rather than four minutes into it.
+    * **Picking the rule as an ordinary leg** is refused with the tick box named, because
+      `requires_source` means it cannot run alone and the message has to say what to do instead.
+    """
+    if _RECOVERY_ID in ids:
+        raise HTTPException(
+            400,
+            "Loss recovery cannot be stacked as a strategy of its own — it has no setups and "
+            "arms off another leg's losses. Add it by attaching it to the leg whose losses it "
+            "should recover (recovery_parent), not by listing it in strategy_ids.",
+        )
+    if not req.recovery_parent:
+        if req.recovery_params:
+            raise HTTPException(
+                400,
+                "recovery_params were sent with no recovery_parent — nothing would read them. "
+                "Name the leg whose losses the recovery should follow.",
+            )
+        return
+    if req.mode != "shared":
+        raise HTTPException(
+            400,
+            "A loss-recovery leg only means something on a SHARED stack. On a screen every leg "
+            "trades its own full account, so the recovery could never take room off its parent — "
+            "which is the only question it exists to answer.",
+        )
+    if req.recovery_parent not in ids:
+        raise HTTPException(
+            400,
+            f"recovery_parent '{req.recovery_parent}' is not one of this stack's strategies "
+            f"({', '.join(ids) or 'none'}). It would read nothing and return an empty book, "
+            f"which looks exactly like a rule that found no setups.",
+        )
+
+
 # Settings a leg of a SHARED stack structurally cannot carry, pinned to the value the simulator
 # can run. `backtest/portfolio/legs.py::_refuse_unreplayable` is the AUTHORITY — it raises on
 # each of these — and this pins them ahead of it so the refusal never has to fire.
@@ -300,7 +353,13 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
 # time while the row said otherwise is this app's most-repeated defect: a page stating a value
 # no code read. Here the row and the replay say the same thing, and the page says it was pinned.
 # `tests/test_shared_stack.py` reads `legs.py` and fails if it grows a refusal this misses.
-_SHARED_LEG_PINS = {"exec_secondary": False}
+# ⚠ `exec_recovery` joins it for a DIFFERENT reason and the difference is worth stating. The
+# 1-minute re-entry is structurally unrunnable here; the recovery switch is merely INERT — it runs
+# from a `finalize` hook the simulator never calls, so the leg would come back with its recovery
+# trades silently missing. Pinned rather than refused so the stack still runs, and STORED as pinned
+# so the leg's own row says the switch was overridden. The way to get a recovery leg in a stack is
+# `recovery_parent`, which competes for the budget; the switch cannot, by construction.
+_SHARED_LEG_PINS = {"exec_secondary": False, "exec_recovery": False}
 
 
 def _pin_for_shared(params: dict) -> dict:
@@ -397,6 +456,44 @@ def _trigger_shared_stack(
                 "class_name": strat["class_name"],
                 "params": params,
                 "ruleset_ids": req.ruleset_ids,
+            }
+        )
+
+    # The loss-recovery leg, if one was asked for. It goes on the END so its parent is already
+    # in `legs` — `run_stack` orders sources first anyway, but a reader of this list should see
+    # the dependency the way it is built.
+    if req.recovery_parent:
+        rec_run_id = uuid.uuid4().hex[:12]
+        run_ids.append(rec_run_id)
+        rec_params = dict(req.recovery_params or {})
+        lab_db.insert_run_stack(
+            {
+                "run_id": rec_run_id,
+                "strategy_id": _RECOVERY_ID,
+                "instrument": req.instrument,
+                "params": rec_params,
+                "bar_type": req.bar_type,
+                "bar_value": req.bar_value,
+                "start_date": req.start_date,
+                "end_date": req.end_date,
+                "commission_per_side": req.commission_per_side,
+                "slippage_ticks": req.slippage_ticks,
+                "status": "running",
+                "created_at": now,
+                "stack_id": stack_id,
+                "runner": "python",
+            }
+        )
+        lab_db.add_stack_member(stack_id, rec_run_id, owned=1, position=len(legs))
+        legs.append(
+            {
+                "run_id": rec_run_id,
+                "strategy_id": _RECOVERY_ID,
+                "class_name": "RecoveryLeg",
+                "params": rec_params,
+                "ruleset_ids": req.ruleset_ids,
+                # The ONE field that makes this a dependent leg rather than a strategy.
+                "source": req.recovery_parent,
             }
         )
 

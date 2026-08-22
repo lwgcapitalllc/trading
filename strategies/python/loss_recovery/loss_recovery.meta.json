@@ -1,0 +1,140 @@
+{
+  "_comment": "Editor UI metadata for the Loss Recovery LEG — labels, groups, plain-English descriptions and the 'essentials' (core) flag. Read by the command-center scanner and overlaid onto the schema built from RecoveryLabConfig. UI ONLY: it never touches a trade decision. NO PINE TWIN EXISTS for this package, so — unlike every strategy meta here — there is no label/tooltip sync rule and no parity gate to re-run; a label may be written for the lab alone. COPY STYLE (matching mpc_sos_fade.meta.json): every desc is SHORT and PLAIN — what the setting does, what each choice means, and the one fact that changes the decision. No measurement dumps, no trade counts, no R figures, no dates. The evidence behind a default lives in this package's CLAUDE.md. THIS RULE CANNOT RUN ALONE: the package declares requires_source, so it never appears in a strategy picker — it is added by ticking it under a parent in the stack builder, and it reads that parent's losses.",
+  "edge": "It does not find its own trades. Every time the strategy it is attached to takes a loss, this waits for the market to turn back the other way and takes a smaller trade in that direction, to win the loss back. It aims for about one unit of profit and then protects it.",
+  "steps": [
+    {
+      "label": "01 · Wait",
+      "title": "The parent takes a loss",
+      "detail": "Nothing happens until the strategy this is attached to closes a real loss. A scratch does not count."
+    },
+    {
+      "label": "02 · Turn",
+      "title": "Structure breaks back the other way",
+      "detail": "It waits for the market to break structure against the direction that just lost. That break is the signal."
+    },
+    {
+      "label": "03 · Enter",
+      "title": "A smaller trade, the other way",
+      "detail": "It enters at the next bar's open, at a fraction of a normal trade's risk. The stop goes at the far end of the move that broke structure."
+    },
+    {
+      "label": "04 · Protect",
+      "title": "Lock the recovery in",
+      "detail": "Once the trade has travelled far enough to have paid the loss back, the stop moves up to bank it. After that it trails behind structure."
+    }
+  ],
+  "params": [
+    {
+      "name": "rec_risk_frac",
+      "group": "Size",
+      "core": true,
+      "label": "Size next to a normal trade",
+      "short": "Recovery size",
+      "step": 0.05,
+      "desc": "How big a recovery trade is compared with one of the parent strategy's. 0.25 means a quarter of the usual risk. It follows the parent, so raising the parent's risk raises this too.",
+      "guide": [
+        "Smaller recoveries, and less room taken off the parent",
+        "Bigger recoveries, and a bigger drawdown with them"
+      ]
+    },
+    {
+      "name": "rec_both_dirs",
+      "group": "What arms a recovery",
+      "core": true,
+      "widget": "toggle",
+      "label": "Recover in either direction",
+      "short": "Both directions",
+      "options": {
+        "off": "One way only",
+        "on": "Either way"
+      },
+      "desc": "Whether to take the recovery whichever way it points. Turning this off keeps only the direction that happened to win in the past, which is a decision made after seeing the answer."
+    },
+    {
+      "name": "rec_scratch_r",
+      "group": "What arms a recovery",
+      "label": "What counts as a real loss",
+      "short": "Scratch band",
+      "step": 0.05,
+      "desc": "A parent trade that finished this close to breakeven counts as a scratch, not a loss, so it arms nothing. Raise it and fewer trades arm a recovery."
+    },
+    {
+      "name": "rec_stop_mode",
+      "group": "Stop",
+      "core": true,
+      "choices": ["structural", "loss_entry", "leg_frac"],
+      "label": "Where the stop goes",
+      "short": "Stop placement",
+      "desc": "structural = the far end of the move that broke structure, which is the tested rule. loss_entry = the price the losing trade entered at, which is much tighter and was measured to lose money. leg_frac = part of the way back, set below. The three volatility-based placements this rule also has cannot run here, because two strategies sharing one account have no shared volatility reading."
+    },
+    {
+      "name": "rec_stop_leg_frac",
+      "group": "Stop",
+      "show_if": {
+        "rec_stop_mode": "leg_frac"
+      },
+      "label": "↳ How much of the move to keep",
+      "short": "Stop fraction",
+      "step": 0.05,
+      "desc": "0.5 puts the stop halfway between the entry and the far end. 1.0 is the same as the structural placement. A tighter stop does not risk less — it buys a bigger position for the same money."
+    },
+    {
+      "name": "rec_lock_at_r",
+      "group": "Protecting it",
+      "core": true,
+      "label": "Move the stop once it has travelled",
+      "short": "Lock at",
+      "step": 0.25,
+      "desc": "How far the recovery has to run in your favour before the stop is moved up. 1 is the point where the original loss has been paid back."
+    },
+    {
+      "name": "rec_lock_to_r",
+      "group": "Protecting it",
+      "core": true,
+      "label": "↳ Where the stop goes",
+      "short": "Lock to",
+      "step": 0.25,
+      "desc": "Where the stop lands once it moves. 1 banks the recovery. 0 is plain breakeven, which stops you losing but does not bank the thing you entered for."
+    },
+    {
+      "name": "rec_soft_stop_r",
+      "group": "Protecting it",
+      "label": "Give up early once it is against you",
+      "short": "Give up at",
+      "step": 0.05,
+      "desc": "Close a losing recovery once it is this far against you, instead of waiting for the full stop. 0 leaves the full stop in place. This is the only setting here that makes a losing recovery cost less, because it does not move the distance the trade was sized on."
+    },
+    {
+      "name": "rec_trail_swings",
+      "group": "Protecting it",
+      "widget": "toggle",
+      "label": "Trail behind structure",
+      "short": "Trail",
+      "options": {
+        "off": "Hold the stop",
+        "on": "Trail it"
+      },
+      "desc": "After the stop has moved up, keep dragging it behind each new confirmed turn. Off leaves it where it was locked."
+    },
+    {
+      "name": "rec_invalidate_on_choch",
+      "group": "Protecting it",
+      "widget": "toggle",
+      "label": "Close if structure turns against it",
+      "short": "Close on turn",
+      "options": {
+        "off": "Ride it out",
+        "on": "Close it"
+      },
+      "desc": "Close the recovery early if the market breaks structure back against it. Measured and it costs money — the turn usually arrives after the damage is done."
+    },
+    {
+      "name": "rec_max_days",
+      "group": "Protecting it",
+      "label": "Give up after this many days",
+      "short": "Max days",
+      "unit": "days",
+      "desc": "Close a recovery that has gone nowhere after this long. A backstop — most finish well inside it. It exists because trades left open for months pay a lot of overnight interest."
+    }
+  ]
+}

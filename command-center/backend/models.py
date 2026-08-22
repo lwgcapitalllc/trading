@@ -738,6 +738,11 @@ class Strategy(BaseModel):
     # sizing engine sizes them per ruleset. True = it sizes itself off its own risk % param, so
     # the engine must not re-size it and the UI hides SIZING MODE (there is nothing to choose).
     self_sizing: bool = False
+    # 🔴 This strategy CANNOT RUN ON ITS OWN — it has no setups and arms off another leg's closed
+    # trades (`loss_recovery`). Every picker must filter it out: run it alone and it is handed
+    # nothing, which returns a book indistinguishable from a rule that found no setups. The only
+    # thing that may create one is the stack builder's tick box on a parent leg.
+    requires_source: bool = False
 
     @field_validator("steps", mode="before")
     @classmethod
@@ -1380,6 +1385,22 @@ class StackRequest(BaseModel):
     account_size: float = 10_000.0
     risk_cap_pct: float = 10.0  # max OPEN risk across all legs, % of the LIVE balance
     entry_floor_pct: float = 0.0  # skip an entry granted less than this % in risk
+    # 🔴 ADD A LOSS-RECOVERY LEG THAT READS ONE OF THE OTHER LEGS' LOSSES. `recovery_parent` is
+    # that leg's strategy id and must be one of `strategy_ids`; `recovery_params` are the rule's
+    # own settings (`loss_recovery`'s flat lab config), defaults used when absent.
+    #
+    # ⚠ It is a PARENT plus params rather than a list, because the API has to express that at
+    # most one may exist: the shared account keys an open position by leg NAME, and two recovery
+    # legs would both be called `loss_recovery` — a duplicate silently overwrites a live
+    # reservation and the cap under-counts the open risk while reporting itself enforced.
+    # `run_stack` refuses duplicate names, but a refusal that fires mid-replay is a worse version
+    # of a shape the request could simply not have.
+    #
+    # ⚠ SHARED ONLY. A screen gives every leg its own full account, so a recovery leg there could
+    # never take room off its parent — which is the entire question it exists to answer. Asking
+    # for one on a screen is refused rather than quietly ignored.
+    recovery_parent: Optional[str] = None
+    recovery_params: dict = {}
 
     @field_validator("mode")
     @classmethod

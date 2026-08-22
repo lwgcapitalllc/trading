@@ -36,6 +36,7 @@ import json
 import threading
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -121,6 +122,16 @@ async def run_shared_stack(stack_id: str, legs: list[dict], settings: dict) -> N
         await asyncio.sleep(0)
 
 
+def _bars_per_day(df) -> float:
+    """The frame's own bar rate, for a dependent leg's time stop.
+
+    Measured off the frame rather than derived from the requested timeframe: a stack may be
+    handed bars that were resampled, and the leg's clock has to match what it is stepped on.
+    """
+    step = df.index.to_series().diff().min().total_seconds()
+    return 86_400.0 / step if step else 96.0
+
+
 def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.portfolio import LegSpec, contention_summary, run_stack
@@ -139,12 +150,14 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     profile = _cost_profile(settings)
 
     specs = []
+    by_id: dict = {}
     for leg in legs:
         found = _resolve(leg["class_name"])
         if found is None:
             raise ValueError(f"no Python strategy class named {leg['class_name']!r}")
         _, entry = found
         config = _build_config(entry["config"], leg.get("params") or {}, symbol)
+        by_id[leg["strategy_id"]] = config
         specs.append(
             LegSpec(
                 name=leg["strategy_id"],
@@ -152,7 +165,41 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
                 config=config,
                 df=df,
                 cost_profile=profile,
+                source=leg.get("source"),
             )
+        )
+
+    # 🔴 A DEPENDENT LEG'S CONFIG IS JOINED TO ITS PARENT'S, and this is the one place that does
+    # it. The recovery rule's form carries only the rule; the leg also needs the instrument's
+    # contract size, the PARENT's full-size risk, the structure length the parent read and the
+    # frame's bar rate — none of which is the user's to choose, and three of which are facts
+    # about the parent rather than about the rule.
+    #
+    # ⚠ `unit_risk_pct` comes off the PARENT so the two move together: raise the parent's risk
+    # and a quarter-size recovery is still a quarter, which is what every measured figure assumes.
+    # ⚠ `major_length` must be the structure length the parent read — a recovery armed off a
+    # different structure stream is a different rule that happens to share a trigger.
+    for i, leg in enumerate(legs):
+        if not leg.get("source"):
+            continue
+        from loss_recovery import leg_config
+
+        parent_cfg = by_id.get(leg["source"])
+        if parent_cfg is None:
+            raise ValueError(
+                f"leg {leg['strategy_id']!r} sources {leg['source']!r}, which is not in this "
+                f"stack. It would read nothing and return an empty book."
+            )
+        parent_spec = next(s for s in specs if s.name == leg["source"])
+        parent_strategy_cls = parent_spec.strategy_cls
+        specs[i] = replace(
+            specs[i],
+            config=leg_config(
+                specs[i].config,
+                parent_cfg,
+                bars_per_day=_bars_per_day(df),
+                major_length=parent_strategy_cls(parent_cfg).engine_config().major_length,
+            ),
         )
 
     total_ticks = len(df.index)

@@ -638,6 +638,51 @@ read would have let every assertion pass on an empty list.
 
 ---
 
+## 🔴 It is a real LEG in the Command Center's stack builder (2026-08-21)
+
+The section below describes the strategy-page SWITCH, which is a post-pass and cannot compete for
+a budget. This is the other one: the rule now runs as a proper leg of a shared-account stack —
+one balance, one risk budget, and it really can shrink or block the leg it recovers.
+
+**`lab.py` is the seam, and it exists because there are two configs for one thing.**
+`RecoveryLegConfig` is what the LEG needs: the rule plus the instrument's contract size, the
+parent's full-size risk, the structure length and the frame's bar rate. **Four of those five are
+not the user's to choose** — they are facts about the parent and the bars. So `RecoveryLabConfig`
+is the flat, user-facing half the scanner builds a form from, and `leg_config()` is the ONE place
+that joins it to the parent's facts. ⚠ **Nothing else may assemble a `RecoveryLegConfig` from lab
+input**, or the parent's risk and the recovery's fraction stop moving together.
+
+🔴 **`LAB_STRATEGY` declares `requires_source`, and that flag is the whole design.** This rule has
+no setups — run it alone and it is handed nothing, which returns an empty book **indistinguishable
+from a rule that found no setups**. The flag lets the lab state that as a FACT rather than leaving
+each picker to remember it: the Strategies page greys its Run button (*Needs a parent*), the stack
+builder filters it out of the list, and the only thing that can create one is a tick box under a
+parent. ⚠ **It is registered as a strategy ROW anyway** — a stack leg's run row references one, so
+without it the leg could carry no params, no KPIs and no chart.
+
+⚠ **Only THREE stop placements are offered** (`STOP_MODES`): structural, the losing trade's entry,
+and a fraction of the break leg. The three ATR-based ones are absent because a shared-account stack
+has no canonical volatility reading and a private copy would be a second implementation of an
+indicator this repo keeps exactly one of — `RecoveryLeg.__init__` refuses them, and offering a
+setting the run cannot honour is worse than not offering it. Use `recovery_report.py` for those.
+
+⚠ **A zero size is REFUSED rather than clamped.** A zero lot fills, closes and lands in the trade
+list at 0R — a trade that looks taken and moved nothing. The way to stop taking recoveries is to
+remove the leg.
+
+⚠ **`soft_stop_r` is 0-means-off on the form and None-means-off in the engine**, translated in one
+place — and `mpc_sos_fade/recovery.py` translates it identically. The two adapters must agree or
+the same setting means two things.
+
+⚠ **The defaults ARE the measured configuration**, so selecting the leg and touching nothing
+reproduces the runs recorded in this file.
+
+✅ **The verdict is UNCHANGED by the new path and that is the point of running it: uncosted, at a
+10% cap, the leg still costs 28.1% — the same direction as the costed −29.9% below.** A+ was shrunk
+22 times, nothing was refused, peak open risk touched 10.0% against the cap, and **both legs post
+identical R shared and solo**, which is the check that says only the sizing moved. Numbers, the
+five build stages and what each refusal is for: `docs/RECOVERY_LEG_IN_COMMAND_CENTER.md`.
+
 ## It is drivable from the Command Center (2026-08-20)
 
 Until now this package could only be run from `backtest/tools/recovery_report.py`, a terminal tool

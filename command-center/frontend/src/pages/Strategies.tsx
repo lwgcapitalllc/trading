@@ -247,7 +247,13 @@ function StrategiesTab() {
 
   // Stackable = the python rows currently VISIBLE (a filtered-out row can't be ticked, so it must
   // not count toward the selection either).
-  const stackable = useMemo(() => sorted.filter((s) => s.runner === 'python'), [sorted])
+  // ⚠ A rule flagged `requires_source` has NO SETUPS of its own — it arms off another leg's
+  // closed trades — so it can never be a leg you tick. It is added inside the stack builder, under
+  // the parent whose losses it follows.
+  const stackable = useMemo(
+    () => sorted.filter((s) => s.runner === 'python' && !s.requires_source),
+    [sorted]
+  )
   const toggleStack = (id: string) =>
     setStackSel((prev) => {
       const next = new Set(prev)
@@ -694,7 +700,21 @@ function StrategyRow({
                   Compile all
                 </button>
               )}
-              {!needsDeploy && !missingOnVps && !needsCompile && (
+              {/* 🔴 A rule that CANNOT RUN ALONE is told so on the button rather than being left
+                  with a Run that could only ever produce an empty book. It has no setups — it arms
+                  off another leg's closed trades — so it is added inside the stack builder, under
+                  the parent whose losses it follows. DISABLED, never hidden: a control that
+                  vanishes reads as a feature that does not exist. */}
+              {!needsDeploy && !missingOnVps && !needsCompile && s.requires_source && (
+                <button
+                  disabled
+                  title="This rule has no setups of its own — it only trades after another strategy loses. Add it inside a stack, under the strategy whose losses it should recover."
+                  className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-bg-sunken text-text-tertiary border border-border-subtle cursor-not-allowed"
+                >
+                  Needs a parent
+                </button>
+              )}
+              {!needsDeploy && !missingOnVps && !needsCompile && !s.requires_source && (
                 <button
                   onClick={onRun}
                   className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"

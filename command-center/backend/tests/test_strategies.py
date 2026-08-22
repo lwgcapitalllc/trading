@@ -33,6 +33,12 @@ EXPECTED_CLASS_NAMES = {
     # gone stale in BOTH directions — a deleted strategy left behind, then a new one not added —
     # which is the callout above earning its keep for the second time.
     "MpcBosStrategy",
+    # Added 2026-08-21 with the loss-recovery LEG. FOURTH time these three tests have gone red for
+    # this one cause. ⚠ This entry is not like the others: `RecoveryLeg` is a RULE, not a strategy
+    # — it has no setups and arms off another leg's closed trades, so it carries
+    # `requires_source` and every picker filters it out. It is still SCANNED and still needs a row
+    # in `strategies`, because a stack leg's run row references one.
+    "RecoveryLeg",
     # Added 2026-08-14. `strategies/python/mpc_realign` landed 2026-08-13 (e87c304) and its
     # roster line did not — the THIRD time these three tests have gone red for this one cause,
     # and the second time in the "new strategy not added" direction. `MpcRealignStrategy`

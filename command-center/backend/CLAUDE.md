@@ -2565,6 +2565,52 @@ the legacy commission/slippage branch like every other stack. **Wire them for BO
 once**, or a screen and a shared run over the same legs would be measured on different physics and
 the delta column would report the cost gap as the cap's doing.
 
+## A stack leg may READ ANOTHER LEG'S LOSSES — `recovery_parent` (2026-08-21)
+
+`StackRequest.recovery_parent` + `recovery_params` add a loss-recovery leg that arms off one of the
+other legs' closed losses. Mechanism and the five build stages:
+`docs/RECOVERY_LEG_IN_COMMAND_CENTER.md`; the account side is `backtest/CLAUDE.md` → `LegSpec.source`.
+
+🔴 **A PARENT PLUS PARAMS, NEVER A LIST, and the shape is the constraint.** At most one may exist:
+the shared account keys an open position by leg NAME and two recovery legs would both be
+`loss_recovery` — a duplicate silently overwrites a live reservation and the cap under-counts the
+open risk while reporting itself enforced. `run_stack` refuses duplicate names, but **a refusal
+that fires four minutes into a replay is a worse version of a shape the request could simply not
+have.**
+
+⚠ **`_validate_recovery_leg` runs BEFORE the lock and before any row is written**, and refuses four
+states, each of which is silent or late otherwise: a recovery on a SCREEN (every leg has its own
+full account there, so it could never take room off its parent — the only question it answers), a
+parent not in the stack (the leg reads nothing and returns an empty book), a parent that is itself
+sourced (the chain `run_stack` refuses), and picking the rule as an ordinary leg.
+
+⚠ **`exec_recovery` JOINED `_SHARED_LEG_PINS`, and the reason differs from `exec_secondary`'s.**
+That one is structurally unrunnable on a merged clock; this one is merely INERT — the switch runs
+from a `finalize` hook the simulator never calls, so the leg came back with its recovery trades
+**silently missing**. Pinned rather than refused so the stack still runs, and STORED as pinned so
+the leg's row says the switch was overridden. `backtest/portfolio/legs.py` refuses it as the
+backstop, and `test_shared_stack.py` reads that file and fails if the two drift.
+
+⚠ **`portfolio_runner` is the ONE place a dependent leg's config is joined to its parent's.** The
+form carries the rule; the leg also needs the instrument's contract size, the PARENT's full-size
+risk, the structure length the parent read and the frame's bar rate — three of which are facts
+about the parent. Reading the risk off the parent is what keeps a quarter-size recovery a quarter
+when the parent's risk moves.
+
+🔴 **`strategies.requires_source` is a new column and it is what every picker filters on.** A rule
+that has no setups cannot be run alone; the flag lets the lab state that rather than leaving each
+picker to remember it. ⚠ **It is still SCANNED and still gets a strategies row** — a leg's run row
+references one, so without it the leg could carry no params, no KPIs and no chart. ⚠ **Declared by
+the package (`LAB_STRATEGY["requires_source"]`), never set by hand.**
+
+⚠ **`EXPECTED_CLASS_NAMES` needed `RecoveryLeg` — the FOURTH time those three tests have gone red
+for that one cause.** Grep `LAB_STRATEGY`, which is what the scanner reads.
+
+**Tests:** `tests/test_recovery_leg_wiring.py` (12). ⚠ **A fail-watch against HEAD is vacuous** —
+none of it existed — so non-vacuity is by MUTATION: allowing a recovery on a screen, allowing a
+parent outside the stack, and dropping the `requires_source` flag each turn their own named test
+red.
+
 ## History floors — blocking a window the broker has no bars for
 
 **MT5 does not error when a symbol lacks history at the requested timeframe — it returns the nearest

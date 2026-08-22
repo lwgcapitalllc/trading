@@ -338,6 +338,12 @@ def init_db() -> None:
             # engine must NOT re-size it: doing so throws the strategy's real size away and leaves
             # the KPI cards disagreeing with the equity chart on the same page.
             "ALTER TABLE strategies ADD COLUMN self_sizing INTEGER NOT NULL DEFAULT 0",
+            # 🔴 This strategy CANNOT RUN ON ITS OWN — it has no setups and arms off another
+            # leg's closed trades (loss_recovery). 0 (default) = an ordinary standalone strategy.
+            # 1 = every picker must filter it out, because running it alone produces an empty book
+            # and a rule handed nothing looks exactly like a rule that found nothing. It is
+            # declared by the package (LAB_STRATEGY["requires_source"]), never set by hand.
+            "ALTER TABLE strategies ADD COLUMN requires_source INTEGER NOT NULL DEFAULT 0",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -2198,8 +2204,8 @@ def upsert_strategy(data: dict) -> None:
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
-                 avoid_news, self_sizing)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 avoid_news, self_sizing, requires_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -2214,7 +2220,8 @@ def upsert_strategy(data: dict) -> None:
                 edge=excluded.edge,
                 steps=excluded.steps,
                 avoid_news=excluded.avoid_news,
-                self_sizing=excluded.self_sizing
+                self_sizing=excluded.self_sizing,
+                requires_source=excluded.requires_source
         """,
             (
                 data["id"],
@@ -2232,6 +2239,7 @@ def upsert_strategy(data: dict) -> None:
                 json.dumps(data.get("steps", [])),
                 1 if data.get("avoid_news") else 0,
                 1 if data.get("self_sizing") else 0,
+                1 if data.get("requires_source") else 0,
             ),
         )
 

@@ -710,6 +710,11 @@ export interface Strategy {
   // True = the strategy sizes its own trades off its own risk % param, so the sizing engine
   // must not re-size it and SIZING MODE is hidden (there is nothing to choose).
   self_sizing?: boolean
+  // 🔴 This strategy CANNOT RUN ON ITS OWN — it has no setups and arms off another leg's closed
+  // trades (loss recovery). Every picker filters it out: run it alone and it is handed nothing,
+  // which returns an empty book that reads exactly like a rule that found no setups. The only
+  // thing that may create one is the stack builder's tick box on a parent leg.
+  requires_source?: boolean
   // True = the source on disk changed since the last Scan Strategies, so the param schema the
   // Run modal shows is stale. Computed live by the backend; the scan-time twin of needs_deploy.
   needs_scan?: boolean

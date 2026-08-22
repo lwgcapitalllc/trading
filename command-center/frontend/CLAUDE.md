@@ -2018,6 +2018,33 @@ trade risks $16,925,791 of a balance A+ grew rather than $3,102 of its own.
 - ⚠ **A shared stack replayed before 2026-08-10 has no control book**, so it lands on `unmeasured`
   rather than inventing one. `backend/scripts/backfill_stack_solo.py` re-derives it.
 
+## A loss-recovery leg is a TICK BOX ON ITS PARENT, never a row in the picker (2026-08-21)
+
+`StackConfigModal` nests one checkbox under the selected strategies: *Also run loss recovery on
+&lt;leg&gt;'s losses*. It sends `recovery_parent`. Backend rules: `../backend/CLAUDE.md` →
+*A stack leg may READ ANOTHER LEG'S LOSSES*.
+
+🔴 **The rule is FILTERED OUT of every picker on `Strategy.requires_source`** — the stack builder's
+list and the Strategies page's stackable set. It has no setups of its own, so picking it as an
+ordinary leg builds a stack with nothing to read, and **an empty book is indistinguishable from a
+rule that found no setups**. The alternative shape — listing it beside the real strategies with a
+"recovers:" dropdown — was rejected: it lets you build a stack with no parent, or the wrong one,
+and the run then refuses AFTER the reader has filled in the form. **A dependency the UI cannot
+express becomes a runtime refusal, which is a worse version of the same rule.**
+
+⚠ **`recoveryFor` holds the PARENT's id, not a boolean and not a set** — at most one recovery leg
+per stack, because two would share a name on the shared account. Unticking a parent clears it, or
+the request names a leg that is not in the stack.
+
+⚠ **Never sent on a SCREEN.** There every leg trades its own full account, so the recovery could
+never take room off its parent — the only question it exists to answer. The backend refuses it;
+this never sends it.
+
+⚠ **The Strategies page GREYS its Run button (*Needs a parent*) rather than hiding it**, with the
+reason on the title. Same rule as an unassignable account on the Accounts tab: a control that
+vanishes reads as a feature that does not exist, and a reader who came looking for the rule needs
+to be told where it went.
+
 ## A NEW stack is always a SHARED ACCOUNT — the mode picker is gone
 
 **2026-08-10, Aaron's call:** *"I would never ever ever wanna do a screen. I would always wanna do

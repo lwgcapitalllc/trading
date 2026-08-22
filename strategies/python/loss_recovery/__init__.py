@@ -18,12 +18,46 @@ from __future__ import annotations
 
 from .config import RecoveryConfig
 from .engine import LossRecoveryEngine
+from .lab import STOP_MODES, RecoveryLabConfig, leg_config, rule_config
+from .leg import RecoveryLeg, RecoveryLegConfig
 from .types import ArmedSignal, LossEvent, RecoveryTrade
 
 __all__ = [
+    "STOP_MODES",
     "ArmedSignal",
+    "LAB_STRATEGY",
     "LossEvent",
     "LossRecoveryEngine",
     "RecoveryConfig",
+    "RecoveryLabConfig",
+    "RecoveryLeg",
+    "RecoveryLegConfig",
     "RecoveryTrade",
+    "leg_config",
+    "rule_config",
 ]
+
+# 🔴 THIS PACKAGE IS REGISTERED WITH THE LAB, AND `requires_source` IS THE WHOLE POINT OF THE
+# ENTRY. It has no setups of its own — it arms off another leg's closed losses — so it cannot be
+# picked like an ordinary strategy and cannot be run on its own. The flag is what lets the lab
+# state that as a FACT rather than leaving each picker to remember it: the Run modal, the
+# optimizer and the stack's own strategy list all filter on it, and the only thing that can
+# create one is the stack builder's tick box on a parent.
+#
+# ⚠ Without the flag this would appear beside the real strategies, and picking it would produce
+# an empty book — a rule that was handed nothing looks exactly like a rule that found nothing.
+#
+# ⚠ `config` is the FLAT lab half (`lab.py`), never `RecoveryLegConfig`: the scanner builds its
+# form from `dataclasses.fields`, and the leg's own config carries a nested rule plus four numbers
+# derived from the parent and the frame, none of which is the user's to choose.
+#
+# ⚠ `self_sizing` is True — the leg sizes off the parent's risk % times its own fraction, so the
+# lab's sizing engine must not re-size it.
+LAB_STRATEGY = {
+    "strategy": RecoveryLeg,
+    "config": RecoveryLabConfig,
+    "name": "Loss Recovery",
+    "category": "mean_reversion",
+    "self_sizing": True,
+    "requires_source": True,
+}
