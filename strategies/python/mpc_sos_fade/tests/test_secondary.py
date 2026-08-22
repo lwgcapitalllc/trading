@@ -1359,3 +1359,146 @@ def test_the_combined_value_prices_by_the_precondition_even_when_a_1m_shift_latc
     assert out.l_armed is True
     assert out.l_src == "reclaim"
     assert out.l_edge == pytest.approx(101.14)   # the deep edge, not a 1-minute retrace
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHICH OF THE 19 RE-ENTRY SETTINGS THE RECLAIM ACTUALLY READS
+#
+# The editor greys a row out when its two states cannot differ in the current configuration
+# (`disable_if` in `mpc_sos_fade.meta.json`), and the lab stops perturbing it in sensitivity for
+# the same reason. Both of those are CLAIMS about the code in this package — exactly the shape
+# rule 7 is about — so each one is pinned below and the schema is pinned to the list.
+#
+# 🔴 THE COUNTER-CASE IS THE IMPORTANT HALF. The shallow zone edge LOOKS as dead as the rest: the
+# reclaim ignores the zone by design and `test_reclaim_ignores_the_zone_gate` says so. It is not
+# dead, because the 1-minute latch runs under every trigger, its gate reads the zone, and it
+# writes the same per-setup bookkeeping the reclaim's own arm is measured against. Greying it
+# would have been a wrong answer on screen that no other test could have caught.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _rec_arm(**kw):
+    """The reclaim's shipped scenario — gate opens, price reclaims — as a comparable record."""
+    return _feed(SecondaryArm(_rec_cfg(**kw)), [(101.0, 100.6), (101.1, 100.8), (101.5, 100.9)])
+
+
+def test_the_reclaim_ignores_every_shared_ARM_setting_the_editor_greys_out():
+    """MUTATION: in `_src_for`, return "1m shift" instead of "reclaim" when only the reclaim is
+    configured, and the retrace case goes red — the entry becomes a retrace of a 1-minute leg.
+    Point `_stop_anchor`'s reclaim call at the shared field and the stop case goes red. Make
+    `arm_gate_l` read `gate_l` and the precondition case goes red (it stops arming at all)."""
+    shipped = _rec_arm()
+    assert shipped[2].l_armed is True, "the fixture never armed — nothing here proves anything"
+    for moved in (dict(exec_sec_retrace=0.0),
+                  dict(exec_sec_stop="0.886"),
+                  dict(exec_sec_require="Any close")):
+        assert _rec_arm(**moved) == shipped, f"the reclaim moved on {list(moved)[0]}"
+
+
+def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_greys_out():
+    """The other half of the same claim, one level down: the first target and how much banks
+    there. MUTATION: drop the `pend.src == "reclaim"` branch in `_open_position`, or the
+    `_entry_src == "reclaim"` branch in `_tp1_pct`, and the matching case goes red."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    def fill(**cfg_kw):
+        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", **cfg_kw)
+        ex = Execution(cfg)
+        pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, src="reclaim")
+        bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                              last_conf_high=None, last_conf_low=None)
+        ex._open_position(pend, 100.0, bar, Decision(index=1), kind="secondary")
+        return ex._tp1, ex._tp1_pct()
+
+    shipped = fill()
+    assert shipped == (106.0, 100.0), "3R off a 2.00 stop, all of it — the measured ladder"
+    assert fill(exec_sec_tp_r=1.0) == shipped, "the shared first target moved a reclaim"
+    assert fill(exec_sec_tp1_pct=25.0) == shipped, "the shared bank percentage moved a reclaim"
+
+
+def test_the_1m_RETRACE_is_dead_under_the_gap_trigger_too_not_just_the_reclaim():
+    """It is the one row here that only the 1m shift reads, so the editor greys it under all
+    three of the other values — including the SHIPPED one. MUTATION: make `_edge`'s gap branch
+    fall through to the retrace and this goes red."""
+    def gap_arm(**kw):
+        arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                                            exec_sec_stop="0.886", **kw))
+        return arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, zone_close=102.5, ny_hour=10,
+                             flat=True, be_sos_l=500, be_sos_s=None, poi_edge_l=103.0)
+
+    shipped = gap_arm()
+    assert shipped.l_armed is True and shipped.l_edge == pytest.approx(103.0)
+    assert gap_arm(exec_sec_retrace=0.0) == shipped
+
+
+def test_the_SHALLOW_zone_edge_is_NOT_dead_under_the_reclaim_so_it_is_never_greyed():
+    """🔴 The counter-case. The reclaim never reads the zone to arm — and the shallow edge can
+    still change what it does, through the 1-minute latch's shared per-setup bookkeeping.
+
+    Watched RED by putting the shallow edge in the greyed list: this is the only test that says
+    it does not belong there. The per-setup cap is OFF because at the shipped cap of one the cap
+    refuses the second arm first and masks the difference — which is why reading the code was not
+    enough here.
+
+    MUTATION: gate the 1-minute latch on the trigger (`if not rec_trigger:` around section 3) and
+    this goes red — the two configurations become identical, which is the state the code was in
+    for one iteration of the build before a control replay caught it."""
+    def rearms(shallow):
+        cfg = _rec_cfg(exec_sec_zone_shallow=shallow, exec_sec_once_per_setup=False)
+        arm_sm = SecondaryArm(cfg)
+        kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
+                  closed_sos_l=None, closed_sos_s=None, lost_sos_l=500, lost_sos_s=None)
+        arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, bar_high=101.0, bar_low=100.6, **kw)
+        # the reclaim bar also carries a 1m shift, so the latch has something to move
+        arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG,
+                      bar_high=101.5, bar_low=100.9, **kw)
+        arm_sm.mark_traded(1)
+        return arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG,
+                             bar_high=101.5, bar_low=100.9, **kw).l_armed
+
+    # 102.5 is inside the band at the shipped 0.618 edge and outside it at 0.786, so the latch
+    # fires in one case and not the other — and the reclaim's next arm differs because of it.
+    assert rearms(0.618) is True
+    assert rearms(0.786) is False
+
+
+def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
+    """The schema half. A row greyed here that nothing above pins is a claim on screen with no
+    proof under it; a row pinned above and left live is a reader told to sweep a dead setting.
+
+    ⚠ Reads the trigger's own choice list rather than restating it, so adding a fifth trigger
+    turns this red until somebody says what each greyed row does under it.
+
+    MUTATION: add the shallow zone edge to the greyed set, or drop any row from it, and this
+    goes red."""
+    import json
+    import pathlib
+
+    meta = json.loads((pathlib.Path(__file__).resolve().parents[1]
+                       / "mpc_sos_fade.meta.json").read_text())
+    rows = {p["name"]: p for p in meta["params"]}
+    triggers = set(rows["exec_sec_trigger"]["choices"])
+    assert triggers == {"1m shift", "Reclaim Entry", "FVG in zone",
+                        "FVG in zone + Reclaim Entry"}, "a trigger was added — re-answer below"
+
+    def dead_under(name):
+        cond = rows[name].get("disable_if") or {}
+        assert set(cond) <= {"exec_sec_trigger"}, f"{name} is greyed on something else too"
+        want = cond.get("exec_sec_trigger", [])
+        return set(want if isinstance(want, list) else [want])
+
+    # the reclaim's own four are dead wherever the reclaim is not in play
+    for n in ("exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct"):
+        assert dead_under(n) == {"1m shift", "FVG in zone"}, n
+    # the four it replaces one-for-one are dead under the plain reclaim, and live under the
+    # combined value because the gap half is still running there
+    for n in ("exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct"):
+        assert dead_under(n) == {"Reclaim Entry"}, n
+    # and the retrace belongs to the 1m shift alone
+    assert dead_under("exec_sec_retrace") == triggers - {"1m shift"}
+
+    greyed = {n for n, p in rows.items()
+              if p.get("group", "").startswith("↳") or p.get("disable_if")}
+    assert greyed == {"exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
+                      "exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct",
+                      "exec_sec_retrace", "exec_sl_deep"}, sorted(greyed)
+    assert all(rows[n].get("disable_note") for n in greyed), "a greyed row with no reason on it"

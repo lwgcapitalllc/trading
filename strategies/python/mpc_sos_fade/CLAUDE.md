@@ -999,6 +999,47 @@ re-entry that had armed at the deep edge **without price ever reclaiming**, wort
 ⚠ **Every reclaim figure quoted before this is the pre-fix book — 156.9R over 54, not 157.9R over
 53.**
 
+#### The 19 re-entry settings, split three ways in the editor (2026-08-21)
+
+Aaron, looking at the panel: *"which one of them is applicable to Reclaim Entry? I have nothing to
+do with any of these items."* He was right about nine of them. The block is now three groups in
+`mpc_sos_fade.meta.json`, and the rows that cannot matter are **greyed with the reason on them**
+(`disable_if` / `disable_note`) rather than hidden — the reader has to be able to see which state a
+dead setting is stuck in.
+
+| group | rows | when they are greyed |
+|---|---|---|
+| `Secondary re-entries (1m)` | the switch, the trigger, and the 8 both halves read | never |
+| `↳ Reclaim Entry only` | its precondition, stop, first target, bank % | trigger is `1m shift` or `FVG in zone` |
+| `↳ FVG / 1m shift only` | the 4 the reclaim replaces one-for-one, + the retrace | trigger is `Reclaim Entry` |
+
+⚠ **The retrace is the odd one — it is dead under the SHIPPED trigger too.** Only the `1m shift`
+retraces a leg; the gap rests at the primary's own price and the reclaim at the deep edge. It is
+greyed under all three of the other values.
+
+⚠ **Greying is not cosmetic — `stress_tester.param_is_reachable` stops perturbing a greyed row**,
+which is the point: shifting a setting the strategy never reads books a guaranteed 0% change and
+reads back as *"tested, rock solid"*.
+
+🔴 **THE SHALLOW ZONE EDGE LOOKS AS DEAD AS THE REST AND IS NOT, AND THAT IS THE TRANSFERABLE
+FINDING.** The reclaim ignores the zone by design — this file says so and a test says so — so it
+was on the greyed list on the way in. It is live, because **section 3's 1-minute latch runs under
+every trigger, its gate reads the zone, and it writes the same per-setup bookkeeping the reclaim's
+own arm is measured against.** ⚠ **Reading the consuming line was not enough here**: the other nine
+rows each have ONE reader inside an explicit source branch, and this one launders through shared
+state with many. ⚠ **At the shipped cap of one re-entry per setup the cap refuses first and MASKS
+the difference**, so the probe that settled it had to turn the cap off — a check that would have
+agreed with the wrong answer at the default. Pinned by
+`test_the_SHALLOW_zone_edge_is_NOT_dead_under_the_reclaim_so_it_is_never_greyed`, which is the only
+thing standing between the next reader and a wrong answer on screen.
+
+**TESTED:** 5 new tests in `tests/test_secondary.py` — 4 pinning the deadness claims at the arm and
+the ladder, 1 the counter-case, 1 tying the contract's greyed set to them. **9 mutations, 9 killed**
+(357 strategy tests green, 49 backend param-gate/sensitivity tests green).
+**PARITY:** `compare_strategy.py` green on the 2026-08-21 export at `--warmup 100`. ⚠ **The gate is
+structurally blind to all of this** — it replays 15m bars through `.run()` and every re-entry lever
+lives on the 1m path behind `run_dual`.
+
 ⚠ **`exec_rec_stop` of `1m leg` or `swing low` is REFUSED**, stricter than the gap trigger's rule,
 because the entry is a FIXED price and a 1-minute swing can land either side of it. That refusal is
 also what lets section 2c read the stop anchor BEFORE the 1m leg latch — both legal anchors are pure

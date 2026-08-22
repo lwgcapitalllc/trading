@@ -561,35 +561,6 @@
       "desc": "Adds a second entry off the 1-minute chart: once the first trade is safe at breakeven and price falls back into the zone, it re-enters for the same targets. On by default. MEASURED over 7.9 years on the settings that now ship: 54 re-entries, worth +13.9R on top of the first trades' +206.2R, and the first trades are untouched to the decimal. It is bought with drawdown — the worst peak-to-trough goes from 51.8% to 60.4% — and it leans hard on one trade, which is why it is sized at half. Lab only, and slow to run."
     },
     {
-      "name": "exec_sec_once_per_setup",
-      "group": "Secondary re-entries (1m)",
-      "widget": "toggle",
-      "label": "One re-entry per primary",
-      "short": "One per primary",
-      "options": {
-        "off": "One per 1m leg",
-        "on": "One per primary"
-      },
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "How often one setup may be re-entered. On = once. Off = once per 1-minute signal, which is what once let a single setup be re-entered twice about an hour and a half apart. It resets on a fresh break of structure. Lab only."
-    },
-    {
-      "name": "exec_sec_retrace",
-      "group": "Secondary re-entries (1m)",
-      "widget": "number",
-      "label": "Secondary entry retrace",
-      "short": "Entry retrace",
-      "min": 0.0,
-      "max": 0.999,
-      "step": 0.001,
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "How deep the 1-minute re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
-    },
-    {
       "name": "exec_sec_trigger",
       "group": "Secondary re-entries (1m)",
       "label": "What triggers a re-entry",
@@ -599,105 +570,6 @@
         "exec_secondary": true
       },
       "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Reclaim Entry is the only one of the three built for a trade that LOST: the first trade is stopped at the deep edge of the entry band, price does not go on to break the move, and instead comes back up through that level — an order then waits AT the level for the retest, stopping at the far end of the move. Because those two levels sit close together the risk is a fraction of the first trade's, so the same cash buys a much bigger position. It reads its OWN four settings below rather than the shared ones, so it means the same thing whether it runs alone or alongside the gap. MEASURED: waiting for the retest earned +43R over 7.9 years while chasing the reclaim earned nothing, so the wait is the whole edge. The fourth choice runs the gap and the reclaim TOGETHER. That is safe because they cover opposite outcomes — a first trade either reaches breakeven or is stopped out, never both — so they can never want the same setup. MEASURED over 7.9 years: 107 re-entries between them, none sharing a setup and none overlapping another in time, and the two together are exactly the two apart. It requires the gap half set to Breakeven and the reclaim half to Stopped only, and refuses any other pairing. Lab only."
-    },
-    {
-      "name": "exec_rec_require",
-      "group": "Secondary re-entries (1m)",
-      "label": "Reclaim needs the first trade to have…",
-      "short": "Reclaim needs",
-      "choices": ["Any close", "Breakeven", "None", "Stopped only"],
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "What the first trade on this setup must have done before Reclaim Entry may re-enter. Stopped only (default) is the whole point of that trigger — it re-enters a setup whose first trade was stopped out at the deep edge. It is separate from the shared setting above so the gap trigger and the reclaim can run together wanting opposite things of the same trade; when they do, this must stay on Stopped only and the shared one on Breakeven, because those are the only two that cannot both be true of one setup. Lab only."
-    },
-    {
-      "name": "exec_rec_stop",
-      "group": "Secondary re-entries (1m)",
-      "label": "Reclaim stop sits at",
-      "short": "Reclaim stop",
-      "choices": ["0.886", "1.0"],
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "Where Reclaim Entry's stop goes. Only these two, because the reclaim enters at a fixed price and a 1-minute swing can land on either side of it — a stop that is sometimes above and sometimes below the thing it protects is not a stop, so the 1-minute anchors are refused rather than substituted. 1.0 is the default and is the reason the trigger exists: the start of the move sits a median 0.43 of the original risk past the deep edge, so the same cash buys a much bigger position. Lab only."
-    },
-    {
-      "name": "exec_rec_tp_r",
-      "group": "Secondary re-entries (1m)",
-      "label": "Reclaim's first target, in R",
-      "short": "Reclaim target",
-      "unit": "R",
-      "step": 0.25,
-      "show_if": {
-        "exec_secondary": true
-      },
-      "guide": ["Banks sooner, gives up the runs", "Waits for a bigger move, more of them fail"],
-      "desc": "Where Reclaim Entry's first target sits, as a multiple of its own risk. -1 uses the halfway fib instead, like the first trade. MEASURED over 7.9 years and the ladder matters as much as the number: taking the whole position off at 3x made 7,225x, where banking half at 1.25x — the gap trigger's ladder — made 3,111x, which is worse than taking no re-entry at all. A re-entry priced this tight has to be allowed to pay for the ones that fail. Lab only."
-    },
-    {
-      "name": "exec_rec_tp1_pct",
-      "group": "Secondary re-entries (1m)",
-      "label": "Reclaim banks at its first target (%)",
-      "short": "Reclaim banks",
-      "unit": "%",
-      "step": 5,
-      "show_if": {
-        "exec_secondary": true
-      },
-      "guide": ["Keeps a runner, gives up certainty", "Takes it all off at the target"],
-      "desc": "How much of Reclaim Entry comes off at its first target. 100 (default) is the whole position, leaving no runner, and that is the configuration the numbers on the setting above were measured at. -1 inherits the shared first-target size. MEASURED: taking only half off measured strictly worse, twice. Lab only."
-    },
-    {
-      "name": "exec_sec_stop",
-      "group": "Secondary re-entries (1m)",
-      "label": "Re-entry stop sits at",
-      "short": "Stop sits at",
-      "choices": ["1m leg", "swing low", "0.886", "1.0"],
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "Where a re-entry's stop goes. 0.886 (default) is the same level the first trade stops at. 1m leg is the original rule and only works with the 1m shift trigger, which is the only one that creates a 1-minute move to measure — pairing it with the gap trigger is refused rather than quietly substituted. Swing low uses the last confirmed 1-minute swing; 1.0 is the start of the leg. MEASURED, and this is not a detail: on the 29 October 2025 case the same entry stopped at the gap's own edge was a loss two minutes later, and stopped 98 cents lower under the swing it ran to both targets for +16R. Lab only."
-    },
-    {
-      "name": "exec_sec_tp_r",
-      "group": "Secondary re-entries (1m)",
-      "widget": "number",
-      "label": "Re-entry's first target, in R",
-      "short": "First target",
-      "min": -1,
-      "max": 10,
-      "step": 0.1,
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "Where a re-entry takes its first profit, measured as a multiple of its own risk. 1.25 (default) puts that first rung on the re-entry's own scale and leaves the later targets alone; how much banks there is set by \"Re-entry banks this % at TP1\". -1 uses the same 15-minute target the first trade uses, which was the rule until 20 August 2026. MEASURED over 7.9 years with the gap trigger on: without a rung of its own most re-entries finish flat — price moves in your favour and the breakeven stop takes you out before a 15-minute target is reached. Every rung from 0.5 to 2 was replayed and 1.25 won on the total with its single best trade removed. It also brings the move-to-breakeven point closer, so read it together with the banking percentage. Lab only."
-    },
-    {
-      "name": "exec_sec_req_div",
-      "group": "Secondary re-entries (1m)",
-      "widget": "toggle",
-      "label": "Re-entry needs a divergence",
-      "short": "Needs divergence",
-      "options": {
-        "off": "Not needed",
-        "on": "Require"
-      },
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "Whether a re-entry also needs a live RSI divergence on the 15-minute chart, on top of the setup still being alive and price being back in the zone. Not needed (default). It is NOT the same question as what arms the first trade — the bot ships finding its trades from liquidity sweeps, so the divergence is usually absent and requiring it stops re-entries firing at all: MEASURED over the year to 2026-08-18, zero re-entries with it required. Lab only."
-    },
-    {
-      "name": "exec_sec_require",
-      "group": "Secondary re-entries (1m)",
-      "label": "Secondary needs the first trade to have…",
-      "short": "First trade must have",
-      "choices": ["Breakeven", "Any close", "Stopped only", "None"],
-      "show_if": {
-        "exec_secondary": true
-      },
-      "desc": "What the first (15-minute) trade on that setup must have done before a 1-minute re-entry is allowed. Breakeven (default) = it reached TP1. Any close = it traded and is now closed, win or lose. Stopped only = it was stopped out without reaching TP1 — the case where your stop gets swept and price then runs without you. None = no first trade required. Lab only."
     },
     {
       "name": "exec_sec_zone_deep",
@@ -728,19 +600,33 @@
       "desc": "The shallow end of that same zone, as a fib ratio. 0.618 (default) is the entry band's edge. A smaller number lets the re-entry arm after price has already reclaimed part of the move — more chances, at a worse price relative to the targets. Lab only."
     },
     {
-      "name": "exec_sec_max_per_setup",
+      "name": "exec_sec_risk_pct",
       "group": "Secondary re-entries (1m)",
       "widget": "number",
-      "label": "   ↳ How many re-entries per setup",
-      "short": "Max per setup",
+      "label": "Re-entry risk (% of the first trade's)",
+      "short": "Risk",
       "min": 1,
-      "max": 5,
+      "max": 300,
       "step": 1,
       "show_if": {
-        "exec_secondary": true,
-        "exec_sec_once_per_setup": true
+        "exec_secondary": true
       },
-      "desc": "Read only when One re-entry per primary is ON. How many times one setup may be re-entered before it is done. A re-entry that is STOPPED OUT still ends the setup whatever this says, so raising it only lets a setup be re-tried after a scratch. MEASURED over 6.6 years: 2, 3, 5 and unlimited all produce the same book — only one setup ever offered a second re-entry, and it lost. Lab only."
+      "desc": "How much a re-entry risks, as a percentage of what a first trade risks. 50 (default) is half; 100 is the same. It changes the SIZE only — entry, stop and targets are identical, so the R figure a re-entry reports does not move at all and must be scaled by this number before it is compared with a first trade's. MEASURED over 7.9 years: the re-entries add 6.9R at a quarter, 13.9R at half, 20.9R at three-quarters and 27.8R at full weight, and the worst peak-to-trough goes 56.2 / 60.4 / 64.4 / 68.1 per cent against 51.8 with them off — a straight line with no natural stopping place, so half was chosen because one trade is three quarters of the whole leg's profit. Zero is refused: use the on/off switch instead. Lab only."
+    },
+    {
+      "name": "exec_sec_req_div",
+      "group": "Secondary re-entries (1m)",
+      "widget": "toggle",
+      "label": "Re-entry needs a divergence",
+      "short": "Needs divergence",
+      "options": {
+        "off": "Not needed",
+        "on": "Require"
+      },
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Whether a re-entry also needs a live RSI divergence on the 15-minute chart, on top of the setup still being alive and price being back in the zone. Not needed (default). It is NOT the same question as what arms the first trade — the bot ships finding its trades from liquidity sweeps, so the divergence is usually absent and requiring it stops re-entries firing at all: MEASURED over the year to 2026-08-18, zero re-entries with it required. Lab only."
     },
     {
       "name": "exec_sec_req_m1_dir",
@@ -769,8 +655,150 @@
       "desc": "When a re-entry's stop jumps to breakeven. TP1 (default) is the same rule the first trade uses. TP2 holds the original stop for longer, giving the trade room to breathe. MEASURED: TP2 is WORSE — the three trades it saved from a breakeven scratch each became a full loss instead. Lab only."
     },
     {
-      "name": "exec_sec_tp1_pct",
+      "name": "exec_sec_once_per_setup",
       "group": "Secondary re-entries (1m)",
+      "widget": "toggle",
+      "label": "One re-entry per primary",
+      "short": "One per primary",
+      "options": {
+        "off": "One per 1m leg",
+        "on": "One per primary"
+      },
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "How often one setup may be re-entered. On = once. Off = once per 1-minute signal, which is what once let a single setup be re-entered twice about an hour and a half apart. It resets on a fresh break of structure. Lab only."
+    },
+    {
+      "name": "exec_sec_max_per_setup",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "   ↳ How many re-entries per setup",
+      "short": "Max per setup",
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "show_if": {
+        "exec_secondary": true,
+        "exec_sec_once_per_setup": true
+      },
+      "desc": "Read only when One re-entry per primary is ON. How many times one setup may be re-entered before it is done. A re-entry that is STOPPED OUT still ends the setup whatever this says, so raising it only lets a setup be re-tried after a scratch. MEASURED over 6.6 years: 2, 3, 5 and unlimited all produce the same book — only one setup ever offered a second re-entry, and it lost. Lab only."
+    },
+    {
+      "name": "exec_rec_require",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim needs the first trade to have…",
+      "short": "Reclaim needs",
+      "choices": ["Any close", "Breakeven", "None", "Stopped only"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "desc": "What the first trade on this setup must have done before Reclaim Entry may re-enter. Stopped only (default) is the whole point of that trigger — it re-enters a setup whose first trade was stopped out at the deep edge. It is separate from the shared setting above so the gap trigger and the reclaim can run together wanting opposite things of the same trade; when they do, this must stay on Stopped only and the shared one on Breakeven, because those are the only two that cannot both be true of one setup. Lab only."
+    },
+    {
+      "name": "exec_rec_stop",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim stop sits at",
+      "short": "Reclaim stop",
+      "choices": ["0.886", "1.0"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "desc": "Where Reclaim Entry's stop goes. Only these two, because the reclaim enters at a fixed price and a 1-minute swing can land on either side of it — a stop that is sometimes above and sometimes below the thing it protects is not a stop, so the 1-minute anchors are refused rather than substituted. 1.0 is the default and is the reason the trigger exists: the start of the move sits a median 0.43 of the original risk past the deep edge, so the same cash buys a much bigger position. Lab only."
+    },
+    {
+      "name": "exec_rec_tp_r",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim's first target, in R",
+      "short": "Reclaim target",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "guide": ["Banks sooner, gives up the runs", "Waits for a bigger move, more of them fail"],
+      "desc": "Where Reclaim Entry's first target sits, as a multiple of its own risk. -1 uses the halfway fib instead, like the first trade. MEASURED over 7.9 years and the ladder matters as much as the number: taking the whole position off at 3x made 7,225x, where banking half at 1.25x — the gap trigger's ladder — made 3,111x, which is worse than taking no re-entry at all. A re-entry priced this tight has to be allowed to pay for the ones that fail. Lab only."
+    },
+    {
+      "name": "exec_rec_tp1_pct",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim banks at its first target (%)",
+      "short": "Reclaim banks",
+      "unit": "%",
+      "step": 5,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "guide": ["Keeps a runner, gives up certainty", "Takes it all off at the target"],
+      "desc": "How much of Reclaim Entry comes off at its first target. 100 (default) is the whole position, leaving no runner, and that is the configuration the numbers on the setting above were measured at. -1 inherits the shared first-target size. MEASURED: taking only half off measured strictly worse, twice. Lab only."
+    },
+    {
+      "name": "exec_sec_require",
+      "group": "↳ FVG / 1m shift only",
+      "label": "Secondary needs the first trade to have…",
+      "short": "First trade must have",
+      "choices": ["Breakeven", "Any close", "Stopped only", "None"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": "Reclaim Entry"
+      },
+      "disable_note": "No effect under Reclaim Entry — that trigger asks its own version of this question, in the group above.",
+      "desc": "What the first (15-minute) trade on that setup must have done before a 1-minute re-entry is allowed. Breakeven (default) = it reached TP1. Any close = it traded and is now closed, win or lose. Stopped only = it was stopped out without reaching TP1 — the case where your stop gets swept and price then runs without you. None = no first trade required. Lab only."
+    },
+    {
+      "name": "exec_sec_stop",
+      "group": "↳ FVG / 1m shift only",
+      "label": "Re-entry stop sits at",
+      "short": "Stop sits at",
+      "choices": ["1m leg", "swing low", "0.886", "1.0"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": "Reclaim Entry"
+      },
+      "disable_note": "No effect under Reclaim Entry — its stop comes from its own row in the group above.",
+      "desc": "Where a re-entry's stop goes. 0.886 (default) is the same level the first trade stops at. 1m leg is the original rule and only works with the 1m shift trigger, which is the only one that creates a 1-minute move to measure — pairing it with the gap trigger is refused rather than quietly substituted. Swing low uses the last confirmed 1-minute swing; 1.0 is the start of the leg. MEASURED, and this is not a detail: on the 29 October 2025 case the same entry stopped at the gap's own edge was a loss two minutes later, and stopped 98 cents lower under the swing it ran to both targets for +16R. Lab only."
+    },
+    {
+      "name": "exec_sec_tp_r",
+      "group": "↳ FVG / 1m shift only",
+      "widget": "number",
+      "label": "Re-entry's first target, in R",
+      "short": "First target",
+      "min": -1,
+      "max": 10,
+      "step": 0.1,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": "Reclaim Entry"
+      },
+      "disable_note": "No effect under Reclaim Entry — its first target comes from its own row in the group above.",
+      "desc": "Where a re-entry takes its first profit, measured as a multiple of its own risk. 1.25 (default) puts that first rung on the re-entry's own scale and leaves the later targets alone; how much banks there is set by \"Re-entry banks this % at TP1\". -1 uses the same 15-minute target the first trade uses, which was the rule until 20 August 2026. MEASURED over 7.9 years with the gap trigger on: without a rung of its own most re-entries finish flat — price moves in your favour and the breakeven stop takes you out before a 15-minute target is reached. Every rung from 0.5 to 2 was replayed and 1.25 won on the total with its single best trade removed. It also brings the move-to-breakeven point closer, so read it together with the banking percentage. Lab only."
+    },
+    {
+      "name": "exec_sec_tp1_pct",
+      "group": "↳ FVG / 1m shift only",
       "widget": "number",
       "label": "Re-entry banks this % at TP1",
       "short": "TP1 size",
@@ -780,21 +808,29 @@
       "show_if": {
         "exec_secondary": true
       },
+      "disable_if": {
+        "exec_sec_trigger": "Reclaim Entry"
+      },
+      "disable_note": "No effect under Reclaim Entry — how much it banks comes from its own row in the group above.",
       "desc": "How much of a re-entry is banked at its first target, separately from the first trade. 50 (default) takes half off and runs the rest. -1 uses the same setting as everything else, which ships at nothing off — the rule until 20 August 2026. MEASURED over 7.9 years: with nothing banked, 15 of 54 re-entries finished flat; banking half left none flat, 30 winners and 24 losers, and took the leg less its single best trade from -0.4R to +7.2R. It cuts the one big winner by the same proportion, which is the trade being made. Lab only."
     },
     {
-      "name": "exec_sec_risk_pct",
-      "group": "Secondary re-entries (1m)",
+      "name": "exec_sec_retrace",
+      "group": "↳ FVG / 1m shift only",
       "widget": "number",
-      "label": "Re-entry risk (% of the first trade's)",
-      "short": "Risk",
-      "min": 1,
-      "max": 300,
-      "step": 1,
+      "label": "Secondary entry retrace",
+      "short": "Entry retrace",
+      "min": 0.0,
+      "max": 0.999,
+      "step": 0.001,
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "How much a re-entry risks, as a percentage of what a first trade risks. 50 (default) is half; 100 is the same. It changes the SIZE only — entry, stop and targets are identical, so the R figure a re-entry reports does not move at all and must be scaled by this number before it is compared with a first trade's. MEASURED over 7.9 years: the re-entries add 6.9R at a quarter, 13.9R at half, 20.9R at three-quarters and 27.8R at full weight, and the worst peak-to-trough goes 56.2 / 60.4 / 64.4 / 68.1 per cent against 51.8 with them off — a straight line with no natural stopping place, so half was chosen because one trade is three quarters of the whole leg's profit. Zero is refused: use the on/off switch instead. Lab only."
+      "disable_if": {
+        "exec_sec_trigger": ["Reclaim Entry", "FVG in zone", "FVG in zone + Reclaim Entry"]
+      },
+      "disable_note": "No effect — only the 1m shift trigger retraces a leg. The other two rest their order at a level instead: the gap uses the first trade's own price, the reclaim uses the deep edge.",
+      "desc": "How deep the 1-minute re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
     },
     {
       "name": "show_div",
