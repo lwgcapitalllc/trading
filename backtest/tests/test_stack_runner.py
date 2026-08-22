@@ -350,3 +350,211 @@ def test_progress_names_the_PHASE_so_a_reader_can_tell_control_from_book(monkeyp
     )
     assert phases[0] == "shared"
     assert set(phases) == {"shared", "solo:a", "solo:b"}
+
+
+# ── a leg that reads ANOTHER leg's closed trades (LegSpec.source) ──────────────────────
+#
+# The mechanism `loss_recovery` needs: a rule with no setups of its own, armed by a primary's
+# losses. Everything pinned here fails SILENTLY if it breaks — an empty book from a rule that
+# found nothing and an empty book from a rule that was handed nothing are the same output.
+
+
+class _SourceStrategy:
+    """A leg that closes one trade partway through the frame."""
+
+    def __init__(self, config=None, initial_capital=0.0, account=None, leg="src"):
+        self.config = config
+        self.execution = _FakeExecution(account, leg, entry_bar=1)
+
+    @staticmethod
+    def engine_config():
+        return None
+
+    def step(self, bar_state) -> None:
+        self.execution.step(bar_state)
+
+
+class _DependentExecution:
+    def __init__(self):
+        self.trades: list = []
+        self.bar_ms = 900_000
+        self.is_flat = True
+
+
+class _DependentStrategy:
+    """Implements the source contract and records what it could SEE on each bar."""
+
+    def __init__(self, config=None, initial_capital=0.0, account=None, leg="dep"):
+        self.config = config
+        self.execution = _DependentExecution()
+        self._source = None
+        self.horizon = None
+        self.seen: list = []
+
+    @staticmethod
+    def engine_config():
+        return None
+
+    def watch(self, source_trades) -> None:
+        self._source = source_trades
+
+    def set_horizon(self, last_index, bars_per_day) -> None:
+        self.horizon = (last_index, bars_per_day)
+
+    def step(self, bar_state) -> None:
+        self.seen.append(0 if self._source is None else len(self._source))
+
+
+def _sourced_stack(monkeypatch, n_bars=10):
+    """Point `run_stack` at a scripted source leg and a scripted dependent, and hand back the
+    dependents that got built (shared run first, then each solo control)."""
+    from backtest.portfolio import runner as runner_mod
+
+    made: dict = {"dependents": [], "sources": []}
+
+    def _fake(name, strategy_cls, config, df, *, account, initial_capital, cost_profile=None):
+        strategy = strategy_cls(config=config, account=account, leg=name)
+        leg = StrategyLeg.__new__(StrategyLeg)
+        leg.name = name
+        leg.strategy = strategy
+        leg._df = None
+        leg._stack = _CountingStack()
+        leg._bars = [_Bar(i, i * 900_000) for i in range(n_bars)]
+        leg.bars = lambda: iter(leg._bars)  # type: ignore[method-assign]
+        if isinstance(strategy, _DependentStrategy):
+            made["dependents"].append(strategy)
+        else:
+            made["sources"].append(strategy)
+        return leg
+
+    monkeypatch.setattr(runner_mod, "build_leg", _fake)
+    specs = [
+        LegSpec("src", _SourceStrategy, {"entry_bar": 1}, pd.DataFrame({"c": range(n_bars)})),
+        LegSpec(
+            "dep",
+            _DependentStrategy,
+            {},
+            pd.DataFrame({"c": range(n_bars)}),
+            source="src",
+        ),
+    ]
+    return specs, made
+
+
+def test_a_source_must_name_a_leg_that_is_actually_in_the_stack():
+    """The quiet failure: the dependent reads nothing, arms on nothing, and returns an empty
+    book — which is indistinguishable from a rule that genuinely found no setups."""
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 0}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 0}, pd.DataFrame(), source="ghost"),
+    ]
+    with pytest.raises(ValueError) as e:
+        run_stack(specs, balance=1000.0, risk_cap_pct=0.1)
+    assert "not in this stack" in str(e.value)
+
+
+def test_a_leg_may_not_source_itself():
+    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 0}, pd.DataFrame(), source="a")]
+    with pytest.raises(ValueError) as e:
+        run_stack(specs, balance=1000.0, risk_cap_pct=0.1)
+    assert "names itself" in str(e.value)
+
+
+def test_chained_sources_are_refused_because_a_cycle_would_build_forever():
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 0}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 0}, pd.DataFrame(), source="a"),
+        LegSpec("c", _FakeStrategy, {"entry_bar": 0}, pd.DataFrame(), source="b"),
+    ]
+    with pytest.raises(ValueError) as e:
+        run_stack(specs, balance=1000.0, risk_cap_pct=0.1)
+    assert "itself sourced" in str(e.value)
+
+
+def test_a_leg_given_a_source_must_implement_the_contract(monkeypatch):
+    """`_FakeStrategy` has no `watch`. Without this refusal the source is dropped in silence and
+    the leg runs as though it had never been given one."""
+    _stub_build_leg(monkeypatch, n_bars=10)
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame(), source="a"),
+    ]
+    with pytest.raises(TypeError) as e:
+        run_stack(specs, balance=10_000.0, risk_cap_pct=1.0)
+    assert "does not implement watch()" in str(e.value)
+
+
+def test_the_dependent_is_handed_the_LIVE_trade_list_not_a_copy(monkeypatch):
+    """🔴 THE ONE THAT MATTERS. The dependent arms when a source trade CLOSES, so it must read a
+    list that grows under it during the replay.
+
+    Watched RED by mutation: `_wire_source` passing `list(source_leg.trades)` makes every entry
+    in `seen` zero, and an empty book is exactly what a rule with no setups returns.
+    """
+    specs, made = _sourced_stack(monkeypatch)
+    run_stack(specs, balance=10_000.0, risk_cap_pct=1.0, solo_control=False)
+    dep = made["dependents"][0]
+    assert dep.seen[0] == 0, "nothing has closed on the first bar"
+    assert dep.seen[-1] == 1, "the source closed a trade and the dependent must have seen it"
+
+
+def test_the_source_is_built_before_the_leg_that_reads_it(monkeypatch):
+    """Order is not cosmetic — the dependent is handed the source's list at BUILD time, so a
+    dependent built first has nothing to be handed."""
+    specs, made = _sourced_stack(monkeypatch)
+    # Ask for the dependent FIRST; the runner must still build the source before it.
+    run_stack(specs[::-1], balance=10_000.0, risk_cap_pct=1.0, solo_control=False)
+    assert made["sources"] and made["dependents"]
+
+
+def test_the_dependent_is_told_where_the_FRAME_ENDS(monkeypatch):
+    """Its time stop is measured in bars, so a leg with no horizon never times a trade out."""
+    specs, made = _sourced_stack(monkeypatch, n_bars=10)
+    run_stack(specs, balance=10_000.0, risk_cap_pct=1.0, solo_control=False)
+    last_index, per_day = made["dependents"][0].horizon
+    assert last_index == 9  # len(df) - 1
+    assert per_day == pytest.approx(96.0)  # 15-minute bars
+
+
+def test_the_CONTROL_for_a_sourced_leg_gets_its_own_PRIVATE_source(monkeypatch):
+    """🔴 A sourced leg alone has nothing to recover, so its control needs a private copy of the
+    source running beside it — on its OWN account, so only the measured leg books onto the
+    control's balance.
+
+    Watched RED by mutation: dropping the private source leaves the control's dependent seeing
+    zero closed trades forever, and an empty control makes the shared result look like the whole
+    of the leg's worth rather than the part that survived the competition.
+    """
+    specs, made = _sourced_stack(monkeypatch)
+    run = run_stack(specs, balance=10_000.0, risk_cap_pct=1.0)
+    assert set(run.solo_per_leg) == {"src", "dep"}
+    # dependents: [shared, control-for-dep]. The control's dependent must have seen the private
+    # source close a trade, exactly as the shared one did.
+    control_dep = made["dependents"][-1]
+    assert control_dep.seen[-1] == 1
+
+
+def test_an_ordinary_stack_with_no_sources_is_untouched(monkeypatch):
+    """The direction that must not move: every stored stack ran with no sources at all."""
+    _stub_build_leg(monkeypatch, n_bars=10)
+    specs = [
+        LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+        LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+    ]
+    run = run_stack(specs, balance=10_000.0, risk_cap_pct=1.0)
+    assert set(run.per_leg) == {"a", "b"}
+    assert set(run.solo_per_leg) == {"a", "b"}
+
+
+def test_the_strategy_page_recovery_switch_is_REFUSED_in_a_stack():
+    """🔴 It is INERT here — it runs from a finalize hook the simulator never calls — so the leg
+    would come back with its recovery trades silently missing."""
+    from backtest.portfolio.legs import _refuse_unreplayable
+
+    class _Cfg:
+        exec_recovery = True
+
+    with pytest.raises(ValueError) as e:
+        _refuse_unreplayable("aplus", _Cfg())
+    assert "does NOTHING" in str(e.value)
+    assert "its own leg" in str(e.value)

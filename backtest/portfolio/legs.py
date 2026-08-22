@@ -107,3 +107,21 @@ def _refuse_unreplayable(name: str, config) -> None:
             f"would be primary-only while everything it is compared against is not. Set "
             f"exec_secondary=False on this leg's config."
         )
+    # 🔴 The strategy-page recovery switch is INERT in a stack and says nothing about it. That
+    # switch runs through `finalize(df)`, a hook nothing here calls — the simulator steps bars and
+    # never drives `run()` — so the leg comes back with the recovery trades simply MISSING. No
+    # error, no empty list to notice, just a smaller book than the same settings produce anywhere
+    # else. It is refused rather than ignored because the two live paths disagree about what the
+    # same tick box means, and the quiet one is the one that reaches a comparison table.
+    #
+    # ⚠ The recovery belongs in a stack as its own LEG (`LegSpec.source`), which is the version
+    # that competes for the budget. The switch cannot compete by construction: it reads a book
+    # that has already finished.
+    if getattr(config, "exec_recovery", False):
+        raise ValueError(
+            f"leg {name!r}: exec_recovery is on, and in a shared-account stack that switch does "
+            f"NOTHING — it runs from a finalize hook the simulator never calls, so this leg would "
+            f"come back with its recovery trades silently missing. Add the recovery as its own "
+            f"leg instead (LegSpec(source=...)), which is the version that competes for the "
+            f"budget, and set exec_recovery=False on this leg's config."
+        )

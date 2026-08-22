@@ -790,6 +790,41 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   over the FULL history beside a book that stopped a year in is not a control — it is two
   different experiments in one table, and the screen-vs-shared delta would read the missing year
   as the cap's doing.
+- 🔴 **`LegSpec.source` — a leg may READ ANOTHER LEG'S CLOSED TRADES (2026-08-21).** The mechanism
+  the loss-recovery rule needs: it has no setups of its own and arms off a primary's losses, so it
+  cannot be an ordinary leg. `source` names another leg in the same stack; `run_stack` builds
+  sources first, hands the dependent that leg's **live trade list object**, and gives it the
+  frame's last bar and bars-per-day for its time stop. **Defaults `None`, so every stored stack is
+  byte-identical** — with no sources the build order, the solo controls and the simulate call are
+  all unchanged.
+  🔴 **The list must be the OBJECT, not a copy, and that is the whole failure mode.** The dependent
+  arms when a source trade CLOSES, so it reads a list that grows under it during the replay. A copy
+  taken at build time is empty forever and the leg returns an empty book — **indistinguishable from
+  a rule that genuinely found no setups.** Pinned by
+  `test_the_dependent_is_handed_the_LIVE_trade_list_not_a_copy`, watched RED by `list(...)`.
+  🔴 **A sourced leg's SOLO CONTROL gets a PRIVATE copy of its source**, on its own account, so only
+  the measured leg books onto the control's balance. A sourced leg alone has nothing to recover, and
+  an empty control makes the shared result look like the whole of the leg's worth rather than the
+  part that survived the competition. ⚠ **The private source's trades are discarded on purpose** —
+  it exists to lose, and reporting it would put a second copy of the source's book in the run.
+  ⚠ **Three refusals, each with a silent failure behind it**: a source not in the stack (the
+  dependent reads nothing), a leg sourcing itself, and a CHAIN — chains are refused rather than
+  supported because the moment they are legal so are cycles, and a cycle here builds forever rather
+  than raising. ⚠ **A leg handed a source that does not implement the contract is refused**, or the
+  source is dropped in silence.
+  ⚠ **`bars_per_day` is read off the leg's own `execution.bar_ms`**, which `StrategyLeg.__init__`
+  has already measured — two readings of one fact are how they come to disagree.
+  **Where this is going:** `docs/RECOVERY_LEG_IN_COMMAND_CENTER.md`. 10 tests in
+  `tests/test_stack_runner.py`, 4 mutations each reddening exactly its own case.
+- 🔴 **`legs.py` REFUSES a leg whose `exec_recovery` is on, and the reason is that it does NOTHING
+  here (2026-08-21).** That switch runs from a `finalize(df)` hook the simulator never calls — it
+  steps bars and never drives `run()` — so the leg came back with its recovery trades **silently
+  missing**. No error, no empty list to notice, just a smaller book than the same settings produce
+  anywhere else, reaching a comparison table looking ordinary. It joins `exec_secondary` at the same
+  seam, for the same class of reason. ⚠ **No stored stack moves** — checked, not assumed: 0 of the
+  6 stored stack leg runs had it on. ⚠ **The recovery belongs in a stack as its own LEG**, which is
+  the version that competes for the budget; the switch cannot compete by construction, because it
+  reads a book that has already finished.
 - **`tools/stack_run.py`** — the CLI. Prints the shared book beside the solo controls, what the
   account CARRIED, and the contention log.
 - **The LAB drives the same object** (`command-center/backend/services/portfolio_runner.py`,

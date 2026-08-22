@@ -40,13 +40,24 @@ __all__ = ["LegSpec", "StackRun", "run_stack", "contention_summary"]
 
 @dataclass
 class LegSpec:
-    """One leg to stack: what to run, on which bars, under which config."""
+    """One leg to stack: what to run, on which bars, under which config.
+
+    `source` names ANOTHER leg in the same stack whose closed trades this one reads. It exists
+    for a rule that has no setups of its own — `loss_recovery` fires off a primary's losses — and
+    it is the one dependency a stack can express. Leave it `None` for an ordinary strategy.
+
+    🔴 **A sourced leg is handed the source's LIVE trade list, not a copy.** The dependent arms
+    when a source trade closes, so it reads a list that grows under it during the replay. A copy
+    taken at build time is empty forever, and a leg that arms on nothing produces an empty book
+    that reads exactly like a rule which found no setups — the failure gives no symptom.
+    """
 
     name: str
     strategy_cls: Any
     config: Any
     df: Any
     cost_profile: Any = None
+    source: str | None = None
 
 
 @dataclass
@@ -97,6 +108,7 @@ def run_stack(
     recorded as a complete one.
     """
     _refuse_duplicate_names(specs)
+    _refuse_bad_sources(specs)
     if not 0.0 < risk_cap_pct:
         raise ValueError(
             f"risk_cap_pct must be positive, got {risk_cap_pct!r} — a cap of zero "
@@ -106,8 +118,13 @@ def run_stack(
     account = PortfolioAccount(
         balance=balance, risk_cap_pct=risk_cap_pct, entry_floor_pct=entry_floor_pct
     )
-    legs = [
-        build_leg(
+    # Sources first, so a dependent can be handed its source's live trade list at build time.
+    # `_refuse_bad_sources` has already established that a source has no source of its own, so
+    # one pass is the whole ordering — there is no chain to walk and no cycle to detect here.
+    ordered = [s for s in specs if s.source is None] + [s for s in specs if s.source is not None]
+    built: dict[str, Any] = {}
+    for s in ordered:
+        leg = build_leg(
             s.name,
             s.strategy_cls,
             s.config,
@@ -116,8 +133,12 @@ def run_stack(
             initial_capital=balance,
             cost_profile=s.cost_profile,
         )
-        for s in specs
-    ]
+        if s.source is not None:
+            _wire_source(leg, built[s.source], s.df)
+        built[s.name] = leg
+    # Back into the caller's order — `simulate` steps holders before flat legs anyway, but the
+    # per-leg reporting and the solo controls read better in the order the caller asked for.
+    legs = [built[s.name] for s in specs]
     result = simulate(
         legs,
         account,
@@ -155,6 +176,7 @@ def run_stack(
         # one table, and the delta column would read as the cap's doing.
         return run
     if solo_control:
+        by_name = {s.name: s for s in specs}
         for spec in specs:
             solo = SoloAccount(balance=balance)
             leg = build_leg(
@@ -166,8 +188,31 @@ def run_stack(
                 initial_capital=balance,
                 cost_profile=spec.cost_profile,
             )
+            # 🔴 A SOURCED LEG ALONE HAS NOTHING TO RECOVER, so its control needs a private copy
+            # of its source running beside it — on its OWN account, so only the leg being measured
+            # books onto `solo`. Without this the control is an empty book, and an empty control
+            # makes the shared result look like the whole of the leg's worth rather than the part
+            # of it that survived the competition.
+            #
+            # ⚠ The private source's trades are DISCARDED on purpose. It exists to lose, so this
+            # leg has losses to read; reporting them would put a second copy of the source's book
+            # in a run that already has one.
+            company = []
+            if spec.source is not None:
+                src_spec = by_name[spec.source]
+                src_leg = build_leg(
+                    src_spec.name,
+                    src_spec.strategy_cls,
+                    src_spec.config,
+                    src_spec.df,
+                    account=SoloAccount(balance=balance),
+                    initial_capital=balance,
+                    cost_profile=src_spec.cost_profile,
+                )
+                _wire_source(leg, src_leg, spec.df)
+                company = [src_leg]
             solo_result = simulate(
-                [leg],
+                company + [leg],
                 solo,
                 progress=(lambda i, n=spec.name: progress(f"solo:{n}", i)) if progress else None,
                 should_cancel=should_cancel,
@@ -200,6 +245,66 @@ def _refuse_duplicate_names(specs: Sequence[LegSpec]) -> None:
             f"open position by leg name, so duplicates overwrite each other's "
             f"reservation and the risk cap silently under-counts."
         )
+
+
+def _refuse_bad_sources(specs: Sequence[LegSpec]) -> None:
+    """Every `source` must name another leg in this stack, and that leg must have none itself.
+
+    Three refusals, and each one has a silent failure behind it:
+
+    * **A source that is not in the stack** would leave the dependent with nothing to read. It
+      arms on nothing, produces an empty book, and that is indistinguishable from a rule which
+      genuinely found no setups.
+    * **A leg sourcing itself** would have it read its own trade list as it writes to it.
+    * **A chain** (A sources B, B sources C) is refused rather than supported, because the moment
+      chains are legal so are cycles, and a cycle here is an infinite build rather than an error.
+      Nothing in this repo wants one; when something does, it arrives with its own ordering.
+    """
+    names = {s.name for s in specs}
+    sourced = {s.name for s in specs if s.source is not None}
+    for s in specs:
+        if s.source is None:
+            continue
+        if s.source == s.name:
+            raise ValueError(
+                f"leg {s.name!r} names itself as its source — it would read its own trade "
+                f"list as it writes to it."
+            )
+        if s.source not in names:
+            raise ValueError(
+                f"leg {s.name!r} sources {s.source!r}, which is not in this stack. It would "
+                f"read nothing and return an empty book, which reads exactly like a rule that "
+                f"found no setups. Add that leg, or drop this one."
+            )
+        if s.source in sourced:
+            raise ValueError(
+                f"leg {s.name!r} sources {s.source!r}, which is itself sourced. Chained sources "
+                f"are refused: once a chain is legal so is a cycle, and a cycle here builds "
+                f"forever rather than raising."
+            )
+
+
+def _wire_source(leg: Any, source_leg: Any, df: Any) -> None:
+    """Hand `leg` the source's LIVE trade list and the frame's end.
+
+    ⚠ `source_leg.trades` is the list the source APPENDS to — passing `list(...)` here is the
+    one mistake this whole mechanism exists to avoid, and it fails silently.
+
+    ⚠ `bar_ms` is read off the leg's own execution rather than recomputed from `df`, because
+    `StrategyLeg.__init__` has already measured it there and two readings of one fact are how
+    they come to disagree. A leg whose frame has one bar leaves it 0; the `or 1` keeps the
+    division safe and the horizon is meaningless on a one-bar frame either way.
+    """
+    for method in ("watch", "set_horizon"):
+        if not hasattr(leg.strategy, method):
+            raise TypeError(
+                f"leg {leg.name!r} was given a source but does not implement {method}(). Only a "
+                f"leg that reads another's closed trades can take one — see "
+                f"strategies/python/loss_recovery/leg.py for the contract."
+            )
+    leg.strategy.watch(source_leg.trades)
+    per_day = 86_400_000.0 / max(int(leg.strategy.execution.bar_ms) or 1, 1)
+    leg.strategy.set_horizon(len(df.index) - 1, per_day)
 
 
 def contention_summary(run: StackRun) -> dict:
