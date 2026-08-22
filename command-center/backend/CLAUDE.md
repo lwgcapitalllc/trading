@@ -3639,7 +3639,7 @@ CANNOT state is where the fill landed on it, and that is the question:
   exactly at the origin.
 
 ⚠ **Both are computed and served, and since 2026-08-03 the chart draws NEITHER** — the panel's Fibs
-layer prints the ladder only, and the trade's own `Entry` / `Deepest` annotations carry those two
+layer prints the ladder only, and the trade's own `Entry` / `DD` annotations carry those two
 price rows (with prices). They stay here because they are the two readings the ladder cannot state
 and the derivation is pinned by tests; if nothing consumes them by the next chart pass, delete them
 rather than leaving a field the UI implies it is showing.

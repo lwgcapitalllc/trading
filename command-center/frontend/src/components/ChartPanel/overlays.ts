@@ -679,19 +679,26 @@ export function registerChartOverlays(): void {
       }
 
       // How far the trade RAN — the two ends of the hold, one each way, and the pair of annotations
-      // this layer was missing (Aaron's call, 2026-08-03). `Furthest` is the top edge of the faint
-      // green band (unlabelled until now); `Deepest` is its adverse mirror and had no marker at all.
+      // this layer was missing (Aaron's call, 2026-08-03). `Best` is the top edge of the faint green
+      // band (unlabelled until now); `DD` is its adverse mirror and had no marker at all.
       //
-      // Each is drawn only where it says something the labels beside it don't. `Furthest` needs a
+      // 🔴 They read `Furthest` / `Deepest` until 2026-08-21. Both are the widest chips a trade
+      // draws, both sit in the cluster the de-collider is already fighting, and neither word says
+      // more than its short form does. `DD` is Aaron's own; `Best` was chosen over `Reached` /
+      // `Peak` because it reads the same on a long and a short — the favourable extreme of a short
+      // is the LOWEST price, so `Peak` invites the wrong half of the chart and `Reached` leaves
+      // "reached what?" unanswered.
+      //
+      // Each is drawn only where it says something the labels beside it don't. `Best` needs a
       // REAL `mfePrice` (it falls back to the banked/exit price, which the Exit chip already
       // states) and it must have run PAST what was banked, which is exactly when the faint unbanked
-      // band exists. `Deepest` needs to have gone adversely past the entry. Without those guards a
-      // trade that never moved against itself prints `Deepest` on the entry's own pixel row.
+      // band exists. `DD` needs to have gone adversely past the entry. Without those guards a
+      // trade that never moved against itself prints `DD` on the entry's own pixel row.
       const runColor = withAlpha(profitColor, 0.7)
       if (typeof d.mfePrice === 'number' && (d.mfePrice - (bankedPrice ?? entryP!)) * sign > 1e-9) {
         crossLine(d.mfePrice, withAlpha(profitColor, 0.4))
         dot(d.mfePrice, runColor)
-        addLabel(d.mfePrice, 'Furthest', runColor)
+        addLabel(d.mfePrice, 'Best', runColor)
       } else {
         crossLine(mfePrice, withAlpha(profitColor, 0.4)) // guide only — Exit already names it
       }
@@ -703,7 +710,7 @@ export function registerChartOverlays(): void {
         const deepColor = withAlpha(stopColor, 0.75)
         crossLine(d.maePrice, withAlpha(stopColor, 0.4))
         dot(d.maePrice, deepColor)
-        addLabel(d.maePrice, 'Deepest', deepColor)
+        addLabel(d.maePrice, 'DD', deepColor)
       }
       // Stop: dotted line across + dot + "SL".
       crossLine(d.stopPrice, withAlpha(stopColor, 0.85))

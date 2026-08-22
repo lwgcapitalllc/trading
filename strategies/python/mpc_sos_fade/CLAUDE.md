@@ -1590,7 +1590,7 @@ own exit: `{price, ms, qty, mfe_price, mae_price, exit_price, exit_ms, exit_reas
 and further into the move, so it sits through a different part of it — on the fixture the base's
 drawdown reaches 103.5 on its entry bar, which happened *before the lot existed*. Copying the
 parent's numbers down would report the base's worst price as the add's, and the chart would draw a
-`Deepest` line at a price that lot never saw. MEASURED over 2018-09→2026-08: **110 of 112 lots have
+`DD` line (the chart's adverse-extreme chip) at a price that lot never saw. MEASURED over 2018-09→2026-08: **110 of 112 lots have
 an excursion that differs from their parent's.** The two that match are lots that happened to ride
 the same extremes, not evidence of inheritance.
 

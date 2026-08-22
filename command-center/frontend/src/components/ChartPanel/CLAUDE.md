@@ -190,7 +190,7 @@ every setting of that kind that will ever exist.
   rule `reconcileToggles` follows for overlay groups, and it fails the same silent way if broken:
   the reader's chart quietly loses a control they never turned off.
 - 🔴 **`tradeLabels`** → `TradeExtend.showLabels` (2026-08-20, Aaron's ask). Off drops every
-  ANNOTATION a trade draws — the `Entry` / `SL` / `TP1` / `Furthest` / `Deepest` / `Add` chips down
+  ANNOTATION a trade draws — the `Entry` / `SL` / `TP1` / `Best` / `DD` / `Add` chips down
   the side, and the `Won` / `Lost` verdict over the end — and leaves the DRAWING: the bands, the
   level lines and their dots. His reason, and it is the design: *"I will just be able to eye it off
   of the colour of the drawdown filters and the TP zone."* On a chart with several trades in view
@@ -205,10 +205,10 @@ every setting of that kind that will ever exist.
     layer name and no kind tag, so it draws no chip at all. An empty one still paints its dark
     rounded box, which on a chart stripped of every other label is the only thing left to look at.
   - ⚠ **The pattern NAME goes too**, though it has its own setting one section down. It is an
-    annotation about what happened at the turn, in the same family as `Furthest` and `Deepest` —
+    annotation about what happened at the turn, in the same family as `Best` and `DD` —
     keeping it while dropping `Won` would be arbitrary, and it is one toggle away.
   - ⚠ **The gate is ONE choke point (`addLabel`), never one per call site.** A trade grew its
-    annotations one call at a time — `SL`, then the legs, then `Furthest`/`Deepest`, then the adds,
+    annotations one call at a time — `SL`, then the legs, then `Best`/`DD`, then the adds,
     then the TP ladder — and a flag wired at each would be a list the NEXT annotation is free to be
     left off, silently, because nothing fails when a label keeps drawing.
   - ⚠ **Undefined means ON**, same rule as `showPrices` below: a caller that has not been updated
@@ -270,6 +270,18 @@ are still on that fib's right-click menu** — a different SCOPE, not a second r
   as something that failed to load.
 - The editor's shown/total count is reported UP (`onCountChange`) rather than drawn, because it
   belongs in whichever header hosts it and the component deliberately has none.
+
+## `Deepest` → `DD`, `Furthest` → `Best` (2026-08-21)
+
+Aaron's ask, and the second half was left to me. Both were the widest chips a trade draws, both
+land in the cluster the de-collider is already pushing apart, and neither word carried more than
+its short form. **`DD` is his; `Best` was chosen over `Reached` and `Peak`** — the favourable
+extreme of a SHORT is the LOWEST price on the chart, so `Peak` points the reader at the wrong half
+and `Reached` leaves *reached what?* unanswered, while `Best` reads the same on either side.
+
+⚠ **They are DISPLAY strings and nothing keys off them** — the fields are still `mfePrice` /
+`maePrice` end to end, and `services/candle_overlays.py` still calls the adverse extreme "deepest"
+in its own reasoning, which is correct there and is not this chip.
 
 ## The one rule
 
@@ -603,7 +615,7 @@ here**, so the chart shows exactly what the strategy saw.
   a **loser** a DARKER band entry→**stop** (up to the stop line) plus a faint tail if price ran
   past the stop (gap/slippage) on to `maePrice`. Each level (stop,
   each profit-take, the entry) is a **thin dotted line** with a **small dot** at the left edge and a
-  compact **rounded label** (`SL`/`TP1`/`TP2`/`TP3`/`Exit`/`Entry`/`Deepest`/`Furthest`; the TP/Exit
+  compact **rounded label** (`SL`/`TP1`/`TP2`/`TP3`/`Exit`/`Entry`/`DD`/`Best`; the TP/Exit
   label comes from the leg's exit id via `chart_spec._leg_label`, one style for every rung — no
   per-TP colours). 🔴 **Every one of these words can be switched
   off whole** — Chart settings → Trades → *Annotate trades* (2026-08-20): the lines, the dots and the
@@ -611,12 +623,12 @@ here**, so the chart shows exactly what the strategy saw.
   **Every label states its own PRICE** (`SL 4031.84`, not `SL`) as of 2026-08-03,
   Aaron's call: these are the trade's record of what happened, so each carries the number it
   happened at instead of making you read it off the axis — `precision` rides in on `extendData`.
-  **`Deepest` (`maePrice`) and `Furthest` (`mfePrice`) landed with it** — how far the trade ran each
+  **`DD` (`maePrice`) and `Best` (`mfePrice`) landed with it** — how far the trade ran each
   way, which the layer drew as band edges and never named. Each is drawn only where it says
-  something its neighbours don't: `Furthest` needs a REAL `mfePrice` that ran PAST what was banked
-  (it falls back to the banked/exit price, which the `Exit` chip already states), and `Deepest` needs
+  something its neighbours don't: `Best` needs a REAL `mfePrice` that ran PAST what was banked
+  (it falls back to the banked/exit price, which the `Exit` chip already states), and `DD` needs
   to have gone adversely past the entry — otherwise a trade that never moved against itself prints
-  `Deepest` on the entry's own pixel row. ⚠ On a stop-out `Deepest` sits within a hair of `SL`
+  `DD` on the entry's own pixel row. ⚠ On a stop-out `DD` sits within a hair of `SL`
   (measured: 0.05–0.62 on this instrument) so the two are always pushed apart by the de-collider;
   that is correct rather than noise — the gap between them is how far past the stop price ran. **The
   entry is the exception: no line across, just a short tick where the green begins** (the fill edge is
@@ -627,7 +639,7 @@ here**, so the chart shows exactly what the strategy saw.
   a solid BLUE chip, so a bare `text` figure renders as an ugly blue tag. The labels therefore style
   the text figure directly (subtle dark `backgroundColor`, rounded, thin border) — never a separate
   `rect` behind a bare `text`. The `mfePrice` line is a faint guide (the top of the faint band); it is
-  labelled `Furthest` only when it outran what was banked, else it stays unlabelled as before. All prices arrive via `extendData`
+  labelled `Best` only when it outran what was banked, else it stays unlabelled as before. All prices arrive via `extendData`
   and are converted to pixels with the callback's **`yAxis.convertToPixel`** (the two overlay points
   give the entry/exit x-span) — so a variable number of legs needs no extra points. `overlays.ts`
   stays theme-free (fav/adv/entry/chip colours are passed in). **Degrades gracefully:** a trade
@@ -641,9 +653,9 @@ here**, so the chart shows exactly what the strategy saw.
   chip under the ENTRY on both paths and it was UNREADABLE on real data, which is worth recording because
   the reasoning for it was sound**: the question a reader has is *why is there a SECOND trade on this leg*,
   which is a question about the entry — but directly under the entry point is exactly where the `Entry` /
-  `SL` / `Deepest` price chips stack, and **a re-entry is TIGHT BY CONSTRUCTION, which is the whole
+  `SL` / `DD` price chips stack, and **a re-entry is TIGHT BY CONSTRUCTION, which is the whole
   idea**, so its box is short and those chips are already almost on top of each other. Screenshotted on
-  2024-12-02, `Deepest 2634.29` and `SEC` were overlapping and `SL 2634.56` was touching it. The outcome
+  2024-12-02, `DD 2634.29` and `SEC` were overlapping and `SL 2634.56` was touching it. The outcome
   chip is centred beyond the trade's resolved extreme and is the one label with clear air around it.
   ⚠ **It reads `SEC` FIRST (`SEC · Won`), so the fact that it is a re-entry survives being skimmed** —
   win or lose was explicitly not the point of the ask. ⚠ **The degraded path keeps the entry chip even
@@ -742,7 +754,7 @@ here**, so the chart shows exactly what the strategy saw.
   and stops there; this answers the questions a reader actually has of it — how far it ran, what its
   drawdown was, where it came off — because a lot is a position and often carries most of the size.
   🔴 **It is the SAME overlay template, registered a second time under a second name**, so a lot gets
-  the identical profit-depth view: two-tone green run, `Furthest`, `Deepest`, exit line, outcome
+  the identical profit-depth view: two-tone green run, `Best`, `DD`, exit line, outcome
   chip. A bespoke renderer would have been a second implementation of the trade box, free to drift
   about what *how far it ran* means. The two names exist only so the layers clear independently.
   ⚠ **Extracting that template to a const cost it its typing** and the params silently became `any`
@@ -1036,7 +1048,7 @@ here**, so the chart shows exactly what the strategy saw.
   readings: `backend/CLAUDE.md` → *Trade fibs*.
   - **It draws the LADDER and nothing else.** It shipped with `entry <ratio>` / `deepest <ratio>`
     accent chips at the right edge; both are gone. The trade underneath already annotates its own
-    entry, and how far it ran now belongs with the rest of its annotations (`Deepest` / `Furthest`
+    entry, and how far it ran now belongs with the rest of its annotations (`DD` / `Best`
     in the TRADE template) — one price row labelled twice by two layers is what made the chart read
     as doubled up. `entryRatio` / `deepestRatio` are still computed and still ride on the spec;
     nothing draws them today.
