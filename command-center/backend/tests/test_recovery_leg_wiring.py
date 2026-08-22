@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config as cfg  # noqa: E402
 from models import StackRequest  # noqa: E402
 from routers._source_guard import refuse_if_needs_source  # noqa: E402
-from routers.stacks import _validate_recovery_leg  # noqa: E402
+from routers.stacks import _validate_recovery_leg, _validate_stack_strategies  # noqa: E402
 from services import strategy_scanner  # noqa: E402
 
 # 🔴 MODULE LEVEL, not inside the first test that happens to need it. It WAS inside one, and the
@@ -216,3 +216,35 @@ def test_every_endpoint_that_STARTS_a_job_from_a_strategy_id_refuses_a_dependent
                 f"that strategy can run alone. See routers/_source_guard.py."
             )
     assert len(checked) >= 3, f"expected the three job creators, found {checked}"
+
+
+# ── one strategy plus a recovery IS a stack ───────────────────────────────────────────
+# 🔴 The minimum was counted in STRATEGY IDS, so A+ plus a recovery on A+ — one id, two legs, the
+# single most likely stack anybody builds and the exact case this leg was built for — was refused
+# with "a stack needs at least 2 strategies". Nothing was broken; the feature just could not be
+# reached, which is the failure shape rule 9 is about.
+def test_one_strategy_plus_a_recovery_leg_is_enough():
+    _validate_stack_strategies(["mpc_sos_fade"], extra_legs=1)
+
+
+def test_one_strategy_on_its_own_is_still_refused():
+    with pytest.raises(HTTPException) as e:
+        _validate_stack_strategies(["mpc_sos_fade"])
+    assert e.value.status_code == 400
+    # It has to name the way out, or the reader is told a rule and not a remedy.
+    assert "loss recovery" in e.value.detail
+
+
+def test_the_leg_count_is_read_off_the_REQUEST_not_assumed():
+    """`trigger_stack` must pass the recovery through to the count. Guarding only the helper
+    would leave the endpoint counting ids and refusing the same stack one layer up."""
+    import ast
+
+    src = Path(__file__).resolve().parents[1] / "routers" / "stacks.py"
+    fn = next(
+        f
+        for f in ast.walk(ast.parse(src.read_text()))
+        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)) and f.name == "trigger_stack"
+    )
+    body = ast.dump(fn)
+    assert "extra_legs" in body and "recovery_parent" in body

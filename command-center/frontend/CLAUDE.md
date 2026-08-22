@@ -2032,6 +2032,16 @@ rule that found no setups**. The alternative shape — listing it beside the rea
 and the run then refuses AFTER the reader has filled in the form. **A dependency the UI cannot
 express becomes a runtime refusal, which is a worse version of the same rule.**
 
+🔴 **THE STACK BUILDER COUNTS LEGS, NOT TICKED STRATEGIES (2026-08-21).** `settingsReady` required
+two ticked strategies and the Strategies page's Stack button required two before it would even
+open — so **A+ with a recovery on A+, the stack this whole leg exists to make possible, was greyed
+out at both doors and refused by the backend behind them.** The count is now
+`selected.size + (shared && recoveryFor ? 1 : 0)`, matching `_validate_stack_strategies`, and the
+list-page button opens at ONE ticked strategy because the recovery is ticked inside the builder,
+where that button cannot see it. ⚠ **Opening is not running** — the builder still refuses to submit
+under two legs. **Nothing here was broken; the path just could not be walked, and every piece of it
+had been tested on its own.**
+
 ⚠ **`recoveryFor` holds the PARENT's id, not a boolean and not a set** — at most one recovery leg
 per stack, because two would share a name on the shared account. Unticking a parent clears it, or
 the request names a leg that is not in the stack.

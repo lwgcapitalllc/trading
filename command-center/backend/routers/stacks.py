@@ -78,9 +78,18 @@ def list_stacks() -> list[StackSummary]:
     return [StackSummary(**r) for r in lab_db.list_stacks()]
 
 
-def _validate_stack_strategies(ids: list[str]) -> list[dict]:
-    if len(ids) < 2:
-        raise HTTPException(400, "A stack needs at least 2 strategies")
+def _validate_stack_strategies(ids: list[str], *, extra_legs: int = 0) -> list[dict]:
+    # 🔴 THE MINIMUM IS TWO **LEGS**, NOT TWO STRATEGIES, AND THE DIFFERENCE IS THE WHOLE POINT OF
+    # THE RECOVERY LEG. A+ plus a recovery on A+ is one strategy id and two legs competing for one
+    # balance — the exact stack the leg was built to make possible — and counting ids refused it
+    # with a message about strategies that named nothing the reader could act on. `extra_legs` is
+    # what the caller adds for legs that are not strategies of their own.
+    if len(ids) + extra_legs < 2:
+        raise HTTPException(
+            400,
+            "A stack needs at least 2 legs — pick another strategy, or tick loss recovery "
+            "under the one you have.",
+        )
     strategies = []
     for sid in ids:
         strat = lab_db.get_strategy(sid)
@@ -147,7 +156,10 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
 @router.post("/stack", status_code=202, response_model=StackResponse)
 async def trigger_stack(req: StackRequest) -> StackResponse:
     ids = list(dict.fromkeys(req.strategy_ids))  # dedupe, keep order
-    strategies = _validate_stack_strategies(ids)
+    # The recovery leg is counted BEFORE its own validation so a one-strategy stack carrying one
+    # is not turned away by the leg count it satisfies. `_validate_recovery_leg` is still what
+    # decides whether the recovery itself is legal (parent in the stack, shared mode, and so on).
+    strategies = _validate_stack_strategies(ids, extra_legs=1 if req.recovery_parent else 0)
     _validate_recovery_leg(req, ids)
 
     for rid in req.ruleset_ids:

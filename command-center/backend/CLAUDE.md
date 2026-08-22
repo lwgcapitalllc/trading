@@ -2650,6 +2650,33 @@ raising on a missing row — plus a fifth on the refusal text losing its *add it
 instruction. MEASURED live against the running backend: the rule refused 400 carrying the
 instruction, and an ordinary strategy passed the guard and was refused by the history floor.
 
+## 🔴 A stack's minimum is two LEGS, not two strategies (2026-08-21)
+
+`_validate_stack_strategies` counted `strategy_ids`, so **A+ plus a recovery on A+ — one id, two
+legs, the single most likely stack anybody builds and the exact case the recovery leg was built
+for — was refused with *"a stack needs at least 2 strategies"*.** Nothing was broken; the feature
+simply could not be reached from the UI at all. That is rule 9's failure shape: a feature nobody
+has RUN is not a feature, and this one had been shipped, documented and tested a leg at a time
+without anybody driving the whole path.
+
+`extra_legs` is what a caller adds for legs that are not strategies of their own; `trigger_stack`
+passes `1` when `recovery_parent` is set. ⚠ **The count happens BEFORE `_validate_recovery_leg`**,
+so a one-strategy stack carrying a recovery is not turned away by the leg count it satisfies —
+the recovery's own legality (parent in the stack, shared mode) is still that function's job.
+
+⚠ **`preview_stack` deliberately does NOT pass it.** A preview is only ever asked for a SCREEN,
+and a recovery is refused on a screen — so a one-strategy preview is correctly refused.
+
+⚠ **The refusal names the way out** (*pick another strategy, or tick loss recovery under the one
+you have*). The old message stated a rule and no remedy, which is how a reader concludes the
+feature is missing rather than that they are one tick away from it.
+
+**Tests:** three more in `tests/test_recovery_leg_wiring.py` (19 total), including an AST check
+that `trigger_stack` still reads the recovery off the request — guarding only the helper would
+leave the endpoint counting ids one layer up. Watched RED by four mutations. MEASURED live: one
+strategy alone refused with the new message, and one strategy plus a recovery passed the count and
+was refused by the history floor instead.
+
 ## History floors — blocking a window the broker has no bars for
 
 **MT5 does not error when a symbol lacks history at the requested timeframe — it returns the nearest

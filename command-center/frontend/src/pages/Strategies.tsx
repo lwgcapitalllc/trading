@@ -298,16 +298,22 @@ function StrategiesTab() {
           <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
         </div>
         <div className="flex items-center gap-2">
-          {/* Appears once 2+ python strategies are ticked — same destination as Backtests → Stacks →
-              New Stack, just reached from the strategy you were already looking at. */}
+          {/* Same destination as Backtests → Stacks → New Stack, just reached from the strategy
+              you were already looking at.
+              ⚠ Enabled at ONE ticked strategy, not two. A stack needs two LEGS, and a loss-recovery
+              leg is added inside the builder by ticking it under its parent — so requiring two
+              ticked strategies here greyed out the single most likely stack anybody builds. The
+              builder still refuses to run until there are two legs; this button only opens it. */}
           {stackable.length >= 2 && (
             <button
               onClick={() => setStackOpen(true)}
-              disabled={stackCount < 2}
+              disabled={stackCount < 1}
               title={
-                stackCount < 2
-                  ? 'Tick 2 or more Python strategies to stack them'
-                  : `Stack ${stackCount} strategies over one instrument, timeframe and window`
+                stackCount < 1
+                  ? 'Tick a Python strategy to stack it'
+                  : stackCount === 1
+                    ? 'Open the stack builder — add a second strategy there, or tick loss recovery under this one'
+                    : `Stack ${stackCount} strategies over one instrument, timeframe and window`
               }
               className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors disabled:opacity-40 disabled:hover:bg-gold-muted"
             >

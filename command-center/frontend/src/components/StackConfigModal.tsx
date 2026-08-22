@@ -132,7 +132,12 @@ export function StackConfigModal({
   // backend refuses it and the button must not offer it either. Account size is guarded the same
   // way: a leg sizes off the balance, so zero produces zero-size positions.
   const accountValid = !shared || (riskCapPct > 0 && accountSize > 0)
-  const settingsReady = selected.size >= 2 && !!instrument.trim() && validPeriod && accountValid
+  // 🔴 TWO **LEGS**, NOT TWO STRATEGIES. A recovery is a full leg — its own reservation, its own
+  // trades, its own KPIs — so one strategy plus a recovery on it IS a stack, and it is the one the
+  // recovery leg exists to make possible. Counting only ticked strategies greyed out exactly that
+  // case, and the backend refused it too. The backend counts the same way (`_validate_stack_strategies`).
+  const legCount = selected.size + (shared && recoveryFor ? 1 : 0)
+  const settingsReady = legCount >= 2 && !!instrument.trim() && validPeriod && accountValid
 
   // Scoped to the legs that are actually SELECTED. The backend ignores an override for a strategy
   // outside `strategy_ids`, so this changes no result — but it does change the preview's query key,
