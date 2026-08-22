@@ -203,6 +203,10 @@ class SecondaryArm:
         self._s_used_n: int = 0
         # The RECLAIM half's per-side state — live whenever `exec_sec_trigger` names it, alone
         # or combined with the gap.
+        # `exec_sec_rest_and_leave` snapshots — (sos_bar, edge, stop, leg, src) per side, or
+        # None. See `_rested`. Always present so the attribute never depends on the mode.
+        self._l_rest = None
+        self._s_rest = None
         # `_seen` = the primary gate was already open on an EARLIER 1m bar, so a reclaim needs a
         # bar of its own rather than firing on the stop-out bar's own upper wick. `_rec` = price
         # has since traded back through the deep edge. `_void` = price reached the stop anchor
@@ -541,6 +545,42 @@ class SecondaryArm:
 
         l_edge = _edge(l_src, l_armed, self._l_hi, self._l_lo, poi_edge_l, 1)
         s_edge = _edge(s_src, s_armed, self._s_hi, self._s_lo, poi_edge_s, -1)
+
+        # `exec_sec_rest_and_leave` — REST THE ORDER ONCE AND LEAVE IT THERE.
+        #
+        # The shipped arm is recomputed from scratch on every bar, so a dozen gates each get a
+        # fresh vote and any one of them closing pulls the resting order back off the book. That
+        # is why the order has to be re-evaluated every minute, and why a 1m feed is loaded to do
+        # it (2.8M bars over 7.9 years). Aaron's rule, 2026-08-21: once the primary has reached
+        # breakeven and price is back in the zone on the gap, put the limit there and leave it —
+        # the only thing that should take it off is the setup itself dying, i.e. a NEW break of
+        # structure. "You don't have to recheck every one minute. What are you re-checking for?"
+        #
+        # ⚠ It freezes the PRICES too, not just the armed flag. Re-reading the edge and the stop
+        # each bar is the same recompute wearing a different hat: the fib levels keep extending, so
+        # a still-resting order would quietly slide to a level it was never placed at, and the
+        # trade's own record would name a price that was never live.
+        # ⚠ The setup key is the 15m SOS bar, so "a new break of structure" is exactly what clears
+        # it — the same key `_traded` / `_dead` / `_used` already use, not a second notion of alive.
+        # ⚠ It is cleared on a FILL, on the leg going dead, and whenever a position is open, so it
+        # can never rest an order behind a live trade.
+        # ⚠ OFF by default: it changes which minute a re-entry fills at, so every stored figure
+        # stays reproducible.
+        if getattr(cfg, "exec_sec_rest_and_leave", False):
+            l_armed, l_edge, l_stop_v, l_leg_v, l_src_v = self._rested(
+                1, seq.l_sos_bar, flat, l_armed, l_edge, l_stop, self._l_leg, l_src)
+            s_armed, s_edge, s_stop_v, s_leg_v, s_src_v = self._rested(
+                -1, seq.s_sos_bar, flat, s_armed, s_edge, s_stop, self._s_leg, s_src)
+            return SecArm(
+                l_armed=l_armed, l_edge=l_edge,
+                l_sl=(l_stop_v - buf) if l_armed and l_stop_v is not None else None,
+                l_tp1=sig.fibo_p2, l_tp2=sig.fibo_p1, l_leg=l_leg_v,
+                s_armed=s_armed, s_edge=s_edge,
+                s_sl=(s_stop_v + buf) if s_armed and s_stop_v is not None else None,
+                s_tp1=sig.fibo_p2, s_tp2=sig.fibo_p1, s_leg=s_leg_v,
+                l_src=l_src_v if l_armed else None,
+                s_src=s_src_v if s_armed else None,
+            )
         return SecArm(
             l_armed=l_armed, l_edge=l_edge,
             l_sl=(l_stop - buf) if l_armed else None,
@@ -551,6 +591,39 @@ class SecondaryArm:
             l_src=l_src if l_armed else None,
             s_src=s_src if s_armed else None,
         )
+
+    def _rested(self, side, sos_bar, flat, armed, edge, stop, leg, src):
+        """One side of `exec_sec_rest_and_leave` — hold a resting order at the price it was
+        PLACED at, until the setup that placed it goes away.
+
+        Returns this bar's `(armed, edge, stop, leg, src)` for the side. The live computation only
+        ever gets to CREATE a snapshot; it never gets to withdraw one. That is the whole rule —
+        withdrawing is what the per-bar recompute was doing, and it measured worth 0.02R over 7.9
+        years while being the entire reason a 1-minute feed had to be re-asked every minute.
+
+        Cleared here by: a position opening (nothing may rest behind a live trade), the setup
+        retiring, or its 15m SOS bar CHANGING — which is a new break of structure, exactly the
+        invalidation Aaron named.
+
+        🔴 Cleared on a FILL and on the leg going DEAD by `mark_traded` / `mark_dead`, NOT here.
+        The first version tried to detect both in this function by comparing `sos_bar` against
+        `_l_traded`, and those are different keys — `_traded` holds the LEG id, which under the 1m
+        trigger is a 1-minute SOS bar and never equals the 15m one. It left a filled order resting
+        and let a second re-entry through the one-per-setup cap. Three tests caught it. **The
+        clear belongs where the retiring happens, not in a reader trying to infer it.**
+        """
+        key = "_l_rest" if side > 0 else "_s_rest"
+        snap = getattr(self, key, None)
+        if not flat or sos_bar is None:
+            setattr(self, key, None)
+            return armed, edge, stop, leg, src
+        if snap is not None:
+            if snap[0] == sos_bar:
+                return True, snap[1], snap[2], snap[3], snap[4]
+            setattr(self, key, None)      # a NEW break of structure — that order is off the book
+        if armed and edge is not None and stop is not None:
+            setattr(self, key, (sos_bar, edge, stop, leg, src))
+        return armed, edge, stop, leg, src
 
     def _stop_anchor(self, m1: M1State, sig, mode=None):
         """(long stop, short stop) before the buffer — `exec_sec_stop`.
@@ -637,15 +710,19 @@ class SecondaryArm:
             self._l_traded = self._l_leg
             self._l_used_n = (self._l_used_n + 1) if self._l_used == self._l_sos else 1
             self._l_used = self._l_sos
+            self._l_rest = None
         else:
             self._s_traded = self._s_leg
             self._s_used_n = (self._s_used_n + 1) if self._s_used == self._s_sos else 1
             self._s_used = self._s_sos
+            self._s_rest = None
 
     def mark_dead(self, direction: int, seq) -> None:
         """A re-entry on this 15m leg hit its initial stop — the leg is dead. No further re-entries
         on it until a new break of structure resets it (`seq.*_sos_bar` goes None / changes)."""
         if direction > 0:
             self._l_dead = seq.l_sos_bar
+            self._l_rest = None
         else:
             self._s_dead = seq.s_sos_bar
+            self._s_rest = None

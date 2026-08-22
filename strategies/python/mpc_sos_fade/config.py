@@ -701,6 +701,33 @@ class SosFadeConfig:
     #   is the opposite of what a runner wants — read it with `exec_sec_tp1_pct` rather than alone.
     #   ⚠ Read ONLY when exec_secondary is on.
 
+    exec_sec_rest_and_leave: bool = True    # "Rest the re-entry order and leave it"
+    #   ON (default since 2026-08-21, Aaron's rule) = once the side arms, the order stays where it
+    #   was placed, at the price it was placed at, until the setup that placed it dies (a new break
+    #   of structure), the leg is traded or goes dead, or a position opens. *"Once we broke even,
+    #   just put the limit there. You don't have to recheck every one minute. What are you
+    #   re-checking for?"*
+    #   OFF = the pre-2026-08-21 rule: the arm is recomputed from scratch on every bar, so any one
+    #   of a dozen gates closing pulls the resting order back off the book.
+    #
+    #   🔴 THE RE-DECIDING WAS WORTH NOTHING, AND IT IS THE REASON THE 1-MINUTE FEED WAS THERE.
+    #   MEASURED 2026-08-21, 7.9 years, gap trigger, matched basis — the ONLY thing that differs
+    #   between each pair is this switch:
+    #     fill clock 1m :  re-decided 235 trades +147.57R  ·  rested 234 trades +147.56R
+    #     fill clock 15m:  re-decided 234 trades +136.38R  ·  rested 233 trades +136.36R
+    #   0.02R over 7.9 years, both ways. ⚠ **The 11R between the two ROWS is a different thing and
+    #   is not this switch** — it is fill PRECISION (a 15m bar fills a limit at a worse price than
+    #   the minute price actually traded at), and it is a measurement-accuracy question, not a
+    #   strategy one. Live, the broker fills the resting order at the price that trades; there is
+    #   no 15-minute anything. See `exec_secondary`.
+    #
+    #   ⚠ It freezes the PRICES, not just the flag — the fibs keep extending, and a re-read edge
+    #   would slide a resting order to a level it was never placed at, so the trade's own record
+    #   would name a price that was never live.
+    #   ⚠ NOT byte-identical to OFF: 2 re-entries move and 1 is lost over 7.9 years, so a stored
+    #   figure from before this date reproduces only with it set False.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
     exec_sec_risk_pct: float = 50.0    # "Re-entry risk (% of the primary's)"
     #   HOW MUCH A RE-ENTRY RISKS, as a percentage of `exec_risk_pct`. 50.0 (default since
     #   2026-08-20) risks HALF what the primary risks; 100.0 is parity with it, 200.0 double. Sizing is `equity * (exec_risk_pct * this/100) / 100 /

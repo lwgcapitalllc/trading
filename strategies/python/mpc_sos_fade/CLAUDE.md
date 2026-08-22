@@ -2811,6 +2811,51 @@ what the bot trades and needs its own measurement, not a drive-by fix alongside 
 
 Tests: `tests/test_execution.py` (2, both watched RED against HEAD).
 
+## The re-entry rests its order and LEAVES it — and what the 1m feed is actually for (2026-08-21)
+
+`exec_sec_rest_and_leave`, ON by default. Once the side arms, the order stays where it was placed
+at the price it was placed at, until the setup that placed it dies (a new break of structure), the
+leg is traded or goes dead, or a position opens. Before this the arm was recomputed from scratch
+every bar, so any one of a dozen gates closing pulled the resting order back off the book.
+
+🔴 **THE RE-DECIDING WAS WORTH 0.02R OVER 7.9 YEARS, AND IT WAS THE ONLY REASON THE ORDER HAD TO BE
+RE-ASKED EVERY MINUTE.** MEASURED, matched basis, the only difference in each pair being the switch:
+
+| fill clock | re-decided every bar | rested and left |
+|---|---|---|
+| 1m | 235 trades, +147.57R | 234 trades, +147.56R |
+| 15m | 234 trades, +136.38R | 233 trades, +136.36R |
+
+⚠ **The ~11R between the two ROWS is a DIFFERENT thing and is not this switch.** It is fill
+PRECISION — a 15m bar fills a resting limit at a worse price than the minute price actually traded
+at. **That is a measurement-accuracy question, not a strategy one: live, the broker fills the order
+at the price that trades and there is no 15-minute anything.** Read the 15m row as a pessimistic
+simulation of the same live behaviour, never as a different rule.
+
+✅ **5 MINUTES IS THE PLACE TO BACKTEST.** Same window, same config, only the fill clock:
+
+| fill clock | bars loaded | trades | total |
+|---|---|---|---|
+| 1m | 2,804,720 | 234 | +147.56R |
+| **5m** | **561,795** | **234** | **+145.61R** |
+| 15m | 187,286 | 233 | +136.36R |
+
+One fifth of the data for 1.3% of accuracy, against 7.6% at 15m.
+
+⚠ **It freezes the PRICES, not just the armed flag.** The fibs keep extending, so a re-read edge
+would slide a still-resting order to a level it was never placed at and the trade's record would
+name a price that was never live.
+
+🔴 **THE SNAPSHOT IS CLEARED WHERE A LEG RETIRES (`mark_traded` / `mark_dead`), NOT BY THE READER.**
+The first version tried to infer both inside `_rested` by comparing the 15m SOS bar against
+`_l_traded` — and those are different keys, because `_traded` holds the LEG id, which under the 1m
+trigger is a 1-minute SOS bar and never equals the 15m one. It left a filled order resting and let
+a second re-entry straight through the one-per-setup cap. **Three existing tests caught it, which
+is the whole argument for a cap having its own tests rather than being 'obviously' enforced.**
+
+⚠ **NOT byte-identical to the old path** — 2 re-entries move and 1 is lost over 7.9 years, so a
+stored figure from before this date reproduces only with the switch set False.
+
 ## Do / Never
 
 - **Do** port any change to `mpc_strategy.pine`'s A+ block or execution layer here line-for-line, then
