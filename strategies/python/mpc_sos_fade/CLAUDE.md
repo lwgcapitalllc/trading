@@ -2862,6 +2862,37 @@ real** — the rule has no targets and prices nothing off a fib — so the chart
 bot is byte-identical to the gated one — which is why it defaults OFF, and why an export made with
 it ON is not a parity input.
 
+### 🔴 The toggle's warning text was WRONG in the direction that flatters the rule (rewritten 2026-08-21)
+
+The `desc` on `exec_recovery` in `mpc_sos_fade.meta.json` opened *"THIS SWITCH DOES NOT MODEL ONE
+ACCOUNT"* and quoted **+3.8% against +44.8% on one real balance**. Three things were wrong with it,
+and the third is the one that mattered.
+
+1. **"Does not model one account" overstates the defect.** Half the sharing is real — a recovery
+   trade IS sized off a balance carrying every A+ trade that had closed by then (`recovery.py`'s
+   heap walk). What is missing is the way BACK: A+ never sizes off the recovery. Saying neither
+   direction works sends the reader looking for a bug that is not there.
+2. **"Added AFTER the main book is finished"** describes the PASS correctly and reads as though the
+   rows are appended at the end of the timeline. They are interleaved by entry bar.
+3. 🔴 **+44.8% was the most optimistic row of a bracket the same measurement calls a BRACKET, and
+   it is a RE-PRICE rather than a replay.** The real leg replayed on one balance under one 10%
+   budget — the cap this bot already runs — measures **−29.9%** ($13,199,534 → $9,251,114 over
+   186,910 M15 bars). **So the warning pointed the reader at "the real answer is much better" when
+   the measured answer at the shipped cap is negative.** Both numbers are in
+   `strategies/python/loss_recovery/CLAUDE.md`; the desc quoted the wrong one.
+
+✅ **Rewritten to describe the MECHANISM and carry no figures at all**, which is also this file's own
+house rule (`_comment` → COPY STYLE: no measurement dumps, no counts, no dates). It now says the
+printed result is wrong in BOTH directions, names which half understates (profit that never
+compounds) and which half flatters (nothing competes for one risk budget), states that the rule
+loses money at the cap this bot runs and only pays on risk the main bot is not using, and points at
+`backtest/tools/recovery_stack.py` and the package CLAUDE.md for the numbers.
+
+🔴 **The standing lesson is about WHERE a number lives, not about this switch.** The stale figure
+was in a UI string nobody re-measures, four files away from the table that would have corrected it.
+**A warning that carries its own numbers goes stale silently and keeps being read as current** —
+put the direction in the warning and leave the arithmetic in the doc that owns the measurement.
+
 **13 tests in `tests/test_recovery.py`, all watched RED by a named mutation** (the mutation is in
 each docstring). ⚠ **A fourteenth was written for the excursion cap, watched STILL-GREEN, and
 deleted** — every recovery in the synthetic fixture exits LOCKED and in profit, so the mutation it
