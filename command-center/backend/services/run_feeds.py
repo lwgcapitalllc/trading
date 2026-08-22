@@ -3,7 +3,7 @@
 WHY THIS EXISTS
 ---------------
 A python run loads its chart timeframe, and it may load MORE. `exec_secondary` turns on a
-1-minute sniper feed alongside the 15m primary, so the run touches two timeframes with two
+faster sniper feed alongside the 15m primary, so the run touches two timeframes with two
 different broker history floors.
 
 That fact used to live in exactly one place — `python_runner`, at fetch time — and the
@@ -110,7 +110,7 @@ def required_timeframes(
 
 
 def uses_secondary(params: Any) -> bool:
-    """Does this run replay a 1m SECONDARY feed alongside its chart?
+    """Does this run replay a faster SECONDARY feed alongside its chart?
 
     The runner's dual-replay branch asks this and nothing else. It exists as a named
     function rather than an inline test because the obvious inline test is WRONG in a way

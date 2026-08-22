@@ -388,7 +388,7 @@ def _leg_param_sets(req: StackRequest, strategies: list[dict]) -> list[dict]:
       order `_resolve_leg` and `_trigger_shared_stack` apply;
     * a SHARED stack pins `_SHARED_LEG_PINS` on top, so it is not refused for a feed that path
       switches off anyway. Skipping the pin here would refuse a shared stack whose legs default
-      `exec_secondary` on — legal, because that path never loads the 1m feed.
+      `exec_secondary` on — legal, because that path never loads the secondary feed.
     """
     out = []
     for strat in strategies:

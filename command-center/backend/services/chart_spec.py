@@ -343,7 +343,7 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
     Prices and the exit time come straight off the point when present; otherwise they fall
     back to the candle CLOSE at the trade's time (NT8/MT5 don't store fill prices, and older
     Python runs predate the extra fields). `pnl` drives the chart's green (win) / red (loss)
-    box; `kind` lets it tell a primary trade from a 1m secondary re-entry.
+    box; `kind` lets it tell a primary trade from a secondary re-entry.
 
     Profit-depth fields (`mfePrice`/`maePrice`/`profitLegs`/`stopPrice`) drive the chart's
     profit-depth trade view — how far price ran vs where each rung actually banked. They are
