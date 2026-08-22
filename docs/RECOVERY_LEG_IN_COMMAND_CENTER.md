@@ -1,6 +1,10 @@
 # Building the loss-recovery leg into the Command Center
 
-**Status:** BUILT 2026-08-21, all five stages. Shape approved by Aaron.
+**Status:** Stages 1–4 BUILT 2026-08-21. **Stage 5 is NOT done and is deliberately held** —
+see below. Shape approved by Aaron.
+⚠ **This line said "all five stages" while stage 5 said NOT DONE eleven screens further
+down.** A status header is the only part of a plan most readers get to, so it is the one
+line that must never be the optimistic version.
 **Owner of the rule:** `strategies/python/loss_recovery/CLAUDE.md`.
 **Owner of the shared account:** `backtest/portfolio/`.
 
@@ -93,11 +97,19 @@ like the whole of the leg's worth.
    indicator this repo keeps exactly one of.
 3. **A recovery leg with no source refuses**, so the tick box cannot be routed round via the API.
 
-### ✅ 4. The settings and the screen
+### ✅ 4. The settings and the screen — with one gap, named
 
 The rule has ~20 settings; the seven that matter already have plain-English descriptions written
 for the strategy-page switch. Reuse that wording, add a description file for the leg, and it
 renders like any other leg.
+
+⚠ **THE STACK BUILDER DOES NOT OFFER THEM YET, so a recovery leg runs on its DEFAULTS.**
+`StackRequest.recovery_params` exists, the backend honours it and the leg's own settings page
+renders in full — but `StackConfigModal` never sends the field, because the rule is filtered out
+of the leg list that per-leg overrides hang off. **A declared field that no caller assigns is
+rule 10's shape**, so it is written down here rather than left for somebody to discover by
+changing a setting and watching nothing happen. The defaults ARE the measured configuration, so
+a first run is honest; anything else needs the API.
 
 ⚠ **Do NOT reuse the `exec_recovery_*` field names for the leg.** The same seven names would mean
 *bolted on afterwards* in one place and *a real competing leg* in the other, which is how somebody
@@ -113,6 +125,32 @@ brings it back) and keep its corrected warning.
 chart, and a stack is a different page with a different reader. Hiding it is a product call worth
 making on its own rather than riding along with the build — and its warning is now correct, so it
 no longer misleads while it waits.
+
+---
+
+## 🔴 Two holes found AFTER this was called done, and both were silent
+
+Recorded because they are the same lesson twice, one layer apart, and neither would ever have
+produced an error.
+
+**1. The rule could still be run alone.** Filtering the pickers and greying the LIST page's Run
+left the rule's own DETAIL page with an unconditional Run button and a full Run modal, posting
+straight to the backtest endpoint. Two clicks. **A strategy is reachable from more than one place,
+and guarding the list is not guarding the strategy.** Fixed at the backend
+(`routers/_source_guard.py`, every endpoint that creates a job from a strategy id) rather than on
+the button, because a disabled button is a label and rule 7 says a label is a claim about code
+somewhere else.
+
+**2. The one stack this whole feature exists for could not be built.** The minimum was counted in
+STRATEGY IDS, so A+ plus a recovery on A+ — one id, two legs — was refused at three doors: the
+Strategies page would not open the builder, the builder would not submit, and the backend answered
+*"a stack needs at least 2 strategies"*. **Nothing was broken. Every piece had been built,
+documented and tested on its own, and the whole path had never been walked** — rule 9, exactly.
+
+⚠ **The transferable part is the acceptance criterion.** *"What must be true at the end"* below
+lists three checks and every one of them passed while both holes were open, because all three are
+about the ENGINE agreeing with itself. **Not one of them asks whether a person can reach the
+feature.** A plan that verifies only the mechanism will call a build finished that nobody can use.
 
 ---
 

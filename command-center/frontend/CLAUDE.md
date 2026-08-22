@@ -2070,6 +2070,12 @@ had been tested on its own.**
 per stack, because two would share a name on the shared account. Unticking a parent clears it, or
 the request names a leg that is not in the stack.
 
+⚠ **`recovery_params` is NEVER SENT and the recovery leg has no settings editor here.** Per-leg
+overrides hang off the leg list, and the rule is filtered out of that list — so the backend field
+exists, is honoured, and no page fills it. The leg runs on its defaults, which are the measured
+configuration. Written down rather than left for somebody to look for a control that was never
+built.
+
 ⚠ **Never sent on a SCREEN.** There every leg trades its own full account, so the recovery could
 never take room off its parent — the only question it exists to answer. The backend refuses it;
 this never sends it.

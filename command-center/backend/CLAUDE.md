@@ -2578,6 +2578,13 @@ open risk while reporting itself enforced. `run_stack` refuses duplicate names, 
 that fires four minutes into a replay is a worse version of a shape the request could simply not
 have.**
 
+⚠ **`recovery_params` IS DECLARED AND THE UI NEVER SENDS IT.** The backend honours it and the
+rule's own settings page renders all eleven — but `StackConfigModal` has no editor for the recovery
+leg, because per-leg overrides hang off the leg LIST and the rule is filtered out of it. So a
+recovery leg built from the page always runs on its defaults, which are the measured configuration.
+**A declared field no caller assigns is rule 10's shape** — written down rather than left for
+somebody to change a setting and watch nothing happen.
+
 ⚠ **`_validate_recovery_leg` runs BEFORE the lock and before any row is written**, and refuses four
 states, each of which is silent or late otherwise: a recovery on a SCREEN (every leg has its own
 full account there, so it could never take room off its parent — the only question it answers), a
@@ -2606,7 +2613,7 @@ the package (`LAB_STRATEGY["requires_source"]`), never set by hand.**
 ⚠ **`EXPECTED_CLASS_NAMES` needed `RecoveryLeg` — the FOURTH time those three tests have gone red
 for that one cause.** Grep `LAB_STRATEGY`, which is what the scanner reads.
 
-**Tests:** `tests/test_recovery_leg_wiring.py` (12). ⚠ **A fail-watch against HEAD is vacuous** —
+**Tests:** `tests/test_recovery_leg_wiring.py` — 12 for THIS section; the file is 19 now, the rest belonging to the two sections below. ⚠ **A fail-watch against HEAD is vacuous** —
 none of it existed — so non-vacuity is by MUTATION: allowing a recovery on a screen, allowing a
 parent outside the stack, and dropping the `requires_source` flag each turn their own named test
 red.

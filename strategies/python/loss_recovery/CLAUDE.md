@@ -655,9 +655,12 @@ input**, or the parent's risk and the recovery's fraction stop moving together.
 🔴 **`LAB_STRATEGY` declares `requires_source`, and that flag is the whole design.** This rule has
 no setups — run it alone and it is handed nothing, which returns an empty book **indistinguishable
 from a rule that found no setups**. The flag lets the lab state that as a FACT rather than leaving
-each picker to remember it: the Strategies page greys its Run button (*Needs a parent*), the stack
-builder filters it out of the list, and the only thing that can create one is a tick box under a
-parent. ⚠ **It is registered as a strategy ROW anyway** — a stack leg's run row references one, so
+each picker to remember it: the Strategies page AND this rule's own detail page both grey their Run
+button (*Needs a parent*), the stack builder filters it out of the list, and the only thing that can
+create one is a tick box under a parent. 🔴 **The detail page was MISSED at first and is the lesson:
+a strategy is reachable from more than one place, and guarding the list is not guarding the
+strategy.** Both buttons are only LABELS — the gate is `command-center/backend/routers/_source_guard.py`,
+which refuses every endpoint that starts a job from a strategy id. ⚠ **It is registered as a strategy ROW anyway** — a stack leg's run row references one, so
 without it the leg could carry no params, no KPIs and no chart.
 
 ⚠ **Only THREE stop placements are offered** (`STOP_MODES`): structural, the losing trade's entry,
@@ -675,7 +678,10 @@ place — and `mpc_sos_fade/recovery.py` translates it identically. The two adap
 the same setting means two things.
 
 ⚠ **The defaults ARE the measured configuration**, so selecting the leg and touching nothing
-reproduces the runs recorded in this file.
+reproduces the runs recorded in this file. ⚠ **Which is just as well, because the stack builder does
+not offer these settings yet** — the request field exists and the backend honours it, but the page
+never sends it, so a recovery leg ticked on a parent always runs on its defaults. Anything else
+needs the API. Named in `docs/RECOVERY_LEG_IN_COMMAND_CENTER.md` → stage 4.
 
 ✅ **The verdict is UNCHANGED by the new path and that is the point of running it: uncosted, at a
 10% cap, the leg still costs 28.1% — the same direction as the costed −29.9% below.** A+ was shrunk
