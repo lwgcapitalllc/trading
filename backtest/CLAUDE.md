@@ -438,7 +438,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `exec_secondary` needs `run_dual(df15, df1m)`; calling `run(df15)` with the flag on produces a
   primary-only book that looks exactly like a run where the feature never fired — `optimizer.py`
   and `portfolio/legs.py` had already met this and refuse it. The tool now loads the 1m frame and
-  calls `run_dual`, refuses when there is no `run_dual` or no 1m bars, and always PRINTS the
+  calls `run_dual`, refuses when there is no `run_dual` or no fill-clock bars, and always PRINTS the
   secondary trade count so *0 secondaries* is a stated answer. ⚠ **`--no-secondary` SETS the flag
   False rather than only picking the fast path** — the config that is reported must be the config
   that RAN. ⚠ **THIS MOVED DOCUMENTED BASELINES**: every `mpc_sos_fade` figure this tool produced
@@ -776,7 +776,7 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   A+ forces it on), so one shared stack would replay at least one of them against a market it never
   saw. It uses `stack_config()`, never `engine_config()` — the second is the static Pine constants
   and a config whose POI source is order blocks needs the OB engine switched on. `exec_secondary`
-  is **REFUSED**, the same call `run_sweep` makes: a leg is one bar frame, the 1m re-entry needs
+  is **REFUSED**, the same call `run_sweep` makes: a leg is one bar frame, the re-entry needs
   `run_dual`, and replaying it single-stream returns a primary-only book that is then compared
   against controls that have the re-entries in them.
 - **`runner.py`** — `run_stack(specs, balance=, risk_cap_pct=)`: build the account, build the legs,

@@ -146,28 +146,28 @@ def _shift_cfg(**kw):
     ⚠ PINNED, NOT DEFAULTED, and the distinction is the point. The shift was the default until
     2026-08-20 and is not any more — the gap trigger is. A test below that kept taking the default
     would still RUN, and would arm on a completely different input (a resting price handed in from
-    the primary, not a 1m leg), so it would stop exercising the branch its name claims. That is the
+    the primary, not a shift leg), so it would stop exercising the branch its name claims. That is the
     same trap `test_run_dual_primary_is_identical_to_run_when_secondary_off` pins against one level
     up. The tests that assert what the DEFAULTS ARE do not use this helper, by design.
     """
-    kw.setdefault("exec_sec_trigger", "1m shift")
-    kw.setdefault("exec_sec_stop", "1m leg")
+    kw.setdefault("exec_sec_trigger", "Structure shift")
+    kw.setdefault("exec_sec_stop", "Shift leg")
     return SosFadeConfig(exec_secondary=True, **kw)
 
 
 def test_arm_fires_and_rests_the_right_limit():
     cfg = _shift_cfg()
     arm_sm = SecondaryArm(cfg)
-    # a 1m leg 102.0→103.0 inside the zone; primary on this 15m leg reached BE (be_sos_l == l_sos_bar)
+    # a shift leg 102.0→103.0 inside the zone; primary on this 15m leg reached BE (be_sos_l == l_sos_bar)
     out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                         ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert out.l_armed is True
-    assert abs(out.l_edge - (103.0 - 1.0 * 0.382)) < 1e-9   # 38.2% retrace of the 1m leg
-    assert out.l_sl == 102.0                                # stop = 1m leg origin (1.0)
+    assert abs(out.l_edge - (103.0 - 1.0 * 0.382)) < 1e-9   # 38.2% retrace of the shift leg
+    assert out.l_sl == 102.0                                # stop = shift leg origin (1.0)
     assert out.l_tp1 == 105.0 and out.l_tp2 == 106.18       # 15m 0.5 / 0.382
     assert out.l_leg == 1000
 
-    # once that leg has re-entered, it must not re-arm (each 1m leg fires once)
+    # once that leg has re-entered, it must not re-arm (each shift leg fires once)
     arm_sm.mark_traded(1)
     again = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                           ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
@@ -186,17 +186,17 @@ def test_arm_blocked_until_primary_reached_breakeven():
 
 def test_dead_leg_blocks_further_reentries():
     """Once a re-entry on a 15m leg hits its initial stop, `mark_dead` kills the leg — no more
-    re-entries on it (even on a fresh 1m shift) until a new break of structure resets it."""
+    re-entries on it (even on a fresh Structure shift) until a new break of structure resets it."""
     cfg = _shift_cfg()
     arm_sm = SecondaryArm(cfg)
-    # arms normally on the first fresh 1m leg
+    # arms normally on the first fresh shift leg
     a = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                       ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert a.l_armed is True
 
     # that re-entry stops out → driver kills the leg
     arm_sm.mark_dead(1, _SEQ_LONG)
-    # a brand-new 1m leg (bar 1001) forms in the same setup — must NOT arm (leg is dead)
+    # a brand-new shift leg (bar 1001) forms in the same setup — must NOT arm (leg is dead)
     dead = arm_sm.update(M1State(bull_sos_bar=1001, bear_sos_bar=None, bull_leg_hi=104.0,
                                  bull_leg_lo=103.0, bear_leg_hi=None, bear_leg_lo=None,
                                  direction=1, new_bull_sos=True, new_bear_sos=False),
@@ -302,14 +302,14 @@ def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _second_1m_leg():
-    """A different 1m leg (bar 1001) on the SAME 15m setup — what the cap has to refuse."""
+    """A different shift leg (bar 1001) on the SAME 15m setup — what the cap has to refuse."""
     return M1State(bull_sos_bar=1001, bear_sos_bar=None, bull_leg_hi=104.0, bull_leg_lo=103.0,
                    bear_leg_hi=None, bear_leg_lo=None, direction=1,
                    new_bull_sos=True, new_bear_sos=False)
 
 
 def _armed_and_traded(cfg):
-    """Arm once on the first 1m leg and fill it, the state both paths start from."""
+    """Arm once on the first shift leg and fill it, the state both paths start from."""
     arm_sm = SecondaryArm(cfg)
     first = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                           ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
@@ -323,7 +323,7 @@ def test_the_cap_refuses_a_second_reentry_on_the_same_15m_setup():
     again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
                           ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert again.l_armed is False, (
-        "a fresh 1m leg re-armed on a 15m setup that has already had its one re-entry")
+        "a fresh shift leg re-armed on a 15m setup that has already had its one re-entry")
     assert again.l_edge is None, "refused but still published a resting price"
 
 
@@ -571,7 +571,7 @@ def test_the_deep_edge_at_1_0_arms_where_price_closed_past_the_entry_band():
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 
 def _rearm(arm_sm, leg_bar, seq=None):
-    """Fire a fresh 1m leg on the same 15m setup and return whether it armed."""
+    """Fire a fresh shift leg on the same 15m setup and return whether it armed."""
     m1 = M1State(bull_sos_bar=leg_bar, bear_sos_bar=None, bull_leg_hi=103.0, bull_leg_lo=102.0,
                  bear_leg_hi=None, bear_leg_lo=None, direction=1,
                  new_bull_sos=True, new_bear_sos=False)
@@ -724,7 +724,7 @@ def test_the_requirement_gates_the_LATCH_too_not_only_the_arm():
     gated by construction. Proved by MUTATION instead: replacing the latch's divergence test
     with `True` (arm-only gating) reddens exactly this test and none of the other 40."""
     arm_sm = SecondaryArm(_shift_cfg(exec_sec_req_div=True))   # PINNED — ships OFF since 2026-08-20
-    # the 1m shift happens with no divergence → nothing may be latched…
+    # the Structure shift happens with no divergence → nothing may be latched…
     arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG_NODIV, _SEQ_LONG,
                   zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     # …so a later bar that DOES have a divergence, but no fresh shift, still has no leg to arm.
@@ -750,7 +750,7 @@ def test_the_requirement_is_NOT_exec_arm_div_and_neither_reads_the_other():
 # ── the FVG-in-zone trigger + the stop anchor (exec_sec_trigger / exec_sec_stop) ─────
 # Watched RED against HEAD: every one fails on the missing config field or on the arm refusing,
 # because before this the ONLY way to arm was a 1m break of structure and the ONLY stop was the
-# 1m leg origin.
+# shift leg origin.
 
 def _m1_quiet(conf_low=None, conf_high=None):
     """A 1m bar with NO structure event at all — the gap trigger must not need one."""
@@ -764,7 +764,7 @@ _GAP_KW = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=N
 
 
 def test_the_gap_trigger_arms_with_no_1m_shift_at_all():
-    """The whole point: the 2025-10-29 long never got a usable 1m shift, so the trigger must not
+    """The whole point: the 2025-10-29 long never got a usable Structure shift, so the trigger must not
     require one. Entry is the PRIMARY's own point-of-interest price, passed in — not recomputed."""
     cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="swing low")
@@ -826,7 +826,7 @@ def test_the_gap_trigger_and_the_0_886_stop_are_the_DEFAULTS_since_2026_08_20():
 
 
 def test_the_1m_shift_path_still_ignores_the_gap_edge_when_it_is_pinned_back_on():
-    """The pre-2026-08-20 rule, reachable and unchanged — a 1m shift, a 1m-leg stop, and no
+    """The pre-2026-08-20 rule, reachable and unchanged — a Structure shift, a 1m-leg stop, and no
     interest in the primary's edge even when one is passed."""
     out = SecondaryArm(_shift_cfg()).update(
         _m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, poi_edge_l=999.0, **_GAP_KW)
@@ -836,11 +836,11 @@ def test_the_1m_shift_path_still_ignores_the_gap_edge_when_it_is_pinned_back_on(
 
 
 def test_the_gap_trigger_with_a_1m_leg_stop_REFUSES_at_construction():
-    """That pair has no stop at all — the gap trigger latches no 1m leg. A silent no-trade would
+    """That pair has no stop at all — the gap trigger latches no shift leg. A silent no-trade would
     read on the page as 'the gap trigger found nothing', which is a different finding entirely."""
-    with pytest.raises(ValueError, match="1m leg"):
+    with pytest.raises(ValueError, match="Shift leg"):
         SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
-                      exec_sec_stop="1m leg")
+                      exec_sec_stop="Shift leg")
 
 
 def test_an_unknown_trigger_or_stop_REFUSES_rather_than_running_the_shipped_rule():
@@ -1277,7 +1277,7 @@ def test_the_reclaim_refuses_a_stop_anchor_it_cannot_price():
     """Its entry is a FIXED price, so a 1m swing can land on either side of it. Refused for the
     plain value and the combined one alike."""
     for trigger in ("Reclaim Entry", "FVG in zone + Reclaim Entry"):
-        for anchor in ("1m leg", "swing low"):
+        for anchor in ("Shift leg", "swing low"):
             with pytest.raises(ValueError, match="exec_rec_stop"):
                 SosFadeConfig(exec_secondary=True, exec_sec_trigger=trigger,
                               exec_sec_require="Breakeven", exec_rec_require="Stopped only",
@@ -1285,18 +1285,18 @@ def test_the_reclaim_refuses_a_stop_anchor_it_cannot_price():
 
 
 def test_the_combined_trigger_still_refuses_the_gap_halfs_impossible_stop():
-    """`1m leg` has nothing to read under the gap half whichever value selected it — the guard
+    """`Shift leg` has nothing to read under the gap half whichever value selected it — the guard
     reads "is the gap half live", not the literal string."""
-    with pytest.raises(ValueError, match="1m leg"):
-        _both_cfg(exec_sec_stop="1m leg")
+    with pytest.raises(ValueError, match="Shift leg"):
+        _both_cfg(exec_sec_stop="Shift leg")
 
 
 def test_the_gap_trigger_prices_off_the_gap_even_when_a_1m_SHIFT_latched_the_side():
     """🔴 The regression the control replay caught, and no unit test saw it.
 
     The 1-minute latch (section 3) runs under EVERY single-value trigger, including the two that
-    have no 1m leg to price off. So on a bar carrying a 1m structure event the side is latched
-    "1m shift" while the operator has selected the gap. Which rule prices the order is the
+    have no shift leg to price off. So on a bar carrying a 1m structure event the side is latched
+    "Structure shift" while the operator has selected the gap. Which rule prices the order is the
     CONFIGURED trigger's, always — key it off whichever block latched last and this bar arms at a
     38.2% retrace of a 1-minute leg, a rule nobody switched on.
 
@@ -1314,7 +1314,7 @@ def test_the_gap_trigger_prices_off_the_gap_even_when_a_1m_SHIFT_latched_the_sid
     cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="0.886")
     arm_sm = SecondaryArm(cfg)
-    # A real 1m shift of structure, 101.0 → 103.0, on a bar that also carries a gap price.
+    # A real Structure shift of structure, 101.0 → 103.0, on a bar that also carries a gap price.
     out = arm_sm.update(_m1_bull_sos(103.0, 101.0), _SIG_LONG, _SEQ_LONG,
                         poi_edge_l=102.8, **_GAP_KW)
     assert out.l_armed is True
@@ -1339,7 +1339,7 @@ def test_the_combined_value_prices_by_the_precondition_even_when_a_1m_shift_latc
     must not change WHICH half prices the side. Ownership is the open precondition, so a stopped
     setup stays the reclaim's however many 1-minute events land on it.
 
-    ⚠ This test was originally called "…turns the 1m shift latch OFF", which is what the code did
+    ⚠ This test was originally called "…turns the Structure shift latch OFF", which is what the code did
     for one iteration. Suppressing that latch made the combined book's halves behave differently
     from the same halves run alone, so the rule changed and the name had to change with it — a
     test whose name outlives its rule is the next reader's wrong answer."""
@@ -1352,7 +1352,7 @@ def test_the_combined_value_prices_by_the_precondition_even_when_a_1m_shift_latc
     kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
               closed_sos_l=None, closed_sos_s=None, lost_sos_l=500, lost_sos_s=None,
               poi_edge_l=103.0, poi_edge_s=None)
-    # bar 1 opens the reclaim's gate; bar 2 reclaims AND carries a 1m shift of structure.
+    # bar 1 opens the reclaim's gate; bar 2 reclaims AND carries a Structure shift of structure.
     arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, bar_high=101.0, bar_low=100.6, **kw)
     out = arm_sm.update(_m1_bull_sos(103.0, 101.0), _SIG_LONG, _SEQ_LONG,
                         bar_high=101.5, bar_low=100.9, **kw)
@@ -1382,7 +1382,7 @@ def _rec_arm(**kw):
 
 
 def test_the_reclaim_ignores_every_shared_ARM_setting_the_editor_greys_out():
-    """MUTATION: in `_src_for`, return "1m shift" instead of "reclaim" when only the reclaim is
+    """MUTATION: in `_src_for`, return "Structure shift" instead of "reclaim" when only the reclaim is
     configured, and the retrace case goes red — the entry becomes a retrace of a 1-minute leg.
     Point `_stop_anchor`'s reclaim call at the shared field and the stop case goes red. Make
     `arm_gate_l` read `gate_l` and the precondition case goes red (it stops arming at all)."""
@@ -1416,7 +1416,7 @@ def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_greys_out():
 
 
 def test_the_1m_RETRACE_is_dead_under_the_gap_trigger_too_not_just_the_reclaim():
-    """It is the one row here that only the 1m shift reads, so the editor greys it under all
+    """It is the one row here that only the Structure shift reads, so the editor greys it under all
     three of the other values — including the SHIPPED one. MUTATION: make `_edge`'s gap branch
     fall through to the retrace and this goes red."""
     def gap_arm(**kw):
@@ -1448,7 +1448,7 @@ def test_the_SHALLOW_zone_edge_is_NOT_dead_under_the_reclaim_so_it_is_never_grey
         kw = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None,
                   closed_sos_l=None, closed_sos_s=None, lost_sos_l=500, lost_sos_s=None)
         arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, bar_high=101.0, bar_low=100.6, **kw)
-        # the reclaim bar also carries a 1m shift, so the latch has something to move
+        # the reclaim bar also carries a Structure shift, so the latch has something to move
         arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG,
                       bar_high=101.5, bar_low=100.9, **kw)
         arm_sm.mark_traded(1)
@@ -1477,7 +1477,7 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
                        / "mpc_sos_fade.meta.json").read_text())
     rows = {p["name"]: p for p in meta["params"]}
     triggers = set(rows["exec_sec_trigger"]["choices"])
-    assert triggers == {"1m shift", "Reclaim Entry", "FVG in zone",
+    assert triggers == {"Structure shift", "Reclaim Entry", "FVG in zone",
                         "FVG in zone + Reclaim Entry"}, "a trigger was added — re-answer below"
 
     def dead_under(name):
@@ -1488,13 +1488,13 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
 
     # the reclaim's own four are dead wherever the reclaim is not in play
     for n in ("exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct"):
-        assert dead_under(n) == {"1m shift", "FVG in zone"}, n
+        assert dead_under(n) == {"Structure shift", "FVG in zone"}, n
     # the four it replaces one-for-one are dead under the plain reclaim, and live under the
     # combined value because the gap half is still running there
     for n in ("exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct"):
         assert dead_under(n) == {"Reclaim Entry"}, n
-    # and the retrace belongs to the 1m shift alone
-    assert dead_under("exec_sec_retrace") == triggers - {"1m shift"}
+    # and the retrace belongs to the Structure shift alone
+    assert dead_under("exec_sec_retrace") == triggers - {"Structure shift"}
 
     greyed = {n for n, p in rows.items()
               if p.get("group", "").startswith("↳") or p.get("disable_if")}

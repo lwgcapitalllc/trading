@@ -43,7 +43,7 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   tradeLabels: true,
   // Default ON — it is how the annotations have read since 2026-08-03, when the prices were added
   // deliberately: a bare `SL` says a level exists and makes you read it off the axis. It is a
-  // setting now because a 1m re-entry's box is short enough that the chips stack on top of each
+  // setting now because a re-entry's box is short enough that the chips stack on top of each
   // other, and on that chart the price is what makes them too wide to fit.
   tradeLabelPrices: true,
   // Default OFF (Aaron, 2026-08-08). Every mark draws its own tag with no cross-overlay

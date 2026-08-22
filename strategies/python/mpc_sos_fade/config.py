@@ -542,22 +542,22 @@ class SosFadeConfig:
     #   on, rather than silently diffing against logic this bot does not have. Porting it means
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
-    exec_secondary: bool = False       # "Secondary re-entries" — the 1m sniper re-entry
+    exec_secondary: bool = False       # "Secondary re-entries" — the fast-feed sniper re-entry
     #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
-    #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from the 1m chart. It
-    #   NEEDS run_dual and a 1m feed, which is the whole reason the default matters — see the
+    #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from a faster one. It
+    #   NEEDS run_dual and a second, faster feed, which is the whole reason the default matters — see the
     #   "not every path can run it" warning below before assuming a number came from this book.
     #   Full rules: docs/MPC_SOS_FADE_SECONDARY.md. There is NO Pine parity gate for it — the Pine
     #   is only the approximate version — so it is verified visually, not by compare_strategy.py.
     #   ⚠ LAB ONLY. algos/live/bridge.py REFUSES this config: the live runner drives one timeframe
-    #   and this needs the 1m stream beside the 15m. Turning it on for a live bot is an error, by
+    #   and this needs the fill-clock stream beside the 15m. Turning it on for a live bot is an error, by
     #   design, rather than a silently-ignored setting.
     #   🔴 MEASURED 2026-08-06 over the FULL history and it does NOT earn its place — the entire
     #   case is one trade. 186,274 M15 + 2,744,333 M1 bars (2018-09-14 → 2026-08-05): baseline 180
     #   trades / +139.90R / maxDD 45.6%, secondary ON 190 / +165.46R / maxDD 50.7%. Ten re-entries
     #   in 7.9 years, and 2023-04-03 alone is +27.33R — DELETE IT AND THE OTHER NINE ARE −1.77R,
     #   with the book's average falling BELOW baseline (+0.777 → +0.731 R/trade). It is bought with
-    #   drawdown (45.6% → 50.7%). ✅ Zero primaries displaced, and the 1m clock is inert with it off
+    #   drawdown (45.6% → 50.7%). ✅ Zero primaries displaced, and the fill clock is inert with it off
     #   (a control run of run_dual reproduced the baseline's 180 trades exactly) — so those numbers
     #   are the re-entries and nothing else.
     #   ⚠ DEFAULTED ON 2026-08-07 AT AARON'S REQUEST, against that measurement, which is recorded
@@ -566,10 +566,10 @@ class SosFadeConfig:
     #   figure in this repo measured before that date — every one of them is a primary-only book.
     #   🔴 NOT EVERY PATH CAN RUN IT, AND THAT IS THE COST OF THE DEFAULT. `run_dual` has exactly
     #   one caller (`python_runner`'s single-backtest path). `backtest/optimizer.run_sweep` replays
-    #   ONE frame, so the optimizer, a sweep and the stress test's pooled sensitivity have no 1m
+    #   ONE frame, so the optimizer, a sweep and the stress test's pooled sensitivity have no second
     #   stream to give it. Those paths now REFUSE rather than silently replaying a primary-only
     #   book and ranking it beside a baseline that has re-entries — the same call `reprice.py`
-    #   makes about `bid_ask_fills`. Turn it off for that run, or wire a 1m frame through the sweep.
+    #   makes about `bid_ask_fills`. Turn it off for that run, or wire the fill-clock frame through the sweep.
     #   ⚠ Until 2026-08-06 this had never opened a position on real data at all: run_dual built a 1m
     #   signal missing `last_conf_high`/`last_conf_low`, so the first 1m bar after any fill raised
     #   AttributeError. Any figure predating that fix describes a feature that could not run.
@@ -590,13 +590,13 @@ class SosFadeConfig:
     #   marginal. It demanded a live 15m divergence while the primary arms on a SWEEP — over the
     #   most recent year that produced 0 re-entries in 12 months, not 10 in 7.9 years.
 
-    exec_sec_retrace: float = 0.382    # "Secondary entry retrace" — where the 1m limit rests
-    #   How far back into the 1m leg the re-entry's resting limit sits, as a fib ratio of that leg.
+    exec_sec_retrace: float = 0.382    # "Secondary entry retrace" — where the shift limit rests
+    #   How far back into the shift leg the re-entry's resting limit sits, as a fib ratio of that leg.
     #   0.382 (default) = the shipped behaviour, byte-identical to the hardcoded constant it replaced.
-    #   0.0 = rest AT the leg extreme, i.e. enter ON the 1m SOS itself rather than waiting for a
+    #   0.0 = rest AT the leg extreme, i.e. enter ON the structure shift itself rather than waiting for a
     #   pullback. Read ONLY when exec_secondary is on (see __post_init__).
     #   ⚠ IT IS A TRADE-OFF, NOT A FREE KNOB, AND THE TWO HALVES PULL OPPOSITE WAYS. The stop is the
-    #   1m leg ORIGIN, so a shallower retrace is a WIDER stop: at 0.382 the stop distance is 0.618
+    #   shift leg ORIGIN, so a shallower retrace is a WIDER stop: at 0.382 the stop distance is 0.618
     #   of the leg, at 0.0 it is the whole leg. Smaller number = more setups actually fill (no
     #   pullback required) and every one of them is sized SMALLER for the same risk, with less room
     #   between the entry and the 15m targets it is aiming at. So expect more trades worth less each,
@@ -663,10 +663,10 @@ class SosFadeConfig:
     #   much comes off it, and at 0.5R banking half was the WORST run in the sweep (+0.14R).
     #   ⚠ Read ONLY when exec_secondary is on.
 
-    exec_sec_req_m1_dir: bool = False  # "Re-entry needs the 1m trend to agree"
-    #   OFF (default) = the shipped rule, which reads the 1m engine's SOS events and ignores its
-    #   direction. ON = the 1-minute structure engine's own direction must also match the trade.
-    #   It is the 1m half of Aaron's question about which chart says "stop taking these" — the 15m
+    exec_sec_req_m1_dir: bool = False  # "Fill-clock trend must agree"
+    #   OFF (default) = the shipped rule, which reads the fill-clock engine's SOS events and ignores its
+    #   direction. ON = the fill-clock structure engine's own direction must also match the trade.
+    #   It is the fast-feed half of Aaron's question about which chart says "stop taking these" — the 15m
     #   half is already covered, because a 15m shift of structure retires the setup and the arm
     #   dies with it.
     #   ⚠ Read ONLY when exec_secondary is on.
@@ -690,7 +690,7 @@ class SosFadeConfig:
     #   🔴 THIS EXISTS BECAUSE THE RE-ENTRIES SCRATCH RATHER THAN LOSE, WHICH IS A DIFFERENT
     #   PROBLEM FROM A BAD ENTRY. MEASURED 2026-08-20 over 7.9 years with the gap trigger on: of 54
     #   re-entries, 28 finished inside the ±0.15R scratch band at the 0.886 stop and 34 at the leg
-    #   origin — the biggest bucket in every configuration tried. A 1-minute entry gets a 1-minute
+    #   origin — the biggest bucket in every configuration tried. A fast-feed entry gets a fast-feed
     #   stop and is then handed a target set for a 15-minute position, so price moves in its favour
     #   and the breakeven ratchet takes it out before the rung is reached. Aaron, same day: *"I read
     #   [the scratches] altogether as wins — price went in my favour and came back. I don't want to
@@ -785,12 +785,12 @@ class SosFadeConfig:
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry"
-    #   ∈ {1m shift, Reclaim Entry, FVG in zone, FVG in zone + Reclaim Entry}
+    #   ∈ {Structure shift, Reclaim Entry, FVG in zone, FVG in zone + Reclaim Entry}
     #   WHAT HAS TO HAPPEN before a re-entry rests its order. Four values:
-    #     "1m shift"    — a 1-minute break of structure inside the zone, then a limit at
-    #                   `exec_sec_retrace` of that 1m leg. The only rule that existed before
+    #     "Structure shift"    — a break of structure on the fill clock inside the zone, then a limit at
+    #                   `exec_sec_retrace` of that shift leg. The only rule that existed before
     #                   2026-08-20, and the default until that date.
-    #     "FVG in zone" (default since 2026-08-20) — no 1m structure event at all. While the setup
+    #     "FVG in zone" (default since 2026-08-20) — no structure event at all. While the setup
     #                   is alive and price is back in the zone, rest the limit at the PRIMARY's own
     #                   point-of-interest price
     #                   (`Execution._poi_edge_l/_s`, i.e. whatever `_entry_edges` computed for this
@@ -800,7 +800,7 @@ class SosFadeConfig:
     #   implementations of those rules is how they silently diverge, and this repo has paid for that
     #   four times. It also means every gap toggle keeps ONE meaning across both entries.
     #   ⚠ MEASURED 2026-08-20, the case that prompted it (2025-10-29 long, primary scratched at
-    #   breakeven 02:00 on the 30th): the 1m shift did not confirm until 04:10, by which time price
+    #   breakeven 02:00 on the 30th): the Structure shift did not confirm until 04:10, by which time price
     #   had left; its limit rested at 3931.84 and the lowest price for the next 19 hours was 3939.86,
     #   so it missed by $8.02 while price ran to 4046.22. A gap sat at 3916.47–3922.66, INSIDE the
     #   zone, and price traded into it at 02:59.
@@ -830,7 +830,7 @@ class SosFadeConfig:
     #   primary is stopped at the deep edge precisely BY a 15m bar closing through it — so the zone
     #   is usually false at the only moment this trigger could fire. The reclaim is itself the
     #   statement that price is back at the zone's deep edge, which is what the zone was asking.
-    #   ⚠ IT NEEDS THE 1m BAR'S HIGH/LOW, which the other two triggers do not. `SecondaryArm.update`
+    #   ⚠ IT NEEDS THE FILL-CLOCK BAR'S HIGH/LOW, which the other two triggers do not. `SecondaryArm.update`
     #   takes them as optional arguments and a caller that omits them gets NO re-entries rather than
     #   a different rule — see the driver in `strategy.py`.
     #   ⚠ Read ONLY when exec_secondary is on.
@@ -861,13 +861,13 @@ class SosFadeConfig:
     #   "Stopped only" while the gap half stays "Breakeven", or the halves are refused (above).
 
     exec_rec_stop: str = "1.0"         # "Reclaim stop sits at" ∈ {0.886, 1.0}
-    #   ONLY the two 15m fib anchors, and `1m leg` / `swing low` are refused rather than accepted
-    #   and quietly reinterpreted. The reclaim latches no 1m leg and its entry is a FIXED price
-    #   (the deep edge), so a 1m swing can land on either side of the entry — a stop that is
+    #   ONLY the two 15m fib anchors, and `Shift leg` / `swing low` are refused rather than accepted
+    #   and quietly reinterpreted. The reclaim latches no shift leg and its entry is a FIXED price
+    #   (the deep edge), so a fill-clock swing can land on either side of the entry — a stop that is
     #   sometimes above and sometimes below the thing it protects is not a stop.
     #   ⚠ "1.0" is the default because the geometry is the reason the trigger exists: the leg origin
     #   sits a median 0.43R past the deep edge, so this is a much tighter stop than the primary's.
-    #   ⚠ It is also what lets the arm read this anchor BEFORE the 1m leg latch — both legal values
+    #   ⚠ It is also what lets the arm read this anchor BEFORE the shift leg latch — both legal values
     #   are pure reads of the 15m fib. Do not widen this set without reading that note in
     #   `secondary.py` section 2c.
 
@@ -883,16 +883,16 @@ class SosFadeConfig:
     #   the measured configuration and leaves NO runner. ⚠ See the R figures on the field above
     #   before reducing it — half-off measured strictly worse, twice.
 
-    exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {1m leg, swing low, 0.886, 1.0}
+    exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {Shift leg, swing low, 0.886, 1.0}
     #   WHERE THE RE-ENTRY'S STOP GOES. Four values:
     #     "0.886"      (default since 2026-08-20) — the same level the primary stops at (`fibo_p6`).
-    #     "1m leg"     — the 1-minute leg origin. The default until 2026-08-20, and it only EXISTS
-    #                   under the "1m shift" trigger; pairing it with the gap trigger is refused
+    #     "Shift leg"     — the shift leg's origin. The default until 2026-08-20, and it only EXISTS
+    #                   under the "Structure shift" trigger; pairing it with the gap trigger is refused
     #                   outright below rather than silently falling back.
-    #     "swing low"  — the 1m engine's last CONFIRMED swing (low for a long, high for a short).
+    #     "swing low"  — the fill-clock engine's last CONFIRMED swing (low for a long, high for a short).
     #     "1.0"        — the 15m leg origin (`fibo_p10`).
     #   ⚠ THE DEFAULT MOVED BECAUSE THE TRIGGER DID, and the two must be read together. The gap
-    #   trigger has no 1m leg to stop behind, so it needs a 15m anchor; 0.886 is the one the primary
+    #   trigger has no shift leg to stop behind, so it needs a 15m anchor; 0.886 is the one the primary
     #   already uses, which keeps one answer to "where does this setup stop out" across both entries.
     #   🔴 STOP PLACEMENT IS NOT A DETAIL HERE AND IT FLIPPED THE SIGN ON THE FIRST CASE MEASURED.
     #   On the 2025-10-29 long, a gap entry at 3922.66 stopped UNDER THE GAP (3916.47) was taken out
@@ -905,7 +905,7 @@ class SosFadeConfig:
     #   WHETHER A RE-ENTRY ALSO DEMANDS A LIVE 15m RSI DIVERGENCE, on top of the setup being alive
     #   and price being back in the zone. OFF (default since 2026-08-20). ON is the pre-2026-08-20
     #   rule and is byte-identical to the hardcoded `sig.*_div_active` test it replaced — it gates
-    #   BOTH the 1m leg latch and the arm, because the Pine WIP `f_secArm` tested it in both places
+    #   BOTH the shift leg latch and the arm, because the Pine WIP `f_secArm` tested it in both places
     #   and the port copied it.
     #
     #   🔴 IT IS A DIFFERENT QUESTION FROM `exec_arm_div`, AND THAT IS THE TRAP. The PRIMARY arms
@@ -916,7 +916,7 @@ class SosFadeConfig:
     #   23,530 M15 + 352,348 M1 bars): with `exec_secondary` forced ON and nothing else changed,
     #   **0 re-entries in the year**. On the 2025-12-09 short every other gate passed — the primary
     #   reached breakeven, price closed back in the zone for 433 one-minute bars, the account was
-    #   flat, and a 1m bear SOS fired inside the zone at 2025-12-11 01:15 — and the divergence test
+    #   flat, and a bear SOS fired on the fill clock inside the zone at 2025-12-11 01:15 — and the divergence test
     #   alone refused it. Aaron, same day: *"Secondary trades, I don't care about divergence."*
     #   ⚠ Read ONLY when exec_secondary is on.
 
@@ -939,7 +939,7 @@ class SosFadeConfig:
     #   leg. 0.886 (default) reads `fibo_p6` itself, so the shipped path cannot move by a float
     #   rounding step. 1.0 is the leg ORIGIN — it lets the setup arm while the 15m bar has closed
     #   BEYOND the entry band, which is exactly the state a swept stop leaves behind.
-    #   ⚠ A deeper edge does NOT move the secondary's stop, which is the 1m leg origin either way.
+    #   ⚠ A deeper edge does NOT move the secondary's stop, which is the shift leg origin either way.
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_zone_shallow: float = 0.618   # "Secondary zone — shallow edge"
@@ -1157,17 +1157,17 @@ class SosFadeConfig:
                 f"exec_sec_risk_pct must be a positive percentage of the primary's risk, got "
                 f"{self.exec_sec_risk_pct!r}. Switch exec_secondary OFF to stop taking re-entries.")
         if self.exec_secondary and self.exec_sec_trigger not in (
-                "1m shift", "FVG in zone", "Reclaim Entry",
+                "Structure shift", "FVG in zone", "Reclaim Entry",
                 "FVG in zone + Reclaim Entry"):
             # Refuse rather than fall through to the shipped trigger: a typo that silently ran the
-            # 1m shift would be indistinguishable, on the page, from the gap trigger finding nothing.
+            # Structure shift would be indistinguishable, on the page, from the gap trigger finding nothing.
             raise ValueError(
-                f"exec_sec_trigger must be one of ['1m shift', 'Reclaim Entry', "
+                f"exec_sec_trigger must be one of ['Structure shift', 'Reclaim Entry', "
                 f"'FVG in zone', 'FVG in zone + Reclaim Entry'], got "
                 f"{self.exec_sec_trigger!r}.")
-        if self.exec_secondary and self.exec_sec_stop not in ("1m leg", "swing low", "0.886", "1.0"):
+        if self.exec_secondary and self.exec_sec_stop not in ("Shift leg", "swing low", "0.886", "1.0"):
             raise ValueError(
-                f"exec_sec_stop must be one of ['0.886', '1.0', '1m leg', 'swing low'], got "
+                f"exec_sec_stop must be one of ['0.886', '1.0', 'Shift leg', 'swing low'], got "
                 f"{self.exec_sec_stop!r}.")
         # ── the RECLAIM half's own fields, checked whenever the trigger names it ──────────────
         rec_on = self.exec_secondary and self.exec_sec_trigger in (
@@ -1175,14 +1175,14 @@ class SosFadeConfig:
         gap_on = self.exec_secondary and self.exec_sec_trigger in (
             "FVG in zone", "FVG in zone + Reclaim Entry")
         if rec_on and self.exec_rec_stop not in ("0.886", "1.0"):
-            # The reclaim latches no 1m leg, so "1m leg" has nothing to read; and it is stricter
+            # The reclaim latches no shift leg, so "Shift leg" has nothing to read; and it is stricter
             # than the gap trigger about "swing low" because its entry is a FIXED price (the deep
-            # edge) — a 1m swing can sit on either side of it, and a stop on the wrong side of the
+            # edge) — a fill-clock swing can sit on either side of it, and a stop on the wrong side of the
             # entry is a position sized off a negative distance. Refusing names the pair; a
             # fallback would price the trade off an anchor nobody chose.
             raise ValueError(
                 f"exec_rec_stop must be '0.886' or '1.0', got {self.exec_rec_stop!r}. The reclaim "
-                "latches no 1m leg and its entry is a fixed price, so a 1m anchor has nothing to "
+                "latches no shift leg and its entry is a fixed price, so a fill-clock anchor has nothing to "
                 "read and could land on either side of the entry.")
         if rec_on and self.exec_rec_require not in (
                 "Any close", "Breakeven", "None", "Stopped only"):
@@ -1212,15 +1212,15 @@ class SosFadeConfig:
                 f"(the reclaim half), got {self.exec_sec_require!r} and "
                 f"{self.exec_rec_require!r}. Those are the only two preconditions that cannot both "
                 "be true of one setup, and the halves share a latch.")
-        if gap_on and self.exec_sec_stop == "1m leg":
-            # The gap trigger never latches a 1m leg, so this pair has no stop at all. Refusing is
+        if gap_on and self.exec_sec_stop == "Shift leg":
+            # The gap trigger never latches a shift leg, so this pair has no stop at all. Refusing is
             # the only honest answer — a fallback would price the trade off an anchor the operator
             # did not choose, and a silent no-trade would read as "the gap trigger found nothing".
             # ⚠ Reads `gap_on`, so it covers the COMBINED value too: under it the gap half is still
             # the gap trigger and still has no leg to stop behind.
             raise ValueError(
-                f"exec_sec_stop='1m leg' has no meaning under exec_sec_trigger="
-                f"{self.exec_sec_trigger!r} — that trigger latches no 1m leg. Pick 'swing low', "
+                f"exec_sec_stop='Shift leg' has no meaning under exec_sec_trigger="
+                f"{self.exec_sec_trigger!r} — that trigger latches no shift leg. Pick 'swing low', "
                 "'0.886' or '1.0'.")
         if self.exec_secondary and self.exec_sec_be_at not in ("TP1", "TP2"):
             raise ValueError(
@@ -1237,7 +1237,7 @@ class SosFadeConfig:
             # through would report "the secondary took no trades" as though that were a finding.
             raise ValueError(
                 f"exec_sec_retrace must be a fib ratio in [0, 1.0), got "
-                f"{self.exec_sec_retrace!r}. 0 rests at the 1m leg extreme (enter on the SOS "
+                f"{self.exec_sec_retrace!r}. 0 rests at the shift leg extreme (enter on the SOS "
                 "itself); 1.0 is the leg origin, where the stop is."
             )
         if self.exec_sl_level != "Custom":

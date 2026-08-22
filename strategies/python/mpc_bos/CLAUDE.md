@@ -161,7 +161,7 @@ load-bearing:
 |---|---|---|
 | `exec_fib_nearest=False` | `True` | the parent's 2026-08-02 entry model rests a gap on a DIFFERENT fib from Method 3. `mpc_bos_strategy.pine` has no such input, so every gap entry would sit at a level the Pine never chose — **and the export has no column to catch it with** |
 | `exec_deep_fib=True` | `False` | the parent turned Method 3 off when its new model replaced it; this fork's Pine still ships it ON and has none of those rules |
-| `exec_secondary=False` | `True` | the 1-minute re-entry needs a second bar stream through `run_dual`, which this fork does not have and `backtest.optimizer.run_sweep` cannot supply — **every BOS sweep would refuse** |
+| `exec_secondary=False` | `True` | the re-entry needs a second bar stream through `run_dual`, which this fork does not have and `backtest.optimizer.run_sweep` cannot supply — **every BOS sweep would refuse** |
 | `exec_time_stop_mode="Off"` | `"Before TP1 only"` | the 36h plateau was measured on A+ trades; a continuation trade is a different hold |
 
 **The standing rule: a default is read by every caller, including the ones that cannot honour
@@ -289,7 +289,7 @@ checking is not a comparator. Before trusting a parity column, ask what it is co
 - **No missed-setup watch.** The parent's answers "how far did this **A+** setup get" — it
   counts the sweep arm, the SOS and the 0.5–0.886 zone, none of which this setup has. A BOS
   version is new design work; the tracker's per-leg death REASON is the raw material.
-- **No `run_dual`.** There is no BOS 1-minute leg in any Pine.
+- **No `run_dual`.** There is no BOS fast-feed leg in any Pine.
 - **No live-bot instance.** This bot is not deployed and must not be until the gate is green —
   `docs/LIVE_TRADING_PIPELINE.md` is the path.
 

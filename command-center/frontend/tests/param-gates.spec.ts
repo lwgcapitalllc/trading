@@ -267,8 +267,17 @@ test.describe('a settled param is hidden, not removed', () => {
     // Aaron's stated pet peeve: `exec_secondary` and its two children were filed under
     // "Direction & sessions", where nobody would look for them.
     // MUTATION: put them back in the old group and this goes red.
+    //
+    // ⚠ The group NAMES NO TIMEFRAME. It read `Secondary re-entries (1m)` until 2026-08-21, when
+    // the re-entry's fill clock became a setting (5 minutes by default) — a heading that hardcodes
+    // a number the row below it owns is the same defect one level up, so the assertion pins the
+    // ABSENCE of one. It also pins the two sub-groups, because a reader told which trigger a
+    // setting belongs to is the whole point of the split.
     await openEditor(page)
-    await expect(page.getByRole('button', { name: /Secondary re-entries \(1m\)/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Secondary re-entries$/ })).toBeVisible()
+    await expect(page.getByText(/Secondary re-entries \(\d+m\)/)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Reclaim Entry only/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Structure shift only/ })).toBeVisible()
     await expect(page.getByText('Direction & sessions')).toHaveCount(0)
   })
 })

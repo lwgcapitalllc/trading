@@ -82,7 +82,7 @@ OTHER param**: the exemption is about which inputs the Pine happens to declare, 
 prefix, and it flips the moment somebody ports the group across. ⚠ **Grep the GROUP, never
 the word "sniper" — it means two different things across the two files.** The Pine's
 "Allow Sniper Zone as entry confirmation" (G5) is a 15m confirmation zone on the PRIMARY
-trade and has nothing to do with the 1m re-entry this section calls the sniper. It has been
+trade and has nothing to do with the re-entry this section calls the sniper. It has been
 there all along and it is the one line a keyword search hits, so the search reports a
 re-entry input that does not exist. The ten group labels are the reliable check: none of
 them is a re-entry group.
@@ -123,7 +123,7 @@ nothing downstream recomputes them from anchors. A fib rebuilt in the backend or
 second claim about one leg, which is the failure this repo has now met four times.
 ⚠ **Recording is all-or-nothing** — a ladder missing a rung is dropped entirely, because seven
 levels drawn where there are eight reads as "this trade had no 0.786" rather than "this record is
-incomplete". The **1m secondary** records none by design (it rests at a retrace of its own tight 1m
+incomplete". The **secondary** records none by design (it rests at a retrace of its own tight 1m
 leg, a different fib). ⚠ **`mpc_bleg` USED to get none for free by overriding `_place_entries`, and
 since 2026-08-11 it records its OWN — do not read this section as covering it.** That fork prices
 off the frozen SOS leg, not this ladder, so it builds a `TradeFib` from its own band anchors and
@@ -430,7 +430,7 @@ trail, a zero `_stage` puts a breakeven stop back to the full stop, a missing `_
 time stop's clock. Nothing raises.
 `test_the_snapshot_covers_every_field_open_position_assigns` therefore **DERIVES the required set by
 reading `_open_position`'s own source**, because a hand-written list would re-freeze exactly the
-assumption that fails — the same guard `run_dual`'s 1m signal needed after it shipped missing two
+assumption that fails — the same guard `run_dual`'s fill-clock signal needed after it shipped missing two
 fields that three weeks of green tests never saw.
 
 ⚠ **`_traded_sos_l` / `_traded_sos_s` are carried even though `_open_position` does not assign
@@ -537,7 +537,7 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
 - **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
   end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
   `.execution.trades`.
-- **`secondary.py`** — the 1m sniper re-entry (below). `Structure1m` (1m structure feed, port of Pine
+- **`secondary.py`** — the fast-feed sniper re-entry (below). `Structure1m` (fill-clock structure feed, port of Pine
   `f_struct1m`) + `SecondaryArm` (the latch/arm, port of Pine `f_secArm`). Consumed by `run_dual`.
 
 ## The missed-setup watch (2026-07-27) — the setups that died, not the ones that were refused
@@ -655,19 +655,19 @@ three other routes in `mpc_sos_fade_optimization.md` → Run 12 / 12b.
 
 ## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, committed `c962601`)
 
-The 1-minute re-entry Aaron prototyped in Pine, built as the *exact* version here (Pine can only
-sample the 1m engine once per 15m bar — its own tooltip says "the exact version is the Python port").
+The re-entry Aaron prototyped in Pine, built as the *exact* version here (Pine can only
+sample the fill-clock engine once per 15m bar — its own tooltip says "the exact version is the Python port").
 **Full rules + design: `docs/MPC_SOS_FADE_SECONDARY.md`.** One paragraph: after the **primary** 15m
 A+ trade on a leg has traded and gone flat, while the 15m div + SOS are still live and price is back
-in the 0.618-0.886 zone, a **1m shift of structure** in the trade direction rests a limit at a 38.2%
-retrace of that tight 1m leg (stop = 1m leg origin; TP1/TP2 = 15m 0.5/0.382; runner = TP3). One
-re-entry per 1m leg; a re-entry is never the first trade on a leg.
+in the 0.618-0.886 zone, a **Structure shift** in the trade direction rests a limit at a 38.2%
+retrace of that tight shift leg (stop = shift leg origin; TP1/TP2 = 15m 0.5/0.382; runner = TP3). One
+re-entry per shift leg; a re-entry is never the first trade on a leg.
 
 - **`run_dual(df15, df1m)`** merges the two streams on a close-time clock: the **primary** is stepped
   on 15m bars exactly as `run(df15)` (so parity is untouched); the **secondary** latches/arms/fills/
   manages on real **1m** bars — the sniper "in and out fast" a 15m bar can't express.
 - **Execution** grows an `_entry_kind` tag + `step_secondary(bar1m, arm)`. A 15m bar only ever
-  touches a `primary` position; a 1m bar only a `secondary`. They share the one position slot but
+  touches a `primary` position; a fill-clock bar only a `secondary`. They share the one position slot but
   never the same trade (the secondary arms only when flat), so the tag is all that separates them.
   With `exec_secondary` OFF, no secondary ever opens, so `step()` is byte-identical to before.
 - **NO Pine parity gate** — the Pine is only the approximate version, so this is verified **visually**
@@ -697,9 +697,9 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   replays over 186,274 M15 + 2,744,333 M1 bars (2018-09-14 → 2026-08-05) at the shipped defaults:
   **A** `run(df15)` = the baseline, **B** `run_dual` with the secondary OFF = the control, **C**
   `run_dual` with it ON. **A 180 trades / +139.90R / maxDD 45.6% (5.61R) · C 190 / +165.46R / maxDD
-  50.7% (6.53R).** ✅ **B reproduced A exactly (180 trades, identical entries), so the 1m clock is
+  50.7% (6.53R).** ✅ **B reproduced A exactly (180 trades, identical entries), so the fill clock is
   inert on its own** and C's delta is the re-entries and nothing else — without that control a
-  difference in C is a mix of *the re-entries made money* and *the 1m stream nudged the primary*,
+  difference in C is a mix of *the re-entries made money* and *the fill-clock stream nudged the primary*,
   and no arithmetic afterwards separates them, because the two share one position slot. ✅ **Zero
   primaries displaced** (0 in A-not-C, 0 in C-not-A), so the one-slot queue effect did not fire.
   🔴 **Ten re-entries in 7.9 years and 2023-04-03 is +27.33R of the +25.56R total — DELETE THAT ONE
@@ -725,7 +725,7 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   EQ/FVG coupling were measured against.
 - ⚠ **`exec_sec_once_per_setup` (default ON) — the latch retired the 1-MINUTE leg, so one 15m
   setup could keep handing out fresh legs.** On 2024-12-02 it did: primary 11:30, re-entry 20:08,
-  re-entry 01:51 — same 15m SOS bar 7893, two different 1m legs (120399 / 120499), the second
+  re-entry 01:51 — same 15m SOS bar 7893, two different shift legs (120399 / 120499), the second
   filling two minutes after the first closed. The cap also retires the 15m SOS BAR on a fill,
   which is one-to-one with the primary because the arm already requires `be_sos == *_sos_bar`.
   ⚠ **Per SETUP, not per lifetime** — a new break of structure re-opens it. ✅ **MEASURED, one real
@@ -742,18 +742,18 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
 - 🔴 **NOT EVERY PATH CAN RUN THE SECONDARY, AND THE DEFAULT MADE THAT LOAD-BEARING.** `run_dual`
   has exactly ONE caller (`python_runner`'s single-backtest path). `backtest/optimizer.run_sweep`
   replays one frame, so **the optimizer, sweeps and the stress test's pooled sensitivity have no
-  1m stream** — they would have replayed a primary-only book and ranked it against a baseline that
+  fill-clock stream** — they would have replayed a primary-only book and ranked it against a baseline that
   has re-entries. They **REFUSE** now, naming the fix. ⚠ **`mpc_bleg` had to PIN it False and that
   one is not cosmetic**: A+ never places an order in that fork so there is no primary to follow,
   and `MpcBLegStrategy.run_dual` raises — an inherited `True` would have killed **every B-LEG lab
   run** on a `NotImplementedError`. ✅ The live bot is unaffected: its instance config states
   `exec_secondary: false` explicitly, and `algos/live/bridge.py` refuses the config outright.
 - ⚠ **IT HAD NEVER OPENED A POSITION ON REAL DATA BEFORE THAT RUN, AND THREE WEEKS OF GREEN TESTS
-  SAID OTHERWISE.** `run_dual` built its 1m signal as a namedtuple without `last_conf_high` /
+  SAID OTHERWISE.** `run_dual` built its fill-clock signal as a namedtuple without `last_conf_high` /
   `last_conf_low` — the STRUCTURE runner trail's anchors, which the shared `_advance_stage` reads on
-  **every** managed bar, primary or secondary — so the first 1m bar after any secondary fill raised
+  **every** managed bar, primary or secondary — so the first fill-clock bar after any secondary fill raised
   `AttributeError`. Not a wrong number: the run died. 🔴 **The reason no test caught it is the
-  transferable part: `tests/test_secondary.py` hand-builds its own 1m bar as a `SimpleNamespace`
+  transferable part: `tests/test_secondary.py` hand-builds its own fill-clock bar as a `SimpleNamespace`
   carrying both fields.** The fixture was more complete than production, so every test exercised a
   shape the code never produced. The regression test now DERIVES the required set by reading
   `_advance_stage`'s own source for `sig.<field>` and asserting the real `run_dual` supplies all of
@@ -761,7 +761,7 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   against the bug, naming both missing fields.**
 - ⚠ **WHERE THE LIMIT RESTS IS NOW A NUMBER (`exec_sec_retrace`, default 0.382), AND SWEEPING IT
   ANSWERS A QUESTION WORTH RECORDING FOR ITS SHAPE RATHER THAN ITS WINNER.** Aaron asked what
-  happens if the 38.2% retrace comes out and the re-entry simply takes the 1m SOS. The 0.382 was a
+  happens if the 38.2% retrace comes out and the re-entry simply takes the fill-clock SOS. The 0.382 was a
   hardcoded constant; it is a config field now, byte-identical at the default (pinned by the suite)
   and refused outside `[0, 1.0)` at construction — 1.0 is the leg ORIGIN, where the stop is, so an
   entry there has a zero stop distance and the order is silently cancelled, which would report *the
@@ -777,7 +777,7 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   | 0.500 | 189 | +170.07 | +0.900 | 9 | +30.17 | +34.01 | −3.84 | 1/4 |
 
   🔴 **Entering on the SOS is the WORST row and the result is monotonic — deeper is better** — which
-  is mechanical rather than mysterious: **the stop is the 1m leg origin whatever the entry**, so at
+  is mechanical rather than mysterious: **the stop is the shift leg origin whatever the entry**, so at
   0.382 the stop distance is 0.618 of the leg and at 0.0 it is the whole leg. A shallower entry is a
   WIDER stop, hence a SMALLER position for the same risk, and less room between the fill and the 15m
   targets. **You fill more often and each fill is worth less** — +2 trades for −11R. ⚠ **But the
@@ -895,7 +895,7 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   it is a doc/code wording mismatch to tidy on the next pass, not a defect.
 - ⚠ **THE PARITY GATE CANNOT SEE ANY OF THIS, AND AN EARLIER NOTE IN THIS SESSION SAID THE OPPOSITE.**
   `compare_strategy.py` replays 15-minute bars through `.run()`; every re-entry lever lives on the
-  1-minute path behind `run_dual`. **No `exec_sec_*` default can move the gate**, which is why six of
+  fill-clock path behind `run_dual`. **No `exec_sec_*` default can move the gate**, which is why six of
   them could change at once. It was still RUN rather than reasoned about, because that is what
   rule 22 asks for: GREEN (exit 0) on `engines/VANTAGE_XAUUSD, 15_4fef8.csv` and `…_49f80.csv` at
   `--warmup 1000`, both before the change and after it. ⚠ **Two other exports sitting on this
@@ -917,7 +917,7 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
 The reclaim exists because of a geometry fact this file already records: **the `1.0` sits a median
 0.43R past the `0.886`**, so a primary stopped at the `0.886` that then turns can be re-entered AT
 the `0.886` with the stop at the `1.0` — the level that genuinely kills the leg — for roughly 0.43x
-the original risk. It waits for a 1-minute bar to trade back THROUGH the `0.886` (never the
+the original risk. It waits for a fill-clock bar to trade back THROUGH the `0.886` (never the
 stop-out bar's own wick — `_l_seen`/`_s_seen` require a later bar), rests the entry at that level,
 and voids for the setup if the `1.0` prints first.
 
@@ -993,9 +993,9 @@ finding it had moved. Full narrative and the numbers: `docs/SOS_FADE_BUILD_NOTES
 combined re-entry value*.
 
 **1. Which rule prices a side is the CONFIGURED TRIGGER's, never whichever block latched last.**
-Section 3's 1-minute latch runs under EVERY trigger, including the two with no 1m leg to price off,
+Section 3's fill-clock latch runs under EVERY trigger, including the two with no shift leg to price off,
 because it moves `_l_leg`, which `_traded` / `_dead` / `_used` all read. Keying the entry price off
-the latch let a 1m structure event price a GAP book at a 38.2% retrace of a 1-minute leg: **the
+the latch let a fill-clock structure event price a GAP book at a 38.2% retrace of a fast-feed leg: **the
 shipped book silently gained 4 re-entries and 4.9R.** Under the combined value ownership falls to
 **which precondition is open**, which is well-defined precisely because the gates are disjoint.
 ⚠ **Do NOT gate section 3 behind a trigger test to "tidy" this** — tried twice, and both attempts
@@ -1023,11 +1023,11 @@ dead setting is stuck in.
 
 | group | rows | when they are greyed |
 |---|---|---|
-| `Secondary re-entries (1m)` | the switch, the trigger, and the 8 both halves read | never |
-| `↳ Reclaim Entry only` | its precondition, stop, first target, bank % | trigger is `1m shift` or `FVG in zone` |
-| `↳ FVG / 1m shift only` | the 4 the reclaim replaces one-for-one, + the retrace | trigger is `Reclaim Entry` |
+| `Secondary re-entries` | the switch, the trigger, and the 8 both halves read | never |
+| `↳ Reclaim Entry only` | its precondition, stop, first target, bank % | trigger is `Structure shift` or `FVG in zone` |
+| `↳ FVG / Structure shift only` | the 4 the reclaim replaces one-for-one, + the retrace | trigger is `Reclaim Entry` |
 
-⚠ **The retrace is the odd one — it is dead under the SHIPPED trigger too.** Only the `1m shift`
+⚠ **The retrace is the odd one — it is dead under the SHIPPED trigger too.** Only the `Structure shift`
 retraces a leg; the gap rests at the primary's own price and the reclaim at the deep edge. It is
 greyed under all three of the other values.
 
@@ -1037,7 +1037,7 @@ reads back as *"tested, rock solid"*.
 
 🔴 **THE SHALLOW ZONE EDGE LOOKS AS DEAD AS THE REST AND IS NOT, AND THAT IS THE TRANSFERABLE
 FINDING.** The reclaim ignores the zone by design — this file says so and a test says so — so it
-was on the greyed list on the way in. It is live, because **section 3's 1-minute latch runs under
+was on the greyed list on the way in. It is live, because **section 3's fill-clock latch runs under
 every trigger, its gate reads the zone, and it writes the same per-setup bookkeeping the reclaim's
 own arm is measured against.** ⚠ **Reading the consuming line was not enough here**: the other nine
 rows each have ONE reader inside an explicit source branch, and this one launders through shared
@@ -1052,7 +1052,7 @@ the ladder, 1 the counter-case, 1 tying the contract's greyed set to them. **9 m
 (357 strategy tests green, 49 backend param-gate/sensitivity tests green).
 **PARITY:** `compare_strategy.py` green on the 2026-08-21 export at `--warmup 100`. ⚠ **The gate is
 structurally blind to all of this** — it replays 15m bars through `.run()` and every re-entry lever
-lives on the 1m path behind `run_dual`.
+lives on the fill-clock path behind `run_dual`.
 
 #### A re-entry records WHAT THE TRADE BEFORE IT DID, and that is a second question (2026-08-21)
 
@@ -1082,38 +1082,55 @@ parametrise the tests over the rule rather than to trust the default.
 **TESTED:** 6 new tests in `tests/test_secondary.py` (+4 in `command-center/backend`); 8 mutations
 written, 8 killed. **PARITY:** unchanged and re-run green — nothing here is read by a decision.
 
-#### A re-entry records WHAT THE TRADE BEFORE IT DID, and that is a second question (2026-08-21)
+#### Nothing in the re-entry layer says "1 minute" any more (2026-08-21)
 
-`SecArm.l_after` / `s_after` → `_Pending.after` → `Trade.after`: **"breakeven" | "stopped" |
-"closed" | None**, reporting-only, read by nothing that arms, prices or sizes. The price chart tags
-a re-entry `BE+` or `SL+` off it — Aaron's ask, looking at a chart with both triggers on and 107
-re-entries all wearing one `SEC`.
+The fill clock became a setting the same day (5 minutes by default — table and reasoning at
+`exec_sec_fill_tf_min` in `config.py`). Aaron, on landing it: *"Make it transparent everywhere.
+Anything that says one minute shouldn't be so."*
 
-🔴 **It is NOT a rename of `*_src`, and collapsing the two is the mistake to avoid.** `src` is the
-trigger that was CONFIGURED; this is the outcome that was OBSERVED. They agree under every shipped
-configuration, which is exactly why they must stay two fields — point the gap half at
-`Stopped only` and a gap-triggered re-entry is a re-entry after a LOSS, and the chart has to say so.
+**Two dropdown VALUES were renamed**, because a value naming a timeframe the code no longer uses
+is worse than stale — it is a wrong answer printed on the page.
 
-⚠ **`None` means the run could not tell, and must never become a word downstream.** A re-entry
-armed through the `None` precondition follows a primary that may not have traded at all.
-⚠ **Stopped is tested before closed.** `_prim_closed_sos_*` is stamped on every close whatever the
-outcome, so a stopped primary sets both latches; asking "closed?" first calls every stop-out a
-plain close.
+| was | is |
+|---|---|
+| `1m shift` (a re-entry trigger) | **`Structure shift`** |
+| `1m leg` (a re-entry stop anchor) | **`Shift leg`** |
 
-🔴 **`SecondaryArm.update` has TWO `SecArm` returns and a test can leave through only one.** The
-first version of these tests passed while the mutation that stripped the field off the plain return
-reddened NOTHING — the resting-order rule had been defaulted ON in the same tree, so every test in
-the file was exiting through the other branch and the untested return was free to be wrong. **A
-duplicated construction is only as covered as its least-visited branch**, and the fix was to
-parametrise the tests over the rule rather than to trust the default.
+⚠ **A saved run or bot config carrying the old string is REFUSED**, not silently reinterpreted —
+the same behaviour as the `Deep-edge reclaim` → `Reclaim Entry` rename the day before, and for the
+same reason: quietly falling back to a default would replay a different strategy under the old
+name.
 
-**TESTED:** 6 new tests in `tests/test_secondary.py` (+4 in `command-center/backend`); 8 mutations
-written, 8 killed. **PARITY:** unchanged and re-run green — nothing here is read by a decision.
+🔴 **THE PANEL GROUP NOW NAMES NO TIMEFRAME AT ALL, AND THAT IS THE RULE, NOT THE FIX.** It read
+`Secondary re-entries (1m)`; the obvious change was `(5m)` and it would have been the same defect
+one turn later. **A heading must not hardcode a number the row beneath it owns** — the fill clock
+is one setting, in one place, and every other surface points at it. `param-gates.spec.ts` pins the
+ABSENCE of a timeframe in the group name rather than the presence of a particular one.
 
-⚠ **`exec_rec_stop` of `1m leg` or `swing low` is REFUSED**, stricter than the gap trigger's rule,
-because the entry is a FIXED price and a 1-minute swing can land either side of it. That refusal is
-also what lets section 2c read the stop anchor BEFORE the 1m leg latch — both legal anchors are pure
-reads of the 15m fib. ⚠ **Do not hoist that lookup for the other triggers**: under `1m leg` the
+⚠ **A MEASUREMENT TAKEN ON 1m DATA STILL SAYS 1m, EVERYWHERE, AND WAS DELIBERATELY LEFT ALONE.**
+Rule 4 cuts both ways: you may not edit a recorded figure to match today's default any more than
+you may invent one. The sweep skipped every line carrying an R figure, a bar count or a date — so
+`1m 2,804,720 bars / +147.56R` reads exactly as it was run, and the prose around it no longer
+claims that is what the strategy does now.
+
+⚠ **The IDENTIFIERS were left alone and that is a debt, not something to be proud of** — `df1m`,
+`sig1m`, `M1State`, `Structure1m`, `_Bar1mSig`. Renaming a public parameter moves every caller
+(`python_runner`, `run_report`, the portfolio stack, the tests) for a cosmetic gain, and this layer
+is one promote away from money. `run_dual`'s docstring now says in as many words that the second
+frame's timeframe is the caller's choice and that the parameter name is the one thing in there
+which cannot be trusted.
+
+⚠ **A DUPLICATE OF THE SECTION ABOVE SHIPPED IN `e107345` AND WAS DELETED HERE.** Two identical
+copies, ~1,950 bytes, from an insert script run twice against an anchor that was unique the first
+time. It was caught by the NEXT insert refusing — `assert s.count(anchor) == 1` — rather than by
+anybody reading the file. **The assertion that stops a script writing twice is the same one that
+tells you it already did; a script that inserts without counting its anchor has no way to notice.**
+
+
+⚠ **`exec_rec_stop` of `Shift leg` or `swing low` is REFUSED**, stricter than the gap trigger's rule,
+because the entry is a FIXED price and a fill-clock swing can land either side of it. That refusal is
+also what lets section 2c read the stop anchor BEFORE the shift leg latch — both legal anchors are pure
+reads of the 15m fib. ⚠ **Do not hoist that lookup for the other triggers**: under `Shift leg` the
 anchor IS the leg assigned by that latch.
 
 ⚠ **The exit ladder is not a detail on this half.** All-out at 3x its own risk is the default and is
@@ -1124,7 +1141,7 @@ fail.
 **TESTED:** 350 strategy tests green (24 new), 11 rules each watched RED by a named mutation —
 detail in the build notes. **PARITY:** `compare_strategy.py` exit 0 on `4fef8` and `49f80` at
 `--warmup 1000`, before and after. ⚠ **The gate is structurally blind to all of this** — it replays
-15-minute bars through `.run()` and every re-entry lever lives on the 1-minute path behind
+15-minute bars through `.run()` and every re-entry lever lives on the fill-clock path behind
 `run_dual`, so a green run means the primary is untouched and nothing more.
 
 ⚠ **NOT USABLE LIVE, and no new refusal was needed** — `algos/live/bridge.py` already refuses
@@ -2271,7 +2288,7 @@ showing the same trade count as its source is working correctly.
 
 ### 🔴 THE RE-ENTRY NOW SHIPS **OFF** (Aaron's call, 2026-08-21 — reverses 2026-08-07)
 
-**Every optional entry path is now OFF by default: the 1m re-entry, loss recovery, scale-in and
+**Every optional entry path is now OFF by default: the re-entry, loss recovery, scale-in and
 B-Leg. The shipped book is the PRIMARY book.** MEASURED over 2018-09-14 → 2026-08-14: **181 trades
 on the new defaults, against 235 with the re-entry on.**
 
@@ -2284,7 +2301,7 @@ enabled, and anyone who switches the re-entry on should get the capped rule with
 uncapped book by accident. Turning a feature off is not a reason to unpin the rule that governs it.
 
 ⚠ **It cannot move `compare_strategy.py`, and that was VERIFIED rather than argued.** The re-entry
-needs a 1m stream through `run_dual` while the gate replays the export's own single frame, so no
+needs a fill-clock stream through `run_dual` while the gate replays the export's own single frame, so no
 re-entry has ever fired inside it — exit 0 at warmups 100 / 500 / 1000 on
 `VANTAGE_XAUUSD, 15_bfe65.csv`, before and after the flip.
 
@@ -2430,7 +2447,7 @@ intend to use, and re-run `compare_strategy.py` to exit 0.
 #### The guard reaches the 1-MINUTE path too (2026-08-07)
 
 The table above says the floor gates `_pend_long` and `_pend_short`. Those are the **15m** orders.
-`_secondary_pending` — the 1m sniper's resting limit — asked only `dist > 0`, so from the day the
+`_secondary_pending` — the fast-feed sniper's resting limit — asked only `dist > 0`, so from the day the
 re-entry was built the shipped floor did not reach it. `exec_min_stop_mode` has been
 `"% of price"` **0.08 since 2026-08-04**, not `"Off"`, so this was a live gap in a default run
 rather than one waiting to be switched on.
@@ -2455,14 +2472,14 @@ replayed).
 
 🔴 **The honest size of the problem is ONE setup, and the first count of it was misread.** Over the
 whole history **1,956 secondary limits were placed and 90 rested under the floor** — but a resting
-limit is re-placed on every 1m bar, and all 90 are the **same limit at the same ratio (0.9848 of
+limit is re-placed on every fill-clock bar, and all 90 are the **same limit at the same ratio (0.9848 of
 the floor), one setup resting for 90 minutes.** Reading them as 90 near-misses would have been a
 count of bars dressed up as a count of risk. Exactly one under-floor secondary has ever FILLED
 (2024-12-02 20:08, a $2.08 stop against a $2.11 floor — 1.5% short).
 
 ⚠ **So the case for this is CONSISTENCY, not the measurement.** The history contains no instance of
 the hazard the floor exists for; what it contains is one rule enforced in one of the two places it
-applies. The sizing hazard on a 1m leg is structural and unpriced either way — an absence over 8
+applies. The sizing hazard on a shift leg is structural and unpriced either way — an absence over 8
 years is not evidence it cannot happen, and the $0.36-stop re-entry that motivated the question
 existed until `exec_sec_once_per_setup` removed it the day before.
 
@@ -2479,7 +2496,7 @@ which is the direction a later "simplification" would restore. 196 strategy + 34
 `test_run_dual_primary_is_identical_to_run_when_secondary_off` built its config with
 `SosFadeConfig()` and a comment reading *"exec_secondary defaults False"*. It ships **True** since
 2026-08-07, so the test had quietly become a run of the secondary path — and it still PASSED,
-because the synthetic 1m stream it feeds never arms one. It pins `exec_secondary=False` explicitly
+because the synthetic fill-clock stream it feeds never arms one. It pins `exec_secondary=False` explicitly
 now. **The lesson generalises past this file: flipping a default silently re-points every test that
 relied on it, and the ones that keep passing are the ones you will not find.** When you change a
 default, grep the suite for bare constructions of that config.
@@ -2875,9 +2892,35 @@ fib it was armed on, so **rung 2 can be the NEARER of the two — 23 of the 45 r
 exists nowhere in `mpc_strategy.pine`.** ⚠ **A first count published as 182 of 205 was WRONG**
 and made this look repo-wide; it measured *nearer* with the sign inverted (corrected
 2026-08-21). Distance is measured FROM the entry in the FAVOURABLE direction — on a short the
-nearer target is the HIGHER price — and a bare price comparison is backwards on one side. `_advance_stage` tests rung 1 before rung 2, so on such a trade the stop can go
-straight from stage 0 to stage 2 without ever arming breakeven. **Not changed here** — it moves
-what the bot trades and needs its own measurement, not a drive-by fix alongside a labelling one.
+nearer target is the HIGHER price — and a bare price comparison is backwards on one side.
+
+`_advance_stage` tests rung 1 before rung 2, so on a flipped trade the stop goes straight from
+stage 0 to stage 2 without ever arming breakeven.
+
+🔴 **IT WAS FLIPPED, MEASURED, AND REVERTED. DO NOT FLIP IT — IT COSTS MONEY, AND THE READING THAT
+SAYS OTHERWISE IS THE INTUITIVE ONE.** MEASURED 2026-08-21 via `run_report`, XAUUSD M15
+2018-09-14 → 2026-08-20, matched basis, only the stage ordering differing:
+
+| | total | trades moved | breakeven scratches |
+|---|---|---|---|
+| as it ships (rungs in the strategy's own order) | **+151.99R** | — | 45 |
+| stage 1 at the NEARER rung, stage 2 at the further | +147.57R | 17 (11 worse, 6 better) | **54** |
+
+**−4.43R over 7.9 years, and nine winners became scratches.** ⚠ **The reason is that a TRAIL is
+STRONGER protection than breakeven, not weaker.** On a flipped trade the first rung price reaches
+already arms the trail, which is better than arming plain breakeven — so the "fix" REPLACES the
+trail with breakeven at the near price and DELAYS the trail to the far one. Trades that were
+banking 0.8–1.2R came off at 0.02–0.06R instead.
+
+⚠ **"It skips the breakeven step" therefore describes something GOOD, and reading it as a defect
+is what motivated the flip.** The naming is what is backwards, not the behaviour: the step called
+"1" waits on the far price and the step called "2" on the near one, so the bot reaches the better
+one first. Aaron's call, 2026-08-21: leave it.
+
+⚠ **What is still genuinely unmeasured is arming breakeven EARLIER THAN EITHER RUNG** — today
+nothing protects the trade until it reaches one of them. That is a NEW rule (a fraction of R, a
+fraction of the way to the first target), not a reordering, and it is the question the reordering
+was mistaken for.
 
 Tests: `tests/test_execution.py` (2, both watched RED against HEAD).
 
@@ -2956,6 +2999,29 @@ history is shallower.
 ⚠ **A strategy that does not declare one keeps the old 1m behaviour.** `run_report` reads
 `getattr(cfg, "exec_sec_fill_tf_min", 1)` — absent means "this fork has not been measured", not
 "coarsen it".
+
+## What the 1-minute STRUCTURE engine contributes at the shipped trigger (2026-08-21)
+
+`Structure1m` runs on every bar of the second feed under **every** trigger, including the ones
+that use no 1m leg — `secondary.py` step 3 says so in its own comment. At the shipped
+`exec_sec_trigger = "FVG in zone"` it **prices nothing**: the entry is the primary's own resting
+price (`_edge` → `poi`), the stop is `sig.fibo_p6`, a 15m fib (`_stop_anchor` never touches `m1`
+for that mode), and `exec_sec_req_m1_dir` is OFF so `m1.direction` is ignored.
+
+⚠ **It is NOT inert, and the difference matters.** Its SOS latch still writes `_l_leg` / `_s_leg`,
+which is the key `_traded` / `_dead` / `_used` read — so it can still move which setup counts as
+already-used. `secondary.py` records a control replay where keying the price rule off the latch
+instead of the trigger priced a gap book at a 1-minute retrace, +4 re-entries and +4.9R.
+
+⚠ **Read from the CODE, not from a replay.** Nobody has run the book with the 1m structure engine
+suppressed, so "it contributes nothing but bookkeeping" is a reading of the source and not a
+measurement. Say which it is before quoting it.
+
+⚠ **Aaron's description of the shipped rule is the right one and the module's own docstring is
+stale**: it opens *"1m sniper re-entry … a 1m shift of structure rests a tight limit at a 38.2%
+retrace of that 1m leg"*, which describes `"1m shift"` — a trigger that is no longer the default.
+The shipped rule is: the first trade reaches breakeven, price comes back into the zone, a fair
+value gap is there, and the entry follows the PRIMARY's model around that gap.
 
 ## Do / Never
 

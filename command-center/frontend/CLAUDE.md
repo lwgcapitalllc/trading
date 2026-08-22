@@ -110,6 +110,19 @@ Implementation-level detail for the denser pages (BacktestDetail, TuningWorkbenc
 
 ---
 
+## A settings GROUP must not hardcode a number one of its rows owns (2026-08-21)
+
+The strategy editor renders its accordions from the `group` string in a strategy's meta file, so a
+group name is a claim like any other label. The re-entry block read **`Secondary re-entries (1m)`**
+until the re-entry's fill clock became a setting (5 minutes by default). Renaming it `(5m)` was the
+obvious move and would have been the same defect one turn later — **the heading now names no
+timeframe at all**, and the one row that owns the number is the only place it appears.
+
+`tests/param-gates.spec.ts` pins the ABSENCE (`Secondary re-entries (\d+m)` must not render)
+rather than the presence of a particular figure, so the test cannot go stale the next time the
+default moves. ⚠ **Playwright is not in `scripts/run_all_tests.sh`** — it needs the app up — so
+this one is only as good as somebody running it.
+
 ## Feature flags — `src/lib/features.ts`
 
 **Added 2026-08-04. Smart Money is OFF.** Aaron is leaning the command center down to

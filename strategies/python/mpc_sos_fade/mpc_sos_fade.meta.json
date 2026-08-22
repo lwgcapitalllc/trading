@@ -550,7 +550,7 @@
     },
     {
       "name": "exec_secondary",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "toggle",
       "label": "Secondary re-entries",
       "short": "Secondary re-entries",
@@ -558,22 +558,22 @@
         "off": "Primary only",
         "on": "Secondary on"
       },
-      "desc": "Adds a second entry off the 1-minute chart: once the first trade is safe at breakeven and price falls back into the zone, it re-enters for the same targets. On by default. MEASURED over 7.9 years on the settings that now ship: 54 re-entries, worth +13.9R on top of the first trades' +206.2R, and the first trades are untouched to the decimal. It is bought with drawdown — the worst peak-to-trough goes from 51.8% to 60.4% — and it leans hard on one trade, which is why it is sized at half. Lab only, and slow to run."
+      "desc": "Adds a second entry off a FASTER chart than the strategy trades — the fill clock set below, 5 minutes by default: once the first trade is safe at breakeven and price falls back into the zone, it re-enters for the same targets. On by default. MEASURED over 7.9 years on the settings that now ship: 54 re-entries, worth +13.9R on top of the first trades' +206.2R, and the first trades are untouched to the decimal. It is bought with drawdown — the worst peak-to-trough goes from 51.8% to 60.4% — and it leans hard on one trade, which is why it is sized at half. Lab only, and slower to run than a plain backtest."
     },
     {
       "name": "exec_sec_trigger",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "label": "What triggers a re-entry",
       "short": "Trigger",
-      "choices": ["1m shift", "Reclaim Entry", "FVG in zone", "FVG in zone + Reclaim Entry"],
+      "choices": ["Structure shift", "Reclaim Entry", "FVG in zone", "FVG in zone + Reclaim Entry"],
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. 1m shift is the original rule: a break of structure on the 1-minute chart, then an order at a 38.2% pullback of that 1-minute move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Reclaim Entry is the only one of the three built for a trade that LOST: the first trade is stopped at the deep edge of the entry band, price does not go on to break the move, and instead comes back up through that level — an order then waits AT the level for the retest, stopping at the far end of the move. Because those two levels sit close together the risk is a fraction of the first trade's, so the same cash buys a much bigger position. It reads its OWN four settings below rather than the shared ones, so it means the same thing whether it runs alone or alongside the gap. MEASURED: waiting for the retest earned +43R over 7.9 years while chasing the reclaim earned nothing, so the wait is the whole edge. The fourth choice runs the gap and the reclaim TOGETHER. That is safe because they cover opposite outcomes — a first trade either reaches breakeven or is stopped out, never both — so they can never want the same setup. MEASURED over 7.9 years: 107 re-entries between them, none sharing a setup and none overlapping another in time, and the two together are exactly the two apart. It requires the gap half set to Breakeven and the reclaim half to Stopped only, and refuses any other pairing. Lab only."
+      "desc": "What has to happen before a re-entry places its order. FVG in zone (default) needs no structure event at all — while the setup is alive and price is back in the zone, it rests the order at the SAME fair-value-gap price the first trade would have used. Structure shift is the original rule: a break of structure on the fill clock, then an order at a 38.2% pullback of that move. MEASURED: the shift confirms late. On 29 October 2025 it did not confirm until an hour after the low, its order missed by $8 and price ran a hundred points without it; a gap sat in the zone and price traded into it an hour earlier. Reclaim Entry is the only one of the three built for a trade that LOST: the first trade is stopped at the deep edge of the entry band, price does not go on to break the move, and instead comes back up through that level — an order then waits AT the level for the retest, stopping at the far end of the move. Because those two levels sit close together the risk is a fraction of the first trade's, so the same cash buys a much bigger position. It reads its OWN four settings below rather than the shared ones, so it means the same thing whether it runs alone or alongside the gap. MEASURED: waiting for the retest earned +43R over 7.9 years while chasing the reclaim earned nothing, so the wait is the whole edge. The fourth choice runs the gap and the reclaim TOGETHER. That is safe because they cover opposite outcomes — a first trade either reaches breakeven or is stopped out, never both — so they can never want the same setup. MEASURED over 7.9 years: 107 re-entries between them, none sharing a setup and none overlapping another in time, and the two together are exactly the two apart. It requires the gap half set to Breakeven and the reclaim half to Stopped only, and refuses any other pairing. Lab only."
     },
     {
       "name": "exec_sec_zone_deep",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "number",
       "label": "Secondary zone — deep edge",
       "short": "Zone deep edge",
@@ -587,7 +587,7 @@
     },
     {
       "name": "exec_sec_zone_shallow",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "number",
       "label": "Secondary zone — shallow edge",
       "short": "Zone shallow edge",
@@ -601,7 +601,7 @@
     },
     {
       "name": "exec_sec_risk_pct",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "number",
       "label": "Re-entry risk (% of the first trade's)",
       "short": "Risk",
@@ -615,7 +615,7 @@
     },
     {
       "name": "exec_sec_req_div",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "toggle",
       "label": "Re-entry needs a divergence",
       "short": "Needs divergence",
@@ -630,10 +630,10 @@
     },
     {
       "name": "exec_sec_req_m1_dir",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "toggle",
-      "label": "1-minute trend must agree",
-      "short": "1m trend must agree",
+      "label": "Fill-clock trend must agree",
+      "short": "Fill-clock trend agrees",
       "options": {
         "off": "Off",
         "on": "Require"
@@ -641,11 +641,11 @@
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "On = a re-entry only arms while the 1-minute structure is already pointing the trade's way. This is the \"has structure shifted against me\" test on the lower timeframe. MEASURED: it drops 2 of 7 re-entries and does not filter the one full loss. Lab only."
+      "desc": "On = a re-entry only arms while the structure on the FILL CLOCK (the faster feed set below, 5 minutes by default) is already pointing the trade's way. This is the \"has structure shifted against me\" test on the lower timeframe. MEASURED: it drops 2 of 7 re-entries and does not filter the one full loss. Lab only."
     },
     {
       "name": "exec_sec_be_at",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "label": "Re-entry moves to breakeven at",
       "short": "Breakeven at",
       "choices": ["TP1", "TP2"],
@@ -656,22 +656,22 @@
     },
     {
       "name": "exec_sec_once_per_setup",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "toggle",
       "label": "One re-entry per primary",
       "short": "One per primary",
       "options": {
-        "off": "One per 1m leg",
+        "off": "One per shift leg",
         "on": "One per primary"
       },
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "How often one setup may be re-entered. On = once. Off = once per 1-minute signal, which is what once let a single setup be re-entered twice about an hour and a half apart. It resets on a fresh break of structure. Lab only."
+      "desc": "How often one setup may be re-entered. On = once. Off = once per signal on the fill clock, which is what once let a single setup be re-entered twice about an hour and a half apart. It resets on a fresh break of structure. Lab only."
     },
     {
       "name": "exec_sec_max_per_setup",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "number",
       "label": "   ↳ How many re-entries per setup",
       "short": "Max per setup",
@@ -686,7 +686,7 @@
     },
     {
       "name": "exec_sec_rest_and_leave",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "toggle",
       "label": "Rest the re-entry order and leave it",
       "short": "Rest and leave",
@@ -701,7 +701,7 @@
     },
     {
       "name": "exec_sec_fill_tf_min",
-      "group": "Secondary re-entries (1m)",
+      "group": "Secondary re-entries",
       "widget": "number",
       "label": "Re-entry fill clock (minutes)",
       "short": "Fill clock",
@@ -723,7 +723,7 @@
         "exec_secondary": true
       },
       "disable_if": {
-        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
       },
       "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
       "desc": "What the first trade on this setup must have done before Reclaim Entry may re-enter. Stopped only (default) is the whole point of that trigger — it re-enters a setup whose first trade was stopped out at the deep edge. It is separate from the shared setting above so the gap trigger and the reclaim can run together wanting opposite things of the same trade; when they do, this must stay on Stopped only and the shared one on Breakeven, because those are the only two that cannot both be true of one setup. Lab only."
@@ -738,10 +738,10 @@
         "exec_secondary": true
       },
       "disable_if": {
-        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
       },
       "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
-      "desc": "Where Reclaim Entry's stop goes. Only these two, because the reclaim enters at a fixed price and a 1-minute swing can land on either side of it — a stop that is sometimes above and sometimes below the thing it protects is not a stop, so the 1-minute anchors are refused rather than substituted. 1.0 is the default and is the reason the trigger exists: the start of the move sits a median 0.43 of the original risk past the deep edge, so the same cash buys a much bigger position. Lab only."
+      "desc": "Where Reclaim Entry's stop goes. Only these two, because the reclaim enters at a fixed price and a swing on the fill clock can land on either side of it — a stop that is sometimes above and sometimes below the thing it protects is not a stop, so the fill-clock anchors are refused rather than substituted. 1.0 is the default and is the reason the trigger exists: the start of the move sits a median 0.43 of the original risk past the deep edge, so the same cash buys a much bigger position. Lab only."
     },
     {
       "name": "exec_rec_tp_r",
@@ -754,7 +754,7 @@
         "exec_secondary": true
       },
       "disable_if": {
-        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
       },
       "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
       "guide": ["Banks sooner, gives up the runs", "Waits for a bigger move, more of them fail"],
@@ -771,7 +771,7 @@
         "exec_secondary": true
       },
       "disable_if": {
-        "exec_sec_trigger": ["1m shift", "FVG in zone"]
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
       },
       "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
       "guide": ["Keeps a runner, gives up certainty", "Takes it all off at the target"],
@@ -779,7 +779,7 @@
     },
     {
       "name": "exec_sec_require",
-      "group": "↳ FVG / 1m shift only",
+      "group": "↳ FVG / Structure shift only",
       "label": "Secondary needs the first trade to have…",
       "short": "First trade must have",
       "choices": ["Breakeven", "Any close", "Stopped only", "None"],
@@ -790,14 +790,14 @@
         "exec_sec_trigger": "Reclaim Entry"
       },
       "disable_note": "No effect under Reclaim Entry — that trigger asks its own version of this question, in the group above.",
-      "desc": "What the first (15-minute) trade on that setup must have done before a 1-minute re-entry is allowed. Breakeven (default) = it reached TP1. Any close = it traded and is now closed, win or lose. Stopped only = it was stopped out without reaching TP1 — the case where your stop gets swept and price then runs without you. None = no first trade required. Lab only."
+      "desc": "What the first (15-minute) trade on that setup must have done before a re-entry is allowed. Breakeven (default) = it reached TP1. Any close = it traded and is now closed, win or lose. Stopped only = it was stopped out without reaching TP1 — the case where your stop gets swept and price then runs without you. None = no first trade required. Lab only."
     },
     {
       "name": "exec_sec_stop",
-      "group": "↳ FVG / 1m shift only",
+      "group": "↳ FVG / Structure shift only",
       "label": "Re-entry stop sits at",
       "short": "Stop sits at",
-      "choices": ["1m leg", "swing low", "0.886", "1.0"],
+      "choices": ["Shift leg", "swing low", "0.886", "1.0"],
       "show_if": {
         "exec_secondary": true
       },
@@ -805,11 +805,11 @@
         "exec_sec_trigger": "Reclaim Entry"
       },
       "disable_note": "No effect under Reclaim Entry — its stop comes from its own row in the group above.",
-      "desc": "Where a re-entry's stop goes. 0.886 (default) is the same level the first trade stops at. 1m leg is the original rule and only works with the 1m shift trigger, which is the only one that creates a 1-minute move to measure — pairing it with the gap trigger is refused rather than quietly substituted. Swing low uses the last confirmed 1-minute swing; 1.0 is the start of the leg. MEASURED, and this is not a detail: on the 29 October 2025 case the same entry stopped at the gap's own edge was a loss two minutes later, and stopped 98 cents lower under the swing it ran to both targets for +16R. Lab only."
+      "desc": "Where a re-entry's stop goes. 0.886 (default) is the same level the first trade stops at. Shift leg is the original rule and only works with the Structure shift trigger, which is the only one that creates a fast-feed move to measure — pairing it with the gap trigger is refused rather than quietly substituted. Swing low uses the last confirmed swing on the fill clock; 1.0 is the start of the leg. MEASURED, and this is not a detail: on the 29 October 2025 case the same entry stopped at the gap's own edge was a loss two minutes later, and stopped 98 cents lower under the swing it ran to both targets for +16R. Lab only."
     },
     {
       "name": "exec_sec_tp_r",
-      "group": "↳ FVG / 1m shift only",
+      "group": "↳ FVG / Structure shift only",
       "widget": "number",
       "label": "Re-entry's first target, in R",
       "short": "First target",
@@ -827,7 +827,7 @@
     },
     {
       "name": "exec_sec_tp1_pct",
-      "group": "↳ FVG / 1m shift only",
+      "group": "↳ FVG / Structure shift only",
       "widget": "number",
       "label": "Re-entry banks this % at TP1",
       "short": "TP1 size",
@@ -845,7 +845,7 @@
     },
     {
       "name": "exec_sec_retrace",
-      "group": "↳ FVG / 1m shift only",
+      "group": "↳ FVG / Structure shift only",
       "widget": "number",
       "label": "Secondary entry retrace",
       "short": "Entry retrace",
@@ -858,8 +858,8 @@
       "disable_if": {
         "exec_sec_trigger": ["Reclaim Entry", "FVG in zone", "FVG in zone + Reclaim Entry"]
       },
-      "disable_note": "No effect — only the 1m shift trigger retraces a leg. The other two rest their order at a level instead: the gap uses the first trade's own price, the reclaim uses the deep edge.",
-      "desc": "How deep the 1-minute re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
+      "disable_note": "No effect — only the Structure shift trigger retraces a leg. The other two rest their order at a level instead: the gap uses the first trade's own price, the reclaim uses the deep edge.",
+      "desc": "How deep the re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
     },
     {
       "name": "show_div",
@@ -1106,9 +1106,9 @@
         "off": "Off",
         "on": "On"
       },
-      "desc": "\u26a0 The result this switch prints is wrong in BOTH directions, so do not read it as what the rule is worth. After this bot loses a trade, it takes a smaller trade the other way to win the loss back. But the recovery is worked out afterwards, over the main book once that book has already finished. Each recovery trade is sized off a balance holding every main trade that had closed by then, so that half is real - what is missing is the way back: the main trades never see the recovery profit, so it sits beside the equity curve instead of lifting it and never compounds. That UNDERSTATES the rule on a long run. Pulling the other way, nothing here shares one risk budget, so a recovery can never shrink or block a main trade the way it would on a real account - and that FLATTERS it. Which of the two wins is not a detail: measured on one balance under one budget, the rule loses money at the risk cap this bot already runs, and only pays when given risk the main bot is not using. Run backtest/tools/recovery_stack.py for the real answer, and read strategies/python/loss_recovery/CLAUDE.md before quoting any figure this switch produces. Lab only - this is not on the TradingView chart and it has never been traded live.",
+      "desc": "⚠ The result this switch prints is wrong in BOTH directions, so do not read it as what the rule is worth. After this bot loses a trade, it takes a smaller trade the other way to win the loss back. But the recovery is worked out afterwards, over the main book once that book has already finished. Each recovery trade is sized off a balance holding every main trade that had closed by then, so that half is real - what is missing is the way back: the main trades never see the recovery profit, so it sits beside the equity curve instead of lifting it and never compounds. That UNDERSTATES the rule on a long run. Pulling the other way, nothing here shares one risk budget, so a recovery can never shrink or block a main trade the way it would on a real account - and that FLATTERS it. Which of the two wins is not a detail: measured on one balance under one budget, the rule loses money at the risk cap this bot already runs, and only pays when given risk the main bot is not using. Run backtest/tools/recovery_stack.py for the real answer, and read strategies/python/loss_recovery/CLAUDE.md before quoting any figure this switch produces. Lab only - this is not on the TradingView chart and it has never been traded live.",
       "guide": [
-        "\u26a0 Answers a different question than the one you are asking - see the description",
+        "⚠ Answers a different question than the one you are asking - see the description",
         "Adds a second, smaller set of trades to the book",
         "Off = the bot trades only its own setups"
       ]

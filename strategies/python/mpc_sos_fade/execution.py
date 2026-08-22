@@ -156,7 +156,7 @@ class Trade:
     exit_price: float = 0.0
     stop_distance: float = 0.0
     exit_reason: str = ""
-    # "primary" (the 15m A+ trade) or "secondary" (a 1m sniper re-entry). Reporting-only — no
+    # "primary" (the 15m A+ trade) or "secondary" (a fast-feed sniper re-entry). Reporting-only — no
     # decision reads it; it lets the lab/chart tell the two apart. See secondary.py.
     kind: str = "primary"
     # For a SECONDARY only, what the PRIMARY on the same setup DID — "breakeven" | "stopped" |
@@ -539,7 +539,7 @@ class _Pending:
     sos_bar: Optional[int]
     # The whole fib ladder those levels came off, frozen on the same bar (reporting only).
     fib: Optional[TradeFib] = None
-    # For a SECONDARY, which trigger armed it ("1m shift" | "gap" | "reclaim"). NOT reporting-only:
+    # For a SECONDARY, which trigger armed it ("Structure shift" | "gap" | "reclaim"). NOT reporting-only:
     # the reclaim half carries its own exit ladder, so the open trade has to remember what it came
     # from. None on every primary and on any secondary from a caller that does not set it.
     src: Optional[str] = None
@@ -614,8 +614,8 @@ class Execution:
 
         # position state
         self._pos_dir = 0                  # 0 flat, +1 long, -1 short
-        # which layer opened the current position — "primary" (15m) or "secondary" (1m sniper).
-        # 15m `step()` only manages a primary; the 1m `step_secondary()` only manages a secondary.
+        # which layer opened the current position — "primary" (15m) or "secondary" (fast-feed sniper).
+        # 15m `step()` only manages a primary; the fill-clock `step_secondary()` only manages a secondary.
         # They share this one position slot but never the same trade (the secondary arms only when
         # flat), so the tag is all that keeps each stream off the other's position. When flat it is
         # ignored, so with `exec_secondary` OFF (no secondary ever opens) `step()` is unchanged.
@@ -694,7 +694,7 @@ class Execution:
         # resting entry orders (one per side; at most one position at a time)
         self._pend_long: Optional[_Pending] = None
         self._pend_short: Optional[_Pending] = None
-        # the secondary sniper limit, placed/filled on the 1m stream (step_secondary). Its own slot
+        # the secondary sniper limit, placed/filled on the fill-clock stream (step_secondary). Its own slot
         # so the 15m `_place_entries` can never clobber it. At most one side arms (fibo_dir is one).
         self._pend_sec: Optional[_Pending] = None
 
@@ -728,7 +728,7 @@ class Execution:
         self._prim_closed_sos_s: Optional[int] = None
         self._prim_lost_sos_l: Optional[int] = None
         self._prim_lost_sos_s: Optional[int] = None
-        # set for one 1m step when a SECONDARY closes at its initial stop (stage 0 = never
+        # set for one fill-clock step when a SECONDARY closes at its initial stop (stage 0 = never
         # reached TP1). The driver reads it to kill that 15m leg — a stopped re-entry ends the
         # cascade on that leg. +1/-1/None; reset at the top of every step_secondary.
         self._sec_stop_dir: Optional[int] = None
@@ -785,7 +785,7 @@ class Execution:
         # ledger; in a portfolio it is the account all legs share, so every leg scales together.
         return self._account.balance
 
-    # ── reads the secondary layer needs (the 1m arm gates on these) ──
+    # ── reads the secondary layer needs (the secondary arm gates on these) ──
     @property
     def is_flat(self) -> bool:
         return self._pos_dir == 0
@@ -813,7 +813,7 @@ class Execution:
     # resets the time stop's clock. None of those raise; they just trade differently.
     # `test_position_snapshot_covers_every_field_open_position_assigns` DERIVES the required set
     # by reading `_open_position`'s own source, because a hand-written list would re-freeze
-    # exactly the assumption that fails — the same guard `run_dual`'s 1m signal needed after it
+    # exactly the assumption that fails — the same guard `run_dual`'s fill-clock signal needed after it
     # shipped missing two fields that three weeks of green tests never saw.
 
     _POSITION_FIELDS = (
@@ -934,13 +934,13 @@ class Execution:
         that 15m leg), else None. Reset at the top of every step_secondary."""
         return self._sec_stop_dir
 
-    # ── secondary (1m sniper) path — driven by the 1m stream, never a 15m bar ────────
+    # ── secondary (fast-feed sniper) path — driven by the fill-clock stream, never a 15m bar ────────
     def step_secondary(self, sig1m, arm) -> Optional[int]:
         """Advance the SECONDARY on one 1m bar. Same calc-on-close/one-bar-delay + intrabar-path
         rules as the primary, but on 1m bars, and only ever touching a secondary position:
 
           - flat  → fill the sniper limit placed LAST 1m bar (if touched), then (re)place from
-                    this bar's arm. A fill retires its 1m leg (returned dir → driver calls
+                    this bar's arm. A fill retires its shift leg (returned dir → driver calls
                     `arm.mark_traded`) and stages the trade so its stop is live next bar.
           - holding a secondary → run its TP1/TP2/runner ladder against this bar, then re-stage.
           - holding a PRIMARY  → do nothing (the 15m stream owns it).
@@ -952,7 +952,7 @@ class Execution:
         sink = Decision(index=sig1m.index)   # throwaway — trades land in self.trades regardless
         filled_dir: Optional[int] = None
 
-        # ── Phase A: fill / manage against THIS 1m bar ──
+        # ── Phase A: fill / manage against THIS fill-clock bar ──
         if self._pos_dir == 0 and self._pend_sec is not None:
             pend = self._pend_sec
             adj = self._ask_adj(pend.dir, entry=True)   # the sniper is a resting limit too
@@ -972,7 +972,7 @@ class Execution:
         if self._pos_dir == 0:
             self._pend_sec = self._secondary_pending(arm)
         elif self._entry_kind == "secondary" and filled_dir is None:
-            # `filled_dir is None` = this 1m bar is not the fill bar. Same rule as the primary
+            # `filled_dir is None` = this fill-clock bar is not the fill bar. Same rule as the primary
             # (see the fill-bar note in `step`): the sniper also enters on a resting limit, so
             # its fill bar's extreme is the approach to that limit, not the trade's own move.
             self._advance_stage(sig1m)
@@ -1071,7 +1071,7 @@ class Execution:
         self._pending_close = None
         # Exit orders are placed at a bar's close and active the NEXT bar, so a trade
         # never fills an exit on the bar it opened (TradingView one-bar delay). A secondary
-        # position is managed on the 1m stream, so a 15m bar never touches it.
+        # position is managed on the fill-clock stream, so a 15m bar never touches it.
         if self._pos_dir != 0 and not opened and self._entry_kind != "secondary":
             self._manage_open(sig, dec)
 
@@ -1123,7 +1123,7 @@ class Execution:
                 self._pending_close = ("time-stop", "TIME")
         elif self._pos_dir == 0:
             self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
-        # else: a secondary is open — managed on the 1m stream (step_secondary), not here.
+        # else: a secondary is open — managed on the fill-clock stream (step_secondary), not here.
 
         return dec
 
@@ -2149,7 +2149,7 @@ class Execution:
         self._legs = []                                 # per-rung exit ledger (reporting only)
         # The traded-SOS latch is the PRIMARY's one-trade-per-15m-leg gate (and the secondary's
         # "primary already went" precondition). A secondary fill must NOT move it — its sos_bar is
-        # a 1m leg, not the 15m A+ leg — so only a primary sets it.
+        # a shift leg, not the 15m A+ leg — so only a primary sets it.
         if kind == "primary":
             if pend.dir > 0:
                 self._traded_sos_l = pend.sos_bar

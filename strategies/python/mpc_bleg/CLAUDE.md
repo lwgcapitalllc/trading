@@ -149,7 +149,7 @@ R-grading machinery is direction- and setup-agnostic, so it is REUSED wholesale:
   - `strategy.py` `MpcBLegStrategy(MpcSosFadeStrategy)` — inherits `_fill_model` +
     `engine_config` (the SAME `fvg_max_count=7` + `show_internal=False` pins — the B-LEG reads
     the same structure/fib engines), overrides `__init__`/`run`/`step` to splice the tracker.
-    `run_dual` is disabled (no 1m secondary).
+    `run_dual` is disabled (no secondary).
 
 ## The "A+ has priority" gate (kept for baseline; first tuning candidate)
 

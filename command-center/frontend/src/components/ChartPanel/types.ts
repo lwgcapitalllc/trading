@@ -141,7 +141,7 @@ export interface ChartTrade {
    *  arithmetic is these lots — bought further into profit, closed at the same exit. */
   adds?: ChartTradeAdd[]
   /** Which BOOK this trade belongs to. `primary` is the strategy's own setup; `secondary` is the
-   *  1m sniper re-entry; `recovery` is a counter-trade the loss-recovery rule took after a loss.
+   *  fast-feed sniper re-entry; `recovery` is a counter-trade the loss-recovery rule took after a loss.
    *
    *  ⚠ It changes the TAG in the outcome chip and nothing else. Every kind is drawn with the same
    *  profit-depth figures off the same fields, because a recovery trade is a trade — it has an

@@ -199,7 +199,7 @@ every setting of that kind that will ever exist.
   - 🔴 **WHATEVER NAMES THE TRADE SURVIVES, AND THAT IS THE WHOLE EXCEPTION** — a stack's strategy,
     the `SEC` / `REC` book tag, an add lot's `Add`. Aaron: *"leave the name of the trade in there if
     it has a name."* Which trade this IS cannot be read off the drawing at all: the colours grade
-    the outcome and say nothing about whether this is the setup, its 1m re-entry or the recovery
+    the outcome and say nothing about whether this is the setup, its re-entry or the recovery
     that followed it. The verdict word goes with the side chips, because a win is already the green.
   - ⚠ **The chip is DROPPED ENTIRELY when nothing is left to say** — a single-run trade has no
     layer name and no kind tag, so it draws no chip at all. An empty one still paints its dark
@@ -215,7 +215,7 @@ every setting of that kind that will ever exist.
     keeps the shipped reading.
 - **`tradeLabelPrices`** → `TradeExtend.showPrices`. Off drops the number from every side label,
   leaving `Entry` / `SL` / `TP1`. **Undefined means ON**, so a caller that has not been updated keeps
-  the shipped reading. It became a setting because a 1m re-entry's box is short by construction and
+  the shipped reading. It became a setting because a re-entry's box is short by construction and
   the price is most of each chip's width. **It now declares `dependsOn: 'tradeLabels'`** — see below.
 - **`candleMarkLabels`** → the Candlestick Reversals tag. See the layer's own section below.
 - **`dependsOn` — a row that is INERT is greyed, never hidden** (2026-08-20). A setting whose parent
@@ -633,15 +633,15 @@ here**, so the chart shows exactly what the strategy saw.
   stays theme-free (fav/adv/entry/chip colours are passed in). **Degrades gracefully:** a trade
   lacking the rich fields (`mfePrice`/`profitLegs` — an NT8/MT5 run, or an old Python run whose stored
   `equity_curve.json` predates them) falls back to the original entry→exit outcome box (win green /
-  loss red, dashed border + a direction triangle for a 1m secondary). **A SECONDARY trade says so in
+  loss red, dashed border + a direction triangle for a secondary). **A SECONDARY trade says so in
   words** (2026-08-06, Aaron's ask): the outcome chip reads **`SEC · Won`**, and on the degraded path a
   small `SEC` chip sits beyond the entry arrow. It had only the dashed box border before, which is
   invisible in practice — a dashed border reads as "different" only when a solid one is beside it, and a
-  1m re-entry is rare enough that there usually is not one on screen. ⚠ **The first version pinned that
+  re-entry is rare enough that there usually is not one on screen. ⚠ **The first version pinned that
   chip under the ENTRY on both paths and it was UNREADABLE on real data, which is worth recording because
   the reasoning for it was sound**: the question a reader has is *why is there a SECOND trade on this leg*,
   which is a question about the entry — but directly under the entry point is exactly where the `Entry` /
-  `SL` / `Deepest` price chips stack, and **a 1m re-entry is TIGHT BY CONSTRUCTION, which is the whole
+  `SL` / `Deepest` price chips stack, and **a re-entry is TIGHT BY CONSTRUCTION, which is the whole
   idea**, so its box is short and those chips are already almost on top of each other. Screenshotted on
   2024-12-02, `Deepest 2634.29` and `SEC` were overlapping and `SL 2634.56` was touching it. The outcome
   chip is centred beyond the trade's resolved extreme and is the one label with clear air around it.
@@ -652,7 +652,7 @@ here**, so the chart shows exactly what the strategy saw.
   looks like an answer is this repo's most-repeated defect. **The standing lesson is small and this folder
   has recorded it before: a placement can be right in principle and wrong on the data — render it.**
   🔴 **The tag GENERALISED on 2026-08-20, and the reason is the standing lesson rather than the
-  feature.** A trade now states which BOOK it came from — the strategy's own setup, the 1m re-entry,
+  feature.** A trade now states which BOOK it came from — the strategy's own setup, the re-entry,
   or a RECOVERY (the counter-trade the loss-recovery rule takes after a loss) — and any non-primary
   kind wears its own three-letter tag in the same slot (`REC · Won`).
 

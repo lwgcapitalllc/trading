@@ -1115,7 +1115,7 @@ def test_an_incompletely_priced_fib_is_recorded_as_NOTHING_rather_than_partially
 
 
 def test_the_secondary_reentry_records_no_A_plus_ladder():
-    """The 1m sniper rests at a retrace of its OWN tight 1m leg, which is a different fib. Absent
+    """The 1m sniper rests at a retrace of its OWN tight shift leg, which is a different fib. Absent
     is the honest answer; borrowing the 15m ladder would label the re-entry with a leg it was
     never priced on."""
     from types import SimpleNamespace

@@ -3,8 +3,8 @@
 The primary A+ trade is a 15m setup (see `execution.py`). The SECONDARY is a re-entry
 on the *same* 15m leg, sniped off the 1-minute chart: after the primary has traded and
 gone flat, while the 15m divergence + SOS are still live and price is back in the
-0.618-0.886 zone, a 1m shift of structure in the trade direction rests a tight limit at
-a 38.2% retrace of that 1m leg. Full rules + the Pine source: `docs/MPC_SOS_FADE_SECONDARY.md`.
+0.618-0.886 zone, a Structure shift of structure in the trade direction rests a tight limit at
+a 38.2% retrace of that shift leg. Full rules + the Pine source: `docs/MPC_SOS_FADE_SECONDARY.md`.
 
 This module owns the 1-minute STRUCTURE feed (`Structure1m`) — a line-for-line port of
 the Pine `f_struct1m` helper (from the stashed secondary-trade WIP). It runs the canonical
@@ -52,8 +52,8 @@ class M1State:
     direction: int          # engine dir (Pine st1.dir): 1 up / -1 down / 0 undetermined
     new_bull_sos: bool      # a bull SOS fired on THIS 1m bar (the latched bar advanced)
     new_bear_sos: bool
-    # The 1m engine's last CONFIRMED swing high/low. Read only by `exec_sec_stop="swing low"`;
-    # None until the 1m engine has confirmed one, which refuses the arm rather than guessing.
+    # The fill-clock engine's last CONFIRMED swing high/low. Read only by `exec_sec_stop="swing low"`;
+    # None until the fill-clock engine has confirmed one, which refuses the arm rather than guessing.
     conf_high: Optional[float] = None
     conf_low: Optional[float] = None
 
@@ -81,9 +81,9 @@ class Structure1m:
     def update(self, index: int, o: float, h: float, l: float, c: float) -> M1State:
         st = self._engine.update(Bar(index=index, open=o, high=h, low=l, close=c))
         ext = st.external
-        # The 1m engine's last CONFIRMED swing — the anchor `exec_sec_stop="swing low"` uses. It is
+        # The fill-clock engine's last CONFIRMED swing — the anchor `exec_sec_stop="swing low"` uses. It is
         # read straight off the same engine the SOS latch reads, so the two can never describe
-        # different 1-minute structure.
+        # different fill-clock structure.
         ch, cl = self._engine.last_confirmed_high, self._engine.last_confirmed_low
         self.conf_high = ch.price if ch is not None else None
         self.conf_low = cl.price if cl is not None else None
@@ -114,11 +114,11 @@ class Structure1m:
 class SecArm:
     """One 1m bar's secondary-arm result — what `Execution.step_secondary` needs to rest
     (or cancel) the sniper limit. `*_leg` is the 1m SOS bar the entry would trade, so the
-    execution can retire that leg on a fill (each 1m leg re-enters at most once)."""
+    execution can retire that leg on a fill (each shift leg re-enters at most once)."""
 
     l_armed: bool = False
-    l_edge: Optional[float] = None      # resting BUY limit — 38.2% retrace of the 1m leg
-    l_sl: Optional[float] = None        # stop = 1m leg origin (1.0) − buffer
+    l_edge: Optional[float] = None      # resting BUY limit — 38.2% retrace of the shift leg
+    l_sl: Optional[float] = None        # stop = shift leg origin (1.0) − buffer
     l_tp1: Optional[float] = None       # 15m fib 0.5
     l_tp2: Optional[float] = None       # 15m fib 0.382 (TP3 = runner)
     l_leg: Optional[int] = None
@@ -128,7 +128,7 @@ class SecArm:
     s_tp1: Optional[float] = None
     s_tp2: Optional[float] = None
     s_leg: Optional[int] = None
-    # WHICH trigger latched this side — "1m shift" | "gap" | "reclaim", or None when nothing is
+    # WHICH trigger latched this side — "Structure shift" | "gap" | "reclaim", or None when nothing is
     # latched. Carried because the halves can be live together and want DIFFERENT exit ladders, so
     # the execution has to know which one it just filled. ⚠ Naming the source rather than testing
     # the config at the ladder is deliberate: the config can be read at any time, but the question
@@ -149,7 +149,7 @@ class SecondaryArm:
     """The secondary latch + arm state machine — a line-for-line port of the Pine WIP
     `f_secArm` (from the stashed secondary-trade branch). See `docs/MPC_SOS_FADE_SECONDARY.md`.
 
-    Holds, per side, the latched 1m leg (`_leg` = its SOS bar, `_hi`/`_lo` = its 0.0/1.0
+    Holds, per side, the latched shift leg (`_leg` = its SOS bar, `_hi`/`_lo` = its 0.0/1.0
     anchors), the leg that has already re-entered (`_traded`, retired so it can't fire twice),
     and the 15m leg killed by a stopped re-entry (`_dead`). Each `update()` reads: the current
     1m structure (`M1State`), the last-closed 15m context (`sig` = Signals, `seq` = SeqState),
@@ -169,7 +169,7 @@ class SecondaryArm:
         (in at 0.618, stopped at 0.886, price reclaims and runs) is what "Stopped only" names.
         The zone edges are likewise `exec_sec_zone_shallow` / `exec_sec_zone_deep` now. Every
         default reproduces the shipped book exactly; see `_primary_gate` and `_zone_edges`.
-      - The cascade continues across winners/scratches (re-enter on each fresh 1m shift while the
+      - The cascade continues across winners/scratches (re-enter on each fresh Structure shift while the
         setup lives), but a re-entry that hits its own initial stop KILLS the leg (`mark_dead`):
         no more re-entries until a new break of structure resets it.
 
@@ -215,7 +215,7 @@ class SecondaryArm:
         # None. See `_rested`. Always present so the attribute never depends on the mode.
         self._l_rest = None
         self._s_rest = None
-        # `_seen` = the primary gate was already open on an EARLIER 1m bar, so a reclaim needs a
+        # `_seen` = the primary gate was already open on an EARLIER fill-clock bar, so a reclaim needs a
         # bar of its own rather than firing on the stop-out bar's own upper wick. `_rec` = price
         # has since traded back through the deep edge. `_void` = price reached the stop anchor
         # first, so this setup's re-entry is finished. All three clear with the setup.
@@ -237,7 +237,7 @@ class SecondaryArm:
                bar_high: Optional[float] = None,
                bar_low: Optional[float] = None) -> SecArm:
         cfg = self._cfg
-        _trig = getattr(cfg, "exec_sec_trigger", "1m shift")
+        _trig = getattr(cfg, "exec_sec_trigger", "Structure shift")
         # Both may be true at once under the combined value. They stay two independent booleans
         # rather than one mode, so every block below reads the question it actually cares about
         # ("is the gap half live") instead of enumerating which combined values include it — the
@@ -245,7 +245,7 @@ class SecondaryArm:
         gap_trigger = _trig in ("FVG in zone", "FVG in zone + Reclaim Entry")
         rec_trigger = _trig in ("Reclaim Entry", "FVG in zone + Reclaim Entry")
 
-        # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
+        # 1. Clear a latched shift leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
         #    A new break of structure also resets the dead-leg flag (the leg is fresh again).
         #    `_used` (the one-per-setup cap) clears here too: the setup it referred to is gone.
         #    The `!=` test below would already re-open on a new SOS bar, so this is tidiness
@@ -266,7 +266,7 @@ class SecondaryArm:
             self._s_seen = self._s_rec = self._s_void = False
 
         # 2. Zone (0.886..0.618 of the 15m fib) — a 15m gate: Pine reads the last-closed 15m bar
-        #    `close`, so `zone_close` is that bar's close (NOT the live 1m close, which the 1m SOS
+        #    `close`, so `zone_close` is that bar's close (NOT the live fast-feed close, which the shift
         #    has usually left by the time it confirms). See the class docstring.
         p3, p6 = sig.fibo_p3, sig.fibo_p6
         # The zone EDGES (`exec_sec_zone_shallow` / `exec_sec_zone_deep`). At the shipped
@@ -311,7 +311,7 @@ class SecondaryArm:
         else:
             rgate_l = rgate_s = False
 
-        # 2c. THE RECLAIM TRIGGER — no 1m structure event and no gap. The case it names is the one
+        # 2c. THE RECLAIM TRIGGER — no fill-clock structure event and no gap. The case it names is the one
         #     the geometry points at: the primary was stopped at the deep edge, price did NOT go on
         #     to break the leg, and instead came back through that level. The re-entry is then a
         #     resting limit AT the deep edge with the stop at whatever `exec_sec_stop` names, so
@@ -335,10 +335,10 @@ class SecondaryArm:
         if rec_trigger:
             deep_l, deep_s = z_hi, z_hi
             # ⚠ Read HERE rather than from the shared `l_stop`/`s_stop` below, and the difference
-            # is not cosmetic. That pair is computed AFTER the 1m leg latch because the shipped
-            # "1m leg" anchor reads the leg latched on THIS bar — hoisting it broke every 1m-shift
+            # is not cosmetic. That pair is computed AFTER the shift leg latch because the shipped
+            # "Shift leg" anchor reads the leg latched on THIS bar — hoisting it broke every structure-shift
             # test in this file. This trigger needs its anchor one step early, and may only ask
-            # for it because config validation refuses "1m leg" and "swing low" against it, so
+            # for it because config validation refuses "Shift leg" and "swing low" against it, so
             # both of its legal anchors are pure reads of the 15m fib.
             rec_stop_l, rec_stop_s = self._stop_anchor(
                 m1, sig, getattr(cfg, "exec_rec_stop", "1.0"))
@@ -373,9 +373,9 @@ class SecondaryArm:
             if seq.s_sos_bar is not None and div_s and self._s_rec and not self._s_void:
                 self._s_leg, self._s_hi, self._s_lo = seq.s_sos_bar, None, None
 
-        # 3. Latch a fresh 1m leg on a new same-side 1m SOS while the 15m setup (+ div) are live.
+        # 3. Latch a fresh shift leg on a new same-side fill-clock SOS while the 15m setup (+ div) are live.
         #
-        #    🔴 IT RUNS UNDER EVERY TRIGGER, INCLUDING THE ONES THAT DO NOT USE A 1m LEG, AND THAT
+        #    🔴 IT RUNS UNDER EVERY TRIGGER, INCLUDING THE ONES THAT DO NOT USE A SHIFT LEG, AND THAT
         #    IS THE SHIPPED BEHAVIOUR — do not "tidy" it behind a trigger test. Under the gap or the
         #    reclaim this latch still moves `_l_leg`, which `_traded` / `_dead` / `_used` all read,
         #    so gating it changes which setups may re-enter. It was gated twice during this build
@@ -393,7 +393,7 @@ class SecondaryArm:
                 and m1.bear_leg_hi > m1.bear_leg_lo):
             self._s_leg, self._s_hi, self._s_lo = m1.bear_sos_bar, m1.bear_leg_hi, m1.bear_leg_lo
 
-        # 3b. THE GAP TRIGGER — no 1m structure event at all. While the setup is alive and the
+        # 3b. THE GAP TRIGGER — no fill-clock structure event at all. While the setup is alive and the
         #     last-closed 15m bar sits in the zone, the "leg" is the SETUP (keyed on its 15m SOS
         #     bar, so `_traded` / `_dead` / `_used` all keep working unchanged) and the entry is
         #     the PRIMARY's own point-of-interest price. Nothing here recomputes the gap rules.
@@ -412,8 +412,8 @@ class SecondaryArm:
             if seq.s_sos_bar is not None and div_s and zone_s and poi_edge_s is not None:
                 self._s_leg, self._s_hi, self._s_lo = seq.s_sos_bar, None, None
 
-        # The stop anchor (`exec_sec_stop`). "1m leg" is the shipped rule and reads the latched 1m
-        # leg origin; the other three are 15m/1m anchors the gap trigger needs, since it has no leg.
+        # The stop anchor (`exec_sec_stop`). "Shift leg" is the shipped rule and reads the latched 1m
+        # leg origin; the other three are 15m/fill-clock anchors the gap trigger needs, since it has no leg.
         l_stop, s_stop = self._stop_anchor(m1, sig)
         # Everything from here is keyed on WHICH half OWNS this side, resolved just below. Under
         # a single trigger that is the trigger; under the combined value it is whichever
@@ -423,7 +423,7 @@ class SecondaryArm:
         #
         # Two control replays were needed to arrive at that. Keying it off the latch let a 1m
         # structure event price a GAP book at a 1-minute retrace (+4 re-entries and +4.9R on the
-        # SHIPPED book). Suppressing the 1m latch to stop that then made the combined book's halves
+        # SHIPPED book). Suppressing the shift latch to stop that then made the combined book's halves
         # behave differently from the same halves run alone — 22 gap re-entries and 9 reclaims
         # moved to a different minute, which reads as "combining changed things" when it was the
         # fix that changed them.
@@ -439,7 +439,7 @@ class SecondaryArm:
                 return "reclaim"
             if gap_trigger:
                 return "gap"
-            return "1m shift"
+            return "Structure shift"
 
         l_src = _src_for(rgate_l, gate_l)
         s_src = _src_for(rgate_s, gate_s)
@@ -454,7 +454,7 @@ class SecondaryArm:
                 l_stop = r_stop_l
             if s_from_rec:
                 s_stop = r_stop_s
-        # Whether the arm has a usable leg. The 1m trigger needs its latched leg to be valid and
+        # Whether the arm has a usable leg. The shift trigger needs its latched leg to be valid and
         # pointing the right way; the other two need an entry price and a stop, and ask the SAME
         # question of both so a missing anchor can never read as "no setup".
         #
@@ -466,8 +466,8 @@ class SecondaryArm:
         def _leg_ok(src, leg, hi, lo, stop, poi, side):
             if leg is None or stop is None or src is None:
                 # `src is None` = both halves live and NEITHER precondition is open. Refuse rather
-                # than fall through to the 1m rule below, which would enter at a retrace of a
-                # 1-minute leg — a trigger nobody selected.
+                # than fall through to the shift rule below, which would enter at a retrace of a
+                # fast-feed leg — a trigger nobody selected.
                 return False
             if src == "reclaim":
                 # The entry price IS the deep edge: is there an entry, and is the stop the right
@@ -494,7 +494,7 @@ class SecondaryArm:
 
         # 4. Arm — flat, the PRIMARY on this 15m leg reached breakeven (be_sos == l_sos_bar; a
         #    primary stopped at its initial stop leaves no re-entry), the leg is not dead (no prior
-        #    re-entry stopped out), div + dir + fibs live, this 1m leg not already re-entered, not
+        #    re-entry stopped out), div + dir + fibs live, this shift leg not already re-entered, not
         #    late-day, veto clear (Pine `s.lArmed := …`).
         fibs_ready = None not in (sig.fibo_p1, sig.fibo_p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
         late = cfg.exec_no_late_day and 16 <= ny_hour < 18
@@ -512,8 +512,8 @@ class SecondaryArm:
         s_capped = (cap and self._s_used is not None and seq.s_sos_bar == self._s_used
                     and self._s_used_n >= depth)
 
-        # The 1m engine's own DIRECTION, optionally required to agree (`exec_sec_req_m1_dir`).
-        # OFF by default = the shipped rule, which reads the 1m SOS events and ignores direction.
+        # The fill-clock engine's own DIRECTION, optionally required to agree (`exec_sec_req_m1_dir`).
+        # OFF by default = the shipped rule, which reads the fill-clock SOS events and ignores direction.
         m1_ok_l = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == 1
         m1_ok_s = (not getattr(cfg, "exec_sec_req_m1_dir", False)) or m1.direction == -1
         # The precondition the ARM checks follows the source too: a reclaim-latched side is
@@ -540,12 +540,12 @@ class SecondaryArm:
 
         buf = cfg.exec_sl_buf_tk * cfg.mintick
         # `exec_sec_retrace` (default 0.382 — the constant this replaced, so the shipped path is
-        # unchanged). 0.0 rests at the leg extreme, which is entering on the 1m SOS itself. The stop
+        # unchanged). 0.0 rests at the leg extreme, which is entering on the fill-clock SOS itself. The stop
         # is the leg ORIGIN either way, so a shallower ratio is a WIDER stop and a smaller position.
         ratio = cfg.exec_sec_retrace
         # Per side off the SOURCE, same reasoning as `_leg_ok` above.
         #   "reclaim" — the deep edge itself, the level the primary was stopped at and price has
-        #               since reclaimed. No retrace of anything, because there is no 1m leg.
+        #               since reclaimed. No retrace of anything, because there is no shift leg.
         #   "gap"     — the primary's own resting price, likewise no leg to retrace.
         def _edge(src, armed, hi, lo, poi, side):
             if not armed or src is None:
@@ -563,7 +563,7 @@ class SecondaryArm:
         #
         # The shipped arm is recomputed from scratch on every bar, so a dozen gates each get a
         # fresh vote and any one of them closing pulls the resting order back off the book. That
-        # is why the order has to be re-evaluated every minute, and why a 1m feed is loaded to do
+        # is why the order has to be re-evaluated every minute, and why a fill-clock feed is loaded to do
         # it (2.8M bars over 7.9 years). Aaron's rule, 2026-08-21: once the primary has reached
         # breakeven and price is back in the zone on the gap, put the limit there and leave it —
         # the only thing that should take it off is the setup itself dying, i.e. a NEW break of
@@ -648,13 +648,13 @@ class SecondaryArm:
         `mode` overrides the config field, which is how the RECLAIM half reads its own anchor
         (`exec_rec_stop`) while the gap half reads the shared one. None = read the config.
 
-        Returns None on a side whose anchor does not exist yet (no latched 1m leg, no confirmed 1m
+        Returns None on a side whose anchor does not exist yet (no latched shift leg, no confirmed 1m
         swing, no fib). ⚠ None must stay None: falling back to another anchor would price the trade
         off a level the operator did not choose, and this repo's sizing is `risk / stop_distance`.
         """
         if mode is None:
-            mode = getattr(self._cfg, "exec_sec_stop", "1m leg")
-        if mode == "1m leg":
+            mode = getattr(self._cfg, "exec_sec_stop", "Shift leg")
+        if mode == "Shift leg":
             return self._l_lo, self._s_hi
         if mode == "swing low":
             return m1.conf_low, m1.conf_high
@@ -663,7 +663,7 @@ class SecondaryArm:
         if mode == "1.0":
             return sig.fibo_p10, sig.fibo_p10
         raise ValueError(
-            f"exec_sec_stop must be one of ['0.886', '1.0', '1m leg', 'swing low'], got {mode!r}")
+            f"exec_sec_stop must be one of ['0.886', '1.0', 'Shift leg', 'swing low'], got {mode!r}")
 
     def _zone_edges(self, sig):
         """(shallow, deep) prices of the 15m retrace zone the re-entry may arm in.
@@ -743,7 +743,7 @@ class SecondaryArm:
             f"'Stopped only'], got {mode!r}")
 
     def mark_traded(self, direction: int) -> None:
-        """Retire the just-filled 1m leg (Pine `sec.lTraded := sec.lPend`) so it re-enters once.
+        """Retire the just-filled shift leg (Pine `sec.lTraded := sec.lPend`) so it re-enters once.
 
         Also retires the 15m SOS bar for `exec_sec_once_per_setup`. The stamp is UNCONDITIONAL —
         the config is read at ARM time, not here — so flipping the cap on mid-run cannot find a

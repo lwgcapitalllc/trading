@@ -201,15 +201,22 @@ class MpcSosFadeStrategy:
 
     def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
                  progress=None, should_cancel=None) -> "MpcSosFadeStrategy":
-        """Replay the PRIMARY on 15m and the SECONDARY (1m sniper re-entry) on 1m, on one merged
+        """Replay the PRIMARY on 15m and the SECONDARY (the sniper re-entry) on a FASTER frame, on one merged
         clock. The primary path is byte-identical to `run(df15)` — 15m bars are stepped in the same
         order with the same OHLC and `step_secondary` never touches a primary position — so
         `compare_strategy.py` parity is unaffected (and with `exec_secondary` OFF this is just a
-        slower `run`). The secondary latches its 1m leg, arms off the LAST-CLOSED 15m context, and
-        fills/manages on real 1m bars. Full design: docs/MPC_SOS_FADE_SECONDARY.md.
+        slower `run`). The secondary latches its shift leg, arms off the LAST-CLOSED 15m context, and
+        fills/manages on real bars of the faster frame. Full design: docs/MPC_SOS_FADE_SECONDARY.md.
 
         `df15` / `df1m` are canonical frames (UTC DatetimeIndex, open/high/low/close) over the same
-        window. Bars are timestamped at OPEN; a 15m bar closes at `open + tf15`, so a 1m bar reads
+        window.
+
+        ⚠ THE SECOND FRAME'S TIMEFRAME IS THE CALLER'S CHOICE and is 5m by default since
+        2026-08-21 (`exec_sec_fill_tf_min`), not 1m — the parameter is still named `df1m` because
+        renaming a public parameter moves every caller, and the name is the one thing here that
+        cannot be trusted to say what the feed is. Nothing in this method assumes a minute.
+
+        Bars are timestamped at OPEN; a 15m bar closes at `open + tf15`, so a faster bar reads
         the 15m context of the bar that has already CLOSED by its open time — non-repainting, and
         the same `lookahead_off` semantics the Pine used.
         """
@@ -222,11 +229,11 @@ class MpcSosFadeStrategy:
 
         # `last_conf_high`/`last_conf_low` are the STRUCTURE runner trail's anchors, read by the
         # shared `_advance_stage` on every managed bar — primary or secondary. They were missing
-        # here until 2026-08-06, so the FIRST 1m bar after any secondary fill raised
+        # here until 2026-08-06, so the FIRST fast bar after any secondary fill raised
         # `AttributeError`: the re-entry had never once opened a position on real data. They come
         # from the last-CLOSED 15m signal, deliberately: the secondary's whole ladder is 15m fibs
         # (TP1 0.5, TP2 0.382) and it shares the parent's exit ladder, so its runner must trail the
-        # same 15m confirmed swings the primary does. `Structure1m` is for the 1m SOS latch only.
+        # same 15m confirmed swings the primary does. `Structure1m` is for the fast-feed SOS latch only.
         _Bar1mSig = namedtuple(
             "_Bar1mSig", "index time_ms open high low close last_conf_high last_conf_low")
         ny = ZoneInfo("America/New_York")
@@ -248,7 +255,7 @@ class MpcSosFadeStrategy:
         last_close15 = None     # the last-CLOSED 15m bar's close — the zone gate reads this (Pine's 15m `close`)
         i15 = 0
         # progress/cancel are optional hooks so a lab run keeps a live bar + a working Stop button
-        # (the 1m stream is the long one — ~50k bars over a month). Both no-ops when not supplied.
+        # (the fast stream is the long one). Both no-ops when not supplied.
         n1 = len(df1m.index)
         step1 = max(1, n1 // 100)
         for b1 in iter_bars(df1m):
@@ -257,7 +264,7 @@ class MpcSosFadeStrategy:
                     return self
                 if progress is not None:
                     progress(b1.index, n1)
-            # Flush every 15m bar that has CLOSED by the time this 1m bar opens — the primary path,
+            # Flush every 15m bar that has CLOSED by the time this fast bar opens — the primary path,
             # unchanged from run(). Its output becomes the 15m context the secondary reads next.
             while i15 < n15 and close15[i15] <= b1.timestamp_ms:
                 b15 = bars15[i15]
@@ -288,12 +295,12 @@ class MpcSosFadeStrategy:
                                   last_sig.last_conf_high, last_sig.last_conf_low)
                 filled = self.execution.step_secondary(sig1m, arm)
                 if filled is not None:
-                    arm_sm.mark_traded(filled)   # retire the just-filled 1m leg
+                    arm_sm.mark_traded(filled)   # retire the just-filled shift leg
                 elif self.execution.sec_stop_dir is not None:
                     # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
                     arm_sm.mark_dead(self.execution.sec_stop_dir, last_seq)
 
-        # Flush any 15m bars after the last 1m bar (window tail).
+        # Flush any 15m bars after the last fast bar (window tail).
         while i15 < n15:
             b15 = bars15[i15]
             state = stack.step(b15)

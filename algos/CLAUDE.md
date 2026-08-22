@@ -56,7 +56,7 @@ ratcheting stop — it has no path that places a second entry**, and `exec_scale
 winning position. Left unrefused the bot would have traded the base position, placed no adds, and
 reported nothing: the backtest would show a scaled book and the account an unscaled one, with
 nothing explaining the gap. That is the exact divergence this function exists to prevent, and it is
-why partial take-profits and the 1m secondary are already refused.
+why partial take-profits and the secondary are already refused.
 
 ✅ **Watched both ways rather than assumed** — scale-in ON is refused with a message naming the
 cause, and the SHIPPED config still starts. A guard that refuses everything is not a guard.

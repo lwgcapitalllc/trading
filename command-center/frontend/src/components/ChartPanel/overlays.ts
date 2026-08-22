@@ -471,7 +471,7 @@ export function registerChartOverlays(): void {
       })
 
       // Which BOOK a trade came from is the one fact about it that its shape cannot state — a
-      // SECONDARY is the 1m sniper RE-ENTRY on a leg the primary already traded, a RECOVERY is the
+      // SECONDARY is the fast-feed sniper RE-ENTRY on a leg the primary already traded, a RECOVERY is the
       // counter-trade the loss-recovery rule took after a loss. Both have also been drawn with a
       // dashed box border, which is invisible in practice: a dashed border only reads as
       // "different" when a solid one is next to it, and neither kind is common enough for there
@@ -485,7 +485,7 @@ export function registerChartOverlays(): void {
       // ⚠ It sits beyond the arrow tip on the DEGRADED path only. The first version put it there on
       // the rich path too and it was unreadable on real data (Aaron, 2026-08-06): directly under the
       // entry point is exactly where the `Entry` / `SL` / `Deepest` price chips already stack, so on
-      // a tight trade — and a 1m re-entry is tight by construction, that is the whole idea — the tag
+      // a tight trade — and a re-entry is tight by construction, that is the whole idea — the tag
       // landed on top of them. The rich path folds it into the outcome chip instead, which is
       // centred beyond the trade's extreme and is the one label with clear air around it.
       const secTagFig = (): OverlayFigure => ({
@@ -619,7 +619,7 @@ export function registerChartOverlays(): void {
       // happened, so each states the number it happened at.
       //
       // That call is now a SETTING rather than a rule (`showPrices`, Chart settings → Trades). The
-      // reason is the 1m re-entry: its box is short by construction, so the chips stack on top of
+      // reason is the re-entry: its box is short by construction, so the chips stack on top of
       // each other, and the price is most of each chip's width. Undefined keeps the price, so the
       // shipped reading is unchanged for anything that has not been updated to pass it.
       const px = (p: number) => p.toFixed(d.precision ?? 2)
@@ -872,7 +872,7 @@ export function registerChartOverlays(): void {
         const outPix = won ? -sign : sign // beyond the extreme, away from entry (px: up = −)
         // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several
         // strategies' trades on one chart, the outcome alone doesn't say whose trade it was.
-        // A 1m re-entry says so here rather than at the entry — see `secTagFig`. It reads
+        // A re-entry says so here rather than at the entry — see `secTagFig`. It reads
         // "SEC · Won", so the fact that it IS a re-entry comes first and survives being skimmed.
         const outcome = won ? 'Won' : verdict === 'scratch' ? 'Scratch' : 'Lost'
         // …and the reversal candle at this trade's turn, BY NAME. ⚠ `undefined` prints NOTHING —
