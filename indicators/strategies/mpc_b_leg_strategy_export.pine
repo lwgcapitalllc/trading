@@ -702,7 +702,15 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             // compares bar index as well as price, misses, and a SECOND label is drawn at the same
             // price. Pine never deletes those, so they stack (the LL beside an HL, 2026-08-20).
             // Full story + measurements: engines/market_structure/CLAUDE.md -> tied-extreme fix.
-            if lowest_val == st.last_conf_low and not na(st.last_conf_low_loc)
+            // 🔴 …AND THE SAME SNAP WHEN IT IS MORE EXTREME BUT NOT NEWER — A REFUSED WICK
+            // (2026-08-21). Structure BREAKS ON A CLOSE, but this scan reads the raw `low` over a
+            // window bounded by `last_conf_high_loc` — the OPPOSITE side — which reaches back BEFORE
+            // the swing just confirmed. So it can resurrect a bar that pierced the level, closed back
+            // inside and was correctly refused, and install it as the new active swing: EARLIER than
+            // and LOWER than the swing just labelled. Full mechanism + the measurements:
+            // `indicators/engines/mpc_assistant.pine`, same block.
+            if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
+                lowest_val := st.last_conf_low
                 lowest_loc := st.last_conf_low_loc
             st.bull_bos_low   := lowest_val
             st.bull_bos_l_loc := lowest_loc
@@ -840,7 +848,11 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             // HL, which is why it went unnoticed far longer despite being the MORE common of the two.
             // ⚠ IT MUST SIT HERE, AFTER THE PROMOTION, NOT BESIDE THE SCAN — placed by the scan it
             // reads a `last_conf_high` the promotion has not written yet and silently does nothing.
-            if highest_val == st.last_conf_high and not na(st.last_conf_high_loc)
+            // 🔴 Mirror of the low side's refused-wick snap (2026-08-21) — see the note there.
+            // This side is the `ASH` printed beside an `HH`, and the bogus `HH` that follows once
+            // that ASH is broken. Must stay AFTER the promotion, same as the tie guard it replaces.
+            if not na(st.last_conf_high_loc) and (highest_val == st.last_conf_high or (highest_val > st.last_conf_high and highest_loc <= st.last_conf_high_loc))
+                highest_val := st.last_conf_high
                 highest_loc := st.last_conf_high_loc
             st.bear_bos_high  := highest_val
             st.bear_bos_h_loc := highest_loc

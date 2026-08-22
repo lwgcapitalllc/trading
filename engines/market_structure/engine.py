@@ -735,7 +735,25 @@ class StructureEngine:
             # swing — see `unconfirmed_low_set` a few lines down, which suppresses the ASL
             # label on `lowest_val != st.last_conf_low` alone, price only. The two tests
             # disagreed about what "the same swing" means; now they agree.
-            if lowest_val == st.last_conf_low and st.last_conf_low_loc is not None:
+            # 🔴 …AND WHEN IT IS MORE EXTREME BUT NOT NEWER — A REFUSED WICK (2026-08-21).
+            # The tie guard is exact-price only, and that is not the only way this scan lands on
+            # something that was never a swing. Structure BREAKS ON A CLOSE — a wick through the
+            # level is deliberately refused — but this scan reads the raw `low`, over a window
+            # bounded by `last_conf_high_loc`, the OPPOSITE side. That window reaches back BEFORE
+            # the swing this break just confirmed, so it can find a bar that pierced the level,
+            # closed back inside, and was correctly refused — and install THAT as the new active
+            # swing: earlier than, and lower than, the swing just labelled. On the chart that is a
+            # second label crowding the first, and when the bogus swing is later broken it is
+            # promoted to its own permanent LL. Measured before the fix: 16 of 1,662 bull breaks
+            # on 400,000 M1 bars, 7 of 934 on 186,759 M15 bars; 0 after.
+            # ⚠ NOT cosmetic — `fibo_asl := st.asl`, so it moves the fib anchor and with it the
+            # entry ladder. One measured case was $8.10 out.
+            # A rescan may only install a swing strictly NEWER than the one just confirmed.
+            if st.last_conf_low_loc is not None and (
+                lowest_val == st.last_conf_low
+                or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc)
+            ):
+                lowest_val = st.last_conf_low
                 lowest_loc = st.last_conf_low_loc
 
             st.bull_bos_low = lowest_val  # Pine: st.bull_bos_low  := lowest_val
@@ -877,7 +895,18 @@ class StructureEngine:
             # does nothing — which is exactly what it did on the first attempt at this fix.
             # The fallback branch above is unaffected: it only runs when the prices DIFFER,
             # so this guard is a no-op by construction on that path.
-            if highest_val == st.last_conf_high and st.last_conf_high_loc is not None:
+            # 🔴 …AND THE MIRROR: MORE EXTREME BUT NOT NEWER — A REFUSED WICK (2026-08-21).
+            # Same window problem read off the raw `high` — see the long note on the low side.
+            # This is the `ASH` printed beside an `HH` on Aaron's 2026-08-21 chart, and the bogus
+            # `HH` that followed once that ASH was broken. Measured before the fix: 15 of 1,380
+            # bear breaks on 400,000 M1 bars, 8 of 768 on 186,759 M15 bars; 0 after.
+            # ⚠ Must sit AFTER the promotion, exactly like the tie guard it replaces — placed
+            # beside the scan it reads a `last_conf_high` the promotion has not written yet.
+            if st.last_conf_high_loc is not None and (
+                highest_val == st.last_conf_high
+                or (highest_val > st.last_conf_high and highest_loc <= st.last_conf_high_loc)
+            ):
+                highest_val = st.last_conf_high
                 highest_loc = st.last_conf_high_loc
 
             st.bear_bos_high = highest_val  # Pine: st.bear_bos_high  := highest_val

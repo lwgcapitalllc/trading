@@ -63,6 +63,26 @@ The missing one is the one that fires on a WIN — `fibo7Touched`, price back at
 
 ---
 
+## 🔴 The refused-wick duplicate label (fixed 2026-08-21) — the sequel, and the tie guard could not see it
+
+Three symptoms, one cause: a doubled `LL`, an `ASH` printed beside an `HH`, and a bogus `HH` after
+it. **Structure breaks on a CLOSE; the post-break rescan reads the WICK** — over a window bounded by
+the opposite side's last confirmed bar, which reaches back before the swing just confirmed. So it
+resurrects a wick the break rule already refused and installs it as the new active swing: earlier
+than, and more extreme than, the swing just labelled.
+
+The 2026-08-20 tie guard fires only on an EXACT price match and so could never catch it. The fix
+folds into that guard — *a rescan may only install a swing strictly NEWER than the one just
+confirmed* — costing one line of code per site.
+
+⚠ **`processMTF` in `mpc_assistant.pine` needed it too**, unlike the tie guard: this snap moves the
+VALUE, and `st.ash := highest_val` is what the next break is tested against. Its "deliberately NOT
+repeated here" note was corrected in place.
+
+⚠ **Not cosmetic** — `fibo_ash := st.ash`, so it moves the fib anchor, E1-E4 and the TP ladder. The
+measurements, the traced bars and the outstanding parity-gate position are in
+`engines/market_structure/CLAUDE.md` → *The 2026-08-21 refused-wick fix*, and are not repeated here.
+
 ## 🔴 The tied-extreme duplicate label (fixed 2026-08-20) — one swing, two labels that never go away
 
 Aaron read an `LL` and an `HL` printed on the *same* 15m swing low and asked whether he had broken

@@ -225,6 +225,66 @@ downstream engines (STALE-BY-INPUT, since the structure stream now fires more SO
 swings) re-validated off the same CSV — `compare_ob.py --warmup 548` and `compare_fib.py --warmup 368`,
 both exit 0.
 
+## The 2026-08-21 refused-wick fix — the same swing, labelled twice, for a different reason
+
+The day after the tie guard shipped Aaron sent three charts: a doubled `LL`, an `ASH` printed beside
+an `HH`, and a bogus `HH` that appeared later. **One root cause behind all three, and the tie guard
+could not see it** — the two bars are NOT at the same price, so an exact-equality test never fires.
+
+🔴 **STRUCTURE BREAKS ON A CLOSE. THE RESCAN READS THE WICK.** That is the whole defect. A wick
+through the level is deliberately refused (`ash_broken = close > st.ash`), but the post-break rescan
+reads the raw `high[i]` / `low[i]` over a window bounded by the OPPOSITE side's last confirmed bar.
+That window reaches back BEFORE the swing the break just confirmed — so it can find a bar that
+pierced the level, closed back inside, was correctly refused, and install THAT as the new active
+swing. The result is an active swing EARLIER than and MORE EXTREME than the swing just labelled: a
+second label crowding the first. When it is later broken it is promoted to its own permanent
+`HH`/`LL`, which is the "wrong new HH" that follows.
+
+**Traced end to end on real bars** (`XAUUSD__M15`, rows 5307-5319):
+
+```
+bar 5307   high 1241.90  close 1241.05    active swing high 1241.12
+           → high pierced it, close did NOT. Correctly no break, no label.
+bar 5308   closes above  → confirmed HH @ 1241.51
+bar 5319   bear break    → promotes HH @bar5308, then rescans and finds
+                           bar 5307's refused wick → installs it as the new ASH
+```
+
+**MEASURED, before → after:**
+
+| | before | after |
+|---|---|---|
+| bear breaks anchoring the new ASH EARLIER than the HH, 400,000 M1 bars | 15 / 1,380 | **0** |
+| bull breaks, mirror, M1 | 16 / 1,662 | **0** |
+| bear breaks, 186,759 M15 bars | 8 / 768 | **0** |
+| bull breaks, M15 | 7 / 934 | **0** |
+| `mpc_sos_fade` book, 2020-01-01 → 2026-08-06 | 159 trades / +142.18R / maxDD 5.61R | 158 / **+140.71R** / 5.61R |
+
+🔴 **NOT COSMETIC.** `fibo_ash := st.ash`, so a bogus active swing moves the External Fib's anchor
+and with it E1-E4, the TP ladder, the Sniper Zone and the B-LEG band. One measured case was **$8.10**
+out. The A+ cost is −1 trade and −1.47R over 6.5 years, well inside this strategy's own run-to-run
+sd of 15.06R (the jitter audit) — but it is a real trade-list change, not a redraw.
+
+**The fix folds INTO the tie guard rather than sitting beside it**, because a tie is just the
+equality case of the same question: *a rescan may only install a swing strictly NEWER than the one
+just confirmed.* At-or-before it, a tie or a deeper extreme is either the same swing or a refused
+wick, and snapping the value on a tie is a no-op. One test, both cases, +1 line of code per site.
+
+⚠ **`processMTF` in `mpc_assistant.pine` DID need it, and the note saying otherwise was corrected.**
+That note was right about the 2026-08-20 guard — it only moved a `*_loc`, and no `*_loc` in that
+method has a consumer, so omitting it really was a no-op. **This snap moves the VALUE**, and
+`st.asl := lowest_val` is the level the next break is tested against. Omitted there, the MTF rows,
+`f_rev15`'s leg and the chart engine would answer differently about the same bar. **A guard that was
+correctly skipped once is not a guard that can be skipped again — check what the new one writes.**
+
+⚠ **Applied to all 17 Pine files (36 sites) and the Python port**, each strategy verified
+byte-identical to its export twin, or a parity gate would be comparing two different engines.
+
+⚠ **The parity gate has NOT run and cannot yet.** `engines/market_structure/exports/` is empty, and
+an export taken before this change encodes the OLD behaviour — so the gate can only be satisfied by
+a fresh export from the FIXED `structure_engine_export.pine`. Rule 22 is outstanding on this change;
+`tests/test_rescan_wick.py` (100 real bars, watched RED) is the evidence that exists today.
+
 ## The 2026-08-20 tied-extreme fix — one swing, two permanent labels
 
 Aaron spotted an `LL` and an `HL` printed side by side on the same 15m swing low and asked whether

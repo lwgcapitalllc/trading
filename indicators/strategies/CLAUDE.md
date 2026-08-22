@@ -175,6 +175,22 @@ as predicted, and loses 14R** — the primary's entry is a price the market has 
 around, so the stop sits in fresh congestion; median MFE falls 1.01R → 0.89R, which a 2.4x smaller
 R should have RAISED. Full grid: `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` →
 Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
+## The refused-wick structure fix (2026-08-21) — every strategy file and its export twin
+
+The sequel to the tie fix below, and the tie guard could not see it: structure breaks on a CLOSE
+while the post-break rescan reads the WICK, so it resurrects a wick the break rule already refused
+and installs it as the new active swing — earlier than and more extreme than the swing just
+confirmed. Folded INTO the existing guard, +1 line of code per site.
+
+⚠ **It moves trades, it is not a redraw.** `mpc_sos_fade` over 2020-01-01 → 2026-08-06 goes
+159 trades / +142.18R → **158 / +140.71R**, drawdown unchanged at 5.61R — inside the 15.06R
+run-to-run sd, but real. Every strategy here was verified byte-identical to its export twin
+afterwards, since a gate comparing a patched strategy to an unpatched twin compares two engines.
+
+⚠ **No parity gate has run on it** — see the canonical write-up for why it cannot until a fresh
+export exists. Mechanism, measurements and traced bars:
+`engines/market_structure/CLAUDE.md` → *The 2026-08-21 refused-wick fix*.
+
 ## The tied-extreme structure fix (2026-08-20) — all ELEVEN strategy files
 
 Every `strategy(` file here embeds its own copy of the market-structure state machine, and all

@@ -1166,7 +1166,24 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             // ⚠ This block ALREADY treats an equal price as the same swing — see
             // `lowest_val != st.last_conf_low` below, which suppresses the ASL label on price
             // ALONE. The two tests disagreed about what "the same swing" means; now they agree.
-            if lowest_val == st.last_conf_low and not na(st.last_conf_low_loc)
+            // 🔴 …AND WHEN IT IS MORE EXTREME BUT NOT NEWER — A REFUSED WICK (2026-08-21).
+            // Exact equality is not the only way this scan lands on something that was never a
+            // swing. Structure BREAKS ON A CLOSE — a wick through the level is deliberately
+            // refused — but this scan reads the raw `low`, over a window bounded by
+            // `last_conf_high_loc`, the OPPOSITE side. That window reaches back BEFORE the swing
+            // this break just confirmed, so it can find a bar that pierced the level, closed
+            // back inside, and was correctly refused, then install THAT as the new active swing:
+            // EARLIER than and LOWER than the swing just labelled. That is the second label
+            // crowding the first, and when the bogus swing is later broken it is promoted to its
+            // own permanent LL. Measured: 16 of 1,662 bull breaks over 400,000 M1 bars, 7 of 934
+            // over 186,759 M15 bars — 0 after this.
+            // ⚠ NOT cosmetic: `fibo_asl := st.asl`, so a bogus swing moves the fib anchor and
+            // with it E1-E4, the TP ladder, the Sniper Zone and the B-LEG band. One measured
+            // case was $8.10 out.
+            // One test, both cases: a rescan may only install a swing strictly NEWER than the one
+            // just confirmed. On an exact tie the value snap is a no-op, so they fold together.
+            if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
+                lowest_val := st.last_conf_low
                 lowest_loc := st.last_conf_low_loc
 
             st.bull_bos_low   := lowest_val
@@ -1311,7 +1328,13 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             // rescans and THEN promotes. Placed next to the scan it reads a `last_conf_high`
             // the promotion has not written yet, compares against the wrong swing and silently
             // does nothing — which is exactly what the first attempt at this fix did.
-            if highest_val == st.last_conf_high and not na(st.last_conf_high_loc)
+            // 🔴 …AND THE MIRROR: MORE EXTREME BUT NOT NEWER — A REFUSED WICK (2026-08-21).
+            // Same window problem read off the raw `high`; the long note is on the low side.
+            // This is the `ASH` printed beside an `HH` on the 2026-08-21 chart, and the bogus
+            // `HH` that followed once that ASH was broken. Measured: 15 of 1,380 bear breaks over
+            // 400,000 M1 bars, 8 of 768 over 186,759 M15 bars — 0 after this.
+            if not na(st.last_conf_high_loc) and (highest_val == st.last_conf_high or (highest_val > st.last_conf_high and highest_loc <= st.last_conf_high_loc))
+                highest_val := st.last_conf_high
                 highest_loc := st.last_conf_high_loc
 
             st.bear_bos_high  := highest_val
@@ -1735,10 +1758,16 @@ method processMTF(MTFStruct st, float ph_val, float pl_val) =>
                         lowest_val := low[i]
                         lowest_loc := bar_index - i
 
-            // NOTE: the tie guard in processExternal above is deliberately NOT repeated here.
-            // f_mtfStruct returns [dir, sEv] only, and dir is driven by close-vs-price breaks —
-            // no *_loc field in this method has any consumer, so the tie cannot change what
-            // this method reports. Left out to spend no compile tokens on a no-op.
+            // 🔴 THE REFUSED-WICK SNAP *IS* REPEATED HERE, AND THE NOTE THAT USED TO SIT HERE
+            // WAS RIGHT ABOUT THE OLD GUARD AND WRONG ABOUT THIS ONE. The 2026-08-20 tie guard
+            // only moved a *_loc, and no *_loc in this method has a consumer — so omitting it
+            // really was a no-op. This snap moves the VALUE, and `st.asl := lowest_val` two lines
+            // down is the level the next break is tested against (`asl_broken = close < st.asl`).
+            // Omit it here and the MTF rows, f_rev15's leg and the chart engine would answer
+            // differently about the same bar. See the low side of process() for the mechanism.
+            if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
+                lowest_val := st.last_conf_low
+                lowest_loc := st.last_conf_low_loc
 
             st.bull_bos_low   := lowest_val
             st.bull_bos_l_loc := lowest_loc
@@ -1817,10 +1846,12 @@ method processMTF(MTFStruct st, float ph_val, float pl_val) =>
                     st.last_conf_high     := highest_val
                     st.last_conf_high_loc := highest_loc
 
-            // NOTE: the tie guard in processExternal above is deliberately NOT repeated here.
-            // f_mtfStruct returns [dir, sEv] only, and dir is driven by close-vs-price breaks —
-            // no *_loc field in this method has any consumer, so the tie cannot change what
-            // this method reports. Left out to spend no compile tokens on a no-op.
+            // 🔴 Mirror of the low side, and repeated here for the same reason: this snap moves
+            // the VALUE, and `st.ash := highest_val` below is what the next break is tested
+            // against. See the note on the low side of processMTF.
+            if not na(st.last_conf_high_loc) and (highest_val == st.last_conf_high or (highest_val > st.last_conf_high and highest_loc <= st.last_conf_high_loc))
+                highest_val := st.last_conf_high
+                highest_loc := st.last_conf_high_loc
 
             st.bear_bos_high  := highest_val
             st.bear_bos_h_loc := highest_loc
