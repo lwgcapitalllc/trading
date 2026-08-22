@@ -440,18 +440,26 @@ def main(argv=None) -> int:
                 f"re-entries cannot be replayed. Pass --no-secondary to measure the primary "
                 f"alone (it will set the flag False so the reported config matches the run)."
             )
-        print(f"loading {args.symbol} 1m for the secondary  {start} -> {end} ...", flush=True)
-        df1m = BarSource().load(args.symbol, 1, start, end)
+        # WHICH feed the re-entry's resting order is filled against — the STRATEGY owns it
+        # (`exec_sec_fill_tf_min`, 5 by default since 2026-08-21), because it is the thing that
+        # knows what its own order needs. Hardcoding 1 here loaded 2.8M bars for 1.3% of accuracy
+        # over 5m, on every run, for as long as this tool existed. A strategy that does not
+        # declare one keeps the old 1m behaviour rather than being quietly coarsened.
+        fill_tf = int(getattr(cfg, "exec_sec_fill_tf_min", 1) or 1)
+        print(
+            f"loading {args.symbol} {fill_tf}m for the secondary  {start} -> {end} ...", flush=True
+        )
+        df1m = BarSource().load(args.symbol, fill_tf, start, end)
         if df1m.empty:
             raise SystemExit(
-                "exec_secondary=True but no 1m bars came back for that window. Refusing rather "
-                "than running the 15m-only path, which would silently drop every re-entry. "
-                "Pass --no-secondary to measure the primary alone."
+                f"exec_secondary=True but no {fill_tf}m bars came back for that window. Refusing "
+                f"rather than running the 15m-only path, which would silently drop every "
+                f"re-entry. Pass --no-secondary to measure the primary alone."
             )
         print(f"  {len(df1m):,} bars  {df1m.index[0]} -> {df1m.index[-1]}", flush=True)
-        _assert_timeframe(df1m, 1)
+        _assert_timeframe(df1m, fill_tf)
         print(
-            f"replaying {args.strategy} DUAL 15m+1m (warmup {args.warmup}) ...",
+            f"replaying {args.strategy} DUAL 15m+{fill_tf}m (warmup {args.warmup}) ...",
             flush=True,
         )
         strat.run_dual(df, df1m, warmup=args.warmup)

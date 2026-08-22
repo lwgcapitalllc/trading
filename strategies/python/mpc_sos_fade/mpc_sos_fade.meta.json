@@ -685,6 +685,35 @@
       "desc": "Read only when One re-entry per primary is ON. How many times one setup may be re-entered before it is done. A re-entry that is STOPPED OUT still ends the setup whatever this says, so raising it only lets a setup be re-tried after a scratch. MEASURED over 6.6 years: 2, 3, 5 and unlimited all produce the same book — only one setup ever offered a second re-entry, and it lost. Lab only."
     },
     {
+      "name": "exec_sec_rest_and_leave",
+      "group": "Secondary re-entries (1m)",
+      "widget": "toggle",
+      "label": "Rest the re-entry order and leave it",
+      "short": "Rest and leave",
+      "options": {
+        "off": "Re-decide every bar",
+        "on": "Rest and leave"
+      },
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Once the re-entry's order is placed it stays there, at the price it was placed at. It only comes off if the setup that placed it dies, the trade fills, or the leg is finished. Off re-decides the order from scratch on every bar, so any one condition closing pulls it back off the book — which is what made the order need re-checking every minute."
+    },
+    {
+      "name": "exec_sec_fill_tf_min",
+      "group": "Secondary re-entries (1m)",
+      "widget": "number",
+      "label": "Re-entry fill clock (minutes)",
+      "short": "Fill clock",
+      "min": 1,
+      "max": 15,
+      "step": 1,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Which bars the backtest fills the re-entry's resting order against. It changes how accurate the test is, not how the strategy trades — live, the broker fills at the price that trades. A coarser setting fills you worse than really happened, so the result reads worse than it is. Smaller is more faithful and much slower to load."
+    },
+    {
       "name": "exec_rec_require",
       "group": "↳ Reclaim Entry only",
       "label": "Reclaim needs the first trade to have…",

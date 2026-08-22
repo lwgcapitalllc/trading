@@ -701,6 +701,23 @@ class SosFadeConfig:
     #   is the opposite of what a runner wants — read it with `exec_sec_tp1_pct` rather than alone.
     #   ⚠ Read ONLY when exec_secondary is on.
 
+    exec_sec_fill_tf_min: int = 5      # "Re-entry fill clock (minutes)"
+    #   WHICH BAR STREAM THE RE-ENTRY'S RESTING ORDER IS FILLED AGAINST in a backtest. The primary
+    #   always replays on 15m; this is the second feed `run_dual` walks alongside it.
+    #
+    #   🔴 IT IS A MEASUREMENT-ACCURACY KNOB, NOT A STRATEGY ONE. Live, the broker fills a resting
+    #   limit at the price that trades — there is no 15-minute anything. A coarser feed simply
+    #   fills the order at a worse price than really traded, so it UNDERSTATES, which is the safe
+    #   direction. MEASURED 2026-08-21, XAUUSD 2018-09-14 → 2026-08-20, matched basis:
+    #     1m  2,804,720 bars  234 trades  +147.56R   (the most faithful)
+    #     5m    561,795 bars  234 trades  +145.61R   ← default: 1/5 the data, 1.3% off
+    #     15m   187,286 bars  233 trades  +136.36R   (7.6% off — this is where it starts to hurt)
+    #   ⚠ **Do not read the 5m default as "the strategy trades on 5m".** Nothing about the setup,
+    #   the entry price or the stop is 5-minute; only the simulated fill is.
+    #   ⚠ A finer feed also bounds the WINDOW by that timeframe's measured history floor, which is
+    #   why 1m is not free even when the machine can afford the bars.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
     exec_sec_rest_and_leave: bool = True    # "Rest the re-entry order and leave it"
     #   ON (default since 2026-08-21, Aaron's rule) = once the side arms, the order stays where it
     #   was placed, at the price it was placed at, until the setup that placed it dies (a new break

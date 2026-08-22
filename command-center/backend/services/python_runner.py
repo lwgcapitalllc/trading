@@ -286,21 +286,26 @@ def _execute(job_id: str, spec: dict) -> None:
         # cost of the wrong figure was not a bad run, it was that this feature went unmeasured
         # for three weeks because the only windows anyone believed reachable were too short for a
         # setup this rare to fire in. A 1m window is SLOW to load and replay, not unavailable.
-        _set(job_id, pct=2, message=f"Loading {symbol} 1m bars for the re-entry…")
-        df1m = BarSource().load(symbol, 1, spec["start_date"], spec["end_date"])
+        # The fill clock comes from `run_feeds.EXTRA_FEEDS`, which is also what BOUNDED the
+        # window — loading a different one here would replay a feed the window was never
+        # checked against. 5m since 2026-08-21; it was hardcoded 1 and cost 2.8M bars a run
+        # for 1.3% of accuracy.
+        fill_tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+        _set(job_id, pct=2, message=f"Loading {symbol} {fill_tf}m bars for the re-entry…")
+        df1m = BarSource().load(symbol, fill_tf, spec["start_date"], spec["end_date"])
         if df1m.empty:
             raise ValueError(
-                f"exec_secondary is on but no 1m bars loaded for {symbol} over "
-                f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves 1m history "
-                f"for this window (or turn the secondary off)."
+                f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
+                f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
+                f"history for this window (or turn the secondary off)."
             )
-        _set(job_id, pct=2, message=f"Testing {len(df):,} × 15m + {len(df1m):,} × 1m bars…")
+        _set(job_id, pct=2, message=f"Testing {len(df):,} × 15m + {len(df1m):,} × {fill_tf}m bars…")
 
         def _prog(i: int, n: int) -> None:
             _set(
                 job_id,
                 pct=min(98, 2 + int(i / n * 96)),
-                message=f"Testing 1m bar {i:,} of {n:,}",
+                message=f"Testing {fill_tf}m bar {i:,} of {n:,}",
             )
 
         strategy.run_dual(df, df1m, progress=_prog, should_cancel=lambda: _cancelled(job_id))

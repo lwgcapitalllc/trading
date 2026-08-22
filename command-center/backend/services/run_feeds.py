@@ -33,9 +33,19 @@ from typing import Any, Iterable, Mapping, Optional
 # "H1") needs its own branch in `required_timeframes`, not a row here — and the frontend
 # sends only truthy flag NAMES, so a non-boolean would never arrive.
 EXTRA_FEEDS: dict[str, int] = {
-    # 1m sniper re-entry. `python_runner` replays 15m PRIMARY + 1m SECONDARY on one clock
-    # via `strategy.run_dual`, so the 1m floor bounds the window just as hard as the chart's.
-    "exec_secondary": 1,
+    # The re-entry's FILL CLOCK. `python_runner` replays the 15m PRIMARY and the re-entry on one
+    # merged clock via `strategy.run_dual`, so this feed's measured history floor bounds the run's
+    # window just as hard as the chart's does.
+    #
+    # 🔴 5, not 1, since 2026-08-21, and the OWNER of that number is the strategy
+    # (`mpc_sos_fade/config.py::exec_sec_fill_tf_min`) — this is a copy, and
+    # `tests/test_run_feeds.py` fails if the two ever disagree. It is a copy rather than an import
+    # because this module bounds the WINDOW before any strategy is constructed, and a value it
+    # cannot read is a value it would have to guess.
+    # ⚠ It is a measurement-accuracy figure, not a strategy one: live, the broker fills a resting
+    # limit at the price that trades. MEASURED over 7.9 years — 1m +147.56R, 5m +145.61R (1/5 the
+    # bars), 15m +136.36R. Full table in the strategy's config beside the field.
+    "exec_secondary": 5,
 }
 
 # The one extra feed the runner knows how to LOAD (`strategy.run_dual`). Adding a row to

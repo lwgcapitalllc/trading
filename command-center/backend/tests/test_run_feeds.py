@@ -30,6 +30,15 @@ from services import history_limits, run_feeds
 # The production shape, and the whole reason this module exists: two feeds, one day apart.
 FLOORS = {1: "2018-09-14", 15: "2018-09-13"}
 
+# 🔴 The floor tests below PIN the extra feed to 1m rather than reading whatever the re-entry
+# happens to use today, and that is deliberate. They prove a MECHANISM — the window is bounded by
+# the shallowest feed the run loads — and they used the re-entry as their vehicle. When its fill
+# clock moved 1m → 5m on 2026-08-21 four of them went red, not because the mechanism broke but
+# because they had quietly become assertions about a number that lives somewhere else. A test that
+# fails on an unrelated config change is a test nobody trusts the next time it speaks.
+# ⚠ The REAL value is asserted once, at the bottom, against the strategy that owns it.
+SHALLOW_FEED = {"exec_secondary": 1}
+
 
 def _describe(symbol, minutes, refresh=False):
     """Stands in for `backtest.data.history.describe` — no live terminal, no probe."""
@@ -76,8 +85,13 @@ def test_the_chart_timeframe_is_always_a_feed():
     assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": False}) == [15]
 
 
-def test_the_secondary_adds_the_one_minute_feed():
-    assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": True}) == [1, 15]
+def test_the_secondary_adds_its_own_fill_feed():
+    """Named for the MECHANISM, not the number. It read `== [1, 15]` and went red on
+    2026-08-21 when the re-entry's fill clock moved to 5m — an assertion about a value that
+    lives in the strategy, wearing the clothes of an assertion about this module."""
+    tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+    assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": True}) == [tf, 15]
+    assert tf != 15, "a fill feed equal to the chart proves nothing here"
 
 
 def test_a_built_config_object_answers_the_same_as_a_params_dict():
@@ -88,7 +102,8 @@ def test_a_built_config_object_answers_the_same_as_a_params_dict():
     class Cfg:
         exec_secondary = True
 
-    assert run_feeds.required_timeframes("Minute", 15, Cfg()) == [1, 15]
+    tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+    assert run_feeds.required_timeframes("Minute", 15, Cfg()) == [tf, 15]
 
 
 def test_a_one_minute_chart_does_not_imply_the_secondary_is_on():
@@ -156,15 +171,17 @@ def test_flags_survive_the_round_trip_through_the_query_param():
 
 def test_the_floor_follows_the_shallowest_feed(floors):
     """THE REPORTED BUG. Same instrument, same chart timeframe, one flag apart."""
-    off = history_limits.limits_for("XAUUSD", "Minute", 15, params={"exec_secondary": False})
-    on = history_limits.limits_for("XAUUSD", "Minute", 15, params={"exec_secondary": True})
+    with patch.dict(run_feeds.EXTRA_FEEDS, SHALLOW_FEED, clear=False):
+        off = history_limits.limits_for("XAUUSD", "Minute", 15, params={"exec_secondary": False})
+        on = history_limits.limits_for("XAUUSD", "Minute", 15, params={"exec_secondary": True})
     assert off["earliest_date"] == "2018-09-13"
     assert on["earliest_date"] == "2018-09-14"
 
 
 def test_the_floor_names_the_feed_that_set_it(floors):
     """A picker that jumps a day has to be able to say why, or it reads as broken."""
-    on = history_limits.limits_for("XAUUSD", "Minute", 15, params={"exec_secondary": True})
+    with patch.dict(run_feeds.EXTRA_FEEDS, SHALLOW_FEED, clear=False):
+        on = history_limits.limits_for("XAUUSD", "Minute", 15, params={"exec_secondary": True})
     assert on["timeframe_minutes"] == 1
     assert "1m" in on["note"] and "15m" in on["note"]
 
@@ -179,13 +196,14 @@ def test_nothing_is_narrowed_when_the_extra_feed_is_off(floors):
 
 
 def test_a_window_the_extra_feed_cannot_serve_is_refused(floors, assert_window):
-    history_limits.validate_window(
-        "XAUUSD", "2018-09-13", "2026-08-15", params={"exec_secondary": False}
-    )  # legal, and must stay legal
-    with pytest.raises(ValueError):
+    with patch.dict(run_feeds.EXTRA_FEEDS, SHALLOW_FEED, clear=False):
         history_limits.validate_window(
-            "XAUUSD", "2018-09-13", "2026-08-15", params={"exec_secondary": True}
-        )
+            "XAUUSD", "2018-09-13", "2026-08-15", params={"exec_secondary": False}
+        )  # legal, and must stay legal
+        with pytest.raises(ValueError):
+            history_limits.validate_window(
+                "XAUUSD", "2018-09-13", "2026-08-15", params={"exec_secondary": True}
+            )
 
 
 def test_a_non_python_runner_is_still_unbounded(floors, assert_window):
@@ -202,8 +220,30 @@ def test_an_unmeasurable_feed_does_not_silently_drop_the_floor(floors):
     from a SUBSET of the feeds. The remaining feeds must still bound the window — answering
     None because one feed is unknown would leave the run unbounded, which is the reassuring
     direction and the wrong one."""
-    with patch.dict(run_feeds.EXTRA_FEEDS, {"exec_bias_h4": 240}, clear=False):
+    with patch.dict(run_feeds.EXTRA_FEEDS, {**SHALLOW_FEED, "exec_bias_h4": 240}, clear=False):
         lim = history_limits.limits_for(
             "XAUUSD", "Minute", 15, params={"exec_secondary": True, "exec_bias_h4": True}
         )
     assert lim["earliest_date"] == "2018-09-14"  # 240m is unknown; 1m still binds
+
+
+# ── the fill clock is a COPY, and a copy needs a test ─────────────────────────
+
+
+def test_the_reentry_fill_clock_matches_the_strategy_that_owns_it():
+    """`EXTRA_FEEDS` bounds the run's WINDOW before any strategy is constructed, so it cannot
+    import the number it needs — it holds a copy. The strategy owns it, and the two disagreeing
+    means the window was checked against one feed and the replay walked another.
+
+    ✅ Watched RED by setting the registry to 1 while the strategy says 5 — which is exactly the
+    state this repo was in until 2026-08-21, loading 2.8M bars a run for 1.3% of accuracy.
+    """
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from strategies.python.mpc_sos_fade.config import SosFadeConfig
+
+    assert run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG] == SosFadeConfig().exec_sec_fill_tf_min

@@ -3639,6 +3639,33 @@ and the docstring says so; `after` is a fact about a BOOK, the same shape as `ki
 Tests: `tests/test_chart_spec_trade_book.py` (4, all watched RED by mutation — dropping the emit,
 making it unconditional, and dropping the type check).
 
+## The re-entry's fill feed is 5m, and `EXTRA_FEEDS` holds a COPY on purpose (2026-08-21)
+
+`run_feeds.EXTRA_FEEDS["exec_secondary"]` moved `1` → `5`, and `python_runner` now loads whatever
+that registry says instead of a hardcoded 1. MEASURED over 7.9 years: 5m loads a fifth of the bars
+(561,795 vs 2,804,720) and lands within 1.3% of the 1m result; 15m is 7.6% off. The table and the
+reasoning live with the strategy that owns the number
+(`strategies/python/mpc_sos_fade/CLAUDE.md` → *The re-entry's FILL CLOCK*), not here.
+
+🔴 **The runner must load the SAME feed the registry BOUNDED the window with.** `EXTRA_FEEDS` is
+what `history_limits` uses to refuse a window the extra feed cannot serve; loading a different one
+in the runner replays a feed the window was never checked against — the pre-flight and the run
+disagreeing, which is the exact defect this module was created to end.
+
+⚠ **It is a COPY of the strategy's `exec_sec_fill_tf_min`, deliberately.** This module bounds the
+window *before* any strategy is constructed, so it cannot import the value it needs, and a value it
+cannot read is a value it would have to guess. `tests/test_run_feeds.py` asserts the two agree and
+was watched RED by setting the registry back to 1.
+
+🔴 **FOUR FLOOR TESTS WENT RED ON THIS CHANGE AND NONE OF THEM WAS ABOUT IT.** They prove a
+mechanism — the window is bounded by the shallowest feed a run loads — and they had used the
+re-entry as their vehicle, so `== [1, 15]` and `earliest_date == "2018-09-14"` had quietly become
+assertions about a number that lives in another subsystem. They now pin the extra feed to 1m
+themselves (`SHALLOW_FEED`) and the real value is asserted once, against its owner. **A test that
+fails on an unrelated config change is a test nobody trusts the next time it speaks** — and the
+tempting repair, editing 1 to 5 in each, would have left four copies of the number where there had
+been one.
+
 ## News filter (post-run)
 
 The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time gate: the lab runs every backtest RAW (news is never wired into the C#/MQL5 strategy), so removing news-window trades is pure arithmetic on the finished trade list — instant, no VPS re-run. Design decision (Aaron 2026-07-05): **run raw + toggle after.** Window default **15 min before / 30 min after** a high-impact USD release (asymmetric — liquidity dies only in the last minutes before; the spike/reversal/move run 15–30 min after). **Two rules, both switchable, and BOTH DEFAULT OFF** (2026-08-01, Aaron's call): the page opens on the run exactly as traded, so every number on it is the backtest's own and turning a rule on is a deliberate what-if. That replaced two different defaults for one reason — a filtered default means the headline figure on screen is not the run's result, and no checkbox further down the page makes that obvious. Holidays had defaulted ON (hardcoded always-excluded with no control at all until 2026-07-30, when they became a visible checkbox but stayed ticked), and news followed the strategy's own `avoid_news`, so the default silently DIFFERED BETWEEN STRATEGIES — two runs over the same window could open on different trade counts with nothing on screen explaining why. The backend reports `in_news` and `in_holiday` separately and always has; every default here has been a frontend-only decision.
