@@ -344,6 +344,10 @@ def init_db() -> None:
             # and a rule handed nothing looks exactly like a rule that found nothing. It is
             # declared by the package (LAB_STRATEGY["requires_source"]), never set by hand.
             "ALTER TABLE strategies ADD COLUMN requires_source INTEGER NOT NULL DEFAULT 0",
+            # Display grouping only — the id of the strategy this one is listed under on the
+            # Strategies page. Declared by the package (LAB_STRATEGY["display_under"]), never set
+            # by hand, and it restricts nothing about how the strategy runs.
+            "ALTER TABLE strategies ADD COLUMN display_under TEXT",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -2204,8 +2208,8 @@ def upsert_strategy(data: dict) -> None:
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
-                 avoid_news, self_sizing, requires_source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 avoid_news, self_sizing, requires_source, display_under)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -2221,7 +2225,8 @@ def upsert_strategy(data: dict) -> None:
                 steps=excluded.steps,
                 avoid_news=excluded.avoid_news,
                 self_sizing=excluded.self_sizing,
-                requires_source=excluded.requires_source
+                requires_source=excluded.requires_source,
+                display_under=excluded.display_under
         """,
             (
                 data["id"],
@@ -2240,6 +2245,7 @@ def upsert_strategy(data: dict) -> None:
                 1 if data.get("avoid_news") else 0,
                 1 if data.get("self_sizing") else 0,
                 1 if data.get("requires_source") else 0,
+                data.get("display_under"),
             ),
         )
 

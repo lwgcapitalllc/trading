@@ -713,3 +713,12 @@ stop, which is not a thing that can happen. ⚠ **It is only testable on a SYNTH
 recovery in the real fixture exits locked and in profit, so the reordered walk returns identical
 numbers there. A wiring-level version of the test was written, watched still-green, and deleted —
 same trap as the five vacuous tests above, found the same way.
+
+## It is LISTED under the A+ bot on the Strategies page (2026-08-21)
+
+`LAB_STRATEGY["display_under"] = "mpc_sos_fade"`. Display grouping only — a flat alphabetical list
+put a rule that cannot run alone beside four that can.
+
+⚠ **It does NOT pin which parent it may recover.** The stack builder still offers the tick box
+under any ticked parent; `recovery_parent` is read off the request and this field is never
+consulted for it. The declaration says only where the row is drawn.

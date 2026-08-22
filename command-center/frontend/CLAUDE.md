@@ -2032,6 +2032,17 @@ rule that found no setups**. The alternative shape — listing it beside the rea
 and the run then refuses AFTER the reader has filled in the form. **A dependency the UI cannot
 express becomes a runtime refusal, which is a worse version of the same rule.**
 
+🔴 **THE STRATEGIES LIST IS A TREE (2026-08-21).** `ordered` groups each row under the strategy
+its own package declares (`Strategy.display_under`), so the loss-recovery rule sits directly beneath
+the bot it recovers instead of wherever the alphabet put it. ⚠ **The indent lives INSIDE the name
+cell**, never on the `td` and never as a spacer column — padding the cell shifts every column to
+its right out of line with the header, and the table's own column widths are what keep
+Platform/Params/Runs/Status aligned. ⚠ **A child whose parent is not in the visible list renders at
+the TOP level rather than disappearing** — the market filter hides rows, and a strategy vanishing
+from this page is how somebody concludes it was deleted. ⚠ **A cycle appends the unemitted rows
+instead of dropping them**, same reason. ⚠ **Display only** — nesting changes nothing about how a
+strategy runs, stacks or deploys.
+
 🔴 **THE STACK BUILDER COUNTS LEGS, NOT TICKED STRATEGIES (2026-08-21).** `settingsReady` required
 two ticked strategies and the Strategies page's Stack button required two before it would even
 open — so **A+ with a recovery on A+, the stack this whole leg exists to make possible, was greyed

@@ -691,6 +691,13 @@ def _parse_python_package(
         # which produces a book indistinguishable from a rule that found nothing. Only a python
         # package may declare it, and only the stack builder can create one.
         "requires_source": bool(spec.get("requires_source", False)),
+        # 🔴 DISPLAY ONLY — the id of the strategy this one is LISTED UNDER on the Strategies
+        # page. It says these belong to one suite; it restricts NOTHING. A nested strategy is
+        # still run, stacked and optimized exactly as before, and a recovery leg can still be
+        # ticked under any parent regardless of what it nests under here. Kept a plain id rather
+        # than a boolean "is a child" so the tree is declared by the packages, not hardcoded in
+        # a page that would then go stale the first time a strategy is added.
+        "display_under": (spec.get("display_under") or None),
     }, None
 
 

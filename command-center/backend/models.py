@@ -743,6 +743,9 @@ class Strategy(BaseModel):
     # nothing, which returns a book indistinguishable from a rule that found no setups. The only
     # thing that may create one is the stack builder's tick box on a parent leg.
     requires_source: bool = False
+    # Display grouping only: the id of the strategy this one is listed UNDER on the Strategies
+    # page. It restricts nothing — a nested strategy runs, stacks and optimizes exactly as before.
+    display_under: Optional[str] = None
 
     @field_validator("steps", mode="before")
     @classmethod

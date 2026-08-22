@@ -2677,6 +2677,33 @@ leave the endpoint counting ids one layer up. Watched RED by four mutations. MEA
 strategy alone refused with the new message, and one strategy plus a recovery passed the count and
 was refused by the history floor instead.
 
+## A strategy may declare which row it is LISTED UNDER — `display_under` (2026-08-21)
+
+`LAB_STRATEGY["display_under"]` holds another strategy's id; the Strategies page draws the
+declarer nested beneath it. It travels the same way `requires_source` does — package → scanner →
+`strategies.display_under` (TEXT, nullable) → `Strategy` → the page.
+
+⚠ **DISPLAY ONLY, and this is the whole contract.** It restricts nothing: a nested strategy is
+scanned, run, stacked, optimized and deployed exactly as a top-level one, and the recovery rule
+can still be ticked under ANY parent in the stack builder whatever it is listed under here
+(`recovery_parent` decides that, read off the request).
+
+🔴 **The tree is declared by the PACKAGES, never listed in the page.** A page holding its own map
+of which strategy belongs to which goes stale the first time somebody adds one, and the symptom is
+a correct-looking list that is quietly wrong.
+
+⚠ **`None`, never `""`** — an empty string reads as a declared parent in some checks and as no
+parent in others, which is the same "no" / "cannot ask" collapse as rule 1.
+
+⚠ **A typo'd parent id fails SILENTLY** — the row renders at the top level, which is precisely
+what a strategy with no parent looks like, so nothing on screen is wrong and the nesting has just
+gone missing. `test_every_declared_parent_IS_a_real_strategy` is the only thing that catches it.
+
+**Tests:** `tests/test_strategy_nesting.py` (5), watched RED by five mutations — dropping the
+field, returning `""` instead of `None`, a typo'd parent, a missing declaration, and a strategy
+listed under itself. MEASURED live: a rescan updated 3 rows and the two grouping values landed in
+the DB.
+
 ## History floors — blocking a window the broker has no bars for
 
 **MT5 does not error when a symbol lacks history at the requested timeframe — it returns the nearest

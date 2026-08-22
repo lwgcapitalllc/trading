@@ -60,4 +60,10 @@ LAB_STRATEGY = {
     "category": "mean_reversion",
     "self_sizing": True,
     "requires_source": True,
+    # 🔴 DISPLAY GROUPING ONLY, and it does NOT pin which parent it may recover. It is listed
+    # under the A+ bot because that is the only leg it has been measured against, and a flat
+    # alphabetical list put a rule that cannot run alone beside four that can. The stack builder
+    # still offers it under ANY ticked parent — `recovery_parent` is what decides that, and it is
+    # read off the request, never from here.
+    "display_under": "mpc_sos_fade",
 }

@@ -232,18 +232,56 @@ function StrategiesTab() {
     [strategies, marketFilter]
   )
 
-  const sorted = useMemo(
-    () =>
-      [...visible].sort((a, b) => {
-        // Group by platform, then by the name actually shown in the row.
-        const pa = RUNNER_LABEL[runnerScope(a.runner)]
-        const pb = RUNNER_LABEL[runnerScope(b.runner)]
-        return (
-          pa.localeCompare(pb) || (a.name || a.class_name).localeCompare(b.name || b.class_name)
-        )
-      }),
-    [visible]
-  )
+  // Platform, then the name actually shown in the row — then NESTED, so a strategy declared as
+  // belonging to another sits directly beneath it instead of wherever the alphabet put it.
+  //
+  // 🔴 THE TREE IS DECLARED BY THE PACKAGES (`Strategy.display_under`), NEVER LISTED HERE. A page
+  // holding its own list of which strategy belongs to which goes stale the first time somebody
+  // adds one, and the symptom is a correct-looking list that is quietly wrong.
+  //
+  // ⚠ It is DISPLAY ONLY. Nesting restricts nothing: a nested strategy is run, stacked, optimized
+  // and deployed exactly as a top-level one, and the recovery rule can still be ticked under any
+  // parent in the stack builder whatever it is listed under here.
+  const ordered = useMemo(() => {
+    const flat = [...visible].sort((a, b) => {
+      const pa = RUNNER_LABEL[runnerScope(a.runner)]
+      const pb = RUNNER_LABEL[runnerScope(b.runner)]
+      return pa.localeCompare(pb) || (a.name || a.class_name).localeCompare(b.name || b.class_name)
+    })
+    const present = new Set(flat.map((x) => x.id))
+    const kids = new Map<string, Strategy[]>()
+    const roots: Strategy[] = []
+    for (const x of flat) {
+      const under = x.display_under
+      // ⚠ A child whose parent is NOT in this list renders at the top level rather than
+      // disappearing. The market filter hides rows, and the parent being filtered out must not
+      // take its children off the page with it — a strategy vanishing from the list is how
+      // somebody concludes it was deleted.
+      if (under && under !== x.id && present.has(under)) {
+        kids.set(under, [...(kids.get(under) ?? []), x])
+      } else {
+        roots.push(x)
+      }
+    }
+    const out: { s: Strategy; depth: number }[] = []
+    const seen = new Set<string>()
+    const emit = (node: Strategy, depth: number) => {
+      if (seen.has(node.id)) return
+      seen.add(node.id)
+      out.push({ s: node, depth })
+      for (const c of kids.get(node.id) ?? []) emit(c, depth + 1)
+    }
+    roots.forEach((r) => emit(r, 0))
+    // ⚠ Anything a cycle left unemitted is appended rather than dropped. A mis-declared pair
+    // pointing at each other is a doc bug; a row silently missing from this page is a much
+    // worse one, because nothing on screen says a strategy exists that you cannot see.
+    flat.forEach((x) => {
+      if (!seen.has(x.id)) out.push({ s: x, depth: 0 })
+    })
+    return out
+  }, [visible])
+
+  const sorted = useMemo(() => ordered.map((o) => o.s), [ordered])
 
   // Stackable = the python rows currently VISIBLE (a filtered-out row can't be ticked, so it must
   // not count toward the selection either).
@@ -403,10 +441,11 @@ function StrategiesTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {sorted.map((s) => (
+              {ordered.map(({ s, depth }) => (
                 <StrategyRow
                   key={s.id}
                   strategy={s}
+                  depth={depth}
                   sync={syncByStrategy[s.id]}
                   isDeploying={deployingId === s.id}
                   bestGrade={strategyGrades?.[s.id]}
@@ -476,6 +515,7 @@ function paramCountTitle(schema: ParamSchemaEntry[]): string {
 
 function StrategyRow({
   strategy: s,
+  depth,
   sync,
   isDeploying,
   bestGrade,
@@ -490,6 +530,8 @@ function StrategyRow({
   onStackToggle,
 }: {
   strategy: Strategy
+  /** 0 = top level, 1 = listed under the row above it. Display grouping only — see `ordered`. */
+  depth: number
   sync?: StrategyFileSyncStatus
   isDeploying: boolean
   bestGrade?: { grade: string; stress_test_id: string }
@@ -550,8 +592,21 @@ function StrategyRow({
           )}
         </td>
       )}
+      {/* ⚠ The indent is INSIDE the name cell, never on the cell or the row. Padding the `td`
+          (or an extra spacer column) would shift every column to its right out of line with the
+          header and with the rows above it — the table's own column widths are what keep the
+          Platform/Params/Runs/Status columns aligned, and a nested row must not move them. */}
       <td className="px-4 py-3 font-medium">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" style={{ paddingLeft: depth * 18 }}>
+          {depth > 0 && (
+            <span
+              aria-hidden
+              title="Listed under the strategy above — display grouping only, it runs and stacks like any other"
+              className="text-text-tertiary opacity-50 select-none mr-0.5"
+            >
+              └
+            </span>
+          )}
           {/* The strategy's NAME — matches StrategyDetail's heading. Showing class_name here
               meant the list said "MpcSosFadeStrategy" while the detail page said "MPC SOS Fade". */}
           {s.name || s.class_name}
