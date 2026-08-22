@@ -709,6 +709,21 @@ export function registerChartOverlays(): void {
       crossLine(d.stopPrice, withAlpha(stopColor, 0.85))
       dot(d.stopPrice, stopColor)
       addLabel(d.stopPrice, 'SL', stopColor)
+      // The trade's own exit LADDER — every rung it aimed at, drawn faint whether or not price
+      // reached it. Read the block below the legs for why it is never gated.
+      const targets = (d.tpTargets ?? [])
+        .map((t) => (typeof t === 'number' ? { price: t } : t))
+        .filter((t) => t && typeof t.price === 'number')
+      // Which rung, if any, sits at a given price — so a level that is BOTH a target and where the
+      // trade came off reads as ONE chip naming both (`TP2 / Exit`) instead of one of the two
+      // silently winning the pixel row. Aaron, 2026-08-21: *"If TP2 and exit is the same dash
+      // line, just update the label to say TP2 / Exit, so I could know."* Without it the reader
+      // cannot tell "it exited AT its target" from "it exited somewhere the ladder never named",
+      // which is the question the whole layer exists to answer.
+      const rungAt = (price: number): string | null => {
+        const i = targets.findIndex((t) => Math.abs(t.price - price) < 1e-9)
+        return i < 0 ? null : `TP${i + 1}`
+      }
       // Each real profit-take: a thin dotted mint line + a dot + its label (TP1/TP2/TP3/Exit). A
       // plain win with no per-rung detail draws one "Exit" at the banked price.
       const drawnLegs = legs.length
@@ -716,10 +731,18 @@ export function registerChartOverlays(): void {
         : bankedPrice != null
           ? [{ price: bankedPrice, label: 'Exit' }]
           : []
+      // ⚠ Off `drawnLegs`, NOT `legs` — a plain win carries no rung detail and its only drawn
+      // price is the exit fallback, which is exactly the trade where `TP2 / Exit` has to work.
+      const drawnPrices = drawnLegs.map((l) => l.price)
       for (const lg of drawnLegs) {
         crossLine(lg.price, profitColor)
         dot(lg.price, profitColor)
-        addLabel(lg.price, lg.label, profitColor)
+        const rung = rungAt(lg.price)
+        addLabel(
+          lg.price,
+          rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label,
+          profitColor
+        )
       }
       // SCALE-IN adds: one dotted line + dot + `Add` per lot, in the ENTRY colour, because that is
       // what they are — further entries, at a later price. Drawn whenever the trade carries them,
@@ -774,38 +797,30 @@ export function registerChartOverlays(): void {
       // a float-equality guard, NOT a "near enough" band: a leg price and its target are the same
       // strategy field, so they either match exactly or the leg belongs somewhere else.
       //
-      // 🔴 A rung that banks NOTHING is not a target and is not drawn as one. It carries no order —
-      // no part of the position is ever sold at that price — and the only thing a touch does is step
-      // the stop. It keeps its line, because it is a real level that really moved the stop and a
-      // line that vanishes in some configurations cannot be read as absence-means-something, but the
-      // chip says what happens there instead of naming a target the trade never had. At the shipped
-      // settings BOTH rungs of a primary bank 0%, so `TP1`/`TP2` on a primary named two targets that
-      // placed no orders on any trade of any run.
-      // ⚠ `banks === false` ONLY — `undefined` is a run stored before the strategy reported it, and
-      // reading that as "banks nothing" would relabel every historical chart off a measurement
-      // nobody made.
+      // 🔴 EVERY RUNG IS NAMED `TP1`/`TP2`, INCLUDING ONE THAT BANKS NOTHING — and the reverse was
+      // tried for half a day on 2026-08-21. A rung whose size is 0 places no order and only steps
+      // the stop, so it was drawn as `Stop tightens` in a neutral colour. Aaron, seeing it on every
+      // A+ trade (both rungs of a primary bank 0% at the shipped ladder, so it was the ONLY thing
+      // those charts said): *"Why is it that my A+ strategies now have annotation Stop Titans? I
+      // don't even know what it is. It should just show a faint dashed line where TP1 was and where
+      // TP2 was, so I could better understand why we exited at certain levels."*
+      // **The number IS the information.** Whether size comes off there is a settings fact, true of
+      // every trade in the run at once; where the rung SAT is a fact about this trade and is what a
+      // reader is reconstructing. And it is already said without words: a rung is a FAINT dotted
+      // line, a banked leg is SOLID. **A chip that has to be looked up is worth less than one that
+      // is slightly incomplete** — the earlier reasoning optimised for a claim nobody was making.
+      // ⚠ `banks` is still carried on the data and is still never defaulted (see `types.ts`); this
+      // layer simply does not spend a chip on it.
       // ⚠ Numbering is by LADDER POSITION, which is the strategy's order and not nearest-first: a
       // re-entry prices its first rung off risk and its second off a fib, so `TP2` can legitimately
       // sit nearer the entry than `TP1` (23 of the 45 re-entries on run 687c8df2a523; every main
       // entry is correctly ordered). Sorting them here would renumber the strategy's own rungs.
-      const targets = (d.tpTargets ?? [])
-        .map((t) => (typeof t === 'number' ? { price: t } : t))
-        .filter((t) => t && typeof t.price === 'number')
       for (let i = 0; i < targets.length; i++) {
-        const { price, banks } = targets[i]
-        if (legPrices.some((p) => Math.abs(p - price) < 1e-9)) continue
-        const dead = banks === false
-        // A stop step is neither profit nor risk — it is a trigger — so it drops the mint and takes
-        // the neutral level colour rather than borrowing the stop's red, which on a winner reads as
-        // a second stop sitting in front of price.
-        const color = dead ? withAlpha(entryColor, 0.45) : withAlpha(profitColor, 0.5)
-        crossLine(price, color)
-        dot(price, color)
-        addLabel(
-          price,
-          dead ? 'Stop tightens' : `TP${i + 1}`,
-          dead ? withAlpha(entryColor, 0.7) : withAlpha(profitColor, 0.7)
-        )
+        const { price } = targets[i]
+        if (drawnPrices.some((p) => Math.abs(p - price) < 1e-9)) continue
+        crossLine(price, withAlpha(profitColor, 0.5))
+        dot(price, withAlpha(profitColor, 0.5))
+        addLabel(price, `TP${i + 1}`, withAlpha(profitColor, 0.7))
       }
 
       // De-collide the labels top→down (min 15px apart), then draw each as a compact rounded chip

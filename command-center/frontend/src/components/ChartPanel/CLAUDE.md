@@ -1099,24 +1099,31 @@ here**, so the chart shows exactly what the strategy saw.
   nothing. ⚠ **A layer that draws itself only sometimes cannot be read as absence-means-something**:
   a blank chart could not be told from a trade with no targets, so the reader had to go and check
   anyway — which is the cost the gate existed to save. Aaron's call.
-  🔴 **A rung that BANKS NOTHING is not a target and is no longer drawn as one (2026-08-21).**
-  `tpTargets` is now `{price, banks?}` per rung. `banks === false` means the trade places no order
-  at that price — nothing is ever sold there and a touch only steps the stop — so the chip reads
-  `Stop tightens` in the neutral level colour instead of `TP1`/`TP2` in mint. It KEEPS its line:
-  it is a real level that really moved the stop, and by the paragraph above a line that vanishes in
-  some configurations cannot be read as absence-means-something. At mpc_sos_fade's shipped settings
-  BOTH rungs of a primary bank 0%, so the old rendering named two targets that placed no orders on
-  any trade of any run. ⚠ **`banks === false` ONLY — `undefined` renders the old way**, because a
-  run stored before the flag existed reported nothing and "cannot ask" must not read as "no".
-  ⚠ **The colour is neutral rather than the stop's red**: on a winner a red line sitting in front
-  of price reads as a second stop. ⚠ **Numbering is by LADDER POSITION, which is the strategy's
-  order and NOT nearest-first** — a re-entry prices rung 1 off risk and rung 2 off a fib, so `TP2`
-  legitimately sit nearer the entry than `TP1` — **23 of the 45 RE-ENTRIES on run
-  `687c8df2a523`; all 160 main entries are correctly ordered** (corrected 2026-08-21: the
-  first count published here read 182 of 205 and had the direction of *nearer* inverted).
-  Sorting
-  here would renumber the strategy's own rungs. Full finding, including the two `TP1` chips on one
-  trade that started it: `command-center/backend/CLAUDE.md` → *The exit ladder*.
+  🔴 **EVERY RUNG IS NAMED `TP1`/`TP2`, AND THE REVERSE WAS TRIED AND WITHDRAWN THE SAME DAY
+  (2026-08-21).** A rung whose size is 0 places no order and only steps the stop, so it was drawn
+  as `Stop tightens` in a neutral colour. At mpc_sos_fade's shipped ladder **both** rungs of a
+  primary bank 0%, so that chip became the only thing every A+ chart said. Aaron: *"Why is it that
+  my A+ strategies now have annotation Stop Titans? I don't even know what it is. It should just
+  show a faint dashed line where TP1 was and where TP2 was, so I could better understand why we
+  exited at certain levels."* **The number IS the information.** Whether size comes off at a rung
+  is a SETTINGS fact — true of every trade in the run at once — while where the rung SAT is a fact
+  about this trade, and it is what a reader is reconstructing. The distinction is already drawn
+  without words: a rung is a FAINT dotted line, a banked leg is SOLID. ⚠ **The lesson is about
+  who the chip is for: a label that has to be looked up is worth less than one that is slightly
+  incomplete.** The withdrawn version optimised against a claim nobody was making. ⚠ `banks` is
+  still carried end to end and still never defaulted — this layer just does not spend a chip on it.
+  🔴 **A price that is BOTH a rung and where the trade came off reads as ONE chip naming both —
+  `TP2 / Exit`.** Aaron: *"If TP2 and exit is the same dash line, just update the label to say
+  TP2 / Exit, so I could know."* Before this the rung was skipped whenever a drawn leg shared its
+  price, so the reader could not tell *it exited AT its target* from *it exited somewhere the
+  ladder never named* — the question the layer exists to answer. **It is not a rare case: 49 of
+  206 trades on run `976aff9ec279`.** ⚠ Matched off `drawnLegs`, NOT `legs` — a plain win carries
+  no rung detail and its only drawn price is the exit fallback, which is exactly the trade where
+  this has to work. ⚠ No merge when the two names already agree, so nothing reads `TP1 / TP1`.
+  ⚠ Numbering is by LADDER POSITION, which is the strategy's order and not nearest-first: a
+  re-entry prices rung 1 off risk and rung 2 off a fib, so `TP2` can legitimately sit nearer the
+  entry than `TP1` (23 of the 45 re-entries on run `687c8df2a523`; every main entry is correctly
+  ordered). Sorting here would renumber the strategy's own rungs.
   Supported figure types are
   `circle/line/polygon/rect/text` (verified via `getSupportedFigures`). **Chart price marks:** the
   candle `priceMark.high`/`.low` (highest/lowest-visible-price tags) are turned OFF in `chartStyles.ts`
