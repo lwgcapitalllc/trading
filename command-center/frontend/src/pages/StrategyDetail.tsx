@@ -395,12 +395,29 @@ export function StrategyDetail() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 mb-3.5">
         <h1 className="text-[22px] font-bold leading-tight">{strategy.name}</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 transition-opacity flex-shrink-0"
-        >
-          <Play size={13} /> Run Backtest
-        </button>
+        {/* 🔴 A rule flagged `requires_source` has NO SETUPS OF ITS OWN — it arms off another
+            leg's closed trades. Run alone it returns an EMPTY book, which on every page here
+            reads exactly like a rule that found no setups: no error, no warning, a run that
+            completes and grades. The list page already swaps its Run for this, and the backend
+            refuses it outright (`routers/_source_guard.py`) — this page had its own Run button
+            and was the way round both. DISABLED, never hidden: a control that vanishes reads as
+            a feature that does not exist. */}
+        {strategy.requires_source ? (
+          <button
+            disabled
+            title="This rule has no setups of its own — it only trades after another strategy loses. Add it inside a stack, under the strategy whose losses it should recover."
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-semibold bg-bg-sunken text-text-tertiary border border-border-subtle cursor-not-allowed flex-shrink-0"
+          >
+            Needs a parent
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 transition-opacity flex-shrink-0"
+          >
+            <Play size={13} /> Run Backtest
+          </button>
+        )}
       </div>
 
       {/* Labeled chips — no ambiguity about what each value means */}

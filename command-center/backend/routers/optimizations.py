@@ -29,6 +29,7 @@ from services.optimization_runner import (
 )
 
 from routers._locks import ensure_platform_idle
+from routers._source_guard import refuse_if_needs_source
 from routers.backtests import _row_to_summary
 
 router = APIRouter(prefix="/optimizations", tags=["optimizations"])
@@ -41,6 +42,10 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     strategy = lab_db.get_strategy(req.strategy_id)
     if not strategy:
         raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
+
+    # A rule with no setups of its own cannot be run alone — it would return an empty book
+    # that reads as "found nothing". See routers/_source_guard.py.
+    refuse_if_needs_source(strategy)
 
     if req.ruleset_id:
         if not lab_db.get_ruleset(req.ruleset_id):

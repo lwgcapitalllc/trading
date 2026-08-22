@@ -2045,6 +2045,15 @@ reason on the title. Same rule as an unassignable account on the Accounts tab: a
 vanishes reads as a feature that does not exist, and a reader who came looking for the rule needs
 to be told where it went.
 
+🔴 **AND SO DOES `StrategyDetail.tsx`, WHICH WAS MISSED AND IS THE WHOLE LESSON HERE (2026-08-21).**
+Filtering the pickers and greying the LIST page's Run left the rule's own detail page with an
+unconditional Run Backtest button and a full Run modal — so it could still be run alone, from the
+UI, in two clicks. **A strategy is reachable from more than one place, and guarding the list is not
+guarding the strategy.** Both pages now read the same flag and render the same disabled button with
+the same title. ⚠ **The button is a LABEL either way** — the gate is `routers/_source_guard.py`,
+which refuses every endpoint that starts a job from a strategy id; see `backend/CLAUDE.md`. There
+is no automated test on either button, because Playwright is out of the suite by design.
+
 ## A NEW stack is always a SHARED ACCOUNT — the mode picker is gone
 
 **2026-08-10, Aaron's call:** *"I would never ever ever wanna do a screen. I would always wanna do

@@ -17,8 +17,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import config as cfg  # noqa: E402
 from models import StackRequest  # noqa: E402
+from routers._source_guard import refuse_if_needs_source  # noqa: E402
 from routers.stacks import _validate_recovery_leg  # noqa: E402
 from services import strategy_scanner  # noqa: E402
+
+# 🔴 MODULE LEVEL, not inside the first test that happens to need it. It WAS inside one, and the
+# next two tests imported `loss_recovery` on the back of that side effect — which held only while
+# pytest ran them in file order on one worker. Adding tests to this file changed how `-n auto`
+# distributes it, and the last test landed on a worker where the insert had never run. **A test
+# that depends on another test having run is a test that passes for a reason nobody chose.**
+sys.path.insert(0, str(Path(cfg.MONOREPO_ROOT) / "strategies" / "python"))
 
 
 def _req(**kw) -> StackRequest:
@@ -119,7 +127,6 @@ def test_an_ATR_stop_mode_is_refused_by_the_lab_config():
     """A shared-account stack has no canonical ATR, and a private copy would be a second
     implementation of an indicator this repo keeps exactly one of. The leg refuses them at
     construction; the form must never offer one."""
-    sys.path.insert(0, str(Path(cfg.MONOREPO_ROOT) / "strategies" / "python"))
     from loss_recovery import STOP_MODES, RecoveryLabConfig
 
     assert "atr" not in STOP_MODES and "swing" not in STOP_MODES
@@ -148,3 +155,64 @@ def test_the_defaults_are_the_measured_configuration():
     assert rule.stop_mode == "structural"
     assert rule.soft_stop_r is None  # 0 on the form means OFF in the engine
     assert rule.horizon_days > rule.max_days, "or the time stop never fires"
+
+
+# ── running it ALONE ──────────────────────────────────────────────────────────────────
+# 🔴 The stack builder was only half the hole. The rule also has a strategy DETAIL page with its
+# own Run button, and a Run modal that submits straight to the backtest endpoint — so it could be
+# run on its own, from the UI, with nothing refusing it. It would have completed, graded, and
+# returned an empty book that reads as "this rule finds nothing".
+def test_a_rule_that_needs_a_source_cannot_be_run_alone():
+    with pytest.raises(HTTPException) as e:
+        refuse_if_needs_source(
+            {"id": "loss_recovery", "name": "Loss Recovery", "requires_source": 1}
+        )
+    assert e.value.status_code == 400
+    # The refusal has to say what to do INSTEAD, or it is a dead end rather than a signpost.
+    assert "Loss Recovery" in e.value.detail
+    assert "stack" in e.value.detail
+
+
+def test_an_ordinary_strategy_is_NOT_refused():
+    """A guard that refuses everything passes its own refusal test and breaks the app."""
+    refuse_if_needs_source({"id": "mpc_sos_fade", "name": "A+ SOS Fade", "requires_source": 0})
+
+
+def test_a_missing_strategy_is_left_to_the_404():
+    """Not this guard's question. Swallowing it here would turn a typo'd id into 'needs a parent'."""
+    refuse_if_needs_source(None)
+
+
+def test_every_endpoint_that_STARTS_a_job_from_a_strategy_id_refuses_a_dependent_rule():
+    """The durable half — this is what catches the NEXT endpoint somebody adds.
+
+    The bug was not that one guard was missing; it was that three separate routers each resolve a
+    strategy off the request and start work, and nothing tied them together. So the rule is
+    structural: if a function looks up `req.strategy_id`, it must also call the guard.
+    """
+    import ast
+
+    routers = Path(__file__).resolve().parents[1] / "routers"
+    checked = []
+    for path in sorted(routers.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            body = ast.dump(fn)
+            if "attr='get_strategy'" not in body or "attr='strategy_id'" not in body:
+                continue
+            # Only the ones that CREATE work — a read-only listing resolves a strategy for its
+            # name and must not be told it needs a parent. Deliberately matched on ANY insert
+            # rather than a named list of them: the sweep creator uses `insert_run_sweep`, which
+            # a named list did not have and would have skipped in silence. Over-including forces
+            # somebody to decide; under-including is how this hole was left open in the first
+            # place.
+            if "attr='insert_" not in body:
+                continue
+            checked.append(f"{path.name}::{fn.name}")
+            assert "refuse_if_needs_source" in body, (
+                f"{path.name}::{fn.name} starts a job from a strategy id but never asks whether "
+                f"that strategy can run alone. See routers/_source_guard.py."
+            )
+    assert len(checked) >= 3, f"expected the three job creators, found {checked}"

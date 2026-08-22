@@ -44,6 +44,7 @@ from services.optimization_runner import resolve_opt_eval_rulesets, retry_single
 from services.sweep_runner import retry_single_sweep_run
 
 from routers._locks import ensure_platform_idle
+from routers._source_guard import refuse_if_needs_source
 
 log = logging.getLogger(__name__)
 
@@ -533,6 +534,10 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     strategy = lab_db.get_strategy(req.strategy_id)
     if not strategy:
         raise HTTPException(404, f"Strategy '{req.strategy_id}' not found")
+
+    # A rule with no setups of its own cannot be run alone — it would return an empty book
+    # that reads as "found nothing". See routers/_source_guard.py.
+    refuse_if_needs_source(strategy)
 
     ruleset_ids = req.ruleset_ids
     for rid in ruleset_ids:

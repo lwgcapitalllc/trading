@@ -2611,6 +2611,45 @@ none of it existed — so non-vacuity is by MUTATION: allowing a recovery on a s
 parent outside the stack, and dropping the `requires_source` flag each turn their own named test
 red.
 
+## 🔴 A rule that NEEDS A PARENT is refused at every endpoint that starts a job (2026-08-21)
+
+**The tick box was only half the hole.** `loss_recovery` also has a strategy DETAIL page with its
+own Run button and its own Run modal, and that modal posts straight to `POST /backtests/run`. So
+the rule could be run alone, from the UI, with nothing refusing it. Found by opening the page.
+
+🔴 **It would not have errored.** Handed no source the rule replays the whole frame, arms off
+nothing, and returns an EMPTY book — a run that completes, grades, stores KPIs and reads as *this
+rule finds no trades*. That is rule 1 (never let "found nothing" and "was never asked" be the same
+value), and it is why this is a 400 rather than a UI tidy-up.
+
+`routers/_source_guard.py::refuse_if_needs_source(strategy)` is called by all three endpoints that
+CREATE a job from a strategy id: `backtests.trigger_backtest`, `optimizations.trigger_optimization`
+and `sweeps.trigger_sweep`. **It reads the FLAG, never the id**, so the next dependent rule inherits
+the refusal by declaring `requires_source` in its package, with no router change.
+
+⚠ **Retry, rerun and stress-test are deliberately NOT guarded** — each acts on a row that already
+exists, and no such row can be created once every creation path refuses. CHECKED rather than
+assumed: `backtest_runs` held zero rows for the flagged strategy when this landed. **A new creation
+path must add the call.**
+
+⚠ **A missing strategy passes straight through.** That is somebody else's 404, and swallowing it
+here would turn a typo'd id into *needs a parent*.
+
+⚠ **The frontend half is a LABEL; this is the gate.** `StrategyDetail.tsx` now swaps its Run for a
+disabled *Needs a parent*, matching the list page — and there is NO automated test on it, because
+Playwright is out of the suite by design. Rule 7: a label is a claim about code somewhere else.
+
+**Tests:** four more in `tests/test_recovery_leg_wiring.py` (16 total). The durable one is
+`test_every_endpoint_that_STARTS_a_job_from_a_strategy_id_refuses_a_dependent_rule` — an AST sweep
+of `routers/` for any function that resolves `req.strategy_id` AND inserts, asserting it calls the
+guard. ⚠ **It matches ANY `insert_*`, not a named list**: the first version named `insert_run` and
+`insert_optimization` and skipped `sweeps.trigger_sweep` in silence, because that one calls
+`insert_run_sweep`. **Under-including is exactly how the hole was left open in the first place.**
+All four watched RED by mutation — dropping the call, never raising, raising for everything, and
+raising on a missing row — plus a fifth on the refusal text losing its *add it inside a stack*
+instruction. MEASURED live against the running backend: the rule refused 400 carrying the
+instruction, and an ordinary strategy passed the guard and was refused by the history floor.
+
 ## History floors — blocking a window the broker has no bars for
 
 **MT5 does not error when a symbol lacks history at the requested timeframe — it returns the nearest
