@@ -24,7 +24,7 @@ Earlier: 2026-07-31 — 🔴 **THE BOT WAS RELYING ON AN ENGINE DEFAULT IT NEVER
 ## The combined re-entry value (2026-08-21) — the two control replays that caught it
 
 Moved out of `CLAUDE.md` under the doc-size rule. The RULES both of these produced live there, in
-*The deep-edge reclaim trigger*; this is the evidence behind them.
+*Reclaim Entry*; this is the evidence behind them.
 
 
 **Neither failure was found by a test.** The suite was green, the parity gate was green, and the

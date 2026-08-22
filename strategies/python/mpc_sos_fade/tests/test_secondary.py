@@ -1005,7 +1005,7 @@ def test_zero_or_negative_reentry_risk_is_REFUSED_not_clamped():
     assert SosFadeConfig(exec_secondary=False, exec_sec_risk_pct=0.0).exec_sec_risk_pct == 0.0
 
 
-# ── The DEEP-EDGE RECLAIM trigger — the swept-stop re-entry ──────────────────────────────
+# ── RECLAIM ENTRY — the swept-stop re-entry ──────────────────────────────
 # The only trigger of the three built for a primary that LOST: stopped at the deep edge, price
 # reclaims that level instead of breaking the leg, and a limit rests back AT it for the retest.
 # Every test below drives `SecondaryArm.update` one 1m bar at a time, because the whole feature is
@@ -1021,7 +1021,7 @@ def _rec_cfg(**kw):
     that was stopped at the deep edge — and `test_reclaim_cannot_fire_under_the_breakeven_gate`
     is the test that says so out loud.
     """
-    kw.setdefault("exec_sec_trigger", "Deep-edge reclaim")
+    kw.setdefault("exec_sec_trigger", "Reclaim Entry")
     # The reclaim half reads its OWN fields (`exec_rec_*`) rather than the shared `exec_sec_*`
     # ones, so that the gap half can be live alongside it wanting the opposite precondition and a
     # different stop. These setdefaults are the shipped defaults restated, so a test that overrides
@@ -1179,7 +1179,7 @@ def _both_cfg(**kw):
     """The combined trigger at its shipped-adjacent defaults: the gap half on `Breakeven`, the
     reclaim half on `Stopped only`. Config validation refuses any other pairing, so these two are
     not a choice this helper is making."""
-    kw.setdefault("exec_sec_trigger", "FVG in zone + Deep-edge reclaim")
+    kw.setdefault("exec_sec_trigger", "FVG in zone + Reclaim Entry")
     kw.setdefault("exec_sec_require", "Breakeven")
     kw.setdefault("exec_rec_require", "Stopped only")
     return SosFadeConfig(exec_secondary=True, **kw)
@@ -1276,7 +1276,7 @@ def test_the_combined_trigger_refuses_a_precondition_pairing_that_can_overlap():
 def test_the_reclaim_refuses_a_stop_anchor_it_cannot_price():
     """Its entry is a FIXED price, so a 1m swing can land on either side of it. Refused for the
     plain value and the combined one alike."""
-    for trigger in ("Deep-edge reclaim", "FVG in zone + Deep-edge reclaim"):
+    for trigger in ("Reclaim Entry", "FVG in zone + Reclaim Entry"):
         for anchor in ("1m leg", "swing low"):
             with pytest.raises(ValueError, match="exec_rec_stop"):
                 SosFadeConfig(exec_secondary=True, exec_sec_trigger=trigger,

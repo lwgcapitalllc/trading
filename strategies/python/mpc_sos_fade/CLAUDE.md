@@ -909,10 +909,10 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
   is a live-pipeline item, and it is correctly gated behind this being measured first.
 
-### The deep-edge reclaim trigger — and the combined value that runs it beside the gap
+### Reclaim Entry, and the combined value that runs it beside the gap
 
-**Added 2026-08-21.** Two new values for `exec_sec_trigger`: **`Deep-edge reclaim`** and
-**`FVG in zone + Deep-edge reclaim`**, which runs it alongside the shipped gap trigger.
+**Added 2026-08-21.** Two new values for `exec_sec_trigger`: **`Reclaim Entry`** and
+**`FVG in zone + Reclaim Entry`**, which runs it alongside the shipped gap trigger.
 
 The reclaim exists because of a geometry fact this file already records: **the `1.0` sits a median
 0.43R past the `0.886`**, so a primary stopped at the `0.886` that then turns can be re-entered AT

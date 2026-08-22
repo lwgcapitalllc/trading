@@ -230,8 +230,8 @@ class SecondaryArm:
         # rather than one mode, so every block below reads the question it actually cares about
         # ("is the gap half live") instead of enumerating which combined values include it — the
         # shape that would need editing again the next time a value is added.
-        gap_trigger = _trig in ("FVG in zone", "FVG in zone + Deep-edge reclaim")
-        rec_trigger = _trig in ("Deep-edge reclaim", "FVG in zone + Deep-edge reclaim")
+        gap_trigger = _trig in ("FVG in zone", "FVG in zone + Reclaim Entry")
+        rec_trigger = _trig in ("Reclaim Entry", "FVG in zone + Reclaim Entry")
 
         # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
         #    A new break of structure also resets the dead-leg flag (the leg is fresh again).

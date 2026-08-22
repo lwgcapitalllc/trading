@@ -741,7 +741,7 @@ class SosFadeConfig:
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry"
-    #   ∈ {1m shift, Deep-edge reclaim, FVG in zone, FVG in zone + Deep-edge reclaim}
+    #   ∈ {1m shift, Reclaim Entry, FVG in zone, FVG in zone + Reclaim Entry}
     #   WHAT HAS TO HAPPEN before a re-entry rests its order. Four values:
     #     "1m shift"    — a 1-minute break of structure inside the zone, then a limit at
     #                   `exec_sec_retrace` of that 1m leg. The only rule that existed before
@@ -760,17 +760,17 @@ class SosFadeConfig:
     #   had left; its limit rested at 3931.84 and the lowest price for the next 19 hours was 3939.86,
     #   so it missed by $8.02 while price ran to 4046.22. A gap sat at 3916.47–3922.66, INSIDE the
     #   zone, and price traded into it at 02:59.
-    #     "Deep-edge reclaim" (added 2026-08-20) — the SWEPT-STOP case, and the only trigger of the
+    #     "Reclaim Entry" (added 2026-08-20) — the SWEPT-STOP case, and the only trigger of the
     #                   three built for a primary that LOST. The primary is stopped at the deep edge
     #                   (`exec_sec_zone_deep`, the 0.886 by default); price does not go on to break
     #                   the leg but instead trades back up through that level; a limit then rests AT
     #                   the deep edge for the retest. Risk is the deep-edge-to-stop gap, not the
     #                   primary's full stop distance — a median 0.43R of it, so the same cash risk
     #                   buys a ~2.3x position.
-    #     "FVG in zone + Deep-edge reclaim" (added 2026-08-21) — BOTH of the above, live at once.
+    #     "FVG in zone + Reclaim Entry" (added 2026-08-21) — BOTH of the above, live at once.
     #                   See the block below on why that is safe and what it measured.
     #   🔴 THE RECLAIM HALF READS ITS OWN SETTINGS — `exec_rec_*`, NOT `exec_sec_*`. It reads them
-    #   under the combined value and under the plain "Deep-edge reclaim" value alike, so the trigger
+    #   under the combined value and under the plain "Reclaim Entry" value alike, so the trigger
     #   means one thing in both. That is what makes the combined mode possible at all: the two
     #   halves want different preconditions, different stops and different ladders, and a single
     #   set of fields can only hold one of each. ⚠ It also means `exec_sec_stop`, `exec_sec_tp_r`,
@@ -1113,13 +1113,13 @@ class SosFadeConfig:
                 f"exec_sec_risk_pct must be a positive percentage of the primary's risk, got "
                 f"{self.exec_sec_risk_pct!r}. Switch exec_secondary OFF to stop taking re-entries.")
         if self.exec_secondary and self.exec_sec_trigger not in (
-                "1m shift", "FVG in zone", "Deep-edge reclaim",
-                "FVG in zone + Deep-edge reclaim"):
+                "1m shift", "FVG in zone", "Reclaim Entry",
+                "FVG in zone + Reclaim Entry"):
             # Refuse rather than fall through to the shipped trigger: a typo that silently ran the
             # 1m shift would be indistinguishable, on the page, from the gap trigger finding nothing.
             raise ValueError(
-                f"exec_sec_trigger must be one of ['1m shift', 'Deep-edge reclaim', "
-                f"'FVG in zone', 'FVG in zone + Deep-edge reclaim'], got "
+                f"exec_sec_trigger must be one of ['1m shift', 'Reclaim Entry', "
+                f"'FVG in zone', 'FVG in zone + Reclaim Entry'], got "
                 f"{self.exec_sec_trigger!r}.")
         if self.exec_secondary and self.exec_sec_stop not in ("1m leg", "swing low", "0.886", "1.0"):
             raise ValueError(
@@ -1127,9 +1127,9 @@ class SosFadeConfig:
                 f"{self.exec_sec_stop!r}.")
         # ── the RECLAIM half's own fields, checked whenever the trigger names it ──────────────
         rec_on = self.exec_secondary and self.exec_sec_trigger in (
-            "Deep-edge reclaim", "FVG in zone + Deep-edge reclaim")
+            "Reclaim Entry", "FVG in zone + Reclaim Entry")
         gap_on = self.exec_secondary and self.exec_sec_trigger in (
-            "FVG in zone", "FVG in zone + Deep-edge reclaim")
+            "FVG in zone", "FVG in zone + Reclaim Entry")
         if rec_on and self.exec_rec_stop not in ("0.886", "1.0"):
             # The reclaim latches no 1m leg, so "1m leg" has nothing to read; and it is stricter
             # than the gap trigger about "swing low" because its entry is a FIXED price (the deep
@@ -1163,7 +1163,7 @@ class SosFadeConfig:
             # and the symptom is not an error: it is a re-entry resting at the other half's price
             # with the other half's stop, which looks entirely plausible on the page.
             raise ValueError(
-                "exec_sec_trigger='FVG in zone + Deep-edge reclaim' requires "
+                "exec_sec_trigger='FVG in zone + Reclaim Entry' requires "
                 "exec_sec_require='Breakeven' (the gap half) and exec_rec_require='Stopped only' "
                 f"(the reclaim half), got {self.exec_sec_require!r} and "
                 f"{self.exec_rec_require!r}. Those are the only two preconditions that cannot both "
