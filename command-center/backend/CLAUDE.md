@@ -3705,6 +3705,28 @@ and the docstring says so; `after` is a fact about a BOOK, the same shape as `ki
 Tests: `tests/test_chart_spec_trade_book.py` (4, all watched RED by mutation — dropping the emit,
 making it unconditional, and dropping the type check).
 
+## The commit-gate probe writes PER-WORKER files (2026-08-21)
+
+`tests/test_deploy_commit_gate.py` drives the real `commit-msg` hook against a scratch message and
+a scratch index under `.git`. Both were FIXED names, and both suites run `-n auto` — so three tests
+in this one file wrote and then `unlink`ed the same two paths, and under xdist one worker deleted
+the file another was still using. The hook then exited non-zero with
+`grep: .git/COMMIT_EDITMSG_probe: No such file or directory`, which reads as *"the deploy gate is
+broken"* rather than *"the test tripped over itself"*.
+
+MEASURED 2026-08-21: green 3/3 serially, red 3/3 under `-n auto`, and it is step 2 of
+`scripts/run_all_tests.sh` — **so the gate has been intermittently red for everyone, on a file
+nobody had touched.** Now `_probe_paths()` keys both names on the PID: 4/4 green in parallel.
+
+⚠ **This is the exact failure the root CLAUDE.md warns about** — *"a new test that writes a fixed
+path breaks other tests non-deterministically, which is the worst failure shape a suite has"* —
+and it was already in the suite when that line was written. **The rule is not "don't add one", it
+is "go and look for the ones already there" the first time a suite goes parallel.**
+
+⚠ **Keyed on the PID, not `PYTEST_XDIST_WORKER`**, so it is still correct when the file is run
+outside xdist, where that variable does not exist and a `.get()` default would put every serial
+run back on one shared name.
+
 ## The re-entry's fill feed is 5m, and `EXTRA_FEEDS` holds a COPY on purpose (2026-08-21)
 
 `run_feeds.EXTRA_FEEDS["exec_secondary"]` moved `1` → `5`, and `python_runner` now loads whatever

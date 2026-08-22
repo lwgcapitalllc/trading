@@ -44,6 +44,26 @@ _BOTS = _BACKEND / "routers" / "bots.py"
 _PROBE_STAGED = "algos/markets/fx/instances/mpc_sos_fade_demo/config.json"
 
 
+def _probe_paths() -> tuple[Path, Path]:
+    """This process's OWN scratch message + index under `.git`, unique per worker.
+
+    🔴 They were two FIXED names, and the suite runs `-n auto`. Three tests here write and then
+    `unlink` the same two paths, so under xdist one worker deletes the file another is mid-way
+    through using — `grep: .git/COMMIT_EDITMSG_probe: No such file or directory`, and the hook
+    exits non-zero for a reason that has nothing to do with what is being tested. MEASURED
+    2026-08-21: green 3/3 serially, red 3/3 under `-n auto`, and it is in `run_all_tests.sh`, so
+    the gate has been intermittently red for everyone.
+
+    ⚠ This is the exact failure the root CLAUDE.md names — *"a new test that writes a fixed path
+    breaks other tests non-deterministically, which is the worst failure shape a suite has"* — and
+    it was already in the suite when that line was written.
+    ⚠ Keyed on the PID rather than `PYTEST_XDIST_WORKER`, so it is also correct when the file is
+    run outside xdist entirely, where that variable does not exist.
+    """
+    tag = os.getpid()
+    return (_REPO / ".git" / f"COMMIT_EDITMSG_probe.{tag}", _REPO / ".git" / f"index_probe.{tag}")
+
+
 def _run_hook(message: str) -> subprocess.CompletedProcess:
     """Run the REAL hook against a message, with a staged set WE control.
 
@@ -68,8 +88,7 @@ def _run_hook(message: str) -> subprocess.CompletedProcess:
     ⚠ **`--force-remove` rather than staging a modification**, because writing a blob to stage a
     change would put a loose object in `.git/objects` for a test that claims to commit nothing.
     """
-    msg = _REPO / ".git" / "COMMIT_EDITMSG_probe"
-    index = _REPO / ".git" / "index_probe"
+    msg, index = _probe_paths()
     msg.write_text(message, encoding="utf-8")
     env = {**os.environ, "GIT_INDEX_FILE": str(index)}
     try:
@@ -109,7 +128,7 @@ def test_the_probe_really_stages_something():
     turns this red AND `test_a_message_without_a_docs_line_is_refused_by_the_real_hook` with it,
     which is exactly the state the suite was silently in before 2026-08-14.
     """
-    index = _REPO / ".git" / "index_probe"
+    _, index = _probe_paths()
     env = {**os.environ, "GIT_INDEX_FILE": str(index)}
     try:
         _seed_probe_index(env, index)
