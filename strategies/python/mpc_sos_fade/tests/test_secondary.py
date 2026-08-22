@@ -1502,3 +1502,99 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
                       "exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct",
                       "exec_sec_retrace", "exec_sl_deep"}, sorted(greyed)
     assert all(rows[n].get("disable_note") for n in greyed), "a greyed row with no reason on it"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT THE TRADE BEFORE IT DID — the fact the price chart tags a re-entry with
+#
+# Aaron, 2026-08-21, reading a chart with both triggers on: "so I could tell the difference
+# between a secondary that was re-entering from a breakeven versus a secondary that's re-entering
+# from the original primary trade at a stop loss." Both wore one `SEC`, and there are 107 of them.
+#
+# 🔴 IT IS A SECOND QUESTION, NOT A RENAMING OF `src`. `src` is the trigger that was CONFIGURED;
+# this is the outcome that was OBSERVED. Under every shipped configuration they agree, which is
+# exactly why they must not be collapsed into one field — the day somebody points the gap half at
+# "Stopped only", a gap-triggered re-entry is a re-entry after a LOSS and the chart has to say so.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("rest", [True, False])
+def test_the_arm_stamps_a_STOPPED_primary_on_a_reclaim(rest):
+    """MUTATION: return None from `_primary_fate` for the lost case, or stop passing `l_after`
+    through either `SecArm` return.
+
+    🔴 BOTH VALUES OF THE RESTING-ORDER RULE, because `SecondaryArm.update` has TWO `SecArm`
+    returns and that rule picks which one runs. Written without the parameter first, and the
+    mutation that strips the field off the plain return reddened NOTHING — the rule had been
+    defaulted ON in the same working tree, so every test in this file was leaving through the
+    other exit and the untested return was free to be wrong. A duplicated construction is only
+    as covered as its least-visited branch."""
+    out = _feed(SecondaryArm(_rec_cfg(exec_sec_rest_and_leave=rest)),
+                [(101.0, 100.6), (101.5, 100.9)])
+    assert out[1].l_armed is True
+    assert out[1].l_after == "stopped"
+
+
+def test_the_arm_stamps_a_BREAKEVEN_primary_on_the_gap_half():
+    """The other side of the same claim, through the trigger that ships."""
+    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+                                        exec_sec_stop="0.886"))
+    out = arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, zone_close=102.5, ny_hour=10,
+                        flat=True, be_sos_l=500, be_sos_s=None, poi_edge_l=103.0)
+    assert out.l_armed is True
+    assert out.l_after == "breakeven"
+
+
+def test_a_STOPPED_primary_is_never_reported_as_a_plain_close():
+    """🔴 The ordering rule. A stopped primary stamps BOTH the closed latch and the lost one — the
+    first is written on every close whatever the outcome — so asking "closed?" first calls every
+    stop-out a plain close, and the chart would tag a loss re-entry as something else entirely.
+
+    MUTATION: move the `closed_sos` branch above the `lost_sos` branch in `_primary_fate`.
+    """
+    fate = SecondaryArm._primary_fate
+    assert fate(500, None, 500, 500) == "stopped"     # closed AND lost — lost is the true one
+    assert fate(500, None, 500, None) == "closed"     # closed, never lost
+    assert fate(500, 500, 500, None) == "breakeven"   # reached TP1
+
+
+def test_a_primary_it_cannot_ask_about_is_None_rather_than_a_guess():
+    """Never let "no" and "cannot ask" be one value — a re-entry armed through the precondition
+    that asks nothing follows a primary that may not have traded at all.
+
+    MUTATION: return "closed" instead of None from either exit of `_primary_fate`."""
+    fate = SecondaryArm._primary_fate
+    assert fate(None, 500, 500, 500) is None          # no setup on this side at all
+    assert fate(500, 400, 400, 400) is None           # the latches name a DIFFERENT setup
+
+    arm_sm = SecondaryArm(_rec_cfg(exec_rec_require="None"))
+    out = _feed(arm_sm, [(101.0, 100.6), (101.5, 100.9)], lost_l=None)
+    assert out[1].l_armed is True, "the fixture never armed — nothing here proves anything"
+    assert out[1].l_after is None
+
+
+def test_an_unarmed_side_publishes_no_outcome():
+    """The field follows the arm, like every other field on the record. MUTATION: drop the
+    `if l_armed else None` guard and this goes red."""
+    for rest in (True, False):
+        out = _feed(SecondaryArm(_rec_cfg(exec_sec_rest_and_leave=rest)), [(101.0, 100.6)])
+        assert out[0].l_armed is False and out[0].l_after is None
+
+
+def test_the_outcome_reaches_the_CLOSED_TRADE_and_never_a_primary():
+    """End of the wire on this side: the lab writes it out of `Trade.after`, so a field that stops
+    at the arm is a chart tag that never appears. MUTATION: drop `after=self._entry_after` from
+    the Trade construction, or `self._entry_after = pend.after` from the fill."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    def fill(kind, **pend_kw):
+        ex = Execution(SosFadeConfig(exec_secondary=True))
+        pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, **pend_kw)
+        bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                              last_conf_high=None, last_conf_low=None)
+        ex._open_position(pend, 100.0, bar, Decision(index=1), kind=kind)
+        return ex
+
+    assert fill("secondary", src="reclaim", after="stopped")._entry_after == "stopped"
+    assert fill("secondary", src="gap", after="breakeven")._entry_after == "breakeven"
+    assert fill("secondary", src="gap")._entry_after is None       # a caller that cannot tell
+    assert fill("primary")._entry_after is None                    # never on the setup itself

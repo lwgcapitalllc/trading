@@ -135,6 +135,14 @@ class SecArm:
     # is what armed THIS trade, and a fourth trigger added later answers it the same way.
     l_src: Optional[str] = None
     s_src: Optional[str] = None
+    # WHAT THE PRIMARY ON THIS SETUP ACTUALLY DID — "breakeven" | "stopped" | "closed", or None.
+    # A different question from `*_src` above, and they are carried separately on purpose: `src`
+    # is the trigger that was CONFIGURED, this is the outcome that was OBSERVED. They agree under
+    # every shipped configuration and come apart the moment somebody moves a precondition — the
+    # gap half set to "Stopped only" is a gap-triggered re-entry after a LOSS. Reporting only:
+    # nothing that arms, prices or sizes an order reads it.
+    l_after: Optional[str] = None
+    s_after: Optional[str] = None
 
 
 class SecondaryArm:
@@ -287,6 +295,11 @@ class SecondaryArm:
         # arm, exactly as before.
         gate_l = self._primary_gate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l)
         gate_s = self._primary_gate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s)
+        # The same three latches read as an OUTCOME rather than as a door. Computed here so it
+        # cannot disagree with the gate above — one read of the three stamps, two questions asked
+        # of it.
+        after_l = self._primary_fate(seq.l_sos_bar, be_sos_l, closed_sos_l, lost_sos_l)
+        after_s = self._primary_fate(seq.s_sos_bar, be_sos_s, closed_sos_s, lost_sos_s)
         # The RECLAIM half asks its OWN question (`exec_rec_require`, default "Stopped only"), so
         # the two halves can be live together wanting opposite things of the primary. Under the
         # combined value config validation has already refused any pairing but Breakeven/Stopped
@@ -580,6 +593,8 @@ class SecondaryArm:
                 s_tp1=sig.fibo_p2, s_tp2=sig.fibo_p1, s_leg=s_leg_v,
                 l_src=l_src_v if l_armed else None,
                 s_src=s_src_v if s_armed else None,
+                l_after=after_l if l_armed else None,
+                s_after=after_s if s_armed else None,
             )
         return SecArm(
             l_armed=l_armed, l_edge=l_edge,
@@ -590,6 +605,8 @@ class SecondaryArm:
             s_tp1=sig.fibo_p2, s_tp2=sig.fibo_p1, s_leg=self._s_leg,
             l_src=l_src if l_armed else None,
             s_src=s_src if s_armed else None,
+            l_after=after_l if l_armed else None,
+            s_after=after_s if s_armed else None,
         )
 
     def _rested(self, side, sos_bar, flat, armed, edge, stop, leg, src):
@@ -670,6 +687,31 @@ class SecondaryArm:
         if p7 is None or p10 is None:
             return None
         return p7 + (p10 - p7) * ratio
+
+    @staticmethod
+    def _primary_fate(sos, be_sos, closed_sos, lost_sos) -> Optional[str]:
+        """What the PRIMARY on this 15m leg DID — for the chart, never for a decision.
+
+        🔴 `None` means UNKNOWN and must stay distinguishable from every answer. A re-entry armed
+        through the "None" precondition follows a primary that may not have traded at all, and a
+        label guessing "breakeven" there would be a fact invented for a chip. Same rule as
+        everywhere else here: never let *no* and *cannot ask* be one value.
+
+        ⚠ Stopped is tested FIRST. `_prim_closed_sos_*` is stamped on every close whatever the
+        outcome, so a stopped primary sets both it and `_prim_lost_sos_*`; asking "closed?" first
+        would call every stop-out a plain close. The two cannot both be true with breakeven — a
+        primary either reached TP1 or closed at stage 0 — which is the same disjointness the
+        combined trigger's safety case rests on.
+        """
+        if sos is None:
+            return None
+        if lost_sos == sos:
+            return "stopped"
+        if be_sos == sos:
+            return "breakeven"
+        if closed_sos == sos:
+            return "closed"
+        return None
 
     def _primary_gate(self, sos, be_sos, closed_sos, lost_sos, mode=None) -> bool:
         """What the PRIMARY on this 15m leg must have done — `exec_sec_require`.

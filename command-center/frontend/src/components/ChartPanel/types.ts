@@ -150,6 +150,14 @@ export interface ChartTrade {
    *  fields used to degrade to a bare rectangle, which read as a different KIND of thing rather
    *  than as a thinner record. */
   kind?: 'primary' | 'secondary' | 'recovery'
+  /** For a `secondary` only: what the trade it FOLLOWED did — `breakeven` is a scratch, `stopped`
+   *  is a full stop-out. It decides the tag (`BE+` / `SL+`), because which of the two happened is
+   *  the reason there is a second trade on the leg at all.
+   *
+   *  ⚠ ABSENT means the run could not tell, not "breakeven". A re-entry can be armed through a
+   *  precondition that asks nothing of the trade before it, and a run stored before 2026-08-21
+   *  carries no `after` at all — both degrade to the plain `SEC` tag. */
+  after?: 'breakeven' | 'stopped' | 'closed'
   exitReason?: string // carried in data; never drawn on the chart
   // Profit-depth fields — all optional; absent ⇒ the trade falls back to the plain box.
   mfePrice?: number // deepest FAVOURABLE price the hold reached (bottom of the green for a short)

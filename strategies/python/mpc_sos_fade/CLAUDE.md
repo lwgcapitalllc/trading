@@ -937,8 +937,22 @@ setup, ZERO overlap in time, and neither ever blocks a primary.**
 
 #### The numbers — `run_dual` over 187,102 M15 / 2,801,964 M1 bars, 2018-09-14 → 2026-08-18
 
-One account, one position slot, `fill_model='bar'`, no costs. **All 181 primaries are byte-identical
-to the primary-only book in every row**, so every difference is the re-entries.
+One account, one position slot, `fill_model='bar'`, no costs.
+
+🔴 **ONE BALANCE, IN TIME ORDER — NOT A SECOND BOOK ADDED AFTERWARDS.** `run_dual` walks both feeds
+on one clock through one `Execution`, and a re-entry sizes off `self.equity` at the moment its
+order is PLACED, so the balance a primary sizes against already holds every re-entry that closed
+before it. **MEASURED: 179 of the 181 primaries carry a DIFFERENT position size** in the reclaim
+book than in the primary-only one (the first two predate the first re-entry) — the third is
+$906 of risk against $1,042, and it compounds from there. This is the opposite of
+`exec_recovery`, which is computed over a FINISHED book and can therefore neither compound into
+the main curve nor be blocked by it; see `strategies/python/loss_recovery/CLAUDE.md`.
+
+⚠ **"Identical" below means the 181 primaries take the same SETUPS at the same prices for the same
+R** — no primary is displaced, delayed or blocked, which is what makes the R difference attributable
+to the re-entries. **It does NOT mean their dollars are unchanged**, and an earlier draft of this
+line said "byte-identical in every row", which reads as exactly the bolt-on defect this paragraph
+exists to deny. **A sentence about a comparison has to name the BASIS it holds on.**
 
 | book | trades | re-ent | R | re-ent R | x at 10% | worst dd | risk / x at a −50% ceiling |
 |---|---|---|---|---|---|---|---|
@@ -1039,6 +1053,62 @@ the ladder, 1 the counter-case, 1 tying the contract's greyed set to them. **9 m
 **PARITY:** `compare_strategy.py` green on the 2026-08-21 export at `--warmup 100`. ⚠ **The gate is
 structurally blind to all of this** — it replays 15m bars through `.run()` and every re-entry lever
 lives on the 1m path behind `run_dual`.
+
+#### A re-entry records WHAT THE TRADE BEFORE IT DID, and that is a second question (2026-08-21)
+
+`SecArm.l_after` / `s_after` → `_Pending.after` → `Trade.after`: **"breakeven" | "stopped" |
+"closed" | None**, reporting-only, read by nothing that arms, prices or sizes. The price chart tags
+a re-entry `BE+` or `SL+` off it — Aaron's ask, looking at a chart with both triggers on and 107
+re-entries all wearing one `SEC`.
+
+🔴 **It is NOT a rename of `*_src`, and collapsing the two is the mistake to avoid.** `src` is the
+trigger that was CONFIGURED; this is the outcome that was OBSERVED. They agree under every shipped
+configuration, which is exactly why they must stay two fields — point the gap half at
+`Stopped only` and a gap-triggered re-entry is a re-entry after a LOSS, and the chart has to say so.
+
+⚠ **`None` means the run could not tell, and must never become a word downstream.** A re-entry
+armed through the `None` precondition follows a primary that may not have traded at all.
+⚠ **Stopped is tested before closed.** `_prim_closed_sos_*` is stamped on every close whatever the
+outcome, so a stopped primary sets both latches; asking "closed?" first calls every stop-out a
+plain close.
+
+🔴 **`SecondaryArm.update` has TWO `SecArm` returns and a test can leave through only one.** The
+first version of these tests passed while the mutation that stripped the field off the plain return
+reddened NOTHING — the resting-order rule had been defaulted ON in the same tree, so every test in
+the file was exiting through the other branch and the untested return was free to be wrong. **A
+duplicated construction is only as covered as its least-visited branch**, and the fix was to
+parametrise the tests over the rule rather than to trust the default.
+
+**TESTED:** 6 new tests in `tests/test_secondary.py` (+4 in `command-center/backend`); 8 mutations
+written, 8 killed. **PARITY:** unchanged and re-run green — nothing here is read by a decision.
+
+#### A re-entry records WHAT THE TRADE BEFORE IT DID, and that is a second question (2026-08-21)
+
+`SecArm.l_after` / `s_after` → `_Pending.after` → `Trade.after`: **"breakeven" | "stopped" |
+"closed" | None**, reporting-only, read by nothing that arms, prices or sizes. The price chart tags
+a re-entry `BE+` or `SL+` off it — Aaron's ask, looking at a chart with both triggers on and 107
+re-entries all wearing one `SEC`.
+
+🔴 **It is NOT a rename of `*_src`, and collapsing the two is the mistake to avoid.** `src` is the
+trigger that was CONFIGURED; this is the outcome that was OBSERVED. They agree under every shipped
+configuration, which is exactly why they must stay two fields — point the gap half at
+`Stopped only` and a gap-triggered re-entry is a re-entry after a LOSS, and the chart has to say so.
+
+⚠ **`None` means the run could not tell, and must never become a word downstream.** A re-entry
+armed through the `None` precondition follows a primary that may not have traded at all.
+⚠ **Stopped is tested before closed.** `_prim_closed_sos_*` is stamped on every close whatever the
+outcome, so a stopped primary sets both latches; asking "closed?" first calls every stop-out a
+plain close.
+
+🔴 **`SecondaryArm.update` has TWO `SecArm` returns and a test can leave through only one.** The
+first version of these tests passed while the mutation that stripped the field off the plain return
+reddened NOTHING — the resting-order rule had been defaulted ON in the same tree, so every test in
+the file was exiting through the other branch and the untested return was free to be wrong. **A
+duplicated construction is only as covered as its least-visited branch**, and the fix was to
+parametrise the tests over the rule rather than to trust the default.
+
+**TESTED:** 6 new tests in `tests/test_secondary.py` (+4 in `command-center/backend`); 8 mutations
+written, 8 killed. **PARITY:** unchanged and re-run green — nothing here is read by a decision.
 
 ⚠ **`exec_rec_stop` of `1m leg` or `swing low` is REFUSED**, stricter than the gap trigger's rule,
 because the entry is a FIXED price and a 1-minute swing can land either side of it. That refusal is
@@ -2855,6 +2925,37 @@ is the whole argument for a cap having its own tests rather than being 'obviousl
 
 ⚠ **NOT byte-identical to the old path** — 2 re-entries move and 1 is lost over 7.9 years, so a
 stored figure from before this date reproduces only with the switch set False.
+
+## The re-entry's FILL CLOCK is 5 minutes, and it is an accuracy knob (2026-08-21)
+
+`exec_sec_fill_tf_min`, default **5**. The primary always replays on 15m; this is the second feed
+`run_dual` walks alongside it, and it is what the re-entry's resting order is filled against.
+**The strategy OWNS this number** — `backtest/tools/run_report.py` reads it off the config, and
+`command-center` keeps a copy in `run_feeds.EXTRA_FEEDS` that a test refuses to let drift.
+
+🔴 **IT IS A MEASUREMENT-ACCURACY KNOB, NOT A STRATEGY ONE.** Live, the broker fills a resting
+limit at the price that trades — there is no 15-minute anything. A coarser feed fills the order at
+a worse price than really traded, so it UNDERSTATES, which is the safe direction. **Never read the
+5m default as "the strategy trades on 5m"**: the setup, the entry price and the stop are all 15m.
+
+MEASURED 2026-08-21, XAUUSD 2018-09-14 → 2026-08-20, matched basis, only the fill clock differing:
+
+| fill clock | bars loaded | trades | total |
+|---|---|---|---|
+| 1m | 2,804,720 | 234 | +147.56R |
+| **5m** | **561,795** | **234** | **+145.61R** |
+| 15m | 187,286 | 233 | +136.36R |
+
+One fifth of the data for 1.3% of accuracy, against 7.6% at 15m. It was hardcoded `1` in both
+runners for as long as they existed, so every run anybody made paid 2.8M bars for that 1.3%.
+
+⚠ **A finer feed also bounds the WINDOW by its own measured history floor**, so 1m is not free
+even on a machine that can afford the bars — it costs a day here, and more on a symbol whose 1m
+history is shallower.
+
+⚠ **A strategy that does not declare one keeps the old 1m behaviour.** `run_report` reads
+`getattr(cfg, "exec_sec_fill_tf_min", 1)` — absent means "this fork has not been measured", not
+"coarsen it".
 
 ## Do / Never
 

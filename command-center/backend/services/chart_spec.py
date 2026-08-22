@@ -428,6 +428,12 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                 # produces (run 295a6ff29d21, 8 trades).
                 **({"outcome": outcomes[i]} if outcomes else {}),
                 "kind": p.get("kind") or "primary",
+                # For a re-entry, what the trade it FOLLOWED did. The chart draws a different tag
+                # for a re-entry after a scratch and one after a stop-out, because they are
+                # different situations and one `SEC` cannot say which. ⚠ Emitted only when the run
+                # recorded it — absent means "cannot tell", and the chart falls back to the plain
+                # book tag rather than picking one. Generic: no strategy names it.
+                **({"after": p["after"]} if isinstance(p.get("after"), str) and p["after"] else {}),
                 "exitReason": p.get("exit_name") or "",
                 "mfePrice": mfe_price,
                 "maePrice": mae_price,

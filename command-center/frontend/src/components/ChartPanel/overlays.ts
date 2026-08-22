@@ -20,6 +20,17 @@ export const SESSION_BOX = 'lwgSessionBox'
 
 /** Entry arrow + dashed line to exit + exit dot for one trade (Step 4). */
 export const TRADE = 'lwgTrade'
+
+/** The tag a PRIMARY trade wears — the setup itself, as opposed to a re-entry or a recovery.
+ *
+ *  ⚠ `A+` is `mpc_sos_fade`'s own word for its setup, and this panel draws every strategy's
+ *  trades, so on a `mpc_bleg` chart it is the wrong word for the right trade. It is hard-coded
+ *  anyway, on purpose and with the cost named: the honest fix is a per-strategy tag travelling
+ *  on the spec, and that needs a column on the strategies table for a chart LABEL. Change this
+ *  one line, or wire the spec, the day a second strategy's chart is read often enough to care.
+ *  ⚠ Untagged is NOT an option any more — Aaron's ask was to tell the books apart at a glance,
+ *  and "no tag" is only readable as "primary" once you already know that is the rule. */
+export const PRIMARY_TAG = 'A+'
 /** A SCALE-IN LOT, drawn by the trade renderer itself — same box, same `Furthest`/`Deepest`/
  *  exit labels, same outcome colouring. A separate overlay NAME rather than a separate
  *  template, so the `Scale-in detail` toggle can clear it without touching the trades. */
@@ -215,6 +226,7 @@ export interface LabelItem {
 interface TradeExtend {
   dir?: 'long' | 'short'
   kind?: 'primary' | 'secondary' | 'recovery'
+  after?: 'breakeven' | 'stopped' | 'closed'
   pnl?: number
   outcome?: 'won' | 'scratch' | 'lost' // graded by the backend; absent ⇒ fall back to `pnl > 0`
   adds?: { price: number; ms: number; qty: number }[] // scale-in lots bought after the entry
@@ -404,11 +416,34 @@ export function registerChartOverlays(): void {
       const outcome = d.color ?? favColor
       const arrowColor = d.dirColor ?? outcome
       const isLong = d.dir !== 'short'
-      // The tag a non-primary trade wears. A trade's SHAPE cannot say which book it came from,
-      // and that is the one fact worth stating on it; everything else about how it is drawn is
-      // identical, deliberately. `null` for a primary (and for an unknown kind — a tag nobody
-      // can read is worse than none).
-      const kindTag = d.kind === 'secondary' ? 'SEC' : d.kind === 'recovery' ? 'REC' : null
+      // The tag a trade wears. A trade's SHAPE cannot say which book it came from, and that is
+      // the one fact worth stating on it; everything else about how it is drawn is identical,
+      // deliberately. `null` for an unknown kind — a tag nobody can read is worse than none.
+      //
+      // 🔴 A RE-ENTRY IS TAGGED BY WHAT THE TRADE IT FOLLOWED DID, not by which trigger armed it.
+      // The whole reason the re-entry layer exists is that a trade that SCRATCHED and a trade that
+      // was STOPPED OUT are different situations wanting different re-entries, and Aaron's ask
+      // (2026-08-21) was exactly this: "so I could tell the difference between a secondary that
+      // was re-entering from a breakeven versus one re-entering from the primary at a stop loss."
+      // One `SEC` on both cannot answer that, and on a run with both triggers on there are 107 of
+      // them on the chart.
+      //
+      // ⚠ `after` ABSENT falls back to `SEC` rather than picking a side. A re-entry can be armed
+      // through a precondition that asks nothing of the primary at all, and a chip guessing
+      // `BE+` there would be a fact invented for a label. Same rule the whole repo runs on:
+      // never let "no" and "cannot ask" be one value.
+      const kindTag =
+        d.kind === 'secondary'
+          ? d.after === 'stopped'
+            ? 'SL+'
+            : d.after === 'breakeven'
+              ? 'BE+'
+              : 'SEC'
+          : d.kind === 'recovery'
+            ? 'REC'
+            : d.kind === 'primary' || d.kind === undefined
+              ? PRIMARY_TAG
+              : null
       const sign = isLong ? 1 : -1 // favourable ⇔ (price − entry) * sign > 0
 
       const x0 = Math.min(entry.x, exit.x)

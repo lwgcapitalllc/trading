@@ -2823,6 +2823,9 @@ export default function ChartPanel({
         extendData: {
           dir: tr.dir,
           kind: tr.kind,
+          // What the trade this one FOLLOWED did — decides `BE+` vs `SL+` on a re-entry. Absent on
+          // every primary, and on any run stored before the field existed.
+          after: tr.after,
           pnl: tr.pnl,
           outcome: tradeOutcome(tr), // won / scratch / lost — the chip and the fallback box colour
           // Scale-in lots. Without them the box can show a short exiting BELOW its entry for a

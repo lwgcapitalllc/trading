@@ -1299,6 +1299,32 @@ strategy's own rungs.
 Tests: `tests/test_output.py` (4, watched RED — 2 against HEAD, 2 by mutating the fallback to claim
 `banks: False`).
 
+## `output.py` — a trade can say what the trade BEFORE it did (2026-08-21)
+
+`build_equity_curve` emits an optional `after` — `"breakeven"` | `"stopped"` | `"closed"` — off
+`Trade.after`, for a strategy whose book contains RE-ENTRIES. Reporting-only, like every other
+optional key here, and **absent unless the strategy recorded a real string**: a runner with no
+re-entry layer, or one that cannot tell, writes nothing rather than a default. ⚠ **The absence is
+the point** — the price chart falls back to a neutral tag on a missing one, so an empty string
+shipped as a value would read as a fact nobody measured. Why it exists:
+`strategies/python/mpc_sos_fade/CLAUDE.md` → *A re-entry records what the trade before it did*.
+
+## `tools/run_report.py` — the second feed's timeframe belongs to the STRATEGY (2026-08-21)
+
+The dual-replay path loaded `BarSource().load(symbol, 1, ...)` — a hardcoded 1-minute feed — for
+as long as it existed. MEASURED on mpc_sos_fade over 7.9 years: 5m loads a fifth of the bars
+(561,795 vs 2,804,720) and lands within 1.3% of the 1m result, where 15m is 7.6% off. So every run
+anybody made paid 2.8M bars for 1.3%.
+
+It now reads `getattr(cfg, "exec_sec_fill_tf_min", 1)` off the config it already built. ⚠ **The
+fallback is 1, not 5** — a strategy that does not declare a fill clock has not been measured, and
+absence must not be read as consent to coarsen it. Full table and the reasoning:
+`strategies/python/mpc_sos_fade/CLAUDE.md` → *The re-entry's FILL CLOCK*.
+
+⚠ **`_assert_timeframe` follows it.** It refused anything that was not 1m before; pinning it while
+the loader moved would refuse every run, and pinning it the other way would let MT5's
+coarser-bars-under-the-wrong-label substitution straight through.
+
 ## `portfolio/account.py` — the entry floor carries `_GRANT_EPS` (2026-08-20)
 
 🔴 **The floor test was a bare `<` while the shrink test beside it had a tolerance, and setting a

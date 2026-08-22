@@ -159,6 +159,12 @@ class Trade:
     # "primary" (the 15m A+ trade) or "secondary" (a 1m sniper re-entry). Reporting-only — no
     # decision reads it; it lets the lab/chart tell the two apart. See secondary.py.
     kind: str = "primary"
+    # For a SECONDARY only, what the PRIMARY on the same setup DID — "breakeven" | "stopped" |
+    # "closed", None when it cannot be told. Reporting-only, and it is the fact the price chart
+    # needs to say WHY there is a second trade on this leg: the whole point of the re-entry layer
+    # is that a scratch and a stop-out are different situations, and one `secondary` tag cannot
+    # tell you which one you are looking at. ⚠ NOT the trigger — see `SecArm.l_after`.
+    after: Optional[str] = None
     # Reporting-only excursion (no decision weight): the most this trade was ever showing in
     # profit (`mfe_usd` ≥ 0, favorable) and the deepest it sat against us (`mae_usd` ≤ 0, adverse)
     # before it closed — measured across the full hold on bar high/low, the same intrabar
@@ -537,6 +543,9 @@ class _Pending:
     # the reclaim half carries its own exit ladder, so the open trade has to remember what it came
     # from. None on every primary and on any secondary from a caller that does not set it.
     src: Optional[str] = None
+    # For a SECONDARY, what the primary on this setup did — reporting only, straight through to
+    # the closed `Trade`. Never read by anything that arms, prices or sizes.
+    after: Optional[str] = None
 
 
 def _intrabar_targets_first(o: float, h: float, l: float) -> bool:
@@ -614,6 +623,7 @@ class Execution:
         # Which re-entry trigger armed the open secondary (see `_open_position`). None on a primary
         # and while flat.
         self._entry_src: Optional[str] = None
+        self._entry_after: Optional[str] = None
         # A force-close DECIDED at this bar's close and FILLED at the next bar's open, held as
         # (reason, leg tag) or None. Pine's `strategy.close()` is a MARKET order, and a market
         # order in this fill model is subject to the same one-bar delay every other order is —
@@ -824,6 +834,7 @@ class Execution:
         # reclaim half carries its own first target and its own bank percentage — so a restored
         # trade that lost it would manage against the other half's rungs, silently.
         "_entry_src",
+        "_entry_after",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
@@ -1000,13 +1011,15 @@ class Execution:
                 # ladder reads as the shared settings — the behaviour every caller had before the
                 # reclaim half existed.
                 return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg,
-                                src=getattr(arm, "l_src", None))
+                                src=getattr(arm, "l_src", None),
+                                after=getattr(arm, "l_after", None))
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
                 qty = (self.equity * risk_pct / 100.0) / dist
                 return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg,
-                                src=getattr(arm, "s_src", None))
+                                src=getattr(arm, "s_src", None),
+                                after=getattr(arm, "s_after", None))
         return None
 
     # ── main step ───────────────────────────────────────────────────────────────
@@ -2056,6 +2069,7 @@ class Execution:
         # time: the config answers "which triggers are enabled", and the question here is which one
         # produced THIS trade — two different questions the moment both halves are live.
         self._entry_src = pend.src
+        self._entry_after = pend.after
         self._qty = granted
         self._entry = fill_price
         self._entry_index = sig.index
@@ -2513,6 +2527,7 @@ class Execution:
             costs_usd=self._costs_usd,
             stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason,
             kind=self._entry_kind,
+            after=self._entry_after,
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
             mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
             adds=[self._add_record(lot) for lot in self._add_lots],

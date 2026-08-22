@@ -3621,6 +3621,24 @@ record, so a run replayed before this landed has bare prices and keeps the old (
 Tests: `tests/test_chart_spec_tp_rungs.py` (8, all watched RED — 5 against HEAD, 3 by mutating the
 target check to always relabel).
 
+## `chart_spec` carries what the trade BEFORE a re-entry did (2026-08-21)
+
+`_build_trades` passes an optional `after` — `"breakeven"` | `"stopped"` | `"closed"` — straight
+off the stored equity-curve point. The panel tags a re-entry `BE+` or `SL+` with it instead of one
+`SEC` for both, which was Aaron's ask on a chart holding 107 re-entries from two different triggers.
+
+⚠ **Emitted ONLY for a real non-empty string.** Absent means the run could not tell — a re-entry
+can be armed through a precondition that asks nothing of the trade before it, and every run stored
+before this date has no `after` at all. The panel falls back to the neutral tag on a missing one,
+so `"after": ""` or `"after": null` shipped as a value would make it read a fact nobody measured.
+An equity curve is JSON somebody else wrote, so the type is checked rather than assumed.
+
+⚠ **Still generic — no strategy or runner names here.** This function draws every runner's trades
+and the docstring says so; `after` is a fact about a BOOK, the same shape as `kind` beside it.
+
+Tests: `tests/test_chart_spec_trade_book.py` (4, all watched RED by mutation — dropping the emit,
+making it unconditional, and dropping the type check).
+
 ## News filter (post-run)
 
 The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time gate: the lab runs every backtest RAW (news is never wired into the C#/MQL5 strategy), so removing news-window trades is pure arithmetic on the finished trade list — instant, no VPS re-run. Design decision (Aaron 2026-07-05): **run raw + toggle after.** Window default **15 min before / 30 min after** a high-impact USD release (asymmetric — liquidity dies only in the last minutes before; the spike/reversal/move run 15–30 min after). **Two rules, both switchable, and BOTH DEFAULT OFF** (2026-08-01, Aaron's call): the page opens on the run exactly as traded, so every number on it is the backtest's own and turning a rule on is a deliberate what-if. That replaced two different defaults for one reason — a filtered default means the headline figure on screen is not the run's result, and no checkbox further down the page makes that obvious. Holidays had defaulted ON (hardcoded always-excluded with no control at all until 2026-07-30, when they became a visible checkbox but stayed ticked), and news followed the strategy's own `avoid_news`, so the default silently DIFFERED BETWEEN STRATEGIES — two runs over the same window could open on different trade counts with nothing on screen explaining why. The backend reports `in_news` and `in_holiday` separately and always has; every default here has been a frontend-only decision.

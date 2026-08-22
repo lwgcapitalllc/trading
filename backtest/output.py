@@ -132,6 +132,16 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                 "entry_price": _round(getattr(t, "entry_price", 0.0), 5),
                 "exit_price": _round(getattr(t, "exit_price", 0.0), 5),
                 "kind": getattr(t, "kind", "primary"),
+                # For a re-entry, what the trade it FOLLOWED did — "breakeven" | "stopped" |
+                # "closed". Optional and reporting-only: a strategy with no re-entry layer, or one
+                # that cannot tell, carries nothing and the key is absent. ⚠ Absent must not become
+                # a word downstream — "we could not tell" and "it scratched" are different facts
+                # and the chart draws them differently.
+                **(
+                    {"after": t.after}
+                    if isinstance(getattr(t, "after", None), str) and t.after
+                    else {}
+                ),
                 # Profit-depth trade view (price chart): how far price ran (mfe/mae PRICES), where each
                 # rung actually banked (`legs`), and the initial 1R stop. All optional — a runner/trade
                 # that doesn't carry them degrades to the plain entry→exit box. Reporting-only.
