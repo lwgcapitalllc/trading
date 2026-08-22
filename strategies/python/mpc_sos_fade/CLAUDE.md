@@ -1013,19 +1013,28 @@ re-entry that had armed at the deep edge **without price ever reclaiming**, wort
 ⚠ **Every reclaim figure quoted before this is the pre-fix book — 156.9R over 54, not 157.9R over
 53.**
 
-#### The 19 re-entry settings, split three ways in the editor (2026-08-21)
+#### The re-entry settings, split three ways in the editor (2026-08-21)
 
-Aaron, looking at the panel: *"which one of them is applicable to Reclaim Entry? I have nothing to
-do with any of these items."* He was right about nine of them. The block is now three groups in
-`mpc_sos_fade.meta.json`, and the rows that cannot matter are **greyed with the reason on them**
-(`disable_if` / `disable_note`) rather than hidden — the reader has to be able to see which state a
-dead setting is stuck in.
+Aaron, looking at a single flat list of them: *"which one of them is applicable to Reclaim Entry?
+I have nothing to do with any of these items."* He was right about nine of them. The block is now
+three groups in `mpc_sos_fade.meta.json`, and the rows that cannot matter are **greyed with the
+reason on them** (`disable_if` / `disable_note`) rather than hidden — the reader has to be able to
+see which state a dead setting is stuck in.
 
-| group | rows | when they are greyed |
+| group | what is in it | when its rows are greyed |
 |---|---|---|
-| `Secondary re-entries` | the switch, the trigger, and the 8 both halves read | never |
+| `Secondary re-entries` | the switch, the trigger, and everything BOTH halves read | never |
 | `↳ Reclaim Entry only` | its precondition, stop, first target, bank % | trigger is `Structure shift` or `FVG in zone` |
-| `↳ FVG / Structure shift only` | the 4 the reclaim replaces one-for-one, + the retrace | trigger is `Reclaim Entry` |
+| `↳ FVG / Structure shift only` | the four the reclaim replaces one-for-one, plus the retrace | trigger is `Reclaim Entry` |
+
+⚠ **No row count here, deliberately.** This section said "the 19 settings … the 8 both halves
+read" and was stale within a day — the fill clock and the resting-order rule landed in the shared
+group and made it 21 and 10. **A count in prose is a number with no test under it.** The exact
+greyed SET is pinned by `test_the_contract_greys_exactly_the_rows_the_tests_above_pin`; the group
+sizes are whatever the contract says, and `python3 -c` over the meta file answers it in a second.
+⚠ **A new row added to this block lands in the shared group by default and nothing asks whether it
+is dead under a trigger** — that test only fails when a row IS greyed without proof, never when one
+that should be greyed is not. Ask the question by hand when you add one.
 
 ⚠ **The retrace is the odd one — it is dead under the SHIPPED trigger too.** Only the `Structure shift`
 retraces a leg; the gap rests at the primary's own price and the reclaim at the deep edge. It is
