@@ -277,6 +277,23 @@ interface TradeExtend {
   // number is tolerated (a run stored before the banking flag existed). `banks === false` marks a
   // rung the trade places no order at, which is not a target — see the ladder block below.
   tpTargets?: Array<number | { price: number; banks?: boolean }>
+  /** Room, in BARS, between this trade's entry and the nearest drawn trade on each side —
+   *  `barsToPrev` back to the last bar any earlier trade was still open on, `barsToNext` forward to
+   *  the next trade's entry. `undefined` = nothing drawn on that side, i.e. unlimited room.
+   *
+   *  They are BARS rather than pixels on purpose: how much room a chip actually has depends on the
+   *  zoom, and the host cannot know it. Bars × the current bar width IS the room, and it is
+   *  recomputed on every frame, so the same pair of trades can park their chips on opposite sides
+   *  zoomed out and both on the default side zoomed in. That is the behaviour Aaron asked for
+   *  (2026-08-23): the chips on a re-entry that starts where the trade before it ended were landing
+   *  on that trade's box and on its own chips, and *"they'll need to be dynamic."*
+   *
+   *  ⚠ `barsToPrev` is measured to the FURTHEST-RIGHT bar of everything drawn before it, not to the
+   *  trade immediately before it in entry order. On a stack a long hold entered early can still be
+   *  open across the next two entries, and measuring to the nearest ENTRY would report clear air
+   *  through the middle of a box that is plainly there. */
+  barsToPrev?: number
+  barsToNext?: number
 }
 
 /** What a WOULD-BE-ENTRY marker (BLOCK / MISS) reads. The `text` is decided by the host, not
@@ -407,7 +424,7 @@ export function registerChartOverlays(): void {
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, yAxis }) => {
+    createPointFigures: ({ coordinates, overlay, yAxis, barSpace, bounding }) => {
       if (coordinates.length < 2) return []
       const [entry, exit] = coordinates
       const d = (overlay.extendData ?? {}) as TradeExtend
@@ -857,7 +874,8 @@ export function registerChartOverlays(): void {
       }
 
       // De-collide the labels top→down (min 15px apart), then draw each as a compact rounded chip
-      // just OUTSIDE the box to the left — flipping inside only if it would clip the pane edge.
+      // beside the entry — by default just OUTSIDE the box to the left, flipping to the right of the
+      // entry when the trade before this one is sitting in that space.
       labels.sort((a, b) => a.y - b.y)
       const MIN_GAP = 15
       for (let i = 1; i < labels.length; i++) {
@@ -894,9 +912,45 @@ export function registerChartOverlays(): void {
           },
           ignoreEvent: true,
         })
+      // WHICH SIDE OF THE ENTRY THE CHIPS PARK ON — decided per trade, per frame.
+      //
+      // 🔴 The default is the left, and on its own it is wrong for the case this chart is full of: a
+      // re-entry opens on the bar the trade before it closed, so its chips are drawn straight onto
+      // that trade's box and onto that trade's own chips. Aaron, 2026-08-23, looking at an A+ loss
+      // with its stop-loss re-entry next to it: *"if two trades line up next to each other and the
+      // annotations kind of overlap, move the next trade's annotations to your right as opposed to
+      // the left."* The EARLIER trade keeps the left — it is the one with clear air behind it — and
+      // the one arriving into the crowd is the one that moves.
+      //
+      // The room on each side is `bars × the current bar width`, so this is a decision about
+      // PIXELS and is re-taken on every zoom: the same two trades that need opposite sides zoomed
+      // out both keep the left once the bars are wide enough. ⚠ It is measured against the WIDEST
+      // chip and applied to ALL of them, never per chip — a column that changes sides halfway down
+      // reads as two different trades' annotations rather than one trade's.
+      //
+      // ⚠ When NEITHER side fits, it takes the roomier one rather than giving up and stacking on
+      // the left. A cramped chip that is merely close to something is readable; one drawn on top of
+      // another is not, and the left is where the collision has already been proven to be.
+      const widest = labels.reduce((m, l) => Math.max(m, l.text.length * 6.3 + 12), 0)
+      const need = widest + LBL_GAP
+      const bar = barSpace?.bar ?? 0
+      // `undefined` neighbour = nothing drawn that side = unlimited room. A NEGATIVE gap is a
+      // neighbour still open across this entry, which is less than no room — it must not read as
+      // plenty, so it is kept as the negative number it is.
+      const roomLeft = d.barsToPrev == null ? Infinity : d.barsToPrev * bar
+      const roomRight = d.barsToNext == null ? Infinity : d.barsToNext * bar
+      // The pane edges still win. A chip off the left of the plot is unreadable whatever is beside
+      // it, and the right edge is the same fact mirrored — which the old code only checked one way.
+      const paneW = bounding?.width ?? 0
+      const clipsLeft = x0 - need < 2
+      const clipsRight = paneW > 0 && x0 + need > paneW - 2
+      const onRight = clipsLeft
+        ? !clipsRight
+        : clipsRight
+          ? false
+          : roomLeft < need && roomRight > roomLeft
       for (const { y, text, color } of labels) {
-        const clipsLeft = x0 - LBL_GAP - (text.length * 6.3 + 12) < 2
-        chip(clipsLeft ? x0 + LBL_GAP : x0 - LBL_GAP, y, text, color, clipsLeft ? 'left' : 'right')
+        chip(onRight ? x0 + LBL_GAP : x0 - LBL_GAP, y, text, color, onRight ? 'left' : 'right')
       }
 
       // Outcome chip — a small "Won"/"Lost" tag, same subtle style as the level labels. Now that a

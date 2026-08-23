@@ -2866,13 +2866,55 @@ export default function ChartPanel({
     if (!chart) return
     chart.removeOverlay({ name: TRADE })
     if (!tradesOn) return
-    for (const [i, tr] of spec.trades.entries()) {
+    if (loadedLoTs == null || loadedHiTs == null) return
+    // Which trades are actually drawn, in the order they open. Collected BEFORE the draw loop
+    // because a trade's chips now have to know what is beside them — see `barsToPrev` below — and
+    // collected ONCE, so the two passes can never disagree about which trades are on the chart.
+    // ⚠ A hidden trade must not crowd anything: everything filtered out here is not on the chart,
+    // so it cannot be collided with, and the gaps are measured over the survivors only.
+    const drawn = spec.trades
+      .map((tr, i) => [i, tr] as const)
       // Only draw a trade whose ENTRY is within the loaded candles — one older than the data edge
       // would otherwise clamp its markers onto the plot's left edge (the no-data region).
-      if (loadedLoTs == null || loadedHiTs == null) break
-      if (tr.entryTime < loadedLoTs || tr.entryTime > loadedHiTs) continue
-      if (tr.layer && hiddenLayers.has(tr.layer)) continue // isolated via the Strategies dropdown
-      if (!outcomeVisible(tr)) continue // Winners / Scratches / Losers filters (Analysis menu)
+      .filter(([, tr]) => tr.entryTime >= loadedLoTs && tr.entryTime <= loadedHiTs)
+      .filter(([, tr]) => !(tr.layer && hiddenLayers.has(tr.layer))) // isolated via Strategies
+      .filter(([, tr]) => outcomeVisible(tr)) // Winners / Scratches / Losers (Analysis menu)
+      // ⚠ SORTED by entry, never assumed. A stack merges several strategies' books into one list
+      // and nothing promises they arrive interleaved by time; "the trade before this one" has to
+      // mean the one to its LEFT on the chart or the whole measurement is about the wrong pair.
+      .sort(([, a], [, b]) => a.entryTime - b.entryTime)
+    // Bar index of a timestamp — the last loaded bar at or before it. Binary search rather than a
+    // time→index map: a trade's entry/exit is stamped by the runner's own timeframe, so on any
+    // resampled or drilled view it lands INSIDE a bar rather than on its open, and an exact-match
+    // map would report "not found" on most of them.
+    const barAt = (ts: number) => {
+      let lo = 0,
+        hi = displayCandles.length - 1,
+        at = 0
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1
+        if (displayCandles[mid].time <= ts) {
+          at = mid
+          lo = mid + 1
+        } else hi = mid - 1
+      }
+      return at
+    }
+    // Room either side of each entry, in BARS. Pixels are the overlay's business — it is the only
+    // one that knows the zoom. Left is measured to the furthest-right bar of EVERYTHING already
+    // drawn, not to the previous entry, so a long hold that is still open across the next two
+    // entries is not reported as clear air.
+    const gapPrev = new Map<number, number>()
+    const gapNext = new Map<number, number>()
+    let openTo = -Infinity
+    for (const [k, [i, tr]] of drawn.entries()) {
+      const entryBar = barAt(tr.entryTime)
+      if (openTo > -Infinity) gapPrev.set(i, entryBar - openTo)
+      const next = drawn[k + 1]
+      if (next) gapNext.set(i, barAt(next[1].entryTime) - entryBar)
+      openTo = Math.max(openTo, barAt(tr.exitTime))
+    }
+    for (const [i, tr] of drawn) {
       chart.createOverlay({
         name: TRADE,
         lock: true,
@@ -2921,6 +2963,12 @@ export default function ChartPanel({
           profitLegs: tr.profitLegs,
           stopPrice: tr.stopPrice,
           tpTargets: tr.tpTargets, // TP ladder — first UNHIT one drawn faintly (near-miss view)
+          // How much room the side chips have either way, in bars. Absent = nothing drawn that
+          // side. The overlay turns them into pixels against the live bar width and parks its chips
+          // on the side that is clear — the answer changes with the zoom, which is why it cannot be
+          // decided here. See `barsToPrev` in `overlays.ts`.
+          barsToPrev: gapPrev.get(i),
+          barsToNext: gapNext.get(i),
           favColor: TRADE_PROFIT_FILL, // light mint — profit fill + take-profit lines
           advColor: TRADE_LOSS_COLOR, // red — adverse side + the stop
           // Portfolio stack: the entry marker takes the strategy's layer colour so overlapping

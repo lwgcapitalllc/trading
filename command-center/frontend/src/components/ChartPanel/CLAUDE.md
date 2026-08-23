@@ -655,8 +655,30 @@ here**, so the chart shows exactly what the strategy saw.
   that is correct rather than noise — the gap between them is how far past the stop price ran. **The
   entry is the exception: no line across, just a short tick where the green begins** (the fill edge is
   the entry). Labels are collected, **de-collided top→down** (so a TP that sits right by the entry
-  never stacks on it), then drawn just OUTSIDE the box to the left, flipping inside only if they would
-  clip the pane edge. **Gotcha — a klinecharts `text` figure paints its OWN background:** `TextStyle`
+  never stacks on it), then drawn just OUTSIDE the box **on whichever side is clear** — see the
+  paragraph below. 🔴 **WHICH SIDE THE CHIP COLUMN PARKS ON IS DECIDED PER TRADE, PER FRAME (2026-08-23).** The
+  default is the left, and on its own it was wrong for the case this chart is full of: a re-entry
+  opens on the bar the trade before it closed, so its column was drawn straight onto that trade's
+  box and onto that trade's own column. Aaron, looking at an A+ loss with its stop-loss re-entry
+  beside it: *"if two trades line up next to each other and the annotations kind of overlap, move
+  the next trade's annotations to your right as opposed to the left."* The EARLIER trade keeps the
+  left — it is the one with clear air behind it — and the one arriving into the crowd moves.
+  ⚠ **The host passes the room either side in BARS, never pixels** (`TradeExtend.barsToPrev` /
+  `barsToNext`), because how much room a chip actually has depends on the ZOOM and the host cannot
+  know it: bars × the callback's `barSpace.bar` IS the room, recomputed every frame. **VERIFIED in
+  the app on run `687c8df2a523`, 2023-02-21 (a 5.7-bar gap): zoomed out the re-entry's column flips
+  right, zoomed in it returns to the left, and every isolated trade on the same chart keeps the left
+  throughout.** ⚠ **`barsToPrev` is measured to the furthest-right bar of everything drawn before
+  it, not to the previous ENTRY** — on a stack a long hold entered early can still be open across
+  the next two entries, and measuring to the nearest entry reports clear air through the middle of a
+  box that is plainly there. ⚠ **Measured against the WIDEST chip and applied to ALL of them** — a
+  column that changes sides halfway down reads as two trades' annotations rather than one trade's.
+  ⚠ **When neither side fits it takes the roomier one** rather than stacking on the left, where the
+  collision is already proven. ⚠ **The pane edges still win, now BOTH of them** — the old code only
+  checked the left. ⚠ **Only the side chips move. The outcome chip is still centred over the trade's
+  resolved extreme** and can still land on a neighbour's column; that is a separate rule and was not
+  touched.
+  **Gotcha — a klinecharts `text` figure paints its OWN background:** `TextStyle`
   carries `backgroundColor`/`borderColor`/`borderRadius`/padding and the DEFAULT overlay text style is
   a solid BLUE chip, so a bare `text` figure renders as an ugly blue tag. The labels therefore style
   the text figure directly (subtle dark `backgroundColor`, rounded, thin border) — never a separate
