@@ -3133,6 +3133,69 @@ favourable side too, and comparing a shifted bar against an unshifted stop.
 
 ---
 
+## 🔴 THE TWO RE-ENTRY HALVES ARE TWO FEATURES, AND ONLY ONE OF THEM EARNS (2026-08-23)
+
+The combined trigger runs **two independent re-entries** and the run report adds them together,
+which is how one of them hid inside the other's result for as long as it existed. They ask
+different questions of the primary: the **gap** half needs the A+ to have scratched at breakeven,
+the **reclaim** half needs it to have been STOPPED. Each trade records which.
+
+MEASURED 2026-08-23 — XAUUSD M15, 2020-01-01 → 2026-08-23, no cost layers, 10% per trade
+compounding, three runs off ONE run's own row with a single field changed, driven through
+`services/python_runner._execute` so the only difference is the flag:
+
+| | trades | total | worst run of losses | account drop |
+|---|---|---|---|---|
+| A+ alone | 159 | +139.71R | −5.61R | −45.6% |
+| A+ + reclaim (after a stop) | 205 | **+169.71R** | −6.13R | −43.9% |
+| A+ + both | 249 | +177.89R | −6.41R | −43.3% |
+
+✅ **THE THREE ARE EXACTLY ADDITIVE, AND THAT IS THE STRUCTURAL FINDING.** 139.71 + 30.00 =
+169.71; + 8.19 = 177.89. The 159 A+ trades are **identical in all three** — same entry times,
+same fills, same R, checked trade by trade. **Neither half displaces an A+ setup or interferes
+with the other**, so each is a genuinely independent switch. ⚠ That is a fact about THIS config,
+not a property of the design — one position slot means displacement is always possible. **Re-run
+the three-way before trusting it after any entry-logic change.**
+
+🔴 **The gap half is one trade away from losing money over six and a half years.** 44 trades,
++8.19R, average +0.186R — and **dropping its single best result leaves −1.92R over 43 trades.**
+Its own worst run of losses is **−7.75R, deeper than the whole strategy's −6.41R.** The reclaim
+half is the opposite shape: 46 trades, +30.00R, a clean binary of −1R or +3R (19 wins, 27
+losses), carried by no single trade.
+
+⚠ **"Adds R" was never the question.** Both halves add R. The gap half adds 8.19R of which none
+is repeatable, for 44 extra trades and 0.28R of extra drawdown. **Split a multi-trigger feature
+into its triggers and drop the best trade from each — a leg carried by one outlier is a finding,
+not a strategy.**
+
+⚠ **It did NOT smooth the drawdown, and the account-drop column is why that reads backwards.**
+The worst stretch (2022-01-26 → 2022-11-14) has A+ down 4.13R and the re-entries down another
+1.68R on top, with **five occasions where the re-entry lost immediately after the A+ it followed
+lost.** In bad conditions the two are ONE position at 1.5× the size — 10% plus 5% on the same
+failing setup. The account drop improves 45.6% → 43.3% only because the extra profit compounds
+the balance; that is sequencing, never safety. **Read the R drawdown, which got 0.8R worse.**
+
+⚠ **Sample-size caveat, and it cuts against over-reading this too:** 44 trades is thin. The
+honest verdict on the gap half is *"it has not shown an edge over this window"*, never *"it does
+not work"*.
+
+## 🔴 The minimum stop distance permits a stop a normal gap can double (2026-08-23)
+
+MEASURED in the same run: one trade lost **−1.98R on a 1R stop**. Its stop was **$1.83 wide,
+0.093% of price**, and price gapped **$1.80** straight through it, filling at the next bar's open.
+
+⚠ **That is the documented one-bar order delay doing exactly what it is supposed to do** — see
+*Wrong-side stop fills* — and it is the SAFE direction for a backtest. **The finding is not the
+fill, it is the floor that let the stop be that tight.** The run's minimum stop distance was
+0.08% of price; the stop cleared it by six thousandths of a percent, and one ordinary gold gap
+then cost twice the risk the position was sized for.
+
+⚠ **Sizing is computed off the stop distance, so a tighter stop buys a BIGGER position.** The
+floor is the only thing standing between a near-zero stop distance and an enormous one, and a
+floor set just under what the market gaps in a bar is a floor that is not doing its job. ⚠ **One
+trade in 249 is not a reason to move it** — it is a reason to measure the floor against the
+instrument's typical bar gap rather than picking a round number.
+
 ## Loss recovery — the toggle, and the one property it must never break
 
 **Added 2026-08-20.** `exec_recovery` turns on a counter-trade after this bot loses. The RULE is

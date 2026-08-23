@@ -57,6 +57,34 @@ cd command-center
 
 **Readiness report** (`backend/services/readiness.py`) — the dependencies whose failure mode is SILENCE, checked once at boot and served at `GET /system/readiness`. An un-backfilled news calendar makes the News & Holiday filter **inert** (it tags nothing, which looks identical to a broken filter), and missing `algos/credentials.json` makes every Telegram send a no-op. It REPORTS and never acts — neither is fixable from here, and neither is worth refusing to boot over.
 
+🔴 **THE DEV SERVER DOES NOT RELOAD WHEN THE STRATEGY OR AN ENGINE CHANGES, AND A RUN GIVES YOU
+NO WAY TO NOTICE (2026-08-23).** `start.sh` launches `uvicorn --reload` with no `--reload-dir`, so
+the reloader watches its working directory — the backend folder — and nothing else. A python
+backtest imports its strategy from `strategies/python/` and its engines from `engines/`, both
+**outside** that folder. Edit either, or pull somebody else's fix, and the running server keeps
+serving the version it imported when it started.
+
+**MEASURED, and it had already produced a real result:** a server started 2026-08-21 12:55 ran a
+backtest at 2026-08-23 16:39, eleven minutes after a structure-engine fix landed in the working
+tree. Re-driven with the code actually on disk, the same settings give **249 trades / +177.89R**
+against the run's stored **250 / +175.43R** — six trades different. The stored run is not wrong
+arithmetic; every figure in it reconciles to the cent. It is the right arithmetic on **two-day-old
+code**, and the page renders identically either way.
+
+⚠ **Restart the app after a pull, or after any edit under `engines/`, `strategies/` or
+`backtest/`.** Nothing enforces this today.
+
+⚠ **Widening `--reload` to those paths is NOT an obvious win and was deliberately not done
+here.** The reloader restarts the process, and a restart mid-run kills a backtest that can take
+twenty minutes — so a doc edit in a strategy package would destroy a running job. **The safer
+shape is to STAMP each run with the commit that produced it**, so a stale result announces itself
+instead of a guard deciding when to interrupt work. Neither is built; this paragraph is the whole
+of the protection.
+
+⚠ **This is the same failure shape the doc-size guard's own notes name: silence read as
+checked.** A run made on stale code has a green status, a full chart and a KPI row. Nothing in a
+result can show you which code produced it.
+
 **Backtesting prerequisites** — before submitting a run, the SSH tunnel and NT8 agent must be up. See Sidebar health indicators below.
 
 ---
