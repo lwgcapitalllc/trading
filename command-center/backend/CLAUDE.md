@@ -2706,10 +2706,25 @@ parent in others, which is the same "no" / "cannot ask" collapse as rule 1.
 what a strategy with no parent looks like, so nothing on screen is wrong and the nesting has just
 gone missing. `test_every_declared_parent_IS_a_real_strategy` is the only thing that catches it.
 
-**Tests:** `tests/test_strategy_nesting.py` (5), watched RED by five mutations — dropping the
-field, returning `""` instead of `None`, a typo'd parent, a missing declaration, and a strategy
-listed under itself. MEASURED live: a rescan updated 3 rows and the two grouping values landed in
-the DB.
+**Tests:** `tests/test_strategy_nesting.py` (6), watched RED by seven mutations — dropping the
+field, returning `""` instead of `None`, a typo'd parent, a missing declaration, a strategy listed
+under itself, dropping the B-LEG declaration, and giving B-LEG the standalone-refusal flag.
+MEASURED live: a rescan updated 3 rows and the two grouping values landed in the DB.
+
+🟢 **B-LEG joined the tree on 2026-08-23, and the interesting part is the eleven days it did not.**
+Aaron asked for it in the same breath as the recovery rule. It was built, then REVERTED, because
+rule 22 forbids committing a changed strategy package until its parity harness has run GREEN on a
+real export — and the only B-LEG export on disk was red. **Byte-identically red at HEAD, so the
+nesting had not caused it; a pre-existing red is still a red.** What shipped instead was a test
+asserting the OPPOSITE — B-LEG is NOT nested — with the reason in its docstring. That tripwire went
+red the moment the declaration was added, which is what put the gate back in front of whoever added
+it. It ran green on a fresh export (`engines/VANTAGE_XAUUSD, 5_f8228.csv`, 20,573 M5 bars, identical
+on every bar from 0) and the tripwire was replaced by the positive test in the same change.
+
+⚠ **The transferable bit is the SHAPE, not this feature:** when a rule blocks a small change, the
+thing to ship is a test that fails when somebody tries again, not a comment nobody reads and not a
+branch nobody remembers. A comment saying *"do not add this yet"* is invisible to the next person
+who adds it.
 
 ## History floors — blocking a window the broker has no bars for
 

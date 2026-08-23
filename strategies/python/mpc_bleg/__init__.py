@@ -46,4 +46,12 @@ LAB_STRATEGY = {
     "suggested_instrument": "XAUUSD",
     "category": "reversal",
     "self_sizing": True,
+    # 🔴 DISPLAY GROUPING ONLY — it changes where the row is drawn and NOTHING about what this
+    # bot may be run with. B-LEG runs standalone, in any stack, against any instrument, exactly
+    # as before; nothing reads this field except the strategies list. It sits under the A+ bot
+    # because the suite is carved up by LEG off ONE structure stream (see the root CLAUDE.md's
+    # trading philosophy) and a flat alphabetical list hid that relationship entirely.
+    # ⚠ Rule 22 gates this file: shipped only after `tools/compare_bleg.py` ran GREEN on
+    # `engines/VANTAGE_XAUUSD, 5_f8228.csv` (20,573 M5 bars, identical on every bar from 0).
+    "display_under": "mpc_sos_fade",
 }

@@ -144,7 +144,7 @@ lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
 
-## Audit findings — 2026-08-23 (`/audit-engines`, clean tree, one commit since: `f4b0410`) 🟠 STRUCTURE CHAIN SYNCED, GATE UNVERIFIED
+## Audit findings — 2026-08-23 (`/audit-engines`, clean tree, one commit since: `f4b0410`) 🟢 STRUCTURE CHAIN SYNCED, GATE GREEN
 
 **One commit touched an engine block: `f4b0410` — "a break may not install a swing the break itself
 refused".** A structure break is decided on a CLOSE; the rescan that follows read the WICK, so a bar
@@ -189,21 +189,57 @@ resyncs is this harness's own signature for a tie-break edge case rather than a 
 against a pre-fix twin. Rule 22 is unsatisfied until `structure_engine_export.pine` is re-exported
 from TradingView and `compare_tradingview.py` exits 0 — **and only a human can take that export.**
 
+### ✅ GATE GREEN — the fresh export arrived the same day
+
+Aaron re-exported `structure_engine_export.pine` on 2026-08-23:
+
+```
+compare_tradingview.py "engines/VANTAGE_XAUUSD, 5_0bcd2.csv"
+20,574 M5 bars · major_length=15 · tol=1e-06 · break-leg columns present and checked
+✓ PARITY: every field matched on every bar.
+```
+
+**Rule 22 satisfied for `engines/market_structure/`.** ⚠ Rule 14 is not repealed by it: green says the
+Pine and the Python AGREE, never that either is right, and nothing at all about a branch neither one
+entered. ⚠ **It is an M5 export where every previous structure gate ran on M15** — the engine is
+timeframe-agnostic so this is a legitimate pass, but it is a DIFFERENT window, not a re-run of the
+old one, and it does not re-validate anything the M15 exports covered.
+
+🔴 **The transferable finding is how cheap the answer was once the right file existed.** The red above
+had a full mechanical account attached — 77 bars, named fields, a bounded episode that resyncs — and
+every word of it was about a stale twin. **A parity red is a claim about a PAIR. Establish which half
+is older before you spend a day inside the newer one.**
+
 ⚠ **The three July exports are useless for this** — they diverge in the hundreds across `px_dir`,
 `px_i_mode` and `px_i_sw`, because two further fixes have landed since. Do not gate on them.
 
-### The knock-on: the A+ strategy gate is red too
+### The knock-on: B-LEG is green too, A+ is still waiting on its export
 
 `compare_strategy.py` was exit 0 at `af62847` and diverges at bar 14126 (`px_l_stage py=3 pine=2`)
 at `f4b0410`, on all three A+ exports — the same bar the structure episode opens on. **Same cause,
-one layer up: new Python against an old Pine twin.** `compare_bleg.py` is red on its only export as
-well. Every Pine-parity gate in this repo is blocked on the same fresh export.
+one layer up: new Python against an old Pine twin.** `compare_bleg.py` was red on its only export for
+the same reason.
+
+✅ **B-LEG re-ran GREEN on a fresh export the same day** — `engines/VANTAGE_XAUUSD, 5_f8228.csv`,
+20,573 M5 bars, identical from bar 0. That confirms the knock-on diagnosis rather than merely being
+consistent with it: the code never moved, only the twin did.
+
+🔴 **A+ IS STILL RED AND IS THE ONE THING OUTSTANDING.** Its export twin was not on the chart when
+these two were taken. ⚠ **Do not read B-LEG's green as covering it** — they are separate strategies
+with separate harnesses, and B-LEG's pass says nothing about A+'s stage ladder. `mpc_strategy_export.pine`
+has to go on a chart and be exported before rule 22 is satisfied for `strategies/python/mpc_sos_fade/`.
+
+⚠ **A+ and B-LEG cannot share one export file**: their instrumentation blocks emit column names that
+collide almost completely, so one CSV could not tell whose numbers are whose. The structure engine's
+columns do NOT collide with either, so it can ride along on the same chart as one strategy — which is
+how these two files were taken.
 
 ### ✅ The LIVE bot is unaffected, and it was checked rather than assumed
 
 `algos/markets/fx/instances/mpc_sos_fade_demo/deployed/` carries its own frozen `engines/`, and that
 copy does **not** contain the guard. A `git pull` on the VPS cannot move it; only `promote.py` can.
-**Do not promote until the gate is green.**
+**The engine gate is now green, and that is still not clearance to promote — the LIVE bot is A+, and
+the A+ gate is the one still red.**
 
 ### Everything else — IN PARITY, nothing new to extract
 

@@ -65,14 +65,26 @@ def test_nesting_takes_NOTHING_away_from_the_row():
     assert rec["runner"] == "python"
 
 
-def test_the_B_LEG_IS_NOT_NESTED_YET_and_this_is_the_reminder_why():
-    """🔴 Aaron asked for B-LEG to nest here too and it is NOT SHIPPED. Rule 22: a changed
-    strategy package may not be committed until its `compare_bleg.py` gate has run and PASSED on
-    a real export, and on the only B-LEG export on disk
-    (`engines/VANTAGE_XAUUSD, 15_9f68f.csv`) it is RED — byte-identically red at HEAD, so the
-    nesting did not cause it, and a pre-existing red is still a red.
+def test_the_B_LEG_nests_under_the_A_PLUS_bot_too():
+    """The tripwire this replaces asserted the OPPOSITE — B-LEG was held back because rule 22
+    forbids shipping a changed strategy package until its parity harness has run GREEN on a real
+    export, and the only B-LEG export on disk at the time was red (byte-identically red at HEAD,
+    so the nesting never caused it — a pre-existing red is still a red).
 
-    ⚠ This test is a TRIPWIRE, not an opinion. When the declaration is added it goes red, which
-    is the prompt to re-run the gate on a fresh export in the same change. Delete it then.
+    Shipped 2026-08-23 on a fresh export: `compare_bleg.py` on
+    `engines/VANTAGE_XAUUSD, 5_f8228.csv` — 20,573 M5 bars, identical on every bar from 0.
+
+    Watched RED by deleting the declaration from the package: the assert below fails with None.
     """
-    assert _scan("mpc_bleg")["display_under"] is None
+    assert _scan("mpc_bleg")["display_under"] == "mpc_sos_fade"
+
+
+def test_nesting_the_B_LEG_leaves_it_runnable_on_its_own():
+    """The whole risk of the declaration: it must move where the row is DRAWN and nothing else.
+    B-LEG has setups of its own, so it must never pick up the flag that refuses a standalone run.
+
+    Watched RED by adding `requires_source` to the B-LEG package alongside the nesting.
+    """
+    bleg = _scan("mpc_bleg")
+    assert not bleg.get("requires_source")
+    assert bleg["runner"] == "python"

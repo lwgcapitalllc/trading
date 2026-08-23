@@ -289,7 +289,13 @@ register and run side by side — the parallel-stack use case.
 
 ## The parity gate — `tools/compare_bleg.py` + `mpc_b_leg_strategy_export.pine` (built 2026-07-26)
 
-BUILT, plumbing-tested, **awaiting its first real export**. `indicators/strategies/mpc_b_leg_strategy_export.pine`
+🟢 **GREEN, re-run 2026-08-23 on `engines/VANTAGE_XAUUSD, 5_f8228.csv` — 20,573 M5 bars, identical
+from bar 0, no warmup needed.** ⚠ Rule 14 still applies: it says the two AGREE, never that either is
+RIGHT, and nothing about a branch neither entered. 🔴 **The export before it was RED, and the code was
+innocent — a stale twin reds this gate exactly like a bug does.** Before hunting a defect, check which
+side is older: prove the red at HEAD first (it was), then look at the export's date.
+
+`indicators/strategies/mpc_b_leg_strategy_export.pine`
 = `mpc_b_leg_strategy.pine` (body byte-identical, only the line-40 `strategy()` title differs) + an
 appended PARITY EXPORT block. Export it from a 15m XAUUSD chart, then:
 
@@ -565,6 +571,16 @@ command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_bleg/tes
 ```
 Offline. Hand-traced `BLegTracker` (band maths, arm, tap, staleness + invalidation death,
 deepest-band migration, BLEG_MAX conversion) + end-to-end driver run + longs/shorts-off.
+
+## It is LISTED under the A+ bot (2026-08-23)
+
+The package names the A+ bot as the row it is drawn beneath, so the strategies list shows the suite
+the way it is actually carved up — one structure stream, each leg taking a different part of the
+move — instead of an alphabetical list that hid the relationship entirely.
+
+⚠ **DISPLAY ONLY.** It changes nothing about what this bot may be run with: standalone, in any stack,
+on any instrument, exactly as before. Nothing but the list reads it. Full contract:
+`command-center/backend/CLAUDE.md` → *A strategy may declare which row it is LISTED UNDER*.
 
 ## Do / Never
 
