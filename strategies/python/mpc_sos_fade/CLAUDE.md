@@ -29,6 +29,15 @@ renamed file (2025-08-31 → 2026-08-02, `cfg_bits` 544375) — exit 0 at warmup
 string, so a green run on an export from the NEW file is the evidence it was cosmetic, rather than
 an argument that it must have been. The same run is the compile proof: a title is a string literal,
 so a mangled one fails to compile, it does not quietly change a trade.
+**RE-VALIDATED GREEN 2026-08-23** on a fresh 21,060-bar `VANTAGE_XAUUSD, 15m` export
+(2025-09-30 → 2026-08-23, shipped defaults, `exec_risk_pct` 10, stop fib 0.886, swing ratchet,
+scale-in OFF) — exit 0 at warmups 100 / 500 / 1000 / 2000. **This is the run that clears the
+2026-08-21 structure fix**, the refused-wick guard, whose only previous evidence was a red gate
+against a twin that predated it. ⚠ **Non-vacuous, and it was checked rather than assumed:**
+25 entries, 25 closes summing +29.05R, 2,470 armed bars and 267 blocked-setup tags, all
+bar-for-bar. ⚠ **Rule 14 still stands** — green says the two AGREE, never that either is right,
+and nothing about a branch neither entered; the harness itself reports that the no-gap fallback
+was not exercised on this run.
 
 ### `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
 

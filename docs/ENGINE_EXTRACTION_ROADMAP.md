@@ -144,7 +144,7 @@ lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
 
-## Audit findings — 2026-08-23 (`/audit-engines`, clean tree, one commit since: `f4b0410`) 🟢 STRUCTURE CHAIN SYNCED, GATE GREEN
+## Audit findings — 2026-08-23 (`/audit-engines`, clean tree, one commit since: `f4b0410`) 🟢 ALL THREE GATES GREEN
 
 **One commit touched an engine block: `f4b0410` — "a break may not install a swing the break itself
 refused".** A structure break is decided on a CLOSE; the rescan that follows read the WICK, so a bar
@@ -213,7 +213,7 @@ is older before you spend a day inside the newer one.**
 ⚠ **The three July exports are useless for this** — they diverge in the hundreds across `px_dir`,
 `px_i_mode` and `px_i_sw`, because two further fixes have landed since. Do not gate on them.
 
-### The knock-on: B-LEG is green too, A+ is still waiting on its export
+### The knock-on: B-LEG green, then A+ green — after two more wrong files
 
 `compare_strategy.py` was exit 0 at `af62847` and diverges at bar 14126 (`px_l_stage py=3 pine=2`)
 at `f4b0410`, on all three A+ exports — the same bar the structure episode opens on. **Same cause,
@@ -236,17 +236,32 @@ diverge as shipped, 0 with the sub-15m pair.**
 that list read exactly like a broken entry rule. Detail:
 `strategies/python/mpc_sos_fade/CLAUDE.md`.
 
-⚠ **So A+ is STILL UNGATED** — nothing here says the port is right, only that the file could
-not answer. It needs `mpc_strategy_export.pine` exported from a **15-minute** chart.
-
 ⚠ **The structure engine's green is unaffected** — that engine has no timeframe-dependent
 input, and the M5 export gated it legitimately. **B-LEG's green stands and was re-measured**
 under the sub-15m pair as well.
 
-🔴 **A+ IS STILL RED AND IS THE ONE THING OUTSTANDING.** Its export twin was not on the chart when
-these two were taken. ⚠ **Do not read B-LEG's green as covering it** — they are separate strategies
-with separate harnesses, and B-LEG's pass says nothing about A+'s stage ladder. `mpc_strategy_export.pine`
-has to go on a chart and be exported before rule 22 is satisfied for `strategies/python/mpc_sos_fade/`.
+### ✅ A+ GREEN — the fifth export of the day, from a 15-minute chart
+
+```
+compare_strategy.py "engines/VANTAGE_XAUUSD, 15_43e7a.csv" --warmup 100 / 500 / 1000 / 2000
+21,060 M15 bars · 2025-09-30 -> 2026-08-23 · shipped defaults · exit 0 at all four
+25 entries · 25 closes summing +29.05R · 2,470 armed bars · 267 blocked-setup tags
+```
+
+**Rule 22 is satisfied for all three: the structure engine, A+ and B-LEG.** The 2026-08-21
+refused-wick fix now has a green gate under it rather than a footprint measurement.
+
+⚠ **Non-vacuous and it was checked** — a green over a window where nothing traded proves
+nothing, so the trade and arm counts are recorded above. ⚠ **Rule 14 is not repealed**: the
+harness itself reports that the no-gap fallback branch was never entered on this run.
+
+🔴 **The day's real lesson is about which HALF of a pair is stale.** Five exports were needed
+and four gate reds were logged, and NOT ONE of them was a defect in the Python. Three were an
+old Pine twin, one was the wrong script on the chart, one was the wrong chart timeframe.
+**Before reading a parity red as a bug, establish the age and the provenance of the file it
+was measured against** — the mechanical detail inside a red is genuine and points at the code
+either way, which is exactly what makes it convincing when it is answering the wrong
+question.
 
 ⚠ **A+ and B-LEG cannot share one export file**: their instrumentation blocks emit column names that
 collide almost completely, so one CSV could not tell whose numbers are whose. The structure engine's
@@ -257,8 +272,8 @@ how these two files were taken.
 
 `algos/markets/fx/instances/mpc_sos_fade_demo/deployed/` carries its own frozen `engines/`, and that
 copy does **not** contain the guard. A `git pull` on the VPS cannot move it; only `promote.py` can.
-**The engine gate is now green, and that is still not clearance to promote — the LIVE bot is A+, and
-the A+ gate is the one still red.**
+**All three gates are green now, so rule 22 no longer blocks a promote — but a green gate is not a
+decision to promote.** That is Aaron's call, and it moves what a live account trades.
 
 ### Everything else — IN PARITY, nothing new to extract
 
