@@ -144,6 +144,77 @@ lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
 
+## Audit findings — 2026-08-23 (`/audit-engines`, clean tree, one commit since: `f4b0410`) 🟠 STRUCTURE CHAIN SYNCED, GATE UNVERIFIED
+
+**One commit touched an engine block: `f4b0410` — "a break may not install a swing the break itself
+refused".** A structure break is decided on a CLOSE; the rescan that follows read the WICK, so a bar
+that pierced the level, closed back inside and was correctly REFUSED could then be installed as the
+swing behind that same break — the engine anchoring backwards onto a candle it had just rejected.
+
+### The sync chain — all four links carry ONE condition ✅
+
+Checked by diffing the code, not by reading the commit message:
+
+| Link | Verdict |
+|---|---|
+| 1. `mpc_assistant.pine` structure block | patched, 4 sites (2 in `process`, 2 in `processMTF`) |
+| 2. `structure_engine.pine` | **byte-identical to link 1** — 395 code lines each, zero differences in `process` |
+| 3. `structure_engine_export.pine` | identical logic; the only 15 differences are `f_swingCol()` label colour (13) and two `showExternal` visibility blocks — **visual, per this command's own rule** |
+| 4. `engines/market_structure/engine.py` | both sites present, same condition and same placement (AFTER the promotion, which is where the previous attempt at this fix got it wrong) |
+| 5. `algos/shared/structure_engine.py` | pass-through shim, no detection logic, no new public field to expose |
+
+⚠ **`processMTF` is NOT ported and does not need to be** — link 2 has no MTF method, so the Python's
+two sites are the two in `process`, which is called once for external structure. Correct as-is.
+
+### 🔴 The gate — RED, and the commit's own account of why is WRONG
+
+The commit says *"engines/market_structure/exports/ is empty"*. **It is not** — it holds six CSVs,
+four of them carrying `px_ash`. Left standing, that sentence tells the next reader there is nothing
+to run, when in fact the gate runs and answers.
+
+**MEASURED 2026-08-23 on `engines/VANTAGE_XAUUSD, 15_9d44d.csv` — taken 2026-08-20 23:08, i.e.
+AFTER the tie guard and BEFORE this fix, so it isolates exactly this change:**
+
+```
+20,990 bars compared     77 mismatching bars (0.37%), bars 14123 → 14199, then RESYNCS
+fields: px_asl 48 · px_lcl 31 · the four *_bos level/ago fields 6
+```
+
+**Every diverging field is a swing ANCHOR or a level derived from one. `px_dir`, `px_new_sh`,
+`px_new_sl` and the break/CHoCH event flags do not diverge at all** — so the fix moves where a swing
+sits and does not move whether a break fires, which is what it claims to do. A bounded episode that
+resyncs is this harness's own signature for a tie-break edge case rather than a logic gap.
+
+⚠ **This is NOT a green gate and must not be read as one.** It is the fix's footprint measured
+against a pre-fix twin. Rule 22 is unsatisfied until `structure_engine_export.pine` is re-exported
+from TradingView and `compare_tradingview.py` exits 0 — **and only a human can take that export.**
+
+⚠ **The three July exports are useless for this** — they diverge in the hundreds across `px_dir`,
+`px_i_mode` and `px_i_sw`, because two further fixes have landed since. Do not gate on them.
+
+### The knock-on: the A+ strategy gate is red too
+
+`compare_strategy.py` was exit 0 at `af62847` and diverges at bar 14126 (`px_l_stage py=3 pine=2`)
+at `f4b0410`, on all three A+ exports — the same bar the structure episode opens on. **Same cause,
+one layer up: new Python against an old Pine twin.** `compare_bleg.py` is red on its only export as
+well. Every Pine-parity gate in this repo is blocked on the same fresh export.
+
+### ✅ The LIVE bot is unaffected, and it was checked rather than assumed
+
+`algos/markets/fx/instances/mpc_sos_fade_demo/deployed/` carries its own frozen `engines/`, and that
+copy does **not** contain the guard. A `git pull` on the VPS cannot move it; only `promote.py` can.
+**Do not promote until the gate is green.**
+
+### Everything else — IN PARITY, nothing new to extract
+
+Coverage scan of all 7,152 lines of `mpc_assistant.pine`: every functional block still maps to a
+canonical engine (structure, order blocks, FVG, EQH/EQL, RSI divergence, sessions/kill zones/NY
+range, VWAP, liquidity, fibs, SVP). The A+ and B-LEG sequences are strategy-tier as before;
+Continuation is still disabled; Internal Fib is still deleted from the Pine. **No new un-extracted
+block.** `engines/market_structure/tests` 17 green.
+
+---
+
 ## Audit findings — 2026-07-31 (10 commits since the last validated paste; clean tree, diff `48c183f..HEAD`) 🔴 3 ENGINES STALE
 
 Working tree clean. Audited the cumulative diff of `indicators/engines/mpc_assistant.pine` from `48c183f`
