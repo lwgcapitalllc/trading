@@ -49,7 +49,7 @@ import type {
   ChartTrade,
   TradeOutcome,
 } from './types'
-import { chartStyles } from './chartStyles'
+import { chartStyles, makeCandleTooltip } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
 import {
   ANALYSIS_GROUPS,
@@ -2543,6 +2543,36 @@ export default function ChartPanel({
     )
   }, [])
 
+  // ── The pinned top-left readout, and the current-price line ────────────────────────────────
+  // Both used to describe the END OF THE RUN while you were looking at somewhere else in it. The
+  // full story is on `makeCandleTooltip` in chartStyles.ts; these three refs are the state it and
+  // the price line need, and they are refs rather than state because the visible-range effect
+  // below runs on every frame of a drag — the same reason the view centre is written to the DOM by
+  // hand rather than through state.
+  const tipEdgeBarRef = useRef<KLineData | null>(null) // the RIGHT-MOST VISIBLE bar
+  const newestTsRef = useRef<number | null>(null) // …and the timestamp of the LAST bar in the run
+  const lastMarkOnRef = useRef(true) // is the newest bar in view → may the price line draw
+
+  // Which bar the readout describes. 🔴 **THERE IS DELIBERATELY NO "IS THE POINTER ON THE CHART"
+  // FLAG, and the first version of this had one and was WRONG.** klinecharts clears its crosshair
+  // through more than one path and at least one of them updates it without firing the change
+  // action, so a flag fed by that action sticks at "hovering" and the readout goes on naming the
+  // newest bar — which is the exact defect this exists to fix, surviving its own fix. MEASURED in
+  // a real browser: after the pointer left the chart the action never fired again.
+  //
+  // The question is answerable without one. klinecharts hands us the CROSSHAIR's bar while the
+  // pointer is on one and the LAST bar in the run when it is not, so the only ambiguous case is
+  // the last bar itself — and if that bar is on screen, it is also the right-most visible bar, so
+  // both readings agree and there is nothing to decide. Substitute only when the last bar is off
+  // screen AND it is the bar we were handed: then it cannot be something the reader is pointing at.
+  const resolveTipBar = useCallback(
+    (current: KLineData) =>
+      !lastMarkOnRef.current && current.timestamp === newestTsRef.current
+        ? (tipEdgeBarRef.current ?? current)
+        : current,
+    []
+  )
+
   // Init once on mount; dispose on unmount. Data is applied by the effect below.
   useEffect(() => {
     const el = containerRef.current
@@ -2552,6 +2582,16 @@ export default function ChartPanel({
     if (!chart) return
     chartRef.current = chart
     chart.setStyles(chartStyles)
+    // The pinned readout describes the RIGHT-MOST VISIBLE bar and carries no date — see
+    // `makeCandleTooltip`. Installed here rather than in `chartStyles` because it closes over live
+    // chart state; the styles object is the theme, this is the behaviour.
+    chart.setStyles({
+      candle: {
+        tooltip: {
+          custom: makeCandleTooltip(resolveTipBar, () => chart.getPriceVolumePrecision()),
+        },
+      },
+    })
     defaultBarSpaceRef.current = chart.getBarSpace() // remembered for "Reset chart view"
     defaultOffsetRef.current = chart.getOffsetRightDistance()
 
@@ -2668,6 +2708,26 @@ export default function ChartPanel({
       const ch = chartRef.current
       if (!ch || !c.length) return
       const r = ch.getVisibleRange()
+
+      // ── What the pinned readout and the current-price line are allowed to describe ──────────
+      // Both follow the WINDOW, not the end of the run. `to` is EXCLUSIVE and already clamped to
+      // the data length, so the right-most visible bar is `to - 1` and "the newest bar is on
+      // screen" is `to >= length`. Read off klinecharts' own list rather than `displayCandles`,
+      // because these two indices are ITS indices — the lists differ for a frame during a page.
+      const kl = ch.getDataList()
+      tipEdgeBarRef.current = kl.length ? (kl[clampIdx(r.to - 1, kl.length)] ?? null) : null
+      newestTsRef.current = kl.length ? (kl[kl.length - 1]?.timestamp ?? null) : null
+      // ⚠ The price line is a fact about the LIVE edge, so it must go quiet when that edge is off
+      // screen — left on, klinecharts clamps it to the top of the scale, where a bright line and a
+      // price tag read as a level in the market you are looking at. It is not one.
+      const markOn = kl.length > 0 && r.to >= kl.length
+      if (markOn !== lastMarkOnRef.current) {
+        lastMarkOnRef.current = markOn
+        // Guarded on CHANGE: `setStyles` redraws the whole chart, and this runs on every frame of
+        // a drag.
+        ch.setStyles({ candle: { priceMark: { last: { show: markOn } } } })
+      }
+
       const span = Math.max(1, r.to - r.from)
       const visLo = c[clampIdx(r.from, c.length)].time
       const visHi = c[clampIdx(r.to, c.length)].time

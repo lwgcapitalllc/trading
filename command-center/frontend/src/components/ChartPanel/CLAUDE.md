@@ -1422,6 +1422,56 @@ ly menu with
 
 ---
 
+## The pinned readout follows the WINDOW, and carries no date (2026-08-23)
+
+🔴 **THE READOUT ACROSS THE TOP DESCRIBED A BAR THAT WAS NOT ON SCREEN, AND THE DATE IT PRINTED
+WAS READ AS THE DATE OF THE TRADE BELOW IT.** With the readout pinned on and the pointer off the
+chart, klinecharts falls back to `dataList[dataList.length - 1]` — the newest bar in the loaded
+run, wherever you have scrolled to. On a chart parked on August 2025 around 3,330 it printed
+`2026-08-21 15:45 … 4,603.31`, and the year on it was taken for the year of the trade on screen.
+**Nothing was wrong with the data. The chart was showing two different moments at once with no
+sign that it was doing it** — the same failure shape as a probe whose negative answer a healthy
+system also produces. TradingView does not do this: its legend follows the visible window and
+carries no timestamp at all.
+
+Three rules, all TradingView's, and the third is the one nobody asks for until they hit it:
+
+1. **The readout names the RIGHT-MOST VISIBLE bar** — never the end of the dataset. While the
+   pointer is on a bar the crosshair's bar wins, because that is the bar being asked about.
+2. **No date in it.** The date lives in exactly one place, the crosshair's own tag on the time
+   axis, so a date you can see is always the bar you are pointing at.
+3. **The current-price line goes quiet when its bar is off screen.** Left on, klinecharts clamps
+   it to the top of the scale, where a bright line and a price tag read as a level in the market
+   you are looking at. It is not one.
+
+🔴 **THERE IS DELIBERATELY NO "IS THE POINTER ON THE CHART" FLAG, AND THE FIRST VERSION HAD ONE
+AND WAS WRONG.** klinecharts clears its crosshair through more than one path and at least one of
+them updates it without firing the change action, so a flag fed by that action sticks at
+*hovering* — and the readout goes on naming the newest bar, i.e. **the defect surviving its own
+fix**. MEASURED in a real browser: after the pointer left the chart the action never fired again.
+**`resolveTipBar` needs no such flag**: the library hands us the crosshair's bar while the pointer
+is on one and the LAST bar when it is not, so the only ambiguous case is the last bar itself — and
+if that bar is on screen it IS the right-most visible bar, so both readings agree. Substitute only
+when the last bar is off screen and it is the bar we were handed.
+
+⚠ **Both readings format through ONE branch** (`makeCandleTooltip`, `chartStyles.ts`), so the
+hovered and the pinned readout cannot drift into disagreeing about how a price is written — which
+is why the `{open}`-style templates are not used for the hover path even though they work there.
+⚠ **The price-line toggle is guarded on CHANGE**: `setStyles` redraws the whole chart and the
+visible-range action runs on every frame of a drag.
+⚠ **The edge bar is read off `chart.getDataList()`, not `displayCandles`** — the indices are
+klinecharts' own, and the two lists differ for a frame during a page.
+⚠ **`to` is EXCLUSIVE and already clamped**, so the right-most bar is `to - 1` and "the newest bar
+is on screen" is `to >= length`.
+
+⚠ **No automated check.** The readout is canvas-drawn with no DOM, so what was done instead was
+driving the real page: hover a bar mid-chart, scroll back, take the pointer off, and read the
+numbers off the screenshot against the candles under them. **Re-do that by hand after touching
+either file** — a unit test here would be asserting on the resolver, which is not the half that
+broke.
+
+---
+
 ## Status
 
 All build steps complete (1–6, 7a, 7b, 8). The panel renders real per-run specs end-to-end:
