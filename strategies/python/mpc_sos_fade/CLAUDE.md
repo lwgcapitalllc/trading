@@ -3032,6 +3032,46 @@ retrace of that 1m leg"*, which describes `"1m shift"` — a trigger that is no 
 The shipped rule is: the first trade reaches breakeven, price comes back into the zone, a fair
 value gap is there, and the entry follows the PRIMARY's model around that gap.
 
+## 🔴 The worst price a trade reports is bounded by its STOP — `_widen_hold` (2026-08-22)
+
+The hold's high/low is widened with each bar BEFORE that bar's exits resolve, so it used to take
+the bar's whole range. On the bar that stops the trade out, the far end of that range is price
+**after the position is flat**, and it was being recorded as the trade's own drawdown.
+
+⚠ **It is not an intrabar-ordering guess.** The stop is triggered BY the adverse move, so any
+price past the stop necessarily came at or after the fill. Determinate, which is what makes this
+fixable at all.
+
+**MEASURED on run `976aff9ec279` (206 trades) before the fix: 77 of 77 trades that exited at their
+stop recorded a worst price beyond it** — median 0.18R past, worst 4.41R. One short lost exactly
+1.0R and reported **2.22R of adverse excursion**; its chart drew a drawdown marker, and its own
+win/loss chip, a full 1.2R **above** its `SL` line. That is what made Aaron ask.
+
+**MEASURED after, same window replayed 2020-01-01 → 2026-08-22, 156,811 bars, 160 trades:**
+worst-price-past-the-stop **54 → 4**, 59 trades' deepest price corrected and their adverse dollars
+with them, and **every trade's R byte-identical** — total +141.177388543R both sides, 0 trades
+moved, 0 favourable extremes moved. `compare_strategy.py` **exit 0 on three exports** at warmup
+1000 (`bfe65`, `4fef8`, `49f80`), before and after.
+
+⚠ **The remaining 4 are the ENTRY BAR and are correct.** The stop is not managed until the next
+bar — the one-bar order delay every fill model here is built on — so a first-bar excursion past the
+stop is real exposure the trade genuinely sat through. Bounding it would report a better worst
+price than the trade actually had, which is a lie in the flattering direction.
+
+⚠ **A bar that OPENS past the stop is bounded by the OPEN, not the stop**, because that is where
+the stop fills (`_fill_price`) and that fill is real.
+
+⚠ **The FAVOURABLE side is deliberately untouched.** A target is partial — TP1 banks a portion and
+the runner stays open — so price past a target is still the trade's move. Only the stop closes
+everything.
+
+⚠ **Reporting only, and proven rather than argued.** No decision reads the excursion, so parity
+could not move; the gate was run anyway, on three exports, because that is the rule.
+
+**Tests:** `tests/test_excursion_bounds.py` (7), watched RED by five mutations — removing the
+bound, ignoring a gapped open, replacing the running extreme instead of bounding it, clamping the
+favourable side too, and comparing a shifted bar against an unshifted stop.
+
 ## Do / Never
 
 - **Do** port any change to `mpc_strategy.pine`'s A+ block or execution layer here line-for-line, then

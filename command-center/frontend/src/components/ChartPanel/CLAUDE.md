@@ -283,6 +283,28 @@ and `Reached` leaves *reached what?* unanswered, while `Best` reads the same on 
 `maePrice` end to end, and `services/candle_overlays.py` still calls the adverse extreme "deepest"
 in its own reasoning, which is correct there and is not this chip.
 
+## 🔴 Nothing adverse is drawn past the stop on a trade the stop closed (2026-08-22)
+
+Aaron's call: *"if my stop loss stopped me out, no need to show the drawdown. I was stopped out.
+There's no drawdown. I lost."* Three marks are suppressed together — the faint tail band beyond the
+stop, the `DD` dot and label, and the **win/loss chip's parking height**, which was the loudest of
+the three: on a 1.0R stopped-out short it sat a full 1.2R above that trade's own `SL` line, reading
+as a trade that kept losing after it was closed.
+
+⚠ **It is also not a preference — the number was wrong.** The bot widened the hold's worst price
+with the whole closing bar before resolving that bar's exits, so a stop-out kept the bar's far end.
+Fixed at source (`strategies/python/mpc_sos_fade/execution.py` → `_widen_hold`), where 77 of 77
+stopped-out trades on run `976aff9ec279` were affected. **This guard is what makes every run STORED
+BEFORE that fix read right too, because nothing backfills them.**
+
+🔴 **Detected from the PRICES, never the exit reason.** An exit's reason string here is the
+BRACKET that closed, not the trigger — a trade that lost exactly 1.0R at its stop is labelled
+`S-TP1`, and on run `976aff9ec279` **not one of the 78 stop-outs carried a stop-shaped reason at
+all**. Keying on the label would have silently missed every one of them.
+
+⚠ **No automated test**, because Playwright is out of the suite by design. The arithmetic it
+mirrors is tested on the python side (`tests/test_excursion_bounds.py`, 7 tests, 5 mutations).
+
 ## The one rule
 
 No strategy or instrument names, and no strategy concepts (sessions, ranges, breakout levels), are hardcoded in this component. The panel draws **only** what the spec carries. Adding a new strategy later means the lab emits a different spec — the code in this folder does not change.

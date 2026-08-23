@@ -665,9 +665,34 @@ export function registerChartOverlays(): void {
       // drawdown and recovered it: one FAINT band entry→mae — the "runner" equivalent, showing
       // how deep it went against before working out.
       const isLoser = typeof d.pnl === 'number' && d.pnl < 0
+      // 🔴 THE STOP TOOK IT, SO THE STOP IS THE DRAWDOWN. Nothing adverse is drawn beyond the stop
+      // line on a trade the stop closed — no tail band, no `DD` dot, no `DD` label (Aaron's call,
+      // 2026-08-22: *"if my stop loss stopped me out, no need to show the drawdown. I was stopped
+      // out. There's no drawdown. I lost."*).
+      //
+      // It is also not a preference — the number those marks were drawn from was WRONG. The bot
+      // widened the hold's worst price with the whole of the closing bar before working out that
+      // bar's exits, so on a stop-out it kept the bar's far end, which is price AFTER the position
+      // was flat. MEASURED on run `976aff9ec279`: 77 of 77 trades that exited at their stop
+      // recorded a worst price beyond it, median 0.18R past and worst 4.41R, and one 1.0R loser
+      // reported 2.22R of drawdown. Fixed at source in `mpc_sos_fade/execution.py`
+      // (`_widen_hold`) — this guard is what makes every run STORED BEFORE that fix read right
+      // too, because nothing backfills them.
+      //
+      // ⚠ Detected from the PRICES, never the exit reason. A stop-out's reason string is the
+      // BRACKET that closed (`S-TP1` on a trade that lost 1.0R at its stop), so keying on it would
+      // silently miss most of them.
+      const stoppedOut =
+        typeof d.exitPrice === 'number' &&
+        typeof d.stopPrice === 'number' &&
+        (d.exitPrice - d.stopPrice) * sign <= 1e-9
       if (isLoser && typeof d.stopPrice === 'number' && (d.stopPrice - entryP!) * sign < -1e-9) {
         rect(entryY, yOf(d.stopPrice)!, withAlpha(advColor, 0.22))
-        if (typeof d.maePrice === 'number' && (d.maePrice - d.stopPrice) * sign < -1e-9) {
+        if (
+          !stoppedOut &&
+          typeof d.maePrice === 'number' &&
+          (d.maePrice - d.stopPrice) * sign < -1e-9
+        ) {
           rect(yOf(d.stopPrice)!, yOf(d.maePrice)!, withAlpha(advColor, 0.07))
         }
       } else if (
@@ -703,6 +728,7 @@ export function registerChartOverlays(): void {
         crossLine(mfePrice, withAlpha(profitColor, 0.4)) // guide only — Exit already names it
       }
       if (
+        !stoppedOut &&
         typeof d.maePrice === 'number' &&
         typeof entryP === 'number' &&
         (d.maePrice - entryP) * sign < -1e-9
@@ -890,7 +916,12 @@ export function registerChartOverlays(): void {
         const won = verdict === 'won'
         // A scratch resolved by giving profit back, so it is parked on the ADVERSE side with the
         // losses — the chip always points the way the trade ended up.
-        const extY = won ? yMfe : (yOf(d.maePrice ?? d.stopPrice) ?? exit.y)
+        // ⚠ A loser's chip parks at its deepest adverse point — but NOT past the stop on a trade
+        // the stop closed. This is the mark that made somebody ask: on a 1.0R stopped-out short it
+        // sat a full 1.2R ABOVE its own `SL` line, which reads as a trade that kept losing after
+        // it was closed. Same rule as the `DD` marker above, and the same reason.
+        const deepY = stoppedOut ? d.stopPrice : (d.maePrice ?? d.stopPrice)
+        const extY = won ? yMfe : (yOf(deepY) ?? exit.y)
         const outPix = won ? -sign : sign // beyond the extreme, away from entry (px: up = −)
         // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several
         // strategies' trades on one chart, the outcome alone doesn't say whose trade it was.

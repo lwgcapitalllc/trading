@@ -2166,12 +2166,44 @@ class Execution:
         # so the closing bar's extreme counts too. Never read by a decision. Shifted onto the ASK
         # for a short, so the reported best and worst prices are ones its exits could have got.
         adj = self._exit_adj()
-        self._ext_high = max(self._ext_high, sig.high + adj)
-        self._ext_low = min(self._ext_low, sig.low + adj)
+        self._ext_high, self._ext_low = self._widen_hold(sig, adj)
         self._widen_add_excursions(sig, adj)
         if self._resolver is not None:
             return self._manage_open_ticks(sig, dec)
         return self._manage_open_bar(sig, dec)
+
+    def _widen_hold(self, sig, adj) -> Tuple[float, float]:
+        """This bar's contribution to the hold's high/low, CLAMPED on the adverse side.
+
+        🔴 THE ADVERSE EXTREME CANNOT BE WORSE THAN THE PRICE THE STOP WOULD HAVE CLOSED AT. The
+        widen runs before this bar's exits resolve, so it used to take the bar's whole range — and
+        on the bar that stops the trade out, the far end of that range is price AFTER the position
+        is flat. It is not an intrabar-ordering guess: the stop is triggered BY the adverse move,
+        so anything past it necessarily happened at or after the fill.
+
+        MEASURED on run `976aff9ec279` (206 trades) before this: **77 of 77 trades that exited at
+        their stop recorded a deepest adverse price beyond it** — median 0.18R past, worst 4.41R.
+        One short lost exactly 1.0R and reported 2.22R of adverse excursion, and the chart drew its
+        drawdown marker above its own stop line, which is what made somebody ask.
+
+        ⚠ The bound is the stop, EXCEPT on a bar that opens already past it — there the stop fills
+        at the open (`_fill_price`), worse than the stop, and that fill is real. `min`/`max` against
+        the open covers both without asking which happened.
+
+        ⚠ The FAVOURABLE side is deliberately untouched. A target is partial here: TP1 banks a
+        portion and the runner stays open, so price beyond a target is still the trade's move. Only
+        the stop closes everything, which is what makes this side determinate and that one not.
+
+        ⚠ Reporting only, like everything it feeds — no decision reads `_ext_high`/`_ext_low`, so
+        the decision stream cannot move. Proven rather than argued: `compare_strategy.py` exit 0.
+        """
+        stop = self._current_stop()
+        hi, lo = sig.high + adj, sig.low + adj
+        if self._pos_dir > 0:
+            lo = max(lo, min(stop, sig.open + adj))
+        else:
+            hi = min(hi, max(stop, sig.open + adj))
+        return max(self._ext_high, hi), min(self._ext_low, lo)
 
     def _widen_add_excursions(self, sig, adj) -> None:
         """Widen each OPEN scale-in lot's own high/low with this bar. Reporting only.
