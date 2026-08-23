@@ -261,3 +261,60 @@ def test_entry_direction_comes_from_fill_dir_not_qty_sign():
     assert cb._py_row(short, flat)["px_entry_dir"] == -1
     assert cb._py_row(long_, flat)["px_entry_dir"] == 1
     assert cb._py_row(Decision(index=3), flat)["px_entry_dir"] == 0
+
+
+# ── this fork inherits the parent's 15m gap pins, so it inherits the refusal ────────
+
+
+def test_the_BLEG_harness_REFUSES_an_export_from_a_chart_faster_than_15m(tmp_path, capsys):
+    """B-LEG's engine config is the parent's with one field replaced, so its gap filter is
+    pinned to 15m exactly as the parent's is, and below 15m the Pine runs a different gap
+    set. A diff there compares two differently-configured runs.
+
+    ⚠ MEASURED and it cuts the other way here: the M5 export this bot went GREEN on was
+    green with the sub-15m pair too, so the difference decided nothing on that run — a
+    B-LEG entry rests on the frozen band, not on a gap. The check is still right. **"It did
+    not bite this time" is a fact about one export.**
+
+    Watched RED by deleting the refusal block from `compare_bleg.main`: the run then
+    proceeds and reports a mismatch list instead of exiting 2.
+    """
+    csv = tmp_path / "fast.csv"
+    idx = pd.date_range("2026-01-01", periods=40, freq="5min")
+    pd.DataFrame({"time": idx.astype("int64") // 10**9, "open": 1.0, "high": 1.0,
+                  "low": 1.0, "close": 1.0, "cfg_eq_exempt": 0}).to_csv(csv, index=False)
+    argv = sys.argv
+    sys.argv = ["compare_bleg.py", str(csv)]
+    try:
+        rc = cb.main()
+    finally:
+        sys.argv = argv
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "CANNOT DIFF" in out
+    assert "5-minute chart" in out
+    assert "mpc_b_leg_strategy_export.pine" in out
+
+
+def test_the_BLEG_refusal_can_be_overridden_deliberately(tmp_path, capsys):
+    """The override exists because the pins CAN be changed; a wall with no door gets
+    worked around in ways that leave no trace. With it passed, the run proceeds past the
+    check (and then fails on this stub file's missing columns, which is a different and
+    honest failure).
+
+    Watched RED by ignoring the flag: the output goes back to CANNOT DIFF.
+    """
+    csv = tmp_path / "fast.csv"
+    idx = pd.date_range("2026-01-01", periods=40, freq="5min")
+    pd.DataFrame({"time": idx.astype("int64") // 10**9, "open": 1.0, "high": 1.0,
+                  "low": 1.0, "close": 1.0, "cfg_eq_exempt": 0}).to_csv(csv, index=False)
+    argv = sys.argv
+    sys.argv = ["compare_bleg.py", str(csv), "--allow-fast-timeframe"]
+    try:
+        try:
+            cb.main()
+        except Exception:
+            pass
+    finally:
+        sys.argv = argv
+    assert "CANNOT DIFF" not in capsys.readouterr().out

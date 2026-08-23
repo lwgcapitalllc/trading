@@ -572,6 +572,27 @@ command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_bleg/tes
 Offline. Hand-traced `BLegTracker` (band maths, arm, tap, staleness + invalidation death,
 deepest-band migration, BLEG_MAX conversion) + end-to-end driver run + longs/shorts-off.
 
+## 🔴 This gate refuses a sub-15m export too, and the green above was re-checked (2026-08-23)
+
+This fork's engine config is the parent's with one field replaced, so it inherits the
+parent's **15-minute gap pins** while its Pine reads those two values off the CHART. Below
+15m the two sides are configured differently before a bar is replayed, so `compare_bleg.py`
+REFUSES rather than reporting a mismatch. Full reasoning and the measurement that forced it:
+`strategies/python/mpc_sos_fade/CLAUDE.md` → *The gate REFUSES an export from a chart faster
+than 15m*.
+
+✅ **The M5 green recorded above STANDS, and it was re-measured rather than defended.** That
+export was replayed a second time with the sub-15m pair the Pine actually used and came back
+green on every bar as well — so the difference provably decided nothing there. It could not:
+a B-LEG entry rests on the frozen band, never on a gap.
+
+🔴 **That is exactly why the check was still added.** *"It did not bite this time"* is a fact
+about one export and one entry rule, and the next run gets no such promise. A green obtained
+under a configuration mismatch is right by luck, and luck is not a gate.
+
+**Tests:** 2 in `tests/test_compare_bleg.py` — the refusal and its deliberate override —
+both watched RED by mutation.
+
 ## It is LISTED under the A+ bot (2026-08-23)
 
 The package names the A+ bot as the row it is drawn beneath, so the strategies list shows the suite

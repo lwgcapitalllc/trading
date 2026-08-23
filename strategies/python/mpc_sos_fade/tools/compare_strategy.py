@@ -654,6 +654,52 @@ def debug_arm(path: Path, warmup: int = 0,
     return []
 
 
+# ── the export's CHART TIMEFRAME, and why this harness refuses a fast one ────────────
+# 🔴 THE BOT PINS THE GAP FILTER TO 15m AND THE PINE DOES NOT — it reads the CHART.
+# `mpc_strategy.pine` splits the minimum-gap floor by timeframe (0.0 below 15m, 0.1 at 15m
+# and above) and drops the middle-bar-close test below 15m; the Python hardcodes the 15m
+# pair, deliberately and with its reason written down in `strategy.py::engine_config`.
+# So on a sub-15m export the two sides are configured DIFFERENTLY before a single bar is
+# replayed, and the diff that follows is not a parity result at all.
+#
+# ⚠ It is not a subtle skew either. MEASURED 2026-08-23 on a 20,574-bar M5 export: 13,759
+# of 20,477 compared bars diverge as shipped, and 0 of them with the sub-15m pair the Pine
+# actually used. The whole file was noise about the chart's timeframe.
+#
+# 🔴 The reason this REFUSES rather than warning is the rule this repo keeps re-learning:
+# never let "cannot compare" and "compared and disagreed" be the same outcome. A mismatch
+# list reads as a defect in the port and sends the reader into the strategy, which is
+# exactly where the hour went before this check existed.
+_MIN_TF_MS = 900_000  # 15 minutes, the timeframe the bot's engine pins are written for
+
+
+def export_bar_ms(df: pd.DataFrame) -> Optional[int]:
+    """The export's bar spacing in ms, or None if the frame is too short to tell. Read as
+    the MINIMUM gap between rows, matching how the bot infers its own bar duration — a
+    median would be dragged upward by weekends and holidays on a fast timeframe."""
+    if len(df.index) < 2:
+        return None
+    return int(df.index.to_series().diff().min().total_seconds() * 1000)
+
+
+def timeframe_refusal(df: pd.DataFrame) -> Optional[str]:
+    """The refusal text for an export from a chart faster than the bot's pins, or None."""
+    ms = export_bar_ms(df)
+    if ms is None or ms >= _MIN_TF_MS:
+        return None
+    mins = ms / 60000.0
+    return (
+        f"this export is from a {mins:g}-minute chart, and the bot's gap filter is pinned to "
+        f"15-minute values (minimum gap 0.1% of price, middle bar must close past the gap).\n"
+        f"  The Pine reads those two off the CHART, so below 15m it runs 0.0 and no close test "
+        f"- a DIFFERENT gap set from the one the Python replays.\n"
+        f"  Any diff here would compare two differently-configured runs, so it is refused "
+        f"rather than reported as a mismatch.\n"
+        f"  Re-export mpc_strategy_export.pine from a 15-minute chart, or pass "
+        f"--allow-fast-timeframe if you have changed the pins in strategy.py::engine_config."
+    )
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="A+ strategy logic-parity check (Python vs Pine export)")
     ap.add_argument("csv", type=Path, help="mpc_strategy_export.pine chart-data CSV")
@@ -664,6 +710,10 @@ def main(argv=None) -> int:
                     help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
                          "surviving the FVG cap). Only needed for an export with no "
                          "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
+    ap.add_argument("--allow-fast-timeframe", action="store_true",
+                    help="diff an export from a chart faster than 15m anyway. Only correct "
+                         "if the engine pins in strategy.py::engine_config have been changed "
+                         "to match what that chart's Pine ran.")
     ap.add_argument("--debug-arm", action="store_true",
                     help="diff the A+ arming INPUTS (recentSSL / session-gap / arm-state) "
                          "against the export's dbg_* columns, to locate an arming gap")
@@ -679,6 +729,14 @@ def main(argv=None) -> int:
     # directly and genuinely cannot be corrected for. See the standing rule in
     # strategies/CLAUDE.md: a parity column holding a Pine bar index is export-window-relative.)
     _df = load_export(args.csv)
+
+    # Refuse a chart faster than the bot's engine pins BEFORE anything else — a diff run
+    # here is not a parity result, and reads exactly like one. See the note above.
+    _tf = None if args.allow_fast_timeframe else timeframe_refusal(_df)
+    if _tf is not None:
+        print(f"CANNOT DIFF - {_tf}")
+        return 2
+
     _gap = export_truncation(_df)
     if _gap > 0:
         print(f"PARTIAL EXPORT — the CSV is missing ~{_gap} warmup bars.")

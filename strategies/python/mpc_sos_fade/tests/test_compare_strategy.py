@@ -402,3 +402,70 @@ def test_a_run_that_DOES_enter_the_branch_is_not_warned_about():
     import pandas as pd
     cfg = dataclasses.replace(SosFadeConfig(), exec_req_fvg=False)
     assert cs.warn_unexercised(cfg, pd.DataFrame({"cfg_nogap_arm": [1]})) == []
+
+
+# ── the chart-timeframe refusal ───────────────────────────────────────────────────
+# 🔴 A sub-15m export is not a harder parity run, it is a DIFFERENT run: the Pine reads
+# the minimum-gap floor and the middle-bar-close test off the chart, the Python pins both
+# to their 15m values. MEASURED on a real M5 export: 13,759 of 20,477 bars diverge as
+# shipped, 0 with the sub-15m pair. So this must never surface as a mismatch list.
+
+
+def _frame(minutes: int, rows: int = 40) -> pd.DataFrame:
+    """A bar frame at a given spacing — only the index matters to the check."""
+    idx = pd.date_range("2026-01-01", periods=rows, freq=f"{minutes}min")
+    return pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=idx)
+
+
+def test_a_five_minute_export_is_REFUSED_and_the_message_names_the_cause():
+    """Watched RED by returning None from timeframe_refusal for every frame."""
+    msg = cs.timeframe_refusal(_frame(5))
+    assert msg is not None
+    assert "5-minute chart" in msg
+    assert "15-minute" in msg
+
+
+def test_a_fifteen_minute_export_passes_the_check_in_silence():
+    """Watched RED by comparing with `>` instead of `>=` — 15m is the pinned timeframe
+    itself and must not be refused by its own guard."""
+    assert cs.timeframe_refusal(_frame(15)) is None
+
+
+def test_a_SLOWER_chart_is_not_refused_either():
+    """The pin is a FLOOR, not an equality. The Pine runs the same two values at every
+    timeframe at or above 15m, so an H1 or H4 export is a legitimate run.
+
+    Watched RED by testing `ms != _MIN_TF_MS`.
+    """
+    assert cs.timeframe_refusal(_frame(60)) is None
+    assert cs.timeframe_refusal(_frame(240)) is None
+
+
+def test_a_weekend_gap_does_not_make_a_fast_chart_read_as_a_slow_one():
+    """🔴 A real export is not evenly spaced — a weekend is a 48-hour hole between two
+    5-minute bars. The spacing has to be read as the SMALLEST gap, which is what the bot
+    itself does when it infers its own bar duration, or a session break can present a fast
+    chart as a slow one and walk straight past this check.
+
+    ⚠ The first version of this test claimed a MEDIAN would break here and was WRONG —
+    weekends are a small minority of the gaps, so the median reads 5 minutes too and the
+    test passed against its own mutation. It is written against `.max()` instead, which is
+    the reading that genuinely fails, and it is watched RED there. **A test whose mutation
+    passes is not evidence; it is a second opinion from the same mistake.**
+    """
+    idx = list(pd.date_range("2026-01-01", periods=4, freq="5min"))
+    idx += [idx[-1] + pd.Timedelta(days=2) + pd.Timedelta(minutes=5 * i) for i in range(1, 12)]
+    df = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0},
+                      index=pd.DatetimeIndex(idx))
+    assert cs.export_bar_ms(df) == 300_000
+    assert cs.timeframe_refusal(df) is not None
+
+
+def test_a_frame_too_short_to_measure_is_not_refused():
+    """One row carries no spacing at all. Refusing it would report a timeframe problem
+    for a file whose real problem is that it is empty.
+
+    Watched RED by returning 0 instead of None from export_bar_ms.
+    """
+    assert cs.export_bar_ms(_frame(5, rows=1)) is None
+    assert cs.timeframe_refusal(_frame(5, rows=1)) is None

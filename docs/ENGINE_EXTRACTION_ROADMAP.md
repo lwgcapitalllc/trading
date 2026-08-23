@@ -224,6 +224,25 @@ the same reason.
 20,573 M5 bars, identical from bar 0. That confirms the knock-on diagnosis rather than merely being
 consistent with it: the code never moved, only the twin did.
 
+### 🔴 The A+ export arrived, and the red was the CHART TIMEFRAME — not the code
+
+Three exports came back on 2026-08-23. The third carried the A+ instrumentation and the gate
+went red at bar 62, then at whatever bar each warmup started on. **It was a 5-minute chart.**
+The bot pins its gap filter to 15-minute values while the Pine reads them off the chart, so
+the two sides were configured differently before a bar was replayed: **13,759 of 20,477 bars
+diverge as shipped, 0 with the sub-15m pair.**
+
+✅ Both harnesses now REFUSE a sub-15m export instead of reporting a mismatch list, because
+that list read exactly like a broken entry rule. Detail:
+`strategies/python/mpc_sos_fade/CLAUDE.md`.
+
+⚠ **So A+ is STILL UNGATED** — nothing here says the port is right, only that the file could
+not answer. It needs `mpc_strategy_export.pine` exported from a **15-minute** chart.
+
+⚠ **The structure engine's green is unaffected** — that engine has no timeframe-dependent
+input, and the M5 export gated it legitimately. **B-LEG's green stands and was re-measured**
+under the sub-15m pair as well.
+
 🔴 **A+ IS STILL RED AND IS THE ONE THING OUTSTANDING.** Its export twin was not on the chart when
 these two were taken. ⚠ **Do not read B-LEG's green as covering it** — they are separate strategies
 with separate harnesses, and B-LEG's pass says nothing about A+'s stage ladder. `mpc_strategy_export.pine`

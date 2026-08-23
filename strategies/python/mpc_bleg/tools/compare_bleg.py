@@ -48,6 +48,7 @@ from mpc_sos_fade.tools.compare_strategy import (  # noqa: E402
     engine_config_from_export as _engine_config_from_export,
     EqExemptUnknown,
     load_export,
+    timeframe_refusal,
 )
 
 
@@ -275,7 +276,27 @@ def main() -> int:
                     help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
                          "surviving the FVG cap). Only needed for an export with no "
                          "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
+    ap.add_argument("--allow-fast-timeframe", action="store_true",
+                    help="diff an export from a chart faster than 15m anyway. Only correct "
+                         "if the inherited engine pins have been changed to match what that "
+                         "chart's Pine ran.")
     a = ap.parse_args()
+
+    # 🔴 THIS FORK INHERITS THE PARENT'S 15m GAP PINS, so it inherits the parent's exposure:
+    # below 15m the Pine runs a different gap set from the one the Python replays, and any
+    # diff would be comparing two differently-configured runs. Refused, never reported as a
+    # mismatch — see the long note in `mpc_sos_fade/tools/compare_strategy.py`.
+    # ⚠ MEASURED 2026-08-23, and the measurement cuts the other way here: the 20,573-bar M5
+    # export this bot went green on was ALSO green with the sub-15m pair, so the difference
+    # provably decided nothing on that run — a B-LEG entry rests on the frozen band, not on a
+    # gap. **That is why the green stands and why this check still had to be added**: "it did
+    # not bite this time" is a fact about one export, and the next one gets no such promise.
+    _tfDf = load_export(Path(a.csv))
+    _tf = None if a.allow_fast_timeframe else timeframe_refusal(_tfDf)
+    if _tf is not None:
+        print(f"CANNOT DIFF - {_tf.replace('mpc_strategy_export.pine', 'mpc_b_leg_strategy_export.pine')}")
+        return 2
+
     eq = None if a.eq_exempt is None else (a.eq_exempt == "on")
     try:
         msgs = run_parity(Path(a.csv), a.warmup, a.price_tol, a.r_tol, eq_exempt=eq)

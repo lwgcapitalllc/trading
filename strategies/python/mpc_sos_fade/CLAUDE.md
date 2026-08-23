@@ -2849,6 +2849,40 @@ shipped rule is unchanged and no number in this file moves. Full grid: `mpc_sos_
 → Run 24.
 
 
+## 🔴 The gate REFUSES an export from a chart faster than 15m (2026-08-23)
+
+**The bot pins the gap filter to 15-minute values; the Pine reads them off the CHART.**
+`mpc_strategy.pine` runs a minimum-gap floor of 0.0 below 15m and 0.1 at 15m and above, and
+drops the middle-bar-close test below 15m. `strategy.py::engine_config` hardcodes the 15m
+pair, deliberately and with its reason already written down there. **So on a sub-15m export
+the two sides are configured differently before a single bar is replayed.**
+
+⚠ **MEASURED, because "it would differ a bit" was not good enough:** on a 20,574-bar M5
+export, **13,759 of 20,477 compared bars diverge as shipped and 0 diverge with the sub-15m
+pair.** `px_edge` on 13,401 of them. The whole file was noise about the chart's timeframe.
+
+🔴 **It REFUSES rather than warning, and that is the point.** The run above did not look
+like a configuration problem — it looked like a broken entry rule, at a named bar, with a
+price on each side. That is the shape of a real defect, and it sends the next reader into
+the strategy. **Never let *cannot compare* and *compared and disagreed* be the same
+outcome** — the same rule as the terminal that answered "quiet market" when it was dead.
+
+⚠ **The spacing is read as the SMALLEST gap between rows**, matching how the bot infers its
+own bar duration. A real export has weekends in it, and a reading that lets a session break
+raise the apparent timeframe would walk a fast chart straight past this check.
+
+⚠ **`--allow-fast-timeframe` exists on purpose.** The pins CAN be changed; a wall with no
+door gets routed around in ways that leave no trace, which is strictly worse.
+
+⚠ **It is a floor, not an equality** — H1 and H4 exports are legitimate, because the Pine
+runs the same two values everywhere at or above 15m.
+
+**Tests:** 5 in `tests/test_compare_strategy.py`, each watched RED by mutation. 🔴 **One of
+them was WRONG on its first pass and is kept as the record**: it claimed a median reading
+would break on a weekend gap, and it passed against that mutation, because weekends are a
+minority of the gaps. **A test whose mutation passes is not evidence — it is a second
+opinion from the same mistake.** It is written against the reading that genuinely fails.
+
 ## Tests
 
 ```
