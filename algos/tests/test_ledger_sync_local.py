@@ -38,6 +38,14 @@ _spec.loader.exec_module(ls)
 TOKEN = "github_pat_11ABCDEFG_notarealtokenatall"
 
 
+class _Empty:
+    """A `git config --get` that found nothing — what SYSTEM sees."""
+
+    stdout = ""
+    stderr = ""
+    returncode = 1
+
+
 def _git(repo: Path, *args: str):
     return subprocess.run(
         ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False
@@ -275,3 +283,44 @@ def test_an_unchanged_record_is_NOT_pending(repo):
     _git(repo, "commit", "-qm", "first")
 
     assert ls.pending([f]) == []
+
+
+# ── the identity, which SYSTEM does not have ────────────────────────────────
+
+
+def test_an_account_with_no_git_identity_gets_the_box_one(repo, monkeypatch):
+    """🔴 Why the first scheduled run exited 1 while the hand-run worked.
+
+    The task runs as SYSTEM, which does not share the interactive user's global git config.
+    MEASURED with a throwaway SYSTEM task: `git config --get user.email` returned nothing, so
+    `git commit` refused with *"Please tell me who you are"* — after the files had been copied,
+    so the working tree looked half-done. The same command as Administrator succeeded.
+    """
+    # ⚠ Simulated rather than `git config --unset`, and that mattered: unsetting the LOCAL value
+    # still finds this developer's GLOBAL one, so the first version of this test failed for a
+    # reason that has nothing to do with SYSTEM. The condition under test is "git reports no
+    # identity", which is what is faked here.
+    monkeypatch.setattr(ls, "_run", lambda *a: _Empty())
+
+    args = ls._identity()
+
+    assert f"user.email={ls._BOX_EMAIL}" in args
+    assert f"user.name={ls._BOX_NAME}" in args
+
+
+def test_an_account_that_HAS_one_keeps_it(repo):
+    """Mutation: returning the box identity unconditionally reddens this.
+
+    ⚠ A Mac running this has its own identity, and overriding it would attribute every manual
+    sync to the trading box — a history that says a machine did work a person did.
+    """
+    assert ls._identity() == ()
+
+
+def test_the_identity_is_never_written_into_the_repo_config(repo, monkeypatch):
+    """It is passed per-command. A write would touch a checkout `promote.py` also reads."""
+    monkeypatch.setattr(ls, "_run", lambda *a: _Empty())
+
+    ls._identity()
+
+    assert ls._BOX_EMAIL not in (repo / ".git" / "config").read_text()

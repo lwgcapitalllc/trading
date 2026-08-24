@@ -273,6 +273,35 @@ def pending(paths: list[Path]) -> list[Path]:
     return [p for p, r in zip(paths, rel) if r in changed]
 
 
+# Who the box commits AS when the account running the task has no git identity of its own.
+#
+# 🔴 The scheduled task runs as SYSTEM, and SYSTEM does not share the interactive user's global
+# git config. MEASURED 2026-08-24 with a throwaway SYSTEM task: `git config --get user.email`
+# returned NOTHING, so `git commit` refused with *"Please tell me who you are"* and the job exited
+# 1 — after copying the files, so the working tree looked half-done. Running the identical command
+# as Administrator worked, which is exactly the shape that makes this hard to see: the hand-check
+# passes and the unattended run does not.
+#
+# ⚠ Used ONLY as a fallback. A Mac running this has its own identity and keeps it, or every manual
+# sync would be attributed to the trading box.
+# ⚠ Deliberately NOT a person. These commits are made by a machine on a timer, and a history that
+# says so is worth more than one that borrows somebody's name for work they did not do.
+_BOX_NAME = "LWG Trading Box"
+_BOX_EMAIL = "bot@lwgcapital.local"
+
+
+def _identity() -> tuple:
+    """`-c user.*` arguments when this account has no git identity, else nothing.
+
+    ⚠ Passed per-command rather than written into `.git/config`. A write would be a side effect on
+    a checkout that `promote.py` also reads, and it would silently re-attribute a human's commits
+    made from the same box.
+    """
+    if _run("git", "-C", str(REPO_ROOT), "config", "--get", "user.email").stdout.strip():
+        return ()
+    return ("-c", f"user.name={_BOX_NAME}", "-c", f"user.email={_BOX_EMAIL}")
+
+
 def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
     """Stage exactly `paths` and commit. Returns True if the record is safely at origin."""
     rel = [_rel(p) for p in paths]
@@ -290,7 +319,7 @@ def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
         f"chore(ledger): bot record {span}\n\n"
         f"Fetched from the VPS by algos/tools/ledger_sync.py. {len(rel)} file(s)."
     )
-    c = _run("git", "-C", str(REPO_ROOT), "commit", "-m", msg, "--", *rel)
+    c = _run("git", "-C", str(REPO_ROOT), *_identity(), "commit", "-m", msg, "--", *rel)
     if c.returncode != 0 and "nothing to commit" not in c.stdout:
         print(f"  git commit failed: {c.stderr.strip() or c.stdout.strip()}")
         return False

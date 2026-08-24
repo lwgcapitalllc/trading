@@ -160,7 +160,20 @@ so the standing rule above holds: **run it on the box.** ⚠ Its test asserts on
 string, because a real path on a Mac has no backslash and the assertion would pass without testing
 anything.
 
-**Tests:** `algos/tests/test_ledger_sync_local.py` (17), weighted toward what the job must REFUSE.
+🔴 **AND THE RUN AFTER THAT EXITED 1, FOR A SECOND REASON ONLY THE SYSTEM ACCOUNT HAS.** SYSTEM
+does not share the interactive user's global git config, and this repo has no LOCAL identity — so
+`git commit` refused with *"Please tell me who you are"*, **after** the files had been copied, which
+leaves the working tree looking half-done. MEASURED with a throwaway SYSTEM task:
+`git config --get user.email` returned nothing. **Running the identical command as Administrator
+worked**, which is the shape that makes this hard to see — the hand-check passes and the unattended
+run does not. `_identity()` supplies a fallback `LWG Trading Box <bot@lwgcapital.local>` per command.
+⚠ **A machine, not a person**: these commits are made on a timer, and a history that says so beats
+one borrowing somebody's name. ⚠ **Fallback ONLY** — a Mac keeps its own identity, or every manual
+sync would be attributed to the box. ⚠ **Passed per-command, never written into `.git/config`**: that
+checkout is what `promote.py` reads, and a write would silently re-attribute a human's commits made
+from the same box.
+
+**Tests:** `algos/tests/test_ledger_sync_local.py` (20), weighted toward what the job must REFUSE.
 A fail-watch is vacuous (new functions), so non-vacuity is by MUTATION — dropping the archive
 exemption and dropping the redaction each redden their own named test. 🔴 **One test caught a real
 defect the live check had missed: the authenticated URL was missing its `@`, so it could never have
