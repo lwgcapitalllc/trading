@@ -1,1 +1,5 @@
 2026-08-24 05:11:33,736 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_sl_deep: False → True. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-08-24 22:15:03,711 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-08-24 22:15:03,713 [INFO] Sizing against account balance $9,996.99
+2026-08-24 22:15:06,296 [INFO] Warmed 5000 bars (2026-06-09 05:15:00+00:00 → 2026-08-24 22:00:00+00:00) in 2.5s
+2026-08-24 22:15:06,299 [INFO] Equity re-anchored to the account after warm-up: 13,724.64 → 9,996.99
