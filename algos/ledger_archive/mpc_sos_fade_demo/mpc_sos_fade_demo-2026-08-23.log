@@ -1,0 +1,4 @@
+2026-08-23 22:15:06,062 [WARNING] 197 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-08-23 22:15:06,105 [INFO] Sizing against account balance $9,996.99
+2026-08-23 22:15:09,661 [INFO] Warmed 5000 bars (2026-06-08 05:15:00+00:00 → 2026-08-23 22:00:00+00:00) in 3.4s
+2026-08-23 22:15:09,670 [INFO] Equity re-anchored to the account after warm-up: 13,724.64 → 9,996.99
