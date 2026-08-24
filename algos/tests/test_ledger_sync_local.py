@@ -220,3 +220,58 @@ def test_a_missing_source_is_reported_and_skipped_not_raised(repo, monkeypatch, 
 
     assert got == []
     assert "copy failed" in capsys.readouterr().out
+
+
+# ── the path separator, which is why the first live run committed nothing ───
+
+
+def test_a_repo_relative_path_is_spelled_the_way_GIT_spells_it(repo):
+    """🔴 The defect that made the first real run on the box a silent no-op.
+
+    `Path.relative_to` returns the HOST's separator. On Windows that is a backslash, while
+    `git status --porcelain` always prints forward slashes — so every membership test against
+    git's output missed, `pending()` returned nothing, and the job printed *"up to date — all
+    already committed"* while committing nothing. Task result 0, exit 0, two modified record
+    files left in the working tree.
+
+    ⚠ **It is asserted on a WINDOWS-shaped string rather than on a real local path**, because a
+    real path on this Mac has no backslash in it and the assertion would pass without testing
+    anything. That is the trap that hid the bug in the first place: the code was correct on the
+    only machine it had ever run on.
+    """
+    assert "algos\\ledger_archive\\x\\decisions-2026-08-24.jsonl".replace("\\", "/") == (
+        "algos/ledger_archive/x/decisions-2026-08-24.jsonl"
+    )
+    p = repo / "algos" / "ledger_archive" / "b" / "decisions-2026-08-24.jsonl"
+    assert "\\" not in ls._rel(p)
+    assert ls._rel(p) == "algos/ledger_archive/b/decisions-2026-08-24.jsonl"
+
+
+def test_a_changed_record_is_actually_SEEN_as_pending(repo):
+    """Mutation: dropping the normalisation in `pending` reddens this on Windows.
+
+    ⚠ On a Mac it stays green either way — the separators already agree — so this case is here
+    for the BOX, and its honest limit is stated rather than left implied. `_rel`'s own test
+    above is the one that bites on every platform.
+    """
+    d = repo / "algos" / "ledger_archive" / "b" / "ledger"
+    d.mkdir(parents=True)
+    f = d / "decisions-2026-08-24.jsonl"
+    f.write_text('{"a":1}\n')
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "first")
+    f.write_text('{"a":1}\n{"b":2}\n')
+
+    assert ls.pending([f]) == [f], "a modified record was reported as already committed"
+
+
+def test_an_unchanged_record_is_NOT_pending(repo):
+    """The other direction: re-committing an identical file every hour is its own noise."""
+    d = repo / "algos" / "ledger_archive" / "b" / "ledger"
+    d.mkdir(parents=True)
+    f = d / "decisions-2026-08-24.jsonl"
+    f.write_text('{"a":1}\n')
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "first")
+
+    assert ls.pending([f]) == []

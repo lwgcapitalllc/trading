@@ -214,6 +214,29 @@ def fetch(host: str, rel_paths: list[str], dry_run: bool = False) -> list[Path]:
     return got
 
 
+def _rel(path: Path) -> str:
+    """A repo-relative path spelled the way GIT spells it — forward slashes, always.
+
+    🔴 **This is a one-line function because it was a silent, total failure of the job.**
+    `Path.relative_to` returns the host's separator, so on the trading box a path came out
+    `algos\\ledger_archive\\...` while `git status --porcelain` prints
+    `algos/ledger_archive/...`. Every membership test against git's output therefore missed,
+    `pending()` returned nothing, and the run reported **"up to date — all already committed"**
+    while committing nothing at all. MEASURED on the box 2026-08-24: exit 0, task result 0, two
+    modified record files still sitting in the working tree.
+
+    ⚠ **It could not happen on a Mac, which is the whole point.** The separators agree there, so
+    this code was correct for as long as it only ever ran on the machine that wrote it — and
+    broke the moment it was moved to the box it was written to back up. **A path comparison is
+    platform-specific even when nothing about the logic is.**
+
+    ⚠ Normalise the INPUT to git too, not only the output: `check-ignore` echoes back whatever
+    pathspec it was handed, so a backslash in and a forward slash out is the same mismatch
+    wearing different clothes.
+    """
+    return str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+
+
 def ignored(paths: list[Path]) -> list[Path]:
     """Which of these files git is configured to ignore — i.e. can never be backed up.
 
@@ -228,7 +251,7 @@ def ignored(paths: list[Path]) -> list[Path]:
     """
     if not paths:
         return []
-    rel = [str(p.relative_to(REPO_ROOT)) for p in paths]
+    rel = [_rel(p) for p in paths]
     # `check-ignore` exits 1 when NOTHING matches, which is the ordinary case — so the return
     # code says nothing here and only the output is read.
     out = _run("git", "-C", str(REPO_ROOT), "check-ignore", "--", *rel)
@@ -240,15 +263,19 @@ def pending(paths: list[Path]) -> list[Path]:
     """Narrow to files git does not already have identical content for."""
     if not paths:
         return []
-    rel = [str(p.relative_to(REPO_ROOT)) for p in paths]
+    rel = [_rel(p) for p in paths]
     out = _run("git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", *rel)
-    changed = {line[3:].strip().strip('"') for line in out.stdout.splitlines() if line.strip()}
+    changed = {
+        line[3:].strip().strip('"').replace("\\", "/")
+        for line in out.stdout.splitlines()
+        if line.strip()
+    }
     return [p for p, r in zip(paths, rel) if r in changed]
 
 
 def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
     """Stage exactly `paths` and commit. Returns True if the record is safely at origin."""
-    rel = [str(p.relative_to(REPO_ROOT)) for p in paths]
+    rel = [_rel(p) for p in paths]
     if dry_run:
         print(f"  would commit {len(rel)} file(s): {', '.join(rel)}")
         return True

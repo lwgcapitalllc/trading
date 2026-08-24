@@ -146,7 +146,21 @@ write, nothing else, is the whole of the limit.
 ⚠ **A rebuild does not restore the token** — it is git-ignored. The task then commits and never
 pushes, with every green tick still green. Put it back as part of the rebuild.
 
-**Tests:** `algos/tests/test_ledger_sync_local.py` (14), weighted toward what the job must REFUSE.
+🔴 **THE FIRST REAL RUN ON THE BOX COMMITTED NOTHING AND REPORTED "up to date".** `Path.relative_to`
+returns the HOST's separator, so a path came out `algos\ledger_archive\...` while
+`git status --porcelain` prints `algos/ledger_archive/...` — every membership test against git's
+output missed, `pending()` returned empty, and the job printed *"up to date — all already
+committed"*. Task result 0, exit 0, two modified record files still sitting in the working tree.
+`_rel()` normalises to git's spelling everywhere. ⚠ **It could not happen on a Mac, and that is the
+lesson: the code was correct for as long as it only ever ran on the machine that wrote it, and broke
+the moment it moved to the box it was written to back up.** A path comparison is platform-specific
+even when nothing about the logic is. ⚠ **This is the THIRD Windows-only defect to reach a scheduled
+task through a green suite** — `%-I` in `strftime` and cp1252 console encoding were the other two —
+so the standing rule above holds: **run it on the box.** ⚠ Its test asserts on a WINDOWS-SHAPED
+string, because a real path on a Mac has no backslash and the assertion would pass without testing
+anything.
+
+**Tests:** `algos/tests/test_ledger_sync_local.py` (17), weighted toward what the job must REFUSE.
 A fail-watch is vacuous (new functions), so non-vacuity is by MUTATION — dropping the archive
 exemption and dropping the redaction each redden their own named test. 🔴 **One test caught a real
 defect the live check had missed: the authenticated URL was missing its `@`, so it could never have
