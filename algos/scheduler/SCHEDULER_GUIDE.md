@@ -12,6 +12,9 @@ All tasks run as `trader` user on the VPS.
 | SYS_TELEGRAM | Boot | At startup | `notifications/start_telegram.py` |
 | SYS_MONITOR | Scheduled | Every 1 min | `notifications/monitor.py` |
 | SYS_DEADMAN | Scheduled | Every 5 min | `notifications/deadman.py` |
+| SYS_LOGBACKUP | Scheduled | Daily 00:30 | `tools/log_backup.py` |
+| SYS_LOGREVIEW | Scheduled | Hourly | `notifications/log_review.py` |
+| SYS_LEDGERSYNC | Scheduled | Hourly, :20 | `tools/ledger_sync.py --local --alert-on-failure` |
 
 **No BOT_ tasks currently exist** — all four first-attempt bots were deleted 2026-06-22.
 When a new bot is deployed it gets a disabled `BOT_<NAME>` task; `SYS_STARTUP` uses
@@ -106,7 +109,9 @@ $tasks = @(
     "telegram_task.xml:SYS_TELEGRAM",
     "monitor_task.xml:SYS_MONITOR",
     "deadman_task.xml:SYS_DEADMAN",
-    "logbackup_task.xml:SYS_LOGBACKUP"
+    "logbackup_task.xml:SYS_LOGBACKUP",
+    "logreview_task.xml:SYS_LOGREVIEW",
+    "ledgersync_task.xml:SYS_LEDGERSYNC"
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")
@@ -114,6 +119,18 @@ foreach ($t in $tasks) {
     schtasks /create /tn $parts[1] /xml "C:\temp\$($parts[0])" /f
 }
 ```
+
+⚠ **This list and the table above were BOTH stale until 2026-08-24** — `SYS_LOGBACKUP` was in
+the snippet and missing from the table, and `SYS_LOGREVIEW` was in neither, while both had been
+running on the box for weeks. A roster is a CLAIM about what a rebuilt box comes back with, and
+the one thing a stale roster cannot do is tell you what it left out. **`scripts/bootstrap_vps.ps1`
+is what actually registers them; this file is a copy for a human, so check it against that list
+rather than against the box.**
+
+🔴 **`SYS_LEDGERSYNC` is the only task here that needs a SECRET, and a rebuild does not restore
+it.** `github_token` lives in `algos/credentials.json`, which is git-ignored. Without it the task
+still runs, still commits, and simply never pushes — so the record stops leaving the box while
+every green tick stays green. Put the token back as part of the rebuild.
 
 ### No password — and never add one back
 

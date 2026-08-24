@@ -120,12 +120,19 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'deadman_task.xml';             Name = 'SYS_DEADMAN' }
     [pscustomobject]@{ Xml = 'logbackup_task.xml';           Name = 'SYS_LOGBACKUP' }
     [pscustomobject]@{ Xml = 'logreview_task.xml';           Name = 'SYS_LOGREVIEW' }
+    [pscustomobject]@{ Xml = 'ledgersync_task.xml';          Name = 'SYS_LEDGERSYNC' }
 )
 # SYS_PNLTRACKER and SYS_REPORTER were removed 2026-08-05 with the scripts behind them.
 # SYS_DEADMAN and SYS_LOGBACKUP were added in the same pass: both had task XMLs sitting in
 # algos/scheduler/ that this list never registered, so a rebuilt box came back with no
 # dead-man's switch — the one alarm that fires when the box itself dies — and nothing would
 # have said so, because a missing alarm is silent by construction.
+# SYS_LEDGERSYNC was added 2026-08-24 and it is the one task here that needs a SECRET to work:
+# `github_token` in algos/credentials.json, which is git-ignored and therefore NOT restored by a
+# rebuild. A rebuilt box registers this task, runs it hourly, and it commits locally and never
+# pushes until somebody puts the token back. That degradation is deliberate (the Mac-side sync
+# has always run without one) but it is SILENT unless you look, so put the token back as part of
+# the rebuild rather than after the first missing day.
 # BOT_ tasks are started by SYS_STARTUP only — disable so they never auto-fire.
 # No bots are registered yet, so this list is empty.
 $DisableTasks = @()

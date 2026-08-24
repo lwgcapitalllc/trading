@@ -9,18 +9,27 @@
 # script ssh's to the VPS, fetches every per-day record file (decisions, health, and the text
 # log), and commits them to `algos/ledger_archive/`.
 #
-# ⚠ WHY THIS RUNS ON THE MAC AND NOT ON THE VPS, which is where the data is. The VPS cannot
-# push: its scheduled tasks run as SYSTEM, SYSTEM has its own credential store, and Git
-# Credential Manager there has no cached token and no interactive session to ask for one — so
-# `git push` BLOCKS rather than failing, forever, until the task's execution limit kills it
-# (measured 2026-07-31). Making it work means putting a GitHub write token on a box that already
-# holds a live MT5 password, which widens what a compromise costs for no trading benefit. See
-# `algos/tools/log_backup.py`.
+# 🔴 THIS IS NO LONGER THE BACKUP. Since 2026-08-24 the trading box pushes its OWN record hourly
+# (SYS_LEDGERSYNC, `algos/scheduler/ledgersync_task.xml`), so this agent runs with `--no-push`
+# and is a SECOND LOCAL COPY on the Mac, nothing more. Aaron's call, and the reason is the one
+# this file used to state as an unavoidable limit: the record only left the box when a Mac
+# happened to be awake, and a laptop shut for a weekend meant a weekend of record on one disk.
 #
-# ⚠ THE HONEST LIMIT: this only runs while this Mac is on. launchd will fire a MISSED calendar
-# job when the machine next wakes, so a closed laptop DELAYS the backup rather than skipping it —
-# but a Mac off for three days means three days of record living on one VPS disk. The `open:` /
-# `closed:` counts printed by `log_backup.py` on the VPS are how you check.
+# ⚠ `--no-push` is not a detail — it is what stops the two machines racing. Both pushing to
+# `main` on their own timers means one rebases under the other; the box is the copy that is
+# always on, so the box is the one that pushes.
+#
+# WHY THE BOX COULD NOT PUSH BEFORE, and what changed: its scheduled tasks run as SYSTEM, whose
+# credential store has no cached token and no interactive session to ask for one — so `git push`
+# BLOCKED rather than failing (measured 2026-07-31). It now uses a repo-scoped fine-grained token
+# from the git-ignored `algos/credentials.json`, spliced into the push URL in memory, with Git
+# Credential Manager disabled outright so it cannot run and cannot hang. The cost is stated where
+# the key is documented: that box already holds a live broker password, and a token beside it
+# means a break-in costs the repository too.
+#
+# ⚠ THE LIMIT THAT REMAINS: this agent still only runs while the Mac is on, and it now only makes
+# a local copy. If you want to know whether the RECORD is safe, look at the box — the `open:` /
+# `closed:` counts from `log_backup.py`, or that SYS_LEDGERSYNC last ran with result 0.
 #
 # Usage:
 #   scripts/install_ledger_sync.sh            # install (or reinstall) and load
@@ -68,6 +77,7 @@ cat > "$PLIST" <<PLIST_EOF
   <array>
     <string>$PYTHON</string>
     <string>$REPO/algos/tools/ledger_sync.py</string>
+    <string>--no-push</string>
   </array>
   <key>WorkingDirectory</key><string>$REPO</string>
   <!-- Every 12 hours. :05 rather than :00 so a UTC-midnight roll on the VPS has finished

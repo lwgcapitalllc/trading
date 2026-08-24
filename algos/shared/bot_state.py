@@ -28,6 +28,7 @@ adds them back with a writer attached, not before.
 """
 
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -142,10 +143,50 @@ def _load_instance_state(instance_dir: Path) -> dict:
 
 
 def _save_instance_state(instance_dir: Path, state: dict):
+    """Replace the state file in one step — temp file + `os.replace`.
+
+    🔴 **It was `open(path, "w")` until 2026-08-24, which EMPTIES the file and only then
+    refills it.** Anything reading in that window gets a truncated or zero-byte file, and a
+    reader has no way to tell that from a corrupt one. Measured cost: on 2026-08-22 at 03:50
+    UTC the dead-man's switch read it mid-write, sent `/fail` with *"bot_state.json cannot be
+    read"*, and cleared five minutes later on its next pass. The bot never missed a
+    heartbeat — `health-2026-08-22.jsonl` has pulses at 03:41 and 03:56, fifteen minutes
+    apart, exactly on schedule.
+
+    ⚠ **The alarm was the SMALL half.** `_load_instance_state` swallows the parse error and
+    returns `{}`, so `write_bot` would then find no entry for the bot, rebuild it from
+    `_default_state`, and save — **wiping the other bot's entry and this bot's own fields**
+    on the way past. A reader that can only ever see a COMPLETE file cannot start that chain,
+    which is why the fix is here rather than a retry in each of the four readers.
+
+    ⚠ **This does NOT make a read-modify-write atomic**, and it is not meant to. Two writers
+    can still interleave and lose one field update — `runner.py` stamps the heartbeat and
+    balance, `monitor.py` stamps the status, and the loser is re-stamped within a poll. That
+    is benign and self-healing. Reading a half-written file was neither.
+
+    ⚠ **The temp name carries the PID.** Two processes sharing one temp path would be the
+    same defect one level down: A's `os.replace` could publish B's half-written bytes.
+
+    ⚠ `os.replace` is atomic on Windows as well as POSIX, which is the whole reason it is
+    used here rather than `shutil.move` — the VPS is the only place this matters.
+    """
     path = instance_dir / "bot_state.json"
     state["last_updated"] = datetime.utcnow().isoformat()
-    with open(path, "w") as f:
-        json.dump(state, f, indent=2)
+    tmp = path.with_suffix(f".json.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(state, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except OSError:
+        # A status write must never take a bot down — the caller is stamping telemetry, not
+        # deciding a trade. Clean up the temp so a failing disk cannot litter the instance dir.
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def read_bot(bot_key: str) -> dict:

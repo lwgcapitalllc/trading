@@ -105,6 +105,82 @@ account cap and there is no room to give a second strategy without lowering it f
 ⚠ **`_account_risk_cap_pct` is NOT runtime-reloadable** — changing the cap needs a RESTART, so it
 arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than on its own.
 
+## 🔴 The box backs up its OWN record now — the Mac no longer pushes (2026-08-24)
+
+`SYS_LEDGERSYNC` runs `algos/tools/ledger_sync.py --local --alert-on-failure` **hourly at :20**.
+The Mac's launchd agent still runs, with `--no-push`, as a second local copy.
+
+**Why it changed.** The record left the box only when a Mac happened to be awake. Aaron, after a
+weekend of records sitting on one disk: *"let the VPS go to work for me… so when I'm asleep,
+things could run automated."*
+
+**Why it could not before, and what actually fixed it.** The task runs as SYSTEM, whose credential
+store has no cached token and no interactive session, so `git push` **BLOCKED** rather than failing.
+Two changes, and the second is the one that matters:
+
+  * a repo-scoped fine-grained token (`github_token`, git-ignored `algos/credentials.json`), spliced
+    into the push URL **in memory** so it never reaches `.git/config`;
+  * 🔴 **Git Credential Manager disabled outright** on every git call. **The token alone would NOT
+    have fixed the hang.** MEASURED: with the helper live, even a SUCCESSFUL `ls-remote` printed
+    *"Unable to persist credentials with the 'wincredman' credential store"* — it reaches for a
+    store it cannot write, and under a session-less task that is what waits forever. Silent with it
+    off.
+
+⚠ **Exactly ONE machine may push.** Two timers on one branch rebase under each other. The box is
+the one always on, so the box pushes and the Mac is `--no-push`. Do not "restore" the Mac's push.
+
+🔴 **It REFUSES to push when the working tree carries changes outside `algos/ledger_archive/`**
+(`_foreign_changes`). `algos/tools/promote.py` freezes a live bot's snapshot out of that same
+checkout, so a rebase underneath a half-finished deployment would change what is about to be
+frozen. The commit stays local and the job says so. ⚠ **Untracked files do NOT count** — the box
+permanently carries two, and counting them would mean the push never ran while looking installed.
+
+⚠ **A failure sends a Telegram HEALTH message.** `--no-push` and `--dry-run` deliberately do NOT
+alert: an alarm that fires when you asked for the thing is one people learn to ignore, and this
+job's silence has already been mistaken for success twice.
+
+⚠ **What it costs, and it was a deliberate trade:** that box already holds a live broker password,
+and a repo write token beside it means a break-in costs the repository too. One repo, Contents
+write, nothing else, is the whole of the limit.
+
+⚠ **A rebuild does not restore the token** — it is git-ignored. The task then commits and never
+pushes, with every green tick still green. Put it back as part of the rebuild.
+
+**Tests:** `algos/tests/test_ledger_sync_local.py` (14), weighted toward what the job must REFUSE.
+A fail-watch is vacuous (new functions), so non-vacuity is by MUTATION — dropping the archive
+exemption and dropping the redaction each redden their own named test. 🔴 **One test caught a real
+defect the live check had missed: the authenticated URL was missing its `@`, so it could never have
+authenticated — and the check on the box only asserted the builder returned something.**
+
+## 🔴 The status file is REPLACED, never emptied and refilled (2026-08-24)
+
+`algos/shared/bot_state.py::_save_instance_state` writes a temp file and `os.replace`s it, the same
+idiom `algos/live/position_state.py` uses. It was `open(path, "w")` until this date — which TRUNCATES
+first — so any of the four readers landing in that window got an unparseable file.
+
+**Measured cost.** 2026-08-22 03:50 UTC the dead-man's switch read it mid-write and sent `/fail`
+saying *"bot_state.json cannot be read"*; it cleared on its next pass five minutes later. The bot
+never missed a beat — `health-2026-08-22.jsonl` has pulses at 03:41 and 03:56, exactly on schedule.
+
+⚠ **The false alarm was the SMALL half.** `_load_instance_state` swallows the parse error and returns
+`{}`, so a `write_bot` landing there rebuilds the entry from defaults and saves — **wiping the other
+bot's entry and this bot's own fields.** A reader that can only ever see a COMPLETE file cannot start
+that chain, which is why the fix is at the writer rather than a retry in each reader.
+
+⚠ **It does NOT make a read-modify-write atomic, and is not meant to.** Two writers can still lose a
+field update; the loser is re-stamped within a poll. Benign. Reading a half-written file was not.
+
+⚠ **The temp name carries the PID** — two processes sharing one scratch path is the same defect one
+level down, where A's `os.replace` publishes B's half-written bytes.
+
+⚠ **No trade was ever at risk and the watchdog was never fooled.** `monitor.py` reads the heartbeat
+through the swallowing loader, gets `0`, and its own guard turns that into `stale_secs = 0` — so it
+neither alarmed nor restarted. Nothing in the trading loop reads this file to decide anything.
+
+**Tests:** `algos/tests/test_bot_state_atomic.py` (4). Three watched RED against HEAD (1,195
+unreadable reads of 6,965; the good record overwritten; no scratch-path separation). The litter check
+passed at HEAD by construction and is pinned by MUTATION — removing the temp cleanup reddens it.
+
 ## `markets/fx/accounts.json` — the broker accounts a bot can be put on
 
 **Added 2026-08-12, GIT-TRACKED, HOLDS NO SECRET.** One entry per broker account: its server, the

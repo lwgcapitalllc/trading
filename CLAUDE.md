@@ -2,7 +2,9 @@
 
 - Plain English only. Short sentences.
 - **Never write a code name in a reply to ANYONE — no variable, parameter, config field, function or class names.** Say what the thing DOES: "the setting that decides what triggers the trade", not its name. If the reader needs to find it themselves, quote the label shown in the Command Center. File paths and file links are fine — those are places, not code. Write a real name only when they ask for it or ask to see the code. *(Aaron, 2026-08-20: "you keep using it as though I'm reading code." A sentence built round a raw name carries no information to the person reading it, so it hides the answer instead of supporting it. It applies to every person working this repo, not just the one who asked — nobody here reads as a compiler.)*
-- Never use bullet points to explain a simple thing.
+- **Answer in a short bulleted list, grouped by outcome.** Findings go under **Broken** and **Working**, worst first, and anything needing a decision goes last under its own heading. One line per bullet — a fact and its consequence, nothing else. No nested bullets, no closing summary repeating what the bullets said. *(Aaron, 2026-08-24: "this is the most efficient way to speak to me." He asked twice in one session after two prose answers, so a long-form reply is now the exception that has to earn itself. It applies to everyone working this repo.)*
+- **Prose only when he asks for it, or when a bullet would hide the reasoning** — a design trade-off, a measurement that needs its caveat attached, why something broke. Then keep it to a paragraph and put it UNDER the bullets, never above them.
+- Say the answer in the first bullet. Never build up to it.
 - No preamble. No "Great question." No "Sure, I can help with that."
 - Spawn subagents for routine tasks. Work sequentially unless the task explicitly requires parallel execution.
 
@@ -166,7 +168,14 @@ each engine's own CLAUDE.md and is not restated here.
 | `education/smc/` | The course material the engines were extracted FROM. Reference a human reads; no code reads any of it. |
 
 ### scripts/
-Cross-subsystem VPS bootstrap and full-recovery scripts (`bootstrap_vps.ps1` for the MT5/algos side, `bootstrap_ninjatrader.ps1` for the NT8 side). Idempotent, run on a wiped or new VPS. Full run order in `scripts/README.md`. **`setup_learning_mode.sh` (2026-08-11) is the odd one out — it targets a DEV MACHINE, not the VPS**, and is the one-time install behind `/learn <video-url>`: it puts `ffmpeg`/`yt-dlp` on the PATH and clones the third-party `watch` skill (MIT, `bradautomates/claude-video`) to `~/.claude/vendor/`, symlinked into `~/.claude/skills/watch`. ⚠ **The watch skill is deliberately NOT vendored into this repo**, so a clone alone does not make `/learn` work — the skill checks for the install and names the script rather than shelling out to `yt-dlp` itself. **Re-running the script is also how it UPDATES**, which is the part that bites: `yt-dlp` breaks whenever a video site changes its markup, and a stale copy fails on real URLs while looking perfectly installed.
+Cross-subsystem VPS bootstrap and full-recovery scripts (`bootstrap_vps.ps1` for the MT5/algos side, `bootstrap_ninjatrader.ps1` for the NT8 side). Idempotent, run on a wiped or new VPS. Full run order in `scripts/README.md`. ⚠ **`bootstrap_vps.ps1`'s task list gained `SYS_LEDGERSYNC` on 2026-08-24** — the box commits and
+pushes its own decision record hourly, so the backup no longer waits for a Mac to wake up. It is the
+one task there that needs a SECRET a rebuild does not restore (`github_token` in the git-ignored
+`algos/credentials.json`): without it the task runs, commits, and silently never pushes.
+`install_ledger_sync.sh` still installs the Mac agent, now `--no-push` — **exactly one machine may
+push or the two rebase under each other.** Rules live in `algos/CLAUDE.md`; do not restate them here.
+
+**`setup_learning_mode.sh` (2026-08-11) is the odd one out — it targets a DEV MACHINE, not the VPS**, and is the one-time install behind `/learn <video-url>`: it puts `ffmpeg`/`yt-dlp` on the PATH and clones the third-party `watch` skill (MIT, `bradautomates/claude-video`) to `~/.claude/vendor/`, symlinked into `~/.claude/skills/watch`. ⚠ **The watch skill is deliberately NOT vendored into this repo**, so a clone alone does not make `/learn` work — the skill checks for the install and names the script rather than shelling out to `yt-dlp` itself. **Re-running the script is also how it UPDATES**, which is the part that bites: `yt-dlp` breaks whenever a video site changes its markup, and a stale copy fails on real URLs while looking perfectly installed.
 
 ### tools/
 Standalone utilities that belong to no subsystem and are run by hand. One today: `tools/skool-transcript/` — rips course video transcripts and indexes them into `education/`. It has its own CLAUDE.md. ⚠ **Nothing imports it and nothing schedules it**, which is the point — it is a dev-machine tool, not part of any deployable, so it is out of scope for the commit hook's money-path rule and for every parity gate.
