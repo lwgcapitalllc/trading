@@ -3179,6 +3179,56 @@ the balance; that is sequencing, never safety. **Read the R drawdown, which got 
 honest verdict on the gap half is *"it has not shown an edge over this window"*, never *"it does
 not work"*.
 
+## 🔴 THE RECLAIM'S GIVE-BACK — FIVE FIXES REPLAYED, FOUR LOSE, AND THE EXCHANGE RATE SAYS WHY (2026-08-24)
+
+The reclaim half banks 100% at its target and its stop does not move until that target is
+touched, so every trade is **+3R or −1R** with nothing in between. Aaron's 2025-08-19 reclaim ran
+**+2.98R**, missed by **7.5 cents**, and paid the full loss. Five ways of fixing that were
+replayed on the shipped basis. **Full grids, per-band splits and the run ids:
+`mpc_sos_fade_optimization.md` → the 2026-08-24 run.**
+
+| idea | reclaim book | vs shipped |
+|---|---|---|
+| bank earlier (target 1.25R) | +10.25R | −19.75R |
+| move the stop to breakeven | +23.77R | −6.23R |
+| enter at market, not on the retest | +23.11R | −6.89R |
+| halve the stop zone at halfway | +29.00R | −1.00R |
+| **expire the resting order after 12h** | **+38.00R** | **+8.00R** |
+
+🔴 **THE RULE, AND IT GENERALISES TO ANY ALL-OR-NOTHING LEG: WORK OUT THE EXCHANGE RATE BEFORE
+BUILDING THE FIX.** A winner here pays 3R and a loser pays 1R, so protecting a loser saves at most
+1R while knocking out one winner costs 3R plus what it then loses. **Nothing that touches the stop
+or the entry clears one winner per three-to-four saves.** Four separate ideas were built, tested
+and replayed before that arithmetic was written down; it would have predicted all four.
+
+⚠ **A WORSE ENTRY IS A WIDER STOP AND A TARGET FURTHER AWAY IN PRICE, because the stop does not
+move with it.** Market entry got 2025-08-19 in **12h45m earlier** — exactly what was asked for —
+and the risk went **$3.98 → $12.51** with the target moving **3339.42 → 3373.55**. Price topped at
+3345.25: **in the move ten hours before the high, and further from the target than before.** The
+reclaim's edge IS its tight geometry, so paying up for the entry removes the thing being traded.
+
+⚠ **The one that pays does so by REMOVING trades, not by trading them better.** 8 orders in 6.6
+years waited over 12 hours to fill and every one lost; cancelling them is **pure subtraction, with
+ZERO new trades appearing in any run** — the freed position slot never let anything in, so there
+is no displacement term and the 8.00R is exact. ⚠ **Every cutoff of 6 hours or less LOSES**: the
+6–12h band is the best in the whole re-entry book (4 wins from 5). Cutting early is the opposite
+trade, not a milder one. ⚠ **It rests on 8 trades** — roughly a 1-in-250 fluke if the pattern is
+not real — and is worth ~1.5R a year.
+
+⚠ **A SMALLER LOSING TICKET IS NOT A SAFER ACCOUNT, and this run is the proof.** Account drawdown
+is **43.34% in six of the seven** stop-protection runs, i.e. unchanged, because the drawdown is
+driven by the A+ book. Halving the re-entry loss moves the number on the ticket and nothing else.
+
+**Three settings landed, all defaulting to the shipped behaviour and all OFF:** the protected-stop
+trigger, how far that stop moves, and the resting-order cancel. **Only the cancel is recommended,
+at 144 fill-clock bars = 12 hours.** ⚠ **Risk percent was ruled out early — it is a SIZE dial**, so
+it changes dollars and account drawdown, never R and never which trades happen.
+
+⚠ **This is the one question that could NOT be answered from stored runs**: a run records when an
+order FILLED and never when it was PLACED. Reconstructing the wait by pairing each secondary with
+the preceding primary matched on only 32 of 90 exit prices and was discarded before it was quoted.
+**Re-run the sweep rather than mining a stored run for it.**
+
 ## 🔴 The minimum stop distance permits a stop a normal gap can double (2026-08-23)
 
 MEASURED in the same run: one trade lost **−1.98R on a 1R stop**. Its stop was **$1.83 wide,

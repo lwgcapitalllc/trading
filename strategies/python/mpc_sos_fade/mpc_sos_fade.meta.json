@@ -600,6 +600,21 @@
       "desc": "The shallow end of that same zone, as a fib ratio. 0.618 (default) is the entry band's edge. A smaller number lets the re-entry arm after price has already reclaimed part of the move — more chances, at a worse price relative to the targets. Lab only."
     },
     {
+      "name": "exec_sec_max_wait_bars",
+      "group": "Secondary re-entries",
+      "widget": "number",
+      "label": "Cancel a resting re-entry after (fill-clock bars)",
+      "short": "Cancel after",
+      "min": 0,
+      "max": 2000,
+      "step": 6,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "guide": ["Never cancels — it waits for the setup to die", "Gives up on the order sooner"],
+      "desc": "How long a resting re-entry order may wait unfilled before it is taken off the book. 0 (default) never cancels, which is the shipped behaviour: the order rests at its price until the setup that armed it dies. Counted in FILL-CLOCK bars, so it moves with the fill clock above — at a 5-minute clock, 144 is 12 hours. Once cancelled, that setup cannot place the order again; a fresh break of structure arms a new one. MEASURED 2026-08-23 over 6.6 years: 61 of 90 re-entry orders fill inside 30 minutes, and every cutoff of 6 hours or less loses money because the 6-to-12-hour band is the best in the book (4 wins from 5, +11.25R). Past 12 hours the book has never won — 8 orders, 8 losses, worth +8.00R to cancel, on 8 trades. Lab only."
+    },
+    {
       "name": "exec_sec_risk_pct",
       "group": "Secondary re-entries",
       "widget": "number",
@@ -776,6 +791,57 @@
       "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
       "guide": ["Keeps a runner, gives up certainty", "Takes it all off at the target"],
       "desc": "How much of Reclaim Entry comes off at its first target. 100 (default) is the whole position, leaving no runner, and that is the configuration the numbers on the setting above were measured at. -1 inherits the shared first-target size. MEASURED: taking only half off measured strictly worse, twice. Lab only."
+    },
+    {
+      "name": "exec_rec_entry_mode",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim enters",
+      "short": "Reclaim entry",
+      "choices": ["Retest", "Market"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "guide": ["Waits for price to come back", "Takes the next price, whatever it is"],
+      "desc": "How a Reclaim Entry gets in. Retest (default) is the shipped path: price sweeps the first trade's stop, trades back through that level, and an order then RESTS at the level waiting for price to come back to it. Market takes the next fill-clock bar instead — it cannot miss the move, but the stop does NOT move with it, so the risk is wider, the position smaller, and the target (a multiple of that risk) sits further away in price. MEASURED 2026-08-24 over 6.6 years: market entry took the reclaim book 30.00R down to 23.11R and drawdown 43% up to 54%, and it was worse again at a wider or tighter target. It rescues only 3 trades that never got a fill. Lab only.",
+      "warn": "Measured WORSE than the default over 6.6 years — 30.00R down to 23.11R, with drawdown 43% up to 54%."
+    },
+    {
+      "name": "exec_rec_be_r",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim moves to breakeven at (R)",
+      "short": "Reclaim BE",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "guide": ["Off — the stop holds until the target", "Protects the trade earlier"],
+      "desc": "When a Reclaim Entry's stop moves to protect the trade, measured on how far price has gone its way as a multiple of the trade's own risk. -1 (default) is off, which is the shipped behaviour: the stop does not move at all until the first target, and because the whole position comes off there a reclaim that runs most of the way and turns around pays the full loss. MEASURED 2026-08-23: only 19 of 46 reclaims ever reach the 3x target, yet they carry the book — so pulling the TARGET in was strictly worse, and this protects the trade without capping them. Read the row below with it: moving all the way to breakeven was replayed and lost money at every trigger. Lab only."
+    },
+    {
+      "name": "exec_rec_be_keep_r",
+      "group": "↳ Reclaim Entry only",
+      "label": "Reclaim protected stop keeps (R) of risk",
+      "short": "Reclaim keep",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "FVG in zone"]
+      },
+      "disable_note": "No effect — the trigger above is not Reclaim Entry, so nothing reads this.",
+      "guide": ["All the way to breakeven", "Leaves more risk in the market"],
+      "desc": "How FAR the stop moves when the row above arms it. 0 (default) is all the way to breakeven, which is what that row was measured with. A positive number leaves that share of the trade's own entry risk in the market, so a trade that is protected and then turns around pays part of the loss rather than none of it. MEASURED 2026-08-23: moving all the way to breakeven made the reclaim book WORSE at every trigger tested (30.00R down to 20.88R, 20.43R and 23.77R), because a stop sitting exactly at entry is inside the noise a reclaim has to survive to reach a 3x target. Must be under 1 — at 1 the stop lands back on the entry stop and does nothing while reading as switched on. Does nothing on its own. Lab only."
     },
     {
       "name": "exec_sec_require",

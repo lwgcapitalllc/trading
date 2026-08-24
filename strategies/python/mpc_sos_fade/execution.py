@@ -546,6 +546,12 @@ class _Pending:
     # For a SECONDARY, what the primary on this setup did — reporting only, straight through to
     # the closed `Trade`. Never read by anything that arms, prices or sizes.
     after: Optional[str] = None
+    # `exec_rec_entry_mode` = "Market" — this order does not wait for price to come to it. It
+    # fills at the NEXT fill-clock bar's open, whatever that is. ⚠ `edge` is then an ESTIMATE (the
+    # arming bar's close, the last price known when the order was placed) and is what `qty` was
+    # sized off, exactly as a real market order is sized off the price on the screen. The trade's
+    # own R is measured off the FILL, never off this.
+    market: bool = False
 
 
 def _intrabar_targets_first(o: float, h: float, l: float) -> bool:
@@ -648,6 +654,7 @@ class Execution:
         self._fib: Optional[TradeFib] = None   # the open trade's frozen fib leg (reporting only)
         self._stage = 0                    # 0 full-stop, 1 BE, 2 floor + runner trail
         self._max_fav = 0.0
+        self._rec_be_armed = False         # `exec_rec_be_r` latched (reclaims only)
         # Structure-trail anchors, snapshotted at each bar's CLOSE (see _advance_stage). The stop
         # placed at bar N's close is what bar N+1 trades against, so the trail must read bar N's
         # swing — never the live one — exactly like `_max_fav` does for the fixed-step ratchet.
@@ -821,6 +828,7 @@ class Execution:
         "_init_stop", "_exit_notional", "_exit_qty", "_exit_ms", "_exit_reason",
         "_sl", "_tp1", "_tp2", "_fib", "_stage", "_filled_qty", "_sos_bar_open",
         "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
+        "_rec_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close",
         # Scale-in lots, and they belong here for the reason the warning above gives: a
@@ -956,13 +964,18 @@ class Execution:
         if self._pos_dir == 0 and self._pend_sec is not None:
             pend = self._pend_sec
             adj = self._ask_adj(pend.dir, entry=True)   # the sniper is a resting limit too
-            if pend.dir > 0 and sig1m.low + adj <= pend.edge:
+            # `exec_rec_entry_mode` = "Market" — no price test at all: the order was placed at the
+            # last bar's close and takes THIS bar's open. It still cannot fill on its own placement
+            # bar, because the one-bar delay every fill on this engine is built on comes from the
+            # place-at-close / fill-next-bar cycle rather than from a check here.
+            if pend.dir > 0 and (pend.market or sig1m.low + adj <= pend.edge):
                 o = sig1m.open + adj
-                fill = pend.edge if o > pend.edge else o
+                fill = o if pend.market else (pend.edge if o > pend.edge else o)
                 if self._open_position(pend, fill, sig1m, sink, kind="secondary"):
                     filled_dir = 1
-            elif pend.dir < 0 and sig1m.high >= pend.edge:
-                fill = pend.edge if sig1m.open < pend.edge else sig1m.open
+            elif pend.dir < 0 and (pend.market or sig1m.high >= pend.edge):
+                o = sig1m.open
+                fill = o if pend.market else (pend.edge if o < pend.edge else o)
                 if self._open_position(pend, fill, sig1m, sink, kind="secondary"):
                     filled_dir = -1
         elif self._pos_dir != 0 and self._entry_kind == "secondary":
@@ -978,6 +991,18 @@ class Execution:
             self._advance_stage(sig1m)
 
         return filled_dir
+
+    def _market_entry(self, src) -> bool:
+        """`exec_rec_entry_mode` — does THIS re-entry take the next open instead of waiting for
+        price to come back to it? Reclaims only, and off unless asked for.
+
+        The reclaim's shipped path is a RETEST: price sweeps the primary's stop, trades back
+        through that level (which arms it), and a limit then rests AT the level waiting for price
+        to return. MEASURED 2026-08-23: 29 of 90 re-entry orders waited over 30 minutes for that
+        return and 8 waited over 12 hours, and Aaron's 2025-08-19 reclaim is one of the 8. A market
+        entry buys a worse price and a wider stop in exchange for never missing the move."""
+        return (src == "reclaim"
+                and getattr(self._cfg, "exec_rec_entry_mode", "Retest") == "Market")
 
     def _secondary_pending(self, arm) -> Optional["_Pending"]:
         """Turn the armed side of a `SecArm` into a resting `_Pending`, sized off the 1m-leg stop
@@ -1012,14 +1037,16 @@ class Execution:
                 # reclaim half existed.
                 return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg,
                                 src=getattr(arm, "l_src", None),
-                                after=getattr(arm, "l_after", None))
+                                after=getattr(arm, "l_after", None),
+                                market=self._market_entry(getattr(arm, "l_src", None)))
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
                 qty = (self.equity * risk_pct / 100.0) / dist
                 return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg,
                                 src=getattr(arm, "s_src", None),
-                                after=getattr(arm, "s_after", None))
+                                after=getattr(arm, "s_after", None),
+                                market=self._market_entry(getattr(arm, "s_src", None)))
         return None
 
     # ── main step ───────────────────────────────────────────────────────────────
@@ -2134,6 +2161,7 @@ class Execution:
         # The bar's FAVOURABLE extreme is where price was on its way INTO the resting limit,
         # i.e. before the trade existed — see the fill-bar note in `step`.
         self._max_fav = fill_price
+        self._rec_be_armed = False
         self._trail_swing_hi = None                     # structure-trail anchors — same
         self._trail_swing_lo = None
         # Excursion (reporting only) is seeded ASYMMETRICALLY on the entry bar, and the asymmetry
@@ -2790,6 +2818,26 @@ class Execution:
                 self._stage = 1
             if self._stage < 2 and sig.low + adj <= far:
                 self._stage = 2
+        # `exec_rec_be_r` — a RECLAIM reaches breakeven on its OWN favourable excursion, before its
+        # first target. Without it a reclaim banks 100% at `exec_rec_tp_r` or nothing, so one that
+        # runs most of the way there and turns around pays the FULL loss (2025-08-19 missed its
+        # target by 7.5 cents and finished -1R). Off by default, reclaims only.
+        # ⚠ Measured against `_sl`, the FROZEN entry stop, so "1R" keeps meaning the risk the trade
+        # was sized against. ⚠ Today `_current_stop()` would give the same answer, because this only
+        # runs while the latch is clear and the stop is therefore still `_sl` — that mutation was
+        # written, run, and is EQUIVALENT rather than uncaught, so no test pins it. It stops being
+        # equivalent the moment anything else moves the stop before this point, which is exactly
+        # when reading the managed stop would start shrinking the trigger as the stop ratchets.
+        # 🔴 LATCHED IN A FLAG rather than recomputed from `_max_fav` on each read. `_max_fav` is
+        # monotonic while a trade runs, but it is also RESTORED state, and this file already warns
+        # that a blank one un-ratchets the trail. A stop that can un-ratchet is a trade that can
+        # lose after it was protected — so the fact is stored once, and `_POSITION_FIELDS` carries
+        # it across a restore.
+        be_r = getattr(self._cfg, "exec_rec_be_r", -1.0)
+        if not self._rec_be_armed and self._entry_src == "reclaim" and be_r > 0:
+            risk = abs(self._entry - self._sl)
+            if risk > 0 and (self._max_fav - self._entry) * d >= be_r * risk:
+                self._rec_be_armed = True
         # Latch the 15m leg once its PRIMARY reaches TP1 (stage >= 1 = moved to breakeven) — the
         # secondary's eligibility gate. Idempotent; only a primary sets it (a secondary reaching
         # TP1 calls this too, but must not move the primary latch). No decision reads it → parity-safe.
@@ -3057,6 +3105,26 @@ class Execution:
                 return floor if trail is None else max(floor, trail)
             return floor if trail is None else min(floor, trail)
         if self._stage >= 1:
+            return self._entry + be_buf if d > 0 else self._entry - be_buf
+        # `exec_rec_be_r` — a RECLAIM may reach breakeven on its own favourable excursion, before
+        # its first target. Without it a reclaim banks 100% at `exec_rec_tp_r` or nothing, so one
+        # that runs most of the way there and turns around pays the FULL loss (2025-08-19 missed
+        # its target by 7.5 cents and finished -1R). Off by default, reclaims only.
+        # ⚠ Measured against `_sl`, the FROZEN entry stop, so "1R" keeps meaning the risk the trade
+        # was sized against — reading a trailed stop would let the trigger creep in as it ratchets.
+        # ⚠ `_max_fav` is monotonic, so this latches by construction: once the excursion has been
+        # reached the stop cannot fall back to the initial one on a later bar.
+        if self._rec_be_armed:
+            # `exec_rec_be_keep_r` — how FAR the protected stop moves. 0 (default) is breakeven,
+            # which was measured WORSE than leaving the stop alone: a stop exactly at entry sits
+            # inside the noise a reclaim has to survive to reach a 3R target. A positive number
+            # leaves that share of the trade's own entry risk in the market, so the loss is cut
+            # rather than erased. ⚠ No buffer on a partial move — `be_buf` cushions the entry
+            # price, and adding it here would make the kept risk something other than the number
+            # configured. ⚠ Off `_sl`, the FROZEN entry stop, for the same reason the trigger is.
+            keep = getattr(self._cfg, "exec_rec_be_keep_r", 0.0)
+            if keep > 0:
+                return self._entry - keep * abs(self._entry - self._sl) * d
             return self._entry + be_buf if d > 0 else self._entry - be_buf
         return self._sl
 

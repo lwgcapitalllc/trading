@@ -1487,7 +1487,8 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
         return set(want if isinstance(want, list) else [want])
 
     # the reclaim's own four are dead wherever the reclaim is not in play
-    for n in ("exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct"):
+    for n in ("exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
+              "exec_rec_be_r", "exec_rec_be_keep_r", "exec_rec_entry_mode"):
         assert dead_under(n) == {"Structure shift", "FVG in zone"}, n
     # the four it replaces one-for-one are dead under the plain reclaim, and live under the
     # combined value because the gap half is still running there
@@ -1499,6 +1500,7 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
     greyed = {n for n, p in rows.items()
               if p.get("group", "").startswith("↳") or p.get("disable_if")}
     assert greyed == {"exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
+                      "exec_rec_be_r", "exec_rec_be_keep_r", "exec_rec_entry_mode",
                       "exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct",
                       "exec_sec_retrace", "exec_sl_deep"}, sorted(greyed)
     assert all(rows[n].get("disable_note") for n in greyed), "a greyed row with no reason on it"
@@ -1598,3 +1600,483 @@ def test_the_outcome_reaches_the_CLOSED_TRADE_and_never_a_primary():
     assert fill("secondary", src="gap", after="breakeven")._entry_after == "breakeven"
     assert fill("secondary", src="gap")._entry_after is None       # a caller that cannot tell
     assert fill("primary")._entry_after is None                    # never on the setup itself
+
+
+# ── the reclaim's early breakeven (`exec_rec_be_r`) ──────────────────────────────────────────
+#
+# A reclaim banks 100% at `exec_rec_tp_r` or nothing, and its stop does not move until that
+# target is touched — so one that runs most of the way there and turns around pays the FULL
+# loss. MEASURED 2026-08-23 on run `6e029942cb29`: 2025-08-19 ran +2.98R, missed its 3R target
+# by 7.5 cents on gold, and finished -1R.
+
+def _reclaim_at(excursion_r, *, src="reclaim", kind="secondary", **cfg_kw):
+    """Open a long re-entry (entry 100.00, stop 98.00 → risk 2.00) and drive its favourable
+    extreme to `excursion_r` times that risk. Returns (config, execution, stop)."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", **cfg_kw)
+    ex = Execution(cfg)
+    pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, src=src)
+    bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, 100.0, bar, Decision(index=1), kind=kind)
+    fav = 100.0 + excursion_r * 2.0
+    ex._advance_stage(SimpleNamespace(high=fav, low=100.0, close=fav,
+                                       last_conf_high=None, last_conf_low=None))
+    return cfg, ex, ex._current_stop()
+
+
+def test_the_reclaim_early_breakeven_is_OFF_by_default():
+    """The shipped behaviour, pinned: a reclaim 2R in front holds its FULL stop, because nothing
+    moves until the target is touched. This is the case the 2025-08-19 trade lost from.
+    MUTATION: change the `exec_rec_be_r` default from -1.0 to any positive number → red."""
+    _, _, stop = _reclaim_at(2.0)
+    assert stop == 98.0, "the stop moved with the feature off"
+
+
+def test_the_reclaim_early_breakeven_lifts_the_stop_once_the_excursion_is_reached():
+    cfg, ex, stop = _reclaim_at(2.0, exec_rec_be_r=0.75)
+    be = 100.0 + cfg.exec_be_buf_tk * cfg.mintick
+    assert stop == pytest.approx(be), "breakeven never armed at 2R with the trigger at 0.75R"
+    assert stop > 98.0
+
+
+def test_the_reclaim_early_breakeven_does_not_arm_BELOW_its_trigger():
+    """The boundary in the direction that matters: an unarmed trade must keep its real stop, or
+    the feature is just 'move the stop in' wearing a threshold.
+    MUTATION: flip `>=` to `<=` in `_current_stop`, or drop the `be_r * risk` scaling → red."""
+    _, _, stop = _reclaim_at(0.74, exec_rec_be_r=0.75)
+    assert stop == 98.0, "breakeven armed before price had gone far enough"
+    _, _, armed = _reclaim_at(0.75, exec_rec_be_r=0.75)
+    assert armed > 98.0, "breakeven failed to arm exactly ON its trigger"
+
+
+def test_the_reclaim_early_breakeven_scales_with_the_TRADE_S_OWN_risk():
+    """"0.75R" has to mean 0.75 of THIS trade's entry-to-stop distance, not a fixed price move.
+    A reclaim's stop is a median 0.43R wide where the primary's is far wider, so a fixed distance
+    would arm at wildly different points on the two.
+    MUTATION: drop the `* risk` scaling in `_advance_stage` and the wide-stop case goes red."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    def armed_at(stop_px, fav_px):
+        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                            exec_rec_be_r=0.75)
+        ex = Execution(cfg)
+        pend = _Pending(1, 100.0, 1.0, stop_px, 105.0, 106.0, 1000, src="reclaim")
+        bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                              last_conf_high=None, last_conf_low=None)
+        ex._open_position(pend, 100.0, bar, Decision(index=1), kind="secondary")
+        ex._advance_stage(SimpleNamespace(high=fav_px, low=100.0, close=fav_px,
+                                           last_conf_high=None, last_conf_low=None))
+        return ex._rec_be_armed
+
+    # risk 2.00 → arms at +1.50 ; risk 8.00 → needs +6.00, so +1.50 must NOT arm it
+    assert armed_at(98.0, 101.5) is True
+    assert armed_at(92.0, 101.5) is False, "a wide-stop reclaim armed on a narrow-stop distance"
+    assert armed_at(92.0, 106.0) is True
+
+
+def test_the_reclaim_early_breakeven_LATCHES_and_survives_a_blank_excursion():
+    """Once armed the stop must never fall back to the initial one. The excursion it arms on is
+    RESTORED state, and this file already warns that a blank one un-ratchets the trail — a stop
+    that un-ratchets is a trade that can lose after it was protected.
+    MUTATION: recompute from `_max_fav` in `_current_stop` instead of reading the flag → red."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.75)
+    ex = Execution(cfg)
+    pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, src="reclaim")
+    bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, 100.0, bar, Decision(index=1), kind="secondary")
+    ex._advance_stage(SimpleNamespace(high=102.0, low=100.0, close=102.0,
+                                       last_conf_high=None, last_conf_low=None))
+    first = ex._current_stop()
+    assert first > 98.0, "breakeven never armed"
+    ex._max_fav = 0.0                  # what a restore that dropped the field would leave behind
+    assert ex._current_stop() == first, "the stop fell back to the initial one"
+
+
+def test_the_reclaim_early_breakeven_mirrors_on_the_short_side():
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.75)
+    ex = Execution(cfg)
+    pend = _Pending(-1, 100.0, 1.0, 102.0, 95.0, 94.0, 1000, src="reclaim")
+    bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, 100.0, bar, Decision(index=1), kind="secondary")
+    ex._advance_stage(SimpleNamespace(high=100.0, low=98.0, close=98.0,
+                                       last_conf_high=None, last_conf_low=None))   # 1R in front for a short
+    assert ex._current_stop() == pytest.approx(100.0 - cfg.exec_be_buf_tk * cfg.mintick)
+
+
+def test_the_reclaim_early_breakeven_never_touches_the_GAP_re_entry():
+    """RECLAIMS ONLY. The gap half keeps `exec_sec_be_at`, and the primary's ladder is what the
+    Pine parity gate checks. MUTATION: drop the `_entry_src == "reclaim"` test → both go red."""
+    # 1.0R is past the 0.75R trigger but SHORT of the gap half's own 1.25R first target, so
+    # anything that moves here is this setting leaking and not the shared ladder doing its job.
+    _, _, rec = _reclaim_at(1.0, exec_rec_be_r=0.75)
+    assert rec > 98.0, "the fixture no longer arms the reclaim — the rest of this test proves nothing"
+    _, _, gap = _reclaim_at(1.0, src="gap", exec_rec_be_r=0.75)
+    assert gap == 98.0, "a gap re-entry read the reclaim's breakeven setting"
+    _, _, prim = _reclaim_at(1.0, src=None, kind="primary", exec_rec_be_r=0.75)
+    assert prim == 98.0, "a primary read the reclaim's breakeven setting"
+
+
+def test_the_reclaim_early_breakeven_is_DEAD_under_the_other_two_triggers():
+    """The claim the editor greys this row on. A gap-triggered or shift-triggered re-entry carries
+    `_entry_src` of "gap"/"shift", never "reclaim", so the setting has no reader under either — it
+    is dead, not merely unusual. MUTATION: drop the `_entry_src == "reclaim"` test and this goes
+    red, which is what stops the row being greyed on a claim nothing checks."""
+    for src in ("gap", "shift"):
+        _, _, stop = _reclaim_at(1.0, src=src, exec_rec_be_r=0.75)
+        assert stop == 98.0, f"a {src} re-entry moved on the reclaim's breakeven setting"
+
+
+def test_the_reclaim_early_breakeven_refuses_a_setting_that_could_never_fire():
+    """A trigger at or beyond the target can never arm — the position has already banked there —
+    so it would read as working while doing nothing. Refuse it instead."""
+    with pytest.raises(ValueError, match="exec_rec_be_r"):
+        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.0)
+    with pytest.raises(ValueError, match="nearer than"):
+        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                      exec_rec_be_r=3.0, exec_rec_tp_r=3.0)
+    SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                  exec_rec_be_r=2.75, exec_rec_tp_r=3.0)     # nearer is fine
+
+
+# ── entering at market instead of waiting for the retest (`exec_rec_entry_mode`) ──────────────
+#
+# Aaron, 2026-08-24: "why can't we re-enter as soon as we lose, like a market execution? It
+# doesn't matter if we get in a little later." The shipped reclaim rests a limit AT the level the
+# primary was stopped at and waits for price to come back to it; 8 of 90 orders waited over 12
+# hours and every one of them lost.
+
+def _sec_pend(mode, src, *, side=1, close=103.0):
+    """Build the resting order one arming bar would produce, so the test can read whether it is a
+    market order and what it was priced off. Zone high 100.00, stop 98.00."""
+    from strategies.python.mpc_sos_fade.execution import Execution
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                        exec_rec_entry_mode=mode)
+    ex = Execution(cfg, initial_capital=10_000.0)
+    arm = SimpleNamespace(
+        l_armed=side > 0, l_edge=close if (side > 0 and mode == "Market") else 100.0,
+        l_sl=98.0, l_tp1=106.0, l_tp2=112.0, l_leg=7, l_src=src, l_after="stopped",
+        s_armed=side < 0, s_edge=close if (side < 0 and mode == "Market") else 100.0,
+        s_sl=102.0, s_tp1=94.0, s_tp2=88.0, s_leg=7, s_src=src, s_after="stopped")
+    return cfg, ex, ex._secondary_pending(arm)
+
+
+def test_a_reclaim_waits_for_the_retest_by_default():
+    """The shipped behaviour, pinned. MUTATION: change the `exec_rec_entry_mode` default to
+    "Market" → red, and so does every stored reclaim figure this repo has quoted.
+
+    ⚠ Reads the default off a config it does NOT pass the field to. Passing "Retest" in would
+    make this pass against any default at all, which is what it did until the mutation ran."""
+    assert SosFadeConfig().exec_rec_entry_mode == "Retest", "the shipped default moved"
+    from strategies.python.mpc_sos_fade.execution import Execution
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry")
+    ex = Execution(cfg, initial_capital=10_000.0)
+    arm = SimpleNamespace(l_armed=True, l_edge=100.0, l_sl=98.0, l_tp1=106.0, l_tp2=112.0,
+                          l_leg=7, l_src="reclaim", l_after="stopped",
+                          s_armed=False, s_edge=None, s_sl=None)
+    assert ex._secondary_pending(arm).market is False, "a reclaim rested no limit by default"
+
+
+def test_a_reclaim_asked_for_market_becomes_a_market_order():
+    _, _, pend = _sec_pend("Market", "reclaim")
+    assert pend.market is True
+    _, _, short = _sec_pend("Market", "reclaim", side=-1, close=97.0)
+    assert short.market is True, "the short side never became a market order"
+
+
+def test_market_entry_is_DEAD_on_the_gap_and_shift_halves():
+    """The claim the editor greys this row on, and the claim that keeps the gap half's numbers
+    valid. MUTATION: drop the `src == "reclaim"` test in `_market_entry` → red."""
+    for src in ("gap", "shift", None):
+        _, _, pend = _sec_pend("Market", src)
+        assert pend.market is False, f"a {src} re-entry became a market order"
+
+
+def test_a_market_order_fills_at_the_NEXT_bar_S_OPEN_whatever_the_price_did():
+    """The whole point: no price test. The retest order on the same bar cannot fill, because price
+    never came back to the level — so this pins the DIFFERENCE, not just that a fill happened.
+    MUTATION: put a price condition back on the market branch → red."""
+    from strategies.python.mpc_sos_fade.execution import Execution, _Pending
+
+    # a bar that runs AWAY from a long's limit at 100.00 and never returns
+    bar = SimpleNamespace(index=9, time_ms=0, open=103.0, high=107.0, low=102.5, close=106.0,
+                          last_conf_high=None, last_conf_low=None)
+    empty = SimpleNamespace(l_armed=False, s_armed=False, l_edge=None, s_edge=None,
+                            l_sl=None, s_sl=None)
+
+    def run(market):
+        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry")
+        ex = Execution(cfg, initial_capital=10_000.0)
+        ex._pend_sec = _Pending(1, 100.0, 1.0, 98.0, 106.0, 112.0, 7,
+                                src="reclaim", market=market)
+        return ex.step_secondary(bar, empty), ex
+
+    retest, _ = run(False)
+    assert retest is None, "the resting limit filled on a bar that never reached it"
+    mkt, ex = run(True)
+    assert mkt == 1, "the market order did not fill"
+    assert ex._entry == pytest.approx(103.0), "the market order did not take the bar's open"
+
+
+def test_a_market_order_cannot_fill_on_its_own_placement_bar():
+    """The one-bar delay every fill on this engine is built on. It comes from the place-at-close /
+    fill-next-bar cycle, so removing the price test must not remove the delay with it.
+    MUTATION: fill from the arm inside phase B → red."""
+    from strategies.python.mpc_sos_fade.execution import Execution
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                        exec_rec_entry_mode="Market")
+    ex = Execution(cfg, initial_capital=10_000.0)
+    arm = SimpleNamespace(l_armed=True, l_edge=103.0, l_sl=98.0, l_tp1=106.0, l_tp2=112.0,
+                          l_leg=7, l_src="reclaim", l_after="stopped",
+                          s_armed=False, s_edge=None, s_sl=None)
+    bar = SimpleNamespace(index=9, time_ms=0, open=103.0, high=104.0, low=102.0, close=103.0,
+                          last_conf_high=None, last_conf_low=None)
+    assert ex.step_secondary(bar, arm) is None, "a market order filled on its own placement bar"
+    assert ex._pend_sec is not None and ex._pend_sec.market
+
+
+def test_a_market_entry_is_sized_off_the_arming_bar_and_scored_off_the_FILL():
+    """A real market order is sized off the price on the screen and then scored off what it got.
+    Conflating the two is how a run reports a risk it never carried.
+    MUTATION: size off the fill, or measure R off the estimate → red."""
+    from strategies.python.mpc_sos_fade.execution import Execution, _Pending
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry")
+    ex = Execution(cfg, initial_capital=10_000.0)
+    qty = (ex.equity * cfg.exec_risk_pct / 100.0) / (103.0 - 98.0)   # off the ESTIMATE
+    ex._pend_sec = _Pending(1, 103.0, qty, 98.0, 106.0, 112.0, 7, src="reclaim", market=True)
+    bar = SimpleNamespace(index=9, time_ms=0, open=104.0, high=105.0, low=103.5, close=104.5,
+                          last_conf_high=None, last_conf_low=None)
+    empty = SimpleNamespace(l_armed=False, s_armed=False, l_edge=None, s_edge=None,
+                            l_sl=None, s_sl=None)
+    assert ex.step_secondary(bar, empty) == 1
+    assert ex._entry == pytest.approx(104.0), "R is not being measured off the fill"
+    assert ex._sl == pytest.approx(98.0), "the stop moved to make the risk back up"
+
+
+def test_market_entry_is_priced_off_the_FILL_CLOCK_BAR_not_the_level():
+    """Driven through the real arm, because the hand-built record above sets `l_edge` itself and
+    would pass against any pricing rule at all — a fixture more capable than production hiding the
+    defect this test exists for. Measured: it did, until this test was added.
+
+    The shipped reclaim rests AT the deep edge (101.14). A market entry pays the bar extreme it
+    was detected on (1.5 higher here), so it is the WORSE price by construction.
+    MUTATION: return `z_hi` under Market mode, or read the 15m close → red."""
+    retest = _rec_arm()[2]
+    market = _rec_arm(exec_rec_entry_mode="Market")[2]
+    assert retest.l_armed and market.l_armed, "the fixture stopped arming — nothing is being tested"
+    assert retest.l_edge == pytest.approx(101.14), "the retest price moved"
+    assert market.l_edge == pytest.approx(101.5), "the market price is not the bar's own extreme"
+    assert market.l_edge > retest.l_edge, "the market entry was not the worse price for a long"
+
+
+def test_market_entry_on_the_SHORT_side_pays_the_bar_S_LOW():
+    """Driven through the real arm on a down-leg, because every other test here is long and a
+    market entry that ignored the side would pass all of them. A short pays UP by trading DOWN,
+    so its worse price is the bar's LOW.
+    MUTATION: return `bar_high` unconditionally → red, and only this test catches it."""
+    sig = SimpleNamespace(
+        fibo_dir=-1, fibo_p7=100.0, fibo_p10=110.0, fibo_p3=106.18, fibo_p6=108.86,
+        fibo_p2=105.0, fibo_p1=103.82, bull_div_active=False, bear_div_active=True,
+        veto_on=False, veto_rsi_ob=False, veto_rsi_os=False)
+    seq = SimpleNamespace(l_sos_bar=None, s_sos_bar=700)
+    bars = [(109.4, 109.0), (109.3, 108.5)]
+    retest = _feed(SecondaryArm(_rec_cfg()), bars, sig=sig, seq=seq,
+                   lost_l=None, lost_s=700, zone_close=111.0)[1]
+    market = _feed(SecondaryArm(_rec_cfg(exec_rec_entry_mode="Market")), bars, sig=sig, seq=seq,
+                   lost_l=None, lost_s=700, zone_close=111.0)[1]
+    assert retest.s_armed and market.s_armed, "the fixture stopped arming"
+    assert retest.s_edge == pytest.approx(108.86)
+    assert market.s_edge == pytest.approx(108.5), "the short did not pay the bar's low"
+    assert market.s_edge < retest.s_edge, "the market entry was not the worse price for a short"
+
+
+def test_market_entry_gives_a_WIDER_risk_than_the_retest_it_replaces():
+    """The cost side of the trade, stated as a test so nobody quotes the upside alone. The stop
+    does not move, so a worse entry is a wider stop and a target further away in price."""
+    _, _, retest = _sec_pend("Retest", "reclaim")
+    _, _, market = _sec_pend("Market", "reclaim")
+    assert market.edge > retest.edge, "the market entry was not the worse price"
+    assert (market.edge - market.sl) > (retest.edge - retest.sl)
+    assert market.qty < retest.qty, "a wider risk did not produce a smaller position"
+
+
+def test_market_entry_refuses_a_value_it_does_not_understand():
+    with pytest.raises(ValueError, match="exec_rec_entry_mode"):
+        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                      exec_rec_entry_mode="market")     # case matters; the UI sends the label
+
+
+# ── how FAR the protected stop moves (`exec_rec_be_keep_r`) ──────────────────────────────────
+#
+# Aaron, 2026-08-23: "bring the stop up, not to breakeven, but halve the stop zone — so if we
+# lose we only lose half." Moving all the way to breakeven was REPLAYED and every trigger made
+# the reclaim book worse (30.00R → 20.88R / 20.43R / 23.77R), because a stop sitting exactly at
+# entry is inside the noise a reclaim has to survive to reach a 3R target.
+
+def test_the_protected_stop_goes_ALL_THE_WAY_to_breakeven_by_default():
+    """The default has to reproduce what `exec_rec_be_r` was measured with, or every R figure
+    recorded against that field is describing a system we no longer have.
+    MUTATION: change the `exec_rec_be_keep_r` default off 0.0 → red."""
+    cfg, _, stop = _reclaim_at(2.0, exec_rec_be_r=0.75)
+    assert stop == pytest.approx(100.0 + cfg.exec_be_buf_tk * cfg.mintick)
+
+
+def test_the_protected_stop_keeps_the_share_of_risk_it_is_given():
+    """Entry 100.00, stop 98.00 → risk 2.00. Keeping half of it must put the stop at 99.00, so a
+    trade that arms and then turns around pays 0.5R rather than the full 1R.
+    MUTATION: drop the `* d` and the long case walks the wrong way → red."""
+    _, _, stop = _reclaim_at(2.0, exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5)
+    assert stop == pytest.approx(99.0), "half the risk was not what was left in the market"
+    _, _, quarter = _reclaim_at(2.0, exec_rec_be_r=0.75, exec_rec_be_keep_r=0.25)
+    assert quarter == pytest.approx(99.5)
+
+
+def test_the_protected_stop_carries_NO_breakeven_buffer_on_a_partial_move():
+    """The buffer cushions the ENTRY price. Applied to a partial move it would make the kept risk
+    something other than the number configured, and the field would be quietly lying about how
+    much is left on the table. MUTATION: add `be_buf` to the partial return → red."""
+    _, _, stop = _reclaim_at(2.0, exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5,
+                             exec_be_buf_tk=40)
+    assert stop == pytest.approx(99.0), "the entry buffer leaked into a partial move"
+
+
+def test_the_protected_stop_is_measured_off_the_TRADE_S_OWN_risk():
+    """"Half" has to mean half of THIS trade's entry-to-stop distance, not a fixed price move —
+    reclaim stops here run a median 0.43R wide and the primary's are far wider.
+    MUTATION: replace `abs(self._entry - self._sl)` with a constant → red."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                        exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5)
+    ex = Execution(cfg)
+    pend = _Pending(1, 100.0, 1.0, 90.0, 130.0, 140.0, 1000, src="reclaim")   # risk 10.00
+    bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, 100.0, bar, Decision(index=1), kind="secondary")
+    ex._advance_stage(SimpleNamespace(high=120.0, low=100.0, close=120.0,
+                                      last_conf_high=None, last_conf_low=None))
+    assert ex._current_stop() == pytest.approx(95.0), "the kept risk did not scale with the trade"
+
+
+def test_the_protected_stop_mirrors_on_a_SHORT():
+    """A short's stop sits ABOVE entry, so keeping half the risk has to move it DOWN toward entry
+    and never up. MUTATION: drop the `* d` and this goes red where the long case cannot."""
+    from strategies.python.mpc_sos_fade.execution import Decision, _Pending
+
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                        exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5)
+    ex = Execution(cfg)
+    pend = _Pending(-1, 100.0, 1.0, 102.0, 95.0, 94.0, 1000, src="reclaim")   # risk 2.00
+    bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                          last_conf_high=None, last_conf_low=None)
+    ex._open_position(pend, 100.0, bar, Decision(index=1), kind="secondary")
+    ex._advance_stage(SimpleNamespace(high=100.0, low=96.0, close=96.0,
+                                      last_conf_high=None, last_conf_low=None))
+    assert ex._current_stop() == pytest.approx(101.0), "the short's protected stop went the wrong way"
+
+
+def test_the_protected_stop_still_does_NOTHING_until_the_excursion_arms_it():
+    """The distance dial must not become a way to move the stop in with no trigger at all.
+    MUTATION: move the partial return outside the `_rec_be_armed` test → red."""
+    _, _, stop = _reclaim_at(0.5, exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5)
+    assert stop == 98.0, "the stop moved before the trade had gone far enough"
+
+
+def test_the_protected_stop_refuses_a_distance_that_moves_nothing_or_loosens():
+    """At 1.0 the protected stop lands back on the entry stop — switched on, doing nothing, which
+    is the shape this repo keeps re-learning. Above 1.0 it would LOOSEN the stop."""
+    for bad in (1.0, 1.5, -0.1):
+        with pytest.raises(ValueError, match="exec_rec_be_keep_r"):
+            SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                          exec_rec_be_r=0.75, exec_rec_be_keep_r=bad)
+
+
+def test_the_protected_stop_distance_refuses_to_sit_there_with_nothing_arming_it():
+    """On its own the dial has no reader. Left in a run's params it would look like a setting that
+    was tested, so refuse it rather than store it."""
+    with pytest.raises(ValueError, match="needs exec_rec_be_r"):
+        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                      exec_rec_be_keep_r=0.5)
+
+
+# ── cancelling a resting re-entry that waited too long (`exec_sec_max_wait_bars`) ─────────────
+#
+# Aaron, 2026-08-23, on the 2025-08-19 reclaim: "the limit was just there held on at the 0.886 —
+# that gave price enough time to break structure internally." The order is priced on the setup
+# that armed it, and every bar it waits is a bar that setup gets older while its price does not.
+
+def _rest_side(limit, bars, *, sos_bar=7, flat=True):
+    """Age one resting LONG order across `bars` calls of the holder, returning the armed flag
+    seen on each call. The live computation stays armed throughout, so anything that goes
+    unarmed did so because the order was cancelled."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                        exec_sec_rest_and_leave=True, exec_sec_max_wait_bars=limit)
+    arm = SecondaryArm(cfg)
+    out = []
+    for _ in range(bars):
+        armed, edge, stop, leg, src = arm._rested(
+            1, sos_bar, flat, True, 100.0, 98.0, 5, "reclaim")
+        out.append(armed)
+    return arm, out
+
+
+def test_a_resting_re_entry_is_never_cancelled_by_default():
+    """The shipped rule, pinned: the order rests for as long as the setup lives.
+    MUTATION: change the `exec_sec_max_wait_bars` default off 0 → red."""
+    _, armed = _rest_side(SosFadeConfig().exec_sec_max_wait_bars, 500)
+    assert all(armed), "an order was cancelled with the feature off"
+
+
+def test_a_resting_re_entry_is_cancelled_once_it_has_waited_too_long():
+    _, armed = _rest_side(3, 8)
+    assert armed[:4] == [True, True, True, True], "cancelled before its limit"
+    assert armed[4:] == [False, False, False, False], "still resting past its limit"
+
+
+def test_the_cancelled_side_cannot_SILENTLY_RE_PLACE_the_same_order():
+    """The defect this rule is one line away from: clearing the snapshot lets the live
+    computation re-place the identical order on the very next bar, so the cancel reads as
+    working and changes nothing. MUTATION: drop the remembered SOS bar and set the snapshot to
+    None instead → the side re-arms and this goes red."""
+    arm, armed = _rest_side(2, 40)
+    assert not any(armed[3:]), "the cancelled order came back onto the book"
+    assert arm._l_rest_dead == 7
+
+
+def test_a_NEW_break_of_structure_lets_the_cancelled_side_arm_again():
+    """The cancel is per SETUP, never for the trade's lifetime — otherwise one slow order
+    silences that side forever. MUTATION: remember a bare True instead of the SOS bar → red."""
+    arm, armed = _rest_side(2, 10)
+    assert not armed[-1]
+    again, _, _, _, _ = arm._rested(1, 99, True, True, 100.0, 98.0, 5, "reclaim")
+    assert again is True, "a new break of structure could not re-arm the side"
+
+
+def test_the_wait_is_counted_in_BARS_ALIVE_not_in_calls_while_a_position_is_open():
+    """A bar where the book is not flat cannot age an order, because there IS no resting order
+    then — the holder drops it. MUTATION: age the snapshot before the flat test → red."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+                        exec_sec_rest_and_leave=True, exec_sec_max_wait_bars=2)
+    arm = SecondaryArm(cfg)
+    for _ in range(50):                      # 50 bars with a position open
+        arm._rested(1, 7, False, True, 100.0, 98.0, 5, "reclaim")
+    armed = [arm._rested(1, 7, True, True, 100.0, 98.0, 5, "reclaim")[0] for _ in range(3)]
+    assert armed == [True, True, True], "bars with no resting order aged one anyway"
+
+
+def test_the_cancel_refuses_to_pair_with_an_order_that_is_re_decided_every_bar():
+    with pytest.raises(ValueError, match="rest_and_leave"):
+        SosFadeConfig(exec_secondary=True, exec_sec_max_wait_bars=12,
+                      exec_sec_rest_and_leave=False)
+    with pytest.raises(ValueError, match="exec_sec_max_wait_bars"):
+        SosFadeConfig(exec_secondary=True, exec_sec_max_wait_bars=-1)

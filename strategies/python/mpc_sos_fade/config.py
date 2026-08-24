@@ -745,6 +745,28 @@ class SosFadeConfig:
     #   figure from before this date reproduces only with it set False.
     #   ⚠ Read ONLY when exec_secondary is on.
 
+    exec_sec_max_wait_bars: int = 0     # "Cancel a resting re-entry after (fill-clock bars)"
+    #   0 (default) = OFF, the shipped rule: once the side arms, the order rests at the price it
+    #   was placed at until the setup dies, the leg retires or a position opens — however long that
+    #   takes. A positive number cancels it after that many FILL-CLOCK bars without a fill, and the
+    #   side may not re-arm on that setup afterwards.
+    #
+    #   🔴 IT EXISTS BECAUSE THE WAIT IS ITSELF A RISK, AND NOTHING MEASURED IT BEFORE.
+    #   Aaron, 2026-08-23, on the 2025-08-19 reclaim: *"the limit was just there held on at the
+    #   0.886 — that gave price enough time to break structure internally."* The order is priced on
+    #   the setup that armed it, and every bar it waits is a bar that setup gets older while the
+    #   price it rests at does not move.
+    #   ⚠ **The unit is FILL-CLOCK bars, so it moves with `exec_sec_fill_tf_min`** — 12 is one hour
+    #   at the 5-minute default and five hours at 25. It is counted in bars rather than minutes
+    #   because that is what the re-entry path is stepped on; a minutes field would silently mean
+    #   something different on every fill clock.
+    #   ⚠ **It counts bars the order was ALIVE, never bars since the primary closed.** A run's
+    #   stored trade list records when an order FILLED and never when it was placed, so the wait
+    #   cannot be reconstructed after the fact — which is why this had to be built to be measured.
+    #   ⚠ **Read ONLY when `exec_sec_rest_and_leave` is on.** With the order re-decided every bar
+    #   there is no single placement to age, and a cancel-after-N would be counting something else.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
     exec_sec_risk_pct: float = 50.0    # "Re-entry risk (% of the primary's)"
     #   HOW MUCH A RE-ENTRY RISKS, as a percentage of `exec_risk_pct`. 50.0 (default since
     #   2026-08-20) risks HALF what the primary risks; 100.0 is parity with it, 200.0 double. Sizing is `equity * (exec_risk_pct * this/100) / 100 /
@@ -882,6 +904,69 @@ class SosFadeConfig:
     #   -1 = inherit `exec_tp1_pct`. 100 = the whole position comes off at `exec_rec_tp_r`, which is
     #   the measured configuration and leaves NO runner. ⚠ See the R figures on the field above
     #   before reducing it — half-off measured strictly worse, twice.
+
+    exec_rec_entry_mode: str = "Retest"   # "Reclaim enters" ∈ {Retest, Market}
+    #   HOW a reclaim gets in. "Retest" (default) is the shipped path: price sweeps the primary's
+    #   stop, trades back through that level, and a limit then RESTS at the level waiting for price
+    #   to come back to it. "Market" takes the next fill-clock bar's open instead — worse price,
+    #   wider stop, smaller position, but it cannot miss the move.
+    #
+    #   🔴 IT EXISTS BECAUSE THE WAIT IS WHERE THE SETUP GOES STALE. Aaron, 2026-08-24: "why can't
+    #   we re-enter as soon as we lose, like a market execution? It doesn't matter if we get in a
+    #   little later." MEASURED 2026-08-23 on run `6e029942cb29`: 29 of 90 re-entry orders waited
+    #   over 30 minutes for that return and 8 waited over 12 hours; every one of the 8 lost, and
+    #   the 2025-08-19 reclaim that ran +2.98R and missed its target by 7.5 cents is one of them.
+    #   ⚠ **THE TRADE-OFF RUNS BOTH WAYS AND MUST BE MEASURED, NOT REASONED.** The stop does NOT
+    #   move, so the entry-to-stop distance grows — the position is smaller AND the target, a
+    #   multiple of that risk, sits further away in price. A market entry can therefore MISS a
+    #   target the retest entry would have banked, on the very same price path.
+    #   ⚠ It also changes the trade COUNT, which nothing else tried on this leg does: a reclaim
+    #   that arms and runs away without a retest never fills today, and fills every time here.
+    #   ⚠ RECLAIMS ONLY. The gap half keeps its resting limit.
+    #   ⚠ Read ONLY when exec_secondary is on and the trigger names the reclaim.
+
+    exec_rec_be_r: float = -1.0        # "Reclaim moves to breakeven at (R)"
+    #   -1 (default) = OFF, the shipped behaviour: a reclaim's stop does not move at all until its
+    #   first target is touched, and because `exec_rec_tp1_pct` is 100 the whole position comes off
+    #   there. So a reclaim that runs most of the way to a 3R target and turns around pays the FULL
+    #   loss. A positive number moves the stop to breakeven (plus `exec_be_buf_tk`) once the
+    #   trade's favourable excursion reaches that multiple of its OWN entry risk, leaving the
+    #   target where it is.
+    #
+    #   🔴 IT EXISTS BECAUSE THE GIVE-BACK IS THE RECLAIM BOOK'S DOMINANT FAILURE, NOT THE ENTRY.
+    #   MEASURED 2026-08-23 on run `6e029942cb29` (XAUUSD M15, 2020-01-01 → 2026-08-23, no costs):
+    #   of 46 reclaims only 19 ever reach the 3R target, yet the book still makes +30.00R because
+    #   each of those pays 3R. Aaron's 2025-08-19 reclaim ran +2.98R and finished −1R, missing its
+    #   target by 7.5 cents on gold.
+    #   ⚠ **The static estimates below are an UPPER BOUND and must not be quoted as results** — a
+    #   breakeven stop sitting at 0.75R can be knocked out by a dip that would have gone on to pay
+    #   3R, which a re-score off each trade's favourable extreme cannot see. Replay before trusting:
+    #     off (today) +30.00R  |  1.50R +35.00R  |  1.00R +40.00R  |  0.75R +43.00R
+    #   ⚠ Read with `exec_rec_tp_r`: pulling the TARGET in was measured strictly worse (a real
+    #   replay took the reclaim book 30.00R → 10.25R at 1.25x), so this is the lever that protects
+    #   the trade WITHOUT capping the winners that carry the leg.
+    #   ⚠ RECLAIMS ONLY. The gap re-entry keeps `exec_sec_be_at`, and the primary's ladder — the
+    #   one the Pine parity gate checks — is untouched, which is what keeps every stored primary
+    #   figure valid.
+    #   ⚠ Read ONLY when exec_secondary is on and the trigger names the reclaim.
+
+    exec_rec_be_keep_r: float = 0.0    # "Reclaim protected stop keeps (R) of risk"
+    #   HOW FAR the stop moves when `exec_rec_be_r` arms. 0.0 (default) = all the way to breakeven,
+    #   which is the behaviour that field was measured with. A positive number leaves that multiple
+    #   of the trade's OWN entry risk still in the market: 0.5 halves the loss instead of erasing
+    #   it, so a trade that arms and then turns around pays 0.5R rather than 1R or 0R.
+    #
+    #   🔴 IT EXISTS BECAUSE ERASING THE RISK ENTIRELY COSTS MORE THAN IT SAVES. Moving a reclaim
+    #   to breakeven was replayed on 2026-08-23 and took the reclaim book 30.00R → 20.88R at 0.75R,
+    #   20.43R at 1.00R and 23.77R at 1.50R — every one of them WORSE, because a stop sitting
+    #   exactly at entry is inside the noise the trade has to survive to reach a 3R target. Keeping
+    #   part of the risk moves the stop out of that noise while still cutting the loss.
+    #   ⚠ The BUFFER is deliberately not applied to a partial move. `exec_be_buf_tk` is a cushion
+    #   around the entry price; a stop already parked a fraction of R away does not need one, and
+    #   adding it would make the kept risk something other than the number typed here.
+    #   ⚠ Must be under 1.0 — at 1.0 the stop lands on the entry stop and the ratchet does nothing
+    #   while reading as switched on, which is the failure shape this repo keeps re-learning.
+    #   ⚠ Read ONLY when `exec_rec_be_r` is on. On its own it does nothing at all.
 
     exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {Shift leg, swing low, 0.886, 1.0}
     #   WHERE THE RE-ENTRY'S STOP GOES. Four values:
@@ -1198,6 +1283,42 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_rec_tp1_pct must be -1 (inherit exec_tp1_pct) or a percentage in [0, 100], "
                 f"got {self.exec_rec_tp1_pct!r}.")
+        if self.exec_secondary and self.exec_sec_max_wait_bars < 0:
+            raise ValueError(
+                f"exec_sec_max_wait_bars must be 0 (never cancel) or a positive number of "
+                f"fill-clock bars, got {self.exec_sec_max_wait_bars!r}.")
+        if (self.exec_secondary and self.exec_sec_max_wait_bars > 0
+                and not self.exec_sec_rest_and_leave):
+            raise ValueError(
+                "exec_sec_max_wait_bars needs exec_sec_rest_and_leave on. With the order "
+                "re-decided every bar there is no single placement to age, so the cancel would "
+                "read as working while counting something else.")
+        if rec_on and not (self.exec_rec_be_r == -1.0 or self.exec_rec_be_r > 0):
+            raise ValueError(
+                f"exec_rec_be_r must be -1 (off) or a positive R multiple, got "
+                f"{self.exec_rec_be_r!r}. Zero would arm breakeven at the entry price, which is "
+                f"already where the stop would go.")
+        if rec_on and self.exec_rec_entry_mode not in ("Retest", "Market"):
+            raise ValueError(
+                f"exec_rec_entry_mode must be 'Retest' or 'Market', got "
+                f"{self.exec_rec_entry_mode!r}.")
+        if rec_on and not (0.0 <= self.exec_rec_be_keep_r < 1.0):
+            raise ValueError(
+                f"exec_rec_be_keep_r must be at least 0 and under 1, got "
+                f"{self.exec_rec_be_keep_r!r}. At 1 the protected stop lands back on the entry "
+                f"stop and the ratchet does nothing while reading as switched on; above 1 it "
+                f"would LOOSEN the stop.")
+        if rec_on and self.exec_rec_be_keep_r > 0 and self.exec_rec_be_r <= 0:
+            raise ValueError(
+                f"exec_rec_be_keep_r ({self.exec_rec_be_keep_r!r}) needs exec_rec_be_r on. "
+                f"Nothing arms the protected stop, so the number would sit in the run's params "
+                f"looking like a setting that was tested.")
+        if (rec_on and self.exec_rec_be_r > 0 and self.exec_rec_tp_r > 0
+                and self.exec_rec_be_r >= self.exec_rec_tp_r):
+            raise ValueError(
+                f"exec_rec_be_r ({self.exec_rec_be_r!r}) must be nearer than exec_rec_tp_r "
+                f"({self.exec_rec_tp_r!r}). At or beyond the target the trade has already banked, "
+                f"so the breakeven ratchet could never fire and would read as working.")
         if rec_on and gap_on and not (self.exec_sec_require == "Breakeven"
                                       and self.exec_rec_require == "Stopped only"):
             # 🔴 THE ONLY THING KEEPING THE TWO HALVES OUT OF EACH OTHER'S WAY. They share one

@@ -215,6 +215,10 @@ class SecondaryArm:
         # None. See `_rested`. Always present so the attribute never depends on the mode.
         self._l_rest = None
         self._s_rest = None
+        # `exec_sec_max_wait_bars` — the SOS bar whose resting order was cancelled for waiting too
+        # long, per side. Not a boolean: it has to name WHICH setup, or the side could never re-arm.
+        self._l_rest_dead = None
+        self._s_rest_dead = None
         # `_seen` = the primary gate was already open on an EARLIER fill-clock bar, so a reclaim needs a
         # bar of its own rather than firing on the stop-out bar's own upper wick. `_rec` = price
         # has since traded back through the deep edge. `_void` = price reached the stop anchor
@@ -551,6 +555,24 @@ class SecondaryArm:
             if not armed or src is None:
                 return None
             if src == "reclaim":
+                # `exec_rec_entry_mode` = "Market" — there is no wait, so the order is priced off
+                # where price IS rather than off the level. The estimate is this FILL-CLOCK bar's
+                # extreme in the trade's direction — the price at which the reclaim was detected.
+                # ⚠ Deliberately the bar's WORST price for the trade, not its close: the close is
+                # not passed to this layer, and of the two prices that are, the extreme gives the
+                # WIDER risk and therefore the SMALLER position. Erring small is the safe side.
+                # ⚠ 15m `sig.close` would be the wrong clock entirely — for a stopped-out primary
+                # it sits BELOW the whole zone, which would price a long BETTER than the level it
+                # is supposed to be paying up for.
+                # ⚠ Passes a missing bar straight through as None rather than falling back to
+                # the level — a market order priced off the level would be sized against a risk it
+                # is not carrying. The fallback was written with a test, the test was VACUOUS, and
+                # running the mutation is what showed why: the reclaim arms by comparing this same
+                # bar to the deep edge, so with no bar it never arms and the branch is
+                # unreachable. Kept as the correct answer to a question that cannot be asked;
+                # there is no test, because one would be green either way.
+                if getattr(cfg, "exec_rec_entry_mode", "Retest") == "Market":
+                    return bar_high if side > 0 else bar_low
                 return z_hi
             if src == "gap":
                 return poi
@@ -630,16 +652,31 @@ class SecondaryArm:
         clear belongs where the retiring happens, not in a reader trying to infer it.**
         """
         key = "_l_rest" if side > 0 else "_s_rest"
+        dead = "_l_rest_dead" if side > 0 else "_s_rest_dead"
         snap = getattr(self, key, None)
         if not flat or sos_bar is None:
             setattr(self, key, None)
             return armed, edge, stop, leg, src
+        # `exec_sec_max_wait_bars` — the order was CANCELLED on this setup for waiting too long.
+        # It is remembered against the SOS bar rather than cleared, because the live computation
+        # below would otherwise re-place the identical order on the very next bar and the cancel
+        # would read as working while changing nothing. A new break of structure gives a new SOS
+        # bar, which is what lets the side arm again.
+        if getattr(self, dead, None) == sos_bar:
+            return False, None, None, None, None
         if snap is not None:
             if snap[0] == sos_bar:
+                limit = getattr(self._cfg, "exec_sec_max_wait_bars", 0)
+                age = snap[5] + 1
+                if limit > 0 and age > limit:
+                    setattr(self, key, None)
+                    setattr(self, dead, sos_bar)
+                    return False, None, None, None, None
+                setattr(self, key, (sos_bar, snap[1], snap[2], snap[3], snap[4], age))
                 return True, snap[1], snap[2], snap[3], snap[4]
             setattr(self, key, None)      # a NEW break of structure — that order is off the book
         if armed and edge is not None and stop is not None:
-            setattr(self, key, (sos_bar, edge, stop, leg, src))
+            setattr(self, key, (sos_bar, edge, stop, leg, src, 0))
         return armed, edge, stop, leg, src
 
     def _stop_anchor(self, m1: M1State, sig, mode=None):

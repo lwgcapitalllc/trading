@@ -3793,3 +3793,146 @@ passed; a refusal is only testable by CONSTRUCTING the state that triggers it. A
 string failed to match after `ruff format` had collapsed the block it targeted, leaving a green
 run that proved nothing: **a mutation that does not apply is indistinguishable from a test that
 survived it — assert the replacement landed before believing the red.**
+
+---
+
+## Run — five ways to stop the RECLAIM re-entry giving its money back (2026-08-24)
+
+**The question.** Aaron's 2025-08-19 reclaim ran **+2.98R**, missed its target by **7.5 cents** on
+gold, and finished **−1R**. The reclaim half banks 100% at its target and its stop does not move
+until that target is touched, so there is no middle outcome: a trade either pays 3R or pays −1R.
+Five ideas were replayed against that.
+
+**Basis, identical for every row.** XAUUSD M15, 2020-01-01 → 2026-08-23, no cost layers, 10% per
+trade compounding, 5-minute fill clock, seeded from control run `71d8aa048999` with only the named
+fields changed. Control reproduces Aaron's run `6e029942cb29` on every stored KPI: 249 trades,
+0.5863 win rate, 44 scratches, 43.34% drawdown. **The A+ leg is +139.71R (159 trades) and the gap
+leg +8.19R (44 trades) in EVERY row below**, which is the check that each change touched only the
+reclaim.
+
+⚠ **R is recomputed per trade from the stored equity curve**, not read off a KPI. The gap and
+reclaim halves are told apart by their first target's distance in R (reclaim 3.0, gap 1.25) —
+`kind` alone cannot separate them.
+
+### The verdict, all five
+
+| idea | setting | reclaim book | vs control |
+|---|---|---|---|
+| — | control (shipped) | **+30.00R** | — |
+| bank the reclaim earlier | target 1.25R | +10.25R | **−19.75R** |
+| move the stop to breakeven | arm 1.5R, keep 0 | +23.77R | **−6.23R** |
+| enter at market, not on the retest | market, target 3R | +23.11R | **−6.89R** |
+| halve the stop zone at halfway | arm 1.5R, keep 0.5R | +29.00R | **−1.00R** |
+| **expire the resting order** | **cancel after 12h** | **+38.00R** | **+8.00R** |
+
+🔴 **FOUR OF THE FIVE LOSE, AND THEY LOSE FOR ONE REASON.** A reclaim winner pays **3R** and a
+reclaim loser pays **1R**. Any rule that protects a loser saves at most 1R; any rule that knocks
+out a winner costs 3R plus whatever it then loses. **The break-even exchange rate is one winner
+per three-to-four saves, and none of the four clears it.** Every losing idea either widens the
+entry-to-stop distance or tightens the stop into the noise the trade has to survive to reach 3R.
+
+### 1. Expire the resting order — the only one that pays
+
+Cancel a reclaim's resting limit after it has waited N fill-clock bars without filling, and forbid
+the same setup re-placing it (a new break of structure arms a fresh one).
+
+| order waited | orders | W/L | worth |
+|---|---|---|---|
+| under 30 min | 61 | — | +25.84R |
+| 30 min – 1 h | 6 | 2W/4L | −1.87R |
+| 1 – 3 h | 8 | 5W/3L | +2.52R |
+| 3 – 6 h | 2 | 1W/1L | +0.25R |
+| **6 – 12 h** | **5** | **4W/1L** | **+11.25R** |
+| 12 – 24 h | 4 | 0W/4L | −4.00R |
+| over 24 h | 4 | 0W/4L | −4.00R |
+
+Whole-book totals by cutoff: 0.5h +173.73R, 1h +171.87R, 3h +174.39R, 6h +174.64R,
+**12h +185.89R**, 24h +181.89R, control +177.89R. Drawdown 43.34% at 12h, unchanged.
+
+✅ **The 8.00R is EXACT ARITHMETIC, not a difference between two noisy runs.** Matching trades by
+entry time across the runs: at every cutoff the cancelled orders are **pure subtraction — zero new
+trades appear in any run.** The freed position slot never let another trade in, so there is no
+displacement term. The 8 orders cancelled at 12h are named, spread over 2020, 2021 ×2, 2023,
+2024 ×2, 2025 ×2, and every one lost exactly −1R. Aaron's 2025-08-19 reclaim is one of them.
+
+⚠ **Every cutoff of 6 hours or less LOSES**, because the 6–12h band is the best in the whole
+re-entry book. Cutting early is not a milder version of cutting late — it is the opposite trade.
+
+⚠ **THE RULE RESTS ON 8 TRADES.** Eight straight losses at roughly even odds is about a 1-in-250
+fluke, so it is suggestive rather than established. It is worth **~1.5R a year**. ⚠ **This is the
+one idea here that could NOT be answered from stored data**: runs record when an order FILLED and
+never when it was PLACED. An earlier attempt to reconstruct the wait by pairing each secondary
+with the preceding primary matched on only 32 of 90 exit prices and was discarded unpublished.
+
+### 2. Halve the stop zone at halfway — the near miss
+
+Arm on the trade's own favourable excursion, then move the stop PART of the way back rather than
+to breakeven.
+
+| arm at | stop keeps | reclaim | vs control | winners lost |
+|---|---|---|---|---|
+| 1.0R | 0.50R | +28.00R | −2.00R | 2 |
+| 1.5R | 0.75R | +31.25R | +1.25R | 0 |
+| **1.5R** | **0.50R** (as asked) | **+29.00R** | **−1.00R** | **1** |
+| 1.5R | 0.25R | +24.00R | −6.00R | 3 |
+| 1.5R | 0 (breakeven) | +23.77R | −6.23R | — |
+| 2.0R | 0.50R | +31.00R | +1.00R | 0 |
+| **2.0R** | **0.25R** | **+31.50R** | **+1.50R** | **0** |
+
+✅ **The arithmetic closes to the cent and that is what makes it trustworthy.** Each armed loser
+saves `(1 − keep)` R; each winner knocked out costs `3 + keep` R. At arm 1.5R five losers arm, so
+keep 0.75 gives 5 × 0.25 = +1.25R with no winner lost; keep 0.50 gives 2.50 − 3.50 = −1.00R with
+one lost; keep 0.25 gives 3.75 − 9.75 = −6.00R with three lost. Every row reproduces.
+
+⚠ **The best row is +1.50R off TWO trades** — only 2 of the 27 losing reclaims ever reach 2R in
+front before failing. ⚠ **Account drawdown is 43.34% in six of the seven runs**, i.e. unchanged:
+the drawdown is driven by the A+ book, so shrinking individual re-entry losses does not move it.
+**Making a losing ticket smaller is not the same as making the account safer, and this row is the
+proof.**
+
+### 3. Enter at market instead of waiting for the retest
+
+| | trades | reclaim | vs control | drawdown |
+|---|---|---|---|---|
+| control (retest, 3R) | 46 | +30.00R | — | 43.34% |
+| market, target 3R | 49 | +23.11R | −6.89R | 53.53% |
+| market, target 4R | 49 | +21.12R | −8.88R | 51.20% |
+| market, target 2R | 49 | +15.11R | −14.89R | 51.01% |
+
+🔴 **THE STOP DOES NOT MOVE, SO A WORSE ENTRY IS A WIDER RISK AND A TARGET FURTHER AWAY IN PRICE.**
+On 2025-08-19 the retest entered at 3327.49 with the stop at 3323.51 — risk **$3.98**, target
+$11.93 up at 3339.42, and price reached 3339.34. Market entry got in **12h45m earlier** at
+00:25 and paid **3336.02**: risk **$12.51**, target **3373.55**, price topped at 3345.25. It
+reached **0.74R** and scratched. **In the move ten hours before the high, and still nowhere near
+the target.**
+
+⚠ **The upside it was built for is three trades.** Reclaims that arm and then run away without
+ever offering a retest never fill today; over 6.6 years there are **3** of them (46 → 49). Three
+extra trades do not pay for tripling the risk on the other 46.
+
+⚠ **Re-cutting the target does not rescue it** — 4R is worse, 2R is much worse. The reclaim's edge
+IS the tight geometry, so paying up for the entry removes the thing being traded.
+
+### 4/5. Bank earlier, and the near-miss tolerance
+
+Pulling the target to 1.25R takes the reclaim book **30.00R → 10.25R** and worsens drawdown.
+A "bank if price gets within $7.50 of the target" rule was not replayed: on this book $7.50 is
+arithmetically a **1.3R** target, which is the row above under another name, and only **one trade
+in 46** ever came within $0.25 of its target.
+
+### What shipped
+
+**Nothing is on.** Three settings were added, all defaulting to the shipped behaviour: the
+protected-stop trigger, how far that stop moves, and the resting-order cancel. The cancel is the
+only one recommended, at **144 fill-clock bars = 12 hours**.
+
+⚠ **Risk percent is a SIZE dial and was ruled out early** — it changes dollars and account
+drawdown, never R and never which trades happen.
+
+✅ **409 tests, 8 mutations written and all 8 killed.** 🔴 **Two mutations survived the first pass
+and both were test defects worth naming.** One test passed the setting in by hand, so it never
+read the default it claimed to pin — a default test that names the default in its own fixture is
+vacuous. The other built the order record itself, so it never reached the pricing rule at all —
+the fixture-more-capable-than-production trap, caught only by running the mutation. A third guard
+was written with a test that was green either way: the branch is unreachable, because the arm
+needs the same bar the guard checks for.
