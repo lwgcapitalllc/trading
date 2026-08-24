@@ -40,8 +40,12 @@ def test_account_type_must_be_demo_or_live():
 def test_the_conventional_names_are_derived_from_the_key():
     b = bots.BotReg(task="BOT_X", key="x_demo", display="X", account_type="demo")
     assert b.instance_dir == "x_demo"
-    assert b.log_file == "x_demo.log"
     assert b.suppress_key == "x_demo"
+    # ⚠ EMPTY, not "x_demo.log". It used to default to that name, and the runner stopped
+    # writing it on 2026-08-05 when it moved to one file per UTC day — so the log panel served
+    # a dead file for nineteen days. Empty now means "discover the newest daily file";
+    # tests/test_bot_log_view.py owns that behaviour.
+    assert b.log_file == ""
     assert b.state_file.endswith(r"\x_demo\bot_state.json")
 
 

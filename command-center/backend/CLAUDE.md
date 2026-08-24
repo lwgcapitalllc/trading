@@ -1717,6 +1717,36 @@ read once the bot is no longer running, so hiding the flag on a stopped bot woul
 explanation at the moment somebody is looking for it. `mt5_link` is gated because a stopped bot's
 last link stamp describes a process that no longer exists; a review describes the record, which does.
 
+## 🔴 The log panel read a file the bot abandoned nineteen days ago (2026-08-24)
+
+`BotReg.log_file` defaulted to `<key>.log`, beside a comment stating that was what
+`algos/live/runner.py` writes. **It was true when written and stopped being true on 2026-08-05**,
+when the runner moved to one file per UTC day (`<key>-YYYY-MM-DD.log`, `DailyFileHandler`). Nothing
+here changed, so `GET /bots/{bot}/log` — and the trading-box tool that fronts it — served the
+5 August file and read as live. The bot placed thirteen orders in that window and none of it
+appeared.
+
+⚠ **Nothing errored and nothing went red.** The endpoint returned a full, well-formed log. Rule 7 in
+its purest form: a label is a CLAIM about code somewhere else, and no test tied this one to the
+runner. That is why the cases assert on the COMMAND sent to the box, never on a filename constant —
+a constant can agree with itself for ever.
+
+`_newest_log_files` lists the dated files and takes the newest `_LOG_DAYS` (2), oldest first.
+
+⚠ **Sorted by NAME, not modified time.** `algos/tools/log_backup.py` copies these into a zip, and a
+copy or restore rewrites the timestamp while the name still says which day it is.
+
+⚠ **TWO days, not one.** The runner rolls at 00:00 UTC, so a request at 00:05 against a single file
+returns four lines and reads as a bot that just woke up.
+
+⚠ **`log_file` empty now means DISCOVER; a value is an override that skips discovery.** A bot running
+pre-2026-08-05 code still writes one fixed file, so an empty listing falls back to `<key>.log` rather
+than reporting no log. An unreachable box RAISES — *nothing there* and *cannot ask* stay apart.
+
+**Tests:** `tests/test_bot_log_view.py` (7). Three watched RED against HEAD (each read
+`…\mpc_sos_fade_demo.log`). The fallback and override cases passed at HEAD by construction and are
+pinned by MUTATION, named in their own docstrings.
+
 ## Nav activity — three booleans so the sidebar stops pulling three lists
 
 `GET /system/activity` → `lab_db.get_nav_activity()` → `{backtests, optimizations, stress_tests}`.

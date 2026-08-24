@@ -115,7 +115,16 @@ class BotReg:
     display: str
     account_type: str  # "demo" | "live" — deliberately no default
     instance_dir: str = ""  # ⇒ key
-    log_file: str = ""  # ⇒ <key>.log, which is what algos/live/runner.py writes
+    # A FIXED log filename to read instead of discovering the newest dated one. Empty is the
+    # normal case and means "discover" — see `_newest_log_files`.
+    #
+    # 🔴 It used to default to `<key>.log`, with a comment claiming that was what the runner
+    # writes. It stopped being true on 2026-08-05, when the runner moved to one file per UTC
+    # day (`<key>-YYYY-MM-DD.log`), and nothing here changed. **The log panel then served the
+    # 5 August file for nineteen days while reading as live** — the bot was placing orders the
+    # whole time and none of it appeared. Rule 7: a label is a CLAIM about code somewhere
+    # else, and the line that consumes it is the only thing that settles it.
+    log_file: str = ""
     suppress_key: str = ""  # ⇒ key; the short key written to stop_suppress.json
     config_section: str = "strategy_params"
     state_section: str = ""  # ⇒ state_<key>; bots SHARING a bot_state.json share this
@@ -132,7 +141,6 @@ class BotReg:
                 f"{self.key}: account_type must be 'demo' or 'live', not {self.account_type!r}"
             )
         self.instance_dir = self.instance_dir or self.key
-        self.log_file = self.log_file or f"{self.key}.log"
         self.suppress_key = self.suppress_key or self.key
         self.state_section = self.state_section or f"state_{self.key}"
         self.state_file = self.state_file or rf"{_VPS_INSTANCES}\{self.instance_dir}\bot_state.json"
@@ -1444,20 +1452,63 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     }
 
 
+# How many of the newest daily log files are stitched together for one view.
+#
+# ⚠ TWO rather than one, and the reason is the roll. The runner opens a new file at 00:00 UTC,
+# so a request at 00:05 against a single file returns four lines and looks like a bot that has
+# only just woken up. Two days always covers the roll, and the tail below still bounds the size.
+_LOG_DAYS = 2
+
+
+def _newest_log_files(instance_dir: str, bot_key: str) -> list[str]:
+    """The newest daily log filenames for a bot, OLDEST first. Empty when there are none.
+
+    The runner writes `<key>-YYYY-MM-DD.log` per UTC day (`algos/live/runner.py`,
+    `DailyFileHandler`), so a plain descending NAME sort is a date sort — no parsing, and
+    nothing here has an opinion about the box's clock or its locale.
+
+    ⚠ **Sorted by name, deliberately NOT by modified time.** `tools/log_backup.py` copies these
+    files into a zip; a copy or a restore rewrites the timestamp and would reorder the view
+    while the names still say exactly which day each one is.
+    """
+    listing = _ssh(rf'dir /b /o-n "{_VPS_INSTANCES}\{instance_dir}\{bot_key}-*.log" 2>nul')
+    names = [
+        ln.strip()
+        for ln in listing.splitlines()
+        if ln.strip().startswith(f"{bot_key}-") and ln.strip().endswith(".log")
+    ]
+    return list(reversed(names[:_LOG_DAYS]))
+
+
 @router.get("/{bot_name}/log", response_class=PlainTextResponse)
 def get_bot_log(bot_name: str, lines: int = 500):
-    """Read the last N lines of a bot's stdout log over SSH."""
+    """Read the last N lines of a bot's log over SSH.
+
+    Two SSH calls — one to find the newest daily files, one to read them. It could be squeezed
+    into a single batch line, and that was not done on purpose: the batch form needs `for /f`
+    quoting that has to survive Python, ssh and cmd.exe, and a log reader is not worth a shell
+    puzzle that goes subtly wrong on a path with a space in it.
+
+    ⚠ **An unreadable listing is NOT an empty one.** A box that will not answer raises out of
+    `_ssh`; a bot with no daily files falls back to the old fixed name, which is what a bot
+    running code from before 2026-08-05 still writes. Reporting either as "no log" would be
+    this repo's standing fault — never let *nothing there* and *cannot ask* be one value.
+    """
     task_name, bot_key = _resolve_bot(bot_name)
     reg = _BY_KEY[bot_key]
-    log_path = rf"{_VPS_INSTANCES}\{reg.instance_dir}\{reg.log_file}"
+    base = rf"{_VPS_INSTANCES}\{reg.instance_dir}"
 
     try:
-        raw = _ssh(f"type {log_path} 2>nul")
+        if reg.log_file:
+            names = [reg.log_file]
+        else:
+            names = _newest_log_files(reg.instance_dir, bot_key) or [f"{bot_key}.log"]
+        raw = _ssh(" & ".join(rf'type "{base}\{n}" 2>nul' for n in names))
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
 
     if not raw:
-        return f"Log file not found or empty: {log_path}"
+        return f"Log file not found or empty: {base}\\{names[-1]}"
 
     log_lines = raw.splitlines()
     return "\n".join(log_lines[-lines:])
