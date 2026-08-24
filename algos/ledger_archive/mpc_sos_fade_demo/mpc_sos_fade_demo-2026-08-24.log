@@ -1,0 +1,1 @@
+2026-08-24 05:11:33,736 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_sl_deep: False → True. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
