@@ -324,3 +324,96 @@ def test_the_identity_is_never_written_into_the_repo_config(repo, monkeypatch):
     ls._identity()
 
     assert ls._BOX_EMAIL not in (repo / ".git" / "config").read_text()
+
+
+# ── the push path needs the identity too ────────────────────────────────────
+
+
+class _NoIdentityCleanTree:
+    """SYSTEM's answers: no git identity, and a clean working tree.
+
+    ⚠ Deliberately NOT `_Empty`. That stub returns 1 for everything, which `_foreign_changes`
+    reads as *cannot read the tree* and stands the push down — so the test would pass without
+    ever reaching the code under test. The two questions need two different answers.
+    """
+
+    def __init__(self, args):
+        self.args = args
+        self.stderr = ""
+        wants_identity = "config" in args
+        self.stdout = ""
+        self.returncode = 1 if wants_identity else 0
+
+
+class _HasIdentityCleanTree(_NoIdentityCleanTree):
+    """A machine that DOES have a git identity — a Mac, or an interactive Windows login."""
+
+    def __init__(self, args):
+        super().__init__(args)
+        if "config" in args:
+            self.stdout = "someone@example.com\n"
+            self.returncode = 0
+
+
+def test_the_REBASE_carries_the_box_identity_too(repo, monkeypatch):
+    """🔴 The defect that failed every hourly run on the night of 2026-08-24.
+
+    `_identity()` was applied to the commit and NOT to the push path. A rebase REPLAYS commits,
+    so it needs a committer exactly as a commit does. While the box was merely ahead of origin
+    the push fast-forwarded, nothing was replayed, and the omission was invisible — it broke the
+    instant the other machine pushed and a real rebase became necessary. The bot committed
+    locally every hour, failed to push, and the alert fired thirteen times.
+
+    ⚠ The assertion is on the ARGUMENTS actually handed to git, not on a constant. A test that
+    checked `_identity()` alone would have stayed green through the whole outage — the helper was
+    never broken, its caller was.
+
+    **Watched RED against the previous line** (`git = ("git", "-C", ...) + _GIT_NO_PROMPT`):
+    the pull argv carries no `user.email` and this fails. Confirmed as SYSTEM on an isolated
+    fixture as well — `Committer identity unknown`, exit 128, and exit 0 once the arguments land.
+    """
+    monkeypatch.setattr(ls, "_run", lambda *a: _NoIdentityCleanTree(a))
+    monkeypatch.setattr(ls, "_authenticated_remote", lambda: None)
+
+    seen = []
+
+    def fake_run(args, **kw):
+        seen.append(list(args))
+        return _NoIdentityCleanTree(tuple(args))
+
+    monkeypatch.setattr(ls.subprocess, "run", fake_run)
+
+    ls._push()
+
+    rebase = [a for a in seen if "pull" in a and "--rebase" in a]
+    assert rebase, f"the rebase never ran; git was called with {seen}"
+    assert f"user.email={ls._BOX_EMAIL}" in rebase[0]
+    assert f"user.name={ls._BOX_NAME}" in rebase[0]
+
+
+def test_the_identity_is_NOT_forced_when_the_machine_has_one(repo, monkeypatch):
+    """Mutation guard: hardcoding the box identity into the push path reddens this.
+
+    A Mac runs this by hand and must keep its own attribution — see `_identity`.
+
+    ⚠ `_run` is stubbed SEPARATELY from `subprocess.run` here, and the first version of this test
+    was wrong for want of it: `_run` is a thin wrapper over `subprocess.run`, so patching the
+    latter to capture argv also answered the identity question — with no identity. The test then
+    failed against correct code. Two questions, two stubs.
+    """
+    monkeypatch.setattr(ls, "_authenticated_remote", lambda: None)
+    monkeypatch.setattr(ls, "_run", lambda *a: _HasIdentityCleanTree(a))
+
+    seen = []
+
+    def fake_run(args, **kw):
+        seen.append(list(args))
+        return _NoIdentityCleanTree(tuple(args))
+
+    monkeypatch.setattr(ls.subprocess, "run", fake_run)
+
+    ls._push()
+
+    rebase = [a for a in seen if "pull" in a and "--rebase" in a]
+    assert rebase, f"the rebase never ran; git was called with {seen}"
+    assert not [x for x in rebase[0] if str(x).startswith("user.email=")]

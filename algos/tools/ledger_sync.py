@@ -404,7 +404,15 @@ def _push() -> bool:
         secret = remote.split("x-access-token:", 1)[1].split("@", 1)[0]
 
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
-    git = ("git", "-C", str(REPO_ROOT)) + _GIT_NO_PROMPT
+    # 🔴 `_identity()` belongs HERE too, not only on the commit, and leaving it off cost a full
+    # night of hourly failures (2026-08-24). A rebase REPLAYS commits, so it needs a committer
+    # exactly as a commit does. While the box was merely ahead of origin the push fast-forwarded,
+    # nothing was replayed, and the missing identity was invisible — it broke the instant the
+    # other machine pushed and a real rebase became necessary. **A guard that is only exercised
+    # by the rarer branch is one that ships broken and waits.** Proven as SYSTEM on an isolated
+    # fixture: without these arguments the rebase dies `Committer identity unknown` / exit 128;
+    # with them, exit 0.
+    git = ("git", "-C", str(REPO_ROOT)) + _identity() + _GIT_NO_PROMPT
 
     foreign = _foreign_changes()
     if foreign:

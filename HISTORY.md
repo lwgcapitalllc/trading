@@ -15,6 +15,57 @@ the other one did.
 
 ## Latest
 
+### The backup that committed all night and pushed nothing (2026-08-24)
+
+The box's hourly ledger sync alerted every hour from about midnight: *"Ledger backup did NOT reach
+origin. 2 file(s) committed locally."* Thirteen commits had stacked up on the box. **The alert was
+right, and it is the reason this was a morning's diagnosis rather than a week of silent data loss.**
+
+**The defect.** `_identity()` — the `-c user.name= -c user.email=` fallback for an account with no
+git config — was applied to the commit and not to `_push`. **A rebase replays commits, so it needs a
+committer exactly as a commit does.**
+
+**Why it survived a full day of working correctly.** While the box was merely AHEAD of origin, the
+push fast-forwarded: nothing was replayed, so no identity was ever wanted. It broke the moment the
+other Mac pushed `45fb762` and a real rebase became necessary. **A branch that only the rarer case
+reaches is one that ships broken and waits for the conditions that expose it.** That is the same
+shape as the path-separator bug in this very file the day before, which could not fail on the
+machine that wrote it.
+
+**The wrong turn, and it is the transferable part.** Running `_push()` by hand on the box succeeded
+and cleared all 13 commits — while the bug was still in the code. Administrator has a global git
+identity; SYSTEM does not. **A hand-run had just destroyed the failing state without diagnosing it.**
+The diagnosis was recovered by building a throwaway repo needing a genuine rebase and driving only
+that step from a temporary SYSTEM task, output redirected to a file:
+
+```
+=== rebase WITHOUT identity (the shipped code path) ===
+Rebasing (1/1)Committer identity unknown
+fatal: unable to auto-detect email address (got 'SYSTEM@fxut9200941.(none)')
+EXITCODE=128
+=== rebase WITH the box identity (the fix) ===
+Rebasing (1/1)Successfully rebased and updated refs/heads/main.
+EXITCODE=0
+```
+
+Red and green in one SYSTEM run, on an isolated fixture, with the real checkout untouched.
+
+**A second finding, from a number that lied.** `git rev-list --count origin/main..HEAD` on the box
+read **14** at a moment when `HEAD` was byte-identical to what origin held. `_push` targets the
+authenticated URL rather than the remote NAME, and **pushing to a URL never updates
+`refs/remotes/origin/main`** — the box's cached ref is frozen wherever the last `git pull origin`
+left it. The sync is unaffected, because `pull --rebase <url>` fetches fresh each run; only the
+human's check was wrong. Compare `rev-parse HEAD` against origin.
+
+**The test that would have caught it, and the one that nearly did not.** The new case asserts on the
+ARGUMENTS handed to git, not on a constant — a test of `_identity()` alone stays green through the
+whole outage, because the helper was never broken, its caller was. The mutation guard beside it
+(a Mac keeps its own attribution) failed first against correct code: `_run` is a thin wrapper over
+`subprocess.run`, so patching the latter to capture argv also answered the identity question, with
+no identity. **Two questions need two stubs** — the same fixture-lies-to-you shape the file's other
+identity test already carries a warning about.
+
+
 ### The MCP servers arrive, and each one moves a rule out of memory (2026-08-20/21)
 
 Aaron asked which MCP servers were worth installing. The honest answer was two off the shelf and

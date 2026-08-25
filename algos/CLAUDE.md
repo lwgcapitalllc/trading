@@ -129,6 +129,22 @@ Two changes, and the second is the one that matters:
 ⚠ **Exactly ONE machine may push.** Two timers on one branch rebase under each other. The box is
 the one always on, so the box pushes and the Mac is `--no-push`. Do not "restore" the Mac's push.
 
+🔴 **`_identity()` goes on the PUSH path as well as the commit — a rebase REPLAYS commits, so it
+needs a committer too.** Missing there, the job committed hourly and pushed nothing for a night.
+⚠ **It was invisible while the box was merely AHEAD of origin** (a fast-forward replays nothing)
+and broke the instant the other machine pushed. **A branch only the rarer case reaches ships broken
+and waits.**
+
+⚠ **Reproduce a scheduled-task failure AS SYSTEM or you have not reproduced it.** The same call by
+hand as Administrator succeeds — that account has a global git identity and SYSTEM has none. Every
+failure this job has had was invisible to a hand-run.
+
+⚠ **`git rev-list --count origin/main..HEAD` LIES ON THE BOX** — `_push` targets the authenticated
+URL, not the remote NAME, and pushing to a URL never updates `refs/remotes/origin/main`. Compare
+`rev-parse HEAD` against origin instead. The sync is unaffected; only the check is.
+
+Story, measurements and the SYSTEM fixture: `HISTORY.md` → *The backup that committed all night*.
+
 🔴 **It REFUSES to push when the working tree carries changes outside `algos/ledger_archive/`**
 (`_foreign_changes`). `algos/tools/promote.py` freezes a live bot's snapshot out of that same
 checkout, so a rebase underneath a half-finished deployment would change what is about to be
@@ -173,7 +189,7 @@ sync would be attributed to the box. ⚠ **Passed per-command, never written int
 checkout is what `promote.py` reads, and a write would silently re-attribute a human's commits made
 from the same box.
 
-**Tests:** `algos/tests/test_ledger_sync_local.py` (20), weighted toward what the job must REFUSE.
+**Tests:** `algos/tests/test_ledger_sync_local.py` (22), weighted toward what the job must REFUSE.
 A fail-watch is vacuous (new functions), so non-vacuity is by MUTATION — dropping the archive
 exemption and dropping the redaction each redden their own named test. 🔴 **One test caught a real
 defect the live check had missed: the authenticated URL was missing its `@`, so it could never have
