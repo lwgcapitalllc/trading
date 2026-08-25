@@ -3185,10 +3185,109 @@ class Execution:
             return self._cfg.exec_sh_tp1_pct
         return self._cfg.exec_tp1_pct
 
+    def _accrued_cost_price(self) -> float:
+        """This trade's costs SO FAR plus the exit side it has not paid yet, as a price distance.
+
+        The staged stop is a PRICE, and costs are DOLLARS, so one of them has to be converted or
+        the comparison is meaningless. Dollars → price on the size still open: profit from closing
+        the remaining position `x` of price above entry is `x * remaining * point_value`, so the
+        price offset that exactly covers a dollar figure is that figure divided by the same two.
+
+        Three things this counts, and one it deliberately does not:
+
+        * **Already charged** — `_costs_usd`, which `_charge` books NEGATIVE. Commission and half
+          the spread on the entry, plus every rollover crossed so far. ⚠ It can be POSITIVE overall
+          on a short, because gold's swap is a real credit to the short side; that is a genuine
+          negative cost and is passed through rather than floored at zero.
+        * **Not yet charged** — the exit side's commission and its half of the spread on whatever
+          is still open. Without this the floor covers half a round trip and calls it a round trip.
+        * **NOT the spread under modelled bid/ask fills.** `_charge_spread` returns early there for
+          the reason given in its own docstring — the cost lives in the fill prices rather than in
+          the ledger — so charging it here would bill it a second time in a different currency.
+
+        ⚠ **Converted on the REMAINING size, not the original.** The buffer only earns on what is
+        still open, so a position that has already banked a rung needs a proportionally WIDER
+        offset to cover costs charged against the full size. That is arithmetic, not a policy: with
+        the shipped ladder (both rungs bank 0%) nothing exits before the stop and the two are the
+        same number.
+        """
+        cfg = self._cfg
+        remaining = self._qty - self._filled_qty
+        if self._profile is None or remaining <= 0 or cfg.point_value <= 0:
+            return 0.0
+        spent_usd = -self._costs_usd
+        exit_usd = self._profile.commission(remaining)
+        s = self._spread()
+        if s > 0 and not getattr(self._profile, "bid_ask_fills", False):
+            exit_usd += (s / 2.0) * remaining * cfg.point_value
+        return (spent_usd + exit_usd) / (remaining * cfg.point_value)
+
+    def _be_buffer(self, *, hold_ok: bool = True) -> Optional[float]:
+        """How far past the ENTRY the staged (breakeven) stop sits, as a positive price offset.
+
+        `exec_be_buf_mode` picks which of three questions this answers, and the default is the
+        shipped one so nothing moves until somebody changes it:
+
+        * **"Ticks"** — `exec_be_buf_tk * mintick`. One fixed distance on every trade.
+        * **"Fraction of stop"** — `exec_be_buf_r` × the FROZEN entry risk, so the cushion is the
+          same size *relative to what the trade risked* rather than the same number of ticks.
+        * **"Fraction of stop + cost"** — the above, floored at what this trade has actually cost
+          (`_accrued_cost_price`) plus `exec_be_cost_margin_r` of risk. This is the only mode that
+          can promise the staged exit is not a loss, and the margin is what makes it a small win.
+
+        Both non-tick modes are then CAPPED at `exec_be_cap_pct` of the entry → nearer-rung
+        distance. ⚠ The cap is not a safety belt, it is the point: a buffer that reaches the rung
+        that staged it closes the trade at the target instead of protecting a runner, and that is
+        measured — 24 of 243 trades at a 300-tick buffer, 70 of 243 at 600.
+
+        ⚠ **Off `_stage_rungs()[0]`, never `_tp1`**, for the reason that method exists: a flipped
+        re-entry ladder would otherwise cap against a rung price has not reached.
+
+        ⚠ **Risk is measured off `_sl`, the FROZEN entry stop**, so "a fifth of the stop" keeps
+        meaning the risk the trade was SIZED against. Reading the live stop would let the buffer
+        shrink as the stop ratchets, i.e. the cushion would evaporate exactly as the trade started
+        working.
+
+        Returns **None** only in the one case the two rules genuinely disagree — the cost floor
+        alone sits above the cap — and only when `hold_ok` and `exec_be_cost_conflict` is
+        "Hold stop". The caller then leaves its previous stop alone: no price both covers cost and
+        stays below the target, so there is nothing honest to move to. `hold_ok=False` forces the
+        clamp for callers that have no previous stop to fall back to.
+        """
+        cfg = self._cfg
+        mode = getattr(cfg, "exec_be_buf_mode", "Ticks")
+        ticks = cfg.exec_be_buf_tk * cfg.mintick
+        if mode == "Ticks":
+            return ticks
+        risk = abs(self._entry - self._sl)
+        if risk <= 0:
+            # No frozen risk to take a fraction OF. Every entry here is priced off a stop, so this
+            # is a can't-happen rather than a case — falling back to the tick buffer keeps it a
+            # can't-happen instead of a division that silently returns zero cushion.
+            return ticks
+        buf = getattr(cfg, "exec_be_buf_r", 0.20) * risk
+        cost = None
+        if mode == "Fraction of stop + cost":
+            cost = self._accrued_cost_price() + getattr(cfg, "exec_be_cost_margin_r", 0.05) * risk
+            buf = max(buf, cost)
+        span = abs(self._stage_rungs()[0] - self._entry)
+        if span > 0:
+            cap = getattr(cfg, "exec_be_cap_pct", 75.0) / 100.0 * span
+            if buf > cap:
+                conflict = getattr(cfg, "exec_be_cost_conflict", "Hold stop")
+                if cost is not None and cost > cap and hold_ok and conflict == "Hold stop":
+                    return None
+                buf = cap
+        return buf
+
     def _current_stop(self) -> float:
         cfg = self._cfg
         d = self._pos_dir
-        be_buf = cfg.exec_be_buf_tk * cfg.mintick
+        # ⚠ The buffer is resolved LAZILY, per branch, and is no longer a plain tick offset —
+        # `_be_buffer` reads the trade's own risk and accrued costs, and may answer None ("no stop
+        # here both covers cost and stays under the target"). Hoisting it back to the top would
+        # compute it on every stage-0 bar and force each branch to handle a None it never asked
+        # for.
         # A SECONDARY may hold its INITIAL stop until TP2 instead of ratcheting to breakeven at
         # TP1 (`exec_sec_be_at`). Three of the seven shipped re-entries exited at exactly the
         # 30-tick buffer after touching TP1 — ticked out of their own trade. Secondaries only:
@@ -3203,7 +3302,13 @@ class Execution:
                 return floor if trail is None else max(floor, trail)
             return floor if trail is None else min(floor, trail)
         if self._stage >= 1:
-            return self._entry + be_buf if d > 0 else self._entry - be_buf
+            buf = self._be_buffer()
+            if buf is None:
+                # Cost-covering mode, and this trade's accrued financing alone is further from
+                # entry than the cap allows. Hold the frozen entry stop rather than stage: every
+                # available price is either a guaranteed loss or the target itself.
+                return self._sl
+            return self._entry + buf if d > 0 else self._entry - buf
         # `exec_rec_be_r` — a RECLAIM may reach breakeven on its own favourable excursion, before
         # its first target. Without it a reclaim banks 100% at `exec_rec_tp_r` or nothing, so one
         # that runs most of the way there and turns around pays the FULL loss (2025-08-19 missed
@@ -3223,7 +3328,10 @@ class Execution:
             keep = getattr(self._cfg, "exec_rec_be_keep_r", 0.0)
             if keep > 0:
                 return self._entry - keep * abs(self._entry - self._sl) * d
-            return self._entry + be_buf if d > 0 else self._entry - be_buf
+            buf = self._be_buffer()
+            if buf is None:
+                return self._sl
+            return self._entry + buf if d > 0 else self._entry - buf
         return self._sl
 
     def _stage2_floor(self) -> float:
@@ -3232,7 +3340,11 @@ class Execution:
         tighten past this — never loosen it."""
         cfg = self._cfg
         d = self._pos_dir
-        be_buf = cfg.exec_be_buf_tk * cfg.mintick
+        # ⚠ `hold_ok=False`, so this can never come back None. Stage 2 has no previous stop worth
+        # falling back to — the trade is past BOTH rungs, and refusing to floor it there would
+        # loosen the stop back toward the entry on a trade that is winning. The clamp is right
+        # here for the same reason holding is right at stage 1.
+        be_buf = self._be_buffer(hold_ok=False)
         be = self._entry + be_buf if d > 0 else self._entry - be_buf
         mode = cfg.exec_tp2_stop_mode
         if mode == "Breakeven":

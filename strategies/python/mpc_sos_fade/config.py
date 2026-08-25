@@ -286,6 +286,68 @@ class SosFadeConfig:
     #   NOTE this is `BLegConfig`'s parent, so the B-LEG bot inherits 0/0 too — intended, both bots
     #   share one exit ladder.
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
+    #   ⚠ A FIXED price offset, applied identically whatever the trade is risking. That is what
+    #   `exec_be_buf_mode` exists to replace — see below.
+    exec_be_buf_mode: str = "Ticks"    # "Breakeven buffer mode"
+    #   ∈ {"Ticks", "Fraction of stop", "Fraction of stop + cost"}. WHAT the breakeven buffer is
+    #   measured in. "Ticks" (DEFAULT) is the shipped behaviour and reads `exec_be_buf_tk` alone,
+    #   so nothing moves until this is changed deliberately.
+    #
+    #   🔴 The problem the other two modes exist for. `exec_be_buf_tk` is one distance for every
+    #   trade, and this strategy's entry stop is not one distance — MEASURED on run 5a5e2174d095
+    #   (243 trades, XAUUSD.p M15 2020-01-01..2026-08-23, PU Prime ECN costs charged) the first
+    #   target sits a median 1.098R from entry but as little as 0.310R. So the SAME buffer is a
+    #   rounding error on a wide-stop trade and most of the way to the target on a tight one.
+    #   Both ends of that are wrong, and they fail in opposite directions:
+    #     * too small — the exit does not clear the trade's own costs, so a "breakeven" is a small
+    #       LOSS. 10 of that run's 46 scratches were losses at the shipped 30 ticks.
+    #     * too large — the stop lands at or PAST the target that staged it, so the next bar closes
+    #       the trade at a fixed small profit instead of protecting a runner. MEASURED across the
+    #       buffer sweep: 0% of trades at 30 ticks, 10% (24 of 243) at 300, 29% (70 of 243) at 600.
+    #       That is why the 600-tick rung lost R (136.5R vs 159.1R) while removing 35 scratches —
+    #       it stopped being a breakeven stop and became an exit.
+    #   "Fraction of stop" replaces the fixed distance with `exec_be_buf_r` × the trade's own entry
+    #   risk, so the cushion scales with what the trade is actually risking. "Fraction of stop +
+    #   cost" additionally floors it at what this trade has COST so far plus `exec_be_cost_margin_r`
+    #   — the only mode that can promise a staged exit is not a loss.
+    #   ⚠ Both new modes are clamped by `exec_be_cap_pct` so neither can reach the target.
+    exec_be_buf_r: float = 0.20        # "Breakeven buffer (fraction of stop)"
+    #   `exec_be_buf_mode` != "Ticks" only. The buffer as a share of the FROZEN entry risk
+    #   (|entry − initial stop|), so 0.20 = one fifth of what the trade risked.
+    #   ⚠ Measured ceiling on the run above: at 0.20 the staged stop never once landed at or past
+    #   the first target across all 243 trades; at 0.35 it did on 5%; at 0.50 on 24%. Above ~0.35
+    #   `exec_be_cap_pct` starts doing real work rather than sitting as a backstop.
+    exec_be_cost_margin_r: float = 0.05    # "Breakeven cost margin (fraction of stop)"
+    #   "Fraction of stop + cost" only. How much the cost FLOOR clears the trade's accrued costs
+    #   by, as a share of entry risk. 0 = exactly flat after costs; positive = a staged exit banks
+    #   something. This is the "capture a little profit instead of a breakeven" dial.
+    exec_be_cap_pct: float = 75.0      # "Breakeven buffer cap (% of the way to the target)"
+    #   `exec_be_buf_mode` != "Ticks" only. The staged stop may never sit further than this share
+    #   of the entry → staging-target distance. 100 would put the stop ON the rung price just
+    #   touched and close the trade there; the cap is what keeps a breakeven stop a PROTECTION
+    #   rather than an exit. Measured against the nearer rung (`_stage_rungs()[0]`), so a flipped
+    #   re-entry ladder caps against the rung that actually staged the stop.
+    exec_be_cost_conflict: str = "Hold stop"   # "When cost exceeds the cap"
+    #   ∈ {"Hold stop", "Clamp to cap"}. "Fraction of stop + cost" only, and it decides the one
+    #   case where the two rules genuinely disagree: a trade held long enough that its accrued
+    #   financing alone is further from entry than `exec_be_cap_pct` allows. MEASURED on the run
+    #   above, cost reaches 1.289R of entry risk at the worst — well past any sane cap — driven by
+    #   overnight financing (correlation 0.727 with hold time; median $0.020/oz under a day,
+    #   $1.704 at 3–7 days, max $5.592).
+    #   "Hold stop" (DEFAULT) keeps the PREVIOUS stop and does not stage. No stop position both
+    #   covers cost and stays below the target, so the honest answer is that this trade cannot be
+    #   protected profitably — say so by leaving the stop where it is rather than moving it to a
+    #   price that guarantees a loss.
+    #   ⚠ It is re-tested every bar, but do NOT read that as "it will resolve": the cap is fixed
+    #   (frozen rung, frozen entry risk) while accrued cost only grows on a LONG, so a conflicted
+    #   long stays conflicted for the rest of its life. A SHORT can recover, because gold's swap is
+    #   a credit to the short side and its accrued cost can fall back under the cap.
+    #   ⚠ The trade is NOT left unprotected either way — stage 2 is untouched, so touching the
+    #   second rung still lifts the stop to `exec_tp2_stop_mode`'s floor and hands it to the trail.
+    #   "Clamp to cap" stages anyway at the cap, accepting a KNOWN small loss. Cheaper than the
+    #   full stop, but it is a stop labelled breakeven that guarantees a loss, which is the exact
+    #   thing this whole change exists to remove. Left configurable because it is measurable, not
+    #   because it is recommended.
     exec_trail_step: float = 5.0       # "Runner trail step ($ of price)" — Fixed-step mode only
     exec_runner_trail: str = "Structure + % ratchet"   # "Runner trail method"
     #   ∈ {"Fixed step", "Structure (swing)", "Structure + % ratchet"}. How the TP3 runner is
@@ -1479,6 +1541,43 @@ class SosFadeConfig:
                 f"{self.exec_sec_retrace!r}. 0 rests at the shift leg extreme (enter on the SOS "
                 "itself); 1.0 is the leg origin, where the stop is."
             )
+        # ── breakeven buffer mode ───────────────────────────────────────────────────
+        be_modes = ("Ticks", "Fraction of stop", "Fraction of stop + cost")
+        if self.exec_be_buf_mode not in be_modes:
+            raise ValueError(
+                f"exec_be_buf_mode must be one of {be_modes}, got {self.exec_be_buf_mode!r}.")
+        if self.exec_be_buf_mode != "Ticks":
+            if not (0.0 < self.exec_be_buf_r < 1.0):
+                # 0 is a bare breakeven stop, which this mode exists to stop being; 1.0 puts the
+                # staged stop a full R past entry, which is past the median first target (1.098R)
+                # — i.e. an exit dressed as a protection. Refusing states that rather than letting
+                # the cap silently swallow every trade.
+                raise ValueError(
+                    f"exec_be_buf_r must be above 0 and under 1, got {self.exec_be_buf_r!r}. "
+                    f"0 is a bare breakeven (use exec_be_buf_mode='Ticks' with exec_be_buf_tk=0 "
+                    f"if that is what you want); 1.0 is a full R past entry, further than the "
+                    f"median first target sits.")
+            if not (0.0 < self.exec_be_cap_pct < 100.0):
+                # 100 puts the stop ON the rung price just touched, which closes the trade there.
+                raise ValueError(
+                    f"exec_be_cap_pct must be above 0 and under 100, got "
+                    f"{self.exec_be_cap_pct!r}. At 100 the staged stop sits on the rung price "
+                    f"just touched, so the next bar closes the trade at the target instead of "
+                    f"protecting it.")
+        if self.exec_be_buf_mode == "Fraction of stop + cost":
+            if self.exec_be_cost_margin_r < 0.0:
+                # Negative would floor the stop BELOW the trade's costs on purpose — a staged exit
+                # that is knowingly a loss, which is the defect this mode exists to remove.
+                raise ValueError(
+                    f"exec_be_cost_margin_r must be at least 0, got "
+                    f"{self.exec_be_cost_margin_r!r}. Negative floors the staged stop below the "
+                    f"trade's own costs, i.e. a deliberate loss labelled breakeven.")
+            conflicts = ("Hold stop", "Clamp to cap")
+            if self.exec_be_cost_conflict not in conflicts:
+                raise ValueError(
+                    f"exec_be_cost_conflict must be one of {conflicts}, got "
+                    f"{self.exec_be_cost_conflict!r}.")
+
         if self.exec_sl_level != "Custom":
             return
         v = self.exec_sl_custom

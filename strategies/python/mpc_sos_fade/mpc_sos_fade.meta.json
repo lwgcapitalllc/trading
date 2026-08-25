@@ -363,8 +363,62 @@
       "label": "Breakeven buffer (ticks)",
       "short": "Breakeven buffer",
       "unit": "ticks",
-      "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs.",
+      "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs. Read only when the buffer mode is set to ticks.",
       "guide": ["True breakeven", "Locks in more, stopped out sooner"],
+      "hidden": true
+    },
+    {
+      "name": "exec_be_buf_mode",
+      "group": "Exit ladder",
+      "core": true,
+      "label": "Breakeven buffer mode",
+      "short": "Buffer mode",
+      "choices": ["Ticks", "Fraction of stop", "Fraction of stop + cost"],
+      "desc": "What the breakeven stop's cushion is measured in. Ticks is one fixed distance on every trade. The other two size it to what the trade is actually risking, and the third also guarantees the exit clears what the trade has cost.",
+      "guide": [
+        "Ticks \u2014 same distance whatever the trade risks",
+        "Fraction of stop + cost \u2014 scales, and never exits at a loss"
+      ]
+    },
+    {
+      "name": "exec_be_buf_r",
+      "group": "Exit ladder",
+      "label": "Breakeven buffer (fraction of stop)",
+      "short": "Buffer fraction",
+      "unit": "fraction of the stop",
+      "desc": "The cushion as a share of what the trade risked. 0.20 is one fifth of the stop. Only read when the buffer mode is not ticks.",
+      "guide": ["Close to breakeven", "Locks in more, stopped out sooner"]
+    },
+    {
+      "name": "exec_be_cost_margin_r",
+      "group": "Exit ladder",
+      "label": "Breakeven cost margin (fraction of stop)",
+      "short": "Cost margin",
+      "unit": "fraction of the stop",
+      "desc": "How far the stop clears the trade's own costs by. 0 exits exactly flat after costs; anything above banks a little. Only read in the cost-covering mode.",
+      "guide": ["Flat after costs", "Keeps more, stopped out sooner"]
+    },
+    {
+      "name": "exec_be_cap_pct",
+      "group": "Exit ladder",
+      "label": "Breakeven buffer cap (% of the way to the target)",
+      "short": "Buffer cap",
+      "unit": "% of the distance to the target",
+      "desc": "The stop can never sit further than this share of the way from the entry to the target that moved it. At 100 it would sit on the target and close the trade there instead of protecting it.",
+      "guide": ["Stop stays well short of the target", "Stop crowds the target"],
+      "hidden": true
+    },
+    {
+      "name": "exec_be_cost_conflict",
+      "group": "Exit ladder",
+      "label": "When cost exceeds the cap",
+      "short": "Cost conflict",
+      "choices": ["Hold stop", "Clamp to cap"],
+      "desc": "What to do on a trade held so long that its financing alone is further from the entry than the cap allows. Hold leaves the original stop where it is. Clamp moves it anyway and accepts a known small loss.",
+      "guide": [
+        "Hold \u2014 never exit at a knowing loss",
+        "Clamp \u2014 smaller loss than the full stop"
+      ],
       "hidden": true
     },
     {

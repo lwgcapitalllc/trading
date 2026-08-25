@@ -4041,3 +4041,172 @@ rather than quoting it.**
 Harness: `run_report.py` twice with `--set`, plus three throwaway scripts in the session scratchpad
 (session-break detection, gap sizing in R, hold/exposure counts). **No repo file modified to take
 these numbers.**
+
+---
+
+# Run 26 — 2026-08-24 — **THE BREAKEVEN BUFFER AS A FRACTION OF THE STOP. Built, swept ten ways, every one loses. Run 17's verdict survives its third test.**
+
+Run 17 measured a FIXED widening of `exec_be_buf_tk` and found 5R lost per 1R of scratch rescued.
+It closed with *"NOT BUILT. Do not build it without re-reading this row."* This run builds the
+smarter version the row did not cover — a buffer that scales with the trade's own stop distance,
+with an optional floor at what the trade has already SPENT — and sweeps it. **It loses too.**
+
+## What was built (ships OFF, tick mode is the default and is byte-identical to before)
+
+Five new settings on `mpc_sos_fade`, all inert unless `exec_be_buf_mode` is moved off `"Ticks"`:
+
+| setting | what it does |
+|---|---|
+| `exec_be_buf_mode` | `"Ticks"` (shipped) / `"Fraction of stop"` / `"Fraction of stop + cost"` |
+| `exec_be_buf_r` | the fraction of FROZEN entry risk (`abs(entry - sl)`, never the live stop) |
+| `exec_be_cost_margin_r` | extra margin above accrued cost, in R, for the cost-floor mode |
+| `exec_be_cap_pct` | ceiling as a % of the distance to the rung price action just touched |
+| `exec_be_cost_conflict` | `"Hold stop"` / `"Clamp to cap"` when the cost floor exceeds the cap |
+
+The cap is measured off `_stage_rungs()[0]` — the NEARER rung by distance — because a secondary can
+carry a flipped ladder and capping off `_tp1` directly would be wrong on those trades.
+
+Accrued cost counts the UNPAID exit side too (exit commission, plus half-spread when the profile is
+not in `bid_ask_fills` mode — under bid/ask the cost already lives in the fill prices, so adding it
+would double-charge).
+
+## Basis — one replay per row, everything else pinned
+
+`XAUUSD.p`, Minute/15, **2020-01-01 → 2026-08-23**, `puprime_ecn`, cost layers
+`["bid_ask_fills", "commission", "swap"]`, commission $1.00/side, slippage 0 ticks, `consistent`
+sizing, `exec_risk_pct = 10`, `exec_scratch_r = 0.15`, `exec_tp2_stop_mode = "TP1 price"`.
+Python runner. Every number below is **recomputed from each run's own trade list**, not read off
+the stored KPIs.
+
+**Integrity, checked before reading anything:**
+
+- ✅ The control reproduces the pre-change baseline `5a5e2174d095` **trade for trade** — fingerprint
+  `7d622ec152d11e3a`, 243 vs 243 trades, matched on entry time, direction, entry, exit and R.
+  **The shipped path is untouched by this build.**
+- ✅ **9 of 9** variants differ from the control, so the settings are genuinely reaching the engine
+  and none of this is a stale backend silently dropping unknown keys.
+
+## The sweep — every rung loses, none improves drawdown
+
+| rung | trades | total R | scratches | still LOSSES | loss R | R handed back | win % | max DD % | best R | top5 R | run id |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **CONTROL 30 ticks** | 243 | **+159.1** | 46 | 10 | −0.52 | 38.9 | 53.1 | **46.79** | 24.6 | 86.0 | `6b18811e25d5` |
+| frac 0.10 | 245 | +150.7 | **51** | 3 | −0.09 | **39.9** | 55.5 | 48.35 | 24.6 | 86.0 | `a623fdb70e47` |
+| frac 0.20 | 246 | +149.4 | 15 | 1 | −0.15 | 12.7 | 56.9 | 49.00 | 24.6 | 86.0 | `3fe90b8b4d4e` |
+| frac 0.20, cap 50% | 246 | +149.3 | 16 | 1 | −0.15 | 13.3 | 56.9 | 49.41 | 24.6 | 86.0 | `5ce548bf9e69` |
+| frac 0.35 | 246 | +138.2 | 9 | 1 | −0.01 | 8.0 | 57.3 | **53.96** | 24.6 | 82.1 | `f04cd22560b7` |
+| frac 0.50 | 246 | +135.0 | 8 | 0 | 0.00 | 6.7 | 57.7 | 49.74 | 24.6 | 82.1 | `cf8ab94197dc` |
+| cost 0.20, margin 0.00 | 246 | +150.6 | 17 | **0** | 0.00 | 20.4 | 56.9 | 48.17 | 24.6 | 86.0 | `9392c1e6736e` |
+| **cost 0.20, margin 0.05** | 246 | **+150.8** | 17 | **0** | 0.00 | 20.3 | **58.1** | **47.91** | 24.6 | 86.0 | `19580097656b` |
+| cost 0.20, clamp | 246 | +150.8 | 17 | **0** | 0.00 | 20.3 | 58.1 | 47.91 | 24.6 | 86.0 | `ce302a5f909f` |
+| cost 0.35, margin 0.05 | 246 | +139.1 | 10 | **0** | 0.00 | 11.8 | 58.1 | 53.68 | 24.6 | 82.1 | `9406a9ecf48f` |
+
+All ten completed on the first attempt.
+
+**The exchange rate is WORSE than Run 17's, not better.** The problem being solved is 10 losing
+scratches worth **−0.52R in total over 6.5 years**. The cheapest complete fix costs **8.3R**. That
+is ~**16R lost per 1R rescued**, against Run 17's 5:1 on a Standard book. Building the smarter
+version made the ratio worse because the cohort on ECN is smaller than it was on Standard, while
+the runners it cuts are the same runners.
+
+## 🟢 The cost floor genuinely beats the plain fraction, and the reason is the interesting part
+
+`cost 0.20 m.05` is the best variant in the table on every column at once: **+150.8R**, the
+smallest loss; **47.91%** drawdown, the closest any variant gets to leaving it alone; **zero**
+remaining losing scratches, where every plain-fraction rung except 0.50 left one; 58.1% win rate,
+the highest; and **top-five 86.0R, identical to control**.
+
+**Why**: the plain fraction widens the stop on EVERY trade that reaches stage 1. The cost floor only
+widens it on trades that have actually SPENT money — commission, spread, swap — and a trade that
+runs to target and beyond in the same session has spent almost nothing. So it leaves the runners
+alone. The evidence is in the top-five column: the wide plain-fraction rungs (0.35, 0.50) clip it
+**86.0R → 82.1R**, and every cost-floor rung at 0.20 keeps all of it.
+
+⚠ **That is still not a reason to switch it on.** 8.3R sits inside the strategy's own run-to-run
+spread of **sd 15.06R**. The honest reading of the best variant is *"not measurably worse"*, never
+*"better"* — and *"not measurably worse than doing nothing"* is not an argument for adding five
+settings to a live strategy.
+
+## 🔴 `exec_be_cost_conflict` is DEAD CODE at every width tested — the branch never executed
+
+`cost 0.20 m.05` (`"Hold stop"`) and `cost 0.20 clamp` (`"Clamp to cap"`) came back **trade for
+trade identical** — fingerprint `a386e83230115f1c` on both, 246 trades each, same entries, exits
+and R.
+
+The accrued cost never once grew past 75% of the distance to the rung price action had just touched.
+On gold at this sizing, costs are small next to that distance, so **the conflict the setting exists
+to resolve does not arise.** The setting has unit tests and has never made a decision on real bars.
+
+⚠ This is repo rule 9 — *a feature nobody has RUN is not a feature* — landing on a branch inside a
+feature. It is covered by tests that construct the conflict artificially, which is exactly the shape
+`CLAUDE.md` warns about under *a fixture more capable than production*. **If this build is ever
+switched on, either prove the branch reachable at a width someone would actually use, or delete the
+setting and hardcode the clamp.** ⚠ The `cap 50%` rung does NOT test this — it is a plain-fraction
+run, and the conflict only exists in cost mode.
+
+## 🔴 The narrowest rung is worse than useless, and it is the one that looks safest
+
+`frac 0.10` produces **MORE** scratches than the control (51 vs 46), hands back **MORE** R
+(39.9 vs 38.9), and still costs 8.4R. It is a buffer large enough to move the stop into the path of
+trades that were coming back to run, and too small to clear the costs that make a scratch negative
+in the first place — it converts full winners into scratches without fixing any scratch. **The
+intuition that a small setting is a small risk is wrong here; the small setting is the worst
+value in the table.**
+
+## ⚠ Correction — R is the monotonic column, drawdown is not
+
+Mid-sweep, on four data points, this session asserted to Aaron that drawdown climbed monotonically
+(46.79 → 48.35 → 49.00 → 49.74) and used that as the load-bearing evidence that the effect was not
+noise. **The fifth rung falsified it**: `frac 0.35` lands at **53.96%**, worse than the wider
+`frac 0.50` at 49.74%.
+
+The correct reading, recorded so the next reader does not repeat it:
+
+- **Total R across the plain-fraction ladder IS strictly monotonic** — 159.1 → 150.7 → 149.4 →
+  138.2 → 135.0, five points, never once going the wrong way. **That** is the signal.
+- **Drawdown is uniformly worse than control but noisily ordered.** Every rung is above 46.79%; the
+  sequence between them is not readable.
+- The transferable point: **a direction that holds across many settings is evidence even when each
+  individual gap sits inside the noise band — but declaring monotonicity on four points, mid-sweep,
+  before the ladder was full, was the error.** Wait for the sweep.
+
+## 🟢 The cap does its job
+
+**Best single trade stays 24.6R at all ten settings.** Run 17's fixed widening had no ceiling, which
+is the mechanism by which a wider buffer eats the runner. Capping the buffer at a fraction of the
+distance to the rung just touched removes that failure mode completely — the remaining loss is the
+extra stop-outs, not a clipped runner. **The cap is the part of this build worth keeping if any of
+it is ever revived.**
+
+## Verdict
+
+**No change to the strategy. `exec_be_buf_mode` ships as `"Ticks"` and `exec_be_buf_tk` stays at 30.**
+
+**Third measurement, third loss.** Run 17 measured the fixed widening (5R per 1R). Run 17 computed a
+ceiling of **+2.11R** for the dynamic swap-aware version and refused to build it. This run built the
+fraction-of-stop version end to end and swept it ten ways: the best case is **−8.3R**, inside the
+noise band, with a worse drawdown.
+
+⚠ **The problem is real and it is not worth fixing.** Ten breakeven exits over 6.5 years are
+genuinely small losses rather than genuinely flat, totalling −0.52R. Every mechanism that removes
+them removes more than they cost, because the stop that saves a trade coming back is the same stop
+that ends a trade still running, and this strategy's money is in the runners (Run 8: >100% of net).
+
+## What was NOT measured
+
+- **The conflict branch on real bars.** See above — it never executed. Its reachability at any
+  practical setting is unknown, not proven absent.
+- **Anything on a Standard or Prime book.** This is ECN only. Run 17 was Standard only. The two
+  are consistent in direction; neither is evidence for the other's tier.
+- **A direction-split buffer.** Still open, still with the poor prior Run 17 recorded: the long
+  scratches are the ones being rescued and the long runners are the ones being cut.
+- **Fractions between 0.20 and 0.35.** The ladder loses at both ends and the R column is monotonic
+  through the gap, so a finer grid would locate a peak already known to be outside the range.
+- **The parity gate.** `compare_sos_fade.py` has NOT run against this change — no decision-stream
+  export exists on this machine. Repo rule 22 applies: this code must not be treated as parity-clean
+  until an export arrives and the gate passes.
+
+Harness: `backtest/tools/` untouched. Ten runs driven through the lab's own HTTP API by throwaway
+scripts in the session scratchpad (`queue3b.py` with bounded retry on `failed_crashed` only,
+`analyse3.py` recomputing every column from the trade lists plus two integrity checks). **No repo
+file was modified to take these numbers.**

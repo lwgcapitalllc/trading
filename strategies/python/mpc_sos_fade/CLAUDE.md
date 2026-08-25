@@ -1177,7 +1177,7 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 | **TP1 / TP2** | Fibs, chosen AUTOMATICALLY by how deep the entry was. Deep entry → TP1 = 0.5, TP2 = 0.382. Shallow → TP1 = 0.382, TP2 = 0.0 (the swing extreme). | **No** — only the sizes (`exec_tp1_pct` / `exec_tp2_pct`, **both default 0** since 2026-07-27: bank nothing, ride the runner) |
 | **TP3 (the runner)** | No target at all. It rides a trailing stop, and it is where the strategy's money is (>100% of net in every window measured). | **Yes** — see below |
 | **Stop staging** | Three phases, always on: (0) the full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, a floor, then the trail. | **No** |
-| **The breakeven buffer** | `exec_be_buf_tk`, default **30 ticks = $0.30**. How far past the entry the stage-1 stop sits. **SWEPT 2026-08-11 and 30 is the optimum — every wider value is worse, monotonically** (60 → −6.17R, 400 → −35.90R). ⚠ **It does NOT cover the swap and cannot be made to**: one night of long swap is $0.796/oz, 2.7× the whole buffer, so ~29% of scratch exits are net losses on every real account — and widening it costs ~5R of total return per 1R of scratch rescued, because the same move that saves a returning trade cuts a running one. **Do not widen it, and do not make it swap-aware** — Run 17. | **Yes, and it is already at its best value** |
+| **The breakeven buffer** | `exec_be_buf_tk`, default **30 ticks = $0.30**. How far past the entry the stage-1 stop sits. **SWEPT 2026-08-11 and 30 is the optimum — every wider value is worse, monotonically** (60 → −6.17R, 400 → −35.90R). ⚠ **It does NOT cover the swap and cannot be made to**: one night of long swap is $0.796/oz, 2.7× the whole buffer, so ~29% of scratch exits are net losses on every real account — and widening it costs ~5R of total return per 1R of scratch rescued, because the same move that saves a returning trade cuts a running one. **Do not widen it** — Run 17. ⚠ **"Do not make it swap-aware" is AMENDED, not retracted, as of 2026-08-24** — `exec_be_buf_mode` can now express the buffer as a fraction of the trade's own stop, optionally floored at what the trade has cost; it ships `"Ticks"`, so this row still describes the shipped bot. Run 17's ceiling on what a cost-covering stop can recover (+2.11R against 15.06R jitter) is unchanged and still binds. | **Yes, and the FIXED buffer is already at its best value** |
 | **The TP2 floor** | `exec_tp2_stop_mode`: **"TP1 price"** (tight, can scratch the runner on the first pullback) / "Breakeven" (most room) / "One trail step behind" (never below breakeven). | **Yes** — dropdown |
 | **The runner trail** | `exec_runner_trail`: "Fixed step" (a `exec_trail_step` grid ratchet anchored on TP2) / "Structure (swing)" (park the stop at the structure engine's last confirmed swing low/high, offset by `exec_struct_trail_buf_tk`) / **"Structure + % ratchet"** (same anchor, then climb one `exec_trail_pct`-of-price step per step of favourable move). | **Yes** — dropdown |
 | **The ratchet step** | `exec_trail_pct`, default **1.0**. Only read in "Structure + % ratchet" mode. A PERCENT of price, never dollars — see below. | **Yes** |
@@ -1209,6 +1209,85 @@ floor, trail, both dropdowns — is this table, inherited unchanged.
 
 **Aaron's brother's tested best combo (the shipped default 2026-07-26):** Structure trail +
 buffer 20 ticks + TP2 floor = TP1 price.
+
+### The breakeven buffer can be a FRACTION of the stop (`exec_be_buf_mode`, 2026-08-24, ships OFF)
+
+Three modes. `"Ticks"` is the shipped one and reads `exec_be_buf_tk` alone — **one fixed distance on
+every trade, whatever that trade is risking.** `"Fraction of stop"` takes `exec_be_buf_r` of the
+FROZEN entry risk instead. `"Fraction of stop + cost"` floors that at what the trade has actually
+cost plus `exec_be_cost_margin_r`, which is the only mode that can promise a staged exit is not a
+loss. Both non-tick modes are capped at `exec_be_cap_pct` of the entry → nearer-rung distance.
+
+🔴 **The cap is the point, not a safety belt, and it is why the fixed buffer sweep read the way it
+did.** A buffer that reaches the rung which staged it closes the trade at the target instead of
+protecting a runner. MEASURED on run `5a5e2174d095` (243 trades, ECN costs charged): that happens on
+**0 trades at 30 ticks, 24 at 300, 70 at 600** — so a wide fixed buffer stops being a breakeven stop
+and becomes an exit, and the widest rungs were losing R for that reason rather than by cutting
+winners early. As a fraction: **0.20R never reached the rung on any of the 243; 0.35R did on 5%;
+0.50R on 24%.**
+
+⚠ **Aaron's premise was right about his trades and wrong about the typical one.** The median round
+trip costs **$0.020/oz** — 6% of the $0.30 buffer — but **66 of 243 trades (27%) cost more than it**,
+and **10 of the 46 scratches are genuine losses.** The driver is overnight financing (correlation
+**0.727** with hold time), which swings the per-trade cost roughly **250-fold**. That range is the
+argument against any fixed distance, and it is the whole argument.
+
+🔴 **THE COST FLOOR IS THE THING RUN 17 SAID NOT TO BUILD, AND ITS CEILING STILL BINDS.** Run 17
+rejected a swap-aware stop and asked to be re-read first; it has been. Its mechanism objection
+survives — only overnight trades pay financing and those are the runners — and **the cap bounds that
+without reversing it.** Its ceiling on what a stage-1 ratchet can recover, **+2.11R over 6.5 years
+against 15.06R of run-to-run jitter**, is unchanged. **So the cost half cannot be argued on return;
+argue it, if at all, on the 10 losses currently reported as breakevens.** The FRACTION half is a
+separate question Run 17 never asked — it swept the buffer's SIZE and never its SHAPE.
+
+⚠ **The conflict case REFUSES to stage.** When accrued cost alone sits past the cap, no price both
+covers cost and stays under the rung, so the frozen entry stop is held. Staging anyway is a stop
+labelled breakeven that guarantees a loss. A conflicted LONG stays conflicted (the cap is fixed,
+cost only grows); a SHORT can recover on the swap credit. Stage 2 is untouched, so the second rung
+still lifts the stop and hands it to the trail. `exec_be_cost_conflict = "Clamp to cap"` is the
+measurable alternative and is not the recommendation.
+
+🔴 **AND THE CONFLICT NEVER HAPPENS — MEASURED 2026-08-24, THE SETTING IS DEAD CODE.** The two runs
+that differ only in `exec_be_cost_conflict` came back **trade for trade identical** (fingerprint
+`a386e83230115f1c`, 246 trades each, matched on entry time, direction, entry, exit and R). Accrued
+cost never once grew past 75% of the entry → nearer-rung distance, because on gold at this sizing
+costs are small next to that distance. **The branch above has unit tests and has never made a
+decision on real bars** — repo rule 9 landing inside a feature, and the tests that cover it
+construct the conflict artificially, which is the *fixture more capable than production* shape.
+⚠ **Before this build is ever switched on, either prove the branch reachable at a width somebody
+would actually use, or delete the setting and hardcode the clamp.** Run 26.
+
+🔴 **SWEPT TEN WAYS 2026-08-24, AND EVERY ONE LOSES — Run 26.** Best variant (cost floor at 0.20R,
+margin 0.05R) is **+150.8R against the control's +159.1R**, with a **worse** drawdown (47.91% vs
+46.79%). Every rung in the table is below the control on return and above it on drawdown. The
+problem being fixed — 10 breakeven exits that are really small losses — is worth **−0.52R over 6.5
+years**, so the cheapest complete fix costs ~**16R per 1R rescued**, against Run 17's 5:1 on a
+Standard book. ⚠ The 8.3R gap sits inside the strategy's **sd 15.06R** run-to-run spread, so the
+best variant is *"not measurably worse"* and never *"better"* — which is not an argument for adding
+five settings to a live strategy. ✅ **Two things the sweep vindicated**: the cap works (best single
+trade stays **24.6R at all ten settings**, where Run 17's uncapped widening ate the runner), and the
+cost floor genuinely beats the plain fraction because it only widens on trades that have SPENT
+money, leaving the same-session runners alone (top-five **86.0R, identical to control**, where the
+wide plain-fraction rungs clip it to 82.1R). 🔴 **The narrowest rung is the worst value in the
+table** — `frac 0.10` produces MORE scratches than the control (51 vs 46) and hands back MORE R,
+converting winners into scratches without fixing any scratch. Full tables, run ids and basis:
+`mpc_sos_fade_optimization.md` → Run 26.
+
+⚠ **NOT GATED, AND THE SHIPPED PATH IS UNCHANGED.** The control run reproduces the pre-change
+baseline `5a5e2174d095` **trade for trade** (fingerprint `7d622ec152d11e3a`, 243 vs 243), so tick
+mode is byte-identical to before this build. `compare_strategy.py` has NOT run — no decision-stream
+export exists on this machine (the CSVs here are trade lists and engine chart data), which is the
+"9 of 14 gates could not run" condition the root CLAUDE.md records. ⚠ **Rule 22 is NOT satisfied.**
+⚠ **No Pine counterpart either**, so even with an export the gate could never configure a non-default
+run of these five fields — the same blindness this file already records for the no-gap arm gate and
+the POI source.
+
+**TESTED:** 21 tests in `tests/test_be_buffer.py`, 21 of 21 watched RED by 18 mutations. ⚠ **One was
+VACUOUS on its first pass and is recorded rather than quietly replaced** — it asserted the buffer
+reads `_sl` rather than "the live stop", and `Execution` has no live-stop attribute, so no mutation
+could redden it. **A test that cannot go red is a claim with nothing behind it**, and that one would
+have read forever as proof the hazard was considered. Story:
+`docs/SOS_FADE_BUILD_NOTES.md` → *The breakeven buffer becomes a FRACTION of the stop*.
 
 ### The swing ratchet (`"Structure + % ratchet"`, DEFAULT since 2026-07-28)
 

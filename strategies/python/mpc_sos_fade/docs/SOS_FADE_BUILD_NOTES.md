@@ -205,3 +205,146 @@ ships off. It proves nothing about the variant, and **no export ever can**, beca
 counterpart to those three rules and a diff needs two sides. The gate said the same thing about the
 no-gap arm gate in the same run, unprompted. **A green gate is evidence about the branch it
 entered.** The variant's own evidence is the replay table above, not this.
+
+---
+
+# The breakeven buffer becomes a FRACTION of the stop (2026-08-24)
+
+**Aaron, on run `6e029942cb29`:** *"that thirty buffer … I don't think that would even cover
+somebody trades cost. So in essence, I will be losing those trades. They won't be breakeven … we
+need something that could really help capture traits and move traits out of breakeven. Like, even
+capture something, a little bit of profit."*
+
+## What was measured first, on the control run `5a5e2174d095`
+
+XAUUSD.p M15, 2020-01-01 → 2026-08-23, PU Prime ECN costs charged, 243 trades. Every figure below
+is recomputed from that run's own trade list, not read off a stored KPI.
+
+| | |
+|---|---|
+| scratches (0.15R band) | 46 — **10 of them net losses** |
+| round-trip cost per ounce | median **$0.020**, p90 $1.493, max $5.592 |
+| trades costing more than the $0.30 buffer | **66 of 243 (27%)** |
+| cost vs hold time | correlation **0.727** |
+| median cost, held under a day | $0.020 · 1–3 days $0.82 · 3–7 days **$1.704** |
+| first target distance from entry | median **1.098R**, minimum **0.310R** |
+
+**Aaron's premise is right about the trades he was looking at and wrong about the typical one.**
+Spread and commission are not the problem — the median round trip is 6% of the buffer. Overnight
+financing is, and it swings the per-trade cost roughly **250-fold**, which is why no single fixed
+distance can sit above it.
+
+## The second finding, which the buffer sweep had hidden
+
+The ten-rung sweep run the day before showed R falling as the buffer widened (159.1R at 30 ticks →
+136.5R at 600). Counting how often the staged stop lands **at or past the rung that staged it**
+explains it:
+
+| fixed buffer | trades where the stop reaches the rung |
+|---|---|
+| $0.30 (shipped) | 0 of 243 |
+| $1.50 | 5 (2%) |
+| $2.00 | 10 (4%) |
+| $3.00 | **24 (10%)** |
+| $6.00 | **70 (29%)** |
+
+Past that line the stop is not protecting the trade, it is closing it at a fixed small profit on the
+next bar. **So a wide fixed buffer stops being a breakeven stop and becomes an exit**, and the
+$3.00 rung recommended off the sweep's headline was already doing it on a tenth of the book.
+
+As a fraction of the trade's own risk instead: **0.20R never once reached the rung across all 243
+trades; 0.35R did on 5%; 0.50R on 24%.** That is where the default and the validation ceiling come
+from.
+
+## What was built
+
+Five settings on `SosFadeConfig`, all defaulting to the shipped behaviour, so the OFF path is the
+tick buffer unchanged. The mode picks one of three answers; the other four are read only when it is
+not `"Ticks"`.
+
+```
+buffer = clamp_to_cap( max( fraction × frozen entry risk,
+                            accrued cost + margin × frozen entry risk ) )
+cap    = exec_be_cap_pct % of the entry → nearer-rung distance
+```
+
+`_accrued_cost_price` converts `_costs_usd` (plus the exit side's commission and half-spread, which
+have not been charged yet) into a price distance on the size still open. It skips the spread under
+modelled bid/ask fills, mirroring `_charge_spread`'s own early return — the cost is in the fill
+prices there, and counting it would bill it twice in a different currency.
+
+**The conflict case is a REFUSAL, not a clamp.** On a trade whose accrued financing alone is past
+the cap there is no price that both covers cost and stays under the rung; `_be_buffer` returns
+`None` and `_current_stop` holds the frozen entry stop. Staging anyway would be a stop labelled
+breakeven that guarantees a loss, which is the defect the whole change exists to remove.
+`exec_be_cost_conflict = "Clamp to cap"` is the measurable alternative and is not recommended.
+
+⚠ **A conflicted LONG stays conflicted for the rest of its life** — the cap is fixed and accrued
+cost only grows. A short can recover, because gold's swap is a credit to the short side. Stage 2 is
+untouched either way, so the second rung still lifts the stop and hands it to the trail.
+
+## 🔴 Run 17 said DO NOT BUILD THE SWAP-AWARE VERSION, and this is the re-read it asked for
+
+Run 17 (2026-08-11) rejected a stop that moves at each rollover by the swap just charged, and closed
+with *"NOT BUILT. Do not build it without re-reading this row."* Read, and both halves of it still
+stand:
+
+- **Its mechanism objection applies here too.** Only overnight positions pay financing, and the
+  overnight positions are the runners — so a cost floor moves the stop on exactly the trades the
+  buffer sweep says to leave alone. **The cap is the difference**: Run 17's version had nothing
+  stopping the stop reaching the target, and this one cannot pass `exec_be_cap_pct` of the way
+  there. That bounds the damage; it does not reverse the direction.
+- **Its ceiling still binds.** Run 17 put the most a stage-1 ratchet could recover at **+2.11R over
+  6.5 years**, against this strategy's **15.06R** run-to-run jitter. Nothing measured since moves
+  that. **The cost-covering half cannot be justified on return** and should be argued, if at all,
+  on the 10 genuine losses being mislabelled as breakevens.
+- **What is genuinely new is the FRACTION half**, which Run 17 never asked about: it swept the
+  buffer's SIZE and never its SHAPE, so every row in its table is one distance applied to trades
+  whose first target sits anywhere from 0.310R to well past 1R away.
+
+⚠ **Read the fraction half and the cost half as two separate questions.** They ship under one mode
+each precisely so a sweep can separate them.
+
+## What has NOT been done
+
+✅ **The sweep was done the same day — ten rungs, and every one loses. See Run 26 in
+`mpc_sos_fade_optimization.md` for the full tables, run ids and basis.** Headline: best variant
+**+150.8R against the control's +159.1R** with a worse drawdown (47.91% vs 46.79%); no rung beat
+doing nothing on either column. The 8.3R gap is inside the strategy's **sd 15.06R** run-to-run
+spread, so the best case is *"not measurably worse"* rather than *"better"*.
+
+🔴 **And the sweep found a dead branch in this very build.** The two runs differing only in
+`exec_be_cost_conflict` are **trade for trade identical** (`a386e83230115f1c`, 246 trades). The
+accrued cost never reached the cap on any trade in 6.5 years, so that setting has never made a
+decision on real bars — its tests construct the conflict artificially. **A branch proven by tests
+alone is exactly what rule 9 is about, and building a setting before sweeping it is how you end up
+shipping one.**
+
+⚠ **Mid-sweep this session asserted a monotonic drawdown on four points and the fifth falsified it**
+(`frac 0.35` at 53.96% is worse than the wider `frac 0.50` at 49.74%). Total R *is* strictly
+monotonic across the plain-fraction ladder; drawdown is uniformly worse than control but noisily
+ordered. **Declaring a trend before the ladder is full is the error, not the trend itself.**
+
+⚠ **No parity gate, and not because it was skipped.** `compare_strategy.py` needs a decision-stream
+export from `mpc_strategy_export.pine` and **no such CSV exists on this machine** — the exports
+present are trade lists and engine chart data. This is the same "9 of 14 gates could not run"
+condition the root CLAUDE.md already records. The shipped path is unchanged and the strategy suite
+is green, but rule 22 is NOT satisfied and this must not be committed as though it were.
+
+⚠ **No Pine counterpart**, so even with an export the gate could never configure a non-default run
+of these five fields — the Python-only-field hazard this file already records for the no-gap arm
+gate and the POI source.
+
+**TESTED:** 21 new tests in `tests/test_be_buffer.py`, **21 of 21 watched RED** by 18 mutations
+(harness: `mutate.py`, scratchpad). 466 strategy tests green.
+
+### 🔴 One of the 21 was VACUOUS on its first pass, and the reason generalises
+
+`test_fraction_mode_measures_risk_off_the_frozen_stop_not_the_live_one` asserted that the buffer
+reads `_sl` rather than "the live stop". **No mutation could redden it, because `Execution` has no
+live-stop attribute** — the bug it described is not one the code can express, so the test was
+describing a system we do not have. It was replaced by one pinning a source the code CAN reach
+(`_max_fav`), which dies when a mutation points the risk at it.
+
+**A test that cannot go red is not a weak test, it is a claim with nothing behind it** — and this
+one would have read, forever, as proof that a hazard had been considered.
