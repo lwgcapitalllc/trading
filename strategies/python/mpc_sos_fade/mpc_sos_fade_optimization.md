@@ -1945,6 +1945,15 @@ to the decimal. **The rule costs ~0.4R over 6.5 years and buys real session-gap 
 is free insurance, not a constraint.** (Note the equity multiple FALLS, 395x → 337x, purely from
 compounding order — read sumR, not the multiple.)
 
+🔴 **CORRECTED BY RUN 25 (2026-08-24) — DO NOT QUOTE THE "FREE INSURANCE" LINE ABOVE.** It was
+asserted, never measured, and it is wrong: **44% of this book already sits through a session break
+and 9% through a WEEKEND**, so the rule closes a two-hour window while the exposure runs the other
+twenty-two. ⚠ **The VERDICT survives — keep the rule** — but on the trades, not on the insurance:
+re-measured on today's config only **two** of the added trades are genuinely final-hour entries and
+they are worth **−1.56R** together, while the headline +0.4R is one unrelated setup filling fifteen
+minutes earlier. ⚠ **The +0.4R here and in Run 25 agree across two different baselines**, so the
+arithmetic was never the problem — the interpretation was. See Run 25.
+
 ## Verdict on the whole thread — the trade count is not inside this strategy
 
 Four routes to more A+ trades, measured on 6.5 years: drop the gap (+173 trades, +13.0R net, 40%
@@ -3936,3 +3945,99 @@ vacuous. The other built the order record itself, so it never reached the pricin
 the fixture-more-capable-than-production trap, caught only by running the mutation. A third guard
 was written with a test that was green either way: the branch is unreachable, because the arm
 needs the same bar the guard checks for.
+
+---
+
+# Run 25 — 2026-08-24 — **THE FINAL-HOUR RULE IS WORTH KEEPING, AND RUN 12 §4 KEPT IT FOR THE WRONG REASON.**
+
+Aaron asked what taking the refused end-of-day setups would do to the KPIs, whether those entry
+levels ever come back, and whether an overnight gap could cost him more than 1R. Run 12 §4 answered
+the first (*"neutral, keep the rule"*) and asserted the third without measuring it: *"buys real
+session-gap protection — that is free insurance."* **That sentence is wrong, and the verdict it
+supported is still right. Both halves matter.**
+
+## The A/B, re-run on today's config
+
+`backtest/tools/run_report.py`, 2018-09-14 → 2026-08-20, M15, primary entries only, `--no-regime`,
+identical on both sides with only the final-hour setting changed.
+
+| | trades | sumR | maxDD | win | loss | be | win rate |
+|---|---|---|---|---|---|---|---|
+| rule ON (shipped) | 180 | **+137.43** | 5.61R | 80 | 63 | 37 | 56% |
+| rule OFF | 181 | **+137.83** | 5.61R | 80 | 64 | 37 | 56% |
+
+**+0.41R on +1 trade**, drawdown identical, win rate identical. Run 12 measured +0.4R on +1 trade
+off a different baseline (164 trades). **Independently reproduced on a moved basis** — that is the
+strongest thing this entry contains.
+
+## 🔴 The headline number is an ARTIFACT, and the dissection reverses its sign
+
+Three trades are added and two displaced. Only **two of the three are actually final-hour entries**:
+
+| entry (NY) | dir | R | what it is |
+|---|---|---|---|
+| 2020-03-06 16:30 | short | **−1.61** | a genuine final-hour entry |
+| 2020-12-04 16:30 | short | +0.05 | a genuine final-hour entry |
+| 2026-04-12 18:00 | long | +3.40 | **NOT a final-hour entry** — it displaced the 18:15 fill of the same setup |
+
+**The two trades the rule is actually about are worth −1.56R combined.** The +3.40R is one setup
+filling fifteen minutes earlier because the slot was free, and it displaced a +1.38R trade, so it
+contributed roughly +2.0R of pure reshuffle. **Strip the artifact and turning the rule off is
+NEGATIVE.** ⚠ Zero shared trades were re-priced, so there is no third term hiding here.
+
+## The gap risk is real, it is the WEEKEND, and it hit exactly this trade
+
+Measured on 2,805,977 M1 bars (2018-09-14 → 2026-08-21), 1,989 session breaks. Gold's break is
+17:00–18:00 NY, confirmed off the tape rather than assumed.
+
+| break | median | p90 | p99 | worst |
+|---|---|---|---|---|
+| nightly (n=1,575) | $0.35 | $1.73 | $8.31 | $29.89 |
+| weekend (n=414) | $1.27 | $11.46 | $39.92 | **$113.23** (2026-04-12) |
+
+Scaled by the stop distance actually used (median 0.402% of price, from the 180-trade ledger), a
+**weekend** jump exceeds the whole stop **11.1%** of the time; a **nightly** one, **0.3%**.
+
+**The 2020-03-06 loser is the mechanism, not a hypothetical.** Friday 16:30 NY short at 1674.47,
+stop $10.83 away at 1685.30. Gold closed Friday at 1674.34 and reopened Sunday at 1691.93 — a
+**$17.59 jump straight through the stop**, filled at 1691.93, **$6.63 past it = 1.61R on 1R of
+risk.** One of the two trades the rule refuses is the exact failure Aaron described.
+
+## 🔴 But the rule is NOT the protection — the book already carries the exposure
+
+Measured on `backtest/reports/trade_ledger_20260806/trades.csv` (180 trades):
+
+- **80 of 180 (44%) already sit through at least one session break**; 109 nightly breaks crossed.
+- **17 of 180 (9%) already sit through a WEEKEND**; 18 weekend breaks crossed.
+- Median hold is 7.2h, p90 **64.1h**. Positions are not flattened at the daily close and the time
+  stop is 36 calendar hours, so holding overnight is the norm.
+
+**So the rule closes a two-hour window while the book stays exposed the other twenty-two.** Calling
+it session-gap insurance overstates it by an order of magnitude. Keep the rule for what it actually
+buys — **the −1.56R those two trades cost** — and treat the overnight exposure as a separate,
+unanswered question.
+
+## ⚠ What was NOT measured, and one probe that cannot answer
+
+- **Costs and tick fills.** Both A/B sides used the bar-path guess with zero costs. Matched, so the
+  comparison is fair; the absolute R is optimistic. Every variant here ADDS a trade, so real costs
+  penalise the OFF side harder — it can only strengthen the verdict.
+- 🔴 **The August ledger records `c_slippage = 0.00 on all 180 trades`, so it never modelled a gap
+  through a stop at all.** Reading its clean record as *"no gap has ever hurt this book"* would have
+  been exactly the trap this repo names — a negative result a broken probe also produces. The gap
+  numbers above come from raw M1 price, which no fill model can launder.
+- **Closing before the Friday close.** The obvious follow-up and untested. 17 weekend holds is a
+  small sample, and the tail is the whole point, so a naive average will mislead.
+- **A concurrency change.** As in Run 12, every number assumes one position slot; the displacement
+  term only exists because of it.
+
+## Verdict
+
+**KEEP the rule** — unchanged from Run 12, on better evidence and for a different reason. It costs
+nothing measurable, refuses two trades worth −1.56R over eight years, and one of those is a weekend
+gap that blew 61% past its stop. ⚠ **Correct the "free session-gap protection" line in §4 of Run 12
+rather than quoting it.**
+
+Harness: `run_report.py` twice with `--set`, plus three throwaway scripts in the session scratchpad
+(session-break detection, gap sizing in R, hold/exposure counts). **No repo file modified to take
+these numbers.**
