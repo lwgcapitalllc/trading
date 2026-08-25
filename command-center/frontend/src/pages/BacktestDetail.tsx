@@ -89,6 +89,7 @@ import type {
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 import {
+  balTick,
   balanceTicks,
   dateMs,
   getXMode,
@@ -2004,11 +2005,7 @@ export function EquityCurveChart({
           axisLine={false}
           tickLine={false}
           // Account balance, not a gain — no "+" prefix. The starting balance is always one of these.
-          tickFormatter={(v: number) => {
-            if (Math.abs(v) < 1000) return `$${Math.round(v)}`
-            const k = v / 1000
-            return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`
-          }}
+          tickFormatter={balTick}
           width={56}
         />
         {/* Hidden axis for the bottom bar strip: zero baseline ~14% up so bars hug the bottom. */}
@@ -2381,10 +2378,7 @@ function SizedEquityCurveChart({
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => {
-            const k = v / 1000
-            return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`
-          }}
+          tickFormatter={balTick}
           width={56}
         />
         <Tooltip
@@ -2525,6 +2519,11 @@ export function DrawdownChart({
 
   const worst = Math.min(...ddData.map((d) => d.drawdown))
   const ddTicks = calIndexTicks(ddData)
+  // Explicit ROUND ticks. Recharts derives its own from the padded domain, which is `worst * 1.1`
+  // and therefore never round — it was labelling a nine-figure run -$45.1M / -$30.1M / -$15.1M.
+  // Zero is the anchor here the way the opening balance is on the equity chart: it is the line the
+  // reader measures every other tick against.
+  const ddYTicks = balanceTicks(0, worst * 1.1, 0)
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -2555,8 +2554,9 @@ export function DrawdownChart({
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => (v === 0 ? '$0' : `$${(v / 1000).toFixed(0)}k`)}
+          tickFormatter={balTick}
           width={56}
+          ticks={ddYTicks}
           domain={[worst * 1.1, 0]}
         />
         <Tooltip
@@ -2783,7 +2783,7 @@ export function DailyPnlChart({
           tick={{ fill: C.axisTick, fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={balTick}
           width={52}
         />
         <Tooltip

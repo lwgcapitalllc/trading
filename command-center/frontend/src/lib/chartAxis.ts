@@ -99,23 +99,53 @@ export function monthTicks(from: number, to: number, max = 10): number[] {
 export const monthLabel = (t: number) =>
   new Date(t).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 
-/** Account balance — no "+" prefix; it's a level, not a gain. */
+/**
+ * A dollar AXIS label — a level, not a gain, so no "+" prefix, and the sign leads the "$" the way
+ * money is written (`-$4.2M`, never `$-4.2M`).
+ *
+ * ⚠ It steps k → M → B. It used to stop at "k", which is not a cosmetic limit: a compounding run
+ * that reached $150,010,000 rendered as "$150010k", which reads a thousand times smaller than it is
+ * and looks like a corrupt number rather than a large one. An axis label is the only place most
+ * readers ever see the SCALE of a run, so a suffix that runs out is a wrong number, not an ugly one.
+ */
 export function balTick(v: number): string {
-  if (Math.abs(v) < 1000) return `$${Math.round(v)}`
-  const k = v / 1000
-  return `$${Number.isInteger(k) ? k : k.toFixed(1)}k`
+  const a = Math.abs(v)
+  const sign = v < 0 ? '-' : ''
+  if (a < 1000) return `${sign}$${Math.round(a)}`
+  const [div, suffix] = a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : [1e3, 'k']
+  const n = a / div
+  return `${sign}$${Number.isInteger(n) ? n : n.toFixed(1)}${suffix}`
 }
 
 /**
- * Y ticks anchored ON the starting balance, stepping evenly either side, so break-even is always
- * one of the labels.
+ * Y ticks on ROUND numbers, plus the starting balance as one extra tick so break-even is always
+ * labelled.
+ *
+ * 🔴 It used to STEP FROM the starting balance, which carried that balance into every other label:
+ * on a $10,000 account whose curve reached nine figures the step was $50M and the labels read
+ * $10k / $50,010,000 / $100,010,000 / $150,010,000. Every one of those was arithmetically correct
+ * and every one was unreadable — the "10k" tail is the opening balance riding along, and a reader
+ * takes it for a formatting fault and stops trusting the axis. **An anchor that is meaningful at
+ * 2x is pure contamination at 15,000x**, because the thing being anchored to has shrunk to noise
+ * against the step. So the round ticks are computed independently and the anchor is INSERTED, which
+ * keeps the property that motivated it without paying for it on every label.
+ *
+ * A round tick within 0.35 of a step of the starting balance is dropped instead, so the two labels
+ * can never collide; the anchor wins because break-even is the more useful of the two.
  */
 export function balanceTicks(startBal: number, yMin: number, yMax: number): number[] {
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || yMax <= yMin) return [startBal]
   const step = niceStep((yMax - yMin) / 5)
-  const ticks: number[] = [startBal]
-  for (let t = startBal + step; t <= yMax; t += step) ticks.push(t)
-  for (let t = startBal - step; t >= yMin; t -= step) ticks.unshift(t)
-  return ticks
+  const ticks: number[] = []
+  // Indexed off an integer multiple rather than accumulated, or the running total drifts and a
+  // "round" tick prints as 150000.00000000003.
+  for (let k = Math.ceil(yMin / step); k * step <= yMax; k++) {
+    const t = k * step
+    if (Math.abs(t - startBal) < step * 0.35) continue
+    ticks.push(t)
+  }
+  if (startBal >= yMin && startBal <= yMax) ticks.push(startBal)
+  return ticks.sort((a, b) => a - b)
 }
 
 /**
