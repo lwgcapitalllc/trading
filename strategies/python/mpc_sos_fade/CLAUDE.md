@@ -3115,6 +3115,65 @@ could not move; the gate was run anyway, on three exports, because that is the r
 bound, ignoring a gapped open, replacing the running extreme instead of bounding it, clamping the
 favourable side too, and comparing a shifted bar against an unshifted stop.
 
+
+## The SHORT-HOLD variant — `exec_short_hold` (2026-08-24, ships OFF)
+
+A second way of trading the SAME setups: close at a fixed R instead of banking a little and
+riding the rest. Three rules behind one toggle — refuse an entry deeper than a fib, close the
+whole position at a multiple of risk, and refuse a New York hour window.
+
+**With the toggle off the run is byte-identical** — 158 trades, +130.8R over 2020-01-01 →
+2026-08-06 on the ECN tier, diffed on every decision field of every trade rather than on the
+count and the total, because a run that RESHUFFLES which setups it took agrees on both of those.
+
+🔴 **IT IS A SWITCH TO EXPERIMENT WITH, NOT A LEG TO DEPLOY, and the numbers are why.** On the
+pool it was built for (order blocks where no gap qualified), matched basis, ECN costs:
+
+| | trades | total R | R/trade | worst DD | scratches |
+|---|---|---|---|---|---|
+| A+ shipped | 158 | +130.8 | +0.828 | −6.0R | 32 |
+| the pool, A+ exits | 109 | +22.5 | +0.207 | −13.7R | 33 |
+| the pool + this variant | 104 | **+10.4** | +0.100 | −10.2R | **1** |
+
+**It does exactly what it was designed to do and still earns less.** The scratch problem it was
+built to fix is fixed — 33 → 1 — and the drawdown improves; the total halves, because capping a
+trade at 2R throws away the tail that was carrying the pool. ⚠ It is also still negative in 2020,
+2024 and 2026, the same decay the pool has without it.
+
+🔴 **THE DEPTH CAP SHIPS INERT BECAUSE IT MEASURED NEGATIVE, AND THAT REVERSED THE
+RECOMMENDATION THE FIELD WAS BUILT ON.** Entry depth was the strongest split found anywhere in
+this work and it replicated three independent ways, including in this bot's own shipped book. Then
+it was applied: capping at 0.702 removed 5 trades, 2.1R and made the drawdown slightly worse.
+**The split was measured under the fib ladder and the cap was applied under a fixed R target** —
+a deep entry has a short stop and the breakeven ratchet takes it out, which stops mattering once
+the trade closes at 2R. ⚠ **A finding is scoped to the exit regime it was measured in; carrying
+it across an exit change is a new claim and needs its own run.** Nothing was wrong when it was
+measured, it was generalised one step too far.
+
+⚠ **Two new BLOCK codes (8, 9) have no Pine counterpart.** `f_blkCode` stops at 7. They are
+appended so every existing code keeps its number, they can only fire with the toggle on, and
+`BlockedSetup` is reporting-only — which is what makes a new code parity-safe rather than merely
+convenient.
+
+⚠ **The variant's hour window is its OWN gate, deliberately not more hours folded into the
+final-hour rule.** That rule's label is rendered by the block marker and the Telegram callout as
+*"no new entries 16:00-18:00 New York"*, and widening it would leave both of them saying 16:00
+about a setup refused at 10:00.
+
+⚠ **The Pine parity gate has NOT run on this change** — the exports on this machine are trade
+lists, not the decision-stream export `tools/compare_strategy.py` needs. The byte-identical
+replay proves the change is INERT when off. It does not prove Pine parity and cannot.
+
+⚠ **All six settings carry a label and a description in `mpc_sos_fade.meta.json`**, which is what
+puts them on the Command Center's parameter form — a toggle nobody can find is not a toggle. That
+file is a CONTRACT the lab reads, not data, and a backend test refuses any tunable parameter with
+no description, which is what caught them missing. ⚠ **Position in its `params` array is the order
+the form renders in, so APPEND — never re-sort.** Sorting it once here silently reordered all 93
+existing settings, and the diff was 1,671 lines that should have been 73.
+
+Full build story, every configuration replayed, the three tests that could not go red and what
+was done about them: `docs/SOS_FADE_BUILD_NOTES.md` → *The short-hold variant*.
+
 ## Do / Never
 
 - **Do** port any change to `mpc_strategy.pine`'s A+ block or execution layer here line-for-line, then

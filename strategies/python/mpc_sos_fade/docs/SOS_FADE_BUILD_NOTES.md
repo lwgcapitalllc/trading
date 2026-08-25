@@ -67,3 +67,125 @@ run left a mutation on disk and poisoned seven later verdicts, and an unasserted
 dropped two mutations so it reported nine confident verdicts about eleven rules. **Both are the same
 shape as the defects it was hunting — a check that cannot tell its own damage from the code's.**
 
+
+---
+
+## The short-hold variant (2026-08-24)
+
+**The question.** Aaron: *"I'm looking for more intraday trades where I don't have to worry about
+swap because our trade captures some R and gets out."* The runner is built to hold; he wanted a
+second way of trading the same setups that banks a small, fixed number of R and closes.
+
+**Where it started.** `miss_audit.py` counts the setups that reach the 0.5-0.886 band with every
+confluence present and no fair-value gap to rest a limit on: **178** over 2020-01-01 → 2026-08-06.
+The question was what those 178 were worth under a short-hold rule.
+
+### What the reconstruction said, and how far wrong it was
+
+`backtest/tools/nogap_scalp_audit.py` prices entries off fib geometry instead of running the order
+layer, so a whole stop × target × breakeven × ladder grid is affordable. Its bar-walk was
+validated against the engine's own answers first — the excursion it computes reproduces
+`Trade.mfe_price` on all 158 A+ trades to 0.0000R, and two mutations were watched red (crediting
+the fill bar's high to a buy limit; letting the stop fire on the fill bar, which killed a trade
+the engine ran 316 bars for +9.98R).
+
+The grid's verdict on the raw pool was unambiguous and negative: every fixed target from 0.5R to
+2R loses at every stop level, and the first positive cell needs 2.5R. Median best excursion 0.54R
+against the A+ book's 1.40R; 84% stopped out against 61%. **At 5R the two pools are identical
+(16.4% vs 15.2%) — the gap buys the first two R and nothing past it, which is exactly the region a
+short hold lives in.**
+
+Two filters then made it look tradeable: an order block in the zone (92 of 146, reaching 1R 44.6%
+against 25.9% for the 54 with nothing) and excluding 10:00-12:00 New York. The best cell read
+**102 trades, +32.7R**.
+
+🔴 **That +32.7R did not survive the order layer. The real replay of the same idea made −6.6R.**
+Three pieces of the reconstructed rule were not settings — the limit at the 0.5, the fixed R
+target and the hour window — and the fourth difference was the pool: the block leg stands down on
+any setup a gap ever qualified for, so it is not the same 178. **A reconstruction that is
+validated on its excursion arithmetic is still not validated on its conclusion.**
+
+### The order-block leg, which existed all along
+
+The best surviving idea turned out to be a shipped setting nobody had run: the point-of-interest
+source that rests on an order block only where a gap setup would not have traded. Replayed against
+the shipped bot on an identical basis (`backtest/tools/ob_leg_replay.py`):
+
+| | trades | total R | R/trade | worst DD | med hold |
+|---|---|---|---|---|---|
+| A+ shipped | 158 | +130.8 | +0.828 | −6.0R | 7.0h |
+| block leg, shipped entry model | 134 | −6.6 | −0.049 | −23.2R | 2.5h |
+| block leg, best config found | 109 | +22.5 | +0.207 | −13.7R | 2.0h |
+
+⚠ **One lever in that search did nothing and it was not the lever failing.** The shallow-snap
+setting sits behind the "nearest fib either side" setting, which ships on and overrides it, so
+switching it on alone produced a byte-identical run. **A lever behind another lever reads exactly
+like a lever that does nothing.**
+
+⚠ **The +22.5R is not stable.** +34.6R over 2020-2023 and −12.0R over 2024-2026.
+
+### Does it fill the main leg's drawdowns? No.
+
+`backtest/tools/drawdown_fill.py` asks the question total R cannot: does a second leg put equity on
+the board while the first is bleeding. The timing looks ideal — monthly correlation **−0.09**, and
++23.3R of its +22.5R lands in the 32 months A+ was down. It still does not help:
+
+| | end | worst drawdown | days under water |
+|---|---|---|---|
+| A+ alone | 2590x | −50% | 1813 |
+| + the leg at 1% | 3155x | −51% | 1971 |
+| + the leg at 2.5% | 3871x | −56% | 1920 |
+
+**At every weight the account spends MORE time under water, not less.** It is leverage, not a
+hedge — an uncorrelated edge too small and too lumpy to fill a hole. ⚠ The one genuinely useful
+result is the −0.09 itself: this repo lists "are two legs off one structure stream independent?"
+as an open question, and over 76 months these two are.
+
+### What was built, and what it measured
+
+Three rules behind `exec_short_hold`, all defaulted so the shipped path is untouched. On the pool
+it was built for: **104 trades, +10.4R, +0.100R a trade, −10.2R worst drawdown, and scratches down
+from 33 to 1.** It does exactly what it was designed to do and still earns less than leaving the
+pool on the A+ exits, because capping at 2R discards the tail that was carrying it. Sweeping the
+target: 1.5R → +3.6R, 2R → +10.4R, 3R → +12.6R.
+
+🔴 **The depth cap ships INERT because applying it lost money, reversing the recommendation the
+field was built on.** Capping at 0.702 removed 5 trades and 2.1R. The split it came from was
+measured under the fib ladder; the cap was applied under a fixed R target, and a deep entry's
+short stop only matters while a breakeven ratchet can take it out. **A finding is scoped to the
+exit regime it was measured in.**
+
+### The tests, and the three that could not go red
+
+36 tests, six mutations. Three killed their target immediately. **Three did not, and each was a
+different way of writing a test that cannot fail:**
+
+* *the target does not creep as the stop trails* — structurally impossible, the value is computed
+  once at open and never recomputed. **Deleted rather than left passing.**
+* *the variant never touches a re-entry* — passed against a build with the guard removed, because
+  the re-entry's own branch runs next and overwrote the leak. **A test whose subject is masked by
+  the following statement is testing that statement.** Rewritten with the re-entry on its fib rung.
+* *the hour window does not borrow the final-hour label* — passed while only reading a lookup
+  table it could not affect. Rewritten to drive the real gate.
+
+### Two defects found on the way
+
+🔴 **The Weekly and Daily bias requirements are DEAD.** Both read a field that is declared on the
+signals dataclass with an empty-string default and assigned nowhere in the repo. Driven rather
+than only grepped, over 2022-2023: "Ignore" 48 trades, "Must not oppose" 48 (a silent no-op),
+"Must agree" **0**, "Must oppose" **0**. **It is an off-switch dressed as a filter** — and the two
+settings that look like the safe ones are the two that stop the bot entirely.
+
+⚠ **An audit reported "no order block in the zone on any of the 146 setups" and it was a false
+zero** — the block engine is only built into the stack when the point-of-interest setting asks for
+something other than gaps, so at shipped settings `obs_available` is False on all 155,807 bars. A
+registry nobody populated answers confidently and wrongly, and the answer looked like a finding.
+Fixed with a second replay whose only output is where the blocks were.
+
+### Higher-timeframe trend filters were tested and do not help
+
+15m, 1h, 4h, daily and weekly, structure engine on each, read off the last bar that had CLOSED
+before the fill. Daily alignment is the best single split (48.1% reach 1R with it, 36.2% against)
+and it still does not survive stacking: 102 trades/+32.7R → 48 trades/+10.9R, i.e. the win rate
+rises and the return per trade falls. ⚠ **The 15-minute row is a tautology** — every setup is
+"with the trend" because the shift of strength IS the 15-minute flip.

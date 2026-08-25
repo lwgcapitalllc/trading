@@ -1139,6 +1139,94 @@ class SosFadeConfig:
     #   median hold is 4 days. It exists because an earlier version left trades open 130+ days
     #   and paid -8.66R of swap on one that made +1.25R.
 
+
+    # ── the SHORT-HOLD variant (2026-08-24) ──────────────────────────────────────
+    # A second way of trading the SAME A+ setups: take them for a fixed, small number of R and
+    # close, instead of banking a little and riding the rest. It exists because the runner's whole
+    # result lives in a tail — MEASURED 2026-08-24, the setups that reach the 0.5-0.886 band with
+    # every confluence but a gap need an 8R-to-12R target before any rule on them turns positive,
+    # and every fixed target from 0.5R to 2R loses. The three fields below are the three pieces of
+    # a short-hold rule that were NOT already settings.
+    #
+    # 🔴 **EVERY FIELD HERE IS READ ONLY WHEN `exec_short_hold` IS ON, and the shipped run is
+    # byte-identical with it off** — 158 trades, +130.8R over 2020-01-01 → 2026-08-06 on the ECN
+    # tier, diffed on every decision field rather than on the count and the total (a run that
+    # RESHUFFLES which setups it took agrees with the old one on both of those).
+    #
+    # ⚠ **The variant was measured as MARGINAL and is off for that reason, not because it is
+    # unfinished.** The best real replay of this pool made +22.5R over 109 trades in 6.6 years at
+    # +0.207R each, against A+'s +130.8R over 158 — and it was NEGATIVE from 2024 onward (+34.6R
+    # over 2020-2023, -12.0R over 2024-2026). Stacking it under A+ on one account raised the end
+    # balance and made the drawdown DEEPER (-50% → -56% at 2.5%), with days-under-water no better
+    # at any weight. **It is a switch to experiment with, not a leg to deploy.** Full numbers:
+    # `backtest/tools/nogap_scalp_audit.py`, `ob_leg_replay.py`, `drawdown_fill.py`.
+    exec_short_hold: bool = False      # "Short-hold variant"
+
+    exec_sh_max_depth: float = 1.0     # "↳ Refuse an entry deeper than this fib"
+    #   WHERE THE LIMIT MAY NOT REST. A setup whose entry edge sits deeper into the retrace than
+    #   this fib is REFUSED — not moved shallower. Moving it would be a different trade with a
+    #   different stop distance and a different R, and this repo has the standing rule that a
+    #   resized order is not the trade the strategy is holding. 1.0 is the leg origin, i.e. refuse
+    #   nothing, so the field ships INERT.
+    #
+    #   🔴 **IT SHIPS INERT BECAUSE THE CAP MEASURED NEGATIVE, AND THAT REVERSED THE
+    #   RECOMMENDATION THIS FIELD WAS BUILT ON. Read this before setting it.**
+    #
+    #   The case FOR a 0.702 cap was strong and came from three independent readings. In the real
+    #   replay of this pool under the A+ exit rules (2026-08-24, 2020-01-01 → 2026-08-06, ECN):
+    #       0.5  - 0.618   74 trades   +0.31R each
+    #       0.618- 0.702   14 trades   +0.97R each
+    #       0.702- 0.786   10 trades   -0.53R each
+    #       deeper          6 trades   -1.42R each
+    #   The same dead band shows in the SHIPPED A+ book, which nothing here fitted: A+'s own 28
+    #   trades resting in 0.702-0.786 make +0.23R each against +1.50 and +2.42 either side.
+    #
+    #   Then the cap was APPLIED, on a matched basis, and it cost money:
+    #       cap 0.702   104 trades   +10.4R   -10.2R worst drawdown
+    #       cap 1.0     109 trades   +12.5R    -9.6R worst drawdown
+    #   Five trades removed, 2.1R and a slightly worse drawdown for it.
+    #
+    #   ⚠ **The split was measured under one exit rule and the cap was applied under another, and
+    #   that is the whole lesson.** Deep entries lose when they are ridden — a deep entry has a
+    #   short stop distance and the fib ladder's breakeven ratchet takes it out. Closed at a fixed
+    #   2R they are fine. **A finding is scoped to the regime it was measured in, and carrying it
+    #   across an exit change is a new claim that needs its own run.** Nothing here was wrong when
+    #   it was measured; it was generalised one step too far.
+    #   ⚠ **It is a FIB RATIO, not a price**, judged against the same leg the stop is priced off,
+    #   so it travels with the leg instead of meaning something different on every setup.
+    #   ⚠ Read ONLY when exec_short_hold is on.
+
+    exec_sh_tp_r: float = 2.0          # "↳ Close the position at this many R"
+    #   THE WHOLE POSITION COMES OFF HERE, replacing the fib TP ladder for this trade. Priced off
+    #   the entry's own risk at the fill, the same way the re-entry path prices its first rung —
+    #   one convention for "a target in R", not two.
+    #
+    #   ⚠ **The fib ladder is what makes the runner scratch on this pool, which is why a short-hold
+    #   rule cannot simply reuse it.** MEASURED 2026-08-24: of 134 block-leg trades under the A+
+    #   exits, 37 reached the first rung, moved the stop to entry and came back for nothing.
+    #   ⚠ 2.0 is the measured best of 0.5/0.75/1.0/1.25/1.5/2.0/2.5/3.0R on the filtered pool, and
+    #   the first target on the unfiltered pool that is not a loss. Below 1.5R nothing works: the
+    #   hit rate never clears the 50% a 1:1 needs.
+    #   ⚠ Read ONLY when exec_short_hold is on.
+
+    exec_sh_tp1_pct: float = 100.0     # "↳ How much comes off at that target"
+    #   100 = the whole position, no runner, which is the point of the variant. Below 100 leaves a
+    #   remainder to the existing runner machinery and the trade stops being short-hold.
+    #   ⚠ Read ONLY when exec_short_hold is on.
+
+    exec_sh_block_from: int = -1       # "↳ Block entries from this New York hour"
+    exec_sh_block_to: int = -1         # "↳ ...until this one"
+    #   A SECOND time window, on top of the final-hour rule, half-open [from, to) in New York
+    #   hours. Both -1 means off, which is the default.
+    #
+    #   🔴 **OFF BY DEFAULT BECAUSE IT IS THE ONE FINDING HERE WITH NO MECHANISM BEHIND IT.** The
+    #   hour-by-hour table put 10:00 and 11:00 New York at 15.4% and 8.3% reaching 1R against a
+    #   37.7% base, and excluding 10:00-12:00 was worth roughly a third of the filtered pool's
+    #   result — but that is a bucket of 25 setups picked out of a table of 24 hours AFTER looking
+    #   at it, which is the shape of an artefact. The order-block filter beside it has a reason
+    #   that predates the data; this one does not. **Set it deliberately or leave it alone.**
+    #   ⚠ Read ONLY when exec_short_hold is on.
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -1154,6 +1242,36 @@ class SosFadeConfig:
         the time stop is Off; every combo is then identical and inert, which is a wasted sweep
         but not an error, and raising on it would kill an otherwise valid grid.
         """
+        if self.exec_short_hold:
+            # Validated ONLY when the variant is on, the same way the re-entry and recovery knobs
+            # are: an optimizer may sweep one of these while the toggle is fixed off, and every
+            # combination is then inert — a wasted sweep, not an error.
+            if not 0.0 < self.exec_sh_max_depth <= 1.0:
+                raise ValueError(
+                    f"exec_sh_max_depth is a fib RATIO on the entry's own leg and must sit in "
+                    f"(0, 1], got {self.exec_sh_max_depth!r}. 1.0 is the leg origin, i.e. refuse "
+                    "nothing; there is no 'off' value because exec_short_hold=False is that.")
+            if not self.exec_sh_tp_r > 0:
+                raise ValueError(
+                    f"exec_sh_tp_r must be a positive R multiple, got {self.exec_sh_tp_r!r}. "
+                    "Zero would put the target ON the entry, which fills instantly for nothing.")
+            if not 0.0 < self.exec_sh_tp1_pct <= 100.0:
+                raise ValueError(
+                    f"exec_sh_tp1_pct must sit in (0, 100], got {self.exec_sh_tp1_pct!r}. Zero "
+                    "banks nothing at the target, which is the runner this variant replaces.")
+            hours = (self.exec_sh_block_from, self.exec_sh_block_to)
+            if hours != (-1, -1):
+                # Refuse a HALF-set window rather than reading the set half. One hour filled in
+                # and the other left at -1 is somebody who meant to configure this and stopped,
+                # and silently blocking 10:00 to -1 is a window nobody asked for.
+                if not all(0 <= h <= 23 for h in hours):
+                    raise ValueError(
+                        f"exec_sh_block_from / exec_sh_block_to must both be -1 (off) or both be "
+                        f"New York hours in 0-23, got {hours!r}.")
+                if self.exec_sh_block_from == self.exec_sh_block_to:
+                    raise ValueError(
+                        f"exec_sh_block_from and exec_sh_block_to are both {hours[0]!r}, which is "
+                        "an empty window. Set them to -1 to mean off — one way to say a thing.")
         if self.exec_recovery:
             # Validated ONLY when the feature is on, matching how `exec_sl_custom` and
             # `exec_time_stop_hrs` are treated here: an optimizer may sweep a recovery knob

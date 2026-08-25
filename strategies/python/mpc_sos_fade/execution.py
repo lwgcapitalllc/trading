@@ -249,6 +249,9 @@ _BLOCK_LABEL = {
     5: "HTF breakout",
     6: "HTF bias",
     7: "Stop too tight",
+    # 8 and 9 are the short-hold variant's own refusals — no Pine counterpart, see `_block_codes`.
+    8: "Short-hold time block",
+    9: "Entry too deep",
 }
 # The hover text, word-for-word from Pine `f_blkWhy` so the chart and TradingView agree.
 _BLOCK_REASON = {
@@ -261,19 +264,30 @@ _BLOCK_REASON = {
     6: "HTF bias requirement — your Weekly / Daily bias gate is not satisfied.",
     7: "Minimum stop distance — the stop sits closer to the entry than your floor, so this "
        "position would be oversized and noise-sensitive.",
+    8: "Short-hold time block — this hour is inside the window the short-hold variant refuses.",
+    9: "Entry too deep — the limit would rest deeper into the retrace than the short-hold "
+       "variant allows, and a deep entry measured negative on every pool tested.",
 }
 
 
 def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
-                 htf_brk: bool, htf_bias: bool, tight: bool = False) -> List[int]:
+                 htf_brk: bool, htf_bias: bool, tight: bool = False,
+                 sh_hours: bool = False, sh_deep: bool = False) -> List[int]:
     """Every rule refusing this side, in the Pine's `f_blkCode` precedence order.
     Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned.
 
     `tight` (the minimum-stop floor) is LAST in precedence and defaults False because it is
     the only code that depends on price rather than on a toggle — a caller that has not
-    computed the stop distance yet simply omits it."""
+    computed the stop distance yet simply omits it.
+
+    ⚠ **8 and 9 are the short-hold variant's refusals and have NO Pine counterpart** — the Pine's
+    `f_blkCode` stops at 7. They are appended rather than inserted so every existing code keeps
+    its number, and they can only fire with `exec_short_hold` on, so a shipped run never sees
+    them. `BlockedSetup` is reporting-only (nothing reads a record back), which is what makes a
+    new code parity-safe rather than merely convenient."""
     return [c for c, on in enumerate(
-        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight), start=1) if on]
+        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight, sh_hours, sh_deep),
+        start=1) if on]
 
 
 @dataclass
@@ -1163,6 +1177,11 @@ class Execution:
         exactly what `_place_entries` used to compute inline)."""
         cfg = self._cfg
         late, htf_block_l, htf_block_s, bias_block_l, bias_block_s = self._bar_gates(sig)
+        sh_hours = self._sh_hour_block(sig)
+        # The variant's window refuses an ENTRY exactly the way the final hour does, so it is
+        # ANDed in beside it rather than given its own branch — one place decides what "the clock
+        # refuses this bar" means, and the marker below reads the same booleans.
+        late_any = late or sh_hours
 
         # arm-source filter (Pine 4349-4355)
         use_swp_l = cfg.exec_arm_sweep and seq.sos_l_swp
@@ -1172,12 +1191,12 @@ class Execution:
         arm_ok_l = use_swp_l or use_div_l
         arm_ok_s = use_swp_s or use_div_s
 
-        long_armed = (cfg.exec_aplus and cfg.exec_longs and arm_ok_l and not late and not htf_block_l
+        long_armed = (cfg.exec_aplus and cfg.exec_longs and arm_ok_l and not late_any and not htf_block_l
                       and not bias_block_l and seq.l_sos_bar is not None and sig.fibo_dir == 1
                       and long_edge is not None
                       and (not dec.long_veto or not cfg.exec_respect_veto)
                       and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l))
-        short_armed = (cfg.exec_aplus and cfg.exec_shorts and arm_ok_s and not late and not htf_block_s
+        short_armed = (cfg.exec_aplus and cfg.exec_shorts and arm_ok_s and not late_any and not htf_block_s
                        and not bias_block_s and seq.s_sos_bar is not None and sig.fibo_dir == -1
                        and short_edge is not None
                        and (not dec.short_veto or not cfg.exec_respect_veto)
@@ -1204,6 +1223,34 @@ class Execution:
         bias_l, bias_s = self._htf_bias_block(sig)
         return late, htf_l, htf_s, bias_l, bias_s
 
+    def _sh_hour_block(self, sig) -> bool:
+        """The short-hold variant's own New York hour window, half-open [from, to).
+
+        🔴 **A SEPARATE gate rather than more hours folded into `late`, and that is the whole
+        reason it is its own method.** `late` is what the block marker and the missed-setup
+        callout both render as *"Final-hour rule — no new entries 16:00-18:00 New York"*. Widening
+        it to cover a 10:00 window would leave both of them saying 16:00 about a setup refused at
+        10:00 — a label describing a rule the code no longer has, which is this repo's most
+        expensive shape of defect. It gets its own code (8) so the marker can say what happened.
+
+        🔴 **AND IT IS A SEPARATE METHOD RATHER THAN A SIXTH RETURN VALUE FROM `_bar_gates`,
+        WHICH IS A DIFFERENT REASON AGAIN.** `mpc_bos` reuses this class and unpacks that tuple
+        into five names, so widening it raised `ValueError: too many values to unpack` in ANOTHER
+        strategy — caught by that strategy's own parity test, not by anything here. **A shared
+        base class makes its return SHAPE part of a contract two packages away**, and the cheap
+        way to add something to it is not to add it to the tuple.
+
+        Off unless both hours are set, and inert entirely with the variant off."""
+        cfg = self._cfg
+        if not cfg.exec_short_hold:
+            return False
+        lo, hi = cfg.exec_sh_block_from, cfg.exec_sh_block_to
+        if lo < 0 or hi < 0:
+            return False
+        # A window may WRAP midnight (22:00 -> 02:00). Handled rather than refused, because New
+        # York hours are what a trader states a session in and Asia genuinely straddles the day.
+        return (lo <= sig.ny_hour < hi) if lo < hi else (sig.ny_hour >= lo or sig.ny_hour < hi)
+
     # ── missed-setup watch (Pine f_w23Arm / f_w23, 3116-3194 + 4022-4023) ────────
     def _record_misses(self, sig, seq, dec, long_edge, short_edge) -> None:
         """Track each side's live setup and book a MISS when it dies without trading.
@@ -1226,6 +1273,10 @@ class Execution:
             return
         cfg = self._cfg
         late, htf_l, htf_s, bias_l, bias_s = self._bar_gates(sig)
+        # The miss watch asks only "did a clock rule refuse this bar", so the two windows fold
+        # together HERE rather than in `_bar_gates` — see `_sh_hour_block` for why that method
+        # exists at all.
+        late = late or self._sh_hour_block(sig)
 
         # Which arm sources COUNT — the live flags already filtered through the enable-toggles,
         # exactly as `_armed` reads them, so "armed" means the same thing in both places.
@@ -1592,6 +1643,7 @@ class Execution:
             return
         cfg = self._cfg
         late, arm_ok_l, arm_ok_s, htf_l, htf_s, bias_l, bias_s = self._blk_gates
+        sh_hours = self._sh_hour_block(sig)
 
         # "Ready" omits every toggle gate — those ARE the blockers being reported. It asserts
         # only what price and the engine decide: the SOS is in, the fib agrees, an edge exists
@@ -1623,9 +1675,11 @@ class Execution:
 
         codes = (
             _block_codes(not cfg.exec_longs, not arm_ok_l, late,
-                         dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l, tight_l),
+                         dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l, tight_l,
+                         sh_hours, self._too_deep(sig, long_edge, True)),
             _block_codes(not cfg.exec_shorts, not arm_ok_s, late,
-                         dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s, tight_s),
+                         dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s, tight_s,
+                         sh_hours, self._too_deep(sig, short_edge, False)),
         )
         for slot, (is_long, ok, cs, edge, sos_bar) in enumerate((
             (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
@@ -1665,7 +1719,8 @@ class Execution:
             deep = long_edge <= sig.fibo_p3       # at/below 0.618
             tp1 = sig.fibo_p2 if deep else sig.fibo_p1   # deep 0.5 / shallow 0.382
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7   # deep 0.382 / shallow 0.0
-            if self._stop_clears_floor(dist, long_edge):
+            if self._stop_clears_floor(dist, long_edge) \
+                    and not self._too_deep(sig, long_edge, True):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 self._pend_long = _Pending(1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar, fib)
             else:
@@ -1679,13 +1734,37 @@ class Execution:
             deep = short_edge >= sig.fibo_p3
             tp1 = sig.fibo_p2 if deep else sig.fibo_p1
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7
-            if self._stop_clears_floor(dist, short_edge):
+            if self._stop_clears_floor(dist, short_edge) \
+                    and not self._too_deep(sig, short_edge, False):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 self._pend_short = _Pending(-1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar, fib)
             else:
                 self._pend_short = None
         else:
             self._pend_short = None
+
+
+    def _too_deep(self, sig, edge: Optional[float], is_long: bool) -> bool:
+        """Would this limit rest deeper into the retrace than the short-hold variant allows?
+
+        REFUSES rather than re-pricing, and that is deliberate. Moving the limit shallower would
+        keep the setup and change the trade: the stop stays pinned at its fib, so a shallower
+        entry is a WIDER stop, a different 1R and a different position size — a different trade
+        wearing this one's name. The entry model already has three settings for moving a limit
+        (they cascade in `_fib_snap`); this one is about not taking the trade.
+
+        The cap is read as a fib RATIO through the canonical geometry, against the same leg
+        anchors the stop is priced off, so "deeper than 0.702" means the same thing on a $3 leg
+        and a $30 one. Unknown geometry reads as NOT too deep — an unpriced fib must not become a
+        silent refusal, which is the shape that makes a filter look like a broken engine.
+        """
+        cfg = self._cfg
+        if not cfg.exec_short_hold or edge is None:
+            return False
+        if sig.fibo_ash is None or sig.fibo_asl is None or not sig.fibo_dir:
+            return False
+        cap = fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir, cfg.exec_sh_max_depth)
+        return edge < cap if is_long else edge > cap
 
     def _gap_pre_zone(self, born: int, sig) -> bool:
         """Pine `f_gapPreZone` — did this gap exist BEFORE price entered the zone?
@@ -2115,6 +2194,20 @@ class Execution:
         # default (-1.0), so the shipped ladder is untouched and every stored figure reproduces.
         # ⚠ Priced off the INITIAL stop, not the trailed one: 1R must mean the risk the trade was
         # sized against, or the target would creep in as the stop ratchets.
+        if kind == "primary" and self._cfg.exec_short_hold and self._cfg.exec_sh_tp_r > 0:
+            # SHORT-HOLD: the whole position comes off at a multiple of its own risk, replacing
+            # the fib ladder for this trade. Priced the same way the re-entry below prices its
+            # rung — one convention for "a target in R" rather than two — and off the INITIAL
+            # stop, so 1R means the risk the trade was sized against and the target cannot creep
+            # in as the stop ratchets.
+            # ⚠ `_tp2` is deliberately LEFT where the fib put it. With the first rung banking
+            # 100% (`exec_sh_tp1_pct`) nothing survives to reach it, and blanking it would erase
+            # the target ladder the chart draws — the record of what the trade AIMED at, which no
+            # decision reads and a reader does.
+            sh_dist = abs(fill_price - pend.sl)
+            if sh_dist > 0:
+                self._tp1 = fill_price + (1 if pend.dir > 0 else -1) \
+                    * self._cfg.exec_sh_tp_r * sh_dist
         if kind == "secondary":
             # The RECLAIM half reads its own rung (`exec_rec_tp_r`), because under the combined
             # trigger the two halves are different trades: the reclaim enters at the deep edge with
@@ -3085,6 +3178,11 @@ class Execution:
                 own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
             if own != -1.0:
                 return own
+        elif self._cfg.exec_short_hold:
+            # SHORT-HOLD banks its own percentage — 100 by default, i.e. the whole position off
+            # at the R target with no runner behind it, which is the point of the variant. Read
+            # only for a PRIMARY: a re-entry keeps its own ladder above.
+            return self._cfg.exec_sh_tp1_pct
         return self._cfg.exec_tp1_pct
 
     def _current_stop(self) -> float:

@@ -1268,6 +1268,79 @@
         "Holds losing trades longer and pays more overnight interest",
         "Cuts stale trades sooner"
       ]
+    },
+    {
+      "name": "exec_sh_block_from",
+      "group": "Short-hold variant",
+      "core": false,
+      "widget": "number",
+      "label": "Block entries from this New York hour",
+      "short": "Block from",
+      "step": 1,
+      "min": -1,
+      "max": 23,
+      "desc": "Start of an extra no-entry window, in New York hours. -1 on both this and the one below means off, which is the default. Only read when the short-hold variant is on."
+    },
+    {
+      "name": "exec_sh_block_to",
+      "group": "Short-hold variant",
+      "core": false,
+      "widget": "number",
+      "label": "...until this New York hour",
+      "short": "Block until",
+      "step": 1,
+      "min": -1,
+      "max": 23,
+      "desc": "End of that window, exclusive. It may wrap past midnight. Set both to -1 to switch it off. Only read when the short-hold variant is on."
+    },
+    {
+      "name": "exec_sh_max_depth",
+      "group": "Short-hold variant",
+      "core": false,
+      "widget": "number",
+      "label": "Refuse an entry deeper than this fib",
+      "short": "Max entry depth",
+      "step": 0.001,
+      "min": 0.001,
+      "max": 1.0,
+      "desc": "Skips a setup whose entry would sit deeper into the pullback than this level. 1.0 refuses nothing, which is the default: capping at 0.702 was measured to remove five trades and cost 2.1R. Only read when the short-hold variant is on."
+    },
+    {
+      "name": "exec_sh_tp1_pct",
+      "group": "Short-hold variant",
+      "core": false,
+      "widget": "number",
+      "label": "How much comes off at that target",
+      "short": "Bank %",
+      "step": 5.0,
+      "min": 1.0,
+      "max": 100.0,
+      "desc": "100 takes the whole position off and leaves no runner, which is the point of the variant. Less than 100 hands the remainder back to the normal runner. Only read when the short-hold variant is on."
+    },
+    {
+      "name": "exec_sh_tp_r",
+      "group": "Short-hold variant",
+      "core": false,
+      "widget": "number",
+      "label": "Close the position at this many R",
+      "short": "Target (R)",
+      "step": 0.25,
+      "min": 0.25,
+      "max": 20.0,
+      "desc": "Where the whole trade comes off, measured in multiples of what it is risking. Best of the ones tested; below 1.5 nothing works. Only read when the short-hold variant is on."
+    },
+    {
+      "name": "exec_short_hold",
+      "group": "Short-hold variant",
+      "core": false,
+      "widget": "toggle",
+      "label": "Short-hold variant",
+      "short": "Short hold",
+      "options": {
+        "off": "Ride the winner",
+        "on": "Bank a fixed R and close"
+      },
+      "desc": "Trades the same setups a different way: closes the whole position at a set multiple of risk instead of banking a little and riding the rest. Measured MARGINAL - it removes almost every scratch and earns about half as much. A switch to experiment with, not a leg to run."
     }
   ]
 }

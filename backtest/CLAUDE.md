@@ -1011,6 +1011,62 @@ terminal so spread/commission/swap/symbol and history depth never have to be typ
 - `GET /data_availability?symbol=XAUUSD&timeframes=M1,M5,M15,M30,H1,H4` → earliest→latest served bar
   per timeframe (cheap: one bar from each end).
 
+## 🔴 The cache is partitioned by BROKER SERVER (2026-08-24)
+
+**The filename was `(symbol, timeframe)` with no broker in it, for as long as the cache existed.**
+That was survivable only because exactly one terminal ever filled it — every one of the 12 probed
+history floors on this machine reads `VantageMarkets-Demo`, so nothing was ever mixed. It stopped
+being survivable the moment the lab gained a reason to point at a second broker: **the second
+broker would have read the first one's bars and been charged its own costs**, and there is nothing
+in a trade list, an equity curve or a metrics panel that could show you that. The two feeds here
+are MEASURED to differ by a systematic 4-5 cents on every bar (2026-08-04 shadow diff), so the
+result would have been wrong by a real amount while looking completely normal.
+
+Bars and ticks now live under `backtest/cache/<server>/`. ⚠ **Keyed on the SERVER, not the account
+tier, and that is measured rather than tidy** — MT5 keys its own store by server, so PU Prime's
+Prime and ECN logins (both `PUPrime-Demo`) genuinely share one history, and partitioning per tier
+would triple a 1.28 GB download for byte-identical bars. **Costs are what differ per tier**, and
+they are charged from `fills.PROFILES`, never from the cache.
+
+⚠ **An unknown server REFUSES** (`UnknownBrokerError`) rather than falling back to a shared or
+`default` folder. That is rule 1 applied to a filesystem path: "cannot ask" must never take the
+same value as "the usual broker". An unreachable agent refuses for the same reason.
+
+⚠ **An explicitly injected `BarCache`/`TickCache` is honoured and NOT partitioned.** That is what
+every test in this package passes, and it is a deliberate statement about where those bars live.
+All 20 production call sites construct `BarSource()` bare, so production always partitions —
+checked, not assumed.
+
+⚠ **Partitioning is LAZY, on the first `load()`.** Construction stays free of network calls, which
+is the property `HistoryFloors` already had; a tool that dies while building an object reports the
+failure in the wrong place.
+
+⚠ **A flat cache from before this change is INVISIBLE, not wrong** — every read is a miss and the
+bars come down again from whatever broker is attached. That is the safe direction to fail in, and
+it is why there is no automatic migration. To keep the existing 1.28 GB, a human asserts which
+broker filled it:
+
+```bash
+python backtest/tools/file_cache_by_broker.py --server VantageMarkets-Demo --dry-run
+python backtest/tools/file_cache_by_broker.py --server VantageMarkets-Demo
+```
+
+**Guessing the server would have written the exact claim the partition exists to prevent** — a
+folder labelled with a broker whose prices may never have been in it — so the name is a required
+argument. The tool refuses to merge into an existing partition, moves rather than copies (a flat
+shadow of a 1 GB tick store is a trap), and COPIES `history_floors.json` because that file is
+keyed by server inside and stays valid in both places.
+
+⚠ **PU Prime's history depth is its own fact and has never been probed.** Vantage gold bottoms out
+at 2018-09-13 on M15; do not carry that number across. The floor probe re-runs per server on its
+own — that part was already right.
+
+Proof: `tests/test_cache_broker_partition.py`, watched RED **by mutation** rather than by revert.
+Reverting only produced an ImportError, which proves a symbol is new and nothing about whether the
+assertions catch anything. Flattening `broker_cache_dir` in place fails the two data tests on
+*"broker B served broker A's cached ticks"*; replacing the refusal with a `default` folder fails
+the two refusal tests on DID NOT RAISE.
+
 ## History floors — MEASURED per broker, and ENFORCED (`data/history.py`)
 
 **The floor is discovered, never hardcoded.** `HistoryFloors.floor(symbol, tf)` binary-searches the
@@ -1346,3 +1402,43 @@ every combo on a book missing those trades and rank them confidently, the combos
 field nothing consumed. Guarded because this optimizer is strategy-agnostic and only some
 strategies have the hook; idempotent, so a strategy whose `run()` already finalized is unaffected.
 ⚠ **Any future runner that reproduces the bar loop needs the same line** — the failure is silent.
+
+## Three tools for asking whether a SECOND leg is worth having (2026-08-24)
+
+Built to answer one question — *can the setups the gap requirement refuses be traded for a small,
+fixed R?* — and each is reusable for the next leg somebody proposes.
+
+| tool | the question only it answers |
+|---|---|
+| `tools/nogap_scalp_audit.py` | what a whole grid of stop × target × breakeven × ladder rules would have made, without one replay per cell |
+| `tools/ob_leg_replay.py` | what the ORDER LAYER makes of the winning cell, against the shipped bot on a basis identical by construction |
+| `tools/drawdown_fill.py` | does a second leg put equity on the board while the FIRST one is bleeding — which total R cannot answer |
+
+🔴 **THE FIRST TOOL IS A RECONSTRUCTION AND ITS BEST CELL WAS WRONG BY MORE THAN THE WHOLE
+RESULT.** It prices entries off fib geometry instead of running the order layer, which is what
+makes a grid affordable — and its +32.7R best cell replayed at **−6.6R**. Its bar-walk was
+validated first, and thoroughly: the excursion it computes reproduces `Trade.mfe_price` on all 158
+A+ trades to 0.0000R, with two mutations watched red. **That validation was real and it did not
+transfer.** The arithmetic was right; the conclusion was not, because the reconstruction's pool and
+its entry price both differed from anything the engine could actually run. ⚠ **Validate the walk,
+then still replay the answer** — a grid tool proposes, it never concludes.
+
+⚠ **`drawdown_fill.py`'s compounded row is an approximation and `portfolio/run_stack` is not.** It
+sequences trades by EXIT and compounds them consecutively, so two positions open at once are
+billed as if they were consecutive, which understates concurrent exposure. It exists to say
+whether the real stack run is worth starting. **Do not quote its row as the stack's result.**
+
+⚠ **A leg can be UNCORRELATED and still not help, and this is the case that proves it.** Monthly
+correlation −0.09 over 76 months, with essentially all of the second leg's profit landing in the
+32 months the first was down — and adding it made the account spend MORE days under water at every
+risk weight (1813 → ~1920), with the worst drawdown flat or deeper. **Uncorrelated is necessary and
+nowhere near sufficient; an edge too small and too lumpy is leverage, not a hedge.** Read
+days-under-water beside the drawdown depth: they are different halves of "help me through the flat
+spells" and a leg can improve one while worsening the other.
+
+⚠ **`nogap_scalp_audit.py` needs a SECOND replay purely to see order blocks**, and the reason is
+rule 8. The block engine is only built into the stack when the strategy's point-of-interest setting
+asks for something other than gaps, so at shipped settings the block list is empty on every one of
+155,807 bars. The first version of that audit reported *"no order block in the zone on any of the
+146 setups"* off exactly that, and it read as a finding. A registry nobody populated answers
+confidently and wrongly.
