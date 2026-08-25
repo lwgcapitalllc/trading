@@ -1057,6 +1057,8 @@ argument. The tool refuses to merge into an existing partition, moves rather tha
 shadow of a 1 GB tick store is a trap), and COPIES `history_floors.json` because that file is
 keyed by server inside and stays valid in both places.
 
+⚠ **PU Prime's recorded M15 floor is WRONG — see the two defects below before trusting it.**
+
 ⚠ **PU Prime's history depth is its own fact. It is now partly known and is still NOT a measured
 floor** — say the difference out loud rather than letting the next reader read a bound as a bottom.
 `XAUUSD.p` M15 is cached from **2019-01-01 23:00 to 2026-08-23 23:45, 180,619 bars with volume**
@@ -1092,16 +1094,42 @@ Command Center reads them to default its cost account to the attached terminal; 
 server-only match would hand a run ECN's $0.12 spread while it sat on Prime.
 ⚠ **Blank/None means UNRECORDED, never "matches anything".**
 
-🔴 **STILL OPEN, found 2026-08-24 while verifying the partition: the history-floor probe returns a
-CONFIDENT floor for a symbol the broker does not serve at all.** With the lab on PU Prime, bare
-`XAUUSD` (PU Prime quotes `XAUUSD.p`) fetches nothing at any date — verified directly, 404 in 2019
-and in 2024 — and yet `history_floors.json` gained `PUPrime-Demo|XAUUSD|15 → 2018-09-13`, dated
-today and labelled *bar-density binary search*. **It is a measurement of a symbol with no data,
-recorded as a fact.** It is not currently harmful — nothing serves those bars, so a run refuses
-loudly rather than replaying a substitution — but it is a false claim in a cache the whole floor
-mechanism is built on trusting, and this file's own rule is that a floor is MEASURED or refused.
-**Fixing it needs its own measurement of what the probe does when every window comes back empty; do
-not paper over it by deleting the entries, which only re-appear on the next load.**
+⚠ **A floors entry is keyed on the SUFFIX-STRIPPED symbol, by design** (`_key` → `_norm`, which
+splits on the dot, because `.s`/`.p`/`.a` are the same underlying instrument's history). So
+`PUPrime-Demo|XAUUSD|15` is the record FOR `XAUUSD.p`, not for a bare symbol nobody can fetch.
+**An earlier version of this paragraph read it the other way round and reported a phantom defect** —
+corrected 2026-08-24 after a peer session checked the code rather than the filename. A probe that
+fails writes nothing at all, so an entry can never exist for a symbol returning no data.
+
+🔴 **STILL OPEN, and it is worse than the phantom was: `PUPrime-Demo|XAUUSD|15 → 2018-09-13` is a
+GENUINELY BAD FLOOR, and both checks that exist to catch it pass.** That day is HALF SUBSTITUTED —
+MEASURED against the live terminal: **2018-09-13 returns 38 bars for an M15 request, with 18 gaps of
+60 minutes, one 75-minute seam, then 18 gaps of 15 minutes.** PU Prime's real M15 history starts
+partway through that day and everything before the seam is H1 wearing an M15 label. A clean day is
+92–96 (2018-10-15 measures 92, with 90 gaps of 15).
+
+Two defects, both reproduced here rather than reasoned about:
+
+1. **`_day_is_real` counts BARS and never looks at their SPACING.** The threshold is
+   `_DENSITY_MIN 0.35 × 96 = 33.6`, and 38 clears it. Its docstring's reasoning — *"a coarser
+   substitution fails by a factor"* — is sound for a CLEAN substitution (H1-as-M15 is 24/96 = 25%
+   and fails) and does not hold for a day that is **half** real.
+2. **`assert_bar_spacing` cannot catch it either, which is the surprising half.** Run on that exact
+   frame: the gaps tie 18–18, `gaps.mode()` returns `[15, 60]`, `.iloc[0]` takes **15**, modal
+   equals requested, and it PASSES. Its `closer` test only hunts gaps SMALLER than the interval —
+   there is deliberately no check for a sustained run of LARGER ones, because weekends produce
+   those legitimately. ⚠ **Over a LONG window it gets worse, not better**: the modal is dominated
+   by the real days and the substituted region never moves it.
+
+⚠ **Impact today is nil and that is not a reason to leave it** — nobody is starting a run there. The
+risk is that the recorded floor INVITES someone to start on 2018-09-13 and receive ~18 hourly bars
+inside an otherwise clean frame **with no error raised**, which is precisely the fictional-backtest
+failure this module's own docstring says it exists to prevent.
+
+⚠ **NOT FIXED HERE, deliberately.** `history.py` is money-path code and a stricter density or
+spacing rule can refuse legitimate short sessions and holidays, so it needs its own measurement
+across brokers rather than a tightening bolted onto a cache change. ⚠ **Do not paper over it by
+deleting the entry** — it re-appears on the next load, and the floor would still be wrong.
 
 Proof: `tests/test_cache_broker_partition.py`, watched RED **by mutation** rather than by revert.
 Reverting only produced an ImportError, which proves a symbol is new and nothing about whether the
