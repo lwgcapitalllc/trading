@@ -1057,9 +1057,19 @@ argument. The tool refuses to merge into an existing partition, moves rather tha
 shadow of a 1 GB tick store is a trap), and COPIES `history_floors.json` because that file is
 keyed by server inside and stays valid in both places.
 
-⚠ **PU Prime's history depth is its own fact and has never been probed.** Vantage gold bottoms out
-at 2018-09-13 on M15; do not carry that number across. The floor probe re-runs per server on its
-own — that part was already right.
+⚠ **PU Prime's history depth is its own fact. It is now partly known and is still NOT a measured
+floor** — say the difference out loud rather than letting the next reader read a bound as a bottom.
+`XAUUSD.p` M15 is cached from **2019-01-01 23:00 to 2026-08-23 23:45, 180,619 bars with volume**
+(pulled 2026-08-24 in ~28s, verified off disk here rather than taken on report). ⚠ **2019-01-01 is
+the earliest date anybody ASKED for, so the real floor is at or before it and nobody has looked** —
+recording it as the floor would be rule 3 exactly: what you requested written down as what you
+received. Vantage gold bottoms out at 2018-09-13 on M15; do not carry that number across either.
+The floor probe re-runs per server on its own — that part was already right.
+
+⚠ **Bare `XAUUSD` does not exist on this broker.** PU Prime quotes `XAUUSD.p`, and a request for the
+bare symbol returns nothing at any date (checked 2019 and 2024). Eight runs died on it in one
+evening before anybody noticed, which is the loud failure working as intended — but every stored run
+made against Vantage carries `instrument: XAUUSD`, so a rerun of one on this terminal cannot fetch.
 
 ✅ **The migration has RUN on this machine (2026-08-24): 42 entries, 1.28 GB, now under
 `cache/VantageMarkets_Demo/`.** That the server name was `VantageMarkets-Demo` is not an assumption —
