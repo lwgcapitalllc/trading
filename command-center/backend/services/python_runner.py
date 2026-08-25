@@ -70,6 +70,85 @@ _DEFAULT_CAPITAL = 10_000.0
 # turned on rather than something the lab decided for you.
 COST_LAYERS = ("spread", "swap", "commission", "slippage", "bid_ask_fills")
 
+#: What "costs ON" means, and it is a POLICY with a reason per entry rather than "all of them".
+#:
+#: * `bid_ask_fills` — buys transact at the ask and sells at the bid. It IMPLIES `spread` and
+#:   REPLACES the flat spread charge (see `_cost_profile`); the two never stack. This is the layer
+#:   that matters most and the only one that can change WHICH setups fill — measured at 161 trades
+#:   → 159, with four setups that never existed on the free path.
+#: * `commission` — a per-side, per-lot fact about the account tier, measured by filling a real
+#:   round turn on each demo (2026-08-10).
+#: * `swap` — overnight financing, read off the symbol Specification.
+#:
+#: 🔴 **`slippage` is DELIBERATELY ABSENT and that is the whole design of this constant.** It is a
+#: typed-in guess — the UI has labelled it "A GUESS" since it shipped — and this repo's standing
+#: rule is that an unmeasured cost REFUSES rather than borrowing a plausible number. Folding it in
+#: would make every charged run carry one invented figure among three measured ones, and nothing
+#: downstream could tell them apart. It keeps its own switch, and turning it on stays a sentence
+#: somebody has to say out loud.
+CHARGED_LAYERS = ("bid_ask_fills", "commission", "swap")
+
+
+class UnpricedBrokerError(ValueError):
+    """A broker whose costs are not all measured cannot be run charged.
+
+    ⚠ **Refusing is the answer** (rule 17, applied to a measurement rather than an order size).
+    The alternative is borrowing a sibling tier's spread, and that mistake has already been made
+    here in the other direction: PU Prime's four tiers carried ONE spread until 2026-08-06, when
+    the tiers were measured 2.7x apart. A charged run against an unmeasured tier would be a
+    confident number about prices nobody has ever read.
+    """
+
+
+def charged_layers(broker: str) -> tuple[str, ...]:
+    """The layers to charge for `broker` when costs are ON — or a refusal naming what is unmeasured.
+
+    This exists so the POLICY lives in one place the runner reads, rather than in a set of
+    tickboxes the operator reassembles from memory on every run. A rule that lives in somebody's
+    memory is a rule that gets broken on a Friday.
+    """
+    from backtest.fills import PROFILES, SPREAD_UNMEASURED
+
+    if broker not in PROFILES:
+        raise UnpricedBrokerError(
+            f"broker_profile {broker!r} unknown — costs are read off a real account, so it must "
+            f"be one of: {sorted(PROFILES)}"
+        )
+    p = PROFILES[broker]
+    missing = []
+    if p.spread == SPREAD_UNMEASURED:
+        missing.append("spread")
+    # ⚠ Two different "no swap" values and they are NOT the same answer: `None` is a profile that
+    # charges none, `UNMEASURED_SWAP` is a tier nobody has read. Only the second refuses.
+    if p.swap is not None and getattr(p.swap, "unmeasured", False):
+        missing.append("overnight swap")
+    if missing:
+        raise UnpricedBrokerError(
+            f"{broker} cannot be run with costs on: its {' and '.join(missing)} has never been "
+            f"measured on this tier. Measure it with algos/tools/broker_facts.py — copying a "
+            f"sibling tier's figure is the exact mistake the sentinel exists to prevent "
+            f"(PU Prime's tiers measured 2.7x apart)."
+        )
+    return CHARGED_LAYERS
+
+
+def measured_commission(broker: str) -> float:
+    """This tier's commission, dollars per side per LOT, as measured on a real fill.
+
+    ⚠ **Per LOT, a lot being `contract_size` units (100 oz for gold)** — reading it as per-ounce
+    charges 100x, which is the unit confusion that put a 54.82-lot order on a $2,000 account from
+    the other end of the same boundary. The caller stores this on the run row, so the run records
+    the number it was billed rather than a number somebody typed next to it.
+    """
+    from backtest.fills import PROFILES
+
+    if broker not in PROFILES:
+        raise UnpricedBrokerError(
+            f"broker_profile {broker!r} unknown — commission is read off a real account, so it "
+            f"must be one of: {sorted(PROFILES)}"
+        )
+    return float(PROFILES[broker].commission_per_side_per_lot)
+
 
 def _cost_profile(spec: dict):
     """The run's `AccountProfile`, or None when the run charges nothing.

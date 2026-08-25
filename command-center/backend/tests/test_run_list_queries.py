@@ -212,15 +212,30 @@ def test_a_run_can_be_created_with_no_layered_cost_contract(client, fresh_db):
     assert row["cost_layers"] in (None, "")
 
 
-def test_omitting_cost_layers_still_means_charge_nothing(client, fresh_db):
-    """The default must not move — a caller that says nothing gets `[]`, exactly as before.
+# ── The cost switch (2026-08-24) ─────────────────────────────────────────────
+#
+# All four tests below were watched RED by MUTATION on 2026-08-24, each on its own assertion:
+#   * `charge_costs` default flipped True → None ..... "omitting ... means CHARGED" fails
+#   * the commission override deleted ................ "bills the ACCOUNT commission" fails
+#   * the unmeasured-broker refusal removed .......... "an unmeasured broker refuses" fails
+# The fourth (costs off still reachable) is the guard on the other side and passes throughout —
+# it exists so a later "simplification" that hard-wires charging cannot land quietly, since the
+# detail page's paired free re-run goes through exactly that path.
 
-    ⚠ Passes against HEAD too, deliberately. It is the guard on the OTHER side of the nullable
-    change: `insert_run` coerces an absent key to `[]` so a new python run can never fall into
-    the legacy commission/slippage branch by omission, and only an EXPLICIT null writes NULL.
+
+def test_omitting_cost_layers_now_means_CHARGED(client, fresh_db):
+    """🔴 **The default REVERSED on 2026-08-24 and this test reversed with it.**
+
+    It used to assert that a caller saying nothing got `[]` — frictionless. That was the 2026-08-02
+    design, and Aaron's call on 2026-08-24 replaced it: a run nobody configured is a run you can't
+    trade, and it must not be the first number the lab shows. A python run that states nothing now
+    stores the resolved charged layers.
+
+    ⚠ It still guards the OTHER side of the nullable change, which did NOT move: only an EXPLICIT
+    null writes NULL, so NT8 and MT5 keep having no layer contract at all.
     """
     from routers.backtests import _json_list
-    from services import lab_db
+    from services import lab_db, python_runner
 
     _strategy(lab_db, "py_strategy", runner="python")
 
@@ -238,7 +253,96 @@ def test_omitting_cost_layers_still_means_charge_nothing(client, fresh_db):
         )
 
     assert r.status_code in (200, 202), r.text
+    stored = _json_list(lab_db.get_run(r.json()["run_id"])["cost_layers"])
+    assert stored == list(python_runner.CHARGED_LAYERS), (
+        "a python run that configured nothing came out frictionless — that is the default "
+        "reversed on 2026-08-24"
+    )
+    # Asserted by NAME rather than by count: `slippage` is deliberately not in the charged set
+    # (it is a typed-in guess), and a test that only counted layers would wave it in.
+    assert "slippage" not in stored
+
+
+def test_costs_off_is_still_reachable_and_stores_empty(client, fresh_db):
+    """Off is a deliberate choice, not an absence — and it must still be sayable.
+
+    The paired free run behind the detail page's re-run button goes through exactly this path.
+    """
+    from services import lab_db
+
+    _strategy(lab_db, "py_free", runner="python")
+    with patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}):
+        r = client.post(
+            "/backtests/run",
+            json={
+                "strategy_id": "py_free",
+                "instrument": "XAUUSD",
+                "params": {},
+                "start_date": "2024-01-01",
+                "end_date": "2024-06-30",
+                "evaluate_rulesets": [],
+                "charge_costs": False,
+            },
+        )
+    assert r.status_code in (200, 202), r.text
+    from routers.backtests import _json_list
+
     assert _json_list(lab_db.get_run(r.json()["run_id"])["cost_layers"]) == []
+
+
+def test_an_unmeasured_broker_refuses_to_run_charged(client, fresh_db):
+    """Rule 17 applied to a measurement: refusing is the answer.
+
+    PU Prime's Prime tier has never had its spread read on an open market. Charging it would mean
+    borrowing a sibling tier's figure — and those tiers measured 2.7x apart.
+    """
+    from services import lab_db
+
+    _strategy(lab_db, "py_unpriced", runner="python")
+    with patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}):
+        r = client.post(
+            "/backtests/run",
+            json={
+                "strategy_id": "py_unpriced",
+                "instrument": "XAUUSD",
+                "params": {},
+                "start_date": "2024-01-01",
+                "end_date": "2024-06-30",
+                "evaluate_rulesets": [],
+                "charge_costs": True,
+                "broker_profile": "puprime_prime",
+            },
+        )
+    assert r.status_code == 400
+    assert "spread" in r.text and "measured" in r.text
+
+
+def test_a_charged_run_bills_the_ACCOUNT_commission_not_the_form(client, fresh_db):
+    """The one cost still typed in by hand until 2026-08-24.
+
+    A form figure sitting beside a measured spread and a measured swap is indistinguishable from
+    them on the page. ECN's $1.00/side/lot was settled by filling a real round turn.
+    """
+    from services import lab_db
+
+    _strategy(lab_db, "py_comm", runner="python")
+    with patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}):
+        r = client.post(
+            "/backtests/run",
+            json={
+                "strategy_id": "py_comm",
+                "instrument": "XAUUSD",
+                "params": {},
+                "start_date": "2024-01-01",
+                "end_date": "2024-06-30",
+                "evaluate_rulesets": [],
+                "charge_costs": True,
+                "broker_profile": "puprime_ecn",
+                "commission_per_side": 99.0,  # a wrong number somebody typed
+            },
+        )
+    assert r.status_code in (200, 202), r.text
+    assert lab_db.get_run(r.json()["run_id"])["commission_per_side"] == 1.00
 
 
 # ── The running-job endpoint must carry every lock scope ──────────────────────

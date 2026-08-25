@@ -920,6 +920,19 @@ class BacktestRunRequest(BaseModel):
     # contract" — which is what NT8 and MT5 are. Storing `[]` for them made the run page report
     # a deliberately frictionless run over a tester that charged commission and slippage.
     cost_layers: Optional[list[str]] = []
+    # 🔴 ONE SWITCH, and it defaults to ON (2026-08-24, Aaron's call — it reverses the 2026-08-02
+    # default above, which is left in place because it is what every stored run was made under).
+    # **The old design asked the operator to reassemble a cost policy out of five tickboxes on
+    # every run, and the first number they saw was always the frictionless one.** A gross figure
+    # is a diagnostic — it answers "how much of my edge is friction" and never "does this work" —
+    # so it must not be what a run produces by default.
+    # ⚠ It RESOLVES to `cost_layers` at run creation (`routers/backtests.py`), so the stored row
+    # still records the layers actually charged. Rule 3: never record the request as the receipt.
+    # ⚠ `None` means "this caller has no opinion" and leaves `cost_layers` exactly as sent — that
+    # is what a retry of a pre-2026-08-24 row does, and it is why the field is nullable rather
+    # than a plain bool. A retry must reproduce the run it is retrying, not today's default.
+    # ⚠ PYTHON-ONLY. NT8 and MT5 have no layer contract; their runs keep `cost_layers = None`.
+    charge_costs: Optional[bool] = True
     broker_profile: str = "vantage_demo"
     evaluate_rulesets: list[str] = []  # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []  # backward-compat alias; prefer evaluate_rulesets

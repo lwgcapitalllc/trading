@@ -3211,6 +3211,29 @@ Each row in `StrategiesTab` has a Deploy/Compile/Run action driven by the **cont
 
 ---
 
+## The Run modal's Costs section is ONE SWITCH, on by default (2026-08-24)
+
+Five tickboxes with everything off became one toggle. **The switch sits OUTSIDE the collapsible
+fold** — a run's single most important physical fact must not be one click away behind a collapsed
+heading, which is how every run ended up frictionless without anybody deciding to.
+
+- ⚠ **It sends a BOOLEAN (`charge_costs`), never a layer list.** The policy lives on the side that
+  charges it (`python_runner.charged_layers`), or the page and the run can describe different
+  physics — rule 7, a label is a claim about code somewhere else. `cost_layers` is sent as `null`.
+- ⚠ **`chargedRows` is a DISPLAY of that policy, not a second copy of it.** If `CHARGED_LAYERS`
+  gains a layer, this list gains a line. Every figure on it is read off the served broker profile
+  and never retyped.
+- ⚠ **Costs OFF renders a warning, not a neutral state.** *"A diagnostic only — it answers how much
+  of the edge is friction, never whether the strategy works"*, plus a line saying real fills change
+  which setups exist, not just what they pay. The summary reads `GROSS — no costs charged`.
+- ⚠ **A tier with no measured spread DISABLES the Run button and says why before the click.**
+  The backend refuses it with a 400; a refusal arriving after a click is the answer in the wrong
+  place. `brokerUnpriced` is `spread < 0` — the profile's refusal sentinel.
+- ⚠ **Slippage keeps its own typed opt-in and its "a guess" tag inside the fold.** It is the only
+  cost here nobody has measured, and folding a guess in beside three measurements makes them
+  indistinguishable on the page.
+
+
 ## The scheduled-job status gained an ARMED value (2026-08-21)
 
 `JobStatus.status` now carries `ARMED` alongside `RUNNING` / `STOPPED` / `DISABLED` / `UNKNOWN`.

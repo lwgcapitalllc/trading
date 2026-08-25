@@ -832,6 +832,12 @@ export interface BacktestRunRequest {
   slippage_ticks?: number
   // `null` = this runner has no layered-cost contract (NT8/MT5). `[]` = charge nothing.
   cost_layers?: CostLayer[] | null
+  // The cost switch (2026-08-24). `true` = charge everything MEASURED on `broker_profile`;
+  // `false` = gross; `null`/absent = this caller has no opinion, leaving `cost_layers` as sent.
+  // ⚠ It OVERRIDES `cost_layers` on the python runner — the backend resolves it into the layers
+  // it charges and stores the resolved set, so the row records what was billed rather than what
+  // was asked for. Do not send both expecting the list to win.
+  charge_costs?: boolean | null
   broker_profile?: string
   evaluate_rulesets: string[]
   source_run_id?: string | null

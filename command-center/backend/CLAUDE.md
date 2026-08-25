@@ -3886,3 +3886,47 @@ Live behavior. Scanner reads from `strategies/` via `rglob("*.cs")`/`rglob("*.mq
 be a toggle the form renders, the config carries, and **nothing consumes** — the run would simply
 report no recovery trades and look correct. `run_dual` finalizes itself and the pass is idempotent,
 so the call is safe on both paths. Guarded by `hasattr`: the runner serves every python strategy.
+
+## Costs are ONE SWITCH, and it defaults to ON (2026-08-24)
+
+**Aaron's call, reversing the 2026-08-02 default.** A run nobody configured used to charge nothing,
+so the first number the lab produced was always the frictionless one — a figure you cannot trade,
+sitting where the answer goes. It also asked the operator to reassemble a cost policy out of five
+tickboxes on every run, and a rule that lives in somebody's memory is a rule that gets broken on a
+Friday.
+
+`BacktestRunRequest.charge_costs` is a nullable bool defaulting **True**, and `routers/backtests.py`
+RESOLVES it into `cost_layers` at run creation. Rules:
+
+- ⚠ **Resolved at CREATION, never inside the runner** — rule 3: the stored row must record what was
+  CHARGED, not what was asked for. The detail page, the re-price endpoint, the stress tester and
+  every retry read that column back.
+- ⚠ **`None` means "this caller has no opinion"** and leaves `cost_layers` exactly as sent. That is
+  what a retry of a pre-2026-08-24 row does — **a retry must reproduce the run it is retrying, not
+  today's default.** It is why the field is nullable rather than a plain bool.
+- ⚠ **PYTHON-ONLY.** NT8 and MT5 have no layer contract; their runs keep `cost_layers = None`, and
+  `charge_costs` must never manufacture one for them.
+- 🔴 **`python_runner.CHARGED_LAYERS` is `(bid_ask_fills, commission, swap)` and `slippage` is
+  DELIBERATELY ABSENT.** It is a typed-in guess — the modal has labelled it "a guess" since it
+  shipped — and this repo's standing rule is that an unmeasured cost REFUSES rather than borrowing a
+  plausible number. Folding it in would put one invented figure beside three measured ones with
+  nothing downstream able to tell them apart. It is added only when a caller states a tick count > 0,
+  which is somebody saying the guess out loud.
+- 🔴 **`bid_ask_fills` rather than the flat `spread` charge, and they are ALTERNATIVES** — running
+  both bills one spread twice. The fill model is the one that also changes WHICH setups fill
+  (measured 161 trades → 159, four setups that never existed on the free path), which is the half a
+  page-level toggle can never reproduce.
+- 🔴 **`charged_layers(broker)` REFUSES a tier whose spread or swap has never been measured**
+  (`UnpricedBrokerError` → 400). PU Prime's Prime and Cent tiers refuse today. Copying ECN's figure
+  onto them is the exact mistake the sentinel exists to prevent — those tiers measured **2.7x**
+  apart.
+- 🔴 **Commission comes off the ACCOUNT, not off the form.** `measured_commission(broker)` writes the
+  measured figure onto the row, so it is the one number the run was billed rather than a number
+  somebody typed beside three measurements. Settled 2026-08-10 by filling one 0.10-lot round turn on
+  each demo: Prime $3.50/side/lot, ECN $1.00, demos $0.00.
+
+Proof: `tests/test_run_list_queries.py`, four checks, each watched RED by its own mutation (default
+flipped to None; commission override deleted; refusal removed). The fourth — costs-off still
+reachable — passes throughout on purpose, so a later "simplification" that hard-wires charging
+cannot land quietly.
+

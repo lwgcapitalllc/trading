@@ -12,7 +12,7 @@ import {
 import { ParamEditor, isChanged, visibleParams, type ParamValue } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
-import type { Strategy, Firm, SizingMode, CostLayer, BrokerProfile } from '@/types'
+import type { Strategy, Firm, SizingMode, BrokerProfile } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -373,20 +373,30 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [commPerSide, setCommPerSide] = useState(0)
   const [slippageTicks, setSlippageTicks] = useState(0)
 
-  // ── Costs (python runner) — OFF by default, and that is the design ──────────
-  // Aaron's call (2026-08-02): the baseline run charges nothing, so it stays directly comparable
-  // to the TradingView Strategy Tester, and every cost is something you deliberately switched on.
-  // Spread and swap are MEASURED and come off the broker profile; slippage is the only figure
-  // anyone types, because it is the only one history cannot measure — which is exactly why it
-  // gets its own switch instead of riding along with the others.
-  const [costLayers, setCostLayers] = useState<Set<CostLayer>>(new Set())
+  // ── Costs (python runner) — ONE SWITCH, and it defaults to ON ───────────────
+  // 🔴 Aaron's call (2026-08-24), reversing the 2026-08-02 design that lived here. That version
+  // offered five tickboxes with everything off, so the first number any run produced was the
+  // frictionless one — a figure you cannot trade, sitting where the answer goes. It also asked
+  // the operator to reassemble a cost policy from memory on every single run, and a rule that
+  // lives in somebody's memory is a rule that gets broken on a Friday.
+  //
+  // ⚠ **The switch does not send layers — it sends a BOOLEAN, and the backend resolves it**
+  // (`python_runner.charged_layers`). The policy has to live on the side that charges it, or the
+  // page and the run can describe different physics. That is rule 7: a label is a claim about
+  // code somewhere else.
+  //
+  // ⚠ Slippage is the one thing still separate, and deliberately so — it is the only cost here
+  // nobody has measured, so it rides its own optional figure rather than the switch.
+  const [chargeCosts, setChargeCosts] = useState(true)
   const [brokerProfile, setBrokerProfile] = useState('vantage_demo')
   const { data: brokerProfiles } = useBrokerProfiles()
   const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
-  // Folded by default: nothing is charged unless you tick it, so the frictionless case — which
-  // is every run until somebody decides otherwise — costs one line instead of ~300px between
-  // the params editor and Advanced. It opens if anything is ticked, so a configured run is
-  // never hiding its own physics.
+  // A tier whose spread has never been read carries the refusal sentinel rather than a number,
+  // and the backend REFUSES to run it charged. The modal has to say so before the button is
+  // pressed — a 400 arriving after a click is the answer in the wrong place.
+  const brokerUnpriced = broker != null && broker.spread < 0
+  // Opens when costs are OFF, because that is the state that needs explaining. A charged run is
+  // the default and says so in one summary line.
   const [costsOpen, setCostsOpen] = useState(false)
   // ⚠ Counted over `visibleParams`, the SAME set the summary lists, so the number can never
   // point at a row the reader cannot find. A settled param moved off its default is visible
@@ -399,53 +409,32 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     [strategy.param_schema, params]
   )
 
-  const toggleLayer = (layer: CostLayer) =>
-    setCostLayers((prev) => {
-      const next = new Set(prev)
-      if (next.has(layer)) next.delete(layer)
-      else next.add(layer)
-      // The spread can be priced as a COST or modelled into the FILLS, never both — doing both
-      // bills one spread twice (see `Execution._charge_spread`). The UI enforces the same
-      // exclusivity the backend does, so the two can never describe different runs.
-      if (layer === 'bid_ask_fills' && next.has('bid_ask_fills')) next.delete('spread')
-      if (layer === 'spread' && next.has('spread')) next.delete('bid_ask_fills')
-      return next
-    })
-
-  // Every `detail` is derived from the SERVED profile, never retyped — see `useBrokerProfiles`.
-  // `tag` marks the two rows that are not plain measured costs, because both mislead if read as
-  // one: slippage is a guess, and bid/ask changes the trade list rather than just the P&L.
-  const costRows: { id: CostLayer; label: string; detail: string; tag?: string }[] = [
+  // What "costs on" actually charges, for THIS broker. Every figure is derived from the SERVED
+  // profile and never retyped — see `useBrokerProfiles`. This mirrors `python_runner.CHARGED_LAYERS`
+  // and exists so the page states what the run will be billed rather than implying it.
+  // ⚠ If that constant gains a layer, this list has to gain a line. It is a display of a policy
+  // that lives on the backend, not a second copy of the policy.
+  const chargedRows: { label: string; detail: string; tag?: string }[] = [
     {
-      id: 'spread',
-      label: 'Spread',
+      label: 'Bid/ask on every fill',
+      tag: 'moves trades',
       detail: broker
-        ? `$${broker.spread.toFixed(2)} per round turn, measured on this broker`
-        : 'measured per broker',
+        ? `buys transact $${broker.spread.toFixed(2)} higher — some longs never fill, some stops do`
+        : 'buys transact at the ask',
     },
     {
-      id: 'swap',
+      label: 'Commission',
+      detail: broker
+        ? `$${broker.commission_per_side_per_lot.toFixed(2)} per side per lot, measured on this account`
+        : 'measured per account',
+    },
+    {
       label: 'Overnight swap',
       detail:
         broker?.swap_long_points != null
           ? `$${swapPerNight(broker, 'long').toFixed(2)} a night per lot long, ` +
             `$${swapPerNight(broker, 'short').toFixed(2)} short`
           : 'this account prices no financing',
-    },
-    { id: 'commission', label: 'Commission', detail: 'charges the figure below, per lot per side' },
-    {
-      id: 'slippage',
-      label: 'Slippage',
-      tag: 'a guess',
-      detail: 'charges the ticks below, on market exits only',
-    },
-    {
-      id: 'bid_ask_fills',
-      label: 'Model bid/ask on fills',
-      tag: 'moves trades',
-      detail: broker
-        ? `buys transact $${broker.spread.toFixed(2)} higher — some longs never fill, some stops do`
-        : 'buys transact at the ask',
     },
   ]
 
@@ -501,13 +490,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
       />
     </>
   )
-  // Which layers carry a typed figure. A layer absent from here charges a MEASURED number off the
-  // broker profile and has nothing for anyone to type — which is the distinction the old Advanced
-  // section erased by putting all the numbers in one box regardless.
-  const costInputs: Partial<Record<CostLayer, React.ReactNode>> = {
-    commission: commissionInput,
-    slippage: slippageInput,
-  }
 
   useEffect(() => {
     if (primaryRuleset?.default_commission_per_side != null) {
@@ -533,6 +515,9 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     startDate < endDate &&
     evalRequiredMet &&
     manualPctValid &&
+    // A tier with no measured spread cannot be run charged, and the backend refuses it. Blocking
+    // the button is the same refusal in the place the reader is looking.
+    !(isPython && chargeCosts && brokerUnpriced) &&
     !trigger.isPending &&
     !jobBlocked
 
@@ -556,7 +541,13 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         // had the detail page print "This run was deliberately frictionless" over a run whose
         // tester really did charge the commission and slippage below. `null` is the honest
         // answer: this run does not use layers, and the two legacy fields say what it charged.
-        cost_layers: isPython ? Array.from(costLayers) : null,
+        cost_layers: null,
+        // 🔴 The switch, and the modal sends ONLY this — the backend resolves it into the layers
+        // it charges. Sending a layer list from here would make the page the authority on a
+        // policy the runner owns, which is how a label ends up claiming something no code does.
+        // ⚠ `null` for NT8/MT5: they have no layer contract at all, and `charge_costs` must not
+        // manufacture one for them.
+        charge_costs: isPython ? chargeCosts : null,
         broker_profile: brokerProfile,
         evaluate_rulesets: Array.from(selectedFirms),
         sizing_mode: sizingMode,
@@ -1094,104 +1085,124 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             <>
               <Divider />
 
-              {/* Costs — off by default; each one is a deliberate choice */}
+              {/* Costs — ONE switch, on by default (2026-08-24) */}
               <div>
                 <SectionHead
                   label="Costs"
-                  tooltip="Nothing is charged unless you tick it, so a bare run is frictionless and comparable to the TradingView Strategy Tester. Spread and swap are measured off the broker account below — they are facts, not settings."
+                  tooltip="A charged run is what you can trade; a free run is a diagnostic that tells you how much of the edge is friction. Every figure is measured off the broker account below — they are facts, not settings."
                   open={costsOpen}
                   onToggle={() => setCostsOpen((o) => !o)}
-                  // Read off `costRows`, not a second list — the summary names exactly what the
-                  // rows below it offer, in their order, and cannot drift when a layer is added.
-                  summary={
-                    costLayers.size === 0
-                      ? 'frictionless'
-                      : `${costRows
-                          .filter((r) => costLayers.has(r.id))
-                          .map((r) => r.label.toLowerCase())
-                          .join(', ')} · ${brokerProfile}`
-                  }
+                  summary={chargeCosts ? `charged · ${brokerProfile}` : 'GROSS — no costs charged'}
                 />
 
-                {costsOpen && (
-                  <>
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <label className="text-[11px] text-text-secondary flex-shrink-0">
-                        Broker account
-                      </label>
-                      <select
-                        value={brokerProfile}
-                        onChange={(e) => setBrokerProfile(e.target.value)}
-                        className={`${inputCls} max-w-[220px]`}
+                {/* 🔴 The switch sits OUTSIDE the fold. Everything below it is explanation, and a
+                    run's single most important physical fact must not be one click away behind a
+                    collapsed heading — that is how the old design let every run ship frictionless
+                    without anybody deciding to. */}
+                <div className="flex items-start gap-2.5 mb-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={chargeCosts}
+                    onClick={() => setChargeCosts((v) => !v)}
+                    className={`mt-[2px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
+                      chargeCosts ? 'bg-accent' : 'bg-border-default'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-bg-base transition-all ${
+                        chargeCosts ? 'left-[16px]' : 'left-[2px]'
+                      }`}
+                    />
+                  </button>
+                  <span className="min-w-0">
+                    <span className="block text-[12px] text-text-primary">
+                      {chargeCosts
+                        ? "Charge this account's real costs"
+                        : 'Run gross — charge nothing'}
+                    </span>
+                    <span className="block text-[11px] text-text-tertiary leading-snug">
+                      {chargeCosts
+                        ? 'The result is net of friction — the number you can actually trade.'
+                        : 'A diagnostic only. It answers how much of the edge is friction, never whether the strategy works.'}
+                    </span>
+                  </span>
+                </div>
+
+                {!chargeCosts && (
+                  <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                    This run will report a gross figure. It is not comparable to a charged run —
+                    real fills change which setups exist, not just what they pay.
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2 mb-2.5">
+                  <label className="text-[11px] text-text-secondary flex-shrink-0">
+                    Broker account
+                  </label>
+                  <select
+                    value={brokerProfile}
+                    onChange={(e) => setBrokerProfile(e.target.value)}
+                    className={`${inputCls} max-w-[220px]`}
+                  >
+                    {(brokerProfiles ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* A tier nobody has measured refuses rather than borrowing a sibling's figure —
+                    PU Prime's tiers measured 2.7x apart. Said here, before the button. */}
+                {chargeCosts && brokerUnpriced && (
+                  <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                    This account&apos;s spread has never been measured, so it cannot be run charged.
+                    Measure it first, or pick an account that has been.
+                  </p>
+                )}
+
+                {costsOpen && chargeCosts && !brokerUnpriced && (
+                  <div className="space-y-1">
+                    {chargedRows.map((row) => (
+                      <div
+                        key={row.label}
+                        className="flex items-start gap-2.5 px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken"
                       >
-                        {(brokerProfiles ?? []).map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.id}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      {costRows.map((row) => {
-                        const on = costLayers.has(row.id)
-                        return (
-                          <div key={row.id}>
-                            <button
-                              type="button"
-                              onClick={() => toggleLayer(row.id)}
-                              className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded border text-left transition-colors ${
-                                on
-                                  ? 'border-accent/40 bg-accent/5'
-                                  : 'border-border-subtle/50 bg-bg-sunken hover:border-border-default'
-                              }`}
-                            >
-                              <span
-                                className={`mt-[2px] w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center ${
-                                  on ? 'border-accent bg-accent' : 'border-border-default'
-                                }`}
-                              >
-                                {on && (
-                                  <span className="text-[9px] leading-none text-bg-base font-bold">
-                                    ✓
-                                  </span>
-                                )}
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-[12px] text-text-primary">{row.label}</span>
+                            {row.tag && (
+                              <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                                {row.tag}
                               </span>
-                              <span className="min-w-0">
-                                <span className="flex items-center gap-1.5">
-                                  <span className="text-[12px] text-text-primary">{row.label}</span>
-                                  {row.tag && (
-                                    <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
-                                      {row.tag}
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="block text-[11px] text-text-tertiary leading-snug">
-                                  {row.detail}
-                                </span>
-                              </span>
-                            </button>
-                            {/* 🔴 The figure a layer charges sits UNDER THAT LAYER, and only while
-                                it is ticked. It lived in an "Advanced" section further down the
-                                modal — so the row read "charges the figure below" while pointing
-                                past a divider at a different heading, and an untick left that
-                                number on screen looking like it still applied. */}
-                            {on && costInputs[row.id] && (
-                              <div className="mt-1 mb-1.5 ml-[26px] max-w-[220px]">
-                                {costInputs[row.id]}
-                              </div>
                             )}
-                          </div>
-                        )
-                      })}
-                    </div>
+                          </span>
+                          <span className="block text-[11px] text-text-tertiary leading-snug">
+                            {row.detail}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
 
-                    {costLayers.size === 0 && (
-                      <p className="mt-2 text-[11px] text-text-tertiary">
-                        Nothing ticked — this run charges no costs at all.
-                      </p>
-                    )}
-                  </>
+                    {/* 🔴 Slippage is the ONE cost that stays a separate, typed opt-in, and the
+                        tag says why. Every other figure above is measured; this one is a guess,
+                        and folding a guess in beside three measurements would make them
+                        indistinguishable on the page. 0 means it is not charged at all. */}
+                    <div className="px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken">
+                      <span className="flex items-center gap-1.5 mb-1">
+                        <span className="text-[12px] text-text-primary">Slippage</span>
+                        <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                          a guess
+                        </span>
+                      </span>
+                      <span className="block text-[11px] text-text-tertiary leading-snug mb-1.5">
+                        Nobody has measured this. Leave it at 0 unless you mean to charge an
+                        assumption; it is charged on market exits only.
+                      </span>
+                      <div className="max-w-[220px]">{slippageInput}</div>
+                    </div>
+                  </div>
                 )}
               </div>
             </>

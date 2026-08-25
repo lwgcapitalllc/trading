@@ -31,7 +31,15 @@ from models import (
     RunRepriceReport,
     WorthinessScore,
 )
-from services import chart_spec, history_limits, lab_db, news_filter, run_feeds, runner_dispatch
+from services import (
+    chart_spec,
+    history_limits,
+    lab_db,
+    news_filter,
+    python_runner,
+    run_feeds,
+    runner_dispatch,
+)
 from services.backtest_runner import (
     LAB_RESULTS_DIR,
     clear_progress,
@@ -585,6 +593,40 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     )
     merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)
 
+    # ── Costs: one switch, resolved HERE so the row records what was CHARGED ─────────────
+    # 🔴 Resolved at creation rather than inside the runner, and the reason is rule 3: never
+    # record what you REQUESTED as though it were what you RECEIVED. The stored `cost_layers`
+    # is what the detail page, the re-price endpoint, the stress tester and every retry read
+    # back, so it has to be the resolved set. A row saying "charged" while the runner decided
+    # the layers privately is a row nothing can audit.
+    # ⚠ `charge_costs` is PYTHON-ONLY. NT8 and MT5 have no layer contract at all and must keep
+    # storing `None` — writing `[]` for them made the detail page announce a deliberately
+    # frictionless run over a tester that charged commission and slippage.
+    cost_layers = req.cost_layers
+    commission_per_side = req.commission_per_side
+    if runner == "python" and req.charge_costs is not None:
+        try:
+            cost_layers = (
+                list(python_runner.charged_layers(req.broker_profile)) if req.charge_costs else []
+            )
+        except python_runner.UnpricedBrokerError as exc:
+            raise HTTPException(400, str(exc))
+        # 🔴 **Commission comes off the ACCOUNT, not off the form.** It was the one cost in the
+        # layered design still typed in by hand, sitting beside a measured spread and a measured
+        # swap and indistinguishable from them on the page. It is a measured fact per tier —
+        # settled 2026-08-10 by filling one 0.10-lot round turn on each demo and reading the deal
+        # breakdown back: PU Prime Prime $3.50/side/lot, ECN $1.00, demos $0.00. Writing the
+        # resolved figure onto the ROW (rather than reading the profile inside the runner) keeps
+        # one code path and makes a retry reproduce the run it is retrying.
+        commission_per_side = python_runner.measured_commission(req.broker_profile)
+        # ⚠ **Slippage stays OPT-IN even inside "costs on", and is added only when a figure was
+        # actually stated.** It is the one cost here nobody has measured — the modal has tagged it
+        # "a guess" since it shipped — so folding it into the switch would put one invented number
+        # beside three measured ones with nothing downstream able to tell them apart. Stating a
+        # tick count is somebody saying the guess out loud, which is the whole bar for charging it.
+        if req.charge_costs and int(req.slippage_ticks or 0) > 0:
+            cost_layers = [*cost_layers, "slippage"]
+
     lab_db.insert_run(
         {
             "run_id": run_id,
@@ -595,7 +637,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
-            "commission_per_side": req.commission_per_side,
+            "commission_per_side": commission_per_side,
             "slippage_ticks": req.slippage_ticks,
             "status": "running",
             "created_at": int(time.time()),
@@ -604,7 +646,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
             "source_run_id": req.source_run_id,
             "sizing_mode": req.sizing_mode,
             "manual_risk_pct": req.manual_risk_pct,
-            "cost_layers": req.cost_layers,
+            "cost_layers": cost_layers,
             "broker_profile": req.broker_profile,
         }
     )
@@ -618,9 +660,9 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "bar_value": req.bar_value,
         "start_date": req.start_date,
         "end_date": req.end_date,
-        "commission_per_side": req.commission_per_side,
+        "commission_per_side": commission_per_side,
         "slippage_ticks": req.slippage_ticks,
-        "cost_layers": req.cost_layers,
+        "cost_layers": cost_layers,
         "broker_profile": req.broker_profile,
     }
 
