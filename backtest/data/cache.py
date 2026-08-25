@@ -2,10 +2,20 @@
 
 One CSV per (symbol, base timeframe), holding every bar ever fetched for that
 pair. Broker bar sets are small (2yr of M15 ≈ 46k rows), so CSV is plenty and
-stays human-inspectable; no parquet dependency. The cache is content-addressed
-by (symbol, tf) only — the date range lives inside the file, and reads slice it.
+stays human-inspectable; no parquet dependency. Within a broker the cache is
+content-addressed by (symbol, tf) only — the date range lives inside the file,
+and reads slice it.
 
-Default location: backtest/cache/ (git-ignored). Override with $BACKTEST_CACHE_DIR.
+🔴 **PARTITIONED BY BROKER SERVER since 2026-08-24, and the flat layout it replaces was a
+real hole rather than a tidiness complaint.** The filename was `(symbol, timeframe)` with no
+broker in it, so pointing a run at a second broker would have silently replayed the first one's
+bars while charging the second one's costs — a complete, clean, confident equity curve about
+prices that were never involved. The two feeds here are MEASURED to differ by a systematic 4-5
+cents on every bar (2026-08-04 shadow diff), so nothing about the result would have looked wrong.
+See `broker_cache_dir`, and note that an UNKNOWN server refuses rather than sharing a folder.
+
+Default location: backtest/cache/<server>/ (git-ignored). Override the base with
+$BACKTEST_CACHE_DIR.
 
 **Feed versioning — read before changing FEED_VERSION.** A cached bar is only as good as the
 agent that produced it, and a cache MISS is loud while a stale cache HIT is silent. On 2026-07-16
@@ -50,6 +60,38 @@ FEED_VERSION = 3
 def _default_cache_dir() -> Path:
     env = os.environ.get("BACKTEST_CACHE_DIR", "").strip()
     return Path(env) if env else _DEFAULT_DIR
+
+
+class UnknownBrokerError(RuntimeError):
+    """The cache was asked to serve bars without knowing WHICH broker they came from.
+
+    Refusing is the answer. The alternative — falling back to one shared folder — is the exact
+    defect this partition exists to end: Vantage's bars replayed under PU Prime's costs, producing
+    a complete, clean, confident equity curve about a broker whose prices were never involved. The
+    two feeds are already MEASURED to differ by a systematic 4-5 cents on every bar (2026-08-04
+    shadow diff), so this is not a rounding concern.
+    """
+
+
+def broker_cache_dir(base: str | os.PathLike, server: str) -> Path:
+    """The cache partition for one broker SERVER, e.g. `cache/VantageMarkets_Demo/`.
+
+    **Keyed on the SERVER, never the account tier, and that is measured rather than tidy.** MT5
+    keys its own bar and tick store by server, so PU Prime's Prime and ECN logins — both on
+    `PUPrime-Demo` — genuinely share one history. Partitioning per tier would triple a 1 GB
+    download for bars that are byte-identical. **Costs are the thing that differs per tier**, and
+    they are charged from `backtest.fills.PROFILES`, not from here.
+
+    ⚠ **An empty server REFUSES.** See `UnknownBrokerError` — a missing identity must never
+    collapse into a shared folder.
+    """
+    if not str(server).strip():
+        raise UnknownBrokerError(
+            "cannot file bars without knowing which broker served them — the MT5 agent's "
+            "/status returned no server name. Fix the agent or pass an explicit cache; a "
+            "backtest must never replay one broker's bars while charging another's costs."
+        )
+    return Path(base) / _safe(str(server).strip())
 
 
 def _safe(token: str) -> str:

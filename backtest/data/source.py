@@ -17,7 +17,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .atomic import cache_lock
-from .cache import BarCache
+from .cache import BarCache, UnknownBrokerError, _default_cache_dir, broker_cache_dir
 from .coverage import RangeCoverage
 from .history import HistoryFloors, assert_bar_spacing
 from .mt5_agent import Mt5Agent, Mt5AgentError
@@ -26,14 +26,75 @@ from .timeframes import resolve_base_tf, to_minutes
 
 
 class BarSource:
+    """Bars for one broker's terminal, cached under that broker's own folder.
+
+    🔴 **The cache is partitioned by the attached terminal's SERVER**, resolved from the
+    agent on first use. Before 2026-08-24 it was one flat folder keyed on (symbol, timeframe), so
+    switching the lab to a second broker would have served the first one's bars without a word —
+    and the run would have charged the second one's spread and commission over them. Nothing in
+    the output could show you that: the frame is clean, the curve is complete, and the two feeds
+    here differ by a systematic 4-5 cents a bar.
+
+    ⚠ **An explicitly injected `cache` is HONOURED and not partitioned.** That is what every test
+    passes, and it is a deliberate statement about where these bars live. Production constructs
+    `BarSource()` bare — checked across all 20 call sites — so production always partitions.
+
+    ⚠ **Partitioning is LAZY, on the first `load()`.** Construction stayed free of network calls
+    on purpose: `HistoryFloors` already resolved its server that way, and a tool that dies while
+    building an object reports the failure in the wrong place.
+    """
+
     def __init__(self, agent: Mt5Agent | None = None, cache: BarCache | None = None):
         self.agent = agent if agent is not None else Mt5Agent()
-        self.cache = cache if cache is not None else BarCache()
-        self.coverage = RangeCoverage(self.cache.dir)
+        self._pinned_cache = cache
+        self._cache: BarCache | None = None
+        self._coverage: RangeCoverage | None = None
+        self._floors: HistoryFloors | None = None
+
+    def _partition(self) -> None:
+        """Bind the cache, coverage and floors to this terminal's broker. Idempotent."""
+        if self._cache is not None:
+            return
+        if self._pinned_cache is not None:
+            cache = self._pinned_cache
+        else:
+            # ⚠ Read through `HistoryFloors.server()`-style handling: an agent that cannot be
+            # reached returns no server, and `broker_cache_dir` REFUSES on an empty one rather
+            # than letting "cannot ask" and "the default broker" be the same folder. That is
+            # rule 1 applied to a filesystem path.
+            try:
+                server = str(self.agent.status().get("server") or "")
+            except Mt5AgentError as exc:
+                raise UnknownBrokerError(
+                    "cannot file bars without knowing which broker served them — the MT5 agent "
+                    f"is unreachable ({exc}). A backtest must never replay one broker's bars "
+                    "while charging another's costs."
+                ) from exc
+            cache = BarCache(broker_cache_dir(_default_cache_dir(), server))
+        self._cache = cache
+        self._coverage = RangeCoverage(cache.dir)
         # Built from OUR agent, not the module-level shared one, so an injected fake in a
         # test probes the fake — a floor check that reached the real terminal from a unit
         # test would be both slow and non-deterministic.
-        self.floors = HistoryFloors(agent=self.agent, cache_dir=self.cache.dir)
+        self._floors = HistoryFloors(agent=self.agent, cache_dir=cache.dir)
+
+    @property
+    def cache(self) -> BarCache:
+        self._partition()
+        assert self._cache is not None
+        return self._cache
+
+    @property
+    def coverage(self) -> RangeCoverage:
+        self._partition()
+        assert self._coverage is not None
+        return self._coverage
+
+    @property
+    def floors(self) -> HistoryFloors:
+        self._partition()
+        assert self._floors is not None
+        return self._floors
 
     def load(
         self, symbol: str, timeframe: str | int, start_date: str, end_date: str

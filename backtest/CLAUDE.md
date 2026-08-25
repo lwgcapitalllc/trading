@@ -1061,6 +1061,18 @@ keyed by server inside and stays valid in both places.
 at 2018-09-13 on M15; do not carry that number across. The floor probe re-runs per server on its
 own — that part was already right.
 
+✅ **The migration has RUN on this machine (2026-08-24): 42 entries, 1.28 GB, now under
+`cache/VantageMarkets_Demo/`.** That the server name was `VantageMarkets-Demo` is not an assumption —
+all 12 probed history floors in `history_floors.json` carry it, so exactly one terminal has ever
+filled this cache.
+
+🔴 **The partition SILENTLY SKIPPED four tests and the suite still printed green**, which is the
+lesson worth more than the feature. `tests/test_reprice.py` looks for the reference bars at a fixed
+path and skips when they are absent — so the moment the files moved, the four slowest and most
+load-bearing tests in the package (the real two-year replays that prove re-pricing reproduces a
+charged run to the cent) went from passing to SKIPPED with nothing to notice. **A missing file is
+indistinguishable from a git-ignored one.** It searches the partitions now.
+
 Proof: `tests/test_cache_broker_partition.py`, watched RED **by mutation** rather than by revert.
 Reverting only produced an ImportError, which proves a symbol is new and nothing about whether the
 assertions catch anything. Flattening `broker_cache_dir` in place fails the two data tests on

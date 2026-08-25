@@ -31,7 +31,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from .cache import FEED_VERSION, _default_cache_dir
+from .cache import FEED_VERSION, _default_cache_dir, broker_cache_dir
 
 __all__ = ["Tick", "TickCache", "TickSource", "TickWindowUnavailable"]
 
@@ -132,7 +132,30 @@ class TickSource:
 
     def __init__(self, agent, cache: TickCache | None = None):
         self.agent = agent
-        self.cache = cache if cache is not None else TickCache()
+        self._pinned_cache = cache
+        self._cache: Optional[TickCache] = None
+
+    @property
+    def cache(self) -> TickCache:
+        """Ticks for THIS terminal's broker, filed under that broker's own folder.
+
+        🔴 Same hole the bar cache had until 2026-08-24 and it mattered more here, because a
+        tick is what the fill model uses to decide whether a stop or a target came first. One
+        broker's tick stream answering that question for another broker's backtest is a wrong
+        answer that looks like a right one. ⚠ An injected cache is honoured (that is what tests
+        pass); an UNKNOWN server refuses rather than sharing a folder — see `broker_cache_dir`.
+        """
+        if self._cache is None:
+            if self._pinned_cache is not None:
+                self._cache = self._pinned_cache
+            else:
+                server = ""
+                try:
+                    server = str(self.agent.status().get("server") or "")
+                except Exception:  # noqa: BLE001 - any agent failure means "cannot ask"
+                    server = ""
+                self._cache = TickCache(broker_cache_dir(_default_cache_dir(), server))
+        return self._cache
 
     def window(self, symbol: str, start_ms: int, end_ms: int) -> List[Tick]:
         if end_ms <= start_ms:

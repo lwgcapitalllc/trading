@@ -28,7 +28,24 @@ from backtest.reprice import (
     rollovers_between,
 )
 
-_CACHE = Path(__file__).resolve().parents[1] / "cache" / "XAUUSD__M15.csv"
+
+def _find_cached_m15() -> Path:
+    """The reference bars, wherever the broker partition put them (2026-08-24).
+
+    ⚠ **Searched rather than hardcoded, and this test taught the lesson the hard way**: the
+    partition landed and all four real-replay tests here went from passing to SKIPPED in silence,
+    because a missing file is indistinguishable from a git-ignored one. The 4 slowest and most
+    load-bearing tests in the package stopped running and the suite still printed green.
+    """
+    base = Path(__file__).resolve().parents[1] / "cache"
+    flat = base / "XAUUSD__M15.csv"
+    if flat.is_file():
+        return flat
+    hits = sorted(base.glob("*/XAUUSD__M15.csv"))
+    return hits[0] if hits else flat
+
+
+_CACHE = _find_cached_m15()
 
 
 def _profile(*, spread: float = 0.0, commission: float = 0.0, swap=None) -> AccountProfile:
