@@ -12,3 +12,6 @@
 2026-08-25 14:18:02,419 [ERROR] Pending failed (XAUUSD.p bearish 0.4L @ 4661.5): retcode=10012 'Request timeout' last_error=(1, 'Success')
 2026-08-25 14:30:06,864 [INFO] place SHORT limit 0.4L @ 4661.5 SL 4686.32356
 2026-08-25 14:30:06,957 [INFO] PENDING PLACED | ticket=345483451 | bearish 0.4L @ 4661.50 | SL=4686.32
+2026-08-25 19:15:09,565 [INFO] POSITION OPENED | T345453758 SHORT 0.39L @ 4661.5 | SL=4686.74
+2026-08-25 19:15:12,617 [ERROR] HALTED: MT5 holds 5 positions under magic 770115; this strategy takes one at a time.
+2026-08-25 19:15:15,435 [ERROR] Bridge halted — the loop will keep observing but place nothing.
