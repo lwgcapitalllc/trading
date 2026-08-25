@@ -21,3 +21,9 @@
 2026-08-25 20:15:08,331 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-08-25 20:30:00,381 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-08-25 20:45:01,982 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-25 22:00:06,842 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-25 22:15:08,238 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-08-25 22:15:08,239 [INFO] Sizing against account balance $9,995.01
+2026-08-25 22:15:11,112 [INFO] Warmed 5000 bars (2026-06-10 05:15:00+00:00 → 2026-08-25 22:00:00+00:00) in 2.8s
+2026-08-25 22:15:11,114 [INFO] Equity re-anchored to the account after warm-up: 13,721.92 → 9,995.01
+2026-08-25 22:15:11,115 [INFO] Restored position T345453758 — SHORT 0.39 lots @ 4661.5, stop 4686.74, stage 0. It will be managed from the next bar.
