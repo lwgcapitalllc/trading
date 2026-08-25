@@ -44,19 +44,38 @@ class BarSource:
     building an object reports the failure in the wrong place.
     """
 
-    def __init__(self, agent: Mt5Agent | None = None, cache: BarCache | None = None):
+    def __init__(
+        self,
+        agent: Mt5Agent | None = None,
+        cache: BarCache | None = None,
+        server: str | None = None,
+    ):
         self.agent = agent if agent is not None else Mt5Agent()
         self._pinned_cache = cache
+        self._pinned_server = (server or "").strip() or None
         self._cache: BarCache | None = None
         self._coverage: RangeCoverage | None = None
         self._floors: HistoryFloors | None = None
 
     def _partition(self) -> None:
-        """Bind the cache, coverage and floors to this terminal's broker. Idempotent."""
+        """Bind the cache, coverage and floors to this run's broker. Idempotent."""
         if self._cache is not None:
             return
         if self._pinned_cache is not None:
             cache = self._pinned_cache
+        elif self._pinned_server is not None:
+            # 🔴 **A RERUN MUST READ THE BROKER THE RUN WAS MADE ON, not whichever terminal is
+            # attached today.** Reported from the screen on 2026-08-24: *"when we click rerun
+            # charged it should still rerun against the broker that the data originated from —
+            # otherwise all of my backtests will be broken."* Exactly right, and the partition
+            # made it urgent: before it, the flat cache served the old broker's bars whatever was
+            # attached, which was wrong in the silent direction; after it, an unpinned rerun looks
+            # in the ATTACHED broker's folder, misses, and tries to pull the run's window from a
+            # terminal that may not even quote its symbol.
+            # ⚠ **No agent call here.** A pinned window that is fully cached must replay with the
+            # terminal unreachable, which is a property this package already had and must keep.
+            # The agent is consulted only if something is about to be FETCHED — see `_load_base`.
+            cache = BarCache(broker_cache_dir(_default_cache_dir(), self._pinned_server))
         else:
             # ⚠ Read through `HistoryFloors.server()`-style handling: an agent that cannot be
             # reached returns no server, and `broker_cache_dir` REFUSES on an empty one rather
@@ -125,6 +144,36 @@ class BarSource:
             bars = resample_up(base_bars, target_min, base_min)
         return _slice(bars, start_date, end_date)
 
+    def _assert_pin_matches_terminal(self, symbol: str) -> None:
+        """Refuse to fetch when this source is pinned to a broker the terminal is not on.
+
+        **Refusing is the answer** (rule 17, and rule 11 — a rerun that quietly swapped its data
+        source is no longer a recreation of the run it claims to reproduce). The alternatives are
+        both worse than an error: fetching would merge one broker's bars into another's cache
+        permanently and invisibly, and silently serving the short cached span would replay a
+        narrower window than the caller asked for.
+        """
+        if self._pinned_server is None:
+            return
+        try:
+            attached = str(self.agent.status().get("server") or "")
+        except Mt5AgentError as exc:
+            raise UnknownBrokerError(
+                f"this run needs {symbol} bars from {self._pinned_server} that are not cached, "
+                f"and the MT5 agent is unreachable ({exc}) — so which broker is attached cannot "
+                f"be established. Refusing rather than guessing."
+            ) from exc
+        if attached and attached == self._pinned_server:
+            return
+        raise UnknownBrokerError(
+            f"this run was made on {self._pinned_server} and needs {symbol} bars that are not "
+            f"cached, but the lab terminal is on {attached or 'an unidentified broker'}. "
+            f"Fetching would merge one broker's bars into another's history, which nothing "
+            f"downstream could detect. Attach a {self._pinned_server} terminal, or run this as a "
+            f"NEW backtest against {attached or 'the attached broker'} — which is a different "
+            f"measurement and should be labelled as one."
+        )
+
     def _load_base(self, symbol: str, base_tf: str, start_date: str, end_date: str) -> pd.DataFrame:
         """Cache-first base-bar load. Fetches only the sub-ranges of [start, end] that are not
         already recorded as fetched, merges them into the cache, and returns the whole file.
@@ -148,6 +197,13 @@ class BarSource:
         if self.cache.is_stale(symbol, base_tf):
             self.coverage.reset(symbol, base_tf)
         for gap_start, gap_end in self.coverage.missing(symbol, base_tf, start_date, end_date):
+            # 🔴 **About to FETCH on a pinned source — check the terminal is the right broker
+            # FIRST.** This is the only place a foreign broker's bars could enter a pinned run's
+            # cache, and once merged they are indistinguishable from the real ones: the file is one
+            # CSV per (symbol, timeframe) and nothing in a bar records where it came from.
+            # ⚠ Deliberately checked HERE and not at partition time, so a fully cached window still
+            # replays with the terminal unreachable.
+            self._assert_pin_matches_terminal(symbol)
             try:
                 fetched = self.agent.bars(symbol, base_tf, gap_start, gap_end)
             except Mt5AgentError:

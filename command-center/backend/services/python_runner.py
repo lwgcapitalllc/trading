@@ -150,6 +150,28 @@ def measured_commission(broker: str) -> float:
     return float(PROFILES[broker].commission_per_side_per_lot)
 
 
+def bar_server(spec: dict) -> Optional[str]:
+    """The MT5 server whose bars this run must replay, or None to use whatever is attached.
+
+    🔴 **A RERUN READS THE BROKER THE RUN WAS MADE ON.** Reported from the screen 2026-08-24:
+    *"when we click rerun charged it should still rerun against the broker that the data
+    originated from — otherwise all of my backtests will be broken."* The cost account was already
+    carried; the BARS were not, and once the cache became broker-partitioned an unpinned rerun
+    looked in the attached terminal's folder, missed, and tried to pull the run's window from a
+    broker that may not even quote its symbol.
+
+    ⚠ **Derived from the run's own `broker_profile`, never from the attached terminal** — that is
+    the whole point. A run that stated no profile returns None and keeps the old behaviour, which
+    is what every pre-2026-08-02 row is.
+    ⚠ **A profile with no recorded server also returns None rather than guessing one.** Blank means
+    unrecorded, and inventing a server here would pin a rerun to a broker nobody measured.
+    """
+    from backtest.fills import PROFILES
+
+    prof = PROFILES.get(str(spec.get("broker_profile") or ""))
+    return (prof.server or None) if prof else None
+
+
 def _cost_profile(spec: dict):
     """The run's `AccountProfile`, or None when the run charges nothing.
 
@@ -337,7 +359,7 @@ def _execute(job_id: str, spec: dict) -> None:
     # takes; keeping loading down to two points means the claim is roughly true and the bar
     # moves at one speed from end to end.
     _set(job_id, pct=1, message=f"Loading {symbol} {tf}m bars…")
-    df = BarSource().load(symbol, tf, spec["start_date"], spec["end_date"])
+    df = BarSource(server=bar_server(spec)).load(symbol, tf, spec["start_date"], spec["end_date"])
     if df.empty:
         raise ValueError(
             f"no bars for {symbol} {tf}m over [{spec['start_date']}, {spec['end_date']}]"
@@ -371,7 +393,9 @@ def _execute(job_id: str, spec: dict) -> None:
         # for 1.3% of accuracy.
         fill_tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
         _set(job_id, pct=2, message=f"Loading {symbol} {fill_tf}m bars for the re-entry…")
-        df1m = BarSource().load(symbol, fill_tf, spec["start_date"], spec["end_date"])
+        df1m = BarSource(server=bar_server(spec)).load(
+            symbol, fill_tf, spec["start_date"], spec["end_date"]
+        )
         if df1m.empty:
             raise ValueError(
                 f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
@@ -686,7 +710,7 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         message=f"loading {symbol} {tf}m bars for {len(param_sets)} combos…",
         pct=5,
     )
-    df = BarSource().load(symbol, tf, spec["start_date"], spec["end_date"])
+    df = BarSource(server=bar_server(spec)).load(symbol, tf, spec["start_date"], spec["end_date"])
     if df.empty:
         raise ValueError(
             f"no bars for {symbol} {tf}m over [{spec['start_date']}, {spec['end_date']}]"

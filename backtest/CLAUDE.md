@@ -1055,6 +1055,25 @@ checked, not assumed.
 is the property `HistoryFloors` already had; a tool that dies while building an object reports the
 failure in the wrong place.
 
+🔴 **A RERUN READS THE BROKER THE RUN WAS MADE ON — `BarSource(server=...)`, added 2026-08-24 the
+same day and reported from the screen.** Aaron: *"when we click rerun charged it should still rerun
+against the broker that the data originated from — otherwise all of my backtests will be broken."*
+Exactly right, and the partition is what made it urgent rather than what caused it: **before, the
+flat cache served the old broker's bars whatever was attached — wrong, but in the silent
+direction; after, an unpinned rerun looks in the ATTACHED broker's folder, misses, and tries to pull
+the run's window from a terminal that may not even quote its symbol.** The lab pins it from the
+run's own `broker_profile` (`python_runner.bar_server`), so a stored run replays its own history and
+only a NEW run follows the attached terminal.
+
+⚠ **The pin is checked at FETCH time, never at partition time**, so a fully cached window still
+replays with the terminal unreachable — a property this package already had and the pin must not
+cost. ⚠ **A fetch on a mismatched pin REFUSES and names both brokers.** Merging is the failure that
+cannot be undone: the file is one CSV per (symbol, timeframe) and **nothing in a bar records which
+broker served it**, so a single wrong fetch is permanent and invisible. ⚠ **Serving the short cached
+span instead would be worse than the error** — a narrower window than the caller asked for, silently.
+⚠ **A profile with no recorded server pins NOTHING rather than guessing one**, which is what every
+pre-2026-08-02 row is.
+
 ⚠ **A flat cache from before this change is INVISIBLE, not wrong** — every read is a miss and the
 bars come down again from whatever broker is attached. That is the safe direction to fail in, and
 it is why there is no automatic migration. To keep the existing 1.28 GB, a human asserts which

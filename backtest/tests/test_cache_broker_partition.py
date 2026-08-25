@@ -29,6 +29,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backtest.data.cache import UnknownBrokerError, broker_cache_dir  # noqa: E402
+from backtest.data.mt5_agent import Mt5AgentError  # noqa: E402
 from backtest.data.source import BarSource  # noqa: E402
 from backtest.data.ticks import TickSource  # noqa: E402
 
@@ -152,3 +153,80 @@ def test_ticks_are_filed_per_broker(tmp_path, monkeypatch):
     got = TickSource(b).window("XAUUSD", 1704153600000, 1704153601000)
     assert b.tick_calls == 1, "broker B served broker A's cached ticks"
     assert got and got[0].bid == 2500.0, "broker B replayed broker A's tick prices"
+
+
+# ── A RERUN READS THE BROKER THE RUN WAS MADE ON (2026-08-24) ────────────────
+#
+# 🔴 Reported from the screen: *"when we click rerun charged it should still rerun against the
+# broker that the data originated from — otherwise all of my backtests will be broken."* The cost
+# account was already carried; the BARS were not. Before the partition an unpinned rerun read the
+# old broker's bars whatever was attached — wrong, but in the silent direction. After it, an
+# unpinned rerun looks in the ATTACHED broker's folder, misses, and pulls the run's window from a
+# terminal that may not even quote its symbol.
+
+
+def test_a_pinned_source_reads_its_OWN_brokers_bars(tmp_path, monkeypatch):
+    """The whole fix. Broker A's cached bars are served while broker B is attached.
+
+    RED by MUTATION: ignore `server=` in `_partition` and this fails — the pinned source lands in
+    B's empty folder, fetches, and returns B's prices.
+    """
+    monkeypatch.setenv("BACKTEST_CACHE_DIR", str(tmp_path))
+    a = _Agent("VantageMarkets-Demo", 2000.0)
+    src_a = BarSource(agent=a)
+    monkeypatch.setattr(src_a.floors, "assert_window", lambda *args, **kw: None)
+    src_a.load("XAUUSD", "15", "2024-01-02", "2024-01-02")
+    assert a.bar_calls == 1
+
+    # Now the terminal is broker B, and a rerun of A's run asks for A's window.
+    b = _Agent("PUPrime-Demo", 2500.0)
+    src = BarSource(agent=b, server="VantageMarkets-Demo")
+    monkeypatch.setattr(src.floors, "assert_window", lambda *args, **kw: None)
+    df = src.load("XAUUSD", "15", "2024-01-02", "2024-01-02")
+    assert float(df["close"].iloc[0]) == 2000.0, "the rerun replayed the attached broker's prices"
+    assert b.bar_calls == 0, "the rerun pulled from the wrong terminal"
+
+
+def test_a_pinned_source_needs_NO_agent_when_the_window_is_cached(tmp_path, monkeypatch):
+    """A cached window must replay with the terminal unreachable — a property this package
+    already had and the pin must not cost. It is why the terminal is checked at FETCH time and
+    not at partition time.
+
+    RED by MUTATION: move `_assert_pin_matches_terminal` into `_partition` and this fails, because
+    a dead agent then blocks a replay that needs nothing from it.
+    """
+    monkeypatch.setenv("BACKTEST_CACHE_DIR", str(tmp_path))
+    a = _Agent("VantageMarkets-Demo", 2000.0)
+    src_a = BarSource(agent=a)
+    monkeypatch.setattr(src_a.floors, "assert_window", lambda *args, **kw: None)
+    src_a.load("XAUUSD", "15", "2024-01-02", "2024-01-02")
+
+    class _DeadAgent(_Agent):
+        def status(self):
+            raise Mt5AgentError("terminal unreachable")
+
+    dead = _DeadAgent("", 0.0)
+    src = BarSource(agent=dead, server="VantageMarkets-Demo")
+    monkeypatch.setattr(src.floors, "assert_window", lambda *args, **kw: None)
+    df = src.load("XAUUSD", "15", "2024-01-02", "2024-01-02")
+    assert float(df["close"].iloc[0]) == 2000.0
+
+
+def test_a_pinned_source_REFUSES_to_fetch_from_the_wrong_broker(tmp_path, monkeypatch):
+    """The half that keeps the cache honest, and the one worth most.
+
+    A fetch here would merge one broker's bars into another's history PERMANENTLY and invisibly —
+    the file is one CSV per (symbol, timeframe) and nothing in a bar records where it came from.
+    Refusing is the answer; the message names both brokers and the two real ways out.
+
+    RED by MUTATION: drop the `_assert_pin_matches_terminal` call from the fetch loop and this
+    fails — the pinned run silently serves the wrong broker's prices.
+    """
+    monkeypatch.setenv("BACKTEST_CACHE_DIR", str(tmp_path))
+    b = _Agent("PUPrime-Demo", 2500.0)
+    src = BarSource(agent=b, server="VantageMarkets-Demo")  # nothing cached for Vantage
+    monkeypatch.setattr(src.floors, "assert_window", lambda *args, **kw: None)
+    with pytest.raises(UnknownBrokerError) as exc:
+        src.load("XAUUSD", "15", "2024-01-02", "2024-01-02")
+    assert "VantageMarkets-Demo" in str(exc.value) and "PUPrime-Demo" in str(exc.value)
+    assert b.bar_calls == 0, "it asked the wrong terminal for bars before refusing"

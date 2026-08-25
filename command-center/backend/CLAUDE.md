@@ -3935,6 +3935,18 @@ layer nobody ticked — the implication had been stated in `_cost_profile` since
 the WRITING side honoured it. Pinned by `test_bid_ask_fills_counts_as_the_spread_already_charged`
 and `test_a_fully_charged_run_has_nothing_left_to_reprice`, both watched RED by mutation.
 
+## A RERUN reads the broker the run was MADE on (2026-08-24)
+
+🔴 Reported from the screen: *"when we click rerun charged it should still rerun against the broker
+that the data originated from — otherwise all of my backtests will be broken."* The COST account was
+already carried by the paired re-run; the BARS were not. `python_runner.bar_server(spec)` resolves
+the run's stored `broker_profile` to its server and pins `BarSource` to it, so **a stored run
+replays its own history and only a NEW run follows the attached terminal.**
+
+⚠ **A profile with no recorded server pins nothing** rather than guessing — every pre-2026-08-02
+row is that. ⚠ The refusal, the fetch-time check and why merging is unrecoverable live in
+`backtest/CLAUDE.md`; do not restate them here.
+
 ## The cost account FOLLOWS the attached terminal (2026-08-24)
 
 🔴 **The bar cache is partitioned by broker, so one broker's BARS can no longer reach another
