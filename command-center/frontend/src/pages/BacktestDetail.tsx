@@ -3972,12 +3972,18 @@ export function PriceChartView({
       : Math.max(200, window.innerHeight - 120)
     : height
 
+  // 🔴 The Rebuild control rides on the CHART PANEL's tool strip, and that panel only mounts once
+  // there are candles — so an empty or failed chart hid the one button that could fix it. Reported
+  // from the screen 2026-08-25: "there is no way to rebuild chart or anything." **A recovery
+  // control that lives inside the thing that failed is not a recovery control**, so both the empty
+  // and the error state carry their own copy.
   const box = (msg: string, cls = 'text-text-tertiary') => (
     <div
       style={{ height: effectiveH }}
-      className={`flex items-center justify-center text-[12px] ${cls}`}
+      className={`flex flex-col items-center justify-center gap-3 text-[12px] ${cls}`}
     >
-      {msg}
+      <span>{msg}</span>
+      {onRebuild ? <RebuildChartButton onClick={onRebuild} pending={rebuilding} /> : null}
     </div>
   )
 

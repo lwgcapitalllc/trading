@@ -311,6 +311,7 @@ def get_ohlc(
     end_date: str,
     timeframe: str = "daily",
     runner: str = "ninjatrader",
+    server: Optional[str] = None,
 ) -> pd.DataFrame:
     """Return OHLC for instrument in [start_date, end_date].
 
@@ -329,11 +330,18 @@ def get_ohlc(
     Cache freshness (yfinance/mt5 paths): bars older than 5 days are fetched once and never
     refetched. Bars within the last 5 days are always refetched. The python path defers
     entirely to BarSource's own cache + coverage tracking.
+
+    `server` names the MT5 server whose bars a Python run must be drawn from. 🔴 **A chart must
+    show the bars its own run traded, and once the bar cache became broker-partitioned an unpinned
+    read resolved whatever terminal is ATTACHED TODAY.** A run made on one broker then charted from
+    another broker's folder, found nothing, and drew an empty price chart with its trades still
+    listed beside it — reported from the screen 2026-08-25. None keeps the old behaviour, which is
+    what every non-Python runner and every row with no broker profile wants.
     """
     if runner == "mt5":
         return _get_ohlc_mt5(instrument, start_date, end_date, timeframe)
     if runner == "python":
-        return _get_ohlc_backtest_cache(instrument, start_date, end_date, timeframe)
+        return _get_ohlc_backtest_cache(instrument, start_date, end_date, timeframe, server)
     return _get_ohlc_yfinance(instrument, start_date, end_date)
 
 
@@ -342,6 +350,7 @@ def _get_ohlc_backtest_cache(
     start_date: str,
     end_date: str,
     timeframe: str,
+    server: Optional[str] = None,
 ) -> pd.DataFrame:
     """Bars for a Python run, straight from the backtest package's own cache.
 
@@ -356,7 +365,7 @@ def _get_ohlc_backtest_cache(
         sys.path.insert(0, str(MONOREPO_ROOT))
     from backtest.data import BarSource
 
-    df = BarSource().load(instrument, timeframe, start_date, end_date)
+    df = BarSource(server=server).load(instrument, timeframe, start_date, end_date)
     if df is None or df.empty:
         return pd.DataFrame(columns=["open", "high", "low", "close"])
     # `volume` rides along WHEN THE CACHE HAS IT — tick volume, needed by the chart's VWAP layer

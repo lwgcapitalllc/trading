@@ -51,7 +51,13 @@ def _settings_for(stack_id: str) -> dict | None:
 def backfill(stack_id: str, *, force: bool = False) -> str:
     # `python_runner` is what puts the monorepo root on `sys.path`, so it has to be imported before
     # anything reaches for `backtest.*` — importing them the other way round is a ModuleNotFoundError.
-    from services.python_runner import _build_config, _cost_profile, _resolve, _timeframe_minutes
+    from services.python_runner import (
+        _build_config,
+        _cost_profile,
+        _resolve,
+        _timeframe_minutes,
+        bar_server,
+    )
 
     from backtest.data.source import BarSource
     from backtest.output import build_results
@@ -83,7 +89,11 @@ def backfill(stack_id: str, *, force: bool = False) -> str:
 
     symbol = settings["instrument"]
     tf = _timeframe_minutes(settings)
-    df = BarSource().load(symbol, tf, settings["start_date"], settings["end_date"])
+    # Same pin as the live stack runner: the bar cache is broker-partitioned, so a backfill that
+    # resolved the attached terminal would derive a stack's solo legs from another broker's prices.
+    df = BarSource(server=bar_server(settings)).load(
+        symbol, tf, settings["start_date"], settings["end_date"]
+    )
     if df.empty:
         return f"{stack_id}: no bars for {symbol} {tf}m — skipped"
 

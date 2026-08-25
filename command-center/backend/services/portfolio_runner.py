@@ -135,12 +135,23 @@ def _bars_per_day(df) -> float:
 def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.portfolio import LegSpec, contention_summary, run_stack
-    from services.python_runner import _build_config, _cost_profile, _resolve, _timeframe_minutes
+    from services.python_runner import (
+        _build_config,
+        _cost_profile,
+        _resolve,
+        _timeframe_minutes,
+        bar_server,
+    )
 
     symbol = settings["instrument"]
     tf = _timeframe_minutes(settings)
 
-    df = BarSource().load(symbol, tf, settings["start_date"], settings["end_date"])
+    # Pinned to the stack's OWN broker, never to whatever terminal is attached — the bar cache is
+    # broker-partitioned, and a stack replayed from the wrong partition either finds nothing or,
+    # worse, silently replays a different broker's prices under the same symbol name.
+    df = BarSource(server=bar_server(settings)).load(
+        symbol, tf, settings["start_date"], settings["end_date"]
+    )
     if df.empty:
         raise ValueError(
             f"no bars for {symbol} {tf}m over [{settings['start_date']}, {settings['end_date']}]"

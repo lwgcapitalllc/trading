@@ -137,12 +137,41 @@ def _iso_to_epoch_ms(s: str) -> Optional[int]:
     return int(dt.timestamp() * 1000)
 
 
+def _bar_server(row: dict) -> Optional[str]:
+    """The MT5 server whose bars this run's chart must be drawn from, or None.
+
+    🔴 **The chart feed reads the same broker-partitioned cache the run replayed, so it has to be
+    pinned to the run's OWN broker exactly as the replay is.** Unpinned it resolves whatever
+    terminal is attached today: on 2026-08-25 a charged re-run of a Vantage run completed with 247
+    trades and drew an EMPTY price chart, because the attached terminal was PU Prime, which does
+    not quote that run's symbol at all. ⚠ **The failure shape is the dangerous one — the trades,
+    the equity curve and every KPI rendered normally, so the only symptom was a blank chart with
+    no reason attached.**
+
+    ⚠ **One implementation, imported rather than repeated** (`python_runner.bar_server`): the
+    replay and the chart disagreeing about which broker a run belongs to is the whole defect, and
+    two copies of this lookup is how they would drift apart again. Imported lazily to keep the
+    backend startable when the backtest package is not importable.
+    """
+    try:
+        from services import python_runner
+
+        return python_runner.bar_server(row)
+    except Exception:  # noqa: BLE001 — a chart must never fail to build over a profile lookup
+        return None
+
+
 def _build_candles(
-    instrument: str, start_date: str, end_date: str, base_tf: str, runner: str
+    instrument: str,
+    start_date: str,
+    end_date: str,
+    base_tf: str,
+    runner: str,
+    server: Optional[str] = None,
 ) -> list[dict]:
     """Candle rows for a window, or `[]`. The spec build's view — it degrades to an empty chart
     either way, so it does not need to know WHY."""
-    return _fetch_candles(instrument, start_date, end_date, base_tf, runner)[0]
+    return _fetch_candles(instrument, start_date, end_date, base_tf, runner, server)[0]
 
 
 def _fetch_candles(
@@ -151,6 +180,7 @@ def _fetch_candles(
     end_date: str,
     base_tf: str,
     runner: str,
+    server: Optional[str] = None,
 ) -> tuple[list[dict], Optional[str]]:
     """`(rows, error)` — and the error half is the point.
 
@@ -167,7 +197,7 @@ def _fetch_candles(
     # we can pass the run instrument as-is — the MT5 agent's terminal uses plain names.
     try:
         df = ohlc_fetcher.get_ohlc(
-            instrument, start_date, end_date, timeframe=base_tf, runner=runner
+            instrument, start_date, end_date, timeframe=base_tf, runner=runner, server=server
         )
     except Exception as exc:  # noqa: BLE001 — fetch is best-effort; empty candles degrade gracefully
         log.warning("chart_spec: candle fetch failed for %s %s: %s", instrument, base_tf, exc)
@@ -917,14 +947,17 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     base_tf = _base_timeframe(row.get("bar_type"), row.get("bar_value")) if intraday else "D1"
     ship_from = row["start_date"]
 
-    candles = _build_candles(instrument, ship_from, row["end_date"], base_tf, runner)
+    bar_server = _bar_server(row)
+    candles = _build_candles(instrument, ship_from, row["end_date"], base_tf, runner, bar_server)
     # Fallback: the MT5 agent can't always serve intraday history (symbol not selected, or the
     # run's sub-hour TF unsupported). Daily bars come from yfinance via the D1 path — coarse, but
     # a real price chart beats none. baseTimeframe reflects what actually loaded.
     # Python is deliberately excluded: its bars come from the cache the run itself replayed, so a
     # fallback to a different feed would silently draw a chart the run never traded.
     if not candles and base_tf != "D1" and runner != "python":
-        candles = _build_candles(instrument, row["start_date"], row["end_date"], "D1", runner)
+        candles = _build_candles(
+            instrument, row["start_date"], row["end_date"], "D1", runner, bar_server
+        )
         if candles:
             base_tf, ship_from = "D1", row["start_date"]
 
@@ -944,7 +977,7 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     params = row.get("params") or {}
     if base_tf != "D1" and "AsianStartGMT" in params:
         warmup_start = (date.fromisoformat(row["start_date"]) - timedelta(days=40)).isoformat()
-        daily = _build_candles(instrument, warmup_start, row["end_date"], "D1", runner)
+        daily = _build_candles(instrument, warmup_start, row["end_date"], "D1", runner, bar_server)
         overlays, indicators = _build_structure(candles, trades, daily, params)
 
     # Market-structure overlays (BOS/CHoCH/swings) from the CANONICAL engine, computed on the
@@ -1343,7 +1376,10 @@ def build_run_candles(
     fetch_from_ms = from_ms - warmup_ms
     start_date = datetime.fromtimestamp(fetch_from_ms / 1000, tz=timezone.utc).date().isoformat()
     end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
-    fetched, feed_error = _fetch_candles(instrument, start_date, end_date, timeframe, runner)
+    bar_server = _bar_server(row)
+    fetched, feed_error = _fetch_candles(
+        instrument, start_date, end_date, timeframe, runner, bar_server
+    )
     if feed_error is not None:
         # ⚠ The warm-up must never be able to REFUSE a window the reader could otherwise see.
         # Reaching back 2,000 bars can cross the broker's measured history floor, and `BarSource`
@@ -1351,7 +1387,9 @@ def build_run_candles(
         # `available: false` for bars the feed holds. Context is a bonus; the window is the point.
         log.info("run_candles: warmed fetch failed (%s) — retrying bare window", feed_error)
         bare_start = datetime.fromtimestamp(from_ms / 1000, tz=timezone.utc).date().isoformat()
-        fetched, feed_error = _fetch_candles(instrument, bare_start, end_date, timeframe, runner)
+        fetched, feed_error = _fetch_candles(
+            instrument, bare_start, end_date, timeframe, runner, bar_server
+        )
     fetched = [c for c in fetched if c["time"] <= to_ms]
     # Structure is read off the WARMED series; the window itself is what gets shipped.
     overlays = _drill_structure(fetched, from_ms, to_ms)

@@ -3974,6 +3974,28 @@ silent in the same way, and the two gold spreads are $0.12 and $0.22 an ounce.
 Three checks in `tests/test_run_list_queries.py`, each watched RED by its own mutation (server-only
 matching; a default on an unreachable agent; the connected check dropped).
 
+🔴 **THE CHART FEED WAS THE HALF LEFT BEHIND, AND IT DREW AN EMPTY CHART BESIDE 247 TRADES
+(2026-08-25).** The replay was pinned to the run's own broker when the cache was partitioned; the
+price chart's bar fetch was not, so it resolved whatever terminal is attached TODAY. A charged
+re-run of a Vantage run completed normally and its Price tab came back blank, because the attached
+terminal was PU Prime — which does not quote that run's symbol at all. ⚠ **Every other number on
+the page was right**, which is what made it hard to read: the trades, the equity curve and every
+KPI rendered, so the only symptom was a blank chart with no reason attached. ✅ **Fixed by resolving
+the run's own profile (`chart_spec._bar_server`, which calls `python_runner.bar_server` rather than
+repeating the lookup — two copies is how the chart and the replay would drift back into disagreeing
+about which broker a run belongs to) and threading it to `ohlc_fetcher.get_ohlc`.** The STACK
+runner and its backfill script carried the same bare call and were pinned in the same change.
+⚠ **The tests pin the ARGUMENT, not the bars** (`tests/test_chart_spec_broker_pin.py`, 5 checks,
+watched RED by mutation): the defect was never in the fetch, it was in what the fetch was asked
+for, so a test asserting "some candles came back" would pass against the bug on any machine whose
+attached terminal happened to be the right one.
+
+⚠ **The standing lesson is about the SWEEP, not this call site.** Pinning three call sites in the
+runner and stopping there left four more — the chart feed, its drill-down, the stack runner and the
+stack backfill — each of which reads the same partitioned cache and each of which was silently
+wrong. **When a shared resource gains a partition, the audit is every construction of the thing
+that reads it, not the ones the reported bug happened to touch.**
+
 Proof: `tests/test_run_list_queries.py`, four checks, each watched RED by its own mutation (default
 flipped to None; commission override deleted; refusal removed). The fourth — costs-off still
 reachable — passes throughout on purpose, so a later "simplification" that hard-wires charging

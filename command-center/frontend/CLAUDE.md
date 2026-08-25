@@ -1487,6 +1487,18 @@ rewritten to the CACHED spec URL** — a genuine rebuild is a 7.6s engine replay
 has to prove it reaches the endpoint; the panel still gets a real payload, so nothing downstream is
 mocked into a shape the server never sends.
 
+**`tests/chart-rebuild-empty.spec.ts` (2, ~6s) — added 2026-08-25.** 🔴 **A recovery control must
+not live inside the thing that failed.** Rebuild rode on the chart panel's tool strip, and that
+panel only mounts once there are candles — so the one state where a reader needs the button was the
+one state that hid it. Reported from the screen over a charged re-run whose chart came back empty:
+*"there is no way to rebuild chart or anything."* Both the empty and the failed-to-load box now
+carry their own copy. ⚠ **It does not clash with the page-wide count of ONE above** — the states
+are mutually exclusive, and that assertion is what would catch it if they stopped being. ⚠ **Each
+check asserts the STATE first and the button second**: an empty viewport and a withheld button are
+otherwise indistinguishable, the trap this folder has now recorded five times. ⚠ **Mocked, so it
+needs no bars and no terminal** — an empty spec cannot be produced on demand. Non-vacuity by
+mutation: dropping the button from the box turns both red.
+
 **`tests/candle-reversals.spec.ts` (9, ~57s) — added 2026-08-08 with the Candlestick Reversals
 layer, and it also carries the Missed layer's two filters.** ⚠ **The 9th check is the only one here
 with a clean fail-watch and it is the most valuable for that reason** — the cross-filter defect
