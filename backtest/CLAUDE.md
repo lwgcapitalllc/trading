@@ -1048,8 +1048,12 @@ same value as "the usual broker". An unreachable agent refuses for the same reas
 
 ⚠ **An explicitly injected `BarCache`/`TickCache` is honoured and NOT partitioned.** That is what
 every test in this package passes, and it is a deliberate statement about where those bars live.
-All 20 production call sites construct `BarSource()` bare, so production always partitions —
-checked, not assumed.
+⚠ **This file said "all 20 production call sites construct `BarSource()` bare, so production
+always partitions — checked, not assumed" until 2026-08-25, and it was true when written and stale
+within the day.** Seven of them pin a server now (the rerun, the price chart's feed and its
+drill-down, the stack runner, the stack backfill); the hand-run tools under `tools/` stay bare on
+purpose, because a person invoking one is pointing it at the terminal they have attached. **A count
+of call sites is a fact with a shelf life — do not quote this line either, run the search.**
 
 ⚠ **Partitioning is LAZY, on the first `load()`.** Construction stays free of network calls, which
 is the property `HistoryFloors` already had; a tool that dies while building an object reports the
@@ -1073,6 +1077,24 @@ broker served it**, so a single wrong fetch is permanent and invisible. ⚠ **Se
 span instead would be worse than the error** — a narrower window than the caller asked for, silently.
 ⚠ **A profile with no recorded server pins NOTHING rather than guessing one**, which is what every
 pre-2026-08-02 row is.
+
+🔴 **THE PIN WAS THREE CALL SITES SHORT FOR A DAY, AND THE PRICE CHART WAS ONE OF THEM (2026-08-25).**
+A charged re-run of a Vantage run completed with 247 trades and drew an EMPTY chart, because the
+chart's own bar fetch was still bare and resolved the attached terminal. Fixed in
+`command-center/backend` (its CLAUDE.md owns the detail); recorded here because the lesson belongs
+to the PARTITION rather than to the chart. ⚠ **When a shared store gains a partition, the audit is
+every construction of the thing that reads it — not the ones the reported bug happened to touch.**
+
+🔴 **A WRONG-PARTITION READ HAS TWO OUTCOMES AND ONLY ONE OF THEM IS LOUD.** Aaron asked the right
+question about that empty chart: *was it drawing PU Prime's prices under my Vantage trades?* It was
+not — but the reason is worth writing down, because it is **not** a safeguard. A partition holds one
+file per EXACT symbol name, and PU Prime's gold carries a suffix Vantage's does not, so the lookup
+found no file, the fetch was refused, and the chart came back blank. **Had both brokers used the
+same symbol name and the wrong partition happened to cover the window, it would have served the
+other broker's prices with nothing anywhere to flag it** — no error, no empty result, just a chart
+and a replay quietly measured on a different market. ⚠ **So the loud failure everybody saw was luck
+(a symbol suffix), not design.** The design answer is the pin, and it is why the pin belongs on
+every reader rather than on the ones that have been seen to fail.
 
 ⚠ **A flat cache from before this change is INVISIBLE, not wrong** — every read is a miss and the
 bars come down again from whatever broker is attached. That is the safe direction to fail in, and
