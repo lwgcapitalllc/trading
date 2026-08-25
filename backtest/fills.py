@@ -273,6 +273,23 @@ class AccountProfile:
     slippage_ticks: int = 0  # BAR MODE ONLY — see below
     spread: float = 0.0  # BAR MODE ONLY — price units; 0.0 = not priced
     bid_ask_fills: bool = False  # BAR MODE ONLY — moves fills, not just P&L
+    #: The MT5 server this profile's numbers were measured on, and the login they were measured on.
+    #: Identity, never a cost — nothing here charges either.
+    #:
+    #: 🔴 **They exist so a caller can tell whether the costs it is about to charge belong to the
+    #: terminal actually attached**, which nothing could ask before 2026-08-24. The bar cache is
+    #: partitioned by server, so one broker's BARS can no longer reach another broker's replay —
+    #: but the cost profile is still chosen independently, so a run could legitimately replay PU
+    #: Prime's bars and charge Vantage's spread. That is the same mixed basis one level up, and it
+    #: is silent in exactly the same way.
+    #:
+    #: ⚠ **The SERVER cannot pick the tier and must not be read as if it could** — PU Prime's Prime
+    #: and ECN logins both live on `PUPrime-Demo`. The ACCOUNT is what separates them, which is why
+    #: both are recorded and why `account` is `None` for a tier nobody has logged into here.
+    #: ⚠ **Empty/None means UNRECORDED, never "matches anything".** A caller comparing against a
+    #: blank must treat it as "cannot tell", not as agreement.
+    server: str = ""
+    account: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.commission_per_side_per_lot == SENTINEL:
@@ -474,7 +491,11 @@ _SPREAD_XAUUSD_VANTAGE = 0.22
 # state and no borrowing.** Question 3 in `docs/BROKER_QUESTIONS.md` is what turns one back on.
 PROFILES = {
     "puprime_standard": AccountProfile(
-        "puprime_standard", 0.00, swap=_XAUUSD_SWAP, spread=_SPREAD_XAUUSD_PUPRIME_STANDARD
+        "puprime_standard",
+        0.00,
+        swap=_XAUUSD_SWAP,
+        spread=_SPREAD_XAUUSD_PUPRIME_STANDARD,
+        server="PUPrime-Demo",
     ),
     # Swap MEASURED on each of these two tiers 2026-08-08 and found identical to Standard's — see
     # the block above `_XAUUSD_SWAP`. The SPREAD is still refused: the only readings taken were the
@@ -515,16 +536,28 @@ PROFILES = {
     # `cost_tiers.py --spread puprime_ecn=0.12`, i.e. the same number, labelled `stated`. The only
     # change is that the row now reads `measured` and needs no flag.
     "puprime_prime": AccountProfile(
-        "puprime_prime", 3.50, swap=_XAUUSD_SWAP, spread=SPREAD_UNMEASURED
+        "puprime_prime", 3.50, swap=_XAUUSD_SWAP, spread=SPREAD_UNMEASURED, server="PUPrime-Demo"
     ),
+    # The account is recorded because the SERVER cannot separate this tier from Prime — both
+    # logins live on PUPrime-Demo, and 700152905 is the ECN one (it is also the live bot's).
     "puprime_ecn": AccountProfile(
-        "puprime_ecn", 1.00, swap=_XAUUSD_SWAP, spread=_SPREAD_XAUUSD_PUPRIME_ECN
+        "puprime_ecn",
+        1.00,
+        swap=_XAUUSD_SWAP,
+        spread=_SPREAD_XAUUSD_PUPRIME_ECN,
+        server="PUPrime-Demo",
+        account=700152905,
     ),
     "puprime_cent": AccountProfile(
-        "puprime_cent", 0.00, swap=UNMEASURED_SWAP, spread=SPREAD_UNMEASURED
+        "puprime_cent", 0.00, swap=UNMEASURED_SWAP, spread=SPREAD_UNMEASURED, server="PUPrime-Demo"
     ),
     "vantage_demo": AccountProfile(
-        "vantage_demo", 0.00, swap=_XAUUSD_SWAP_VANTAGE, spread=_SPREAD_XAUUSD_VANTAGE
+        "vantage_demo",
+        0.00,
+        swap=_XAUUSD_SWAP_VANTAGE,
+        spread=_SPREAD_XAUUSD_VANTAGE,
+        server="VantageMarkets-Demo",
+        account=25893735,
     ),
 }
 

@@ -3935,6 +3935,33 @@ layer nobody ticked — the implication had been stated in `_cost_profile` since
 the WRITING side honoured it. Pinned by `test_bid_ask_fills_counts_as_the_spread_already_charged`
 and `test_a_fully_charged_run_has_nothing_left_to_reprice`, both watched RED by mutation.
 
+## The cost account FOLLOWS the attached terminal (2026-08-24)
+
+🔴 **The bar cache is partitioned by broker, so one broker's BARS can no longer reach another
+broker's replay — but the cost profile was a hardcoded `vantage_demo` string.** Point the lab at PU
+Prime and you got PU Prime's bars charged at Vantage's spread: the same mixed basis one level up,
+silent in the same way, and the two gold spreads are $0.12 and $0.22 an ounce.
+
+`GET /backtests/broker-profiles` now reports each profile's `server`, `account` and whether it is
+`attached` — the terminal the lab is pointed at right now. The Run modal defaults to it.
+
+- 🔴 **The ACCOUNT resolves it, never the server.** PU Prime's Prime and ECN logins both live on
+  `PUPrime-Demo`, so blessing a tier on the server alone hands a run ECN's $0.12 spread while it
+  sits on Prime — the 2.7x error the unmeasured-spread sentinel exists to prevent, arriving through
+  the front door. A profile with no recorded account can only ever match a terminal with no
+  recorded account.
+- ⚠ **An unreachable agent attaches NOTHING** rather than falling back to a default (rule 1), and a
+  terminal that answers while DISCONNECTED attaches nothing either — the agent replies `ok` with
+  its broker link down, which is this repo's own 2026-08-04 incident.
+- ⚠ **It WARNS, never blocks.** Measuring a strategy against a broker you are not pointed at is a
+  legitimate deliberate act; the page says the run would charge one broker's costs over another's
+  bars and leaves the decision alone.
+- ⚠ **`server`/`account` live on `AccountProfile` in `backtest/fills.py`** — identity beside the
+  costs they identify, so they cannot drift from the numbers they describe.
+
+Three checks in `tests/test_run_list_queries.py`, each watched RED by its own mutation (server-only
+matching; a default on an unreachable agent; the connected check dropped).
+
 Proof: `tests/test_run_list_queries.py`, four checks, each watched RED by its own mutation (default
 flipped to None; commission override deleted; refusal removed). The fourth — costs-off still
 reachable — passes throughout on purpose, so a later "simplification" that hard-wires charging

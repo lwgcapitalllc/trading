@@ -972,6 +972,20 @@ class BrokerProfile(BaseModel):
     swap_long_points: Optional[float] = None
     swap_short_points: Optional[float] = None
     contract_size: float
+    #: Which terminal these numbers were measured on. Identity, never a cost.
+    #: ⚠ **Empty / null means UNRECORDED, never "matches anything"** — a caller comparing against a
+    #: blank must read it as "cannot tell", the same three-state rule `mt5_connected` follows.
+    server: str = ""
+    account: Optional[int] = None
+    #: True when this profile describes the terminal the lab is attached to RIGHT NOW.
+    #: 🔴 The bar cache is partitioned by server, so one broker's BARS can no longer reach another
+    #: broker's replay — but the cost profile is still picked independently, so a run could
+    #: legitimately replay PU Prime's bars and charge Vantage's spread. Same mixed basis one level
+    #: up, and just as silent. This is the field that lets the page refuse to be quiet about it.
+    #: ⚠ **`False` is not "wrong", it is "not the attached terminal"** — measuring a strategy
+    #: against a broker you are not currently pointed at is a legitimate thing to do on purpose.
+    #: The page warns; it does not block.
+    attached: bool = False
 
 
 class HistoryLimit(BaseModel):

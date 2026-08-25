@@ -1073,6 +1073,26 @@ load-bearing tests in the package (the real two-year replays that prove re-prici
 charged run to the cent) went from passing to SKIPPED with nothing to notice. **A missing file is
 indistinguishable from a git-ignored one.** It searches the partitions now.
 
+⚠ **A profile now records the SERVER and ACCOUNT it was measured on** (`fills.py` →
+`AccountProfile.server` / `.account`). Identity, never a cost — nothing charges either. They exist
+because the partition fixes the BARS and leaves the COSTS free to mismatch: a run can legitimately
+replay PU Prime's bars and charge Vantage's spread, which is the same defect one level up. The
+Command Center reads them to default its cost account to the attached terminal; rules there.
+⚠ **The account is what separates PU Prime's tiers** — Prime and ECN share `PUPrime-Demo`, so a
+server-only match would hand a run ECN's $0.12 spread while it sat on Prime.
+⚠ **Blank/None means UNRECORDED, never "matches anything".**
+
+🔴 **STILL OPEN, found 2026-08-24 while verifying the partition: the history-floor probe returns a
+CONFIDENT floor for a symbol the broker does not serve at all.** With the lab on PU Prime, bare
+`XAUUSD` (PU Prime quotes `XAUUSD.p`) fetches nothing at any date — verified directly, 404 in 2019
+and in 2024 — and yet `history_floors.json` gained `PUPrime-Demo|XAUUSD|15 → 2018-09-13`, dated
+today and labelled *bar-density binary search*. **It is a measurement of a symbol with no data,
+recorded as a fact.** It is not currently harmful — nothing serves those bars, so a run refuses
+loudly rather than replaying a substitution — but it is a false claim in a cache the whole floor
+mechanism is built on trusting, and this file's own rule is that a floor is MEASURED or refused.
+**Fixing it needs its own measurement of what the probe does when every window comes back empty; do
+not paper over it by deleting the entries, which only re-appear on the next load.**
+
 Proof: `tests/test_cache_broker_partition.py`, watched RED **by mutation** rather than by revert.
 Reverting only produced an ImportError, which proves a symbol is new and nothing about whether the
 assertions catch anything. Flattening `broker_cache_dir` in place fails the two data tests on

@@ -388,9 +388,31 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // ⚠ Slippage is the one thing still separate, and deliberately so — it is the only cost here
   // nobody has measured, so it rides its own optional figure rather than the switch.
   const [chargeCosts, setChargeCosts] = useState(true)
-  const [brokerProfile, setBrokerProfile] = useState('vantage_demo')
+  // 🔴 **DEFAULTS TO THE ATTACHED TERMINAL, and `vantage_demo` as a literal is exactly what this
+  // replaces.** The bar cache is partitioned by broker, so one broker's BARS can no longer reach
+  // another broker's replay — but the cost profile was still a hardcoded string, so pointing the
+  // lab at PU Prime gave you PU Prime's bars charged at Vantage's spread. Same mixed basis one
+  // level up, silent in the same way, and the two figures are 0.12 vs 0.22 an ounce.
+  // ⚠ **`null` until the profiles arrive**, so nothing is submitted against a guess; the effect
+  // below fills it once, and only while the reader has not chosen for themselves.
+  const [brokerProfile, setBrokerProfile] = useState<string | null>(null)
   const { data: brokerProfiles } = useBrokerProfiles()
+  const attachedProfile = brokerProfiles?.find((b) => b.attached) ?? null
+  // ⚠ Falls back to the first profile only when NOTHING is attached — an unreachable agent means
+  // "cannot tell", and the mismatch note below then says so rather than blessing whatever is
+  // selected. A fallback that silently picked one would be the hardcode again with extra steps.
+  useEffect(() => {
+    if (brokerProfile != null || !brokerProfiles?.length) return
+    setBrokerProfile(attachedProfile?.id ?? brokerProfiles[0].id)
+  }, [brokerProfile, brokerProfiles, attachedProfile])
   const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
+  // Three answers, not two. `null` = the agent could not be asked, which must not render as a
+  // mismatch — same three-state rule the MT5 health dot follows.
+  const brokerMatches: boolean | null = !broker
+    ? null
+    : !attachedProfile
+      ? null
+      : broker.id === attachedProfile.id
   // A tier whose spread has never been read carries the refusal sentinel rather than a number,
   // and the backend REFUSES to run it charged. The modal has to say so before the button is
   // pressed — a 400 arriving after a click is the answer in the wrong place.
@@ -518,6 +540,9 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     // A tier with no measured spread cannot be run charged, and the backend refuses it. Blocking
     // the button is the same refusal in the place the reader is looking.
     !(isPython && chargeCosts && brokerUnpriced) &&
+    // ⚠ And never submit a charged run before the profiles have resolved — omitting the field
+    // would fall through to the request model's own default, which is a broker nobody picked.
+    !(isPython && chargeCosts && brokerProfile == null) &&
     !trigger.isPending &&
     !jobBlocked
 
@@ -548,7 +573,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         // ⚠ `null` for NT8/MT5: they have no layer contract at all, and `charge_costs` must not
         // manufacture one for them.
         charge_costs: isPython ? chargeCosts : null,
-        broker_profile: brokerProfile,
+        broker_profile: brokerProfile ?? undefined,
         evaluate_rulesets: Array.from(selectedFirms),
         sizing_mode: sizingMode,
         manual_risk_pct: sizingMode === 'manual' ? manualPctNum : null,
@@ -1141,17 +1166,38 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     Broker account
                   </label>
                   <select
-                    value={brokerProfile}
+                    value={brokerProfile ?? ''}
                     onChange={(e) => setBrokerProfile(e.target.value)}
-                    className={`${inputCls} max-w-[220px]`}
+                    className={`${inputCls} max-w-[240px]`}
                   >
                     {(brokerProfiles ?? []).map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.id}
+                        {b.attached ? ' — connected now' : ''}
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* 🔴 The costs and the BARS must come from the same broker, and nothing else on
+                    this page can say whether they do. A run charged here replays whatever terminal
+                    the lab is attached to; picking a different account charges that account's
+                    spread over those bars, and the two gold spreads are $0.12 and $0.22 an ounce.
+                    ⚠ It WARNS and never blocks — measuring a strategy against a broker you are not
+                    pointed at is a legitimate thing to do deliberately. */}
+                {chargeCosts && brokerMatches === false && (
+                  <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                    This charges {brokerProfile}&apos;s costs over bars from {attachedProfile?.id},
+                    which is the terminal actually connected. Same run, two brokers — pick{' '}
+                    {attachedProfile?.id} unless you mean to compare.
+                  </p>
+                )}
+                {chargeCosts && brokerMatches === null && brokerProfiles?.length && (
+                  <p className="mb-2 text-[11px] text-text-tertiary leading-snug">
+                    Can&apos;t tell which terminal is connected, so nothing here confirms these
+                    costs match the bars this run will replay.
+                  </p>
+                )}
 
                 {/* A tier nobody has measured refuses rather than borrowing a sibling's figure —
                     PU Prime's tiers measured 2.7x apart. Said here, before the button. */}

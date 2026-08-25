@@ -74,6 +74,18 @@ export interface BrokerProfile {
   swap_long_points: number | null // null = this profile prices no overnight financing
   swap_short_points: number | null
   contract_size: number
+  /** Which terminal these numbers were measured on. Identity, never a cost.
+   *  ⚠ Empty/null means UNRECORDED, never "matches anything". */
+  server: string
+  account: number | null
+  /** True when this profile describes the terminal the lab is attached to RIGHT NOW.
+   *  🔴 The bar cache is partitioned by server, so one broker's BARS cannot reach another's replay
+   *  — but the cost profile is picked independently, so a run can replay PU Prime's bars and charge
+   *  Vantage's spread. Same mixed basis one level up, and just as silent.
+   *  ⚠ `false` is "not the attached terminal", NOT "wrong" — measuring against a broker you are not
+   *  pointed at is legitimate on purpose. The page warns; it must not block. And with the agent
+   *  unreachable EVERY profile is false, which is "cannot tell", not "all mismatched". */
+  attached: boolean
 }
 
 /** One trade on a re-priced equity curve — `GET /backtests/runs/{id}/repriced`. */

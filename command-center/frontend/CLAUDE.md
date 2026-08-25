@@ -3234,6 +3234,23 @@ heading, which is how every run ended up frictionless without anybody deciding t
   indistinguishable on the page.
 
 
+## The Run modal's broker DEFAULTS to the attached terminal (2026-08-24)
+
+🔴 **`useState('vantage_demo')` was the defect.** The bar cache is partitioned per broker, so bars
+can no longer mix — but a hardcoded cost profile meant pointing the lab at PU Prime charged Vantage's
+spread over PU Prime's bars. Same mixed basis one level up, and just as quiet.
+
+- ⚠ **The state starts `null` and an effect fills it once**, so nothing is submitted against a
+  guess and the reader's own choice is never overwritten. Submit is blocked while it is null on a
+  charged python run — omitting the field would fall through to the request model's default, which
+  is a broker nobody picked.
+- ⚠ **`brokerMatches` is THREE-state.** `null` means the agent could not be asked, and must render
+  as *cannot tell* rather than as a mismatch — the same rule the MT5 health dot follows.
+- ⚠ **It warns and never blocks.** Comparing against a broker you are not pointed at is a
+  legitimate deliberate act.
+- ⚠ **No fallback picks a broker when nothing is attached** — it takes the first profile only so
+  the select has a value, and the *cannot tell* note is what the reader acts on.
+
 ## The re-price control dies on a charged run, and a PAIRED RE-RUN replaces it (2026-08-24)
 
 🔴 **Re-pricing is strictly ADDITIVE — the server can only charge a layer the run did not.** Since

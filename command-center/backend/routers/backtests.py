@@ -35,6 +35,7 @@ from services import (
     chart_spec,
     history_limits,
     lab_db,
+    mt5_agent_client,
     news_filter,
     python_runner,
     run_feeds,
@@ -322,11 +323,45 @@ def list_broker_profiles() -> list[BrokerProfile]:
     """
     from backtest.fills import PROFILES
 
+    # Which terminal the lab is actually attached to, so the page can say whether the costs it is
+    # about to charge belong to the broker whose bars it is about to replay.
+    # ⚠ **An unreachable agent yields NO attachment, never a default one.** "Cannot ask" and "the
+    # usual broker" must not take the same value — rule 1 — so every profile comes back
+    # `attached: False` and the page says it cannot tell rather than blessing one.
+    attached_server, attached_account = "", None
+    try:
+        st = mt5_agent_client.status()
+        if st.get("mt5_connected") is True:
+            attached_server = str(st.get("server") or "")
+            attached_account = st.get("account")
+    except Exception:  # noqa: BLE001 - any failure means "cannot ask"
+        attached_server, attached_account = "", None
+
+    def _is_attached(p) -> bool:
+        """Does this profile describe the attached terminal?
+
+        ⚠ **The ACCOUNT decides it whenever both sides have one**, because the SERVER cannot: PU
+        Prime's Prime and ECN logins share `PUPrime-Demo`, and blessing a tier on the server alone
+        would hand a run ECN's $0.12 spread while it sat on Prime — the exact 2.7x error the
+        unmeasured-spread sentinel exists to prevent, arriving through the front door.
+        ⚠ **A blank on EITHER side is "cannot tell", never a match.**
+        """
+        if not attached_server or not p.server or p.server != attached_server:
+            return False
+        if p.account is not None and attached_account is not None:
+            return int(p.account) == int(attached_account)
+        # Server matches and nobody can narrow it further. That is an honest maybe, and the page
+        # renders it as one — never as a confirmed match.
+        return p.account is None and attached_account is None
+
     return [
         BrokerProfile(
             id=key,
             spread=p.spread,
             commission_per_side_per_lot=p.commission_per_side_per_lot,
+            server=p.server,
+            account=p.account,
+            attached=_is_attached(p),
             swap_long_points=p.swap.swap_long_points if p.swap else None,
             swap_short_points=p.swap.swap_short_points if p.swap else None,
             contract_size=p.contract_size,

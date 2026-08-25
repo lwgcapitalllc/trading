@@ -401,3 +401,63 @@ def test_every_lock_scope_reaches_the_api(client, fresh_db):
     body = client.get("/backtests/running-job").json()
     for scope in lab_db._SCOPE_RUNNER_SQL:
         assert scope in body, f"lock scope {scope!r} is computed but never served"
+
+
+# ── The cost account must follow the ATTACHED terminal (2026-08-24) ──────────
+#
+# 🔴 The bar cache is partitioned by broker, so one broker's BARS can no longer reach another
+# broker's replay. The cost profile is picked independently, so a run could still replay PU Prime's
+# bars and charge Vantage's spread — the same mixed basis one level up, silent in the same way, and
+# the two gold spreads are $0.12 and $0.22 an ounce.
+#
+# All three watched RED by MUTATION, named per test.
+
+
+def _profiles(client):
+    return {p["id"]: p for p in client.get("/backtests/broker-profiles").json()}
+
+
+def test_the_attached_profile_is_resolved_by_ACCOUNT_not_by_server(client):
+    """🔴 The server CANNOT separate PU Prime's tiers — Prime and ECN share `PUPrime-Demo`.
+
+    Blessing a tier on the server alone hands a run ECN's $0.12 spread while it sits on Prime,
+    which is the 2.7x error the unmeasured-spread sentinel exists to prevent, arriving through the
+    front door.
+
+    MUTATION: match on `p.server == attached_server` alone and this fails — every PU Prime tier
+    comes back attached at once.
+    """
+    with patch(
+        "services.mt5_agent_client.status",
+        return_value={"mt5_connected": True, "server": "PUPrime-Demo", "account": 700152905},
+    ):
+        got = _profiles(client)
+    assert got["puprime_ecn"]["attached"] is True
+    assert got["puprime_prime"]["attached"] is False, "the server alone blessed the wrong tier"
+    assert got["puprime_standard"]["attached"] is False
+    assert got["vantage_demo"]["attached"] is False
+
+
+def test_an_unreachable_agent_attaches_NOTHING_rather_than_a_default(client):
+    """Rule 1 at this seam: "cannot ask" must never take the same value as "the usual broker".
+
+    MUTATION: fall back to any profile when the status call fails and this goes red — the page
+    would then bless a broker nobody measured against.
+    """
+    with patch("services.mt5_agent_client.status", side_effect=RuntimeError("agent down")):
+        got = _profiles(client)
+    assert not any(p["attached"] for p in got.values())
+
+
+def test_a_terminal_that_is_NOT_connected_attaches_nothing(client):
+    """The agent answers `ok` while its terminal has dropped the broker link — this repo's own
+    incident. A server name from a disconnected terminal is a stale claim, not a measurement.
+
+    MUTATION: drop the `mt5_connected is True` check and this goes red.
+    """
+    with patch(
+        "services.mt5_agent_client.status",
+        return_value={"mt5_connected": False, "server": "PUPrime-Demo", "account": 700152905},
+    ):
+        got = _profiles(client)
+    assert not any(p["attached"] for p in got.values())
