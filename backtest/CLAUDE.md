@@ -598,6 +598,65 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **`--min-risk-atr` defaults to 0** (honest for a study, wrong for a strategy) and it is the
   cut that decides whether structure's edge clears 2σ. Quote both.
 
+- **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The A+ bot waits for the
+  shift and fades the retracement; this asks whether the move that CREATES it is tradeable.** Added
+  2026-08-24 on Aaron's question. Stdlib only, runs off `backtest/cache/`. Full record:
+  `docs/PRE_SOS_LEG_STUDY.md`.
+  🔴 **THE EXTREME IS ONLY KNOWABLE AFTERWARDS, so the whole tool is about finding a REAL-TIME
+  proxy for it.** The prize is real — measured over 811 external breaks, the extreme-to-break leg
+  is a median **$20.55 / 7.7× ATR(50) / 36 bars, ~106 a year**. Getting on it is the entire problem.
+  🔴 **CONFIRMING ON THE BASE FRAME IS DEAD, AND THE NUMBER THAT KILLS IT IS `medR 0.87`, NOT THE
+  EDGE.** By the time the M15 changes character internally, the target sits CLOSER than the stop —
+  the setup arrives having already spent its own reward. **A confirmation that is late is not a
+  weak signal, it is an absent trade**, and a tool that only reported win rate would have scored it
+  50.9% and looked fine. Report the R AVAILABLE beside every hit rate.
+  ✅ **What survives: a 15m level swept, then a change of character on the 5m within 3h, the 15m
+  trend still opposing, target ≥2 stops away.** n=228 over 9 years, hit 28.1% at medR 3.67,
+  **+0.296R against a matched control at 21.6% (+2.2σ)**; two level families agreeing n=112,
+  +0.386R (+2.4σ). ≈25 trades a year.
+  🔴 **The SWEEP is the ingredient and it is not close: the identical trigger with no level under
+  it is 18.2% and −0.186R.** Session (+14.4%) and daily (+16.7%) are the strong families, h4
+  (+5.7%) the weak one that still works, weekly n=8 and unanswerable.
+  ⚠ **Its confluence result CONTRADICTS `sweep_edge.py`'s** (stacking families helps here,
+  monotonically; there it hurt) and neither is wrong — that study scored a fixed 2R target off a
+  wick stop, this one a structural target off a faster-frame confirmation. **Confluence is not a
+  property of the levels alone.** Re-quote either number only with the target it was measured on.
+  ⚠ **Banking early buys nothing** — exiting anywhere from 0.5 to 1.0 of the way pays +0.31 to
+  +0.35R, flat. And the failure shape is early: most losers die under 30% of the way, while a trade
+  80% there finishes 87.8% of the time.
+  🔴 **AN EARLY MOVE TO BREAKEVEN COSTS −0.217R A TRADE, AND THE BEST ARM POINT IS WORTH A
+  ROUNDING ERROR.** Measured by re-walking every qualifying trade with the stop moving to entry at
+  a given fraction: arming at 30% takes the win rate 28.1% → 16.2% while losses only fall
+  71.9% → 50.9%, so **the trades a breakeven stop "saves" are overwhelmingly ones that were going
+  to win** — this setup's retracements happen INSIDE the leg, not before it. The peak is ~70%
+  (+0.024R) and 90% is +0.000R. **Leaving the stop alone entirely is within noise of the best
+  setting and is one less thing to get wrong live.** ⚠ A scratch is booked at −(half spread)/risk,
+  never at zero — the entry carries half the spread and exiting at entry returns the other half.
+  ⚠ **The arm is decided on a BAR CLOSE, never intrabar**: nothing in a bar says which extreme came
+  first, and arming intrabar exits at a price the model could not have known to place. That
+  flatters the breakeven rows and they still lose.
+  ⚠ **It reads ONE private field of the structure engine** (`_ext.ash`/`_ext.asl`) — the swing that
+  is live RIGHT NOW, which the public stream cannot give because events fire on CHANGE, not on
+  STATE. The alternative was rebuilding that state here, which is the second implementation rule 21
+  exists to prevent. **Guarded: a rename raises on the first bar rather than quietly scoring zero.**
+  🔴 **A FASTER CONFIRMATION FRAME IS NOT A CHEAPER VERSION OF THE SAME IDEA — `--confirm M1`
+  gets the stop down $7.24 -> $4.35 and takes expectancy +0.296R -> +0.032R.** The hit rate falls
+  faster than the payoff rises. ⚠ **And the M1 row carries the HIGHER SIGMA (+3.2σ vs +2.2σ),
+  which is the trap**: σ scales with √n and M1 fires 12× as often, so ranking rows by significance
+  picks the worse trigger. **Read the expectancy; sigma only says whether it is real.** ⚠ Per YEAR
+  they look close (≈+7.5R vs ≈+9.9R gross) and COST is what separates them — `--spread 0.44`
+  charges the whole round trip at entry and takes M1 to **+0.002R** while M5 is unmoved at
+  +0.307R, because a full spread is ~1.5% of a $7.24 stop and ~5% of a $4.46 one. 🔴 **M1's edge
+  over the control SURVIVES this (+2.3% / +3.1σ) — it really is detecting something, and it is
+  still not worth trading, because what it detects is smaller than the cost of acting on it.
+  "Beats random" and "worth trading" are different questions and only the second has a broker in
+  it.** ⚠ Level-stacking helps M5 monotonically and does
+  NOTHING on M1 — **a filter that works on one frame and not the other says the two triggers are
+  not detecting the same event.**
+  ⚠ **228 trades, three losing years inside them** (2021, 2023, 2024) against a 2025-26 that carries
+  half the result. Found on PU Prime, reproduced on Vantage; costs are half a spread on entry and
+  **no commission, so the live ECN account is not modelled.** A study, never a backtest.
+
 - **`tools/killzone_profile.py`** + **`tools/killzone_sweep.py`** — **is the New York kill zone
   special, or does it just look special because we watch it?** Added 2026-08-04, stdlib only, runs
   off `backtest/cache/`. The profile tool measures what price DOES in a window and reports the same
