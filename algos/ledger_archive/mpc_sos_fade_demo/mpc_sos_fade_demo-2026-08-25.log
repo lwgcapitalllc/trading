@@ -27,3 +27,8 @@
 2026-08-25 22:15:11,112 [INFO] Warmed 5000 bars (2026-06-10 05:15:00+00:00 → 2026-08-25 22:00:00+00:00) in 2.8s
 2026-08-25 22:15:11,114 [INFO] Equity re-anchored to the account after warm-up: 13,721.92 → 9,995.01
 2026-08-25 22:15:11,115 [INFO] Restored position T345453758 — SHORT 0.39 lots @ 4661.5, stop 4686.74, stage 0. It will be managed from the next bar.
+2026-08-25 22:30:02,389 [ERROR] HALTED: MT5 holds 5 positions under magic 770115; this strategy takes one at a time.
+2026-08-25 22:30:03,580 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-25 22:45:04,726 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-25 23:00:05,832 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-25 23:15:06,996 [ERROR] Bridge halted — the loop will keep observing but place nothing.
