@@ -174,6 +174,7 @@ class Base:
     and the times each level family was last swept on each side."""
 
     tmin: List[int]
+    close: List[float]
     direction: List[int]
     swing_high: List[Optional[float]]
     swing_low: List[Optional[float]]
@@ -189,12 +190,13 @@ def replay_base(rows: Sequence[Row]) -> Base:
             "swing, which the public event stream does not carry. Re-point it at whatever replaced "
             "that field rather than rebuilding the state here."
         )
-    b = Base([], [], [], [], {(f, s): [] for f in FAMILIES for s in ("high", "low")})
+    b = Base([], [], [], [], [], {(f, s): [] for f in FAMILIES for s in ("high", "low")})
     for r in rows:
         se.update(Bar(index=r.i, open=r.o, high=r.h, low=r.l, close=r.c))
         ev = le.update(r.i, r.ts, r.h, r.l, r.c)
         st = se._ext
         b.tmin.append(r.tmin)
+        b.close.append(r.c)
         b.direction.append(st.dir)
         b.swing_high.append(st.ash)
         b.swing_low.append(st.asl)
@@ -204,6 +206,48 @@ def replay_base(rows: Sequence[Row]) -> Base:
                 # the sweep is only KNOWN once the bar that made it has closed
                 b.swept[key].append(r.tmin + (rows[1].tmin - rows[0].tmin if len(rows) > 1 else 0))
     return b
+
+
+def reclaim_triggers(rows: Sequence[Row], base: Base, args) -> List[Tuple[int, int]]:
+    """A SINGLE-FRAME stand-in for the faster-frame change of character.
+
+    A level is swept; then, within `--reclaim-bars`, a bar closes back beyond the HIGH of the bar
+    that swept it (mirror for shorts). No second structure engine, no `request.security`, so a
+    Pine file needs only the one embedded state machine it already has.
+
+    It exists to answer an ARCHITECTURE question before any Pine is written: if this scores like
+    the 5m change of character, the strategy is a one-frame file. If it does not, the second
+    draw-free engine instance is not a shortcut somebody skipped, it is the thing that carries the
+    edge — and that is worth knowing before building either.
+    """
+    out: List[Tuple[int, int]] = []
+    for side, direction in (("low", 1), ("high", -1)):
+        times = sorted({t for f in FAMILIES for t in base.swept[(f, side)]})
+        ti = {t: None for t in times}
+        for t in times:
+            # the base bar whose CLOSE is that sweep time
+            lo, hi = 0, len(rows)
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if rows[mid].tmin + MINUTES[args.base] < t:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            ti[t] = lo if lo < len(rows) else None
+        for t in times:
+            s0 = ti[t]
+            if s0 is None:
+                continue
+            ref = rows[s0].h if direction > 0 else rows[s0].l
+            for j in range(s0 + 1, min(s0 + 1 + args.reclaim_bars, len(rows))):
+                if direction > 0 and rows[j].c > ref:
+                    out.append((j, direction))
+                    break
+                if direction < 0 and rows[j].c < ref:
+                    out.append((j, direction))
+                    break
+    out.sort()
+    return out
 
 
 def replay_confirm(rows: Sequence[Row], same_frame: bool) -> List[Tuple[int, int]]:
@@ -377,6 +421,30 @@ def collect(
             entry = fast[i].c - half_spread
             stop = extreme + args.stop_buffer_atr * a_fast[i]
             if target >= entry or stop <= entry:
+                continue
+        if args.entry_on_base_close:
+            # Fill at the first BASE-frame close at or after the trigger bar closes, which is what
+            # a strategy charted on the base frame can actually do. The stop and the target do not
+            # move — only the fill, and only ever later. This is the cheap-to-build architecture:
+            # if the edge survives here, the Pine is a single-frame file.
+            m = bi
+            while (
+                m < len(base.tmin) and base.tmin[m] + MINUTES[args.base] < t + MINUTES[args.confirm]
+            ):
+                m += 1
+            if m >= len(base.tmin):
+                continue
+            fill = base.close[m] + direction * half_spread
+            # walk from the fast bar that ends the base bar we filled on
+            close_t = base.tmin[m] + MINUTES[args.base]
+            while i < len(fast) - 1 and fast[i].tmin + MINUTES[args.confirm] < close_t:
+                i += 1
+            if i >= len(fast) - horizon - 2:
+                continue
+            entry = fill
+            if direction > 0 and (target <= entry or stop >= entry):
+                continue
+            if direction < 0 and (target >= entry or stop <= entry):
                 continue
         risk = abs(entry - stop)
         if risk <= 0:
@@ -659,6 +727,20 @@ def main() -> None:
         default=6000,
         help="how long a trade may stay open before it is booked as a loss",
     )
+    ap.add_argument(
+        "--entry-on-base-close",
+        action="store_true",
+        help="fill at the next BASE-frame close instead of the confirmation bar's close — what a "
+        "strategy charted on the base frame can actually do. Costs whatever the delay costs.",
+    )
+    ap.add_argument(
+        "--trigger",
+        default="choch",
+        choices=("choch", "reclaim"),
+        help="choch: the change of character on --confirm. reclaim: a single-frame stand-in — "
+        "a bar closing back beyond the sweep bar's extreme, needing no second engine.",
+    )
+    ap.add_argument("--reclaim-bars", type=int, default=8)
     ap.add_argument("--stop-buffer-atr", type=float, default=0.05)
     ap.add_argument("--control-draws", type=int, default=3)
     ap.add_argument("--seed", type=int, default=31)
@@ -683,7 +765,12 @@ def main() -> None:
     print(f"{args.confirm}: {len(fast_rows)} bars")
 
     base = replay_base(base_rows)
-    shifts = replay_confirm(fast_rows, same)
+    if args.trigger == "reclaim":
+        fast_rows = base_rows
+        args.confirm = args.base
+        shifts = reclaim_triggers(base_rows, base, args)
+    else:
+        shifts = replay_confirm(fast_rows, same)
     a_fast = atr(fast_rows)
     sigs = collect(fast_rows, base, shifts, a_fast, args)
     ctl = Control(fast_rows, a_fast, args, args.horizon_minutes // MINUTES[args.confirm])

@@ -653,6 +653,14 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   it.** ⚠ Level-stacking helps M5 monotonically and does
   NOTHING on M1 — **a filter that works on one frame and not the other says the two triggers are
   not detecting the same event.**
+  🔴 **`--trigger reclaim` AND `--entry-on-base-close` EXIST TO SETTLE AN ARCHITECTURE QUESTION
+  BEFORE A LINE OF PINE IS WRITTEN, and both answers were needed.** The single-frame stand-in (a bar
+  closing back beyond the sweep bar's extreme, no second engine) scores **+0.082R against the 5m
+  change of character's +0.296R**, and filling on the next base close instead of the confirmation
+  close costs about a quarter of the edge (**+0.223R, +3.1σ**). **So the faster engine is not a
+  convenience somebody could skip — it is what carries the result**, and the Pine has to embed a
+  second state-machine instance. ⚠ **Measure the cheap architecture before building the expensive
+  one**; the reverse order is how a file gets written twice.
   ⚠ **228 trades, three losing years inside them** (2021, 2023, 2024) against a 2025-26 that carries
   half the result. Found on PU Prime, reproduced on Vantage; costs are half a spread on entry and
   **no commission, so the live ECN account is not modelled.** A study, never a backtest.

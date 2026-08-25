@@ -176,3 +176,6 @@ node_modules/.cache/
 
 # Playwright MCP browser session scratch (console logs, page snapshots, screenshots)
 .playwright-mcp/
+
+# generated intermediate — indicators/strategies/tools/derive_htf_structure.py rebuilds it
+indicators/strategies/tools/_derived_structure_15.pine

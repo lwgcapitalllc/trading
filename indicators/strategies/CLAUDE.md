@@ -175,6 +175,42 @@ as predicted, and loses 14R** — the primary's entry is a price the market has 
 around, so the stop sits in fresh congestion; median MFE falls 1.01R → 0.89R, which a 2.4x smaller
 R should have RAISED. Full grid: `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` →
 Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
+## `mpc_extreme_leg_strategy.pine` — the run INTO the shift of structure (new 2026-08-24)
+
+The counterpart to A+: that bot waits for the shift and fades the retracement, this one takes the
+move that CREATES the shift — extreme up to the swing whose break IS the shift. **Prose, defaults
+and the numbers behind them: `docs/mpc_extreme_leg_strategy.md`. The study that produced the rules
+is `../../docs/PRE_SOS_LEG_STUDY.md`.** Only what is true of THIS directory lives here.
+
+🔴 **WRITTEN, NEVER COMPILED. Paste before trusting.** It is 1,417 lines carrying two copies of
+the external state machine, and the token ceiling is the first thing that could stop it — the same
+risk this file already recorded for H4, unresolved there too.
+
+🔴 **IT IS THE FIRST FILE HERE WHOSE SECOND ENGINE INSTANCE IS GENERATED RATHER THAN FORKED.**
+`tools/derive_htf_structure.py` regenerates the 15-minute copy from the block in
+`mpc_h4_sweep_strategy.pine` — renaming the type and method, swapping the four bar globals for
+passed-in values — and `tools/build_extreme_leg.py` assembles the file around it. **This directory's
+own worst failure mode is the reason**: eleven files each carry a private fork of one state machine,
+so a bug fixed in sixteen places walked back in through a seventeenth cut from pre-fix source, and
+nothing failed when it did. A generated copy makes a divergence a diff. ⚠ **The script asserts the
+exact substitution counts (16 `high`, 19 `low`, 9 `close`, 2 `open`, 44 `bar_index`) and refuses to
+write on any other number** — a silent under-match is a state machine reading the wrong timeframe's
+bar with nothing on the chart to show for it. **Do not relax that check; re-count and update it in
+the same edit.** ⚠ **Re-run BOTH scripts after any cross-cutting structure fix**, or this file
+keeps the old engine while its source gets the new one.
+
+⚠ **It ships TWO of Section 2's four toggles, and that is an open decision rather than an
+oversight.** There is no internal engine here, so the other two would be controls that look like
+they do something — the hazard the contract's own note names. Porting it in would be a THIRD state
+machine in one uncompiled file, purely to draw with. **If it compiles with room to spare, port the
+internal engine and make the section standard.**
+
+⚠ **No `_export` twin, so no parity gate can ever run on it** — the same hole
+`mpc_realign_strategy.pine` has, and it means every number this file produces is a lab finding
+until a twin exists.
+
+---
+
 ## The refused-wick structure fix (2026-08-21) — every strategy file and its export twin
 
 The sequel to the tie fix below, and the tie guard could not see it: structure breaks on a CLOSE
