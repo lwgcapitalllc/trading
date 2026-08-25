@@ -189,3 +189,19 @@ before the fill. Daily alignment is the best single split (48.1% reach 1R with i
 and it still does not survive stacking: 102 trades/+32.7R → 48 trades/+10.9R, i.e. the win rate
 rises and the return per trade falls. ⚠ **The 15-minute row is a tautology** — every setup is
 "with the trend" because the shift of strength IS the 15-minute flip.
+
+### The parity gate, run afterwards (2026-08-24)
+
+The change was committed with the gate unrun — the exports on this machine were TRADE LISTS, not
+the decision-stream export `compare_strategy.py` reads, and the commit message said so rather than
+implying otherwise. Aaron exported the twin the same evening.
+
+**Green.** `VANTAGE_XAUUSD, 15_80a5f.csv`, 21,162 bars, 2025-10-01 → 2026-08-24, shipped config
+(`cfg_bits` 544375): **exit 0 at warmups 100 / 500 / 1000 / 2000.**
+
+⚠ **What it does NOT cover, and this is the part worth keeping.** It proves the SHIPPED path is
+bar-for-bar identical to the Pine — which is exactly the claim the change makes, since the variant
+ships off. It proves nothing about the variant, and **no export ever can**, because the Pine has no
+counterpart to those three rules and a diff needs two sides. The gate said the same thing about the
+no-gap arm gate in the same run, unprompted. **A green gate is evidence about the branch it
+entered.** The variant's own evidence is the replay table above, not this.

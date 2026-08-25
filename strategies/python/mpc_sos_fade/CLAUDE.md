@@ -3160,9 +3160,22 @@ final-hour rule.** That rule's label is rendered by the block marker and the Tel
 *"no new entries 16:00-18:00 New York"*, and widening it would leave both of them saying 16:00
 about a setup refused at 10:00.
 
-⚠ **The Pine parity gate has NOT run on this change** — the exports on this machine are trade
-lists, not the decision-stream export `tools/compare_strategy.py` needs. The byte-identical
-replay proves the change is INERT when off. It does not prove Pine parity and cannot.
+✅ **THE PINE PARITY GATE HAS RUN AND IS GREEN (2026-08-24).** `compare_strategy.py` on
+`VANTAGE_XAUUSD, 15_80a5f.csv` — 21,162 bars, 2025-10-01 → 2026-08-24, shipped config
+(`cfg_bits` 544375) — **exit 0 at warmups 100 / 500 / 1000 / 2000.** Rule 22 is satisfied for
+this change: the Python makes the identical decision to the Pine on every bar.
+
+⚠ **Read what that green run covers, and what it cannot.** It proves parity of the SHIPPED path,
+which is the claim that matters here — the variant is off, so the Pine and the Python are running
+the same strategy and agree bar for bar. It says nothing about the variant itself, and **no export
+ever can**: the Pine has no counterpart to these three rules, so there is nothing on the other side
+to diff against. That is a stronger version of the gate's own standing warning about the no-gap
+arm gate, which this run also reported as un-exercised. **A green gate is evidence about the
+branch it entered and about no other.**
+
+⚠ **Without `--warmup` the gate reports a mismatch at bar 16** (`px_s_stage` py=1 pine=0). That is
+engine cold-start and is already recorded further down this file — it is not this change, and it
+reproduces on HEAD.
 
 ⚠ **All six settings carry a label and a description in `mpc_sos_fade.meta.json`**, which is what
 puts them on the Command Center's parameter form — a toggle nobody can find is not a toggle. That
