@@ -192,6 +192,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/internal_break_audit.py`** (2026-08-23) — does an INTERNAL break against the trade
+  predict a bad entry? Aaron's observation from the price chart on a losing re-entry, asked two
+  ways because it is really two rules: **refuse the setup**, or **take it and leave at flat**.
+  ⚠ **Committed 2026-08-24 having sat untracked for a day, and the reason is worth more than the
+  tool**: it was about to be deleted as unattributable cruft because it was blocking a repo-wide
+  format check, and it exists nowhere else — an untracked file has no history to recover from.
+  **A tool nobody has committed is a tool one tidy-up away from never having existed.**
+  ⚠ **The numbers in its docstring are its author's, not re-run here.** It was committed unchanged
+  apart from formatting; whoever next trusts a figure from it runs it first.
+  ⚠ **It is a STATIC RE-SCORE of one book, not a replay** (its own docstring says so at length):
+  with one position slot, refusing a setup does not merely remove its R, it lets whatever queued
+  behind it trade instead — the effect this repo has already MEASURED running the other way in
+  Run 12. `--replay` is the honest mode; the default is the cheap one.
+
 - **`tools/recovery_report.py`** (new 2026-08-19) — replays a strategy, then replays the
   **loss-recovery** rule over its losses and prices the addition against the only honest
   alternative: turning `exec_risk_pct` up on the strategy you already own. The rule itself lives
