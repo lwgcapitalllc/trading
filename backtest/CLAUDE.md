@@ -1121,6 +1121,20 @@ Two defects, both reproduced here rather than reasoned about:
    those legitimately. ⚠ **Over a LONG window it gets worse, not better**: the modal is dominated
    by the real days and the substituted region never moves it.
 
+✅ **THE DEFECT IS NARROWER THAN "the density check is broken", and this is the part that makes a
+future fix SCOPED rather than a risky tightening.** All three cases, arithmetic checked:
+
+| the day | bars of 96 | verdict | right? |
+|---|---|---|---|
+| entirely H1 substituted | 24 (25%) | fails the 0.35 threshold | ✅ correct, and by a wide margin |
+| a short holiday session in clean history | fewer, but correctly SPACED | fails → floor lands LATE | ✅ safe direction |
+| **history starts MID-DAY** | **38 (40%)** | **passes** | 🔴 **the only broken case** |
+
+**So the rule is: the check is wrong exactly where a broker's history STARTS PART-WAY THROUGH A
+DAY**, and nowhere else. A fix therefore has to catch a frame that is half correctly-spaced without
+refusing a genuinely short session — which is why "tighten `_DENSITY_MIN`" is the wrong instinct: it
+would push every holiday-adjacent floor later while still passing 38.
+
 ⚠ **Impact today is nil and that is not a reason to leave it** — nobody is starting a run there. The
 risk is that the recorded floor INVITES someone to start on 2018-09-13 and receive ~18 hourly bars
 inside an otherwise clean frame **with no error raised**, which is precisely the fictional-backtest
