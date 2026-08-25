@@ -20,6 +20,11 @@ WATCHED RED by mutation, 2026-08-21:
   * making the override drop the WARNING key reddens exactly the two override cases;
   * moving `net_pnl` above the unit-free metrics reddens exactly the ordering case.
 
+WATCHED RED again, 2026-08-25:
+  * dropping the `charge_costs` pin from `start_backtest` reddens exactly the pin case;
+  * pinning it unconditionally reddens exactly the new-run case;
+  * removing `charge_costs` from `_NOT_BASIS` reddens exactly the contract check.
+
 Run: python3 .claude/mcp/check_lab.py
 """
 
@@ -144,6 +149,61 @@ for field, other_value in DIFFERENT.items():
         next(iter(ovr)) == "WARNING",
         f"first key was {next(iter(ovr))}",
     )
+
+# ── 2b. handing over resolved cost layers PINS the lab's cost switch ─────────
+# 🔴 The lab's one cost switch defaults to ON and, when set, overwrites the layers and the
+# commission from the broker profile. So a copied basis that names its layers must arrive with
+# the switch explicitly null, or starting it charges a run the copy said was uncharged — and the
+# comparison it was copied FOR is then measuring costs rather than params.
+sent = {}
+
+
+def capture(path, method="GET", timeout=None, body=None):
+    sent["path"], sent["body"] = path, body
+    return {"run_id": "new"}, None
+
+
+real, lab._api = lab._api, capture
+try:
+    lab.call_tool(
+        "start_backtest",
+        {
+            "strategy_id": "mpc_sos_fade",
+            "instrument": "XAUUSD",
+            "start_date": "2020-01-01",
+            "end_date": "2026-08-20",
+            "cost_layers": [],
+        },
+    )
+    with_layers = sent["body"]
+    sent.clear()
+    lab.call_tool(
+        "start_backtest",
+        {
+            "strategy_id": "mpc_sos_fade",
+            "instrument": "XAUUSD",
+            "start_date": "2020-01-01",
+            "end_date": "2026-08-20",
+        },
+    )
+    without_layers = sent["body"]
+finally:
+    lab._api = real
+
+check(
+    "starting with copied cost layers pins the cost switch to null",
+    "charge_costs" in with_layers and with_layers["charge_costs"] is None,
+    f"sent {with_layers.get('charge_costs')!r}",
+)
+check(
+    "the copied layers themselves are still sent",
+    with_layers.get("cost_layers") == [],
+)
+check(
+    "a genuinely new run does not carry an opinion about the cost switch",
+    "charge_costs" not in without_layers,
+    f"sent {without_layers.get('charge_costs')!r}",
+)
 
 # ── 3. an identical basis compares, and reports the params that moved ────────
 a = dict(BASE_RUN, run_id="aaa")

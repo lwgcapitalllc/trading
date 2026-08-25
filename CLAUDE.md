@@ -320,7 +320,10 @@ in this app, always the same way: the difference column becomes the thing that l
 timeframe, instrument, costs, broker, sizing — if any of them moved, the tool refuses and names
 the field. ⚠ **The basis is READ OFF the request contract, not chosen** — `check_lab.py` parses
 `BacktestRunRequest` out of this repo, so adding an input to a run turns red until somebody
-decides whether it changes what the run is measured on. ⚠ **Net dollars are reported under the
+decides whether it changes what the run is measured on. ✅ **It caught a real one on
+2026-08-25**: a run input that OVERWRITES a basis field is request-time, not basis, and a tool
+handing over the resolved field must PIN it or the lab re-resolves it and a copied basis is
+silently measured differently. Story: `HISTORY.md` → *The switch that overwrote the basis*. ⚠ **Net dollars are reported under the
 unit-free numbers, never above** (rule 6), and the breakeven-scratch count always travels with
 the win rate.
 

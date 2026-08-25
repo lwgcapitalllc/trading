@@ -79,6 +79,13 @@ _NOT_BASIS = {
     "evaluate_rulesets": "grading applied AFTER the run; changes no fill",
     "evaluate_firms": "grading applied AFTER the run; changes no fill",
     "source_run_id": "provenance, not an input to the replay",
+    "charge_costs": (
+        "a REQUEST-time switch, not a measurement: the lab resolves it into `cost_layers` and "
+        "`commission_per_side` at run creation and stores those, which ARE basis. Copying the "
+        "switch would copy what was asked for instead of what was charged - rule 3. "
+        "start_backtest pins it to null whenever it hands over resolved layers, or the lab "
+        "would re-resolve them and quietly charge a copied basis differently"
+    ),
 }
 
 # Unit-free first. Net dollars appear once, at the bottom, next to the caveat.
@@ -308,6 +315,16 @@ def tool_start_backtest(args):
     ):
         if k in args:
             body[k] = args[k]
+    # 🔴 Handing over resolved cost layers means the lab must NOT re-resolve them. Its one cost
+    # switch defaults to ON and, when set, overwrites `cost_layers` and `commission_per_side`
+    # from the broker profile — so copying a deliberately uncharged run's basis and starting it
+    # would produce a fully charged run while this tool reported the basis had been copied.
+    # That is rule 11's failure exactly: the difference column becomes the thing that lies.
+    # Null means "I am giving you the resolved set; leave it alone". Absent — a genuinely new
+    # run — still gets the lab's own default, because a default HERE would be a second opinion
+    # about what a run is measured on, one layer away from the lab that decides.
+    if "cost_layers" in body:
+        body["charge_costs"] = None
     out, err = _api("/backtests/run", method="POST", timeout=TIMEOUT_SLOW, body=body)
     if err:
         return err

@@ -15,6 +15,38 @@ the other one did.
 
 ## Latest
 
+### The switch that overwrote the basis (2026-08-25)
+
+The lab MCP server's contract check went red on its own the first time it mattered. `charge_costs`
+— the single costs-on switch that replaced five tickboxes the day before — had been added to
+`BacktestRunRequest` and never classified, so `check_lab.py` refused to pass until somebody decided
+whether it changes what a run is measured on.
+
+**It was not paperwork.** The switch defaults to ON and, when set, OVERWRITES both `cost_layers` and
+`commission_per_side` off the broker profile. `copy_run_basis` hands over a run's stored layers so a
+new run is comparable to it — and `start_backtest` then submitted them alongside a defaulted-ON
+switch, which threw them away and recharged from the profile. **Copying the basis of a deliberately
+uncharged run and starting it produced a fully charged run, while the tool reported the basis had
+been copied.** That is rule 11's exact failure: the difference column ends up measuring costs
+instead of params, and nothing in either result says so.
+
+**The classification that is right, and why it is not obvious.** The switch is NOT basis, even
+though it decides costs and costs are basis. It is a REQUEST-time input that the lab resolves at run
+creation into `cost_layers` and `commission_per_side`, and the row stores the resolved pair — rule 3
+again, record what was received rather than what was asked for. Copying the switch would copy the
+question; copying the resolved layers copies the answer. So it lands in `_NOT_BASIS`, and
+`start_backtest` pins it to null whenever it is handing resolved layers over. A genuinely new run
+still sends nothing, because a default in the MCP server would be a second opinion about what a run
+is measured on sitting one layer away from the lab that decides.
+
+**The transferable rule: a run input that OVERWRITES a basis field is request-time, not basis — and
+any tool that hands over the resolved field must PIN it, or the far side re-resolves it.** The check
+that caught this exists because the basis was broken four times by hand; this is the first time it
+went red before a comparison did.
+
+Watched red three ways: dropping the pin reddens only the pin case, pinning unconditionally reddens
+only the new-run case, and unclassifying the switch reddens only the contract check.
+
 ### The backup that committed all night and pushed nothing (2026-08-24)
 
 The box's hourly ledger sync alerted every hour from about midnight: *"Ledger backup did NOT reach
