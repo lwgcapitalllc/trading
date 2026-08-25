@@ -456,6 +456,17 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
     # TEXT, so setting the string directly iterates its CHARACTERS and every layer name silently
     # fails to match while `'s'`, `'p'`, `'r'`… all appear to be charged.
     already = set(_json_list(row.get("cost_layers")) or [])
+    # 🔴 **`bid_ask_fills` IMPLIES `spread`, and forgetting that here DOUBLE-BILLS a spread.**
+    # A run that transacted at the ask has already paid it — in the fills themselves rather than as
+    # a line item — so `spread` is absent from its stored layer list while being fully charged. The
+    # naive membership test then reports it as available, and ticking it adds a second flat charge
+    # on top of a book that already carries one. Nothing downstream can tell: the result is a
+    # plausible number, which is this repo's most expensive failure shape.
+    # ⚠ It became reachable on 2026-08-24, when the charged default made `bid_ask_fills` the
+    # ordinary case rather than a layer nobody ticked. The same implication is stated in
+    # `python_runner._cost_profile`; this is the READING side of it.
+    if "bid_ask_fills" in already:
+        already.add("spread")
     wanted = [l.strip() for l in layers.split(",") if l.strip()]
     # Reported off the RUN, not off what the caller ticked, because the UI has to render those rows
     # as already-on whether or not anyone asked for them — a row that looks available and does

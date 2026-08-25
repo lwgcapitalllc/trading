@@ -3234,6 +3234,42 @@ heading, which is how every run ended up frictionless without anybody deciding t
   indistinguishable on the page.
 
 
+## The re-price control dies on a charged run, and a PAIRED RE-RUN replaces it (2026-08-24)
+
+🔴 **Re-pricing is strictly ADDITIVE — the server can only charge a layer the run did not.** Since
+the charged default an ordinary run already carries every re-priceable layer, so every row renders
+already-on and priced at zero and the pill's only possible outcome is *no change*. **A control that
+can never change anything is indistinguishable from a broken one**, and the reader has no way to
+tell which they are looking at. It renders only while `costs.spent` is false.
+
+🔴 **And no arithmetic could bring it back.** The charged default transacts at the bid/ask, which
+changes WHICH setups fill — 161 trades → 159, with four setups that never existed on the free path.
+No pass over a stored trade list can invent a trade the list does not contain, so **the free twin of
+a charged run is a RUN, not a subtraction.** That is why `CostPairButton` is a button.
+
+- ⚠ **It fires a NEW run** (`useTriggerBacktest`), never `useRetryBacktest` — the retry path clears
+  the run directory and discards the result, and the pair has to sit side by side to be worth
+  anything. `source_run_id` links them.
+- ⚠ **Everything except the cost switch is carried across** — rule 11. A twin differing in a second
+  field turns the difference column into the thing that lies.
+- ⚠ **`cost_layers === null` gets NO twin.** It means the run predates the layer contract, which is
+  not `[]` and is not a claim about what it charged that a twin could be built on.
+- ⚠ **`costs.spent` is derived from the SERVER's `already_charged`, never from what a layer set
+  implies.** `bid_ask_fills` pays the spread inside the fills and never names it, so a page-side
+  guess would call a fully charged run half-charged and offer a row that DOUBLE-BILLS. The backend
+  closes the same hole from its end — see `../backend/CLAUDE.md`.
+- ⚠ **Two captions on the Made card moved with the default and had to.** "That is the default" over
+  a frictionless run became false the moment charged became the default, and the fees tooltip
+  pointed at a pill that is now hidden on the runs it described. **If a default changes, every
+  caption asserting it changes in the same commit** — this folder already records that exact defect
+  on the news filter's own control.
+
+`tests/cost-switch.spec.ts` — 4 checks, all proven by mutation, and **two were VACUOUS first**: one
+fixture carried two guards so a mutation of either left it green, and both no-twin checks passed
+against a deleted guard because the Performance header had not rendered yet. **An absent header is
+indistinguishable from a withheld button.** Positive control first, one guard per fixture.
+
+
 ## The scheduled-job status gained an ARMED value (2026-08-21)
 
 `JobStatus.status` now carries `ARMED` alongside `RUNNING` / `STOPPED` / `DISABLED` / `UNKNOWN`.

@@ -25,6 +25,7 @@ import {
   Newspaper,
   Coins,
   CalendarRange,
+  RotateCcw,
   X,
 } from 'lucide-react'
 import {
@@ -55,6 +56,7 @@ import {
   useStopBacktest,
   useReloadCharts,
   useRetryBacktest,
+  useTriggerBacktest,
   useRunningVpsJob,
   useStrategy,
   useRulesets,
@@ -1343,7 +1345,7 @@ export function PerformancePanel({
             key: 'costs',
             label: 'Fees charged',
             value: dollar(costsTotal),
-            tip: `Commission, spread, slippage and swap actually handed to the broker across every fill, already deducted from Net above. ⚠ This is NOT the amount the Net moved by, and the gap is usually large: at a fixed % risk the account compounds, so a dollar of fee paid early also costs every dollar it would have grown into over every trade after it. Expect the balance impact to be many times this figure — that is compounding, not a bigger fee. Judge a cost in R (the Costs pill states it), never in net dollars.`,
+            tip: `Commission, spread, slippage and swap actually handed to the broker across every fill, already deducted from Net above. ⚠ This is NOT the amount the Net moved by, and the gap is usually large: at a fixed % risk the account compounds, so a dollar of fee paid early also costs every dollar it would have grown into over every trade after it. Expect the balance impact to be many times this figure — that is compounding, not a bigger fee. ⚠ It also cannot tell you about the setups that never filled, which real fills remove. The honest answer to what friction cost is the free twin of this run — the "Run this free" button on the Performance header — never a subtraction from this figure.`,
           } as PanelRow,
         ]
       : []),
@@ -1361,7 +1363,7 @@ export function PerformancePanel({
               : 'nothing',
             tip: run.cost_layers.length
               ? `The cost layers this run had switched on${run.broker_profile ? `, priced off the ${run.broker_profile} account` : ''}. Anything not listed was not charged at all.`
-              : 'This run was deliberately frictionless — no spread, no swap, no commission, no slippage. That is the default, and it is what makes the result directly comparable to the TradingView Strategy Tester.',
+              : 'This run was deliberately frictionless — no spread, no swap, no commission, no slippage. ⚠ It is a GROSS figure: a diagnostic for how much of the edge is friction, never an answer to whether the strategy works. It is also not comparable trade-for-trade to a charged run, because real fills change which setups exist rather than only what they pay. Charged is the default since 2026-08-24; use the "Run this charged" button on the Performance header for the tradeable twin.',
           } as PanelRow,
         ]
       : []),
@@ -5670,6 +5672,14 @@ function useCostFilter(run: Run | undefined) {
     // silently doing nothing when ticked — the server refuses to re-price them (double billing),
     // and a checkbox that changes no number is indistinguishable from a broken one.
     alreadyCharged: report?.already_charged ?? [],
+    // 🔴 Every re-priceable layer is already on this run, so the control can only add nothing.
+    // Derived from the SERVER's `already_charged` rather than from what a layer set implies —
+    // `bid_ask_fills` pays the spread inside the fills and never names it, so a page-side guess
+    // would call a fully charged run half-charged and offer a row that double-bills.
+    // ⚠ Undefined while the report is loading, which is NOT "there is something left" — the
+    // caller must not render a control on an unanswered question, so this reads false only once
+    // a report has actually arrived.
+    spent: !!report && REPRICEABLE.every((l) => (report.already_charged ?? []).includes(l)),
     notExact: !!report && !report.is_exact,
     derivedBasis: !!report?.derived_basis,
     approximateLayers: report?.approximate_layers ?? [],
@@ -5691,6 +5701,82 @@ function useCostFilter(run: Run | undefined) {
     // Every layer's own price, ticked or not — the pill shows what turning one on would cost.
     layerCostR: report?.layer_cost_r ?? {},
   }
+}
+
+// ── The paired run — the honest answer to "what did friction cost me" (2026-08-24) ────────────
+//
+// 🔴 **Once every run is charged, the re-price control is DEAD, and this replaces it.** Re-pricing
+// is strictly ADDITIVE — the server can only charge a layer the run did not — so on a fully
+// charged run every row is already-on, priced at zero, and clicking any of them changes nothing.
+// A control whose every outcome is "no change" is indistinguishable from a broken one.
+//
+// 🔴 **And there is no arithmetic that could bring it back.** The charged default transacts at the
+// bid/ask, which changes WHICH setups fill — measured 161 trades → 159, with four setups that never
+// existed on the free path. No pass over a stored trade list can invent a trade the list does not
+// contain, so the free twin of a charged run is a RUN, not a subtraction. That is the whole reason
+// this is a button and not a checkbox.
+//
+// ⚠ It fires a NEW run rather than replacing this one (`useTriggerBacktest`, not
+// `useRetryBacktest` — the retry path clears the run directory and discards the result). The pair
+// has to sit side by side to be worth anything.
+//
+// ⚠ **Everything except the cost switch is carried across**, which is rule 11: anything that
+// recreates a run for COMPARISON must carry forward everything that decides what it is measured on.
+// A twin differing in a second field turns the difference column into the thing that lies.
+function CostPairButton({ run, blocked }: { run: Run; blocked: string | null }) {
+  const navigate = useNavigate()
+  const trigger = useTriggerBacktest()
+  const runningJob = useRunningVpsJob()
+  const jobBlocked = !!runningJobFor(runningJob.data, run.runner)?.running
+
+  // `null` = a run made before the layer contract existed (NT8/MT5, or a pre-2026-08-02 python
+  // row). It is NOT the same as `[]`, and neither is a claim about what this run charged that we
+  // could act on — so no twin is offered rather than one made on a guess.
+  if (run.runner !== 'python' || run.cost_layers == null) return null
+
+  const wasCharged = run.cost_layers.length > 0
+  const label = wasCharged ? 'Run this free' : 'Run this charged'
+  const why = wasCharged
+    ? 'Replays the identical settings with no costs, so you can read what friction cost — including the setups that only exist when fills are free.'
+    : 'Replays the identical settings charged at this broker, which is the result you could actually trade.'
+  const reason = blocked ?? (jobBlocked ? 'A job is already running on this platform' : null)
+
+  return (
+    <button
+      type="button"
+      data-testid="cost-pair-button"
+      disabled={!!reason || trigger.isPending}
+      title={reason ?? why}
+      onClick={() =>
+        trigger.mutate(
+          {
+            strategy_id: run.strategy_id,
+            instrument: run.instrument,
+            params: run.params,
+            bar_type: run.bar_type,
+            bar_value: run.bar_value,
+            start_date: run.start_date,
+            end_date: run.end_date,
+            slippage_ticks: run.slippage_ticks,
+            broker_profile: run.broker_profile ?? undefined,
+            // The ONE field that differs. Everything above is carried so the two runs are
+            // measured on the same basis and the difference is the costs and nothing else.
+            charge_costs: !wasCharged,
+            evaluate_rulesets: run.evaluations.map((e: EvaluationDetail) => e.ruleset_id),
+            sizing_mode: run.sizing_mode,
+            manual_risk_pct: run.manual_risk_pct ?? null,
+            // Links the pair, so the twin is reachable from this run rather than lost in the list.
+            source_run_id: run.run_id,
+          },
+          { onSuccess: (d: { run_id: string }) => navigate(`/backtests/runs/${d.run_id}`) }
+        )
+      }
+      className="flex items-center gap-1.5 px-2 py-1 rounded border border-border-subtle/60 bg-bg-sunken text-[11px] text-text-secondary hover:border-border-default disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <RotateCcw className="w-3 h-3" />
+      {trigger.isPending ? 'Starting…' : label}
+    </button>
+  )
 }
 
 export type NewsFilter = ReturnType<typeof useNewsFilter>
@@ -6343,6 +6429,7 @@ function PerformanceHeader({
   news,
   costs,
   dates,
+  run,
   blocked,
   filtered,
   dated,
@@ -6352,6 +6439,7 @@ function PerformanceHeader({
   news: NewsFilter
   costs: CostFilter
   dates: DateFilter
+  run: Run | undefined
   blocked: string | null
   filtered: boolean
   dated: boolean
@@ -6394,7 +6482,15 @@ function PerformanceHeader({
           period's own control is the chip in the page header — it states the run's window whether
           or not it is filtering, so a second copy here would be two claims about one span. */}
       <div className="flex items-center gap-2 shrink-0">
-        {costs.enabled && <CostFilterPill costs={costs} blocked={blocked} />}
+        {/* 🔴 The re-price pill renders only while it can still ADD something. Re-pricing cannot
+            subtract a charge the run already carries, so on a fully charged run — the default
+            since 2026-08-24 — every row is already-on and priced at zero, and the control's only
+            possible outcome is "no change". A control that can never change anything reads as a
+            broken one, and the reader has no way to tell the difference. `costs.spent` is derived
+            from the SERVER's own `already_charged`, never from a guess about what a layer set
+            implies, so the two cannot disagree about when the pill is useful. */}
+        {costs.enabled && !costs.spent && <CostFilterPill costs={costs} blocked={blocked} />}
+        {run && <CostPairButton run={run} blocked={blocked} />}
         {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
       </div>
     </div>
@@ -7211,6 +7307,7 @@ export function BacktestDetail() {
                   news={news}
                   costs={costs}
                   dates={dates}
+                  run={run}
                   blocked={newsBlocked}
                   filtered={newsOnKpis}
                   dated={dateOnKpis}

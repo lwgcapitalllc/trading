@@ -3925,6 +3925,16 @@ RESOLVES it into `cost_layers` at run creation. Rules:
   somebody typed beside three measurements. Settled 2026-08-10 by filling one 0.10-lot round turn on
   each demo: Prime $3.50/side/lot, ECN $1.00, demos $0.00.
 
+🔴 **`bid_ask_fills` IMPLIES `spread` on the RE-PRICE side too, and forgetting it double-bills.**
+A run that transacted at the ask has paid the spread in the fills, so `spread` never appears in its
+stored layer list — read literally it looks available, and ticking it adds a second flat charge to a
+book that already carries one. Nothing downstream can tell: the result is a plausible number.
+`get_run_repriced` adds `spread` to `already` whenever `bid_ask_fills` is there. ⚠ **It became
+reachable on the day the charged default made `bid_ask_fills` the ordinary case** rather than a
+layer nobody ticked — the implication had been stated in `_cost_profile` since 2026-08-02 and only
+the WRITING side honoured it. Pinned by `test_bid_ask_fills_counts_as_the_spread_already_charged`
+and `test_a_fully_charged_run_has_nothing_left_to_reprice`, both watched RED by mutation.
+
 Proof: `tests/test_run_list_queries.py`, four checks, each watched RED by its own mutation (default
 flipped to None; commission override deleted; refusal removed). The fourth — costs-off still
 reachable — passes throughout on purpose, so a later "simplification" that hard-wires charging
