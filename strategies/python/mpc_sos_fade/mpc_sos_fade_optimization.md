@@ -4221,9 +4221,12 @@ that ends a trade still running, and this strategy's money is in the runners (Ru
   scratches are the ones being rescued and the long runners are the ones being cut.
 - **Fractions between 0.20 and 0.35.** The ladder loses at both ends and the R column is monotonic
   through the gap, so a finer grid would locate a peak already known to be outside the range.
-- **The parity gate.** `compare_sos_fade.py` has NOT run against this change — no decision-stream
-  export exists on this machine. Repo rule 22 applies: this code must not be treated as parity-clean
-  until an export arrives and the gate passes.
+- ~~**The parity gate.**~~ ✅ **RAN AND PASSED 2026-08-26**, after this run was first written.
+  `compare_strategy.py "VANTAGE_XAUUSD, 15_6fb2a.csv"` → exit 0 at warmups 100 / 200 / 500 / 1000 /
+  2000, 21,259 bars from 2025-10-01. ⚠ It covers the SHIPPED path only — the five new fields have no
+  Pine counterpart, so nothing in this run's ten rungs was parity-checked and every number in the
+  table above remains a lab finding. ⚠ A pre-existing red below warmup 50 (bar 16, `px_s_stage`)
+  reproduces identically on the pre-change code and is not this change.
 
 Harness: `backtest/tools/` untouched. Ten runs driven through the lab's own HTTP API by throwaway
 scripts in the session scratchpad (`queue3b.py` with bounded retry on `failed_crashed` only,

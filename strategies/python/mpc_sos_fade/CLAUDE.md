@@ -1273,7 +1273,22 @@ table** — `frac 0.10` produces MORE scratches than the control (51 vs 46) and 
 converting winners into scratches without fixing any scratch. Full tables, run ids and basis:
 `mpc_sos_fade_optimization.md` → Run 26.
 
-⚠ **NOT GATED, AND THE SHIPPED PATH IS UNCHANGED.** The control run reproduces the pre-change
+✅ **PARITY GATE GREEN, 2026-08-26 — rule 22 is now SATISFIED for this change.**
+`compare_strategy.py "VANTAGE_XAUUSD, 15_6fb2a.csv"` → **exit 0 at warmups 100 / 200 / 500 / 1000 /
+2000**, 21,259 bars from 2025-10-01. ⚠ **It proves the SHIPPED path only.** The five new fields have
+no Pine counterpart, so the export configures them at their off position and a green says **nothing**
+about the fraction or cost modes — the same structural blindness this file already records for the
+Custom stop level. ⚠ **And the harness itself warned that the no-gap arm was not exercised**: this
+export ran with Require-FVG ON, so neither side entered that fallback branch. A green covers the
+bars it walked, never the branch nobody entered.
+
+⚠ **At warmup 0 the gate is RED at bar 16 (`px_s_stage` py=1 pine=0), and that is PRE-EXISTING.**
+Confirmed rather than assumed: the identical failure, same bar, same field, same values, reproduces
+on the code from BEFORE this change in a throwaway worktree at `1ff36e4^`. Green from **warmup 50**
+onward on both. **A pre-existing red is still a red and is not retired by this note** — it is
+recorded here so the next reader does not spend the afternoon blaming the breakeven buffer for it.
+
+⚠ **THE SHIPPED PATH IS UNCHANGED.** The control run reproduces the pre-change
 baseline `5a5e2174d095` **trade for trade** (fingerprint `13fc4e5f9c7a95fb`, 243 vs 243 — ⚠ the
 FIRST version of this fingerprint keyed on `entry_time`, which is not a field in these trade records,
 so `.get()` returned `None` for every trade and that component compared nothing to nothing; corrected
