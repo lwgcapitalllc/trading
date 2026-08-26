@@ -198,7 +198,11 @@ def test_settings_the_deployment_does_not_state_are_reported(bot):
     staging, _ = promote_tool.stage(bot, promote_tool.repo_trees(bot))
     ok, detail = promote_tool.verify(bot, staging)
     assert ok is True
-    assert "exec_fib_nearest" in json.loads(detail)
+    # `verify` reports two things since 2026-08-26: the settings this deployment does not
+    # state, and the fields an open-position record would need. Read through `defaulted`
+    # rather than the top level - the second one is what makes a promote refuse while a bot
+    # is in the market, and it must not be squeezed out to keep this line shorter.
+    assert "exec_fib_nearest" in json.loads(detail)["defaulted"]
 
 
 # ── the version record ──────────────────────────────────────────────────────────

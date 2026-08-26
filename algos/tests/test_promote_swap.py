@@ -15,6 +15,7 @@ Every test here was watched RED against the pre-fix `activate()`.
 """
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -174,3 +175,61 @@ def test_remove_tree_never_raises(tmp_path, promote, monkeypatch):
         promote.shutil, "rmtree", lambda *a, **k: (_ for _ in ()).throw(OSError("nope"))
     )
     promote._remove_tree(target, attempts=2)  # must not raise
+
+
+# ── promoting while the bot is IN THE MARKET ─────────────────────────────────
+#
+# 🔴 2026-08-26: a bot was promoted v168 -> v241 holding a real trade. The newer strategy
+# persists 13 more position fields, the record had none of them, the restore refused, and the bot
+# HALTED with the position unmanaged - no stop ratcheting, no time exit. **Nothing warned.** The
+# dry run reports which SETTINGS would change and said nothing about the one thing that would
+# actually stop the bot.
+
+
+def _rec(tmp_path: Path, fields: dict, ticket: int = 999) -> Path:
+    d = tmp_path / "deployed"
+    d.mkdir(parents=True, exist_ok=True)
+    p = tmp_path / "position.json"
+    p.write_text(json.dumps({"ticket": ticket, "strategy": fields}))
+    return p
+
+
+def test_a_record_missing_fields_the_new_version_needs_is_a_gap(tmp_path, promote):
+    _rec(tmp_path, {"_sl": 1.0, "_stage": 0})
+    gap = promote.open_position_gap(_cfg(tmp_path), ["_sl", "_stage", "_adds", "_base_qty"])
+    assert gap and gap["ticket"] == 999
+    assert sorted(gap["missing"]) == ["_adds", "_base_qty"]
+
+
+def test_a_complete_record_is_not_a_gap(tmp_path, promote):
+    """It must be silent on the ordinary case, or it is a warning people learn to scroll past -
+    which this repo has already measured to be worth less than no warning at all."""
+    _rec(tmp_path, {"_sl": 1.0, "_stage": 0})
+    assert promote.open_position_gap(_cfg(tmp_path), ["_sl", "_stage"]) is None
+
+
+def test_no_open_position_is_not_a_gap(tmp_path, promote):
+    (tmp_path / "deployed").mkdir(parents=True, exist_ok=True)
+    assert promote.open_position_gap(_cfg(tmp_path), ["_sl"]) is None
+
+
+def test_an_UNREADABLE_record_counts_as_a_gap(tmp_path, promote):
+    """A record that will not parse is one the restore would refuse anyway. Reporting it as "no
+    position" is the exact shape of error this file exists to stop."""
+    (tmp_path / "deployed").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "position.json").write_text("{not json")
+    gap = promote.open_position_gap(_cfg(tmp_path), ["_sl"])
+    assert gap is not None and gap["missing"]
+
+
+def test_a_version_that_declares_no_position_fields_asks_nothing(tmp_path, promote):
+    """An empty list means the question could not be answered, not that the answer is no.
+
+    ⚠ Asserted against an UNREADABLE record on purpose. The first draft used an ordinary one, and
+    that version passed with the guard deleted - the field loop finds nothing to miss either way.
+    **A test that cannot tell the guard from its absence is not testing the guard**, and only
+    running the mutation showed it.
+    """
+    (tmp_path / "deployed").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "position.json").write_text("{not json")
+    assert promote.open_position_gap(_cfg(tmp_path), []) is None

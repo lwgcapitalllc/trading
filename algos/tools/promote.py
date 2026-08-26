@@ -252,6 +252,31 @@ def _remove_tree(path: Path, attempts: int = 5) -> None:
         pass
 
 
+def open_position_gap(cfg, position_fields: list) -> Optional[dict]:
+    """Is this bot holding a position whose record the NEW version could not restore?
+
+    Returns `{ticket, missing}` when it is, `None` when there is nothing to worry about — no
+    record, or a record that already carries every field.
+
+    ⚠ **An unreadable record counts as a gap, not as "no position".** A record that will not
+    parse is one the restore would refuse anyway, and reporting it as absent is the shape of
+    error this whole file exists to stop.
+    """
+    if not position_fields:
+        return None
+    rec_path = cfg.deployed_dir.parent / "position.json"
+    if not rec_path.exists():
+        return None
+    try:
+        rec = json.loads(rec_path.read_text(encoding="utf-8"))
+        strat = rec.get("strategy") or {}
+        ticket = rec.get("ticket")
+    except Exception:
+        return {"ticket": "?", "missing": ["<the record could not be read at all>"]}
+    missing = [f for f in position_fields if f not in strat]
+    return {"ticket": ticket, "missing": missing} if missing else None
+
+
 def recover_interrupted(cfg) -> str:
     """Put a deployment back if a previous promote died between the two renames.
 
@@ -322,7 +347,17 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
             name: repr(getattr(built.cfg if hasattr(built, "cfg") else cfg_cls(**params), name))
             for name in sorted(set(fields) - set(params))
         }}
-        print("@@" + json.dumps(defaulted))
+        # Which fields this version needs in an open-position record. Searched for rather than
+        # named: a guessed attribute that misses would report an empty list, and an empty list
+        # reads as "nothing to worry about" - a silent wrong answer about a live position.
+        pos_fields = []
+        for holder in (built,) + tuple(
+            getattr(built, n) for n in dir(built) if not n.startswith("__")
+        ):
+            if hasattr(holder, "_POSITION_FIELDS"):
+                pos_fields = list(holder._POSITION_FIELDS)
+                break
+        print("@@" + json.dumps({{"defaulted": defaulted, "position_fields": pos_fields}}))
     """)
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(root)
@@ -416,6 +451,11 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--no-verify", action="store_true", help="skip the post-copy import check (not recommended)"
     )
+    ap.add_argument(
+        "--allow-open-position",
+        action="store_true",
+        help="promote even though the open position's record cannot be restored by this version",
+    )
     args = ap.parse_args(argv)
 
     cfg = live_config.load(args.bot)
@@ -470,7 +510,30 @@ def main(argv=None) -> int:
             print(textwrap.indent(detail, "    "))
             return 1
         print("  verified: the snapshot imports and builds with the promoted parameters")
-        defaulted = json.loads(detail or "{}")
+        report = json.loads(detail or "{}")
+        defaulted = report.get("defaulted", {})
+        gap = open_position_gap(cfg, report.get("position_fields") or [])
+        if gap:
+            # 🔴 2026-08-26: a bot was promoted v168 -> v241 while holding a real trade. The
+            # newer strategy persists 13 more position fields, the record had none of them, the
+            # restore refused, and the bot HALTED with the position unmanaged - no stop
+            # ratcheting, no time exit. Nothing warned. This is the one question worth asking
+            # before promoting a bot that is in the market, and it can only be asked here,
+            # because only the staged snapshot knows what the new version needs.
+            print(
+                f"\n  !! THIS BOT IS HOLDING A POSITION (T{gap['ticket']}) AND THIS VERSION "
+                f"CANNOT RESTORE IT."
+            )
+            print(f"     The record is missing {len(gap['missing'])} field(s) it needs:")
+            print(f"       {', '.join(sorted(gap['missing']))}")
+            print("     Restarting onto this version would HALT the bot and leave the position")
+            print("     with only its broker stop - nothing ratcheting it, no time exit.")
+            print("     Either wait until the position closes, or repair the record first:")
+            print(f"       migrate_position_record.py --bot {cfg.bot_key} --write")
+            if not args.dry_run and not args.allow_open_position:
+                print("\n  ! nothing was deployed. Pass --allow-open-position to promote anyway.")
+                shutil.rmtree(staging, ignore_errors=True)
+                return 1
         if defaulted:
             # Settings this version has that the deployment does not state. They take the
             # strategy's own defaults, which is how a new version quietly changes behaviour —

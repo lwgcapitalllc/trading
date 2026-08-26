@@ -1470,9 +1470,20 @@ the record had been written minutes earlier by the old version, and the restore 
 correctly, because a record it cannot fully read means it does not know what it is holding. The
 trade sat with only its broker stop, nothing ratcheting it and no time exit.
 
-⚠ **Nothing warned.** The promote's dry run reports which SETTINGS would change; it says nothing
-about whether the bot is holding a position whose record the new version cannot read. That is the
-one question worth asking before promoting a bot that is in the market.
+✅ **The promote now ASKS, and REFUSES (2026-08-26).** `open_position_gap()` compares the open
+position's record against the `_POSITION_FIELDS` the STAGED snapshot declares — read from the
+snapshot, because only the new version knows what the new version needs. A real promote stops and
+names the migration tool; `--allow-open-position` overrides it; a dry run reports and carries on,
+which is the whole point of a preview.
+
+⚠ **An unreadable record counts as a gap, never as "no position"** — a record that will not parse
+is one the restore would refuse anyway, and reporting it as absent is the shape of error this file
+exists to stop. ⚠ **A version declaring no position fields asks nothing** rather than treating
+every field as missing, or it would refuse every promote for a strategy that holds no state.
+
+⚠ **It is silent on the ordinary case.** A complete record, or no position at all, prints nothing
+— a warning that fires when it should not is one people learn to scroll past, and this repo has
+already measured that to be worth less than no warning at all.
 
 ✅ **`tools/migrate_position_record.py` is the repair.** It ADDS the missing fields and never
 touches an existing one, and **every value is read off a freshly BUILT deployed strategy rather
