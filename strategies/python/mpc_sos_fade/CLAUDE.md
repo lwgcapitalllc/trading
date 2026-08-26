@@ -3406,6 +3406,36 @@ trades, so it changed which setups were TAKEN.
 ⚠ **If the naming is to be fixed, sort the LABELS and leave both prices alone.** Everything the
 stop ladder does is already distance-ordered; only the chip is out of order.
 
+### The second rung as a CHOSEN distance, not leftover geometry (2026-08-25)
+
+**For a re-entry the second rung means nothing deliberate, and that is the finding.** It is a
+retracement level of the swing the ORIGINAL setup formed on — a price fixed on the chart when the
+setup appeared. A primary enters where that ladder expects, so the rung is a real target and all
+155 primaries on run `f3e8bc41db50` were correctly ordered. A re-entry enters somewhere else, so
+what is left to that same price is an accident of the fill: MEASURED across 90 re-entries it lands
+between **0.27× and 3.66× the first rung's distance, median 1.47×, with 25 of 90 INSIDE the first
+rung.**
+
+✅ **`exec_sec_tp2_x` REPLACES it with a chosen multiple of the first rung, so the two are ordered
+by construction.** ⚠ **It is not the floor above renamed — the difference is DIRECTION.** A floor
+lets a distant fib stand and can only push a rung away; this overrides both ways, so it also pulls
+IN the rung that ran to 3.66×. Applied BEFORE the floor, so with both on they compose.
+
+⚠ **SHIPS OFF, and the standing rules from its sweep are these three.** ① **The money is noise and
+the drawdown is not** — best arm (1.25×) is 142.87R against 139.09R, which is 15 trades swinging ±1R
+each, while max drawdown fell at EVERY arm monotonically as the multiple tightened, 53.68% → 47.95%.
+Treat it as a drawdown lever, never as a way to make more money. ② **Any arm at 3× or beyond is a
+DIFFERENT BOOK, not a comparison** — a re-entry then holds long enough to block the setups behind it
+and the trade count drops to 237 and 235; with one position slot an extra hold does not add to the
+book, it queues in front of it. ③ 🔴 **Ordering the ladder DELETES the only breakeven trigger some
+re-entries have.** 2020-11-04 goes +0.348R → −0.907R at every setting tested, with 2021-02-11 and
+2020-12-28 doing the same. **Ordering the targets and protecting those trades are opposing goals**,
+and the cheap way to have both is still the one named above: sort the chart LABELS, leave the prices
+alone.
+
+TESTED: 15 tests in `tests/test_sec_tp2_level.py`, 6 mutations run and all killed. Full sweep table,
+the run ids and the entry-by-entry divergence check: `docs/SOS_FADE_BUILD_NOTES.md`.
+
 🔴 **ONE SWEEP ARM SILENTLY REPLAYED STALE CODE.** The 2.5× arm ran 170s, stored its parameter, and
 produced a ladder byte-identical to the control; an identical re-request came out correct. The lab
 purges cached strategy modules under one namespace only, and `mpc_bleg` imports this package's

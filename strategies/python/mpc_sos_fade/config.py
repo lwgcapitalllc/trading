@@ -825,6 +825,66 @@ class SosFadeConfig:
     #   the input does not license removing the guard that survived it.
     #   ⚠ Read ONLY when exec_secondary is on.
 
+    exec_sec_tp2_x: float = -1.0       # "Re-entry's second target, multiple of the first"
+    #   THE SECOND TARGET IS REPLACED OUTRIGHT by this multiple of the FIRST rung's distance.
+    #   -1.0 (default) is OFF and the 15m fib stands. A positive number puts the second rung at
+    #   `entry + dir * x * (tp1 - entry)` on EVERY re-entry, so the two are in order by
+    #   construction and the second one means the same thing on every trade.
+    #
+    #   🔴 IT IS NOT `exec_sec_tp2_min_x` UNDER A NEW NAME. That one is a FLOOR: the fib WINS
+    #   whenever it already sits further out, so it can only ever push a rung away. MEASURED
+    #   2026-08-25 and it was noise — 139.09R control against 140.64 / 140.29 / 139.79 / 137.10
+    #   at 1.5x / 2.0x / 2.5x / 3.0x, with only 13 of 246 trades moving at all. This one
+    #   overrides the fib in BOTH directions, so it also pulls IN the rung that extended to
+    #   6.732R, which is the half a floor can never touch.
+    #
+    #   ⚠ WHAT MOVES IS THE TRAIL HAND-OVER, NOT WHERE PROFIT BANKS. The second rung banks
+    #   `exec_tp2_pct` — 0 on the shipped ladder — so its only job is to lift the stop floor to
+    #   the first rung's price and hand the rest to the runner trail. `exec_sec_tp1_pct` still
+    #   comes off at `exec_sec_tp_r` wherever this is set.
+    #   🔴 IT DELAYS BREAKEVEN ON A FLIPPED TRADE, and that is the cost the sweep has to price.
+    #   The stop arms stage 1 at whichever rung is NEARER, and on a flipped re-entry that is the
+    #   fib — measured as near as 0.198R. Replacing it with a multiple of the first rung moves
+    #   stage 1 out to `exec_sec_tp_r`. 2020-11-04 is the worked example: its flipped rung at
+    #   0.757R was the only breakeven trigger that trade ever reached, and pushing the second
+    #   target away took it from +0.348R to -0.907R.
+    #   ⚠ SECONDARIES ONLY, and that is a parity decision rather than caution: the flip is created
+    #   by `exec_sec_tp_r`, which exists nowhere in `mpc_strategy.pine` — the Pine has no re-entry
+    #   at all — so `compare_strategy.py` sees the same primary decisions it always did.
+    #   ⚠ Applied BEFORE `exec_sec_tp2_min_x`, so with both on the floor still floors the REPLACED
+    #   level instead of being silently overwritten by it.
+    #
+    #   MEASURED 2026-08-25, XAUUSD.p M15, 2020-01-01..2026-08-23, PU Prime ECN bid/ask fills +
+    #   commission 1.0/side + swap, consistent sizing. Control `34ffef240698` = 139.09R at 53.68%
+    #   max drawdown, and it reproduced the earlier control to the penny with this field off.
+    #
+    #     multiple    totR     maxDD%   trades   note
+    #     off        139.09     53.68     246    control
+    #     1.10x      142.83     47.95     246    15 moved
+    #     1.25x      142.87     47.95     246    15 moved  <- best
+    #     1.50x      141.09     49.02     246    14 moved
+    #     2.00x      140.29     50.67     246    16 moved
+    #     2.50x      139.79     51.11     246    17 moved
+    #     3.00x      137.10     51.11     237    book DIVERGES at trade 18
+    #     4.00x      136.55     52.85     235    book DIVERGES at trade 18
+    #
+    #   🔴 THE LAST TWO ROWS ARE NOT TRADE-FOR-TRADE COMPARISONS AND MUST NOT BE READ AS ONE. At
+    #   3.0x a re-entry on 2020-09-28 holds long enough to block the setups behind it, so the book
+    #   after trade 18 is a DIFFERENT SET OF TRADES — 9 and 11 fewer. With one position slot an
+    #   extra hold does not add to the book, it queues in front of it. The 1.1x-2.5x rows all keep
+    #   the same 246 entries and are clean.
+    #
+    #   ⚠ THE GAIN IS SMALL AND THE DRAWDOWN IS THE INTERESTING HALF. +3.78R over 6.5 years off 15
+    #   trades is the same order as the floor above, which was called noise for the same reason.
+    #   What is NOT noise is that every single arm improved max drawdown, monotonically as the
+    #   multiple tightened — 53.68% down to 47.95%. Read it as a drawdown lever that pays for
+    #   itself, not as a way to make more money.
+    #   🔴 IT COSTS THE 2020-11-04 RE-ENTRY, AT EVERY SETTING TESTED: +0.348R -> -0.907R, and two
+    #   others do the same (2021-02-11, 2020-12-28). Those are trades whose swing level was the
+    #   NEARER of the two rungs and therefore the only thing that ever armed their breakeven.
+    #   Ordering the ladder removes that, which is the honest cost of ordering the ladder.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
     exec_sec_fill_tf_min: int = 5      # "Re-entry fill clock (minutes)"
     #   WHICH BAR STREAM THE RE-ENTRY'S RESTING ORDER IS FILLED AGAINST in a backtest. The primary
     #   always replays on 15m; this is the second feed `run_dual` walks alongside it.
@@ -1497,6 +1557,16 @@ class SosFadeConfig:
                 f"exec_sec_tp2_min_x must be -1 (off) or greater than 1.0, got "
                 f"{self.exec_sec_tp2_min_x!r}. A multiple of 1.0 or less would put the second "
                 f"target at or inside the first, which is the flip this setting exists to stop.")
+        if self.exec_secondary and not (
+                self.exec_sec_tp2_x == -1.0 or self.exec_sec_tp2_x > 1.0):
+            # Refuse rather than clamp, same reasoning as the floor above. At or below 1.0 the
+            # replacement puts the second rung ON or INSIDE the first, which is the very flip the
+            # setting exists to remove — and a setting that quietly accepts a value it cannot
+            # honour is how a run gets measured on a configuration nobody chose.
+            raise ValueError(
+                f"exec_sec_tp2_x must be -1 (off, keep the 15m fib) or greater than 1.0, got "
+                f"{self.exec_sec_tp2_x!r}. A multiple of 1.0 or less would put the second target "
+                f"at or inside the first, which is the flip this setting exists to remove.")
         if self.exec_secondary and not self.exec_sec_risk_pct > 0:
             # Refuse rather than clamp to a floor. Zero (or negative) risk sizes a lot of zero,
             # which fills, closes and lands in the trade list at 0R — a trade that looks taken and

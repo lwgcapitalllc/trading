@@ -487,3 +487,63 @@ that is not a rare event. The run only completed on the third attempt, with a wa
 server's process identity every ten seconds. ⚠ **The reaper is right to fire — the alternative is a
 row stuck `running` forever — but a long sweep under a reloading server is not a safe place to
 measure.**
+
+
+## The second rung as a chosen distance (2026-08-25)
+
+
+Aaron, reading the 2020-11-04 chart: *"I just want to find a better TP2 other than the 15-minute
+level it was armed on — I don't even know what this means. TP2 should always come after TP1."*
+
+**He is right about what it means, and the answer is that for a re-entry it means nothing
+deliberate.** The second rung is a retracement level of the swing the ORIGINAL setup formed on —
+a fixed price on the chart, fixed when the setup appeared. A primary enters where that ladder
+expects and the rung is a real target: MEASURED on run `f3e8bc41db50`, 75 primaries took the start
+of the move and 80 took the 38.2% mark, and **all 155 were correctly ordered**. A re-entry enters
+somewhere else entirely, so the distance left to that same price is an accident of where it got
+filled. MEASURED over the same run's 90 re-entries: the second rung lands between **0.27× and
+3.66× the first rung's distance, median 1.47×, with 25 of 90 INSIDE the first rung.**
+
+✅ **So `exec_sec_tp2_x` REPLACES it with a chosen multiple of the first rung.** The two are then
+ordered by construction on every re-entry. ⚠ **It is not the floor above under a new name, and the
+difference is direction**: a floor lets a distant fib stand and can only push a rung away, while
+this overrides in BOTH directions — it also pulls IN the rung that ran to 3.66×, which is the half
+a floor can never reach. Applied BEFORE the floor, so with both on they compose.
+
+MEASURED 2026-08-25 on the basis above. Control `34ffef240698` reproduced the earlier control to
+the penny with the field off, which is how the sweep knows the new field is inert when unset.
+
+| multiple | total R | max DD | trades | |
+|---|---|---|---|---|
+| off | 139.09 | 53.68% | 246 | control |
+| 1.10× | 142.83 | 47.95% | 246 | 15 moved |
+| **1.25×** | **142.87** | **47.95%** | 246 | 15 moved — best |
+| 1.50× | 141.09 | 49.02% | 246 | 14 moved |
+| 2.00× | 140.29 | 50.67% | 246 | 16 moved |
+| 2.50× | 139.79 | 51.11% | 246 | 17 moved |
+| 3.00× | 137.10 | 51.11% | 237 | book DIVERGES |
+| 4.00× | 136.55 | 52.85% | 235 | book DIVERGES |
+
+🔴 **THE LAST TWO ROWS ARE A DIFFERENT BOOK AND MUST NOT BE READ AS A TRADE-FOR-TRADE COMPARISON.**
+At 3× a re-entry on 2020-09-28 (trade 18) holds long enough to block the setups behind it, and every
+entry after that point differs — 9 and 11 fewer trades. **With one position slot an extra hold does
+not ADD to the book, it QUEUES in front of it**, which is the same effect this repo already
+measured when loosening the entry filter. The 1.1×–2.5× rows all keep the same 246 entries and were
+checked entry-by-entry, so those are clean.
+
+⚠ **THE MONEY IS NOISE AND THE DRAWDOWN IS NOT — same verdict as the floor, reached independently.**
++3.78R over 6.5 years off 15 trades swinging ±1R each is fifteen coin flips. What does not look like
+a coin flip is that **every arm tested cut max drawdown, monotonically as the multiple tightened,
+53.68% → 47.95%** — and the floor sweep found the same direction on a different mechanism. Read this
+as a drawdown lever, never as a way to make more money.
+
+🔴 **AND IT COSTS THE TRADE THAT PROMPTED IT, AT EVERY SETTING TESTED.** 2020-11-04 goes
+**+0.348R → −0.907R**, identical at 1.1× through 2.5×, joined by 2021-02-11 and 2020-12-28. The
+mechanism is the one the floor already exposed: on a flipped re-entry the too-close rung is the ONLY
+thing that ever arms breakeven, so ordering the ladder deletes that trade's only protection.
+**Ordering the targets and protecting those trades are opposing goals, not one job** — the cheap way
+to have both is still the one named above: sort the chart LABELS and leave the prices alone.
+
+**Ships OFF.** TESTED: 15 tests in `tests/test_sec_tp2_level.py`, 6 mutations run and all killed —
+the rule never firing, reading the raw fib instead of the replaced first rung, ignoring direction,
+being applied after the floor instead of before, shipping ON, and the validation accepting anything.

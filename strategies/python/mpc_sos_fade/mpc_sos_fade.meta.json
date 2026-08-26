@@ -1007,6 +1007,25 @@
       "desc": "Stops a re-entry's two targets coming out BACKWARDS. The first target is a multiple of the trade's own risk while the second stays the 15-minute swing level it was armed on, so nothing keeps the first the nearer of the two. MEASURED 2026-08-25 over 93 re-entries: 36 came out flipped and 32 had their second target sitting INSIDE the first, one as close as 0.198 times the risk — which is noise rather than a sign the move has extended. -1 (default) is off. A positive number is the least the second target may be, as a multiple of the first one's distance from entry; the swing level still wins whenever it is already further out, so this only ever pushes a target away and never pulls one in. It reads on BOTH halves of the re-entry, which is why it sits in the shared group: the rule is a statement about the ladder, and the code applies it to every re-entry whatever armed it. MEASURED 2026-08-25: only the gap half ever comes out flipped (27 of 44), while all 47 reclaim re-entries were already in order — so on that half this only ever pushes an already-ordered target further out. It does NOT move where profit banks — the second target takes nothing off on the shipped ladder, so all that changes is when the stop lifts to the first target's price and the runner trail takes over. Lab only."
     },
     {
+      "name": "exec_sec_tp2_x",
+      "group": "Secondary re-entries",
+      "widget": "number",
+      "label": "Re-entry's second target — set it as a multiple of the first",
+      "short": "Second target",
+      "min": -1,
+      "max": 8,
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "guide": [
+        "Off — the second target stays on the swing level",
+        "Places the second target further out"
+      ],
+      "warn": "Cuts the worst drawdown at every setting measured, but three re-entries lose their only breakeven trigger and turn small wins into full losses. Ships off.",
+      "desc": "REPLACES a re-entry's second target instead of only flooring it. The first target is a multiple of the trade's own risk while the second stays the 15-minute swing level it was armed on, so the two are measured by different rulers and the second can land nearer than the first. -1 (default) is off and the swing level stands. A positive number places the second target at that multiple of the first one's distance from entry, on EVERY re-entry, so the two are always in order. The difference from the floor setting above is direction: the floor only ever pushes a target further away and lets the swing level win when it is already out there, while this one also pulls IN a target that ran to nearly seven times the trade's risk. It does NOT move where profit banks — the second target takes nothing off on the shipped ladder, so what changes is when the stop lifts to the first target's price and hands the rest to the trail. That cuts both ways: on a trade whose swing level was the NEARER of the two, moving it out delays the point where the trade becomes unloseable. Lab only. MEASURED 2026-08-25 over 6.5 years on gold, PU Prime ECN with real fills, commission and swap: off = 139.09R at 53.68% worst drawdown; 1.1x = 142.83R at 47.95%; 1.25x = 142.87R at 47.95%; 1.5x = 141.09R at 49.02%; 2x = 140.29R at 50.67%; 2.5x = 139.79R at 51.11%. Every setting tested cut the worst drawdown, and the tighter the multiple the more it cut — that is the reason to use it. The extra money is small: about 4R over six and a half years off 15 trades. At 3x and above a re-entry starts holding long enough to block the setups behind it and the run becomes a different set of trades (237 and 235 instead of 246), so those are not like-for-like and are not quoted here. It has a real cost: three trades whose swing level was the nearer of the two rungs lose the only thing that moved their stop to breakeven, and each goes from a small win to a full loss."
+    },
+    {
       "name": "exec_sec_retrace",
       "group": "↳ FVG / Structure shift only",
       "widget": "number",

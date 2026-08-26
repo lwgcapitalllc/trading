@@ -2284,6 +2284,19 @@ class Execution:
             dist = abs(fill_price - pend.sl)
             if tp_r > 0 and dist > 0:
                 self._tp1 = fill_price + (1 if pend.dir > 0 else -1) * tp_r * dist
+            # `exec_sec_tp2_x` — REPLACE the second rung with a multiple of the FIRST one's
+            # distance, so a re-entry's two targets are in order by construction. Off by default.
+            # ⚠ Unlike the floor below, this overrides the fib in BOTH directions: it pulls IN a
+            # rung that extended as well as pushing out one that landed inside. That is the whole
+            # difference between the two, and the reason both exist.
+            # ⚠ Measured off `self._tp1` AFTER the block above, not off `tp_r`, so it holds for the
+            # -1 case too, where the first rung is the fib and the multiple is of that distance.
+            tp2_x = getattr(self._cfg, "exec_sec_tp2_x", -1.0)
+            if tp2_x > 0:
+                dx = 1 if pend.dir > 0 else -1
+                t1_dist_x = (self._tp1 - fill_price) * dx
+                if t1_dist_x > 0:
+                    self._tp2 = fill_price + dx * tp2_x * t1_dist_x
             # `exec_sec_tp2_min_x` — the second rung may not sit NEARER than a multiple of the
             # first one's distance. The two are priced by different rulers (risk vs the frozen 15m
             # fib), so nothing otherwise keeps them in order: 36 of 93 re-entries on run
