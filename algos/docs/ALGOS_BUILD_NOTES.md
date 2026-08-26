@@ -76,3 +76,69 @@ leg origin and the deepest level the fib ladder defines.
 the config was touched. The sweep that produced them ran in a scratch copy carrying scale-in and
 early-cut experiments; those are inert at their defaults, but *inert* is a claim about code and a
 live config change is not the place to trust one.
+
+---
+
+## 2026-08-25 - one order, five positions: a timeout read as a rejection
+
+**Symptom Aaron saw:** a stall alert at 8:35 AM CDT, then repeated halt and review alerts all
+afternoon, and five positions in the account all filled at the identical price of 4661.50.
+
+**What actually happened,** off the bot's own log:
+
+| time (UTC) | event |
+|---|---|
+| 13:15 | short limit 0.37L @ 4661.50 placed, confirmed, ticket recorded |
+| 13:30 | size moved to 0.39L; MODIFY cannot change volume, so it cancels and re-places |
+| 13:33 | the CANCEL times out after 3 minutes (retcode 10012). `_sync_side` discards the answer and clears its record anyway |
+| 13:33, 13:45, 14:00, 14:15 | four placements, each hanging 3 minutes and then reporting failure - **each one had already landed at the broker** |
+| 14:30 | the fifth placement returns cleanly and is the only one the bot records |
+| 19:15 | price touches 4661.50 once; all five fill in the same second; the bot halts on the position count |
+
+**The defect, and it is the first rule in the root `CLAUDE.md` arriving through a different
+door.** `place_pending_limit` returns `None` for every retcode that is not DONE. Retcode 10012
+is TIMEOUT: the reply never came back, so the outcome is **unknown** - the broker may well have
+accepted it. Collapsing *rejected* and *cannot tell* into one return value meant the retry loop
+could not distinguish them, and it re-sent the same order on every bar for an hour.
+
+**Three things had to line up, and all three are worth fixing separately:**
+
+1. **A timeout is treated as a rejection.** `cancel_pending` already does the right thing - it
+   re-asks the broker before believing itself - and the placement path never got the same
+   treatment. **The reconciling half of a pair is the one that was written second.**
+2. **A failed cancel is ignored.** `_sync_side` throws away `cancel_pending`'s return value and
+   clears `_rest[direction]` unconditionally, so a cancel that fails leaves an order resting
+   that the bot has forgotten. That alone duplicates an order without any timeout involved.
+3. **Nothing looks for orphans during a run.** `_observe_vanished` checks the orders the bot
+   REMEMBERS against the broker. The opposite direction - an order at the broker under our own
+   magic that we have no record of - is only ever swept at startup.
+
+🔴 **The account risk cap could not see any of it, and its exclusion is documented and was
+correct-looking.** `_account_cap_check` deliberately ignores this bot's own exposure, on the
+stated premise that "anything of ours already on the book is the thing this order REPLACES,
+never something it adds to." That premise is true **only while a cancel is known to have
+worked.** The moment a cancel's outcome became unknown the premise was false, and the one check
+that could have counted five copies of a 10% order was the one check told not to look.
+**A safety exclusion carries a premise; write the premise down next to it, because that is the
+thing that fails.** ~50% of the account ended up on one idea at one price.
+
+⚠ **The 8:35 stall alert was this, and it read as unrelated.** The 3-minute blocking broker call
+starves the heartbeat, so the watchdog reported STALLED and then RECOVERED. **The first symptom
+of an order fault surfaced as a liveness alert** - two different rooms, no link between them.
+
+⚠ **Four of the five positions were unmanaged.** The bot restored the one ticket in its own
+position record and ratchets that stop; the other four carried only their original broker stop
+and would never have seen a breakeven move or a time exit.
+
+⚠ **Nothing in the Command Center can show an account's open positions**, so there was no screen
+anywhere that would have made five-instead-of-one visible.
+
+✅ **Cleaned up with `algos/tools/close_orphans.py`,** written the same day - it keeps the ticket
+the bot wrote down, closes the rest, and records each one as `counts_as_strategy_performance:
+false`. 🔴 **At the moment of the clean-up the four extras were +$2,770 in front, and that is
+exactly why the labelling matters.** Aaron's instruction was the right one: *"I don't want us to
+look at them like we won."* A windfall produced by a defect, left unlabelled in a broker
+statement, becomes evidence for the strategy the next time anybody totals the account.
+
+⚠ **Demo account 700152905, so no real money moved.** That is luck about which account it
+happened on, not a property of the defect.

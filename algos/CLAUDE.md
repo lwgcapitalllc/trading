@@ -454,6 +454,32 @@ The root `conftest.py` has to `collect_ignore` `algos/nt8/test_bt_switch.py`: it
 script, not a test, and it calls `sys.exit(1)` at IMPORT when pywinauto is missing, which crashes
 collection for the whole repo rather than failing one file.
 
+**`tools/close_orphans.py` - close positions the bot did NOT choose, and record them as
+MISTAKES rather than trades (2026-08-25).** Written the day five copies of one limit order
+reached the broker. It keeps the ticket the bot wrote down for itself, closes every other
+position under that bot's magic, and writes one `unmanaged_position_closed` record per ticket
+into the decision ledger carrying `counts_as_strategy_performance: false`.
+
+🔴 **The RECORDING is the tool, and the closing is the easy half.** Those tickets are in the
+broker's deal history for good, so any study built off the statement will find them and score
+them - and on the day it was written the four extras were **+$2,770 in front**, which is the
+shape that gets kept. A windfall from a defect that nobody labels becomes evidence for the
+strategy the next time somebody totals the account. The flag sits next to the ticket so a
+reader joining on the statement cannot miss it.
+
+⚠ **It decides from the ACCOUNT, never from a return code, and that is the whole design.** The
+incident it cleans up happened because a request that TIMED OUT was read as a request that
+FAILED. So after every close it re-reads the open positions and concludes from what the broker
+actually holds; a ticket still open is reported and **never automatically retried**. A recovery
+tool that repeats the fault it is recovering from is worse than no tool.
+
+⚠ **It asserts the account before it touches anything** (same `attach()` shape as
+`broker_facts.py`), it never looks past its own magic, and it refuses outright if the
+`--keep` ticket is not open - so it cannot be talked into closing everything.
+⚠ **Read-only unless BOTH `--close` and the exact `--confirm` phrase are given**, and the
+phrase names the bot and the count. A speed bump against a slip, not a wall against intent.
+⚠ **It is NOT a kill switch** - `tools/fleet_halt.py` is that.
+
 **`tools/shadow_diff.py` — did the LIVE bot decide what the LAB says it should have?** Step 9.2 of
 `docs/LIVE_TRADING_PIPELINE.md`. It joins the bot's own `bar` ledger stream to a lab replay of the
 same window and diffs them field by field. The claim it checks is narrow and therefore useful:
