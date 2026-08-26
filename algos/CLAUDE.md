@@ -1456,6 +1456,30 @@ Any time you add or fix behaviour that applies to ALL bots. Do not add it to one
 leave the others with stale code. Fix the shared implementation, update the thin delegates
 in every bot that uses it.
 
+### 🔴 Promoting with a position OPEN halts the bot (2026-08-26)
+
+**It happened the same night as the promote fix.** A bot was promoted v168 -> v241 while holding
+a real trade. The newer strategy persists 13 more position fields (scale-in and reclaim state),
+the record had been written minutes earlier by the old version, and the restore **refused** —
+correctly, because a record it cannot fully read means it does not know what it is holding. The
+trade sat with only its broker stop, nothing ratcheting it and no time exit.
+
+⚠ **Nothing warned.** The promote's dry run reports which SETTINGS would change; it says nothing
+about whether the bot is holding a position whose record the new version cannot read. That is the
+one question worth asking before promoting a bot that is in the market.
+
+✅ **`tools/migrate_position_record.py` is the repair.** It ADDS the missing fields and never
+touches an existing one, and **every value is read off a freshly BUILT deployed strategy rather
+than typed into the tool** — a default written here would be a guess that goes stale the next
+time the strategy changes, and it would look exactly like a measurement. It refuses unless the
+broker really holds the recorded ticket, keeps a timestamped backup, and leaves fields the
+current version does not know about in place so a rollback is not lossy.
+
+⚠ **The bot must be STOPPED** — a running bot rewrites that file whenever the stop moves.
+
+⚠ **It repairs ONE shape of damage.** A record disagreeing with the broker about direction, size,
+entry or stop is a different problem and this will not touch it.
+
 ### 🔴 A promote must never leave a bot with NO deployed code (2026-08-26)
 
 **It happened.** `activate()` deleted the live snapshot and then renamed the staged one into its
