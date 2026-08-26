@@ -456,6 +456,22 @@ fix(chart): correct a comment typo
 DOCS: none - comment only, no behaviour change
 ```
 
+🔴 **`git add -A` FROM A SECOND SESSION BREAKS THE PAIRING THE HOOK EXISTS TO ENFORCE, and it
+happened on 2026-08-25.** The docs check asks that a changed file's owning CLAUDE.md be in the SAME
+commit. It cannot ask the reverse — that a CLAUDE.md paragraph ships with the code it describes —
+so a blanket stage from a session working on something else sweeps up another session's in-progress
+doc edits and lands them alone. Commit `89a6324` (an MCP fix) carried 19 lines of this file
+describing a test step that lived only in an uncommitted working file, so **`main` documented step
+8 of `scripts/run_all_tests.sh` while `main`'s own copy of that script still said seven steps.**
+
+⚠ **Nothing failed and no check went red** — the same shape as the ruff carve-out that `git add -A`
+undid, and this file already names that one. **Stage by PATH when two sessions share a clone**, and
+before committing, read `git status` for files you did not touch.
+
+⚠ **The direction of the damage is the part to remember: a doc that arrives EARLY reads exactly
+like a doc that is right.** The next person greps for the step, finds the paragraph, runs the
+script, and sees seven — and the honest conclusion available to them is that the script is broken.
+
 ### The second half — a change to the money paths names its evidence
 
 **Added 2026-08-12.** The docs check proves somebody WROTE something down. It does not prove

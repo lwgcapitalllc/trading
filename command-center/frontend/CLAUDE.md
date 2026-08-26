@@ -1422,6 +1422,24 @@ somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runna
 been left at a stale "66 in 5" through several passes — re-count it rather than incrementing it),
 run with `npm test` from `frontend/`.
 
+### `scripts/*.mjs` — the checks that need NOTHING running
+
+Two so far, and both exist for the same reason: the thing they check is ARITHMETIC, while the only
+browser-side evidence for it is formatted text or canvas pixels. A check that settles for those is
+asserting on a formatter or on a locator.
+
+- **`check_period_rebase.mjs`** — the period filter's numeric identities. Needs the backend on
+  :8000, so it is run by hand. Detail under *The period filter* above.
+- **`check_trade_geometry.mjs`** — the trade box's two PRICE rules: how far the adverse band
+  reaches, and whether the exit gets a marker. Needs nothing running, so it IS in the gate,
+  as **step 8 of `../../scripts/run_all_tests.sh`** — 25 cases, non-vacuity by mutation with the
+  map RUN rather than reasoned. **The rules and why each exists live in
+  `src/components/ChartPanel/CLAUDE.md`; do not restate them here.**
+
+⚠ **The pure module they drive is the point.** `src/components/ChartPanel/tradeGeometry.ts` has no
+imports precisely so a plain node script can run it — the rules were wrong on real trades for as
+long as they lived inside a canvas callback nothing could reach.
+
 ### 🔴 A FIXTURE PINNED TO A DATABASE ROW — bitten three times now
 
 **A spec that asserts on which rows happen to be in the lab will fail on a day nothing is wrong, and

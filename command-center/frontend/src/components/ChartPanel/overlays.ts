@@ -8,6 +8,7 @@ import {
   type OverlayCreateFiguresCallbackParams,
   type OverlayFigure,
 } from 'klinecharts'
+import { adverseFloor, exitMarker, exitSide, stoppedOut, type Sign } from './tradeGeometry'
 
 /** What `registerOverlay` accepts. Named because the trade template is held in a CONST before it
  *  is registered (twice, under two names) — and a template written inline is contextually typed
@@ -271,7 +272,10 @@ interface TradeExtend {
   exitPrice?: number
   mfePrice?: number
   maePrice?: number
-  profitLegs?: Array<number | { price: number; label: string }> // {price,label}; bare number tolerated
+  // Every FILL the trade came off at, not only the profitable ones — `banked` says which took
+  // profit. ⚠ `banked` ABSENT reads as TRUE: a run stored before the flag carried only the
+  // profitable rungs. A bare number is tolerated (older cached specs).
+  profitLegs?: Array<number | { price: number; label: string; banked?: boolean }>
   stopPrice?: number
   // The exit ladder in the STRATEGY's own order — NOT nearest-first. `{price, banks}`; a bare
   // number is tolerated (a run stored before the banking flag existed). `banks === false` marks a
@@ -461,7 +465,7 @@ export function registerChartOverlays(): void {
             : d.kind === 'primary' || d.kind === undefined
               ? PRIMARY_TAG
               : null
-      const sign = isLong ? 1 : -1 // favourable ⇔ (price − entry) * sign > 0
+      const sign: Sign = isLong ? 1 : -1 // favourable ⇔ (price − entry) * sign > 0
 
       const x0 = Math.min(entry.x, exit.x)
       const x1 = Math.max(entry.x, exit.x)
@@ -532,25 +536,45 @@ export function registerChartOverlays(): void {
         ignoreEvent: true,
       })
 
-      // Each leg is {price, label} from chart_spec; tolerate a bare number too (older cached
-      // specs) by auto-labelling in exit order (TP1, TP2, …, last = Exit).
+      // Each leg is one FILL — {price, label, banked} from chart_spec; tolerate a bare number too
+      // (older cached specs) by auto-labelling in exit order (TP1, TP2, …, last = Exit).
+      // ⚠ `banked` ABSENT reads as TRUE. A run stored before the flag existed carried only the
+      // profitable rungs, so defaulting to false would repaint every historical profit-take as a
+      // plain exit — a claim about size that nobody measured.
       const legs = (d.profitLegs ?? [])
-        .map((l, i, a): { price: number; label: string } =>
+        .map((l, i, a): { price: number; label: string; banked: boolean } =>
           typeof l === 'number'
-            ? { price: l, label: i === a.length - 1 && a.length > 1 ? 'Exit' : `TP${i + 1}` }
-            : l
+            ? {
+                price: l,
+                label: i === a.length - 1 && a.length > 1 ? 'Exit' : `TP${i + 1}`,
+                banked: true,
+              }
+            : { ...l, banked: l?.banked !== false }
         )
         .filter((l) => l && typeof l.price === 'number')
       const legPrices = legs.map((l) => l.price)
-      // banked = deepest price where real profit was taken; a plain win with no leg detail banks
-      // at its exit price.
-      const bankedPrice: number | null = legPrices.length
+      // Where the trade came off, and whether that price already has a line on it. Resolved HERE
+      // because the `SL` chip is drawn before the legs are and has to know whether to name it.
+      const exitAt = exitMarker({
+        exitPrice: d.exitPrice,
+        legPrices,
+        stopPrice: d.stopPrice,
+      })
+      // banked = deepest price where real profit was taken; a trade with no fills on record banks
+      // at its exit price, but only if it made money.
+      // ⚠ Off the BANKED fills, not off every fill. Since every fill reaches the chart, taking the
+      // extreme of all of them would let a breakeven-stop exit set the top of the green band and
+      // read as a profit-take.
+      const bankedPrices = legs.filter((l) => l.banked).map((l) => l.price)
+      const bankedPrice: number | null = bankedPrices.length
         ? isLong
-          ? Math.max(...legPrices)
-          : Math.min(...legPrices)
-        : typeof d.pnl === 'number' && d.pnl > 0 && typeof d.exitPrice === 'number'
-          ? d.exitPrice
-          : null
+          ? Math.max(...bankedPrices)
+          : Math.min(...bankedPrices)
+        : legPrices.length
+          ? null
+          : typeof d.pnl === 'number' && d.pnl > 0 && typeof d.exitPrice === 'number'
+            ? d.exitPrice
+            : null
       const mfePrice: number | undefined =
         typeof d.mfePrice === 'number'
           ? d.mfePrice
@@ -682,43 +706,24 @@ export function registerChartOverlays(): void {
       // drawdown and recovered it: one FAINT band entry→mae — the "runner" equivalent, showing
       // how deep it went against before working out.
       const isLoser = typeof d.pnl === 'number' && d.pnl < 0
-      // 🔴 THE STOP TOOK IT, SO THE STOP IS THE DRAWDOWN. Nothing adverse is drawn beyond the stop
-      // line on a trade the stop closed — no tail band, no `DD` dot, no `DD` label (Aaron's call,
-      // 2026-08-22: *"if my stop loss stopped me out, no need to show the drawdown. I was stopped
-      // out. There's no drawdown. I lost."*).
+      // 🔴 THE BAND ENDS WHERE PRICE ACTUALLY WENT. Its floor is the worst price the trade traded,
+      // and it reaches the stop ONLY when the stop actually filled — the two rules and the reasons
+      // they exist live in `tradeGeometry.ts::adverseFloor`, where they can be checked without a
+      // browser. The alpha is the only thing decided here: DARK when the trade ended net negative
+      // (it gave the drawdown back), FAINT when it recovered and closed up.
       //
-      // It is also not a preference — the number those marks were drawn from was WRONG. The bot
-      // widened the hold's worst price with the whole of the closing bar before working out that
-      // bar's exits, so on a stop-out it kept the bar's far end, which is price AFTER the position
-      // was flat. MEASURED on run `976aff9ec279`: 77 of 77 trades that exited at their stop
-      // recorded a worst price beyond it, median 0.18R past and worst 4.41R, and one 1.0R loser
-      // reported 2.22R of drawdown. Fixed at source in `mpc_sos_fade/execution.py`
-      // (`_widen_hold`) — this guard is what makes every run STORED BEFORE that fix read right
-      // too, because nothing backfills them.
-      //
-      // ⚠ Detected from the PRICES, never the exit reason. A stop-out's reason string is the
+      // ⚠ Both are read from the PRICES, never the exit reason. A stop-out's reason string is the
       // BRACKET that closed (`S-TP1` on a trade that lost 1.0R at its stop), so keying on it would
       // silently miss most of them.
-      const stoppedOut =
-        typeof d.exitPrice === 'number' &&
-        typeof d.stopPrice === 'number' &&
-        (d.exitPrice - d.stopPrice) * sign <= 1e-9
-      if (isLoser && typeof d.stopPrice === 'number' && (d.stopPrice - entryP!) * sign < -1e-9) {
-        rect(entryY, yOf(d.stopPrice)!, withAlpha(advColor, 0.22))
-        if (
-          !stoppedOut &&
-          typeof d.maePrice === 'number' &&
-          (d.maePrice - d.stopPrice) * sign < -1e-9
-        ) {
-          rect(yOf(d.stopPrice)!, yOf(d.maePrice)!, withAlpha(advColor, 0.07))
-        }
-      } else if (
-        typeof d.maePrice === 'number' &&
-        typeof entryP === 'number' &&
-        (d.maePrice - entryP) * sign < -1e-9
-      ) {
-        rect(entryY, yOf(d.maePrice)!, withAlpha(advColor, 0.1))
-      }
+      const wasStopped = stoppedOut(d.exitPrice, d.stopPrice, sign)
+      const floor = adverseFloor({
+        entryPrice: entryP as number,
+        stopPrice: d.stopPrice,
+        maePrice: d.maePrice,
+        exitPrice: d.exitPrice,
+        sign,
+      })
+      if (floor != null) rect(entryY, yOf(floor)!, withAlpha(advColor, isLoser ? 0.22 : 0.1))
 
       // How far the trade RAN — the two ends of the hold, one each way, and the pair of annotations
       // this layer was missing (Aaron's call, 2026-08-03). `Best` is the top edge of the faint green
@@ -745,7 +750,7 @@ export function registerChartOverlays(): void {
         crossLine(mfePrice, withAlpha(profitColor, 0.4)) // guide only — Exit already names it
       }
       if (
-        !stoppedOut &&
+        !wasStopped &&
         typeof d.maePrice === 'number' &&
         typeof entryP === 'number' &&
         (d.maePrice - entryP) * sign < -1e-9
@@ -758,7 +763,7 @@ export function registerChartOverlays(): void {
       // Stop: dotted line across + dot + "SL".
       crossLine(d.stopPrice, withAlpha(stopColor, 0.85))
       dot(d.stopPrice, stopColor)
-      addLabel(d.stopPrice, 'SL', stopColor)
+      addLabel(d.stopPrice, exitAt === 'stop' ? 'SL / Exit' : 'SL', stopColor)
       // The trade's own exit LADDER — every rung it aimed at, drawn faint whether or not price
       // reached it. Read the block below the legs for why it is never gated.
       const targets = (d.tpTargets ?? [])
@@ -776,23 +781,42 @@ export function registerChartOverlays(): void {
       }
       // Each real profit-take: a thin dotted mint line + a dot + its label (TP1/TP2/TP3/Exit). A
       // plain win with no per-rung detail draws one "Exit" at the banked price.
-      const drawnLegs = legs.length
-        ? legs
-        : bankedPrice != null
-          ? [{ price: bankedPrice, label: 'Exit' }]
-          : []
+      //
+      // 🔴 THE EXIT IS ALWAYS ONE OF THEM. Where a trade came off is a fact about the trade, not a
+      // reward for making money — `tradeGeometry.ts::exitMarker` carries the rule and the trade it
+      // was invisible on. It resolves to `stop` when the stop is where it ended (the `SL` chip
+      // above becomes `SL / Exit` rather than a second red line on the same pixel row) and to
+      // `leg` when a profit leg already draws that price.
+      //
+      // ⚠ Its colour is PRICE against the entry, never P&L. A breakeven-stop exit sits above a
+      // long's entry and still nets a loss once costs come out; colouring by P&L would paint a
+      // level price cleared as if price had not.
+      const sideColor = (price: number) => {
+        const side = exitSide(entryP as number, price, sign)
+        return side === 'adverse' ? stopColor : side === 'flat' ? entryColor : profitColor
+      }
+      const drawnLegs: { price: number; label: string; color: string }[] = legs.map((l) => ({
+        price: l.price,
+        label: l.label,
+        // A fill that BANKED is mint whichever way it sits; one that banked nothing is coloured by
+        // where it landed against the entry, because that is the only thing it says.
+        color: l.banked ? profitColor : sideColor(l.price),
+      }))
+      if (exitAt === 'draw') {
+        drawnLegs.push({
+          price: d.exitPrice as number,
+          label: 'Exit',
+          color: sideColor(d.exitPrice as number),
+        })
+      }
       // ⚠ Off `drawnLegs`, NOT `legs` — a plain win carries no rung detail and its only drawn
-      // price is the exit fallback, which is exactly the trade where `TP2 / Exit` has to work.
+      // price is the exit, which is exactly the trade where `TP2 / Exit` has to work.
       const drawnPrices = drawnLegs.map((l) => l.price)
       for (const lg of drawnLegs) {
-        crossLine(lg.price, profitColor)
-        dot(lg.price, profitColor)
+        crossLine(lg.price, lg.color)
+        dot(lg.price, lg.color)
         const rung = rungAt(lg.price)
-        addLabel(
-          lg.price,
-          rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label,
-          profitColor
-        )
+        addLabel(lg.price, rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label, lg.color)
       }
       // SCALE-IN adds: one dotted line + dot + `Add` per lot, in the ENTRY colour, because that is
       // what they are — further entries, at a later price. Drawn whenever the trade carries them,
@@ -974,7 +998,7 @@ export function registerChartOverlays(): void {
         // the stop closed. This is the mark that made somebody ask: on a 1.0R stopped-out short it
         // sat a full 1.2R ABOVE its own `SL` line, which reads as a trade that kept losing after
         // it was closed. Same rule as the `DD` marker above, and the same reason.
-        const deepY = stoppedOut ? d.stopPrice : (d.maePrice ?? d.stopPrice)
+        const deepY = wasStopped ? d.stopPrice : (d.maePrice ?? d.stopPrice)
         const extY = won ? yMfe : (yOf(deepY) ?? exit.y)
         const outPix = won ? -sign : sign // beyond the extreme, away from entry (px: up = −)
         // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several

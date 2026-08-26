@@ -40,10 +40,21 @@ export interface ChartSession {
 
 export type TradeDir = 'long' | 'short'
 
-/** One profit-take rung: the price it banked at + a display label (TP1/TP2/TP3/Exit). */
+/** One FILL the trade came off at: its price, a display label (TP1/TP2/TP3/Exit), and whether it
+ *  took profit.
+ *
+ *  🔴 EVERY fill is carried, not only the profitable ones — `banked` is a flag rather than a
+ *  filter (`chart_spec.py`, 2026-08-25). Nothing else on a trade can stand in for a fill:
+ *  `exitPrice` is the size-weighted AVERAGE of these, so on a two-fill exit it is a price nothing
+ *  traded at, and on a one-fill exit it is the fill itself. A trade that came off at its staged
+ *  breakeven stop banked nothing and used to arrive here with no fills at all.
+ *  ⚠ `banked` ABSENT means banked, not `false`. A run stored before the flag existed carries only
+ *  the profitable rungs, so reading a missing flag as false would repaint every historical
+ *  profit-take as a plain exit — a claim about size that nobody measured. */
 export interface ChartProfitLeg {
   price: number
   label: string
+  banked?: boolean
 }
 
 /** One rung of a trade's exit ladder: the price it sits at, plus whether the trade actually

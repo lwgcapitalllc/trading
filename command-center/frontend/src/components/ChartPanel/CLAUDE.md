@@ -302,8 +302,54 @@ BRACKET that closed, not the trigger — a trade that lost exactly 1.0R at its s
 `S-TP1`, and on run `976aff9ec279` **not one of the 78 stop-outs carried a stop-shaped reason at
 all**. Keying on the label would have silently missed every one of them.
 
-⚠ **No automated test**, because Playwright is out of the suite by design. The arithmetic it
-mirrors is tested on the python side (`tests/test_excursion_bounds.py`, 7 tests, 5 mutations).
+⚠ The arithmetic it mirrors is tested on the python side (`tests/test_excursion_bounds.py`,
+7 tests, 5 mutations); the drawing rule itself is now in `tradeGeometry.ts` and in the suite —
+see the next section.
+
+## 🔴 The adverse band ends where price WENT, and every trade draws its exit (2026-08-25)
+
+Both rules live in **`tradeGeometry.ts`** — pure arithmetic, no imports — and are checked by
+`scripts/check_trade_geometry.mjs`, **step 8 of `scripts/run_all_tests.sh`**, which needs nothing
+running. Read that file's header for the mutation map; it was RUN, not reasoned.
+
+**The band's floor is the worst price the trade actually traded, and it reaches the stop only when
+the stop actually filled.** It used to run entry→stop for anything with a negative net P&L, and
+the premise — *a loser lost at its stop* — is false for the commonest small loser this strategy
+makes: one that comes off at its **staged breakeven stop a few ticks ABOVE the entry** and goes
+negative on **costs alone**. On the long of 2020-10-13 (entry 1901.71, exit 1902.01, stop
+1879.72306) price bottomed at 1882.36 and the band was painted 2.64 further, to a level the trade
+never traded — **contradicting the `DD` marker printed inside it**.
+
+⚠ **The floor is clamped to the stop even when the stop did NOT close the trade** — a worst price
+beyond an unhit stop is a defect, not a measurement, and nothing backfills a stored run.
+⚠ **A stop FILL is stronger evidence than the recorded worst price**, so that branch is not
+redundant with the clamp. ⚠ **An absent worst price draws NO band** — rule 1.
+
+**Every FILL is drawn, and the trade's `exitPrice` is NOT one of them.** That price is the
+size-weighted AVERAGE of the fills: on a one-fill exit it IS the fill, and on a two-fill exit it is
+a price nothing ever traded at. Drawing it as an `Exit` line put a third chip between two real ones
+32 cents apart on the re-entry short of 2020-11-04 (run `6b18811e25d5`, fills 1895.40058 and
+1895.72498, average 1895.56278) and shoved both real chips off their own levels.
+
+🔴 **So the fix belongs in `chart_spec.py`, which now emits every fill with a `banked` flag instead
+of DROPPING the ones that made no money.** A rung used to have to clear a tenth of the entry risk
+to reach the chart at all, so the breakeven-stop trade above had no exit anywhere on it — the one
+trade a reader most needs it on. `exitMarker` now returns `leg` whenever any fill is on record, and
+only draws the average when the run recorded no fills at all.
+
+⚠ **`banked` ABSENT reads as TRUE, never as false.** A run stored before the flag carried only the
+profitable rungs; defaulting to false would repaint every historical profit-take as a plain exit.
+⚠ **A banked fill is mint; an unbanked one is coloured by PRICE against the entry, never by P&L** —
+which disagree on exactly that trade: 0.30 above a long's entry and still a loss on costs.
+⚠ **The green band is measured off the BANKED fills only.** Now that every fill reaches the chart,
+taking the extreme of all of them would let a breakeven-stop exit set the top of the band.
+⚠ **No separate line for the staged breakeven stop** (Aaron's call) — the exit fill already sits on
+it whenever that is where the trade came off. When there are no fills and the exit is at the stop,
+the `SL` chip becomes `SL / Exit` rather than stacking a second red line on one pixel row.
+
+⚠ **Chips are DE-COLLIDED and a chip's height is therefore not its price.** Three levels inside 32
+cents get spread 15px apart; the dots and dotted lines stay on the true price. Reported as a bug
+twice — read the dot.
 
 ## The one rule
 
@@ -319,6 +365,7 @@ ChartPanel/
 ├── types.ts           ChartSpec — the contract the lab emits per run (THE source of truth)
 ├── chartStyles.ts     klinecharts style object, derived from the app theme (no hardcoded hex)
 ├── overlays.ts        custom klinecharts overlay templates (registerChartOverlays, idempotent)
+├── tradeGeometry.ts   the trade box's two PRICE rules (adverse floor, exit marker) — pure, tested
 ├── fibLevels.ts       the fib LADDER — factory set, localStorage persistence, add/sanitize helpers
 ├── FibSettings.tsx    the fib level editor panel (add / remove / retune / recolour / hide a level)
 ├── indicators.ts      shipped-series indicator: ensureSeriesIndicator + mapSeriesToCandles (pure)

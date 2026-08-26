@@ -423,6 +423,19 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
         # A rung BANKED profit only if it closed favorably beyond a scratch band (0.1R). A rung that
         # filled at the stop / breakeven (≈ entry) is not a profit-take and gets no green line —
         # this is what keeps a breakeven exit from being drawn as if it took profit.
+        #
+        # 🔴 BANKED IS A FLAG, NOT A FILTER, SINCE 2026-08-25. Every fill is emitted; `banked` says
+        # which of them took profit. Dropping the others lost the only record of WHERE a trade came
+        # off, and the chart cannot reconstruct it: a trade's `exitPrice` is the size-weighted
+        # AVERAGE of its fills, so on a two-fill exit it is a price nothing traded at, and on a
+        # one-fill exit it is the fill that was just discarded. MEASURED on the long of 2020-10-13,
+        # which came off in one piece at 1902.01 on its staged breakeven stop: that fill cleared
+        # 0.30 of a 21.99 stop, missed the 2.20 band, and the trade had no exit anywhere on its
+        # chart. Aaron, same day: *"exit should always be shown."*
+        # ⚠ A run stored before this carries only the banked legs and no flag at all. The chart
+        # reads a missing flag as BANKED, because that is what those rows meant when they were
+        # written — never as False, which would repaint every historical profit-take as a plain
+        # exit.
         scratch = 0.1 * abs(ep - stop_price) if stop_price else 0.0
         tp_targets = _tp_targets(p.get("tp_targets"))
         # Two rungs closed by the SAME event land at the same price with the same label — a
@@ -434,11 +447,10 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
             if not isinstance(lg.get("price"), (int, float)):
                 continue
             lp = float(lg["price"])
-            if (lp - ep) * dir_sign <= max(scratch, 1e-9):
-                continue
             leg = {
                 "price": round(lp, 5),
                 "label": _leg_label(str(lg.get("reason") or ""), lp, dir_sign, tp_targets),
+                "banked": (lp - ep) * dir_sign > max(scratch, 1e-9),
             }
             if leg not in profit_legs:
                 profit_legs.append(leg)

@@ -552,6 +552,27 @@ Three rules they share, and each is load-bearing:
   `_restamp_profit_concentration` stamps `'dollars'`: a row left NULL is re-read on every startup
   forever.
 
+## 🔴 A trade's `exitPrice` is an AVERAGE, so the chart is given its FILLS (2026-08-25)
+
+`chart_spec._build_trades` emits **every** leg on `profitLegs` with a `banked` flag, where it used
+to DROP any leg that did not clear a tenth of the entry risk. Two defects, one cause:
+
+- **A trade that banked nothing had no exit anywhere on its chart.** The long of 2020-10-13 came
+  off in one piece at 1902.01 on its staged breakeven stop — 0.30 favourable against a 21.99 stop,
+  so it missed the 2.20 band and was discarded. Aaron: *"exit should always be shown."*
+- **`exitPrice` cannot stand in for it.** It is the SIZE-WEIGHTED AVERAGE of the fills. On a
+  one-fill exit it is the fill that was just discarded; on a two-fill exit it is a price nothing
+  ever traded at. Drawn as an `Exit` line it put a third chip between two real ones 32 cents apart
+  (run `6b18811e25d5`, 2020-11-04: fills 1895.40058 and 1895.72498, average 1895.56278) and shoved
+  both real chips off their levels.
+
+⚠ **`banked` is a FLAG, never a filter, and its absence means TRUE.** Runs stored before it carry
+only the profitable rungs, so reading a missing flag as `false` would repaint every historical
+profit-take as a plain exit — a claim about size that nobody measured.
+⚠ **The consumer must take the green band's top off the BANKED fills only.** With every fill on
+the wire, the extreme of all of them lets a breakeven-stop exit set the top and read as a
+profit-take. See `frontend/src/components/ChartPanel/CLAUDE.md`.
+
 **The same bar now grades EACH trade, for the chart — `metrics.trade_outcomes` (2026-08-18).** It
 returns `won` / `scratch` / `lost` per curve point and `chart_spec` stamps it on the trade as
 `outcome`, so the price chart's per-trade chip and the KPI row's `scratch_count` cannot tell two
