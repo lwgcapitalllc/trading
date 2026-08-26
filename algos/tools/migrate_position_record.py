@@ -82,9 +82,20 @@ def deployed_defaults(bot: str, cfg: dict) -> dict:
         lab = pkg.LAB_STRATEGY
         cls, cfg_cls = lab["strategy"], lab["config"]
         built = cls(cfg_cls(**json.loads({json.dumps(params)!r})), initial_capital=1000.0)
-        ex = getattr(built, "ex", None) or getattr(built, "_ex", None) or built
-        fields = getattr(ex, "_POSITION_FIELDS", None)
-        assert fields, "the strategy does not declare _POSITION_FIELDS"
+        # The field list lives on the EXECUTION object, not the strategy. Found by searching
+        # rather than by naming one attribute: a guessed name that misses would fall through to
+        # the strategy itself and report zero fields, which reads as "nothing to migrate" - a
+        # silent wrong answer, and the worst outcome this tool has.
+        ex, fields = None, None
+        for holder in (built,) + tuple(
+            getattr(built, n) for n in dir(built) if not n.startswith("__")
+        ):
+            if hasattr(holder, "_POSITION_FIELDS"):
+                ex, fields = holder, holder._POSITION_FIELDS
+                break
+        assert fields, (
+            "no object on the built strategy declares _POSITION_FIELDS - this tool cannot know "
+            "what the record should contain, and guessing is the one thing it must not do")
         out = {{}}
         for name in fields:
             v = getattr(ex, name)
