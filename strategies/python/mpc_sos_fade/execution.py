@@ -730,6 +730,11 @@ class Execution:
         self._gap_seen_sos_s: Optional[int] = None
         self._traded_sos_l: Optional[int] = None
         self._traded_sos_s: Optional[int] = None
+        # The same two legs identified by TIME rather than by bar number — see `_same_leg`.
+        self._traded_sos_l_ms: Optional[int] = None
+        self._traded_sos_s_ms: Optional[int] = None
+        # bar number -> bar time, for the run this object is living through.
+        self._bar_ms: dict = {}
         # secondary eligibility: the 15m leg whose PRIMARY reached at least TP1 (moved to
         # breakeven, _stage >= 1). A secondary arms only when its leg == this — a primary that
         # opened and got stopped at its initial stop (never reached TP1) leaves no re-entry.
@@ -861,6 +866,9 @@ class Execution:
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
         "_traded_sos_l", "_traded_sos_s",
+        # ...and their TIMES, which is the half that survives a restart. Without these the
+        # restored latch is a bar number from the PREVIOUS numbering and matches nothing.
+        "_traded_sos_l_ms", "_traded_sos_s_ms",
     )
 
     def snapshot_position(self) -> dict:
@@ -1067,6 +1075,9 @@ class Execution:
     def step(self, sig, seq) -> Decision:
         dec = Decision(index=sig.index)
 
+        # Before anything reads a bar number. See `_same_leg` for why a number is not enough.
+        self._remember_bar(sig)
+
         # Runs before anything can branch — see `_update_atr`.
         self._update_atr(sig)
 
@@ -1195,12 +1206,12 @@ class Execution:
                       and not bias_block_l and seq.l_sos_bar is not None and sig.fibo_dir == 1
                       and long_edge is not None
                       and (not dec.long_veto or not cfg.exec_respect_veto)
-                      and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l))
+                      and not self._same_leg(self._traded_sos_l, self._traded_sos_l_ms, seq.l_sos_bar))
         short_armed = (cfg.exec_aplus and cfg.exec_shorts and arm_ok_s and not late_any and not htf_block_s
                        and not bias_block_s and seq.s_sos_bar is not None and sig.fibo_dir == -1
                        and short_edge is not None
                        and (not dec.short_veto or not cfg.exec_respect_veto)
-                       and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s))
+                       and not self._same_leg(self._traded_sos_s, self._traded_sos_s_ms, seq.s_sos_bar))
         dec.long_armed, dec.short_armed = long_armed, short_armed
         # Hand the gate booleans to `_record_blocks` rather than recompute them there — one
         # place decides what "blocked" means, so the marker can never disagree with the arm.
@@ -1281,16 +1292,19 @@ class Execution:
         # Which arm sources COUNT — the live flags already filtered through the enable-toggles,
         # exactly as `_armed` reads them, so "armed" means the same thing in both places.
         sides = (
-            (0, True, seq.l_stage, seq.l_sos_bar, self._traded_sos_l, self._pos_dir <= 0,
+            (0, True, seq.l_stage, seq.l_sos_bar, self._traded_sos_l, self._traded_sos_l_ms,
+             self._pos_dir <= 0,
              seq.l_half or seq.l_618, long_edge, dec.long_veto and cfg.exec_respect_veto,
              htf_l or bias_l, cfg.exec_arm_sweep and seq.sos_l_swp,
              cfg.exec_arm_div and seq.sos_l_div, seq.l_arm_src, sig.recent_ssl),
-            (1, False, seq.s_stage, seq.s_sos_bar, self._traded_sos_s, self._pos_dir >= 0,
+            (1, False, seq.s_stage, seq.s_sos_bar, self._traded_sos_s, self._traded_sos_s_ms,
+             self._pos_dir >= 0,
              seq.s_half or seq.s_618, short_edge, dec.short_veto and cfg.exec_respect_veto,
              htf_s or bias_s, cfg.exec_arm_sweep and seq.sos_s_swp,
              cfg.exec_arm_div and seq.sos_s_div, seq.s_arm_src, sig.recent_bsl),
         )
-        for (slot, is_long, stage, sos_bar, traded_sos, flat, zone_hit, edge, veto,
+        for (slot, is_long, stage, sos_bar, traded_sos, traded_sos_ms, flat, zone_hit, edge,
+             veto,
              htf_any, arm_swp, arm_div, arm_src, swp_nm) in sides:
             m = self._mw[slot]
             # Open the watch on the RISING edge into stage 2 OR HIGHER — a fast leg can print the
@@ -1304,7 +1318,7 @@ class Execution:
             if not m.watch:
                 self._setup_ctx[slot] = None
                 continue
-            traded = traded_sos is not None and m.sos_bar is not None and traded_sos == m.sos_bar
+            traded = self._same_leg(traded_sos, traded_sos_ms, m.sos_bar)
             if sos_bar is not None and not traded:
                 # still alive — accumulate what it achieved
                 m.fib = sig.fibo_p3
@@ -1411,6 +1425,54 @@ class Execution:
         trade. It needs its own `_setup_context` before its alerts go on.
         """
         return bool(self._records_misses)
+
+    # A bar's NUMBER is local to one run; its TIME is not.
+    #
+    # 🔴 **2026-08-26, live.** The one-trade-per-leg latch stored the shift bar's NUMBER. A live
+    # bot renumbers every bar each time it re-warms its history on restart, so a restored latch
+    # holding 5059 was compared against the SAME leg now numbered 4953, saw no match, and let the
+    # trade through. The bot re-entered a setup it had been scratched out of **three seconds
+    # earlier** — same stop, same targets, same leg — at 0.53 lots.
+    #
+    # ⚠ **This repo already had the lesson written down, about a different tool.** `shadow_diff`
+    # joins on bar TIMESTAMP and its docstring says why: *"the live index counts on from wherever
+    # warm-up stopped and survives restarts."* The live path itself was still comparing numbers.
+    # **A lesson recorded against one consumer is not a lesson applied to the others.**
+    #
+    # ⚠ **It is a NO-OP in any single continuous run** — one backtest, one Pine chart, one
+    # uninterrupted live session — because within a run a number maps to exactly one time. The
+    # two answers can only differ across a RESTART, which exists nowhere but live. That is why
+    # the parity gate is unaffected, and it was RUN rather than reasoned about.
+    _BAR_MS_KEEP = 20_000
+
+    def _remember_bar(self, sig) -> None:
+        """Record this bar's time against its number, so a leg can be identified by TIME."""
+        ms = getattr(sig, "time_ms", None)
+        if ms is None:
+            return
+        self._bar_ms[sig.index] = int(ms)
+        if len(self._bar_ms) > self._BAR_MS_KEEP:
+            # Keep the recent tail. A setup's shift bar is always inside the warm-up window, and
+            # an unbounded dict on a bot that runs for weeks is a leak with no upside.
+            for k in sorted(self._bar_ms)[: len(self._bar_ms) - self._BAR_MS_KEEP]:
+                del self._bar_ms[k]
+
+    def _same_leg(self, traded_bar, traded_ms, current_bar) -> bool:
+        """Is `current_bar` the leg we have already traded?
+
+        TIME decides whenever both sides have one; the bar NUMBER is the fallback for a leg whose
+        time we never saw (a record written before this field existed, or a shift bar that fell
+        off the tail above). ⚠ **The fallback is the OLD behaviour and is wrong across a restart**
+        — it is kept because refusing to answer would silently disable the latch entirely, which
+        is the same failure with fewer clues.
+        """
+        if current_bar is None:
+            return False
+        if traded_ms is not None:
+            current_ms = self._bar_ms.get(current_bar)
+            if current_ms is not None:
+                return current_ms == traded_ms
+        return traded_bar is not None and current_bar == traded_bar
 
     def _setup_key(self, is_long: bool, sos_bar: Optional[int]) -> str:
         """The thread id, stable for this setup's whole life.
@@ -1651,10 +1713,10 @@ class Execution:
         ready = (
             (seq.l_sos_bar is not None and sig.fibo_dir == 1 and long_edge is not None
              and self._pos_dir == 0
-             and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l)),
+             and not self._same_leg(self._traded_sos_l, self._traded_sos_l_ms, seq.l_sos_bar)),
             (seq.s_sos_bar is not None and sig.fibo_dir == -1 and short_edge is not None
              and self._pos_dir == 0
-             and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)),
+             and not self._same_leg(self._traded_sos_s, self._traded_sos_s_ms, seq.s_sos_bar)),
         )
         # The min-stop refusal itself happens at order placement; it is recomputed here so a
         # setup refused on PRICE gets a record like every other refusal (Pine 4167-4172). A
@@ -2272,10 +2334,14 @@ class Execution:
         # "primary already went" precondition). A secondary fill must NOT move it — its sos_bar is
         # a shift leg, not the 15m A+ leg — so only a primary sets it.
         if kind == "primary":
+            # The leg's TIME is recorded beside its number. The number is what a single run
+            # compares on; the time is what survives the re-warm a restart performs. See
+            # `_same_leg` for the incident that made the difference matter.
+            sos_ms = self._bar_ms.get(pend.sos_bar) if pend.sos_bar is not None else None
             if pend.dir > 0:
-                self._traded_sos_l = pend.sos_bar
+                self._traded_sos_l, self._traded_sos_l_ms = pend.sos_bar, sos_ms
             else:
-                self._traded_sos_s = pend.sos_bar
+                self._traded_sos_s, self._traded_sos_s_ms = pend.sos_bar, sos_ms
         self._pend_long = self._pend_short = self._pend_sec = None
         dec.fills.append(Fill("entry", "Long" if pend.dir > 0 else "Short",
                               fill_price, granted, pend.dir))

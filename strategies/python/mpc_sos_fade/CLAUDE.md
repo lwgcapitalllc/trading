@@ -285,6 +285,46 @@ engine-input bug (`fvg_require_close`). See `## The exit ladder` and `## The 202
 
 **Last reviewed:** 2026-08-12 - the dated build narrative that used to sit here moved VERBATIM to `strategies/python/mpc_sos_fade/docs/SOS_FADE_BUILD_NOTES.md`. **Nothing was deleted.** It was 60,467 bytes in 2 paragraph(s), the largest 58,936 bytes on a single line, loaded in full every time anyone opened this area. Rules stay here; the evidence is one file away.
 
+## 🔴 A BAR NUMBER IS LOCAL TO ONE RUN. THE ONE-TRADE-PER-LEG LATCH NOW KEYS ON TIME (2026-08-26)
+
+**The bot re-entered a setup it had been scratched out of three seconds earlier.** Same fib leg,
+same stop 4686.32356, same targets 4640.22772 / 4605.29, 0.53 lots. The latch that exists to stop
+exactly that stored the shift bar's **NUMBER** — and a live bot renumbers every bar each time it
+re-warms its history on restart. The restored latch held 5059; the same leg was now numbered
+4953; no match; through it went.
+
+🔴 **This repo had already written the lesson down, against a different consumer.** `shadow_diff`
+joins on bar TIMESTAMP and its docstring says why in as many words: *"the live index counts on
+from wherever warm-up stopped and survives restarts."* `strategies/CLAUDE.md` records the same
+trap from the B-LEG harness, where 2,409 comparisons failed at one flat offset. **The live path
+was still comparing numbers. A lesson recorded against one consumer is not a lesson applied to
+the others — go and look at the others.**
+
+✅ **`Execution._same_leg()` decides by TIME whenever both sides have one**, falling back to the
+number only for a leg whose time was never seen. `_remember_bar()` keeps a bar-number → bar-time
+map for the run, pruned to the recent 20,000 (a bot runs for weeks; an unbounded dict is a leak
+with no upside). `_traded_sos_l_ms` / `_traded_sos_s_ms` are PERSISTED — without them a restart
+restores a number from the previous numbering and the fix does nothing, which is the same bug one
+layer down.
+
+⚠ **The fallback is the OLD behaviour and is wrong across a restart.** It is kept because
+refusing to answer would disable the latch outright, which is the same failure with fewer clues.
+
+⚠ **It is a NO-OP in any single continuous run** — one backtest, one Pine chart, one uninterrupted
+session — because within a run a number maps to exactly one time. The two answers can only differ
+across a RESTART, which exists nowhere but live. **That is why parity is unaffected, and it was
+RUN rather than reasoned**: `compare_strategy.py "VANTAGE_XAUUSD, 15_6fb2a.csv"` exit 0 at warmups
+100 / 200 / 500 / 1000 / 2000 — the same five the pre-change code passes, and the known
+pre-existing red below warmup 50 (bar 16, `px_s_stage`) is unchanged.
+
+⚠ **Adding two fields to `_POSITION_FIELDS` means the next promote with a position OPEN will halt
+on the restore** until the record is migrated. That is the designed refusal, and
+`algos/tools/migrate_position_record.py` is the repair.
+
+**Tests: 8 in `tests/test_leg_latch_across_restart.py`, two mutations watched RED** — comparing
+numbers only reddens the restart case; dropping the two persisted fields reddens the other.
+
+
 ## The name (renamed 2026-07-16 — was `mpc_aplus` / `MpcAplusStrategy`)
 
 `MPC` = Mental Peak Consulting (Aaron's brother's company) and prefixes every strategy in the
@@ -3302,6 +3342,50 @@ was done about them: `docs/SOS_FADE_BUILD_NOTES.md` → *The short-hold variant*
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.
 
 ---
+
+## 🔴 THE RE-ENTRY LADDER COMES OUT BACKWARDS ON ONE HALF, AND THE FLIP IS PROTECTIVE (2026-08-25)
+
+**The two rungs are priced by two different rulers.** The first is a multiple of the trade's OWN
+risk (`exec_sec_tp_r`, 1.25R); the second stays the frozen 15m fib. The first therefore MOVES with
+the fill price and the second does not, so how close you get filled decides whether they come out
+in order. MEASURED on run `ed21fca08a91` (XAUUSD.p M15, 2020-01-01 → 2026-08-23, PU Prime ECN
+costs), 91 re-entries:
+
+| half | n | flipped | second rung, as a multiple of the first |
+|---|---|---|---|
+| after a STOPPED primary (reclaim) | 47 | **0** | 1.474 – 2.263 |
+| after a BREAKEVEN primary (gap) | 44 | **27 (61%)** | 0.268 – 3.662 |
+
+The gap half stops at the deep fib — a WIDE stop — so 1.25× that width routinely overshoots the fib
+target. The reclaim half enters at its level with a stop a median 0.43R away, so its rung lands
+short of the fib every time. **Only the gap half can flip, and it flips more often than not.**
+
+🔴 **THE FLIP IS NOT A BEHAVIOUR BUG. IT IS A LABELLING ONE, AND "FIXING" IT COSTS REAL MONEY.**
+`_stage_rungs()` already sorts the stop ladder by DISTANCE, so on a flipped trade the nearer rung —
+the fib, labelled `TP2` — is what arms BREAKEVEN, and the further one still banks
+`exec_sec_tp1_pct`. That is a good ladder: protect early, bank later. Push the second rung away and
+you delete the early breakeven trigger. **MEASURED on the re-entry short of 2020-11-04** (entry
+1902.97, stop 1912.55354, TP1 1890.99058, TP2 1895.72498, best price 1893.23): price cleared TP2 and
+never reached TP1, the stop staged to 1899.61576 and took it for **+0.348R**. With the second rung
+floored at 1.5× it moved to 1885.00086, nothing was touched, the stop never staged, and the same
+trade ran back to 1912.55354 for **−0.907R**.
+
+⚠ **So `exec_sec_tp2_min_x` exists, is MEASURED, and ships OFF.** Four floors were swept against a
+matched control on the basis above. Total R 139.09 (off) / 140.64 / 140.29 / 139.79 / 137.10 at
+1.5× / 2× / 2.5× / 3×; the re-entry leg alone improves at every floor and the improvement survives
+removing its single best trade. ⚠ **Read none of that as an edge: only 13 of 246 trades changed and
+they swung about ±1R each** — the +1.55R is thirteen coin flips. The one durable read is drawdown,
+53.68% → 49.02% at 1.5×. ⚠ **3× is not a clean comparison at all** — it drops the book to 237
+trades, so it changed which setups were TAKEN.
+
+⚠ **If the naming is to be fixed, sort the LABELS and leave both prices alone.** Everything the
+stop ladder does is already distance-ordered; only the chip is out of order.
+
+🔴 **ONE SWEEP ARM SILENTLY REPLAYED STALE CODE.** The 2.5× arm ran 170s, stored its parameter, and
+produced a ladder byte-identical to the control; an identical re-request came out correct. The lab
+purges cached strategy modules under one namespace only, and `mpc_bleg` imports this package's
+files under their BARE names, which are never purged. **Verify a swept parameter by reading the
+stored TRADES, never the KPI row** — the KPI row of a stale replay looks entirely normal.
 
 ## 🔴 THE TWO RE-ENTRY HALVES ARE TWO FEATURES, AND ONLY ONE OF THEM EARNS (2026-08-23)
 
