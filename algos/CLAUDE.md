@@ -1456,6 +1456,12 @@ Any time you add or fix behaviour that applies to ALL bots. Do not add it to one
 leave the others with stale code. Fix the shared implementation, update the thin delegates
 in every bot that uses it.
 
+**`tools/mark_trade.py` — a trade that is STAYING but must not be counted (2026-08-26).**
+Companion to `close_orphans.py`, which closes and marks; this one marks and leaves the trade
+alone. ⚠ **It changes nothing about how the bot treats the trade** — the bot goes on managing it
+normally, which is usually right: a trade that should not exist should still be exited properly.
+It marks by TICKET, the one thing the ledger and the broker statement share.
+
 ### 🔴 Promoting with a position OPEN halts the bot (2026-08-26)
 
 **It happened the same night as the promote fix.** A bot was promoted v168 -> v241 while holding
