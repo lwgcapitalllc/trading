@@ -343,6 +343,17 @@ python3 .claude/mcp/check_tradingbox.py
 python3 .claude/mcp/check_lab.py
 ```
 
+🔴 **BOTH PROMOTE TOOLS ON THE TRADING BOX HAD NEVER WORKED, and the check passed the whole
+time (2026-08-26).** They POSTed with no body to an endpoint whose body is required, so the
+Command Center answered HTTP 422 every single call. `check_tradingbox.py` was green because
+every case it had asserted what a tool REFUSES, or how it reports a dead backend — **and a tool
+that always fails passes both of those beautifully. A check that only tests the sad paths
+certifies a tool with no working happy path.** It now records the request and asserts the body,
+field by field. ⚠ **The Command Center's own button was never affected** — it sends
+`{pull, restart}` and was verified end to end the same day. ⚠ **The MCP sends `restart: false`
+on purpose**: this server's whole design is what it does NOT offer, so a promote from here moves
+the code and stops, and a human restarts the bot.
+
 ⚠ **When a new route touches money or the live box, it goes in the browser guard and the trading
 box in the SAME change.** Both are deny-lists by design — a route they have never heard of is
 allowed. That is the honest trade for not blocking the lab, and it is the part that goes stale.
@@ -626,6 +637,14 @@ linter skipping files it has never read on this machine.
 collection error, because the backend has its own `pytest.ini`, its own venv, and imports
 `services`/`routers` by bare name. Use `scripts/run_all_tests.sh`. It runs all three suites even
 when one fails: stopping early reports the others as unknown, and unknown reads as fine.
+
+✅ **Frontend logic CAN be gated when it is pulled out of the canvas.** Step 8 runs
+`command-center/frontend/scripts/check_trade_geometry.mjs` with nothing running — the backtest
+chart's trade box decides from PRICES how far its adverse band reaches and whether the exit is
+drawn at all, and both were wrong on real trades for as long as they lived inside a klinecharts
+callback that only a browser could reach. ⚠ **The lesson is about REACHABILITY, not about charts:
+logic with no seam a test can grab is logic nobody checks.** The rules are in
+`command-center/frontend/src/components/ChartPanel/CLAUDE.md`.
 
 ⚠ **Playwright is deliberately NOT in the gate.** Its config has no `webServer` block on purpose —
 this backend talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand can

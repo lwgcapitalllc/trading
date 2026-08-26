@@ -172,6 +172,54 @@ check("an unknown tool reads as cannot-ask", out.get("asked") is False)
 out = tb.call_tool("bot_version", {})  # missing required arg
 check("a missing argument reads as cannot-ask", out.get("asked") is False, str(out)[:120])
 
+
+# ── 7. the promote tools actually SEND what the endpoint requires ────────────
+#
+# 🔴 Both promote tools had NEVER worked. They POSTed with no body to an endpoint whose body is
+# required, and the Command Center answered HTTP 422 every time. Nothing here caught it, because
+# every case above asserts what a tool REFUSES or how it reports a dead backend -- and a tool
+# that always fails passes both of those beautifully. **A check that only tests the sad paths
+# certifies a tool that has no working happy path.** Found 2026-08-26, the day one was needed.
+
+
+class Recorder:
+    """Stands in for the network and REMEMBERS the body, which is the thing that was missing."""
+
+    def __init__(self):
+        self.sent = []
+
+    def __call__(self, path, method="GET", timeout=None, body=None):
+        self.sent.append({"path": path, "method": method, "body": body})
+        return {"ok": True, "output": "stub"}, None
+
+
+for name, args in (
+    ("promote_preview", {"bot": "b"}),
+    ("promote", {"bot": "b", "confirm": "promote b"}),
+):
+    rec = Recorder()
+    real, tb._api = tb._api, rec
+    try:
+        tb.call_tool(name, dict(args))
+    finally:
+        tb._api = real
+    check(f"{name} reaches the backend at all", len(rec.sent) == 1, str(rec.sent))
+    if not rec.sent:
+        continue
+    body = rec.sent[0]["body"]
+    check(f"{name} sends a body", isinstance(body, dict), repr(body))
+    if not isinstance(body, dict):
+        continue
+    # Every field the endpoint's model declares must be stated. Leaving one out means taking a
+    # default chosen for a DIFFERENT caller -- and `restart` defaults to True for the button.
+    for field in ("pull", "restart"):
+        check(f"{name} states '{field}'", field in body, repr(body))
+    check(
+        f"{name} never restarts the bot",
+        body.get("restart") is False,
+        f"this server offers no restart anywhere else on its menu; {body!r}",
+    )
+
 if failures:
     print(f"\n{len(failures)} trading-box check(s) FAILED:\n")
     for f in failures:

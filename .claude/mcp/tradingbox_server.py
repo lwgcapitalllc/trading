@@ -333,10 +333,29 @@ def tool_bot_decisions(args):
     }
 
 
+# Both promote endpoints take a REQUIRED body, and every field in it decides something the
+# person reading this tool's answer cares about. Sending none produced HTTP 422 and both tools
+# had never worked -- found 2026-08-26, the day somebody needed the preview.
+#
+# 🔴 `restart` is False on BOTH, deliberately, and it is the field worth defending. The Command
+# Center's own button sends `restart: true`, which is right for a person who clicked Deploy and
+# is watching. This server's whole design is what it does NOT offer -- no restart, no kill, no
+# agent start -- so a promote from here moves the CODE and stops. The bot goes on running what
+# it is running until a human restarts it, which is the honest split for a tool with nobody
+# watching it.
+def _promote_body() -> dict:
+    return {"pull": True, "restart": False}
+
+
 def tool_promote_preview(args):
     """What a promote WOULD change. Changes nothing itself."""
     bot = args["bot"]
-    out, err = _api(f"/bots/{bot}/promote/preview", method="POST", timeout=TIMEOUT_SLOW)
+    out, err = _api(
+        f"/bots/{bot}/promote/preview",
+        method="POST",
+        timeout=TIMEOUT_SLOW,
+        body=_promote_body(),
+    )
     if err:
         return err
     return {"asked": True, "bot": bot, "preview": out}
@@ -400,14 +419,21 @@ def tool_promote(args):
                 f"with confirm exactly '{want}' once the person you are working with has said to."
             ),
         }
-    out, err = _api(f"/bots/{bot}/promote", method="POST", timeout=TIMEOUT_SLOW)
+    out, err = _api(
+        f"/bots/{bot}/promote", method="POST", timeout=TIMEOUT_SLOW, body=_promote_body()
+    )
     if err:
         return err
     return {
         "asked": True,
         "bot": bot,
         "result": out,
-        "next": "check bot_version to confirm which snapshot is now live.",
+        "restarted": False,
+        "next": (
+            "the bot is STILL RUNNING THE OLD CODE - a promote never touches a running process, "
+            "and this tool deliberately does not restart it. Check bot_version for which "
+            "snapshot is pinned, and ask the person you are working with before restarting."
+        ),
     }
 
 
