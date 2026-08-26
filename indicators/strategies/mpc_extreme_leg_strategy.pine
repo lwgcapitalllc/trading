@@ -671,7 +671,7 @@ method create_ash15(SMCStructure15 st, float val, int loc, color col, bool solid
     st.ash_loc  := loc
     st.ash_type := ""
     st.ash_lbl  := label.new(loc, val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(col), style=label.style_label_down, size=f_structSize())
-    st.ash_line := line.new(loc, val, _bi, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+    st.ash_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
 
 method create_asl15(SMCStructure15 st, float val, int loc, color col, bool solid, string prefix) =>
     if not na(st.asl_line)
@@ -683,10 +683,10 @@ method create_asl15(SMCStructure15 st, float val, int loc, color col, bool solid
     st.asl_loc  := loc
     st.asl_type := ""
     st.asl_lbl  := label.new(loc, val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(col), style=label.style_label_up, size=f_structSize())
-    st.asl_line := line.new(loc, val, _bi, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+    st.asl_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
 
 // process() now accepts prefix + bull/bear colors so both instances share one method
-method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, color bull_col, color bear_col, float _o, float _h, float _l, float _c, int _bi) =>
+method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, color bull_col, color bear_col, float _o, float _h, float _l, float _c, int _pbi) =>
 
     st.bull_bos := false
     st.bear_bos := false
@@ -709,7 +709,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
         if not st.pb_started
             st.pb_started            := true
             st.pb_extreme            := _h
-            st.pb_extreme_loc        := _bi
+            st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
             st.pb_count              := 0
             st.pb_last_qualify_close := na
@@ -718,7 +718,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             bool extreme_updated_1 = false
             if na(st.pb_extreme) or _h > st.pb_extreme
                 st.pb_extreme            := _h
-                st.pb_extreme_loc        := _bi
+                st.pb_extreme_loc        := bar_index
                 st.pb_extreme_close      := na
                 st.pb_count              := 0
                 st.pb_last_qualify_close := na
@@ -740,7 +740,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
                 st.ash      := st.pb_extreme
                 st.ash_loc  := st.pb_extreme_loc
                 st.ash_type := "LOCKED"
-                st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, _bi, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
+                st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
                 st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
                 st.new_swing_high := true
                 st.pb_mode    := 0
@@ -751,7 +751,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
         if not st.pb_started
             st.pb_started            := true
             st.pb_extreme            := _l
-            st.pb_extreme_loc        := _bi
+            st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
             st.pb_count              := 0
             st.pb_last_qualify_close := na
@@ -760,7 +760,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             bool extreme_updated_m1 = false
             if na(st.pb_extreme) or _l < st.pb_extreme
                 st.pb_extreme            := _l
-                st.pb_extreme_loc        := _bi
+                st.pb_extreme_loc        := bar_index
                 st.pb_extreme_close      := na
                 st.pb_count              := 0
                 st.pb_last_qualify_close := na
@@ -782,7 +782,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
                 st.asl      := st.pb_extreme
                 st.asl_loc  := st.pb_extreme_loc
                 st.asl_type := "LOCKED"
-                st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, _bi, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
+                st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
                 st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
                 st.new_swing_low := true
                 st.pb_mode    := 0
@@ -795,41 +795,41 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
 
     if na(st.ash) and na(st.asl) and not st.seeded
         if not na(ph_val)
-            st.create_ash15(ph_val, _bi[st.length], bear_col, false, prefix)
+            st.create_ash15(ph_val, _pbi, bear_col, false, prefix)
             st.dir := -1
         else if not na(pl_val)
-            st.create_asl15(pl_val, _bi[st.length], bull_col, false, prefix)
+            st.create_asl15(pl_val, _pbi, bull_col, false, prefix)
             st.dir := 1
 
     if not st.seeded
         if not na(st.ash) and na(st.asl)
             float seed_low = _l
-            int   seed_loc = _bi
-            int   lb       = math.min(_bi, 500)
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
             for i = 0 to lb
-                if _l[i] < seed_low
-                    seed_low := _l[i]
-                    seed_loc := _bi - i
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
             if seed_low < st.ash
                 st.asl      := seed_low
                 st.asl_loc  := seed_loc
                 st.asl_type := ""
-                st.asl_line := line.new(seed_loc, seed_low, _bi, seed_low, color=bull_col, style=line.style_dashed, width=1)
+                st.asl_line := line.new(seed_loc, seed_low, bar_index, seed_low, color=bull_col, style=line.style_dashed, width=1)
                 st.asl_lbl  := label.new(seed_loc, seed_low, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
                 st.seeded := true
         else if not na(st.asl) and na(st.ash)
             float seed_high = _h
-            int   seed_loc  = _bi
-            int   lb        = math.min(_bi, 500)
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
             for i = 0 to lb
-                if _h[i] > seed_high
-                    seed_high := _h[i]
-                    seed_loc  := _bi - i
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
             if seed_high > st.asl
                 st.ash      := seed_high
                 st.ash_loc  := seed_loc
                 st.ash_type := ""
-                st.ash_line := line.new(seed_loc, seed_high, _bi, seed_high, color=bear_col, style=line.style_dashed, width=1)
+                st.ash_line := line.new(seed_loc, seed_high, bar_index, seed_high, color=bear_col, style=line.style_dashed, width=1)
                 st.ash_lbl  := label.new(seed_loc, seed_high, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
                 st.seeded := true
         else if not na(st.ash) and not na(st.asl)
@@ -838,10 +838,10 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
     if na(st.last_conf_high) and na(st.last_conf_low)
         if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
             if ph_val > st.ash
-                st.create_ash15(ph_val, _bi[st.length], bear_col, false, prefix)
+                st.create_ash15(ph_val, _pbi, bear_col, false, prefix)
         if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
             if pl_val < st.asl
-                st.create_asl15(pl_val, _bi[st.length], bull_col, false, prefix)
+                st.create_asl15(pl_val, _pbi, bull_col, false, prefix)
 
     bool ash_broken = not na(st.ash) and _c > st.ash
     bool asl_broken = not na(st.asl) and _c < st.asl
@@ -859,7 +859,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
         string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
         if is_choch
             st.bull_sos := true
-        int    mid_x       = math.round((st.ash_loc + _bi) / 2)
+        int    mid_x       = math.round((st.ash_loc + bar_index) / 2)
         label.new(mid_x, st.ash, "\n" + brk_lbl_txt, color=color(na), textcolor=bull_col, style=label.style_label_down, size=size.tiny)
 
         if is_choch
@@ -878,7 +878,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             line.set_style(st.ash_line, line.style_solid)
             line.set_color(st.ash_line, bull_col)
             line.set_width(st.ash_line, 2)
-            line.set_x2(st.ash_line, _bi)
+            line.set_x2(st.ash_line, bar_index)
             st.ash_line := na
 
         st.last_conf_high     := st.ash
@@ -902,13 +902,13 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.asl      := st.pb_extreme
             st.asl_loc  := st.pb_extreme_loc
             st.asl_type := "LOCKED"
-            st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, _bi, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
+            st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
             st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + pb_low_t, color=color(na), textcolor=f_swingCol(pb_low_c), style=label.style_label_up, size=f_structSize())
             if not is_choch
                 st.last_conf_low     := st.pb_extreme
                 st.last_conf_low_loc := st.pb_extreme_loc
             st.pb_extreme            := _h
-            st.pb_extreme_loc        := _bi
+            st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
             st.pb_last_qualify_close := na
             st.pb_last_qualify_high  := na
@@ -939,14 +939,14 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
                 st.asl      := na
 
             float lowest_val = _l
-            int   lowest_loc = _bi
-            int   bars_back  = na(st.last_conf_high_loc) ? _bi : _bi - st.last_conf_high_loc
+            int   lowest_loc = bar_index
+            int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
             if bars_back > 0
-                int max_lb = math.min(math.min(bars_back, 1490), _bi)
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
                 for i = 0 to max_lb
-                    if _l[i] < lowest_val
-                        lowest_val := _l[i]
-                        lowest_loc := _bi - i
+                    if low[i] < lowest_val
+                        lowest_val := low[i]
+                        lowest_loc := bar_index - i
 
             // 🔴 KEEP THE ORIGINAL ANCHOR WHEN TWO BARS TIE FOR THE LOW. The scan above runs
             // newest-to-oldest with a strict `<`, so on an identical _l it lands on the LATER bar
@@ -970,7 +970,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.asl      := lowest_val
             st.asl_loc  := lowest_loc
             st.asl_type := ""
-            st.asl_line := line.new(lowest_loc, lowest_val, _bi, lowest_val, color=bull_col, style=line.style_solid, width=1)
+            st.asl_line := line.new(lowest_loc, lowest_val, bar_index, lowest_val, color=bull_col, style=line.style_solid, width=1)
             if lowest_val != st.last_conf_low
                 st.asl_lbl := label.new(lowest_loc, lowest_val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
             else
@@ -980,7 +980,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.pb_count              := 0
             st.pb_level              := na
             st.pb_extreme            := _h
-            st.pb_extreme_loc        := _bi
+            st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
             st.pb_last_qualify_close := na
             st.pb_last_qualify_high  := na
@@ -999,7 +999,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
         string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
         if is_choch
             st.bear_sos := true
-        int    mid_x       = math.round((st.asl_loc + _bi) / 2)
+        int    mid_x       = math.round((st.asl_loc + bar_index) / 2)
         label.new(mid_x, st.asl, brk_lbl_txt + "\n", color=color(na), textcolor=bear_col, style=label.style_label_up, size=size.tiny)
 
         if is_choch
@@ -1017,7 +1017,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             line.set_style(st.asl_line, line.style_solid)
             line.set_color(st.asl_line, bear_col)
             line.set_width(st.asl_line, 2)
-            line.set_x2(st.asl_line, _bi)
+            line.set_x2(st.asl_line, bar_index)
             st.asl_line := na
 
         st.last_conf_low     := st.asl
@@ -1041,13 +1041,13 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.ash      := st.pb_extreme
             st.ash_loc  := st.pb_extreme_loc
             st.ash_type := "LOCKED"
-            st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, _bi, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
+            st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
             st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, pb_high_t + "\n", color=color(na), textcolor=f_swingCol(pb_high_c), style=label.style_label_down, size=f_structSize())
             if not is_choch
                 st.last_conf_high     := st.pb_extreme
                 st.last_conf_high_loc := st.pb_extreme_loc
             st.pb_extreme            := _l
-            st.pb_extreme_loc        := _bi
+            st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
             st.pb_last_qualify_close := na
             st.pb_last_qualify_high  := na
@@ -1058,14 +1058,14 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.pb_started            := true
         else
             float highest_val = _h
-            int   highest_loc = _bi
-            int   bars_back   = na(st.last_conf_low_loc) ? _bi : _bi - st.last_conf_low_loc
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
             if bars_back > 0
-                int max_lb = math.min(math.min(bars_back, 1490), _bi)
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
                 for i = 0 to max_lb
-                    if _h[i] > highest_val
-                        highest_val := _h[i]
-                        highest_loc := _bi - i
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
 
             if not na(st.ash)
                 bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
@@ -1112,7 +1112,7 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.ash      := highest_val
             st.ash_loc  := highest_loc
             st.ash_type := ""
-            st.ash_line := line.new(highest_loc, highest_val, _bi, highest_val, color=bear_col, style=line.style_solid, width=1)
+            st.ash_line := line.new(highest_loc, highest_val, bar_index, highest_val, color=bear_col, style=line.style_solid, width=1)
             if highest_val != st.last_conf_high
                 st.ash_lbl := label.new(highest_loc, highest_val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
             else
@@ -1122,18 +1122,18 @@ method process15(SMCStructure15 st, float ph_val, float pl_val, string prefix, c
             st.pb_count              := 0
             st.pb_level              := na
             st.pb_extreme            := _l
-            st.pb_extreme_loc        := _bi
+            st.pb_extreme_loc        := bar_index
             st.pb_extreme_close      := na
             st.pb_last_qualify_close := na
             st.pb_last_qualify_high  := na
             st.pb_started            := true
 
     if not na(st.ash_line)
-        line.set_x2(st.ash_line, _bi)
+        line.set_x2(st.ash_line, bar_index)
         if not showExternal
             line.set_color(st.ash_line, color(na))
     if not na(st.asl_line)
-        line.set_x2(st.asl_line, _bi)
+        line.set_x2(st.asl_line, bar_index)
         if not showExternal
             line.set_color(st.asl_line, color(na))
     if not showExternal
@@ -1194,6 +1194,7 @@ var float[] ll15 = array.new_float()
 var int[]   bi15 = array.new_int()
 float ph15 = na
 float pl15 = na
+int   pivBar = na
 if periodClosed
     array.push(hh15, doneH)
     array.push(ll15, doneL)
@@ -1206,6 +1207,7 @@ if periodClosed
     if array.size(hh15) == cap
         float candH = array.get(hh15, majorLength)
         float candL = array.get(ll15, majorLength)
+        pivBar := array.get(bi15, majorLength)
         bool isHigh = true
         bool isLow  = true
         for k = 0 to cap - 1
@@ -1219,7 +1221,7 @@ if periodClosed
 
 var st15 = SMCStructure15.new(majorLength)
 if periodClosed
-    st15.process15(ph15, pl15, "H", showHtfSwing ? bullColor : color(na), showHtfSwing ? bearColor : color(na), doneO, doneH, doneL, doneC, bar_index)
+    st15.process15(ph15, pl15, "H", showHtfSwing ? bullColor : color(na), showHtfSwing ? bearColor : color(na), doneO, doneH, doneL, doneC, pivBar)
 if showHtfSwing
     if not na(st15.ash_line)
         line.set_x2(st15.ash_line, bar_index)
@@ -1363,16 +1365,28 @@ var float tStop = na
 var float tTgt  = na
 var bool  beArmed = false
 
+// [doc 12a] THE BAR THE ENTRY IS PLACED ON STILL READS FLAT, AND THAT COST AN ACCOUNT
+// `process_orders_on_close` fills the entry AFTER this script has finished running for the bar,
+// so `strategy.position_size` is still 0 everywhere below on the bar that opens the trade. These
+// two flags are the only way this bar can tell "flat" from "just entered". Without them the reset
+// at the bottom wiped the stop and the target back to na on the very bar they were set, the
+// bracket went out empty on the next bar, and the position was never protected and never closed.
+// The sibling `mpc_h4_sweep_strategy.pine` has carried the same pair since it was written.
+bool tookLong  = false
+bool tookShort = false
+
 if goLong and strategy.position_size == 0
     strategy.entry("L", strategy.long, qty = f_qty(riskLong))
     tStop := stopLong
     tTgt  := tgtLong
     beArmed := false
+    tookLong := true
 if goShort and strategy.position_size == 0
     strategy.entry("S", strategy.short, qty = f_qty(riskShort))
     tStop := stopShort
     tTgt  := tgtShort
     beArmed := false
+    tookShort := true
 
 if strategy.position_size != 0 and useBreakeven and not na(tTgt) and not na(tStop)
     float span = math.abs(tTgt - strategy.position_avg_price)
@@ -1382,11 +1396,14 @@ if strategy.position_size != 0 and useBreakeven and not na(tTgt) and not na(tSto
             beArmed := true
             tStop := strategy.position_avg_price
 
-if strategy.position_size > 0
+// The bracket goes out on the ENTRY bar too, so it is live for the next bar's range rather than
+// the one after that. `or tookLong` is what makes that possible — see [doc 12a].
+if strategy.position_size > 0 or tookLong
     strategy.exit("L-x", from_entry = "L", stop = tStop, limit = tTgt)
-if strategy.position_size < 0
+if strategy.position_size < 0 or tookShort
     strategy.exit("S-x", from_entry = "S", stop = tStop, limit = tTgt)
-if strategy.position_size == 0
+// Flat AND we did not just enter. Dropping the second half is the bug in [doc 12a].
+if strategy.position_size == 0 and not tookLong and not tookShort
     tStop := na
     tTgt  := na
     beArmed := false

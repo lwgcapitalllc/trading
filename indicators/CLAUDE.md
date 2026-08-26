@@ -60,6 +60,45 @@ nothing else. ⚠ **It is a PROMPT, not enforcement**: nothing runs it for you, 
 with regular expressions rather than parsing it, so a novel formatting of `active =` could slip
 past. It is a cheap check for a defect that otherwise costs a round trip to TradingView.
 
+**`check_scope.py` (2026-08-25).** Asserts that every `_`-prefixed identifier read inside a
+function or method body is a parameter of it or assigned in it. Pine calls the failure `CE10272`
+and **it only appears on the paste**, so a file can look finished in the repo for days.
+
+```bash
+python3 indicators/tools/check_scope.py indicators/strategies/*.pine
+```
+
+**All thirteen strategy files pass as of 2026-08-25.** It exists because
+`mpc_extreme_leg_strategy.pine` builds its higher-timeframe engine by GENERATING a second copy of
+the chart-frame one, swapping the bar globals for passed-in values — and two helper methods got
+the swap without getting the parameter. ⚠ **It is deliberately narrow: the underscore prefix is
+this repo's convention for a value handed IN to a derived engine instance, so the check covers the
+whole class that generator can produce and nothing else.** Finding an undeclared identifier with
+no underscore needs Pine's own builtin list, which we do not have — **so its silence is one
+specific question answered, not a clean bill of health.** ✅ Watched RED by mutation rather than
+trusted, on the exact line the first paste failed at. ⚠ **It is a PROMPT, not enforcement**, same
+as its neighbour.
+
+🔴 **`check_flat_reset.py` (2026-08-25). This one is here because a strategy blew an account on its
+first run.** Orders are processed on the bar's close, which happens AFTER the script has finished
+running for that bar — so on the bar an entry is placed, `strategy.position_size` still reads flat
+everywhere below it. `mpc_extreme_leg_strategy.pine` cleared its stop and target under a bare flat
+test, which therefore fired on the entry bar and wiped both three lines after the entry set them.
+**The bracket then went out empty, and because a new entry needs a flat book the position could
+never close: one unprotected trade held to the end of the chart.** The check flags any value an
+entry block sets and a bare flat test clears.
+
+```bash
+python3 indicators/tools/check_flat_reset.py indicators/strategies/*.pine
+```
+
+**All thirteen strategy files pass as of 2026-08-25.** ✅ Watched RED against the exact file that
+blew the account, naming both cleared values at their own lines. ⚠ **It knows this one shape and
+nothing else — it cannot tell you a bracket is correct**, only that this specific way of destroying
+one is absent. ⚠ **Nothing else in this repo tests whether a position is protected.** A Python
+study measures in R with the stop assumed live, so an absent stop is not a shape it can express;
+that lives only in the Pine file. ⚠ **It is a PROMPT, not enforcement.**
+
 **Everything else that is prose lives in [`docs/`](docs/):** `PINE_INPUT_DEFAULTS.md`,
 `BUG_exit_fill_price_mismatch.md`, `MARKET_STRUCTURE_GLOSSARY.md`, `STRUCTURE_OS_BUILD.md` and
 `INDICATORS_BUILD_NOTES.md`. They were NOT split across the two children: each describes both

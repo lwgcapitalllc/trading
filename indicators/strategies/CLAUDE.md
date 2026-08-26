@@ -193,11 +193,63 @@ passed-in values — and `tools/build_extreme_leg.py` assembles the file around 
 own worst failure mode is the reason**: eleven files each carry a private fork of one state machine,
 so a bug fixed in sixteen places walked back in through a seventeenth cut from pre-fix source, and
 nothing failed when it did. A generated copy makes a divergence a diff. ⚠ **The script asserts the
-exact substitution counts (16 `high`, 19 `low`, 9 `close`, 2 `open`, 44 `bar_index`) and refuses to
-write on any other number** — a silent under-match is a state machine reading the wrong timeframe's
-bar with nothing on the chart to show for it. **Do not relax that check; re-count and update it in
-the same edit.** ⚠ **Re-run BOTH scripts after any cross-cutting structure fix**, or this file
-keeps the old engine while its source gets the new one.
+exact substitution counts (12 `high`, 15 `low`, 9 `close`, 2 `open`, 4 pivot-bar reads) and refuses
+to write on any other number** — a silent under-match is a state machine reading the wrong
+timeframe's bar with nothing on the chart to show for it. **Do not relax that check; re-count and
+update it in the same edit.** ⚠ **Re-run BOTH scripts after any cross-cutting structure fix**, or
+this file keeps the old engine while its source gets the new one.
+
+🔴 **THOSE COUNTS WERE 16 / 19 / 9 / 2 / 44 FOR ONE DAY AND THE ENGINE THEY BUILT RAN ON TWO
+CLOCKS AT ONCE (2026-08-25).** The first generator swapped the bar index too, and everything
+downstream of it: every swing LOCATION became a higher-timeframe count while every loop bound and
+lookback stayed a chart-bar count. The post-break rescan then searched a window a third of the
+length it meant to, and the bootstrap scan could reach past the start of history. **Neither half
+errors, goes red, or shows on a chart — a swing simply anchors in the wrong place.**
+
+✅ **The rule that resolves it, and it generalises to any aggregated-bar engine here: THE EXTREME
+OF A SPAN OF AGGREGATED BARS IS THE EXTREME OF THE CHART BARS UNDER IT.** A 15-minute bar's low
+IS the lowest of its three 5-minute lows, so "the lowest low between these two points" returns the
+same PRICE whichever series you scan. So the scans, the loop bounds and every stored location stay
+on the CHART's clock and stay consistent with each other, and only the per-bar DECISIONS — is this
+bar inside the last one, did this close break the swing — take the aggregated values. That is
+exactly the bare reads, which is why the counts dropped: an indexed read (`low[i]`) is history on
+the chart's own series and is deliberately left alone. ⚠ **One consequence to know rather than
+discover: the rescan's 1490-bar runaway guard is now 1490 CHART bars, about 496 higher-timeframe
+ones.** It is a guard, not a rule, and no swing here spans that far.
+
+🔴 **IT SURFACED AS ONE COMPILE ERROR ON AARON'S PASTE (`CE10272`, `_bi` undeclared), AND THE
+COMPILE ERROR WAS THE HARMLESS HALF.** Two helper methods got the rename without getting the
+parameter, so Pine refused them; the two-clock defect underneath compiled perfectly and would
+have run. ✅ **The narrow half is now checked mechanically — `indicators/tools/check_scope.py`,
+which asserts every `_`-prefixed read inside a function body is a parameter of it or assigned in
+it.** All 13 strategy files pass; watched RED by mutation on the exact line Aaron reported. ⚠ **It
+cannot see the two-clock half at all**, and nothing can — that one is caught by reading, or by the
+export twin this file still does not have.
+
+🔴 **IT THEN COMPILED, AND ITS FIRST RUN BLEW THE ACCOUNT (2026-08-25). The compile error and the
+two-clock defect were both cheaper than this.** Orders here process on the bar's CLOSE, which is
+after the script has finished running for that bar — so on the bar an entry is placed, the book
+still reads flat everywhere below it. This file cleared its stop and target under a bare flat test,
+which fired on the entry bar and wiped both three lines after the entry set them. **The bracket
+went out empty on the next bar, and because a new entry needs a flat book the position could never
+close: one unprotected trade, held to the end of the chart.**
+
+**The standing rule for every strategy in this directory: after a `strategy.entry` call, a bare
+`strategy.position_size == 0` is a LIE for the rest of that bar.** Any block that reads the flat
+book below an entry needs a per-bar just-entered flag in its guard. `mpc_h4_sweep_strategy.pine`
+has carried that pair since it was written; the derivation of this file dropped it.
+
+⚠ **Sizing is what turned a wrong trade into a dead account, and it is worth saying separately.**
+Every trade risks a fixed percentage of equity, so a tight stop buys a large position — MEASURED
+over the 486 signals the shipped configuration produces, the median stop is $6.98 and the 1st
+percentile $1.26, which on a $10,000 account at 1% risk is 14 and 79 ounces, $47k and $262k of
+notional. **Correct sizes for a trade that has a stop. The account, for one that does not.**
+
+🔴 **No Python study can catch this class.** A study measures in R with the stop assumed live, so
+an absent stop is not a shape it can express — and a parity gate would not have caught it either,
+since both sides would agree. **Whether a position is protected is decided only in the Pine file.**
+✅ `indicators/tools/check_flat_reset.py` now refuses this one shape mechanically; watched RED
+against the exact file that blew the account, and all 13 strategy files pass.
 
 ⚠ **It ships TWO of Section 2's four toggles, and that is an open decision rather than an
 oversight.** There is no internal engine here, so the other two would be controls that look like

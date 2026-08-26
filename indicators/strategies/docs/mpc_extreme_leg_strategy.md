@@ -1,7 +1,10 @@
 # `mpc_extreme_leg_strategy.pine` — the run INTO the shift of structure
 
-**Status: WRITTEN, NEVER COMPILED.** Nothing here has been pasted into TradingView. Every number
-below comes from `backtest/tools/pre_sos_leg.py`, not from this file. Paste before trusting.
+**Status: COMPILES AND RUNS.** Its first run blew the account and the cause is fixed — see the
+defect record below, because the shape it broke in applies to every strategy here. ⚠ **Every number
+in this doc still comes from `backtest/tools/pre_sos_leg.py`, not from this file.** The strategy now
+takes trades and protects them; nobody has yet checked whether what it books matches the study, and
+until somebody does, the table below describes the study rather than the file.
 
 **Run it on a 5-minute chart.** The 15-minute half is aggregated in code, so the chart timeframe
 is not a preference — it is the frame the trigger is measured on.
@@ -41,6 +44,37 @@ somebody patches one and not the other, which this repo has already had happen a
 forked Pine files. **A divergence is now a diff rather than a discovery.** The script asserts the
 exact substitution counts and refuses to write on any other number.
 
+### 🔴 What the derivation must NOT swap — the two-clock bug (2026-08-25)
+
+The first generator swapped the bar index along with the four bar values, and that produced an
+engine running on two clocks at once: every swing LOCATION became a count of 15-minute bars while
+every loop bound and lookback stayed a count of chart bars. **The post-break rescan then searched a
+window a third as long as it meant to, and the bootstrap scan could reach past the start of
+history. Neither half errors, goes red, or shows on a chart** — a swing simply anchors somewhere
+it does not belong.
+
+**The rule that resolves it, and it applies to any aggregated-bar engine here: the extreme of a
+span of aggregated bars is the extreme of the chart bars under it.** A 15-minute bar's low IS the
+lowest of its three 5-minute lows, so *the lowest low between these two points* returns the same
+price whichever series you scan. So the scans, the loop bounds and every stored location stay on
+the **chart's** clock and stay consistent with each other, and only the per-bar DECISIONS — is this
+bar inside the last one, did this close break the swing — take the aggregated values.
+
+| swapped for the 15-minute values | left on the chart's own series |
+|---|---|
+| bare `open` / `high` / `low` / `close` | `bar_index` and everything computed from it |
+| the pivot's own bar, passed in | an indexed read — `low[i]`, `high[i]` |
+
+⚠ **One consequence to know rather than discover: the rescan's 1490-bar runaway guard is now 1490
+CHART bars, about 496 higher-timeframe ones.** It is a guard against a runaway loop, not a rule,
+and no swing here spans that far.
+
+⚠ **It surfaced as a single compile error on the first paste** (`CE10272`, an undeclared
+identifier) — two helper methods got the rename without getting the parameter. **That was the
+harmless half.** The compile error stopped the file; the two-clock defect underneath compiled
+perfectly. `indicators/tools/check_scope.py` now catches the narrow half mechanically and cannot
+see the other one at all.
+
 ⚠ **Regenerate after ANY change to the source block**, including a cross-cutting structure fix:
 
 ```
@@ -71,6 +105,40 @@ purely to draw with** — in a file that already carries two and has never been 
 compile-token ceiling is the live risk. Left as an open decision rather than done silently: if the
 file compiles with room to spare, the internal engine should go in and the section becomes
 standard.
+
+---
+
+## 🔴 The first run blew the account — the bracket was cleared on the bar it was set (2026-08-25)
+
+**Symptom:** pasted on a 5-minute chart, the equity curve went to zero.
+
+**Cause, and it is one line.** Orders here are processed on the bar's close, which happens *after*
+the script has finished running for that bar — so on the bar an entry is placed, the book still
+reads flat everywhere below it. The block that cleared the stop and the target when flat therefore
+fired on the entry bar itself and wiped both back to nothing, three lines after the entry set them.
+On the next bar the bracket went out with no stop and no target. A new entry needs a flat book, so
+the position could never close either: **one trade, unprotected, held to the end of the chart.**
+
+**Sizing is what made it fatal rather than merely wrong.** Every trade is sized to risk a fixed
+percentage of equity, so a tight stop buys a large position — MEASURED over the 486 signals the
+shipped configuration produces, the median stop is $6.98 and the 1st percentile is $1.26, which on
+a $10,000 account at 1% risk is **14 and 79 ounces — $47k and $262k of notional**. Those are
+correct sizes for a trade with a stop. With no stop they are the account.
+
+⚠ **The study could never have caught this**, and that is the transferable half. It measures in R
+with the stop assumed live, so an absent stop is not a shape it can express. **Everything that
+decides whether a position is protected lives only in the strategy file, and nothing upstream
+tests it.**
+
+✅ Fixed by a per-bar just-entered flag, which is what `mpc_h4_sweep_strategy.pine` has always
+carried and what the derivation of this file dropped. The flag does two jobs: the bracket now goes
+out on the entry bar (so it is live for the next bar's range rather than the one after it), and the
+reset only fires when the book is flat *and* nothing was opened this bar.
+
+✅ **`indicators/tools/check_flat_reset.py` now refuses this shape mechanically.** It was watched
+RED against the exact file that blew the account, naming both cleared values and their lines, and
+all thirteen strategy files pass it. ⚠ It knows this one shape and nothing else — it cannot tell
+you a bracket is correct.
 
 ---
 

@@ -165,6 +165,7 @@ var float[] ll15 = array.new_float()
 var int[]   bi15 = array.new_int()
 float ph15 = na
 float pl15 = na
+int   pivBar = na
 if periodClosed
     array.push(hh15, doneH)
     array.push(ll15, doneL)
@@ -177,6 +178,7 @@ if periodClosed
     if array.size(hh15) == cap
         float candH = array.get(hh15, majorLength)
         float candL = array.get(ll15, majorLength)
+        pivBar := array.get(bi15, majorLength)
         bool isHigh = true
         bool isLow  = true
         for k = 0 to cap - 1
@@ -190,7 +192,7 @@ if periodClosed
 
 var st15 = SMCStructure15.new(majorLength)
 if periodClosed
-    st15.process15(ph15, pl15, "H", showHtfSwing ? bullColor : color(na), showHtfSwing ? bearColor : color(na), doneO, doneH, doneL, doneC, bar_index)
+    st15.process15(ph15, pl15, "H", showHtfSwing ? bullColor : color(na), showHtfSwing ? bearColor : color(na), doneO, doneH, doneL, doneC, pivBar)
 if showHtfSwing
     if not na(st15.ash_line)
         line.set_x2(st15.ash_line, bar_index)
@@ -334,16 +336,28 @@ var float tStop = na
 var float tTgt  = na
 var bool  beArmed = false
 
+// [doc 12a] THE BAR THE ENTRY IS PLACED ON STILL READS FLAT, AND THAT COST AN ACCOUNT
+// `process_orders_on_close` fills the entry AFTER this script has finished running for the bar,
+// so `strategy.position_size` is still 0 everywhere below on the bar that opens the trade. These
+// two flags are the only way this bar can tell "flat" from "just entered". Without them the reset
+// at the bottom wiped the stop and the target back to na on the very bar they were set, the
+// bracket went out empty on the next bar, and the position was never protected and never closed.
+// The sibling `mpc_h4_sweep_strategy.pine` has carried the same pair since it was written.
+bool tookLong  = false
+bool tookShort = false
+
 if goLong and strategy.position_size == 0
     strategy.entry("L", strategy.long, qty = f_qty(riskLong))
     tStop := stopLong
     tTgt  := tgtLong
     beArmed := false
+    tookLong := true
 if goShort and strategy.position_size == 0
     strategy.entry("S", strategy.short, qty = f_qty(riskShort))
     tStop := stopShort
     tTgt  := tgtShort
     beArmed := false
+    tookShort := true
 
 if strategy.position_size != 0 and useBreakeven and not na(tTgt) and not na(tStop)
     float span = math.abs(tTgt - strategy.position_avg_price)
@@ -353,11 +367,14 @@ if strategy.position_size != 0 and useBreakeven and not na(tTgt) and not na(tSto
             beArmed := true
             tStop := strategy.position_avg_price
 
-if strategy.position_size > 0
+// The bracket goes out on the ENTRY bar too, so it is live for the next bar's range rather than
+// the one after that. `or tookLong` is what makes that possible — see [doc 12a].
+if strategy.position_size > 0 or tookLong
     strategy.exit("L-x", from_entry = "L", stop = tStop, limit = tTgt)
-if strategy.position_size < 0
+if strategy.position_size < 0 or tookShort
     strategy.exit("S-x", from_entry = "S", stop = tStop, limit = tTgt)
-if strategy.position_size == 0
+// Flat AND we did not just enter. Dropping the second half is the bug in [doc 12a].
+if strategy.position_size == 0 and not tookLong and not tookShort
     tStop := na
     tTgt  := na
     beArmed := false
