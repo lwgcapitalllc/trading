@@ -185,3 +185,23 @@ statement, becomes evidence for the strategy the next time anybody totals the ac
 
 ⚠ **Demo account 700152905, so no real money moved.** That is luck about which account it
 happened on, not a property of the defect.
+
+### The fix, same day
+
+Four changes, all in the repo and **none of them live until a promote**:
+
+| | what | where |
+|---|---|---|
+| 1 | a send that does not confirm re-reads the order book before reporting failure | `shared/mt5_ops.py::place_pending_limit` |
+| 2 | a cancel that is not confirmed keeps its record and blocks the replacement | `live/bridge.py::_drop_rest` |
+| 3 | every bar sweeps for resting orders we have no record of | `live/bridge.py::_observe_orphans` |
+| 4 | the account cap excludes our own orders by ticket, not by magic | `live/bridge.py::_account_cap_check` |
+
+plus `shared/broker_result.UNKNOWN`, the third answer that made all four expressible.
+
+**22 new tests, ten mutations watched red.** The end-to-end one drives the real sequence from that
+day - five bars, every placement reported as failed, every one landing - and fails with five
+resting orders against the old behaviour.
+
+⚠ **The rules live in `algos/CLAUDE.md`; this is the diary entry.** Do not restate them here.
+

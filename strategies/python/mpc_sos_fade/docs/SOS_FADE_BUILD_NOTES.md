@@ -325,20 +325,11 @@ shipping one.**
 monotonic across the plain-fraction ladder; drawdown is uniformly worse than control but noisily
 ordered. **Declaring a trend before the ladder is full is the error, not the trend itself.**
 
-✅ **PARITY GATE RAN AND PASSED, 2026-08-26.** Aaron supplied the decision-stream export the same
-week; `compare_strategy.py "VANTAGE_XAUUSD, 15_6fb2a.csv"` gives **exit 0 at warmups 100 / 200 /
-500 / 1000 / 2000** over 21,259 bars from 2025-10-01. **Rule 22 is satisfied for this change.**
-
-⚠ **A pre-existing red sits below the warm-up boundary and is NOT this change.** At warmup 0 the
-gate fails at bar 16 (`px_s_stage` py=1 pine=0); green from warmup 50 on. The identical failure —
-same bar, field and values — reproduces on the code from before this change, run in a throwaway
-worktree at `1ff36e4^`. **Recorded rather than retired**: it is somebody's open question, just
-provably not the breakeven buffer's.
-
-⚠ **The green covers the shipped path only, and the harness said so itself.** The five new fields
-have no Pine counterpart, so the export runs them at their off position — nothing here tests the
-fraction or cost modes. The harness separately warned that the no-gap arm branch was never entered,
-because this export ran with Require-FVG ON.
+⚠ **No parity gate, and not because it was skipped.** `compare_strategy.py` needs a decision-stream
+export from `mpc_strategy_export.pine` and **no such CSV exists on this machine** — the exports
+present are trade lists and engine chart data. This is the same "9 of 14 gates could not run"
+condition the root CLAUDE.md already records. The shipped path is unchanged and the strategy suite
+is green, but rule 22 is NOT satisfied and this must not be committed as though it were.
 
 ⚠ **No Pine counterpart**, so even with an export the gate could never configure a non-default run
 of these five fields — the Python-only-field hazard this file already records for the no-gap arm

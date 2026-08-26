@@ -79,6 +79,10 @@ import MetaTrader5 as mt5
 import pandas as pd
 from bot_state import write_bot
 
+# The third answer a broker call can give: not success, not failure, but 'could not find
+# out'. Its own dependency-free module by design - see the note in that file.
+from broker_result import UNKNOWN
+
 # The broker-server-clock → true-UTC rule. It lives under markets/fx/tools/ because the MT5 lab
 # agent (which is not on shared/'s path) was its first consumer; imported here by the repo-wide
 # "put the dir on sys.path, import bare" convention rather than copied, because a second copy of
@@ -587,9 +591,36 @@ class BotMT5:
     def get_pending_orders(self, symbol: str = None) -> list:
         """This bot's resting orders — filtered by MAGIC, so another bot (or a hand-placed
         order) on the same terminal and symbol is invisible here and can never be cancelled by
-        this bot. Returns [] when there are none or the call fails."""
+        this bot. Returns [] when there are none or the call fails.
+
+        ⚠ **This one collapses "none" and "cannot ask" into `[]`, and callers that ACT on the
+        answer must use `pending_orders_strict` instead.** It is kept as-is because its callers
+        only ever ask "is this ticket still there", where a failed read costs one wasted cycle.
+        Deciding to PLACE an order off an empty list is a different matter — see below.
+        """
         orders = mt5.orders_get(symbol=symbol or self.symbol)
         return [o for o in (orders or []) if o.magic == self.magic]
+
+    def pending_orders_strict(self, symbol: str = None) -> Optional[list]:
+        """This bot's resting orders, or **`None` when the terminal could not be asked.**
+
+        🔴 **Built 2026-08-25, and the distinction is the whole incident.** MT5 returns `None`
+        from `orders_get` on an error and an empty tuple when there genuinely is nothing. Any
+        caller that reads "no orders resting" and then PLACES one has to know which of those two
+        it got: on the day this was written, five copies of one order reached the broker because
+        the bot could not tell "you have nothing resting" from "I could not find out".
+
+        This is rule 1 of the root `CLAUDE.md` applied to the order book rather than to the
+        terminal link. Never let "no" and "cannot ask" be the same value.
+        """
+        orders = mt5.orders_get(symbol=symbol or self.symbol)
+        if orders is None:
+            self.log.error(
+                f"orders_get returned None for {symbol or self.symbol}: {mt5.last_error()} — "
+                f"the order book could not be READ, which is not the same as it being empty."
+            )
+            return None
+        return [o for o in orders if o.magic == self.magic]
 
     def get_open_positions(self, symbol: str = None) -> list:
         """This bot's open positions, filtered by MAGIC. Same isolation rule as
@@ -744,6 +775,10 @@ class BotMT5:
                 )
                 return None, None
 
+        # Snapshot the order book BEFORE the send. This is the only way to answer "did it
+        # land" without trusting a return code — see the reconciliation below.
+        before = self.pending_orders_strict(sym)
+
         result = mt5.order_send(
             {
                 "action": mt5.TRADE_ACTION_PENDING,
@@ -765,10 +800,78 @@ class BotMT5:
                 f"@ {price:.{digits}f} | SL={sl:.{digits}f}"
             )
             return result.order, price
-        self.log.error(
-            f"Pending failed ({sym} {direction} {vol}L @ {price}): {refusal_detail(result)}"
-        )
+
+        # ── the send did not come back DONE, and that is NOT the same as "it did not happen" ──
+        #
+        # 🔴 **2026-08-25.** Retcode 10012 is TIMEOUT: the reply never arrived, so the outcome is
+        # UNKNOWN. This returned `(None, None)` for every non-DONE code alike, the caller read
+        # that as "no order exists", and re-sent on the next bar. Four requests timed out, all
+        # four had actually reached the broker, and five copies of one limit filled at the same
+        # price within 69 milliseconds. The terminal's own journal printed `0 positions, 4 orders`
+        # twice while the bot believed it had none.
+        #
+        # So: ASK THE BROKER. A ticket that is on the book now and was not before is ours — the
+        # read is magic-filtered and symbol-filtered, so nothing else can appear in that diff.
+        # `cancel_pending` has re-asked like this since it was written; this is the half of the
+        # pair that never got the same treatment.
+        detail = refusal_detail(result)
+        landed = self._reconcile_pending(sym, before, vol, price)
+        if landed is UNKNOWN:
+            self.log.error(
+                f"Pending UNKNOWN ({sym} {direction} {vol}L @ {price}): {detail} — and the order "
+                f"book could not be read afterwards, so whether it landed is not known. "
+                f"Reporting unknown rather than failure: a failure here gets re-sent."
+            )
+            return UNKNOWN, None
+        if landed is not None:
+            self.log.warning(
+                f"Pending reported failure but the order IS at the broker: ticket={landed} "
+                f"({sym} {direction} {vol}L @ {price}). Reported: {detail}. "
+                f"Adopting it instead of re-sending."
+            )
+            return landed, price
+        self.log.error(f"Pending failed ({sym} {direction} {vol}L @ {price}): {detail}")
         return None, None
+
+    def _reconcile_pending(self, sym: str, before, vol: float, price: float):
+        """After a send that did not confirm: did an order of ours appear anyway?
+
+        Returns the new ticket, `None` for "confidently nothing new", or `UNKNOWN` when the
+        question could not be answered. **The three are deliberately distinct** — collapsing the
+        third into the second is the defect this whole method exists to close.
+
+        ⚠ **A snapshot that could not be taken makes the diff meaningless**, so an unreadable
+        `before` is UNKNOWN even if the `after` read succeeds: without the baseline, an order
+        already resting is indistinguishable from one that just landed.
+
+        ⚠ **More than one new ticket is also UNKNOWN, not a pick.** It should be impossible for
+        one send, and guessing which of two orders to adopt would leave the other resting and
+        unowned - exactly the state being fixed. The bridge's orphan sweep cleans that up on the
+        next bar, which is the slower but honest route.
+        """
+        if before is None:
+            return UNKNOWN
+        after = self.pending_orders_strict(sym)
+        if after is None:
+            return UNKNOWN
+        fresh = [o for o in after if o.ticket not in {b.ticket for b in before}]
+        if not fresh:
+            return None
+        # Volume and price are checked as well as the ticket diff. The diff alone is sound today
+        # (one bot, one magic, one symbol, one send in flight), and that is exactly the kind of
+        # assumption this file has been bitten by before.
+        match = [
+            o
+            for o in fresh
+            if abs(float(o.volume_current) - vol) < 1e-9 and abs(float(o.price_open) - price) < 1e-9
+        ]
+        if len(match) == 1:
+            return int(match[0].ticket)
+        self.log.error(
+            f"Pending reconciliation is ambiguous: {len(fresh)} new order(s) on {sym}, "
+            f"{len(match)} matching {vol}L @ {price}. Reporting unknown; the bridge will sweep."
+        )
+        return UNKNOWN
 
     def modify_pending(
         self, ticket: int, price: float, sl: float, tp: float = 0.0, symbol: str = None
@@ -794,15 +897,33 @@ class BotMT5:
             self.log.error(f"Pending modify failed T{ticket}: {refusal_detail(result)}")
         return ok
 
-    def cancel_pending(self, ticket: int) -> bool:
-        """Remove a resting order. A ticket that is already gone (filled or cancelled) counts
-        as SUCCESS — the caller's intent is "there should be no order here", and treating a
-        race with a fill as a failure would make the bridge retry forever."""
+    def cancel_pending(self, ticket: int):
+        """Remove a resting order. Returns True (gone), False (still there), or `UNKNOWN`.
+
+        A ticket that is already gone (filled or cancelled) counts as SUCCESS — the caller's
+        intent is "there should be no order here", and treating a race with a fill as a failure
+        would make the bridge retry forever.
+
+        🔴 **The `UNKNOWN` arm was added 2026-08-25 and it closes a real hole.** This method
+        already did the right thing in shape — it re-asked the broker rather than trusting the
+        return code — but it asked with `mt5.orders_get(ticket=...)`, which returns `None` both
+        when the order is gone AND when the terminal could not be asked. `not None` is True, so
+        **an unreadable order book was reported as a successful cancel.** On the day this was
+        written the caller then cleared its record and placed a replacement, which is one of the
+        three ways one order became five.
+        """
         result = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": ticket})
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(f"PENDING CANCELLED | T{ticket}")
             return True
-        if not mt5.orders_get(ticket=ticket):
+        still = mt5.orders_get(ticket=ticket)
+        if still is None:
+            self.log.error(
+                f"Pending cancel T{ticket}: {refusal_detail(result)} — and the order book could "
+                f"not be read afterwards, so whether it is gone is not known."
+            )
+            return UNKNOWN
+        if not still:
             return True  # already gone
         self.log.error(f"Pending cancel failed T{ticket}: {refusal_detail(result)}")
         return False

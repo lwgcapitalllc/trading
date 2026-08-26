@@ -1456,6 +1456,74 @@ Any time you add or fix behaviour that applies to ALL bots. Do not add it to one
 leave the others with stale code. Fix the shared implementation, update the thin delegates
 in every bot that uses it.
 
+### 🔴 A broker call has THREE outcomes, not two (2026-08-25)
+
+**One limit order became five positions, and the whole cause is a missing third value.** Retcode
+10012 is TIMEOUT: the reply never arrived, so the broker may well have acted. It arrived at the
+caller as the same `(None, None)` a rejection produces, the retry loop could not tell them apart,
+and the same limit was re-sent on five consecutive bars. All five copies filled at 4661.50 within
+69 milliseconds. Full story and the terminal-journal evidence: `docs/ALGOS_BUILD_NOTES.md`.
+
+**`shared/broker_result.UNKNOWN` is that third value.** Its own dependency-free module on purpose
+— defining it inside `mt5_ops.py` and importing it into `bridge.py` pulled the broker module into
+the bridge's import graph, reordered `sys.path`, made a different `fleet_halt` win, and broke
+three unrelated test modules with a circular-import error naming neither file. It is **falsy**, so
+an old `if ticket:` site degrades to the conservative reading rather than crashing; anything that
+must act on the difference tests `is UNKNOWN`.
+
+**The four rules this leaves, and each one is a place the old code was wrong:**
+
+1. **A send that does not confirm must ASK THE BROKER before reporting failure.**
+   `place_pending_limit` snapshots the order book, sends, and on any non-DONE result diffs the
+   book against that snapshot. A ticket that is there now and was not before is ours. ⚠ **An
+   unreadable snapshot is UNKNOWN even if the follow-up read succeeds** — without the baseline an
+   order already resting cannot be told from one that just landed. ⚠ **Two new tickets is also
+   UNKNOWN, not a pick**: adopting one would leave the other resting and unowned, which is the
+   state being fixed.
+2. **A cancel that is not CONFIRMED must never be followed by a replacement.** `_drop_rest`
+   returns False and KEEPS the record, so the next bar retries the cancel instead of placing a
+   second order beside the first. 🔴 **This one needs no timeout at all** — an ordinary rejected
+   cancel was enough, because `_sync_side` discarded the answer and cleared its record anyway.
+3. **The order book is swept EVERY BAR for orders we have no record of** (`_observe_orphans`),
+   not only at startup. Four orphans sat resting for five hours through twenty bars and the first
+   thing that noticed was the position-count halt, after they had all filled. ⚠ **It cancels
+   rather than adopting**: adoption needs a decision about which strategy intent an order belongs
+   to, and getting that wrong silently attaches a live order to the wrong side. ⚠ **An unreadable
+   book cancels nothing and clears nothing** — fail closed.
+4. **The account risk cap excludes our own orders by TICKET, never by MAGIC.** The exclusion
+   carried an unstated premise — *anything under our magic is something we placed and are about
+   to replace* — and four orders we had no record of were under our magic too, so five copies of a
+   10% order read as an empty account. **A premise like that belongs written next to the exclusion
+   it justifies**: this one was documented, reasoned and correct on the day it was written, and
+   nothing announced the day it stopped being true.
+
+⚠ **`get_pending_orders` still flattens "empty" and "unreadable" into `[]`, deliberately.** Its
+callers only ask *is this ticket still there*, where a failed read costs one wasted cycle.
+**Anything that ACTS on the answer uses `pending_orders_strict`, which returns `None` for "could
+not ask".** The two are pinned apart by a test so they cannot quietly converge.
+
+⚠ **A side whose placement outcome is UNKNOWN is BLOCKED, not refused** — no placement, no
+cancel, nothing, until a sweep manages to read the book. It is not a latch: one readable bar
+clears it, or a single bad minute would stop the bot trading for good.
+
+**Tests: 13 in `tests/test_order_reconciliation.py` (bridge) and 9 in `tests/test_mt5_ops_pending.py`
+(broker layer). Ten mutations watched RED**, including both directions of rule 4 — count our own
+recorded order and the bot refuses its own re-size; exclude by magic and the incident returns.
+
+🔴 **Two of the fixtures were lying, and both were found by the new code rather than by a test.**
+The bridge's broker fake carried an order as resting AND filled at once, which MT5 cannot do — a
+triggered order leaves the book for good and comes back as a position under the same ticket. And
+its `cancel_pending` could only ever answer True, **which is exactly why a discarded cancel result
+went unnoticed for as long as it did: no test could produce an answer worth keeping.** ⚠ **A fake
+that cannot produce a failure mode is a fake that certifies the code against a system you do not
+have.**
+
+⚠ **One test in the new file names NO mutation on purpose and says so.** Its fake returns the
+failure directly and never reaches the broker layer, so mutating the reconciliation does not turn
+it red — the sweep saves it instead. **A test naming the wrong mutation is worse than one naming
+none: it reports coverage that is not there.** The first draft did exactly that and it was only
+caught by running the mutation.
+
 ### The pending-order layer (added 2026-07-30) — four MT5 behaviours to know
 
 `place_pending_limit` / `modify_pending` / `cancel_pending` / `cancel_all_pending` /

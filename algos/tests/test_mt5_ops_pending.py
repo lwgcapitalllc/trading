@@ -480,3 +480,173 @@ def test_no_deals_still_reads_as_not_found_rather_than_free(mt5ops):
     bd = _bot(mt5_ops).get_deal_breakdown(505)
     assert bd["deals"] == 0
     assert bd["commission_usd"] == 0.0
+
+
+# ── the timeout that is not a failure (2026-08-25) ───────────────────────────
+#
+# 🔴 On 2026-08-25 four order requests timed out, all four reached the broker, and the bot
+# re-sent on every bar because `place_pending_limit` returned `(None, None)` for a timeout
+# exactly as it does for a rejection. Five copies of one limit filled at 4661.50 within 69
+# milliseconds. These pin the broker layer's half of the fix; the bridge's half is in
+# `test_order_reconciliation.py`.
+#
+# Retcode 10012 is TRADE_RETCODE_TIMEOUT: the reply never arrived. Nothing about it says the
+# broker did not act.
+
+
+class _RestingOrder:
+    """Shaped like an MT5 order — `price_open` and `volume_current`, not `price`/`volume`.
+
+    ⚠ `volume_current` is what is LEFT on a partially-filled order, and it is the field
+    production reads. A fake using `volume` would let a reconciliation that reads the wrong
+    name pass.
+    """
+
+    def __init__(self, ticket, price, volume, magic=770115, sl=0.0):
+        self.ticket = ticket
+        self.price_open = price
+        self.volume_current = volume
+        self.magic = magic
+        self.sl = sl
+
+
+def _timeout():
+    return _Result(10012, comment="Request timeout")
+
+
+def test_a_timed_out_send_whose_order_LANDED_returns_that_ticket(mt5ops):
+    """The incident, at the layer it happened. The terminal says the request failed; the order
+    book says otherwise; the order book wins.
+
+    WATCHED RED: make `_reconcile_pending` return `None` unconditionally and this fails with
+    `(None, None)` - i.e. the caller re-sends, which is the incident.
+    """
+    mt5_ops, fake = mt5ops
+    log = _Log()
+    bot = _bot(mt5_ops, log)
+
+    def order_send(req):
+        fake.sent.append(req)
+        fake._orders.append(_RestingOrder(7777, req["price"], req["volume"]))  # it DID land
+        return _timeout()
+
+    fake.order_send = order_send
+
+    ticket, price = bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+
+    assert ticket == 7777, "an order that is demonstrably at the broker was reported as absent"
+    assert price == 3310.0
+    assert log.saw("IS at the broker")
+
+
+def test_a_timed_out_send_that_really_failed_still_reports_failure(mt5ops):
+    """The fix must not turn every refusal into an imagined order. Nothing new on the book means
+    nothing was placed, and the caller is right to try again."""
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._refuse_with = _timeout()
+
+    assert bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0) == (None, None)
+
+
+def test_an_order_that_was_ALREADY_resting_is_not_mistaken_for_a_new_one(mt5ops):
+    """The baseline is what makes the diff mean anything. An identical order resting before the
+    send must not be adopted as the result of it - that would invent an order the bot then
+    believes it owns, which is the same disease pointed the other way."""
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._orders.append(_RestingOrder(6666, 3310.0, 0.40))
+    fake._refuse_with = _timeout()
+
+    assert bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0) == (None, None)
+
+
+def test_an_unreadable_book_after_the_send_is_UNKNOWN_not_failure(mt5ops):
+    """ "Cannot ask" is never "it did not happen". Reporting failure here is what gets the order
+    re-sent, and the whole incident is one re-send repeated.
+
+    WATCHED RED: return `None` instead of `UNKNOWN` from the `after is None` arm - this fails
+    because the caller is handed a clean failure it will act on.
+    """
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._refuse_with = _timeout()
+
+    calls = {"n": 0}
+
+    def orders_get(**kw):
+        calls["n"] += 1
+        return None if calls["n"] > 1 else tuple()  # baseline reads, the follow-up does not
+
+    fake.orders_get = orders_get
+
+    ticket, price = bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+    assert ticket is mt5_ops.UNKNOWN
+
+
+def test_an_unreadable_book_BEFORE_the_send_is_UNKNOWN(mt5ops):
+    """Without a baseline the diff is meaningless: an order already resting cannot be told from
+    one that just landed. Refusing to answer beats answering with a coin flip."""
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._refuse_with = _timeout()
+    fake.orders_get = lambda **kw: None
+
+    ticket, _ = bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+    assert ticket is mt5_ops.UNKNOWN
+
+
+def test_a_confirmed_send_never_consults_the_book(mt5ops):
+    """The reconciliation is the exceptional path. A clean DONE must stay one order_send and two
+    cheap reads, or the common case pays for the rare one on every bar."""
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    reads = {"n": 0}
+    real = fake.orders_get
+
+    def counting(**kw):
+        reads["n"] += 1
+        return real(**kw)
+
+    fake.orders_get = counting
+    ticket, _ = bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+    assert ticket and reads["n"] == 1  # the baseline only
+
+
+def test_an_unreadable_book_makes_a_failed_CANCEL_unknown_not_successful(mt5ops):
+    """🔴 The quietest of the three faults. `cancel_pending` re-asked the broker - the right
+    shape - but asked with a call that returns `None` both when the order is gone and when the
+    terminal cannot be reached, and `not None` is True. **An unreadable book was reported as a
+    successful cancel**, after which the bridge cleared its record and placed a replacement.
+
+    WATCHED RED: restore `if not mt5.orders_get(ticket=ticket): return True` and this returns
+    True for a cancel that never happened.
+    """
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._refuse_with = _timeout()
+    fake.orders_get = lambda **kw: None
+
+    assert bot.cancel_pending(4242) is mt5_ops.UNKNOWN
+
+
+def test_a_cancel_for_an_order_that_is_genuinely_gone_still_succeeds(mt5ops):
+    """A race with a fill must not read as a failure, or the bridge retries forever."""
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._refuse_with = _Result(10013, comment="Invalid request")
+
+    assert bot.cancel_pending(4242) is True
+
+
+def test_the_strict_read_separates_empty_from_unreadable(mt5ops):
+    """The distinction the whole fix rests on, asserted directly rather than through a caller."""
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+
+    assert bot.pending_orders_strict() == []
+    fake.orders_get = lambda **kw: None
+    assert bot.pending_orders_strict() is None
+    # ...while the lenient reader still flattens both, which is why callers that ACT use the
+    # strict one. Pinned so the two cannot quietly converge.
+    assert bot.get_pending_orders() == []

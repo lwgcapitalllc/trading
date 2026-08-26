@@ -100,6 +100,14 @@ _DECISION_EVENTS = {
     "dry_run_action",
     # a position that existed before this process did, so the strategy never chose it
     "warmup_position_skipped",
+    # ── the 2026-08-25 order-reconciliation events. All three are about an ORDER, so they
+    # belong in the decision stream next to the setup they came from, not in the health one.
+    # a send that did not confirm AND could not be checked: it may or may not be at the broker
+    "order_unknown",
+    # a resting order under our magic that this bot has no record of placing
+    "order_orphaned",
+    # a cancel the broker did not confirm, so the record was KEPT rather than cleared
+    "cancel_unconfirmed",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

@@ -71,6 +71,12 @@ class _Order:
         # hand-listed beside it. A fake whose exposure disagrees with its own order book is the
         # 2026-08-07 trap one level up: it would test a shape production never produces.
         self.price, self.sl, self.volume, self.buy = price, sl, volume, buy
+        # MT5 names these fields `price_open` and `volume_current` on a real order, and the
+        # orphan sweep reads them by those names. Mirrored rather than renamed: the existing
+        # `price`/`volume` are load-bearing for the exposure derivation above, and a fake that
+        # answers to a name production does not use is the other half of the same trap.
+        self.price_open = price
+        self.volume_current = volume
 
 
 class _FakeMt5Ops:
@@ -92,12 +98,43 @@ class _FakeMt5Ops:
         # account and the bridge has to treat it as one.
         self.external: list = []
         self.exposure_readable = True
+        # Whether the ORDER BOOK can be read. Production distinguishes "nothing resting" from
+        # "could not ask" (`mt5_ops.pending_orders_strict`), and a fake that cannot produce the
+        # second models a system we do not have — which is the fixture trap this repo has been
+        # caught by four times. It is the state the whole 2026-08-25 fix turns on.
+        self.orders_readable = True
+        # Tickets that have become positions. See `_book()`.
+        self._filled: set = set()
+        # What the broker says when asked to cancel. True (gone), False (still there), or
+        # `broker_result.UNKNOWN`.
+        self.cancel_result = True
 
     def get_open_positions(self, symbol=None):
+        # Remember every ticket that has ever been open, so `_book()` can keep a filled order
+        # out of the order book AFTER its position closes too. In MT5 a triggered order is gone
+        # for good; it does not come back when the position does.
+        self._filled.update(p.ticket for p in self.positions)
         return list(self.positions)
 
+    def _book(self):
+        """The resting orders, with anything that has FILLED removed.
+
+        ⚠ **Derived, because MT5 cannot show an order as both resting and filled.** A triggered
+        pending order leaves `orders_get` and appears in `positions_get` under the SAME ticket.
+        Tests here open a position by assigning `positions` directly, and before 2026-08-25
+        nothing read the order book afterwards, so the fake was never wrong in a way that showed
+        — it simply carried a state production cannot produce. The orphan sweep reads that book
+        every bar, and it flagged the fake's phantom order the moment it was switched on. **A
+        fixture more capable than production hides the defect; this one invented one.**
+        """
+        self._filled.update(p.ticket for p in self.positions)
+        return [o for o in self.orders if o.ticket not in self._filled]
+
     def get_pending_orders(self, symbol=None):
-        return list(self.orders)
+        return self._book()
+
+    def pending_orders_strict(self, symbol=None):
+        return self._book() if self.orders_readable else None
 
     def account_exposure(self, symbol=None):
         """Everything on the account across EVERY magic — this bot's own book plus `external`.
@@ -173,9 +210,16 @@ class _FakeMt5Ops:
         return True
 
     def cancel_pending(self, ticket):
+        """Three outcomes, because production has three: gone, still there, or unknown.
+
+        ⚠ **`cancel_result` defaults to True and a fake that could ONLY say True is why a failed
+        cancel went unnoticed for as long as it did** — the bridge threw the answer away, and no
+        test could show it, because no test could produce an answer worth keeping.
+        """
         self.actions.append(("cancel", ticket))
-        self.orders = [o for o in self.orders if o.ticket != ticket]
-        return True
+        if self.cancel_result is True:
+            self.orders = [o for o in self.orders if o.ticket != ticket]
+        return self.cancel_result
 
     def move_sl(self, ticket, new_sl, tp=None):
         self.actions.append(("move_sl", ticket, new_sl))
@@ -270,10 +314,11 @@ class _Log:
     info = warning = error = _rec
 
 
-@pytest.fixture(autouse=True)
-def _stub_mt5(monkeypatch):
-    """`_moved` and `_contract_size` reach for MetaTrader5. Stub it so the tick size and
-    contract size are the real gold ones rather than the fallbacks."""
+def install_mt5_stub(monkeypatch):
+    """Put a fake MetaTrader5 in place. A plain function, not a fixture, so a sibling test module
+    can install the same stub — importing a FIXTURE by name and then naming it as a parameter
+    shadows it, which the linter rejects and which would silently give that module a second,
+    unrelated fixture of the same name if it did not."""
     m = types.ModuleType("MetaTrader5")
 
     class _SI:
@@ -290,6 +335,13 @@ def _stub_mt5(monkeypatch):
     m.symbol_info = lambda s: _SI()
     m.account_info = lambda: _AI()
     monkeypatch.setitem(sys.modules, "MetaTrader5", m)
+
+
+@pytest.fixture(autouse=True)
+def _stub_mt5(monkeypatch):
+    """`_moved` and `_contract_size` reach for MetaTrader5. Stub it so the tick size and contract
+    size are the real gold ones rather than the fallbacks."""
+    install_mt5_stub(monkeypatch)
 
 
 def _bridge(
