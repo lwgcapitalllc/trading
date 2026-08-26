@@ -1249,7 +1249,7 @@ measurable alternative and is not the recommendation.
 
 🔴 **AND THE CONFLICT NEVER HAPPENS — MEASURED 2026-08-24, THE SETTING IS DEAD CODE.** The two runs
 that differ only in `exec_be_cost_conflict` came back **trade for trade identical** (fingerprint
-`a386e83230115f1c`, 246 trades each, matched on entry time, direction, entry, exit and R). Accrued
+`8088d3411b5e4449`, 246 trades each, matched on entry time, direction, entry, exit and R). Accrued
 cost never once grew past 75% of the entry → nearer-rung distance, because on gold at this sizing
 costs are small next to that distance. **The branch above has unit tests and has never made a
 decision on real bars** — repo rule 9 landing inside a feature, and the tests that cover it
@@ -1274,7 +1274,11 @@ converting winners into scratches without fixing any scratch. Full tables, run i
 `mpc_sos_fade_optimization.md` → Run 26.
 
 ⚠ **NOT GATED, AND THE SHIPPED PATH IS UNCHANGED.** The control run reproduces the pre-change
-baseline `5a5e2174d095` **trade for trade** (fingerprint `7d622ec152d11e3a`, 243 vs 243), so tick
+baseline `5a5e2174d095` **trade for trade** (fingerprint `13fc4e5f9c7a95fb`, 243 vs 243 — ⚠ the
+FIRST version of this fingerprint keyed on `entry_time`, which is not a field in these trade records,
+so `.get()` returned `None` for every trade and that component compared nothing to nothing; corrected
+to `entry_ms` + `exit_name` on 2026-08-25 and both claims survived. **A comparison built from several
+fields degrades SILENTLY — assert the key exists before you fingerprint on it.** Run 26), so tick
 mode is byte-identical to before this build. `compare_strategy.py` has NOT run — no decision-stream
 export exists on this machine (the CSVs here are trade lists and engine chart data), which is the
 "9 of 14 gates could not run" condition the root CLAUDE.md records. ⚠ **Rule 22 is NOT satisfied.**

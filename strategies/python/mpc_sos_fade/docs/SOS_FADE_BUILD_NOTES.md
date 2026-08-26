@@ -314,7 +314,7 @@ doing nothing on either column. The 8.3R gap is inside the strategy's **sd 15.06
 spread, so the best case is *"not measurably worse"* rather than *"better"*.
 
 🔴 **And the sweep found a dead branch in this very build.** The two runs differing only in
-`exec_be_cost_conflict` are **trade for trade identical** (`a386e83230115f1c`, 246 trades). The
+`exec_be_cost_conflict` are **trade for trade identical** (`8088d3411b5e4449`, 246 trades). The
 accrued cost never reached the cap on any trade in 6.5 years, so that setting has never made a
 decision on real bars — its tests construct the conflict artificially. **A branch proven by tests
 alone is exactly what rule 9 is about, and building a setting before sweeping it is how you end up

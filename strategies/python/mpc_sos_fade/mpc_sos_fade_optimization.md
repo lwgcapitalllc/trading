@@ -4081,10 +4081,29 @@ the stored KPIs.
 **Integrity, checked before reading anything:**
 
 - ✅ The control reproduces the pre-change baseline `5a5e2174d095` **trade for trade** — fingerprint
-  `7d622ec152d11e3a`, 243 vs 243 trades, matched on entry time, direction, entry, exit and R.
+  `13fc4e5f9c7a95fb`, 243 vs 243 trades, matched on entry time, direction, entry, exit and R.
   **The shipped path is untouched by this build.**
 - ✅ **9 of 9** variants differ from the control, so the settings are genuinely reaching the engine
   and none of this is a stale backend silently dropping unknown keys.
+
+🔴 **THE FIRST VERSION OF THAT FINGERPRINT WAS PARTLY VACUOUS, AND IT IS THE SAME DEFECT THIS BUILD
+ALREADY RECORDS ONE LEVEL UP.** It keyed on `entry_time`, which **is not a field in these trade
+records** — the key is `entry_ms`. `dict.get()` returned `None` for every trade in both runs, so
+that component of the comparison matched nothing against nothing and contributed no evidence. The
+check was still doing real work on direction, entry price, exit price and R, which is why it did not
+read as broken — **a partly-dead comparison looks exactly like a live one, because the half that
+still works produces a plausible answer.**
+
+✅ **Re-run 2026-08-25 on the real field plus `exit_name`, and BOTH claims survive** — control vs
+baseline `13fc4e5f9c7a95fb` on both sides (243 trades), and the two conflict variants
+`8088d3411b5e4449` on both sides (246 trades). The fingerprints quoted throughout this run are the
+corrected ones; the earlier values `7d622ec152d11e3a` / `a386e83230115f1c` were computed with the
+dud key and appear nowhere any more.
+
+⚠ **The transferable rule is the one this file already states about tests, applied to a
+MEASUREMENT**: `.get()` on a misspelled key is silent, and a comparison built out of several fields
+degrades quietly rather than failing. **Assert the key exists before you fingerprint on it** — a
+comparison that cannot distinguish two runs will happily report them identical.
 
 ## The sweep — every rung loses, none improves drawdown
 
@@ -4130,7 +4149,7 @@ settings to a live strategy.
 ## 🔴 `exec_be_cost_conflict` is DEAD CODE at every width tested — the branch never executed
 
 `cost 0.20 m.05` (`"Hold stop"`) and `cost 0.20 clamp` (`"Clamp to cap"`) came back **trade for
-trade identical** — fingerprint `a386e83230115f1c` on both, 246 trades each, same entries, exits
+trade identical** — fingerprint `8088d3411b5e4449` on both, 246 trades each, same entries, exits
 and R.
 
 The accrued cost never once grew past 75% of the distance to the rung price action had just touched.
