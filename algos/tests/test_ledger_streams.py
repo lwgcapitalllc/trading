@@ -133,6 +133,10 @@ def test_every_event_written_in_algos_live_is_classified():
     # health names are listed here so adding an event makes somebody name it in one of the two
     # places rather than discovering the routing later from a file that grew a stranger.
     known_health = {
+        # The account balance the strategy sizes against, when a stated adjustment moves it off
+        # the broker's figure. A fact about the PROCESS's view of the account, not about a
+        # setup or an order.
+        "sizing_basis",
         "startup",
         "startup_failed",
         "shutdown",

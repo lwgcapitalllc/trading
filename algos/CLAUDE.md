@@ -1462,6 +1462,47 @@ alone. ⚠ **It changes nothing about how the bot treats the trade** — the bot
 normally, which is usually right: a trade that should not exist should still be exited properly.
 It marks by TICKET, the one thing the ledger and the broker statement share.
 
+### 🔴 A windfall from a defect keeps sizing every later trade (2026-08-26)
+
+**Marking the trades in the record was not enough.** Five copies of one order filled on
+2026-08-25 and left **$3,344.80 the strategy did not earn**. The four extras were closed and
+marked `counts_as_strategy_performance=false` the same night — and the very next entry still went
+out at **0.53 lots where the risk percentage called for 0.40**, a third too big, because the
+balance they left behind is what everything sizes off. **A label fixes the accounting; it does
+nothing about the compounding.**
+
+✅ **`sizing_basis_adjustment` in the instance config** is ADDED to the broker balance before
+anything sizes off it, so an amount to EXCLUDE is written NEGATIVE. Addition is unambiguous
+arithmetic — an "amount to exclude" invites a sign error, and a sign error here makes every
+position BIGGER rather than smaller.
+
+🔴 **One seam, and it is the point.** Three places read the balance — startup capital, the
+flat-moment equity re-anchor, and the account-level risk cap — and all three go through
+`algos/shared/sizing_basis.py`. **A cap measured against the broker's balance while the strategy
+sizes against an adjusted one is a cap quietly looser than it says**, and the difference would
+only surface in a month nobody is checking. That is the shape of 2026-08-07, where the units
+conversion lived in no single place and was wrong by 221x with every artefact reading as correct.
+
+⚠ **The link PROBE returns the broker's raw figure, deliberately.** `probe_link` answers one
+question — is the link up — and an early draft applied the adjustment inside it, which made a
+liveness probe depend on strategy configuration. A test building a bare runner caught it at once.
+**Ask what a function is FOR before adding a concern to it.**
+
+⚠ **It REFUSES, never clamps.** An adjustment leaving nothing to trade on makes the basis
+unreadable and every order is refused — the same call `order_sizing` makes for an order below the
+broker minimum. A floor would be a size nobody chose.
+
+⚠ **`None` in, `None` out.** An unreadable balance must never become a number.
+
+⚠ **NOT runtime-reloadable** — read at startup and at every flat-moment re-anchor, so it needs a
+restart. ⚠ **It is a CLAIM and it goes stale**: state the reason and the date beside it in
+`config.json`, and revisit whenever the account is reconciled.
+
+**Tests: 11 in `tests/test_sizing_basis.py`, three mutations watched RED.** ⚠ **The first pass
+missed the one that matters** — making the cap ignore the adjustment left the whole suite green,
+because the one-seam property was claimed in three docstrings and asserted nowhere. **A property
+stated only in prose is not a property the code has.**
+
 ### 🔴 Promoting with a position OPEN halts the bot (2026-08-26)
 
 **It happened the same night as the promote fix.** A bot was promoted v168 -> v241 while holding

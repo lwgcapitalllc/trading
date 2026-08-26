@@ -140,6 +140,9 @@ class OrderBridge:
         dry_run: bool = True,
         margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT,
         account_risk_cap_pct: Optional[float] = None,
+        # ADDED to the broker balance before the cap measures anything. It must be the SAME
+        # number the strategy sizes against - see `_account_balance`.
+        sizing_basis_adjustment: float = 0.0,
         instance_dir: Optional[Path] = None,
     ) -> None:
         self._mt5 = bot_mt5
@@ -166,6 +169,7 @@ class OrderBridge:
         # which state it is in at startup, so "no cap" is a reported fact rather than an
         # absence nobody noticed (the `deadman_url` precedent). See G10.
         self._risk_cap_pct = None if account_risk_cap_pct is None else float(account_risk_cap_pct)
+        self._sizing_basis_adjustment = float(sizing_basis_adjustment or 0.0)
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
         self.state = BridgeState.LIVE
@@ -1031,17 +1035,24 @@ class OrderBridge:
         return SizingRefusal(verdict.code, verdict.detail)
 
     def _account_balance(self):
-        """The broker's balance, or None if it cannot be read.
+        """The balance the account CAP measures against, or None if it cannot be read.
 
         `None` is passed straight through to `plan_order`, which then simply skips the
         authorised-risk check rather than comparing against a fabricated zero — the same
         three-state rule as `mt5_link`. A zero here would refuse every order forever.
+
+        ⚠ **It applies the same stated adjustment the strategy sizes against** (2026-08-26). The
+        cap and the sizing must read ONE number: a cap measured against the broker's balance
+        while the strategy sizes against an adjusted one is a cap that is quietly looser than it
+        says, and the difference only appears in a month nobody is checking.
         """
         try:
             import MetaTrader5 as mt5
+            from sizing_basis import sizing_basis
 
             info = mt5.account_info()
-            return float(info.balance) if info else None
+            raw = float(info.balance) if info else None
+            return sizing_basis(raw, self._sizing_basis_adjustment)
         except Exception:
             return None
 

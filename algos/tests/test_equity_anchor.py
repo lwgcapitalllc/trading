@@ -54,6 +54,10 @@ def _runner(*, balance, emulator_balance=4422.88):
     every one of that day's three orders risked.
     """
     r = LiveRunner.__new__(LiveRunner)
+    # The bot's own config. Present even in this cut-down runner because the re-anchor reads the
+    # STATED sizing-basis adjustment off it (2026-08-26) - a fake without one would test a
+    # runner that cannot exist, and the default of 0.0 keeps every assertion below unchanged.
+    r.cfg = SimpleNamespace(sizing_basis_adjustment=0.0)
     account = SimpleNamespace(balance=emulator_balance)
     r.strategy = SimpleNamespace(execution=SimpleNamespace(_account=account))
     r.ledger = _Ledger()

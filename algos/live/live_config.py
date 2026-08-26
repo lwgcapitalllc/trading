@@ -147,6 +147,25 @@ class LiveConfig:
     # bridge, which holds live order state, so changing it means a restart.
     account_risk_cap_pct: Optional[float] = None
 
+    # ── the balance the strategy may size against ───────────────────────────
+    #
+    # ADDED to the broker's balance before anything sizes off it, so an amount to EXCLUDE is
+    # written NEGATIVE. Zero or absent means "size off exactly what the broker reports", which is
+    # the only sane default and the behaviour every bot had before 2026-08-26.
+    #
+    # 🔴 It exists because a defect can put money in the account. Five copies of one order filled
+    # on 2026-08-25 and left $3,344.80 the strategy did not earn; the very next trade went out at
+    # 0.53 lots where the risk percentage called for 0.40. **Labelling the trades in the record
+    # was not enough — the balance they left behind keeps sizing every trade that follows.**
+    #
+    # ⚠ It REFUSES rather than clamping: an adjustment that leaves nothing to trade on makes the
+    # basis unreadable, and every caller already treats that as "cannot size".
+    # ⚠ NOT runtime-reloadable. It is read at startup and at every flat-moment re-anchor, so a
+    # change needs a restart - the same rule as the account cap above.
+    # ⚠ It is a CLAIM, and it goes stale. State the reason and the date beside it in
+    # `config.json`, and revisit it when the account is next reconciled.
+    sizing_basis_adjustment: float = 0.0
+
     # ── broker clock ────────────────────────────────────────────────────────
     # "std,dst" hours ahead of UTC. MEASURED with backtest/tools/compare_feeds.py against THIS
     # terminal — never assumed. The default matches the Vantage lab terminal; a different broker

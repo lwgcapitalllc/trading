@@ -377,7 +377,8 @@ class LiveRunner:
             import MetaTrader5 as mt5
 
             info = mt5.account_info()
-            capital = float(info.balance) if info else 0.0
+            raw = float(info.balance) if info else None
+            capital = self._sizing_basis(raw)
             if not capital:
                 raise RuntimeError(
                     "Could not read the account balance, and initial_capital is "
@@ -422,7 +423,32 @@ class LiveRunner:
         # "could not ask", which `_check_account_identity` refuses to read as agreement.
         login = getattr(info, "login", None)
         self._observed_account = int(login) if login is not None else None
+        # The BROKER's balance, unadjusted. This probe answers one question - is the link up -
+        # and the sizing adjustment belongs to whoever sizes. Mixing them here made a link probe
+        # depend on strategy configuration, which a test building a bare runner caught at once.
         return True, float(info.balance)
+
+    def _sizing_basis(self, raw_balance):
+        """The broker's balance with this bot's STATED adjustment applied. See
+        `algos/shared/sizing_basis.py` for why the adjustment exists and why there is one seam.
+
+        Announced whenever it does anything: an adjusted basis that is not in the log is
+        indistinguishable from a broker balance, and whoever reconciles the bot's sizing against
+        the account statement would find a gap with nothing to explain it. Said once per distinct
+        pair, because this runs on every poll and a line per poll is noise nobody reads.
+        """
+        from sizing_basis import describe, sizing_basis
+
+        adj = getattr(self.cfg, "sizing_basis_adjustment", 0.0) or 0.0
+        out = sizing_basis(raw_balance, adj)
+        note = describe(raw_balance, adj)
+        if note and note != getattr(self, "_last_basis_note", None):
+            self._last_basis_note = note
+            (self.log.error if out is None else self.log.info)(note)
+            self.ledger.event(
+                "sizing_basis", raw=raw_balance, adjustment=adj, basis=out, detail=note
+            )
+        return out
 
     def _recover_link(self) -> None:
         """Announce a lost link once, then keep trying to get it back.
@@ -697,6 +723,7 @@ class LiveRunner:
         if account is None:
             return
         _, balance = self.probe_link()
+        balance = self._sizing_basis(balance)
         if not balance:
             self.log.warning(
                 f"Could not read the account balance to re-anchor equity {why}; the strategy "
@@ -967,6 +994,8 @@ class LiveRunner:
                 dry_run=self.dry_run,
                 margin_safety_pct=self.cfg.margin_safety_pct,
                 account_risk_cap_pct=self.cfg.account_risk_cap_pct,
+                # The cap must measure against the SAME number the strategy sizes against.
+                sizing_basis_adjustment=getattr(self.cfg, "sizing_basis_adjustment", 0.0),
                 instance_dir=self.cfg.instance_dir,
             )
             # SAY which state the account-level cap is in, every start. An absent guard is
