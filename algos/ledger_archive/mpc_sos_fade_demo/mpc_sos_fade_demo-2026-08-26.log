@@ -126,3 +126,4 @@
 2026-08-26 04:19:13,492 [INFO] Equity re-anchored to the account after warm-up: 18,370.56 → 13,364.92
 2026-08-26 04:19:13,574 [INFO] Restored position T346619476 — SHORT 0.53 lots @ 4661.41, stop 4686.32, stage 0. It will be managed from the next bar.
 2026-08-26 04:19:16,653 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-26 04:45:05,843 [INFO] move stop T346619476 4686.32 → 4661.11
