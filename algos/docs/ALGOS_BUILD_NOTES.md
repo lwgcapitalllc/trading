@@ -101,6 +101,49 @@ is TIMEOUT: the reply never came back, so the outcome is **unknown** - the broke
 accepted it. Collapsing *rejected* and *cannot tell* into one return value meant the retry loop
 could not distinguish them, and it re-sent the same order on every bar for an hour.
 
+### What actually triggered it - the terminal's own journal, read the next day
+
+**The broker link degraded for about an hour and the terminal never called it a disconnect.**
+`AppData/Roaming/MetaQuotes/Terminal/927F.../logs/20260825.log`, VPS clock is UTC and so is that
+journal (verified, not assumed - the fills in it line up with the bot's own log):
+
+| UTC | who | what |
+|---|---|---|
+| 13:15:03 | bot | places a limit, confirmed. **The last healthy broker call of the day.** |
+| 13:30:08 -> 13:33:08 | bot | cancel issued, times out after exactly 180s |
+| 13:33 / 13:45 / 14:00 / 14:15 | bot | four placements, each hanging the full 180s and reporting failure |
+| 12:14:09 -> 14:22:50 | **terminal** | **says NOTHING. No disconnect, no warning, no error.** |
+| 14:22:50 | terminal | `connection to PUPrime-Demo lost` - the first admission, ~52 minutes after the first timeout |
+| 14:22:55 | terminal | reconnects and syncs: **`0 positions, 4 orders`** |
+| 14:24:37 | terminal | lost again |
+| 14:26:49 | terminal | reconnects and syncs: **`0 positions, 4 orders`** |
+| 14:30:06 | bot | fifth placement returns cleanly -> five resting orders |
+| 19:10:18 | broker | all five fill at 4661.50 **within 69 milliseconds** |
+
+🔴 **The terminal printed the right answer twice, in a file nothing reads.** Both reconnect lines
+state four resting orders at a moment the bot believed it had none. The information needed to
+catch this existed, on the same machine, an hour before the fills - it was simply never in a
+place anything looked.
+
+🔴 **A degraded link is not a dropped link, and only one of them is reported.** For ~50 minutes
+requests went out and replies never came back while the terminal still considered itself
+connected. **That is why the bot's own liveness probe was no help**: `account_info()` was chosen
+in 2026-08-04 precisely because it answers whenever the link is alive - and it kept answering,
+because by the terminal's reckoning the link WAS alive. The 2026-08-04 fix is still right; this
+is a different failure mode sitting underneath it. **A probe that proves the link is up does not
+prove a REQUEST will be answered, and nothing here measured that.**
+
+⚠ **It was a one-off, which is worth stating because it changes what to fix.** Zero connection
+losses in the terminal journal on each of the seven preceding days; two on this one. Ping on both
+reconnects was a normal 77 ms. This was not a sick VPS or a chronic route problem, so the fix is
+not infrastructure - it is that **one hour of bad luck on a demo server was enough to put 5x the
+intended risk on the account**, and it will be again.
+
+⚠ **The 3-minute hang is also why the first alert was about the HEARTBEAT.** A blocking broker
+call starves the loop, so the watchdog reported STALLED at 13:35 and RECOVERED three minutes
+later. **An order fault surfaced as a liveness alert, in a different room, with nothing linking
+the two** - and the recovery message made it read as resolved.
+
 **Three things had to line up, and all three are worth fixing separately:**
 
 1. **A timeout is treated as a rejection.** `cancel_pending` already does the right thing - it
