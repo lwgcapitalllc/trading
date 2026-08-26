@@ -3107,10 +3107,35 @@ is what motivated the flip.** The naming is what is backwards, not the behaviour
 "1" waits on the far price and the step called "2" on the near one, so the bot reaches the better
 one first. Aaron's call, 2026-08-21: leave it.
 
-⚠ **What is still genuinely unmeasured is arming breakeven EARLIER THAN EITHER RUNG** — today
-nothing protects the trade until it reaches one of them. That is a NEW rule (a fraction of R, a
-fraction of the way to the first target), not a reordering, and it is the question the reordering
-was mistaken for.
+✅ **The question the reordering was mistaken for — arming breakeven EARLIER THAN EITHER RUNG —
+has now been MEASURED, and the answer is DON'T (2026-08-25).** `exec_be_arm_r` /
+`exec_be_keep_r` generalise the reclaim's arm to every trade: the stop moves once price has gone a
+multiple of the trade's own entry risk its way, with no rung touched. Both ship **OFF** and the
+`warn` on each says why.
+
+🔴 **Every setting tested LOST money, and the decomposition is the rule, not the totals.** Over
+6.6 years on 246 trades (control `32f82feae4ee`, 139.09R): **99.92R** at 1.00R→breakeven,
+**71.20R** at 0.75R, **51.55R** at 0.50R; keeping half the risk instead is the least bad and still
+loses — **118.99R** at 1.00R, **108.12R** at 0.75R. At 1.00R→breakeven it rescued 17 trades worth
+**+17.07R** and destroyed 15 worth **−54.49R**, one of them a **+16.48R** winner cut to +0.35R.
+
+🔴 **The give-back and the outsized winners are the SAME EVENT** — this book is carried by trades
+that run, pull back hard THROUGH the entry, and only then go, so any rule that refuses to sit
+through the pullback kills those trades first, at about three R destroyed per R rescued.
+
+⚠ **A rising win rate is NOT evidence here**: it went 58.1% → 68.7% at the earliest arm while the
+money fell by two thirds. ⚠ **Protection did not reliably buy drawdown either** — keeping half the
+risk at 0.75R made the worst drawdown WORSE (60.21% against 53.68%).
+
+⚠ **The defect it was built for is real and is still open**: the stop's ONLY trigger is a rung
+TOUCH, so a trade can run a full R in profit and have nothing happen. The 2020-11-04 re-entry did
+exactly that (best price 1.016R, nearest rung 1.25R, full loss) and survived in the shipped
+configuration only because the flipped ladder put a rung at 0.757R. **A ladder defect was
+load-bearing for a stop with no other trigger.**
+
+Arm-by-arm table, the mutation map, and the two process failures that nearly published a wrong
+number: `docs/SOS_FADE_BUILD_NOTES.md` → *The stop that never moved*.
+Tests: `tests/test_excursion_arm.py` (13, all watched RED by mutation).
 
 Tests: `tests/test_execution.py` (2, both watched RED against HEAD).
 

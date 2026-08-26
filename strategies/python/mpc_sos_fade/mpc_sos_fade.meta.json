@@ -340,6 +340,31 @@
       "guide": ["Almost nothing is refused", "Refuses real trades, not just dangerous ones"]
     },
     {
+      "name": "exec_be_arm_r",
+      "group": "Risk & stop",
+      "label": "Any trade moves to breakeven at (R)",
+      "short": "Excursion BE",
+      "unit": "R",
+      "step": 0.25,
+      "guide": [
+        "Off \u2014 the stop holds until a rung is touched",
+        "Protects every trade earlier"
+      ],
+      "desc": "When ANY trade's stop moves to protect it, measured on how far price has gone its way as a multiple of the trade's own risk. -1 (default) is off, which is the shipped behaviour: the only thing that moves the stop is price TOUCHING a rung on the ladder, so a trade can run a full R in profit, turn around and pay the full loss with nothing having happened \u2014 the re-entry short of 2020-11-04 did exactly that at 1.016R with its nearest rung at 1.25R. MEASURED 2026-08-25 over 6.6 years on 246 trades: every setting tested LOST money against leaving it off \u2014 139.09R off, against 99.92R at 1.00, 71.20R at 0.75 and 51.55R at 0.50. At 1.00 it rescued 17 trades worth +17.07R and destroyed 15 worth -54.49R, one of them a +16.48R winner cut to +0.35R. Win rate rose 58% to 69% while the money fell by two thirds, which is the fingerprint of cutting winners. Lab only, and it is kept as a recorded dead end.",
+      "warn": "MEASURED WORSE at every setting tested \u2014 139.09R down to 99.92R at best. It cuts the winners that carry the book."
+    },
+    {
+      "name": "exec_be_keep_r",
+      "group": "Risk & stop",
+      "label": "Protected stop keeps (R) of risk",
+      "short": "Excursion keep",
+      "unit": "R",
+      "step": 0.25,
+      "guide": ["All the way to breakeven", "Leaves more risk in the market"],
+      "desc": "How FAR the stop moves when the row above arms it. 0 (default) is all the way to breakeven. A positive number leaves that share of the trade's own entry risk in the market, so a trade that is protected and then turns around pays part of the loss rather than none of it. MEASURED 2026-08-25: it is the least bad version and still worse than off \u2014 118.99R at 1.00 and 108.12R at 0.75 against 139.09R off, and at 0.75 the worst drawdown got WORSE (60.21% against 53.68%). Must be under 1 \u2014 at 1 the stop lands back on the entry stop and does nothing while reading as switched on. Does nothing on its own. Lab only.",
+      "warn": "MEASURED WORSE than off \u2014 118.99R at best against 139.09R, and at 0.75 it deepened the drawdown."
+    },
+    {
       "name": "exec_tp1_pct",
       "group": "Exit ladder",
       "label": "TP1 size %",
@@ -962,6 +987,24 @@
       },
       "disable_note": "No effect under Reclaim Entry — how much it banks comes from its own row in the group above.",
       "desc": "How much of a re-entry is banked at its first target, separately from the first trade. 50 (default) takes half off and runs the rest. -1 uses the same setting as everything else, which ships at nothing off — the rule until 20 August 2026. MEASURED over 7.9 years: with nothing banked, 15 of 54 re-entries finished flat; banking half left none flat, 30 winners and 24 losers, and took the leg less its single best trade from -0.4R to +7.2R. It cuts the one big winner by the same proportion, which is the trade being made. Lab only."
+    },
+    {
+      "name": "exec_sec_tp2_min_x",
+      "group": "Secondary re-entries",
+      "widget": "number",
+      "label": "Re-entry's second target — how much further out than the first",
+      "short": "Second target floor",
+      "min": -1,
+      "max": 6,
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "guide": [
+        "Off — the second target stays wherever the swing put it",
+        "Pushes the second target further away"
+      ],
+      "desc": "Stops a re-entry's two targets coming out BACKWARDS. The first target is a multiple of the trade's own risk while the second stays the 15-minute swing level it was armed on, so nothing keeps the first the nearer of the two. MEASURED 2026-08-25 over 93 re-entries: 36 came out flipped and 32 had their second target sitting INSIDE the first, one as close as 0.198 times the risk — which is noise rather than a sign the move has extended. -1 (default) is off. A positive number is the least the second target may be, as a multiple of the first one's distance from entry; the swing level still wins whenever it is already further out, so this only ever pushes a target away and never pulls one in. It reads on BOTH halves of the re-entry, which is why it sits in the shared group: the rule is a statement about the ladder, and the code applies it to every re-entry whatever armed it. MEASURED 2026-08-25: only the gap half ever comes out flipped (27 of 44), while all 47 reclaim re-entries were already in order — so on that half this only ever pushes an already-ordered target further out. It does NOT move where profit banks — the second target takes nothing off on the shipped ladder, so all that changes is when the stop lifts to the first target's price and the runner trail takes over. Lab only."
     },
     {
       "name": "exec_sec_retrace",

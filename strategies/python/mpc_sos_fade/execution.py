@@ -669,6 +669,7 @@ class Execution:
         self._stage = 0                    # 0 full-stop, 1 BE, 2 floor + runner trail
         self._max_fav = 0.0
         self._rec_be_armed = False         # `exec_rec_be_r` latched (reclaims only)
+        self._exc_be_armed = False         # `exec_be_arm_r` latched (every trade)
         # Structure-trail anchors, snapshotted at each bar's CLOSE (see _advance_stage). The stop
         # placed at bar N's close is what bar N+1 trades against, so the trail must read bar N's
         # swing — never the live one — exactly like `_max_fav` does for the fixed-step ratchet.
@@ -847,7 +848,7 @@ class Execution:
         "_init_stop", "_exit_notional", "_exit_qty", "_exit_ms", "_exit_reason",
         "_sl", "_tp1", "_tp2", "_fib", "_stage", "_filled_qty", "_sos_bar_open",
         "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
-        "_rec_be_armed",
+        "_rec_be_armed", "_exc_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close",
         # Scale-in lots, and they belong here for the reason the warning above gives: a
@@ -2283,6 +2284,24 @@ class Execution:
             dist = abs(fill_price - pend.sl)
             if tp_r > 0 and dist > 0:
                 self._tp1 = fill_price + (1 if pend.dir > 0 else -1) * tp_r * dist
+            # `exec_sec_tp2_min_x` — the second rung may not sit NEARER than a multiple of the
+            # first one's distance. The two are priced by different rulers (risk vs the frozen 15m
+            # fib), so nothing otherwise keeps them in order: 36 of 93 re-entries on run
+            # `cab44579d74b` came out with the second rung inside the first. Off by default.
+            #
+            # ⚠ It can only ever push a rung AWAY from the entry — the fib wins whenever it is
+            # already further out, because a structure level that has extended carries information
+            # a multiple of risk does not.
+            # ⚠ Measured off `self._tp1` AFTER the block above, not off `tp_r`, so it holds for the
+            # -1 case too, where the first rung is the fib and the multiple is of that distance.
+            min_x = getattr(self._cfg, "exec_sec_tp2_min_x", -1.0)
+            if min_x > 0:
+                d2 = 1 if pend.dir > 0 else -1
+                t1_dist = (self._tp1 - fill_price) * d2
+                if t1_dist > 0:
+                    floor_px = fill_price + d2 * min_x * t1_dist
+                    if (self._tp2 - floor_px) * d2 < 0:
+                        self._tp2 = floor_px
         # The ladder those three came off, carried through to the closed Trade (reporting only).
         # Taken from the ORDER, not from `sig`: the fib is a live thing that keeps extending, so
         # reading it again at the fill would report a leg the resting limit was never priced on.
@@ -2317,6 +2336,7 @@ class Execution:
         # i.e. before the trade existed — see the fill-bar note in `step`.
         self._max_fav = fill_price
         self._rec_be_armed = False
+        self._exc_be_armed = False
         self._trail_swing_hi = None                     # structure-trail anchors — same
         self._trail_swing_lo = None
         # Excursion (reporting only) is seeded ASYMMETRICALLY on the entry bar, and the asymmetry
@@ -2997,6 +3017,23 @@ class Execution:
             risk = abs(self._entry - self._sl)
             if risk > 0 and (self._max_fav - self._entry) * d >= be_r * risk:
                 self._rec_be_armed = True
+        # `exec_be_arm_r` — the same idea for EVERY trade, and the reason it had to be generalised:
+        # the stop's only trigger is a rung TOUCH, so a trade can run a full R in profit and have
+        # nothing happen. MEASURED on the re-entry short of 2020-11-04 (run `ed21fca08a91`): best
+        # price 1.016R in profit, nearest rung at 1.25R, stop never left its entry level, full
+        # loss. Off by default.
+        # ⚠ Latched for the same reason the reclaim's is — `_max_fav` is RESTORED state, and a stop
+        # that can un-ratchet is a trade that can lose after it was protected. `_POSITION_FIELDS`
+        # carries the flag across a restore.
+        # ⚠ Read against `_sl`, the FROZEN entry stop, so the trigger cannot creep in as the stop
+        # ratchets. Unlike the reclaim's, this one is NOT equivalent to reading the managed stop:
+        # `exec_rec_be_r` only ever runs with the latch clear, while this shares its trade with the
+        # rung ladder and a staged stop can already have moved.
+        arm_r = getattr(self._cfg, "exec_be_arm_r", -1.0)
+        if not self._exc_be_armed and arm_r > 0:
+            risk = abs(self._entry - self._sl)
+            if risk > 0 and (self._max_fav - self._entry) * d >= arm_r * risk:
+                self._exc_be_armed = True
         # Latch the 15m leg once its PRIMARY reaches TP1 (stage >= 1 = moved to breakeven) — the
         # secondary's eligibility gate. Idempotent; only a primary sets it (a secondary reaching
         # TP1 calls this too, but must not move the primary latch). No decision reads it → parity-safe.
@@ -3393,6 +3430,23 @@ class Execution:
             # configured. ⚠ Off `_sl`, the FROZEN entry stop, for the same reason the trigger is.
             keep = getattr(self._cfg, "exec_rec_be_keep_r", 0.0)
             if keep > 0:
+                return self._entry - keep * abs(self._entry - self._sl) * d
+            buf = self._be_buffer()
+            if buf is None:
+                return self._sl
+            return self._entry + buf if d > 0 else self._entry - buf
+        # `exec_be_arm_r` — the general version, and it sits LAST on purpose. Every branch above is
+        # a stop a touched rung has already staged, and each of those is at least as tight as this
+        # one; reaching here means nothing has fired and the stop is still the entry stop.
+        # ⚠ It can only TIGHTEN: `exec_be_keep_r` is clamped below 1.0, so the armed stop always
+        # lands strictly between the entry and `_sl`.
+        if self._exc_be_armed:
+            keep = getattr(self._cfg, "exec_be_keep_r", 0.0)
+            if keep > 0:
+                # Cut the loss rather than erase it — a stop exactly at entry sits inside the noise
+                # the trade has to survive. ⚠ No buffer on a partial move: the cushion exists to
+                # clear the ENTRY price, and adding it would make the kept risk a different number
+                # from the one configured.
                 return self._entry - keep * abs(self._entry - self._sl) * d
             buf = self._be_buffer()
             if buf is None:

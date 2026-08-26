@@ -357,3 +357,133 @@ describing a system we do not have. It was replaced by one pinning a source the 
 
 **A test that cannot go red is not a weak test, it is a claim with nothing behind it** — and this
 one would have read, forever, as proof that a hazard had been considered.
+
+---
+
+## The stop that never moved, and the sweep that said leave it alone (2026-08-25)
+
+**Aaron, reading the 2020-11-04 re-entry short:** *"so wait we were up so much money and we just
+leave SL at its original SL? that is dumb."*
+
+He was right about the mechanism and wrong about the fix, and both halves are worth keeping.
+
+### The defect he found is real
+
+**The stop's ONLY trigger is a rung TOUCH.** `_advance_stage` moves the stage when price reaches
+a ladder rung; nothing else moves it. So a trade can run a long way in profit, turn around, and
+pay the full loss with the stop still sitting where it started.
+
+MEASURED on the 2020-11-04 re-entry short (run `ed21fca08a91`): best price **1.016R in profit**,
+nearest rung at **1.25R**, stop never left `1912.55354`, full loss.
+
+⚠ **It survived in the shipped configuration only by accident.** The flipped ladder that session
+started out investigating put a rung at 0.757R on that trade, and that rung is the only reason it
+banked anything at all. **A ladder defect was load-bearing for a stop that had no other trigger.**
+
+### The fix generalises the reclaim's arm to every trade
+
+Two settings, both off by default. The first says how far the trade must go, as a multiple of its
+own entry risk, before the stop moves at all. The second says how far the stop then moves — all
+the way to breakeven, or leaving a share of the risk in the market.
+
+Design points that are decisions rather than details:
+
+- **Latched.** `_max_fav` is RESTORED state, and a stop that can un-ratchet is a trade that can
+  lose after it was protected. The flag is in `_POSITION_FIELDS`.
+- **Read against the FROZEN entry stop** (`_sl` at entry), so the trigger cannot creep upward as
+  the stop ratchets. ⚠ Unlike `exec_rec_be_r`, this is NOT equivalent to reading the managed stop:
+  the reclaim's only ever runs with the latch clear, while this one shares its trade with the rung
+  ladder and a staged stop can already have moved.
+- **Applied LAST in `_current_stop()`.** Every branch above it is a stop a touched rung has already
+  staged, and each of those is at least as tight. Reaching the new branch means nothing has fired.
+- **It can only TIGHTEN.** The keep fraction is clamped below 1.0, so the armed stop always lands
+  strictly between the entry and the entry stop.
+
+### 🔴 AND THE SWEEP SAYS DO NOT SWITCH IT ON
+
+Six arms, one basis (XAUUSD.p M15, 2020-01-01 → 2026-08-23, PU Prime ECN with bid/ask fills,
+commission and swap, commission 1.0/side, consistent sizing). Control is run `32f82feae4ee`.
+
+| arm | run | total R | max DD % | PF | win % | scratches |
+|---|---|---|---|---|---|---|
+| **control (off)** | `32f82feae4ee` | **139.09** | **53.68** | 2.439 | 58.1 | 9 |
+| 0.50R → breakeven | `0642367749d3` | 51.55 | 46.27 | 1.359 | 68.7 | 27 |
+| 0.75R → breakeven | `59392c124e84` | 71.20 | 50.93 | 1.647 | 64.2 | 14 |
+| 1.00R → breakeven | `d0374d7c31cd` | 99.92 | 49.06 | 2.047 | 63.3 | 11 |
+| 0.75R → keep 0.5R | `5e63ae5398ec` | 108.12 | 60.21 | 2.089 | 52.2 | 8 |
+| 1.00R → keep 0.5R | `f3e8bc41db50` | 118.99 | 55.50 | 2.300 | 54.7 | 8 |
+
+**Not one arm beat the control, and the ranking is monotonic in how little it interferes.** The
+best arm is also the one closest to doing nothing.
+
+**The decomposition is the finding, not the totals.** Against the control, trade by trade:
+
+| arm | trades rescued | trades destroyed | net | worst single case |
+|---|---|---|---|---|
+| 1.00R → breakeven | 17, **+17.07R** | 15, **−54.49R** | −37.42R | +16.48R → +0.35R |
+| 1.00R → keep 0.5R | 15, **+6.80R** | 8, **−26.44R** | −19.64R | +5.47R → −0.50R |
+
+🔴 **The give-back and the outsized winners are the SAME EVENT.** This book is carried by trades
+that run, pull back hard THROUGH the entry, and only then go. Any rule that refuses to sit through
+that pullback kills those trades first, at roughly three R destroyed per R rescued. The
+2020-11-04 trade Aaron was angry about *is* in the rescued 17 — worth +1.35R, bought for 54.49R.
+
+⚠ **Win rate rose from 58.1% to 68.7% at the earliest arm while the money fell by two thirds.**
+That is the fingerprint of cutting winners, and it is why a win-rate improvement must never be
+read as evidence on its own here.
+
+⚠ **Protection did not even buy drawdown reliably.** The keep-half arm at 0.75R made drawdown
+WORSE than control (60.21% against 53.68%). Only the arms that gutted the profit reduced it.
+
+**Both settings are SHIPPED OFF and kept deliberately, with these numbers in their `desc` and a
+`warn` on each**, so the next person to have this idea reads the answer instead of re-running it.
+
+### The target floor is a separate dead end, kept the same way
+
+`exec_sec_tp2_min_x` came out of the same session — a re-entry's two targets are priced by
+different rulers (a multiple of the trade's own risk, and the frozen 15m fib), so nothing keeps
+them in order and the second can land nearer than the first.
+
+MEASURED over 6.5 years: control 139.09R against 140.64R / 140.29R / 139.79R / 137.10R at floors
+of 1.5× / 2.0× / 2.5× / 3.0×. **Only 13 of 246 trades changed, each swinging about ±1R — noise.**
+
+🔴 **And it is ACTIVELY harmful on the trade that started all this.** Pushing the second target out
+on 2020-11-04 took that trade from **+0.348R to −0.907R**, because the flipped rung was the only
+breakeven trigger it ever reached. **The flip is protective.** Shipped off.
+
+**TESTED:** 13 new tests in `tests/test_excursion_arm.py`, all 13 watched RED by mutation. The map
+was RUN, not reasoned:
+
+| mutation | tests killed |
+|---|---|
+| arming never fires | 8 |
+| arming ignores the trigger level | 2 |
+| the armed stop is never applied | 6 |
+| the keep fraction is ignored, always breakeven | 4 |
+| a partial move takes the breakeven buffer too | 4 |
+| the trigger is read off the MANAGED stop | 1 |
+| it ships ON | 2 |
+| the branch is lifted ABOVE the staged stops | 1 |
+
+⚠ **Two mutations silently failed to apply on the first pass** — the anchor string appeared twice —
+and produced blank rows that read exactly like "no test covers this". They were re-run with unique
+context and an explicit edit-failed guard. **A mutation harness needs to prove it EDITED, or its
+silence is indistinguishable from a passing test.**
+
+### ⚠ Two process failures worth more than the result
+
+🔴 **A sweep arm ran for 170 seconds, stored the right setting, completed normally, and replayed
+the CONTROL's code.** `services/strategy_import.purge_strategy_modules()` drops
+`strategies.python.*` from `sys.modules`, but sibling strategies do `sys.path.insert` then import
+by BARE name — and those copies are never purged. **It was caught only by reading each arm's
+stored ladder, not its headline numbers.** Every arm above therefore carries a trade-by-trade
+comparison against the control, and the driver refuses to report an arm whose book is identical.
+**Open — the stale-module hole is not fixed.**
+
+🔴 **The backend destroyed two runs mid-flight and the second attempt looked identical to a
+strategy that produced nothing.** `lab_db.reset_stale_runs()` runs at every startup and marks
+EVERY `running` row `failed_crashed`, so any reload during a run kills it. Under `uvicorn --reload`
+that is not a rare event. The run only completed on the third attempt, with a watcher recording the
+server's process identity every ten seconds. ⚠ **The reaper is right to fire — the alternative is a
+row stuck `running` forever — but a long sweep under a reloading server is not a safe place to
+measure.**

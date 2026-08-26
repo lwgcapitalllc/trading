@@ -288,6 +288,43 @@ class SosFadeConfig:
     exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
     #   ⚠ A FIXED price offset, applied identically whatever the trade is risking. That is what
     #   `exec_be_buf_mode` exists to replace — see below.
+    exec_be_arm_r: float = -1.0        # "Protect the stop after a move of (R)"
+    #   MOVE THE STOP ON HOW FAR THE TRADE HAS GONE, not on whether it touched a target. -1.0
+    #   (default) is OFF and nothing moves. A positive number arms once the trade's favourable
+    #   excursion reaches that multiple of its FROZEN entry risk, whatever the ladder did.
+    #
+    #   🔴 IT EXISTS BECAUSE THE STOP HAS EXACTLY ONE TRIGGER TODAY AND IT IS A TARGET TOUCH. A
+    #   trade can run a full R in profit and, as far as the stop is concerned, nothing has
+    #   happened. MEASURED on the re-entry short of 2020-11-04 (run `ed21fca08a91`: entry 1902.97,
+    #   stop 1912.55354, risk 9.58354, first rung 1.25R): its best price was 1893.23 — **1.016R in
+    #   profit** — and its nearest rung sat at 1.25R, so the stop never left 1912.55354 and the
+    #   trade finished at a full loss. It only survived in the shipped configuration because the
+    #   FLIPPED ladder happened to put a rung at 0.757R; it was protected by an accident of
+    #   geometry rather than by a rule. Aaron, 2026-08-25: *"we were up so much money and we just
+    #   leave SL at its original SL? that is dumb."*
+    #
+    #   ⚠ EVERY trade, primary and re-entry alike — `exec_rec_be_r` is the reclaim-only ancestor of
+    #   this and is left exactly as it was, because its numbers were measured on it.
+    #   ⚠ Read against `_sl`, the FROZEN entry stop, so "1R" keeps meaning the risk the trade was
+    #   SIZED against. Reading the managed stop would shrink the trigger as the stop ratchets.
+    #   ⚠ It can only ever TIGHTEN. A touched rung already outranks it (`_current_stop` reaches this
+    #   branch only while no stage has fired), and `exec_be_keep_r` is clamped below 1.0 so the
+    #   armed stop always sits between the entry and the original stop.
+    #   ⚠ Off by default, so `compare_strategy.py` sees the same primary decisions it always did.
+    exec_be_keep_r: float = 0.0        # "   ↳ Risk left in the market (R)"
+    #   HOW FAR THE ARMED STOP MOVES. 0.0 (default) is breakeven — the stop goes to the entry plus
+    #   the usual `exec_be_buf_mode` cushion, so the trade cannot lose. A positive number instead
+    #   leaves that share of the trade's own entry risk in the market, so the loss is CUT rather
+    #   than erased and the trade keeps room to breathe.
+    #   ⚠ A stop exactly at entry sits inside the noise the trade has to survive, which is what
+    #   turns winners into scratches — that is the whole trade-off this dial exposes, and where to
+    #   set it is a MEASUREMENT rather than a preference.
+    #   ⚠ No buffer is added on a partial move: the cushion exists to clear the ENTRY price, and
+    #   adding it here would make the kept risk something other than the number configured.
+    #   ⚠ Must stay below 1.0 — at 1.0 the "protected" stop is the original stop, i.e. the feature
+    #   silently does nothing while reading as switched on.
+    #   ⚠ Read ONLY when `exec_be_arm_r` is positive.
+
     exec_be_buf_mode: str = "Ticks"    # "Breakeven buffer mode"
     #   ∈ {"Ticks", "Fraction of stop", "Fraction of stop + cost"}. WHAT the breakeven buffer is
     #   measured in. "Ticks" (DEFAULT) is the shipped behaviour and reads `exec_be_buf_tk` alone,
@@ -761,6 +798,31 @@ class SosFadeConfig:
     #   ⚠ It also moves the BREAKEVEN trigger, because the ratchet fires at stage 1 and stage 1 is
     #   this rung. A nearer target therefore means an earlier breakeven on whatever is left, which
     #   is the opposite of what a runner wants — read it with `exec_sec_tp1_pct` rather than alone.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_tp2_min_x: float = -1.0   # "Re-entry's second target, minimum multiple of the first"
+    #   THE SECOND TARGET MAY NEVER SIT NEARER THE ENTRY THAN THIS MULTIPLE OF THE FIRST ONE'S
+    #   DISTANCE. -1.0 (default) is OFF and nothing moves. A positive number floors the second rung
+    #   at `entry + dir * x * (tp1 - entry)`; the structure level still WINS whenever it is further
+    #   out, so this only ever pushes a rung away from the entry, never pulls one in.
+    #
+    #   🔴 IT EXISTS BECAUSE THE RE-ENTRY LADDER CAN COME OUT BACKWARDS, AND DOES. The first rung
+    #   is priced off the trade's OWN risk (`exec_sec_tp_r`) while the second stays the 15m fib it
+    #   was armed on — two different rulers, and nothing makes the first the nearer one. MEASURED
+    #   2026-08-25 on run `cab44579d74b`, 93 re-entries: **36 came out flipped (39%)**, the fib rung
+    #   landed anywhere from 0.198R to 6.732R (median 2.077R), and **32 of 93 sat inside the 1.25R
+    #   first rung**. At 0.2R that rung is not a "the move extended" signal at all.
+    #
+    #   ⚠ WHAT MOVES IS THE TRAIL HAND-OVER, NOT WHERE PROFIT BANKS. The second rung banks
+    #   `exec_tp2_pct` — 0 on the shipped ladder — so its only job is to lift the stop floor to the
+    #   first rung's price and hand the rest to the runner trail. `exec_sec_tp1_pct` still comes off
+    #   at `exec_sec_tp_r` wherever this is set.
+    #   ⚠ SECONDARIES ONLY, and that is a parity decision rather than caution: the flip is created
+    #   by `exec_sec_tp_r`, which exists nowhere in `mpc_strategy.pine` — the Pine has no re-entry
+    #   at all — so `compare_strategy.py` sees the same primary decisions it always did.
+    #   ⚠ It does NOT retire `_stage_rungs()`. That sorts the stop LADDER and is what keeps a
+    #   flipped trade arming breakeven before the trail; this stops the flip being created. Fixing
+    #   the input does not license removing the guard that survived it.
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_fill_tf_min: int = 5      # "Re-entry fill clock (minutes)"
@@ -1410,10 +1472,31 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_sec_max_per_setup must be >= 1, got {self.exec_sec_max_per_setup!r}. "
                 "Switch exec_sec_once_per_setup OFF for an uncapped cascade.")
+        if not (self.exec_be_arm_r == -1.0 or self.exec_be_arm_r > 0):
+            # Refuse rather than clamp. Zero would arm the moment the trade opened, before price
+            # had moved at all, and a negative multiple is a stop on the losing side of the entry.
+            raise ValueError(
+                f"exec_be_arm_r must be -1 (off) or a positive R multiple, got "
+                f"{self.exec_be_arm_r!r}. Zero would protect a trade that has not moved.")
+        if not 0.0 <= self.exec_be_keep_r < 1.0:
+            raise ValueError(
+                f"exec_be_keep_r must sit in [0, 1), got {self.exec_be_keep_r!r}. At 1.0 the "
+                f"'protected' stop IS the original stop, so the feature would read as switched "
+                f"on and change nothing.")
         if self.exec_secondary and not (self.exec_sec_tp_r == -1.0 or self.exec_sec_tp_r > 0):
             raise ValueError(
                 f"exec_sec_tp_r must be -1 (use the 15m 0.5 fib) or a positive R multiple, got "
                 f"{self.exec_sec_tp_r!r}. Zero would put the first target ON the entry.")
+        if self.exec_secondary and not (
+                self.exec_sec_tp2_min_x == -1.0 or self.exec_sec_tp2_min_x > 1.0):
+            # Refuse rather than clamp. At or below 1.0 the floor is at or INSIDE the first rung,
+            # so it either does nothing or permits the very flip it exists to stop — and a setting
+            # that silently accepts a value it cannot honour is how a run gets measured on a
+            # configuration nobody chose.
+            raise ValueError(
+                f"exec_sec_tp2_min_x must be -1 (off) or greater than 1.0, got "
+                f"{self.exec_sec_tp2_min_x!r}. A multiple of 1.0 or less would put the second "
+                f"target at or inside the first, which is the flip this setting exists to stop.")
         if self.exec_secondary and not self.exec_sec_risk_pct > 0:
             # Refuse rather than clamp to a floor. Zero (or negative) risk sizes a lot of zero,
             # which fills, closes and lands in the trade list at 0R — a trade that looks taken and
