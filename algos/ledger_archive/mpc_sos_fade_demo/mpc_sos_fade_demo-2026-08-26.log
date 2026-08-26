@@ -4,3 +4,30 @@
 2026-08-26 00:45:01,216 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-08-26 01:00:05,245 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-08-26 01:15:09,744 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-26 01:30:04,123 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-08-26 01:40:58,068 [INFO] Stop requested by file — shutting down cleanly.
+2026-08-26 01:40:58,069 [INFO] Stop requested — shutting down.
+2026-08-26 01:40:58,069 [INFO] Cleared a stale stop.request from a previous run.
+2026-08-26 01:40:59,540 [INFO] MT5 disconnected.
+2026-08-26 01:41:44,664 [INFO] MPC SOS Fade | MpcSosFadeStrategy v168 | hash e49a5e87902a | commit 1af068e3 | frozen | LIVE
+2026-08-26 01:41:45,307 [INFO] Connected | #700152905 | $13,341.40 | PUPrime-Demo
+2026-08-26 01:41:45,308 [INFO] MT5 connection lock released
+2026-08-26 01:41:46,393 [INFO] Sizing against account balance $13,341.40
+2026-08-26 01:41:46,433 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-26 01:41:46,437 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-08-26 01:41:55,229 [INFO] Warmed 5000 bars (2026-06-10 08:30:00+00:00 → 2026-08-26 01:15:00+00:00) in 8.7s
+2026-08-26 01:41:55,244 [INFO] Equity re-anchored to the account after warm-up: 18,316.10 → 13,341.40
+2026-08-26 01:41:55,244 [INFO] Restored position T345453758 — SHORT 0.39 lots @ 4661.5, stop 4686.74, stage 0. It will be managed from the next bar.
+2026-08-26 01:41:59,729 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-26 01:45:02,065 [INFO] move stop T345453758 4686.74 → 4661.2
+2026-08-26 01:55:26,136 [ERROR] MT5 link lost — the terminal is not answering this process. No bars are arriving and the strategy is NOT seeing the market until it reconnects. The usual cause is the terminal restarting itself after an auto-update.
+2026-08-26 01:56:00,229 [INFO] Connected | #700152905 | $13,341.40 | PUPrime-Demo
+2026-08-26 01:56:00,239 [INFO] MT5 connection lock released
+2026-08-26 01:56:00,548 [INFO] Sizing against account balance $13,341.40
+2026-08-26 01:56:19,102 [INFO] Warmed 5000 bars (2026-06-10 08:45:00+00:00 → 2026-08-26 01:30:00+00:00) in 15.9s
+2026-08-26 01:56:19,134 [INFO] Equity re-anchored to the account after warm-up: 18,316.10 → 13,341.40
+2026-08-26 01:56:19,171 [INFO] Restored position T345453758 — SHORT 0.39 lots @ 4661.5, stop 4661.2, stage 1. It will be managed from the next bar.
+2026-08-26 01:56:19,200 [INFO] MT5 link restored after 0.0 min — engines re-warmed.
+2026-08-26 02:15:01,890 [INFO] POSITION CLOSED | T345453758 SHORT @ 4661.2 | P&L $23.66 (+0.02R)
+2026-08-26 02:15:04,199 [INFO] place SHORT limit 0.53L @ 4661.41 SL 4686.32356
+2026-08-26 02:15:04,309 [INFO] PENDING PLACED | ticket=346619476 | bearish 0.53L @ 4661.41 | SL=4686.32
