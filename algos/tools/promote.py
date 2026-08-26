@@ -41,6 +41,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import time
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -167,8 +168,7 @@ def stage(cfg, trees, dry_run: bool = False) -> tuple[Path, int]:
     if dry_run:
         return staging, len(files)
 
-    if staging.exists():
-        shutil.rmtree(staging)
+    _remove_tree(staging)
     for src_file, rel in files:
         dst = staging / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -179,14 +179,101 @@ def stage(cfg, trees, dry_run: bool = False) -> tuple[Path, int]:
 def activate(cfg, staging: Path) -> None:
     """Swap the verified snapshot in. Last destructive step, and the only one.
 
-    The old snapshot is REMOVED rather than merged over. Merging leaves a file that was deleted
+    The old snapshot is REPLACED rather than merged over. Merging leaves a file that was deleted
     upstream sitting in the deployment, still importable, and the hash would then describe a
     tree that exists nowhere in git.
+
+    🔴 **The old snapshot is MOVED ASIDE, never deleted first (fixed 2026-08-26).** This used to
+    read `rmtree(dest)` and then `staging.rename(dest)`, which opens a window where the bot has
+    NO deployed code at all — and on Windows that window can become permanent, because a rename
+    fails outright if anything holds either directory (the running bot, an indexer, a virus
+    scanner). **That is exactly what happened on 2026-08-26: the promote deleted the live
+    snapshot, the rename failed, and the bot was left with no code to restart onto.** It kept
+    running only because Python already had its modules in memory.
+
+    ⚠ **`stage()`'s own docstring promised what this function then broke** — *"a failed promote
+    must leave the previous deployment exactly as it was"*. It was true of staging and false of
+    activation, and the two are three functions apart. **A safety property is only as strong as
+    its LAST step; check the whole path, not the part that documents itself.**
+
+    Order now: move `deployed` -> `deployed.old`, move the staged tree into place, and only then
+    delete the backup. Any failure rolls the backup back, so the bot always has exactly one
+    complete snapshot.
     """
     dest = cfg.deployed_dir
+    backup = dest.with_name("deployed.old")
+    _remove_tree(backup)
+
+    moved = False
     if dest.exists():
-        shutil.rmtree(dest)
-    staging.rename(dest)
+        dest.rename(backup)
+        moved = True
+    try:
+        staging.rename(dest)
+    except Exception:
+        # Put the working deployment back before re-raising. A promote that fails must cost
+        # nothing; a promote that fails AND takes out the bot is worse than never running one.
+        #
+        # ⚠ The rollback is itself wrapped: if it fails too, the ORIGINAL error is the one worth
+        # reading, and `recover_interrupted()` puts `deployed.old` back on the next run. A
+        # rollback that can raise turns one diagnosable failure into a confusing one.
+        if moved and not dest.exists():
+            try:
+                backup.rename(dest)
+            except OSError:
+                pass
+        raise
+    _remove_tree(backup)
+
+
+def _remove_tree(path: Path, attempts: int = 5) -> None:
+    """`shutil.rmtree` with Windows in mind.
+
+    ⚠ **A file being deleted on Windows can be held briefly by something that is not the bot** —
+    Defender scans a freshly-written tree, Explorer keeps a handle, the indexer wakes up. The
+    failure is transient and a single attempt turns it into a stopped promote; on 2026-08-26 a
+    leftover staging directory did exactly that. Retrying costs a second and removes a whole
+    class of spurious failures.
+
+    Never raises. Every caller here is either cleaning up a backup that no longer matters or
+    clearing a stale staging tree, and neither is worth failing a promote over.
+    """
+    for i in range(attempts):
+        if not path.exists():
+            return
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            time.sleep(0.2 * (i + 1))
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def recover_interrupted(cfg) -> str:
+    """Put a deployment back if a previous promote died between the two renames.
+
+    Returns a sentence describing what it did, or "" when there was nothing to do. Called at the
+    START of every promote, because the one moment somebody is definitely looking at this tool is
+    the moment they are running it again after it failed.
+
+    ⚠ **It only ever restores; it never chooses between two candidates.** If both `deployed` and
+    `deployed.old` exist, the live one has already been swapped in and the backup is just
+    litter — removing it is safe, and preferring one over the other is a decision this function
+    has no basis to make.
+    """
+    dest, backup = cfg.deployed_dir, cfg.deployed_dir.with_name("deployed.old")
+    if dest.exists():
+        if backup.exists():
+            _remove_tree(backup)
+            return "cleared a leftover deployed.old from an earlier promote"
+        return ""
+    if backup.exists():
+        backup.rename(dest)
+        return "RECOVERED: the previous promote died mid-swap and left no deployment; the "
+    return ""
 
 
 def verify(cfg, root: Path) -> tuple[bool, str]:
@@ -353,6 +440,13 @@ def main(argv=None) -> int:
             "describe what was copied."
         )
         return 1
+
+    # Before anything else: did a PREVIOUS promote die between the two renames and leave this
+    # bot with no deployment at all? That is the state 2026-08-26 produced, and the moment
+    # somebody runs this tool again is the moment to say so.
+    note = recover_interrupted(cfg)
+    if note:
+        print(f"  {note}previous snapshot has been put back.")
 
     commit = current_commit(_REPO)
     print(f"promote {cfg.bot_key} {'(dry run)' if args.dry_run else ''}".rstrip())

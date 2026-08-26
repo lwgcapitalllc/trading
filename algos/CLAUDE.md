@@ -1456,6 +1456,48 @@ Any time you add or fix behaviour that applies to ALL bots. Do not add it to one
 leave the others with stale code. Fix the shared implementation, update the thin delegates
 in every bot that uses it.
 
+### 🔴 A promote must never leave a bot with NO deployed code (2026-08-26)
+
+**It happened.** `activate()` deleted the live snapshot and then renamed the staged one into its
+place. On Windows that rename can fail outright — the running bot, an indexer or a virus scanner
+holding a handle is enough — and when it did, the instance directory was left with **no
+`deployed/` at all**. The bot kept trading only because Python already had its modules in memory;
+a restart would have found nothing to import, and `SYS_MONITOR` would have restarted it into that.
+
+🔴 **`stage()`'s own docstring promised exactly what `activate()` broke** — *"a failed promote must
+leave the previous deployment exactly as it was, still importable, still matching its pin."* It
+was true of staging and false of activation, and the two are three functions apart. **A safety
+property is only as strong as its LAST step. Check the whole path, not the part that documents
+itself.**
+
+✅ **The old snapshot is now MOVED ASIDE, never deleted first**: `deployed` → `deployed.old`, then
+the staged tree into place, then the backup is removed. Any failure rolls the backup back, and the
+rollback is itself wrapped so it cannot mask the original error. At every moment at least one
+complete snapshot exists — pinned by a test that asserts the ORDER, not just the outcome, because
+an outcome test can be satisfied by a lucky retry while the dangerous window is still open.
+
+✅ **`recover_interrupted()` runs at the START of every promote** and puts `deployed.old` back if a
+previous run died mid-swap. ⚠ **It only ever restores and never chooses**: if both directories
+exist the swap already succeeded and the backup is litter, and preferring one would roll a good
+promote back. ⚠ **It is silent when there is nothing to do** — a tool that announces a recovery on
+every ordinary run is one people stop reading.
+
+✅ **`_remove_tree()` retries.** A transient Windows lock on a leftover staging directory stopped a
+promote dead the same day, before anything had been swapped. The lock is transient; one attempt
+turned it into a failure. It never raises — every caller is clearing litter, and none of it is
+worth failing a promote over.
+
+⚠ **A `--dry-run` really does stage and verify**, by design — the two things worth knowing before
+you deploy are *does it import* and *which settings will change*, and both need the snapshot to
+exist. It writes only to `deployed.new` and never calls `activate()`.
+
+⚠ **The trading box's promote-PREVIEW tool is broken** — it sends no request body and the Command
+Center answers HTTP 422. Use `promote.py --dry-run` until that is fixed.
+
+**Tests: 8 in `tests/test_promote_swap.py`. The incident is reproduced directly** — the rename is
+made to fail and the test asserts the bot still has its old code; it goes RED against the previous
+body.
+
 ### 🔴 A broker call has THREE outcomes, not two (2026-08-25)
 
 **One limit order became five positions, and the whole cause is a missing third value.** Retcode
