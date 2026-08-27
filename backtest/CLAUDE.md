@@ -460,7 +460,15 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   but understating absolute totals — **MEASURED 2018-09-14 → 2026-08-14, bar fills, ONE window both sides: 189 trades /
   +164.4R with the secondary against 181 / +138.9R without — the gap being 8 secondary trades
   worth exactly +25.5R**. ⚠ **Dual costs ~50 min a
-  full-history replay against ~3 min.** Pinned by `tests/test_run_report_secondary.py` (7; 3
+  full-history replay against ~3 min.** ✅ **BOTH FIGURES ARE SUPERSEDED — RE-MEASURED 2026-08-27:
+  a full 6.6-year replay is 59.9s single-feed and 94.1s DUAL** (157,004 M15 + 471,830 M5 bars,
+  200 trades). **The 471,830 extra bars cost 34 seconds.** ⚠ **Two separate reasons the old pair
+  no longer applies, and they must not be collapsed**: the fill clock defaulted 1m → 5m on
+  2026-08-21 (a fifth of the bars for 1.3% of accuracy), and the replay path itself got ~9x faster
+  on 2026-08-26/27 (`HISTORY.md`). **So the ~50 min was a 1-minute clock on the old code and is
+  not comparable to either number here.** 🔴 **The standing point is the one this file keeps
+  making: a TIMING in a doc goes stale exactly like a measurement, and this one had been quoted as
+  the reason not to run a dual replay.** Pinned by `tests/test_run_report_secondary.py` (7; 3
   watched RED against HEAD, the behavioural pair killed by 2 mutations). Story:
   `docs/BACKTEST_BUILD_NOTES.md` → *The secondary that never ran*.
 - **`archive/`** — committed, frozen `run_report.py` output. `backtest/reports/` is git-ignored
