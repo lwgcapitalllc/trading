@@ -3726,13 +3726,35 @@ gets the slot, so a stored figure does not merely shift by the refused trades' R
 stale until `backtest/tools/overlap_audit.py` is re-run** — it was measured on the logic that took
 245.
 
-🔴 **AND THE PARITY POSITION CHANGED WITH IT, WHICH IS THE PART THAT COSTS SOMETHING.** While both
-sides shipped at 0.0 the gate could not fire, so a shipped run was byte-identical to one from
-before this existed and the code could land unverified. **At 0.08 it fires on real bars in the
-SHIPPED configuration, so the strategy the live bot would run is one `compare_strategy.py` has
-never checked.** No decision-stream export exists on this machine — the "9 of 14 gates could not
-run" condition the root CLAUDE.md records — so **rule 22 is NOT satisfied and the shipped path is
-now the unverified one.** Take an export carrying `cfg_min_atr` before promoting.
+✅ **RULE 22 IS SATISFIED (2026-08-26), AND IT TOOK TWO EXPORTS — THE SECOND ONE IS THE PROOF.**
+
+| export | floor on the chart | verdict | setups the floor REFUSED |
+|---|---|---|---|
+| `…15_b5eda.csv` | 0.08 (shipped) | exit 0 | **0** |
+| `…15_3ce38.csv` | 0.30 (driving) | exit 0 | **21 of 26** |
+
+Both 21,355 bars, 2025-10-01 → 2026-08-26, green at warmups 100 / 500 / 1000 / 2000, both
+carrying `cfg_min_atr` so the harness configured the floor from the chart rather than from a
+default. On the second, Python and Pine agree bar-for-bar **while the floor is refusing four out
+of five setups** — 9 trades / +10.64R against the control's 26 / +29.06R on the same bars.
+
+🔴 **THE FIRST RUN WAS GREEN AND PROVED NOTHING ABOUT THIS FEATURE, AND ONLY A COVERAGE CHECK
+COULD HAVE TOLD YOU.** At the shipped 0.08 the floor refused **nothing** on that window: replaying
+its own bars with the floor OFF gave the same 26 trades and the same +29.06R. **That is not bad
+luck, it is arithmetic** — the floor refuses 5 setups in 6.6 years, so an 11-month export expects
+about 0.2 of one. A shipped-value export can never gate this.
+
+⚠ **So export at a value that FIRES, then put the chart back.** It is the identical code path, and
+it is the move the time stop already documents (shipped at 36 hours, exported at 4). Measured on
+these bars: 0.08 and 0.10 refuse nothing, 0.20 refuses 6, **0.30 refuses 17–21** — the spread is
+because the two exports are not the same bar set. **Re-export at 0.30 after any change here.**
+
+🔴 **AND THE REASON A REFUSAL IS INVISIBLE IS WORTH KNOWING BEFORE SOMEBODY LOOKS FOR IT IN THE
+DECISION STREAM: this gate emits NO block code on either side, deliberately** — `_stop_is_tight`
+excludes it, matching Pine's `lBlkTight`, so a refused setup is untagged and shows up only as an
+entry that is not there. **A coverage check here therefore cannot read a counter; it has to replay
+the same bars with the floor off and diff the entries.** Four lines, and it is the only thing
+standing between a green run and a false claim.
 
 ⚠ **What stands in meanwhile is deliberately weak and its own docstring says so**:
 `test_the_PINE_side_ships_the_SAME_value_and_still_gates_both_entries` reads the Pine source and
