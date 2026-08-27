@@ -285,6 +285,38 @@ an export taken before this change encodes the OLD behaviour — so the gate can
 a fresh export from the FIXED `structure_engine_export.pine`. Rule 22 is outstanding on this change;
 `tests/test_rescan_wick.py` (100 real bars, watched RED) is the evidence that exists today.
 
+✅ **CLOSED 2026-08-27 — RULE 22 IS SATISFIED FOR THIS FIX.** A post-fix export exists after all,
+in `engines/` rather than in `exports/`: `VANTAGE_XAUUSD, 5_0bcd2.csv`, taken **2026-08-23**, and
+`compare_tradingview.py` is **GREEN from bar 0 on all 20,574 bars**. The paragraph above stands as
+the record of what was true when it was written; the gate has now run.
+
+🔴 **AND THE THREE RED GATES ON THIS MACHINE ARE THIS FIX WORKING, NOT A DEFECT — CHECKED, NOT
+INFERRED FROM DATES.** Every red export was taken **2026-08-20 23:08–23:31**, the day BEFORE the
+fix, so its Pine columns encode the OLD behaviour. What settles it is the OHLC underneath the
+disagreement, read straight out of the export:
+
+| export | bar | Pine anchored | Python kept |
+|---|---|---|---|
+| `15_b201e.csv` | 14123 | bar **14108**, low 4677.34, close 4691.34 | bar **14111**, low 4681.90 |
+| `5_84d6c.csv` | 7322 | bar **7309**, low 4335.14, close 4338.83 | bar **7312**, low 4336.87 |
+
+**In both, Pine installed the EARLIER and MORE EXTREME bar — a low the close never broke — which is
+precisely the refused wick this fix stopped installing.** `15_9d44d.csv` fails at the same bar
+14123 and the same timestamp, one engine upstream. The fibonacci reds are inherited: `fibo_asl` IS
+the structure anchor, so a wrong active swing moves E1-E4, the TP ladder and the Sniper Zone with
+it.
+
+⚠ **The 5m fibonacci export ALSO has a genuine cold start at bars 49-58** (touch latches and
+`px_fib_origin`), which is the ordinary "TradingView's engine was warm before the export window"
+effect and is unrelated. It is called out separately so a future reader does not fold it into the
+anchor story.
+
+⚠ **A pre-existing red is still a red, and this note does NOT retire these three.** What it retires
+is the need to re-investigate them: **the fix is right, the exports are stale, and the only thing
+that can turn them green is re-exporting from today's Pine.** Re-take `15_b201e` (fibonacci),
+`15_9d44d` (structure) and `5_84d6c` (fibonacci) when convenient — nothing is blocked on them,
+because the post-fix 5m export already carries the green.
+
 ## The 2026-08-20 tied-extreme fix — one swing, two permanent labels
 
 Aaron spotted an `LL` and an `HL` printed side by side on the same 15m swing low and asked whether

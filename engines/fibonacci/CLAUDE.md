@@ -327,3 +327,28 @@ Not built yet — there is no bot consuming this engine. Wire it up together wit
   source is re-pasted — grep the `GRP_*` markers.)
 - Upstream structure engine: `engines/market_structure/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.
+
+## The two RED gates on this machine are STALE EXPORTS, not drift (2026-08-27)
+
+`compare_fib.py` is RED on both exports here — `15_b201e.csv` from bar 14123 and `5_84d6c.csv`
+from bar 7322 — and **neither is this engine's fault.** Both were taken **2026-08-20**, the day
+before `market_structure`'s refused-wick fix, so their Pine columns encode the old structure
+behaviour.
+
+🔴 **THE MECHANISM IS WHY THIS ENGINE IS ALWAYS THE ONE THAT LOOKS BROKEN.** `fibo_asl` / `fibo_ash`
+ARE the structure engine's active swings, so a single wrong anchor upstream moves **E1-E4, the 1.0,
+the whole TP ladder and both Sniper Zone edges at once** — 47 bars × 9 fields on the 15m export off
+one bar's disagreement. **A long list of mismatched PRICE fields with no mismatched DIRECTION or
+LATCH field beside it is the signature of an inherited anchor, never of a fib arithmetic bug.**
+Read `px_fib_100_price` first: it is the leg origin, so if it differs the rest cannot agree.
+
+✅ Confirmed at the source rather than assumed: at both diverging bars, Pine anchored on an EARLIER
+and MORE EXTREME bar whose close never broke the level, which is the refused wick that fix removed.
+Full table and the OHLC: `engines/market_structure/CLAUDE.md` → *The 2026-08-21 refused-wick fix*.
+
+⚠ **The 5m export has a SEPARATE and ordinary cold start at bars 49-58** — `px_fib_origin` and the
+touch latches, TradingView having been warm before the export window. Do not fold it into the
+anchor story; they are two different things in one file.
+
+⚠ **Nothing here is fixed by editing this engine, and trying would be the damage.** The fix is a
+fresh export from today's Pine. Until then these two reds stay red, and a red is still a red.
