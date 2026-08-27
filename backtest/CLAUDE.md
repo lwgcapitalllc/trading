@@ -1729,3 +1729,22 @@ compared equal to everything forever. ⚠ **And `_trade_rows` builds LISTS, not 
 no tuple, so a reloaded baseline never equalled a freshly-built one and every trade read as
 changed with no differing field to show for it. **Both failures are the same shape: a comparison
 tool that is broken says EQUAL or says DIFFERENT, and neither answer looks like an error.**
+
+### `--allow-strategy-change` — the door in the basis wall (2026-08-26)
+
+A speed change INSIDE a strategy moves its source digest, so the basis guard refuses and the one
+comparison the tool exists to make becomes the one it will not run. The flag waives
+`strategy_source` **and nothing else**: `strategy_settings`, window, instrument, timeframe and
+server still refuse, so a moved DEFAULT can never ride in under a performance claim.
+
+⚠ **Passing it is a CLAIM — *I changed the code and assert it is inert* — and it prints a line
+saying so above the verdict.** A CHANGED result underneath it is that claim being refuted, never
+a tool malfunction. Same reasoning as `compare_strategy.py`'s `--allow-fast-timeframe`: a wall
+with no door gets routed around in ways that leave no trace.
+
+🔴 **Where a strategy exposes BOTH algorithms behind a flag, prefer forcing the flag over running
+the tool twice** — one process, one binary, nothing else able to differ. That is how the bar-time
+map's prune was proved (`strategies/python/mpc_sos_fade/CLAUDE.md`), and it needs no waiver at
+all. ⚠ **Patch `type(strategy.execution)`, never the class imported by package path — the lab
+loads that module twice and they are different class objects.** A patch on the wrong one hits
+nothing and the comparison silently becomes a run against itself.

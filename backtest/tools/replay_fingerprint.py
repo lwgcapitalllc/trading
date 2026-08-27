@@ -188,16 +188,40 @@ def fingerprint(symbol: str, start: str, end: str, tf: str, secondary: bool, ser
     }
 
 
-def _refuse_on_different_basis(a: dict, b: dict) -> None:
+def _refuse_on_different_basis(a: dict, b: dict, allow_strategy_change: bool = False) -> None:
     """⚠ Rule 11, in miniature. A comparison across two different bases is worse than no
-    comparison: it reports agreement about a question neither run was asked."""
-    if a.get("basis") != b.get("basis"):
+    comparison: it reports agreement about a question neither run was asked.
+
+    🔴 **`--allow-strategy-change` is a DOOR, and it is here because the wall blocks the one
+    comparison this tool most needs to make.** A speed change INSIDE the strategy — the bar-time
+    map's prune is the first — moves the source digest, so the guard refuses and the only proof
+    available is the one that cannot be run. A wall with no door gets routed around in ways that
+    leave no trace, which is strictly worse; `compare_strategy.py` carries the same reasoning for
+    `--allow-fast-timeframe`.
+
+    ⚠ **It waives `strategy_source` and NOTHING ELSE.** `strategy_settings` still refuses, which
+    is the half that matters most: a moved DEFAULT is a different strategy however inert the code
+    change was, and waiving both would let a tuning change ride in under a performance claim. The
+    window, instrument, timeframe and server still refuse too. So the flag says *I changed the
+    code and assert it is inert*, never *compare these two runs however they were set up*.
+    Passing it is a claim, and an unexpected CHANGED verdict underneath it is that claim being
+    refuted rather than a tool malfunction.
+    """
+    ba, bb = dict(a.get("basis") or {}), dict(b.get("basis") or {})
+    waived = None
+    if allow_strategy_change:
+        waived = (ba.pop("strategy_source", None), bb.pop("strategy_source", None))
+    if ba != bb:
         print("REFUSED - the two fingerprints were not taken on the same basis:")
-        for k in sorted(set(a.get("basis", {})) | set(b.get("basis", {}))):
-            av, bv = a.get("basis", {}).get(k), b.get("basis", {}).get(k)
-            if av != bv:
-                print(f"  {k}: {av!r} vs {bv!r}")
+        for k in sorted(set(ba) | set(bb)):
+            if ba.get(k) != bb.get(k):
+                print(f"  {k}: {ba.get(k)!r} vs {bb.get(k)!r}")
         raise SystemExit(2)
+    if waived is not None and waived[0] != waived[1]:
+        print(
+            "NOTE - the strategy source CHANGED and the refusal was waived by --allow-strategy-change."
+        )
+        print("       Everything below is a claim that the change was inert. Read it as one.")
 
 
 def main() -> None:
@@ -210,6 +234,12 @@ def main() -> None:
     ap.add_argument("--timeframe", default="M15")
     ap.add_argument("--secondary", action="store_true")
     ap.add_argument("--server", default="PUPrime-Demo")
+    ap.add_argument(
+        "--allow-strategy-change",
+        action="store_true",
+        help="compare across a change to the strategy's own SOURCE (a perf change inside it). "
+        "Waives strategy_source only - a moved default still refuses.",
+    )
     a = ap.parse_args()
 
     fp = fingerprint(a.symbol, a.start, a.end, a.timeframe, a.secondary, a.server)
@@ -225,7 +255,7 @@ def main() -> None:
         return
 
     old = json.loads(Path(a.path).read_text())
-    _refuse_on_different_basis(old, fp)
+    _refuse_on_different_basis(old, fp, allow_strategy_change=a.allow_strategy_change)
 
     bars_ok = old["bar_stream"]["digest"] == fp["bar_stream"]["digest"]
     trades_ok = old["trades_digest"] == fp["trades_digest"]

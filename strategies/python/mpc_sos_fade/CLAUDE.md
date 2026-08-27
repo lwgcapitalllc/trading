@@ -3767,3 +3767,42 @@ because "the field is new" cannot tell a working gate from a present one. ⚠ **
 never seeds and the gate refuses by design. **They were fixed by having each DECLARE its basis, not
 by teaching a fixture to fake an ATR** — a fixture more capable than production describes a system
 you do not have.
+
+## 🔴 The leg latch's bar-time map was re-sorting 20,000 keys EVERY BAR (fixed 2026-08-26)
+
+The map that made the one-trade-per-leg latch survive a restart (above) is capped at 20,000
+entries. Its prune called `sorted(self._bar_ms)` to find the one key to delete — and once the cap
+is reached that runs on **every single bar for the rest of the run**.
+
+**MEASURED under cProfile on a 23,539-bar year: 3,539 sorts were 8.0s of a 52.6s replay — 15%,
+and the largest single cost in the whole profile.** Measured end to end on 62,468 bars, both
+algorithms in ONE process with only the branch differing: **189.76s → 81.25s, the whole replay
+2.34x faster.** The 6.6-year window pays that prune 135,807 times.
+
+✅ **A dict preserves INSERTION order, `step` inserts one strictly increasing index per bar, and
+the map is rebuilt empty on every restart (it is deliberately NOT in `_POSITION_FIELDS`) — so the
+earliest-inserted key IS the smallest key** and `next(iter(...))` is the same answer the sort was
+recomputing from scratch. O(n log n) per bar became O(1).
+
+⚠ **The equivalence is a fact about the ORDER keys arrive in, so `_bar_ms_ordered` CHECKS it
+rather than trusting it.** Any out-of-order or repeated index latches the flag False and the
+original sort takes over, which is correct at any order. The latch is deliberately one-way:
+re-arming it would be a second claim about the same thing.
+
+✅ **Same keys survive, so no decision can move — PROVEN ON REAL BARS**, 62,468 of them, both
+algorithms giving a byte-identical 66-trade book (`0c4250ab`).
+
+🔴 **THE FIRST VERSION OF THAT PROOF WAS VACUOUS AND THE TIMING IS WHAT CAUGHT IT.** The script
+patched `Execution` imported by package path; **the lab instantiates a DIFFERENT class object
+loaded from the same file**, so the patch hit nothing, both runs took the new path, and
+`TRADES IDENTICAL` was a run compared against itself. Nothing in the verdict looked wrong — the
+tell was that the supposedly-slower run came out FASTER, which no amount of machine noise
+explains. ⚠ **Patch `type(strategy.execution)`, never the imported name**, and this is the same
+double-load this file already records under the 2.5× sweep arm that silently replayed stale code.
+⚠ **A performance number is a CHECK on a correctness claim here, not just a headline** — the
+identity result alone could not tell the two apart.
+
+**TESTED:** 16 in `tests/test_bar_ms_prune.py`, two mutations watched RED — pruning the newest
+instead of the oldest reddens 9, dropping the order latch reddens 3. The key-set claim is
+asserted against a re-implementation of the ORIGINAL algorithm rather than against a hand-typed
+constant, so it cannot re-freeze my own reading of it.
