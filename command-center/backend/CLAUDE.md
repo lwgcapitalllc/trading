@@ -3968,6 +3968,39 @@ replays its own history and only a NEW run follows the attached terminal.**
 row is that. ⚠ The refusal, the fetch-time check and why merging is unrecoverable live in
 `backtest/CLAUDE.md`; do not restate them here.
 
+## The regime map is CACHED on its inputs, not recomputed per run (2026-08-26)
+
+A regime is a property of the MARKET on a date, not of a run — `build_date_regime_map`'s own
+docstring said so while recomputing the whole calendar on every single run. **MEASURED: 98.5s to
+turn 50,548 H1+H4 rows into 2,066 date→label strings, and a second identical call cost the same
+again.** On a 3.5-minute backtest that was half the wall clock, and the tuning loop re-runs one
+window over and over. **After: 2.27s, output byte-identical — 0 of 2,066 days disagree against a
+baseline captured before the change.**
+
+- 🔴 **Keyed on the DATA, never on the dates alone.** A window ending today is still filling and
+  the broker back-fills history, so a date-keyed cache would serve yesterday's answer for bars
+  that have since moved. The fingerprint is the index and OHLC of both frames, so a hit is only
+  possible when the inputs are byte-identical and there is no staleness to reason about.
+- 🔴 **The classifier's own SOURCE is in the key.** Edit `engines/regime/classifier.py` and every
+  stored map stops matching — a cached label from a superseded rule is the silent wrongness this
+  repo keeps paying for. `_REGIME_CACHE_LOGIC_VERSION` covers the surrounding logic (warmup,
+  window size, which frames feed it); bump it by hand when any of those move.
+- ⚠ **The key is taken AFTER the fetch**, which costs 2.3s every call. That is what buys the
+  guarantee, and it is the right trade against a wrong regime label nothing downstream can spot.
+- ⚠ **A key that cannot be taken is `None`, and `None` neither reads nor writes.** A key that
+  quietly drops an input still looks like a key and would serve stale labels for ever.
+- ⚠ **Fails OPEN in every direction** — corrupt file, wrong shape, unwritable dir: all cost the
+  98 seconds and none stop the run. **An empty map is never stored**: `{}` means the fetch failed,
+  not that the window has no regimes, and storing it would make one bad fetch permanent.
+- ⚠ **This did NOT make the cold path faster** and was not meant to. The 96s is pandas overhead
+  inside the classifier — ~20 operations on a 34-row window, 2,066 times. Making THAT faster means
+  changing arithmetic, which is a separate decision.
+
+⚠ **A first attempt replaced the per-day window scan with a binary search — provably identical
+output, and MEASURED at no gain (105.9s against 100.8s), so it was reverted.** The quadratic is
+real (2,066 days × 50,548 rows masked and copied) and it is not the cost; the cost is pandas.
+Recorded so nobody spends the afternoon again.
+
 ## The BROKER spells the symbol, and the run records the resolved name (2026-08-26)
 
 A strategy suggests a bare `XAUUSD`; PU Prime quotes gold as `XAUUSD.p` and Vantage quotes it bare.

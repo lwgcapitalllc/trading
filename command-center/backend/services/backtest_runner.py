@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import json
 import logging
+import os
 import sys
 import time
 from bisect import bisect_right
@@ -17,6 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from services import evaluator, lab_db, runner_dispatch, sizing_pipeline, worthiness
@@ -26,6 +29,7 @@ _ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
+from regime import classifier as classifier_module
 from regime import classify_regime
 
 from services.metrics import (
@@ -415,6 +419,103 @@ def build_regime_timeline_and_tag(
     return timeline, tagged
 
 
+_REGIME_CACHE_DIR = Path(__file__).parent.parent / "data" / "regime_cache"
+
+#: Bumped by hand when anything OUTSIDE the classifier changes what a label means — the warmup,
+#: the window size, which frames feed it, or how the trading days are chosen. The classifier's own
+#: source is fingerprinted automatically below, so this is only for the surrounding logic.
+_REGIME_CACHE_LOGIC_VERSION = "1"
+
+
+def _regime_cache_key(
+    instrument: str,
+    runner: str,
+    start_date: str,
+    end_date: str,
+    df_short: pd.DataFrame,
+    df_long: pd.DataFrame,
+) -> Optional[str]:
+    """Fingerprint EVERY input a regime label depends on, or None if it cannot be taken.
+
+    🔴 **The map is a pure function of the bars and the classifier, and it was recomputed from
+    scratch on every single run.** MEASURED on the live cache: **98.5 seconds** to turn 50,548
+    H1+H4 rows into 2,066 short strings, and a second identical call cost the same again. On a
+    3.5-minute backtest that is half the wall clock, and the tuning loop re-runs the same window
+    over and over. The docstring on `build_date_regime_map` already says a regime is *a property
+    of the MARKET on a date, not of a run* — this makes the code agree with it.
+
+    ⚠ **Keyed on the DATA, never on the dates alone.** A window ending today is still filling, and
+    the broker back-fills history; a date-keyed cache would serve yesterday's answer for a window
+    that has since gained bars. Hashing the actual index and OHLC of both frames means a cache hit
+    is only possible when the inputs are byte-identical, so there is no staleness to reason about
+    and no rule about "today" to get wrong.
+
+    ⚠ **The CLASSIFIER'S OWN SOURCE is in the key.** Edit `engines/regime/classifier.py` and every
+    stored map stops matching, because a cached label from a superseded rule is exactly the silent
+    wrongness this repo keeps paying for. `_REGIME_CACHE_LOGIC_VERSION` covers the rest.
+
+    ⚠ **Returns None rather than a partial key** when the classifier source cannot be read. A key
+    that quietly drops one of its inputs still LOOKS like a key, and would serve stale labels for
+    ever; refusing to cache costs 98 seconds and cannot be wrong.
+    """
+    try:
+        h = hashlib.sha1()
+        h.update(
+            f"{_REGIME_CACHE_LOGIC_VERSION}|{instrument}|{runner}|{start_date}|{end_date}"
+            f"|{_WARMUP_DAYS}|{_WINDOW_SIZE}".encode()
+        )
+        h.update(Path(classifier_module.__file__).read_bytes())
+        for df in (df_short, df_long):
+            h.update(f"|rows={len(df)}|".encode())
+            if len(df):
+                h.update(np.ascontiguousarray(df.index.values).tobytes())
+                for col in ("open", "high", "low", "close"):
+                    if col in df.columns:
+                        h.update(np.ascontiguousarray(df[col].to_numpy(dtype="float64")).tobytes())
+        return h.hexdigest()
+    except Exception as exc:  # noqa: BLE001 - any failure means "cannot key it", never "no key needed"
+        log.warning("regime cache: could not fingerprint inputs (%s) - computing fresh", exc)
+        return None
+
+
+def _regime_cache_read(key: Optional[str]) -> Optional[dict[str, str]]:
+    """The stored map for this fingerprint, or None. Fails OPEN — a broken cache must never
+    stop a run, it must only stop being a shortcut."""
+    if not key:
+        return None
+    try:
+        path = _REGIME_CACHE_DIR / f"{key}.json"
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        # A map of date -> label and nothing else. A file that is not that shape is not a
+        # cache hit, whatever produced it.
+        if not isinstance(data, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in data.items()
+        ):
+            return None
+        return data
+    except Exception:  # noqa: BLE001 - unreadable, truncated, mid-write: all mean "no shortcut"
+        return None
+
+
+def _regime_cache_write(key: Optional[str], result: dict[str, str]) -> None:
+    """Store the map, atomically. Fails OPEN and silently — this is a shortcut for next time,
+    never part of producing THIS run's answer.
+
+    ⚠ Written to a temp file and renamed, because a reader taking a half-written file for a
+    complete map would serve a run a truncated calendar with no way to notice."""
+    if not key or not result:
+        return
+    try:
+        _REGIME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = _REGIME_CACHE_DIR / f".{key}.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(result, sort_keys=True))
+        tmp.replace(_REGIME_CACHE_DIR / f"{key}.json")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def build_date_regime_map(
     instrument: str,
     start_date: str,
@@ -441,6 +542,24 @@ def build_date_regime_map(
 
     if df_long.empty:
         return {}
+
+    # ── The shortcut, taken AFTER the fetch and BEFORE the 98 seconds ────────────────────
+    # The fetch is 2.3s and is what makes the key trustworthy: the fingerprint is taken from
+    # the bars themselves, so a hit is only possible when the inputs are byte-identical. Doing
+    # it this way costs a fetch on every call and removes any question of staleness — which is
+    # the right trade when the alternative is a wrong regime label nothing downstream can spot.
+    cache_key = _regime_cache_key(instrument, runner, start_date, end_date, df_short, df_long)
+    cached = _regime_cache_read(cache_key)
+    if cached is not None:
+        log.info(
+            "build_date_regime_map (%s): %d days served from cache for %s [%s, %s]",
+            runner,
+            len(cached),
+            instrument,
+            start_date,
+            end_date,
+        )
+        return cached
 
     result: dict[str, str] = {}
 
@@ -473,6 +592,8 @@ def build_date_regime_map(
                     result[date_str] = classify_regime(window, window)
                 except Exception:
                     result[date_str] = "UNKNOWN"
+
+    _regime_cache_write(cache_key, result)
 
     log.info(
         "build_date_regime_map (%s): %d trading days classified for %s [%s, %s]",
