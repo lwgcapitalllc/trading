@@ -1756,3 +1756,29 @@ map's prune was proved (`strategies/python/mpc_sos_fade/CLAUDE.md`), and it need
 all. ⚠ **Patch `type(strategy.execution)`, never the class imported by package path — the lab
 loads that module twice and they are different class objects.** A patch on the wrong one hits
 nothing and the comparison silently becomes a run against itself.
+
+### Where the replay's time goes NOW, and why the optimisation stopped (2026-08-27)
+
+After the four fixes above, a 23,539-bar profile is **8.7s and FLAT** — the largest single entry is
+7.5% and everything else is under 4%. That is the signal to stop, and the reasoning is recorded so
+the next person does not re-derive it:
+
+| what is left | share | why it was not taken |
+|---|---|---|
+| the strategy's signal adapter | 7.5% | it is 71 dataclass field assignments per bar; making it faster means `__slots__` or a namedtuple, i.e. a wide refactor of a money path for ~4% |
+| timezone conversion (10 `astimezone` per bar) | ~4.6% | spread across `sessions/`, `liquidity/`, `vwap/` and the strategy — **four canonical engines, four parity gates**, for a few percent |
+| everything else | <4% each | no single item worth a gate |
+
+🔴 **THE BAR IS NOT "IS THERE ANY TIME LEFT" — IT IS "WHAT DOES CLAIMING IT COST TO VERIFY".** Every
+remaining candidate lives in a canonical engine, so rule 22 applies to each one: a real export, a
+gate run before and after, and a byte-identical trade book. **A 3% gain that needs a TradingView
+export somebody has to sit down and take is not a 3% gain, it is a 3% gain plus a human.**
+
+⚠ **The four that WERE taken are not counter-examples to that bar, they are the reason it exists.**
+Three of them were defects — work with no purpose, removable with the comparisons untouched — and
+the fourth was a cache. **None of them required reading a strategy differently.** When the next
+candidate does, the answer is no.
+
+⚠ **Re-measure before re-opening this.** The table is one profile on one window, and cProfile
+charges allocation pressure to whoever is running — the pivot fix returned four times its own
+profile share for exactly that reason, so a small entry here is not proof a change would be small.
