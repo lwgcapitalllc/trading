@@ -63,6 +63,9 @@ def _sig(dir=1, hour=8, ash=_ASH, asl=_ASL):
 
 
 def _cfg(**kw):
+    # Pinned OFF: these fixtures feed too few bars to seed ATR(14), and the dead-market floor
+    # refuses on an unseeded ATR by design. `test_dead_market.py` owns that behaviour.
+    kw.setdefault("exec_min_atr_pct", 0.0)
     return SosFadeConfig(**kw)
 
 

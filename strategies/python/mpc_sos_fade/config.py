@@ -272,6 +272,68 @@ class SosFadeConfig:
     #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
     #   Read only when the mode is not "Off". See the sweep table above for every measured rung;
     #   below 0.05 the floor refuses nothing at all, and 0.09 upward starts costing.
+    #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
+    #   Read only when the mode is not "Off". See the sweep table above for every measured rung;
+    #   below 0.05 the floor refuses nothing at all, and 0.09 upward starts costing.
+    # ── the DEAD-MARKET floor (2026-08-26) ───────────────────────────────────────
+    #   Refuse a setup when ATR(14) at the fill is below this % of price. A fade needs range to
+    #   travel into; in a market this quiet the setup has nowhere to go and the trade is decided
+    #   by spread and noise.
+    #   ⚠ This is NOT `exec_min_stop_val`, which floors the STOP DISTANCE. That one asks "is this
+    #   leg long enough to size against"; this one asks "is the market moving at all". A wide stop
+    #   in a dead market clears the stop floor comfortably and is still the trade refused here —
+    #   the two gates share a unit and answer different questions.
+    #   MEASURED over 245 trades on run c868358c5177 (2020-01-01 -> 2026-08-23, priced):
+    #     0.08 -> refuses 11 trades worth -10.0R, hurts 0 of 7 years, refuses NO trade above 3R
+    #     0.10 -> refuses 36 trades worth -13.7R, hurts 1 of 7 (-0.3R), refuses NO trade above 3R
+    #     0.11 -> starts refusing winners (+3.0R of them)
+    #     0.14 -> refuses +17.9R and hurts 6 of 7 years
+    #   ⚠ **The decay above 0.11 is the reason to believe the floor AND to fear it.** A fitted
+    #   spike would not degrade in order; this one does, which also means the usable band is
+    #   NARROW. Do not creep it upward because a quiet-market loss annoyed you.
+    #   ⚠ Measured on a REPLAY of finished trades, which cannot see that refusing an entry frees
+    #   the one position slot — Run 12's lesson is that trades QUEUE rather than add. Only a full
+    #   lab run settles the real number.
+    #   MEASURED by full replay (2026-08-26), not by the trade-list estimate above — the driver in
+    #   `scratchpad/sweep.py` reproduced lab run 5c35fc4081bf to the cent (245 trades, 119.0R,
+    #   $4,855,242.72) before any of these were believed:
+    #     off  -> 245 trades, 119.0R      0.09 -> 235 trades, 111.5R
+    #     0.08 -> 240 trades, 127.9R      0.10 -> 227 trades, 114.4R  (lab run ee2b70e3c738)
+    #   🔴 **THOSE FOUR NUMBERS ARE NOISE AND MUST NOT BE READ AS A CURVE.** R swings ±8 on a 0.01
+    #   nudge with no order to it, and the ENDING BALANCE swings 2x ($4.86M / $9.77M / $9.92M /
+    #   $4.92M) because refusing one setup reshuffles which later trade gets the single position
+    #   slot. 0.09 books LESS R than 0.08 and MORE money, which is rule 6 demonstrating itself.
+    #   **The value of this floor is not measurable at this sample size — only its DIRECTION is.**
+    #   Do not tune it on the R column.
+    #   ✅ **THE DRAWDOWN COLUMN IS THE ONE THAT HOLDS ITS ORDER, and it is what this was built
+    #   for.** Same replays, equity path ordered by EXIT TIMESTAMP:
+    #     off  -> max DD 55.5%   ulcer 20.8%
+    #     0.08 -> max DD 47.9%   ulcer 17.2%
+    #     0.10 -> max DD 41.5%   ulcer 18.6%
+    #   Worst drawdown falls in order with the floor, and the SMOOTHNESS measure bottoms at 0.08 —
+    #   the shipped value, and the thing Aaron actually asked for.
+    #   🔴 **An earlier pass reported 51.5% / 51.2% here and BOTH WERE WRONG: the equity path was
+    #   ordered by BAR INDEX and the trade list mixes two clocks** — a 15m setup carries a 15m
+    #   index, a 5m re-entry carries a 5m one, so a 2026 setup sorted ahead of a 2021 re-entry.
+    #   ⚠ The failure shape is the transferable part: **a SUM is order-independent, so the ending
+    #   balance and the R total came out byte-identical either way and gave no signal at all.**
+    #   Only the path-dependent numbers were wrong, and they are the only ones anybody was
+    #   reading. `scratchpad/sweep.py` now REFUSES when an exit timestamp is unpopulated rather
+    #   than falling back to the index.
+    #   ✅ **PORTED to `mpc_strategy.pine` the same day** as `execMinAtrPct` + `f_marketHasRange`,
+    #   so the two sides are no longer asymmetric. ⚠ The Pine input is APPENDED after the last
+    #   `input.float` rather than sitting beside the stop floor it belongs with — TradingView keys
+    #   a saved chart's values off declaration order within each type, so inserting it in the
+    #   readable place silently resets every later float on Aaron's live charts.
+    #   ⚠ **Pine gates the 15m setup path only, because that is the only entry path Pine HAS.**
+    #   The re-entry is Python-only, so it is gated here and has nothing to be compared against.
+    #   ⚠ **OFF (0.0) on both sides, so `compare_strategy.py` sees exactly the decisions it always
+    #   did and a shipped run is byte-identical to one from before this existed.** That is the
+    #   only reason the gate can land before the parity harness has re-run.
+    #   ⚠ **OFF is Aaron's call (2026-08-26)**, taken after the measurement above, not instead of
+    #   it: build the switch, ship it down, decide from a run. Turning it on is a real behaviour
+    #   change and the live bot does not have it until somebody PROMOTES.
+    exec_min_atr_pct: float = 0.0      # "Refuse setups below volatility (% of price)"
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart

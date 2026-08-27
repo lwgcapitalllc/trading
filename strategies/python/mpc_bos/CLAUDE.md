@@ -321,3 +321,19 @@ The fork's own value is asserted first because that is what protects this bot; t
 pinned after it so a flip back to True surfaces in BOS's own test rather than as a
 refused sweep.
 
+
+## 🔴 `exec_min_atr_pct` is PINNED off, and the pin here is LOAD-BEARING (2026-08-26)
+
+The parent gained a dead-market entry floor
+(`strategies/python/mpc_sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*). This fork pins it to 0.0,
+and unlike the sibling forks **the pin is what stops it acquiring the filter**, not a precaution.
+
+🔴 **This fork defines its own `_place_entries`, which reads as "it cannot reach the parent's entry
+gates" — and it is wrong.** The gate rides inside the shared `_stop_clears_floor`, and this fork
+calls that check from inside its own placer (`execution.py:401`). Without the pin it would have
+acquired a volatility filter with **no error, no failing test and no Pine input to catch it** —
+this package's own suite passed the whole time while inheriting it.
+
+**The rule, and it is bigger than this field: "it overrides the method" is a claim about ONE call
+site. Find the line that consumes the value.** A fork is only insulated from a parent's gate where
+it stops calling the code the gate lives in, and a shared helper is exactly where a gate gets hung.

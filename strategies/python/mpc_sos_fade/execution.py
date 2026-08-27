@@ -2151,9 +2151,42 @@ class Execution:
             return None if self._atr is None else cfg.exec_min_stop_val * self._atr
         return 0.0
 
+    def _market_has_range(self, edge: float) -> bool:
+        """`exec_min_atr_pct` — is the market moving enough for a fade to have anywhere to go?
+
+        A DIFFERENT question from the minimum-stop floor, which asks whether the leg is long
+        enough to size against. A dead market produces wide stops as happily as tight ones, so
+        that floor does not catch this and never could.
+
+        ⚠ Pine's `f_marketHasRange`, and the port is deliberately line-for-line: off returns True
+        for every bar, an unseeded ATR returns False, and the comparison is `>=`. Both sides
+        default OFF, so `compare_strategy.py` sees exactly the decisions it always did.
+        ⚠ Pine gates the 15m setup path ONLY, because that is the only entry path Pine has. The
+        re-entry below is Python-only and is gated here with nothing to compare it against.
+        ⚠ Reads `self._atr`, the FIFTEEN-minute ATR(14), on both entry paths — the setup is a 15m
+        setup whichever timeframe fills it.
+        ⚠ An unseeded ATR REFUSES rather than passes. The first 14 bars of a run cannot answer
+        "is the market quiet", and a gate that waves through what it could not measure is the
+        defect this repo keeps re-learning — never let "no" and "cannot ask" be the same value.
+        """
+        pct = getattr(self._cfg, "exec_min_atr_pct", 0.0)
+        if pct <= 0:
+            return True                        # off - the gate does not exist
+        if self._atr is None or edge <= 0:
+            return False                       # cannot ask -> refuse, never pass
+        return (self._atr / edge) * 100.0 >= pct
+
     def _stop_clears_floor(self, dist: float, edge: float) -> bool:
-        """Pine's `slDist > 0 and slDist >= f_minStopFloor(edge)`, with NA reading as false."""
+        """Pine's `slDist > 0 and slDist >= f_minStopFloor(edge)`, with NA reading as false.
+
+        ⚠ The dead-market gate rides HERE rather than at the call sites, because there are two
+        of them — the 15m setup path and the re-entry's own fill clock — and a filter that guards
+        one entry path is how a setup the strategy means to refuse gets in through the other door.
+        ⚠ The re-entry fill clock is `exec_sec_fill_tf_min`, a MEASUREMENT knob that defaults to
+        5 minutes; do not name a timeframe here, because the gate must hold whatever it is set to."""
         if dist <= 0:
+            return False
+        if not self._market_has_range(edge):
             return False
         floor = self._min_stop_floor(edge)
         return floor is not None and dist >= floor

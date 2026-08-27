@@ -34,6 +34,17 @@ from mpc_sos_fade.config import SosFadeConfig  # noqa: E402
 
 @dataclass(frozen=True)
 class RealignConfig(SosFadeConfig):
+    exec_min_atr_pct: float = 0.0   # pinned OFF, and INERT here — this fork overrides `_place_entries`
+    """The parent's dead-market floor, pinned to the inert value.
+
+    The parent turned it ON at 0.08 on 2026-08-26. It is enforced inside the parent's
+    `_place_entries`, which this fork overrides, so it never runs on this path. Pinned so a
+    parent default change cannot silently claim a filter this fork does not run.
+
+    ⚠ It has never been swept here, and this fork has NO parity gate at all, so there is nothing
+    that would catch it starting to bite. Do not read the pin as a measured choice for this setup.
+    """
+
     # ── the setup ────────────────────────────────────────────────────────────────
     realign_htf_minutes: int = 15
     """The EXTERNAL frame, aggregated from the chart frame inside the strategy.

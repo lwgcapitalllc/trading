@@ -547,3 +547,58 @@ to have both is still the one named above: sort the chart LABELS and leave the p
 **Ships OFF.** TESTED: 15 tests in `tests/test_sec_tp2_level.py`, 6 mutations run and all killed —
 the rule never firing, reading the raw fib instead of the replaced first rung, ignoring direction,
 being applied after the floor instead of before, shipping ON, and the validation accepting anything.
+
+---
+
+## The dead-market floor (2026-08-26)
+
+Rules live in `strategies/python/mpc_sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*. This is what
+happened and what it was measured on.
+
+**Where the question came from.** Aaron asked for a smoother equity curve, having read that the
+strategy showed far more open profit than it kept. Of 245 trades on run `c868358c5177`, **86 never
+reached +0.5R and cost 67.6R between them.** Cutting that population by stop width, by hour of day
+and by entry kind each looked good in aggregate and refused trades that carry the return. The one
+cut that survived a per-year check was the volatility at the fill.
+
+**The driver.** Lab runs are slow, so the sweep ran through a scratchpad driver reusing the lab's
+own `_resolve` / `_build_config` / `_cost_profile` / `BarSource` / `build_strategy` / `run_dual`.
+It was validated before anything it produced was believed: it reproduced lab run `5c35fc4081bf`
+exactly — 245 trades, 119.0R, $4,855,242.72.
+
+**Full replay, 2020-01-01 → 2026-08-23, one replay per row:**
+
+| floor | trades | total R | ending balance | max DD | ulcer | wins |
+|---|---|---|---|---|---|---|
+| off | 245 | +119.0 | $4,855,242.72 | 55.5% | 20.8% | 134 |
+| 0.08 | 240 | +127.9 | $9,769,875.84 | 47.9% | 17.2% | 136 |
+| 0.09 | 235 | +111.5 | $9,920,480.96 | — | — | 132 |
+| 0.10 | 227 | +114.4 | $4,915,629.94 | 41.5% | 18.6% | 126 |
+
+0.09's drawdown is blank because it was only ever measured under the ordering bug below and was
+never re-run. **0.09 books LESS R than 0.08 and MORE money**, which is rule 6 demonstrating itself.
+
+🔴 **The first drawdown pass was wrong, and it took a deliberate look to notice.** The equity path
+was sorted by `exit_index`. The trade list mixes two bar clocks — a 15m setup carries a 15m index,
+a re-entry carries a fill-clock one — so the maximum index was 468,057 against roughly 155,000 15m
+bars, and a 2026 setup sorted ahead of a 2021 re-entry. The tell was that number, not the output:
+**the sum is order-independent, so the ending balance and the R total came out identical either
+way.** It reported 51.5% at 0.08 where the truth is 47.9%. The sweep now refuses when any exit
+timestamp is unpopulated rather than falling back to the index.
+
+**The near-miss on the breakout-structure bot.** The gate was hung inside `_stop_clears_floor`
+because two entry paths call it. `mpc_bos` overrides `_place_entries`, which read as *it cannot
+reach this* — and it calls the shared floor check from inside its own placer
+(`mpc_bos/execution.py:401`). Its own suite passed while silently acquiring a volatility filter
+nobody had decided to give it. All three forks pin it off.
+
+**What the 0.08 was not.** Aaron said *"set it to zero point zero eight, that's what I've been
+using forever."* The 0.08 he has used forever is the **minimum stop distance** — a different
+setting, already 0.08 as "% of price" on both sides for weeks, untouched here. Both are expressed
+as a percent of price, which is exactly how the two get confused. It shipped at 0.08 for part of
+the day and went back to 0.0 (off) once the switch existed on both sides.
+
+**TESTED:** 10 in `tests/test_dead_market.py`. **71 pre-existing tests went red when the default
+moved and none was a defect** — those fixtures feed two to four bars, so the ATR never seeds and
+the gate refuses by design. They were fixed by having each declare `exec_min_atr_pct=0.0`, not by
+teaching a fixture to fake an ATR.

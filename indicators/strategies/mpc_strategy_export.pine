@@ -106,6 +106,12 @@ bool  execScaleIn    = input.bool(false, "Add to the runner (scale in)", group =
 int   execScaleAdds  = input.int(3, "   ↳ How many times it may add", minval = 1, maxval = 4, group = G6, active = execScaleIn, tooltip = "The most times one trade may add. It only adds again once the trailing stop has moved up since the last add, so a stalling trade gets nothing.")
 float execScaleCapX  = input.float(0.5, "   ↳ Biggest add, as a multiple of the original size", minval = 0.1, maxval = 5.0, step = 0.1, group = G6, active = execScaleIn, tooltip = "A ceiling on each add, as a multiple of the size the trade opened with. 1.0 means an add can never be bigger than the original position.")
 string execScaleMode = input.string("Trail", "   ↳ Where it adds", options = ["Trail", "BOS retest"], group = G6, active = execScaleIn, tooltip = "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.")
+// ⚠ APPENDED after the last `input.float` on purpose (2026-08-26). TradingView keys a saved
+// chart's input values off DECLARATION ORDER within each type, so inserting this next to the
+// minimum-stop floor it belongs beside — where a reader would look for it — would silently
+// reset every later float on Aaron's live charts. It reads badly and sits correctly.
+float execMinAtrPct = input.float(0.0, "Minimum market volatility (% of price)", group = G7, minval = 0, step = 0.01, tooltip = "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 (the default) is off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.")
+
 string execScaleTpMode = input.string("Ride", "   ↳ Where the adds take profit", options = ["Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"], group = G6, active = execScaleIn, tooltip = "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade. The others rest them at the nearest level of that kind that price has not already taken, and only when it sits beyond the newest add so every lot banks in profit. MEASURED: riding beats all three and is the default. Previous week costs 25.64R, previous day 36.58R and H4 48.06R, against a run-to-run noise of 15.06R — so all three are real costs, not noise.")
 
 // [doc 3] Four corners, not nine (Aaron, 2026-08-04) — synced from mpc_assistant.p  -> docs/mpc_strategy.md
@@ -3491,6 +3497,18 @@ f_minStopFloor(float px) =>
         "Fixed $"    => execMinStopVal
         "x ATR(14)"  => execMinStopVal * minStopAtr
         => 0.0
+
+// [doc 120b] The DEAD-MARKET floor (2026-08-26) — is the market moving enough for the fade to
+// have anywhere to travel? A DIFFERENT question from the minimum-stop floor above, which asks
+// whether the leg is long enough to size against. A dead market throws up wide stops as happily
+// as tight ones, so that floor does not catch this and never could.
+// ⚠ An UNSEEDED ATR must REFUSE, not pass. The first 14 bars of a run cannot answer "is the
+// market quiet", and a gate whose silence reads as approval on the bars it knows least about is
+// the defect this repo keeps paying for — never let "no" and "cannot ask" be the same value.
+// It is written out rather than left to `na >= x` being falsy, so the intent survives an edit.
+f_marketHasRange(float px) =>
+    execMinAtrPct <= 0 ? true : na(minStopAtr) or na(px) or px <= 0 ? false : (minStopAtr / px) * 100.0 >= execMinAtrPct
+
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
 // [doc 121] The FIB-SNAP entry price (2026-08-02) — where a qualifying gap's resting  -> docs/mpc_strategy.md
@@ -3752,7 +3770,7 @@ if longArmed
     float slDist = longEdge - lSL
     lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
     lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
-    if slDist > 0 and slDist >= f_minStopFloor(longEdge)
+    if slDist > 0 and slDist >= f_minStopFloor(longEdge) and f_marketHasRange(longEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
         pendIsBLegL := false
@@ -3769,7 +3787,7 @@ if shortArmed
     float slDist = sSL - shortEdge
     sTP1 := shortDeep ? fiboP2 : fiboP1
     sTP2 := shortDeep ? fiboP1 : fiboP7
-    if slDist > 0 and slDist >= f_minStopFloor(shortEdge)
+    if slDist > 0 and slDist >= f_minStopFloor(shortEdge) and f_marketHasRange(shortEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
         pendIsBLegS := false
@@ -4245,6 +4263,7 @@ plot(execBeBandR,          "cfg_scratch_r",   _INV, editable = false)
 // [doc 167] MINIMUM STOP DISTANCE (2026-07-30) — an ENTRY filter, so it is deliberat  -> docs/mpc_strategy.md
 plot((execMinStopMode=="Off"?0:execMinStopMode=="% of price"?1:execMinStopMode=="Fixed $"?2:3), "cfg_min_stop", _INV, editable = false)
 plot(execMinStopVal,       "cfg_min_stop_val", _INV, editable = false)
+plot(execMinAtrPct,        "cfg_min_atr", _INV, editable = false)
 // [doc 168] TIME STOP (2026-08-05) — an EXIT lever, but kept out of cfg_exitmode for  -> docs/mpc_strategy.md
 plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _INV, editable = false)
 plot(execTimeStopHrs,      "cfg_time_stop_hrs", _INV, editable = false)

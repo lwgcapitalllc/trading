@@ -629,3 +629,16 @@ The fork's own value is asserted first because that is what protects this bot; t
 pinned after it so a flip back to True surfaces in B-LEG's own test rather than as a
 crash on a NotImplementedError.
 
+
+## `exec_min_atr_pct` is PINNED off (2026-08-26)
+
+The parent gained a dead-market entry floor
+(`strategies/python/mpc_sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*). This fork pins it to 0.0
+rather than inheriting, for the same reason it pins the minimum-stop guard: `mpc_b_leg_strategy.pine`
+has no such input, so an inherited value would put this bot's Python and Pine on different entry
+rules with no gate able to see it.
+
+⚠ **The pin is INERT TODAY and is kept anyway.** This fork overrides `_place_entries`, so it does
+not currently reach the shared floor check the gate hangs off — but *"it overrides the method"* is a
+claim about one call site and the sibling `mpc_bos` disproved it the same day. **A pin costs one
+line; discovering an inherited entry filter costs a run nobody can explain.**

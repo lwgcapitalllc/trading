@@ -26,8 +26,15 @@ def _cfg(**kw):
     # `exec_sl_level` is pinned for the same reason: the price fixtures put the stop at
     # fibo_p10 = 100.0 and the sizing / −1R assertions are hand-computed off that, so they must
     # not move when the shipped default does (it went 1.0 → 0.886 on 2026-07-27).
+    # The dead-market floor is pinned OFF for the same reason: these fixtures feed 2-4 bars, so
+    # ATR(14) is never seeded, and the floor REFUSES on an unseeded ATR by design ("cannot ask"
+    # is not "measured quiet" - rule 1). Every one of these tests was written against a basis
+    # where this gate did not exist; leaving it on would have them all assert that nothing
+    # trades, which is not what any of them is about. `test_dead_market.py` turns it on and owns
+    # the behaviour, including the unseeded-ATR case.
     base = dict(exec_req_fvg=False, exec_be_buf_tk=0.0, exec_risk_pct=10.0,
-                exec_arm_div=True, exec_arm_sweep=False, exec_sl_level="1.0")
+                exec_arm_div=True, exec_arm_sweep=False, exec_sl_level="1.0",
+                exec_min_atr_pct=0.0)
     base.update(kw)
     return SosFadeConfig(**base)
 

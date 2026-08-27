@@ -1884,3 +1884,27 @@ Every comment that pointed at the file was retargeted rather than left dangling.
 - `indicators/strategies/mpc_realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
 
 ---
+
+## `execMinAtrPct` — the dead-market floor (2026-08-26, ships OFF)
+
+`mpc_strategy.pine` and its export twin gained one input and one helper (`f_marketHasRange`),
+ANDed into both entry placements. It refuses a setup when ATR(14) is smaller than the given share
+of price. Rules, measurement and why it exists live where the code that consumes it lives:
+`strategies/python/mpc_sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*.
+
+⚠ **It is DECLARED after the last `input.float` in the file, nowhere near the minimum-stop floor it
+belongs beside.** That reads badly and it is correct: TradingView keys a saved chart's input values
+off DECLARATION ORDER within each type, so putting it where a reader would look for it silently
+resets every later float on every chart running the script. **Do not tidy it into place.**
+
+⚠ **An UNSEEDED ATR must REFUSE, not pass, and it is written out rather than left to `na >= x`
+being falsy** — Pine gets the right answer either way, and the intent has to survive the next edit.
+
+✅ **The export twin moved with its parent in the same commit**, including a `cfg_min_atr` column,
+so `compare_strategy.py` configures the Python from the export rather than from its own default.
+🔴 **That column is the guard, not the comment beside the input.** A trade-affecting input with no
+export column is invisible to the parity gate BY CONSTRUCTION — and the gate does not go quiet, it
+goes WRONG, accusing whichever code the symptom lands in. This repo has met that four times.
+
+⚠ **Pine has ONE entry path here and the Python has two** — the re-entry is Python-only — so a
+green gate on this input says the 15m setup path agrees and nothing about the other door.

@@ -329,3 +329,13 @@ exists to settle, and the parity gate does not exist.**
 | `indicators/strategies/mpc_realign_strategy.pine` | the TradingView side |
 | `docs/MPC_REALIGN_SPEC.md` | the stage-1 spec and the full measurement record |
 | `backtest/tools/internal_realign_scan.py` | the counting/geometry scan |
+
+## `exec_min_atr_pct` is PINNED off (2026-08-26)
+
+The parent gained a dead-market entry floor
+(`strategies/python/mpc_sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*). This fork pins it to 0.0
+rather than inheriting.
+
+⚠ **It matters more here than on the other forks, because this one has NO PARITY GATE AT ALL** — no
+export twin, no CSV, no comparator. Nothing on this bot would ever report having silently acquired
+an entry filter, so an inherited default is not something a run could tell you about afterwards.

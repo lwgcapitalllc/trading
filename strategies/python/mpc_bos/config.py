@@ -146,6 +146,21 @@ class BosConfig(SosFadeConfig):
     #   It is kept only because the Pine has it.
     bos_sl_atr: float = 1.3            # ATR model only. 1.2–1.5 is one plateau inside the noise.
     exec_min_stop_mode: str = "% of price"   # inherited value, and this fork's Pine agrees
+
+    exec_min_atr_pct: float = 0.0   # pinned OFF — and unlike the row above, the pin is LOAD-BEARING
+    #   The parent turned it ON at 0.08 on 2026-08-26.
+    #   🔴 **THIS FORK REACHES IT, and the reasoning that says otherwise is the trap.** The
+    #   neighbouring pins are all justified by "this fork overrides `_place_entries`, so the
+    #   parent's check never runs". That is TRUE and it is NOT ENOUGH: this fork's own
+    #   `_place_entries` calls the shared `_stop_clears_floor` (execution.py:401), and the parent
+    #   hung the dead-market test inside THAT helper rather than beside it. So inheriting 0.08
+    #   would have silently added a volatility filter to this bot — no error, no test, and this
+    #   fork's Pine has no such input, so `compare_bos.py` could never see it.
+    #   ⚠ **"It overrides the method" is a claim about ONE call site. Find the line that consumes
+    #   the value.** The B-LEG and realign forks genuinely do not reach it; this one does.
+    #   ⚠ It has never been swept here. Do not read the pin as a measured choice for this setup —
+    #   a BOS setup breaks structure by construction, so the parent's volatility band is not
+    #   evidence about it either way.
     bos_move_stop: str = "Off"         # Pine execMoveStop ∈ {"Off","$ of price","Structure (swing)"}
     bos_move_stop_val: float = 5.0     # Pine execMoveStopVal — DOLLARS in "$ of price", TICKS in "Structure"
     #   🔴 NEW FIELDS — `SosFadeConfig` has no moving stop at all, so there was nothing to

@@ -1457,6 +1457,15 @@
         "on": "Bank a fixed R and close"
       },
       "desc": "Trades the same setups a different way: closes the whole position at a set multiple of risk instead of banking a little and riding the rest. Measured MARGINAL - it removes almost every scratch and earns about half as much. A switch to experiment with, not a leg to run."
+    },
+    {
+      "name": "exec_min_atr_pct",
+      "group": "Risk & stop",
+      "label": "Minimum market volatility (% of price)",
+      "short": "Dead-market floor",
+      "desc": "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 (the default) is off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.",
+      "step": 0.01,
+      "guide": ["Nothing is refused", "Refuses real trades, not just dead ones"]
     }
   ]
 }

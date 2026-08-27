@@ -3675,3 +3675,64 @@ arms on a real loss, and a cost tier moves a borderline scratch across that line
 window, same settings: **uncosted gives 62 recovery trades and `puprime_ecn` gives 65**, because
 the primary's real-loss population goes 62 → 65 with the friction charged. Nothing changed in the
 rule between those two runs.
+
+## The DEAD-MARKET floor — `exec_min_atr_pct` (2026-08-26, ships OFF)
+
+A second entry filter beside the minimum stop distance, asking a **different question**: not *is
+the leg long enough to size against* but *is the market moving at all*. A dead market throws up
+wide stops as happily as tight ones, so the stop floor does not catch this and never could. Full
+measurement, the driver it was taken with and the two near-misses: `docs/SOS_FADE_BUILD_NOTES.md`
+→ *The dead-market floor*.
+
+🔴 **READ ITS DRAWDOWN, NEVER ITS R, AND THE REASON GENERALISES TO EVERY ENTRY FILTER HERE.** Across
+off / 0.08 / 0.10 the drawdown falls in order (55.5% → 47.9% → 41.5%) and the R does not (119.0 →
+127.9 → 114.4), swinging ±8R on a 0.01 nudge. With one position slot, refusing a setup changes
+which LATER trade gets the slot, so total R and the ending balance are a reshuffle; **removing
+losing stretches is what survives the reshuffle.** The smoothness measure bottoms at 0.08.
+
+🔴 **ORDER AN EQUITY PATH BY EXIT TIMESTAMP, NEVER BY BAR INDEX — this trade list mixes two
+clocks.** A 15m setup carries a 15m index and a re-entry a fill-clock one, so an index sort puts a
+2026 setup before a 2021 re-entry. **A SUM is order-independent, so the ending balance and the R
+total come out byte-identical either way and give no signal at all**; only the path-dependent
+numbers are wrong, and they are the only ones anybody reads. Refuse when the timestamp was never
+populated rather than falling back to the index.
+
+🔴 **"IT OVERRIDES THE METHOD" IS A CLAIM ABOUT ONE CALL SITE — FIND THE LINE THAT CONSUMES THE
+VALUE.** The gate rides inside `_stop_clears_floor` because TWO entry paths call it (the 15m setup
+and the re-entry's own fill clock), and a filter guarding one path is how a refused setup gets in
+through the other door. `mpc_bos` defines its own `_place_entries` and still calls that shared
+check from inside it (`mpc_bos/execution.py:401`), so it would have acquired a volatility filter
+with **no error, no failing test and no Pine input to catch it**. All three forks now PIN it off
+with the reason attached.
+
+⚠ **An unseeded ATR REFUSES rather than passes** — the first 14 bars cannot answer *is the market
+quiet*, and a gate whose silence reads as approval on the bars it knows least about is rule 1.
+
+✅ **PORTED TO THE PINE THE SAME DAY** (`execMinAtrPct` + `f_marketHasRange`), with a `cfg_min_atr`
+column in the export twin and the decode in `compare_strategy.py` — so this is **not** another
+Python-only field the gate is structurally blind to. ⚠ **The Pine gates the 15m setup path only,
+because that is the only entry path Pine has**; the re-entry is Python-only and has nothing to be
+compared against. ⚠ **The Pine input is APPENDED after the last `input.float`** rather than sitting
+beside the stop floor it belongs with, because declaration order is what TradingView keys a saved
+chart's values off.
+
+⚠ **SHIPS OFF (0.0) ON BOTH SIDES** — Aaron's call, 2026-08-26: build the switch, ship it down,
+decide from a run. That is also what keeps the gate meaningful, since a shipped run stays
+byte-identical to one from before this existed. ⚠ **Turning it on is a real behaviour change, the
+live bot does not have it until somebody PROMOTES, and it makes the A+/B-LEG overlap audit stale —
+re-run `backtest/tools/overlap_audit.py`.**
+
+⚠ **`compare_strategy.py` has NOT run for this change** — no decision-stream export exists on this
+machine, the "9 of 14 gates could not run" condition the root CLAUDE.md records, so **rule 22 is not
+satisfied.** What stands in until an export lands is
+`test_the_PINE_side_ships_the_same_default_and_still_gates_both_entries`, which reads the Pine source
+and pins the default and both call sites. **It is deliberately weak and its docstring says so**: it
+proves the two sides ship the same OFF position, and nothing about whether they agree once
+somebody turns it on.
+
+**TESTED:** 10 in `tests/test_dead_market.py`, watched RED against HEAD and re-proved BY MUTATION,
+because "the field is new" cannot tell a working gate from a present one. ⚠ **Turning it on broke
+71 pre-existing tests and not one was a defect** — those fixtures feed two to four bars, so the ATR
+never seeds and the gate refuses by design. **They were fixed by having each DECLARE its basis, not
+by teaching a fixture to fake an ATR** — a fixture more capable than production describes a system
+you do not have.

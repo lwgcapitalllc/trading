@@ -86,6 +86,17 @@ class BLegConfig(SosFadeConfig):
     #   Porting it means adding the input to that Pine, the floor check to `_place_entries`, and a
     #   `cfg_min_stop` column to the B-LEG export — in one commit, then re-run `compare_bleg.py`.
 
+    exec_min_atr_pct: float = 0.0     # "Refuse setups below volatility" — pinned OFF, and INERT here
+    #   The parent turned this ON at 0.08 on 2026-08-26. It does NOT apply on this path, for exactly
+    #   the reason the stop floor above does not: it is enforced inside the parent's `_place_entries`,
+    #   which `BLegExecution` overrides, and `mpc_b_leg_strategy.pine` has no such input to be
+    #   parity-checked against. Pinned to the inert value so a parent default change cannot silently
+    #   claim a filter this fork does not run — which is the whole reason the pin above exists.
+    #   ⚠ Inheriting 0.08 would be INERT TODAY and a live filter the moment anybody moves the entry
+    #   placement back onto the parent's. Do not read the pin as "measured for B-LEG": it has never
+    #   been swept here, and a B leg waits for a LATE retrace by construction, so the parent's
+    #   volatility band is not evidence about this setup.
+
     #   `exec_runner_trail` was PINNED to "Structure (swing)" here from 2026-07-28 until later the
     #   same day, because the parent had moved to "Structure + % ratchet" while this fork's Pine
     #   still shipped the two-option dropdown — inheriting would have moved every B-LEG runner exit

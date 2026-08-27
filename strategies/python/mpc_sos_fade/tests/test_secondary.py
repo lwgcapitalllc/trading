@@ -152,6 +152,11 @@ def _shift_cfg(**kw):
     """
     kw.setdefault("exec_sec_trigger", "Structure shift")
     kw.setdefault("exec_sec_stop", "Shift leg")
+    # The dead-market floor is pinned OFF for the same reason the arm source is: these fixtures
+    # feed a handful of bars, ATR(14) never seeds, and the floor REFUSES on an unseeded ATR by
+    # design. Left on, every test here would assert that nothing trades instead of exercising the
+    # re-entry branch it names. `test_dead_market.py` owns that behaviour.
+    kw.setdefault("exec_min_atr_pct", 0.0)
     return SosFadeConfig(exec_secondary=True, **kw)
 
 
@@ -224,7 +229,7 @@ def _bar1m(i, o, h, l, c):
 
 
 def test_execution_fills_and_closes_a_secondary_trade():
-    execu = Execution(SosFadeConfig(exec_secondary=True), initial_capital=100_000.0)
+    execu = Execution(SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True), initial_capital=100_000.0)
     arm = SecArm(l_armed=True, l_edge=102.618, l_sl=102.0, l_tp1=105.0, l_tp2=106.18, l_leg=1000)
 
     # bar A: place the resting limit (one-bar delay — no fill this bar)
@@ -280,7 +285,7 @@ def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
 
     Execution.step_secondary = capture
     try:
-        MpcSosFadeStrategy(config=SosFadeConfig(exec_secondary=True, symbol="XAUUSD"),
+        MpcSosFadeStrategy(config=SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, symbol="XAUUSD"),
                            initial_capital=10_000.0).run_dual(frame(15, 40), frame(1, 600))
     finally:
         Execution.step_secondary = orig
@@ -404,7 +409,7 @@ _TIGHT_SHORT = SecArm(s_armed=True, s_edge=102.0, s_sl=102.618, s_tp1=99.0, s_tp
 
 
 def _pending(**cfg_kw):
-    execu = Execution(SosFadeConfig(exec_secondary=True, **cfg_kw), initial_capital=100_000.0)
+    execu = Execution(SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, **cfg_kw), initial_capital=100_000.0)
     return execu
 
 
@@ -628,7 +633,7 @@ def test_a_stopped_reentry_still_kills_the_leg_however_deep_the_cap_is():
 
 def test_a_depth_below_one_refuses_rather_than_reading_as_unlimited():
     with pytest.raises(ValueError, match="exec_sec_max_per_setup"):
-        SosFadeConfig(exec_secondary=True, exec_sec_max_per_setup=0)
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_max_per_setup=0)
 
 
 def test_the_1m_direction_filter_is_OFF_by_default_and_blocks_when_ON():
@@ -644,7 +649,7 @@ def test_the_1m_direction_filter_is_OFF_by_default_and_blocks_when_ON():
 
 def _open_secondary(**cfg_kw):
     """A filled LONG secondary that has just touched TP1 (stage 1), so the stop question is live."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_be_buf_tk=30, **cfg_kw)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_be_buf_tk=30, **cfg_kw)
     ex = Execution(cfg)
     ex._entry_kind = "secondary"
     ex._pos_dir = 1
@@ -766,7 +771,7 @@ _GAP_KW = dict(zone_close=102.5, ny_hour=10, flat=True, be_sos_l=500, be_sos_s=N
 def test_the_gap_trigger_arms_with_no_1m_shift_at_all():
     """The whole point: the 2025-10-29 long never got a usable Structure shift, so the trigger must not
     require one. Entry is the PRIMARY's own point-of-interest price, passed in — not recomputed."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="swing low")
     out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
                                    poi_edge_l=102.8, **_GAP_KW)
@@ -779,7 +784,7 @@ def test_the_gap_trigger_arms_with_no_1m_shift_at_all():
 def test_the_gap_trigger_refuses_when_the_setup_has_no_gap_to_enter_on():
     """No point-of-interest price means no gap qualified — which must be a REFUSAL, never a
     fallback onto some other level. `None` here is 'nothing to enter on', not 'enter anywhere'."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="swing low")
     out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
                                    poi_edge_l=None, **_GAP_KW)
@@ -789,7 +794,7 @@ def test_the_gap_trigger_refuses_when_the_setup_has_no_gap_to_enter_on():
 def test_the_gap_trigger_refuses_when_the_1m_swing_has_not_confirmed_yet():
     """No stop anchor is the same class of answer as no entry — refuse. Sizing is risk divided by
     stop distance, so an unnoticed fallback here is the 54-lot defect wearing a different hat."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="swing low")
     out = SecondaryArm(cfg).update(_m1_quiet(conf_low=None), _SIG_LONG, _SEQ_LONG,
                                    poi_edge_l=102.8, **_GAP_KW)
@@ -799,7 +804,7 @@ def test_the_gap_trigger_refuses_when_the_1m_swing_has_not_confirmed_yet():
 def test_each_stop_anchor_prices_the_same_entry_differently():
     """Stop placement flipped the sign on the first case measured, so each anchor is pinned."""
     for mode, expected in (("swing low", 101.5), ("0.886", 101.14), ("1.0", 100.0)):
-        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+        cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                             exec_sec_stop=mode)
         out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
                                        poi_edge_l=102.8, **_GAP_KW)
@@ -810,7 +815,7 @@ def test_each_stop_anchor_prices_the_same_entry_differently():
 def test_an_entry_the_wrong_side_of_its_stop_refuses_rather_than_sizing_off_it():
     """A long whose gap edge sits BELOW its stop is not a tight trade, it is a negative one, and
     `qty = risk / distance` would happily divide by it."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="swing low")
     out = SecondaryArm(cfg).update(_m1_quiet(conf_low=103.5), _SIG_LONG, _SEQ_LONG,
                                    poi_edge_l=102.8, **_GAP_KW)
@@ -839,15 +844,15 @@ def test_the_gap_trigger_with_a_1m_leg_stop_REFUSES_at_construction():
     """That pair has no stop at all — the gap trigger latches no shift leg. A silent no-trade would
     read on the page as 'the gap trigger found nothing', which is a different finding entirely."""
     with pytest.raises(ValueError, match="Shift leg"):
-        SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                       exec_sec_stop="Shift leg")
 
 
 def test_an_unknown_trigger_or_stop_REFUSES_rather_than_running_the_shipped_rule():
     with pytest.raises(ValueError, match="exec_sec_trigger"):
-        SosFadeConfig(exec_secondary=True, exec_sec_trigger="fvg")
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="fvg")
     with pytest.raises(ValueError, match="exec_sec_stop"):
-        SosFadeConfig(exec_secondary=True, exec_sec_stop="swing")
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_stop="swing")
 
 
 # ── the re-entry's own first target, in R (exec_sec_tp_r) ────────────────────────────
@@ -856,7 +861,7 @@ def test_an_unknown_trigger_or_stop_REFUSES_rather_than_running_the_shipped_rule
 def _fill_secondary(entry, sl, tp1, tp2, direction=1, **cfg_kw):
     """Fill a secondary at `entry` through the real entry path, and hand back its ladder."""
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
-    cfg = SosFadeConfig(exec_secondary=True, **cfg_kw)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, **cfg_kw)
     ex = Execution(cfg)
     pend = _Pending(direction, entry, 1.0, sl, tp1, tp2, 1000)
     bar = SimpleNamespace(index=1, time_ms=0, open=entry, high=entry, low=entry, close=entry,
@@ -901,7 +906,7 @@ def test_the_R_target_never_touches_a_PRIMARY():
     """A primary keeps the 15m ladder whatever this says — it is a re-entry lever only, and the
     shipped 164-trade book must be reproducible with it set."""
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_tp_r=1.0)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_tp_r=1.0)
     ex = Execution(cfg)
     pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, None)
     bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
@@ -912,9 +917,9 @@ def test_the_R_target_never_touches_a_PRIMARY():
 
 def test_a_zero_or_negative_R_target_REFUSES_rather_than_sitting_on_the_entry():
     with pytest.raises(ValueError, match="exec_sec_tp_r"):
-        SosFadeConfig(exec_secondary=True, exec_sec_tp_r=0.0)
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_tp_r=0.0)
     with pytest.raises(ValueError, match="exec_sec_tp_r"):
-        SosFadeConfig(exec_secondary=True, exec_sec_tp_r=-0.5)
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_tp_r=-0.5)
 
 
 # ── the re-entry's own risk size (`exec_sec_risk_pct`) ────────────────────────────────
@@ -930,7 +935,7 @@ def test_a_zero_or_negative_R_target_REFUSES_rather_than_sitting_on_the_entry():
 
 def _sec_qty(**cfg_kw):
     """Lot the real sizing path rests for the shared long arm, under `cfg_kw`."""
-    cfg = SosFadeConfig(exec_secondary=True, **cfg_kw)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, **cfg_kw)
     ex = Execution(cfg, initial_capital=100_000.0)
     arm = SecArm(l_armed=True, l_edge=102.618, l_sl=102.0, l_tp1=105.0, l_tp2=106.18, l_leg=1000)
     pend = ex._secondary_pending(arm)
@@ -973,7 +978,7 @@ def _primary_qty(monkeypatch, **cfg_kw):
     the whole point — a test that stubbed the sizing too would pass against any wiring.
     """
     from strategies.python.mpc_sos_fade import execution as _ex_mod
-    cfg = SosFadeConfig(exec_secondary=True, **cfg_kw)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, **cfg_kw)
     ex = Execution(cfg, initial_capital=100_000.0)
     monkeypatch.setattr(ex, "_armed", lambda *a, **k: (True, False))
     monkeypatch.setattr(ex, "_record_blocks", lambda *a, **k: None)
@@ -1000,7 +1005,7 @@ def test_zero_or_negative_reentry_risk_is_REFUSED_not_clamped():
     moved nothing. The honest way to stop taking re-entries is to switch them off."""
     for bad in (0.0, -1.0, -50.0):
         with pytest.raises(ValueError, match="exec_sec_risk_pct"):
-            SosFadeConfig(exec_secondary=True, exec_sec_risk_pct=bad)
+            SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_risk_pct=bad)
     # ...and it is not asked at all when re-entries are off, same as every other re-entry input.
     assert SosFadeConfig(exec_secondary=False, exec_sec_risk_pct=0.0).exec_sec_risk_pct == 0.0
 
@@ -1028,7 +1033,7 @@ def _rec_cfg(**kw):
     # nothing is testing the shipped configuration.
     kw.setdefault("exec_rec_stop", "1.0")
     kw.setdefault("exec_rec_require", "Stopped only")
-    return SosFadeConfig(exec_secondary=True, **kw)
+    return SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, **kw)
 
 
 def _m1_no_event():
@@ -1182,7 +1187,7 @@ def _both_cfg(**kw):
     kw.setdefault("exec_sec_trigger", "FVG in zone + Reclaim Entry")
     kw.setdefault("exec_sec_require", "Breakeven")
     kw.setdefault("exec_rec_require", "Stopped only")
-    return SosFadeConfig(exec_secondary=True, **kw)
+    return SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, **kw)
 
 
 def _feed_both(arm_sm, bars, be_l=None, lost_l=None, zone_close=99.0, poi=103.0):
@@ -1279,7 +1284,7 @@ def test_the_reclaim_refuses_a_stop_anchor_it_cannot_price():
     for trigger in ("Reclaim Entry", "FVG in zone + Reclaim Entry"):
         for anchor in ("Shift leg", "swing low"):
             with pytest.raises(ValueError, match="exec_rec_stop"):
-                SosFadeConfig(exec_secondary=True, exec_sec_trigger=trigger,
+                SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger=trigger,
                               exec_sec_require="Breakeven", exec_rec_require="Stopped only",
                               exec_rec_stop=anchor)
 
@@ -1311,7 +1316,7 @@ def test_the_gap_trigger_prices_off_the_gap_even_when_a_1m_SHIFT_latched_the_sid
     """
     # The SHIPPED 0.886 stop, not `swing low`: the shared 1m-SOS helper carries no confirmed swing,
     # so that anchor would refuse for a reason unrelated to what this test is about.
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="0.886")
     arm_sm = SecondaryArm(cfg)
     # A real Structure shift of structure, 101.0 → 103.0, on a bar that also carries a gap price.
@@ -1327,7 +1332,7 @@ def test_the_gap_trigger_refuses_a_1m_SHIFT_latch_when_no_gap_price_exists():
     """The other half of the same rule, and the half that actually moved the book. With no gap
     price the gap trigger has nothing to enter on and must refuse — even though a 1-minute leg is
     sitting right there, fully valid, and the previous line of code was happy to use it."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                         exec_sec_stop="0.886")
     out = SecondaryArm(cfg).update(_m1_bull_sos(103.0, 101.0), _SIG_LONG, _SEQ_LONG,
                                    poi_edge_l=None, **_GAP_KW)
@@ -1401,7 +1406,7 @@ def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_greys_out():
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
     def fill(**cfg_kw):
-        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", **cfg_kw)
+        cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry", **cfg_kw)
         ex = Execution(cfg)
         pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, src="reclaim")
         bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
@@ -1420,7 +1425,7 @@ def test_the_1m_RETRACE_is_dead_under_the_gap_trigger_too_not_just_the_reclaim()
     three of the other values — including the SHIPPED one. MUTATION: make `_edge`'s gap branch
     fall through to the retrace and this goes red."""
     def gap_arm(**kw):
-        arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+        arm_sm = SecondaryArm(SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                                             exec_sec_stop="0.886", **kw))
         return arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, zone_close=102.5, ny_hour=10,
                              flat=True, be_sos_l=500, be_sos_s=None, poi_edge_l=103.0)
@@ -1538,7 +1543,7 @@ def test_the_arm_stamps_a_STOPPED_primary_on_a_reclaim(rest):
 
 def test_the_arm_stamps_a_BREAKEVEN_primary_on_the_gap_half():
     """The other side of the same claim, through the trigger that ships."""
-    arm_sm = SecondaryArm(SosFadeConfig(exec_secondary=True, exec_sec_trigger="FVG in zone",
+    arm_sm = SecondaryArm(SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
                                         exec_sec_stop="0.886"))
     out = arm_sm.update(_m1_no_event(), _SIG_LONG, _SEQ_LONG, zone_close=102.5, ny_hour=10,
                         flat=True, be_sos_l=500, be_sos_s=None, poi_edge_l=103.0)
@@ -1589,7 +1594,7 @@ def test_the_outcome_reaches_the_CLOSED_TRADE_and_never_a_primary():
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
     def fill(kind, **pend_kw):
-        ex = Execution(SosFadeConfig(exec_secondary=True))
+        ex = Execution(SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True))
         pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, **pend_kw)
         bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
                               last_conf_high=None, last_conf_low=None)
@@ -1614,7 +1619,7 @@ def _reclaim_at(excursion_r, *, src="reclaim", kind="secondary", **cfg_kw):
     extreme to `excursion_r` times that risk. Returns (config, execution, stop)."""
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", **cfg_kw)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry", **cfg_kw)
     ex = Execution(cfg)
     pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, src=src)
     bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
@@ -1659,7 +1664,7 @@ def test_the_reclaim_early_breakeven_scales_with_the_TRADE_S_OWN_risk():
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
     def armed_at(stop_px, fav_px):
-        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+        cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                             exec_rec_be_r=0.75)
         ex = Execution(cfg)
         pend = _Pending(1, 100.0, 1.0, stop_px, 105.0, 106.0, 1000, src="reclaim")
@@ -1683,7 +1688,7 @@ def test_the_reclaim_early_breakeven_LATCHES_and_survives_a_blank_excursion():
     MUTATION: recompute from `_max_fav` in `_current_stop` instead of reading the flag → red."""
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.75)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.75)
     ex = Execution(cfg)
     pend = _Pending(1, 100.0, 1.0, 98.0, 105.0, 106.0, 1000, src="reclaim")
     bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
@@ -1700,7 +1705,7 @@ def test_the_reclaim_early_breakeven_LATCHES_and_survives_a_blank_excursion():
 def test_the_reclaim_early_breakeven_mirrors_on_the_short_side():
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.75)
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.75)
     ex = Execution(cfg)
     pend = _Pending(-1, 100.0, 1.0, 102.0, 95.0, 94.0, 1000, src="reclaim")
     bar = SimpleNamespace(index=1, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
@@ -1738,11 +1743,11 @@ def test_the_reclaim_early_breakeven_refuses_a_setting_that_could_never_fire():
     """A trigger at or beyond the target can never arm — the position has already banked there —
     so it would read as working while doing nothing. Refuse it instead."""
     with pytest.raises(ValueError, match="exec_rec_be_r"):
-        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.0)
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry", exec_rec_be_r=0.0)
     with pytest.raises(ValueError, match="nearer than"):
-        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                       exec_rec_be_r=3.0, exec_rec_tp_r=3.0)
-    SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                   exec_rec_be_r=2.75, exec_rec_tp_r=3.0)     # nearer is fine
 
 
@@ -1758,7 +1763,7 @@ def _sec_pend(mode, src, *, side=1, close=103.0):
     market order and what it was priced off. Zone high 100.00, stop 98.00."""
     from strategies.python.mpc_sos_fade.execution import Execution
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                         exec_rec_entry_mode=mode)
     ex = Execution(cfg, initial_capital=10_000.0)
     arm = SimpleNamespace(
@@ -1777,7 +1782,7 @@ def test_a_reclaim_waits_for_the_retest_by_default():
     make this pass against any default at all, which is what it did until the mutation ran."""
     assert SosFadeConfig().exec_rec_entry_mode == "Retest", "the shipped default moved"
     from strategies.python.mpc_sos_fade.execution import Execution
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry")
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry")
     ex = Execution(cfg, initial_capital=10_000.0)
     arm = SimpleNamespace(l_armed=True, l_edge=100.0, l_sl=98.0, l_tp1=106.0, l_tp2=112.0,
                           l_leg=7, l_src="reclaim", l_after="stopped",
@@ -1813,7 +1818,7 @@ def test_a_market_order_fills_at_the_NEXT_bar_S_OPEN_whatever_the_price_did():
                             l_sl=None, s_sl=None)
 
     def run(market):
-        cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry")
+        cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry")
         ex = Execution(cfg, initial_capital=10_000.0)
         ex._pend_sec = _Pending(1, 100.0, 1.0, 98.0, 106.0, 112.0, 7,
                                 src="reclaim", market=market)
@@ -1832,7 +1837,7 @@ def test_a_market_order_cannot_fill_on_its_own_placement_bar():
     MUTATION: fill from the arm inside phase B → red."""
     from strategies.python.mpc_sos_fade.execution import Execution
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                         exec_rec_entry_mode="Market")
     ex = Execution(cfg, initial_capital=10_000.0)
     arm = SimpleNamespace(l_armed=True, l_edge=103.0, l_sl=98.0, l_tp1=106.0, l_tp2=112.0,
@@ -1850,7 +1855,7 @@ def test_a_market_entry_is_sized_off_the_arming_bar_and_scored_off_the_FILL():
     MUTATION: size off the fill, or measure R off the estimate → red."""
     from strategies.python.mpc_sos_fade.execution import Execution, _Pending
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry")
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry")
     ex = Execution(cfg, initial_capital=10_000.0)
     qty = (ex.equity * cfg.exec_risk_pct / 100.0) / (103.0 - 98.0)   # off the ESTIMATE
     ex._pend_sec = _Pending(1, 103.0, qty, 98.0, 106.0, 112.0, 7, src="reclaim", market=True)
@@ -1912,7 +1917,7 @@ def test_market_entry_gives_a_WIDER_risk_than_the_retest_it_replaces():
 
 def test_market_entry_refuses_a_value_it_does_not_understand():
     with pytest.raises(ValueError, match="exec_rec_entry_mode"):
-        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                       exec_rec_entry_mode="market")     # case matters; the UI sends the label
 
 
@@ -1956,7 +1961,7 @@ def test_the_protected_stop_is_measured_off_the_TRADE_S_OWN_risk():
     MUTATION: replace `abs(self._entry - self._sl)` with a constant → red."""
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                         exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5)
     ex = Execution(cfg)
     pend = _Pending(1, 100.0, 1.0, 90.0, 130.0, 140.0, 1000, src="reclaim")   # risk 10.00
@@ -1973,7 +1978,7 @@ def test_the_protected_stop_mirrors_on_a_SHORT():
     and never up. MUTATION: drop the `* d` and this goes red where the long case cannot."""
     from strategies.python.mpc_sos_fade.execution import Decision, _Pending
 
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                         exec_rec_be_r=0.75, exec_rec_be_keep_r=0.5)
     ex = Execution(cfg)
     pend = _Pending(-1, 100.0, 1.0, 102.0, 95.0, 94.0, 1000, src="reclaim")   # risk 2.00
@@ -1997,7 +2002,7 @@ def test_the_protected_stop_refuses_a_distance_that_moves_nothing_or_loosens():
     is the shape this repo keeps re-learning. Above 1.0 it would LOOSEN the stop."""
     for bad in (1.0, 1.5, -0.1):
         with pytest.raises(ValueError, match="exec_rec_be_keep_r"):
-            SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+            SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                           exec_rec_be_r=0.75, exec_rec_be_keep_r=bad)
 
 
@@ -2005,7 +2010,7 @@ def test_the_protected_stop_distance_refuses_to_sit_there_with_nothing_arming_it
     """On its own the dial has no reader. Left in a run's params it would look like a setting that
     was tested, so refuse it rather than store it."""
     with pytest.raises(ValueError, match="needs exec_rec_be_r"):
-        SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                       exec_rec_be_keep_r=0.5)
 
 
@@ -2019,7 +2024,7 @@ def _rest_side(limit, bars, *, sos_bar=7, flat=True):
     """Age one resting LONG order across `bars` calls of the holder, returning the armed flag
     seen on each call. The live computation stays armed throughout, so anything that goes
     unarmed did so because the order was cancelled."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                         exec_sec_rest_and_leave=True, exec_sec_max_wait_bars=limit)
     arm = SecondaryArm(cfg)
     out = []
@@ -2065,7 +2070,7 @@ def test_a_NEW_break_of_structure_lets_the_cancelled_side_arm_again():
 def test_the_wait_is_counted_in_BARS_ALIVE_not_in_calls_while_a_position_is_open():
     """A bar where the book is not flat cannot age an order, because there IS no resting order
     then — the holder drops it. MUTATION: age the snapshot before the flat test → red."""
-    cfg = SosFadeConfig(exec_secondary=True, exec_sec_trigger="Reclaim Entry",
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="Reclaim Entry",
                         exec_sec_rest_and_leave=True, exec_sec_max_wait_bars=2)
     arm = SecondaryArm(cfg)
     for _ in range(50):                      # 50 bars with a position open
@@ -2076,7 +2081,7 @@ def test_the_wait_is_counted_in_BARS_ALIVE_not_in_calls_while_a_position_is_open
 
 def test_the_cancel_refuses_to_pair_with_an_order_that_is_re_decided_every_bar():
     with pytest.raises(ValueError, match="rest_and_leave"):
-        SosFadeConfig(exec_secondary=True, exec_sec_max_wait_bars=12,
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_max_wait_bars=12,
                       exec_sec_rest_and_leave=False)
     with pytest.raises(ValueError, match="exec_sec_max_wait_bars"):
-        SosFadeConfig(exec_secondary=True, exec_sec_max_wait_bars=-1)
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_max_wait_bars=-1)
