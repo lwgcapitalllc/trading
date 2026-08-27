@@ -601,6 +601,16 @@ was byte-identical either way. **Nothing in a result can show you a cost.**
 genuine two-year replays. Everything else runs in ~44s. **Any further speed is a COVERAGE decision,
 not a scheduling one** — say so out loud rather than quietly narrowing a window.
 
+✅ **RE-MEASURED 2026-08-27: `scripts/run_all_tests.sh` is 3:16 → 2:00 end to end, all green, and
+NOT ONE TEST WAS TOUCHED TO GET THERE.** The whole gain came from making the REPLAY faster — the
+regime map, the bar loop, a leg-latch prune that re-sorted 20,000 keys per bar and a pivot detector
+that copied 2,000 to read 31 (`HISTORY.md` → *A full-history backtest went from ten minutes to a
+minute*). ⚠ **The per-file split above is from 2026-08-15 and predates that work, so the 68/119
+figures no longer describe this suite** — the total is measured, the split is not. Re-measure before
+quoting either half. 🔴 **This is the 2026-08-15 lesson arriving from the other end and it is worth
+saying plainly: a slow TEST is sometimes a defect in the code under it, and the reverse also holds —
+fixing production code is how a suite gets faster without a single scheduling decision.**
+
 ⚠ **The suites are only parallel-safe because the shared state is per-test** (`tmp_path` DBs, the
 `_no_live_vps` interlock, scratch git indexes). A new test that writes a fixed path breaks other
 tests non-deterministically, which is the worst failure shape a suite has. ⚠ **`--dist load`, not

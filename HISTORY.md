@@ -15,6 +15,78 @@ the other one did.
 
 ## Latest
 
+### A full-history backtest went from ten minutes to a minute, and three of the four fixes were defects (2026-08-26/27)
+
+Aaron, on the lab: *"If we have a Python runner and we have all the price data cached, why does a
+bug test take so long? … There's no reason for me to have a backtest over sixty seconds."* Then the
+constraint that shaped everything after it: *"Do not sacrifice the accuracy of the backtest. I want
+it to be a hundred percent accurate. I just wanted faster."*
+
+**A full 6.6-year replay — 157,004 bars, 156 trades — now takes 59.9 seconds.** Four changes, and
+the striking part is that only ONE of them was an optimisation. The other three were code doing
+work that had no purpose at all.
+
+| what | measured |
+|---|---|
+| the regime map, rebuilt from scratch on every run | 100.8s → **2.27s** |
+| `iter_bars` building a pandas Series per bar to read five numbers off it | 615 µs/bar → **60 µs/bar** |
+| the leg latch re-sorting a 20,000-key map every bar to delete ONE entry | 2.5-year replay 189.76s → **81.25s** |
+| the pivot detector copying all 2,000 buffered bars to read 31 | 81.25s → **22.16s** |
+
+🔴 **THE TWO BIGGEST WINS WERE DEFECTS, NOT SLOW CODE, AND BOTH WERE INVISIBLE BECAUSE THEY
+PRODUCED THE RIGHT ANSWER.** The prune sorted 20,000 keys to drop the smallest, on every bar past
+the cap, when a dict already holds them in that order. The pivot detector allocated a 2,000-element
+list per bar and used 31 of it. Neither changed a number, so nothing in any output could show them
+— the same shape as the `git show`-per-commit fan-out this repo found in 2026-08-15, and the same
+lesson: **nothing in a result can show you a cost.**
+
+⚠ **The pivot fix returned four times its own profile share, and that is worth understanding rather
+than enjoying.** cProfile put it at 3.26s of 34.1s; removing it took the profile to 8.3s. The
+missing three-quarters is garbage collection — 2,000 reference-count operations per bar — which
+cProfile charges to whoever happens to be running. **A profile attributes allocation pressure to the
+wrong function by construction.**
+
+**How accuracy was held, because that was the whole brief.** `backtest/tools/replay_fingerprint.py`
+was built first: it hashes the BAR STREAM by replaying the iterator, plus every field of every
+closed trade. Each change was then shown to produce a byte-identical book on real bars, and the
+engine change additionally cleared rule 22 — the parity gate RAN on two real exports before and
+after, with every verdict identical, including two pre-existing reds that stayed on the exact same
+bars rather than being quietly retired.
+
+🔴 **THE HARNESS WAS WRONG THREE TIMES BEFORE IT WAS RIGHT, AND EVERY FAILURE LOOKED LIKE A RESULT.**
+It first read `strategy.trades`, a field that does not exist, captured ZERO trades, and would have
+certified anything. Then it compared freshly-built tuples against JSON-reloaded lists, so every
+trade read as CHANGED with no differing field to print. Then it spanned somebody else's edit to
+`mpc_sos_fade.meta.json` and reported that the trades had moved — **they had; the strategy had.**
+**A comparison tool that is broken says EQUAL or says DIFFERENT, and neither answer looks like an
+error.** It now digests the strategy source and settings into the basis and refuses to compare
+across a change, with `--allow-strategy-change` as the door for a deliberate perf change inside a
+strategy.
+
+🔴 **AND THE FOURTH FAILURE IS THE ONE TO REMEMBER: A PROOF THAT COMPARED A RUN AGAINST ITSELF.**
+To show the prune was safe, both algorithms were run in one process with a flag forced — except the
+patch was applied to `Execution` imported by package path, and **the lab instantiates a different
+class object loaded from the same file**. The patch hit nothing, both runs took the new path, and
+`TRADES IDENTICAL` was vacuous. Nothing in the verdict looked wrong. **The tell was the TIMING —
+the supposedly-slower run came out faster**, which no amount of machine noise explains. This repo
+had already recorded that double-load once, against a sweep arm that silently replayed stale code.
+**Patch `type(strategy.execution)`, never the imported name — and read the performance number as a
+CHECK on the correctness claim, not as the headline beside it.**
+
+⚠ **Timing was taken on a machine under load from a second session**, where identical end-to-end
+runs came back at 201s and 382s. Every A/B was therefore run ALTERNATELY in ONE process and scored
+on the best pass: **two sequential benchmarks on a loaded machine each measure a different amount of
+the load.**
+
+🔴 **TWO SESSIONS SHARED ONE GIT INDEX AND IT BIT TWICE IN ONE EVENING.** A commit staged by path
+still swept in nine files another session staged in the seconds between the check and the commit —
+including a live default flipping 0.0 → 0.08 in the Pine, under a message about a bar loop. The
+attempt to unpick it then reset HEAD back over that session's newer commit (restored within seconds,
+nothing lost). **`git status` immediately before a commit is not a guarantee when somebody else can
+stage between it and the commit.** What worked afterwards was extracting only the hunks matching a
+marker unique to this session's change and staging them with `git apply --cached`, leaving the
+other session's in-progress feature untouched in the working tree.
+
 ### The broker that spelled gold differently (2026-08-26)
 
 Reported from the screen: every backtest was failing with `MT5 agent returned no bars for XAUUSD
