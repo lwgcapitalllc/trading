@@ -1,5 +1,17 @@
 # CLAUDE.md — strategies/python/mpc_sos_fade/ (the MPC SOS Fade bot)
 
+> 🔴 **THIS FILE HOLDS THE RULES. THE EVIDENCE IS IN `docs/SOS_FADE_BUILD_NOTES.md` (2026-08-27).**
+> Every section here keeps its ⚠ / 🔴 / ✅ rules and a pointer; the prose, the tables and the run
+> numbers behind them moved there VERBATIM under the SAME heading. **Nothing was deleted** — a
+> line that used to be here is in one of the two files, and that was checked rather than assumed
+> (463 rule lines and 2,478 other lines, 0 lost).
+>
+> ⚠ **So a rule here may quote a figure whose table is now in the build notes.** Follow the
+> pointer under the heading rather than assuming the number is unsupported.
+> ⚠ **When you add to this file, add the RULE here and the working out there.** That is the repo
+> rule — parents route, children explain — applied one level down, and it is the only thing that
+> keeps this file from growing back.
+
 **Purpose:** The MPC SOS Fade strategy in Python — a line-for-line port of the A+ block +
 execution layer in `indicators/strategies/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
 the canonical engine stack's per-bar output and turns the A+ sequence into trades.
@@ -41,6 +53,8 @@ was not exercised on this run.
 
 ### `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
 
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *`mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)*.
+
 🔴 **39 `desc` fields were rewritten to plain English on 2026-08-16, and the trigger was the
 PINE side.** Every input tooltip in all 29 Pine files was cut to one or two plain sentences
 (rule: `indicators/strategies/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*), and because a `desc`
@@ -49,12 +63,6 @@ teaching the old wording. ⚠ **Strings only — every param's `name`, `group`, 
 and `options` is unchanged, verified by diffing and counting the changed lines that do not
 contain `"desc"`.** The measured detail those descs used to carry now lives in
 `indicators/strategies/docs/mpc_strategy.md` and the specs.
-
-
-
-Every `label` in the meta file is byte-identical to that input's title in
-`indicators/strategies/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
-input's tooltip **verbatim**. One parameter, one name, one explanation, two UIs.
 
 🔴 **`short` IS THE ONE KEY WITH NO PINE TWIN, AND IT IS EXEMPT FROM THE SYNC RULE BELOW
 (2026-08-20).** All 83 params gained one. It is the same setting named in as few words as
@@ -68,19 +76,6 @@ where an explanation goes (Aaron, 2026-08-20: *"they just have to be simple engl
 added later without one is not an error** — the panel falls back to `label`; it just reads long.
 ⚠ **`strategy_scanner._PARAM_META_KEYS` is a whitelist and `short` is in it** — a key missing
 there is dropped in silence and the UI behaves as though nobody wrote it.
-
-**Change a label or a desc and change the Pine in the same commit.** Otherwise the lab and
-TradingView start teaching different things about the same setting, which is exactly how the
-old `exec_deep_fib` row came to be labelled "nearest fib ABOVE" — true for a long, wrong for a
-short, and contradicting its own Pine tooltip four inches away.
-
-The ONE allowed deviation is a suffix stating something true only of THIS runner: `exec_conf_sz`
-reads "Allow Sniper Zone as entry confirmation **(not supported)**" in the lab, because the
-Sniper-Zone entry is Pine-only and turning it on changes nothing on a lab run.
-
-Verify with a diff, not by eye — the check is mechanical: pull every `input.*` title out of the
-Pine, join on the field name, and compare. As of 2026-08-02 that is **42 of 43 shared params
-identical** and **43 of 43 descs identical**.
 
 ⚠ **THE WHOLE SECONDARY GROUP IS PYTHON-ONLY AND IS EXEMPT FROM THIS RULE — CHECKED, NOT ASSUMED.**
 `mpc_strategy.pine` declares 71 inputs and not one of them is a re-entry input (`grep -c "input\."`
@@ -280,18 +275,9 @@ setup toggles) ported from the Pine, the export's config columns completed, and 
 GREEN (exit 0)** on a fresh 21,230-bar `VANTAGE_XAUUSD, 15m` export — which caught a real unpinned-
 engine-input bug (`fvg_require_close`). See `## The exit ladder` and `## The 2026-07-26 exit-lever sync`.
 
----
-
-
-**Last reviewed:** 2026-08-12 - the dated build narrative that used to sit here moved VERBATIM to `strategies/python/mpc_sos_fade/docs/SOS_FADE_BUILD_NOTES.md`. **Nothing was deleted.** It was 60,467 bytes in 2 paragraph(s), the largest 58,936 bytes on a single line, loaded in full every time anyone opened this area. Rules stay here; the evidence is one file away.
-
 ## 🔴 A BAR NUMBER IS LOCAL TO ONE RUN. THE ONE-TRADE-PER-LEG LATCH NOW KEYS ON TIME (2026-08-26)
 
-**The bot re-entered a setup it had been scratched out of three seconds earlier.** Same fib leg,
-same stop 4686.32356, same targets 4640.22772 / 4605.29, 0.53 lots. The latch that exists to stop
-exactly that stored the shift bar's **NUMBER** — and a live bot renumbers every bar each time it
-re-warms its history on restart. The restored latch held 5059; the same leg was now numbered
-4953; no match; through it went.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 A BAR NUMBER IS LOCAL TO ONE RUN. THE ONE-TRADE-PER-LEG LATCH NOW KEYS ON TIME (2026-08-26)*.
 
 🔴 **This repo had already written the lesson down, against a different consumer.** `shadow_diff`
 joins on bar TIMESTAMP and its docstring says why in as many words: *"the live index counts on
@@ -321,53 +307,17 @@ pre-existing red below warmup 50 (bar 16, `px_s_stage`) is unchanged.
 on the restore** until the record is migrated. That is the designed refusal, and
 `algos/tools/migrate_position_record.py` is the repair.
 
-**Tests: 8 in `tests/test_leg_latch_across_restart.py`, two mutations watched RED** — comparing
-numbers only reddens the restart case; dropping the two persisted fields reddens the other.
-
-
 ## The name (renamed 2026-07-16 — was `mpc_aplus` / `MpcAplusStrategy`)
 
-`MPC` = Mental Peak Consulting (Aaron's brother's company) and prefixes every strategy in the
-house. The suffix names the **narrative** the strategy trades off the shared `engines/` — here:
-a **shift of structure (SOS)**, faded. The old name described the *grade filter* it happens to
-use, not what it does, and "A+" would collide the moment a second MPC bot also traded A+ setups.
-
-**"A+" is still correct vocabulary and is deliberately kept** wherever it names the brother's own
-Pine concept — the A+/B/C/D grade dropdown, the "A+ SETUP SEQUENCE" block this ports, and the
-`aplus_window` config field (which mirrors the Pine input "Max time: sweep → SOS (minutes)" and is
-a lab param-grid key). Renaming those would break the line-for-line traceability to the Pine, and
-`aplus_window` is also an optimizer grid key. The Pine files themselves are NEVER renamed: they are
-the brother's source and the parity reference.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The name (renamed 2026-07-16 — was `mpc_aplus` / `MpcAplusStrategy`)*.
 
 ## Sizing — this bot sizes ITSELF
 
-`LAB_STRATEGY` declares `self_sizing: True`, so the command-center lab does NOT run its dynamic
-sizing engine over this bot's trades. `exec_risk_pct` (Pine default **10%** per trade) IS the risk
-knob: it is a normal strategy param, so it is editable in the Run modal and sweepable in the
-optimizer grid — that is the "manual %" for this strategy, and the SIZING MODE control is hidden
-because there is nothing for it to decide. Pair a run with the **Unconstrained (No Limits)**
-ruleset to see the raw behaviour with no halts and no drawdown floor cutting a day short.
-
-**Input range (2026-07-27):** the Pine input's `maxval` was raised **10 → 100** across all four
-strategy Pine files at Aaron's request — the old 10 was an arbitrary UI cap, not a safety rule, and
-`exec_risk_pct` in `config.py` never had one. The DEFAULT is still 10 on both sides, so no run
-changes. Two things the raised ceiling exposes and neither side checks: the `margin_long/short =
-0.2` pin means TradingView rejects (or partially fills) an entry whose notional exceeds 5x equity —
-silently, as a missing trade rather than an error — and the **no-minimum-stop-distance hazard**
-below scales linearly with the risk %, so a degenerate stop that realised ~180% of equity at
-`exec_risk_pct = 10` realises the same multiple of whatever is typed here.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Sizing — this bot sizes ITSELF*.
 
 ## `live_setups()` — what this bot is WATCHING, for the pre-trade signals channel (2026-08-13)
 
-The `backtest/setups.py` contract, implemented here. `Execution._setup_context` freezes each
-side's live watch every bar; `live_setups()` assembles it with the CURRENT resting order;
-`drain_setups()` is what the live runner calls. Messages and volume:
-`docs/LIVE_SETUP_ALERTS.md`.
-
-**Three confluences, reported with the strategy's own words**: Arm (`Sweep · Day High`), Shift of
-structure, Retrace zone (`0.5-0.886 tagged, FVG live`). Plus the tradeable ZONE (`fibo_p2` →
-`fibo_p6`) and the stop projected off the deep edge through `_sl_anchor`, so `exec_sl_level` /
-`exec_sl_custom` / `exec_sl_deep` resolve exactly as they would for a real order.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *`live_setups()` — what this bot is WATCHING, for the pre-trade signals channel (2026-08-13)*.
 
 ⚠ **REPORTING ONLY, PROVEN BY REPLAY.** HEAD vs the working tree over 155,807 M15 bars →
 byte-identical 159-trade list, SHA-256 `b52816e7…`, sum R **+142.177389**. **No figure in this
@@ -461,17 +411,7 @@ not the count you asked for.**
 
 ## The restart seam — `snapshot_position()` / `restore_position()` (2026-08-10)
 
-`Execution` can write its whole open-trade state down and put it back. **It exists for
-`algos/live/` and nothing in a backtest calls it** — the full design, and every refusal around
-it, is in `algos/live/position_state.py`.
-
-**Why it had to live here rather than in the live package.** A restart rebuilds this object EMPTY
-from a warm-up replay, so the live bridge used to HALT on any position the broker already held and
-the trade sat unmanaged until somebody looked — its broker stop stood, but nothing ratcheted it and
-the time stop never fired. Putting the state back means writing ~30 private fields, and the live
-package reaching across a subsystem boundary to set them would be a second, silent copy of what an
-open trade IS. One method here is the honest seam, the same standing as the `account` / `leg` pair
-above.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The restart seam — `snapshot_position()` / `restore_position()` (2026-08-10)*.
 
 ⚠ **`_POSITION_FIELDS` is the whole open-trade state and a missing entry is SILENT.** Leave one out
 and the restored trade manages against a constructor default — a zero `_max_fav` un-ratchets the
@@ -502,117 +442,23 @@ keeps the old code until `algos/tools/promote.py` runs.
 
 ## The portfolio-account seam (2026-07-17)
 
-`Execution.__init__` takes an injected `account` (default `SoloAccount`) and a `leg` name — the seam
-for stacking this bot with others on ONE shared account (`backtest/portfolio/`). What changed:
-`self.equity` now reads `account.balance` (the shared balance the bot sizes against); the leg-local
-`_equity_realized` is kept for R. The fill gate in `_open_position` calls `account.request_fill`,
-which **scales** the bot's own desired qty to the shared room (solo → full size); partial exits and
-costs `book_pnl` onto the shared balance; the full close frees the reservation; each bar reports the
-live stop via `update_stop`. **Parity is unchanged:** a `SoloAccount` grants full size always, so
-`compare_strategy.py` stays exit 0 — re-verified on the 20,076-bar export after the seam landed. The
-account scales the bot's qty rather than recomputing it precisely so parity holds (the bot sizes off
-the limit price at placement, not the fill). Do not route qty computation through the account.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The portfolio-account seam (2026-07-17)*.
 
 ## What it is (one paragraph)
 
-A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ sequence: **Arm**
-(liquidity sweep by default, or an RSI divergence) → **SOS** (a same-side external structure break in
-the trade direction, inside a staleness window) → **Zone+FVG** (price retraces into the 0.5–0.886 fib
-band and a live FVG overlaps it; default requires the gap fully past 0.5). Entry is a resting limit — a
-deep gap re-prices to the nearest shallower fib (Method 3), else the FVG's near edge, clamped into the
-band; stop = fib 1.0 (leg origin) + buffer; exit = the fib TP ladder (30/40/runner) with stop→BE on
-TP1, stop→TP1 on TP2, and a ratcheting trail on the runner. Full rules: `docs/MPC_SOS_FADE_SPEC.md`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *What it is (one paragraph)*.
 
 ## The five modules (the data flow)
 
-```
-BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Execution-->  Decision
-(backtest.replay)             (Pine-named inputs)          (A+ stages)               (orders + fills + R)
-```
-
-- **`config.py`** — `SosFadeConfig`: every trade-affecting Pine input toggle, same name + default
-  (**toggle parity is a hard requirement**). Instrument facts (mintick, point value, close time) are
-  Layer-B injections, also here. Cosmetic Pine inputs (debug labels, boxes, table styling) are
-  deliberately absent — they don't touch a trade decision.
-- **`signals.py`** — `SignalAdapter`: turns a replay `BarState` into the exact Pine-named globals the
-  A+ block reads. Two reconstructions are non-trivial and must stay faithful:
-  1. `recentSSL` / `recentBSL` — the most-recent swept pool per side, from ten per-source slots
-     (H4 / Day / Asia / London / NY high & low) resolved by latest sweep bar, sessions suppressed
-     once Day is filled. Rebuilt from the liquidity engine's `mitigated` / `evicted` events.
-  2. `bullDivActive` / `longVeto` — recomputed WITH the structure-break staleness (`lastExtBreakBar`)
-     the standalone RSI engine can't see. **Do NOT use the RSI engine's convenience `bull_active`** —
-     it omits the stale check and would diverge from the Pine.
-- **`sequence.py`** — `SosFadeSequence`: the Stage 1→4 state machine, retro-link (a late-confirming
-  divergence adopting an SOS that already fired), sequence death (opposite SOS / TP3 / invalidation /
-  continuation BOS), and the arm-source snapshot (which Stage-1 source was live at the SOS).
-- **`execution.py`** — `Execution`: entry edge → resting limit → TP1/TP2/runner ladder → staged stop
-  + ratchet → %-risk sizing → graded R, on a small broker emulator (`_Broker`-style) that reproduces
-  the two TradingView fill assumptions logic parity depends on:
-  1. **calc-on-close, one-bar delay** — an order placed at a bar's close is active only next bar (a
-     resting limit never fills the bar it was placed; an exit never fills the bar the entry filled).
-     **This is also a KNOWN BACKTEST LIMITATION, not a defect — see `### Wrong-side stop fills`
-     below before reporting it as one.**
-  2. **intrabar path** — when a bar covers both a TP and the stop, the open's proximity to the
-     extremes decides which fills first (open nearer high ⇒ price travels open→high→low→close ⇒
-     targets first; nearer low ⇒ stop first). **This is the single most parity-sensitive assumption
-     — it is a GUESS until `compare_strategy.py` is exit 0.**
-  Each closed `Trade` also carries **reporting-only excursion** — `mfe_usd` (favorable: the most it
-  ever showed in profit) and `mae_usd` (adverse: the deepest it sat against us), tracked across the
-  whole hold on bar high/low (`_ext_high`/`_ext_low`) and converted to USD at close. NO decision
-  reads them, so they are parity-safe (`compare_strategy.py` diffs the `px_*` decision stream, not
-  `Trade`); they flow through `backtest/output.py` to the lab's equity-chart excursion overlay.
-  `Execution` also records **blocked setups** (`BlockedSetup`, `execution.blocks`) — a port of the
-  Pine's pink `TRADE BLOCKED` tag (`mpc_strategy.pine` 4025-4086): a setup price and the engine had
-  READY (SOS in, fib agreeing, an entry edge to rest on, flat, this leg untraded) that one of the
-  strategy's OWN toggles refused. Same six reason codes in the same PRECEDENCE (`f_blkCode`: 1
-  direction off · 2 arm source off · 3 final hour · 4 divergence/extreme veto · 5 HTF breakout · 6
-  HTF bias), the same hover text as `f_blkWhy`, and the Pine's `sosBar*10 + code` dedupe generalised
-  to the reason SET — one record per setup per distinct COMBINATION, so a setup blocked for twenty
-  bars is one record but a set that changes is a genuinely different refusal.
-  **ONE DELIBERATE DEVIATION:** the Pine reports only the FIRST blocker (a chart tag has room for one
-  line); we record EVERY rule refusing the setup, because the lab filters by reason and "blocked by
-  the veto" has to stay true when the final hour was also blocking. Precedence survives as the ORDER,
-  so `codes[0]` (exposed as `.code`) is exactly what `f_blkCode` would have returned alone — a
-  per-reason count taken off the primary still reconciles with TradingView.
-  **Reporting-only and parity-safe**, exactly like the excursion fields:
-  nothing reads a record back, so no decision can move and `compare_strategy.py` diffs the same
-  `px_*` stream as before. The recording hangs off `_place_entries` (reading gates `_armed`
-  computed, never recomputing them), which is why `mpc_bleg` gets none — it overrides that method,
-  and those codes describe why an *A+* setup was refused. Surfaced on the lab price chart's Blocked
-  layer; the full path is in `command-center/backend/CLAUDE.md` → *Blocked setups*.
-  `Execution` also records **missed setups** (`MissedSetup`, `execution.misses`) — the OTHER half of
-  "why didn't this trade", and a port of the Pine's orange 2-of-3 callout (`f_w23Arm` / `f_w23`,
-  `mpc_strategy.pine` 3064-3194 + 4022-4023). See *The missed-setup watch* below.
-- **`strategy.py`** — `MpcSosFadeStrategy`: the driver. `run(df, warmup=…)` replays a canonical frame
-  end-to-end; `step(bar_state)` does one bar. Collects `.decisions` (the per-bar stream) and
-  `.execution.trades`.
-- **`secondary.py`** — the fast-feed sniper re-entry (below). `Structure1m` (fill-clock structure feed, port of Pine
-  `f_struct1m`) + `SecondaryArm` (the latch/arm, port of Pine `f_secArm`). Consumed by `run_dual`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The five modules (the data flow)*.
 
 ## The missed-setup watch (2026-07-27) — the setups that died, not the ones that were refused
 
-A **block** and a **miss** answer the same question one step apart in a setup's life, and mixing
-them up makes both useless. A block is a trade the strategy had FULLY READY and one of its own
-toggles refused. A miss never got that far: it reached 2 or 3 of the three confluences and then
-DIED. Neither places an order, so neither is in any trade list, any equity curve, or any broker
-report — the only place either is countable is here.
-
-The three confluences, and what "met" means (Pine `f_w23`):
-
-| # | Confluence | Met when |
-|---|---|---|
-| 1 | **ARM** | a liquidity sweep or an RSI divergence armed Stage 1 — and the source that fired is one you have ENABLED |
-| 2 | **SOS** | always: it is why the watch is open at all |
-| 3 | **ZONE** | price tagged the 0.5-0.886 band AND (with Require-FVG on) a gap was live in it while price was there |
-
-**Exactly one thing is ever missing**, which is why `MissedSetup` carries a single `code` where
-`BlockedSetup` carries a list. At 2 of 3 it is the arm or the zone (codes 1-3); at 3 of 3 every
-confluence was there and the entry still never happened, so the record names the ENTRY-side reason
-instead, in the Pine's precedence: veto → final hour → HTF → "the limit rested and price never
-touched it" (codes 4-7). `reasons` is still exposed as a one-item LIST purely so a miss and a block
-read identically all the way downstream.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The missed-setup watch (2026-07-27) — the setups that died, not the ones that were refused*.
 
 ### The RETRACE a miss was waiting on (`zone_time_ms` / `zone_turn_ms`, 2026-08-08)
+
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The RETRACE a miss was waiting on (`zone_time_ms` / `zone_turn_ms`, 2026-08-08)*.
 
 🔴 **`MissedSetup.time_ms` is the bar the setup DIED, and something downstream read it as "where
 the setup was".** The lab's Candlestick Reversals layer anchored its marks there and painted them in
@@ -624,9 +470,6 @@ the zone for the trade and there was a reversal candle."*
 misses): on 32 of the 35, price sits a median $22 and up to $205 from the setup's own `edge` on the
 death bar, which is a median 17 and up to 717 bars after the retrace.** That is correct for a marker
 saying *this setup is now over* and useless for anything asking *where was price when it was live*.
-
-`MissedSetup` therefore carries the retrace itself: `zone_time_ms` (the first bar of the visit) and
-`zone_turn_ms` (its most adverse bar). Both `None` when price never reached the band.
 
 🔴 **IT CANNOT BE DERIVED DOWNSTREAM, which is the reason this had to change here rather than in the
 consumer.** The cheap fix — scan back from the death bar for a bar that traded through `edge` —
@@ -654,42 +497,6 @@ each turn a different one red. `_seq_short_ready` / `_seq_short_dead` were added
 those: the adverse extreme is the highest high on a short, and a long-only fixture cannot see it
 being backwards.
 
-**Three deliberate deviations from the Pine, all reporting-side:**
-
-1. **Every miss is recorded; nothing is filtered at write time.** The Pine has three view filters
-   (`debugShow23`, `debug23Filter`, `debugShow23Disarmed`) plus a `debugDays` recency window because
-   TradingView caps a chart at 500 labels. The lab has neither problem, and a miss filtered away at
-   write time can never be counted later. The chart filters BY REASON instead, which is strictly
-   more expressive than the Pine's three presets.
-2. **`near` replaces those presets.** Each record carries the Pine's own near-miss test
-   (`metN == 3 or (zone reached and zone not met)`). The chart derives its DEFAULT view from it —
-   see `command-center/backend/CLAUDE.md` → *Missed setups* — so the layer opens on the Pine's
-   default and one click widens it, which the Pine's radio buttons cannot do.
-3. **A setup that filled this bar closes as TRADED immediately.** The Pine assigns `tradedSosL`
-   further down its script than it reads it, so on the fill bar it still reads the previous value.
-   Both end with no callout; ours gets there a bar sooner, and it is the correct answer on the one
-   bar where they differ (a trade that opened and closed inside the same bar, which the Pine would
-   have booked as a miss).
-
-**Where it runs, and why not where the blocks run.** `_record_misses` is called from `step()`,
-between the fills and the placement — the same slot the Pine calls `f_w23` from. It CANNOT hang off
-`_place_entries` like the block recorder does: a setup keeps accumulating state while a position
-from the other side is open, and that path never runs then. That is also why `_bar_gates` was
-extracted from `_armed` (the final-hour / HTF / bias gates are needed on every bar, not only when
-flat) and why `mpc_bleg` needs the explicit `_records_misses = False` opt-out rather than getting
-the exclusion for free.
-
-**Two additions this needed elsewhere, both parity-neutral.** `SeqState` gained `l_arm_src` /
-`s_arm_src` (Pine `armHolderL`/`armHolderS`) — the source holding the Stage-1 slot, which is the one
-thing the live `sos_*_swp`/`sos_*_div` flags cannot tell you once the execution layer has filtered
-them through the toggles, and without it a "your arm source is off" reason could not say WHICH one.
-`build_results` gained `missed_setups`.
-
-**Measured on the shipped window** (XAUUSD M15, 2025-03-04 → 2026-07-27, 33,041 bars, defaults):
-46 trades, 80 blocks, **93 misses** — 50 "No retrace" (none near), 35 "No FVG in zone" (all near),
-4 "Never filled", 4 "Final hour". So the chart opens on 43 markers and the routine 50 are one click
-away.
-
 ⚠ **"No FVG in zone" is a DIAGNOSTIC, not a to-do list — corrected 2026-07-29 (Run 12).** This
 section used to call that bucket "the actionable number this whole layer exists to produce". It was
 then measured over 6.5 years (2020-01-01 → 2026-07-29, 155,186 M15 bars) by replaying the same bars
@@ -704,13 +511,7 @@ three other routes in `mpc_sos_fade_optimization.md` → Run 12 / 12b.
 
 ## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, committed `c962601`)
 
-The re-entry Aaron prototyped in Pine, built as the *exact* version here (Pine can only
-sample the fill-clock engine once per 15m bar — its own tooltip says "the exact version is the Python port").
-**Full rules + design: `docs/MPC_SOS_FADE_SECONDARY.md`.** One paragraph: after the **primary** 15m
-A+ trade on a leg has traded and gone flat, while the 15m div + SOS are still live and price is back
-in the 0.618-0.886 zone, a **Structure shift** in the trade direction rests a limit at a 38.2%
-retrace of that tight shift leg (stop = shift leg origin; TP1/TP2 = 15m 0.5/0.382; runner = TP3). One
-re-entry per shift leg; a re-entry is never the first trade on a leg.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, committed `c962601`)*.
 
 - **`run_dual(df15, df1m)`** merges the two streams on a close-time clock: the **primary** is stepped
   on 15m bars exactly as `run(df15)` (so parity is untouched); the **secondary** latches/arms/fills/
@@ -817,13 +618,6 @@ re-entry per shift leg; a re-entry is never the first trade on a leg.
   secondary took no trades* as though that were a finding. ✅ **Four full-history replays, run in
   parallel, with 0.382 as the CONTROL** (it reproduced 190 trades / +165.46R exactly, which is what
   says the refactor moved nothing):
-
-  | retrace | trades | total R | avg R/trade | sec | sec R | its best | other 9+ | W/L |
-  |---|---|---|---|---|---|---|---|---|
-  | **0.000** (on the SOS) | 192 | +154.38 | +0.804 | 12 | +14.48 | +16.51 | −2.03 | 3/3 |
-  | 0.236 | 190 | +159.92 | +0.842 | 10 | +20.02 | +21.91 | −1.90 | 2/3 |
-  | **0.382** (shipped) | 190 | +165.46 | +0.871 | 10 | +25.56 | +27.33 | −1.76 | 2/3 |
-  | 0.500 | 189 | +170.07 | +0.900 | 9 | +30.17 | +34.01 | −3.84 | 1/4 |
 
   🔴 **Entering on the SOS is the WORST row and the result is monotonic — deeper is better** — which
   is mechanical rather than mysterious: **the stop is the shift leg origin whatever the entry**, so at
@@ -960,15 +754,7 @@ re-entry per shift leg; a re-entry is never the first trade on a leg.
 
 ### Reclaim Entry, and the combined value that runs it beside the gap
 
-**Added 2026-08-21.** Two new values for `exec_sec_trigger`: **`Reclaim Entry`** and
-**`FVG in zone + Reclaim Entry`**, which runs it alongside the shipped gap trigger.
-
-The reclaim exists because of a geometry fact this file already records: **the `1.0` sits a median
-0.43R past the `0.886`**, so a primary stopped at the `0.886` that then turns can be re-entered AT
-the `0.886` with the stop at the `1.0` — the level that genuinely kills the leg — for roughly 0.43x
-the original risk. It waits for a fill-clock bar to trade back THROUGH the `0.886` (never the
-stop-out bar's own wick — `_l_seen`/`_s_seen` require a later bar), rests the entry at that level,
-and voids for the setup if the `1.0` prints first.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Reclaim Entry, and the combined value that runs it beside the gap*.
 
 🔴 **THE RECLAIM HALF READS ITS OWN SETTINGS — `exec_rec_require` / `exec_rec_stop` /
 `exec_rec_tp_r` / `exec_rec_tp1_pct` — UNDER BOTH VALUES, AND THE SHARED `exec_sec_*` FIELDS ARE
@@ -986,7 +772,7 @@ setup, ZERO overlap in time, and neither ever blocks a primary.**
 
 #### The numbers — `run_dual` over 187,102 M15 / 2,801,964 M1 bars, 2018-09-14 → 2026-08-18
 
-One account, one position slot, `fill_model='bar'`, no costs.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The numbers — `run_dual` over 187,102 M15 / 2,801,964 M1 bars, 2018-09-14 → 2026-08-18*.
 
 🔴 **ONE BALANCE, IN TIME ORDER — NOT A SECOND BOOK ADDED AFTERWARDS.** `run_dual` walks both feeds
 on one clock through one `Execution`, and a re-entry sizes off `self.equity` at the moment its
@@ -1002,13 +788,6 @@ R** — no primary is displaced, delayed or blocked, which is what makes the R d
 to the re-entries. **It does NOT mean their dollars are unchanged**, and an earlier draft of this
 line said "byte-identical in every row", which reads as exactly the bolt-on defect this paragraph
 exists to deny. **A sentence about a comparison has to name the BASIS it holds on.**
-
-| book | trades | re-ent | R | re-ent R | x at 10% | worst dd | risk / x at a −50% ceiling |
-|---|---|---|---|---|---|---|---|
-| no re-entry | 181 | 0 | 138.9 | — | 3,582 | −45.6% | 11.00% / 7,188 |
-| after-breakeven only (**ships today**) | 235 | 54 | 152.0 | +13.1 | 5,490 | −53.5% | 8.50% / 2,981 |
-| after-a-loss only (the reclaim) | 234 | 53 | 157.9 | +19.0 | 7,225 | −46.3% | 11.00% / 15,509 |
-| **both** | 288 | 107 | **171.0** | **+32.1** | **11,072** | −49.0% | 10.25% / **17,142** |
 
 🔴 **THE COMBINED BOOK IS EXACTLY THE TWO HALVES — matched trade for trade on entry price, R summing
 to the cent (13.09 + 19.00 = 32.09), 54 + 53 = 107, and 0 trades in one book and not the other.**
@@ -1031,15 +810,9 @@ is the sharpest argument for the reclaim existing.
 and both together **+13.0R then +19.1R** — positive in both halves where each alone leans on one.
 ✅ Neither is carried by a single trade on the reclaim side (its best is +3.0R, the target caps it).
 
-**It all ships OFF.** `exec_sec_trigger` still defaults to the gap alone, and the shipped path is
-byte-identical: the control book reproduces 235 trades / 54 re-entries / 152.0R / +13.1R exactly.
-
 #### 🔴 Two control replays, two rules — the story is in the build notes, the rules are here
 
-**Neither failure was found by a test.** The suite was green, the parity gate was green, and the
-only thing that caught either was re-running the UNCHANGED configuration on the changed code and
-finding it had moved. Full narrative and the numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The
-combined re-entry value*.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 Two control replays, two rules — the story is in the build notes, the rules are here*.
 
 **1. Which rule prices a side is the CONFIGURED TRIGGER's, never whichever block latched last.**
 Section 3's fill-clock latch runs under EVERY trigger, including the two with no shift leg to price off,
@@ -1050,13 +823,6 @@ shipped book silently gained 4 re-entries and 4.9R.** Under the combined value o
 ⚠ **Do NOT gate section 3 behind a trigger test to "tidy" this** — tried twice, and both attempts
 are the two rules on this list.
 
-**2. A fix belongs in the half that has the problem — protect at the READER with the requirement,
-never at every WRITER.** The reclaim must not arm off a latch another block wrote, but guarding it
-at the GAP LATCH **cost the gap half 7 of its 54 re-entries whenever the reclaim was switched on**,
-so the combined book stopped being the two halves. The guard belongs in `_leg_ok`, where the reclaim
-asks its own question — *has price come back through the level* (`_l_rec`) — rather than *did
-something latch this side*.
-
 ✅ **Rule 2 found a real defect rather than only restoring additivity.** It removed one reclaim
 re-entry that had armed at the deep edge **without price ever reclaiming**, worth **+1.0R**.
 ⚠ **Every reclaim figure quoted before this is the pre-fix book — 156.9R over 54, not 157.9R over
@@ -1064,17 +830,7 @@ re-entry that had armed at the deep edge **without price ever reclaiming**, wort
 
 #### The re-entry settings, split three ways in the editor (2026-08-21)
 
-Aaron, looking at a single flat list of them: *"which one of them is applicable to Reclaim Entry?
-I have nothing to do with any of these items."* He was right about nine of them. The block is now
-three groups in `mpc_sos_fade.meta.json`, and the rows that cannot matter are **greyed with the
-reason on them** (`disable_if` / `disable_note`) rather than hidden — the reader has to be able to
-see which state a dead setting is stuck in.
-
-| group | what is in it | when its rows are greyed |
-|---|---|---|
-| `Secondary re-entries` | the switch, the trigger, and everything BOTH halves read | never |
-| `↳ Reclaim Entry only` | its precondition, stop, first target, bank % | trigger is `Structure shift` or `FVG in zone` |
-| `↳ FVG / Structure shift only` | the four the reclaim replaces one-for-one, plus the retrace | trigger is `Reclaim Entry` |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The re-entry settings, split three ways in the editor (2026-08-21)*.
 
 ⚠ **No row count here, deliberately.** This section said "the 19 settings … the 8 both halves
 read" and was stale within a day — the fill clock and the resting-order rule landed in the shared
@@ -1114,10 +870,7 @@ lives on the fill-clock path behind `run_dual`.
 
 #### A re-entry records WHAT THE TRADE BEFORE IT DID, and that is a second question (2026-08-21)
 
-`SecArm.l_after` / `s_after` → `_Pending.after` → `Trade.after`: **"breakeven" | "stopped" |
-"closed" | None**, reporting-only, read by nothing that arms, prices or sizes. The price chart tags
-a re-entry `BE+` or `SL+` off it — Aaron's ask, looking at a chart with both triggers on and 107
-re-entries all wearing one `SEC`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *A re-entry records WHAT THE TRADE BEFORE IT DID, and that is a second question (2026-08-21)*.
 
 🔴 **It is NOT a rename of `*_src`, and collapsing the two is the mistake to avoid.** `src` is the
 trigger that was CONFIGURED; this is the outcome that was OBSERVED. They agree under every shipped
@@ -1137,22 +890,9 @@ the file was exiting through the other branch and the untested return was free t
 duplicated construction is only as covered as its least-visited branch**, and the fix was to
 parametrise the tests over the rule rather than to trust the default.
 
-**TESTED:** 6 new tests in `tests/test_secondary.py` (+4 in `command-center/backend`); 8 mutations
-written, 8 killed. **PARITY:** unchanged and re-run green — nothing here is read by a decision.
-
 #### Nothing in the re-entry layer says "1 minute" any more (2026-08-21)
 
-The fill clock became a setting the same day (5 minutes by default — table and reasoning at
-`exec_sec_fill_tf_min` in `config.py`). Aaron, on landing it: *"Make it transparent everywhere.
-Anything that says one minute shouldn't be so."*
-
-**Two dropdown VALUES were renamed**, because a value naming a timeframe the code no longer uses
-is worse than stale — it is a wrong answer printed on the page.
-
-| was | is |
-|---|---|
-| `1m shift` (a re-entry trigger) | **`Structure shift`** |
-| `1m leg` (a re-entry stop anchor) | **`Shift leg`** |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Nothing in the re-entry layer says "1 minute" any more (2026-08-21)*.
 
 ⚠ **A saved run or bot config carrying the old string is REFUSED**, not silently reinterpreted —
 the same behaviour as the `Deep-edge reclaim` → `Reclaim Entry` rename the day before, and for the
@@ -1184,7 +924,6 @@ time. It was caught by the NEXT insert refusing — `assert s.count(anchor) == 1
 anybody reading the file. **The assertion that stops a script writing twice is the same one that
 tells you it already did; a script that inserts without counting its anchor has no way to notice.**
 
-
 ⚠ **`exec_rec_stop` of `Shift leg` or `swing low` is REFUSED**, stricter than the gap trigger's rule,
 because the entry is a FIXED price and a fill-clock swing can land either side of it. That refusal is
 also what lets section 2c read the stop anchor BEFORE the shift leg latch — both legal anchors are pure
@@ -1207,9 +946,7 @@ detail in the build notes. **PARITY:** `compare_strategy.py` exit 0 on `4fef8` a
 
 ## The exit ladder — every TP/SL lever, and which ones are switchable
 
-The register of how this bot (and `mpc_bleg`, which reuses the whole ladder) decides where the
-stop and the targets sit. Keep it current: a new exit lever in the Pine lands here, in `config.py`,
-in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The exit ladder — every TP/SL lever, and which ones are switchable*.
 
 | Stage | What sets it | Switchable? |
 |---|---|---|
@@ -1229,34 +966,9 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 | **Time stop** | `exec_time_stop_mode` ∈ {**"Off"**, "Before TP1 only", "Always"} + `exec_time_stop_hrs` (36.0). Close a position open for that many CALENDAR hours. **"Before TP1 only" fires only at stage 0** — TP1 never touched, so the stop never staged to breakeven; touching TP1 makes a trade immune for the rest of its life. The exit leg books as `L-TIME` / `S-TIME`. Added 2026-08-05; **defaulted ON ("Before TP1 only", 36h) 2026-08-06 — the baseline moved.** | **Yes** — dropdown + hours; see `### The time stop` |
 | **Scale-in (ADD size)** | `exec_scale_in` (default **OFF**) + `exec_scale_mode` (**"Trail"**) + `exec_scale_max_adds` (**3**) + `exec_scale_cap_x` (**0.5**). Past TP2, adds to a runner the trail is already protecting, sized so the add's worst case equals the profit the stop already guarantees. **The only ADDITIVE lever here; every other one is protective.** Added 2026-08-16; defaults re-measured 2026-08-18 after the fill model was corrected. **Since 2026-08-19 the adds also carry their own TAKE PROFIT** — `exec_scale_tp_mode` (**"Ride"**, i.e. no target, which is what the measurement says; it shipped for one day on `"Prev week H/L"` and was reversed once the 4.38R gap behind that choice turned out to be 25.64R). ✅ **Five** `cfg_*` columns. ⚠ **The fifth is UNGATED until a fresh export carries `cfg_scale_tp`.** | **Yes** — toggle + mode + two numbers + where the adds bank; see `### Scale-in` |
 
-The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten
-it further, never loosen it. With Structure selected and no confirmed swing yet, the trail is
-absent and the floor alone holds the stop.
-
-**The TP rungs default to 0/0 (2026-07-27) — and 0 does NOT disable the target.** The rung SIZE and
-the target PRICE are separate things. At 0 no size leaves at TP1/TP2, but `_advance_stage` still
-watches those prices, so touching TP1 still stages the stop to breakeven and touching TP2 still
-installs the floor and hands the runner to the trail. The whole position then exits as one runner leg.
-This is the shipped behaviour because it is what Run 1 measured as best AND what Aaron actually trades.
-`test_zero_pct_rungs_bank_nothing_but_still_stage_the_stop` locks both halves of that.
-Python needs no special case (`_remaining_brackets` computes p1 = p2 = 0 and emits neither bracket);
-**the Pine does** — `strategy.exit(qty_percent = 0)` closes the WHOLE position, so both Pine files skip
-the call when the rung is 0. If you ever port a new rung, port that guard with it.
-
-**`mpc_bleg` overrides TP1, TP2 and the SL** with its own band prices (SL = band origin, TP1 =
-the broken swing extreme, TP2 = the expansion extreme). Everything from the staging down —
-floor, trail, both dropdowns — is this table, inherited unchanged.
-
-**Aaron's brother's tested best combo (the shipped default 2026-07-26):** Structure trail +
-buffer 20 ticks + TP2 floor = TP1 price.
-
 ### The breakeven buffer can be a FRACTION of the stop (`exec_be_buf_mode`, 2026-08-24, ships OFF)
 
-Three modes. `"Ticks"` is the shipped one and reads `exec_be_buf_tk` alone — **one fixed distance on
-every trade, whatever that trade is risking.** `"Fraction of stop"` takes `exec_be_buf_r` of the
-FROZEN entry risk instead. `"Fraction of stop + cost"` floors that at what the trade has actually
-cost plus `exec_be_cost_margin_r`, which is the only mode that can promise a staged exit is not a
-loss. Both non-tick modes are capped at `exec_be_cap_pct` of the entry → nearer-rung distance.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The breakeven buffer can be a FRACTION of the stop (`exec_be_buf_mode`, 2026-08-24, ships OFF)*.
 
 🔴 **The cap is the point, not a safety belt, and it is why the fixed buffer sweep read the way it
 did.** A buffer that reaches the rung which staged it closes the trade at the target instead of
@@ -1350,89 +1062,13 @@ have read forever as proof the hazard was considered. Story:
 
 ### The swing ratchet (`"Structure + % ratchet"`, DEFAULT since 2026-07-28)
 
-**The problem it fixes.** The plain structure trail PARKS the stop at the last confirmed swing.
-That swing is a LAGGING anchor: in a strong leg it ends up a long way behind, and the gap between
-it and the high IS the runner's give-back. Measured over 6.6y / 164 trades (XAUUSD 15m, SL 0.886):
-the strategy banked **27.5% of the total profit it ever showed open**, and on the 78 trades that
-ran ≥$10 of gold it captured $2,283 of the $5,300 they moved — **57% handed back**.
-
-**What it does.** Same anchor (`last_conf_swing ± exec_struct_trail_buf_tk`), but from there the
-stop climbs one `exec_trail_pct`-of-price step for every step of favourable move. It falls back to
-the bare anchor until the move is one full step past it, so it is **never LOOSER than the plain
-structure trail — only equal or tighter** (`test_swing_ratchet_is_never_looser_than_the_plain_structure_trail`).
-
-**Measured, vs the plain structure trail** (same 6.6y window, same 164 trades, same entries):
-
-| | order-free edge | net | run actually banked | max DD |
-|---|---|---|---|---|
-| Structure (swing) | 107.6R | $2.82M | **43%** | 54.7% |
-| Structure + 1% ratchet | 109.3R | $3.81M | **53%** | 54.7% |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The swing ratchet (`"Structure + % ratchet"`, DEFAULT since 2026-07-28)*.
 
 ⚠ **Both rows were measured at `exec_tp1_pct = exec_tp2_pct = 1`, NOT at the shipped 0/0** (found
 2026-07-28). The A/B is apples-to-apples so the comparison stands, but the absolute figures are not
 the shipped configuration: at the true 0/0 default the same window gives **110.65R**, and the 1%+1%
 rungs cost 1.4R. Quote 110.65R as "the current bot", not 109.3R — and run `compare_strategy.py` at
 0/0 so the parity gate tests what the Pine actually ships.
-
-**Read this honestly.** The EDGE is unchanged — +1.7R over 164 trades is noise, and 1.5% (106.3R)
-/ 2.5% (110.4R) bounce either side of it, which is the signature of randomness rather than an
-optimum. What is real is the 10-point jump in how much of each run survives to the close, and it
-costs nothing: **percentage drawdown is IDENTICAL (54.7%, same day)** — the bigger DOLLAR drawdown
-in an early write-up was a compounding-account artifact, not a risk increase. Only 11 exits change:
-8 better (+13.2R), 3 worse (−11.5R), and ONE trade (2025-10-21, +25.23R → +16.27R) is nearly the
-whole downside.
-
-**Why PERCENT and not dollars.** Gold ran 1,500 → 3,400 across the test window, so no fixed $ step
-is right at both ends ($20 is a 1.3% trail at 1,500 and 0.6% at 3,400). The dollar version tops out
-at **100.4R vs the percent version's 109.3R** for exactly that reason, and it only ever climbs
-toward the plain structure trail as the step widens — in dollars this dial cannot beat what it
-replaced. Do not "simplify" it back to a $ step.
-
-**Do NOT add a hard take-profit on top of it.** Tested (2026-07-28): a target is either too loose to
-fire (40R was byte-identical to no target — no trade in 6.6y ever reached it) or tight enough to cut
-the tail that IS the profit (15R → 86.4R, a fifth of the edge gone). The 25R row looks best on the
-table and is three lucky trades — only 3 of 164 ever reached 25R peak. There is no useful middle.
-
-**Extension fibs (NEGATIVE fibs past 0.0) — measured 2026-07-28, REJECTED in every form.** This is
-the most natural-looking idea on the list and the one Aaron trades by hand, so it gets its own record
-rather than a line in the list below. Past the 0.0 fib the runner has no target at all, so the
-proposal was to bank at the standard extensions the way a discretionary trader would.
-
-*As TAKE-PROFIT rungs, shallow* (0.0 / −0.272 / −0.414 / −0.618, all off at −0.618 — Aaron's hand
-rule): **109.3R → 69.1R**, a third of the edge gone. Every one of 14 allocations lost, and the
-ranking was perfectly monotonic in how much was banked — the limit of "bank less" is the shipped
-runner. Best of them (50% at −0.618 only) still only reached 92.4R.
-
-*As a STOP FLOOR* (bank nothing, but ratchet the stop up the extension ladder one rung behind price):
-**worse than the targets — 109.3R → 56.1R at best**, roughly half the strategy. A fib level is a
-FIXED price and does not breathe; the structure trail moves with the market and survives an ordinary
-retrace, a horizontal line does not. The 23.5R trade became 10.5R, cut on a pullback six legs before
-it actually finished. Same lesson as every other tightening experiment above.
-
-*As DEEP rungs* (−1 / −2 / −3 / −4 / −6 — take nothing until the trade is already a monster, then
-trim): far better than the shallow version and still not an improvement. Aaron's −1:10% / −4:50% /
-−6:rest ladder = **106.3R**. The only rows that beat the baseline sit at −6, and **exactly ONE trade
-in 6.6 years ever reached −6** (−6 take 100% = 112.2R, i.e. +1.55R over the true 110.65R baseline,
-from a single 2020 trade). That is a description of July 2020, not a rule.
-
-**The pattern, and why there is no ceiling to find.** Rule cost tracks how OFTEN the rule fires:
-−1 touches 8 trades and costs 7–14R, −4 touches 2 and costs 1–3R, −6 touches 1 and costs nothing.
-Every candidate converges on the baseline from below as it stops doing anything. There is no depth
-at which banking becomes profitable — there is only a depth at which it becomes harmless.
-
-**The shape of the book, which is the real reason.** Of 164 trades only **29 ever reach the 0.0 fib**,
-11 reach −0.618, 8 reach −1, 2 reach −4, 1 reaches −6. Those **11 trades past −0.618 make 106R of the
-109R total**. The two biggest ran to −4.77 and −6.74 and the trail paid −3.69 and −5.68. Any fixed
-ceiling is applied to every trade, so it necessarily caps the handful that carry the strategy. Eight
-trades DO run past 0.0 and hand the whole extension back (they exit at the 0.382 floor) — that leak
-is real, but it is worth 5.7R and the cheapest rule that plugs it costs 17R.
-
-**Four other exit ideas measured and REJECTED the same day, so they are not re-tried:** tightening
-the trail in any form (fixed step $2–$40, chandelier 2–8×ATR, giveback caps 25–50%) costs 60–90% of
-net; banking at the TP rungs (25/25, 33/33, 50/0) costs 60%; "stay loose then clamp once it is a
-monster" (>3R/5R/8R/15R → a tight trail) costs 20–45%; and exiting on an opposing RSI divergence past
-TP2 costs 77% — only 18 of 164 trades ever print one, the six biggest give-back trades print ZERO,
-and where it does fire it fires 2–4 times so you can only ever act on the earliest and worst one.
 
 **⚠ `exec_sl_level` — `"0.886"` (the default since 2026-07-27) and `"1.0"` only. Do NOT sweep or
 ship 0.618 / 0.702 / 0.786** (Run 4, 2026-07-26). The entry is a resting limit inside the
@@ -1441,35 +1077,13 @@ placed at, or past, the entry price. Nothing validates the result.
 
 ### Scale-in (`exec_scale_in`, 2026-08-16) — the first ADDITIVE lever this bot has ever had
 
-**Every exit family swept here before this one was PROTECTIVE** (Run 8 alone killed ~50 tightening
-variants, Run 9 rejected banking in every form). This one adds SIZE to a runner the trail is already
-protecting, and a grep for pyramid/scale-in across the repo returned nothing before it.
-
-**The rule, and it is a SIZING rule rather than a timing one:**
-
-```
-locked   = (stop - entry) * base_qty     profit the stop already guarantees
-per_unit = (price - stop)                what one extra unit risks to that SAME stop
-add_qty  = min(locked / per_unit, base_qty * exec_scale_cap_x)
-```
-
-Stop out right after adding and the two cancel — the base banks `locked`, the add gives back at most
-`locked`. **An add can shrink a winner; it cannot manufacture a loser.** The guarantee is arranged in
-advance by SIZE, never detected in real time.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Scale-in (`exec_scale_in`, 2026-08-16) — the first ADDITIVE lever this bot has ever had*.
 
 🔴 **THE TRIGGER IS THE TRAIL (stage 2), NOT A TARGET, and that is what makes it self-regulating.**
 At TP2 the stop is only at TP1, so `locked` is small while `price - stop` is large and the affordable
 add is a rounding error. Once the trail ratchets up near price the same arithmetic permits a LARGE
 add. A trending runner buys size; a stalling one buys nothing, with no extra "is this trade still
 good" test.
-
-**MEASURED 2026-08-16 (Run 19) — XAUUSD 15m, 2018-09-13 → 2026-08-14, PU Prime ECN costs charged:
-off 182 trades / +128.26R / 6.03R maxDD / 65 losers, and 2 adds at cap 1.0x gives +211.59R (+65%) /
-8.72R maxDD / 67 losers with the WORST TRADE UNCHANGED at −2.06R.** Return-per-drawdown 21.27 →
-24.26. **Dropping the affordability test and adding a flat 1x instead costs 8–13 extra losing
-trades — that difference is what the `locked / per_unit` line buys.** Full grid, the free-of-costs
-pair whose losers are bit-identical, and the two families that closed NEGATIVE the same day (ATR
-stop distance, regime filtering): `mpc_sos_fade_optimization.md` → Run 19.
 
 ⚠ **+83R is well outside this strategy's 15.06R run-to-run jitter, so the direction is real** — but
 it is one window on one instrument, and the gain is concentrated in the runners that already carry
@@ -1541,10 +1155,7 @@ gate BY CONSTRUCTION, so the gate would go green while comparing two different s
 
 ### Scale-in gained a MODE — and the first answer was measured on a broken fill (2026-08-18)
 
-`exec_scale_mode` ∈ {`"Trail"`, `"BOS retest"`}. **Trail** adds at MARKET on the bar the trail
-ratchets. **BOS retest** waits for the next confirmed break of structure our way and RESTS A LIMIT
-at the level that break cleared. The SIZE rule is untouched by either; only the moment and the
-price move.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Scale-in gained a MODE — and the first answer was measured on a broken fill (2026-08-18)*.
 
 🔴 **THE 2026-08-17 DEFAULTS WERE WRONG AND ARE REVERSED. Every Run 20 figure is VOID.** That sweep
 booked each add at the price its RULE TRIGGERED on, and Pine buys it somewhere else — a market
@@ -1565,16 +1176,6 @@ turned winners of +3.41R and +1.34R into losses of −2.50R and −2.15R, agains
 that GAPS through a buy limit fills BETTER. ⚠ **`Trail` is a market rule by nature and keeps a
 small version of the gap: zero breaches at 3 adds, −2.24R and −2.73R at 4.** That is why the add
 count ships at 3, and zero observed is not zero possible.
-
-🟢 **SHIPPED 2026-08-18 after a 32-cell re-run: `exec_scale_mode="Trail"`, `exec_scale_max_adds=3`,
-`exec_scale_cap_x=0.5`.** Scored on the 2020-FREE book, because 2020 is ~1/3 of the all-period
-figure and scaling roughly TRIPLES its contribution:
-
-| | ALL R | dd | ret/DD | EX20 R | ret/DD |
-|---|---|---|---|---|---|
-| no scaling | 128.26 | 6.03 | 21.27 | 92.51 | 15.34 |
-| **Trail 3 × 0.5x** | **194.15** | **7.24** | **26.81** | **124.05** | 11.99 |
-| BOS retest 4 × 2.0x | 180.44 | 9.20 | 19.61 | 80.90 | 8.79 |
 
 ⚠ **`BOS retest` LOSES MONEY outside 2020 at every budget above one add** — down to −14.15R against
 not scaling. It is kept as an option because it is implemented, gated and parity-green, **not
@@ -1610,27 +1211,13 @@ after a sweep and a structure shift, and an add has none of that behind it. Bank
 target, structural or otherwise, has never been tested; the liquidity engine already emits previous
 day/week levels and session highs and lows and the execution layer reads none of it.
 
-Full grid, the ladder-shape test and the void banner: `mpc_sos_fade_optimization.md` → Run 21.
-
 ### The adds got a TAKE PROFIT, and the measurement said not to (2026-08-19)
 
-`exec_scale_tp_mode` ∈ {`"Ride"`, `"Prev week H/L"`, `"Prev day H/L"`, `"H4 H/L"`}. Until now the
-scale-in lots had **no exit of their own**: they closed pro-rata whenever the base ladder banked a
-rung, and otherwise rode the base trade's trailing stop. Aaron's question was the right one to ask —
-an add is bought late and high, with almost none of the base entry's cushion, so a pullback ought to
-hand back what it just made.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The adds got a TAKE PROFIT, and the measurement said not to (2026-08-19)*.
 
 **It was measured before it was built, and every target lost to riding.** XAUUSD 15m 2018-09-13 →
 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5×, 182 trades. 🔴 **These are the RE-MEASURED
 numbers, taken after the resting-order fix below — the first set was wrong and is void.**
-
-| where the adds bank | total | maxDD | banks | worst | excl. top 20 | its dd | ret/dd |
-|---|---|---|---|---|---|---|---|
-| scale-in OFF (shipped) | 128.26R | 6.03 | — | −2.06 | 92.51R | 6.03 | 15.34 |
-| **Ride** (no target) | **194.15R** | 7.24 | 0 | −2.06 | 124.05R | 10.34 | 11.99 |
-| Prev week H/L | 168.51R | 7.24 | 16 | −2.06 | 114.12R | 9.73 | 11.73 |
-| Prev day H/L | 157.57R | 7.51 | 25 | −2.06 | 111.91R | 7.72 | **14.49** |
-| H4 H/L | 146.09R | 7.15 | 47 | −2.06 | 104.38R | 7.15 | **14.60** |
 
 🔴 **THE ORDERING IS THE FINDING, NOT ANY SINGLE ROW.** That column sorts by how OFTEN the target
 fires: weekly levels are far away and rarely bind, H4 levels are near and bind constantly. A
@@ -1677,24 +1264,11 @@ has already been ACTED on leaves a defensible-looking decision behind, and the d
 correction unless somebody deliberately goes back for it.** ⚠ Session H/L is deliberately not an option:
 worst measured, and it would need six more mirrored Pine variables.
 
-**How it works, and the two things that are load-bearing.** The target is the nearest level of the
-chosen family that (a) price has **not already taken** — a swept level is not somewhere to aim at,
-it is a price we are past — and (b) sits **beyond the newest add**, so every lot it closes is closed
-in profit. On the Pine side it rides the existing per-add `strategy.exit` as a `limit`, which makes
-each add a proper OCO bracket; a `na` limit is no limit, so `"Ride"` leaves those calls
-byte-identical.
-
 🔴 **THE TARGET IS RESTED AT THE BAR'S CLOSE AND FILLS ON THE NEXT BAR (`_add_tp_level`), AND THAT
 IS THE WHOLE REASON TWO OF THE FOUR MODES WORK AT ALL.** Resolved from the LIVE bar instead —
 which is how this was first built — `"Prev day H/L"` and `"H4 H/L"` banked **ZERO times in eight
 years**, returning a figure byte-identical to `Ride`. They were not short of levels: daily resolved
 **1,804** valid targets and H4 **2,438**, every one of them standing and beyond the newest add.
-
-The cause is an interaction, which is why neither the tests nor the numbers caught it. A daily or H4
-level dies on a **WICK** (`SWEEP_HIGH` / `SWEEP_LOW`), and `stack.step(bar)` runs **before** the
-strategy sees that bar — so on the exact bar price reached the level, the engine had already flagged
-it mitigated and the target evaluated to `None`. **The order vanished precisely on the bar it would
-have filled**, every single time, for eight years.
 
 ⚠ **WEEKLY HID IT COMPLETELY, AND THAT IS THE TRANSFERABLE PART.** A week level dies on a **CLOSE**
 through (`BREAK_HIGH` / `BREAK_LOW`), so it survives the spike that fills it and banked normally
@@ -1725,13 +1299,7 @@ lands with the column present and the gate passes on it.
 
 ### An add lot is now a TRADE-SHAPED record (2026-08-20)
 
-**Aaron's ask:** see a scale-in add on the Command Center price chart the way any trade is seen —
-how far it ran, what its drawdown was, where it got exited — and be able to toggle it.
-
-**It was a data problem, not a chart one.** The record was `{price, ms, qty}`, so the only true
-statement the panel could make was *a lot was bought here* — one dotted `Add` line. Every question
-worth asking had no answer anywhere in the pipeline. Each lot now carries its own excursion and its
-own exit: `{price, ms, qty, mfe_price, mae_price, exit_price, exit_ms, exit_reason, pnl_usd}`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *An add lot is now a TRADE-SHAPED record (2026-08-20)*.
 
 🔴 **The lot's excursion is measured FROM THE LOT and is not the trade's.** An add is bought later
 and further into the move, so it sits through a different part of it — on the fixture the base's
@@ -1761,16 +1329,6 @@ probe: *never let "not measured" and "measured zero" be the same value.*
 stored before this carries the three original keys, and the chart's `Scale-in detail` row simply
 does not appear for it.
 
-**TESTED:** 3 new strategy tests, each watched RED by its own mutation and each reddening only
-itself — inheriting the parent's window (reddens the excursion test at the parent's 103.5), dropping
-the `_close_add_record` call (reddens the exit test on a `KeyError`), returning `dict(lot)` from
-`_add_record` (reddens the bookkeeping test). Plus 3 backend tests on the passthrough.
-
-**MEASURED, full history, `Trail` 3 × 0.5× at rungs 50/25:** 66 trades with adds, 112 lots; **0**
-lots missing an exit, **0** whose window fails to bracket its own entry and exit, **0** whose
-stamped P&L disagrees with its own entry→exit arithmetic, and **0** trades where base + lots + costs
-fails to reconcile to `pnl_usd` to the cent.
-
 🔴 **The parity gate is GREEN and CANNOT COVER THIS, and saying so is the point.**
 `compare_strategy.py` diffs the **decision** stream; every field added here is reporting-only, so a
 green run means *my edits to `_exit_portion` and `_bank_adds` did not disturb the decisions* — which
@@ -1781,25 +1339,7 @@ it reports a mismatch at bar 16 that is engine cold-start and nothing else.
 
 ### 🔴 A TP RUNG WAS SLICING THE ADDS, AND `_finalise_trade` BINNED THE REST (fixed 2026-08-19)
 
-**Found while verifying the TP1/TP2 sweep, not by a test.** `_exit_portion` closed the scale-in
-lots **pro-rata** with the base: a rung taking 50% of the base took 50% of every add. Then
-`_finalise_trade` ends with `self._adds = []`, so the unclosed remainder vanished **with its P&L
-never booked**. The trade's R was short by whatever those lots were worth.
-
-**MEASURED, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN, `Trail` 3 × 0.5×:** every affected
-configuration dropped **exactly 112 add lots**, worth up to **42.46R — 32% of the result** at
-`exec_tp1_pct = 50, exec_tp2_pct = 25`.
-
-| tp1 / tp2 | booked (buggy) | discarded | re-run (fixed) | understated by |
-|---|---|---|---|---|
-| 0 / 0 | 194.15R | 0.00R | **194.15R** | — |
-| 0 / 25 | 163.59R | — | **180.19R** | 9% |
-| 25 / 0 | 158.02R | 14.15R | **174.62R** | 10% |
-| 25 / 25 | 127.45R | 28.31R | **160.65R** | 21% |
-| 50 / 0 | 121.89R | 28.31R | **155.09R** | 21% |
-| 33 / 33 | 106.11R | 37.37R | **149.93R** | 29% |
-| 50 / 25 | 91.32R | 42.46R | **141.12R** | 35% |
-| 50 / 50 | 61.26R | 0.00R | **61.26R** | — |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 A TP RUNG WAS SLICING THE ADDS, AND `_finalise_trade` BINNED THE REST (fixed 2026-08-19)*.
 
 ✅ **Exactly two rows came back UNCHANGED, and they are the two that should have.** `0/0` never
 slices (the runner closes 100% of the base, so the fraction was always 1.0) and `50/50` never
@@ -1816,21 +1356,11 @@ shape is re-measured, never corrected by arithmetic** — the missing P&L compou
 every later trade's size, and win%, sd and drawdown cannot be reconstructed from an aggregate at
 all.
 
-**The ranking survives the fix and Ride still wins**, but the penalty is smaller than the buggy
-table implied: `exec_tp1_pct = 50` costs 39R against Ride, not the 72R it was reading.
-
 ⚠ **DIRECTION IS NOT FIXED, and the aggregate hides it.** Only **49 of the 112** dropped lots were
 in profit — by COUNT most were underwater. The net came out positive because the winners are far
 bigger, which is what lots added into a trend look like. On a single trade the bug can flatter just
 as easily: the unit test's fixture drops a LOSING lot, so there the old code read 21,073 against a
 true 11,257. **"It understates" was true of the eight-year total and of nothing smaller.**
-
-**The fix is Pine's rule, not a repair of the pro-rata one.** `L-TP1`/`L-TP2` are
-`from_entry = "Long"`, so a rung can only ever close the BASE entry; each add carries its own
-`L-AX1..4` exit at the same stop and dies with it. So: **a TP rung leaves the adds alone; a stop, a
-force-close, or whichever fill closes the last of the base takes them in FULL.** The `final` clause
-is why the second half is there — if `exec_tp1_pct + exec_tp2_pct == 100` a *limit* is what closes
-the base, and the adds must still go with it. Nothing may outlive the trade that owns it.
 
 🔴 **IT COULD NOT FIRE AT THE SHIPPED `0/0`, WHICH IS THE WHOLE REASON IT SURVIVED.** With both
 rungs at zero the runner closes 100% of the base, so the pro-rata fraction was always 1.0 and the
@@ -1865,24 +1395,7 @@ the two runs ARE each other's expected value and only a sliced base can separate
 
 ### The time stop (`exec_time_stop_mode` / `exec_time_stop_hrs`, 2026-08-05)
 
-Aaron's ask, and it started from the right question rather than from a rule: *"what number could we
-draw a line at and say if a trade is dancing around by this hour, cut it, to minimise our
-drawdown."* The lever exists; **the evidence for the number does not yet, and that distinction is
-the whole of this section.**
-
-**What it does.** `exec_time_stop_mode = "Before TP1 only"` closes a position that has been open
-`exec_time_stop_hrs` calendar hours **and is still at stage 0** — TP1 never touched. `"Always"`
-drops the stage gate and closes on the clock alone. `"Off"` closes nothing. **"Before TP1 only" at 36h became the DEFAULT
-on 2026-08-06 (Aaron's call), so the baseline moved — 159 trades / +137.94R / maxDD 7.99R →
-159 / +142.17R / maxDD 5.62R. Pin `exec_time_stop_mode="Off"` when reproducing any run measured
-before that date.** The exit leg books as `L-TIME` / `S-TIME` so it is countable in the lab
-rather than hiding inside the ordinary force-close bucket.
-
-**Why the milestone is TP1 and not something else.** Over the 161-trade window
-(2020-01-01 → 2026-08-03, run `75ccc776d10c`) the TP1 line splits the book perfectly:
-**105 trades reached TP1 and not one of them lost; all 56 that never reached it lost.** That is
-structural, not a coincidence — touching TP1 stages the stop to breakeven, so a trade past that
-line cannot take a full loss. The clock is therefore only ever asked about trades still at risk.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The time stop (`exec_time_stop_mode` / `exec_time_stop_hrs`, 2026-08-05)*.
 
 ⚠ **Breakeven was the obvious alternative and it is INERT — measured, not assumed.** The entry is
 a RESTING LIMIT, so price is sitting at the entry the moment it fills and the next bar's wick
@@ -1890,29 +1403,11 @@ crosses back over it: **161 of 161 trades touch breakeven, median 0.25h — one 
 share of losers that have not returned to breakeven is **0%**. A breakeven-gated time stop fires on
 nothing at any usable cutoff, and the sweep confirms it (0 trades cut at every H ≥ 8).
 
-**MEASURED BY REAL REPLAY — 155,440 M15 bars (2020-01-01 → 2026-08-03), one full replay per row,
-at today's shipped defaults** (which include `exec_min_stop_mode = "% of price"` 0.08, so the
-baseline is **159 trades / +137.94R**, not the 161 / +135.94R of the pre-guard run `75ccc776d10c`):
-
-| cut at | mode | trades | total R | max DD (R) | cut by the clock |
-|---|---|---|---|---|---|
-| — | **Off (shipped)** | 159 | **+137.94** | **7.99** | 0 |
-| 24h | Before TP1 only | 159 | +140.22 | 5.54 | 10 |
-| 30h | Before TP1 only | 159 | +142.05 | **5.37** | 7 |
-| **36h** | **Before TP1 only** | 159 | **+142.18** | 5.61 | 6 |
-| 40h | Before TP1 only | 159 | +142.59 | 5.60 | 6 |
-| 48h | Before TP1 only | 159 | +140.10 | 7.34 | 4 |
-| 36h | **Always** | 159 | **+97.27** | 5.91 | 26 |
-
 ✅ **RE-RUN 2026-08-06 and this table is the corrected one.** It was measured twice over: once
 before the one-bar force-close fix, and once before `eq_exempt_fvg` reached the Python side. Both
 were real reasons to distrust it and **neither moved it** — every row shifted by ≤0.05R and the
 trade counts, the cut counts and the plateau are unchanged. Recorded because "we re-measured and
 nothing moved" is a result; a table nobody re-ran after two known-relevant fixes is not.
-
-**24h–40h is a PLATEAU, not a peak, and that is the only reason 36 is defensible.** Roughly the
-same R and the same drawdown across a 16-hour band describes the trade population rather than
-fitting it; 36 sits mid-plateau deliberately.
 
 🔴 **"Always" is the row that justifies the stage gate, and it is not close: +137.94R → +97.32R,
 a THIRD of the edge gone.** Same clock, same 36 hours — the only difference is that it also cuts
@@ -1941,14 +1436,6 @@ rests on 6 trades in 6.5 years.** That is a real improvement in the number a ris
 against, bought for R that is indistinguishable from noise; it is not a profit lever and must not
 be sold as one.
 
-**Where it lives.** `_time_stop_due()` in `execution.py`, fired from the same Phase-B `elif` chain
-as `exec_close_opp_sos` and `flat_by_close`, so the three force-close paths keep one precedence.
-The clock is `sig.time_ms - self._entry_ms`, i.e. from the FILL — a limit can rest for days, and
-charging that waiting time against the trade's life would close positions that had barely opened
-(`test_the_clock_runs_from_the_FILL_not_from_the_bar_the_limit_was_PLACED`). `_stage == 0` is the
-existing state rather than a new flag, because stage 1 IS "price touched TP1"; deriving it a second
-way would be a second claim about one event.
-
 ⚠ **Calendar hours, weekends included** — the same basis the swap is charged on, and the one a
 reader can check against a chart without knowing which hours the market was open. A Friday-to-Monday
 hold advances the clock by the whole weekend on a handful of bars, which is deliberate and pinned.
@@ -1966,13 +1453,6 @@ the pair down at the exit block shifts **nothing**. Inserting them beside their 
 would silently reset every later string and float input on every chart running the script.
 
 ✅ **PARITY VALIDATED 2026-08-06, AND GETTING THERE TOOK THREE EXPORTS AND FOUND A REAL BUG.**
-
-- **Round 1, mode Off** — worthless by construction, exactly as this section had warned.
-- **Round 2, mode ON at 36h** — `compare_bleg.py` exit 0, and it proved NOTHING: the clock fired
-  **zero times**. At 36h the lever fires ~6 times in 6.5 years, so no export a human takes will
-  reach it.
-- **Round 3, mode ON at 4h** — the clock fires constantly, and the gate went **RED on its first
-  exercised bar.**
 
 🔴 **The bug it found is a one-bar fill error, and it was in the port from the first line.**
 `_close_at(sig, sig.close, ...)` closed the position at the DECIDING bar's close. Pine's
@@ -1995,16 +1475,6 @@ that was correct to the cent.** It now selects "any exit that is not a TP rung",
 name cannot reintroduce it. **A parity tool that must be taught every new leg name will fail this
 way, and it fails by accusing the strategy.**
 
-**After both fixes:**
-
-| gate | result | clock exits in the window |
-|---|---|---|
-| `compare_bleg.py` | **exit 0** | 1 |
-| `compare_strategy.py` | clean to bar 11031 | **6** (2 long, 4 short) |
-
-Bar 11031 is the pre-existing minimum-stop divergence recorded above, unrelated to this lever and
-red before it existed. Every clock exit before it matches Pine bar-for-bar and price-for-price.
-
 ⚠ **A THIRD probe bug is worth recording, because it is this section's own lesson eating itself.**
 The script that counts clock exits read `getattr(t, "exit_name", "")` — a field `Trade` does not
 have — so it returned `0 closed BY THE CLOCK` for **every** export, including the one where the
@@ -2014,7 +1484,7 @@ broken counter is indistinguishable from a zero from an unexercised branch. Read
 directly so a rename raises; never `getattr` with a default in a check whose whole job is to
 notice absence.
 
-✅ **THE SWEEP WAS RE-RUN 2026-08-06 AND THE TABLE ABOVE IS CORRECTED** — every row shifted by
+✅ **THE SWEEP WAS RE-RUN 2026-08-06 AND THE TIME-STOP TABLE IN THE BUILD NOTES IS THE CORRECTED ONE** — every row shifted by
 ≤0.05R, the trade counts and the plateau are unchanged. It had been stale twice over (the one-bar
 force-close fix here, and `eq_exempt_fvg` reaching the Python side the same day) and neither moved
 it. Quote the table freely now.
@@ -2024,17 +1494,7 @@ untestable on a normal chart; 4 is the same code path and exercises it dozens of
 
 ### ✅ CLOSED — the A+ parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)
 
-**The symptom**, on a 21,999-bar `VANTAGE_XAUUSD, 15m` export, at every warmup 100 / 500 / 1000 /
-2000:
-
-```
-bar 11031  2026-02-18 14:30  px_edge:  py=4990.02  pine=4965.73
-```
-
-Same fib leg on both sides (`dbg_fib_ash` 5052.77 / `dbg_fib_asl` 4842.20), same stage, same
-`px_dec_bits`. Python rested at **fib 0.702 exactly**; Pine at **0.5866 of the leg**, which is not
-a rung, so Pine was resting on a GAP EDGE. It reads exactly like the two sides taking different
-branches of the entry model.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *✅ CLOSED — the A+ parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)*.
 
 🔴 **They were not. `_fib_snap` is line-for-line identical on both sides, and the gap Pine rested
 on did not exist in Python at all.** Dumping the live gap list at that bar found Python holding
@@ -2051,12 +1511,6 @@ implementations were evicting different gaps for three days.
 strategies and blamed the entry rule.** The Pine's own comment block, eight lines above the input,
 still said *"THE EXEMPTION DEFAULTS OFF HERE"* and warned that neither the port nor the export
 modelled it. The default was flipped and the warning was not.
-
-**Fixed in four places, all in one commit:** `EngineStack` builds an `EqualHighsLowsEngine` and
-feeds its levels to the FVG cap; the FVG engine's cap counts **ordinary gaps only** (it was still
-on the self-cancelling SWAP rule the Pine fixed on 2026-08-03); `mpc_sos_fade` pins
-`eq_exempt_fvg=True` and `mpc_bleg` pins it False (that fork's Pine keeps it off); and both export
-Pines plot **`cfg_eq_exempt`**, which the harnesses now configure from.
 
 ✅ **GREEN at warmups 100 / 500 / 1000 / 2000**, and non-vacuously so — that export ran the live
 `exec_min_stop_val = 0.08` and the time stop at **4 hours**, which closed **12 of its 26 trades**.
@@ -2084,20 +1538,9 @@ limit rests, and over 6.5 years it has never changed a trade.** Do not restate t
 nothing" — the exercise counts are what make the second half a measurement rather than an
 unentered branch, and this is one window on one instrument.
 
-**The standing lesson is one this repo keeps meeting from new directions, and this is its sharpest
-form: a trade-affecting input with no export column is invisible to the parity gate BY
-CONSTRUCTION — and the gate does not go quiet, it goes WRONG, accusing whichever code the symptom
-happens to land in.** `execRunnerTrail` (2026-07-26) and `cfg_min_stop` (2026-07-30) were the same
-shape and were both caught before they cost anything. This one was caught after three days and a
-misdiagnosis, because the missing column was for an input somebody else had already written a
-warning about. **A comment saying "this defaults OFF" is not a guard; the column is the guard.**
-
 ### The Custom stop level (`exec_sl_custom`, 2026-08-02)
 
-A ratio in (0, 1.0] used as the stop instead of one of the five dropdown levels; default
-**0.886**, which is bit-identical to picking the dropdown's own 0.886 — so switching the mode
-alone moves nothing. How the price is derived, the lab UI, the optimizer axis, and why 0.886 is
-the shipped default: See `docs/SOS_FADE_BUILD_NOTES.md` → *The Custom stop level*.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The Custom stop level (`exec_sl_custom`, 2026-08-02)*.
 
 🔴 **Do not go SHALLOWER than 0.886.** A stop shallower than the fill either fails the
 positive-distance test (order cancelled, no trade and no tag) or leaves a tiny distance, and the
@@ -2110,24 +1553,7 @@ would replay a whole backtest against a stop nobody chose and report it as their
 
 ### The deeper-entry test (`exec_ob_deepen`, 2026-08-09) — REFUTED, and the mechanism is geometry
 
-Aaron's theory, and it is a good one: **31% of the scratches and almost all of the losers could have
-filled at an order block DEEPER than where they actually entered** (measured first — a deeper
-same-direction block existed on 113 of 159 trades, and price reached it on 4 of 40 winners, 11 of 36
-scratches and **35 of 37 losers**). A deeper fill has a TIGHTER stop, so the same price path is worth
-more R — *"would I have less losers? and potentially slightly more return on the scratches."*
-
-**Filling almost only on losers is bad only if the loser stays a loser**, which is why this needed a
-REPLAY and not arithmetic over the finished list.
-
-**MEASURED, two full replays, 155,807 M15 bars (2020-01-01 → 2026-08-06):**
-
-| | trades | won | scratch | **lost** | hit TP1 | total R | maxDD |
-|---|---|---|---|---|---|---|---|
-| baseline | 159 | 63 | 44 | **52** | 104 (65.4%) | **+142.18R** | 5.61R |
-| deepened | 102 | 35 | 15 | **52** | 48 (47.1%) | +73.41R | 15.20R |
-
-**Both of his questions come back NO**: losers stay at exactly **52** and their R goes **−50.86 →
-−71.30**; scratches **44 → 15**, their R +1.54 → +0.72.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The deeper-entry test (`exec_ob_deepen`, 2026-08-09) — REFUTED, and the mechanism is geometry*.
 
 🔴 **The mechanism he named runs BACKWARDS, and it is geometry rather than luck.** TP1 is a FIB, and
 on a long it sits ABOVE the entry — so entering deeper puts it FURTHER away, not nearer. **TP1 hit
@@ -2140,16 +1566,6 @@ new route.** The stop is a median **79% tighter**, which puts it inside ordinary
 runs straight through and the exit stops happening at the stop price. **A risk % is only the real
 risk if the exit actually happens at the stop** (`### The minimum-stop guard`); this is that rule
 being violated by an ENTRY change rather than by a stop-level change.
-
-Per-trade accounting, matched on the setup `(side, SOS bar)`:
-
-```
-never filled at the deeper price    57   (+44.61R given up)   ← the adverse selection, priced
-entry unchanged (no deeper block)   47
-re-priced and BETTER                16   (+25.70R)
-re-priced and WORSE                 39   (−49.85R)
-setups the baseline never traded     0   (+0.00R)             ← the freed slot bought nothing
-```
 
 ⚠ **The freed slot produced ZERO replacement trades, and that is worth recording because this repo
 expects the opposite.** The queue effect is real for an ENTRY-side filter (the min-stop guard's cheap
@@ -2167,59 +1583,15 @@ deleted because it is the instrument this measurement was taken with.
 
 ### Bar-mode costs — commission and slippage, charged at last (2026-08-01)
 
-Bar mode charging ZERO costs is the parity requirement (deviation 3 above). Bar mode being
-*incapable* of charging any is not, and the two were confused: the command-center lab collected
-`commission_per_side` and `slippage_ticks` on every run, stored them, displayed them, and
-`python_runner` read neither — so every lab run of this bot was frictionless while reporting a
-cost profile it had not applied. The tell was 52 of one run's 54 losers each losing **exactly
-10.00%** of prior equity.
-
-`MpcSosFadeStrategy(..., cost_profile=<AccountProfile>)` now passes a profile straight through to
-`Execution` in bar mode. **Omit it and every path is byte-identical to what it was**, which is
-what keeps `compare_strategy.py` a valid gate — and the harness never passes one, so parity is
-untouched by construction. `mpc_bleg` inherits the kwarg.
-
-Two units, both deliberate, and both would look plausible if wrong:
-
-- **Commission is per LOT per side** — a lot being 100 oz. Charged on the entry and on every
-  ladder rung, through the existing `_charge_commission`, which means it lands inside the trade's
-  own P&L and R rather than beside them.
-- **Slippage is charged on MARKET exits only** (`_charge_slippage`, `_exit_portion(market=...)`).
-  A stop is a market order and pays; the entry limit and the TP rungs are RESTING LIMITS, which
-  fill at their price or better or not at all, so charging them would price a cost that does not
-  exist. It is also skipped entirely in **tick mode**, where the fill price already contains the
-  real slippage off the tape — charging an estimate on top would book it twice.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Bar-mode costs — commission and slippage, charged at last (2026-08-01)*.
 
 ⚠ ~~**Swap is NOT charged from the lab's fields.**~~ **Closed 2026-08-02 — see below.**
 
 ### Layered costs — spread and swap, and the one that moves trades (2026-08-02)
 
-Aaron's ask: *"you know the spread… the only thing we don't know is slippage."* Correct, and bar
-mode was pricing neither the spread nor the swap. Both are now chargeable, from a broker profile
-rather than a typed number, behind independent switches that are **all OFF by default** — the
-baseline run stays frictionless so it stays comparable to the TradingView Strategy Tester, and
-every cost is something you deliberately turned on. Lab contract: `python_runner.COST_LAYERS`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Layered costs — spread and swap, and the one that moves trades (2026-08-02)*.
 
-**Swap needed almost nothing** — `_charge_swap` has run on every bar in bar mode since A2 and was
-dead only because the lab passed `swap=None`. It matters here more than on most strategies: this
-runner is designed to hold overnight (deviation 1) and gold swap is **−74.84 points/lot/night**
-long on the Vantage demo.
-
-**The spread is measured, and the number this repo had was the wrong broker's.** `$0.33` is PU
-Prime's (688k ticks). Vantage — the broker every backtest here replays — measures **$0.22**
-(median, over 1,494,459 cached ticks spanning 2025-08 → 2026-07; p90 0.27, p99 0.31). Using 0.33
-would have overstated every backtest cost by 50%.
-
-**MEASURED over 155,431 M15 bars, 2020-01-01 → 2026-07-31, at the shipped defaults:**
-
-| run | trades | sum R | final equity | charged |
-|---|---|---|---|---|
-| free (the shipped baseline) | 161 | 135.94R | $28.26M | $0 |
-| + spread as a cost | 161 | 130.27R | $16.27M | −$266,948 |
-| + spread + swap | 161 | 123.90R | $10.09M | −$333,110 |
-| **bid/ask fills + swap** | **159** | **141.93R** | **$29.48M** | −$361,835 |
-
-🔴 **EVERY ROW ABOVE IS PRICED ON VANTAGE, AND THE BOT TRADES PU PRIME — which costs 23% more.**
+🔴 **EVERY ROW OF THE COST TABLE IN THE BUILD NOTES IS PRICED ON VANTAGE, AND THE BOT TRADES PU PRIME — which costs 23% more.**
 Measured 2026-08-06 (`docs/LIVE_TRADING_PIPELINE.md` → G5) off the live terminal's own tick store,
 1,893,438 ticks over 3 whole days. On the CURRENT shipped defaults over 155,531 bars, one real
 replay per row: free **+142.18R** · Vantage costs **+130.59R** · **PU Prime costs +127.91R**, with
@@ -2239,7 +1611,7 @@ rather than only on the lab's path. ⚠ **It refuses the SPREAD, not the tier** 
 commission and swap are known and still chargeable.
 ✅ **ECN — the tier this bot actually trades — left that list on 2026-08-14 at `$0.12`** (5 days of
 its own ticks; provenance and which tiers still refuse: `backtest/CLAUDE.md`). ⚠ **NO documented
-baseline here moves.** The tier RAISED before, so no table below ever charged an ECN spread, and
+baseline here moves.** The tier RAISED before, so no cost table in the build notes ever charged an ECN spread, and
 the `cost_tiers.py` row that quoted $0.12 as `stated` returns an identical 157 trades / +151.39R
 now that it is `measured`. ⚠ **`0.0` and "unmeasured" must never
 collapse**: 0.0 charges nothing on purpose, and the sentinel is NEGATIVE, so passing it through
@@ -2254,10 +1626,8 @@ trade is measured and
 answered in `docs/BROKER_QUESTIONS.md` — a RAW tier, not Standard, because on this strategy the
 spread costs ~20x what the commission does and it costs by killing FILLS** (8 setups of 159 never
 fill at $0.32, 3 at $0.08; commission is 0.48R at $1.00/side and 1.67R at $3.50/side over 6.5
-years). That is the same limit-order asymmetry the `bid_ask_fills` row above describes, read as a
+years). That is the same limit-order asymmetry the `bid_ask_fills` row in the build notes describes, read as a
 decision rather than as a lab curiosity.
-
-Two things to take from that table, and the second is the one worth remembering.
 
 ⚠ **A small charge is not a small effect.** 12.04R of cost turns $28.3M into $10.1M — **64% of the
 final balance for 9% of the R** — because at a fixed % risk a dollar not earned early never
@@ -2276,16 +1646,6 @@ slot, let 4 different setups through in their place — the queue effect Run 12 
 ⚠ It is also the newest and least-validated path here: it is unit-tested per order side and
 measured once. Treat a `bid_ask_fills` result as a lab finding until it has been read on a chart.
 
-Everything else is unchanged and deliberately so: **omit the profile and every path is
-byte-identical** (the free row above reproduces the documented 161 / +135.94R exactly), the
-harness never passes one, and `compare_strategy.py` is still **exit 0**.
-
-**A cost turns marginal winners into real losers, and the win rate is where it shows up
-(measured 2026-08-03).** On the 3-year run `432aff31f374` (73 trades, Aug 2023 → Aug 2026),
-charging spread + swap took the win rate from **65.8% to 60.3%** — because **four trades flipped
-side**: +$12 → −$26, +$68 → −$133, +$207 → −$1,315 and +$376 → −$2,331. All four were scratches
-that only looked like wins because the run was frictionless, and the last two are not small.
-
 ⚠ **Drawdown got WORSE while profit fell — 57.2% → 60.1%.** A cost does not merely shave the top
 off the equity curve, it deepens every losing stretch, so profit and risk move in opposite
 directions and both readings are correct. This is the companion to the compounding warning above:
@@ -2298,9 +1658,7 @@ showing the same trade count as its source is working correctly.
 
 ### 🔴 THE RE-ENTRY NOW SHIPS **OFF** (Aaron's call, 2026-08-21 — reverses 2026-08-07)
 
-**Every optional entry path is now OFF by default: the re-entry, loss recovery, scale-in and
-B-Leg. The shipped book is the PRIMARY book.** MEASURED over 2018-09-14 → 2026-08-14: **181 trades
-on the new defaults, against 235 with the re-entry on.**
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 THE RE-ENTRY NOW SHIPS **OFF** (Aaron's call, 2026-08-21 — reverses 2026-08-07)*.
 
 ⚠ **This MOVES every historical figure in this repo that was produced on the defaults**, exactly as
 turning it on did in August. A number quoted from before this date may be a 235-trade book. Check
@@ -2319,18 +1677,9 @@ re-entry has ever fired inside it — exit 0 at warmups 100 / 500 / 1000 on
 default reaches an armed bot only through `promote.py`. Until then the live bot keeps whatever it
 was promoted with.
 
----
-
 ### A SHRUNK entry paid its costs on the size it ASKED for (fixed 2026-08-21)
 
-**Only reachable when a second leg competes for one budget**, so it was invisible for as long as it
-existed. On a solo account the granted size ALWAYS equals the requested size, so both readings agree
-and no stored run, no live trade and no parity export can tell them apart.
-
-**The defect.** When the shared account shrinks an entry to fit the budget, the position, its risk
-and its R yardstick all follow the GRANT — but the entry commission and half-spread were billed on
-`pend.qty`, the size the leg merely asked for. Those costs are booked inside the trade's own P&L on
-purpose, so the overcharge landed inside its R.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *A SHRUNK entry paid its costs on the size it ASKED for (fixed 2026-08-21)*.
 
 🔴 **The symptom was not a wrong dollar figure — it was the R INVARIANT disagreeing.** R's
 denominator followed the shrink and one piece of its numerator did not, so a shrunk trade's R came
@@ -2338,11 +1687,6 @@ back BELOW the same trade run solo. That invariant is the shared account's own t
 change stayed a sizing change"*, and leaving this in place made it cry wolf on every shared run.
 ⚠ **The tool offers two explanations for a moved R — the cap bit, or a decision changed — and this
 was a THIRD it had no name for.** The refusal log showed ZERO refusals, which is what pointed at it.
-
-**MEASURED, 186,910 M15 bars 2018-09-14 → 2026-08-14, `puprime_ecn`:** 25 shrunk trades, every one
-negative, **−0.0954R** total. Predicted error (shrink factor × entry cost ÷ risk) matched the
-observed to five decimal places on **all 25**, and no other trade moved. Fixed: bill both on
-`granted`. A+ shared then reads **+127.11R against +127.11R solo** — exact.
 
 ⚠ **Nothing already recorded moves**, and that was checked rather than assumed: `compare_strategy.py`
 is **exit 0 at warmups 100 / 200 / 500 / 1000** on `VANTAGE_XAUUSD, 15_bfe65.csv` (21,052 bars,
@@ -2353,32 +1697,9 @@ sides executed.
 ⚠ **It is the ONLY charge site that used the requested size.** The TP rungs, the exits and the
 scale-in adds all bill against the real position; checked, not assumed.
 
----
-
 ### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
 
-**Read this before reporting "the exit price matches no stop and no target" again.** That symptom
-was the phantom-exit bug (`indicators/docs/BUG_exit_fill_price_mismatch.md`, fixed 2026-08-01), but with
-that fixed there is a *legitimate* residue that produces a similar-looking exit, and it will keep
-appearing on the chart forever.
-
-**The shape.** Price runs up, tags TP1, the ladder stages the stop to breakeven — and then price
-closes back through breakeven **inside the same bar**. The stop only becomes live on the NEXT bar
-(assumption 1 above, `calc_on_every_tick = false` / `process_orders_on_close = false`). By then it
-is already behind the market, so the emulator converts it to a market order and fills at that bar's
-**open**, not at the stop price.
-
-**Why it is not a defect.** Being OUT is correct — price genuinely went through the stop. What is
-imprecise is the exit PRICE, and only because a bar-replay backtest looks at orders once per bar
-while a real broker watches every tick and would have filled at or near the stop. Three consequences
-worth holding onto:
-
-- It makes the backtest look **slightly worse than reality**, which is the safe direction to be
-  wrong. Do not "fix" it to make numbers look better.
-- **Pine and Python behave identically**, so **parity is unaffected** — `compare_strategy.py` and
-  `compare_bleg.py` stay valid, and neither will ever flag it.
-- It is a **bar-mode** property. `fill_model="tick"` resolves the stop against real ticks and will
-  legitimately disagree here; that is the improvement, not drift (see `backtest/CLAUDE.md` → A2).
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)*.
 
 **Deliberately NOT fixed: a "a stop may never be placed through the market" clamp.** It would have
 caught the phantom-exit bug on day one, but applied now it would change real trade behaviour and
@@ -2390,8 +1711,7 @@ problem, not as this.
 
 ## The 2026-07-26 exit-lever sync
 
-The run write-up and the parity record that followed it moved to
-`docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-26 exit-lever sync*. The standing rules stay here:
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-26 exit-lever sync*.
 
 ⚠ **Not covered by this run:** it was taken before the minimum-stop guard was ported, at the `"Off"`
 
@@ -2411,30 +1731,13 @@ The run write-up and the parity record that followed it moved to
 
 ## Deliberate deviations from the Pine (per the framework)
 
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Deliberate deviations from the Pine (per the framework)*.
+
 🔴 **PYTHON-ONLY FIELDS — THE GATE IS BLIND TO THESE, AND THERE ARE NOW TWO (audited 2026-08-12).** A field with no Pine input has no `cfg_*` column, so `compare_strategy.py` **can never configure a non-default run of it** — the green gate says nothing whatever about these branches. This is rule 14 with a specific shape: *a gate proves nothing about a branch neither side entered*, and here one side cannot enter it at all.
 - **`exec_no_gap_arm`** — no `execNoGapArm` input exists in either A+ Pine. Any result measured with it moved was taken with one implementation only.
 - **`exec_poi_source`** — `execPoiSource` appears in **zero** `.pine` files. The Pine POI seam was reverted (`indicators/CLAUDE.md` records it); the Python side was not reverted with it, so this field outlived its counterpart.
 
 ⚠ **Before trusting any A+ measurement, check whether it moved one of these two.** ⚠ **The fix is a decision, not a tidy-up:** either add the Pine inputs and re-export so the gate can see them, or drop the fields. Leaving them is the one option that keeps a live strategy carrying dials nothing verifies. Detail: `strategies/python/mpc_sos_fade/docs/SOS_FADE_BUILD_NOTES.md`.
-
-**Other rules rescued from that same moved narrative (60,467 bytes, largest paragraph 58,936 bytes on ONE line):**
-- **Block codes are a WIRE FORMAT — never renumbered.** `leg` must stay distinct per leg.
-- **An absent column means "Any"** — read it as a fact about what the Pine did *before the gate existed*, never as the Python default.
-- **Read a within-noise R as "not worse", never as the gain.** This strategy's run-to-run spread is 15.06R, so anything under that is a consistency check on a rule, not a second measurement of the edge. Where a pass genuinely gained, it gained FREQUENCY — a count, which noise cannot manufacture — and it was bought with drawdown that must be restated every time the gain is quoted.
-
-All OFF for the parity check (to match the Pine); each is a real-run choice:
-1. **Flat-by-close** — force-flat + no new entries N minutes before the daily close (`flat_by_close`).
-   **Default False, and RE-MEASURED 2026-08-03 over the full 6.5 years: leave it that way, and the
-   margin is not close.** Aaron asked the natural question — *"I don't like swaps, what if we just
-   close before the market closes?"* — so it was replayed four ways over the same 155,453 M15 bars
-   at run `75ccc776d10c`'s params:
-
-   | | trades | R | final balance |
-   |---|---|---|---|
-   | hold overnight, free | 161 | **135.94** | $28,258,768 |
-   | hold overnight, spread+swap | 161 | 123.90 | $10,090,716 |
-   | flat before close, free | 161 | **59.82** | $411,314 |
-   | flat before close, spread+swap | 161 | 54.18 | $236,057 |
 
    **It does exactly what it promises and the swap goes to zero** — the charge falls 12.04R → 5.64R
    and what remains is pure spread. **You save 6.4R of swap and give up 76.1R of edge to do it, a
@@ -2451,7 +1754,7 @@ All OFF for the parity check (to match the Pine); each is a real-run choice:
    the tail, and anything that truncates the tail costs more than the friction it removes.
    ⚠ **Do not read the earlier figure recorded here** (6.5 months / 32 trades / OFF $39,454 vs ON
    $19,813, measured 2026-07-16). Same direction, but 4 overnight trades is not a sample and the
-   dollars predate the phantom-exit fix and the layered costs. The table above supersedes it.
+   dollars predate the phantom-exit fix and the layered costs. The cost table in the build notes supersedes it.
    (This param was DEAD CODE until 2026-07-16 — `_in_flat_window` read only `sig.ny_hour`, so
    "minutes left" was always a multiple of 60 and never hit the ≤15 window. Any A/B run before that
    date compared a flag against itself.)
@@ -2465,80 +1768,23 @@ All OFF for the parity check (to match the Pine); each is a real-run choice:
 
 ## Engine-construction pins (`MpcSosFadeStrategy.engine_config`)
 
-**FOUR** engine inputs are NOT in the decision stream, so the bot pins them to the Pine STRATEGY's own
-input defaults rather than the shared engine defaults — miss any one and the fib the bot reads drifts.
-`test_engine_config_pins_every_input_the_pine_moved_off_its_default` asserts all four.
-1. **`fvg_max_count=7`** — `mpc_strategy.pine` sets Max Active FVGs to 7 (the FVG engine default is 8);
-   a smaller cap evicts the oldest gap one bar sooner and drops an entry edge Pine still holds.
-2. **`fvg_threshold_pct=0.1`** *(added 2026-07-31 — it had NEVER been pinned)*. The minimum-gap floor.
-   `mpc_strategy.pine` splits it by timeframe (`fvgThreshLTF` 0.0 below 15m / `fvgThreshHTF` **0.1** at
-   15m and up, lines 116-118) and this bot trades 15m. `mpc_assistant.pine` uses **0.04** at 15m and
-   the ENGINE default mirrors the indicator, so the two Pines genuinely disagree and no shared default
-   can be right for both. **The bot worked for months by coincidence**: `backtest/replay/stack.py`
-   happened to carry 0.1 as its own default. That default was itself stale relative to the engine, so
-   anyone reconciling it would have silently moved this bot's trades with no test failing. Proven
-   load-bearing by removing it — `compare_strategy.py` failed on the first compared bar
-   (`px_edge` py=3478.99 vs pine=3475.43). `stack.py` now carries the engine default (0.0) and this
-   pin carries the strategy's, which is the right way round.
-3. **`fvg_require_close=True`** — `mpc_strategy.pine` HARDCODES the middle-bar close-cleared check
-   while the engine defaults it OFF (mirroring the indicator). Caught 2026-07-26 as the single
-   mismatch on a fresh export; full story in `### PARITY GREEN 2026-07-26`.
-4. **`show_internal=False`** — the Pine's "Show Internal Structure" input defaults OFF, and Pine gates
-   the ENTIRE internal block behind it (`internalActive = showInternal`), so `i_confirmed_*` is never
-   set and the **Structure fib never adopts a more-extreme internal swing** as its anchor. The
-   `market_structure` engine ALWAYS computes internal structure, so the `EngineStack` must be told to
-   suppress the internal-derived snapshot fields (it blanks `i_confirmed_*` + `ifib_seed_*` when this
-   is off). This is a real "a drawing toggle changes trade logic" coupling in the Pine — do not drop it.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Engine-construction pins (`MpcSosFadeStrategy.engine_config`)*.
 
 ## The three parity fixes (2026-07-16) — read before touching signals/fib
 
-The port went green after fixing three faithful-translation gaps; each is a class of bug to watch for:
-1. **Internal-swing adoption** (the `show_internal` pin above) — the engine's always-on internal
-   structure fed the fib an anchor the Pine strategy never had (internal display off).
-2. **Sweep double-count at the daily/session rollover** — Pine records a sweep on `d_lMit and not
-   d_lMit[1]` (a bar-to-bar edge of a persistent VARIABLE). When a daily/session/H4 level rolls at
-   18:00 and is re-taken on its own creation bar, `d_lMit[1]` (the old level, already swept) is still
-   true, so no edge fires. The engine models levels (create / mitigate / EVICT) and the naive
-   reconstruction latched on every `mitigated` event, re-recording the rollover sweep — which made a
-   stale sweep look fresh and armed a trade Pine didn't. `signals.py` now reconstructs the Pine
-   variable: reset on `created`, set on `mitigated`, **left alone on `evicted`**, edge vs the prior bar.
-3. **The forming last bar** — TradingView exports the final (still-forming) bar's plotted series as
-   NaN. `compare_strategy.py` now marks that bar `_px_present=False` and skips it, instead of reading
-   `fillna(0)` as a real "stage 0" and flagging a phantom mismatch.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The three parity fixes (2026-07-16) — read before touching signals/fib*.
 
 ## The parity gate — `tools/compare_strategy.py` + `/audit-strategy`
 
-The standing regression harness (same pattern as the engines' `compare_*.py`). `mpc_strategy_export.pine`
-(in `indicators/`) = `mpc_strategy.pine` + an appended block that plots the per-bar decision stream
-(`px_*`) and every toggle (`cfg_*`). Export it to CSV on a 5m XAUUSD chart; `compare_strategy.py` reads
-the toggles, configures the bot identically, replays the same bars, and diffs the decision stream. Exit
-0 = bar-for-bar identical. On a mismatch it names the first diverging bar + field. Run it via
-`/audit-strategy`, or:
-```
-command-center/backend/.venv/bin/python strategies/python/mpc_sos_fade/tools/compare_strategy.py <export.csv> --warmup N
-```
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The parity gate — `tools/compare_strategy.py` + `/audit-strategy`*.
 
 ### The 2026-07-22 re-sync (the export was 7 days stale)
 
-A dated gate record carrying no standing rule. See `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-22 re-sync*.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-22 re-sync (the export was 7 days stale)*.
 
 ## LOGIC parity vs RESULT parity — two different tools, two different questions
 
-`compare_strategy.py` answers "is our CODE the Pine's code?" — it replays TradingView's OWN bars and
-diffs the per-bar `px_*` decision stream, so the data feed is out of the equation. That is the gate.
-
-`tools/compare_trades.py` answers a different question: "why does a LAB RUN's finished trade list
-differ from what I got in the TradingView Strategy Tester?" It pairs the two trade lists by entry TIME
-(not price — different brokers legitimately differ by cents on the same bar) and reports matched /
-TV-only / ours-only. **It is a diagnosis tool, not a parity gate** — a diff here is usually the DATA
-FEED, not the code (proven 2026-07-22: run `f455b21faabe` came in ~110% vs TradingView's 142%; the whole
-gap was two longs Vantage's wick swept a level our PU-Prime feed's wick fell ~10 cents short of, so the
-sweep never armed. `compare_strategy.py` was green on TradingView's bars, i.e. our code took both those
-longs on Vantage data — the lab missed them purely on the feed). Two counting conventions also confuse
-the comparison and are NOT bugs: TradingView counts each TP rung as its own "trade" (41 positions × 3
-rungs = 123) and its max-DD % is vs peak equity where ours is vs starting capital. Usage:
-`compare_trades.py <tv_trades.csv> <run_id>` — `--tz` defaults to `Etc/GMT+4` (the Vantage XAUUSD chart
-is a FIXED UTC-4, no US DST); it prints a hint if the median pairing offset says otherwise.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *LOGIC parity vs RESULT parity — two different tools, two different questions*.
 
 ## The 2026-07-16 year run
 
@@ -2548,27 +1794,17 @@ See `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-16 year run*.
 
 ## This bot's LOSSES are another package's population — `strategies/python/loss_recovery/`
 
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *This bot's LOSSES are another package's population — `strategies/python/loss_recovery/`*.
+
 `loss_recovery` replays a **25%-size counter-trade after every A+ stop-out**. It is not a config
 of this bot and changes nothing here — but its entire trade population is **this bot's 62 real
 losses**, so it is coupled in one direction: ⚠ **any change to A+'s entry rule re-populates it and
 every figure it has produced goes stale**, the same standing `overlap_audit.py` has. Re-run
 `backtest/tools/recovery_report.py` after one.
 
-**The rule, its measurements and every caveat live in that package's own CLAUDE.md.** What belongs
-here is only what a reader of THIS file needs: the recovery leg adds **+4.1R on top of +129.0R
-(~3%)**, it does **not** reduce max drawdown (48.3% against 48.8%) and does not smooth the curve —
-and the 2026-08-19 search of nine stop placements and six exit ladders **adopted nothing**, so the
-shipped rule is unchanged and no number in this file moves. Full grid: `mpc_sos_fade_optimization.md`
-→ Run 24.
-
-
 ## 🔴 The gate REFUSES an export from a chart faster than 15m (2026-08-23)
 
-**The bot pins the gap filter to 15-minute values; the Pine reads them off the CHART.**
-`mpc_strategy.pine` runs a minimum-gap floor of 0.0 below 15m and 0.1 at 15m and above, and
-drops the middle-bar-close test below 15m. `strategy.py::engine_config` hardcodes the 15m
-pair, deliberately and with its reason already written down there. **So on a sub-15m export
-the two sides are configured differently before a single bar is replayed.**
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 The gate REFUSES an export from a chart faster than 15m (2026-08-23)*.
 
 ⚠ **MEASURED, because "it would differ a bit" was not good enough:** on a 20,574-bar M5
 export, **13,759 of 20,477 compared bars diverge as shipped and 0 diverge with the sub-15m
@@ -2598,39 +1834,15 @@ opinion from the same mistake.** It is written against the reading that genuinel
 
 ## Tests
 
-```
-command-center/backend/.venv/bin/python -m pytest strategies/python/mpc_sos_fade/tests/ -q
-```
-Offline, no network, no TradingView. `test_sequence.py` (state machine on the real engine stack +
-hand-checked Pine rules), `test_execution.py` (fills / ladder / stop-out / sizing, hand-checked),
-`test_strategy_driver.py` (end-to-end), `test_compare_strategy.py` (the parity tool round-trips its
-own output). These prove the plumbing; the Pine diff is the live gate.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Tests*.
 
 ## The B-LEG bot reuses this one — three parity-safe additions (2026-07-24, do NOT revert)
 
-`strategies/python/mpc_bleg/` (the standalone B-LEG bot) reuses this package's engine + A+ sequence +
-fill machinery, so it needed three ADDITIVE, decision-neutral changes here. All three are safe (this
-bot's offline tests stay green) and must not be reverted:
-
-1. **`signals.py`** — `Signals` gained `bull_bos_high/low` + `bear_bos_high/low` (the break-leg
-   endpoints the B-LEG band-freeze reads). Nothing in the A+ path reads them.
-2. **`sequence.py`** — `SeqState` gained `bleg_arm_l`/`bleg_arm_s`, computed at the EXACT Pine point:
-   after the opposite-SOS death, BEFORE the continuation-BOS death clears `l_sos_bar` and before the
-   half/618 latch update. The B leg arms off state that `update()` has already cleared by the time it
-   returns, so the sequence has to expose it here.
-3. **`execution.py`** — the A+ arm decision was extracted from `_place_entries` into `_armed()` (a pure
-   refactor) so the B-LEG subclass can reuse the "A+ has priority" gate. No behaviour change.
-
-Full context in `strategies/python/mpc_bleg/CLAUDE.md`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The B-LEG bot reuses this one — three parity-safe additions (2026-07-24, do NOT revert)*.
 
 ## `Trade.tp_rungs` — the closed record says how much each rung TAKES OFF (2026-08-21)
 
-`Trade.tp1` / `tp2` say only WHERE a rung sits. At the shipped `exec_tp1_pct = exec_tp2_pct = 0`
-nothing is ever sold at either one — the position rides the runner and the rungs only stage the
-stop — so a chart reading two prices off a closed trade drew two profit targets that had no orders
-behind them, on every trade of every run. `tp_rungs` carries the same two rungs as
-`(price, banks_pct)` pairs beside the prices. Full finding, and the two `TP1` chips on one trade
-that started it: `command-center/backend/CLAUDE.md` → *The exit ladder*.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *`Trade.tp_rungs` — the closed record says how much each rung TAKES OFF (2026-08-21)*.
 
 ⚠ **The percentage is resolved for the trade that was actually OPEN, not read off the config.**
 A re-entry may bank its own (`exec_sec_tp1_pct`, 50 by default) and the reclaim half a different
@@ -2650,17 +1862,9 @@ and made this look repo-wide; it measured *nearer* with the sign inverted (corre
 2026-08-21). Distance is measured FROM the entry in the FAVOURABLE direction — on a short the
 nearer target is the HIGHER price — and a bare price comparison is backwards on one side.
 
-`_advance_stage` tests rung 1 before rung 2, so on a flipped trade the stop goes straight from
-stage 0 to stage 2 without ever arming breakeven.
-
 🔴 **IT WAS FLIPPED, MEASURED, AND REVERTED. DO NOT FLIP IT — IT COSTS MONEY, AND THE READING THAT
 SAYS OTHERWISE IS THE INTUITIVE ONE.** MEASURED 2026-08-21 via `run_report`, XAUUSD M15
 2018-09-14 → 2026-08-20, matched basis, only the stage ordering differing:
-
-| | total | trades moved | breakeven scratches |
-|---|---|---|---|
-| as it ships (rungs in the strategy's own order) | **+151.99R** | — | 45 |
-| stage 1 at the NEARER rung, stage 2 at the further | +147.57R | 17 (11 worse, 6 better) | **54** |
 
 **−4.43R over 7.9 years, and nine winners became scratches.** ⚠ **The reason is that a TRAIL is
 STRONGER protection than breakeven, not weaker.** On a flipped trade the first rung price reaches
@@ -2699,16 +1903,9 @@ exactly that (best price 1.016R, nearest rung 1.25R, full loss) and survived in 
 configuration only because the flipped ladder put a rung at 0.757R. **A ladder defect was
 load-bearing for a stop with no other trigger.**
 
-Arm-by-arm table, the mutation map, and the two process failures that nearly published a wrong
-number: `docs/SOS_FADE_BUILD_NOTES.md` → *The stop that never moved*.
-Tests: `tests/test_excursion_arm.py` (13, all watched RED by mutation).
-
 ## Every entry method OWNS its stop rule — the precedence list is gone (2026-08-27)
 
-**The stop used to be resolved by walking a list of rules and taking the first that matched, and
-that list had a defect.** The reclaim's own protection sat ABOVE the general one, so on a reclaim
-that the general rule had already tightened, the reclaim's rule would fire later and hand back a
-**looser** stop.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Every entry method OWNS its stop rule — the precedence list is gone (2026-08-27)*.
 
 🔴 **MEASURED with `stopwalk.py` on 2026-08-26.** Entry 100.00, stop 98.00, general rule arming at
 1R and keeping half. At 2.25R in front the stop was 99.00; at 2.50R it went back out to 98.50.
@@ -2719,22 +1916,6 @@ every arm later than 1R (0.10 / 0.50 / 0.90 at keeps of 0.55 / 0.75 / 0.95).
 ⚠ **A second retreat existed one branch up and is closed in the same change**: a re-entry set to
 hold its initial stop until the second target returned the FROZEN entry stop the moment the first
 rung was touched — wider than whatever its own protection rule had already set.
-
-**Aaron, 2026-08-27:** *"For all my different entry types, they should have their own take profit
-and stop loss rules. They shouldn't be, like, a list of stop loss rules, and now I need to go
-figure out which one has precedence over the other."*
-
-**So there is now exactly ONE rule per entry method.** `_protect_rule()` returns the pair belonging
-to the method that opened the trade — keyed on `_entry_src`, the value `secondary.py` stamps on the
-arm — and nothing else is consulted. **A retreat is unreachable rather than merely unobserved,
-because there is no second rule to override the first.**
-
-| entry method | its pair |
-|---|---|
-| the normal entry | `exec_be_arm_r` / `exec_be_keep_r` — the PRIMARY's now, not everyone's |
-| re-entry off a reclaim | `exec_rec_be_r` / `exec_rec_be_keep_r` |
-| re-entry off a gap in the zone | `exec_gap_be_r` / `exec_gap_be_keep_r` (new) |
-| re-entry off a structure shift | `exec_shift_be_r` / `exec_shift_be_keep_r` (new) |
 
 ⚠ **The rule is not switchable — its VALUE is.** `-1` does not mean "this method has no rule"; it
 means "this method's rule is *never move the stop*". Switching an entry method on brings its exit
@@ -2770,25 +1951,12 @@ setting tested on the primary LOST money, at about three R destroyed per R rescu
 decisions it always did. The moment any of the four goes positive, Python and Pine are trading
 different ladders: there is no TradingView side for any of them.
 
-Tests: `tests/test_stop_rule_per_method.py` (37; 18 watched RED against HEAD in a detached
-worktree, and the file's docstring records the four mutations that re-prove them).
-
-Tests: `tests/test_execution.py` (2, both watched RED against HEAD).
-
 ## The re-entry rests its order and LEAVES it — and what the 1m feed is actually for (2026-08-21)
 
-`exec_sec_rest_and_leave`, ON by default. Once the side arms, the order stays where it was placed
-at the price it was placed at, until the setup that placed it dies (a new break of structure), the
-leg is traded or goes dead, or a position opens. Before this the arm was recomputed from scratch
-every bar, so any one of a dozen gates closing pulled the resting order back off the book.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The re-entry rests its order and LEAVES it — and what the 1m feed is actually for (2026-08-21)*.
 
 🔴 **THE RE-DECIDING WAS WORTH 0.02R OVER 7.9 YEARS, AND IT WAS THE ONLY REASON THE ORDER HAD TO BE
 RE-ASKED EVERY MINUTE.** MEASURED, matched basis, the only difference in each pair being the switch:
-
-| fill clock | re-decided every bar | rested and left |
-|---|---|---|
-| 1m | 235 trades, +147.57R | 234 trades, +147.56R |
-| 15m | 234 trades, +136.38R | 233 trades, +136.36R |
 
 ⚠ **The ~11R between the two ROWS is a DIFFERENT thing and is not this switch.** It is fill
 PRECISION — a 15m bar fills a resting limit at a worse price than the minute price actually traded
@@ -2797,14 +1965,6 @@ at the price that trades and there is no 15-minute anything.** Read the 15m row 
 simulation of the same live behaviour, never as a different rule.
 
 ✅ **5 MINUTES IS THE PLACE TO BACKTEST.** Same window, same config, only the fill clock:
-
-| fill clock | bars loaded | trades | total |
-|---|---|---|---|
-| 1m | 2,804,720 | 234 | +147.56R |
-| **5m** | **561,795** | **234** | **+145.61R** |
-| 15m | 187,286 | 233 | +136.36R |
-
-One fifth of the data for 1.3% of accuracy, against 7.6% at 15m.
 
 ⚠ **It freezes the PRICES, not just the armed flag.** The fibs keep extending, so a re-read edge
 would slide a still-resting order to a level it was never placed at and the trade's record would
@@ -2822,26 +1982,12 @@ stored figure from before this date reproduces only with the switch set False.
 
 ## The re-entry's FILL CLOCK is 5 minutes, and it is an accuracy knob (2026-08-21)
 
-`exec_sec_fill_tf_min`, default **5**. The primary always replays on 15m; this is the second feed
-`run_dual` walks alongside it, and it is what the re-entry's resting order is filled against.
-**The strategy OWNS this number** — `backtest/tools/run_report.py` reads it off the config, and
-`command-center` keeps a copy in `run_feeds.EXTRA_FEEDS` that a test refuses to let drift.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The re-entry's FILL CLOCK is 5 minutes, and it is an accuracy knob (2026-08-21)*.
 
 🔴 **IT IS A MEASUREMENT-ACCURACY KNOB, NOT A STRATEGY ONE.** Live, the broker fills a resting
 limit at the price that trades — there is no 15-minute anything. A coarser feed fills the order at
 a worse price than really traded, so it UNDERSTATES, which is the safe direction. **Never read the
 5m default as "the strategy trades on 5m"**: the setup, the entry price and the stop are all 15m.
-
-MEASURED 2026-08-21, XAUUSD 2018-09-14 → 2026-08-20, matched basis, only the fill clock differing:
-
-| fill clock | bars loaded | trades | total |
-|---|---|---|---|
-| 1m | 2,804,720 | 234 | +147.56R |
-| **5m** | **561,795** | **234** | **+145.61R** |
-| 15m | 187,286 | 233 | +136.36R |
-
-One fifth of the data for 1.3% of accuracy, against 7.6% at 15m. It was hardcoded `1` in both
-runners for as long as they existed, so every run anybody made paid 2.8M bars for that 1.3%.
 
 ⚠ **A finer feed also bounds the WINDOW by its own measured history floor**, so 1m is not free
 even on a machine that can afford the bars — it costs a day here, and more on a symbol whose 1m
@@ -2853,11 +1999,7 @@ history is shallower.
 
 ## What the 1-minute STRUCTURE engine contributes at the shipped trigger (2026-08-21)
 
-`Structure1m` runs on every bar of the second feed under **every** trigger, including the ones
-that use no 1m leg — `secondary.py` step 3 says so in its own comment. At the shipped
-`exec_sec_trigger = "FVG in zone"` it **prices nothing**: the entry is the primary's own resting
-price (`_edge` → `poi`), the stop is `sig.fibo_p6`, a 15m fib (`_stop_anchor` never touches `m1`
-for that mode), and `exec_sec_req_m1_dir` is OFF so `m1.direction` is ignored.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *What the 1-minute STRUCTURE engine contributes at the shipped trigger (2026-08-21)*.
 
 ⚠ **It is NOT inert, and the difference matters.** Its SOS latch still writes `_l_leg` / `_s_leg`,
 which is the key `_traded` / `_dead` / `_used` read — so it can still move which setup counts as
@@ -2876,24 +2018,11 @@ value gap is there, and the entry follows the PRIMARY's model around that gap.
 
 ## 🔴 The worst price a trade reports is bounded by its STOP — `_widen_hold` (2026-08-22)
 
-The hold's high/low is widened with each bar BEFORE that bar's exits resolve, so it used to take
-the bar's whole range. On the bar that stops the trade out, the far end of that range is price
-**after the position is flat**, and it was being recorded as the trade's own drawdown.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 The worst price a trade reports is bounded by its STOP — `_widen_hold` (2026-08-22)*.
 
 ⚠ **It is not an intrabar-ordering guess.** The stop is triggered BY the adverse move, so any
 price past the stop necessarily came at or after the fill. Determinate, which is what makes this
 fixable at all.
-
-**MEASURED on run `976aff9ec279` (206 trades) before the fix: 77 of 77 trades that exited at their
-stop recorded a worst price beyond it** — median 0.18R past, worst 4.41R. One short lost exactly
-1.0R and reported **2.22R of adverse excursion**; its chart drew a drawdown marker, and its own
-win/loss chip, a full 1.2R **above** its `SL` line. That is what made Aaron ask.
-
-**MEASURED after, same window replayed 2020-01-01 → 2026-08-22, 156,811 bars, 160 trades:**
-worst-price-past-the-stop **54 → 4**, 59 trades' deepest price corrected and their adverse dollars
-with them, and **every trade's R byte-identical** — total +141.177388543R both sides, 0 trades
-moved, 0 favourable extremes moved. `compare_strategy.py` **exit 0 on three exports** at warmup
-1000 (`bfe65`, `4fef8`, `49f80`), before and after.
 
 ⚠ **The remaining 4 are the ENTRY BAR and are correct.** The stop is not managed until the next
 bar — the one-bar order delay every fill model here is built on — so a first-bar excursion past the
@@ -2910,29 +2039,12 @@ everything.
 ⚠ **Reporting only, and proven rather than argued.** No decision reads the excursion, so parity
 could not move; the gate was run anyway, on three exports, because that is the rule.
 
-**Tests:** `tests/test_excursion_bounds.py` (7), watched RED by five mutations — removing the
-bound, ignoring a gapped open, replacing the running extreme instead of bounding it, clamping the
-favourable side too, and comparing a shifted bar against an unshifted stop.
-
-
 ## The SHORT-HOLD variant — `exec_short_hold` (2026-08-24, ships OFF)
 
-A second way of trading the SAME setups: close at a fixed R instead of banking a little and
-riding the rest. Three rules behind one toggle — refuse an entry deeper than a fib, close the
-whole position at a multiple of risk, and refuse a New York hour window.
-
-**With the toggle off the run is byte-identical** — 158 trades, +130.8R over 2020-01-01 →
-2026-08-06 on the ECN tier, diffed on every decision field of every trade rather than on the
-count and the total, because a run that RESHUFFLES which setups it took agrees on both of those.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The SHORT-HOLD variant — `exec_short_hold` (2026-08-24, ships OFF)*.
 
 🔴 **IT IS A SWITCH TO EXPERIMENT WITH, NOT A LEG TO DEPLOY, and the numbers are why.** On the
 pool it was built for (order blocks where no gap qualified), matched basis, ECN costs:
-
-| | trades | total R | R/trade | worst DD | scratches |
-|---|---|---|---|---|---|
-| A+ shipped | 158 | +130.8 | +0.828 | −6.0R | 32 |
-| the pool, A+ exits | 109 | +22.5 | +0.207 | −13.7R | 33 |
-| the pool + this variant | 104 | **+10.4** | +0.100 | −10.2R | **1** |
 
 **It does exactly what it was designed to do and still earns less.** The scratch problem it was
 built to fix is fixed — 33 → 1 — and the drawdown improves; the total halves, because capping a
@@ -2983,43 +2095,17 @@ no description, which is what caught them missing. ⚠ **Position in its `params
 the form renders in, so APPEND — never re-sort.** Sorting it once here silently reordered all 93
 existing settings, and the diff was 1,671 lines that should have been 73.
 
-Full build story, every configuration replayed, the three tests that could not go red and what
-was done about them: `docs/SOS_FADE_BUILD_NOTES.md` → *The short-hold variant*.
-
 ## Do / Never
 
-- **Do** port any change to `mpc_strategy.pine`'s A+ block or execution layer here line-for-line, then
-  re-run `compare_strategy.py`. Keep the Pine the source of truth — never edit it to match the Python.
-- **Do** read engine OUTPUT only (`backtest.replay` `BarState`) — never reach into an engine's internals.
-- **Never** build a second copy of any engine here — this consumes the canonical `engines/`.
-- **Never** trust a backtest number until `compare_strategy.py` is exit 0 on a fresh export.
-- **Never** commit a real TradingView export or backtest cache into git.
-- **Never** revert the three B-LEG parity-safe additions above without also updating `mpc_bleg/`.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Do / Never*.
 
 ## References
 
-- Spec: `docs/MPC_SOS_FADE_SPEC.md`; build plan + order: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-- Pine source of truth: `indicators/strategies/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
-- Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.
-
----
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *References*.
 
 ## 🔴 THE RE-ENTRY LADDER COMES OUT BACKWARDS ON ONE HALF, AND THE FLIP IS PROTECTIVE (2026-08-25)
 
-**The two rungs are priced by two different rulers.** The first is a multiple of the trade's OWN
-risk (`exec_sec_tp_r`, 1.25R); the second stays the frozen 15m fib. The first therefore MOVES with
-the fill price and the second does not, so how close you get filled decides whether they come out
-in order. MEASURED on run `ed21fca08a91` (XAUUSD.p M15, 2020-01-01 → 2026-08-23, PU Prime ECN
-costs), 91 re-entries:
-
-| half | n | flipped | second rung, as a multiple of the first |
-|---|---|---|---|
-| after a STOPPED primary (reclaim) | 47 | **0** | 1.474 – 2.263 |
-| after a BREAKEVEN primary (gap) | 44 | **27 (61%)** | 0.268 – 3.662 |
-
-The gap half stops at the deep fib — a WIDE stop — so 1.25× that width routinely overshoots the fib
-target. The reclaim half enters at its level with a stop a median 0.43R away, so its rung lands
-short of the fib every time. **Only the gap half can flip, and it flips more often than not.**
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 THE RE-ENTRY LADDER COMES OUT BACKWARDS ON ONE HALF, AND THE FLIP IS PROTECTIVE (2026-08-25)*.
 
 🔴 **THE FLIP IS NOT A BEHAVIOUR BUG. IT IS A LABELLING ONE, AND "FIXING" IT COSTS REAL MONEY.**
 `_stage_rungs()` already sorts the stop ladder by DISTANCE, so on a flipped trade the nearer rung —
@@ -3044,13 +2130,7 @@ stop ladder does is already distance-ordered; only the chip is out of order.
 
 ### The second rung as a CHOSEN distance, not leftover geometry (2026-08-25)
 
-**For a re-entry the second rung means nothing deliberate, and that is the finding.** It is a
-retracement level of the swing the ORIGINAL setup formed on — a price fixed on the chart when the
-setup appeared. A primary enters where that ladder expects, so the rung is a real target and all
-155 primaries on run `f3e8bc41db50` were correctly ordered. A re-entry enters somewhere else, so
-what is left to that same price is an accident of the fill: MEASURED across 90 re-entries it lands
-between **0.27× and 3.66× the first rung's distance, median 1.47×, with 25 of 90 INSIDE the first
-rung.**
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The second rung as a CHOSEN distance, not leftover geometry (2026-08-25)*.
 
 ✅ **`exec_sec_tp2_x` REPLACES it with a chosen multiple of the first rung, so the two are ordered
 by construction.** ⚠ **It is not the floor above renamed — the difference is DIRECTION.** A floor
@@ -3069,9 +2149,6 @@ re-entries have.** 2020-11-04 goes +0.348R → −0.907R at every setting tested
 and the cheap way to have both is still the one named above: sort the chart LABELS, leave the prices
 alone.
 
-TESTED: 15 tests in `tests/test_sec_tp2_level.py`, 6 mutations run and all killed. Full sweep table,
-the run ids and the entry-by-entry divergence check: `docs/SOS_FADE_BUILD_NOTES.md`.
-
 🔴 **ONE SWEEP ARM SILENTLY REPLAYED STALE CODE.** The 2.5× arm ran 170s, stored its parameter, and
 produced a ladder byte-identical to the control; an identical re-request came out correct. The lab
 purges cached strategy modules under one namespace only, and `mpc_bleg` imports this package's
@@ -3080,20 +2157,7 @@ stored TRADES, never the KPI row** — the KPI row of a stale replay looks entir
 
 ## 🔴 THE TWO RE-ENTRY HALVES ARE TWO FEATURES, AND ONLY ONE OF THEM EARNS (2026-08-23)
 
-The combined trigger runs **two independent re-entries** and the run report adds them together,
-which is how one of them hid inside the other's result for as long as it existed. They ask
-different questions of the primary: the **gap** half needs the A+ to have scratched at breakeven,
-the **reclaim** half needs it to have been STOPPED. Each trade records which.
-
-MEASURED 2026-08-23 — XAUUSD M15, 2020-01-01 → 2026-08-23, no cost layers, 10% per trade
-compounding, three runs off ONE run's own row with a single field changed, driven through
-`services/python_runner._execute` so the only difference is the flag:
-
-| | trades | total | worst run of losses | account drop |
-|---|---|---|---|---|
-| A+ alone | 159 | +139.71R | −5.61R | −45.6% |
-| A+ + reclaim (after a stop) | 205 | **+169.71R** | −6.13R | −43.9% |
-| A+ + both | 249 | +177.89R | −6.41R | −43.3% |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 THE TWO RE-ENTRY HALVES ARE TWO FEATURES, AND ONLY ONE OF THEM EARNS (2026-08-23)*.
 
 ✅ **THE THREE ARE EXACTLY ADDITIVE, AND THAT IS THE STRUCTURAL FINDING.** 139.71 + 30.00 =
 169.71; + 8.19 = 177.89. The 159 A+ trades are **identical in all three** — same entry times,
@@ -3126,28 +2190,14 @@ not work"*.
 
 ## Where the reclaim banks: 3.0R → 3.25R, and the 0.25R that costs nothing (2026-08-27)
 
-**MEASURED on the live bot's own stance** — every stop rule at never-move, the whole position off
-at the target, no runner — over **47 reclaims**, XAUUSD.p M15+M5, 2020-01-01 → 2026-08-23, nine
-targets replayed on one frozen checkout so no code moved between them:
-
-| bank at | total | winners |
-|---|---|---|
-| 2.00R | 13.00R | 20 |
-| 2.25R | 14.75R | 19 |
-| 2.50R | 19.50R | 19 |
-| 2.75R | 24.25R | 19 |
-| 3.00R | 25.00R | 18 |
-| **3.25R** | **29.50R** | **18** |
-| 3.50R | 29.50R | 17 |
-| 3.75R | 14.75R | 13 |
-| 4.00R | 13.95R | 12 |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Where the reclaim banks: 3.0R → 3.25R, and the 0.25R that costs nothing (2026-08-27)*.
 
 ✅ **The move from 3.00R to 3.25R changed NO trade's outcome.** Same 18 winners, same 29 losers —
 every winner that reached 3.00R also reached 3.25R and simply carried 0.25R further. **The +4.50R
 is not bought from anywhere**, which is what separates this from a tuning nudge that traded one
 population of trades for another.
 
-⚠ **THE TABLE ABOVE WAS MEASURED ON A FROZEN CHECKOUT AND TODAY'S TREE GIVES A DIFFERENT BOOK.**
+⚠ **THE TARGET TABLE (NOW IN THE BUILD NOTES) WAS MEASURED ON A FROZEN CHECKOUT AND TODAY'S TREE GIVES A DIFFERENT BOOK.**
 Work landed on this strategy between the sweep and the default change, and on current code the
 same window gives **44 reclaims, not 47**. Do not expect to reproduce 29.50R by replaying today —
 quote the table as what it is, a ranking measured on one pinned checkout.
@@ -3191,20 +2241,7 @@ it.
 
 ## 🔴 THE RECLAIM'S GIVE-BACK — FIVE FIXES REPLAYED, FOUR LOSE, AND THE EXCHANGE RATE SAYS WHY (2026-08-24)
 
-The reclaim half banks 100% at its target and its stop does not move until that target is
-touched, so every trade is **+3.25R or −1R** with nothing in between (the target was 3.0R until
-2026-08-27 — see *Where the reclaim banks* below). Aaron's 2025-08-19 reclaim ran **+2.98R**,
-missed by **7.5 cents**, and paid the full loss. Five ways of fixing that were
-replayed on the shipped basis. **Full grids, per-band splits and the run ids:
-`mpc_sos_fade_optimization.md` → the 2026-08-24 run.**
-
-| idea | reclaim book | vs shipped |
-|---|---|---|
-| bank earlier (target 1.25R) | +10.25R | −19.75R |
-| move the stop to breakeven | +23.77R | −6.23R |
-| enter at market, not on the retest | +23.11R | −6.89R |
-| halve the stop zone at halfway | +29.00R | −1.00R |
-| **expire the resting order after 12h** | **+38.00R** | **+8.00R** |
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 THE RECLAIM'S GIVE-BACK — FIVE FIXES REPLAYED, FOUR LOSE, AND THE EXCHANGE RATE SAYS WHY (2026-08-24)*.
 
 🔴 **THE RULE, AND IT GENERALISES TO ANY ALL-OR-NOTHING LEG: WORK OUT THE EXCHANGE RATE BEFORE
 BUILDING THE FIX.** A winner here pays 3R and a loser pays 1R, so protecting a loser saves at most
@@ -3242,8 +2279,7 @@ the preceding primary matched on only 32 of 90 exit prices and was discarded bef
 
 ## 🔴 The minimum stop distance permits a stop a normal gap can double (2026-08-23)
 
-MEASURED in the same run: one trade lost **−1.98R on a 1R stop**. Its stop was **$1.83 wide,
-0.093% of price**, and price gapped **$1.80** straight through it, filling at the next bar's open.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 The minimum stop distance permits a stop a normal gap can double (2026-08-23)*.
 
 ⚠ **That is the documented one-bar order delay doing exactly what it is supposed to do** — see
 *Wrong-side stop fills* — and it is the SAFE direction for a backtest. **The finding is not the
@@ -3259,10 +2295,7 @@ instrument's typical bar gap rather than picking a round number.
 
 ## Loss recovery — the toggle, and the one property it must never break
 
-**Added 2026-08-20.** `exec_recovery` turns on a counter-trade after this bot loses. The RULE is
-not here — it lives in `strategies/python/loss_recovery/`, defined against a `LossEvent` protocol
-so any strategy can drive it, and that file owns every measurement. This section is the WIRING
-only: `recovery.py` (the adapter), the seven `exec_recovery_*` inputs, and the `finalize` hook.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Loss recovery — the toggle, and the one property it must never break*.
 
 🔴 **Turning it on cannot move one A+ trade, and a test pins that.** The recovery reads A+'s
 finished losses and appends rows tagged `kind="recovery"`; it never gates, delays or re-sizes an
@@ -3333,9 +2366,7 @@ it ON is not a parity input.
 
 ### 🔴 The toggle's warning text was WRONG in the direction that flatters the rule (rewritten 2026-08-21)
 
-The `desc` on `exec_recovery` in `mpc_sos_fade.meta.json` opened *"THIS SWITCH DOES NOT MODEL ONE
-ACCOUNT"* and quoted **+3.8% against +44.8% on one real balance**. Three things were wrong with it,
-and the third is the one that mattered.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 The toggle's warning text was WRONG in the direction that flatters the rule (rewritten 2026-08-21)*.
 
 1. **"Does not model one account" overstates the defect.** Half the sharing is real — a recovery
    trade IS sized off a balance carrying every A+ trade that had closed by then (`recovery.py`'s
@@ -3368,10 +2399,6 @@ deleted** — every recovery in the synthetic fixture exits LOCKED and in profit
 named changed nothing. The assertion now lives in `loss_recovery/tests/test_engine.py` as a direct
 two-bar `_manage` call, which is the only shape where the ordering is observable.
 
-MEASURED end to end on XAUUSD M15 2018-09-14 → 2026-08-14 at `puprime_ecn`: 181 A+ trades
-unchanged, 65 recovery trades added, median recovery risk $2,050 against A+'s $10,127. **All 65
-reach the chart's full profit-depth view; none falls back to the plain box.**
-
 ⚠ **Quote the COST TIER with the recovery count or the number looks like a regression.** The rule
 arms on a real loss, and a cost tier moves a borderline scratch across that line — same bars, same
 window, same settings: **uncosted gives 62 recovery trades and `puprime_ecn` gives 65**, because
@@ -3380,11 +2407,7 @@ rule between those two runs.
 
 ## The DEAD-MARKET floor — `exec_min_atr_pct` (2026-08-26, ON at 0.08)
 
-A second entry filter beside the minimum stop distance, asking a **different question**: not *is
-the leg long enough to size against* but *is the market moving at all*. A dead market throws up
-wide stops as happily as tight ones, so the stop floor does not catch this and never could. Full
-measurement, the driver it was taken with and the two near-misses: `docs/SOS_FADE_BUILD_NOTES.md`
-→ *The dead-market floor*.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The DEAD-MARKET floor — `exec_min_atr_pct` (2026-08-26, ON at 0.08)*.
 
 🔴 **READ ITS DRAWDOWN, NEVER ITS R, AND THE REASON GENERALISES TO EVERY ENTRY FILTER HERE.** Across
 off / 0.08 / 0.10 the drawdown falls in order (55.5% → 47.9% → 41.5%) and the R does not (119.0 →
@@ -3430,16 +2453,6 @@ stale until `backtest/tools/overlap_audit.py` is re-run** — it was measured on
 
 ✅ **RULE 22 IS SATISFIED (2026-08-26), AND IT TOOK TWO EXPORTS — THE SECOND ONE IS THE PROOF.**
 
-| export | floor on the chart | verdict | setups the floor REFUSED |
-|---|---|---|---|
-| `…15_b5eda.csv` | 0.08 (shipped) | exit 0 | **0** |
-| `…15_3ce38.csv` | 0.30 (driving) | exit 0 | **21 of 26** |
-
-Both 21,355 bars, 2025-10-01 → 2026-08-26, green at warmups 100 / 500 / 1000 / 2000, both
-carrying `cfg_min_atr` so the harness configured the floor from the chart rather than from a
-default. On the second, Python and Pine agree bar-for-bar **while the floor is refusing four out
-of five setups** — 9 trades / +10.64R against the control's 26 / +29.06R on the same bars.
-
 🔴 **THE FIRST RUN WAS GREEN AND PROVED NOTHING ABOUT THIS FEATURE, AND ONLY A COVERAGE CHECK
 COULD HAVE TOLD YOU.** At the shipped 0.08 the floor refused **nothing** on that window: replaying
 its own bars with the floor OFF gave the same 26 trades and the same +29.06R. **That is not bad
@@ -3472,14 +2485,7 @@ you do not have.
 
 ## 🔴 The leg latch's bar-time map was re-sorting 20,000 keys EVERY BAR (fixed 2026-08-26)
 
-The map that made the one-trade-per-leg latch survive a restart (above) is capped at 20,000
-entries. Its prune called `sorted(self._bar_ms)` to find the one key to delete — and once the cap
-is reached that runs on **every single bar for the rest of the run**.
-
-**MEASURED under cProfile on a 23,539-bar year: 3,539 sorts were 8.0s of a 52.6s replay — 15%,
-and the largest single cost in the whole profile.** Measured end to end on 62,468 bars, both
-algorithms in ONE process with only the branch differing: **189.76s → 81.25s, the whole replay
-2.34x faster.** The 6.6-year window pays that prune 135,807 times.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 The leg latch's bar-time map was re-sorting 20,000 keys EVERY BAR (fixed 2026-08-26)*.
 
 ✅ **A dict preserves INSERTION order, `step` inserts one strictly increasing index per bar, and
 the map is rebuilt empty on every restart (it is deliberately NOT in `_POSITION_FIELDS`) — so the
@@ -3503,8 +2509,3 @@ explains. ⚠ **Patch `type(strategy.execution)`, never the imported name**, and
 double-load this file already records under the 2.5× sweep arm that silently replayed stale code.
 ⚠ **A performance number is a CHECK on a correctness claim here, not just a headline** — the
 identity result alone could not tell the two apart.
-
-**TESTED:** 16 in `tests/test_bar_ms_prune.py`, two mutations watched RED — pruning the newest
-instead of the oldest reddens 9, dropping the order latch reddens 3. The key-set claim is
-asserted against a re-implementation of the ORIGINAL algorithm rather than against a hand-typed
-constant, so it cannot re-freeze my own reading of it.

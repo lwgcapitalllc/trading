@@ -268,9 +268,16 @@ repo grew into the number, not that the number is wrong. **Re-measure this gap b
 moving it, and record the new width here; do not move it because a file is sitting near it.**
 
 ⚠ **The direction of travel is good and the audit should say so.** Since the ceiling landed,
-six of the eleven oversized docs have SHRUNK, several by a lot — `command-center/backend`
-−83 KB, `command-center/frontend` −75 KB, `indicators` −166 KB, `command-center` −117 KB. The
-reminder is working on the files it can reach.
+seven of the eleven oversized docs have SHRUNK, several by a lot — `command-center/backend`
+−83 KB, `command-center/frontend` −75 KB, `indicators` −166 KB, `command-center` −117 KB, and
+`strategies/python/mpc_sos_fade` −102 KB (307 → 205 KB, 2026-08-27). The reminder is working on
+the files it can reach.
+
+
+⚠ **MEASURED there, and it bounds what a doc migration can ever achieve: moving EVERY explanation
+out — prose, tables and run numbers — still left 205 KB, because ~70% of that file is rules WITH
+their justification, which must stay next to the code. Past that point, reaching the ceiling is a
+decision to compress or DROP rules, not a migration. Say which is being asked for.**
 
 🔴 **A subsystem fragment is ANCHORED at the repo root (2026-08-13, `subsystem_matches`)** — a fragment starting with `/` matches only paths actually under that top-level dir, while `.pine` is about what the file IS and still matches anywhere. It was a plain substring test until `indicators/engines/` was created and a Pine file was about to be told it is a canonical Python engine. **The standing lesson: a directory RENAME can silently re-aim a guard** — nothing fails and no test goes red; the only symptom is correct-looking advice about the wrong file. Story: `HISTORY.md`.
 
