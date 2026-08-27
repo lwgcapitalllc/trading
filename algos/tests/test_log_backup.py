@@ -296,7 +296,11 @@ def _tracked(repo: Path) -> set[str]:
 
 def test_a_ledger_file_reaches_origin(repo):
     p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-    assert ledger_sync.commit([p], push=True) is True
+    # ⚠ Unpacked, never truth-tested. `commit` returns the outcome AND the reason for it, and any
+    # tuple is truthy — so `if commit(...)` would read every failure as a success and keep running.
+    ok, why = ledger_sync.commit([p], push=True)
+    assert ok is True
+    assert why == "", f"a successful backup invented a reason: {why}"
 
     out = subprocess.run(
         ["git", "-C", str(repo), "log", "--oneline", "origin/main"], capture_output=True, text=True
@@ -349,9 +353,16 @@ def test_a_missed_day_is_caught_up_not_lost(repo):
 
 
 def test_no_push_commits_locally_and_says_it_did_not_push(repo):
-    """`--no-push` must not report success — the record is not safe until it is at origin."""
+    """`--no-push` must not report success — the record is not safe until it is at origin.
+
+    ⚠ It must also say the refusal was DELIBERATE. This is the one `False` here that is not a
+    fault, and the alarm is muted for it separately; a reason that read like a failure would send
+    whoever eventually prints it looking for a broken push that never happened.
+    """
     p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-    assert ledger_sync.commit([p], push=False) is False
+    ok, why = ledger_sync.commit([p], push=False)
+    assert ok is False
+    assert "on purpose" in why, f"a deliberate local-only commit reads as a fault: {why}"
     assert any("decisions-2026-08-14" in t for t in _tracked(repo))
 
     out = subprocess.run(

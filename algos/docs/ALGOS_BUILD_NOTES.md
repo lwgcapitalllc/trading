@@ -205,3 +205,57 @@ resting orders against the old behaviour.
 
 ⚠ **The rules live in `algos/CLAUDE.md`; this is the diary entry.** Do not restate them here.
 
+
+## 2026-08-27 - ten identical alerts, and the answer was in the console all along
+
+Aaron, at 09:40: *"since 11:30pm last night I keep getting this errors: Ledger backup did NOT
+reach origin (this box). 3 file(s) committed locally; the record is on one disk until this
+clears."* Ten of them, an hour apart, byte-for-byte the same.
+
+**What had actually happened.** A bot's instance settings file was hand-edited on the box some
+time between the 22:20 and 23:20 runs - a dated `.bak` was left beside it - which made it a
+MODIFIED TRACKED file outside `algos/ledger_archive/`. `_foreign_changes()` therefore returned
+non-empty and `_push()` stood down, hourly, **exactly as designed**. The guard was right; a rebase
+under a checkout `promote.py` freezes is the thing it exists to refuse. First unpushed commit was
+stamped `2026-08-27 04:20:06 +0000` = 23:20 local, which is the "11:30pm" in the report.
+
+**The defect was not the refusal. It was that the refusal could not reach the person.** `_push()`
+printed the blocking filename and one sentence of explanation - to the scheduled task's console.
+`_alert()` was handed a fixed two-line string built in `main()` from a bool. **A bool cannot carry
+a reason, so the most useful sentence the system had was thrown away one stack frame below the
+only channel a human reads.**
+
+Cost: a session to diagnose something the box had already worked out ten times.
+
+**The fix.** `commit()` and `_push()` return `(ok, reason)`; `main()` renders the reason as a third
+line, `Why: ...`. Four failures, four different jobs for the reader - clear the tree, resolve a
+rebase, read why the remote refused, or edit `.gitignore` because that file can never be backed up
+at all and no retry will help. An unexplained failure prints *"reason not recorded"* rather than a
+blank, because a blank *Why* reads exactly like a clean failure with nothing to add.
+
+**A tuple rather than a result object, deliberately.** Any object is truthy, so `if commit(...)`
+would have gone on compiling and read every failure as a success - the exact class of silent bug
+this file is full of. Unpacking breaks every caller loudly, and **it immediately found one that a
+grep for callers had missed**: an assertion in `test_log_backup.py`. The noisy design paid for
+itself inside one test run.
+
+**Four new tests, three fail-watched against HEAD** in a throwaway worktree with the new test file
+copied in: the alert text there is the two generic lines, so the assertions on the named blocker
+and on the ignored record fail on text that never contained them, and the no-reason case fails
+with `rc == 0` because HEAD's truthy-tuple stub reads a failure as a success - which is the tuple
+argument above, demonstrated. The fourth ("a good run says nothing at all") passes against HEAD
+for the wrong reason, so it is red by MUTATION instead: forcing the alert condition true makes it
+fire on a successful backup.
+
+**Also verified, because a hand-run proves nothing here.** The 14:20 scheduled run exited 1 while
+being investigated; a manual run at 15:16 pushed cleanly. **That is precisely the shape this file
+warns about, so it was not accepted as proof** - the 15:20 SYSTEM run was waited for instead, and
+exited 0 with the box 0 commits ahead of origin after a fetch. The 14:20 failure was a manual run
+colliding with the scheduled one in the same clone.
+
+**Still open, and it is the same defect one branch over:** when EVERY fetched record is gitignored,
+`todo` is empty, `main()` returns 1 and alerts nothing at all. An unattended job failing in silence
+is the shape this whole subsystem keeps being bitten by. Left alone in this pass because it changes
+WHEN the alarm fires rather than what it says - but it is a hole, not a design.
+
+⚠ **The rules live in `algos/CLAUDE.md`; this is the diary entry.** Do not restate them here.

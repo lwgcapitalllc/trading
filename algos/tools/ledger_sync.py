@@ -302,16 +302,29 @@ def _identity() -> tuple:
     return ("-c", f"user.name={_BOX_NAME}", "-c", f"user.email={_BOX_EMAIL}")
 
 
-def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
-    """Stage exactly `paths` and commit. Returns True if the record is safely at origin."""
+def commit(paths: list[Path], push: bool, dry_run: bool = False) -> tuple[bool, str]:
+    """Stage exactly `paths` and commit. `(True, "")` if the record is safely at origin.
+
+    🔴 **The second half of the pair is the REASON, and it exists because the alarm had none.**
+    Every failure below already printed a specific explanation — to the scheduled task's console,
+    which nobody reads. The Telegram message said only that the backup had not reached origin, so
+    a night of hourly failures arrived as ten identical sentences carrying no way to act on them
+    (2026-08-27: a hand edit to a bot's settings file on the box had stood the push down since
+    23:20, and finding that out took a session). **A returned bool cannot carry why, so the reason
+    is returned beside it rather than left in a print.**
+
+    ⚠ **A tuple rather than an object on purpose.** Any object is truthy, so `if commit(...)` would
+    have kept compiling and silently read every failure as a success; unpacking forces every caller
+    to be changed, which is the loud direction.
+    """
     rel = [_rel(p) for p in paths]
     if dry_run:
         print(f"  would commit {len(rel)} file(s): {', '.join(rel)}")
-        return True
+        return True, ""
 
     if _run("git", "-C", str(REPO_ROOT), "add", "--", *rel).returncode != 0:
         print("  git add failed")
-        return False
+        return False, "git could not stage the fetched files"
 
     days = sorted({m[0] for p in paths for m in [re.findall(r"\d{4}-\d{2}-\d{2}", p.name)] if m})
     span = (days[0] if len(days) == 1 else f"{days[0]}..{days[-1]}") if days else "?"
@@ -321,12 +334,13 @@ def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
     )
     c = _run("git", "-C", str(REPO_ROOT), *_identity(), "commit", "-m", msg, "--", *rel)
     if c.returncode != 0 and "nothing to commit" not in c.stdout:
-        print(f"  git commit failed: {c.stderr.strip() or c.stdout.strip()}")
-        return False
+        detail = (c.stderr.strip() or c.stdout.strip())[:200]
+        print(f"  git commit failed: {detail}")
+        return False, f"git refused the commit: {detail}"
 
     if not push:
         print("  committed locally (--no-push)")
-        return False
+        return False, "committed locally on purpose (--no-push); this machine never pushes"
     return _push()
 
 
@@ -391,11 +405,16 @@ def _redact(text: str, secret: Optional[str]) -> str:
     return text.replace(secret, "REDACTED")
 
 
-def _push() -> bool:
-    """Rebase onto origin, then push. True only when the record is actually AT origin.
+def _push() -> tuple[bool, str]:
+    """Rebase onto origin, then push. `(True, "")` only when the record is actually AT origin.
 
     The rebase is what lets two machines commit to one branch. It is scoped by `_foreign_changes`
     rather than trusted: this same checkout is what a promote freezes.
+
+    ⚠ Every `False` here carries the sentence a reader needs to ACT on — see `commit`. The three
+    failures are genuinely different jobs (clear the working tree / resolve a rebase / look at
+    why the remote refused), and an alarm that cannot tell them apart sends its reader to read
+    this file before they can start.
     """
     remote = _authenticated_remote()
     target = remote or "origin"
@@ -420,7 +439,12 @@ def _push() -> bool:
         for f in foreign[:5]:
             print(f"      {f}")
         print("  The commit is safe locally. A rebase here could move what a promote freezes.")
-        return False
+        more = f" (+{len(foreign) - 3} more)" if len(foreign) > 3 else ""
+        return False, (
+            "this checkout has uncommitted changes outside the record folder — "
+            f"{', '.join(foreign[:3])}{more}. Pushing means rebasing, and a rebase could move "
+            "what a deployment freezes. Commit or revert them and the next hourly run clears it."
+        )
 
     r = subprocess.run(
         [*git, "pull", "--rebase", target, "main"], capture_output=True, text=True, env=env
@@ -429,13 +453,14 @@ def _push() -> bool:
         detail = _redact((r.stderr or r.stdout).strip(), secret)
         print(f"  rebase failed — the commit is safe locally: {detail[:300]}")
         subprocess.run([*git, "rebase", "--abort"], capture_output=True, text=True, env=env)
-        return False
+        return False, f"the rebase onto origin failed and was aborted: {detail[:200]}"
 
     r = subprocess.run([*git, "push", target, "HEAD:main"], capture_output=True, text=True, env=env)
     if r.returncode == 0:
-        return True
-    print(f"  push failed: {_redact((r.stderr or r.stdout).strip(), secret)[:300]}")
-    return False
+        return True, ""
+    detail = _redact((r.stderr or r.stdout).strip(), secret)
+    print(f"  push failed: {detail[:300]}")
+    return False, f"the rebase worked but the remote refused the push: {detail[:200]}"
 
 
 def _alert(message: str) -> None:
@@ -529,16 +554,33 @@ def main(argv=None) -> int:
         print(f"  up to date ({len(rel)} file(s) on the VPS, all already committed)")
         return 0
 
-    ok = commit(todo, push=not args.no_push, dry_run=args.dry_run)
+    ok, why = commit(todo, push=not args.no_push, dry_run=args.dry_run)
     print(f"  {len(todo)} file(s) {'pushed' if ok else 'NOT pushed'}")
 
     # ⚠ Only a genuine failure alerts. `--no-push` returns False on purpose (the operator asked
     # for a local commit), and alerting there would train the reader to ignore this message —
     # which is the one thing an unattended job's alarm cannot afford.
     if args.alert_on_failure and not args.no_push and not args.dry_run and not (ok and not blocked):
+        # 🔴 The reason is the whole point of this message. Without it the alarm says only that
+        # something is wrong, hourly, in identical words — and ten of those are worth less than
+        # one, because the reader learns there is nothing in them to read. MEASURED the hard way
+        # on 2026-08-27: ten of these arrived overnight and the cause (a hand-edited settings
+        # file on the box) was sitting in the task console the whole time.
+        reasons = [r for r in [why] if r]
+        if blocked:
+            named = ", ".join(str(p.relative_to(REPO_ROOT)) for p in blocked[:3])
+            reasons.append(
+                f"git is configured to IGNORE {named}, so it can never be backed up at all — "
+                "that needs a .gitignore change, not a retry"
+            )
+        # ⚠ Never let "no reason" and "the reason was not recorded" read the same. A blank line
+        # here would be indistinguishable from a clean failure, and this repo's first rule is
+        # that cannot-ask must never share a value with nothing-to-say.
+        detail = "; ".join(reasons) or "reason not recorded — read the task output on this box"
         _alert(
             f"Ledger backup did NOT reach origin ({where}).\n"
-            f"{len(todo)} file(s) committed locally; the record is on one disk until this clears."
+            f"{len(todo)} file(s) committed locally; the record is on one disk until this clears.\n"
+            f"Why: {detail}"
         )
     return 0 if (ok and not blocked) else 1
 

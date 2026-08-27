@@ -155,6 +155,28 @@ permanently carries two, and counting them would mean the push never ran while l
 alert: an alarm that fires when you asked for the thing is one people learn to ignore, and this
 job's silence has already been mistaken for success twice.
 
+🔴 **THAT MESSAGE COULD NOT SAY WHY UNTIL 2026-08-27, AND IT COST A NIGHT AND A SESSION.** Every
+refusal above already printed a specific, actionable explanation — **to the scheduled task's
+console, which nobody reads** — while what reached a human was two fixed sentences. **An alarm that
+cannot distinguish its own causes is a doorbell: it tells you to go and look, which is the work you
+built it to save.** ✅ `commit` and `_push` return `(ok, reason)`; the reason is the message's third
+line. Story: `docs/ALGOS_BUILD_NOTES.md` → *Ten identical alerts*.
+
+⚠ **Reasons are written for someone with no context, and they differ by the ACTION they call for** —
+clear the tree, resolve a rebase, read why the remote refused, or change `.gitignore` because that
+file can never be backed up and a retry is pointless. Two failures needing different work must never
+render as one sentence.
+
+⚠ **A tuple, not a result object, and the ugliness is the point.** Any object is truthy, so
+`if commit(...)` would keep compiling and read every failure as a success; unpacking breaks every
+caller loudly — and immediately found one a grep had missed.
+
+⚠ **An unexplained failure NAMES ITSELF as one** rather than leaving a blank *Why*. Rule 1 through a
+message instead of a value: a blank line reads exactly like a clean failure with nothing to add.
+
+🔴 **STILL OPEN — the same defect one branch over: when EVERY fetched record is gitignored, `todo`
+is empty, the job returns 1 and alerts NOTHING.** A hole, not a design.
+
 ⚠ **What it costs, and it was a deliberate trade:** that box already holds a live broker password,
 and a repo write token beside it means a break-in costs the repository too. One repo, Contents
 write, nothing else, is the whole of the limit.
@@ -189,9 +211,13 @@ sync would be attributed to the box. ⚠ **Passed per-command, never written int
 checkout is what `promote.py` reads, and a write would silently re-attribute a human's commits made
 from the same box.
 
-**Tests:** `algos/tests/test_ledger_sync_local.py` (22), weighted toward what the job must REFUSE.
-A fail-watch is vacuous (new functions), so non-vacuity is by MUTATION — dropping the archive
-exemption and dropping the redaction each redden their own named test. 🔴 **One test caught a real
+**Tests:** `algos/tests/test_ledger_sync_local.py` (26), weighted toward what the job must REFUSE.
+A fail-watch is vacuous for the original functions (they were new), so non-vacuity is by MUTATION —
+dropping the archive exemption and dropping the redaction each redden their own named test. ⚠ **The
+four alarm-wording cases are the exception and WERE fail-watched properly**, this file copied into a
+worktree at HEAD: three go red there because the old message has no room to carry a reason, and the
+fourth — a good run must stay silent — is red by mutation instead, since it passes against HEAD for
+the wrong reason. 🔴 **One test caught a real
 defect the live check had missed: the authenticated URL was missing its `@`, so it could never have
 authenticated — and the check on the box only asserted the builder returned something.**
 

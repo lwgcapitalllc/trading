@@ -317,6 +317,118 @@ def test_an_account_that_HAS_one_keeps_it(repo):
     assert ls._identity() == ()
 
 
+# ── the alarm has to say WHY ────────────────────────────────────────────────
+
+
+@pytest.fixture
+def box(repo, monkeypatch):
+    """`repo`, shaped like the trading box mid-run: one record waiting to be backed up.
+
+    ⚠ `remote_files` is stubbed rather than left to shell out. Unstubbed it would ssh to the real
+    trading box, and a unit test may never touch the machine carrying the live bot.
+    ⚠ `_authenticated_remote` is forced to None so nothing here can reach for a token or a network.
+    """
+    live = repo / "algos" / "markets" / "fx" / "instances" / "b" / "ledger"
+    live.mkdir(parents=True)
+    (live / "decisions-2026-08-27.jsonl").write_text('{"a":1}\n')
+    monkeypatch.setattr(ls, "LOCAL_INSTANCES", repo / "algos" / "markets" / "fx" / "instances")
+    monkeypatch.setattr(ls, "LOCAL_ARCHIVE", repo / "algos" / "ledger_archive")
+    monkeypatch.setattr(
+        ls,
+        "remote_files",
+        lambda host, which: ["b/ledger/decisions-2026-08-27.jsonl"] if which == "closed" else [],
+    )
+    monkeypatch.setattr(ls, "_authenticated_remote", lambda: None)
+    return repo
+
+
+@pytest.fixture
+def alerts(monkeypatch):
+    """Everything the job would have sent to the health channel."""
+    sent = []
+    monkeypatch.setattr(ls, "_alert", sent.append)
+    return sent
+
+
+def test_the_alarm_NAMES_the_file_that_stood_the_push_down(box, alerts):
+    """🔴 The night of 2026-08-27: ten identical alerts, not one of which said what to do.
+
+    A hand edit to a bot's settings file on the box makes `_foreign_changes` non-empty, so the
+    push stands down every hour exactly as designed. The refusal named the file — to the
+    scheduled task's console, which nobody reads — while the message that actually reached a
+    human carried only *"did NOT reach origin"*. **Ten of those are worth less than one, because
+    the reader learns there is nothing in them to read.**
+
+    **Watched RED against HEAD**, this whole file copied into a worktree at HEAD: the alert there
+    is the two generic lines, so the path assertion fails on text that never contained it.
+    """
+    (box / "algos" / "tools" / "promote.py").write_text("# edited mid-deployment\n")
+
+    rc = ls.main(["--local", "--alert-on-failure"])
+
+    assert rc == 1
+    assert len(alerts) == 1, f"expected exactly one alert, got {alerts}"
+    assert "Why:" in alerts[0]
+    assert "algos/tools/promote.py" in alerts[0], f"the alarm did not name the blocker: {alerts[0]}"
+
+
+def test_a_run_that_REACHES_origin_says_nothing_at_all(box, alerts, monkeypatch):
+    """Mutation guard: alerting unconditionally reddens this.
+
+    An alarm that fires on a good run fails the same way as one carrying no reason — the reader
+    stops reading it, and then the real one arrives and is scrolled past.
+    """
+    monkeypatch.setattr(ls, "_push", lambda: (True, ""))
+
+    rc = ls.main(["--local", "--alert-on-failure"])
+
+    assert rc == 0
+    assert alerts == []
+
+
+def test_the_alarm_NAMES_a_record_git_is_configured_to_IGNORE(box, alerts, monkeypatch):
+    """The other failure that fires this alert, and it needs a completely different action.
+
+    A `.gitignore` match means the file can never be backed up at all, so waiting for the next
+    hourly run is pointless — which is exactly what the old message could not distinguish from a
+    working tree that will be clean in ten minutes.
+    """
+    (box / ".gitignore").write_text("*.log\n")
+    (box / "algos" / "markets" / "fx" / "instances" / "b" / "b-2026-08-27.log").write_text("x\n")
+    monkeypatch.setattr(
+        ls,
+        "remote_files",
+        lambda host, which: (
+            ["b/ledger/decisions-2026-08-27.jsonl", "b/b-2026-08-27.log"]
+            if which == "closed"
+            else []
+        ),
+    )
+    monkeypatch.setattr(ls, "_push", lambda: (True, ""))
+
+    rc = ls.main(["--local", "--alert-on-failure"])
+
+    assert rc == 1
+    assert len(alerts) == 1, f"expected exactly one alert, got {alerts}"
+    assert "b-2026-08-27.log" in alerts[0]
+    assert ".gitignore" in alerts[0], f"the alarm did not say a retry is useless: {alerts[0]}"
+
+
+def test_a_failure_with_NO_recorded_reason_SAYS_it_has_none(box, alerts, monkeypatch):
+    """Rule 1 arriving through a message rather than a value.
+
+    A blank *"Why:"* line reads exactly like a clean failure with nothing to add. Cannot-ask and
+    nothing-to-say must never share a form, so an unexplained failure has to name itself as one —
+    otherwise the next silent branch added below reads as an explained failure for ever.
+    """
+    monkeypatch.setattr(ls, "_push", lambda: (False, ""))
+
+    rc = ls.main(["--local", "--alert-on-failure"])
+
+    assert rc == 1
+    assert "reason not recorded" in alerts[0], alerts[0]
+
+
 def test_the_identity_is_never_written_into_the_repo_config(repo, monkeypatch):
     """It is passed per-command. A write would touch a checkout `promote.py` also reads."""
     monkeypatch.setattr(ls, "_run", lambda *a: _Empty())
