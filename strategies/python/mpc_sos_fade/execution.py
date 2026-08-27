@@ -2349,7 +2349,11 @@ class Execution:
             # here. MEASURED 2026-08-21: all-out at 3x made 6,740x over 7.9 years where the shipped
             # bank-half-at-1.25x ladder made 3,111x — worse than taking no re-entry at all.
             if pend.src == "reclaim":
-                tp_r = getattr(self._cfg, "exec_rec_tp_r", 3.0)
+                # ⚠ The fallback MIRRORS the config default and must move with it. It is
+                # unreachable through a real config (the field always exists), but a duck-typed
+                # stand-in that fell back to a stale number would price the rung differently from
+                # every shipped run while looking correct.
+                tp_r = getattr(self._cfg, "exec_rec_tp_r", 3.25)
             else:
                 tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
             dist = abs(fill_price - pend.sl)

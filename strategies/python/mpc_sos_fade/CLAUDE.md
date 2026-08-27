@@ -3558,11 +3558,77 @@ the balance; that is sequencing, never safety. **Read the R drawdown, which got 
 honest verdict on the gap half is *"it has not shown an edge over this window"*, never *"it does
 not work"*.
 
+## Where the reclaim banks: 3.0R → 3.25R, and the 0.25R that costs nothing (2026-08-27)
+
+**MEASURED on the live bot's own stance** — every stop rule at never-move, the whole position off
+at the target, no runner — over **47 reclaims**, XAUUSD.p M15+M5, 2020-01-01 → 2026-08-23, nine
+targets replayed on one frozen checkout so no code moved between them:
+
+| bank at | total | winners |
+|---|---|---|
+| 2.00R | 13.00R | 20 |
+| 2.25R | 14.75R | 19 |
+| 2.50R | 19.50R | 19 |
+| 2.75R | 24.25R | 19 |
+| 3.00R | 25.00R | 18 |
+| **3.25R** | **29.50R** | **18** |
+| 3.50R | 29.50R | 17 |
+| 3.75R | 14.75R | 13 |
+| 4.00R | 13.95R | 12 |
+
+✅ **The move from 3.00R to 3.25R changed NO trade's outcome.** Same 18 winners, same 29 losers —
+every winner that reached 3.00R also reached 3.25R and simply carried 0.25R further. **The +4.50R
+is not bought from anywhere**, which is what separates this from a tuning nudge that traded one
+population of trades for another.
+
+⚠ **THE TABLE ABOVE WAS MEASURED ON A FROZEN CHECKOUT AND TODAY'S TREE GIVES A DIFFERENT BOOK.**
+Work landed on this strategy between the sweep and the default change, and on current code the
+same window gives **44 reclaims, not 47**. Do not expect to reproduce 29.50R by replaying today —
+quote the table as what it is, a ranking measured on one pinned checkout.
+
+✅ **RE-CONFIRMED ON CURRENT CODE (2026-08-27), with the target resolved from the SETTING rather
+than pinned in the run's params:** 3.00R gives 44 reclaims / **28.00R** / 18 winners, and 3.25R
+gives 44 reclaims / **32.50R** / 18 winners. **The same 44 trades, the same 18 winners, and zero
+outcomes flipped** — 18 × 0.25R = exactly the +4.50R observed. Different absolute numbers, same
+structure, same conclusion.
+
+🔴 **THE FIRST ATTEMPT AT THAT CHECK WAS VACUOUS AND PASSED ANYWAY, WHICH IS THE LESSON WORTH
+KEEPING.** It replayed a params file that PINNED the target, so both sides read the pinned value
+and the default under test was never consulted. Both runs came back byte-identical, and identical
+is exactly what a working no-op looks like — **the check could not tell "took effect" from "was
+overridden".** To test a DEFAULT, the key has to be ABSENT from the params, not set to the value
+you are hoping for. This is the same shape as the lab's basis trap: a request-time value that
+overwrites the thing you meant to measure.
+
+🔴 **3.50R ties it at 29.50R and was NOT chosen.** It has one fewer winner, and it sits one 0.25R
+step from a cliff where four winners vanish and the leg halves. 3.25R keeps twice that margin for
+identical money. ⚠ **The cliff rests on four trades, so its exact position is soft — that it
+exists is not**: 3.75R and 4.00R are both down there.
+
+⚠ **This is the OTHER half of the same question the de-risking grid answered**, and the two
+answers point the same way: this leg is carried by trades that run, so anything that shortens
+them — a nearer target, a tightened stop — costs more than it saves. See *Every entry method owns
+its stop rule* above for the stop half.
+
+⚠ **The default is all that moved. The re-entry itself still ships OFF** (Aaron's call,
+2026-08-27) and the shipped trigger is still the gap, so no shipped run changes.
+🔴 **The live bot PINS the old 3.0 in its own instance config** — `algos/markets/fx/instances/
+mpc_sos_fade_demo/config.json` — so it will NOT pick this up. It is inert there today because
+that bot's re-entry fires off the gap, but the moment anyone switches the reclaim on live, the
+pinned 3.0 silently wins over this default. **Change it there too, or the measurement never
+reaches the bot.**
+
+⚠ **Every losing reclaim in all nine runs came back at exactly −1.0R** (one exception at 4.00R).
+The leg is binary, which is what lets each row's total be reconciled from its win count alone —
+all nine do, to the cent. That is an independent check on the table rather than a restatement of
+it.
+
 ## 🔴 THE RECLAIM'S GIVE-BACK — FIVE FIXES REPLAYED, FOUR LOSE, AND THE EXCHANGE RATE SAYS WHY (2026-08-24)
 
 The reclaim half banks 100% at its target and its stop does not move until that target is
-touched, so every trade is **+3R or −1R** with nothing in between. Aaron's 2025-08-19 reclaim ran
-**+2.98R**, missed by **7.5 cents**, and paid the full loss. Five ways of fixing that were
+touched, so every trade is **+3.25R or −1R** with nothing in between (the target was 3.0R until
+2026-08-27 — see *Where the reclaim banks* below). Aaron's 2025-08-19 reclaim ran **+2.98R**,
+missed by **7.5 cents**, and paid the full loss. Five ways of fixing that were
 replayed on the shipped basis. **Full grids, per-band splits and the run ids:
 `mpc_sos_fade_optimization.md` → the 2026-08-24 run.**
 

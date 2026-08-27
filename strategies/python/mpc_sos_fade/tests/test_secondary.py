@@ -1415,7 +1415,7 @@ def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_greys_out():
         return ex._tp1, ex._tp1_pct()
 
     shipped = fill()
-    assert shipped == (106.0, 100.0), "3R off a 2.00 stop, all of it — the measured ladder"
+    assert shipped == (106.5, 100.0), "3.25R off a 2.00 stop, all of it — the measured ladder"
     assert fill(exec_sec_tp_r=1.0) == shipped, "the shared first target moved a reclaim"
     assert fill(exec_sec_tp1_pct=25.0) == shipped, "the shared bank percentage moved a reclaim"
 

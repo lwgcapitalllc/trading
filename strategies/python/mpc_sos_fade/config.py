@@ -1144,12 +1144,29 @@ class SosFadeConfig:
     #   are pure reads of the 15m fib. Do not widen this set without reading that note in
     #   `secondary.py` section 2c.
 
-    exec_rec_tp_r: float = 3.0         # "Reclaim's first target, in R"
+    exec_rec_tp_r: float = 3.25        # "Reclaim's first target, in R"
     #   -1 = use the 15m 0.5 fib like the primary; a positive number is a multiple of the RECLAIM's
-    #   own (much tighter) risk. ⚠ 3.0 is the measured default and the ladder below matters as much
-    #   as the number: MEASURED 2026-08-21 over 7.9 years, all-out at 3x made 6,740x while the
-    #   shipped bank-half-at-1.25x ladder made 3,111x — WORSE than taking no re-entry at all
-    #   (3,582x). A re-entry this tight has to be allowed to pay for the ones that fail.
+    #   own (much tighter) risk. ⚠ The LADDER below matters as much as the number: MEASURED
+    #   2026-08-21 over 7.9 years, all-out at 3x made 6,740x while the shipped bank-half-at-1.25x
+    #   ladder made 3,111x — WORSE than taking no re-entry at all (3,582x). A re-entry this tight
+    #   has to be allowed to pay for the ones that fail.
+    #
+    #   🔴 3.0 → 3.25 ON 2026-08-27, and the reason it is not a tuning nudge: the SAME 18 winners
+    #   reach both. MEASURED over 47 reclaims (XAUUSD.p M15+M5, 2020-01-01 → 2026-08-23, the live
+    #   bot's own stance with every stop rule at never-move), nine targets replayed on one frozen
+    #   checkout:
+    #     2.00x 13.00R | 2.25x 14.75R | 2.50x 19.50R | 2.75x 24.25R | 3.00x 25.00R
+    #     3.25x 29.50R | 3.50x 29.50R | 3.75x 14.75R | 4.00x 13.95R
+    #   Going 3.00 → 3.25 changed NO trade's outcome — 18 winners and 29 losers either way, each
+    #   winner simply carried 0.25R further, so the +4.50R is not bought from anywhere.
+    #   ⚠ 3.50x ties it at 29.50R and is NOT chosen: it has one fewer winner and sits one 0.25x
+    #   step from a cliff where four winners vanish and the leg halves. 3.25x keeps twice that
+    #   margin for the same money.
+    #   ⚠ THE CLIFF RESTS ON FOUR TRADES, so treat its exact position as soft. That it exists is
+    #   not soft — 3.75x and 4.00x are both down there.
+    #   ⚠ Every losing reclaim in all nine runs came back at exactly -1.0R (one exception at
+    #   4.00x). The leg is BINARY — target or full stop, nothing between — which is what lets each
+    #   row's total be reconciled from its win count alone. All nine do.
 
     exec_rec_tp1_pct: float = 100.0    # "Reclaim banks at its first target (%)"
     #   -1 = inherit `exec_tp1_pct`. 100 = the whole position comes off at `exec_rec_tp_r`, which is
