@@ -324,13 +324,21 @@ class SosFadeConfig:
     #   readable place silently resets every later float on Aaron's live charts.
     #   ⚠ **Pine gates the 15m setup path only, because that is the only entry path Pine HAS.**
     #   The re-entry is Python-only, so it is gated here and has nothing to be compared against.
-    #   ⚠ **OFF (0.0) on both sides, so `compare_strategy.py` sees exactly the decisions it always
-    #   did and a shipped run is byte-identical to one from before this existed.** That is the
-    #   only reason the gate can land before the parity harness has re-run.
-    #   ⚠ **OFF is Aaron's call (2026-08-26)**, taken after the measurement above, not instead of
-    #   it: build the switch, ship it down, decide from a run. Turning it on is a real behaviour
-    #   change and the live bot does not have it until somebody PROMOTES.
-    exec_min_atr_pct: float = 0.0      # "Refuse setups below volatility (% of price)"
+    #   🔴 **ON at 0.08 ON BOTH SIDES since 2026-08-26 (Aaron's call, taken off the drawdown table
+    #   above and not off the R one). THE SHIPPED BOOK IS NOW 240 TRADES, NOT 245.** It landed OFF
+    #   earlier the same day and was switched on once the run was read — the switch and the value
+    #   are two separate decisions and the history is kept that way on purpose.
+    #   ⚠ **EVERY BASELINE IN THIS PACKAGE MEASURED BEFORE TODAY IS A 245-TRADE BOOK.** Pin this to
+    #   0.0 to reproduce one. That is not a formality here: the floor removes 5 entries, and with
+    #   one position slot a removed entry changes which LATER setup gets the slot, so a stored
+    #   figure does not merely shift by the refused trades' R.
+    #   ⚠ **The A+/B-LEG overlap audit is STALE until `backtest/tools/overlap_audit.py` is re-run** —
+    #   it was measured on the entry logic that took 245.
+    #   ⚠ **The live bot does not have this until somebody PROMOTES.** A pull cannot move it.
+    #   ⚠ **An export taken before today has no `cfg_min_atr` column, and the comparator reads an
+    #   absent column as 0.0 rather than as this default** — which is the only thing keeping an
+    #   archived export replayable now that the shipped value is non-zero.
+    exec_min_atr_pct: float = 0.08     # "Minimum market volatility (% of price)"
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart
