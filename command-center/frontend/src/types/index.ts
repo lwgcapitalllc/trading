@@ -78,6 +78,13 @@ export interface BrokerProfile {
    *  ⚠ Empty/null means UNRECORDED, never "matches anything". */
   server: string
   account: number | null
+  /** How this broker spells its symbols — `'.p'`, `'.s'`, or `''` for one quoting bare names.
+   *  ⚠ **Three-state: `null` means UNRECORDED, never bare.** A page reading null must say it
+   *  cannot tell rather than showing the typed name as though it had been resolved — the same
+   *  rule `server` above follows, and the reason gold silently returned no bars on 2026-08-26.
+   *  The Run modal resolves the instrument against this so the symbol updates as you switch
+   *  broker; the backend resolves it again at run creation, which is the one that binds. */
+  symbol_suffix: string | null
   /** True when this profile describes the terminal the lab is attached to RIGHT NOW.
    *  🔴 The bar cache is partitioned by server, so one broker's BARS cannot reach another's replay
    *  — but the cost profile is picked independently, so a run can replay PU Prime's bars and charge

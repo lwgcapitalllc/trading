@@ -15,6 +15,68 @@ the other one did.
 
 ## Latest
 
+### The broker that spelled gold differently (2026-08-26)
+
+Reported from the screen: every backtest was failing with `MT5 agent returned no bars for XAUUSD
+M15 [2020-01-01, 2026-08-26] across 4 chunk(s)`.
+
+**Nothing was broken.** The tunnel was up, the agent was healthy, the terminal was connected to PU
+Prime ECN 700152905, and six years of gold bars were sitting in the cache. The run asked for
+`XAUUSD`; PU Prime quotes gold as `XAUUSD.p`. Probed directly, the agent serves `XAUUSD.p`
+instantly and answers `XAUUSD` with `(-1, 'Terminal: Call failed')`.
+
+**Three runs earlier the same evening had completed on the same broker**, at 21:24, 22:05 and
+22:14, all with the suffixed name. Every earlier bare-name run in the lab was on the Vantage
+profile — Vantage quotes bare names. So the report of *"anytime I try to run a backtest"* was one
+run, and the change that broke it was a dropdown, not a commit.
+
+**The error is the interesting part, and it is a repeat offender in a new costume.** It named the
+symbol, the timeframe, the window and the chunk count. It could not say *which* of those was wrong,
+because by the time it was raised — four layers down, inside the bar loader's gap-fetch — the only
+fact left was that a request returned nothing. An unknown symbol and an unavailable window produce
+the identical answer, which is this repo's rule 2 arriving one level below where it is usually
+caught: **a negative result a healthy system can also produce.** A quiet weekend and a symbol the
+broker has never heard of are the same empty frame.
+
+**Why nobody had to know this before.** The suffix belongs to the ACCOUNT — measured 2026-08-08,
+`.s` on Standard and `.p` on the two raw tiers, and neither login can even see the other's symbol.
+The LIVE side has known this since 2026-08-12, when a bot moved account and kept a symbol its new
+terminal did not quote; `rebase_symbol` was written then. **The lab was the half left behind**, and
+it stayed invisible for as long as the lab pointed at one broker.
+
+**Fixed by making the broker state its own spelling.** Each profile in `backtest/fills.py` now
+carries a `symbol_suffix`, and run creation resolves the typed name against it and stores the
+RESULT — the same discipline the cost layers beside it already follow. The Run modal shows the
+resolved symbol as you switch broker, which is what was actually asked for.
+
+Three things worth keeping:
+
+1. **The resolution had to move ABOVE the history-floor check.** That check is per broker and per
+   symbol; asked about the typed name it clears a window for a symbol the run will never load — a
+   green check about the wrong thing.
+2. **`symbol_suffix` is three-state and PU Prime Cent is `None`.** Nobody here has logged into that
+   tier. `XAUUSD.crp` appearing in another account's Market Watch is not evidence of what the Cent
+   account quotes, and guessing bare would fail in exactly the way this fixes. Rule 1, again.
+3. **One rebase, not two.** The live side's function is imported rather than reimplemented, so the
+   lab and the bot cannot end up disagreeing about what gold is called.
+
+**A second finding fell out of the same audit and was fixed in the same change (Aaron's call).**
+PU Prime Standard and Prime carried no `account`, and `_is_attached` falls back to "both sides
+blank" when either side has none — so a lab pointed at either could never be confirmed as the
+attached terminal, and the page said *"cannot tell which terminal is connected"* about a terminal
+it could name exactly. **They were never unknown**: the 2026-08-08 swap measurement signed MT5_Lab
+into all three logins in turn and the block names every one. That notice is the only thing standing
+between a reader and a run charged on the wrong tier, and these three tiers' spreads are 2.7x apart
+on one shared server. Cent stays blank on purpose — nobody has logged into it, so "cannot tell" is
+the true answer there.
+
+**TESTED:** 20 new tests. 13 watched RED against HEAD — 8 `AttributeError` on the missing resolver,
+3 on the missing field, 2 `KeyError` on the endpoint, and one `assert 'XAUUSD' == 'XAUUSD.p'` at the
+stored row, which is the defect itself. A further 3 watched RED by mutation (both `account=` lines
+deleted). ⚠ The remaining 4 are GUARDS that are green either way by design — the live-side rebase
+against a future second implementation, Cent staying blank, and an unrecognised login still
+reading as "cannot tell". Counting those as red would be a lie.
+
 ### The switch that overwrote the basis (2026-08-25)
 
 The lab MCP server's contract check went red on its own the first time it mattered. `charge_costs`

@@ -17,7 +17,7 @@ from models import (
     OptimizationRequest,
     OptimizationSummary,
 )
-from services import history_limits, lab_db, runner_dispatch
+from services import history_limits, lab_db, python_runner, runner_dispatch
 from services.optimization_runner import (
     base_params_for,
     expand_grid,
@@ -76,9 +76,19 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
+    # The BROKER decides how this instrument is spelled — same resolution the single-run path
+    # does, and it has to happen before the floor check below for the same reason: that check is
+    # per broker and per symbol. A sweep is the worst place for this to go wrong, because one
+    # unanswerable symbol fails every combo in the grid identically and reads as a broken engine.
+    instrument = (
+        python_runner.run_symbol(req.instrument, req.broker_profile)
+        if runner == "python"
+        else req.instrument
+    )
+
     try:
         history_limits.validate_window(
-            req.instrument,
+            instrument,
             req.start_date,
             req.end_date,
             req.bar_type,
@@ -108,7 +118,7 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         {
             "optimization_id": opt_id,
             "strategy_id": req.strategy_id,
-            "instrument": req.instrument,
+            "instrument": instrument,
             "start_date": req.start_date,
             "end_date": req.end_date,
             "commission_per_side": req.commission_per_side,

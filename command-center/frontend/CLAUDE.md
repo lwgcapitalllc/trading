@@ -3318,6 +3318,37 @@ spread over PU Prime's bars. Same mixed basis one level up, and just as quiet.
 - ⚠ **No fallback picks a broker when nothing is attached** — it takes the first profile only so
   the select has a value, and the *cannot tell* note is what the reader acts on.
 
+## The Run modal: BROKER first, and it rewrites the symbol (2026-08-26)
+
+A strategy suggests a bare `XAUUSD`; PU Prime quotes gold as `XAUUSD.p`. Switching broker and not
+the symbol produced an empty bar frame minutes into the run. **Switching broker now rewrites the
+instrument field itself**, and the broker select moved to the TOP of the form.
+
+- 🔴 **The broker select is the FIRST control, above Instrument.** It used to sit inside the Costs
+  block, which read as though it only decided what a run was CHARGED — while it also decides which
+  broker's bars are replayed and now how the symbol is spelled. **A control that silently rewrites
+  a field ABOVE it makes no sense to anybody**; cause before effect and the rewrite explains
+  itself.
+- 🔴 **It rewrites the FIELD, never captions it.** The first version left `XAUUSD` in the box with
+  *"puprime_ecn quotes this as XAUUSD.p"* beneath — rule 7 in miniature, a label claiming what some
+  other code will do. **The box is what the reader believes, so the box is what has to be right.**
+- ⚠ **Keyed on the BROKER only, not the symbol** — rebasing per keystroke would append a suffix
+  before somebody had finished typing the base. Switch broker and it rewrites; type and it leaves
+  you alone.
+- ⚠ **An EFFECT, not the select's `onChange`, and it must stay one.** onChange would silence the
+  `set-state-in-effect` warning it trips (one of five here; the rule is at warn on purpose) but
+  only fires when a HUMAN picks a broker. The broker also arrives on its own when the profiles load
+  and the default lands on the attached terminal — the common case, open and press Run — and an
+  onChange-only version leaves a bare `XAUUSD` under a PU Prime selection, which is the bug.
+- ⚠ **Display only — the BACKEND binds.** `python_runner.run_symbol` resolves again at run creation
+  and stores the result, so a hand-typed bare name is still corrected. This half makes the answer
+  VISIBLE; it is not what guarantees it.
+- ⚠ **A null suffix is UNRECORDED, never bare.** The symbol is left as typed and a note says nobody
+  recorded that broker's naming — silence there would read as "bare", which is a guess.
+- ⚠ NT8 keeps its own `Submits as:` line and contract-month logic, untouched.
+
+Story: `HISTORY.md` → *The broker that spelled gold differently*.
+
 ## The re-price control dies on a charged run, and a PAIRED RE-RUN replaces it (2026-08-24)
 
 🔴 **Re-pricing is strictly ADDITIVE — the server can only charge a layer the run did not.** Since

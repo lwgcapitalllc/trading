@@ -3968,6 +3968,29 @@ replays its own history and only a NEW run follows the attached terminal.**
 row is that. ⚠ The refusal, the fetch-time check and why merging is unrecoverable live in
 `backtest/CLAUDE.md`; do not restate them here.
 
+## The BROKER spells the symbol, and the run records the resolved name (2026-08-26)
+
+A strategy suggests a bare `XAUUSD`; PU Prime quotes gold as `XAUUSD.p` and Vantage quotes it bare.
+`python_runner.run_symbol(instrument, broker)` rebases the typed name onto the profile's
+`symbol_suffix`, and **run creation and the optimizer store the RESOLVED name** (rule 3 — the row
+is what a rerun, the re-price endpoint and every comparison read back).
+
+- ⚠ **It resolves BEFORE the history-floor check, not after.** That check is per broker and per
+  symbol, so asking it about the typed name clears a window for a symbol the run never loads.
+- ⚠ **The rebase is the LIVE side's `bot_account_registry.rebase_symbol`, not a second copy.** One
+  implementation, so the two cannot drift about what gold is called.
+- ⚠ **Three-state, and the middle one is the point.** `""` = measured to quote bare names,
+  `None` = **nobody recorded it**, and the symbol is then left exactly as typed with the page
+  saying so. Collapsing them hands a terminal a symbol nobody has seen it quote — failing in the
+  very way this fixes. PU Prime Cent is `None`.
+- ⚠ **PYTHON-ONLY.** NT8 and MT5 have no broker profile to resolve against; their instrument is
+  sent exactly as given.
+- ⚠ The Run modal resolves it for DISPLAY only — the backend is what binds, so the page can never
+  put a wrong symbol on a row.
+
+Why it went unnoticed for so long, and what the error said instead: `HISTORY.md` → *The broker that
+spelled gold differently*.
+
 ## The cost account FOLLOWS the attached terminal (2026-08-24)
 
 🔴 **The bar cache is partitioned by broker, so one broker's BARS can no longer reach another
@@ -3983,6 +4006,11 @@ silent in the same way, and the two gold spreads are $0.12 and $0.22 an ounce.
   sits on Prime — the 2.7x error the unmeasured-spread sentinel exists to prevent, arriving through
   the front door. A profile with no recorded account can only ever match a terminal with no
   recorded account.
+- ✅ **Standard and Prime gained their logins 2026-08-26, so all three tiers can now be NAMED.**
+  Until then the sentence above bit the profiles it was written to protect: blank on both meant a
+  lab attached to either got the "cannot tell" notice about a terminal it could identify exactly.
+  ⚠ Cent stays blank deliberately — nobody has logged into it, and the honest answer there is
+  still "cannot tell".
 - ⚠ **An unreachable agent attaches NOTHING** rather than falling back to a default (rule 1), and a
   terminal that answers while DISCONNECTED attaches nothing either — the agent replies `ok` with
   its broker link down, which is this repo's own 2026-08-04 incident.

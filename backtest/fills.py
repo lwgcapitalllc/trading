@@ -286,10 +286,38 @@ class AccountProfile:
     #: ⚠ **The SERVER cannot pick the tier and must not be read as if it could** — PU Prime's Prime
     #: and ECN logins both live on `PUPrime-Demo`. The ACCOUNT is what separates them, which is why
     #: both are recorded and why `account` is `None` for a tier nobody has logged into here.
+    #: ✅ **Standard and Prime gained theirs on 2026-08-26, and they were never unknown** — the
+    #: 2026-08-08 block below `_XAUUSD_SWAP` names all three logins, because MT5_Lab was signed
+    #: into each in turn to measure them. Leaving them blank meant a lab pointed at Standard
+    #: reported *"cannot tell which terminal is connected"* about a terminal it could name exactly.
+    #: ⚠ **Cent stays `None` and that is the field working**, not an omission: nobody has logged
+    #: into that tier, so pointing the lab at it will honestly say it cannot tell.
     #: ⚠ **Empty/None means UNRECORDED, never "matches anything".** A caller comparing against a
     #: blank must treat it as "cannot tell", not as agreement.
     server: str = ""
     account: Optional[int] = None
+    #: The suffix this account's broker puts on every symbol it quotes — `".p"`, `".s"`, or `""`
+    #: for a broker that quotes bare names. Identity, never a cost.
+    #:
+    #: 🔴 **THE SUFFIX IS THE TIER, and neither account can see the other's symbol.** MEASURED
+    #: 2026-08-08 by logging MT5_Lab into each PU Prime demo in turn (`algos/tools/broker_facts.py`,
+    #: read-only): Standard 700119432 quotes `XAUUSD.s`, Prime 700152904 and ECN 700152905 quote
+    #: `XAUUSD.p`, and there is **no `XAUUSD.p` on the Standard account at all**. Vantage's
+    #: 25893735 was read the same way on 2026-07-22 and quotes bare `XAUUSD`. Re-confirmed on the
+    #: ECN login 2026-08-26: `/historical_data` serves `XAUUSD.p` and answers `XAUUSD` with
+    #: *"no data"*.
+    #:
+    #: ⚠ **Three-state, and the middle one is the whole point** — the same rule `symbol_suffix`
+    #: already follows on the live side (`services/bot_account_registry.py`). `""` means this
+    #: broker MEASURABLY quotes bare names; `None` means **nobody has recorded it**, and a caller
+    #: must leave the symbol alone and SAY so rather than guess. Collapsing the two would let an
+    #: unmeasured tier quietly claim it quotes bare symbols — which is how a run asks a terminal
+    #: for a symbol it does not carry and gets an empty answer with no clue why.
+    #:
+    #: ⚠ **Cent is `None` on purpose.** Nobody here has logged into that tier, and `XAUUSD.crp`
+    #: appearing in another account's Market Watch is not evidence of what the Cent account
+    #: quotes. Log into it with `broker_facts.py` and record what it answers.
+    symbol_suffix: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.commission_per_side_per_lot == SENTINEL:
@@ -496,6 +524,8 @@ PROFILES = {
         swap=_XAUUSD_SWAP,
         spread=_SPREAD_XAUUSD_PUPRIME_STANDARD,
         server="PUPrime-Demo",
+        account=700119432,
+        symbol_suffix=".s",
     ),
     # Swap MEASURED on each of these two tiers 2026-08-08 and found identical to Standard's — see
     # the block above `_XAUUSD_SWAP`. The SPREAD is still refused: the only readings taken were the
@@ -536,7 +566,13 @@ PROFILES = {
     # `cost_tiers.py --spread puprime_ecn=0.12`, i.e. the same number, labelled `stated`. The only
     # change is that the row now reads `measured` and needs no flag.
     "puprime_prime": AccountProfile(
-        "puprime_prime", 3.50, swap=_XAUUSD_SWAP, spread=SPREAD_UNMEASURED, server="PUPrime-Demo"
+        "puprime_prime",
+        3.50,
+        swap=_XAUUSD_SWAP,
+        spread=SPREAD_UNMEASURED,
+        server="PUPrime-Demo",
+        account=700152904,
+        symbol_suffix=".p",
     ),
     # The account is recorded because the SERVER cannot separate this tier from Prime — both
     # logins live on PUPrime-Demo, and 700152905 is the ECN one (it is also the live bot's).
@@ -547,9 +583,16 @@ PROFILES = {
         spread=_SPREAD_XAUUSD_PUPRIME_ECN,
         server="PUPrime-Demo",
         account=700152905,
+        symbol_suffix=".p",
     ),
     "puprime_cent": AccountProfile(
-        "puprime_cent", 0.00, swap=UNMEASURED_SWAP, spread=SPREAD_UNMEASURED, server="PUPrime-Demo"
+        # ⚠ `symbol_suffix` is deliberately absent — nobody has logged into this tier, so its
+        # symbol naming is UNRECORDED rather than bare. See the field's docstring.
+        "puprime_cent",
+        0.00,
+        swap=UNMEASURED_SWAP,
+        spread=SPREAD_UNMEASURED,
+        server="PUPrime-Demo",
     ),
     "vantage_demo": AccountProfile(
         "vantage_demo",
@@ -558,6 +601,7 @@ PROFILES = {
         spread=_SPREAD_XAUUSD_VANTAGE,
         server="VantageMarkets-Demo",
         account=25893735,
+        symbol_suffix="",
     ),
 }
 

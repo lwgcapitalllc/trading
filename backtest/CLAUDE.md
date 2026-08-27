@@ -1092,6 +1092,35 @@ terminal so spread/commission/swap/symbol and history depth never have to be typ
 - `GET /data_availability?symbol=XAUUSD&timeframes=M1,M5,M15,M30,H1,H4` → earliest→latest served bar
   per timeframe (cheap: one bar from each end).
 
+## A profile also states how its broker SPELLS a symbol (2026-08-26)
+
+`AccountProfile.symbol_suffix` — `".p"`, `".s"`, or `""` for a broker quoting bare names. Identity,
+never a cost. MEASURED 2026-08-08 across three PU Prime logins and re-confirmed on the ECN terminal
+2026-08-26: **the suffix IS the tier, and neither account can see the other's symbol.**
+
+- ⚠ **Three-state, and `None` means nobody recorded it** — not "bare". A caller must leave the
+  symbol alone and say so. PU Prime Cent is `None`; nobody has logged into it, and `XAUUSD.crp` in
+  another account's Market Watch is not evidence of what Cent quotes.
+- ⚠ **Nothing in this package rebases anything.** The field is data; the lab resolves it at run
+  creation (`command-center/backend` → *The BROKER spells the symbol*), reusing the live side's one
+  rebase rather than adding a second.
+- 🔴 This is the missing half of the partition below: the cache learned WHICH broker's bars it
+  holds, and this is the broker saying what it calls them. A run that asks for a symbol the
+  terminal does not quote gets the same empty frame a closed market returns — rule 2, one level
+  down.
+
+## Standard and Prime record their LOGINS (2026-08-26)
+
+`account` was blank on both, so a lab pointed at either could not be confirmed as the attached
+terminal and the page said *"cannot tell which terminal is connected"* about a terminal it could
+name exactly. **They were never unknown** — MT5_Lab was signed into all three PU Prime demos in
+turn on 2026-08-08 to measure their swaps and symbols, and that block names every login.
+
+- 🔴 **The ACCOUNT is the only thing that separates these tiers** — all three live on
+  `PUPrime-Demo`, and their spreads are 2.7x apart.
+- ⚠ **Cent stays blank and that is the field WORKING.** Nobody has logged into it, so the lab will
+  honestly say it cannot tell rather than blessing a tier.
+
 ## 🔴 The cache is partitioned by BROKER SERVER (2026-08-24)
 
 **The filename was `(symbol, timeframe)` with no broker in it, for as long as the cache existed.**

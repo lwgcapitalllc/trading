@@ -227,6 +227,29 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
   const labelCls = 'block text-[11px] text-text-secondary mb-1'
 
+  // ── Broker account — the first thing decided, because everything reads it ────
+  // ⚠ **Lifted above the Instrument section on 2026-08-26 because the SYMBOL now depends on it**,
+  // and the select itself moved to the top of the form for the same reason. The Costs block below
+  // still READS this state for its warnings; it no longer owns it.
+  // 🔴 **DEFAULTS TO THE ATTACHED TERMINAL, and `vantage_demo` as a literal is exactly what this
+  // replaces.** The bar cache is partitioned by broker, so one broker's BARS can no longer reach
+  // another broker's replay — but the cost profile was still a hardcoded string, so pointing the
+  // lab at PU Prime gave you PU Prime's bars charged at Vantage's spread. Same mixed basis one
+  // level up, silent in the same way, and the two figures are 0.12 vs 0.22 an ounce.
+  // ⚠ **`null` until the profiles arrive**, so nothing is submitted against a guess; the effect
+  // below fills it once, and only while the reader has not chosen for themselves.
+  const [brokerProfile, setBrokerProfile] = useState<string | null>(null)
+  const { data: brokerProfiles } = useBrokerProfiles()
+  const attachedProfile = brokerProfiles?.find((b) => b.attached) ?? null
+  // ⚠ Falls back to the first profile only when NOTHING is attached — an unreachable agent means
+  // "cannot tell", and the mismatch note below then says so rather than blessing whatever is
+  // selected. A fallback that silently picked one would be the hardcode again with extra steps.
+  useEffect(() => {
+    if (brokerProfile != null || !brokerProfiles?.length) return
+    setBrokerProfile(attachedProfile?.id ?? brokerProfiles[0].id)
+  }, [brokerProfile, brokerProfiles, attachedProfile])
+  const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
+
   // ── Instrument ───────────────────────────────────────────────────────────────
   const frontMonth = useMemo(() => currentFrontMonth(), [])
   const futuresFirms = useMemo(() => firms.filter((f) => f.market !== 'forex'), [firms])
@@ -251,6 +274,46 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
       setInstrumentSymbol(allowedSymbols[0])
     }
   }, [allowedSymbols]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Switching broker REWRITES the symbol in the box ──────────────────────────
+  // 🔴 **The instrument is the strategy's and the suffix is the broker's, and nobody should have
+  // to hold both in their head.** Every python strategy here suggests a bare `XAUUSD` — correctly,
+  // because a strategy does not belong to a broker — while PU Prime quotes gold as `XAUUSD.p` and
+  // Vantage quotes it bare. Reported 2026-08-26: switching broker and not the symbol produced
+  // `MT5 agent returned no bars ... across 4 chunk(s)`, raised four layers down in the bar loader,
+  // naming the window and the timeframe and never the one field that was wrong.
+  //
+  // 🔴 **It rewrites the FIELD rather than captioning it** (Aaron's call, 2026-08-26). The first
+  // version left `XAUUSD` in the box and added *"puprime_ecn quotes this as XAUUSD.p"* beneath —
+  // which is this repo's own rule 7 in miniature: a label making a claim about what some other
+  // code will do. The box is what the reader believes, so the box is what has to be right.
+  //
+  // ⚠ **Keyed on the BROKER only, deliberately** — not on the symbol. Rebasing on every keystroke
+  // would fight somebody typing a symbol out, appending a suffix before they had finished the
+  // base. Switch broker and it rewrites; type and it leaves you alone.
+  //
+  // ⚠ **The BACKEND still binds.** `python_runner.run_symbol` resolves again at run creation and
+  // the RESOLVED name is what gets stored, so a hand-typed bare name is still corrected on the way
+  // in. This is the half that makes the answer VISIBLE, never the half that guarantees it.
+  //
+  // ⚠ **A null suffix is UNRECORDED, never bare** (three-state, same as `server`), so the symbol
+  // is left exactly as typed and the note under the input says nobody has recorded that broker's
+  // naming. Stripping on a guess hands the terminal a symbol nobody has seen it quote — the very
+  // failure this fixes.
+  //
+  // ⚠ **An EFFECT rather than the select's `onChange`, and it must stay one.** onChange is the
+  // idiomatic React answer and it would silence the `set-state-in-effect` warning this trips (one
+  // of five in this file; the rule is at warn here on purpose) — but it only fires when a HUMAN
+  // picks a broker. The broker also arrives on its own, once the profiles load and the default
+  // lands on the attached terminal, and that is the common case: open the modal, press Run. An
+  // onChange-only version leaves a bare `XAUUSD` sitting under a PU Prime selection, which is
+  // precisely the bug.
+  const suffix = broker?.symbol_suffix
+  useEffect(() => {
+    if (isNt8 || suffix == null) return
+    setInstrumentSymbol((prev) => (prev ? `${prev.split('.')[0]}${suffix}` : prev))
+  }, [suffix, isNt8])
+  const brokerNamingUnknown = !isNt8 && broker != null && broker.symbol_suffix == null
 
   const instrument = !isNt8
     ? instrumentSymbol
@@ -388,24 +451,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // ⚠ Slippage is the one thing still separate, and deliberately so — it is the only cost here
   // nobody has measured, so it rides its own optional figure rather than the switch.
   const [chargeCosts, setChargeCosts] = useState(true)
-  // 🔴 **DEFAULTS TO THE ATTACHED TERMINAL, and `vantage_demo` as a literal is exactly what this
-  // replaces.** The bar cache is partitioned by broker, so one broker's BARS can no longer reach
-  // another broker's replay — but the cost profile was still a hardcoded string, so pointing the
-  // lab at PU Prime gave you PU Prime's bars charged at Vantage's spread. Same mixed basis one
-  // level up, silent in the same way, and the two figures are 0.12 vs 0.22 an ounce.
-  // ⚠ **`null` until the profiles arrive**, so nothing is submitted against a guess; the effect
-  // below fills it once, and only while the reader has not chosen for themselves.
-  const [brokerProfile, setBrokerProfile] = useState<string | null>(null)
-  const { data: brokerProfiles } = useBrokerProfiles()
-  const attachedProfile = brokerProfiles?.find((b) => b.attached) ?? null
-  // ⚠ Falls back to the first profile only when NOTHING is attached — an unreachable agent means
-  // "cannot tell", and the mismatch note below then says so rather than blessing whatever is
-  // selected. A fallback that silently picked one would be the hardcode again with extra steps.
-  useEffect(() => {
-    if (brokerProfile != null || !brokerProfiles?.length) return
-    setBrokerProfile(attachedProfile?.id ?? brokerProfiles[0].id)
-  }, [brokerProfile, brokerProfiles, attachedProfile])
-  const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
+  // ⚠ The broker's state is declared ABOVE the Instrument section (it decides how the symbol is
+  // spelled), and the select renders at the top of the form. What follows only READS it.
   // Three answers, not two. `null` = the agent could not be asked, which must not render as a
   // mismatch — same three-state rule the MT5 health dot follows.
   const brokerMatches: boolean | null = !broker
@@ -661,6 +708,32 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
         {/* ── Scrollable body ─────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {/* ── Broker account — FIRST, because everything under it depends on it ─────
+              🔴 Moved to the top 2026-08-26 (Aaron's call). It used to sit inside the Costs
+              block, which read as though it only decided what a run was CHARGED. It also decides
+              which broker's bars are replayed and — since the same day — how the instrument below
+              is SPELLED, and a control that silently rewrites the field above it makes no sense
+              to anybody. Put the cause before the effect and the rewrite explains itself. */}
+          {isPython && (
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-text-secondary flex-shrink-0">
+                Broker account
+              </label>
+              <select
+                value={brokerProfile ?? ''}
+                onChange={(e) => setBrokerProfile(e.target.value)}
+                className={`${inputCls} max-w-[240px]`}
+              >
+                {(brokerProfiles ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.id}
+                    {b.attached ? ' — connected now' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* ── Setup — instrument, bar size and period on ONE row ─────────────────
               These were four stacked sections with four uppercase headings, and between them
               they cost ~340px before the first strategy setting appeared. Nothing was dropped:
@@ -688,6 +761,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                       <option key={sym} value={sym} />
                     ))}
                   </datalist>
+                  {/* No caption saying what the broker "would" call it — the box itself now
+                      carries the resolved name. Three states, not two, so an UNRECORDED suffix
+                      still has to speak: silence here would read as "bare", which is a guess. */}
+                  {instrumentSymbol && brokerNamingUnknown && (
+                    <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
+                      Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
+                      exactly as typed.
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -1160,24 +1242,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     real fills change which setups exist, not just what they pay.
                   </p>
                 )}
-
-                <div className="flex items-center gap-2 mb-2.5">
-                  <label className="text-[11px] text-text-secondary flex-shrink-0">
-                    Broker account
-                  </label>
-                  <select
-                    value={brokerProfile ?? ''}
-                    onChange={(e) => setBrokerProfile(e.target.value)}
-                    className={`${inputCls} max-w-[240px]`}
-                  >
-                    {(brokerProfiles ?? []).map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.id}
-                        {b.attached ? ' — connected now' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
 
                 {/* 🔴 The costs and the BARS must come from the same broker, and nothing else on
                     this page can say whether they do. A run charged here replays whatever terminal

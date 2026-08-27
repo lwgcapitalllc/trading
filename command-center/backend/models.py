@@ -977,6 +977,12 @@ class BrokerProfile(BaseModel):
     #: blank must read it as "cannot tell", the same three-state rule `mt5_connected` follows.
     server: str = ""
     account: Optional[int] = None
+    #: How this broker spells its symbols — `".p"`, `".s"`, or `""` for a broker quoting bare
+    #: names. **Three-state, and null means UNRECORDED, never bare** (rule 1): a page reading a
+    #: null must say it cannot tell rather than showing the typed name as though it were resolved.
+    #: The Run modal reads this so switching broker updates the symbol in front of you, instead of
+    #: the mismatch surfacing minutes later as *"the agent returned no bars"*.
+    symbol_suffix: Optional[str] = None
     #: True when this profile describes the terminal the lab is attached to RIGHT NOW.
     #: 🔴 The bar cache is partitioned by server, so one broker's BARS can no longer reach another
     #: broker's replay — but the cost profile is still picked independently, so a run could

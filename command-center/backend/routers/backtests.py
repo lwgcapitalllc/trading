@@ -361,6 +361,7 @@ def list_broker_profiles() -> list[BrokerProfile]:
             commission_per_side_per_lot=p.commission_per_side_per_lot,
             server=p.server,
             account=p.account,
+            symbol_suffix=p.symbol_suffix,
             attached=_is_attached(p),
             swap_long_points=p.swap.swap_long_points if p.swap else None,
             swap_short_points=p.swap.swap_short_points if p.swap else None,
@@ -600,6 +601,25 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
 
     runner = strategy.get("runner", "ninjatrader")
 
+    # ── The symbol: the strategy states the base, the BROKER states the suffix ───────────
+    # 🔴 Resolved at creation, exactly like the costs below, and for the same reason (rule 3):
+    # the row must record what the run was actually MEASURED on. PU Prime quotes gold as
+    # `XAUUSD.p` and Vantage quotes it bare, so a strategy's suggested `XAUUSD` is right on one
+    # broker and unanswerable on the other — and until 2026-08-26 that mismatch surfaced only as
+    # *"the agent returned no bars"* four chunks deep, with nothing naming the symbol as the cause.
+    # ⚠ PYTHON-ONLY, same as the cost switch below. NT8 and MT5 route through their own agents and
+    # have no broker profile to resolve against, so their instrument stays exactly as sent.
+    # ⚠ A broker whose symbol naming was never recorded leaves the name exactly as typed — see
+    # `python_runner.run_symbol`.
+    # ⚠ **It resolves BEFORE the history floor check below, not after.** That check is per
+    # BROKER and per SYMBOL, so asking it about the typed name would clear a window for a
+    # symbol this run is never going to load — a green check about the wrong thing.
+    instrument = (
+        python_runner.run_symbol(req.instrument, req.broker_profile)
+        if runner == "python"
+        else req.instrument
+    )
+
     # Refuse a window the broker has no real bars for BEFORE taking the lock or inserting
     # a row. MT5 answers a too-early request with coarser bars mislabelled as the
     # timeframe asked for, so this would otherwise complete as a plausible fiction.
@@ -608,7 +628,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     # through to die at 8%.
     try:
         history_limits.validate_window(
-            req.instrument,
+            instrument,
             req.start_date,
             req.end_date,
             req.bar_type,
@@ -677,7 +697,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         {
             "run_id": run_id,
             "strategy_id": req.strategy_id,
-            "instrument": req.instrument,
+            "instrument": instrument,
             "params": merged_params,
             "bar_type": req.bar_type,
             "bar_value": req.bar_value,
@@ -700,7 +720,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
     job_spec = {
         "job_id": job_id,
         "strategy_class": strategy["class_name"],
-        "instrument": req.instrument,
+        "instrument": instrument,
         "params": merged_params,
         "bar_type": req.bar_type,
         "bar_value": req.bar_value,
@@ -719,7 +739,7 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         raise HTTPException(502, f"VPS agent unreachable: {exc}")
 
     asyncio.create_task(
-        run_backtest_job(run_id, job_id, req.strategy_id, req.instrument, ruleset_ids, runner)
+        run_backtest_job(run_id, job_id, req.strategy_id, instrument, ruleset_ids, runner)
     )
 
     return {"run_id": run_id, "status": "started"}

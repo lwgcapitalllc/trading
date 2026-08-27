@@ -172,6 +172,43 @@ def bar_server(spec: dict) -> Optional[str]:
     return (prof.server or None) if prof else None
 
 
+def run_symbol(instrument: str, broker: Optional[str]) -> str:
+    """The symbol this run must actually ask the broker for.
+
+    🔴 **THE INSTRUMENT IS THE STRATEGY'S AND THE SUFFIX IS THE BROKER'S**, and nobody should have
+    to hold both in their head. Every python strategy here suggests a BARE name (`XAUUSD`) because
+    a strategy does not belong to a broker — but PU Prime quotes gold as `XAUUSD.p` and Vantage
+    quotes it bare, so the same typed name is right on one and unanswerable on the other. Reported
+    from the screen 2026-08-26: *"I should not have to configure this."*
+
+    ⚠ **Resolved HERE, at run creation, and the RESOLVED name is what gets stored** — the same
+    discipline `cost_layers` and `commission_per_side` already follow one function along, and for
+    the same reason (rule 3): never record what you REQUESTED as though it were what you RECEIVED.
+    A row storing the typed name while the runner replayed a different symbol is a row nothing can
+    audit, and it would break a rerun the moment the two disagreed.
+
+    ⚠ **The rebase is `bot_account_registry.rebase_symbol` rather than a second copy of the same
+    three lines.** The live side has rebased a bot's symbol onto its account since 2026-08-12; the
+    lab is the half that was left behind. One implementation, so the two can never drift into
+    disagreeing about what gold is called.
+
+    ⚠ **A broker with no RECORDED suffix leaves the symbol exactly as typed**, and the caller must
+    surface that rather than assume bare names — `symbol_suffix` is three-state and `None` means
+    nobody measured it (rule 1: never let "quotes bare symbols" and "cannot ask" be the same
+    value). The broker-profiles endpoint serves the three states so the page can say which it is.
+    ⚠ **An unknown profile is likewise left alone** rather than guessed at; `measured_commission`
+    is the function that refuses an unknown broker, and refusing twice for one bad field would
+    just move the error somewhere less clear.
+    """
+    from backtest.fills import PROFILES
+    from services.bot_account_registry import rebase_symbol
+
+    prof = PROFILES.get(str(broker or ""))
+    if prof is None:
+        return instrument
+    return rebase_symbol(instrument, prof.symbol_suffix) or instrument
+
+
 def _cost_profile(spec: dict):
     """The run's `AccountProfile`, or None when the run charges nothing.
 
