@@ -1219,6 +1219,56 @@ class SosFadeConfig:
     #   while reading as switched on, which is the failure shape this repo keeps re-learning.
     #   ⚠ Read ONLY when `exec_rec_be_r` is on. On its own it does nothing at all.
 
+    # ── Each entry method OWNS its pre-rung stop rule (2026-08-27) ──────────────
+    # 🔴 THE RULE USED TO BE A LIST WITH A PRECEDENCE ORDER, AND THAT IS WHAT THESE FOUR PAIRS
+    # REPLACE. `_current_stop` walked its branches and took the first that matched, so the
+    # reclaim's pair — which sits earlier — could OVERWRITE a stop `exec_be_arm_r` had already
+    # tightened. MEASURED with `stopwalk.py` on 2026-08-26: entry 100.00, stop 98.00, the general
+    # rule arming at 1R and keeping half. At 2.25R in front the stop was 99.00; at 2.50R the
+    # reclaim's rule armed and put it back to 98.50. **A protective stop that RETREATS on a
+    # winning trade**, which is a defect shape rather than a setting anyone would choose.
+    #
+    # Aaron, 2026-08-27: *"For all my different entry types, they should have their own take
+    # profit and stop loss rules. They shouldn't be, like, a list of stop loss rules, and now I
+    # need to go figure out which one has precedence over the other."* So there is now exactly ONE
+    # pair per entry method, the trade reads the pair belonging to the method that opened it, and
+    # nothing can override anything because nothing else is consulted.
+    #
+    # ⚠ **The pair is not switchable — its VALUE is.** -1 does not mean "this method has no rule";
+    # it means "this method's rule is never move the stop". That distinction is the whole model:
+    # switching an entry method on brings its exit rules with it, and they cannot be detached.
+    # ⚠ **All four ship at -1 / 0.0, so the ladder is byte-identical to what it was.** Nothing can
+    # arm, so `compare_strategy.py` sees exactly the decisions it always did.
+    # ⚠ The primary's pair is `exec_be_arm_r` / `exec_be_keep_r`, up in the shared exit block where
+    # it has always been. It is the PRIMARY's now, not everyone's — that is the behaviour change.
+
+    exec_gap_be_r: float = -1.0        # "Gap re-entry moves to breakeven at (R)"
+    #   -1 (default) = never move the stop, which is what a gap re-entry did before this existed:
+    #   it kept its entry stop until a rung was touched. A positive number moves the stop once the
+    #   trade's favourable excursion reaches that multiple of its OWN frozen entry risk.
+    #   ⚠ GAP RE-ENTRIES ONLY. Before 2026-08-27 this trade read the primary's pair; it no longer
+    #   does, so turning the primary's rule on no longer reaches it.
+    #   ⚠ NEVER MEASURED ON. No replay has been run with this positive — see the reclaim's numbers
+    #   below for how badly a breakeven stop can read before it is measured.
+    #   ⚠ Read ONLY when exec_secondary is on and the trigger names the gap.
+    exec_gap_be_keep_r: float = 0.0    # "Gap re-entry protected stop keeps (R) of risk"
+    #   HOW FAR that stop moves. 0.0 (default) = all the way to breakeven plus the usual cushion.
+    #   A positive number leaves that share of the trade's own entry risk in the market, so the
+    #   loss is CUT rather than erased and the trade keeps room to breathe.
+    #   ⚠ Must stay below 1.0 — at 1.0 the "protected" stop is the original stop, i.e. the rule
+    #   silently does nothing while reading as switched on.
+    #   ⚠ Read ONLY when `exec_gap_be_r` is positive.
+
+    exec_shift_be_r: float = -1.0      # "Shift re-entry moves to breakeven at (R)"
+    #   The same rule, owned by the re-entry that arms off a STRUCTURE SHIFT. -1 (default) = never
+    #   move the stop, which is what this trade did before this existed.
+    #   ⚠ SHIFT RE-ENTRIES ONLY, and never measured on — same caveat as the gap's.
+    #   ⚠ Read ONLY when exec_secondary is on and the trigger is the structure shift.
+    exec_shift_be_keep_r: float = 0.0  # "Shift re-entry protected stop keeps (R) of risk"
+    #   HOW FAR that stop moves, on the same terms as the gap's.
+    #   ⚠ Must stay below 1.0, for the reason given there.
+    #   ⚠ Read ONLY when `exec_shift_be_r` is positive.
+
     exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {Shift leg, swing low, 0.886, 1.0}
     #   WHERE THE RE-ENTRY'S STOP GOES. Four values:
     #     "0.886"      (default since 2026-08-20) — the same level the primary stops at (`fibo_p6`).
@@ -1659,6 +1709,7 @@ class SosFadeConfig:
             "Reclaim Entry", "FVG in zone + Reclaim Entry")
         gap_on = self.exec_secondary and self.exec_sec_trigger in (
             "FVG in zone", "FVG in zone + Reclaim Entry")
+        shift_on = self.exec_secondary and self.exec_sec_trigger == "Structure shift"
         if rec_on and self.exec_rec_stop not in ("0.886", "1.0"):
             # The reclaim latches no shift leg, so "Shift leg" has nothing to read; and it is stricter
             # than the gap trigger about "swing low" because its entry is a FIXED price (the deep
@@ -1719,6 +1770,30 @@ class SosFadeConfig:
                 f"exec_rec_be_r ({self.exec_rec_be_r!r}) must be nearer than exec_rec_tp_r "
                 f"({self.exec_rec_tp_r!r}). At or beyond the target the trade has already banked, "
                 f"so the breakeven ratchet could never fire and would read as working.")
+        # ── the GAP and SHIFT re-entries' own pairs, on the same terms as the reclaim's ────
+        # Each is checked only when its own trigger is the one selected: a number left sitting on
+        # a method that cannot fire is not a setting anybody tested, and refusing it here is what
+        # stops it reading as one in a run's stored params.
+        for _label, _on, _arm, _keep in (
+                ("gap", gap_on, self.exec_gap_be_r, self.exec_gap_be_keep_r),
+                ("shift", shift_on, self.exec_shift_be_r, self.exec_shift_be_keep_r)):
+            if not _on:
+                continue
+            if not (_arm == -1.0 or _arm > 0):
+                raise ValueError(
+                    f"exec_{_label}_be_r must be -1 (never move the stop) or a positive R "
+                    f"multiple, got {_arm!r}. Zero would arm at the entry price, which is already "
+                    f"where the stop would go.")
+            if not 0.0 <= _keep < 1.0:
+                raise ValueError(
+                    f"exec_{_label}_be_keep_r must be at least 0 and under 1, got {_keep!r}. At 1 "
+                    f"the protected stop lands back on the entry stop and the rule does nothing "
+                    f"while reading as switched on; above 1 it would LOOSEN the stop.")
+            if _keep > 0 and _arm <= 0:
+                raise ValueError(
+                    f"exec_{_label}_be_keep_r ({_keep!r}) needs exec_{_label}_be_r on. Nothing "
+                    f"arms the protected stop, so the number would sit in the run's params "
+                    f"looking like a setting that was tested.")
         if rec_on and gap_on and not (self.exec_sec_require == "Breakeven"
                                       and self.exec_rec_require == "Stopped only"):
             # 🔴 THE ONLY THING KEEPING THE TWO HALVES OUT OF EACH OTHER'S WAY. They share one

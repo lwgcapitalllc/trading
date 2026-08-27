@@ -668,8 +668,12 @@ class Execution:
         self._fib: Optional[TradeFib] = None   # the open trade's frozen fib leg (reporting only)
         self._stage = 0                    # 0 full-stop, 1 BE, 2 floor + runner trail
         self._max_fav = 0.0
-        self._rec_be_armed = False         # `exec_rec_be_r` latched (reclaims only)
-        self._exc_be_armed = False         # `exec_be_arm_r` latched (every trade)
+        # The pre-rung stop rule has latched for this trade. ONE latch, whichever entry method
+        # owns the rule — see `_protect_rule`. `_rec_be_armed` is legacy: written only on a
+        # reclaim, read by nothing here, and kept so a rollback to the previous deployment can
+        # still restore this version's position record.
+        self._rec_be_armed = False
+        self._exc_be_armed = False
         # Structure-trail anchors, snapshotted at each bar's CLOSE (see _advance_stage). The stop
         # placed at bar N's close is what bar N+1 trades against, so the trail must read bar N's
         # swing — never the live one — exactly like `_max_fav` does for the fixed-step ratchet.
@@ -3077,43 +3081,35 @@ class Execution:
                 self._stage = 1
             if self._stage < 2 and sig.low + adj <= far:
                 self._stage = 2
-        # `exec_rec_be_r` — a RECLAIM reaches breakeven on its OWN favourable excursion, before its
-        # first target. Without it a reclaim banks 100% at `exec_rec_tp_r` or nothing, so one that
-        # runs most of the way there and turns around pays the FULL loss (2025-08-19 missed its
-        # target by 7.5 cents and finished -1R). Off by default, reclaims only.
+        # THE PRE-RUNG STOP RULE, and there is exactly one of it per trade — `_protect_rule()`
+        # hands back the pair belonging to the entry method that opened this position. It used to
+        # be two independent latches racing to answer the same question, which is what let a
+        # reclaim's stop RETREAT; the resolver's docstring carries the measurement.
+        #
+        # 🔴 IT EXISTS BECAUSE THE STOP HAS ONE TRIGGER AND IT IS A TARGET TOUCH. A trade can run a
+        # full R in profit and, as far as the stop is concerned, nothing has happened. MEASURED on
+        # the re-entry short of 2020-11-04 (run `ed21fca08a91`): best price 1.016R in profit,
+        # nearest rung at 1.25R, the stop never left its entry level, full loss. Off on every
+        # method by default.
         # ⚠ Measured against `_sl`, the FROZEN entry stop, so "1R" keeps meaning the risk the trade
-        # was sized against. ⚠ Today `_current_stop()` would give the same answer, because this only
-        # runs while the latch is clear and the stop is therefore still `_sl` — that mutation was
-        # written, run, and is EQUIVALENT rather than uncaught, so no test pins it. It stops being
-        # equivalent the moment anything else moves the stop before this point, which is exactly
-        # when reading the managed stop would start shrinking the trigger as the stop ratchets.
+        # was SIZED against. Reading the managed stop would shrink the trigger as the stop ratchets.
         # 🔴 LATCHED IN A FLAG rather than recomputed from `_max_fav` on each read. `_max_fav` is
         # monotonic while a trade runs, but it is also RESTORED state, and this file already warns
         # that a blank one un-ratchets the trail. A stop that can un-ratchet is a trade that can
-        # lose after it was protected — so the fact is stored once, and `_POSITION_FIELDS` carries
-        # it across a restore.
-        be_r = getattr(self._cfg, "exec_rec_be_r", -1.0)
-        if not self._rec_be_armed and self._entry_src == "reclaim" and be_r > 0:
-            risk = abs(self._entry - self._sl)
-            if risk > 0 and (self._max_fav - self._entry) * d >= be_r * risk:
-                self._rec_be_armed = True
-        # `exec_be_arm_r` — the same idea for EVERY trade, and the reason it had to be generalised:
-        # the stop's only trigger is a rung TOUCH, so a trade can run a full R in profit and have
-        # nothing happen. MEASURED on the re-entry short of 2020-11-04 (run `ed21fca08a91`): best
-        # price 1.016R in profit, nearest rung at 1.25R, stop never left its entry level, full
-        # loss. Off by default.
-        # ⚠ Latched for the same reason the reclaim's is — `_max_fav` is RESTORED state, and a stop
-        # that can un-ratchet is a trade that can lose after it was protected. `_POSITION_FIELDS`
-        # carries the flag across a restore.
-        # ⚠ Read against `_sl`, the FROZEN entry stop, so the trigger cannot creep in as the stop
-        # ratchets. Unlike the reclaim's, this one is NOT equivalent to reading the managed stop:
-        # `exec_rec_be_r` only ever runs with the latch clear, while this shares its trade with the
-        # rung ladder and a staged stop can already have moved.
-        arm_r = getattr(self._cfg, "exec_be_arm_r", -1.0)
+        # lose after it was protected — so the fact is stored once and `_POSITION_FIELDS` carries it.
+        arm_r, _ = self._protect_rule()
         if not self._exc_be_armed and arm_r > 0:
             risk = abs(self._entry - self._sl)
             if risk > 0 and (self._max_fav - self._entry) * d >= arm_r * risk:
                 self._exc_be_armed = True
+                # ⚠ `_rec_be_armed` is no longer READ by anything — the single latch above is the
+                # decision. It is still written, and only for a reclaim, so that a live bot rolled
+                # BACK onto the previous deployment restores a record that version understands and
+                # computes the same stop from. `_POSITION_FIELDS` refuses a record with a missing
+                # field, so dropping it here would make this version's snapshots unrestorable by
+                # the one before it — and `promote.py` refuses exactly that.
+                if self._entry_src == "reclaim":
+                    self._rec_be_armed = True
         # Latch the 15m leg once its PRIMARY reaches TP1 (stage >= 1 = moved to breakeven) — the
         # secondary's eligibility gate. Idempotent; only a primary sets it (a secondary reaching
         # TP1 calls this too, but must not move the primary latch). No decision reads it → parity-safe.
@@ -3463,6 +3459,68 @@ class Execution:
                 buf = cap
         return buf
 
+    # Which config pair holds each entry method's pre-rung stop rule. The KEY is `_entry_src`,
+    # the value `secondary.py` stamped on the arm, and it is the only thing that decides.
+    _PROTECT_RULES = {
+        "reclaim": ("exec_rec_be_r", "exec_rec_be_keep_r"),
+        "gap": ("exec_gap_be_r", "exec_gap_be_keep_r"),
+        "Structure shift": ("exec_shift_be_r", "exec_shift_be_keep_r"),
+    }
+
+    def _protect_rule(self) -> Tuple[float, float]:
+        """The pre-rung stop rule OWNED by the entry method that opened this trade.
+
+        Returns `(arm_r, keep_r)`: how far in front the trade must go before the stop moves, and
+        how much of its frozen entry risk is left in the market when it does. `arm_r = -1` means
+        this method's rule is *never move the stop* — it is a VALUE of the rule, not the rule
+        being absent. An entry method cannot have its exit rules detached; switching the method
+        on brings them with it.
+
+        🔴 IT REPLACES A LIST WITH A PRECEDENCE ORDER, AND THAT LIST HAD A DEFECT. `_current_stop`
+        used to walk its branches and take the first match. The reclaim's pair sat ABOVE the
+        general one, so on a reclaim that had already been tightened by the general rule the
+        reclaim's rule would fire later and hand back a LOOSER stop. MEASURED with `stopwalk.py`
+        on 2026-08-26 — entry 100.00, stop 98.00, general rule arming at 1R keeping half: at
+        2.25R in front the stop was 99.00, and at 2.50R it went back to 98.50. A protective stop
+        that retreats on a winning trade. Exactly one rule is consulted now, so there is nothing
+        left to override anything.
+
+        ⚠ **An UNNAMED secondary gets no stop movement, and that is a decision rather than a
+        fallthrough.** Before this, a re-entry whose trigger never named itself read the primary's
+        pair — the shared fallback this whole change exists to remove. Reinstating it here for the
+        one case the map does not cover would put the precedence question straight back. It can
+        only ever leave the frozen entry stop in place, never move one that has already moved.
+        ⚠ In production every armed re-entry carries a source (`secondary.py::_src_for`); the
+        unnamed case is duck-typed test stand-ins and the combined trigger's neither-gate branch.
+        """
+        cfg = self._cfg
+        if self._entry_kind != "secondary":
+            return (getattr(cfg, "exec_be_arm_r", -1.0), getattr(cfg, "exec_be_keep_r", 0.0))
+        names = self._PROTECT_RULES.get(self._entry_src)
+        if names is None:
+            return (-1.0, 0.0)
+        return (getattr(cfg, names[0], -1.0), getattr(cfg, names[1], 0.0))
+
+    def _armed_stop(self) -> Optional[float]:
+        """Where this trade's own protection rule puts the stop, or None if it has not armed.
+
+        ⚠ Always strictly between the entry and the FROZEN entry stop: `keep` is clamped below 1.0
+        by config validation, so this can only ever be TIGHTER than `_sl`. That is what lets the
+        callers below treat it as a floor rather than as another candidate to rank.
+        """
+        if not self._exc_be_armed:
+            return None
+        _, keep = self._protect_rule()
+        d = self._pos_dir
+        if keep > 0:
+            return self._entry - keep * abs(self._entry - self._sl) * d
+        buf = self._be_buffer()
+        if buf is None:
+            # Cost-covering mode, and this trade's financing alone is further out than the cap
+            # allows. Hold the frozen stop — the same answer the rung ladder gives in that state.
+            return self._sl
+        return self._entry + buf if d > 0 else self._entry - buf
+
     def _current_stop(self) -> float:
         cfg = self._cfg
         d = self._pos_dir
@@ -3475,9 +3533,15 @@ class Execution:
         # TP1 (`exec_sec_be_at`). Three of the seven shipped re-entries exited at exactly the
         # 30-tick buffer after touching TP1 — ticked out of their own trade. Secondaries only:
         # the primary's ladder is what the Pine parity gate checks.
+        # ⚠ FLOORED AT THIS METHOD'S OWN PROTECTION STOP, which is the second retreat this rewrite
+        # closes. Handing back `_sl` unconditionally would WIDEN the stop back to the entry stop on
+        # a trade whose protection rule had already moved it — the same defect as the reclaim's,
+        # one branch up. `_armed_stop()` is always tighter than `_sl`, so taking it is a floor
+        # rather than a ranking, and the two rules involved belong to the SAME entry method.
         if (self._entry_kind == "secondary" and self._stage == 1
                 and getattr(cfg, "exec_sec_be_at", "TP1") == "TP2"):
-            return self._sl
+            armed = self._armed_stop()
+            return self._sl if armed is None else armed
         if self._stage >= 2:
             floor = self._stage2_floor()
             trail = self._trail()
@@ -3492,46 +3556,14 @@ class Execution:
                 # available price is either a guaranteed loss or the target itself.
                 return self._sl
             return self._entry + buf if d > 0 else self._entry - buf
-        # `exec_rec_be_r` — a RECLAIM may reach breakeven on its own favourable excursion, before
-        # its first target. Without it a reclaim banks 100% at `exec_rec_tp_r` or nothing, so one
-        # that runs most of the way there and turns around pays the FULL loss (2025-08-19 missed
-        # its target by 7.5 cents and finished -1R). Off by default, reclaims only.
-        # ⚠ Measured against `_sl`, the FROZEN entry stop, so "1R" keeps meaning the risk the trade
-        # was sized against — reading a trailed stop would let the trigger creep in as it ratchets.
-        # ⚠ `_max_fav` is monotonic, so this latches by construction: once the excursion has been
-        # reached the stop cannot fall back to the initial one on a later bar.
-        if self._rec_be_armed:
-            # `exec_rec_be_keep_r` — how FAR the protected stop moves. 0 (default) is breakeven,
-            # which was measured WORSE than leaving the stop alone: a stop exactly at entry sits
-            # inside the noise a reclaim has to survive to reach a 3R target. A positive number
-            # leaves that share of the trade's own entry risk in the market, so the loss is cut
-            # rather than erased. ⚠ No buffer on a partial move — `be_buf` cushions the entry
-            # price, and adding it here would make the kept risk something other than the number
-            # configured. ⚠ Off `_sl`, the FROZEN entry stop, for the same reason the trigger is.
-            keep = getattr(self._cfg, "exec_rec_be_keep_r", 0.0)
-            if keep > 0:
-                return self._entry - keep * abs(self._entry - self._sl) * d
-            buf = self._be_buffer()
-            if buf is None:
-                return self._sl
-            return self._entry + buf if d > 0 else self._entry - buf
-        # `exec_be_arm_r` — the general version, and it sits LAST on purpose. Every branch above is
-        # a stop a touched rung has already staged, and each of those is at least as tight as this
-        # one; reaching here means nothing has fired and the stop is still the entry stop.
-        # ⚠ It can only TIGHTEN: `exec_be_keep_r` is clamped below 1.0, so the armed stop always
-        # lands strictly between the entry and `_sl`.
-        if self._exc_be_armed:
-            keep = getattr(self._cfg, "exec_be_keep_r", 0.0)
-            if keep > 0:
-                # Cut the loss rather than erase it — a stop exactly at entry sits inside the noise
-                # the trade has to survive. ⚠ No buffer on a partial move: the cushion exists to
-                # clear the ENTRY price, and adding it would make the kept risk a different number
-                # from the one configured.
-                return self._entry - keep * abs(self._entry - self._sl) * d
-            buf = self._be_buffer()
-            if buf is None:
-                return self._sl
-            return self._entry + buf if d > 0 else self._entry - buf
+        # No rung has fired, so the only thing that can have moved the stop is the pre-rung rule
+        # OWNED BY THIS TRADE'S ENTRY METHOD. There is exactly one, `_protect_rule()` picks it, and
+        # nothing else is consulted — which is what makes a retreat unreachable rather than merely
+        # unobserved. The two branches that used to sit here, and the stop that walked backwards
+        # between them, are written up in `_protect_rule`'s docstring.
+        armed = self._armed_stop()
+        if armed is not None:
+            return armed
         return self._sl
 
     def _stage2_floor(self) -> float:

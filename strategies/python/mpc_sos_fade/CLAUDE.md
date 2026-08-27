@@ -3137,6 +3137,76 @@ Arm-by-arm table, the mutation map, and the two process failures that nearly pub
 number: `docs/SOS_FADE_BUILD_NOTES.md` → *The stop that never moved*.
 Tests: `tests/test_excursion_arm.py` (13, all watched RED by mutation).
 
+## Every entry method OWNS its stop rule — the precedence list is gone (2026-08-27)
+
+**The stop used to be resolved by walking a list of rules and taking the first that matched, and
+that list had a defect.** The reclaim's own protection sat ABOVE the general one, so on a reclaim
+that the general rule had already tightened, the reclaim's rule would fire later and hand back a
+**looser** stop.
+
+🔴 **MEASURED with `stopwalk.py` on 2026-08-26.** Entry 100.00, stop 98.00, general rule arming at
+1R and keeping half. At 2.25R in front the stop was 99.00; at 2.50R it went back out to 98.50.
+**A protective stop that RETREATS on a winning trade** — the trade got better and its stop got
+worse, putting 0.50 back at risk on a position that had already been made safe. It retreated at
+every arm later than 1R (0.10 / 0.50 / 0.90 at keeps of 0.55 / 0.75 / 0.95).
+
+⚠ **A second retreat existed one branch up and is closed in the same change**: a re-entry set to
+hold its initial stop until the second target returned the FROZEN entry stop the moment the first
+rung was touched — wider than whatever its own protection rule had already set.
+
+**Aaron, 2026-08-27:** *"For all my different entry types, they should have their own take profit
+and stop loss rules. They shouldn't be, like, a list of stop loss rules, and now I need to go
+figure out which one has precedence over the other."*
+
+**So there is now exactly ONE rule per entry method.** `_protect_rule()` returns the pair belonging
+to the method that opened the trade — keyed on `_entry_src`, the value `secondary.py` stamps on the
+arm — and nothing else is consulted. **A retreat is unreachable rather than merely unobserved,
+because there is no second rule to override the first.**
+
+| entry method | its pair |
+|---|---|
+| the normal entry | `exec_be_arm_r` / `exec_be_keep_r` — the PRIMARY's now, not everyone's |
+| re-entry off a reclaim | `exec_rec_be_r` / `exec_rec_be_keep_r` |
+| re-entry off a gap in the zone | `exec_gap_be_r` / `exec_gap_be_keep_r` (new) |
+| re-entry off a structure shift | `exec_shift_be_r` / `exec_shift_be_keep_r` (new) |
+
+⚠ **The rule is not switchable — its VALUE is.** `-1` does not mean "this method has no rule"; it
+means "this method's rule is *never move the stop*". Switching an entry method on brings its exit
+rules with it and they cannot be detached. That is the model, and it is why there is no "inherit
+the shared one" value on any of the four.
+
+✅ **PROVEN A NO-OP AT SHIPPED SETTINGS, trade by trade.** All four pairs ship at `-1` / `0.0`, so
+nothing can arm. HEAD (`ecdbd9b1`) and this change were replayed on identical bars, window and
+params (XAUUSD.p, 2020-01-01 → 2026-08-23, reclaim trigger, 3.25R target): **200 trades and
+141.6497R on both, and zero trades differ.** Same 44 re-entries at 32.50R.
+
+✅ **And proven to CHANGE the thing it was meant to change.** With the old collision switched on
+(general 1.0R/keep 0.5, reclaim 2.5R/keep 0.75) the same replay differs on **12 trades**: eleven
+reclaims that the primary's rule used to reach now take their own method's rule instead, and one
+of them goes −0.5R → **+3.25R** because the borrowed stop had been knocking it out.
+
+⚠ **`_rec_be_armed` is now written but never READ.** It is kept only so a live bot rolled BACK onto
+the previous deployment can still restore this version's position record — `restore_position()`
+refuses a record with a missing field, and `promote.py` refuses a version that cannot restore the
+open position. It is set only on a reclaim, so the older code computes the same stop from it.
+
+⚠ **An UNNAMED re-entry gets no stop movement, and that is a decision rather than a fallthrough.**
+Reinstating the primary's pair for the one case the map does not cover would put the precedence
+question straight back. It can only ever leave the frozen entry stop in place, never widen one that
+has already moved. In production every armed re-entry carries a source (`secondary.py::_src_for`);
+the unnamed case is duck-typed test stand-ins.
+
+⚠ **The two new pairs have NEVER been MEASURED ON.** No replay has been run with either positive,
+and this file's own numbers above are the reason to distrust the intuition: every protective
+setting tested on the primary LOST money, at about three R destroyed per R rescued.
+
+⚠ **Parity is unaffected while they ship off** — nothing can arm, so `compare_strategy.py` sees the
+decisions it always did. The moment any of the four goes positive, Python and Pine are trading
+different ladders: there is no TradingView side for any of them.
+
+Tests: `tests/test_stop_rule_per_method.py` (37; 18 watched RED against HEAD in a detached
+worktree, and the file's docstring records the four mutations that re-prove them).
+
 Tests: `tests/test_execution.py` (2, both watched RED against HEAD).
 
 ## The re-entry rests its order and LEAVES it — and what the 1m feed is actually for (2026-08-21)

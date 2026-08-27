@@ -1501,12 +1501,21 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
         assert dead_under(n) == {"Reclaim Entry"}, n
     # and the retrace belongs to the Structure shift alone
     assert dead_under("exec_sec_retrace") == triggers - {"Structure shift"}
+    # each entry method's OWN stop rule is dead wherever that method is not in play. The gap's
+    # pair survives the combined value because the gap half is still running there; the shift's
+    # does not, because the structure shift is the plain value alone.
+    for n in ("exec_gap_be_r", "exec_gap_be_keep_r"):
+        assert dead_under(n) == {"Structure shift", "Reclaim Entry"}, n
+    for n in ("exec_shift_be_r", "exec_shift_be_keep_r"):
+        assert dead_under(n) == triggers - {"Structure shift"}, n
 
     greyed = {n for n, p in rows.items()
               if p.get("group", "").startswith("↳") or p.get("disable_if")}
     assert greyed == {"exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
                       "exec_rec_be_r", "exec_rec_be_keep_r", "exec_rec_entry_mode",
                       "exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct",
+                      "exec_gap_be_r", "exec_gap_be_keep_r",
+                      "exec_shift_be_r", "exec_shift_be_keep_r",
                       "exec_sec_retrace", "exec_sl_deep"}, sorted(greyed)
     assert all(rows[n].get("disable_note") for n in greyed), "a greyed row with no reason on it"
 

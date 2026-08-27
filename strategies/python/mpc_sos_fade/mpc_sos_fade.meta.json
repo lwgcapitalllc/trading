@@ -923,6 +923,74 @@
       "desc": "How FAR the stop moves when the row above arms it. 0 (default) is all the way to breakeven, which is what that row was measured with. A positive number leaves that share of the trade's own entry risk in the market, so a trade that is protected and then turns around pays part of the loss rather than none of it. MEASURED 2026-08-23: moving all the way to breakeven made the reclaim book WORSE at every trigger tested (30.00R down to 20.88R, 20.43R and 23.77R), because a stop sitting exactly at entry is inside the noise a reclaim has to survive to reach a 3x target. Must be under 1 — at 1 the stop lands back on the entry stop and does nothing while reading as switched on. Does nothing on its own. Lab only."
     },
     {
+      "name": "exec_gap_be_r",
+      "group": "\u21b3 FVG in zone only",
+      "label": "Gap re-entry moves to breakeven at (R)",
+      "short": "Gap BE",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "Reclaim Entry"]
+      },
+      "disable_note": "No effect \u2014 the trigger above is not FVG in zone, so nothing reads this.",
+      "guide": ["Never moves the stop", "Protects the trade earlier"],
+      "desc": "When a gap re-entry's stop moves to protect the trade, measured on how far price has gone its way as a multiple of the trade's own risk. -1 (default) means never move the stop, which is what this trade did before this row existed. Each entry method owns its own stop rule and nothing else is consulted, so turning this on cannot move any other method's stop and no other method's setting can move this one. Before 2026-08-27 this trade read the shared row in Risk & stop instead, and that shared row could be overwritten by a later one \u2014 on a reclaim it produced a stop that moved AWAY from the market on a winning trade (measured: 99.00 back out to 98.50 at 2.5x in front). NEVER MEASURED ON: no replay has been run with this positive. Lab only."
+    },
+    {
+      "name": "exec_gap_be_keep_r",
+      "group": "\u21b3 FVG in zone only",
+      "label": "Gap re-entry protected stop keeps (R) of risk",
+      "short": "Gap keep",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "Reclaim Entry"]
+      },
+      "disable_note": "No effect \u2014 the trigger above is not FVG in zone, so nothing reads this.",
+      "guide": ["All the way to breakeven", "Leaves more risk in the market"],
+      "desc": "How FAR that stop moves when the row above arms it. 0 (default) is all the way to breakeven. A positive number leaves that share of the trade's own entry risk in the market, so a trade that is protected and then turns around pays part of the loss rather than none of it. Must be under 1 \u2014 at 1 the stop lands back on the entry stop and does nothing while reading as switched on. Does nothing on its own. Lab only."
+    },
+    {
+      "name": "exec_shift_be_r",
+      "group": "\u21b3 Structure shift only",
+      "label": "Shift re-entry moves to breakeven at (R)",
+      "short": "Shift BE",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["FVG in zone", "Reclaim Entry", "FVG in zone + Reclaim Entry"]
+      },
+      "disable_note": "No effect \u2014 the trigger above is not Structure shift, so nothing reads this.",
+      "guide": ["Never moves the stop", "Protects the trade earlier"],
+      "desc": "The same rule, owned by the re-entry that arms off a structure shift. -1 (default) means never move the stop, which is what this trade did before this row existed. Each entry method owns its own stop rule and nothing else is consulted, so turning this on cannot move any other method's stop and no other method's setting can move this one. Before 2026-08-27 this trade read the shared row in Risk & stop instead, and that shared row could be overwritten by a later one \u2014 on a reclaim it produced a stop that moved AWAY from the market on a winning trade (measured: 99.00 back out to 98.50 at 2.5x in front). NEVER MEASURED ON: no replay has been run with this positive. Lab only."
+    },
+    {
+      "name": "exec_shift_be_keep_r",
+      "group": "\u21b3 Structure shift only",
+      "label": "Shift re-entry protected stop keeps (R) of risk",
+      "short": "Shift keep",
+      "unit": "R",
+      "step": 0.25,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["FVG in zone", "Reclaim Entry", "FVG in zone + Reclaim Entry"]
+      },
+      "disable_note": "No effect \u2014 the trigger above is not Structure shift, so nothing reads this.",
+      "guide": ["All the way to breakeven", "Leaves more risk in the market"],
+      "desc": "How FAR that stop moves when the row above arms it. 0 (default) is all the way to breakeven. A positive number leaves that share of the trade's own entry risk in the market, so a trade that is protected and then turns around pays part of the loss rather than none of it. Must be under 1 \u2014 at 1 the stop lands back on the entry stop and does nothing while reading as switched on. Does nothing on its own. Lab only."
+    },
+    {
       "name": "exec_sec_require",
       "group": "↳ FVG / Structure shift only",
       "label": "Secondary needs the first trade to have…",
