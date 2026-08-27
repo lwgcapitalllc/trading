@@ -663,6 +663,7 @@ class Execution:
         self._exit_notional = 0.0
         self._exit_qty = 0.0
         self._exit_reason = ""
+        self._tp0 = None                   # the volatility rung; None = off / unpriceable
         self._tp1 = 0.0
         self._tp2 = 0.0
         self._fib: Optional[TradeFib] = None   # the open trade's frozen fib leg (reporting only)
@@ -854,7 +855,7 @@ class Execution:
     _POSITION_FIELDS = (
         "_pos_dir", "_entry_kind", "_qty", "_entry", "_entry_index", "_entry_ms",
         "_init_stop", "_exit_notional", "_exit_qty", "_exit_ms", "_exit_reason",
-        "_sl", "_tp1", "_tp2", "_fib", "_stage", "_filled_qty", "_sos_bar_open",
+        "_sl", "_tp0", "_tp1", "_tp2", "_fib", "_stage", "_filled_qty", "_sos_bar_open",
         "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
         "_rec_be_armed", "_exc_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
@@ -2386,6 +2387,13 @@ class Execution:
         # Taken from the ORDER, not from `sig`: the fib is a live thing that keeps extending, so
         # reading it again at the fill would report a leg the resting limit was never priced on.
         self._fib = pend.fib
+        # The VOLATILITY rung, frozen at the fill (`exec_tp0_atr_x`). None whenever it cannot be
+        # priced — the rung is OFF, or ATR has not seeded its 14 bars yet. ⚠ None means "no rung",
+        # never "a rung at the entry price": a zero here would bank the whole slice instantly.
+        self._tp0 = None
+        tp0_x = getattr(self._cfg, "exec_tp0_atr_x", 0.0)
+        if getattr(self._cfg, "exec_tp0_pct", 0.0) > 0 and tp0_x > 0 and self._atr is not None:
+            self._tp0 = fill_price + (1 if pend.dir > 0 else -1) * tp0_x * self._atr
         self._stage = 0
         self._filled_qty = 0.0
         # Snapshot the OPENING size and clear the add ledger. Every add sizes off `_base_qty`
@@ -2729,17 +2737,33 @@ class Execution:
         qty. Percentages are of the ORIGINAL position (Pine qty_percent)."""
         d = self._pos_dir
         prefix = "L" if d > 0 else "S"
+        p0 = self._qty * getattr(self._cfg, "exec_tp0_pct", 0.0) / 100.0 if self._tp0 is not None else 0.0
         p1 = self._qty * self._tp1_pct() / 100.0
-        p2 = self._qty * self._cfg.exec_tp2_pct / 100.0
+        p2 = self._qty * self._tp2_pct() / 100.0
         out: List[Tuple[str, Optional[float], float]] = []
         remaining = self._qty - self._filled_qty
+        # TP0 — the volatility rung. First in the ladder because it is the nearest price, and the
+        # ladder has to climb in the order price actually reaches it (same rule `_stage_rungs`
+        # exists for). Banks size only; the stop ladder never reads it.
+        if p0 > 1e-12 and self._filled_qty < p0 - 1e-12:
+            out.append((f"{prefix}-TP0", self._tp0, min(p0, remaining)))
+            remaining -= min(p0, remaining)
         # TP1
-        if self._filled_qty < p1 - 1e-12:
-            out.append((f"{prefix}-TP1", self._tp1, min(p1, remaining)))
-            remaining -= min(p1, remaining)
+        # ⚠ Written as an OFFSET on the original branch rather than a tidier rewrite of it.
+        # With the rung off (`p0 == 0`) this reduces to `min(p1, remaining)` — the exact
+        # expression that shipped. A cleaner version that subtracted the already-filled quantity
+        # changed the ladder in 24 partial-fill states, and none of them are this feature's
+        # business: a silent fix to a shared path is indistinguishable, in anyone else's run,
+        # from a defect this change introduced.
+        if self._filled_qty < (p0 + p1) - 1e-12:
+            q = min(p1, remaining) if p0 <= 1e-12 else min(p1 - max(0.0, self._filled_qty - p0),
+                                                           remaining)
+            if q > 1e-12:
+                out.append((f"{prefix}-TP1", self._tp1, q))
+                remaining -= q
         # TP2
-        done = p1
-        if self._filled_qty < (p1 + p2) - 1e-12 and remaining > 1e-12:
+        done = p0 + p1
+        if self._filled_qty < (p0 + p1 + p2) - 1e-12 and remaining > 1e-12:
             already = max(0.0, self._filled_qty - done)
             q = min(p2 - already, remaining)
             if q > 1e-12:
@@ -2852,7 +2876,7 @@ class Execution:
             adds=[self._add_record(lot) for lot in self._add_lots],
             tp1=round(self._tp1, 5), tp2=round(self._tp2, 5),
             tp_rungs=((round(self._tp1, 5), self._tp1_pct()),
-                      (round(self._tp2, 5), self._cfg.exec_tp2_pct)),
+                      (round(self._tp2, 5), self._tp2_pct())),
             fib=self._fib))
         dec.closed_r = r
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
@@ -3340,6 +3364,16 @@ class Execution:
         """
         if self._entry_kind != "secondary":
             return self._tp1, self._tp2
+        if getattr(self._cfg, "exec_sec_trail_at_tp1", False):
+            # `exec_sec_trail_at_tp1` — BOTH rungs collapse onto the first target, so stage 2
+            # arms the moment it is touched and the runner trails from there. The second rung
+            # stops being consulted at all, which is also why this mode cannot come out flipped:
+            # there is no second ruler left to disagree with the first.
+            # ⚠ `_stage2_floor` must read BREAKEVEN in this mode — see the note there.
+            # ⚠ `_tp2` is deliberately left where the fib put it. Nothing rests an order on it
+            # (its percentage is 0), and blanking it would erase what the chart draws as the
+            # trade's aim — the record a reader reconstructs the exit from.
+            return self._tp1, self._tp1
         d = self._pos_dir
         if (self._tp2 - self._entry) * d < (self._tp1 - self._entry) * d:
             return self._tp2, self._tp1
@@ -3367,6 +3401,24 @@ class Execution:
             # only for a PRIMARY: a re-entry keeps its own ladder above.
             return self._cfg.exec_sh_tp1_pct
         return self._cfg.exec_tp1_pct
+
+    def _tp2_pct(self) -> float:
+        """The SECOND rung's percentage for the trade that is actually open.
+
+        A SECONDARY may bank its own percentage (`exec_sec_tp2_pct`); -1.0 means inherit the
+        shared `exec_tp2_pct`, which is 0 on the shipped ladder — so the default cannot move a
+        stored figure and a primary never reads the override.
+
+        🔴 It is what turns a re-entry from a miniature A+ into a RECOVERY trade: with a
+        percentage here the rest of the position comes OFF at the second target instead of being
+        handed to the runner trail. Read it with `exec_sec_tp1_pct` (how much banks early) and
+        `exec_sec_tp2_x` (where the second target sits) — the three are one design.
+        """
+        if self._entry_kind == "secondary":
+            own = getattr(self._cfg, "exec_sec_tp2_pct", -1.0)
+            if own != -1.0:
+                return own
+        return self._cfg.exec_tp2_pct
 
     def _accrued_cost_price(self) -> float:
         """This trade's costs SO FAR plus the exit side it has not paid yet, as a price distance.
@@ -3557,6 +3609,13 @@ class Execution:
         # "TP1 price" (default) — the FIRST rung price, i.e. the nearer one. Reaching the second
         # rung pulls the stop back to the first; naming `_tp1` directly would, on a flipped
         # re-entry, pull it to the price price just reached and close the trade there.
+        if (getattr(cfg, "exec_sec_trail_at_tp1", False)
+                and self._entry_kind == "secondary"):
+            # 🔴 In that mode the rung that ARMED stage 2 is the first target itself — the price
+            # standing right now — so flooring there would put the stop on the current price and
+            # close the runner for the same figure the banked half just made. Breakeven is what
+            # stage 1 already held, so this can only ever be the same or tighter, never looser.
+            return be
         return self._stage_rungs()[0]
 
     def _trail(self) -> Optional[float]:
@@ -3596,7 +3655,17 @@ class Execution:
         if run < step:
             return None
         steps = int((run - step) // step)
-        return self._tp2 + steps * step if d > 0 else self._tp2 - steps * step
+        # The step trail is anchored on the rung that armed stage 2. That is `_tp2` on the shipped
+        # ladder, but under `exec_sec_trail_at_tp1` there is no second rung at all, so measuring the
+        # run from one price and placing the stop off another would put the trail somewhere neither
+        # rung names.
+        # ⚠ A PRE-EXISTING INCONSISTENCY IS DELIBERATELY LEFT ALONE HERE: on a FLIPPED re-entry
+        # `far` is already `_tp1` while this anchor stays `_tp2`, and correcting that would change
+        # what today's shipped configuration trades. It is unreachable in the swept basis (the
+        # structure ratchet returns above), so it is recorded rather than quietly fixed.
+        anchor = far if getattr(cfg, "exec_sec_trail_at_tp1", False) \
+            and self._entry_kind == "secondary" else self._tp2
+        return anchor + steps * step if d > 0 else anchor - steps * step
 
     # ── HTF filters (default off) ────────────────────────────────────────────────
     def _htf_exhaustion_block(self, sig) -> Tuple[bool, bool]:

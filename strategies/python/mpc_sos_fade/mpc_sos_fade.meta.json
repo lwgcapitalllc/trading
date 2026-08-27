@@ -1466,6 +1466,63 @@
       "desc": "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 turns it off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.",
       "step": 0.01,
       "guide": ["Nothing is refused", "Refuses real trades, not just dead ones"]
+    },
+    {
+      "name": "exec_tp0_atr_x",
+      "group": "Exit ladder",
+      "label": "Vol rung distance (x ATR14)",
+      "short": "Vol rung distance",
+      "desc": "How far from the fill the volatility rung sits, as a multiple of the average 15-minute range at the moment the trade filled. Frozen at the fill on purpose: a rung that re-prices every bar is a second trailing stop rather than a target, and it would walk away from price in exactly the conditions this is meant to bank into. Does nothing unless the size above is above 0.",
+      "step": 0.1,
+      "guide": [
+        "Banks very close to the entry",
+        "Banks far out, rarely reached"
+      ]
+    },
+    {
+      "name": "exec_tp0_pct",
+      "group": "Exit ladder",
+      "label": "Vol rung size %",
+      "short": "Vol rung size",
+      "desc": "How much of the position to bank at the volatility rung below. 0 (default) is off and banks nothing, which is the shipped behaviour. It exists because the two fib rungs sit too far away, and are reached too rarely, to touch the case this is aimed at: a trade that runs a long way and hands most of it back. It banks SIZE only and cannot move a stop or change which trades are taken. Banking anything at all has measured worse on this bot every time it has been asked, so read a non-zero value as buying a smoother ride out of total return. Lab only.",
+      "step": 5.0,
+      "guide": [
+        "Nothing banked, whole position rides",
+        "Most of the position banked early"
+      ]
+    },
+    {
+      "name": "exec_sec_tp2_pct",
+      "group": "Secondary re-entries",
+      "widget": "number",
+      "label": "Re-entry banks at its second target (%)",
+      "short": "Second bank %",
+      "min": -1,
+      "max": 100,
+      "step": 5,
+      "show_if": {
+        "exec_secondary": true
+      },
+      "guide": [
+        "Inherit — the second target takes nothing off",
+        "The rest of the re-entry comes off at the second target"
+      ],
+      "desc": "How much of a re-entry comes off at its SECOND target. -1 (default) inherits the shared setting, which is zero, so by default the second target banks nothing and whatever is left rides the trail. Set this and the rest of the trade comes OFF at that target instead. It exists because a re-entry is not a second A+ setup — its job is to recover what the first trade gave up and a little more, and a runner is the wrong instrument for that job. Read it together with how much banks at the first target and where the second target sits; those three settings are one design. Setting the two percentages to 100 between them closes the re-entry completely at its second target with nothing left trailing. Banking at the first target is also what brings RISK down on the way, because it takes size off and moves the stop to breakeven at the same moment — an all-out design that banks nothing early carries full risk all the way to its target and has nothing to stage the stop with. Re-entries only; main entries are untouched. Lab only."
+    },
+    {
+      "name": "exec_sec_trail_at_tp1",
+      "group": "Secondary re-entries",
+      "widget": "toggle",
+      "label": "Re-entry trails from its first target",
+      "short": "Trail from first target",
+      "options": {
+        "off": "Wait for the second target",
+        "on": "Trail from the first"
+      },
+      "show_if": {
+        "exec_secondary": true
+      },
+      "desc": "Drops a re-entry's second target completely and starts the runner trail the moment the first target is touched. Off by default. On the shipped ladder the second target banks nothing at all — its only job is to lift the stop and start the trail — and on a re-entry it is a price fixed to the FIRST trade's chart, so it decides when the runner starts trailing by geometry nobody chose. This makes that moment the first target instead, which is a price the strategy picked. The stop moves to breakeven at that point rather than to the target just reached, because the target is where price is standing and stopping there would end the runner for the same figure the banked half just made. It does not change where profit banks. It also removes the out-of-order target problem outright: with no second target there is no second ruler to disagree with the first. Lab only."
     }
   ]
 }

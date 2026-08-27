@@ -339,6 +339,23 @@ class SosFadeConfig:
     #   absent column as 0.0 rather than as this default** — which is the only thing keeping an
     #   archived export replayable now that the shipped value is non-zero.
     exec_min_atr_pct: float = 0.08     # "Minimum market volatility (% of price)"
+
+    # ── the VOLATILITY rung (2026-08-26) ────────────────────────────────────────
+    #   A rung IN FRONT of TP1, priced off ATR(14) at the fill rather than off the fib. It exists
+    #   because the two fib rungs sit at a median 1.10R and 1.76R and are reached by 137 and 59 of
+    #   245 trades — too far and too rare to touch the thing Aaron is actually complaining about,
+    #   which is a trade that runs 4R and hands most of it back.
+    #   ⚠ **It banks SIZE only. It does NOT stage the stop** — `_advance_stage` still arms
+    #   breakeven and the trail off TP1/TP2 exactly as before, so turning this on cannot move a
+    #   single stop or change which trades are taken. That separation is the whole design: Run 1
+    #   already measured that moving size off the runner costs ~2R per 10%, so this lever is only
+    #   ever worth pulling for what it does to DRAWDOWN, and it must not drag anything else along.
+    #   ⚠ **Frozen at the fill.** ATR keeps moving; a rung that re-prices every bar is not a target,
+    #   it is a second trail, and it would walk away from price in exactly the volatility this is
+    #   meant to bank into.
+    #   ⚠ **OFF by default (0%), so the shipped ladder and the live bot are byte-identical.**
+    exec_tp0_atr_x: float = 1.2        # "Vol rung distance (x ATR14)"
+    exec_tp0_pct: float = 0.0          # "Vol rung size %"
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart
@@ -950,6 +967,54 @@ class SosFadeConfig:
     #   others do the same (2021-02-11, 2020-12-28). Those are trades whose swing level was the
     #   NEARER of the two rungs and therefore the only thing that ever armed their breakeven.
     #   Ordering the ladder removes that, which is the honest cost of ordering the ladder.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_tp2_pct: float = -1.0     # "Re-entry banks at its second target (%)"
+    #   HOW MUCH OF A RE-ENTRY COMES OFF AT ITS SECOND TARGET. -1.0 (default) inherits the shared
+    #   `exec_tp2_pct`, which is 0 on the shipped ladder, so the default cannot move a stored
+    #   figure. A positive number is that percentage of the ORIGINAL position.
+    #
+    #   🔴 IT EXISTS BECAUSE A RE-ENTRY IS NOT A SECOND A+ TRADE. Aaron's design intent
+    #   (2026-08-26): *"WHAT IS THE PURPOSE OF RE-ENTRIES? not to make back what you lost and a
+    #   little more? not to make more than an A+ setup."* The shipped ladder banks half at the
+    #   first target and hands the REST to the runner trail — that is a miniature A+, built to
+    #   chase a tail. This is the setting that lets the rest come OFF at a chosen level instead.
+    #
+    #   ⚠ READ IT WITH `exec_sec_tp1_pct` AND `exec_sec_tp2_x`, NEVER ALONE. The three together
+    #   are the whole design: how much banks early, how much banks late, and where the late one
+    #   sits. Set the two percentages to 100 between them and the re-entry closes completely at
+    #   its second target with nothing left to trail.
+    #   🔴 RISK MUST FALL ALONG THE WAY, AND THIS IS THE HALF THAT DOES IT BY SIZE. Banking at
+    #   the first target both takes size off AND stages the stop to breakeven, so the trade is
+    #   free from that point. An all-out design that banks nothing early carries FULL risk right
+    #   up to its target and has nothing to stage the stop — which is why banking 100% at one
+    #   distant target is a different and worse-shaped trade than banking twice.
+    #   ⚠ SECONDARIES ONLY. A primary's ladder is the ported path `compare_strategy.py` gates,
+    #   and the shared input is what the Pine holds.
+    #   ⚠ Read ONLY when exec_secondary is on.
+
+    exec_sec_trail_at_tp1: bool = False  # "Re-entry trails from its first target"
+    #   THE RE-ENTRY HANDS STRAIGHT TO THE RUNNER TRAIL WHEN ITS FIRST TARGET IS TOUCHED, instead
+    #   of waiting for a second rung. False (default) is off and the ladder is unchanged.
+    #
+    #   🔴 IT DELETES THE SECOND RUNG'S ONLY JOB RATHER THAN MOVING IT. On the shipped ladder the
+    #   second rung banks `exec_tp2_pct` = 0, so it takes nothing off — all it ever does is lift
+    #   the stop floor and start the trail. On a re-entry that rung is a price fixed on the chart
+    #   before this trade existed (see `exec_sec_tp2_x`), so what it really controls is WHEN the
+    #   runner starts trailing, decided by geometry nobody chose. This makes that moment the first
+    #   target instead, which is a price the strategy did choose.
+    #
+    #   ⚠ THE STAGE-2 FLOOR BECOMES BREAKEVEN, AND IT HAS TO. The floor normally sits at the first
+    #   rung's price — but that rung is exactly where price is standing when this fires, so keeping
+    #   it would put the stop on the current price and close the runner instantly for the same 1.25R
+    #   the banked half just made. Breakeven is what stage 1 already used, so the stop never
+    #   loosens; the only change is that the trail now engages behind it.
+    #   ⚠ The other two floor modes are LEFT ALONE — both already floor at breakeven and neither
+    #   names the rung, so neither collapses onto the current price.
+    #   ⚠ It does NOT move where profit banks: `exec_sec_tp1_pct` still comes off at the first
+    #   target, and the second rung's own percentage was already zero.
+    #   ⚠ SECONDARIES ONLY, and that is a parity decision rather than caution — a primary's ladder
+    #   is the ported path `compare_strategy.py` gates.
     #   ⚠ Read ONLY when exec_secondary is on.
 
     exec_sec_fill_tf_min: int = 5      # "Re-entry fill clock (minutes)"
