@@ -328,12 +328,22 @@ Not built yet — there is no bot consuming this engine. Wire it up together wit
 - Upstream structure engine: `engines/market_structure/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.
 
-## The two RED gates on this machine are STALE EXPORTS, not drift (2026-08-27)
+## The two RED gates were STALE EXPORTS, not drift — re-exported and GREEN (2026-08-27)
 
-`compare_fib.py` is RED on both exports here — `15_b201e.csv` from bar 14123 and `5_84d6c.csv`
-from bar 7322 — and **neither is this engine's fault.** Both were taken **2026-08-20**, the day
-before `market_structure`'s refused-wick fix, so their Pine columns encode the old structure
+`compare_fib.py` was RED on both exports here — `15_b201e.csv` from bar 14123 and `5_84d6c.csv`
+from bar 7322 — and **neither was this engine's fault.** Both were taken **2026-08-20**, the day
+before `market_structure`'s refused-wick fix, so their Pine columns encoded the old structure
 behaviour.
+
+✅ **CLOSED THE SAME DAY. Aaron re-exported from today's Pine and BOTH gates pass:**
+`VANTAGE_XAUUSD, 15_dfe47.csv` (21,403 bars) is **GREEN from bar 32**, and
+`VANTAGE_XAUUSD, 5_02c0a.csv` (20,229 bars) is **GREEN from bar 49** — the 5m one with the Macro fib
+actually exercised, which the 15m export can never do.
+
+🔴 **THIS IS THE ONE CASE WHERE "IT IS UPSTREAM, NOT ME" WAS PUT AT RISK AND SURVIVED.** That
+claim is the easiest thing in this repo to say and the hardest to check, because it is exactly what a
+genuinely broken port would also say. **A fresh export was the experiment that could have falsified
+it.** Read the diagnosis below as a method that earned its keep, not as a story about two files.
 
 🔴 **THE MECHANISM IS WHY THIS ENGINE IS ALWAYS THE ONE THAT LOOKS BROKEN.** `fibo_asl` / `fibo_ash`
 ARE the structure engine's active swings, so a single wrong anchor upstream moves **E1-E4, the 1.0,
@@ -346,9 +356,29 @@ Read `px_fib_100_price` first: it is the leg origin, so if it differs the rest c
 and MORE EXTREME bar whose close never broke the level, which is the refused wick that fix removed.
 Full table and the OHLC: `engines/market_structure/CLAUDE.md` → *The 2026-08-21 refused-wick fix*.
 
-⚠ **The 5m export has a SEPARATE and ordinary cold start at bars 49-58** — `px_fib_origin` and the
-touch latches, TradingView having been warm before the export window. Do not fold it into the
-anchor story; they are two different things in one file.
+⚠ **The 5m export ALSO had a SEPARATE and ordinary cold start at bars 49-58** — `px_fib_origin` and
+the touch latches, TradingView having been warm before the export window. It was called out
+separately so nobody folded it into the anchor story; they were two different things in one file.
 
-⚠ **Nothing here is fixed by editing this engine, and trying would be the damage.** The fix is a
-fresh export from today's Pine. Until then these two reds stay red, and a red is still a red.
+⚠ **Nothing here was fixed by editing this engine, and trying would have been the damage.** The fix
+was a fresh export from today's Pine, and until it arrived those two reds stayed red — a red is
+still a red.
+
+🔴 **A ONE-BAR DISAGREEMENT SURVIVES ON BOTH FRESH EXPORTS, AND IT IS A REAL DIFFERENCE RATHER THAN
+WARM-UP — CHECKED, NOT WAVED THROUGH.** In each file the single mismatching bar IS the very first bar
+the fib becomes active (bar 31 on the 15m, bar 48 on the 5m), and the single field is the leg's
+origin-changed pulse. **Pine compares the new origin index against an unset previous value, and an
+unset value makes that comparison neither true nor false — so Pine reports NO change on its own first
+activation while this port reports one.** ⚠ **It can only ever happen once per run**, because after
+the first activation there is a real previous value to compare against; the gate is the proof, clean
+across the remaining 21,371 and 20,180 bars. ⚠ **Harmless in both directions**: the pulse resets
+touch latches that are still clear and internal anchors that are still unset, so nothing downstream
+moves — **but do not let the next reader rediscover it as a defect, and do not "fix" it by teaching
+this port to swallow its first activation.** That would make a genuine first-bar origin change
+invisible, which is a worse failure than a cosmetic one, and rule 1 is the reason: *unasked* and
+*measured no* must never collapse into the same value.
+
+⚠ **This engine will always need a warm-up allowance where `market_structure` does not, and that is
+inherent.** The fibs cannot exist until structure has produced an anchor, so this engine's first
+compared bar is always a first activation; structure's never is. **A fib gate that needs no warm-up
+at all would be the surprising result, not this one.**

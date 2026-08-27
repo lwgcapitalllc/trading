@@ -311,11 +311,38 @@ it.
 effect and is unrelated. It is called out separately so a future reader does not fold it into the
 anchor story.
 
-⚠ **A pre-existing red is still a red, and this note does NOT retire these three.** What it retires
-is the need to re-investigate them: **the fix is right, the exports are stale, and the only thing
-that can turn them green is re-exporting from today's Pine.** Re-take `15_b201e` (fibonacci),
-`15_9d44d` (structure) and `5_84d6c` (fibonacci) when convenient — nothing is blocked on them,
-because the post-fix 5m export already carries the green.
+⚠ **A pre-existing red is still a red, and this note did NOT retire these three.** What it retired
+was the need to re-investigate them: **the fix is right, the exports are stale, and the only thing
+that can turn them green is re-exporting from today's Pine.**
+
+✅ **RE-EXPORTED AND ALL THREE ARE GREEN (2026-08-27, same day).** Aaron re-took all three from
+today's Pine and every gate passes:
+
+| new export | replaces | bars | verdict |
+|---|---|---|---|
+| `VANTAGE_XAUUSD, 15_cafd7.csv` | `15_9d44d` (structure) | 21,403 | **GREEN from bar 0, every field** |
+| `VANTAGE_XAUUSD, 15_dfe47.csv` | `15_b201e` (fibonacci) | 21,403 | **GREEN from bar 32** |
+| `VANTAGE_XAUUSD, 5_02c0a.csv` | `5_84d6c` (fibonacci) | 20,229 | **GREEN from bar 49** |
+
+🔴 **THE PREDICTION HELD EXACTLY, AND THAT IS THE POINT WORTH KEEPING.** The paragraph above
+was written from the exports' own OHLC — Pine anchoring an earlier, more extreme bar the close never
+broke — and it said the fix was right and the files were stale. **A fresh export was the experiment
+that could have falsified it and did not.** Had the reds been drift, re-exporting would have changed
+nothing.
+
+⚠ **The two fibonacci gates each still disagree on exactly ONE bar, and it is not warm-up in the
+usual sense — CHECKED, not assumed.** In both files the single mismatching bar IS the very first bar
+the fib becomes active (bar 31 on the 15m, bar 48 on the 5m), and the one field is the leg's
+origin-changed pulse. **Pine compares the new origin against an unset previous value, and an unset
+value makes that comparison neither true nor false — so Pine reports no change on its own first
+activation, while the Python reports one.** It can only ever happen once per run, because after the
+first activation there is a previous value to compare against; the gate proves it, running clean
+across the remaining 21,371 and 20,180 bars. On that bar the pulse resets latches that are already
+clear, so nothing downstream moves.
+
+⚠ **The structure gate needs no warm-up allowance at all and the fib gates do** — that asymmetry is
+inherent, not a defect: the fibs cannot exist until structure has produced an anchor, so their first
+bar is always a first activation and structure's never is.
 
 ## The 2026-08-20 tied-extreme fix — one swing, two permanent labels
 
@@ -423,6 +450,11 @@ without sign-off.
 |---|---|---|
 | `VANTAGE_XAUUSD, 5_0bcd2.csv` (20,574 bars) | GREEN from bar 0 | **GREEN from bar 0** |
 | `VANTAGE_XAUUSD, 15_9d44d.csv` (20,991 bars) | RED at bar 14123 | **RED at bar 14123, same timestamp** |
+
+✅ **THE 15m RED WAS A STALE EXPORT AND IS NOW CLOSED (2026-08-27)** — its replacement
+`VANTAGE_XAUUSD, 15_cafd7.csv` (21,403 bars) is **GREEN from bar 0 on every field**, so this engine
+now has a green gate on both timeframes. The paragraph below stands as the record of what was true
+when it was written, and its discipline is the reason the red was recorded rather than explained away.
 
 ⚠ **THE 15m EXPORT IS RED AND WAS RED BEFORE THIS CHANGE — a pre-existing red is still a red.** It
 is recorded here so the next reader does not spend an afternoon blaming the pivot detector for it,
