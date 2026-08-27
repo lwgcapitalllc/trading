@@ -1677,3 +1677,55 @@ asks for something other than gaps, so at shipped settings the block list is emp
 155,807 bars. The first version of that audit reported *"no order block in the zone on any of the
 146 setups"* off exactly that, and it read as a finding. A registry nobody populated answers
 confidently and wrongly.
+
+## The bar loop reads COLUMN ARRAYS, never `df.iterrows()` (2026-08-26)
+
+`iter_bars` is the hot loop of the whole lab — every replay, every optimizer cell and every
+portfolio leg goes through it once per bar. It walked `df.iterrows()`, which builds a fresh pandas
+Series **per bar** (block manager, dtype resolution, `__finalize__`) so that five numbers can be
+read off it and thrown away.
+
+**MEASURED, the two implementations A/B'd ALTERNATELY in one process over 62,468 real M15 bars:
+615 µs/bar → 60 µs/bar, ~10x, saving ~35s on a 2.5-year window.** ⚠ **The RATIO is the
+measurement and the absolute figures are an upper bound** — this machine was under load from a
+second session, identical end-to-end runs came back at 201s and 382s, and that is why the two were
+interleaved and scored on the BEST pass rather than benchmarked one after the other. **Two
+sequential benchmarks on a loaded machine each measure a different amount of the load.**
+
+🔴 **The conversion is deliberately IDENTICAL rather than merely equivalent.** `.to_numpy()` is
+called with NO dtype coercion and every element still goes through `float(...)` — the same call on
+the same stored value `row["open"]` produced. Forcing `dtype="float64"` is faster again and is
+REFUSED: on an object column it converts by a different route, and *slightly faster and
+occasionally a different float* is not a trade anybody asked for.
+
+⚠ **`pd.isna` on the raw volume element STAYS.** It is what keeps an absent volume `None` rather
+than `0.0` — rule 1, and `ReplayBar.volume`'s own docstring says why that distinction is
+load-bearing. A NaN test written as `raw != raw` is equivalent for floats and WRONG for an object
+column carrying `None`.
+
+✅ **PROVEN ON REAL BARS RATHER THAN ARGUED** — `replay_fingerprint.py` (below, same commit)
+replayed 2.5 years before and after: bar-stream digest identical, all 66 trades identical on every
+field. 539 strategy tests green.
+
+### `tools/replay_fingerprint.py` — how a speed change proves it moved nothing
+
+`capture` before the change, `compare` after. It hashes the BAR STREAM — by replaying the
+iterator, never by hashing the frame, so it measures the thing under test — and every field of
+every closed trade.
+
+⚠ **A totals check is not this.** Two different books post the same net, so a change that merely
+SWAPPED two trades passes a totals check in silence.
+
+🔴 **It fingerprints the STRATEGY SOURCE and the resolved config into the basis, and REFUSES to
+compare across a change in either.** Without that it reported a real difference that belonged to
+somebody else: a second session edited `mpc_sos_fade.meta.json` between a capture and its
+comparison, and the tool duly said the trades had moved. **They had — the strategy had.** *A
+comparison harness that cannot see the thing underneath it changing will blame whichever change
+you happen to be holding.*
+
+⚠ **It REFUSES an empty trade book.** The first version read `strategy.trades`, a field that does
+not exist (`strategy.execution.trades` is the real one), captured ZERO trades, and would have
+compared equal to everything forever. ⚠ **And `_trade_rows` builds LISTS, not tuples** — JSON has
+no tuple, so a reloaded baseline never equalled a freshly-built one and every trade read as
+changed with no differing field to show for it. **Both failures are the same shape: a comparison
+tool that is broken says EQUAL or says DIFFERENT, and neither answer looks like an error.**

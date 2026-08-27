@@ -52,19 +52,49 @@ def iter_bars(df: pd.DataFrame) -> Iterator[ReplayBar]:
     with no volume must arrive with no volume rather than with zeros. A NaN cell (one
     unknown bar inside an otherwise-populated column) is `None` for the same reason.
     """
+    # 🔴 **COLUMN ARRAYS, NEVER `df.iterrows()`, AND THIS IS THE HOT LOOP OF THE WHOLE LAB.**
+    # `iterrows` builds a fresh pandas Series for EVERY BAR — a full object with its own block
+    # manager, dtype resolution and `__finalize__` — purely so five numbers can be read off it and
+    # thrown away. MEASURED under cProfile on a real replay: Series construction alone was **12.7%
+    # of a 15m run and 19% of a 5m one**, plus `Series.__getitem__` five times a bar on top. On the
+    # 6.6-year window this app actually runs that is minutes of wall clock spent allocating
+    # objects, and none of it touches a single number the strategy reads.
+    #
+    # ⚠ **The conversion is IDENTICAL, deliberately, and that is the whole design.** `.to_numpy()`
+    # is called with NO dtype coercion and each element still goes through `float(...)` — the same
+    # call applied to the same stored value that `row["open"]` produced. Forcing `dtype="float64"`
+    # here would be faster again and is refused: on an object column it would convert by a
+    # different route, and "a bit faster and occasionally a different float" is not a trade
+    # anybody asked for. Aaron's constraint, 2026-08-26: *"do not sacrifice the accuracy."*
+    #
+    # ⚠ **`pd.isna` on the raw volume element STAYS.** It is what keeps a missing volume `None`
+    # rather than `0.0`, and the field's own docstring above says why that distinction is
+    # load-bearing. A NaN test written as `raw != raw` would be equivalent for floats and wrong
+    # for an object column carrying `None`.
+    #
+    # ⚠ Proven on real bars, not by argument: `backtest/tools/replay_fingerprint.py` replays a
+    # 2.5-year window and compares the bar stream digest AND every trade field before and after.
     has_volume = "volume" in df.columns
-    for seq, (ts, row) in enumerate(df.iterrows()):
+    idx = df.index
+    opens = df["open"].to_numpy()
+    highs = df["high"].to_numpy()
+    lows = df["low"].to_numpy()
+    closes = df["close"].to_numpy()
+    vols = df["volume"].to_numpy() if has_volume else None
+
+    for seq in range(len(idx)):
         vol = None
-        if has_volume:
-            raw = row["volume"]
+        if vols is not None:
+            raw = vols[seq]
             vol = None if pd.isna(raw) else float(raw)
+        ts = idx[seq]
         yield ReplayBar(
             index=seq,
             timestamp_ms=_epoch_ms(ts),
             time=ts,
-            open=float(row["open"]),
-            high=float(row["high"]),
-            low=float(row["low"]),
-            close=float(row["close"]),
+            open=float(opens[seq]),
+            high=float(highs[seq]),
+            low=float(lows[seq]),
+            close=float(closes[seq]),
             volume=vol,
         )

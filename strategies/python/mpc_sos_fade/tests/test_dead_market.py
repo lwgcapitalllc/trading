@@ -23,28 +23,30 @@ def _ex(atr, **cfg_kw):
     return ex
 
 
-def test_the_shipped_default_is_OFF():
+def test_the_shipped_default_is_ON_at_the_value_that_was_CHOSEN():
     """Pins the SHIPPED value so it cannot move without somebody editing this line.
 
-    ⚠ It briefly stood at 0.08 on 2026-08-26 and was put back to 0.0 the same day (Aaron's call:
-    ship the switch down, decide from a run). OFF is also what keeps `compare_strategy.py`
-    meaningful — Pine defaults to 0.0 too, so a shipped run is byte-identical to one from before
-    this gate existed.
-    ⚠ Do NOT read the number as measured-optimal in either direction. The replayed floors came
-    back 119.0R / 127.9R / 111.5R / 114.4R at off / 0.08 / 0.09 / 0.10, which is noise with no
-    order to it; only the DRAWDOWN column held its order (55.5% / 47.9% / — / 41.5%).
+    ⚠ It landed at 0.0 (off) on 2026-08-26 and was switched ON at 0.08 the same day, once the
+    run it was shipped-down to wait for had been read (Aaron's call).
+    ⚠ Do NOT read 0.08 as a measured optimum. The replayed floors came back 119.0R / 127.9R /
+    111.5R / 114.4R at off / 0.08 / 0.09 / 0.10, which is noise with no order to it. **What
+    chose 0.08 is the DRAWDOWN column, which does hold its order** — 55.5% / 47.9% / — / 41.5%
+    worst drawdown, and the smoothness measure bottoming at 0.08 (20.8% / 17.2% / — / 18.6%).
+    What this test protects is that the value is DELIBERATE.
     """
-    assert SosFadeConfig().exec_min_atr_pct == 0.0
+    assert SosFadeConfig().exec_min_atr_pct == 0.08
 
 
-def test_the_shipped_default_passes_a_market_nothing_could_trade():
-    """🔴 The point of shipping it OFF is that it must refuse NOTHING until somebody turns it on.
+def test_the_shipped_default_actually_REFUSES_a_dead_market():
+    """🔴 A non-zero default is worth nothing if it does not bite, and a default that bites is
+    worth nothing if nobody can see where the line is.
 
-    An absurdly quiet bar — ATR 0.01 on price 4000, four ten-thousandths of a percent — has to
-    come through the shipped config with no kwargs at all, or every baseline measured before
-    today silently moved. MUTATION: any non-zero default and this goes red.
+    ATR 1.60 on price 4000 is 0.04% — half the shipped floor — so the shipped config must refuse
+    it with no kwargs at all, and a market at twice the floor must still come through.
+    MUTATION: put the default back to 0.0 and the first assertion goes red.
     """
-    assert _ex(atr=0.01)._market_has_range(4000.0) is True
+    assert _ex(atr=1.60)._market_has_range(4000.0) is False
+    assert _ex(atr=6.40)._market_has_range(4000.0) is True
 
 
 def test_zero_passes_everything():
@@ -106,25 +108,31 @@ def test_it_gates_the_entry_path_through_the_shared_floor_check():
     assert ex._stop_clears_floor(5.00, 4000.0) is True
 
 
-def test_the_PINE_side_ships_the_same_default_and_still_gates_both_entries():
-    """🔴 The parity argument for landing this gate is "both sides default OFF", and nothing else
-    in this repo can check it — `compare_strategy.py` needs a TradingView export, and an export
-    can only ever show the decisions of ONE settings snapshot.
+def test_the_PINE_side_ships_the_SAME_value_and_still_gates_both_entries():
+    """🔴 THIS TEST GOT WEAKER THE DAY THE GATE WAS SWITCHED ON, AND SAYING SO IS THE POINT.
 
-    So this reads the Pine source. It is a weak test and deliberately so: it proves the DEFAULT
-    and the two CALL SITES, which is exactly the part that makes a shipped run comparable. It
-    proves nothing about whether the two implementations agree once somebody turns it on — only
-    a real export can, and this docstring must not be read as if it did.
+    While both sides shipped at 0.0 the gate could not fire, so "the two agree" was true by
+    construction and this file was a cheap way to keep it that way. At 0.08 the gate fires on
+    real bars in the SHIPPED configuration, and whether the two implementations then make the
+    same decision is a question only `compare_strategy.py` on a fresh export can answer.
 
-    MUTATION: change the Pine default to 0.08, or drop either `f_marketHasRange` from the entry
-    conditions, and this goes red.
+    So read this for exactly what it checks: the two DEFAULTS are the same number, and the Pine
+    gates BOTH entry placements. It is the floor under the claim, never the claim itself, and it
+    would pass happily against a Pine whose comparison ran the wrong way round.
+
+    ⚠ Until an export lands carrying `cfg_min_atr`, the shipped configuration is one the parity
+    gate has never verified. Rule 22 is not satisfied by this file.
+
+    MUTATION: move either default, or drop either `f_marketHasRange` from the entry conditions,
+    and this goes red.
     """
     from pathlib import Path
 
     pine = (Path(__file__).resolve().parents[4]
             / "indicators" / "strategies" / "mpc_strategy.pine").read_text()
 
-    assert 'execMinAtrPct = input.float(0.0,' in pine, "Pine default moved off 0.0 (off)"
+    assert 'execMinAtrPct = input.float(0.08,' in pine, "Pine default no longer matches Python's"
+    assert SosFadeConfig().exec_min_atr_pct == 0.08, "Python default no longer matches Pine's"
     # Both entry placements, long and short, must carry the gate — one of them is how a setup
     # the strategy means to refuse gets in through the other door.
     assert pine.count("and f_marketHasRange(") == 2, "expected the gate on exactly both entries"

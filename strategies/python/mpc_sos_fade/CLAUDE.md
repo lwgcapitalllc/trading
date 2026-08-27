@@ -3676,7 +3676,7 @@ window, same settings: **uncosted gives 62 recovery trades and `puprime_ecn` giv
 the primary's real-loss population goes 62 → 65 with the friction charged. Nothing changed in the
 rule between those two runs.
 
-## The DEAD-MARKET floor — `exec_min_atr_pct` (2026-08-26, ships OFF)
+## The DEAD-MARKET floor — `exec_min_atr_pct` (2026-08-26, ON at 0.08)
 
 A second entry filter beside the minimum stop distance, asking a **different question**: not *is
 the leg long enough to size against* but *is the market moving at all*. A dead market throws up
@@ -3716,19 +3716,28 @@ compared against. ⚠ **The Pine input is APPENDED after the last `input.float`*
 beside the stop floor it belongs with, because declaration order is what TradingView keys a saved
 chart's values off.
 
-⚠ **SHIPS OFF (0.0) ON BOTH SIDES** — Aaron's call, 2026-08-26: build the switch, ship it down,
-decide from a run. That is also what keeps the gate meaningful, since a shipped run stays
-byte-identical to one from before this existed. ⚠ **Turning it on is a real behaviour change, the
-live bot does not have it until somebody PROMOTES, and it makes the A+/B-LEG overlap audit stale —
-re-run `backtest/tools/overlap_audit.py`.**
+🔴 **ON AT 0.08 ON BOTH SIDES (Aaron's call, 2026-08-26), SO THE SHIPPED BOOK IS 240 TRADES AND
+NOT 245.** It landed OFF earlier the same day and was switched on once the run was read — the
+switch and the value were two separate decisions and the history is kept that way on purpose.
+⚠ **PIN IT TO 0.0 TO REPRODUCE ANY BASELINE IN THIS FILE MEASURED BEFORE TODAY.** Not a formality:
+the floor removes 5 entries, and with one position slot a removed entry changes which LATER setup
+gets the slot, so a stored figure does not merely shift by the refused trades' R.
+⚠ **The live bot does not have it until somebody PROMOTES**, and **the A+/B-LEG overlap audit is
+stale until `backtest/tools/overlap_audit.py` is re-run** — it was measured on the logic that took
+245.
 
-⚠ **`compare_strategy.py` has NOT run for this change** — no decision-stream export exists on this
-machine, the "9 of 14 gates could not run" condition the root CLAUDE.md records, so **rule 22 is not
-satisfied.** What stands in until an export lands is
-`test_the_PINE_side_ships_the_same_default_and_still_gates_both_entries`, which reads the Pine source
-and pins the default and both call sites. **It is deliberately weak and its docstring says so**: it
-proves the two sides ship the same OFF position, and nothing about whether they agree once
-somebody turns it on.
+🔴 **AND THE PARITY POSITION CHANGED WITH IT, WHICH IS THE PART THAT COSTS SOMETHING.** While both
+sides shipped at 0.0 the gate could not fire, so a shipped run was byte-identical to one from
+before this existed and the code could land unverified. **At 0.08 it fires on real bars in the
+SHIPPED configuration, so the strategy the live bot would run is one `compare_strategy.py` has
+never checked.** No decision-stream export exists on this machine — the "9 of 14 gates could not
+run" condition the root CLAUDE.md records — so **rule 22 is NOT satisfied and the shipped path is
+now the unverified one.** Take an export carrying `cfg_min_atr` before promoting.
+
+⚠ **What stands in meanwhile is deliberately weak and its own docstring says so**:
+`test_the_PINE_side_ships_the_SAME_value_and_still_gates_both_entries` reads the Pine source and
+pins that the two defaults are the same number and that both entry placements carry the gate. **It
+would pass against a Pine whose comparison ran the wrong way round.**
 
 **TESTED:** 10 in `tests/test_dead_market.py`, watched RED against HEAD and re-proved BY MUTATION,
 because "the field is new" cannot tell a working gate from a present one. ⚠ **Turning it on broke

@@ -272,9 +272,6 @@ class SosFadeConfig:
     #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
     #   Read only when the mode is not "Off". See the sweep table above for every measured rung;
     #   below 0.05 the floor refuses nothing at all, and 0.09 upward starts costing.
-    #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
-    #   Read only when the mode is not "Off". See the sweep table above for every measured rung;
-    #   below 0.05 the floor refuses nothing at all, and 0.09 upward starts costing.
     # ── the DEAD-MARKET floor (2026-08-26) ───────────────────────────────────────
     #   Refuse a setup when ATR(14) at the fill is below this % of price. A fade needs range to
     #   travel into; in a market this quiet the setup has nowhere to go and the trade is decided

@@ -1463,7 +1463,7 @@
       "group": "Risk & stop",
       "label": "Minimum market volatility (% of price)",
       "short": "Dead-market floor",
-      "desc": "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 (the default) is off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.",
+      "desc": "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 turns it off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.",
       "step": 0.01,
       "guide": ["Nothing is refused", "Refuses real trades, not just dead ones"]
     }

@@ -69,6 +69,12 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             "cfg_scratch_r": cfg.exec_scratch_r,
             "cfg_min_stop": _MINSTOP[cfg.exec_min_stop_mode],
             "cfg_min_stop_val": cfg.exec_min_stop_val,
+            # The dead-market floor. It has to be here for the same reason every other
+            # trade-affecting field is: the decode reads an ABSENT column as 0.0 (correct for a
+            # real export predating the input), so a synthetic export that omits it round-trips
+            # the shipped 0.08 back as "off" and the replay disagrees with itself. That is the
+            # failure this whole file exists to catch, and it caught it.
+            "cfg_min_atr": cfg.exec_min_atr_pct,
             "cfg_time_stop": _TIMESTOP[cfg.exec_time_stop_mode],
             "cfg_time_stop_hrs": cfg.exec_time_stop_hrs,
             "cfg_poi_source": _POI[cfg.exec_poi_source],

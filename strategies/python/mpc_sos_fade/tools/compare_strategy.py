@@ -214,12 +214,15 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         vals["exec_min_stop_val"] = float(msv)
     # Dead-market floor (added 2026-08-26) — the OTHER entry filter, asking whether the market
     # is moving at all rather than whether the stop is far enough away. Same shape and same
-    # reasoning as the two above: an export with no column predates the input, and the parent
-    # shipped it at 0.0 (off) from the day it was added, so "absent ⇒ 0.0" is a FACT about
-    # those exports rather than a guess. Do NOT fall back on the base config — the moment the
-    # Python default is anything but 0.0, that would refuse setups the exported Pine took, and
-    # the diff would accuse the entry rule of a disagreement the harness itself created. That
-    # is not hypothetical here: this field DID ship at 0.08 for part of one day.
+    # reasoning as the two above: an export with no column was taken from a Pine that had no
+    # such input, so it ran with no floor and "absent ⇒ 0.0" is a FACT about those exports
+    # rather than a guess.
+    # 🔴 Do NOT fall back on the base config here, and this one is not hypothetical: the SHIPPED
+    # default is 0.08, so a config fallback would configure every archived export with a filter
+    # its Pine had no code to run — refusing setups the export took, and reporting the harness's
+    # own configuration as an entry-rule bug. That is the `eqExemptFvg` failure exactly, which
+    # cost three days and a misdiagnosis.
+    # ⚠ It also means a GREEN run on a column-less export says nothing about the shipped path.
     mav = get("cfg_min_atr")
     vals["exec_min_atr_pct"] = 0.0 if mav is None else float(mav)
     # Time stop (added 2026-08-05) — same shape and same reasoning as the minimum-stop guard

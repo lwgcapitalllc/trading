@@ -1885,7 +1885,7 @@ Every comment that pointed at the file was retargeted rather than left dangling.
 
 ---
 
-## `execMinAtrPct` — the dead-market floor (2026-08-26, ships OFF)
+## `execMinAtrPct` — the dead-market floor (2026-08-26, ON at 0.08)
 
 `mpc_strategy.pine` and its export twin gained one input and one helper (`f_marketHasRange`),
 ANDed into both entry placements. It refuses a setup when ATR(14) is smaller than the given share
@@ -1908,3 +1908,10 @@ goes WRONG, accusing whichever code the symptom lands in. This repo has met that
 
 ⚠ **Pine has ONE entry path here and the Python has two** — the re-entry is Python-only — so a
 green gate on this input says the 15m setup path agrees and nothing about the other door.
+
+🔴 **IT SHIPPED AT 0.0 AND WAS SWITCHED ON AT 0.08 THE SAME DAY (Aaron's call), AND THAT CHANGED
+WHAT AN UNVERIFIED PASTE COSTS.** At 0.0 the gate could not fire, so the file traded exactly as
+before and landing it without a paste was cheap. At 0.08 it refuses setups in the DEFAULT
+configuration — so a fresh paste of this file is a strategy nobody has run on a chart, and no
+export carries `cfg_min_atr` yet. **Paste it, export it, and run the gate before any number taken
+off it is believed.**
