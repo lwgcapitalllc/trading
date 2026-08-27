@@ -447,6 +447,31 @@ about this file: a rule that fires on a robot's commit has no human to read its 
 not nag — it silently stops the job.** When you add a check, ask what it does to the things that
 commit without a person watching.
 
+🔴 **THE SAME RECORD BROKE THE SAME WAY AGAIN ON 2026-08-27, AND THE CAUSE WAS LINE ENDINGS.**
+The trading box writes the decision record with a carriage return; the Mac does not. Both machines
+commit it, git stores whatever bytes it is handed, and two copies that disagree on EVERY line
+conflict on every line — **even though both sides had only ever APPENDED.** Hit twice inside ten
+minutes while pushing a doc change, and it was harmless only because a person was standing in front
+of it. Unattended, it is the 2026-08-05 failure exactly: the sync does not nag, it stops, and the
+day sits on one machine alone.
+
+✅ **FIXED AT THE STORAGE LAYER by `.gitattributes` at the repo root** — `*.jsonl` and `*.log` are
+declared text, so git normalises them however they arrive and the two machines store identical
+bytes. ⚠ **Deliberately NOT fixed by making an agent write the other ending.** That is a rule living
+in one script's memory, and this repo already knows what happens to those: the next tool that
+touches the file has never heard of it. **Nothing has to remember anything for this fix to hold.**
+⚠ **The broad glob was CHECKED, not assumed** — all 64 tracked files of those two types are these
+bot records, so nothing else is touched. ⚠ **62 existing files were renormalised in the same
+commit**, and each was verified byte-identical to its old version once carriage returns are ignored:
+a record of what the bot decided may not be edited to fix a merge problem. ⚠ **Proven rather than
+reasoned** — a carriage-return file was written, staged, and the stored blob confirmed to hold none.
+
+⚠ **The deeper hazard is unchanged and this does not retire it: TWO machines still commit this file,
+and exactly one may push.** The rule stops them conflicting on formatting. It does not stop them
+diverging, and a same-day divergence still needs a human to merge — check that the fuller side is a
+strict superset before taking it, because on 2026-08-27 it was, and that is the only reason nothing
+was lost.
+
 When a change genuinely needs no doc update, say so **in the message** — the reason is
 required and is recorded where the other person can read it:
 

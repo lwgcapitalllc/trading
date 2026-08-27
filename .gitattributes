@@ -1,0 +1,21 @@
+# The live bot's decision record is written on the Windows trading box AND committed
+# from two machines, and Windows writes a carriage return that the Mac does not. Git
+# stores whatever bytes it is handed, so one side's copy differs from the other's on
+# EVERY line — and a merge of two files that disagree on every line is a conflict on
+# every line, even when both sides only ever APPENDED.
+#
+# That matters more than it looks. This record is the only copy of what the bot decided,
+# including every setup it REFUSED, and no broker statement contains it. It is committed
+# unattended twice a day, so a conflict has nobody there to resolve it: the job does not
+# nag, it stops, and the day sits on one machine alone. That has already happened once,
+# on 2026-08-05, for a different reason.
+#
+# `text` makes git normalise these to LF in the repository whichever machine hands them
+# over, so the two sides store identical bytes and an append merges as an append. It is a
+# fix at the STORAGE layer on purpose — nothing has to remember to write the right ending,
+# so neither agent can undo it. `eol=lf` keeps the working copy the same on both machines.
+#
+# Every tracked file of these two types is one of these bot records (64 of them, all under
+# algos/ledger_archive/) — checked, not assumed, before choosing a rule this broad.
+*.jsonl text eol=lf
+*.log   text eol=lf
