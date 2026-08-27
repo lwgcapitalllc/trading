@@ -363,3 +363,44 @@ goes red instead of letting the other three pass for the wrong reason.
 - Shim and bot integration: `algos/shared/structure_engine.py`
 - Sibling shared-library pattern (stateless, for contrast): `engines/regime/CLAUDE.md`
 - Monorepo context: `../CLAUDE.md`
+
+## 🔴 The pivot detector copied the WHOLE 2000-bar buffer to read 31 of them (2026-08-27)
+
+`_pivot_at_current_bar` did `list(self._bars)[n - (2*L+1) : n]`. `self._bars` is a deque bounded at
+`max_bars_back` (2000), so **every bar allocated a 2000-element list, copied 2000 references into
+it, and threw all but 31 away** — on every replay in this repo, for the life of the port.
+
+**MEASURED under cProfile on a 23,539-bar replay: it was the single hottest function in the whole
+profile, 3.26s of 34.1s.** Removing the copy took the profile to **8.3s**, which is far more than
+the function's own share — the allocation and its 2,000 reference-count operations per bar were
+driving garbage collection that cProfile charges to whoever is running. **Unprofiled, end to end on
+62,468 real bars, the replay went 81.25s → 22.16s.**
+
+✅ **Indexing near a deque's right-hand end walks from that end**, so the window costs O(L²) pointer
+steps rather than an O(max_bars_back) copy plus a list allocation.
+
+⚠ **The COMPARISONS are untouched and that is deliberate** — the same `>` and `<` against the same
+bars, candidate excluded, and the early exit cannot alter a result because both tests are pure
+conjunctions. It only stops asking once both answers are settled. **This is a memory-traffic fix,
+not a logic change**, which is the only kind of change this file's *Never do* list allows here
+without sign-off.
+
+✅ **RULE 22 SATISFIED — the gate RAN, on two real exports, before and after:**
+
+| export | before | after |
+|---|---|---|
+| `VANTAGE_XAUUSD, 5_0bcd2.csv` (20,574 bars) | GREEN from bar 0 | **GREEN from bar 0** |
+| `VANTAGE_XAUUSD, 15_9d44d.csv` (20,991 bars) | RED at bar 14123 | **RED at bar 14123, same timestamp** |
+
+⚠ **THE 15m EXPORT IS RED AND WAS RED BEFORE THIS CHANGE — a pre-existing red is still a red.** It
+is recorded here so the next reader does not spend an afternoon blaming the pivot detector for it,
+and it is NOT retired by this note. The same discipline was applied downstream: the A+ strategy gate
+is GREEN on `15_3ce38.csv`, and the fibonacci gate is RED at bar 31 / bar 49 on its two exports
+**identically before and after**.
+
+✅ **Also proven at the CONSUMER, which is the check a green engine gate cannot make**: the
+`mpc_sos_fade` book over 62,468 real M15 bars is byte-identical before and after — same bar-stream
+digest, all 66 trades identical on every field (`backtest/tools/replay_fingerprint.py`, with the
+engine reverted via `git stash` to take the baseline in the same working tree).
+
+**Tests:** 251 engine tests green, 1,201 strategy + backtest tests green.
