@@ -324,6 +324,11 @@ today's Pine and every gate passes:
 | `VANTAGE_XAUUSD, 15_dfe47.csv` | `15_b201e` (fibonacci) | 21,403 | **GREEN from bar 32** |
 | `VANTAGE_XAUUSD, 5_02c0a.csv` | `5_84d6c` (fibonacci) | 20,229 | **GREEN from bar 49** |
 
+⚠ **The three superseded files were DELETED the same day** (Aaron's call). They are named here
+only as history — do not go looking for them, and do not re-derive a red from one if a copy turns
+up. **A stale export left beside a fresh one is a trap that costs an afternoon**, because a gate
+run against it is red for a reason that has nothing to do with the code under test.
+
 🔴 **THE PREDICTION HELD EXACTLY, AND THAT IS THE POINT WORTH KEEPING.** The paragraph above
 was written from the exports' own OHLC — Pine anchoring an earlier, more extreme bar the close never
 broke — and it said the fix was right and the files were stale. **A fresh export was the experiment

@@ -340,6 +340,8 @@ behaviour.
 `VANTAGE_XAUUSD, 5_02c0a.csv` (20,229 bars) is **GREEN from bar 49** — the 5m one with the Macro fib
 actually exercised, which the 15m export can never do.
 
+⚠ **The two superseded files were DELETED the same day** and are named below only as history.
+
 🔴 **THIS IS THE ONE CASE WHERE "IT IS UPSTREAM, NOT ME" WAS PUT AT RISK AND SURVIVED.** That
 claim is the easiest thing in this repo to say and the hardest to check, because it is exactly what a
 genuinely broken port would also say. **A fresh export was the experiment that could have falsified
