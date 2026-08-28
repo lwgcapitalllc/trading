@@ -105,6 +105,24 @@ account cap and there is no room to give a second strategy without lowering it f
 ⚠ **`_account_risk_cap_pct` is NOT runtime-reloadable** — changing the cap needs a RESTART, so it
 arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than on its own.
 
+## The live bot takes RECLAIM re-entries as of 2026-08-27
+
+⚠ **`mpc_sos_fade_demo` now runs the reclaim re-entry, banking the whole position at 3.25x its own
+risk.** Its instance config had pinned the re-entry OFF and the target at 3.0; both were changed
+deliberately (Aaron's call). The strategy's own defaults moved the same day.
+
+🔴 **Neither setting is runtime-reloadable, so this needed a RESTART — only `exec_risk_pct` applies
+to a running bot.** A config pull alone leaves the bot trading the old rules while the file on disk
+says otherwise, and the bot reports the difference as *blocked* rather than applying it.
+
+⚠ **An instance config PIN beats the strategy default, silently and permanently.** This bot pinned
+the old 3.0 target, so the default moving to 3.25 did not reach it — the pin had to be edited too.
+Check the pin before assuming a default change reaches a bot.
+
+⚠ **It is a LAB finding on the live box.** The Pine has no reclaim at all, so `compare_strategy.py`
+can never gate it — measured, not assumed: the harness exercised **0** re-entries. The evidence is
+a `run_dual` replay (44 re-entries, +32.50R, 2020-2026), not a parity pass.
+
 ## 🔴 The box backs up its OWN record now — the Mac no longer pushes (2026-08-24)
 
 `SYS_LEDGERSYNC` runs `algos/tools/ledger_sync.py --local --alert-on-failure` **hourly at :20**.
