@@ -377,12 +377,19 @@ def test_the_stop_out_latch_is_not_the_cap_latch():
         "a stopped-out leg re-armed with the cap off — the stop-out rule is not a preference")
 
 
-def test_the_secondary_ships_OFF_and_its_cap_stays_ON():
-    """Aaron's call, 2026-08-21, REVERSING his 2026-08-07 call that shipped it ON.
+def test_the_re_entry_ships_ON_as_the_RECLAIM_and_its_cap_stays_ON():
+    """Aaron's call, 2026-08-27: it ships ON, as the RECLAIM, banking all-out at 3.25x.
 
-    ⚠ **This moves every historical figure in this repo that was produced on the defaults**, the
-    same way turning it on did. The shipped book is now the PRIMARY book: 181 trades over
-    2018-09-14 -> 2026-08-14, where the pair shipped ON gave 235.
+    That is the third position this switch has held — ON 2026-08-07, OFF 2026-08-21, ON again now
+    — so the history is kept rather than overwritten. What changed between the second and the third
+    is WHICH re-entry: the 2026-08-21 call turned off a GAP re-entry that had never earned its
+    place (ten in 7.9 years, one trade carrying the whole result). The reclaim is a different
+    feature on the same switch, measured separately: 44 re-entries and +32.50R over 2020-2026.
+
+    The old note, still true and still the reason to be careful:
+
+    ⚠ **This moves every historical figure in this repo that was produced on the defaults**, and it
+    has now done so three times. Any figure quoted as "the shipped book" has to name its date.
 
     ⚠ **The CAP stays ON and that is not an oversight.** It only has meaning while the secondary
     is enabled, and a reader who turns the secondary on gets the once-per-setup rule with it rather
@@ -394,7 +401,7 @@ def test_the_secondary_ships_OFF_and_its_cap_stays_ON():
     Verified rather than argued - exit 0 at warmups 100/200/500/1000 on the same export, before and
     after this flip."""
     cfg = SosFadeConfig()
-    assert cfg.exec_secondary is False
+    assert cfg.exec_secondary is True
     assert cfg.exec_sec_once_per_setup is True
 
 
@@ -822,10 +829,14 @@ def test_an_entry_the_wrong_side_of_its_stop_refuses_rather_than_sizing_off_it()
     assert out.l_armed is False
 
 
-def test_the_gap_trigger_and_the_0_886_stop_are_the_DEFAULTS_since_2026_08_20():
-    """What ships. Both moved together on 2026-08-20 and they have to: the gap trigger has no 1m
-    leg to stop behind, and pairing it with the old anchor is refused at construction."""
-    assert SosFadeConfig().exec_sec_trigger == "FVG in zone"
+def test_the_RECLAIM_trigger_and_the_0_886_stop_are_the_DEFAULTS_since_2026_08_27():
+    """What ships. The trigger moved to the reclaim on 2026-08-27 (Aaron); the 0.886 stop anchor
+    has not moved since 2026-08-20 and still may not be paired with the old one, which is refused
+    at construction. ⚠ The reclaim reads its OWN stop anchor, not this one — see
+    `exec_rec_stop`."""
+    assert SosFadeConfig().exec_sec_trigger == "Reclaim Entry"
+    assert SosFadeConfig().exec_rec_tp_r == 3.25
+    assert SosFadeConfig().exec_rec_tp1_pct == 100.0
     assert SosFadeConfig().exec_sec_stop == "0.886"
     assert SosFadeConfig().exec_sec_req_div is False    # the gate that kept it from ever firing
 

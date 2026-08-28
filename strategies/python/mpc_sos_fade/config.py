@@ -708,7 +708,7 @@ class SosFadeConfig:
     #   on, rather than silently diffing against logic this bot does not have. Porting it means
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
-    exec_secondary: bool = False       # "Secondary re-entries" — the fast-feed sniper re-entry
+    exec_secondary: bool = True        # "Secondary re-entries" — the fast-feed sniper re-entry
     #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
     #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from a faster one. It
     #   NEEDS run_dual and a second, faster feed, which is the whole reason the default matters — see the
@@ -1057,7 +1057,7 @@ class SosFadeConfig:
     #   taking re-entries is `exec_secondary = False`, which also stops the arm doing the work.
     #   ⚠ Read ONLY when exec_secondary is on.
 
-    exec_sec_trigger: str = "FVG in zone"   # "What triggers a re-entry"
+    exec_sec_trigger: str = "Reclaim Entry"   # "What triggers a re-entry"
     #   ∈ {Structure shift, Reclaim Entry, FVG in zone, FVG in zone + Reclaim Entry}
     #   WHAT HAS TO HAPPEN before a re-entry rests its order. Four values:
     #     "Structure shift"    — a break of structure on the fill clock inside the zone, then a limit at

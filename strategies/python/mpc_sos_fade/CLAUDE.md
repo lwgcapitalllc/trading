@@ -1689,7 +1689,14 @@ costs you drawdown, which is the number a risk budget is actually set against.
 worth, never whether it happened. Only `bid_ask_fills` moves the trade list. A re-priced run
 showing the same trade count as its source is working correctly.
 
-### 🔴 THE RE-ENTRY NOW SHIPS **OFF** (Aaron's call, 2026-08-21 — reverses 2026-08-07)
+### 🔴 THE RE-ENTRY SWITCH HAS FLIPPED THREE TIMES — ON 2026-08-07, OFF 2026-08-21, ON 2026-08-27
+
+⚠ **It now ships ON, as the RECLAIM, banking all-out at 3.25x** (Aaron, 2026-08-27). What follows
+is the 2026-08-21 record of turning it OFF, kept because the reasoning still stands and applies to
+a different feature on the same switch: what was turned off then was the GAP re-entry, which had
+never earned its place. The reclaim is measured separately — 44 re-entries, +32.50R over 2020-2026.
+⚠ **Any figure in this repo quoted as "the shipped book" must name its DATE**, because this switch
+has moved the defaults three times.
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 THE RE-ENTRY NOW SHIPS **OFF** (Aaron's call, 2026-08-21 — reverses 2026-08-07)*.
 
@@ -2259,8 +2266,9 @@ answers point the same way: this leg is carried by trades that run, so anything 
 them — a nearer target, a tightened stop — costs more than it saves. See *Every entry method owns
 its stop rule* above for the stop half.
 
-⚠ **The default is all that moved. The re-entry itself still ships OFF** (Aaron's call,
-2026-08-27) and the shipped trigger is still the gap, so no shipped run changes.
+⚠ **SUPERSEDED THE SAME DAY.** When this was written the re-entry still shipped OFF and only the
+default target had moved. Later on 2026-08-27 Aaron turned the re-entry ON as the reclaim, so this
+target IS now what the shipped configuration trades — and it is also what the live bot runs.
 🔴 **The live bot PINS the old 3.0 in its own instance config** — `algos/markets/fx/instances/
 mpc_sos_fade_demo/config.json` — so it will NOT pick this up. It is inert there today because
 that bot's re-entry fires off the gap, but the moment anyone switches the reclaim on live, the

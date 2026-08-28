@@ -54,9 +54,12 @@ def test_the_pins_that_would_move_trades_if_inherited():
     # False is asserted first because that is what protects this bot; the parent's value is pinned
     # after it so a future flip back to True surfaces HERE rather than as a refused BOS sweep.
     assert cfg.exec_secondary is False
-    assert parent.exec_secondary is False, (
-        "the parent defaults the 1m re-entry ON again — this fork's pin is load-bearing once more, "
-        "and run_sweep still cannot supply a second bar stream")
+    # 🔴 2026-08-27: the parent ships the re-entry ON again (as the reclaim), so this fork's pin is
+    # LOAD-BEARING once more — `run_sweep` still cannot supply a second bar stream, and an inherited
+    # True would break every sweep rather than mis-price a trade. The pin above is what stops it.
+    assert parent.exec_secondary is True, (
+        "the parent's default moved again — re-answer this in the same commit and say whether this "
+        "fork's pin is load-bearing or redundant")
     assert parent.exec_time_stop_mode != "Off" and cfg.exec_time_stop_mode == "Off"
     assert parent.exec_runner_trail != cfg.exec_runner_trail
 

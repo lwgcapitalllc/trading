@@ -310,13 +310,14 @@ switched the gap entry back on.
 They vary per run and ARE exported, so `compare_bos.py` configures the engines FROM the export
 rather than trusting that function.
 
-## ⚠ The parent's 1m re-entry now defaults OFF (2026-08-21)
+## 🔴 The parent's re-entry ships ON again — this fork's pin is LOAD-BEARING (2026-08-27)
 
-`mpc_sos_fade` shipped `exec_secondary` ON on 2026-08-07 and reverted it to OFF on 2026-08-21
-(Aaron — every optional entry path ships off). **This fork's own pin is unchanged and still False.**
+`mpc_sos_fade` has now flipped `exec_secondary` THREE times: ON 2026-08-07, OFF 2026-08-21, and ON
+again 2026-08-27, this time as the **reclaim** re-entry banking all-out at 3.25x (Aaron's call).
+**This fork's own pin is unchanged and still False**, so nothing this bot trades has moved.
 
-🔴 **The pin is now REDUNDANT rather than load-bearing, and it stays.** A fork that leans on its
-parent's default is one flip away from breaking, and this field has flipped TWICE in a fortnight.
+🔴 **The pin is LOAD-BEARING again, not redundant — that is the change.** A fork that leans on its
+parent's default is one flip away from breaking, and this field has now flipped three times.
 The fork's own value is asserted first because that is what protects this bot; the parent's value is
 pinned after it so a flip back to True surfaces in BOS's own test rather than as a
 refused sweep.
