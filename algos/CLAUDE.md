@@ -105,11 +105,27 @@ account cap and there is no room to give a second strategy without lowering it f
 ⚠ **`_account_risk_cap_pct` is NOT runtime-reloadable** — changing the cap needs a RESTART, so it
 arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than on its own.
 
-## The live bot takes RECLAIM re-entries as of 2026-08-27
+## 🔴 THE LIVE RUNNER CANNOT RUN ANY RE-ENTRY — it drives ONE timeframe (2026-08-28)
 
-⚠ **`mpc_sos_fade_demo` now runs the reclaim re-entry, banking the whole position at 3.25x its own
-risk.** Its instance config had pinned the re-entry OFF and the target at 3.0; both were changed
-deliberately (Aaron's call). The strategy's own defaults moved the same day.
+🔴 **`exec_secondary` on a live bot REFUSES AT STARTUP: *"needs a 1-minute bar stream alongside the
+15m one (run_dual). The live runner drives a single timeframe."*** It was turned on for
+`mpc_sos_fade_demo` on 2026-08-28 (Aaron's call) and the bot **would not start** — down until the
+setting was put back. **The re-entry is a LAB-ONLY feature on the live side today**, whatever the
+strategy's defaults say.
+
+⚠ **Nothing before startup catches it, and that is the trap.** The config CONSTRUCTS fine, and
+`promote.py` reported *"verified: the snapshot imports and builds with the promoted parameters"* —
+because importing and building is not running. The refusal lives in the runner, so the first thing
+that tests it is the restart, by which point the bot is down.
+⚠ **A promote's "verified" line means IMPORTS AND BUILDS, never RUNS.** Read it that way.
+⚠ **The same limitation is why `compare_strategy.py` can never gate the re-entry** (single frame,
+no fill clock) and why `mpc_bleg` and `mpc_bos` pin it off. Three places had already recorded this
+shape; the live runner was the fourth and nobody had asked it.
+
+✅ **To actually run it live, the runner needs a second feed** — that is a build, not a setting.
+
+⚠ **The 3.25x reclaim target IS stated in the config and is correct**, but inert while the
+re-entry is off.
 
 🔴 **Neither setting is runtime-reloadable, so this needed a RESTART — only `exec_risk_pct` applies
 to a running bot.** A config pull alone leaves the bot trading the old rules while the file on disk
