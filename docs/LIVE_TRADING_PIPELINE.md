@@ -1519,3 +1519,86 @@ believing it works.** Offline green means the logic is right, not that the bot s
 - **Never hardcode a broker fact** — history depth, symbol suffix, clock offset. Measure it, or refuse
   to run and ask. The live pipeline adds a new one to the list: the broker's minimum stop distance
   (`SYMBOL_TRADE_STOPS_LEVEL`), which must be read off the terminal, never typed.
+
+---
+
+### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **OPEN, plan below (2026-08-28)**
+
+**The gap in one line:** every re-entry this repo has is priced and filled on a FASTER clock than
+the 15-minute one the strategy arms on, and `algos/live/runner.py::_loop` polls exactly one
+timeframe. So the live bot cannot take a re-entry, and `algos/live/bridge.py::assert_supported`
+refuses to start rather than trade a configuration it would silently mis-execute.
+
+🔴 **PROVEN THE EXPENSIVE WAY ON 2026-08-28.** The re-entry was switched on for
+`mpc_sos_fade_demo` and the bot **would not start** — down until the setting was reverted:
+
+> `bridge.UnsupportedStrategyConfig: exec_secondary needs a 1-minute bar stream alongside the 15m
+> one (run_dual). The live runner drives a single timeframe. Turn it off, or build the dual feed.`
+
+⚠ **Nothing before the restart catches it, and that is the trap this gap must close.** The config
+CONSTRUCTS, and `promote.py` printed *"verified: the snapshot imports and builds with the promoted
+parameters"* — because importing and building is not running. The refusal lives in the runner, so
+the first thing that exercises it is the restart, by which point the bot is down.
+**A promote's "verified" line means IMPORTS AND BUILDS, never RUNS. Read it that way.**
+
+⚠ **The same single-feed limitation is why `compare_strategy.py` can never gate a re-entry**
+(measured, not argued: the harness exercised **0** re-entries on a 21,357-bar export) **and why
+`mpc_bleg` and `mpc_bos` both pin the setting off.** Three places had already recorded this shape.
+Nobody had asked the live runner, which is the fourth.
+
+**What it costs today:** the reclaim re-entry is measured at **+32.50R over 44 trades**
+(2020-01-01 → 2026-08-23, `run_dual`, primaries unchanged at 156, so it adds rather than
+displaces). All of it is unreachable live.
+
+#### Why it is tractable — the fact that makes this a feed problem, not an allocator problem
+
+**A reclaim only arms after the primary on that leg has CLOSED** (`exec_rec_require` =
+*Stopped only*), and primary and secondary share ONE position slot. **So the two are never in the
+market together, and the bridge's one-position model still holds.** What changes is where an entry
+order's price and stop come from, and how often the resting order is re-decided — not how many
+positions exist. That is why this is nothing like G10 (the account-level allocator), and must not
+be bundled with it.
+
+#### The plan — four stages, each shippable and provable on its own
+
+**Stage 1 — a second feed into the runner, placing NO orders.**
+Add a second `BarFeed` on `exec_sec_fill_tf_min` (5 minutes by default, and the caller's choice —
+`run_dual`'s second frame is deliberately not a minute). Merge the two on one clock exactly as
+`MpcSosFadeStrategy.run_dual` does: bars are timestamped at OPEN, so a faster bar reads the 15m
+context of the bar that has already CLOSED at its open time. Step the secondary path and **LOG
+what it would have done. Place nothing.**
+✅ **Proof, and it is the whole point of doing this stage alone:** replay one window through
+`run_dual` and through the live merge and require **identical secondary decisions, bar for bar**.
+The merge ORDER is the part that is easy to get wrong and impossible to see later.
+⚠ The bar-hole recovery in `_loop` (a raised bar advances the bookmark) has to cover BOTH feeds, or
+the faster stream desyncs silently — the same defect that cost a re-warm rewrite on 2026-08-05.
+
+**Stage 2 — the bridge places a second entry.**
+`assert_supported`'s three refusals all trace to one sentence: the bridge *"mirrors ONE entry limit
+and one ratcheting stop"*. A re-entry needs an entry limit at its own price with its own stop, rested
+on the faster clock and cancellable (`exec_sec_max_wait_bars`, `exec_sec_rest_and_leave`).
+⚠ **Dry run first — the runner already defaults to it and requires `--live` to be typed.** Run it
+alongside the live bot for a week and diff intended orders against what the lab says.
+
+**Stage 3 — turn the refusal into a CAPABILITY check.**
+`assert_supported` should stop asking *"is this setting on"* and start asking *"do I have the feed
+this configuration needs"*. Until stage 2 lands it must keep refusing — **the refusal is correct
+and must not be softened to get a bot started.**
+✅ **And the check has to run BEFORE the restart.** `promote_preview` should exercise the same
+startup path it claims to verify, so a configuration that cannot start is refused while the bot is
+still happily running. That is the fix for the trap at the top of this gap.
+
+**Stage 4 — enable on demo, measure, then decide.**
+Demo only, one bot, and compare live decisions against the lab on the same bars before it goes near
+anything else.
+
+#### What must stay true throughout
+
+- ⚠ **No parity gate covers any of this** — the Pine has no re-entry at all. The `run_dual` replay
+  is the only evidence there will ever be, so it is a LAB finding on the live side and should be
+  described that way.
+- ⚠ **Do not soften `assert_supported` to make a bot start.** It exists because a silently
+  mis-executed strategy diverges from every backtest with nothing saying why.
+- ⚠ **`exec_tp1_pct` / `exec_tp2_pct` and `exec_scale_in` are refused for the SAME underlying
+  reason** (one entry limit, one stop). Stage 2 is the shared unlock; whoever does it should read
+  all three refusals together rather than fixing one.

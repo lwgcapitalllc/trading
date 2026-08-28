@@ -123,6 +123,8 @@ no fill clock) and why `mpc_bleg` and `mpc_bos` pin it off. Three places had alr
 shape; the live runner was the fourth and nobody had asked it.
 
 ✅ **To actually run it live, the runner needs a second feed** — that is a build, not a setting.
+**The plan to build it is `docs/LIVE_TRADING_PIPELINE.md` → G18** — four stages, the first
+placing no orders at all, and the proof for each.
 
 ⚠ **The 3.25x reclaim target IS stated in the config and is correct**, but inert while the
 re-entry is off.
