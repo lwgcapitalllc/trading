@@ -140,7 +140,12 @@
       "Bash(cp routers/stacks.py /tmp/stacks.bak)",
       "Bash(cp /tmp/ba.orig.py services/bot_accounts.py)",
       "Bash(python3 -m pytest tests/test_bot_accounts.py -q)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "mcp__playwright__browser_take_screenshot",
+      "Bash(ls -t /Users/alwg/trading/.playwright-mcp/*.yml 2>/dev/null | head -3; find /Users/alwg -name \"configure-tab.yml\" -newermt \"-5 minutes\" 2>/dev/null | head -3)",
+      "mcp__playwright__browser_evaluate",
+      "Bash(npx prettier *)",
+      "Bash(./scripts/run_all_tests.sh)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
