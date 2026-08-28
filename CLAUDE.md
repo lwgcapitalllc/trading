@@ -172,8 +172,12 @@ Cross-subsystem VPS bootstrap and full-recovery scripts (`bootstrap_vps.ps1` for
 pushes its own decision record hourly, so the backup no longer waits for a Mac to wake up. It is the
 one task there that needs a SECRET a rebuild does not restore (`github_token` in the git-ignored
 `algos/credentials.json`): without it the task runs, commits, and silently never pushes.
-`install_ledger_sync.sh` still installs the Mac agent, now `--no-push` — **exactly one machine may
-push or the two rebase under each other.** Rules live in `algos/CLAUDE.md`; do not restate them here.
+🔴 `install_ledger_sync.sh` **no longer installs anything and refuses if you ask** — its Mac agent
+was a SECOND WRITER of an append-only file, and two appends to one file end cannot be merged at any
+content (eight hours of hourly conflicts, 2026-08-28). **`--no-push` did not save it: on a shared
+branch a local commit is a push with a delay.** The rule is enforced in `ledger_sync.py`, which
+refuses to commit records the running machine did not write. Rules live in `algos/CLAUDE.md`; do
+not restate them here.
 
 **`setup_learning_mode.sh` (2026-08-11) is the odd one out — it targets a DEV MACHINE, not the VPS**, and is the one-time install behind `/learn <video-url>`: it puts `ffmpeg`/`yt-dlp` on the PATH and clones the third-party `watch` skill (MIT, `bradautomates/claude-video`) to `~/.claude/vendor/`, symlinked into `~/.claude/skills/watch`. ⚠ **The watch skill is deliberately NOT vendored into this repo**, so a clone alone does not make `/learn` work — the skill checks for the install and names the script rather than shelling out to `yt-dlp` itself. **Re-running the script is also how it UPDATES**, which is the part that bites: `yt-dlp` breaks whenever a video site changes its markup, and a stale copy fails on real URLs while looking perfectly installed.
 

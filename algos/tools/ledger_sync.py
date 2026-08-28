@@ -1,18 +1,20 @@
-"""ledger_sync.py — commit the bots' record to git. Runs ON THE BOX hourly; also runs on a Mac.
+"""ledger_sync.py — commit the bots' record to git. Runs ON THE BOX, hourly, and NOWHERE ELSE.
 
-Run it from the repo root, on the machine that has git credentials:
-
-    python algos/tools/ledger_sync.py             # fetch, commit, push
-    python algos/tools/ledger_sync.py --dry-run   # say what it would do
-    python algos/tools/ledger_sync.py --no-push   # commit locally only
+    python algos/tools/ledger_sync.py --local     # fetch, commit, push  (the box only)
+    python algos/tools/ledger_sync.py --dry-run   # say what it would do (any machine)
     python algos/tools/ledger_sync.py --closed-only   # skip today's open files
 
-**It runs itself, twice a day.** `scripts/install_ledger_sync.sh` installs a launchd agent at
-00:05 and 12:05 local (`com.lwg.ledger-sync`), which is Aaron's requirement from 2026-08-05 —
-*"once a day is wrong, I think it should be at least twice a day."* launchd runs a missed
-calendar job when the Mac next wakes, so a closed laptop delays the backup rather than skipping
-it. ⚠ **It still only runs when this Mac is on**, and that is the honest limit of a design where
-the box holding the data is not allowed to hold a git token (see below).
+🔴 **EXACTLY ONE MACHINE MAY COMMIT THESE FILES, and `main()` refuses rather than trusting
+anybody to remember it.** The record is append-only, so two machines committing one day's file
+means merging two appends to one file end — which git cannot do at any content. Read the block
+above the refusal in `main()` before changing any of this; it cost a day of the record sitting
+on one disk on 2026-08-28.
+
+**It runs itself, hourly, on the box** (`SYS_LEDGERSYNC`, `algos/scheduler/ledgersync_task.xml`).
+That is the whole schedule — there is no Mac half any more, and `scripts/install_ledger_sync.sh`
+now refuses to install one. Aaron's 2026-08-05 requirement (*"at least twice a day"*) is met
+twelve times over by a machine that is always on, which the laptop that used to carry it was
+not.
 
 **Three kinds of file are fetched**, all per-day, all committed the same way:
 
@@ -42,9 +44,10 @@ true and it is now fixed rather than worked around. Two things had to change:
     reaching for a store it cannot write, and under a task with no session that is what waits
     forever. With it disabled the same call is silent.
 
-**So the box now backs itself up hourly** (`SYS_LEDGERSYNC`) and the Mac agent runs `--no-push`
-as a second local copy. ⚠ **Exactly one machine may push**, or two timers rebase under each
-other on one branch; the box is the one that is always on, so the box is the one that pushes.
+**So the box backs itself up hourly** (`SYS_LEDGERSYNC`) and is the ONLY machine that commits
+this record. ⚠ The Mac agent that used to run beside it was removed on 2026-08-28: it made a
+second local copy the Mac already had by `git pull`, and the copy cost a day of conflicts. A
+second reader is free; a second WRITER is what breaks.
 
 ⚠ **What this COSTS, stated plainly because it was a deliberate trade:** that box already holds
 a live broker password, and a repo write token beside it means a break-in costs the repository
@@ -507,6 +510,43 @@ def main(argv=None) -> int:
         help="skip today's still-open files (the pre-2026-08-05 behaviour)",
     )
     args = ap.parse_args(argv)
+
+    # 🔴 **A MACHINE THAT FETCHED THE RECORD OVER SSH HOLDS A COPY, NOT THE RECORD, AND MAY NOT
+    # COMMIT IT.** This is the fix for 2026-08-28, and it is deliberately a property of the
+    # MACHINE rather than a flag somebody has to remember to pass.
+    #
+    # What broke: the Mac agent ran `--no-push`, so it committed locally and never pushed — and
+    # committing locally is not the same as not writing. Its commit reached origin on the next
+    # human `git push` of unrelated code, which from the box's side is indistinguishable from
+    # the Mac having pushed. The box's hourly job then had to merge two APPENDS to the end of
+    # one file, which git cannot do at ANY content — the 3-way merge sees one changed region and
+    # conflicts. It aborted by design, re-failed identically every hour for eight hours, stacked
+    # another commit each time, and the record sat on one disk throughout.
+    #
+    # 🔴 **`--no-push` reduced the damage without removing the cause: the rule was written at the
+    # PUSH layer and the hazard lives at the COMMIT layer.** A local commit on a shared branch is
+    # a push with a delay.
+    #
+    # ⚠ `--local` is what decides, because that flag already means *the record files are on this
+    # disk* — i.e. this machine WROTE them. It is not spoofable in practice: a Mac has no
+    # `algos/markets/fx/instances/*/ledger/` at all, so `--local` there fetches nothing and
+    # returns before reaching any commit.
+    #
+    # ⚠ It REFUSES rather than falling back to a local commit, and it exits NON-ZERO. A machine
+    # that quietly did nothing would look exactly like one doing its job, and a stale agent left
+    # installed on another Mac would go on manufacturing conflicts nobody could trace back.
+    # "Refused" and "backed up" must never be the same outcome.
+    #
+    # ⚠ It refuses BEFORE fetching, so it never copies files into the working tree either. A
+    # dirty archive folder is a loaded gun: the next `git add -A` from any session commits it,
+    # and this repo has already been bitten by exactly that (root CLAUDE.md, 2026-08-25).
+    #
+    # ⚠ A dry run is still allowed from anywhere — it neither fetches nor commits.
+    if not args.local and not args.dry_run:
+        print("  REFUSED: this machine did not write these records, so it may not commit them.")
+        print("  The box that owns them backs them up hourly by itself (SYS_LEDGERSYNC).")
+        print("  This is NOT a backup failure. Run `git pull` to get the record onto this disk.")
+        return 1
 
     host = None if args.local else args.host
     today = datetime.now(timezone.utc).date()

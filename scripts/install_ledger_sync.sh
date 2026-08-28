@@ -9,15 +9,27 @@
 # script ssh's to the VPS, fetches every per-day record file (decisions, health, and the text
 # log), and commits them to `algos/ledger_archive/`.
 #
-# 🔴 THIS IS NO LONGER THE BACKUP. Since 2026-08-24 the trading box pushes its OWN record hourly
-# (SYS_LEDGERSYNC, `algos/scheduler/ledgersync_task.xml`), so this agent runs with `--no-push`
-# and is a SECOND LOCAL COPY on the Mac, nothing more. Aaron's call, and the reason is the one
-# this file used to state as an unavoidable limit: the record only left the box when a Mac
-# happened to be awake, and a laptop shut for a weekend meant a weekend of record on one disk.
+# 🔴 IT NO LONGER INSTALLS ANYTHING, AND THE ONLY THING LEFT HERE IS `--uninstall`. Since
+# 2026-08-24 the trading box pushes its OWN record hourly (SYS_LEDGERSYNC,
+# `algos/scheduler/ledgersync_task.xml`), which made this agent a second copy of something the
+# Mac already had by `git pull`. On 2026-08-28 that copy cost a day.
 #
-# ⚠ `--no-push` is not a detail — it is what stops the two machines racing. Both pushing to
-# `main` on their own timers means one rebases under the other; the box is the copy that is
-# always on, so the box is the one that pushes.
+# 🔴 WHAT IT COST, because "it only commits locally" reads harmless and is not. The agent ran
+# `--no-push`, so it committed to `main` and never pushed — and the commit then reached origin
+# on the next human `git push` of unrelated code, which from the box's side is exactly a push.
+# The box's hourly job had to merge two APPENDS to the end of one file. Git cannot do that at
+# any content: the 3-way merge sees one changed region and conflicts. It aborted (correctly),
+# re-failed identically every hour for EIGHT hours, stacked another commit each time, and the
+# record sat on one disk the whole while.
+#
+# 🔴 THE RULE WAS WRITTEN AT THE WRONG LAYER, and that is the transferable part. `--no-push`
+# governs PUSHING; the hazard is COMMITTING. On a shared branch a local commit is a push with a
+# delay. The fix is in `algos/tools/ledger_sync.py::main`, which now refuses to commit records
+# this machine did not write — so a stale agent left installed on another Mac is inert rather
+# than dangerous, without anybody having to go and remove it.
+#
+# ⚠ A second READER is free and always was. It is a second WRITER that breaks, and this repo
+# only ever needed one: the box is always on, and GitHub is the off-box copy.
 #
 # WHY THE BOX COULD NOT PUSH BEFORE, and what changed: its scheduled tasks run as SYSTEM, whose
 # credential store has no cached token and no interactive session to ask for one — so `git push`
@@ -56,8 +68,22 @@ case "${1:-install}" in
     echo "removed $LABEL"
     exit 0
     ;;
+  install|"")
+    echo "REFUSED: this agent is not installed any more, on purpose."
+    echo
+    echo "  The trading box commits and pushes the record itself, hourly (SYS_LEDGERSYNC)."
+    echo "  A Mac agent beside it is a SECOND WRITER of an append-only file, and two appends"
+    echo "  to one file end cannot be merged — that cost a day of backup on 2026-08-28."
+    echo
+    echo "  This Mac already gets every record with 'git pull'."
+    echo "  If an old agent is still loaded here, remove it:"
+    echo "      scripts/install_ledger_sync.sh --uninstall"
+    exit 1
+    ;;
 esac
 
+# Unreachable: the case above exits on every path. Kept so the shape of what used to be
+# installed stays readable next to the reason it no longer is.
 # ABSOLUTE paths throughout. launchd starts a job with a minimal environment and a PATH that has
 # neither Homebrew nor a virtualenv on it, so a bare `python3` or `git` is the classic way one of
 # these agents "installs fine" and then fails silently every night.

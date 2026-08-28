@@ -529,3 +529,74 @@ def test_the_identity_is_NOT_forced_when_the_machine_has_one(repo, monkeypatch):
     rebase = [a for a in seen if "pull" in a and "--rebase" in a]
     assert rebase, f"the rebase never ran; git was called with {seen}"
     assert not [x for x in rebase[0] if str(x).startswith("user.email=")]
+
+
+# ---------------------------------------------------------------------------
+# Only the machine that WROTE the record may commit it (2026-08-28).
+#
+# 🔴 These four cases exist because the rule was previously written at the PUSH layer, where the
+# hazard is not. The Mac agent ran `--no-push`, committed to `main`, and its commit reached
+# origin on the next human `git push` of unrelated code — so the box's hourly job had to merge
+# two APPENDS to the end of one file. Git cannot do that at any content: the 3-way merge sees a
+# single changed region and conflicts. It aborted correctly, re-failed identically for eight
+# hours, stacked a commit each time, and the record stayed on one disk.
+#
+# ⚠ The assertion that matters is `fetch` never running, not the return code. A refusal that
+# still copies files into the working tree leaves them for the next `git add -A` to commit, which
+# is the same defect one session later.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def never_fetches(monkeypatch):
+    """Records any fetch attempt. Empty is the only passing state for a refused run."""
+    calls = []
+    monkeypatch.setattr(ls, "fetch", lambda *a, **k: calls.append(a) or [])
+    return calls
+
+
+def test_a_machine_that_did_not_write_the_record_may_not_commit_it(box, never_fetches):
+    """Watched RED against HEAD: without the guard this returns 0 and fetches a file."""
+    rc = ls.main([])
+
+    assert rc == 1
+    assert never_fetches == [], "a refused run must not copy records into the working tree"
+
+
+def test_the_refusal_is_at_the_COMMIT_layer_not_the_PUSH_layer(box, never_fetches):
+    """The exact command the removed Mac agent ran, twice a day, for weeks.
+
+    `--no-push` looked safe and was not: a local commit on a shared branch is a push with a
+    delay. Mutating the guard to `if not args.local and not args.no_push` reddens this and
+    nothing else in the file, which is the point of keeping it separate from the case above.
+    """
+    rc = ls.main(["--no-push"])
+
+    assert rc == 1
+    assert never_fetches == []
+
+
+def test_the_box_that_OWNS_the_record_is_not_refused(box, monkeypatch):
+    """Mutation guard: a guard that refuses everybody backs nothing up.
+
+    ⚠ This is the half that a refusal-only test cannot cover, and this repo has already shipped
+    a checker whose every case asserted a refusal — it certified two tools that had never once
+    worked (root CLAUDE.md, the promote tools, 2026-08-26).
+    """
+    monkeypatch.setattr(ls, "_push", lambda: (True, ""))
+
+    assert ls.main(["--local"]) == 0
+
+
+def test_a_dry_run_is_still_allowed_from_anywhere_and_writes_NOTHING(box):
+    """Inspecting the record from a Mac stays possible, and leaves no file behind.
+
+    ⚠ The assertion is on the DISK, not on whether `fetch` was called. It is called on a dry run
+    and returns the paths it would have written without writing them — so a call-counter here
+    passes on code that copies and fails on code that does not, i.e. exactly backwards. The
+    first version of this test was wrong that way.
+    """
+    assert ls.main(["--dry-run"]) == 0
+
+    landed = list((box / "algos" / "ledger_archive").rglob("*.jsonl"))
+    assert landed == [], f"a dry run left files in the working tree: {landed}"

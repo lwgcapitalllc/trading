@@ -259,3 +259,48 @@ is the shape this whole subsystem keeps being bitten by. Left alone in this pass
 WHEN the alarm fires rather than what it says - but it is a hole, not a design.
 
 ⚠ **The rules live in `algos/CLAUDE.md`; this is the diary entry.** Do not restate them here.
+
+## 2026-08-28 - the backup that conflicted with itself, hourly, for eight hours
+
+**Symptom.** `Ledger backup did NOT reach origin (this box). 3 file(s) committed locally.` The
+alert arrived hourly with the reason attached — the 2026-08-27 fix working — and the reason was
+`the rebase onto origin failed and was aborted`.
+
+**What was actually happening.** Two machines were committing one append-only file. The trading
+box commits its record hourly; the Mac's launchd agent (`com.lwg.ledger-sync`, 00:05 and 12:05)
+scp'd the same files down and committed them too. The Mac ran `--no-push`, which was believed to
+make it safe.
+
+**Why `--no-push` did not make it safe, and this is the whole lesson.** A local commit on a shared
+branch is a push with a delay. The Mac committed `ff7cb217` at 00:08; a human `git push` of
+unrelated code at 00:20 carried it to origin. From the box's side that is indistinguishable from
+the Mac having pushed. **The rule "exactly one machine may push" was written at the PUSH layer and
+the hazard lives at the COMMIT layer.**
+
+**Why it could never merge.** Both sides only ever APPENDED, and both appended to the end of the
+same file from the same parent. Git's 3-way merge sees one changed region with two different
+contents and conflicts — **at any content, including when one side is a strict superset of the
+other.** This is not the 2026-08-27 line-ending problem; `.gitattributes` held throughout.
+
+**Why it stacked.** The job commits first and pushes second, so every hour added another commit
+that could not be replayed. By the time it was looked at there were EIGHT, and a `git status` early
+in the session showed only ONE — the difference was seven hours of the session's own elapsed time.
+⚠ Re-read the state at the moment you act on it, not from a reading taken earlier in the sitting.
+
+**Measured before resolving**, per the standing rule that the fuller side must be a strict superset
+before it is taken: `git diff --numstat` over the whole archive, box tip against origin — 57 lines
+added, **0 deleted**, and the third file (the text log) byte-identical. Only then was the branch
+reset to origin and the sync re-run, producing `c5274622` with 60 lines: 3 MORE than the eight
+discarded commits held, 0 fewer. Nothing was lost, and that was checked rather than argued.
+
+**The fix, and why it is where it is.** The Mac agent was removed, but that alone would be a rule
+living in one machine's launchd folder. `ledger_sync.py::main` now refuses to commit records the
+running machine did not write — before fetching, exiting non-zero. `--local` is the test because it
+already means *these files are on this disk*. A stale agent on anybody else's Mac is now inert
+without anybody going to remove it, which is the property that makes it scale.
+
+**Rejected: `*.jsonl merge=union` in `.gitattributes`.** It is the obvious one-line answer and it
+is wrong here. Union resolves a conflicting region by concatenating BOTH sides, so where the Mac
+had lines A,B and the box had A,B,C the result is A,B,A,B,C — **it duplicates decision records.**
+A merge driver clever enough to dedupe is a script each clone must install into `.git/config`,
+which is the same "invisible on a fresh clone" shape as `core.hooksPath`. One writer needs neither.

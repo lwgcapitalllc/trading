@@ -141,10 +141,11 @@ Check the pin before assuming a default change reaches a bot.
 can never gate it — measured, not assumed: the harness exercised **0** re-entries. The evidence is
 a `run_dual` replay (44 re-entries, +32.50R, 2020-2026), not a parity pass.
 
-## 🔴 The box backs up its OWN record now — the Mac no longer pushes (2026-08-24)
+## 🔴 The box backs up its OWN record — and it is the ONLY machine that may (2026-08-24/28)
 
 `SYS_LEDGERSYNC` runs `algos/tools/ledger_sync.py --local --alert-on-failure` **hourly at :20**.
-The Mac's launchd agent still runs, with `--no-push`, as a second local copy.
+There is no Mac agent any more; it was removed 2026-08-28 and `main()` now refuses to commit
+records the running machine did not write.
 
 **Why it changed.** The record left the box only when a Mac happened to be awake. Aaron, after a
 weekend of records sitting on one disk: *"let the VPS go to work for me… so when I'm asleep,
@@ -162,8 +163,21 @@ Two changes, and the second is the one that matters:
     store it cannot write, and under a session-less task that is what waits forever. Silent with it
     off.
 
-⚠ **Exactly ONE machine may push.** Two timers on one branch rebase under each other. The box is
-the one always on, so the box pushes and the Mac is `--no-push`. Do not "restore" the Mac's push.
+🔴 **EXACTLY ONE MACHINE MAY COMMIT THIS RECORD, and writing that rule at the PUSH layer cost a
+day (2026-08-28).** `--no-push` looks safe and is not: **on a shared branch a local commit is a
+push with a delay** — the Mac's commit reached origin on the next human push of unrelated code.
+Two APPENDS to the end of one file then cannot be merged, **at any content**, so the box's hourly
+job conflicted, aborted correctly, and re-failed for eight hours stacking a commit each time.
+
+✅ **Fixed as a property of the MACHINE, not a flag on an installer**: a run that fetched the
+records over SSH refuses, before fetching, and exits non-zero. `--local` is the test — it already
+means *these files are on this disk*. ⚠ Refusing BEFORE the fetch is deliberate: files copied into
+the working tree are a loaded gun for the next `git add -A`. ⚠ A stale agent on anybody else's Mac
+is now inert, so nothing has to be removed anywhere. ⚠ A dry run still works from any machine.
+⚠ A second READER is free — the Mac has every record by `git pull`. It is a second WRITER that
+breaks. Do not "restore" the Mac agent; `scripts/install_ledger_sync.sh` refuses and says why.
+⚠ `merge=union` is the tempting one-line fix and it DUPLICATES records — story and numbers:
+`algos/docs/ALGOS_BUILD_NOTES.md` → *the backup that conflicted with itself*.
 
 🔴 **`_identity()` goes on the PUSH path as well as the commit — a rebase REPLAYS commits, so it
 needs a committer too.** Missing there, the job committed hourly and pushed nothing for a night.
@@ -247,7 +261,10 @@ sync would be attributed to the box. ⚠ **Passed per-command, never written int
 checkout is what `promote.py` reads, and a write would silently re-attribute a human's commits made
 from the same box.
 
-**Tests:** `algos/tests/test_ledger_sync_local.py` (26), weighted toward what the job must REFUSE.
+**Tests:** `algos/tests/test_ledger_sync_local.py` (30), weighted toward what the job must REFUSE.
+⚠ The owner rule has a case for the box being ALLOWED as well as three refusals — a checker whose
+every case asserts a refusal certifies a tool that never works (root CLAUDE.md, 2026-08-26). Both
+mutations watched RED: guard removed, and guard refusing everybody.
 A fail-watch is vacuous for the original functions (they were new), so non-vacuity is by MUTATION —
 dropping the archive exemption and dropping the redaction each redden their own named test. ⚠ **The
 four alarm-wording cases are the exception and WERE fail-watched properly**, this file copied into a
@@ -757,9 +774,10 @@ it before you trust it — and delete the throwaway immediately, because a stray
 
 - **It cannot `git push`.** SYSTEM has its own credential store, Git Credential Manager has no token
   there and no session to prompt in, so the push **blocks** rather than failing — the task sits in
-  `Running` with no output until its execution limit kills it. This is why the ledger is pulled by
-  the Mac (`algos/tools/ledger_sync.py`) instead of pushed by the VPS. Do not "fix" it by putting a
-  GitHub token on this box: it already holds a live MT5 password and a Telegram token.
+  `Running` with no output until its execution limit kills it. ⚠ **SOLVED for the ledger since
+  2026-08-24 and the fix is above, not here**: a repo-scoped token plus Git Credential Manager
+  disabled outright. The cost was accepted deliberately — this box already holds a live MT5
+  password, so a repo write token beside it means a break-in costs the repository too.
 - **It has no console.** `timeout /t` and anything else wanting a console fails under a task and
   over SSH alike.
 
@@ -795,9 +813,8 @@ honestly and sends nothing rather than failing every five minutes). Check with
 
 **`SYS_LOGBACKUP` is ON as of 2026-07-31.** Daily 00:30 UTC (the VPS clock is UTC), runs
 `tools/log_backup.py`: zips the instance `.log` files into `algos/log_archive/`, prunes past 90
-days, reports closed AND open record files. **It does no git** — see the SYSTEM-cannot-push note
-above. The record reaches the repo via `algos/tools/ledger_sync.py` on the Mac, which since
-2026-08-05 runs **itself, every 12 hours** under launchd — see `### The daily record` below. Logs
+days, reports closed AND open record files. **It does no git.** The record reaches the repo
+via `algos/tools/ledger_sync.py --local` on this box, hourly — see `### The daily record` below. Logs
 are COPIED, never rotated: the bot holds its log open and renaming an open file on Windows fails.
 
 **`SYS_PNLTRACKER` and `SYS_REPORTER` no longer exist — deleted 2026-08-05, tasks and scripts
@@ -879,10 +896,9 @@ writes nothing too — which is why "the file is short today" was never a signal
    in place, so it can say the bot is blind NOW and can never say for how long, or that it happened
    at all once it recovers. That is exactly what the 50-minute outage on 2026-08-04 left behind.
 
-**Backup runs every 12 hours, on the Mac.** `scripts/install_ledger_sync.sh` installs a launchd
-agent (`com.lwg.ledger-sync`) at **00:05 and 12:05 local**, running `tools/ledger_sync.py`: it asks
-the VPS for its closed and open files (`log_backup.py --list-closed` / `--list-open`), scp's them
-into `algos/ledger_archive/`, and commits. ⚠ **Today's files are fetched too and are still being
+**Backup runs hourly, on the box** (`SYS_LEDGERSYNC`, `:20`), and nowhere else — see the ONE
+MACHINE MAY COMMIT rule above. `tools/ledger_sync.py --local` reads its closed and open files off
+this disk, copies them into `algos/ledger_archive/`, commits and pushes. ⚠ **Today's files are fetched too and are still being
 written**, so `_whole_lines` drops a trailing partial JSON line before committing — the check is
 *does the last line parse*, never *does it end in a newline*, because a record can be flushed
 complete a moment before its newline lands and truncating on the newline would silently discard the
@@ -892,12 +908,12 @@ newest record on every sync. Text logs are never truncated: prose is not records
 is final; an open one is the best copy so far and will be fetched again. Merging them is what lets
 a torn half-day later read exactly like a whole one.
 
-⚠ **The VPS still does not push, and must not be made to.** Its tasks run as SYSTEM, whose Git
-Credential Manager has no token and no interactive session, so `git push` BLOCKS rather than
-failing (measured 2026-07-31). Fixing that means a GitHub write token on a box already holding a
-live MT5 password. **The honest cost of the Mac-side design: the backup runs only when this Mac is
-on.** launchd fires a missed calendar job on the next wake, so a closed laptop delays rather than
-skips — but a Mac off for three days is three days of record on one disk.
+⚠ **The VPS pushes since 2026-08-24 — the paragraph that stood here said it could not, and said
+so for weeks after it was false.** The blocker was real (SYSTEM's credential store has no token and
+no session, so `git push` BLOCKED rather than failed, measured 2026-07-31) and it was FIXED, not
+worked around; the how and its accepted cost are in the section above. **The old Mac-side design
+was retired because its honest cost was a backup that ran only when a laptop was open**, and a Mac
+off for three days meant three days of record on one disk.
 
 ⚠ **The text log rolls by choosing a NAME, never by renaming** (`runner.DailyFileHandler`).
 `TimedRotatingFileHandler` renames the live file, and renaming a file Windows holds open fails with
