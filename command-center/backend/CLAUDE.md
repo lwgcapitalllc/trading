@@ -1268,6 +1268,15 @@ did not here. No schema uses `{}` today, which is exactly why nothing on screen 
 it. ⚠ **A new shape goes in the fixture in the same commit as the code**, or the drift guard is
 guarding the old rule.
 
+🔴 **A ROW THAT IS SETTLED *AND* GATED CANNOT BE REACHED FROM THE FORM, and `test_param_gates.py`
+refuses one with no exceptions since 2026-08-27.** The two mechanisms hide it for opposite reasons
+and compose badly: the gate takes it off the screen wherever it cannot matter, `hidden` takes it
+off wherever it CAN. ⚠ **It is not literally invisible in every configuration** — `hidden` only
+holds while the value sits at its default, so a run already carrying a moved value shows the row
+again. **That IS the defect**: the only way to reach the row is to have changed it somewhere else.
+⚠ **Six rows on `mpc_sos_fade` carried both and all six lost the `hidden` flag**, so the meta is
+the state the test pins rather than a list of known exceptions — a list would have grown.
+
 ⚠ **`strategy_scanner._PARAM_META_KEYS` IS A WHITELIST, and a key missing from it is dropped in
 SILENCE** — the meta states a rule, the scan reports success, and the editor behaves as though
 nobody wrote it. Add the key there in the same commit as the rule that uses it. (It is also why a

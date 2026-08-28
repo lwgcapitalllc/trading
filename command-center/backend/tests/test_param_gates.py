@@ -244,17 +244,21 @@ def test_a_param_with_no_default_in_the_schema_is_never_called_settled():
 # ── the bar for hiding: a SWEEP, not an untouched value ───────────────────────
 
 
-def test_the_six_proven_settled_params_are_hidden():
+def test_the_five_proven_settled_params_are_hidden():
     """Each of these was tested against alternatives and lost or tied. The evidence is in
     `mpc_sos_fade_optimization.md`, named per param in this package's CLAUDE.md — Run 2's
     525-combo exit grid, Run 5/6 (`exec_close_opp_sos` at exactly 0 effect, twice), Run 12 (both
-    relax routes)."""
+    relax routes).
+
+    ⚠ `exec_trail_step` was a sixth until 2026-08-27 and it is NOT a weakening of the bar. Run 2
+    settled the trail METHOD, and the method dropdown is on screen; the step size is a row behind
+    it, so the gate is already the thing hiding it. See the test below.
+    """
     by = {p["name"]: p for p in _params()}
     for n in (
         "exec_close_opp_sos",
         "exec_tp2_stop_mode",
         "exec_struct_trail_buf_tk",
-        "exec_trail_step",
         "exec_fvg_deep_only",
         "exec_no_late_day",
     ):
@@ -291,36 +295,35 @@ def test_the_breakeven_buffer_IN_FORCE_is_not_settled_off_the_screen():
     }
 
 
-# 🔴 SETTLED **AND** CONDITIONAL IS INVISIBLE IN EVERY CONFIGURATION, and five rows are.
-#
-# The two mechanisms hide a row for opposite reasons and they compose badly: the gate takes it off
-# the screen wherever it cannot matter, and `hidden` takes it off the screen wherever it CAN — so
-# between them there is nowhere left. A reader who switches the runner trail to a fixed step and
-# then looks for the step size does not find one.
-#
-# The five below are PRE-EXISTING and each is a real question rather than a bug this test knows
-# how to settle: whether the row should stop being settled (the answer taken for the breakeven
-# buffer above) or stop being gated. They are pinned as a LIST rather than asserted away, so a
-# sixth cannot arrive without somebody deciding. ⚠ Raised with Aaron 2026-08-27, undecided.
-KNOWN_SETTLED_AND_CONDITIONAL = [
-    "exec_trail_step",
-    "div_valid_bars",
-    "div_extreme_ob",
-    "div_extreme_os",
-    "exec_htf_source",
-]
+def test_NO_param_is_both_settled_and_conditional():
+    """🔴 SETTLED **AND** GATED PUTS A ROW OUT OF REACH FROM THE FORM.
 
+    The two mechanisms hide a row for opposite reasons and they compose badly: the gate takes it
+    off the screen wherever it cannot matter, and `hidden` takes it off wherever it CAN. What is
+    left is a setting you can only change by not being able to see it — a reader who switches the
+    runner trail to a fixed step and goes looking for the step size finds no box.
 
-def test_no_NEW_param_is_both_settled_and_conditional():
-    """MUTATION: add `"hidden": true` to any gated row in the meta and this goes red.
+    ⚠ It is not literally invisible in every configuration: `hidden` only holds while the value
+    sits at its default, so a run already carrying a moved value shows the row again. **That is
+    the whole defect** — the one way to reach the row is to already have changed it somewhere
+    else.
 
-    ⚠ It cannot go red at HEAD, and that is the point of the list — the five are the state being
-    frozen, not a state being asserted correct.
+    Six rows carried both. `exec_be_buf_tk` came off the settled list earlier on 2026-08-27
+    because the mode it belongs to ships reading it; the other five followed the same day
+    (Aaron's call) once the rule was stated, and the rule is what this test now pins with no
+    exceptions. ⚠ **Two of the five cost nothing on screen** — their gates are off in the shipped
+    config, so they appear only in the mode that reads them, which is the point. ⚠ **Three do**
+    (the divergence valid window and the two RSI extremes): the veto ships ON and is still
+    refusing setups, so its switch was on screen while the two numbers it fires on were not.
+
+    ⚠ **None of the five had a sweep behind it.** They were retired on the *never moved lately*
+    criterion Aaron rejected in August — the absence of the experiment, not its result.
+
+    MUTATION: add `"hidden": true` to any gated row in the meta and this goes red naming it.
     """
     both = [p["name"] for p in _params() if p.get("hidden") and p.get("show_if")]
-    assert both == KNOWN_SETTLED_AND_CONDITIONAL, (
-        "a row is now both settled and gated, so no configuration can show it: "
-        f"{sorted(set(both) ^ set(KNOWN_SETTLED_AND_CONDITIONAL))}"
+    assert both == [], (
+        f"settled AND gated — the row cannot be reached from the form. Drop one of the two: {both}"
     )
 
 

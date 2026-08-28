@@ -522,8 +522,7 @@
       "guide": [
         "Tighter trail — banks sooner, cuts runners short",
         "Looser trail — lets winners breathe, gives back more"
-      ],
-      "hidden": true
+      ]
     },
     {
       "name": "exec_tp2_stop_mode",
@@ -1178,8 +1177,7 @@
       "show_if": {
         "show_div": true
       },
-      "guide": ["Expires fast", "Stays live longer"],
-      "hidden": true
+      "guide": ["Expires fast", "Stays live longer"]
     },
     {
       "name": "div_veto",
@@ -1218,8 +1216,7 @@
         "show_div": true,
         "div_veto": true
       },
-      "guide": ["Vetoes longs more often", "Only vetoes at a true extreme"],
-      "hidden": true
+      "guide": ["Vetoes longs more often", "Only vetoes at a true extreme"]
     },
     {
       "name": "div_extreme_os",
@@ -1231,8 +1228,7 @@
         "show_div": true,
         "div_veto": true
       },
-      "guide": ["Only vetoes at a true extreme", "Vetoes shorts more often"],
-      "hidden": true
+      "guide": ["Only vetoes at a true extreme", "Vetoes shorts more often"]
     },
     {
       "name": "exec_no_late_day",
@@ -1313,8 +1309,7 @@
       "show_if": {
         "exec_htf_exhaust_only": true
       },
-      "choices": ["Weekly", "Daily", "Either"],
-      "hidden": true
+      "choices": ["Weekly", "Daily", "Either"]
     },
     {
       "name": "exec_scratch_r",
