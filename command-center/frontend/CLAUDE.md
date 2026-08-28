@@ -2586,6 +2586,55 @@ must never be described as having landed there — so it asserts the HEADER now,
 went. **Re-mutated to confirm it still bites**: rendering `local_version` as the deployed version
 turns it red.
 
+## The fleet strip re-reads itself, and its labels are about the BOT (2026-08-28)
+
+🔴 **A DEPLOYMENT BADGE THAT NEVER RE-READS IS A BADGE THAT LIES.** Both version hooks had
+`staleTime: 30_000` and **no `refetchInterval`**, so the only refetch a promote caused was the one
+`usePromoteBot` fires when the HTTP call returns — while the bot it just asked to stop takes tens of
+seconds to go, come back and stamp its new hash. **That refetch lands mid-restart, reads the OLD
+running hash, and nothing asks again.** ✅ MEASURED: the strip read `1 restart pending` over a bot
+whose deployment record and running hash agreed exactly. Numbers, timings and the fail-watch:
+`../docs/FRONTEND_BUILD_NOTES.md` → *The fleet strip's badge that never re-read*.
+
+✅ **Poll on the ANSWER, never on the action** (`versionPoll`): pending ⇒ 15s, settled ⇒ no poll.
+⚠ **"Poll for a while after a promote" was rejected** — it covers only the restarts THIS page
+started, so a CLI restart, a crash-loop or somebody else's promote goes on lying. Reading the flag
+off the data watches every cause and stops itself when the hashes agree. ⚠ **15s, not the 3s a lab
+run gets: this endpoint is one SSH round trip PER BOT — MEASURED 4.5s — and it multiplies by the
+fleet.** ⚠ **An idle page that has never SEEN a pending restart is covered by the global 30s
+`staleTime` + refetch-on-focus, not by a baseline poll** — nothing polls for a state it has not
+seen, and that is the deliberate limit.
+
+🔴 **`isRestartPending` lives in `lib/botVersion.ts` because TWO layers need it** — the badge draws
+it, the hook polls on it. A private copy in either lets the page poll for a condition it no longer
+draws, or draw one it never polls for.
+
+⚠ **The strip SAYS when it is re-reading** (`re-checking…`, off `isFetching`, distinct from
+`loading`'s first read). A page that refreshes silently gives the reader no way to tell a live
+number from a frozen one — the defect above, wearing a fix.
+
+🔴 **`not frozen` → `never deployed`.** "Frozen" names the MECHANISM (a promoted bot runs a frozen
+snapshot) and says nothing about the bot — Aaron, reading `1 not frozen`: *"idk what that even
+means"*. What is true is that nobody ever deployed it, so it has no pinned version and runs whatever
+the repo holds when it starts. **The DeployCard's warning changed in the same commit**, or the strip
+explains a word the card it sends you to no longer uses.
+
+🔴 **A non-zero count is a BUTTON that selects the bot it counts, and its tooltip NAMES them.** A
+condition plus a number left *which bot?* answerable only by clicking every rail row — and the
+sentence explaining the condition lives on the card you reach by doing that. ⚠ **The number is
+`bots.length` of the list behind it**, so the figure and the bot it navigates to cannot come apart.
+⚠ **Zero stays a `<span>`** — a button that navigates nowhere reads as broken.
+
+✅ **`tests/bots-version.spec.ts` (17 → 20), scoped to a new `fleet-strip` seam** — "restart pending"
+and "behind repo" also appear in the DeployCard's warnings, so a page-wide locator matches a card
+that is not the strip and passes against a broken one. 🔴 **The polling check is the one test in
+that file with a CLEAN fail-watch** (WATCHED RED with the fleet hook's `refetchInterval` removed).
+⚠ **It asserts the TRANSITION, never a number**, so the registry's SIZE cannot break it. 🔴 **Its
+mock's clock starts at the FIRST REQUEST, not at route registration** — anchored at registration it
+spends the page's whole boot, answers SETTLED on the first read, and fails on its opening assertion
+having proved nothing. **A fixture that measures from a moment the subject has not reached yet is a
+fixture testing its own timing.**
+
 ## The Accounts tab is a RAIL + DETAIL, not a stack of cards (2026-08-12)
 
 `AccountsTab` was a card per account, stacked down the page. Aaron's report is the spec for what

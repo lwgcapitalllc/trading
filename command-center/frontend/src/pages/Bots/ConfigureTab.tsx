@@ -25,6 +25,7 @@ import {
   usePreviewPromote,
   usePromoteBot,
 } from '@/hooks/useBots'
+import { isRestartPending } from '@/lib/botVersion'
 import type { BotDeployedVersion, BotParamRow, BotParamsView, BotStatus } from '@/types'
 
 /**
@@ -131,10 +132,10 @@ function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
   if (!v) return null
   const notFrozen = !v.frozen
   const snapshotModified = v.frozen && !v.snapshot_ok
-  // The live process reports a 12-char prefix; compare like for like. A mismatch means a
-  // promote landed after the bot started, so the NEW code is on disk and the OLD code is
-  // still trading — the most misleading state this page can show.
-  const restartPending = !!(v.running_hash && v.hash && !v.hash.startsWith(v.running_hash))
+  // 🔴 The predicate lives in `lib/botVersion`, not here, because `useBotVersion` reads it too —
+  // it is what decides whether this record is still settling and worth re-reading. A copy here
+  // would let the badge and the poll disagree about the one state this page exists to report.
+  const restartPending = isRestartPending(v)
   const driftCount = v.params_drift.length
   return {
     notFrozen,
@@ -153,34 +154,69 @@ function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
 // extra fetch — the flat stack was already reading every bot's version to render every
 // DeployCard, and these are the same cache entries.
 
+/**
+ * One count on the strip.
+ *
+ * 🔴 **A non-zero count is a BUTTON that selects the bot it is talking about.** Aaron, 2026-08-28,
+ * reading `1 not frozen`: *"idk what that even means"*. The strip named a condition and a number
+ * and nothing else — so answering *which bot?* meant clicking every row in the rail in turn, and
+ * the sentence explaining the condition lives on the card you get to by doing that. The count now
+ * takes you there, and the tooltip names the bots so the common case needs no click at all.
+ *
+ * ⚠ **Zero stays a plain `<span>`.** A button that navigates nowhere is the control this repo
+ * keeps recording as worse than none — a reader presses it, nothing happens, and the honest
+ * conclusion available to them is that the page is broken.
+ */
 function FleetCount({
   label,
-  n,
+  bots,
   tone,
   icon: Icon,
   title,
+  onSelect,
 }: {
   label: string
-  n: number
+  /** The bots this count is ABOUT — `bots.length` is the number rendered, so a count can never
+   *  disagree with the list behind it or send you to a bot it is not counting. */
+  bots: BotStatus[]
   tone: 'warn' | 'neutral'
   icon: typeof AlertTriangle
   title: string
+  onSelect: (key: string) => void
 }) {
+  const n = bots.length
   const hot = n > 0
   const cls = !hot
     ? 'border-border-subtle/60 text-text-tertiary'
     : tone === 'warn'
       ? 'border-warn/30 bg-warn-muted text-warn-text'
       : 'border-border-default text-text-secondary'
-  return (
-    <span
-      title={title}
-      className={`inline-flex items-center gap-[5px] text-[10px] px-[8px] py-[4px] rounded-md border cursor-default ${cls}`}
-    >
+  const body = (
+    <>
       <Icon size={10} className="shrink-0" />
       <span className="font-mono tabular-nums font-semibold">{n}</span>
       <span className="whitespace-nowrap">{label}</span>
-    </span>
+    </>
+  )
+  const shape = `inline-flex items-center gap-[5px] text-[10px] px-[8px] py-[4px] rounded-md border ${cls}`
+
+  if (!hot) {
+    return (
+      <span title={title} className={`${shape} cursor-default`}>
+        {body}
+      </span>
+    )
+  }
+  const names = bots.map((b) => b.name).join(', ')
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(bots[0].key)}
+      title={`${names} — ${title}`}
+      className={`${shape} cursor-pointer hover:brightness-125`}
+    >
+      {body}
+    </button>
   )
 }
 
@@ -189,26 +225,38 @@ function FleetStrip({
   flags,
   unreadable,
   loading,
+  rechecking,
+  onSelect,
 }: {
   bots: BotStatus[]
   flags: (VersionFlags | null)[]
   unreadable: number
   loading: boolean
+  /** A version is being re-read RIGHT NOW. Distinct from `loading`, which is the first read. */
+  rechecking: boolean
+  onSelect: (key: string) => void
 }) {
   const running = bots.filter((b) => b.status === 'RUNNING').length
   const live = bots.filter((b) => b.account_type === 'live').length
   const known = flags.filter((f): f is VersionFlags => f !== null)
 
-  const restartPending = known.filter((f) => f.restartPending).length
-  const notFrozen = known.filter((f) => f.notFrozen).length
-  const snapshotModified = known.filter((f) => f.snapshotModified).length
-  const drifted = known.filter((f) => f.driftCount > 0).length
-  const behind = known.filter((f) => f.behind > 0).length
+  // Each count is the LIST of bots it is about, not a number counted separately from them —
+  // so the figure on a chip and the bot it sends you to cannot come apart.
+  const withFlag = (p: (f: VersionFlags) => boolean) =>
+    bots.filter((_, i) => {
+      const f = flags[i]
+      return f !== null && p(f)
+    })
 
   const clean = known.length > 0 && known.every((f) => !f.anyWarn)
 
   return (
+    /* A declared TEST SEAM, for the reason `version-banner` carries one: the words on these chips
+       ("restart pending", "behind repo") also appear in the DeployCard's own warnings further down
+       the page, so a page-wide locator matches a card that is not this strip and passes against a
+       broken one. */
     <div
+      data-testid="fleet-strip"
       className="bg-bg-surface border border-border-subtle rounded-lg px-4 py-[11px] mb-4
                     flex items-center gap-x-[10px] gap-y-[8px] flex-wrap"
     >
@@ -234,38 +282,48 @@ function FleetStrip({
       <div className="flex items-center gap-[6px] flex-wrap ml-auto">
         <FleetCount
           label="restart pending"
-          n={restartPending}
+          bots={withFlag((f) => f.restartPending)}
           tone="warn"
           icon={RotateCcw}
-          title="Promoted, but the running process still reports the OLD hash — the new version is on disk and the old one is trading."
+          onSelect={onSelect}
+          title="the new code is on disk and the OLD code is still trading. This clears itself once the bot comes back — the page re-checks every 15s while it says so."
         />
+        {/* 🔴 It read `not frozen` until 2026-08-28, and that is a word about the MECHANISM
+            (a promoted bot runs a frozen snapshot) rather than about what is true of the bot.
+            Aaron: *"1 not frozen — idk what that even means"*. What it means to a reader is that
+            this bot has never been deployed, so there is no pinned version and it runs whatever
+            the repo says at the moment it starts. Say that. */}
         <FleetCount
-          label="not frozen"
-          n={notFrozen}
+          label="never deployed"
+          bots={withFlag((f) => f.notFrozen)}
           tone="warn"
           icon={Snowflake}
-          title="Still importing from the repo working tree, so a git pull changes what it trades. Promote it."
+          onSelect={onSelect}
+          title="never promoted, so it has no pinned version — it runs whatever is in the repo when it starts, and a git pull changes what it trades. Deploy it."
         />
         <FleetCount
           label="snapshot edited"
-          n={snapshotModified}
+          bots={withFlag((f) => f.snapshotModified)}
           tone="warn"
           icon={AlertTriangle}
-          title="The deployed files no longer match their record — edited in place, bypassing promote."
+          onSelect={onSelect}
+          title="the deployed files no longer match their record — edited in place, bypassing promote."
         />
         <FleetCount
           label="settings changed"
-          n={drifted}
+          bots={withFlag((f) => f.driftCount > 0)}
           tone="warn"
           icon={SlidersHorizontal}
+          onSelect={onSelect}
           title="config.json now states settings the deployment does not carry. They take effect at the next promote (risk % applies live)."
         />
         <FleetCount
           label="behind repo"
-          n={behind}
+          bots={withFlag((f) => f.behind > 0)}
           tone="neutral"
           icon={GitCommitHorizontal}
-          title="The repo has moved past this deployment. Normal — a bot runs what it was promoted at, not what the repo says today."
+          onSelect={onSelect}
+          title="the repo has moved past this deployment. Normal — a bot runs what it was promoted at, not what the repo says today."
         />
 
         {/* A version that could not be READ is not a healthy one. Counting an unreadable
@@ -282,7 +340,15 @@ function FleetStrip({
           </span>
         )}
         {loading && <span className="text-[10px] text-text-tertiary">reading…</span>}
-        {!loading && unreadable === 0 && clean && (
+        {/* 🔴 A page that re-reads on its own has to SAY it is doing so, or the reader cannot
+            tell a live number from a frozen one — and a strip that had gone stale after a
+            promote is exactly what taught us that. `loading` is the FIRST read (there is
+            nothing on screen yet); this is a re-read over numbers already showing, which is a
+            different sentence for a different state. */}
+        {!loading && rechecking && (
+          <span className="text-[10px] text-text-tertiary">re-checking…</span>
+        )}
+        {!loading && !rechecking && unreadable === 0 && clean && (
           <span className="text-[10px] text-pos-text ml-[2px]">all deployments clean</span>
         )}
       </div>
@@ -810,10 +876,14 @@ function DeployCard({ botKey }: { botKey: string }) {
         {f.behind > 0 ? ` · ${f.behind} ahead` : ' · same'}
       </Row>
 
+      {/* "Not frozen" was the MECHANISM's word (a deployed bot runs a frozen snapshot), and it
+          told a reader nothing about this bot. What is true of it is that nobody has ever
+          deployed it, so it has no pinned version — say that, and the rest follows. */}
       {f.notFrozen && (
         <Warn>
-          <strong>Not frozen.</strong> This bot still imports from the repo working tree, so a pull
-          changes what it trades and can stop it starting. Promote it.
+          <strong>Never deployed.</strong> This bot has no pinned version — it imports straight from
+          the repo working tree, so a pull changes what it trades and can stop it starting. Deploy
+          it from the banner at the top of this page.
         </Warn>
       )}
       {f.snapshotModified && (
@@ -822,11 +892,15 @@ function DeployCard({ botKey }: { botKey: string }) {
           someone edited them in place, bypassing promote. Re-promote to re-pin.
         </Warn>
       )}
+      {/* It says how it CLEARS, because it clears on its own and the page used not to notice —
+          a badge that stayed put over a bot that had already come back is what sent somebody
+          looking for a restart that had happened. See `useBotVersion`. */}
       {f.restartPending && (
         <Warn>
           <strong>Restart pending.</strong> The running process reports{' '}
           <span className="font-mono">{v.running_hash}</span>, not the deployed hash. The new
-          version is on disk but the old one is still trading.
+          version is on disk but the old one is still trading. This clears itself once the bot comes
+          back — the page re-reads it every 15s while it says this.
         </Warn>
       )}
       {f.driftCount > 0 && (
@@ -1193,6 +1267,10 @@ export function ConfigureTab() {
   const flags = versionQueries.map((q) => versionFlags(q.data))
   const unreadable = versionQueries.filter((q) => !q.isPending && !q.data).length
   const loading = versionQueries.some((q) => q.isPending)
+  // `isFetching` covers the BACKGROUND re-read the poll fires while a restart settles, which
+  // `isPending` (the first read) never sees. The strip renders it so a number that is about to
+  // move says so — see `useBotVersion` for why anything polls here at all.
+  const rechecking = versionQueries.some((q) => q.isFetching)
 
   // Selection lives in the URL, like every other tab state in this app — so a link to a
   // specific bot's config is a real link, and a refresh does not silently move you to
@@ -1219,7 +1297,14 @@ export function ConfigureTab() {
 
   return (
     <div>
-      <FleetStrip bots={bots} flags={flags} unreadable={unreadable} loading={loading} />
+      <FleetStrip
+        bots={bots}
+        flags={flags}
+        unreadable={unreadable}
+        loading={loading}
+        rechecking={rechecking}
+        onSelect={selectBot}
+      />
 
       <div className="flex items-start gap-4">
         {/* ── Rail ──────────────────────────────────────────────────────────── */}

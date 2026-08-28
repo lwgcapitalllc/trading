@@ -1,6 +1,13 @@
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+  type Query,
+} from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
+import { isRestartPending } from '@/lib/botVersion'
 import type {
   BotAccountAssignResult,
   BotAccountCapResult,
@@ -113,12 +120,44 @@ export function useBotParams(botName: string | null) {
 // made "which version is running?" unanswerable. This reads the deployment record written
 // beside the bot's frozen code snapshot, so it describes what is on that disk right now.
 
+/**
+ * How often to re-read a deployment record, decided by the RECORD rather than by what the reader
+ * just did.
+ *
+ * 🔴 **This exists because a promote could not settle on screen.** The mutation invalidates this
+ * query the moment the HTTP call returns — but a promote ASKS the bot to stop (it polls its
+ * instance dir every 10s), waits for it to go, and starts a new process that then stamps its own
+ * hash into `bot_state.json`. That is tens of seconds. So the one refetch a promote triggers lands
+ * mid-restart, reads the OLD running hash, and — with nothing polling — the page went on claiming
+ * *restart pending* over a bot that had already come back, until somebody reloaded. MEASURED
+ * 2026-08-28: the strip read `1 restart pending` while the box's own record and the deployment
+ * record agreed exactly.
+ *
+ * ⚠ **The condition is the ANSWER, never the action.** Polling "for a while after a promote" would
+ * cover only the restarts this page started — a bot restarted from the CLI, one that crash-looped,
+ * or a promote somebody else ran would go on lying just the same. Reading the pending flag off the
+ * data means every cause is watched and the poll stops itself the moment the two hashes agree.
+ *
+ * ⚠ **A settled record is NOT polled, and the interval is 15s rather than the 3s a lab run gets.**
+ * This endpoint is one SSH round trip to the trading box per bot — MEASURED 4.5s — so a poll here
+ * is not free the way a local DB read is, and it multiplies by the fleet. 15s is comfortably inside
+ * the restart it is watching and leaves the connection idle most of the time.
+ *
+ * ⚠ **An idle page that has NOT seen a pending restart still refetches on window focus** (the app's
+ * global 30s `staleTime`), which is what covers a promote made somewhere else while this tab sat in
+ * the background. Nothing polls for a state it has never seen; that is the deliberate limit.
+ */
+function versionPoll(v: BotDeployedVersion | undefined): number | false {
+  return isRestartPending(v) ? 15_000 : false
+}
+
 export function useBotVersion(botName: string | null) {
   return useQuery({
     queryKey: ['bots', 'version', botName],
     queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(botName!)}/version`),
     enabled: !!botName,
     staleTime: 30_000,
+    refetchInterval: (q) => versionPoll(q.state.data),
   })
 }
 
@@ -141,6 +180,11 @@ export function useBotVersions(botNames: string[]) {
       queryKey: ['bots', 'version', name],
       queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(name)}/version`),
       staleTime: 30_000,
+      // ⚠ The SAME poll rule as `useBotVersion`, through the same function. These share a cache
+      // entry per bot, so two different intervals would not merely disagree — whichever query
+      // mounted last would decide, and the strip and the card would settle at different times
+      // while claiming to be one reading.
+      refetchInterval: (q: Query<BotDeployedVersion>) => versionPoll(q.state.data),
     })),
   })
 }

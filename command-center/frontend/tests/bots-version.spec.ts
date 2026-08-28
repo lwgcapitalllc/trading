@@ -471,3 +471,103 @@ test('the success line names the version that LANDED, not the one in the backtes
   // And it is honest that the bot is still short of the backtester.
   await expect(banner(page).getByText(/is 1 version behind/)).toBeVisible()
 })
+
+// ── the fleet strip: a badge that goes stale is a badge that lies ───────────────
+//
+// 🔴 **Reported 2026-08-28, off the screen, after a promote that had plainly worked:** the strip
+// read `1 restart pending` over a bot the box itself said was up to date, and `1 not frozen`,
+// which meant nothing to the reader. MEASURED the same day: the deployment record and the running
+// process agreed exactly, so the count was not wrong — it was OLD, and nothing was ever going to
+// re-read it.
+//
+// ⚠ **These are scoped to `fleet-strip`, and that is not tidiness.** "restart pending" and
+// "behind repo" also appear in the DeployCard's warnings further down the page, so a page-wide
+// locator matches a card that is not the strip and passes against a broken one — the vacuous
+// locator this folder has now recorded five times.
+
+const strip = (page: Page) => page.getByTestId('fleet-strip')
+/** The chip, whichever shape it is in — the button form prefixes the bot names onto the title. */
+const restartChip = (page: Page) => strip(page).getByTitle(/the new code is on disk/)
+
+/**
+ * `/version` that reports a STALE running hash and then, after `settlesAfterMs`, a matching one —
+ * i.e. a bot mid-restart that comes back.
+ *
+ * ⚠ **A fixed payload would make the whole point untestable.** The defect is that the page never
+ * asks again; a mock that answers the same thing for ever cannot tell a page that re-read from one
+ * that did not.
+ */
+async function mockRestartSettling(
+  page: Page,
+  settlesAfterMs: number,
+  over: { frozen?: boolean } = {}
+) {
+  // ⚠ **The clock starts at the FIRST REQUEST, not at registration**, and that is not a detail.
+  // Anchoring it here costs the page's whole boot — navigation, the bot snapshot, then the version
+  // queries — so a 3s window had already elapsed before anything asked, the first answer came back
+  // SETTLED, and the check failed on its opening assertion having proved nothing. A fixture that
+  // measures from a moment the subject has not reached yet is a fixture testing its own timing.
+  let firstAskedAt: number | null = null
+  await page.route('**/api/bots/*/version', (r) => {
+    firstAskedAt ??= Date.now()
+    const settled = Date.now() - firstAskedAt > settlesAfterMs
+    const v = version(
+      compare({ versions_behind: 0, deployed_version: 121, changes: [], setting_changes: [] })
+    )
+    return r.fulfill({
+      json: {
+        ...v,
+        ...over,
+        // The live process reports a 12-char prefix of the deployed hash. A DIFFERENT one is the
+        // whole restart-pending condition.
+        running_hash: settled ? v.hash.slice(0, 12) : 'c1d3337df643',
+      },
+    })
+  })
+  await page.route('**/api/bots/*/promote/preview', (r) =>
+    r.fulfill({ json: { ok: true, output: 'dry run', restarted: false } })
+  )
+}
+
+test('a restart-pending badge clears ITSELF once the bot comes back — no reload', async ({
+  page,
+}) => {
+  // 🔴 The reported bug, and the one check in this file with a CLEAN fail-watch: against HEAD the
+  // version query had no `refetchInterval` at all, so the count sticks at its first reading for
+  // ever and the second assertion times out. Nothing about the locator can make that pass.
+  // ⚠ It asserts the TRANSITION rather than a number, so it does not care how many bots are
+  // registered — the registry's SIZE is one of the five things a spec here drifts against.
+  await mockRestartSettling(page, 3_000)
+  await openConfigure(page)
+
+  await expect(restartChip(page)).toHaveText(/^[1-9]/)
+  // No reload, no click, no navigation — the poll is the only thing that can move this.
+  await expect(restartChip(page)).toHaveText(/^0/, { timeout: 30_000 })
+})
+
+test('a non-zero count is a button that goes to the bot it is counting', async ({ page }) => {
+  // MUTATION: render the chip as a `<span>` again. It goes red on the role, and the URL check is
+  // what says the click actually SELECTED something rather than merely being clickable.
+  // ⚠ The count named a condition and a number and nothing else, so "which bot?" meant clicking
+  // every row in the rail — and the sentence explaining the condition lives on the card you reach
+  // by doing that.
+  await mockRestartSettling(page, 999_000)
+  await openConfigure(page)
+
+  await restartChip(page).click()
+  await expect(page).toHaveURL(/[?&]bot=/)
+})
+
+test('the strip says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {
+  // 🔴 Aaron, 2026-08-28: *"1 not frozen — idk what that even means"*. "Frozen" is the word for the
+  // MECHANISM (a deployed bot runs a frozen snapshot) and says nothing about the bot.
+  // MUTATION: put the old label back — the first assertion goes red on the absent chip and the
+  // second on the resurrected one.
+  await mockRestartSettling(page, 999_000, { frozen: false })
+  await openConfigure(page)
+
+  await expect(strip(page).getByTitle(/never promoted, so it has no pinned version/)).toHaveText(
+    /never deployed$/
+  )
+  await expect(strip(page).getByText(/not frozen/i)).toHaveCount(0)
+})

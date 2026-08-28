@@ -415,3 +415,45 @@ The suite's own failure message now prints that command.
 The three specs had been red for an unknown number of days and nobody was reading them, because 16
 red checks on a green feature train you to scroll past. **The count is the symptom to watch, not
 the individual failure** — a suite that is normally 16-red has stopped being a suite.
+
+## The fleet strip's badge that never re-read — the full record (2026-08-28)
+
+Rules and the fix: `command-center/frontend/CLAUDE.md` → *The fleet strip re-reads itself*. This is
+the measurement behind them.
+
+**Reported off the screen**, after a promote of `mpc_sos_fade_demo` that had plainly worked: the
+Configure tab's strip read `1 restart pending` and `1 not frozen` over a banner reading
+*"MPC SOS Fade is up to date · Deployed v263 · Backtester v263 · Deployed and restarted"*.
+
+**MEASURED the same day, against the live backend**, and the count was not wrong — it was OLD:
+
+```
+GET /bots/mpc_sos_fade_demo/version
+  hash          46565639b94d090caa66a8f9fa6cf9af
+  running_hash  46565639b94d          ← a 12-char prefix of it: the bot HAD come back
+GET /bots/mpc_bleg_demo/version
+  frozen false, hash ""               ← benched, never promoted: `not frozen` was true
+```
+
+So one badge was stale and the other was correct and unreadable. **`GET /{bot}/version` costs 4.5s
+(timed twice, warm)** — one SSH round trip per bot — which is what rules out a baseline poll and
+sets the 15s interval.
+
+**Why the single invalidation could never work.** `usePromoteBot` invalidates on the mutation's
+success, which is the moment the HTTP call returns. What happens AFTER that: `promote.py` writes
+`stop.request`, the runner notices on its own 10s poll, exits through its clean path, the startup
+task brings a new process up, and only then does that process stamp its `source_hash` into
+`bot_state.json`. The refetch lands somewhere in the middle of that and reads the old hash.
+
+**The fail-watch, and the detail worth keeping.** With `refetchInterval` removed from
+`useBotVersions` alone, the check goes red having observed `2 restart pending` and then
+`1 restart pending`, never 0. The `1` is not noise: `useBotVersion` (unmutated, still polling) and
+`useBotVersions` share one cache entry per bot, so the SELECTED bot's entry refreshed and the other
+bot's never did. That is the evidence the strip needs its own poll rather than inheriting the
+card's.
+
+**A fixture that measures from a moment the subject has not reached yet.** The polling check first
+failed on its OPENING assertion — the chip already read `0`. The mock served a stale hash for 3s
+measured from `page.route(...)` registration, and the page's boot (navigate → bot snapshot → version
+queries) spends more than that before anything asks, so the very first answer came back settled. It
+anchors on the first REQUEST now. The failure looked exactly like the feature working.
