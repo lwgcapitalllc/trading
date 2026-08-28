@@ -704,6 +704,16 @@ callback that only a browser could reach. ⚠ **The lesson is about REACHABILITY
 logic with no seam a test can grab is logic nobody checks.** The rules are in
 `command-center/frontend/src/components/ChartPanel/CLAUDE.md`.
 
+🔴 **Step 9 (2026-08-27) is the same move for a harder case: a rule written TWICE, in two
+languages.** `check_param_conditions.mjs` drives the run form's visibility evaluator, whose twin is
+the lab's own `stress_tester.param_is_reachable` — and the two have already disagreed in silence, a
+number that compared equal in Python and unequal in JavaScript leaving a dead control live on
+screen. ⚠ **The CASES are the shared artifact, not the code**: one fixture file, read by the node
+check here and by the python test in step 2, so a shape one side learns and the other does not
+fails on the side that did not learn it. ✅ It found a real disagreement on its first run. **When
+you write the same rule on both sides of a boundary, make the two answer ONE list of cases** —
+mirroring them by hand is how they drift, and neither side looks wrong alone.
+
 ⚠ **Playwright is deliberately NOT in the gate.** Its config has no `webServer` block on purpose —
 this backend talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand can
 start things on the trading box. `./start.sh` then `npm test` stays a person's decision; `tsc

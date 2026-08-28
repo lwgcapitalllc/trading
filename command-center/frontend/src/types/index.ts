@@ -661,6 +661,18 @@ export interface BotPromoteResult {
 // sizing_engine.MODES. Irrelevant for a self_sizing strategy, which sizes its own trades.
 export type SizingMode = 'consistent' | 'bullet' | 'manual'
 
+/**
+ * The right-hand side of ONE condition in `show_if` / `disable_if`.
+ *
+ * A scalar is equality, an array is "any of these", and `{ gt: n }` is "a number above n" — for a
+ * switch with no single OFF value to name (a rule that is off at -1 and at 0 and on at everything
+ * above). Evaluated by `wantHolds` in ParamEditor and mirrored by `_want_holds` in the backend's
+ * stress tester; an operator either side does not know is treated as NOT met, so a typo hides a
+ * row rather than showing one it was meant to hide.
+ */
+export type ParamCondValue =
+  string | number | boolean | Array<string | number | boolean> | { gt: number }
+
 export interface ParamSchemaEntry {
   name: string
   type: string
@@ -687,14 +699,25 @@ export interface ParamSchemaEntry {
   // param's CURRENT value, so a label can state the setting it actually produces rather than
   // hardcoding a second copy of a neighbouring default. See `fillTokens` in ParamEditor.
   options?: { off: string; on: string }
-  // show only when another param equals a value — or, with an array, equals ANY of them
-  show_if?: Record<string, string | number | boolean | Array<string | number | boolean>>
-  // ⚠ OPPOSITE POLARITY TO `show_if`: the row is greyed out when EVERY condition here HOLDS.
-  // For a setting that still exists but cannot change anything in the current configuration —
-  // both of its states would produce the same result. Hiding it instead would make a setting
-  // that exists look like one that does not; the house rule is to show it and say why.
-  disable_if?: Record<string, string | number | boolean | Array<string | number | boolean>>
-  disable_note?: string // the reason, shown on the row whenever `disable_if` holds
+  // show only when another param equals a value — or, with an array, equals ANY of them, or,
+  // with `{ gt: n }`, is a number above n. See `ParamCondValue`.
+  show_if?: Record<string, ParamCondValue>
+  // ⚠ OPPOSITE POLARITY TO `show_if`: the row comes OFF THE SCREEN when EVERY condition here
+  // HOLDS. For a setting that still exists but cannot change anything in the current
+  // configuration — both of its states would produce the same result.
+  // ⚠ The two keys stay separate because they are written from opposite ends — this one names the
+  // values that KILL a row, `show_if` the values that revive it — and converting between them
+  // means computing the complement of a dropdown's choice list by hand. They agree about the
+  // screen, not about how they are written.
+  // ⚠ It GREYED the row until 2026-08-27, on the rule that a setting which vanishes looks like one
+  // that does not exist. Aaron reversed it reading a form with 17 greyed rows on it: the reader
+  // hunting one live setting is the common case, and the dead rows were what they had to read
+  // past. See `visible` in ParamEditor.
+  disable_if?: Record<string, ParamCondValue>
+  // The reason. NOT dead with the greying — the finished-run params panel still prints it, to say
+  // why a setting did nothing on a run that has already been taken. Required on every
+  // `disable_if` row (pinned by the strategy's own contract test).
+  disable_note?: string
   // Settled — the field STAYS in the strategy and keeps being sent at its default; it just comes
   // off the screen. For a question that has been answered, so the editor is the levers you are
   // still testing rather than every lever that exists.

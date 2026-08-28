@@ -1,0 +1,103 @@
+{
+  "_why": "ONE set of cases, TWO evaluators. The editor's `wantHolds` (src/components/paramConditions.ts, driven by scripts/check_param_conditions.mjs) and the lab's `_want_holds` (backend/services/stress_tester.py, driven by backend/tests/test_param_gates.py) both answer these. They have already disagreed in silence once — a Custom fib level of 1.0 compared equal in Python and unequal in JS, and a toggle stayed live in the one configuration it exists to be dead in. A shape one side learns and the other does not now fails on the side that did not learn it.",
+  "_shape": "actual = the value the param is sitting at; want = the right-hand side of one condition; holds = what both evaluators must answer.",
+  "cases": [
+    { "why": "a plain string matches itself", "actual": "Ticks", "want": "Ticks", "holds": true },
+    {
+      "why": "and does not match another",
+      "actual": "Ticks",
+      "want": "Fraction of stop",
+      "holds": false
+    },
+    { "why": "a bool matches itself", "actual": true, "want": true, "holds": true },
+    { "why": "false is not true", "actual": false, "want": true, "holds": false },
+
+    {
+      "why": "NUMBERS COMPARE AS NUMBERS — the defect both sides now share a rule for",
+      "actual": 1.0,
+      "want": "1.0",
+      "holds": true
+    },
+    { "why": "the same fact from the other end", "actual": "1.0", "want": 1, "holds": true },
+    {
+      "why": "a number that is not the one asked for",
+      "actual": 0.886,
+      "want": "1.0",
+      "holds": false
+    },
+
+    {
+      "why": "an array is any of these",
+      "actual": "FVG in zone",
+      "want": ["Reclaim Entry", "FVG in zone"],
+      "holds": true
+    },
+    {
+      "why": "and refuses a value not in it",
+      "actual": "Structure shift",
+      "want": ["Reclaim Entry", "FVG in zone"],
+      "holds": false
+    },
+    { "why": "an empty list can never hold", "actual": "anything", "want": [], "holds": false },
+
+    {
+      "why": "ABOVE ZERO — the shape added 2026-08-27 for a switch with no single OFF value",
+      "actual": 1.0,
+      "want": { "gt": 0 },
+      "holds": true
+    },
+    { "why": "off at zero", "actual": 0, "want": { "gt": 0 }, "holds": false },
+    { "why": "off at the other off value", "actual": -1.0, "want": { "gt": 0 }, "holds": false },
+    {
+      "why": "strictly greater, so the boundary itself does not hold",
+      "actual": 0.0,
+      "want": { "gt": 0.0 },
+      "holds": false
+    },
+    {
+      "why": "a numeric STRING is a number here, same as everywhere else",
+      "actual": "0.75",
+      "want": { "gt": 0 },
+      "holds": true
+    },
+    {
+      "why": "a non-numeric string is not above anything",
+      "actual": "Ticks",
+      "want": { "gt": 0 },
+      "holds": false
+    },
+    {
+      "why": "TRUE IS NOT A NUMBER — otherwise a checkbox would arm a numeric gate",
+      "actual": true,
+      "want": { "gt": 0 },
+      "holds": false
+    },
+    { "why": "and neither is false", "actual": false, "want": { "gt": 0 }, "holds": false },
+    {
+      "why": "a threshold other than zero works the same way",
+      "actual": 2,
+      "want": { "gt": 1 },
+      "holds": true
+    },
+    { "why": "below that threshold", "actual": 0.5, "want": { "gt": 1 }, "holds": false },
+    {
+      "why": "a negative threshold — above -1 is the ON state of an arming rule",
+      "actual": 0,
+      "want": { "gt": -1 },
+      "holds": true
+    },
+
+    {
+      "why": "AN UNKNOWN OPERATOR IS NOT MET. A typo must hide a row, never show one it was meant to hide — the failure nobody can see on screen.",
+      "actual": 5,
+      "want": { "lt": 10 },
+      "holds": false
+    },
+    {
+      "why": "an empty operator object is the same refusal",
+      "actual": 5,
+      "want": {},
+      "holds": false
+    }
+  ]
+}

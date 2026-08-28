@@ -1,5 +1,5 @@
 /**
- * A toggle's labels READ the setting they describe, and a toggle that cannot matter is greyed.
+ * A toggle's labels READ the setting they describe, and a toggle that cannot matter is HIDDEN.
  *
  * 🔴 THE SUBJECT (2026-08-15): `exec_sl_deep` read `Always the level above` / `1.0 past 0.786` —
  * two labels describing a NEIGHBOURING widget rather than what this one does, neither of which
@@ -117,46 +117,62 @@ test.describe('an option label states the setting it produces', () => {
   })
 })
 
-test.describe('a toggle that cannot matter is greyed, not hidden', () => {
-  test('at 1.0 the toggle is DISABLED and the row says why', async ({ page }) => {
-    // MUTATION: drop `disabled={inert}` from the toggle button and the first assertion goes red;
-    // drop the `inert && p.disable_note` block and the second does.
+test.describe('a toggle that cannot matter is HIDDEN', () => {
+  /**
+   * 🔴 THIS SUITE ASSERTED THE OPPOSITE UNTIL 2026-08-27, and the reversal is the point.
+   *
+   * The row used to be drawn greyed with its reason beside it, on the rule that a setting which
+   * vanishes reads as one that does not exist. Aaron reversed it reading the run form: on
+   * `mpc_sos_fade` SEVENTEEN rows are greyed under the shipped defaults, so the reader hunting the
+   * one live setting reads past a screen of dead controls first. The old rule protects a reader
+   * looking for a specific row; the count says that is not the common reader.
+   *
+   * ⚠ The REASON did not die with the greying — `disable_note` is still required on every row and
+   * the finished-run params panel still prints it, because a run already taken has to be able to
+   * say why a setting did nothing. `backend/tests/test_param_gates.py` owns that half.
+   */
+  test('at 1.0 the row is GONE, not greyed', async ({ page }) => {
+    // MUTATION: drop `&& !inert(p)` from `visible` in ParamEditor and the row comes back — both
+    // assertions go red. The second one is what stops a fix that hides the row while leaving the
+    // greyed note behind it.
     await openEditor(page)
 
     await levelSelect(page).selectOption('1.0')
-    await expect(offLabel(page, 'Stop 1.0')).toBeDisabled()
-    await expect(page.getByTestId('param-inert-exec_sl_deep')).toContainText('already 1.0')
-  })
-
-  test('it stays VISIBLE at 1.0 — greyed is the house rule, hiding is not', async ({ page }) => {
-    // A setting that vanishes reads as one that does not exist, which is the failure expressing
-    // this as `show_if` would have introduced. MUTATION: swap `disable_if` for `show_if` in the
-    // meta and this goes red.
-    await openEditor(page)
-
-    await levelSelect(page).selectOption('1.0')
-    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0').first()).toBeVisible()
-  })
-
-  test('below 1.0 it is live again, and the note is gone', async ({ page }) => {
-    // The guard against fixing this in the dangerous direction — a toggle disabled unconditionally
-    // satisfies every check above. MUTATION: make `isInert` return true always and this goes red.
-    await openEditor(page)
-
-    await levelSelect(page).selectOption('1.0')
-    await expect(page.getByTestId('param-inert-exec_sl_deep')).toBeVisible()
-    await levelSelect(page).selectOption('0.886')
+    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0')).toHaveCount(0)
     await expect(page.getByTestId('param-inert-exec_sl_deep')).toHaveCount(0)
+  })
+
+  test('below 1.0 it is back — the guard against hiding it unconditionally', async ({ page }) => {
+    // 🔴 The dangerous direction. A row hidden always satisfies every check above, and a setting
+    // that can never be reached is strictly worse than one greyed out — there is nothing on
+    // screen to notice. MUTATION: make `isInert` return true always and this goes red.
+    await openEditor(page)
+
+    await levelSelect(page).selectOption('1.0')
+    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0')).toHaveCount(0)
+    await levelSelect(page).selectOption('0.886')
+    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0').first()).toBeVisible()
     await expect(offLabel(page, 'Stop 0.886')).toBeEnabled()
   })
 
-  test('CUSTOM set to 1.0 disables it exactly as the dropdown does', async ({ page }) => {
-    // 🔴 The half a value-blind gate gets wrong: Custom = 1.0 IS 1.0, so a control left live there
-    // is one whose two states cannot differ. MUTATION: drop the `custom_from` resolution from
-    // `isInert` and this goes red while every other check stays green.
+  test('CUSTOM set to 1.0 hides it exactly as the dropdown does', async ({ page }) => {
+    // 🔴 The half a value-blind gate gets wrong: Custom = 1.0 IS 1.0, so a row left on screen
+    // there is one whose two states cannot differ. MUTATION: drop the `custom_from` resolution
+    // from `isInert` and this goes red while every other check stays green.
     await openEditor(page, { exec_sl_level: 'Custom', exec_sl_custom: 1.0 })
 
-    await expect(page.getByTestId('param-inert-exec_sl_deep')).toBeVisible()
+    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0')).toHaveCount(0)
+  })
+
+  test('the dropdown that KILLS it is itself untouched', async ({ page }) => {
+    // A cascade that eats its own parent is the failure mode of hiding rather than greying: the
+    // reader sets the level to 1.0, the dependent row goes, and if the parent went too there is
+    // no way back to 0.886. MUTATION: give `exec_sl_level` the same `disable_if` and this goes red.
+    await openEditor(page)
+
+    await levelSelect(page).selectOption('1.0')
+    await expect(levelSelect(page)).toBeVisible()
+    await expect(levelSelect(page)).toBeEnabled()
   })
 })
 

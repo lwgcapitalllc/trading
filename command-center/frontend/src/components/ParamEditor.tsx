@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { ChevronRight, ChevronDown } from 'lucide-react'
 import type { ParamSchemaEntry } from '@/types'
+import { condHolds, sameValue, type ParamValue } from '@/components/paramConditions'
 
 // Shared parameter editor used by Run Backtest, Tuning, and Optimize.
 // Layout: Essentials card up front + counted accordions on the left, a live
@@ -9,7 +10,7 @@ import type { ParamSchemaEntry } from '@/types'
 // focus; gold = section-title text. Degrades gracefully when a strategy carries no
 // editor metadata (no core flags → no Essentials card, all groups as accordions).
 
-export type ParamValue = number | boolean | string
+export type { ParamValue }
 export type AxisEdit =
   | { mode: 'range'; min: string; max: string; step: string }
   | { mode: 'fixed'; value: string }
@@ -17,45 +18,11 @@ export type AxisEdit =
 export type ParamEditorMode = 'run' | 'tune' | 'optimize'
 
 // ── conditions and value resolution ───────────────────────────────────────────
-// Three schema keys read one another's VALUES: `show_if`, `disable_if` and `custom_from`. They
-// all go through the helpers below so the comparison rule (stringified, "any of these" as an
-// array) exists once. `backend/services/stress_tester.py::param_is_reachable` mirrors it — a
-// param the editor would grey out must not be perturbed by sensitivity either, or the lab books
-// a guaranteed 0% change and reports it as "rock solid".
-
-/**
- * `null` unless the value is a NUMBER or a string that is one. Booleans are deliberately excluded
- * — `Number(false)` is 0, so a numeric param sitting at 0 would satisfy a `{flag: false}` gate.
- */
-function numeric(v: unknown): number | null {
-  if (typeof v === 'boolean') return null
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null
-  if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v)
-    return Number.isFinite(n) ? n : null
-  }
-  return null
-}
-
-/**
- * 🔴 NUMBERS COMPARE AS NUMBERS, and it is not a nicety.
- *
- * A fib level is the string `"1.0"` in a dropdown and the number `1.0` in the Custom box, and
- * `String(1.0)` is `"1"` — so a stringified compare says a Custom level of 1.0 is not 1.0. That
- * left `exec_sl_deep` live in exactly the configuration it exists to be dead in, caught by
- * `param-gates.spec.ts` rather than by review. Python's `str(1.0)` is `"1.0"`, so the backend
- * mirror happened to be RIGHT while this side was wrong — two evaluators of one rule disagreeing
- * silently, which is why both got this function.
- *
- * Everything else (an enum, a bool, a time) falls back to the stringified compare, which is what
- * `show_if` has always used and why `1` and `"1"` match.
- */
-function sameValue(actual: ParamValue, want: string | number | boolean): boolean {
-  const a = numeric(actual)
-  const b = numeric(want)
-  if (a !== null && b !== null) return a === b
-  return String(actual) === String(want)
-}
+// Three schema keys read one another's VALUES: `show_if`, `disable_if` and `custom_from`. The
+// first two are evaluated in `paramConditions.ts`, which is a separate file for one reason: it
+// has a twin in `backend/services/stress_tester.py::param_is_reachable`, and the two must agree
+// or the lab perturbs a param the editor will not draw and books the guaranteed 0% change as
+// "rock solid". `custom_from` resolution stays here, because it needs the schema.
 
 /**
  * 🔴 SETTLED = `hidden` AND still on its default. Both halves, always.
@@ -73,18 +40,6 @@ export function isSettled(p: ParamSchemaEntry, value: ParamValue | undefined): b
   if (!p.hidden || p.default === undefined) return false
   if (value === undefined) return true // never sent ⇒ it is at whatever the default is
   return sameValue(value, p.default as ParamValue)
-}
-
-/** Every condition must hold. Shared by `show_if` (to show) and `disable_if` (to disable). */
-function condHolds(
-  cond: Record<string, string | number | boolean | Array<string | number | boolean>> | undefined,
-  read: (name: string) => ParamValue
-): boolean {
-  if (!cond) return false
-  return Object.entries(cond).every(([k, want]) => {
-    const actual = read(k)
-    return Array.isArray(want) ? want.some((x) => sameValue(actual, x)) : sameValue(actual, want)
-  })
 }
 
 /** Reads values with `custom_from` resolved — the number a param is ACTUALLY worth right now. */
@@ -109,7 +64,14 @@ function readerFor(schema: ParamSchemaEntry[], values: Record<string, ParamValue
   return { raw, visible, read }
 }
 
-/** True when the param still exists but cannot change anything — see `disable_if` in types. */
+/**
+ * True when the param still exists but cannot change anything — see `disable_if` in types.
+ *
+ * ⚠ Since 2026-08-27 the editor HIDES these rows rather than greying them, so this is one of the
+ * two questions `visible` asks. `disable_note` survives the change and is still required on every
+ * `disable_if` row: the finished-run params panel has to say why a setting did nothing on a run
+ * that has already been taken, and that reader cannot be shown an empty space.
+ */
 export function isInert(
   p: ParamSchemaEntry,
   schema: ParamSchemaEntry[],
@@ -122,14 +84,15 @@ export function isInert(
  * True when a param could not have affected this configuration AT ALL.
  *
  * Two ways that happens, and they are the same fact from opposite ends: its `show_if` does not
- * hold (the editor would not even draw the row — the secondary re-entry settings when the
- * secondary is off), or its `disable_if` does (the row is drawn and greyed).
+ * hold (the secondary re-entry settings when the secondary is off), or its `disable_if` does.
+ * Aaron, 2026-08-20: *"if secondary trades is off in the strategy you DON'T need to show all the
+ * params related to it… same goes for anything cascading."*
  *
- * ⚠ Exported for the finished-run params panel. The EDITOR must not use it to drop rows: there,
- * `show_if` hides and `disable_if` greys, and the difference between those two is deliberate.
- * Here there is only one question — did this setting do anything on this run — and both answers
- * are no. Aaron, 2026-08-20: *"if secondary trades is off in the strategy you DON'T need to show
- * all the params related to it… same goes for anything cascading."*
+ * ⚠ Exported for the finished-run params panel, which asks it of a run already taken. The editor
+ * asks the same question in two halves instead (`show_if` in `visible`, `disable_if` through
+ * `isInert`) because it reads `show_if` off the RAW value and this reads it custom-resolved. No
+ * `show_if` in this repo names a `custom_from` target today, so the two agree — the day one does,
+ * they diverge silently, and the fix is to make this the single reader rather than to hope.
  *
  * ⚠ Resolved through `readerFor`, so a `custom_from` sibling's value is the one compared — a
  * gate that reads the raw dropdown instead of the Custom number it resolves to gets exactly the
@@ -191,11 +154,14 @@ export function sweepChoices(p: ParamSchemaEntry): { value: string; label: strin
 
 /**
  * The params the editor WOULD render, tokens filled — foundational dropped, `show_if` applied,
- * settled ones gone unless moved.
+ * `disable_if` applied, settled ones gone unless moved.
  *
  * ⚠ Exported so the read-only summary and the editor cannot disagree about what a strategy's
  * settings ARE. A summary listing a row the editor does not offer (or missing one it does) is
  * worse than no summary: the reader opens the editor to change something the summary promised.
+ * That is also why the `disable_if` clause below is not optional: the day those rows stopped
+ * being drawn, a summary that still counted them would have been the disagreement this warning
+ * describes.
  */
 export function visibleParams(
   schema: ParamSchemaEntry[],
@@ -207,6 +173,7 @@ export function visibleParams(
     (p) =>
       p.category !== 'foundational' &&
       (!p.show_if || condHolds(p.show_if, raw)) &&
+      !isInert(p, filled, values) &&
       !isSettled(p, raw(p.name))
   )
 }
@@ -234,17 +201,16 @@ export function isChanged(p: ParamSchemaEntry, v: ParamValue | undefined): boole
  * exactly once, under the group it belongs to.
  * ⚠ **Every control is the SAME WIDTH on the right edge**, so the labels form one column and the
  * values another — which is what makes 30 settings scannable rather than a wall.
- * ⚠ It shares `visible` / `settled` / `inert` with the stacked layout, so the two cannot disagree
+ * ⚠ It shares `visible` / `settled` with the stacked layout, so the two cannot disagree
  * about which rows exist.
  */
 function CompactRow(
   props: Props & {
     p: ParamSchemaEntry
     valueOf: (n: string) => ParamValue
-    inert: boolean
   }
 ) {
-  const { p, valueOf, inert, onChange, mode, baseline } = props
+  const { p, valueOf, onChange, mode, baseline } = props
   const v = valueOf(p.name)
   const changed = isChanged(p, props.values[p.name])
   const tuned =
@@ -262,12 +228,7 @@ function CompactRow(
   let control
   if (p.choices?.length) {
     control = (
-      <select
-        value={String(v ?? '')}
-        disabled={inert}
-        onChange={(e) => set(e.target.value)}
-        className={ctlBase}
-      >
+      <select value={String(v ?? '')} onChange={(e) => set(e.target.value)} className={ctlBase}>
         {p.choices.map((c) => (
           <option key={c} value={c}>
             {c}
@@ -282,7 +243,6 @@ function CompactRow(
     control = (
       <select
         value={v === true || v === 'true' ? 'true' : 'false'}
-        disabled={inert}
         onChange={(e) => set(e.target.value === 'true')}
         className={ctlBase}
       >
@@ -298,7 +258,6 @@ function CompactRow(
           step={p.step ?? 'any'}
           min={p.min ?? undefined}
           max={p.max ?? undefined}
-          disabled={inert}
           value={String(v ?? '')}
           onChange={(e) => set(coerceInput(p, e.target.value, v))}
           className={`${ctlBase} w-full ${p.unit ? 'pr-[52px]' : ''} invalid:text-neg-text`}
@@ -314,7 +273,6 @@ function CompactRow(
     control = (
       <input
         type="text"
-        disabled={inert}
         value={String(v ?? '')}
         onChange={(e) => set(e.target.value)}
         className={ctlBase}
@@ -327,8 +285,8 @@ function CompactRow(
       data-testid={`param-row-${p.name}`}
       className={`flex items-center gap-3 py-[3px] pl-2 pr-1 rounded border-l-2 min-w-0 hover:bg-bg-hover/60 ${
         changed ? 'border-l-accent/60' : 'border-l-transparent'
-      } ${inert ? 'opacity-50' : ''}`}
-      title={inert ? p.disable_note : p.description}
+      }`}
+      title={p.description}
     >
       <span className="flex-1 min-w-0 truncate text-[12px] text-text-secondary">
         {labelOf(p)}
@@ -490,12 +448,23 @@ export function ParamEditor(props: Props) {
   // back on its own.
   const settled = (p: ParamSchemaEntry) => isSettled(p, valueOf(p.name))
   const settledCount = params.filter(settled).length
-  const visible = (p: ParamSchemaEntry) =>
-    (!p.show_if || condHolds(p.show_if, valueOf)) && !settled(p)
-  // ⚠ `disable_if` is the OPPOSITE polarity — a row that holds it is shown and greyed, not
-  // hidden. Read via `isInert` so the `custom_from` resolution is the same one the labels use:
-  // a dropdown set to Custom = 1.0 must disable exactly what its own 1.0 disables.
+  // 🔴 A ROW WHOSE `disable_if` HOLDS IS HIDDEN, NOT GREYED (Aaron, 2026-08-27: *"hide them, like
+  // everything else"*). It used to be drawn greyed with its reason beside it, on the argument that
+  // a setting which vanishes reads as one that does not exist — see `param-gates.spec.ts` for the
+  // case that argument won in August. It lost to the form it produced: on `mpc_sos_fade` SEVENTEEN
+  // rows are greyed under the shipped defaults, so a reader hunting the one setting that matters
+  // reads past a screen of controls before learning that none of them apply. The old argument
+  // protects a reader who is looking for a specific row and needs to be told it is dead; the count
+  // decides which reader is the common one, and it is not that one.
+  // ⚠ `disable_if` stays a SEPARATE key from `show_if` — they are opposite polarity in the
+  // metadata (one names the values that KILL a row, the other the values that revive it), and
+  // collapsing them means recomputing the complement of a dropdown's choice list by hand on every
+  // row. They now agree about the screen, not about how they are written.
+  // ⚠ Read via `isInert` so the `custom_from` resolution is the same one the labels use: a
+  // dropdown set to Custom = 1.0 must hide exactly what its own 1.0 hides.
   const inert = (p: ParamSchemaEntry) => isInert(p, params, values)
+  const visible = (p: ParamSchemaEntry) =>
+    (!p.show_if || condHolds(p.show_if, valueOf)) && !settled(p) && !inert(p)
 
   // The group the `core` params live in — the one that opens first. Nothing else reads `core`
   // in this layout any more; see the note above `left`.
@@ -606,7 +575,6 @@ export function ParamEditor(props: Props) {
                     focused={focus === p.name}
                     onFocus={() => setFocus(p.name)}
                     valueOf={valueOf}
-                    inert={inert(p)}
                   />
                 ))}
               </div>
@@ -664,7 +632,7 @@ export function ParamEditor(props: Props) {
             {!collapsed[g.name] && (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-0 px-2.5 py-1.5">
                 {g.rows.map((p) => (
-                  <CompactRow key={p.name} p={p} {...props} valueOf={valueOf} inert={inert(p)} />
+                  <CompactRow key={p.name} p={p} {...props} valueOf={valueOf} />
                 ))}
               </div>
             )}
@@ -698,7 +666,7 @@ export function ParamEditor(props: Props) {
       <div className="border-l border-border-subtle bg-bg-sunken/40">
         <div className="sticky top-0 p-4">
           {focusP ? (
-            <Explainer p={focusP} mode={mode} valueOf={valueOf} axes={axes} inert={inert(focusP)} />
+            <Explainer p={focusP} mode={mode} valueOf={valueOf} axes={axes} />
           ) : (
             <span className="text-text-tertiary text-[12px]">Select a parameter.</span>
           )}
@@ -716,11 +684,9 @@ function Row(
     focused: boolean
     onFocus: () => void
     valueOf: (n: string) => ParamValue
-    /** `disable_if` holds — the row is shown, greyed, and says why. Never hidden. */
-    inert: boolean
   }
 ) {
-  const { p, focused, onFocus, inert } = props // widget forwarded to Control via {...props}
+  const { p, focused, onFocus } = props // widget forwarded to Control via {...props}
   const showInline = props.explainer === 'inline' && focused
   return (
     <>
@@ -739,33 +705,17 @@ function Row(
           </span>
           <TuneTag {...props} />
         </div>
-        {/* line 2 — the control. Greyed but still READABLE when inert: the reader has to be able
-            to see which state it is stuck in, which is the whole reason it is not hidden. */}
-        <div
-          className={`flex items-center gap-2 flex-wrap ${inert ? 'opacity-50' : ''}`}
-          title={inert ? p.disable_note : undefined}
-        >
+        {/* line 2 — the control. Every row drawn here is one that can still change something:
+            a param its own `disable_if` kills is not rendered at all, so there is no dead state
+            to grey and no reason to print. `disable_note` is still READ — by the finished-run
+            params panel, which has to say why a setting did nothing on a run already taken. */}
+        <div className="flex items-center gap-2 flex-wrap">
           <Control {...props} />
         </div>
-        {inert && p.disable_note && (
-          <p
-            data-testid={`param-inert-${p.name}`}
-            className="text-[11px] italic text-text-tertiary mt-1.5 leading-snug"
-          >
-            {p.disable_note}
-          </p>
-        )}
       </div>
       {showInline && (
         <div className="mb-2 rounded-lg border border-border-subtle border-l-[3px] border-l-accent bg-bg-sunken/60 px-3 py-2.5">
-          <Explainer
-            p={p}
-            mode={props.mode}
-            valueOf={props.valueOf}
-            axes={props.axes}
-            inert={inert}
-            inline
-          />
+          <Explainer p={p} mode={props.mode} valueOf={props.valueOf} axes={props.axes} inline />
         </div>
       )}
     </>
@@ -796,13 +746,11 @@ function Control(
     widget: Widget
     onFocus: () => void
     valueOf: (n: string) => ParamValue
-    inert?: boolean
   }
 ) {
   const {
     p,
     widget,
-    inert,
     mode,
     onChange,
     axes,
@@ -947,10 +895,6 @@ function Control(
             <button
               key={String(state)}
               type="button"
-              // An inert toggle is refused rather than hidden — clicking it would write a value
-              // the strategy cannot act on, and a control that accepts a change nothing honours
-              // is worse than one that plainly will not move.
-              disabled={inert}
               onClick={() => {
                 onFocus()
                 onChange?.(p.name, state)
@@ -959,11 +903,9 @@ function Control(
               // its half; title keeps a clipped label readable.
               title={label}
               className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1.5 text-[12px] font-semibold rounded-md transition-colors ${
-                inert ? 'cursor-not-allowed' : ''
-              } ${
                 on === state
                   ? 'bg-accent text-bg-base'
-                  : `text-text-tertiary ${inert ? '' : 'hover:text-text-secondary'}`
+                  : 'text-text-tertiary hover:text-text-secondary'
               }`}
             >
               <span
@@ -1088,14 +1030,12 @@ function Explainer({
   valueOf,
   axes,
   inline,
-  inert,
 }: {
   p: ParamSchemaEntry
   mode: ParamEditorMode
   valueOf: (n: string) => ParamValue
   axes?: Record<string, AxisEdit>
   inline?: boolean
-  inert?: boolean
 }) {
   const v = valueOf(p.name)
   const widget = widgetOf(p, v)
@@ -1123,17 +1063,6 @@ function Explainer({
           className={`text-text-secondary ${inline ? 'text-[12px] mb-2.5' : 'text-[12.5px] mb-3.5'}`}
         >
           {descOf(p)}
-        </p>
-      )}
-
-      {/* Above the states, not below: a reader who has just been told what each option does
-          needs to know it has no say here BEFORE deciding between them. */}
-      {inert && p.disable_note && (
-        <p
-          data-testid={`param-inert-note-${p.name}`}
-          className="text-[12px] text-text-tertiary italic border-l-2 border-border-default pl-2.5 mb-3"
-        >
-          {p.disable_note}
         </p>
       )}
 

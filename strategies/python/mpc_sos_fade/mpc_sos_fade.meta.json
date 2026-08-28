@@ -218,6 +218,9 @@
     {
       "name": "exec_fib_nearest",
       "group": "Entry zone",
+      "show_if": {
+        "exec_fib_deep_edge": false
+      },
       "core": true,
       "widget": "toggle",
       "label": "Floating gap → nearest fib (either side)",
@@ -231,6 +234,10 @@
     {
       "name": "exec_deep_fib",
       "group": "Entry zone",
+      "show_if": {
+        "exec_fib_deep_edge": false,
+        "exec_fib_nearest": false
+      },
       "widget": "toggle",
       "label": "Floating gap → nearest fib shallower",
       "short": "Nearest fib shallower",
@@ -356,6 +363,9 @@
     {
       "name": "exec_be_keep_r",
       "group": "Risk & stop",
+      "show_if": {
+        "exec_be_arm_r": { "gt": 0 }
+      },
       "label": "Protected stop keeps (R) of risk",
       "short": "Excursion keep",
       "unit": "R",
@@ -385,12 +395,14 @@
     {
       "name": "exec_be_buf_tk",
       "group": "Exit ladder",
+      "show_if": {
+        "exec_be_buf_mode": "Ticks"
+      },
       "label": "Breakeven buffer (ticks)",
       "short": "Breakeven buffer",
       "unit": "ticks",
       "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs. Read only when the buffer mode is set to ticks.",
-      "guide": ["True breakeven", "Locks in more, stopped out sooner"],
-      "hidden": true
+      "guide": ["True breakeven", "Locks in more, stopped out sooner"]
     },
     {
       "name": "exec_be_buf_mode",
@@ -408,6 +420,9 @@
     {
       "name": "exec_be_buf_r",
       "group": "Exit ladder",
+      "show_if": {
+        "exec_be_buf_mode": ["Fraction of stop", "Fraction of stop + cost"]
+      },
       "label": "Breakeven buffer (fraction of stop)",
       "short": "Buffer fraction",
       "unit": "fraction of the stop",
@@ -417,6 +432,9 @@
     {
       "name": "exec_be_cost_margin_r",
       "group": "Exit ladder",
+      "show_if": {
+        "exec_be_buf_mode": "Fraction of stop + cost"
+      },
       "label": "Breakeven cost margin (fraction of stop)",
       "short": "Cost margin",
       "unit": "fraction of the stop",
@@ -426,16 +444,21 @@
     {
       "name": "exec_be_cap_pct",
       "group": "Exit ladder",
+      "show_if": {
+        "exec_be_buf_mode": ["Fraction of stop", "Fraction of stop + cost"]
+      },
       "label": "Breakeven buffer cap (% of the way to the target)",
       "short": "Buffer cap",
       "unit": "% of the distance to the target",
       "desc": "The stop can never sit further than this share of the way from the entry to the target that moved it. At 100 it would sit on the target and close the trade there instead of protecting it.",
-      "guide": ["Stop stays well short of the target", "Stop crowds the target"],
-      "hidden": true
+      "guide": ["Stop stays well short of the target", "Stop crowds the target"]
     },
     {
       "name": "exec_be_cost_conflict",
       "group": "Exit ladder",
+      "show_if": {
+        "exec_be_buf_mode": "Fraction of stop + cost"
+      },
       "label": "When cost exceeds the cap",
       "short": "Cost conflict",
       "choices": ["Hold stop", "Clamp to cap"],
@@ -443,8 +466,7 @@
       "guide": [
         "Hold \u2014 never exit at a knowing loss",
         "Clamp \u2014 smaller loss than the full stop"
-      ],
-      "hidden": true
+      ]
     },
     {
       "name": "exec_runner_trail",
@@ -908,13 +930,14 @@
     {
       "name": "exec_rec_be_keep_r",
       "group": "↳ Reclaim Entry only",
+      "show_if": {
+        "exec_secondary": true,
+        "exec_rec_be_r": { "gt": 0 }
+      },
       "label": "Reclaim protected stop keeps (R) of risk",
       "short": "Reclaim keep",
       "unit": "R",
       "step": 0.25,
-      "show_if": {
-        "exec_secondary": true
-      },
       "disable_if": {
         "exec_sec_trigger": ["Structure shift", "FVG in zone"]
       },
@@ -942,13 +965,14 @@
     {
       "name": "exec_gap_be_keep_r",
       "group": "\u21b3 FVG in zone only",
+      "show_if": {
+        "exec_secondary": true,
+        "exec_gap_be_r": { "gt": 0 }
+      },
       "label": "Gap re-entry protected stop keeps (R) of risk",
       "short": "Gap keep",
       "unit": "R",
       "step": 0.25,
-      "show_if": {
-        "exec_secondary": true
-      },
       "disable_if": {
         "exec_sec_trigger": ["Structure shift", "Reclaim Entry"]
       },
@@ -976,13 +1000,14 @@
     {
       "name": "exec_shift_be_keep_r",
       "group": "\u21b3 Structure shift only",
+      "show_if": {
+        "exec_secondary": true,
+        "exec_shift_be_r": { "gt": 0 }
+      },
       "label": "Shift re-entry protected stop keeps (R) of risk",
       "short": "Shift keep",
       "unit": "R",
       "step": 0.25,
-      "show_if": {
-        "exec_secondary": true
-      },
       "disable_if": {
         "exec_sec_trigger": ["FVG in zone", "Reclaim Entry", "FVG in zone + Reclaim Entry"]
       },
@@ -1456,6 +1481,9 @@
     {
       "name": "exec_sh_block_from",
       "group": "Short-hold variant",
+      "show_if": {
+        "exec_short_hold": true
+      },
       "core": false,
       "widget": "number",
       "label": "Block entries from this New York hour",
@@ -1468,6 +1496,9 @@
     {
       "name": "exec_sh_block_to",
       "group": "Short-hold variant",
+      "show_if": {
+        "exec_short_hold": true
+      },
       "core": false,
       "widget": "number",
       "label": "...until this New York hour",
@@ -1480,6 +1511,9 @@
     {
       "name": "exec_sh_max_depth",
       "group": "Short-hold variant",
+      "show_if": {
+        "exec_short_hold": true
+      },
       "core": false,
       "widget": "number",
       "label": "Refuse an entry deeper than this fib",
@@ -1492,6 +1526,9 @@
     {
       "name": "exec_sh_tp1_pct",
       "group": "Short-hold variant",
+      "show_if": {
+        "exec_short_hold": true
+      },
       "core": false,
       "widget": "number",
       "label": "How much comes off at that target",
@@ -1504,6 +1541,9 @@
     {
       "name": "exec_sh_tp_r",
       "group": "Short-hold variant",
+      "show_if": {
+        "exec_short_hold": true
+      },
       "core": false,
       "widget": "number",
       "label": "Close the position at this many R",

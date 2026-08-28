@@ -108,7 +108,7 @@ def test_it_REFUSES_a_multiple_that_cannot_order_the_rungs(bad):
         SosFadeConfig(exec_secondary=True, exec_sec_tp2_x=bad)
 
 
-def test_the_UI_contract_carries_it_ungreyed():
+def test_the_UI_contract_carries_it_undisabled():
     """A field with no row in the contract is invisible in the Command Center, which is how a
     lever gets built, measured and then never reached by the person who needs it."""
     import json

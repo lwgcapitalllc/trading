@@ -466,19 +466,42 @@ def _same_value(actual, want) -> bool:
     return str(actual) == str(want)
 
 
+def _want_holds(actual, want) -> bool:
+    """One condition's right-hand side against one value. Three shapes, in the order they arrived.
+
+    * a scalar — equality, via `_same_value`
+    * a list — any of them
+    * `{"gt": n}` — the value is a NUMBER strictly greater than n
+
+    🔴 THE COMPARISON SHAPE EXISTS BECAUSE SOME SWITCHES HAVE NO OFF VALUE TO NAME. A rule that
+    arms the stop after a move of N R is off at -1 and also off at 0, and on at every number above
+    — so the row it controls could not be gated by equality without listing every number that is
+    not off. Before this it simply was not gated, and the dependent row sat on screen under a
+    parent that was off, which is the exact defect the cascade exists to remove.
+
+    ⚠ A NON-NUMBER NEVER SATISFIES `gt`, and a bool is not a number here (`_numeric` refuses it) —
+    otherwise `True > 0` would quietly arm a numeric gate off a checkbox.
+    ⚠ Mirrored by `wantHolds` in `ParamEditor.tsx`. The two must not drift;
+    `test_param_gates.py` compares them on one fixture.
+    """
+    if isinstance(want, dict):
+        if "gt" in want:
+            a, b = _numeric(actual), _numeric(want["gt"])
+            return a is not None and b is not None and a > b
+        # An unknown operator must not read as "condition met" — that would SHOW a row a typo was
+        # meant to hide, and nothing on screen would look wrong.
+        return False
+    if isinstance(want, list):
+        return any(_same_value(actual, x) for x in want)
+    return _same_value(actual, want)
+
+
 def _cond_holds(cond: Optional[dict], read) -> bool:
     """Every condition holds. Shared by `show_if` and `disable_if`, exactly as the editor's
     `condHolds` shares it — the two evaluators must not drift, so they have one shape each side."""
     if not cond:
         return False
-    for key, want in cond.items():
-        actual = read(key)
-        if isinstance(want, list):
-            if not any(_same_value(actual, x) for x in want):
-                return False
-        elif not _same_value(actual, want):
-            return False
-    return True
+    return all(_want_holds(read(key), want) for key, want in cond.items())
 
 
 def _reader_for(schema: list, base_params: dict):
@@ -522,8 +545,9 @@ def param_is_reachable(p: dict, base_params: dict, schema: Optional[list] = None
 
     THREE gates, and all three produce that same guaranteed 0% or an unactionable result:
       - `show_if` OFF — the editor would not even display the row;
-      - `disable_if` HOLDING — the row is displayed and greyed, because its states cannot differ
-        in this configuration;
+      - `disable_if` HOLDING — the row is not displayed either, because its states cannot differ
+        in this configuration (it was displayed-and-greyed until 2026-08-27; the reachability
+        answer was the same before and after, which is why this function did not change);
       - SETTLED (`hidden` and still on its default) — the row is off the editor entirely. The
         shift is not a no-op here, which is exactly why it has to be excluded: sensitivity would
         rank a parameter high and send the reader looking for a control that no page renders.

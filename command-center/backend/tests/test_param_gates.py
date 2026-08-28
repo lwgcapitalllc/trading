@@ -244,22 +244,84 @@ def test_a_param_with_no_default_in_the_schema_is_never_called_settled():
 # ── the bar for hiding: a SWEEP, not an untouched value ───────────────────────
 
 
-def test_the_seven_proven_settled_params_are_hidden():
+def test_the_six_proven_settled_params_are_hidden():
     """Each of these was tested against alternatives and lost or tied. The evidence is in
     `mpc_sos_fade_optimization.md`, named per param in this package's CLAUDE.md — Run 2's
-    525-combo exit grid, Run 5/6 (`exec_close_opp_sos` at exactly 0 effect, twice), Run 17 (the
-    breakeven buffer), Run 12 (both relax routes)."""
+    525-combo exit grid, Run 5/6 (`exec_close_opp_sos` at exactly 0 effect, twice), Run 12 (both
+    relax routes)."""
     by = {p["name"]: p for p in _params()}
     for n in (
         "exec_close_opp_sos",
         "exec_tp2_stop_mode",
         "exec_struct_trail_buf_tk",
         "exec_trail_step",
-        "exec_be_buf_tk",
         "exec_fvg_deep_only",
         "exec_no_late_day",
     ):
         assert by[n].get("hidden") is True, f"{n} has a sweep behind it and should be settled"
+
+
+def test_the_breakeven_buffer_IN_FORCE_is_not_settled_off_the_screen():
+    """🔴 IT WAS SETTLED ON THE STRENGTH OF RUN 17 UNTIL 2026-08-27, AND THAT WAS THE WRONG HALF.
+
+    Run 17 swept the tick buffer and it did not earn a different value — which is the bar for
+    settling a param. But the buffer mode has THREE values and the shipped one is Ticks, so this
+    figure is the one the exit ladder actually reads on every live trade, while the two fraction
+    fields it competes with were on screen. The form showed the cushions that were NOT in force
+    and hid the one that was.
+
+    That is not hypothetical. The 2026-06-04 short came off its staged stop $12.92 in profit
+    rather than $0.30, because a run had been launched on the fraction mode at 0.35, and reading
+    the form gave no way to see which cushion was in play. The mode dropdown is now the thing that
+    picks, and whichever figure it picks is visible beside it.
+
+    ⚠ `hidden` is not being retired — the six above are still settled. The rule this adds is
+    narrower: a param that a `show_if` makes CONDITIONAL cannot also be settled, or the one
+    configuration where it is live is the one where nobody can see it.
+
+    MUTATION: put `"hidden": true` back on the row and this goes red.
+    """
+    by = {p["name"]: p for p in _params()}
+    buf = by["exec_be_buf_tk"]
+    assert not buf.get("hidden")
+    assert buf["show_if"] == {"exec_be_buf_mode": "Ticks"}
+    # and the pair it competes with is gated the other way, or two cushions read as live at once
+    assert by["exec_be_buf_r"]["show_if"] == {
+        "exec_be_buf_mode": ["Fraction of stop", "Fraction of stop + cost"]
+    }
+
+
+# 🔴 SETTLED **AND** CONDITIONAL IS INVISIBLE IN EVERY CONFIGURATION, and five rows are.
+#
+# The two mechanisms hide a row for opposite reasons and they compose badly: the gate takes it off
+# the screen wherever it cannot matter, and `hidden` takes it off the screen wherever it CAN — so
+# between them there is nowhere left. A reader who switches the runner trail to a fixed step and
+# then looks for the step size does not find one.
+#
+# The five below are PRE-EXISTING and each is a real question rather than a bug this test knows
+# how to settle: whether the row should stop being settled (the answer taken for the breakeven
+# buffer above) or stop being gated. They are pinned as a LIST rather than asserted away, so a
+# sixth cannot arrive without somebody deciding. ⚠ Raised with Aaron 2026-08-27, undecided.
+KNOWN_SETTLED_AND_CONDITIONAL = [
+    "exec_trail_step",
+    "div_valid_bars",
+    "div_extreme_ob",
+    "div_extreme_os",
+    "exec_htf_source",
+]
+
+
+def test_no_NEW_param_is_both_settled_and_conditional():
+    """MUTATION: add `"hidden": true` to any gated row in the meta and this goes red.
+
+    ⚠ It cannot go red at HEAD, and that is the point of the list — the five are the state being
+    frozen, not a state being asserted correct.
+    """
+    both = [p["name"] for p in _params() if p.get("hidden") and p.get("show_if")]
+    assert both == KNOWN_SETTLED_AND_CONDITIONAL, (
+        "a row is now both settled and gated, so no configuration can show it: "
+        f"{sorted(set(both) ^ set(KNOWN_SETTLED_AND_CONDITIONAL))}"
+    )
 
 
 def test_a_param_that_was_never_SWEPT_is_not_hidden_on_the_strength_of_never_moving():
@@ -298,3 +360,145 @@ def test_nothing_that_has_actually_been_TUNED_is_hidden():
     by = {p["name"]: p for p in _params()}
     for n in ("exec_req_fvg", "exec_deep_fib", "exec_sl_level", "exec_secondary"):
         assert not by[n].get("hidden"), f"{n} has been tuned and must stay visible"
+
+
+# ── the "above zero" shape, and the fixture both evaluators answer ────────────
+#
+# 🔴 ONE SET OF CASES, TWO EVALUATORS. `_want_holds` here and `wantHolds` in
+# `frontend/src/components/paramConditions.ts` are the same rule written twice, and they have
+# already disagreed in silence: a fib level is the string "1.0" in a dropdown and the number 1.0
+# in the Custom box, JS stringified them differently from Python, and a toggle stayed live in
+# exactly the configuration it exists to be dead in. Neither side looked wrong alone.
+#
+# So the CASES are the shared artifact rather than the code. This test and
+# `frontend/scripts/check_param_conditions.mjs` read the same JSON, and a shape one side learns
+# and the other does not fails on the side that did not learn it. ✅ It caught one the day it was
+# written: `Object.entries({}).every(...)` is true, so an empty condition HELD on the JS side and
+# did not here.
+
+CONDITIONS_FIXTURE = (
+    cfg.MONOREPO_ROOT
+    / "command-center"
+    / "frontend"
+    / "tests"
+    / "fixtures"
+    / "param-conditions.json"
+)
+
+
+def _condition_cases():
+    return json.loads(CONDITIONS_FIXTURE.read_text())["cases"]
+
+
+def test_the_shared_fixture_is_where_the_other_evaluator_reads_it_from():
+    """The path is the whole mechanism. MUTATION: point either reader at its own copy and the two
+    evaluators can drift again with every test still green — which is the state this replaced."""
+    assert CONDITIONS_FIXTURE.exists(), f"{CONDITIONS_FIXTURE} is gone — the JS side reads it too"
+    driver = (
+        cfg.MONOREPO_ROOT / "command-center" / "frontend" / "scripts" / "check_param_conditions.mjs"
+    )
+    assert driver.exists()
+    assert "param-conditions.json" in driver.read_text()
+
+
+@pytest.mark.parametrize("case", _condition_cases(), ids=lambda c: c["why"][:60])
+def test_both_evaluators_answer_the_shared_fixture_the_same_way(case):
+    """MUTATIONS, each RUN rather than reasoned — the numbers are the fixture's own order.
+
+    ⚠ That is not pedantry. The first version of this map was written from inspection and named
+    the wrong cases for three of its seven entries, every time in the flattering direction.
+
+      drop the `gt` branch from `_want_holds` ........... 11 12 14 15 19 21
+      `>=` instead of `>` .............................. 12 14
+      an unknown operator reads as MET ................. 22 23
+      drop the list branch ............................. 8
+      an empty list HOLDS (`all` for `any`) ............ 8 10
+      drop the bool guard from `_numeric` .............. 17
+      drop the numeric branch from `_same_value` ....... 6
+
+    ⚠ Cases 1 2 3 4 5 7 9 13 16 18 20 are killed by no mutation above and are listed rather than
+    quietly left in. They are DIRECTION checks — the plain equality that must keep working while
+    the new shape lands, and the negative half of a case whose positive half is pinned.
+
+    🔴 CASE 5 IS THE ASYMMETRY THE SHARED FIXTURE EXISTS FOR. `1.0` against `"1.0"` survives here
+    when the numeric compare is removed, because `str(1.0)` is `"1.0"` — and it DIES on the JS
+    side, where `String(1.0)` is `"1"`. This evaluator was right by accident for months while the
+    other one was wrong, and no test on either side could see it.
+    """
+    from services.stress_tester import _want_holds
+
+    assert _want_holds(case["actual"], case["want"]) is case["holds"], case["why"]
+
+
+def test_an_EMPTY_condition_holds_nothing():
+    """🔴 The disagreement the fixture caught on its first run, from this side.
+
+    `not {}` is True in Python so this side already refused it; `Object.entries({}).every(...)` is
+    `true` in JS, so the editor would have called every row with an empty `disable_if` dead. No
+    schema uses `{}` today, which is exactly why nothing on screen could have shown it.
+
+    MUTATION: drop the `if not cond` guard and this goes red.
+    """
+    from services.stress_tester import _cond_holds
+
+    assert _cond_holds({}, lambda _n: 1) is False
+    assert _cond_holds(None, lambda _n: 1) is False
+
+
+def test_a_param_gated_ABOVE_ZERO_is_not_perturbed_while_its_parent_is_off():
+    """The reachability half — the reason the shape was added at all.
+
+    A rule that arms the stop after a move of N R is off at -1 and also off at 0, so the row it
+    controls cannot be gated by equality without listing every number that is not off. Until this
+    shape existed the dependent row was simply not gated: it sat on screen under a parent that was
+    off, and sensitivity perturbed it and booked a guaranteed 0% change as a robustness result.
+
+    MUTATION: drop the `gt` branch from `_want_holds` and the first two assertions go red.
+    """
+    keep = {"name": "keep_r", "type": "float", "show_if": {"arm_r": {"gt": 0}}}
+    schema = [{"name": "arm_r", "type": "float"}, keep]
+    assert param_is_reachable(keep, {"arm_r": -1.0}, schema) is False
+    assert param_is_reachable(keep, {"arm_r": 0.0}, schema) is False
+    assert param_is_reachable(keep, {"arm_r": 1.0}, schema) is True
+
+
+def test_no_param_declares_the_SAME_KEY_TWICE():
+    """🔴 A DUPLICATE JSON KEY IS SILENT AND THE LAST ONE WINS.
+
+    Written after exactly that: a script inserted `show_if` after `group` on three rows that
+    already carried one further down, and `json.load` took the second. The rule read as landed —
+    it was in the file, on the right param, spelled correctly — and the editor served the older,
+    weaker condition. Nothing failed: not the scan, not the parse, not a test, not the page.
+
+    ⚠ It cannot be caught by reading the parsed object, because by then one of the two is gone.
+    `object_pairs_hook` is the only place the collision is still visible.
+
+    MUTATION: duplicate any key on any param in the meta and this goes red naming it.
+    """
+
+    def refuse_duplicates(pairs):
+        seen = [k for k, _ in pairs]
+        dupes = {k for k in seen if seen.count(k) > 1}
+        assert not dupes, f"duplicate key(s) {sorted(dupes)} in {dict(pairs).get('name', '?')}"
+        return dict(pairs)
+
+    json.loads(Path(META).read_text(), object_pairs_hook=refuse_duplicates)
+
+
+def test_every_gate_names_a_param_that_EXISTS():
+    """A condition on a misspelled name reads the default of nothing, so it never holds and the
+    row it guards is hidden forever — a setting deleted by a typo, with no error anywhere.
+
+    MUTATION: rename any param referenced by a `show_if` / `disable_if` in the meta and this goes
+    red naming both sides.
+    """
+    params = _params()
+    names = {p["name"] for p in params}
+    missing = [
+        (p["name"], key)
+        for p in params
+        for gate in ("show_if", "disable_if")
+        for key in (p.get(gate) or {})
+        if key not in names
+    ]
+    assert missing == [], f"a gate names a param that does not exist: {missing}"

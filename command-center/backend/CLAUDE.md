@@ -1237,13 +1237,36 @@ reproduced the baseline exactly — 3 of 17 numeric non-foundational params on t
 roster, shared with the router's estimate so the two cannot drift.
 
 ⚠ **It mirrors TWO gates since 2026-08-15, and the second has the opposite polarity.** `disable_if`
-holding means the editor shows the row and GREYS it — a setting whose two states cannot differ in
-this configuration — which produces the same guaranteed 0% as a hidden one. ⚠ **`schema` must be
+holding means a setting whose two states cannot differ in this configuration, which produces the
+same guaranteed 0% as a hidden one. ⚠ **The editor GREYED those rows until 2026-08-27 and now hides
+them; this function did not change, because the reachability answer was the same before and
+after** — worth knowing before reading its old wording as stale. ⚠ **`schema` must be
 PASSED**: it is what makes `custom_from` resolvable, and without it a dropdown reading `Custom` =
 1.0 gates differently here than it does on screen. The default is `None`, so a caller that forgets
 it gets an answer that looks correct and is simply blind to the second gate. ⚠ **A THIRD gate landed the same day and it is NOT the same shape as the other two.** A SETTLED param (`hidden` in the meta AND still on its default, i.e. off the editor entirely) is excluded — but shifting one is not a no-op, the strategy really reads it and the result really moves. The reason to exclude it is that sensitivity would RANK a parameter no page renders, and a ranking that points at nothing is worse than a shorter one. ⚠ **`_is_settled` mirrors `ParamEditor.settled`, never `p.hidden` alone** — a hidden param MOVED off its default is back on screen, so it must be back in the ranking; gating on `hidden` would silently drop a param the reader can see and edit. Both are pinned by
-`tests/test_param_gates.py` (22, non-vacuous by eight run mutations); the editor side is in
+`tests/test_param_gates.py` (non-vacuous by run mutations); the editor side is in
 `../frontend/CLAUDE.md` → `ParamEditor.tsx`.
+
+🔴 **A CONDITION'S RIGHT-HAND SIDE TAKES A THIRD SHAPE SINCE 2026-08-27: `{"gt": n}`, "a number
+above n".** Some switches have no OFF value to name — a rule arming the stop after a move of N R is
+off at -1 and off at 0 and on at everything above — so the row it controls could not be gated by
+equality without listing every number that is not off, and was simply not gated. ⚠ **An operator
+this side does not recognise is NOT MET**, so a typo hides a row rather than showing one it was
+meant to hide. ⚠ **A bool is still not a number** (`_numeric` refuses it), or a checkbox would arm
+a numeric gate.
+
+🔴 **THE TWIN IS NOW DRIVEN OVER ONE SHARED FIXTURE, AND THAT IS THE PART TO KEEP.** `_want_holds`
+here and `wantHolds` in `frontend/src/components/paramConditions.ts` are one rule written twice,
+and they have already disagreed in silence — a fib level that is `"1.0"` in a dropdown and `1.0` in
+a Custom box compared equal in Python and unequal in JS, leaving a toggle live in exactly the
+configuration it exists to be dead in. **The CASES are the shared artifact rather than the code**:
+`frontend/tests/fixtures/param-conditions.json` is read by `test_param_gates.py` and by
+`frontend/scripts/check_param_conditions.mjs` (step 9 of `scripts/run_all_tests.sh`), so a shape
+one side learns and the other does not fails on the side that did not learn it. ✅ **It caught one
+on its first run**: `Object.entries({}).every(...)` is `true`, so an empty condition HELD in JS and
+did not here. No schema uses `{}` today, which is exactly why nothing on screen could have shown
+it. ⚠ **A new shape goes in the fixture in the same commit as the code**, or the drift guard is
+guarding the old rule.
 
 ⚠ **`strategy_scanner._PARAM_META_KEYS` IS A WHITELIST, and a key missing from it is dropped in
 SILENCE** — the meta states a rule, the scan reports success, and the editor behaves as though

@@ -1369,7 +1369,8 @@ def test_the_combined_value_prices_by_the_precondition_even_when_a_1m_shift_latc
 # ─────────────────────────────────────────────────────────────────────────────
 # WHICH OF THE 19 RE-ENTRY SETTINGS THE RECLAIM ACTUALLY READS
 #
-# The editor greys a row out when its two states cannot differ in the current configuration
+# The editor takes a row OFF THE SCREEN when its two states cannot differ in the current
+# configuration
 # (`disable_if` in `mpc_sos_fade.meta.json`), and the lab stops perturbing it in sensitivity for
 # the same reason. Both of those are CLAIMS about the code in this package — exactly the shape
 # rule 7 is about — so each one is pinned below and the schema is pinned to the list.
@@ -1386,7 +1387,7 @@ def _rec_arm(**kw):
     return _feed(SecondaryArm(_rec_cfg(**kw)), [(101.0, 100.6), (101.1, 100.8), (101.5, 100.9)])
 
 
-def test_the_reclaim_ignores_every_shared_ARM_setting_the_editor_greys_out():
+def test_the_reclaim_ignores_every_shared_ARM_setting_the_editor_hides():
     """MUTATION: in `_src_for`, return "Structure shift" instead of "reclaim" when only the reclaim is
     configured, and the retrace case goes red — the entry becomes a retrace of a 1-minute leg.
     Point `_stop_anchor`'s reclaim call at the shared field and the stop case goes red. Make
@@ -1399,7 +1400,7 @@ def test_the_reclaim_ignores_every_shared_ARM_setting_the_editor_greys_out():
         assert _rec_arm(**moved) == shipped, f"the reclaim moved on {list(moved)[0]}"
 
 
-def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_greys_out():
+def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_hides():
     """The other half of the same claim, one level down: the first target and how much banks
     there. MUTATION: drop the `pend.src == "reclaim"` branch in `_open_position`, or the
     `_entry_src == "reclaim"` branch in `_tp1_pct`, and the matching case goes red."""
@@ -1421,7 +1422,7 @@ def test_the_reclaim_ignores_the_shared_LADDER_settings_the_editor_greys_out():
 
 
 def test_the_1m_RETRACE_is_dead_under_the_gap_trigger_too_not_just_the_reclaim():
-    """It is the one row here that only the Structure shift reads, so the editor greys it under all
+    """It is the one row here that only the Structure shift reads, so the editor hides it under all
     three of the other values — including the SHIPPED one. MUTATION: make `_edge`'s gap branch
     fall through to the retrace and this goes red."""
     def gap_arm(**kw):
@@ -1435,11 +1436,11 @@ def test_the_1m_RETRACE_is_dead_under_the_gap_trigger_too_not_just_the_reclaim()
     assert gap_arm(exec_sec_retrace=0.0) == shipped
 
 
-def test_the_SHALLOW_zone_edge_is_NOT_dead_under_the_reclaim_so_it_is_never_greyed():
+def test_the_SHALLOW_zone_edge_is_NOT_dead_under_the_reclaim_so_it_is_never_hidden():
     """🔴 The counter-case. The reclaim never reads the zone to arm — and the shallow edge can
     still change what it does, through the 1-minute latch's shared per-setup bookkeeping.
 
-    Watched RED by putting the shallow edge in the greyed list: this is the only test that says
+    Watched RED by putting the shallow edge in the dead list: this is the only test that says
     it does not belong there. The per-setup cap is OFF because at the shipped cap of one the cap
     refuses the second arm first and masks the difference — which is why reading the code was not
     enough here.
@@ -1466,14 +1467,14 @@ def test_the_SHALLOW_zone_edge_is_NOT_dead_under_the_reclaim_so_it_is_never_grey
     assert rearms(0.786) is False
 
 
-def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
-    """The schema half. A row greyed here that nothing above pins is a claim on screen with no
+def test_the_contract_kills_exactly_the_rows_the_tests_above_pin():
+    """The schema half. A row killed here that nothing above pins is a claim on screen with no
     proof under it; a row pinned above and left live is a reader told to sweep a dead setting.
 
     ⚠ Reads the trigger's own choice list rather than restating it, so adding a fifth trigger
-    turns this red until somebody says what each greyed row does under it.
+    turns this red until somebody says what each dead row does under it.
 
-    MUTATION: add the shallow zone edge to the greyed set, or drop any row from it, and this
+    MUTATION: add the shallow zone edge to the dead set, or drop any row from it, and this
     goes red."""
     import json
     import pathlib
@@ -1487,7 +1488,7 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
 
     def dead_under(name):
         cond = rows[name].get("disable_if") or {}
-        assert set(cond) <= {"exec_sec_trigger"}, f"{name} is greyed on something else too"
+        assert set(cond) <= {"exec_sec_trigger"}, f"{name} is killed on something else too"
         want = cond.get("exec_sec_trigger", [])
         return set(want if isinstance(want, list) else [want])
 
@@ -1509,15 +1510,18 @@ def test_the_contract_greys_exactly_the_rows_the_tests_above_pin():
     for n in ("exec_shift_be_r", "exec_shift_be_keep_r"):
         assert dead_under(n) == triggers - {"Structure shift"}, n
 
-    greyed = {n for n, p in rows.items()
+    dead = {n for n, p in rows.items()
               if p.get("group", "").startswith("↳") or p.get("disable_if")}
-    assert greyed == {"exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
+    assert dead == {"exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
                       "exec_rec_be_r", "exec_rec_be_keep_r", "exec_rec_entry_mode",
                       "exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct",
                       "exec_gap_be_r", "exec_gap_be_keep_r",
                       "exec_shift_be_r", "exec_shift_be_keep_r",
-                      "exec_sec_retrace", "exec_sl_deep"}, sorted(greyed)
-    assert all(rows[n].get("disable_note") for n in greyed), "a greyed row with no reason on it"
+                      "exec_sec_retrace", "exec_sl_deep"}, sorted(dead)
+    # ⚠ The reason is still REQUIRED on every one, even though the editor no longer prints it
+    # beside the control: the finished-run params panel has to say why a setting did nothing on a
+    # run already taken, and that reader cannot be shown an empty space.
+    assert all(rows[n].get("disable_note") for n in dead), "a dead row with no reason on it"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1739,10 +1743,10 @@ def test_the_reclaim_early_breakeven_never_touches_the_GAP_re_entry():
 
 
 def test_the_reclaim_early_breakeven_is_DEAD_under_the_other_two_triggers():
-    """The claim the editor greys this row on. A gap-triggered or shift-triggered re-entry carries
+    """The claim the editor hides this row on. A gap-triggered or shift-triggered re-entry carries
     `_entry_src` of "gap"/"shift", never "reclaim", so the setting has no reader under either — it
     is dead, not merely unusual. MUTATION: drop the `_entry_src == "reclaim"` test and this goes
-    red, which is what stops the row being greyed on a claim nothing checks."""
+    red, which is what stops the row being hidden on a claim nothing checks."""
     for src in ("gap", "shift"):
         _, _, stop = _reclaim_at(1.0, src=src, exec_rec_be_r=0.75)
         assert stop == 98.0, f"a {src} re-entry moved on the reclaim's breakeven setting"
@@ -1807,7 +1811,7 @@ def test_a_reclaim_asked_for_market_becomes_a_market_order():
 
 
 def test_market_entry_is_DEAD_on_the_gap_and_shift_halves():
-    """The claim the editor greys this row on, and the claim that keeps the gap half's numbers
+    """The claim the editor hides this row on, and the claim that keeps the gap half's numbers
     valid. MUTATION: drop the `src == "reclaim"` test in `_market_entry` → red."""
     for src in ("gap", "shift", None):
         _, _, pend = _sec_pend("Market", src)

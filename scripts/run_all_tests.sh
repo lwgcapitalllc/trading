@@ -73,7 +73,7 @@ echo ""
 # `mpc_sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
 # else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
 # conversation, and the lever is coverage rather than scheduling.
-echo "  [1/8] engines / backtest / algos / strategies / smart-money ..."
+echo "  [1/9] engines / backtest / algos / strategies / smart-money ..."
 if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q $PYTEST_PARALLEL; then
   pass "root suite"
 else
@@ -85,7 +85,7 @@ echo ""
 # ~45s across 12 cores, 1,051 tests. MUST be run from its own directory: its pytest.ini carries the
 # `-m "not integration"` interlock that keeps the destructive live-VPS suite deselected, and a
 # `-m` from anywhere else would replace it.
-echo "  [2/8] command-center backend ..."
+echo "  [2/9] command-center backend ..."
 if (cd command-center/backend && ./.venv/bin/python -m pytest -q $PYTEST_PARALLEL); then
   pass "backend suite"
 else
@@ -101,7 +101,7 @@ echo ""
 # gate takes the half that needs nothing running — `tsc`, which is the check that would actually
 # have caught a broken build — and the browser tests stay a deliberate `./start.sh` then
 # `npm test` in `command-center/frontend`.
-echo "  [3/8] frontend typecheck ..."
+echo "  [3/9] frontend typecheck ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && npx --no-install tsc --noEmit); then
     pass "frontend typecheck (tsc --noEmit)"
@@ -122,7 +122,7 @@ echo ""
 # under it, deploying a strategy or rewriting a broker account row. It is in the suite because
 # a check nobody runs is not a check — and because the guard is a DENY-list, so a new live route
 # is allowed until somebody adds it here.
-echo "  [4/8] browser guard ..."
+echo "  [4/9] browser guard ..."
 if command -v node >/dev/null 2>&1; then
   if node .claude/mcp/check_browser_guard.js; then
     pass "browser guard (34 cases, refusals and allowances)"
@@ -140,7 +140,7 @@ echo ""
 # Claude is given instead of an open SSH prompt. This asserts the dangerous forms are still
 # absent from that menu, that a guarded operation refuses BEFORE touching the network, and
 # that an unreachable Command Center reads as "cannot ask" rather than as "the bot is stopped".
-echo "  [5/8] trading-box server ..."
+echo "  [5/9] trading-box server ..."
 if "$PYTHON" .claude/mcp/check_tradingbox.py; then
   pass "trading-box server (menu, refusals, cannot-ask)"
 else
@@ -156,7 +156,7 @@ echo ""
 # and silence is indistinguishable from "checked". Both halves are asserted here: the
 # reminder before an Edit/Write, and the after-the-fact size check that catches a file
 # rewritten by any other means.
-echo "  [6/8] documentation-size guard ..."
+echo "  [6/9] documentation-size guard ..."
 if "$PYTHON" .claude/hooks/check_guard.py; then
   pass "documentation-size guard (21 cases, warnings and silences)"
 else
@@ -170,7 +170,7 @@ echo ""
 # measured the same way — rule 11, broken four times in this app. The check that matters most
 # is the FIRST one: it parses `BacktestRunRequest` out of models.py, so adding an input to a
 # backtest goes red here until somebody decides whether it belongs to the measurement basis.
-echo "  [7/8] lab server ..."
+echo "  [7/9] lab server ..."
 if "$PYTHON" .claude/mcp/check_lab.py; then
   pass "lab server (basis contract, per-field refusals)"
 else
@@ -188,7 +188,7 @@ echo ""
 # ⚠ It is here and not in Playwright because a trade annotation is painted into a canvas and has
 # no element to assert on: the browser suite can only measure pixels, and it needs the app up.
 # These rules are arithmetic, so they run with nothing running.
-echo "  [8/8] trade-overlay geometry ..."
+echo "  [8/9] trade-overlay geometry ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_trade_geometry.mjs); then
     pass "trade geometry (26 cases, adverse band + exit marker)"
@@ -197,6 +197,30 @@ if [ -d "command-center/frontend/node_modules" ]; then
   fi
 else
   fail "trade geometry - command-center/frontend/node_modules missing (run: cd command-center/frontend && npm install)"
+fi
+
+echo ""
+
+# ── 9. Parameter-condition evaluator ──────────────────────────────────────────
+# Milliseconds. `show_if` / `disable_if` decide which settings a run form draws, and the SAME rule
+# is written twice — once in the editor and once in the lab's sensitivity gate. They have already
+# disagreed in silence: a fib level that is "1.0" in a dropdown and 1.0 in a Custom box compared
+# equal in Python and unequal in JS, and a toggle stayed live in the one configuration it exists
+# to be dead in. Neither side looked wrong alone.
+#
+# ⚠ The cases are the shared artifact, not the code. This step drives the JS evaluator over
+# `frontend/tests/fixtures/param-conditions.json`; `backend/tests/test_param_gates.py` drives the
+# python one over the same file, in step 2. A shape one side learns and the other does not fails
+# on the side that did not learn it — which is how the empty-condition disagreement was found.
+echo "  [9/9] parameter-condition evaluator ..."
+if [ -d "command-center/frontend/node_modules" ]; then
+  if (cd command-center/frontend && node scripts/check_param_conditions.mjs); then
+    pass "param conditions (28 cases, shared with the python evaluator)"
+  else
+    fail "param conditions (28 cases, shared with the python evaluator)"
+  fi
+else
+  fail "param conditions - command-center/frontend/node_modules missing (run: cd command-center/frontend && npm install)"
 fi
 
 echo ""
