@@ -113,6 +113,11 @@ def _warmed_runner(monkeypatch, bars=300):
         {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0}, index=idx
     )
     r.feed = SimpleNamespace(history=lambda n: df, mark_seen=lambda d: None, bar_seconds=900)
+    # No re-entry, so no second bar stream — `warm()` builds the degenerate `_SingleFeedClock`
+    # and the fast half of it is never reached. Set explicitly rather than left off: a missing
+    # attribute and a deliberate "this bot has one feed" must not be the same thing.
+    r.fast_feed = None
+    r._fast_pending = []
 
     # `warm()` imports these from backtest.replay at call time.
     import backtest.replay as replay

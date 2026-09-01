@@ -56,6 +56,7 @@ import signal
 import sys
 import time
 import traceback
+from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -73,7 +74,11 @@ for _p in (
 import live_config  # noqa: E402  (algos/live/live_config.py)
 from alert_format import alert, joined, money  # noqa: E402
 from bridge import BridgeState, OrderBridge, assert_supported  # noqa: E402
-from feed import BarFeed  # noqa: E402
+from feed import (  # noqa: E402
+    BarFeed,
+    timeframe_for_minutes,
+    timeframe_seconds,
+)
 from fleet_halt import read_fleet_halt  # noqa: E402  (algos/shared/fleet_halt.py)
 from ledger import Ledger  # noqa: E402
 from version import VersionMismatch, current_commit, verify_pin  # noqa: E402
@@ -146,6 +151,49 @@ class DailyFileHandler(logging.Handler):
             super().close()
 
 
+# What a clock hands back for one stepped primary bar. Structurally the same as the strategy
+# side's `PrimaryStep` and deliberately NOT imported from it: nothing in `algos/live/` may touch
+# the strategy package at module scope (`tests/test_no_frozen_imports_at_module_scope.py`), and a
+# four-field record is not a rule worth sharing across that boundary. `_settle_primary` reads
+# both by attribute.
+_Stepped = namedtuple("_Stepped", "bar sig seq dec")
+
+
+class _SingleFeedClock:
+    """The no-merge case: one bar stream, stepped as it arrives.
+
+    It exists so `LiveRunner` has ONE way of stepping a primary bar whether or not a second feed
+    is running, without this package learning what a merge is. It holds no ordering rule —
+    a bot with one feed has nothing to order — so it is not a second copy of `DualClock`, which
+    is where the ordering lives and must stay.
+    """
+
+    class OutOfOrder(RuntimeError):
+        """Never raised here. Present so a caller can catch it without asking which clock it has."""
+
+    def __init__(self, strategy, stack) -> None:
+        self._st = strategy
+        self._stack = stack
+        self._queue = []
+
+    def push_primary(self, bar) -> None:
+        self._queue.append(bar)
+
+    def can_step_fast(self, ts_ms) -> bool:
+        return False  # there is no fast feed to step
+
+    def drain_primary(self):
+        out = []
+        for bar in self._queue:
+            state = self._stack.step(bar)
+            sig = self._st.signals.update(state)
+            seq = self._st.sequence.update(sig)
+            dec = self._st.execution.step(sig, seq)
+            out.append(_Stepped(bar=bar, sig=sig, seq=seq, dec=dec))
+        self._queue.clear()
+        return out
+
+
 class LiveRunner:
     def __init__(self, cfg, *, dry_run: bool = True) -> None:
         self.cfg = cfg
@@ -156,6 +204,22 @@ class LiveRunner:
         self.strategy = None
         self.stack = None
         self.feed = None
+        # The RE-ENTRY's fill clock — a second bar stream beside `self.feed`. `None` whenever the
+        # strategy has no re-entry switched on, which is the ordinary case and must stay
+        # distinguishable from "configured but not reachable". See `_build_fast_feed`.
+        self.fast_feed = None
+        # The merge. Owns which bar steps when, and it is the SAME object the lab's `run_dual`
+        # drives — see `strategies/python/mpc_sos_fade/dual_clock.py` for why there is only one.
+        self.clock = None
+        # Fast bars pulled from the broker but not yet stepped, because the 15m stream has not
+        # caught up to them. Live only: the lab has both frames in hand.
+        self._fast_pending = []
+        # The fast frame's own bar counter. Counts on from its warm-up exactly as `_bar_index`
+        # does for the primary — the fast structure engine compares bar numbers too.
+        self._fast_index = 0
+        # Said ONCE per outage, not once per poll. A feed that has gone quiet is worth one
+        # message; repeating it every ten seconds is how a channel gets muted.
+        self._fast_stale_alerted = False
         self.bridge = None
         # Built after the strategy, because whether it can do anything depends on whether that
         # strategy implements the setup contract. None until then — never an object that quietly
@@ -386,6 +450,318 @@ class LiveRunner:
                 )
         self.log.info(f"Sizing against account balance ${capital:,.2f}")
         return cls(scfg, initial_capital=capital), scfg
+
+    # ── the re-entry's second bar stream ─────────────────────────────────────
+    #
+    # 🔴 **THE PRIMARY IS NEVER HELD UP BY THIS FEED, AND EVERY DECISION BELOW FOLLOWS FROM IT.**
+    # The 15m bar carries the trade with real money on it and a stop to manage; the fast bar
+    # carries a re-entry that may never fire. So a 15m bar is stepped the moment it closes, and a
+    # fast bar that turns up after that has missed its slot and is refused. The alternative —
+    # hold the primary until the fast feed catches up — would let a quiet second stream delay a
+    # live stop.
+    #
+    # ⚠ **THIS PACKAGE LEARNS NOTHING ABOUT THE RE-ENTRY, AND THAT IS DELIBERATE.** `algos/live/`
+    # holds no trading logic — that is the property that keeps a live result comparable to a
+    # backtest result — so the merge itself lives in the STRATEGY (`dual_clock.DualClock`, the
+    # same object the lab's `run_dual` drives) and is reached through two optional methods. A
+    # strategy that implements neither simply has one feed, exactly as every bot here does today.
+
+    def _make_clock(self):
+        """The object that decides which bar is stepped when.
+
+        🔴 **With a second feed it is the STRATEGY's `DualClock` — the same object the lab's
+        `run_dual` drives, so the merge rule has exactly one implementation.** Without one there
+        is nothing to merge, and `_SingleFeedClock` below is the degenerate case: it steps the
+        primary and holds no ordering rule at all. **That is why it is not a second copy of
+        anything** — the only thing worth duplicating here is the interleave, and a bot with one
+        feed has no interleave.
+
+        ⚠ **A bot with the re-entry OFF therefore keeps the primary path it has always had**, byte
+        for byte. That is deliberate for a staged rollout: turning the re-entry on is the change
+        that moves a live bot onto the merged path, and it happens once, on purpose, with its own
+        proof.
+        """
+        if self.fast_feed is None:
+            return _SingleFeedClock(self.strategy, self.stack)
+        make = getattr(self.strategy, "make_dual_clock", None)
+        if not callable(make):
+            raise RuntimeError(
+                f"{type(self.strategy).__name__} asked for a {self.fast_feed.timeframe} fill "
+                f"clock but provides no make_dual_clock(), so there is nothing to merge the two "
+                f"streams with. A strategy that needs a second feed owns the merge — see "
+                f"strategies/python/mpc_sos_fade/dual_clock.py."
+            )
+        return make(self.stack, tf_primary_ms=self.feed.bar_seconds * 1000)
+
+    def _build_fast_feed(self, scfg):
+        """The re-entry's fill-clock feed, or `None` when the strategy asked for no second stream.
+
+        🔴 **The timeframe is the STRATEGY's answer, never a constant here.** `bridge.assert_supported`
+        said "a 1-minute bar stream" until 2026-09-01 and was simply wrong — the fill clock has
+        been 5 minutes by default since 2026-08-21 and is configurable either way. A refusal that
+        names the wrong feed sends the next reader to build the wrong thing.
+
+        ⚠ **`None` means the strategy asked for no second feed.** It never means "asked and could
+        not have one": an unusable fill clock RAISES, at startup, naming the legal values. Rule 1
+        — *off* and *cannot* must not be the same answer.
+        """
+        minutes = self._fast_feed_minutes(scfg)
+        if minutes is None:
+            return None
+        name = timeframe_for_minutes(minutes)
+        if timeframe_seconds(name) >= self.feed.bar_seconds:
+            raise RuntimeError(
+                f"The re-entry's fill clock ({name}, {minutes}m) is not FASTER than the stream "
+                f"the strategy trades ({self.cfg.timeframe}). A re-entry fills INSIDE one of "
+                f"those bars, so a stream at or below that resolution cannot express it."
+            )
+        self.log.info(
+            f"Re-entry fill clock: {name} — a second bar stream beside {self.cfg.timeframe}."
+        )
+        return BarFeed(self.mt5, name, self.cfg.symbol)
+
+    def _fast_feed_minutes(self, scfg):
+        """Ask the STRATEGY whether it needs a second feed, and how fast. `None` = it does not."""
+        ask = getattr(self.strategy, "fast_feed_minutes", None)
+        if not callable(ask):
+            return None
+        return ask()
+
+    def _fast_warmup_bars(self) -> int:
+        """How many fast bars to warm, so the fast stream covers the SAME SPAN as the primary.
+
+        Derived, never configured. The two streams are merged, so a fast warm-up shorter than the
+        primary's would step the re-entry against a 15m context built from bars its own structure
+        engine never saw. One number with one meaning — `warmup_bars` — and this follows it.
+        """
+        return int(self.cfg.warmup_bars * (self.feed.bar_seconds / self.fast_feed.bar_seconds))
+
+    def _fast_bar(self, ts, row):
+        """One fast row → a `ReplayBar`, numbering on from the fast warm-up.
+
+        ⚠ The fast frame keeps its OWN counter. The fast structure engine compares bar numbers
+        exactly as the primary's does, so restarting it at 0 mid-run would make every latched
+        leg look fresh — the same trap `_bar_index` exists to avoid on the other feed.
+        """
+        from backtest.replay import ReplayBar
+
+        self._fast_index += 1
+        return ReplayBar(
+            index=self._fast_index,
+            timestamp_ms=int(ts.value // 1_000_000),
+            time=ts,
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+        )
+
+    def _pump_fast(self) -> None:
+        """Step every fast bar whose 15m context is complete. Called BEFORE the primary rows of
+        the same poll, which is what puts the two streams into `run_dual`'s order.
+
+        🔴 **STAGE 1 PLACES NOTHING.** The emulator steps the re-entry exactly as the lab does —
+        that is the entire point, it is the same object — and what this method does with the
+        result is write it down. Mirroring a re-entry onto the broker is stage 2 of
+        `docs/LIVE_TRADING_PIPELINE.md` G18 and is a different change with a different proof.
+        """
+        if self.fast_feed is None or self.clock is None:
+            return
+        for ts, row in self.fast_feed.new_bars().iterrows():
+            self._fast_pending.append(self._fast_bar(ts, row))
+
+        while self._fast_pending and self.clock.can_step_fast(self._fast_pending[0].timestamp_ms):
+            if not self._step_one_fast():
+                return
+
+    def _check_fast_feed(self) -> None:
+        """Is the re-entry's feed still delivering? A hole re-warms the fast side ALONE.
+
+        ⚠ **It never touches the primary**, and never stops the bot. The worst honest outcome of
+        a dead fill clock is that no re-entry can arm — which is a real loss and is why it is
+        SAID rather than absorbed, but it is not a reason to stop managing a live trade.
+
+        ⚠ **Silence is not evidence here either.** The fast feed going quiet and the market being
+        shut look identical from a bar count, which is why this reads `gap_bars()` — a count
+        against a clock — rather than *did any bar arrive*.
+        """
+        if self.fast_feed is None:
+            return
+        gap = self.fast_feed.gap_bars()
+        if gap <= 4:
+            if self._fast_stale_alerted:
+                self.log.info("The re-entry's feed is delivering again.")
+                self.ledger.event("fast_feed_recovered", timeframe=self.fast_feed.timeframe)
+                self._fast_stale_alerted = False
+            return
+        self.log.warning(
+            f"{gap} {self.fast_feed.timeframe} bars missed on the re-entry's feed — re-warming "
+            f"the fast side. The primary is untouched."
+        )
+        self.ledger.event("fast_feed_gap", missed_bars=gap, timeframe=self.fast_feed.timeframe)
+        self._fast_pending.clear()
+        self._rewarm_fast()
+        # ONCE per outage. A feed that has been quiet for an hour is one message, not 360.
+        if not self._fast_stale_alerted:
+            self._fast_stale_alerted = True
+            self._notify_health(
+                alert(
+                    "⚠️",
+                    "RE-ENTRY FEED GAP",
+                    self.cfg.display_name,
+                    f"Missed {gap} {self.fast_feed.timeframe} bars on the re-entry's fill clock, "
+                    f"so it re-warmed that feed. The 15-minute stream and any open trade are "
+                    f"unaffected.",
+                    "Nothing to do unless it repeats.",
+                )
+            )
+
+    def flush_fast_before(self, close_ms: int) -> None:
+        """Step every pending fast bar that OPENS before a primary bar closing at `close_ms`.
+
+        🔴 **THIS IS WHAT MAKES THE MERGE SURVIVE A SESSION BREAK, and it was found the
+        expensive way.** `can_step_fast` asks whether the 15m stream has reached a fast bar, and
+        the only cheap way to answer it live is *one primary bar past what has been pushed* —
+        which silently assumes primary bars are CONTIGUOUS. Gold breaks daily. Across that break
+        the next 15m bar is not one bar later, so a fast bar sitting in the queue was still
+        waiting when the post-break primary was pushed, and the eager drain then moved the
+        context past it: **stale, once a day, every day.** MEASURED on a three-month replay — 13
+        forced re-warms, one per trading day.
+
+        ✅ Asking *does this bar open before the primary I am about to push* needs no assumption
+        about spacing at all. It is the merge rule stated directly, and it is exact across a gap,
+        a weekend and a feed outage alike.
+        """
+        while self._fast_pending and self._fast_pending[0].timestamp_ms < int(close_ms):
+            if not self._step_one_fast():
+                return
+
+    def _step_one_fast(self) -> bool:
+        """Step the head of the fast queue. `False` = the queue was dropped and the feed re-warmed.
+
+        ⚠ The primaries `step_fast` flushes are settled HERE, before the secondary is observed,
+        because that is the order they happened in — a 15m bar that closed before this fast bar
+        opened reaches the broker first.
+        """
+        bar = self._fast_pending.pop(0)
+        try:
+            step = self.clock.step_fast(bar)
+        except self.clock.OutOfOrder as e:
+            # The 15m context moved past this bar while it was in flight. There is no honest way
+            # to step it, and skipping it in silence would leave the fast structure engine
+            # computing over a history that never happened — the 2026-08-05 defect arriving on
+            # the other feed. Drop what is queued and rebuild the fast side alone.
+            self.log.warning(f"{e} — re-warming the fast feed.")
+            self.ledger.event("fast_feed_out_of_order", detail=str(e))
+            self._fast_pending.clear()
+            self._rewarm_fast()
+            return False
+        for ps in step.primaries:
+            self._settle_primary(ps)
+        self._observe_secondary(step)
+        return True
+
+    def _observe_secondary(self, step) -> None:
+        """Record what the re-entry did on one fast bar. **Stage 1: it places no orders.**
+
+        ⚠ **It writes only on a bar where something HAPPENED.** A record per fast bar is ~288 a
+        day of *nothing armed*, and the decision ledger is the one file nothing else in the world
+        holds a copy of — burying it is not free.
+        """
+        if step.arm is None:
+            return
+        if step.filled_dir is not None:
+            side = "long" if step.filled_dir > 0 else "short"
+            src = getattr(step.arm, "l_src" if step.filled_dir > 0 else "s_src", None)
+            self.ledger.event(
+                "secondary_shadow_fill", dir=step.filled_dir, bar=str(step.bar.time), src=src
+            )
+            self.log.info(
+                f"[shadow] the re-entry WOULD have filled {side} at {step.bar.time} "
+                f"(trigger {src}). Nothing was sent to the broker — G18 stage 1."
+            )
+        elif step.stopped_dir is not None:
+            self.ledger.event("secondary_shadow_stop", dir=step.stopped_dir, bar=str(step.bar.time))
+
+    def _warm_fast(self) -> None:
+        """Replay fast history through the fast structure feed WITHOUT acting on any of it.
+
+        ⚠ **Structure only — it does not step the re-entry.** The primary's warm-up replays
+        through the same emulator and can leave a warm-up position behind (which is what
+        `BridgeState.WARMING` exists for); running the re-entry over history as well would open a
+        second imaginary trade in the one position slot and change what the primary warm-up saw.
+        What the fast side needs from history is its own structure state, and that is what this
+        builds.
+        """
+        df = self.fast_feed.history(self._fast_warmup_bars())
+        # 🔴 **`-1`, SO THE FIRST WARM BAR IS 0 AND THE FAST FRAME NUMBERS EXACTLY AS THE LAB
+        # DOES.** `_fast_bar` increments BEFORE it builds, so seeding at 0 made every fast bar
+        # one higher than `iter_bars` gives it — and the primary side does not have that skew,
+        # because `warm()` sets `_bar_index` from the last warm bar's own index. The offset
+        # changes no decision (every comparison on this feed is between two of its own indices)
+        # and it makes the recorded `entry_index` of a re-entry disagree with the lab's by one
+        # for ever. **That is the B-LEG harness trap** — `strategies/CLAUDE.md` records 2,409
+        # comparisons failing at one flat offset while the logic was identical — and the point of
+        # fixing it is that a future shadow diff on this feed can then join at all.
+        self._fast_index = -1
+        for ts, row in df.iterrows():
+            bar = self._fast_bar(ts, row)
+            self.clock.warm_fast_bar(bar)
+        self.fast_feed.mark_seen(df)
+        # 🔴 **THE BOOKMARK IS PUSHED PAST THE 15m CONTEXT, AND WITHOUT THIS A RE-WARM CAN LOOP.**
+        # The two histories do not end at the same instant: the newest CLOSED fast bar can be up
+        # to one primary bar NEWER than the newest closed primary bar, and on the other side a
+        # short fast history can leave the bookmark BEHIND the primary context. In that second
+        # case the next live fast bar is stale, which raises, which re-warms, which lands in the
+        # same place — a re-warm that cannot make progress. Advancing the bookmark is what makes
+        # the re-warm terminate: after it, no bar the context has already passed can be handed out.
+        # ⚠ It is `<`, matching `fast_bar_is_stale` — a fast bar opening exactly AT the context's
+        # close time is the next one due, not a late one.
+        ctx = self.clock.stepped_primary_to_ms
+        if ctx is not None and len(df):
+            import pandas as pd
+
+            # ⚠ **The comparison is in MILLISECONDS, and the timestamp is built to match the
+            # FRAME's own timezone.** `feed.to_canonical` builds a tz-NAIVE index (UTC by this
+            # repo's convention, but naive), while a lab frame is tz-aware — and pandas raises
+            # outright on comparing the two. The first version of this guard constructed an aware
+            # timestamp unconditionally and would have raised on the box, inside the warm-up, on
+            # the first start with a re-entry on. Caught by driving it over lab frames.
+            # ⚠ **ONE MILLISECOND BEFORE the context, not AT it, and the millisecond matters.**
+            # `BarFeed.new_bars` hands out bars STRICTLY NEWER than the bookmark, while a fast bar
+            # opening exactly AT the context's close is the next one DUE, not a late one (see
+            # `fast_bar_is_stale`, which tests `<`). Bookmarking at the instant itself dropped
+            # that bar — one silent hole in a streaming state machine on every single restart,
+            # and it was caught by the merge pairing being short by exactly one entry.
+            edge = pd.Timestamp(ctx - 1, unit="ms", tz="UTC")
+            tz = getattr(df.index, "tz", None)
+            edge = edge.tz_convert(tz) if tz is not None else edge.tz_localize(None)
+            seen = self.fast_feed.last_bar_time
+            if seen is None or int(seen.value // 1_000_000) < ctx - 1:
+                self.fast_feed.last_bar_time = edge
+                self.log.info(
+                    f"Fast feed bookmarked at {edge} — the 15m context is already past it."
+                )
+        first = str(df.index[0]) if len(df) else "-"
+        last = str(df.index[-1]) if len(df) else "-"
+        self.log.info(
+            f"Warmed the fast feed on {len(df)} {self.fast_feed.timeframe} bars ({first} → {last})."
+        )
+        self.ledger.event(
+            "fast_warmed", bars=len(df), first=first, last=last, timeframe=self.fast_feed.timeframe
+        )
+
+    def _rewarm_fast(self) -> None:
+        """Rebuild the fast side alone, after a hole in ITS stream.
+
+        ⚠ **The primary's engines and the open trade are untouched.** A hole in the re-entry's
+        feed must never cost the trade the bot is holding — that asymmetry is the same call as
+        *the primary is never held up by this feed*, one failure later.
+        """
+        if self.fast_feed is None or self.clock is None:
+            return
+        self.clock.reset_fast()
+        self._warm_fast()
 
     # ── the terminal link ────────────────────────────────────────────────────
     def probe_link(self) -> tuple[bool, float | None]:
@@ -629,13 +1005,18 @@ class LiveRunner:
             )
         self.stack = EngineStack(self.strategy.engine_config())
         self.strategy.execution.bar_ms = self.feed.bar_seconds * 1000
+        # Built HERE and not at startup, because a re-warm rebuilds the stack and the clock holds
+        # a reference to it. One object, one lifetime — a clock left pointing at the previous
+        # stack would step the strategy against engines nothing else is feeding.
+        self.clock = self._make_clock()
         t0 = time.time()
         bar = None
         for bar in iter_bars(df):
-            state = self.stack.step(bar)
-            sig = self.strategy.signals.update(state)
-            seq = self.strategy.sequence.update(sig)
-            self.strategy.execution.step(sig, seq)
+            # Through the CLOCK, so the primary is stepped by the same code live and in the lab.
+            # `drain_primary` rather than `_settle_primary`: a warm-up bar must not reach the
+            # ledger, the alerts or the broker — see the discard block below.
+            self.clock.push_primary(bar)
+            self.clock.drain_primary()
         self._bar_index = bar.index  # live bars count on from here — see _on_bar
         self.feed.mark_seen(df)
 
@@ -692,6 +1073,12 @@ class LiveRunner:
             replayed_setups=dropped,
             replayed_snapshots=replayed,
         )
+        # AFTER the primary, always. The fast side's whole job is to read a 15m context, and
+        # there is none until the primary has replayed.
+        if self.fast_feed is not None:
+            self._warm_fast()
+            self._fast_pending.clear()
+
         self.reanchor_equity("after warm-up")
         return df
 
@@ -985,6 +1372,7 @@ class LiveRunner:
         try:
             self.strategy, scfg = self._build_strategy()
             self.feed = BarFeed(self.mt5, self.cfg.timeframe, self.cfg.symbol)
+            self.fast_feed = self._build_fast_feed(scfg)
             self.bridge = OrderBridge(
                 self.mt5,
                 self.strategy.execution,
@@ -1140,6 +1528,32 @@ class LiveRunner:
                         self.bridge.apply_restore(announce=False)
                         self.bridge.begin_live()
                         stream_broken = False
+
+                    # BEFORE the primary rows of this same poll, and the order is the merge
+                    # rule rather than a preference. A 15m bar closing at X and the fast bar
+                    # opening at X-5m become available in the SAME instant; `run_dual` steps the
+                    # fast one first, because the 15m bar is only flushed in front of a fast bar
+                    # opening at or after its close. Reversing these two lines is a silent
+                    # lookahead — see `DualClock`.
+                    #
+                    # 🔴 **ITS OWN HANDLER, AND THIS IS THE SAME RULE AS EVERYTHING ELSE ABOUT
+                    # THIS FEED: the primary is never held up by it.** Unguarded, anything that
+                    # raised in here fell through to the loop's outer handler and the primary
+                    # bars below were never read — so a fault in the re-entry's feed would stop
+                    # the bot managing the trade it is holding. **Found by a test, not by
+                    # reasoning: `test_a_healthy_loop_reads_bars_and_reports_the_link_up` went
+                    # red with `bar_calls == 0`.** ⚠ It is a WARNING and not a bar error: the
+                    # primary stream has no hole, so `stream_broken` must stay untouched or a
+                    # re-entry fault would re-warm the engines that are trading.
+                    try:
+                        self._check_fast_feed()
+                        self._pump_fast()
+                    except Exception as e:
+                        self.log.error(
+                            f"The re-entry's feed raised ({e}) — the primary is unaffected and "
+                            f"keeps trading.\n{traceback.format_exc()}"
+                        )
+                        self.ledger.event("fast_feed_error", error=str(e))
 
                     for _, row in self.feed.new_bars().iterrows():
                         try:
@@ -1446,8 +1860,22 @@ class LiveRunner:
         )
 
     def _on_bar(self, row) -> None:
-        """One closed bar: engines → strategy → broker → log. This ordering is the whole
-        contract — the broker is reconciled only AFTER the strategy has seen the same bar."""
+        """One closed PRIMARY bar: queue it, then step whatever is now due.
+
+        🔴 **THE STEP IS THE CLOCK'S DECISION, NOT THIS METHOD'S, AND THAT IS THE WHOLE POINT.**
+        With a second feed running, a 15m bar and a fast bar can become available in the same
+        instant and the order between them is not arrival order — it is the merge rule, which
+        lives in ONE place (the strategy's `dual_clock.DualClock`, the same object the lab's
+        `run_dual` drives). A copy of that rule here is the shape this repo has been bitten by
+        twice; see that module's docstring.
+
+        ⚠ **`drain_primary` immediately afterwards is what keeps the primary from being delayed.**
+        A 15m bar closing at `X` is available at `X`; the fast bar opening at `X` is not available
+        until `X + fast`, and waiting for it would place this bar's orders one fast bar late. It
+        is safe because the merge would flush this bar in front of that fast bar anyway — and a
+        fast bar that then turns up out of order is REFUSED rather than stepped against a context
+        from its own future (`DualClock.fast_bar_is_stale`).
+        """
         from backtest.replay import ReplayBar
 
         ts = row.name
@@ -1465,13 +1893,21 @@ class LiveRunner:
             low=float(row["low"]),
             close=float(row["close"]),
         )
+        # BEFORE the push. Every fast bar opening before this bar CLOSES belongs in front of it,
+        # and `flush_fast_before` says why that question is asked instead of the cheaper one.
+        if self.fast_feed is not None:
+            self.flush_fast_before(bar.timestamp_ms + self.feed.bar_seconds * 1000)
+        self.clock.push_primary(bar)
+        for ps in self.clock.drain_primary():
+            self._settle_primary(ps)
 
-        state = self.stack.step(bar)
-        sig = self.strategy.signals.update(state)
-        seq = self.strategy.sequence.update(sig)
-        dec = self.strategy.execution.step(sig, seq)
+    def _settle_primary(self, ps) -> None:
+        """One primary bar the clock has STEPPED: ledger → alerts → broker.
 
-        self.ledger.bar(dec, sig, seq)
+        This ordering is the whole contract — the broker is reconciled only AFTER the strategy has
+        seen the same bar.
+        """
+        self.ledger.bar(ps.dec, ps.sig, ps.seq)
         self._drain_records()
         # AFTER the strategy has stepped — the resting order is rebuilt inside `execution.step`,
         # so reading it any earlier reports last bar's price beside this bar's confluences. It
@@ -1480,7 +1916,7 @@ class LiveRunner:
         # It never raises; see `setup_alerts.SetupAlerts`.
         if self.setup_alerts is not None:
             self.setup_alerts.on_bar(self.strategy)
-        self.bridge.sync(dec, sig)
+        self.bridge.sync(ps.dec, ps.sig)
 
         if self.bridge.state is BridgeState.HALTED:
             self.log.error("Bridge halted — the loop will keep observing but place nothing.")

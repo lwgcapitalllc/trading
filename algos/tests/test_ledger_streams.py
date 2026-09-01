@@ -191,6 +191,18 @@ def test_every_event_written_in_algos_live_is_classified():
         # report, not a setup. Note it is the reporting layer's state and never a setup's — an
         # actual setup never reaches the ledger through this event, it reaches Telegram.
         "setup_alerts",
+        # ── the re-entry's SECOND BAR FEED (G18 stage 1, 2026-09-01). All four describe the
+        # FEED, never a setup, so they are health by the subject test — the same call that puts
+        # `warmed` and `rewarm` here and `order_refused` in the other stream. The re-entry's own
+        # shadow decisions ARE decisions and live in `_DECISION_EVENTS`.
+        # ⚠ A gap on this feed is deliberately NOT the same event as a gap on the primary's:
+        # they have different consequences (no re-entry can arm, against the engines being
+        # rebuilt), and merging them would make a re-entry outage read as a trading outage.
+        "fast_warmed",
+        "fast_feed_gap",
+        "fast_feed_recovered",
+        "fast_feed_out_of_order",
+        "fast_feed_error",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (

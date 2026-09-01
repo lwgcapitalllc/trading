@@ -199,6 +199,42 @@ class MpcSosFadeStrategy:
         recovery.apply(self, df)
         return self
 
+    # ── the live driver's contract ───────────────────────────────────────────
+    #
+    # 🔴 **TWO OPTIONAL METHODS ARE THE WHOLE SEAM BETWEEN THIS STRATEGY AND THE LIVE RUNNER'S
+    # SECOND BAR FEED, AND THAT IS DELIBERATE.** `algos/live/` holds no trading logic — that is
+    # the property which keeps a live result comparable to a backtest result — so it may not know
+    # what a re-entry is, what a fill clock is, or where the merge lives. It asks these two
+    # questions and does as it is told. A strategy that implements neither has one feed, which is
+    # every other bot in this repo today. See `docs/LIVE_TRADING_PIPELINE.md` G18.
+
+    def fast_feed_minutes(self):
+        """Does this strategy need a SECOND bar stream live, and how fast? `None` = no.
+
+        ⚠ **`None` is *this configuration does not want one*, never *one is unavailable*.** An
+        impossible fill clock is refused where it is resolved, at startup, naming the legal
+        values — `algos/live/feed.timeframe_for_minutes`. Rule 1: off and cannot-have must not
+        arrive as the same answer.
+        """
+        if not self.config.exec_secondary:
+            return None
+        from .dual_clock import fast_tf_minutes
+
+        return fast_tf_minutes(self.config)
+
+    def make_dual_clock(self, stack, *, tf_primary_ms: int, engine_config=None):
+        """The merge — the SAME object `run_dual` drives, built for a live caller.
+
+        ⚠ The caller owns the engine stack (the live runner rebuilds it on every re-warm), so it
+        is passed in rather than built here; two would drift.
+        """
+        from .dual_clock import DualClock
+
+        return DualClock(
+            self, stack, tf_primary_ms=tf_primary_ms,
+            major_length=(engine_config or self.engine_config()).major_length,
+        )
+
     def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
                  progress=None, should_cancel=None) -> "MpcSosFadeStrategy":
         """Replay the PRIMARY on 15m and the SECONDARY (the sniper re-entry) on a FASTER frame, on one merged
@@ -219,24 +255,16 @@ class MpcSosFadeStrategy:
         Bars are timestamped at OPEN; a 15m bar closes at `open + tf15`, so a faster bar reads
         the 15m context of the bar that has already CLOSED by its open time — non-repainting, and
         the same `lookahead_off` semantics the Pine used.
+
+        🔴 **THE MERGE ITSELF LIVES IN `dual_clock.DualClock`, NOT HERE, SINCE 2026-09-01.** The
+        live runner needs the identical rule, and a second copy of *which bar steps when* is the
+        exact shape that has already produced two silent disagreements in this repo. This method
+        is now the LAB DRIVER of that object: it pushes both frames in and reports. See
+        `docs/LIVE_TRADING_PIPELINE.md` G18.
         """
-        from collections import namedtuple
-        from datetime import datetime, timezone
-        from zoneinfo import ZoneInfo
-
         from backtest.replay import EngineStack, iter_bars
-        from .secondary import SecondaryArm, Structure1m
 
-        # `last_conf_high`/`last_conf_low` are the STRUCTURE runner trail's anchors, read by the
-        # shared `_advance_stage` on every managed bar — primary or secondary. They were missing
-        # here until 2026-08-06, so the FIRST fast bar after any secondary fill raised
-        # `AttributeError`: the re-entry had never once opened a position on real data. They come
-        # from the last-CLOSED 15m signal, deliberately: the secondary's whole ladder is 15m fibs
-        # (TP1 0.5, TP2 0.382) and it shares the parent's exit ladder, so its runner must trail the
-        # same 15m confirmed swings the primary does. `Structure1m` is for the fast-feed SOS latch only.
-        _Bar1mSig = namedtuple(
-            "_Bar1mSig", "index time_ms open high low close last_conf_high last_conf_low")
-        ny = ZoneInfo("America/New_York")
+        from .dual_clock import DualClock
 
         if len(df15.index) > 1:
             tf15_ms = int(df15.index.to_series().diff().min().total_seconds() * 1000)
@@ -245,15 +273,16 @@ class MpcSosFadeStrategy:
             tf15_ms = 900_000
 
         stack = EngineStack(self.stack_config(engine_config))
-        bars15 = list(iter_bars(df15))
-        close15 = [b.timestamp_ms + tf15_ms for b in bars15]   # when each 15m bar is known
-        n15 = len(bars15)
-        struct1m = Structure1m(major_length=(engine_config or self.engine_config()).major_length)
-        arm_sm = SecondaryArm(self.config)
+        clock = DualClock(
+            self, stack, tf_primary_ms=tf15_ms,
+            major_length=(engine_config or self.engine_config()).major_length,
+        )
+        # Every 15m bar up front: the lab HAS both frames, so `can_step_fast` can never refuse and
+        # the queue does the ordering. Only the live driver, whose feeds poll independently, has to
+        # ask that question. `push_primary` steps nothing — `step_fast` flushes what is due.
+        for b15 in iter_bars(df15):
+            clock.push_primary(b15)
 
-        last_sig = last_seq = None
-        last_close15 = None     # the last-CLOSED 15m bar's close — the zone gate reads this (Pine's 15m `close`)
-        i15 = 0
         # progress/cancel are optional hooks so a lab run keeps a live bar + a working Stop button
         # (the fast stream is the long one). Both no-ops when not supplied.
         n1 = len(df1m.index)
@@ -264,52 +293,15 @@ class MpcSosFadeStrategy:
                     return self
                 if progress is not None:
                     progress(b1.index, n1)
-            # Flush every 15m bar that has CLOSED by the time this fast bar opens — the primary path,
-            # unchanged from run(). Its output becomes the 15m context the secondary reads next.
-            while i15 < n15 and close15[i15] <= b1.timestamp_ms:
-                b15 = bars15[i15]
-                state = stack.step(b15)
-                last_sig = self.signals.update(state)
-                last_seq = self.sequence.update(last_sig)
-                dec = self.execution.step(last_sig, last_seq)
-                last_close15 = b15.close
-                if b15.index >= warmup:
-                    self.decisions.append(dec)
-                i15 += 1
-
-            m1 = struct1m.update(b1.index, b1.open, b1.high, b1.low, b1.close)
-            if self.config.exec_secondary and last_sig is not None:
-                ny_hour = datetime.fromtimestamp(b1.timestamp_ms / 1000.0, tz=timezone.utc) \
-                    .astimezone(ny).hour
-                arm = arm_sm.update(m1, last_sig, last_seq, last_close15, ny_hour,
-                                    self.execution.is_flat, self.execution.be_sos_l,
-                                    self.execution.be_sos_s,
-                                    self.execution.prim_closed_sos_l,
-                                    self.execution.prim_closed_sos_s,
-                                    self.execution.prim_lost_sos_l,
-                                    self.execution.prim_lost_sos_s,
-                                    self.execution._poi_edge_l,
-                                    self.execution._poi_edge_s,
-                                    b1.high, b1.low)
-                sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close,
-                                  last_sig.last_conf_high, last_sig.last_conf_low)
-                filled = self.execution.step_secondary(sig1m, arm)
-                if filled is not None:
-                    arm_sm.mark_traded(filled)   # retire the just-filled shift leg
-                elif self.execution.sec_stop_dir is not None:
-                    # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
-                    arm_sm.mark_dead(self.execution.sec_stop_dir, last_seq)
+            fast = clock.step_fast(b1)
+            for ps in fast.primaries:
+                if ps.bar.index >= warmup:
+                    self.decisions.append(ps.dec)
 
         # Flush any 15m bars after the last fast bar (window tail).
-        while i15 < n15:
-            b15 = bars15[i15]
-            state = stack.step(b15)
-            last_sig = self.signals.update(state)
-            last_seq = self.sequence.update(last_sig)
-            dec = self.execution.step(last_sig, last_seq)
-            if b15.index >= warmup:
-                self.decisions.append(dec)
-            i15 += 1
+        for ps in clock.drain_primary():
+            if ps.bar.index >= warmup:
+                self.decisions.append(ps.dec)
         # df15, not df1m: the recovery replays 15m structure, the same stream the primary read.
         # The cancel path above deliberately does NOT come here — a cancelled run has a partial
         # book, and appending recovery trades to it would report a rule applied to half a record.

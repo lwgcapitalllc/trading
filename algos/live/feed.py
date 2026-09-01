@@ -33,6 +33,29 @@ TIMEFRAMES = {
 }
 
 
+def timeframe_for_minutes(minutes: int) -> str:
+    """`5` → `"M5"`. The re-entry's fill clock is configured in MINUTES and the feed is
+    addressed by NAME, and this is the one place the two meet.
+
+    🔴 **It REFUSES a duration MT5 has no timeframe for rather than rounding to the nearest
+    one.** A fill clock of 7 minutes silently served as 5m or 10m is a strategy replayed on a
+    stream nobody chose — the lab would measure one thing and the bot would trade another, with
+    the config file agreeing with neither. Same rule as an out-of-range stop ratio: refuse, name
+    the legal set, and let a human decide.
+    """
+    want = int(minutes) * 60
+    for name, (_const, secs) in TIMEFRAMES.items():
+        if secs == want:
+            return name
+    legal = ", ".join(
+        str(secs // 60) for _n, (_c, secs) in TIMEFRAMES.items() if secs % 60 == 0 and secs < 86400
+    )
+    raise ValueError(
+        f"No MT5 timeframe is {minutes} minutes long, so no bar stream can be opened for it. "
+        f"Legal minute values: {legal}."
+    )
+
+
 def timeframe_seconds(name: str) -> int:
     try:
         return TIMEFRAMES[name][1]

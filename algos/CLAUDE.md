@@ -105,10 +105,13 @@ account cap and there is no room to give a second strategy without lowering it f
 ⚠ **`_account_risk_cap_pct` is NOT runtime-reloadable** — changing the cap needs a RESTART, so it
 arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than on its own.
 
-## 🔴 THE LIVE RUNNER CANNOT RUN ANY RE-ENTRY — it drives ONE timeframe (2026-08-28)
+## The live runner's SECOND bar feed — G18 stage 1 (2026-09-01). Stages 2-4 still open
 
-🔴 **`exec_secondary` on a live bot REFUSES AT STARTUP: *"needs a 1-minute bar stream alongside the
-15m one (run_dual). The live runner drives a single timeframe."*** It was turned on for
+🔴 **`exec_secondary` on a live bot STILL REFUSES AT STARTUP**, and the message that used to say
+*"a 1-minute bar stream"* was WRONG — the fill clock has been FIVE minutes by default since
+2026-08-21 and is configurable either way. It is corrected as of 2026-09-01 and now names the
+setting. ⚠ **A refusal that names the wrong feed is worse than a vague one: it sends the next
+reader to build the wrong thing, confidently.** The setting was turned on for
 `mpc_sos_fade_demo` on 2026-08-28 (Aaron's call) and the bot **would not start** — down until the
 setting was put back. **The re-entry is a LAB-ONLY feature on the live side today**, whatever the
 strategy's defaults say.
@@ -122,9 +125,43 @@ that tests it is the restart, by which point the bot is down.
 no fill clock) and why `mpc_bleg` and `mpc_bos` pin it off. Three places had already recorded this
 shape; the live runner was the fourth and nobody had asked it.
 
-✅ **To actually run it live, the runner needs a second feed** — that is a build, not a setting.
-**The plan to build it is `docs/LIVE_TRADING_PIPELINE.md` → G18** — four stages, the first
-placing no orders at all, and the proof for each.
+✅ **THE SECOND FEED EXISTS SINCE 2026-09-01 AND PLACES NOTHING — G18 stage 1.** The runner opens
+a second `BarFeed` on the re-entry's fill clock, warms it, and steps the re-entry through the SAME
+object the lab drives (`dual_clock.DualClock`, which `run_dual` was refactored onto in the same
+change). A would-be fill is written to the decision ledger as `secondary_shadow_fill`; no order is
+sent. **`assert_supported` still refuses the config outright and must not be softened until the
+bridge can place a second entry** — that is stage 2, and it is the bigger half. Full record, the
+five defects the merge cost and the proof: `docs/LIVE_TRADING_PIPELINE.md` → G18.
+
+🔴 **STAGE 1 CANNOT BE RUN ON A LIVE BOT, AND THE PLAN THAT SAID IT COULD IS CORRECTED.** The
+primary and the re-entry share ONE position slot in the same `Execution`. A "shadow" re-entry does
+not sit beside the book — it FILLS in the emulator and takes that slot, and the bridge then finds
+*the strategy believes it is in a position but MT5 has none* and **HALTS**. So there is no
+observe-it-live step: **stage 2 and stage 3 both land before anything runs on a bot.** Nothing is
+lost — the claim is about the MERGE, and that is proved better offline against `run_dual` on the
+same bars than by watching a log.
+
+🔴 **THE PRIMARY IS NEVER HELD UP BY THAT FEED, AND EVERY DECISION IN IT FOLLOWS FROM THAT.** A
+15m bar is stepped the MOMENT it closes; a fast bar arriving after that has missed its slot and is
+REFUSED rather than stepped against a context from its own future. ⚠ **The fast pump has its own
+exception handler for the same reason** — unguarded, anything raising in it fell through to the
+loop's handler and the primary bars were never read at all, so a fault in the re-entry's feed
+would have stopped the bot managing a live trade. Found by a test going red, not by reading.
+
+⚠ **A bot with the re-entry OFF keeps the primary path it has always had, byte for byte** — it
+gets a `_SingleFeedClock` that holds no ordering rule at all. Turning the re-entry on is the
+change that moves a live bot onto the merged path, once, on purpose, with its own proof.
+
+🔴 **THE MERGE RULE HAS EXACTLY ONE IMPLEMENTATION AND IT LIVES IN THE STRATEGY, NOT HERE.**
+`algos/live/` holds no trading logic — that is what keeps a live result comparable to a backtest
+result — so this package asks a strategy two questions (`fast_feed_minutes`, `make_dual_clock`)
+and does as it is told. **A copy of *which bar steps when* in this package is the defect shape
+this repo has already met twice**, and a wrong merge produces an ordinary-looking trade at a
+slightly wrong price with nothing in any output able to show it.
+
+⚠ **A fill clock MT5 has no timeframe for is REFUSED, never rounded** (`timeframe_for_minutes`),
+and so is one that is not FASTER than the stream the strategy trades. A 7-minute clock silently
+served as 5m is a strategy replayed on a stream nobody chose.
 
 ⚠ **The 3.25x reclaim target IS stated in the config and is correct**, but inert while the
 re-entry is off.

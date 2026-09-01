@@ -1522,7 +1522,7 @@ believing it works.** Offline green means the logic is right, not that the bot s
 
 ---
 
-### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **OPEN, plan below (2026-08-28)**
+### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **STAGE 1 DONE 2026-09-01, stages 2-4 OPEN**
 
 **The gap in one line:** every re-entry this repo has is priced and filled on a FASTER clock than
 the 15-minute one the strategy arms on, and `algos/live/runner.py::_loop` polls exactly one
@@ -1572,6 +1572,126 @@ what it would have done. Place nothing.**
 The merge ORDER is the part that is easy to get wrong and impossible to see later.
 ⚠ The bar-hole recovery in `_loop` (a raised bar advances the bookmark) has to cover BOTH feeds, or
 the faster stream desyncs silently — the same defect that cost a re-warm rewrite on 2026-08-05.
+
+#### ✅ STAGE 1 LANDED 2026-09-01 — and what it cost to get the merge right
+
+**What shipped.** `LiveRunner` opens a second `BarFeed` on `exec_sec_fill_tf_min`, warms it, and
+steps the re-entry through the SAME object the lab drives — `strategies/python/mpc_sos_fade/
+dual_clock.DualClock`, which `run_dual` was refactored onto in the same change. **The bridge
+still places nothing**: a would-be fill is written to the decision ledger as
+`secondary_shadow_fill` and logged, and `assert_supported` still refuses the config outright.
+
+✅ **THE PROOF, and it is the one stage 1 was defined by.** Replays driven through the REAL
+`LiveRunner` methods (`_on_bar`, `_pump_fast`, `_warm_fast`, `_check_fast_feed`) against fake feeds
+that hand bars out in wall-clock ARRIVAL order, diffed field by field against `run_dual` on the
+identical frames.
+
+| window | bars | trades | re-entries | total R | decision fields differing |
+|---|---|---|---|---|---|
+| 2025-01-01 → 2025-04-01 | 5,875 M15 / 17,625 M5 | 7 = 7 | 1 = 1 | +7.0248 = +7.0248 | **0 of 26** |
+| **2020-01-01 → 2026-08-23** | **157,004 M15 / 470,995 M5** | **185 = 185** | **29 = 29** | **+126.0985 = +126.0985** | **0** |
+
+**On the full 6.6 years every decision field is identical on all 185 trades** — direction, entry
+and exit price, entry and exit time, R, exit reason, kind, stop distance, costs, both excursion
+PRICES, the target ladder and the fib leg. **29 re-entries either side worth +22.0000R either
+side.**
+
+⚠ **Six DOLLAR columns do differ, and the reason is a harness artefact rather than the merge.**
+`qty`, `risk_usd`, `pnl_usd`, the two excursion DOLLAR figures and the leg size are all higher live
+by a ratio that is **constant to six decimals across all 185 trades (1.052632)** — and a constant
+ratio is the signature of an equity offset, never of a decision. MEASURED cause: the lab takes a
+re-entry inside the harness's warm-up window that loses $498.41, while the live warm-up replays
+the fast feed for STRUCTURE ONLY and never arms one, so the two emulator balances part company at
+the boundary and every later size scales by the same figure. (Predicted 1.052484 against the
+observed 1.052632; the 0.014% residual is the warm-up's own primaries being sized on the two
+different paths.)
+
+🔴 **AND IT CANNOT HAPPEN ON A REAL BOT, which is the part worth keeping.** `warm()` ends with
+`reanchor_equity("after warm-up")` — the emulator's balance is thrown away and replaced with the
+BROKER's, and it is re-anchored again on every flat bar. **The warm-up equity path reaches nothing
+live.** The harness has no broker to re-anchor against, which is exactly why a live-vs-lab
+comparison is made on DECISIONS and not on dollars — the same restriction
+`algos/tools/shadow_diff.py` already carries.
+
+⚠ **Driving the runner rather than re-creating its poll order is load-bearing** — the first version
+of that harness reimplemented the loop and spent its time finding its own bugs instead of the
+runner's.
+
+🔴 **THE PLAN ABOVE IS WRONG ON ONE POINT AND IT IS CORRECTED HERE RATHER THAN QUIETLY EDITED:
+STAGE 1 CANNOT BE RUN ON A LIVE BOT "PLACING NOTHING". THE PROOF IS OFFLINE, AND HAS TO BE.**
+Stage 1 was written as *a second feed into the runner, placing NO orders* — run it beside the live
+bot for a while and watch. **That is not possible, because the primary and the re-entry share ONE
+position slot in the same `Execution` object.** A shadow re-entry does not sit beside the book, it
+FILLS in the emulator and occupies that slot; the bridge then reconciles on the next 15m bar,
+finds *the strategy believes it is in a position but MT5 has none*, and **HALTS** — correctly, and
+by the design that makes every other guard here work.
+
+⚠ So there is no "observe it live" step. **The order is: stage 2 (the bridge can mirror a
+re-entry) and stage 3 (the refusal becomes a capability check) BOTH land before anything runs on a
+bot at all.** ✅ Nothing is lost by that: the claim stage 1 exists to prove is about the MERGE, and
+the merge is proved better offline than live — against `run_dual` on the same bars, where a
+disagreement is a diff rather than something to be spotted in a log.
+
+⚠ **The shadow ledger records are still worth having** (`secondary_shadow_fill` /
+`secondary_shadow_stop`) — they are what a dry run reports once stage 2 exists, and `shadow` is in
+the NAME rather than a field, because a field can be dropped by a consumer that never heard of it
+and a shadow fill read as a real one would put a trade in the book that never happened.
+
+🔴 **FIVE DEFECTS, AND FOUR OF THEM WERE INVISIBLE TO REASONING.** Every one was found by running
+the merge over real bars or by a test going red — none by reading the code.
+
+1. **The steppable gate DEADLOCKED two thirds of the fast stream.** It asked *has the 15m stream
+   reached this bar* as `open <= newest primary close`, where the real question is *have all 15m
+   bars CLOSING at or before this bar been pushed* — which is `open < newest close + one primary
+   bar`. The strict form made a fast bar wait for a 15m bar that closes AFTER it, which then
+   advanced the context past it and made it permanently unsteppable.
+2. 🔴 **A SESSION BREAK STRANDED A FAST BAR, ONCE PER TRADING DAY.** Even corrected, that gate
+   assumes primary bars are CONTIGUOUS. Gold breaks daily. MEASURED before the fix: **13 forced
+   re-warms on a three-month replay, one per day.** ✅ `flush_fast_before` fixes it by asking the
+   merge rule directly — *does this bar open before the primary I am about to push* — which needs
+   no assumption about spacing and is exact across a break, a weekend and an outage alike.
+3. **The warm-up bookmark dropped one fast bar on every restart.** It was set AT the 15m context's
+   close, and `new_bars` hands out bars strictly newer — but a fast bar opening exactly at that
+   instant is the next one DUE, not a late one. One silent hole in a streaming state machine per
+   start. Caught by the merge pairing being short by exactly one entry.
+4. **A tz-aware timestamp compared against a tz-naive feed index.** `feed.to_canonical` builds a
+   NAIVE index; the guard built an aware one. It would have raised on the box, inside the warm-up,
+   on the first start with a re-entry on.
+5. **The fast frame numbered from 1 where the lab numbers from 0.** No decision moves (every
+   comparison on that feed is between two of its own indices) and it made a re-entry's recorded
+   `entry_index` disagree with the lab's for ever — **the B-LEG harness trap**, which
+   `strategies/CLAUDE.md` records as 2,409 comparisons failing at one flat offset while the logic
+   was identical.
+
+🔴 **AND ONE IN THE PROOF ITSELF, WHICH IS THE MOST TRANSFERABLE.** The first trade-comparison
+script read its fields with `getattr(t, name, default)` and asked for `entry`, `exit` and
+`entry_src` — **none of which `Trade` has**, so three of its nine columns compared nothing to
+nothing and would have called two different books identical. The field list is now DERIVED from
+the dataclass, so a rename breaks the script and a new field is compared from the day it exists.
+**This repo already records the same failure** (`entry_time` against a record whose field is
+`entry_ms`); it recurred inside the tool written to check a live-path change.
+
+**Two design rules this stage fixed in place, both about the same asymmetry:**
+
+- 🔴 **THE PRIMARY IS NEVER HELD UP BY THE RE-ENTRY'S FEED.** A 15m bar is stepped the moment it
+  closes; a fast bar that turns up after that has missed its slot and is REFUSED rather than
+  stepped against a context from its own future. The fast pump also has its OWN exception handler
+  — unguarded, anything raising in it fell through to the loop's handler and **the primary bars
+  were never read at all**, so a fault in the re-entry's feed would have stopped the bot managing
+  a live trade. Found by `test_a_healthy_loop_reads_bars_and_reports_the_link_up` going red with
+  `bar_calls == 0`.
+- ⚠ **A bot with the re-entry OFF keeps the primary path it has always had, byte for byte.**
+  `_make_clock` hands it a `_SingleFeedClock` that holds no ordering rule at all. Turning the
+  re-entry on is the change that moves a live bot onto the merged path, once, on purpose.
+
+⚠ **`assert_supported`'s message was WRONG and is fixed in the same change** — it said *"a
+1-minute bar stream"* when the fill clock has been FIVE minutes by default since 2026-08-21 and is
+configurable either way. **A refusal that names the wrong feed is worse than a vague one: it sends
+the next reader to build the wrong thing, confidently.** The refusal itself is unchanged and must
+not be softened until stage 2 lands.
+
+**TESTED:** `algos/tests/test_dual_feed_merge.py` — 11 tests driving the real runner methods, six
+mutations each reddening its own named test. 1,355 tests green across `algos/` and the strategy.
 
 **Stage 2 — the bridge places a second entry.**
 `assert_supported`'s three refusals all trace to one sentence: the bridge *"mirrors ONE entry limit

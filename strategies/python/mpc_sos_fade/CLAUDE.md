@@ -1991,6 +1991,52 @@ setting tested on the primary LOST money, at about three R destroyed per R rescu
 decisions it always did. The moment any of the four goes positive, Python and Pine are trading
 different ladders: there is no TradingView side for any of them.
 
+## 🔴 THE MERGE MOVED OUT OF `run_dual` INTO `dual_clock.DualClock` (2026-09-01)
+
+Story, the five defects it cost and the proof: `docs/LIVE_TRADING_PIPELINE.md` → G18.
+
+🔴 **THERE IS ONE IMPLEMENTATION OF *WHICH BAR IS STEPPED WHEN*, AND BOTH DRIVERS USE IT.**
+`run_dual` is now the LAB driver of `DualClock`; the live runner is the other one. The merge order
+is the part that is easy to get wrong and impossible to see afterwards — a fast bar stepped
+against the wrong 15m context produces an ordinary-looking trade at a slightly wrong price, for
+ever, and nothing in any output can show it. **A second copy in `algos/live/` is the shape this
+repo has already met twice** (the run-form visibility evaluator against `param_is_reachable`; the
+ruff carve-out living in somebody's memory of what they had reverted).
+
+✅ **THE REFACTOR IS A PROVEN NO-OP.** Same window, same params, reclaim trigger:
+**188 trades / +125.0949R before and after, 0 rows differing.** ⚠ **The FIRST version of that
+check was partly vacuous and is recorded rather than quietly replaced** — it read three of its
+nine fields with `getattr(t, name, default)` under names `Trade` does not have (`entry`, `exit`,
+`entry_src`), so those three compared nothing to nothing. The field list is DERIVED from the
+dataclass now. **This repo already records that failure** (`entry_time` against a record whose
+field is `entry_ms`), and it recurred inside the tool written to check a live-path change.
+
+⚠ **`algos/live/` may not know what a re-entry is**, so the live driver asks this strategy two
+questions and does as it is told: `fast_feed_minutes()` (does this configuration want a second
+stream, and how fast — `None` means *no*, never *cannot have one*) and `make_dual_clock()`. A
+strategy implementing neither has one feed, which is every other bot here.
+
+⚠ **`warm_fast_bar` deliberately does NOT arm, price or fill anything.** The primary's warm-up
+already replays through the shared emulator and can leave a warm-up position behind; running the
+re-entry over the same history would open a second imaginary trade in the ONE position slot and
+change what the primary's warm-up saw. What the fast side needs out of history is its own
+structure state, and that is all it builds.
+
+⚠ **`reset_fast` throws the arm state machine away with the structure feed.** Its latched legs are
+keyed on fast bar NUMBERS, and a rebuilt feed renumbers them — keeping it would leave latches
+pointing at bars that no longer exist.
+
+🔴 **A FAST BAR THAT ARRIVES AFTER THE 15m CONTEXT HAS PASSED IT RAISES, AND MUST GO ON RAISING.**
+There is no honest way to step it, and absorbing it silently would let a re-entry arm on
+information the market had not published. The lab can never trigger it (it pushes every primary
+before it steps a fast bar); live it is the late-arrival case and the caller re-warms the fast
+side alone.
+
+⚠ **NOTHING ABOUT THE STRATEGY MOVED, AND THE PARITY GATE STILL CANNOT SEE ANY OF IT.**
+`compare_strategy.py` replays 15m bars through `.run()`; every re-entry lever lives on the
+fill-clock path. **The `run_dual` replay is the only evidence this feature will ever have — call
+every number it produces a lab finding, never a parity pass.**
+
 ## The re-entry rests its order and LEAVES it — and what the 1m feed is actually for (2026-08-21)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The re-entry rests its order and LEAVES it — and what the 1m feed is actually for (2026-08-21)*.

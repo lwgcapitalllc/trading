@@ -154,6 +154,16 @@ def _runner(monkeypatch, *, account_info):
     # by the time the loop turns; `reanchor_equity` reads it every flat pass.
     r.strategy = None
     r.feed = _Feed()
+    # THE THIRD TIME the note above has had to be written, and it bit the same way again on
+    # 2026-09-01: the re-entry's second bar stream landed, `_check_fast_feed` raised
+    # AttributeError on its first line, the loop's outer handler swallowed it, and the pass read
+    # no primary bars at all — `bar_calls == 0`. **That is what sent the fast pump into its own
+    # try/except**, so a fault in the re-entry's feed can no longer stop the bot managing a live
+    # trade. `None` here is the honest value: this bot has one feed.
+    r.fast_feed = None
+    r._fast_pending = []
+    r._fast_index = 0
+    r._fast_stale_alerted = False
     r._link_lost_at = None
     r._link_retry_at = 0.0
     # Same reason as `strategy` above — `__new__` skips __init__, and the loop reads this on

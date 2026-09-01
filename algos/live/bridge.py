@@ -105,9 +105,21 @@ def assert_supported(strategy_config) -> None:
             f"build the scale-out path first."
         )
     if getattr(strategy_config, "exec_secondary", False):
+        # 🔴 **THIS MESSAGE SAID "a 1-minute bar stream" UNTIL 2026-09-01 AND WAS WRONG.** The
+        # re-entry's fill clock is `exec_sec_fill_tf_min` and has been FIVE minutes by default
+        # since 2026-08-21 — it is the caller's choice either way, and `run_dual`'s parameter is
+        # still named `df1m` only because renaming a public parameter moves every caller. A
+        # refusal that names the wrong feed is worse than a vague one: it sends the next reader
+        # to build the wrong thing, confidently. The number is read off the config here for the
+        # same reason the feed is built off it — one setting, one place, every surface pointing
+        # at it.
+        mins = int(getattr(strategy_config, "exec_sec_fill_tf_min", 5) or 5)
         raise UnsupportedStrategyConfig(
-            "exec_secondary needs a 1-minute bar stream alongside the 15m one (run_dual). The "
-            "live runner drives a single timeframe. Turn it off, or build the dual feed."
+            f"exec_secondary needs a SECOND bar stream — a {mins}-minute one, per "
+            f"exec_sec_fill_tf_min — running alongside the strategy's own timeframe, and this "
+            f"bridge mirrors ONE entry limit and one ratcheting stop, so it has no path that "
+            f"places the re-entry's order. Turn it off, or build the second entry path. See "
+            f"docs/LIVE_TRADING_PIPELINE.md G18."
         )
     if getattr(strategy_config, "exec_scale_in", False):
         raise UnsupportedStrategyConfig(

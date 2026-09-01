@@ -108,6 +108,16 @@ _DECISION_EVENTS = {
     "order_orphaned",
     # a cancel the broker did not confirm, so the record was KEPT rather than cleared
     "cancel_unconfirmed",
+    # ── the re-entry's SHADOW records (G18 stage 1, 2026-09-01). The second bar feed runs and
+    # the bridge places nothing, so these say what a re-entry WOULD have done. They are
+    # decisions, not health: they answer "why was there a trade, or not", and the whole reason
+    # to write them down is that they are the only record of a stage nobody can read off a
+    # broker statement — no order was ever sent.
+    # ⚠ **`shadow` is in the NAME, not a flag.** A field can be dropped by a consumer that never
+    # heard of it, and a shadow fill read as a real one would put a trade in the book that never
+    # happened. The name cannot be dropped.
+    "secondary_shadow_fill",
+    "secondary_shadow_stop",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most
