@@ -56,6 +56,36 @@ def timeframe_for_minutes(minutes: int) -> str:
     )
 
 
+def fast_feed_timeframe(minutes, primary_timeframe: str) -> str:
+    """The fill clock's timeframe NAME, or raise the refusal a bot would die of at startup.
+
+    🔴 **THIS EXISTS SO THE PRE-DEPLOY CHECK AND THE RUNNER ASK THE SAME QUESTION (2026-09-01).**
+    Both refusals used to be inline in `runner._build_fast_feed`, which is only ever reached by
+    RESTARTING the bot — so `promote.py --dry-run` printed *"verified: the snapshot imports and
+    builds with the promoted parameters"* for a configuration that would kill it. That happened
+    for real on 2026-08-28: the re-entry was switched on, the promote reported verified, and the
+    bot would not come back up. **A promote's "verified" line means IMPORTS AND BUILDS, never
+    RUNS** — and the fix for that is not a better sentence, it is making the preview ask the
+    question the restart asks.
+
+    ⚠ **A second copy in the promote tool would have been the wrong fix**, and this repo has
+    already paid for that shape twice (two places independently deciding what a run loads;
+    `python_runner` and the floor check disagreeing). One function, two callers.
+
+    Raises the SAME exception types the runner raised inline, with the same wording:
+    `ValueError` for a duration MT5 has no timeframe for, `RuntimeError` for a clock that is not
+    strictly FASTER than the stream the strategy trades.
+    """
+    name = timeframe_for_minutes(minutes)
+    if timeframe_seconds(name) >= timeframe_seconds(primary_timeframe):
+        raise RuntimeError(
+            f"The re-entry's fill clock ({name}, {minutes}m) is not FASTER than the stream "
+            f"the strategy trades ({primary_timeframe}). A re-entry fills INSIDE one of "
+            f"those bars, so a stream at or below that resolution cannot express it."
+        )
+    return name
+
+
 def timeframe_seconds(name: str) -> int:
     try:
         return TIMEFRAMES[name][1]

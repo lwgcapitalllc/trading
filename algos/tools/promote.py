@@ -42,6 +42,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import types
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -53,6 +54,8 @@ for _p in (str(_REPO / "algos" / "live"),):
         sys.path.insert(0, _p)
 
 import live_config  # noqa: E402
+from bridge import UnsupportedStrategyConfig, assert_supported  # noqa: E402
+from feed import fast_feed_timeframe  # noqa: E402
 from live_config import deployed_record  # noqa: E402
 from version import current_commit, deployment_hash  # noqa: E402
 
@@ -301,6 +304,60 @@ def recover_interrupted(cfg) -> str:
     return ""
 
 
+def startup_refusals(startup: dict, primary_timeframe: str) -> list:
+    """Every reason a bot with this configuration would REFUSE TO START, as printable strings.
+
+    🔴 **A PROMOTE'S "verified" LINE MEANS IMPORTS AND BUILDS, NEVER RUNS — AND THAT COST A BOT
+    ON 2026-08-28.** The re-entry was switched on, `promote.py --dry-run` printed *"verified: the
+    snapshot imports and builds with the promoted parameters"*, and the bot would not come back
+    up: `bridge.assert_supported` refuses at RUNTIME, in the runner, which nothing before a
+    restart reaches. The bot was down until the setting was reverted. **The fix for a sentence
+    that overclaims is not a better sentence — it is making the preview ask the question the
+    restart asks.**
+
+    ⚠ **It answers off VALUES shipped from the verify subprocess, never off a live import.** The
+    staged snapshot holds no `algos/` tree, so the subprocess cannot import these rules; and this
+    parent must not import the STRATEGY, because doing so would satisfy itself from the repo
+    rather than from the snapshot — which is the whole reason `verify` runs out of process.
+
+    ⚠ **Returns a LIST rather than raising**, so the FEED problems are all named at once. ⚠ The
+    bridge's half contributes at most ONE entry, because `assert_supported` raises on the first
+    refusal exactly as the runner does — so a config with two bridge problems is reported, fixed,
+    and reported again. That is deliberate (the list must describe the restart, and a restart
+    stops at the first raise too), and it is written down here because "names every problem at
+    once" is what the shape of the return value suggests and it is not true.
+
+    ⚠ **A missing `startup` payload returns [] — and that is the honest answer, not a pass.** It
+    means an older snapshot's verify step did not ship one, so the question was NOT ASKED. The
+    caller says so; it must never print a clean bill of health on silence (rule 1).
+    """
+    if not startup:
+        return []
+    problems = []
+    cfg_ns = types.SimpleNamespace(**(startup.get("settings") or {}))
+    try:
+        assert_supported(cfg_ns)
+    except UnsupportedStrategyConfig as exc:
+        problems.append(str(exc))
+    if startup.get("fast_feed_error"):
+        problems.append(
+            f"asking the strategy how fast a second feed it needs raised "
+            f"{startup['fast_feed_error']}"
+        )
+    minutes = startup.get("fast_feed_minutes")
+    if minutes is not None:
+        try:
+            fast_feed_timeframe(minutes, primary_timeframe)
+        except (ValueError, RuntimeError) as exc:
+            problems.append(str(exc))
+        if not startup.get("has_make_dual_clock"):
+            problems.append(
+                f"the strategy asks for a {minutes}-minute fill clock but provides no "
+                f"make_dual_clock(), so there is nothing to merge the two streams with."
+            )
+    return problems
+
+
 def verify(cfg, root: Path) -> tuple[bool, str]:
     """Import the strategy out of `root` and build it with the promoted parameters.
 
@@ -357,7 +414,32 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
             if hasattr(holder, "_POSITION_FIELDS"):
                 pos_fields = list(holder._POSITION_FIELDS)
                 break
-        print("@@" + json.dumps({{"defaulted": defaulted, "position_fields": pos_fields}}))
+        # What a RESTART needs beyond importing. Shipped as VALUES, never as a verdict: the
+        # rules live in algos/live/ and `repo_trees` copies no algos/ tree at all, so bridge.py
+        # and feed.py do not exist inside this snapshot. The parent decides.
+        # ⚠ EVERY field is sent, not the handful a check reads today. A capability rule that
+        # grows a new field would otherwise take its `getattr` default here and pass on a value
+        # this bot does not hold - a check that is wrong in the direction of saying yes.
+        resolved = built.cfg if hasattr(built, "cfg") else cfg_cls(**params)
+        settings, opaque = {{}}, []
+        for name in sorted(fields):
+            v = getattr(resolved, name, None)
+            (settings.__setitem__(name, v) if v is None or isinstance(v, (bool, int, float, str))
+             else opaque.append(name))
+        try:
+            ask = getattr(built, "fast_feed_minutes", None)
+            fast_min, fast_err = (ask() if callable(ask) else None), None
+        except Exception as exc:
+            fast_min, fast_err = None, type(exc).__name__ + ": " + str(exc)
+        startup = {{
+            "settings": settings,
+            "opaque": opaque,
+            "fast_feed_minutes": fast_min,
+            "fast_feed_error": fast_err,
+            "has_make_dual_clock": callable(getattr(built, "make_dual_clock", None)),
+        }}
+        print("@@" + json.dumps({{"defaulted": defaulted, "position_fields": pos_fields,
+                                 "startup": startup}}))
     """)
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(root)
@@ -512,6 +594,37 @@ def main(argv=None) -> int:
         print("  verified: the snapshot imports and builds with the promoted parameters")
         report = json.loads(detail or "{}")
         defaulted = report.get("defaulted", {})
+        startup = report.get("startup") or {}
+        if not startup:
+            # Rule 1: NOT ASKED and NOTHING WRONG must not print the same way.
+            print(
+                "  ! this snapshot's verify step shipped no startup facts, so whether the bot "
+                "would START was NOT CHECKED (only that it imports and builds)."
+            )
+        else:
+            if startup.get("opaque"):
+                print(
+                    f"  ! {len(startup['opaque'])} setting(s) are not plain values and were not "
+                    f"carried into the startup check: {', '.join(startup['opaque'])}"
+                )
+            refusals = startup_refusals(startup, cfg.timeframe)
+            if refusals:
+                # 🔴 DELIBERATELY non-zero on a DRY RUN, unlike the open-position warning below.
+                # A preview that renders green for a config which kills the bot is the exact
+                # failure this check exists for, and the Command Center's verdict is the exit
+                # code (`if errorlevel 1`), never the prose.
+                print(
+                    f"\n  !! THIS CONFIGURATION WOULD NOT START. {len(refusals)} refusal(s) "
+                    f"the RESTART would hit, which importing and building cannot reach:"
+                )
+                for r in refusals:
+                    print(textwrap.indent("- " + r, "     "))
+                print(
+                    "\n  ! nothing was deployed. Fix the configuration, or promote a version "
+                    "that supports it."
+                )
+                shutil.rmtree(staging, ignore_errors=True)
+                return 1
         gap = open_position_gap(cfg, report.get("position_fields") or [])
         if gap:
             # 🔴 2026-08-26: a bot was promoted v168 -> v241 while holding a real trade. The

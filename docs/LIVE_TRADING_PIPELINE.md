@@ -1709,24 +1709,80 @@ not be softened until stage 2 lands.
 **TESTED:** `algos/tests/test_dual_feed_merge.py` — 11 tests driving the real runner methods, six
 mutations each reddening its own named test. 1,355 tests green across `algos/` and the strategy.
 
-**Stage 2 — the bridge places a second entry.**
-`assert_supported`'s three refusals all trace to one sentence: the bridge *"mirrors ONE entry limit
-and one ratcheting stop"*. A re-entry needs an entry limit at its own price with its own stop, rested
-on the faster clock and cancellable (`exec_sec_max_wait_bars`, `exec_sec_rest_and_leave`).
-⚠ **Dry run first — the runner already defaults to it and requires `--live` to be typed.** Run it
-alongside the live bot for a week and diff intended orders against what the lab says.
+**Stage 2 — the bridge places a second entry AND can bank part of a position.**
+A re-entry needs an entry limit at its own price with its own stop, rested on the faster clock and
+cancellable (`exec_sec_max_wait_bars`, `exec_sec_rest_and_leave`). ⚠ **The proof is OFFLINE — see
+the correction above; there is no "run it beside the live bot for a week" step, because the two
+share one position slot.**
 
-**Stage 3 — turn the refusal into a CAPABILITY check.**
+🔴 **AND IT IS BIGGER THAN "ONE MORE ORDER". THE SCOPE WAS RE-READ 2026-09-01 AND THE PLAN ABOVE
+UNDERSTATED IT THREE WAYS.**
+
+1. 🔴 **THE RE-ENTRY BANKS AT A PRICE, AND THE BRIDGE HAS NO EXIT PATH OF ANY KIND.** Its only
+   order calls are `place_pending_limit`, `modify_pending`, `cancel_pending` and `move_sl` — every
+   exit reaches the broker as a STOP MOVE. The shipped re-entry takes **100%** off at its target
+   under the reclaim trigger (`exec_rec_tp1_pct`) and **50%** under the gap trigger
+   (`exec_sec_tp1_pct` — the live bot's stated value). So placing the ENTRY is not enough: the
+   scale-out would have nowhere to go, the bot would RIDE where the lab BANKED, and the two books
+   would part company with nothing saying why. **That is the precise divergence
+   `assert_supported` was written to prevent, and it would have shipped through it** — the check
+   read `exec_tp1_pct`/`exec_tp2_pct` only, which are 0 on this bot.
+2. **The re-entry's stop would never ratchet.** `bridge.sync` is called from exactly one place,
+   `_settle_primary`, so the broker is reconciled on 15m closes only — while the re-entry is
+   managed on the fill clock. Its stop would sit still between primary closes while the emulator
+   moved it.
+3. **`_observe_orphans` cancels every resting order the bridge has no record of**, and `_rest` is
+   keyed by DIRECTION rather than by intent — so a second long limit collides with the primary's
+   on the same key and would be swept within a bar.
+
+**Either the bridge learns to bank part of a position, or the re-entry's own banking goes to zero
+and is re-measured.** The second is cheaper and is a strategy decision, not a tidy-up: `+32.50R
+over 44 trades` was measured WITH the bank, so the figure does not survive turning it off.
+
+✅ **The check that would have caught it is in place** — `bridge.price_triggered_banks` now mirrors
+`execution.Execution._tp1_pct` branch for branch, so no rung can reach a live bot unmirrored. It
+found a second, unrelated hole while landing: **`exec_short_hold` was reachable today.** One
+boolean on the armed bot, `exec_sh_tp1_pct` defaulting to **100**, and nothing refused it — the bot
+would have STARTED and ridden every trade past a target its backtest closed at.
+
+🔴 **AND "STAGE 2 IS THE SHARED UNLOCK FOR ALL THREE REFUSALS" IS WRONG — IT WAS TESTED RATHER
+THAN REPEATED (2026-09-01).** There are **FOUR** refusals, not three (`fill_model` is the fourth
+and traces to something else entirely), and stage 2 unlocks **one**:
+
+| refusal | what it actually needs | stage 2? |
+|---|---|---|
+| `exec_secondary` | a second resting entry, its own stop, on the fast clock — **plus the exit path above** | ✅ yes |
+| partial take-profits | an EXIT path the bridge does not have at all | ⚠ shares the exit half only |
+| `exec_scale_in` | an entry placed WHILE a position is open in the SAME direction, a MARKET order path (the bridge has none), and the unbuilt allocator (G10) | ❌ no |
+| `fill_model` | nothing — it is a backtest cost model, refused for its own reason | ❌ n/a |
+
+**Stage 3 — turn the refusal into a CAPABILITY check. ✅ SECOND HALF LANDED 2026-09-01.**
 `assert_supported` should stop asking *"is this setting on"* and start asking *"do I have the feed
-this configuration needs"*. Until stage 2 lands it must keep refusing — **the refusal is correct
-and must not be softened to get a bot started.**
-✅ **And the check has to run BEFORE the restart.** `promote_preview` should exercise the same
-startup path it claims to verify, so a configuration that cannot start is refused while the bot is
-still happily running. That is the fix for the trap at the top of this gap.
+this configuration needs"*. ⚠ **That half is BLOCKED on stage 2 and must keep refusing until then —
+the refusal is correct and must not be softened to get a bot started.**
+
+✅ **The half that could land has: the preview now exercises the startup path it claims to
+verify.** `promote.py --dry-run` printed *"verified"* for the configuration that killed the bot on
+2026-08-28, because importing and building is not running and every startup refusal lives in
+`algos/live/`, which the staged snapshot does not even contain. Now:
+
+- the verify subprocess ships the FACTS (every config field as a plain value, the fill clock the
+  strategy asks for, whether it can merge two streams) on its existing `@@` line — ⚠ **every
+  field, not the handful a rule reads today**, or a rule that grows a field would read a `getattr`
+  default and be wrong in the direction of saying yes;
+- the parent applies the rules, which it can because it already has `algos/live/` importable;
+- ⚠ **it returns NON-ZERO on a dry run**, deliberately unlike the open-position warning beside it
+  — the Command Center's verdict is the exit code, so a preview that only prints renders green;
+- ⚠ **a snapshot that ships no startup facts prints "NOT CHECKED" rather than passing** (rule 1).
+
+⚠ **Both feed refusals moved into `feed.fast_feed_timeframe`, and the runner now calls it too.**
+They were inline in `runner._build_fast_feed`, and inline meant only a restart could reach them. A
+copy in the promote tool would have drifted the first time either moved — this repo has paid for
+that shape twice already.
 
 **Stage 4 — enable on demo, measure, then decide.**
 Demo only, one bot, and compare live decisions against the lab on the same bars before it goes near
-anything else.
+anything else. ⚠ **Blocked on stage 2, and on the banking decision above.**
 
 #### What must stay true throughout
 
@@ -1735,6 +1791,5 @@ anything else.
   described that way.
 - ⚠ **Do not soften `assert_supported` to make a bot start.** It exists because a silently
   mis-executed strategy diverges from every backtest with nothing saying why.
-- ⚠ **`exec_tp1_pct` / `exec_tp2_pct` and `exec_scale_in` are refused for the SAME underlying
-  reason** (one entry limit, one stop). Stage 2 is the shared unlock; whoever does it should read
-  all three refusals together rather than fixing one.
+- 🔴 **Read all FOUR refusals before touching one, but do not assume one change clears them** —
+  the table above is the measured version of the claim that used to sit here.

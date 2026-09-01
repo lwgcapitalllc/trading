@@ -393,7 +393,7 @@ def test_partial_take_profits_are_refused_not_ignored():
     cfg = types.SimpleNamespace(
         exec_tp1_pct=30.0, exec_tp2_pct=40.0, exec_secondary=False, fill_model="bar"
     )
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="partial take-profits"):
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="bank size AT A PRICE"):
         live_bridge.assert_supported(cfg)
 
 
@@ -410,6 +410,119 @@ def test_the_shipped_config_is_supported():
         exec_tp1_pct=0.0, exec_tp2_pct=0.0, exec_secondary=False, fill_model="bar"
     )
     live_bridge.assert_supported(cfg)  # no raise
+
+
+# ── the banking rungs the old check could not see (2026-09-01) ────────────────
+#
+# 🔴 `assert_supported` read `exec_tp1_pct`/`exec_tp2_pct` only — the LAST branch of
+# `execution.Execution._tp1_pct`. Three branches above it were invisible to it, and all three
+# default to banking 100%.
+#
+# ⚠ **All nine tests below were watched RED against the bridge as it stood before 2026-09-01,
+# and the reds are NOT the same strength — say which is which rather than counting them.**
+#   - `test_the_short_hold_variant_is_refused` failed with **DID NOT RAISE**. That is the real
+#     one: `exec_short_hold` is a single boolean on a bot that is armed today, nothing refused
+#     it, and the bot would have STARTED and ridden every trade past a target the backtest
+#     banked 100% at.
+#   - The two re-entry refusals failed on the MESSAGE, not on the refusal — the old bridge
+#     already refused that config for having no second feed. They pin that the banking reason
+#     SURVIVES once G18 stage 2 relaxes the feed refusal, which is the moment it starts
+#     mattering. A weaker red, and worth nothing if read as the first kind.
+#   - The rest exercise `price_triggered_banks` directly, so against HEAD they fail on the
+#     function not existing. Weakest red there is, so they were proved by MUTATION instead —
+#     six mutations, each reddening its own named test, none surviving:
+#
+#       mutation                                       went red
+#       ---------------------------------------------  ------------------------------------------
+#       short-hold branch deleted                      short_hold_variant + short_hold_REPLACES
+#       short-hold ADDS instead of REPLACING           short_hold_REPLACES
+#       reclaim branch deleted                         reclaim_re_entry + combined_trigger
+#       gap/shift branch deleted                       gap_re_entrys + combined_trigger
+#       -1.0 no longer means INHERIT                   INHERITS_a_zero_rung + second_rungs_MULTIPLE
+#       the second rung's MULTIPLE treated as a bank   second_rungs_MULTIPLE
+
+
+def _shipped(**over):
+    """The live bot's own exit-related settings, so a test says what it CHANGED."""
+    cfg = dict(
+        exec_tp1_pct=0.0,
+        exec_tp2_pct=0.0,
+        fill_model="bar",
+        exec_short_hold=False,
+        exec_sh_tp1_pct=100.0,
+        exec_secondary=False,
+        exec_sec_trigger="Reclaim Entry",
+        exec_sec_tp1_pct=50.0,
+        exec_rec_tp1_pct=100.0,
+    )
+    cfg.update(over)
+    return types.SimpleNamespace(**cfg)
+
+
+def test_the_short_hold_variant_is_refused():
+    """One boolean, and the whole position is meant to come off at 2R. The bridge can only move a
+    stop, so nothing would come off — and before this check the bot STARTED."""
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_sh_tp1_pct=100"):
+        live_bridge.assert_supported(_shipped(exec_short_hold=True))
+
+
+def test_short_hold_REPLACES_the_shared_rung_rather_than_adding_to_it():
+    """`_tp1_pct` reads one or the other, never both. Naming both would send the reader to set a
+    field that is not being read."""
+    banks = live_bridge.price_triggered_banks(_shipped(exec_short_hold=True, exec_tp1_pct=30.0))
+    assert [name for name, _ in banks] == ["exec_sh_tp1_pct"]
+
+
+def test_the_reclaim_re_entry_banks_everything_and_is_refused():
+    """The shipped re-entry trigger. `exec_rec_tp1_pct` is 100 — the whole position off at its
+    target, no runner — and it is the configuration that measured 6,740x in the lab."""
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_rec_tp1_pct=100"):
+        live_bridge.assert_supported(_shipped(exec_secondary=True))
+
+
+def test_the_gap_re_entrys_half_bank_is_refused():
+    """G18 stage 2's real scope: placing the re-entry's ENTRY is not enough while half of it is
+    meant to come off at the first target with nowhere to go."""
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_sec_tp1_pct=50"):
+        live_bridge.assert_supported(_shipped(exec_secondary=True, exec_sec_trigger="FVG in zone"))
+
+
+def test_a_combined_trigger_names_BOTH_rungs():
+    """'FVG in zone + Reclaim Entry' runs both halves, and they bank different percentages off
+    different fields. A refusal naming one would be fixed by setting one and refused again."""
+    banks = live_bridge.price_triggered_banks(
+        _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone + Reclaim Entry")
+    )
+    assert sorted(name for name, _ in banks) == ["exec_rec_tp1_pct", "exec_sec_tp1_pct"]
+
+
+def test_a_re_entry_that_INHERITS_a_zero_rung_is_not_a_banking_refusal():
+    """-1.0 means 'inherit the shared field', which is 0 here — so nothing banks and this must
+    fall through to the SECOND-FEED refusal instead. A check that refuses everything is not a
+    check."""
+    cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone", exec_sec_tp1_pct=-1.0)
+    assert live_bridge.price_triggered_banks(cfg) == []
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
+        live_bridge.assert_supported(cfg)
+
+
+def test_the_second_rungs_MULTIPLE_alone_does_not_refuse():
+    """`exec_sec_tp2_x` moves where the second rung sits; how much comes off there is
+    `exec_tp2_pct` alone. At 0 nothing banks whatever the multiple says."""
+    cfg = _shipped(
+        exec_secondary=True,
+        exec_sec_trigger="FVG in zone",
+        exec_sec_tp1_pct=-1.0,
+        exec_sec_tp2_x=2.0,
+    )
+    assert live_bridge.price_triggered_banks(cfg) == []
+
+
+def test_the_live_bots_own_config_still_passes():
+    """The bot that is ARMED right now. If this reddens, a guard has started refusing a
+    configuration that is trading — read that before changing the test."""
+    assert live_bridge.price_triggered_banks(_shipped()) == []
+    live_bridge.assert_supported(_shipped())  # no raise
 
 
 # ── placing and maintaining a resting limit ───────────────────────────────────

@@ -760,6 +760,17 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1
   the same sentence is why partial take-profits and scale-in are refused — read the three refusals
   together. ⚠ The refusal fires at strategy construction, BEFORE the second feed is built, so no
   bot drives two frames today. See `docs/LIVE_TRADING_PIPELINE.md` → G18.
+- 🔴 **AND THIS LADDER IS THE SECOND BLOCKER, NOT JUST THE FEED (2026-09-01).** The bridge has NO
+  exit path at all — every exit reaches the broker as a stop move — while the re-entry banks
+  **100%** at its target under the reclaim trigger (`exec_rec_tp1_pct`) and **50%** under the gap
+  trigger (`exec_sec_tp1_pct`). So placing the re-entry's ENTRY is not enough: the scale-out would
+  have nowhere to go and the bot would RIDE where this file's numbers BANKED. ⚠ **Either the bridge
+  learns to bank, or `exec_sec_tp1_pct` / `exec_rec_tp1_pct` go to 0 and every re-entry figure here
+  is re-measured** — `+32.50R over 44 trades` was measured WITH the bank and does not survive
+  turning it off. ⚠ **`exec_short_hold` had the same shape and was reachable TODAY** (its
+  `exec_sh_tp1_pct` defaults to 100 and nothing refused it); `bridge.price_triggered_banks` now
+  mirrors `Execution._tp1_pct` branch for branch, so **re-read it against this ladder whenever a
+  rung changes.**
 
 ### Reclaim Entry, and the combined value that runs it beside the gap
 

@@ -121,6 +121,48 @@ strategy's defaults say.
 because importing and building is not running. The refusal lives in the runner, so the first thing
 that tests it is the restart, by which point the bot is down.
 ⚠ **A promote's "verified" line means IMPORTS AND BUILDS, never RUNS.** Read it that way.
+
+✅ **CLOSED 2026-09-01 — the preview now asks the question the RESTART asks.** `promote.py`'s
+verify subprocess ships the startup FACTS on its existing `@@` line and the parent applies the
+rules, which it can because it already has `algos/live/` importable while the staged snapshot has
+no `algos/` tree at all. ⚠ **Every config field travels, not the handful a rule reads today** — a
+rule that grows a field would otherwise take its `getattr` default and be wrong in the direction
+of saying yes. ⚠ **It returns NON-ZERO on a dry run**, deliberately unlike the open-position
+warning beside it: the Command Center's verdict is the exit code, so a check that only prints
+renders green. ⚠ **A snapshot shipping no startup facts prints "NOT CHECKED" rather than passing**
+— rule 1, one level up: *was not asked* and *nothing wrong* must not read the same. ⚠ **Both feed
+refusals moved into `feed.fast_feed_timeframe` and the RUNNER calls it too** — a copy in the
+promote tool would have drifted the first time either moved. Tests drive the real `verify()`
+subprocess against a real staged snapshot, because a hand-written payload would only prove the
+parser reads my own dict.
+
+## 🔴 The bridge could not bank at a price, and only two of the six rungs were refused (2026-09-01)
+
+**`assert_supported` read `exec_tp1_pct`/`exec_tp2_pct` and nothing else — which is the LAST branch
+of `execution.Execution._tp1_pct`.** Three branches above it were invisible to it and all three
+default to banking **100%**. **The bridge has no exit path of any kind**: its only order calls are
+`place_pending_limit`, `modify_pending`, `cancel_pending` and `move_sl`, so every exit reaches the
+broker as a stop move and any rung that takes size off at a PRICE simply never happens.
+
+🔴 **ONE OF THEM WAS REACHABLE ON THE ARMED BOT TODAY.** `exec_short_hold` is a single boolean;
+turning it on replaces the primary's first rung with `exec_sh_tp1_pct`, default **100** — the whole
+position off at the R target. Nothing refused it, so the bot would have **STARTED** and ridden
+every trade past a target its own backtest closed at. **Watched RED with DID NOT RAISE**, which is
+the strongest red available and the reason this is written as an incident rather than a hardening.
+
+⚠ **The other two matter for G18 stage 2**: the re-entry banks 100% under the reclaim trigger
+(`exec_rec_tp1_pct`) and 50% under the gap trigger (`exec_sec_tp1_pct`, the live bot's stated
+value). **So stage 2 is not "place one more order"** — the entry can be placed and the scale-out
+would still have nowhere to go. Either the bridge learns to bank, or the re-entry's banking goes to
+zero and the `+32.50R` is re-measured without it.
+
+✅ **`price_triggered_banks` MIRRORS `_tp1_pct` branch for branch and must be re-read against it
+when that changes.** It returns a LIST of `(field, percent)` rather than a bool, so the refusal
+names the fields — *"partial take-profits are on"* sends nobody anywhere. ⚠ **`exec_sec_tp2_x` is
+deliberately NOT listed**: it moves where the second rung sits, while how much comes off there is
+`exec_tp2_pct` alone. ⚠ **`assert_supported` still raises on the FIRST problem**, so the preview's
+list carries at most one bridge refusal — written down because the list shape suggests otherwise.
+Six mutations, each reddening its own named test, none surviving.
 ⚠ **The same limitation is why `compare_strategy.py` can never gate the re-entry** (single frame,
 no fill clock) and why `mpc_bleg` and `mpc_bos` pin it off. Three places had already recorded this
 shape; the live runner was the fourth and nobody had asked it.

@@ -76,8 +76,7 @@ from alert_format import alert, joined, money  # noqa: E402
 from bridge import BridgeState, OrderBridge, assert_supported  # noqa: E402
 from feed import (  # noqa: E402
     BarFeed,
-    timeframe_for_minutes,
-    timeframe_seconds,
+    fast_feed_timeframe,
 )
 from fleet_halt import read_fleet_halt  # noqa: E402  (algos/shared/fleet_halt.py)
 from ledger import Ledger  # noqa: E402
@@ -508,13 +507,12 @@ class LiveRunner:
         minutes = self._fast_feed_minutes(scfg)
         if minutes is None:
             return None
-        name = timeframe_for_minutes(minutes)
-        if timeframe_seconds(name) >= self.feed.bar_seconds:
-            raise RuntimeError(
-                f"The re-entry's fill clock ({name}, {minutes}m) is not FASTER than the stream "
-                f"the strategy trades ({self.cfg.timeframe}). A re-entry fills INSIDE one of "
-                f"those bars, so a stream at or below that resolution cannot express it."
-            )
+        # ⚠ **Both refusals live in `feed.fast_feed_timeframe`, not here (2026-09-01).** They were
+        # inline, and inline meant only a RESTART could reach them — so `promote.py --dry-run`
+        # blessed a config that killed the bot on 2026-08-28. `algos/tools/promote.py` now asks
+        # the same function before the swap. One rule, two callers; a copy in the promote tool
+        # would drift the first time either moved.
+        name = fast_feed_timeframe(minutes, self.cfg.timeframe)
         self.log.info(
             f"Re-entry fill clock: {name} — a second bar stream beside {self.cfg.timeframe}."
         )

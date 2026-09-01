@@ -89,20 +89,91 @@ class UnsupportedStrategyConfig(RuntimeError):
     """The strategy is configured to do something the live bridge cannot mirror."""
 
 
+def price_triggered_banks(strategy_config) -> list:
+    """Every setting asking for size to come off AT A PRICE, as `(field, percent)` pairs.
+
+    🔴 **THE BRIDGE HAS NO EXIT PATH AT ALL.** Its only order calls are `place_pending_limit`,
+    `modify_pending`, `cancel_pending` and `move_sl` — every exit reaches the broker as a STOP
+    MOVE. So any rung that banks a percentage when a price is touched is unmirrorable, and a bot
+    that runs one trades a book its own backtest does not: it rides where the lab banked.
+
+    🔴 **THIS FUNCTION EXISTS BECAUSE THE OLD CHECK READ TWO FIELDS AND THE STRATEGY READS SIX
+    (found 2026-09-01).** `assert_supported` tested `exec_tp1_pct` / `exec_tp2_pct` only, which
+    is the LAST branch of `execution.Execution._tp1_pct` — the three branches above it were
+    invisible to it. Two of them are reachable by flipping ONE setting on the live bot:
+
+      - `exec_short_hold` ON replaces the primary's first rung with `exec_sh_tp1_pct`, whose
+        default is **100** — the whole position off at the R target, no runner. Nothing refused
+        it, so the bot would have STARTED and silently ridden every trade past its target.
+      - `exec_secondary` ON gives the re-entry its own rung: `exec_rec_tp1_pct` (default **100**)
+        under a reclaim trigger, `exec_sec_tp1_pct` (**50** on this bot) otherwise. This is the
+        one that matters for G18 stage 2 — placing the re-entry's ENTRY is not enough, because
+        its 50% scale-out has nowhere to go.
+
+    ⚠ **It MIRRORS `Execution._tp1_pct` branch for branch and must be re-read against it when
+    that changes.** The branches, in the strategy's own order: a secondary reads its own
+    percentage (reclaim source vs any other), `-1.0` means inherit the shared `exec_tp1_pct`; a
+    primary under `exec_short_hold` reads `exec_sh_tp1_pct`; everything else reads the shared
+    field. Which triggers count as the reclaim is `config.py`'s own `rec_on` test.
+
+    ⚠ **`exec_sec_tp2_x` is deliberately NOT listed.** It moves where the second rung SITS; how
+    much comes off there is `exec_tp2_pct` alone (`execution.py` — `p2 = qty * exec_tp2_pct/100`),
+    so at `exec_tp2_pct = 0` nothing banks there whatever the multiple says.
+
+    Returns [] for a configuration the bridge can mirror. A LIST rather than a bool so the
+    refusal can name the fields — "partial take-profits are on" sends nobody anywhere.
+    """
+
+    def g(name, default):
+        return getattr(strategy_config, name, default)
+
+    shared_tp1 = float(g("exec_tp1_pct", 0) or 0)
+    shared_tp2 = float(g("exec_tp2_pct", 0) or 0)
+    found = []
+
+    # ── the PRIMARY's rungs ────────────────────────────────────────────────────────────────
+    if g("exec_short_hold", False):
+        # REPLACES the shared first rung for a primary, so the shared field is not also read.
+        sh = float(g("exec_sh_tp1_pct", 100.0) or 0)
+        if sh:
+            found.append(("exec_sh_tp1_pct", sh))
+    elif shared_tp1:
+        found.append(("exec_tp1_pct", shared_tp1))
+    if shared_tp2:
+        found.append(("exec_tp2_pct", shared_tp2))
+
+    # ── the RE-ENTRY's own rung, gated exactly as `config.py` gates it ─────────────────────
+    if g("exec_secondary", False):
+        trigger = g("exec_sec_trigger", "Reclaim Entry")
+        if trigger in ("Reclaim Entry", "FVG in zone + Reclaim Entry"):
+            own = float(g("exec_rec_tp1_pct", 100.0))
+            pct = shared_tp1 if own == -1.0 else own
+            if pct:
+                found.append(("exec_rec_tp1_pct", pct))
+        if trigger in ("FVG in zone", "Structure shift", "FVG in zone + Reclaim Entry"):
+            own = float(g("exec_sec_tp1_pct", -1.0))
+            pct = shared_tp1 if own == -1.0 else own
+            if pct:
+                found.append(("exec_sec_tp1_pct", pct))
+    return found
+
+
 def assert_supported(strategy_config) -> None:
     """Refuse a configuration the bridge would silently mis-execute.
 
     Better to not start than to run a strategy whose scale-outs quietly never happen — the
     equity curve would diverge from every backtest and nothing would say why.
     """
-    tp1 = float(getattr(strategy_config, "exec_tp1_pct", 0) or 0)
-    tp2 = float(getattr(strategy_config, "exec_tp2_pct", 0) or 0)
-    if tp1 or tp2:
+    banks = price_triggered_banks(strategy_config)
+    if banks:
+        named = ", ".join(f"{name}={pct:g}" for name, pct in banks)
         raise UnsupportedStrategyConfig(
-            f"exec_tp1_pct={tp1} / exec_tp2_pct={tp2} configure partial take-profits, which the "
-            f"live bridge does not place yet — it mirrors one entry limit and one ratcheting "
-            f"stop. Set both to 0 (the shipped default: bank nothing, ride the runner), or "
-            f"build the scale-out path first."
+            f"{named} — these bank size AT A PRICE, and the live bridge does not place an exit "
+            f"of any kind: it mirrors one entry limit and one ratcheting stop, so every exit "
+            f"reaches the broker as a stop move. Left unrefused the bot would RIDE where the "
+            f"backtest BANKED, and nothing would say why the two disagree. Set them to 0 (the "
+            f"shipped default: bank nothing, ride the runner), or build the scale-out path "
+            f"first. See docs/LIVE_TRADING_PIPELINE.md G18."
         )
     if getattr(strategy_config, "exec_secondary", False):
         # 🔴 **THIS MESSAGE SAID "a 1-minute bar stream" UNTIL 2026-09-01 AND WAS WRONG.** The
