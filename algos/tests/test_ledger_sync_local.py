@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -600,3 +601,114 @@ def test_a_dry_run_is_still_allowed_from_anywhere_and_writes_NOTHING(box):
 
     landed = list((box / "algos" / "ledger_archive").rglob("*.jsonl"))
     assert landed == [], f"a dry run left files in the working tree: {landed}"
+
+
+# ---------------------------------------------------------------------------
+# The alarm says a thing ONCE (2026-08-28).
+#
+# 🔴 Eight identical alerts arrived overnight while the backup conflicted with itself hourly.
+# The reason line (2026-08-27) told the reader what to do; nothing stopped it telling them eight
+# times, and an alarm that repeats itself hourly teaches people to scroll past it.
+#
+# ⚠ The suppression is only safe because RECOVERY speaks. Half these cases are about what must
+# still be said — a changed cause, a daily reminder, an unreadable state file, and the all-clear.
+# A de-duplicator with no recovery message turns silence into two different facts.
+# ---------------------------------------------------------------------------
+
+NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+
+
+def _said(reason, state, now=NOW):
+    send, prefix, keep = ls.alert_decision(reason, state, now)
+    return send, prefix, keep
+
+
+def test_the_same_failure_twice_running_speaks_ONCE():
+    """Watched RED against HEAD: the old code alerted on every failing run, unconditionally."""
+    first_send, _, keep = _said("the rebase failed", {})
+    assert first_send
+
+    again, _, _ = _said("the rebase failed", keep, NOW + timedelta(hours=1))
+    assert not again, "the second identical failure must stay quiet"
+
+
+def test_a_DIFFERENT_cause_always_speaks_however_recent_the_last_one():
+    """A different cause needs a different action, so it can never be a duplicate.
+
+    Mutation guard: suppressing on "a message was sent recently" rather than on the REASON
+    reddens this, and that is the version that silently loses the message that mattered.
+    """
+    _, _, keep = _said("the rebase failed", {})
+
+    send, _, _ = _said("the remote refused the push", keep, NOW + timedelta(minutes=1))
+    assert send
+
+
+def test_an_UNCHANGED_failure_says_itself_again_after_a_day():
+    """A problem nobody fixed must not fall silent forever — once a day, with its age."""
+    _, _, keep = _said("the rebase failed", {})
+
+    send, prefix, _ = _said("the rebase failed", keep, NOW + timedelta(hours=25))
+    assert send
+    assert "STILL FAILING" in prefix
+    assert "25 hours" in prefix, f"the reminder must say how long: {prefix}"
+
+
+def test_RECOVERY_speaks_exactly_once_and_then_says_nothing():
+    """🔴 The case that makes suppression safe at all.
+
+    Without it, silence means either "fixed" or "still broken, not worth mentioning", and the
+    reader has to go and look — which is the work the alarm exists to save.
+
+    Mutation guard: deleting the recovery branch reddens the first assertion only, which is why
+    the second one is here too.
+    """
+    _, _, failed = _said("the rebase failed", {})
+
+    send, prefix, keep = _said(None, failed, NOW + timedelta(hours=2))
+    assert send
+    assert "RECOVERED" in prefix
+    assert keep == {}, "a cleared alarm must forget, or it announces recovery forever"
+
+    again, _, _ = _said(None, keep, NOW + timedelta(hours=3))
+    assert not again
+
+
+def test_a_backup_that_was_never_broken_says_NOTHING():
+    """Mutation guard: announcing recovery unconditionally makes every healthy hour a message."""
+    send, _, _ = _said(None, {})
+    assert not send
+
+
+def test_a_state_file_it_CANNOT_READ_speaks(tmp_path):
+    """'I cannot tell whether I already said this' is not 'I already said this'.
+
+    Of the two wrong answers, one extra message is recoverable and a swallowed first alert is
+    not. `read_alert_state` returns None for unreadable, `{}` for nothing recorded — collapsing
+    those two is this repo's first rule broken where it would be silent.
+    """
+    corrupt = tmp_path / "state.json"
+    corrupt.write_text("{not json at all")
+    assert ls.read_alert_state(corrupt) is None
+
+    send, _, _ = _said("the rebase failed", None)
+    assert send
+
+
+def test_a_record_git_IGNORES_alerts_even_when_nothing_is_pending(box, alerts, monkeypatch):
+    """🔴 This path returned 1 in SILENCE until 2026-08-28.
+
+    An ignored record can never be backed up at all — the worst outcome this job has — and it was
+    the one case that never reached the alarm, because an ignored file is not "changed" so
+    nothing was left pending to fail on.
+
+    Watched RED against HEAD: the alert list there is empty.
+    """
+    monkeypatch.setattr(ls, "pending", lambda paths: [])
+    monkeypatch.setattr(ls, "ignored", lambda paths: list(paths))
+
+    rc = ls.main(["--local", "--alert-on-failure"])
+
+    assert rc == 1
+    assert len(alerts) == 1, f"an unbackupable record said nothing: {alerts}"
+    assert "IGNORE" in alerts[0]

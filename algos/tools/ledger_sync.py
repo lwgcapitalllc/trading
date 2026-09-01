@@ -78,7 +78,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -466,6 +466,114 @@ def _push() -> tuple[bool, str]:
     return False, f"the rebase worked but the remote refused the push: {detail[:200]}"
 
 
+# How long an UNCHANGED failure stays quiet before it says itself again. A day, so a problem
+# nobody fixed is still raised once a day rather than never.
+REMINDER_AFTER = timedelta(hours=24)
+
+
+def alert_state_path() -> Path:
+    """Where the alarm remembers what it has already said. Git-ignored per-machine runtime
+    state, exactly like `algos/monitor_state.json` beside it.
+
+    ⚠ **A function, not a module constant, so it follows `REPO_ROOT`.** A constant is bound at
+    import and would keep pointing at the developer's real checkout however the caller is set
+    up — which means every test would write its scratch state into the working tree, and a test
+    that writes a fixed real path is the worst failure shape a suite has.
+    """
+    return REPO_ROOT / "algos" / "ledgersync_alert_state.json"
+
+
+def read_alert_state(path: Path = None):
+    """What the alarm last said, `{}` if nothing, or **None if it could not be read**.
+
+    ⚠ The three-way return is the point. "No failure recorded" and "I cannot tell you whether a
+    failure was recorded" are different facts, and collapsing them is this repo's first rule
+    broken in the one place it would be silent — an unreadable state file would mean the alarm
+    quietly decides it has already spoken.
+    """
+    path = path or alert_state_path()
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception:  # noqa: BLE001 - unreadable, corrupt, wrong type: all mean "cannot ask"
+        return None
+
+
+def alert_decision(reason: Optional[str], state, now: datetime) -> tuple:
+    """Should this run speak, and what should it say first? `(send, prefix, next_state)`.
+
+    🔴 **This exists because eight identical alerts arrived overnight on 2026-08-28 and the
+    reader learned there was nothing in them to read.** The job fails hourly, and an hourly
+    repetition of one sentence is how an alarm teaches people to scroll past it — which is the
+    only thing an unattended job's alarm cannot afford.
+
+    ⚠ **Suppression is only safe because RECOVERY also speaks.** Without the cleared message,
+    silence would mean either "fixed" or "still broken, just not worth mentioning", and the
+    reader would have to go and look — which is the work the alarm exists to save. Never remove
+    the cleared branch to make this quieter.
+
+    ⚠ **A CHANGED reason always speaks**, however recently the last one did. A different cause
+    needs a different action, and the whole point of carrying the reason is lost if the second
+    one is swallowed as a duplicate of the first.
+
+    ⚠ **An unreadable state file speaks.** Of the two wrong answers, one extra message is
+    recoverable and a swallowed first alert is not.
+
+    `reason=None` means the record reached origin. `state=None` means it could not be read.
+    """
+    prev = state if isinstance(state, dict) else {}
+    prev_reason = prev.get("reason")
+
+    if reason is None:
+        # Recovered. Say so exactly once, and only if a failure was actually announced — a
+        # backup that has been fine all along must never send anything.
+        if prev_reason:
+            return True, "RECOVERED — the backup is reaching origin again.", {}
+        return False, "", {}
+
+    first_seen = prev.get("first_seen") if prev_reason == reason else now.isoformat()
+    keep = {"reason": reason, "first_seen": first_seen, "last_alert_at": now.isoformat()}
+
+    if state is None:
+        return True, "", keep
+    if prev_reason != reason:
+        return True, "", keep
+
+    last = prev.get("last_alert_at")
+    try:
+        due = last is None or (now - datetime.fromisoformat(last)) >= REMINDER_AFTER
+    except (TypeError, ValueError):
+        due = True  # An unparseable timestamp is "cannot ask", so it speaks.
+    if due:
+        hours = _hours_since(first_seen, now)
+        since = f" for {hours} hours" if hours is not None else ""
+        return True, f"STILL FAILING{since}, unchanged since the first message.", keep
+
+    # Quiet: same cause, already said today. The commit is still safe locally and the next run
+    # will try again.
+    return False, "", {**keep, "last_alert_at": prev.get("last_alert_at")}
+
+
+def _hours_since(iso: Optional[str], now: datetime) -> Optional[int]:
+    try:
+        return int((now - datetime.fromisoformat(iso)).total_seconds() // 3600)
+    except (TypeError, ValueError):
+        return None
+
+
+def write_alert_state(state: dict, path: Path = None) -> None:
+    """Record what was said. Never raises — a backup must not fail over its own scratch file."""
+    path = path or alert_state_path()
+    try:
+        if state:
+            path.write_text(json.dumps(state), encoding="utf-8")
+        elif path.exists():
+            path.unlink()
+    except Exception as e:  # noqa: BLE001 - reported, never raised
+        print(f"  (could not record the alert state: {e})")
+
+
 def _alert(message: str) -> None:
     """Tell the health channel this job failed. Never raises, whatever happens.
 
@@ -487,6 +595,36 @@ def _alert(message: str) -> None:
         send_telegram(message, kind=HEALTH)
     except Exception as e:  # noqa: BLE001 - reported, never raised
         print(f"  (could not send the failure alert: {e})")
+
+
+def _blocked_reason(blocked: list) -> str:
+    named = ", ".join(str(p.relative_to(REPO_ROOT)) for p in blocked[:3])
+    return (
+        f"git is configured to IGNORE {named}, so it can never be backed up at all — "
+        "that needs a .gitignore change, not a retry"
+    )
+
+
+def _maybe_alert(reason: Optional[str], where: str, staged: int, enabled: bool) -> None:
+    """Send, suppress or CLEAR the health message for this run. `reason=None` means it worked.
+
+    ⚠ Called on the good paths too, not only the bad ones. A recovery has to be announced or
+    suppression is not safe — see `alert_decision`.
+    """
+    if not enabled:
+        return
+    now = datetime.now(timezone.utc)
+    send, prefix, keep = alert_decision(reason, read_alert_state(), now)
+    if send and reason is None:
+        _alert(f"Ledger backup {prefix} ({where})")
+    elif send:
+        head = f"{prefix}\n" if prefix else ""
+        _alert(
+            f"{head}Ledger backup did NOT reach origin ({where}).\n"
+            f"{staged} file(s) committed locally; the record is on one disk until this clears.\n"
+            f"Why: {reason}"
+        )
+    write_alert_state(keep)
 
 
 def main(argv=None) -> int:
@@ -586,43 +724,42 @@ def main(argv=None) -> int:
             f"  ! IGNORED by .gitignore, so it can never be backed up: {p.relative_to(REPO_ROOT)}"
         )
 
+    alerting = args.alert_on_failure and not args.no_push and not args.dry_run
+
     todo = pending(local)
     if not todo:
         if blocked:
             print(f"  {len(blocked)} file(s) fetched but unbackupable — fix .gitignore")
+            # ⚠ This path used to return 1 in silence. An ignored record can never be backed up
+            # AT ALL, which is the worst outcome this job has, and it was the one case that
+            # never reached the alarm because nothing was left "pending" to fail on.
+            _maybe_alert(_blocked_reason(blocked), where, 0, alerting)
             return 1
         print(f"  up to date ({len(rel)} file(s) on the VPS, all already committed)")
+        _maybe_alert(None, where, 0, alerting)
         return 0
 
     ok, why = commit(todo, push=not args.no_push, dry_run=args.dry_run)
     print(f"  {len(todo)} file(s) {'pushed' if ok else 'NOT pushed'}")
 
-    # ⚠ Only a genuine failure alerts. `--no-push` returns False on purpose (the operator asked
-    # for a local commit), and alerting there would train the reader to ignore this message —
-    # which is the one thing an unattended job's alarm cannot afford.
-    if args.alert_on_failure and not args.no_push and not args.dry_run and not (ok and not blocked):
-        # 🔴 The reason is the whole point of this message. Without it the alarm says only that
-        # something is wrong, hourly, in identical words — and ten of those are worth less than
-        # one, because the reader learns there is nothing in them to read. MEASURED the hard way
-        # on 2026-08-27: ten of these arrived overnight and the cause (a hand-edited settings
-        # file on the box) was sitting in the task console the whole time.
-        reasons = [r for r in [why] if r]
-        if blocked:
-            named = ", ".join(str(p.relative_to(REPO_ROOT)) for p in blocked[:3])
-            reasons.append(
-                f"git is configured to IGNORE {named}, so it can never be backed up at all — "
-                "that needs a .gitignore change, not a retry"
-            )
-        # ⚠ Never let "no reason" and "the reason was not recorded" read the same. A blank line
-        # here would be indistinguishable from a clean failure, and this repo's first rule is
-        # that cannot-ask must never share a value with nothing-to-say.
-        detail = "; ".join(reasons) or "reason not recorded — read the task output on this box"
-        _alert(
-            f"Ledger backup did NOT reach origin ({where}).\n"
-            f"{len(todo)} file(s) committed locally; the record is on one disk until this clears.\n"
-            f"Why: {detail}"
-        )
-    return 0 if (ok and not blocked) else 1
+    # ⚠ `--no-push` and `--dry-run` never alert: the operator asked for exactly what happened,
+    # and an alarm that fires when you press the button is one people learn to scroll past.
+    #
+    # 🔴 The reason is the whole point of the message. Without it the alarm says only that
+    # something is wrong, hourly, in identical words — and ten of those are worth less than one,
+    # because the reader learns there is nothing in them to read. MEASURED the hard way on
+    # 2026-08-27: ten arrived overnight and the cause (a hand-edited settings file on the box)
+    # was sitting in the task console the whole time.
+    reasons = [r for r in [why] if r]
+    if blocked:
+        reasons.append(_blocked_reason(blocked))
+    # ⚠ Never let "no reason" and "the reason was not recorded" read the same. A blank line here
+    # would be indistinguishable from a clean failure, and this repo's first rule is that
+    # cannot-ask must never share a value with nothing-to-say.
+    detail = "; ".join(reasons) or "reason not recorded — read the task output on this box"
+    healthy = ok and not blocked
+    _maybe_alert(None if healthy else detail, where, len(todo), alerting)
+    return 0 if healthy else 1
 
 
 if __name__ == "__main__":

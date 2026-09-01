@@ -212,6 +212,26 @@ cannot distinguish its own causes is a doorbell: it tells you to go and look, wh
 built it to save.** ✅ `commit` and `_push` return `(ok, reason)`; the reason is the message's third
 line. Story: `docs/ALGOS_BUILD_NOTES.md` → *Ten identical alerts*.
 
+🔴 **AND IT SAYS A THING ONCE (2026-08-28).** Carrying the reason did not stop it carrying the SAME
+reason eight times in one night. **An alarm that repeats itself hourly teaches people to scroll past
+it**, which is the same defect as one with no reason at all, arriving from the other side.
+`alert_decision` suppresses an UNCHANGED cause, and the state lives in a git-ignored file beside
+`monitor_state.json`.
+
+⚠ **Suppression is ONLY safe because RECOVERY speaks.** Without the all-clear, silence would mean
+either *fixed* or *still broken, not worth mentioning*, and the reader would have to go and look.
+**Never delete the cleared branch to make this quieter.** Four things always speak: a CHANGED cause
+(a different cause needs a different action), a daily reminder with the failure's age, an unreadable
+state file (*cannot tell whether I said this* is not *I said this*), and recovery.
+
+✅ **It also closed a path that returned non-zero in SILENCE**: a record git is configured to IGNORE
+can never be backed up at all — the worst outcome this job has — and it was the one case that never
+reached the alarm, because an ignored file is not "changed" so nothing was left pending to fail on.
+
+⚠ **`alert_state_path()` is a FUNCTION, not a constant**, so it follows `REPO_ROOT`. A constant is
+bound at import and would keep pointing at the real checkout however a caller is set up — a test
+writing a fixed real path is the worst failure shape a suite has.
+
 ⚠ **Reasons are written for someone with no context, and they differ by the ACTION they call for** —
 clear the tree, resolve a rebase, read why the remote refused, or change `.gitignore` because that
 file can never be backed up and a retry is pointless. Two failures needing different work must never
@@ -261,7 +281,7 @@ sync would be attributed to the box. ⚠ **Passed per-command, never written int
 checkout is what `promote.py` reads, and a write would silently re-attribute a human's commits made
 from the same box.
 
-**Tests:** `algos/tests/test_ledger_sync_local.py` (30), weighted toward what the job must REFUSE.
+**Tests:** `algos/tests/test_ledger_sync_local.py` (37), weighted toward what the job must REFUSE.
 ⚠ The owner rule has a case for the box being ALLOWED as well as three refusals — a checker whose
 every case asserts a refusal certifies a tool that never works (root CLAUDE.md, 2026-08-26). Both
 mutations watched RED: guard removed, and guard refusing everybody.

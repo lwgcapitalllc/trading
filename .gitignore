@@ -111,6 +111,16 @@ command-center/backend/params_*.json
 
 # Live bot state
 algos/markets/fx/instances/*/bot_state.json
+# Hand-taken snapshots that live beside a bot: a settings file copied before an edit, and a
+# position captured before a migration. Kept on the box deliberately — the position one is
+# live state and cannot be reproduced from git — but they are not source, so they are not
+# tracked and must not sit in `git status` looking like work in progress.
+algos/markets/fx/instances/*/*.bak
+algos/markets/fx/instances/*/position.*.pre-migrate.json
+# A convenience launcher for the LAB data agent, hand-written on the box. Nothing in this
+# repo references it and no scheduled task runs it, so it is one person's shortcut rather
+# than part of any deployable — a rebuild will not restore it.
+start_mt5_agent.bat
 
 # The DEPLOYED CODE SNAPSHOT and its record. `algos/tools/promote.py` copies the strategy,
 # engines and backtest trees in here so a running bot stops importing from the repo working
@@ -150,6 +160,10 @@ algos/users.json
 algos/telegram_offset.json
 algos/telegram_start.json
 algos/telegram_monitor_state.json
+# What the ledger backup's alarm has already said, so it does not repeat itself hourly.
+algos/ledgersync_alert_state.json
+# The log reviewer's bookmark. Per-machine runtime state, written on the trading box.
+algos/log_review_state.json
 
 # MT5 lock
 algos/mt5_connect.lock
