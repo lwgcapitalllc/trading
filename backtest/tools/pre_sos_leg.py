@@ -77,7 +77,9 @@ from market_structure import Bar, StructureEngine  # noqa: E402
 # broker's offset and the answer would be plausible and wrong. Same floor as sweep_edge.py.
 MIN_FEED_VERSION = 2
 
-MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
+# H4 is here so the timeframe question can be ASKED, not because the strategy runs there.
+# Adding a frame changes nothing for an existing run: every default names its frame.
+MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240}
 FAMILIES = ("h4", "session", "daily", "weekly")
 
 

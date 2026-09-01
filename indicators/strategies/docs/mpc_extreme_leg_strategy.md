@@ -279,3 +279,120 @@ the two years that had them that costs real money. It buys back more than it cos
   split, a knob sweep and a change of broker feed; it is not out-of-sample.
 - It reads the same structure stream as A+ on the same instrument, so the two are **not**
   independent. `backtest/tools/overlap_audit.py` has not been run against it.
+
+---
+
+## 🔴 The exhaustive search, and the two filters that came out of it (2026-09-01)
+
+**Aaron's ask: run every combination, find the best settings, and pick the timeframe.** Then, once
+those came back: *"I like 5% and I want more quality trades — see how to decrease the losing trade
+count while keeping the highest quality trades."* Both halves are recorded here.
+
+**509,000 configurations were searched and NOT ONE BEAT THE SHIPPED SETTINGS.** That is the whole
+headline and it deserves to be said before anything else, because it is the outcome a search is
+least likely to produce and most likely to be doubted.
+
+| search | what moved | configurations | best found |
+|---|---|---|---|
+| coarse grid, 15m/5m | 9 axes at once | 252,000 | the shipped settings |
+| fine grid, 15m/5m | the winner's own square | 5,040 | the shipped settings |
+| coarse grid, 30m/5m | the same 9 axes, re-tuned | 252,000 | +35.9R vs +83.3R |
+| small grid, 15m/1m | exits and filters, re-tuned | 144 | +38.0R against a 37R hole |
+| every pair of charts | nothing — the rules held | 14 | 15m with a 5m trigger |
+
+⚠ **The fine pass DID name a winner and it was rejected on purpose.** Requiring the sweep within
+165 minutes instead of 180 scored +86.8R against +83.3R. Its neighbours across single 15-minute
+steps run **74 / 87 / 83 / 75 / 77 / 74** — the axis moves 10R between adjacent values, so 165 is a
+coin landing well, not a setting. **Every other axis is a smooth hill with the shipped value on
+top.** This is why the tool prints neighbours at all: without them, that row is a 4% improvement.
+
+### The timeframe question, answered
+
+| base / trigger | trades/yr | hit | total | worst run | R over drawdown |
+|---|---|---|---|---|---|
+| **15m / 5m** | **26.2** | **47.6%** | **+83.3R** | **9.7R** | **8.60** |
+| 30m / 5m | 39.4 | 35.1% | +17.6R | 27.7R | 0.64 |
+| 15m / 1m | 270.4 | 30.1% | −9.0R | 78.7R | −0.11 |
+| 1-hour and 4-hour bases | — | — | every configuration loses | | |
+
+🔴 **The 30-minute chart was RE-TUNED from scratch before being dismissed**, because a sweep that
+holds one chart's settings and applies them to another only proves settings do not transfer, which
+nobody doubted. Its own best of 252,000 is +35.9R against an 18.6R hole, and its exit curve swings
++36R → −28R between neighbouring values. ⚠ **The 1-minute trigger is the answer to "can this pay me
+every day": it fires 270 times a year and the edge is gone.** Frequency is available here; it is
+just not worth having.
+
+### The edge is not gold's trend
+
+At the shipped settings the setup wins **30.2%** against **18.2%** for random entries matched on
+direction, hour of day and stop distance — **+12.0%, 3.9 standard deviations**. ⚠ Setups where NO
+level was swept run at −0.203R and score −3.3% against their control, so the sweep requirement is
+carrying real weight rather than decorating the entry.
+
+### Fewer losers: two filters, and only one of them can ship today
+
+| rule | trades | losers | hit | total | worst run | at 5% risk |
+|---|---|---|---|---|---|---|
+| what shipped on 2026-08-25 | 208 | 109 | 47.6% | +83.3R | 9.7R | 32.1x, 40.0% down |
+| **+ never trade Friday** | **169** | **84** | **50.3%** | **+84.0R** | **7.9R** | **36.4x, 33.5% down** |
+| + also refuse a transitioning market | 148 | 70 | 52.7% | +83.9R | 5.9R | 38.3x, 26.4% down |
+
+✅ **The Friday refusal is IN the file and defaults to ON.** 40 Friday setups over eight years
+returned **+1.1R between them** while supplying 25 of the losses — the money is unchanged and the
+worst run drops by a fifth. ⚠ **The day is read in UTC because that is how it was measured**; a
+chart opened in another timezone would otherwise refuse a different set of bars, silently and only
+for part of the day. ⚠ **Friday is NOT reliably bad** — it lost 8.5R in the first half of the
+history and made 9.6R in the second. The case for skipping it is that it adds risk without adding
+return, not that the data proves Friday is cursed. ⚠ Weekend carry is not the mechanism: 18 Friday
+trades ran past Friday and they booked **+5.2R**.
+
+🔴 **The transitioning-market refusal is the bigger win and it CANNOT be built here yet.**
+`engines/regime/` is Python-only — it has no Pine source, by construction, so putting it in this
+file means writing a second implementation of a canonical engine in another language with no parity
+gate to hold it honest. That is a project, not an input. What it is worth, measured: 24 trades over
+eight years, +0.060R each — near-free, and removing them takes the worst run from 7.9R to 5.9R and
+**the 5%-risk drawdown from 33.5% to 26.4%.**
+
+⚠ **Both cuts are applied BEFORE the position slot**, so refusing a setup genuinely buys whatever
+came next. Scoring a cut by deleting rows from a finished result measures a strategy that could see
+the future, and it flatters every cut ever tried.
+
+### What was tried and did NOT work — recorded so it is not tried again
+
+- **Every session filter loses money.** Asia is the best session per trade (+0.534R on 68 trades);
+  refusing it drops the average to +0.335R.
+- **Capping how far the swing may be loses money.** Nearby targets win most often (53.4% at 2–3
+  stops) and pay least (+0.178R); the 8 setups aiming 9+ stops away pay **+1.83R each**.
+- **A floor or ceiling on the stop size does nothing** — 198 of 208 stops already sit above three
+  times the 5-minute average range, so the axis has nothing to cut.
+- **Moving the stop to breakeven costs money at every arming point**, confirming the 2026-08-25 pass.
+- **Trading one side only is worse than both.** Longs alone +47.4R on 69 trades, shorts alone
+  +35.9R on 139, together +83.3R — they do not compete for the slot.
+- **Demanding two levels agree** halves the take, +83.3R → +38.6R, and does not raise the edge
+  (1 family +12.3%, 2 families +11.7%, 3 families +12.7% against control).
+
+### Risk, at Aaron's chosen 5%
+
+| rule | multiple | worst drop | if the worst run is twice as deep |
+|---|---|---|---|
+| shipped 2026-08-25 | 32.1x | 40.0% | **98.3%** |
+| + no Friday | 36.4x | 33.5% | 95.1% |
+| + no transitioning market | 38.3x | 26.4% | 85.1% |
+
+🔴 **The last column is the one that decides whether 5% is survivable, and on the shipped rules it
+is not.** A worst run twice the deepest one measured is an ordinary thing for a 200-trade sample to
+produce, and at 5% that is a 98.3% drawdown — an account that no longer exists. The Friday refusal
+moves it to 95.1% and the regime refusal to 85.1%. **Neither is comfortable.** Aaron's stated plan
+is to dial the risk back by hand as the account grows (2026-09-01); that is a decision to manage
+this actively rather than a reason the number is wrong.
+
+⚠ **Every year stays positive under both filters** — 2018 +7.1, 2019 +21.9, 2020 +13.2, 2021 +6.5,
+2022 +3.8, 2023 +5.9, 2024 +1.5, 2025 +15.5, 2026 +8.6. The caution above the earlier per-year
+table applies here unchanged and with more force: this is now a rule set that has been shown nine
+positive years twice.
+
+⚠ **It holds a position 5.76% of the time** (32,397 of 562,071 5-minute bars), median hold about six
+hours. That is the closest thing to an overlap number this strategy has, and it is **not** the
+overlap audit — `backtest/tools/overlap_audit.py` needs a Python package and none exists.
+
+Full tooling and how to re-run any of it: `backtest/tools/pre_sos_leg_grid.py`.

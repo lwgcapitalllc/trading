@@ -193,6 +193,29 @@ position it is the largest gain available. Two defaults moved as a result. Numbe
 risk-percent table and the interaction that killed the most promising change:
 `docs/mpc_extreme_leg_strategy.md`.
 
+🔴 **THEN SEARCHED EXHAUSTIVELY ON 2026-09-01 — 509,000 configurations across five searches — AND
+NOT ONE BEAT THE SHIPPED SETTINGS.** That is the finding, and it is the outcome a search is least
+likely to produce and most likely to be doubted, so it goes first. **The 15-minute chart with a
+5-minute trigger also won the timeframe question outright**, against thirteen other pairings and
+against a 30-minute chart RE-TUNED from scratch over its own 252,000 (its best: +35.9R against
++83.3R). ⚠ **A faster trigger buys frequency and nothing else** — the 1-minute version fires 270
+times a year and loses money, which is the direct answer to "can this pay me every day".
+🔴 **THE FINE PASS NAMED A WINNER AND IT WAS REJECTED, WHICH IS THE TRANSFERABLE PART.** A 15-minute
+change to the sweep window scored 4% better; its neighbours across single steps run 74 / 87 / 83 /
+75 / 77 / 74, so the axis moves 10R between adjacent values and the "winner" is a coin landing well.
+**Print the neighbours of anything a search hands you — a real setting sits on a hill, and a hill
+and a spike are indistinguishable from the top.**
+✅ **ONE INPUT ADDED: the calendar refusal, defaulting to ON.** Friday setups were free — 40 over
+eight years returning +1.1R between them while supplying 25 of the losses — so refusing them leaves
+the money unchanged and cuts the worst run from 9.7R to 7.9R. ⚠ **It reads the day in UTC**, because
+that is how it was measured and a chart opened elsewhere would otherwise refuse different bars,
+silently and only for part of the day.
+🔴 **THE BIGGER WIN CANNOT BE BUILT IN PINE AND THAT IS WORTH KNOWING BEFORE SOMEBODY TRIES.**
+Refusing a transitioning market takes the worst run to 5.9R and the 5%-risk drawdown from 33.5% to
+26.4% — but `engines/regime/` has no Pine source by construction, so putting it here means a second
+implementation of a canonical engine in another language with no parity gate. That is a project.
+Every number, the four dead ends, and the risk table: `docs/mpc_extreme_leg_strategy.md`.
+
 🔴 **IT IS THE FIRST FILE HERE WHOSE SECOND ENGINE INSTANCE IS GENERATED RATHER THAN FORKED.**
 `tools/derive_htf_structure.py` regenerates the 15-minute copy from the block in
 `mpc_h4_sweep_strategy.pine` — renaming the type and method, swapping the four bar globals for

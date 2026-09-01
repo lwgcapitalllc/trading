@@ -42,6 +42,7 @@ bool useSessionLevel = input.bool(true, "Arm on a session level", group = G4, to
 bool useDailyLevel   = input.bool(true, "Arm on the previous day's level", group = G4, tooltip = "Yesterday's high and low. The strongest single family measured.")
 bool useWeeklyLevel  = input.bool(true, "Arm on the previous week's level", group = G4, tooltip = "Last week's high and low. Too rare on its own to have been measured either way.")
 int  minFamilies     = input.int(1, "Levels that must agree", minval = 1, maxval = 4, group = G4, tooltip = "How many different kinds of level must have been swept together. Two is better than one and cuts the trade count in half.")
+bool skipFriday      = input.bool(true, "Never open a trade on a Friday", group = G4, tooltip = "Friday setups were measured as free: 40 of them over eight years returned +1.1R between them, while accounting for 25 of the losses. Skipping them left the money unchanged and cut the worst losing run from 9.7 to 7.9 times the risk. The day is read in UTC, which is how it was measured.")
 
 // ── 5 · Entry ───────────────────────────────────────────────────
 bool entryOnClose = input.bool(true, "Enter on the change-of-character close", group = G5, tooltip = "On = enter as soon as the 5-minute bar that shifts structure closes. Off waits for the next 15-minute close instead, which is later and worth less.")
@@ -1333,6 +1334,11 @@ float extremeHigh = ta.highest(high, lookbackBars)
 bool htfBear = st15.dir == -1
 bool htfBull = st15.dir == 1
 
+// [doc 12c] THE CALENDAR REFUSAL IS READ IN UTC, NOT IN THE CHART'S TIMEZONE
+// It was measured in UTC, and a chart opened in New York would otherwise refuse a different set of
+// bars than the one the number describes - silently, and only for part of the day.
+bool isFriday = dayofweek(time, "UTC") == dayofweek.friday
+
 bool rawLong  = st.bull_sos and execLongs  and lowArmed  and (not reqCounterTrend or htfBear)
 bool rawShort = st.bear_sos and execShorts and highArmed and (not reqCounterTrend or htfBull)
 
@@ -1357,9 +1363,9 @@ float tpShort = entryPx - (entryPx - tgtShort) * tpFrac
 string blockLong  = na
 string blockShort = na
 if rawLong
-    blockLong := na(tgtLong) ? "no 15m swing to aim at" : tgtLong <= entryPx ? "the swing is already below us" : riskLong <= 0 ? "the extreme is above the entry" : minStopUsd > 0 and riskLong < minStopUsd ? "stop tighter than the floor" : rLong < minR ? "the swing is nearer than " + str.tostring(minR, "#.#") + "R" : na
+    blockLong := skipFriday and isFriday ? "Friday - refused by the calendar" : na(tgtLong) ? "no 15m swing to aim at" : tgtLong <= entryPx ? "the swing is already below us" : riskLong <= 0 ? "the extreme is above the entry" : minStopUsd > 0 and riskLong < minStopUsd ? "stop tighter than the floor" : rLong < minR ? "the swing is nearer than " + str.tostring(minR, "#.#") + "R" : na
 if rawShort
-    blockShort := na(tgtShort) ? "no 15m swing to aim at" : tgtShort >= entryPx ? "the swing is already above us" : riskShort <= 0 ? "the extreme is below the entry" : minStopUsd > 0 and riskShort < minStopUsd ? "stop tighter than the floor" : rShort < minR ? "the swing is nearer than " + str.tostring(minR, "#.#") + "R" : na
+    blockShort := skipFriday and isFriday ? "Friday - refused by the calendar" : na(tgtShort) ? "no 15m swing to aim at" : tgtShort >= entryPx ? "the swing is already above us" : riskShort <= 0 ? "the extreme is below the entry" : minStopUsd > 0 and riskShort < minStopUsd ? "stop tighter than the floor" : rShort < minR ? "the swing is nearer than " + str.tostring(minR, "#.#") + "R" : na
 
 bool goLong  = rawLong  and na(blockLong)
 bool goShort = rawShort and na(blockShort)

@@ -624,6 +624,36 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ The exit walks return the bar a trade was let go on, which is what the slot needs; that value
   was always computed and thrown away. Adding it moved no number the study reports — verified by
   re-running and diffing the whole report.
+- **`tools/pre_sos_leg_grid.py`** (2026-09-01) — the cartesian product, the timeframe question, and
+  the search for a rule that removes losers. Imports the study and the one-position rule; restates
+  neither. 509,000 configurations run through it so far.
+  🔴 **A SEARCH THIS SIZE HANDS BACK A WINNER WHATEVER THE DATA IS, so the tool is built around
+  refusing to report the top row alone.** Three defences, and the middle one earned its keep on the
+  first run: every configuration is scored on both calendar halves and ranked by the WORSE one; the
+  winner's NEIGHBOURS are printed on every axis; and the shipped configuration is printed beside
+  each ranking so "is this actually better" needs no arithmetic.
+  🔴 **PRINTING THE NEIGHBOURS IS THE PART THAT CHANGED AN ANSWER.** A fine pass named a setting 4%
+  better than shipped; its neighbours across single steps ran 74 / 87 / 83 / 75 / 77 / 74, so the
+  axis moves 10R between adjacent values and the winner was a coin. **A hill and a spike look
+  identical from the top — the only way to tell is to step sideways.**
+  🔴 **A CHALLENGER MUST BE RE-TUNED BEFORE IT IS DISMISSED.** Holding one chart's settings and
+  applying them to another only proves settings do not transfer, which nobody doubted. The
+  30-minute chart got its own full 252,000 and still lost by more than half.
+  🔴 **A CUT IS APPLIED BEFORE THE POSITION SLOT, NEVER BY DELETING ROWS FROM A RESULT.** Refusing a
+  setup has to genuinely buy whatever came next; scoring it the other way measures a strategy that
+  could see the future, and it flatters every cut ever tried.
+  ⚠ **The loser-hunting stage is the most overfittable thing in the file and says so** — it searches
+  for a NEW rule using the losses it is trying to remove as the thing that suggests it. Its axes are
+  deliberately restricted to cuts a trader can state a reason for; an hour-by-hour cut is not
+  offered, because it would win and it would mean nothing.
+  ⚠ **The whole product finishes only because the exit re-walk is shared**: a filter cannot change
+  when a trade ended, only which trades are looked at, so each pool is re-walked once per exit rule
+  and every filter underneath reads the same answers. 252,000 configurations in 291 seconds.
+  ⚠ **One real bug found and fixed here**: a target that lands a rounding error from the entry price
+  divided by zero in the walk. It only reaches that state on same-frame pairs; the shipped pair
+  re-ran byte-identical afterwards, so no documented baseline moves.
+  ⚠ `MINUTES` in the study gained a 4-hour entry so the timeframe question could be ASKED. Additive
+  only — every existing default names its own frame, so nothing that ran before runs differently.
 - **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The A+ bot waits for the
   shift and fades the retracement; this asks whether the move that CREATES it is tradeable.** Added
   2026-08-24 on Aaron's question. Stdlib only, runs off `backtest/cache/`. Full record:
