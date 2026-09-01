@@ -573,8 +573,8 @@ and moved no decision — which is what makes any later difference attributable 
 **2 of 2 legs holding at once**, and the contention log is empty — because risk is measured to each
 trade's CURRENT stop and A+ touches breakeven on 161 of 161 trades at a median of ONE BAR, so its
 room is released before the other leg can ever be refused. **Read that as "the allocator would
-rarely have had anything to arbitrate", never as "a cap is unnecessary"**: it is G14's 27 shared
-bars arriving through the budget, and the window where two bots genuinely carry 2× risk is the bar
+rarely have had anything to arbitrate", never as "a cap is unnecessary"**: it is G14's shared
+bars (27 when this was written, **45** at the 2026-09-01 re-run) arriving through the budget, and the window where two bots genuinely carry 2× risk is the bar
 before the stop stages.
 
 ✅ **THE LIVE HALF IS BUILT TOO, LATER THE SAME DAY, AND IT COULD NOT REUSE THAT OBJECT.**
@@ -661,44 +661,48 @@ driven.
 The overlap half of this gap is **CLOSED** — see G14. What stands between here and a second bot is
 the live allocator above and the caveats on B-LEG in G15.
 
-### G14 — The overlap audit — **RE-MEASURED 2026-08-09, and it still passes**
+### G14 — The overlap audit — **RE-MEASURED 2026-09-01, and it still passes**
 
-`backtest/tools/overlap_audit.py`, replayed over **155,531 M15 bars (2020-01-01 → 2026-08-03)**.
-A+ reproduced its documented **159 trades / +142.18R** baseline to the cent, which is the cross-check
-that the tool drives the strategies correctly rather than a third thing.
+`backtest/tools/overlap_audit.py`, replayed over **157,004 M15 bars (2020-01-01 → 2026-08-23)**.
+A+ reproduces **156 trades / +131.77R** and B-LEG **101 / +20.20R**, which is the cross-check that
+the tool drives the two strategies correctly rather than a third thing.
 
-🔴 **THE RE-RUN IS THE POINT, AND WHY IT WAS NEEDED IS THE LESSON.** The first audit ran 2026-08-04.
-On **2026-08-06** B-LEG was re-defaulted on three axes at once — `bleg_max_days` 1.25 → 4.0,
-`exec_trail_pct` 1.0 → 0.05, `exec_time_stop_hrs` 36 → 8 — which **more than doubled its trade count
-and tripled how long a frozen band stays alive**. Every number in the old G14/G15 was measured on a
-bot that no longer exists. This file's own instruction (*"re-run it after any entry-logic change on
-either bot"*) was there, and nobody ran it, because the change landed in the B-LEG package and the
-verdict lived here. **A cross-cutting measurement has to be re-run by whoever moves the inputs, not by
-whoever wrote the conclusion.**
+🔴 **THE RE-RUN IS THE POINT, AND IT HAS NOW BEEN NEEDED TWICE FOR THE SAME REASON.** The first
+audit ran 2026-08-04. On **2026-08-06** B-LEG was re-defaulted on three axes at once —
+`bleg_max_days` 1.25 → 4.0, `exec_trail_pct` 1.0 → 0.05, `exec_time_stop_hrs` 36 → 8 — which **more
+than doubled its trade count and tripled how long a frozen band stays alive**. It happened AGAIN on
+**2026-08-26**, when the dead-market entry filter (`exec_min_atr_pct` = 0.08) landed on A+ and took
+its shipped book from 245 trades to 240 — and the 2026-08-09 reading below then described neither
+bot and stood unchallenged in three files for three weeks. **A cross-cutting measurement has to be
+re-run by whoever MOVES the inputs, not by whoever wrote the conclusion.** ⚠ The second time, that
+instruction was already written at the bottom of this very section and it still did not happen —
+so treat it as a step in the change, not as a reminder.
 
-**The legs still do not overlap, and on direction they overlap LESS than before.** Both bots held a
-position on **49 bars out of 155,531** — 0.5% of A+'s own hold time, 1.8% of B-LEG's. **Exactly ONE of
-those bars was same-side**; the other 48 were opposite, i.e. partially hedged. Seven A+ trades out of
-159 (4.4%) shared a bar with a B-LEG trade, and **one pair was same-direction**.
+**The legs still do not overlap, and on direction they now overlap not at all.** Both bots held a
+position on **45 bars out of 157,004** — 0.5% of A+'s own hold time, 1.9% of B-LEG's. **ZERO of
+those bars were same-side**; all 45 were opposite, i.e. partially hedged. Four A+ trades out of 156
+(2.6%) shared a bar with a B-LEG trade, and **none of those four pairs was same-direction**.
 
-**They do not fire on the same structure break either**, which was the specific worry: across 6.5
-years there is now **NO** A+ trade with a same-direction B-LEG entry within 16 bars — the single
-2023-07-27 cluster the old audit found is gone. Monthly R correlation is **+0.172** across all 78
-traded months (both traded in 53).
+**They barely fire on the same structure break either**, which was the specific worry: across 6.6
+years **exactly ONE** A+ trade has a same-direction B-LEG entry within 16 bars (2023-07-27, one bar
+apart; A+ −1.99R, B-LEG −1.00R). Monthly R correlation is **+0.072** across all 78 traded months
+(both traded in 52). ⚠ **Read that as a FLOOR on how together they move rather than as a figure** —
+a month only one bot traded contributes a zero for the other and pulls it toward 0.
 
-⚠ **The absolute overlap went UP and the same-side overlap went DOWN, and both are consequences of the
-same change.** B-LEG holds more positions for longer, so it shares more bars with A+ — but the bars it
-gained are opposite-side, which is a partial hedge rather than doubled risk. Do not read "49 bars, up
-from 27" as a regression without reading the direction split under it.
+⚠ **Both halves improved this time, and neither direction is a trend.** 2026-08-09 → 2026-09-01:
+49 → 45 shared bars, 1 → 0 same-side. Before that the absolute count went UP 27 → 49 while same-side
+went DOWN 18 → 1, from one change. **Do not read a bigger overlap number as a regression without
+reading the direction split under it** — and do not read a smaller one as progress on its own.
 
-⚠ **This does NOT clear the allocator (G10).** The peak was still 2 concurrent positions, and each bot
-sizes off its OWN equity, so on those 49 bars one account would have carried 2 × `exec_risk_pct`. The
-audit says the allocator would rarely have had anything to arbitrate — not that risk stacking is safe.
-The backtest allocator measured the same thing from the other side on 2026-08-09 and refused nothing.
+⚠ **This does NOT clear the allocator (G10).** The peak was still 2 concurrent positions, and each
+bot sizes off its OWN equity, so on those 45 bars one account would have carried 2 ×
+`exec_risk_pct`. The audit says the allocator would rarely have had anything to arbitrate — not
+that risk stacking is safe. The backtest allocator measured the same thing from the other side on
+2026-08-09 and refused nothing.
 
-⚠ **And it does NOT mean the two are independent.** Both read one structure stream on one instrument,
-and being flat at different moments is not the same as losing for different reasons. A near-zero
-monthly correlation is the better evidence, and it is still only 6.5 years of one symbol.
+⚠ **And it does NOT mean the two are independent.** Both read one structure stream on one
+instrument, and being flat at different moments is not the same as losing for different reasons. A
+near-zero monthly correlation is the better evidence, and it is still only 6.6 years of one symbol.
 
 ⚠ **Re-run it after any entry-logic change on either bot** — that is what the tool is for, and the
 result above is a fact about today's config, not about the setups.
@@ -1498,15 +1502,17 @@ believing it works.** Offline green means the logic is right, not that the bot s
 | 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | ~~**Live `exec_risk_pct`**~~ — **ANSWERED 2026-08-05: 10%, Aaron's explicit call.** No config change was needed; the live instance already carries `exec_risk_pct = 10.0`, so this is the decision being RECORDED rather than applied. ⚠ **It is a deliberate acceptance, not an unexamined default** — 10% measured **−54.9% max drawdown** over 6.5 years, and Run 12 established that the drawdown is a losing STREAK at that risk rather than give-back, so risk % is the only lever that moves it. Nothing further is owed here; re-open it only if the account purpose changes from demo | — |
-| 4 | **A+ only, or A+ and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "A+ only" answer rested on a number that is now dead.** The overlap audit re-ran and B-LEG passes it more cleanly than before — 1 same-side bar in 6.5 years, no same-break clusters at all (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11) |
+| 4 | **A+ only, or A+ and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "A+ only" answer rested on a number that is now dead.** The overlap audit re-ran again on 2026-09-01 and B-LEG passes it more cleanly still — **0 same-side bars in 6.6 years**, one same-break cluster (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11) |
 
 ---
 
 ## 7. Standing reminders this plan touches
 
-- ~~**The overlap audit**~~ — **RUN 2026-08-04 and it passed** (G14). 27 shared bars in 155,453; one
-  same-direction entry cluster in 6.5 years. `backtest/tools/overlap_audit.py` is the tool; re-run it
-  after any entry-logic change on either bot, because the result is a fact about today's config.
+- ~~**The overlap audit**~~ — **RE-RUN 2026-09-01 and it still passes** (G14). 45 shared bars in
+  157,004, **none of them same-side**; one same-direction entry cluster in 6.6 years.
+  `backtest/tools/overlap_audit.py` is the tool; re-run it after any entry-logic change on either
+  bot, because the result is a fact about today's config. ⚠ It has gone stale TWICE by not being
+  re-run at the moment the inputs moved — do it in the same change, not afterwards.
 - **Risk is budgeted per account and never layered** (`CLAUDE.md`). `exec_risk_pct` today is per-trade
   with nothing above it. The allocator is a prerequisite for bot #2, not a nice-to-have.
 - **The Bots page needs a multi-bot shape before bot #2** (G11, raised 2026-08-04). It is already
@@ -1567,6 +1573,9 @@ Add a second `BarFeed` on `exec_sec_fill_tf_min` (5 minutes by default, and the 
 `MpcSosFadeStrategy.run_dual` does: bars are timestamped at OPEN, so a faster bar reads the 15m
 context of the bar that has already CLOSED at its open time. Step the secondary path and **LOG
 what it would have done. Place nothing.**
+🔴 **THIS PARAGRAPH IS WRONG ABOUT WHERE THAT PROOF RUNS AND IS CORRECTED BELOW — read the
+correction before acting on it.** There is no "run it beside the live bot and watch" step; the
+proof is offline and has to be.
 ✅ **Proof, and it is the whole point of doing this stage alone:** replay one window through
 `run_dual` and through the live merge and require **identical secondary decisions, bar for bar**.
 The merge ORDER is the part that is easy to get wrong and impossible to see later.
@@ -1637,8 +1646,8 @@ disagreement is a diff rather than something to be spotted in a log.
 the NAME rather than a field, because a field can be dropped by a consumer that never heard of it
 and a shadow fill read as a real one would put a trade in the book that never happened.
 
-🔴 **FIVE DEFECTS, AND FOUR OF THEM WERE INVISIBLE TO REASONING.** Every one was found by running
-the merge over real bars or by a test going red — none by reading the code.
+🔴 **FIVE DEFECTS, AND NOT ONE WAS FOUND BY READING THE CODE.** Every one surfaced by running the
+merge over real bars or by a test going red.
 
 1. **The steppable gate DEADLOCKED two thirds of the fast stream.** It asked *has the 15m stream
    reached this bar* as `open <= newest primary close`, where the real question is *have all 15m
@@ -1654,14 +1663,21 @@ the merge over real bars or by a test going red — none by reading the code.
    close, and `new_bars` hands out bars strictly newer — but a fast bar opening exactly at that
    instant is the next one DUE, not a late one. One silent hole in a streaming state machine per
    start. Caught by the merge pairing being short by exactly one entry.
-4. **A tz-aware timestamp compared against a tz-naive feed index.** `feed.to_canonical` builds a
-   NAIVE index; the guard built an aware one. It would have raised on the box, inside the warm-up,
-   on the first start with a re-entry on.
+4. **A tz-aware timestamp compared against a tz-naive feed index.** The guard built an aware
+   timestamp unconditionally, and pandas refuses to compare the two. ⚠ **CORRECTED 2026-09-01, and
+   the correction matters more than the defect did: this file first recorded the reason backwards.**
+   It said `feed.to_canonical` builds a NAIVE index and that the raise would have happened ON THE
+   BOX. Both are false — `mt5_ops.get_candles` stamps its time column `utc=True` and `to_canonical`
+   passes it straight through, so **the live frame is tz-AWARE**; it is the LAB bar cache that is
+   naive, which is where the raise actually happened. The shipped guard branches on the frame's own
+   timezone and is right either way. **A guard whose recorded reason names the wrong side is the
+   next person's wrong mental model** — and the wrong version also overstated the defect as a live
+   outage.
 5. **The fast frame numbered from 1 where the lab numbers from 0.** No decision moves (every
    comparison on that feed is between two of its own indices) and it made a re-entry's recorded
    `entry_index` disagree with the lab's for ever — **the B-LEG harness trap**, which
-   `strategies/CLAUDE.md` records as 2,409 comparisons failing at one flat offset while the logic
-   was identical.
+   `strategies/python/mpc_bleg/CLAUDE.md` records as 2,409 comparisons failing at one flat offset
+   while the logic was identical.
 
 🔴 **AND ONE IN THE PROOF ITSELF, WHICH IS THE MOST TRANSFERABLE.** The first trade-comparison
 script read its fields with `getattr(t, name, default)` and asked for `entry`, `exit` and

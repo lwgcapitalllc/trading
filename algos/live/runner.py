@@ -700,9 +700,9 @@ class LiveRunner:
         # because `warm()` sets `_bar_index` from the last warm bar's own index. The offset
         # changes no decision (every comparison on this feed is between two of its own indices)
         # and it makes the recorded `entry_index` of a re-entry disagree with the lab's by one
-        # for ever. **That is the B-LEG harness trap** — `strategies/CLAUDE.md` records 2,409
-        # comparisons failing at one flat offset while the logic was identical — and the point of
-        # fixing it is that a future shadow diff on this feed can then join at all.
+        # for ever. **That is the B-LEG harness trap** — `strategies/python/mpc_bleg/CLAUDE.md`
+        # records 2,409 comparisons failing at one flat offset while the logic was identical —
+        # and the point of fixing it is that a future shadow diff on this feed can then join at all.
         self._fast_index = -1
         for ts, row in df.iterrows():
             bar = self._fast_bar(ts, row)
@@ -722,11 +722,13 @@ class LiveRunner:
             import pandas as pd
 
             # ⚠ **The comparison is in MILLISECONDS, and the timestamp is built to match the
-            # FRAME's own timezone.** `feed.to_canonical` builds a tz-NAIVE index (UTC by this
-            # repo's convention, but naive), while a lab frame is tz-aware — and pandas raises
-            # outright on comparing the two. The first version of this guard constructed an aware
-            # timestamp unconditionally and would have raised on the box, inside the warm-up, on
-            # the first start with a re-entry on. Caught by driving it over lab frames.
+            # FRAME's own timezone**, because the two frames this runner is driven over do NOT
+            # agree. The LIVE one is tz-AWARE: `mt5_ops.get_candles` stamps its time column with
+            # `utc=True` and `feed.to_canonical` passes it straight through. A LAB frame out of
+            # `backtest.data.source.BarSource` is tz-NAIVE. pandas raises outright on comparing
+            # the two, and the first version of this guard built an aware timestamp
+            # unconditionally — so it raised against the lab frames it was proved on. ⚠ **Do not
+            # rewrite this to assume either answer**; branch on what the frame actually carries.
             # ⚠ **ONE MILLISECOND BEFORE the context, not AT it, and the millisecond matters.**
             # `BarFeed.new_bars` hands out bars STRICTLY NEWER than the bookmark, while a fast bar
             # opening exactly AT the context's close is the next one DUE, not a late one (see

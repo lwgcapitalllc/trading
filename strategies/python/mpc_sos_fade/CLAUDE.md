@@ -748,9 +748,18 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1
   they are worth chasing on their own. ⚠ **Warm-up is not optional**: at the default warm-up all four report a
   mismatch on bar 16, which is the engines still filling.
 - **NOT USABLE LIVE** — `algos/live/bridge.py` REFUSES `exec_secondary` outright
-  (`UnsupportedStrategyConfig`), because the live runner drives ONE timeframe and this needs the 1m
-  stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
-  is a live-pipeline item, and it is correctly gated behind this being measured first.
+  (`UnsupportedStrategyConfig`). The lab can run it; the bot cannot. ⚠ **CORRECTED 2026-09-01 —
+  the refusal is unchanged and still right, but the three reasons this bullet used to give are all
+  now false.** The live runner is NO LONGER single-timeframe (it opens a second `BarFeed` and
+  merges it through this package's own `dual_clock.DualClock`, the same object `run_dual` drives);
+  the second stream is NOT a 1m one (it is `exec_sec_fill_tf_min`, **5 minutes by default since
+  2026-08-21** and the caller's choice — the parameter still named `df1m` is a name its own
+  docstring says not to trust); and building that feed is no longer an open item. **The reason it
+  refuses TODAY is the order path**: the bridge mirrors ONE entry limit and one ratcheting stop, so
+  it has no path that places the re-entry's own order at its own price. That is G18 stage 2, and
+  the same sentence is why partial take-profits and scale-in are refused — read the three refusals
+  together. ⚠ The refusal fires at strategy construction, BEFORE the second feed is built, so no
+  bot drives two frames today. See `docs/LIVE_TRADING_PIPELINE.md` → G18.
 
 ### Reclaim Entry, and the combined value that runs it beside the gap
 
@@ -2534,9 +2543,12 @@ switch and the value were two separate decisions and the history is kept that wa
 ⚠ **PIN IT TO 0.0 TO REPRODUCE ANY BASELINE IN THIS FILE MEASURED BEFORE TODAY.** Not a formality:
 the floor removes 5 entries, and with one position slot a removed entry changes which LATER setup
 gets the slot, so a stored figure does not merely shift by the refused trades' R.
-⚠ **The live bot does not have it until somebody PROMOTES**, and **the A+/B-LEG overlap audit is
-stale until `backtest/tools/overlap_audit.py` is re-run** — it was measured on the logic that took
-245.
+⚠ **The live bot does not have it until somebody PROMOTES.** ✅ **The A+/B-LEG overlap audit was
+RE-RUN on 2026-09-01** against the shipped 240-trade book, discharging the stale reading measured
+on the logic that took 245: **45 shared bars in 157,004, ZERO of them same-side**, monthly r
++0.072. Figures and caveats live in ONE place — root `CLAUDE.md` → *Trading Philosophy*, with the
+gate record at `docs/LIVE_TRADING_PIPELINE.md` → G14. ⚠ **It has now gone stale TWICE by not being
+re-run at the moment the inputs moved. Re-run it inside the change that moves them.**
 
 ✅ **RULE 22 IS SATISFIED (2026-08-26), AND IT TOOK TWO EXPORTS — THE SECOND ONE IS THE PROOF.**
 

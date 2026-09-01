@@ -624,8 +624,9 @@ is data — a feed, a clock, or a warm-up — never logic.**
 
 ⚠ **Joined on bar TIMESTAMP, never on index.** The live index counts on from wherever warm-up
 stopped and survives restarts; the lab's counts from the first row of whatever frame it was handed.
-Two unrelated integers that look comparable — the trap `strategies/CLAUDE.md` records from the
-B-LEG harness, where 2,409 comparisons failed at one flat offset while the logic was identical.
+Two unrelated integers that look comparable — the trap `strategies/python/mpc_bleg/CLAUDE.md`
+records from the B-LEG harness, where 2,409 comparisons failed at one flat offset while the logic
+was identical.
 
 ⚠ **FEED drift and DECISION drift are reported SEPARATELY**, because the live bot trades PU Prime
 `XAUUSD.s` and the lab replays Vantage `XAUUSD` — different brokers, so their bars genuinely differ.
