@@ -20,6 +20,36 @@ from services import bot_versions as bv
 _REPO = Path(cfg.MONOREPO_ROOT)
 
 
+def _before_the_last(n: int = 8, package: str = "mpc_sos_fade") -> str:
+    """A revision reaching back over the last `n` commits that actually TOUCHED this strategy.
+
+    🔴 **Every case below asked for `HEAD~50` until 2026-09-01, and an hourly robot made that
+    meaningless.** The trading box commits its own record every hour, so 49 of the last 50
+    commits here touch nothing but a `.jsonl`. `HEAD~50` came to mean *a day and a half ago*
+    rather than *a while of real work ago*: the range stopped containing any strategy change,
+    three of these tests went red against completely correct code, and a fourth compared a
+    version against itself and asserted it was smaller.
+
+    ⚠ **The transferable part is not about these tests: a commit COUNT is a proxy for elapsed
+    work that only holds while commits are human-paced.** Anything reaching back by `HEAD~n` in
+    this repo is measuring the robot's schedule instead, and it DEGRADES daily rather than
+    failing once — which is the kind of red that gets rerun, shrugged at and eventually
+    excluded. Reach for the commit you actually mean.
+    """
+    out = subprocess.run(
+        ["git", "-C", str(_REPO), "rev-list", f"-{n}", "HEAD", "--", *bv.trees_for(package)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert out, "no commit in this clone touches the strategy trees"
+    return f"{out[-1]}~1"
+
+
+# Resolved once: it shells out, and every case below wants the same window.
+OLDER = _before_the_last()
+
+
 # ── the agreement with promote.py ───────────────────────────────────────────────
 
 
@@ -72,10 +102,24 @@ def test_a_version_is_the_count_of_commits_touching_the_trees():
 
 
 def test_an_older_commit_has_a_lower_version_than_head():
-    """The whole banner rests on subtracting two of these, so the ordering is the contract."""
+    """The whole banner rests on subtracting two of these, so the ordering is the contract.
+
+    🔴 **This asked for `HEAD~50` until 2026-09-01, and an hourly robot made that false.** The
+    trading box commits its own record every hour, so 49 of the last 50 commits here touch
+    nothing but a `.jsonl` — `HEAD~50` landed a day and a half ago, well AFTER the last strategy
+    change, and both ends counted 264. The test went red against completely correct code.
+
+    ⚠ **The transferable part is not about this test: a commit COUNT is a proxy for elapsed work
+    that only holds while commits are human-paced.** Anything in this repo that reaches back by
+    `HEAD~n` is measuring the robot's schedule, and it gets worse every day rather than failing
+    once. Reach for the commit you actually mean.
+
+    So it picks the last commit that TOUCHED the strategy and steps one behind it, which is
+    lower by construction whatever else has been committed in between.
+    """
     trees = bv.trees_for("mpc_sos_fade")
     head = bv.version_at("HEAD", trees)
-    older = bv.version_at("HEAD~50", trees)
+    older = bv.version_at(OLDER, trees)
     assert older is not None and head is not None
     assert older < head
 
@@ -119,7 +163,7 @@ def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():
 def test_behind_never_goes_negative():
     """A deployment AHEAD of this clone (somebody else promoted from a machine that had pulled)
     must read 0, not a negative count — the banner's copy has no sensible form for -3."""
-    r = bv.compare("mpc_sos_fade", "HEAD~50", {})
+    r = bv.compare("mpc_sos_fade", OLDER, {})
     assert r["versions_behind"] is not None and r["versions_behind"] > 0
     r2 = bv.compare("mpc_sos_fade", "HEAD", {})
     assert r2["versions_behind"] == 0
@@ -128,7 +172,7 @@ def test_behind_never_goes_negative():
 def test_the_change_list_matches_the_version_gap():
     """The number in the headline and the list under it are two renderings of one fact; if they
     disagree the banner argues with itself."""
-    r = bv.compare("mpc_sos_fade", "HEAD~50", {})
+    r = bv.compare("mpc_sos_fade", OLDER, {})
     assert r["comparable"] is True
     assert len(r["changes"]) == r["versions_behind"]
 
@@ -151,7 +195,7 @@ def test_every_change_names_the_tree_it_touched():
       top-level FILE of that name, a missing `tree + "/"` test) shows up here and nowhere else.
     """
     trees = bv.trees_for("mpc_sos_fade")
-    r = bv.compare("mpc_sos_fade", "HEAD~50", {})
+    r = bv.compare("mpc_sos_fade", OLDER, {})
     assert r["changes"], "no changes to check — widen the range"
     assert any(not c.get("merge") for c in r["changes"]), "only merges in range — widen it"
     for c in r["changes"]:
@@ -187,7 +231,7 @@ def test_the_change_list_is_ONE_git_process_per_range():
         return real(args, **kwargs)
 
     with mock.patch.object(subprocess, "run", _counting_run):
-        changes = bv.changes_between("HEAD~50", "HEAD", bv.trees_for("mpc_sos_fade"))
+        changes = bv.changes_between(OLDER, "HEAD", bv.trees_for("mpc_sos_fade"))
 
     assert changes, "no changes to check — widen the range"
     assert len(calls) == 1, f"{len(calls)} git processes for {len(changes)} commits: {calls}"
@@ -248,7 +292,7 @@ def test_a_setting_the_config_pins_is_reported_as_stated():
     """A pinned setting cannot move on a promote. It is still returned, because *your bot is
     holding this still* is the reassuring half of the same question — and filtering it out
     leaves the reader unable to tell 'not affected' from 'not checked'."""
-    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD", {"exec_secondary": False})
+    changes = bv.setting_changes("mpc_sos_fade", OLDER, "HEAD", {"exec_secondary": False})
     assert changes is not None
     pinned = [c for c in changes if c["name"] == "exec_secondary"]
     if pinned:  # only if that default actually moved in-range
@@ -258,7 +302,7 @@ def test_a_setting_the_config_pins_is_reported_as_stated():
 def test_a_new_setting_says_it_is_new_rather_than_claiming_it_was_off():
     """`was: ""` + `is_new` — the deployed version had no such lever at all, which is not the
     same as having it switched off, and 'Off' would be a lie in the reassuring direction."""
-    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD", {})
+    changes = bv.setting_changes("mpc_sos_fade", OLDER, "HEAD", {})
     assert changes is not None
     for c in changes:
         assert (c["was"] == "") == c["is_new"], c
@@ -273,7 +317,7 @@ def test_setting_labels_come_from_the_strategys_own_meta_file():
 
 
 def test_a_setting_with_no_meta_entry_falls_back_to_its_key_rather_than_blank():
-    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD", {})
+    changes = bv.setting_changes("mpc_sos_fade", OLDER, "HEAD", {})
     assert changes is not None
     for c in changes:
         assert c["label"], f"{c['name']} rendered a blank label"
@@ -281,7 +325,7 @@ def test_a_setting_with_no_meta_entry_falls_back_to_its_key_rather_than_blank():
 
 def test_an_unknown_package_refuses_instead_of_returning_an_empty_diff():
     """`[]` means 'nothing changed'. A package whose config.py cannot be read must not say so."""
-    assert bv.setting_changes("no_such_package", "HEAD~50", "HEAD", {}) is None
+    assert bv.setting_changes("no_such_package", OLDER, "HEAD", {}) is None
 
 
 @pytest.mark.parametrize(

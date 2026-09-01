@@ -1685,10 +1685,21 @@ defect; the same discipline the trade-fib layer follows.
 `backtest/` holds both the fill model the bot runs on and the lab's own cache, and no path can tell
 those apart. Naming the area is derived; naming the effect would be a guess wearing a label.
 
-✅ **34 tests (`tests/test_bot_versions.py`), non-vacuity proven by MUTATION** — a fail-watch
+✅ **36 tests (`tests/test_bot_versions.py`), non-vacuity proven by MUTATION** — a fail-watch
 against HEAD is vacuous for a new module. Four mutations, four distinct tests red: dropping the
 shared trees from `trees_for`, returning `0` instead of `None` for an unfetched commit, letting a
 subclass override win silently, and claiming a new setting `was: "Off"`.
+
+🔴 **THEY ALL REACHED BACK BY `HEAD~50` AND AN HOURLY ROBOT MADE THAT MEANINGLESS (2026-09-01).**
+The trading box commits its own record every hour, so 49 of the last 50 commits here touch nothing
+but a `.jsonl`. `HEAD~50` came to mean *a day and a half ago* rather than *a while of real work
+ago*: the range stopped containing any strategy change, three cases went red against completely
+correct code, and a fourth compared version 264 against version 264 and asserted it was smaller.
+✅ One shared anchor (`_before_the_last`) now reaches back over the last commits that actually
+TOUCHED the strategy. ⚠ **The lesson is not about these tests: a commit COUNT is a proxy for
+elapsed work that only holds while commits are human-paced, and anything using `HEAD~n` here is
+measuring the robot's schedule.** It DEGRADES daily rather than failing once — the kind of red
+that gets rerun, shrugged at, and eventually excluded.
 
 ## Stopping a bot ASKS it to stop (2026-08-07)
 
