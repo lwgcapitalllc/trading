@@ -966,8 +966,9 @@ measured to each trade's CURRENT stop, so a stop moved to breakeven releases its
 `mpc_sos_fade` touches breakeven on 161 of 161 trades at a median of ONE BAR (measured 2026-08-06).
 So by the time the second leg wants in, the first is reserving nothing. ⚠ **Read that as "the
 allocator would rarely have had anything to arbitrate", never as "a cap is unnecessary"** — it is
-the overlap audit's 27-shared-bars result arriving through the budget, and the window where two
-bots really do carry 2× risk is the bar before the stop stages.
+the overlap audit's shared-bars result arriving through the budget (27 when this was written,
+**45 with ZERO same-side at the 2026-09-01 re-run** — `docs/LIVE_TRADING_PIPELINE.md` → G14), and
+the window where two bots really do carry 2× risk is the bar before the stop stages.
 
 ⚠ **A cap BELOW a leg's own risk % does not arbitrate, it re-sizes.** At `--risk-cap 5` against two
 bots each risking 10%, all 258 entries are shrunk and NONE is blocked — every position is halved,

@@ -1662,7 +1662,8 @@ therefore wait out the real poll — which is why one test is 65s and says so.
 
 ## `useHistoryLimit` takes the run's PARAMS, and omitting them is the defect (2026-08-15)
 
-**A run can load more than its chart timeframe** — `exec_secondary` adds a 1m feed — and each
+**A run can load more than its chart timeframe** — `exec_secondary` adds a second feed, **5m
+since 2026-08-21 and NOT 1m** (`services/run_feeds.py::EXTRA_FEEDS` owns the number) — and each
 feed has its own broker floor, so the earliest legal date depends on the PARAMS, not just the
 instrument and bar size. The hook takes them and sends the names of every truthy one as repeated
 `&flags=`; the backend keeps the ones that mean a feed. Backend rules and the incident:

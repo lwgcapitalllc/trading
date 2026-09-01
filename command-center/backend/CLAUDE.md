@@ -2855,10 +2855,13 @@ Full mechanism, the evidence table, and the probe's two-phase design: `backtest/
 
 ### 🔴 THE FLOOR IS PER-RUN, NOT PER-CHART-TIMEFRAME (2026-08-15)
 
-**A run loads more than its chart.** `exec_secondary` replays a 1m feed alongside the 15m
+**A run loads more than its chart.** `exec_secondary` replays a SECOND feed alongside the 15m
 primary, and each feed has its own measured floor — so the window is bounded by the LATEST of
-them. Until this date everything here asked only about the chart timeframe, and a run with the
-secondary on sailed through a pre-flight that had never heard of the 1m floor: measured on run
+them. ⚠ **That feed is 5m, not 1m, since 2026-08-21** — the incident below happened while it was
+still 1m, and the numbers in it are that feed's. `EXTRA_FEEDS` owns the current value; do not read
+"1m" here as a live fact. Until this date everything here asked only about the chart timeframe, and
+a run with the secondary on sailed through a pre-flight that had never heard of the 1m floor:
+measured on run
 `50331c7cbe96`, Vantage XAUUSD reaches **2018-09-13 at M15 and only 2018-09-14 at M1**, so the
 picker offered a date this module blessed and the runner refused at 8%. **The pre-flight promise
 three bullets up was not being kept.** Story and the verification: `../docs/BACKEND_BUILD_NOTES.md`
@@ -3887,6 +3890,31 @@ disagreeing, which is the exact defect this module was created to end.
 window *before* any strategy is constructed, so it cannot import the value it needs, and a value it
 cannot read is a value it would have to guess. `tests/test_run_feeds.py` asserts the two agree and
 was watched RED by setting the registry back to 1.
+
+🔴 **AND THE COPY HAS A CONSEQUENCE NOBODY WROTE DOWN: THE RUN FORM'S "Re-entry fill clock
+(minutes)" CONTROL IS DEAD ON THIS PATH — OPEN, RAISED 2026-09-01, NOT FIXED.** The strategy
+declares it as a live number widget (`mpc_sos_fade.meta.json`, range 1–15, shown whenever the
+re-entry is on) whose own description tells the reader it changes how accurate the test is. This
+module ignores it. `required_timeframes` only ever adds the registry's constant, and
+`python_runner.py:431` FETCHES at `EXTRA_FEEDS[SECONDARY_FLAG]` rather than at the config — so a
+run that sets the clock to 1 or to 15 still bounds and still replays **5m bars**, and the result
+carries the value the user chose while having been measured at another. **MEASURED, not reasoned:**
+
+```
+cd command-center/backend && .venv/bin/python -c "from services import run_feeds; \
+print(run_feeds.required_timeframes('Minute', 15, {'exec_secondary': True, 'exec_sec_fill_tf_min': 1}))"
+# -> [5, 15]     ... and [5, 15] again at 15. The control moves nothing.
+```
+
+⚠ **The CLI tool disagrees with the app**, which is the part that will bite: `backtest/tools/
+run_report.py:448` reads `getattr(cfg, "exec_sec_fill_tf_min", 1)` off the built config and DOES
+honour it. So the same params produce a different fill clock depending on which side ran them, and
+nothing says so. ⚠ **This is rule 7 arriving through the pre-flight** — the label is a claim about
+code somewhere else, and here that code reads a constant. ⚠ **The fix is not simply "read the
+config"**: this module bounds the window before a config exists, which is the whole reason the
+copy is here — so it needs the raw param plumbed through `required_timeframes`, with the registry
+value kept as the default for the case where no params arrive. **It changes what a run MEASURES,
+so it is a decision rather than a tidy-up.**
 
 🔴 **FOUR FLOOR TESTS WENT RED ON THIS CHANGE AND NONE OF THEM WAS ABOUT IT.** They prove a
 mechanism — the window is bounded by the shallowest feed a run loads — and they had used the
