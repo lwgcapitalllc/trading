@@ -1,1 +1,5 @@
 2026-09-01 05:20:14,231 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_gap_be_keep_r: None → 0.0, exec_gap_be_r: None → -1.0, exec_min_atr_pct: None → 0.08, exec_be_arm_r: None → -1.0, exec_be_keep_r: None → 0.0, exec_sec_tp2_min_x: None → -1.0, exec_sec_tp2_x: None → -1.0, exec_shift_be_keep_r: None → 0.0, exec_shift_be_r: None → -1.0. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-01 22:15:05,373 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-01 22:15:05,429 [INFO] Sizing against account balance $10,020.65
+2026-09-01 22:15:08,530 [INFO] Warmed 5000 bars (2026-06-17 05:15:00+00:00 → 2026-09-01 22:00:00+00:00) in 2.9s
+2026-09-01 22:15:08,533 [INFO] Equity re-anchored to the account after warm-up: 10,925.03 → 10,020.65
