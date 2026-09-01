@@ -55,7 +55,7 @@ G12 = "12 · Debug"
 // [doc 4] ⚠ TWO of the house's four toggles are absent here, deliberately  -> docs/mpc_extreme_leg_strategy.md
 bool showExternal    = input.bool(true,  "Show External Structure", group = G2, display = display.none)
 bool showSwingLabels = input.bool(false, "Show Swing Point Labels", group = G2, tooltip = "Off hides the swing point labels, leaving just BOS and SOS. Nothing else changes.", display = display.none)
-bool showHtfSwing    = input.bool(true,  "Show the 15-minute swing being aimed at", group = G2, tooltip = "Draws the higher-timeframe swing this trade targets. That level is the take profit.")
+bool showHtfSwing    = input.bool(true,  "Show the 15-minute swing being aimed at", group = G2, tooltip = "Draws the higher-timeframe swing the setup is measured against. The take profit sits PART of the way to it — see the take profit setting under Stop & targets.")
 
 // ── 3 · What trades ─────────────────────────────────────────────
 bool   execLongs  = input.bool(true, "Trade longs",  group = G3, tooltip = "Lets long setups trade. Off = shorts only.")
@@ -78,7 +78,8 @@ bool entryOnClose = input.bool(true, "Enter on the change-of-character close", g
 
 // ── 6 · Stop & targets ──────────────────────────────────────────
 int   extremeMinutes = input.int(120, "Look back for the extreme (minutes)", minval = 15, maxval = 720, step = 15, group = G6, tooltip = "The stop goes beyond the lowest low (or highest high) of this window. That extreme is what the trade is betting has held.")
-float stopBufferAtr  = input.float(0.05, "Stop buffer (ATR)", minval = 0.0, maxval = 1.0, step = 0.01, group = G6, tooltip = "Extra room beyond the extreme, as a fraction of the average range. 0 puts the stop exactly on the extreme.")
+float stopBufferAtr  = input.float(0.20, "Stop buffer (ATR)", minval = 0.0, maxval = 1.0, step = 0.01, group = G6, tooltip = "Extra room beyond the extreme, as a fraction of the average range. 0 puts the stop exactly on the extreme. 0.20 was measured as the best of 0.00 to 0.50 and the curve either side of it is smooth.")
+float tpFrac         = input.float(0.5, "Take profit at this much of the way to the swing", minval = 0.1, maxval = 1.0, step = 0.05, group = G6, tooltip = "1.0 aims at the swing itself. 0.5 books half the distance and was measured as the best of 0.35 to 0.65 — it wins far more often, and because only one position is held at a time, getting out sooner frees the slot for the next setup.")
 bool  useBreakeven   = input.bool(false, "Move the stop to breakeven", group = G6, tooltip = "Off by default. Moving it early converts winners into scratches; moving it late is worth almost nothing.")
 float beArmFrac      = input.float(0.7, "   ↳ Arm at this much of the way to the target", minval = 0.1, maxval = 0.99, step = 0.05, group = G6, active = useBreakeven, tooltip = "How far price must travel before the stop moves up. Below about two thirds this costs money.")
 
@@ -316,6 +317,14 @@ float riskShort = stopShort - entryPx
 float rLong  = riskLong  > 0 and not na(tgtLong)  ? (tgtLong  - entryPx) / riskLong  : na
 float rShort = riskShort > 0 and not na(tgtShort) ? (entryPx - tgtShort) / riskShort : na
 
+// [doc 12b] THE SWING IS WHAT THE SETUP IS MEASURED AGAINST; THE TAKE PROFIT IS PART OF THE WAY TO IT
+// `rLong`/`rShort` above stay measured on the WHOLE distance to the swing, because that is what the
+// minimum-target refusal is judging — how much room the setup has. `tpFrac` then decides where the
+// order actually rests. Reducing the measured R instead would refuse setups on the size of the exit
+// we chose rather than on the size of the move available, and the two are different questions.
+float tpLong  = entryPx + (tgtLong  - entryPx) * tpFrac
+float tpShort = entryPx - (entryPx - tgtShort) * tpFrac
+
 string blockLong  = na
 string blockShort = na
 if rawLong
@@ -349,13 +358,13 @@ bool tookShort = false
 if goLong and strategy.position_size == 0
     strategy.entry("L", strategy.long, qty = f_qty(riskLong))
     tStop := stopLong
-    tTgt  := tgtLong
+    tTgt  := tpLong
     beArmed := false
     tookLong := true
 if goShort and strategy.position_size == 0
     strategy.entry("S", strategy.short, qty = f_qty(riskShort))
     tStop := stopShort
-    tTgt  := tgtShort
+    tTgt  := tpShort
     beArmed := false
     tookShort := true
 
@@ -381,7 +390,7 @@ if strategy.position_size == 0 and not tookLong and not tookShort
 
 // [doc 13] ANNOTATIONS
 if showEntries and (goLong or goShort)
-    label.new(bar_index, goLong ? low : high, goLong ? "▲" : "▼", style = goLong ? label.style_label_up : label.style_label_down, color = color.new(goLong ? bullColor : bearColor, 20), textcolor = color.white, size = size.small, tooltip = "target " + str.tostring(goLong ? tgtLong : tgtShort, format.mintick) + "  ·  " + str.tostring(goLong ? rLong : rShort, "#.##") + "R  ·  " + str.tostring(goLong ? lowFamilies : highFamilies) + " level(s) swept")
+    label.new(bar_index, goLong ? low : high, goLong ? "▲" : "▼", style = goLong ? label.style_label_up : label.style_label_down, color = color.new(goLong ? bullColor : bearColor, 20), textcolor = color.white, size = size.small, tooltip = "take profit " + str.tostring(goLong ? tpLong : tpShort, format.mintick) + " (" + str.tostring((goLong ? rLong : rShort) * tpFrac, "#.##") + "R booked)  ·  swing " + str.tostring(goLong ? tgtLong : tgtShort, format.mintick) + " (" + str.tostring(goLong ? rLong : rShort, "#.##") + "R available)  ·  " + str.tostring(goLong ? lowFamilies : highFamilies) + " level(s) swept")
 
 if showBlocked and (not na(blockLong) or not na(blockShort))
     label.new(bar_index, not na(blockLong) ? low : high, "REFUSED", style = not na(blockLong) ? label.style_label_up : label.style_label_down, color = color.new(color.orange, 60), textcolor = color.orange, size = size.tiny, tooltip = not na(blockLong) ? blockLong : blockShort)

@@ -27,7 +27,9 @@ The rule, in full:
    character rather than a continuation.
 4. That swing is at least 2 stops away, the stop sitting beyond the extreme of the last 2 hours.
 
-Entry at the 5-minute close. Stop beyond the extreme. Target the swing. The stop does not move.
+Entry at the 5-minute close. Stop beyond the extreme, plus a fifth of the average range of air.
+**Take profit HALF the way to the swing** — the swing is what the setup is measured against, not
+where the order rests. The stop does not move.
 
 ---
 
@@ -150,11 +152,13 @@ All from `backtest/tools/pre_sos_leg.py`, Vantage XAUUSD, 2018-09-13 → 2026-08
 | default | value | why |
 |---|---|---|
 | chart / confirmation frame | 5m | 15m confirms too late (target closer than the stop); 1m collapses to +0.002R once the round trip is charged |
-| levels must be swept within | 180 min | the window the study measured |
-| levels that must agree | 1 | two is better (+0.386R vs +0.296R) and halves the trade count — Aaron's call, not a measurement |
+| levels must be swept within | 180 min | a sharp peak — 120 min scores +0.185R and 240 min +0.168R against its +0.276R |
+| levels that must agree | 1 | ⚠ two looked best ALONE and is the worst change in the sweep once the half-target exit is in — see below |
 | only against the 15m trend | on | the with-trend half is where the edge is not |
-| refuse a target nearer than | 2R | below it the setups have no room to pay |
-| look back for the extreme | 120 min | the window the study measured |
+| refuse a target nearer than | 2R | below it the setups have no room to pay. Measured on the whole distance to the swing, not on the take profit |
+| look back for the extreme | 120 min | 90 min scores marginally better alone and adds nothing once the stop is wider; left alone to move one knob fewer |
+| **air under the stop** | **0.20 ATR** | ⚠ **changed from 0.05 on 2026-08-25.** A smooth hill: 0.0 → +0.227R, 0.1 → +0.301R, **0.2 → +0.357R**, 0.3 → +0.331R, 0.5 → +0.292R |
+| **take profit** | **half the way to the swing** | ⚠ **new on 2026-08-25.** A plateau from 0.44 to 0.54, peaking at 0.50 |
 | move the stop to breakeven | **off** | arming at 30% costs −0.217R; the best point (~70%) is worth +0.024R |
 
 🔴 **The breakeven default is OFF and that is the measurement, not caution.** A breakeven stop on
@@ -166,6 +170,71 @@ the stop alone is within noise of the best possible setting and is one less thin
 +0.223R) and was measured, because it decides whether the file needs two engines at all. It does.
 The single-frame stand-in — a bar closing back beyond the sweep bar's extreme — scores +0.082R.
 **The faster engine is not a convenience; it is what carries the result.**
+
+---
+
+## 🔴 The tuning pass, and the two settings that changed (2026-08-25)
+
+**Everything above the table was measured with NO POSITION SLOT, and that is not this strategy.**
+`backtest/tools/pre_sos_leg.py` says so in its own docstring — it scores every setup on its own, as
+though the account could hold all of them at once. This file holds ONE. Measured by
+`backtest/tools/pre_sos_leg_queued.py`: **228 setups → 200 taken**, +0.296R → +0.276R. The 28 it
+cannot reach are BETTER than average (32.1% hit, +0.441R) and worth +12.3R, so the slot costs real
+money — it just does not break the setup. ⚠ **The study gives up on a stuck trade after ~4 days and
+this file has no time stop, so the true slot cost is worse than 12.3R.**
+
+**The sweep is `backtest/tools/pre_sos_leg_tune.py`, and it moves one knob at a time with the slot
+ON.** Shipped scored n=200, 27.5% hit, +0.276R, +55.2R, worst drawdown 18.1R. Two changes landed:
+
+| | shipped | tuned |
+|---|---|---|
+| air under the stop | 0.05 ATR | **0.20 ATR** |
+| take profit | the swing | **half the way to it** |
+| trades / hit rate | 200 / 27.5% | **208 / 47.6%** |
+| expectancy | +0.276R | **+0.400R** |
+| total | +55.2R | **+83.3R** |
+| worst peak-to-trough | 18.1R | **9.7R** |
+| each half of the history | +0.194 / +0.339 | **+0.386 / +0.414** |
+
+🔴 **WHY THE EARLIER EXIT WINS IS THE SLOT, NOT THE EXIT.** Booking half the distance gives up
+reward per trade — the parent study, which has no slot, rates 0.5 at +0.349R against 1.0's +0.310R,
+a modest gap. With one position it is +0.400R against +0.276R, because **a trade that ends sooner
+hands the slot back and the strategy catches setups it used to be busy for** (200 → 208 taken).
+**A rule scored one-trade-at-a-time cannot see that, and every number above the table was scored
+that way.**
+
+⚠ **Neither change is a lone spike, which is the whole reason they were kept.** The stop buffer is a
+smooth hill (0.0/0.1/0.2/0.3/0.5 → +0.227/+0.301/+0.357/+0.331/+0.292R) and the exit is a plateau
+(0.44→6.36, 0.46→6.77, 0.48→7.81, **0.50→8.53**, 0.52→8.21, 0.54→8.46 return-over-drawdown). ✅ The
+re-walk reproduces the untouched baseline EXACTLY at a fraction of 1.0 — a built-in control that
+would catch the harness rather than the setting.
+
+🔴 **REQUIRING TWO LIQUIDITY LEVELS TO AGREE IS THE FINDING TO REMEMBER, AND IT IS A WARNING ABOUT
+SWEEPS.** Measured alone it is the single best change available — return-over-drawdown 5.19 against
+1's 3.04, on half the trades. Combined with the half-target exit it **cuts the return by more than
+half** (+78.5R → +38.6R) and its two halves fall apart (+0.133 / +0.547). ⚠ **A one-at-a-time sweep
+cannot see an interaction, so its winners are candidates and never conclusions** — the combination
+has to be run before anything is believed.
+
+### What risk percent this supports
+
+Compounded over the tuned trade list, constant fraction per trade:
+
+| risk each trade | grows to | worst drawdown | if a future run is twice as deep |
+|---|---|---|---|
+| 2.0% | 4.7x | 17.9% | 32.7% |
+| 2.5% | 6.7x | 22.0% | 39.2% |
+| 5.0% | 32.1x | 40.0% | 64.0% |
+| 10.0% | 304.0x | 65.8% | **88.3%** |
+
+⚠ **9.7R is the worst drawdown IN THIS SAMPLE and the real worst is still ahead** — that is what the
+last column is for, and it is why 10% is not recommended however good the multiple looks. The worst
+run of consecutive losers was **6**. ⚠ **The smallest stop is still $0.88 even with the wider
+buffer**, so the sizing hazard in the section above has not gone away; the minimum-stop refusal is
+still shipped OFF.
+
+⚠ **These are the STUDY's numbers under this file's settings, not this file's numbers.** Nobody has
+yet compared a TradingView run against them.
 
 ---
 
@@ -181,8 +250,31 @@ preference: every number behind this file was measured with one slot.
 
 ## Before this is believed
 
-- It has never been compiled. The token ceiling is the first thing that could stop it.
-- 228 trades in 9 years with three losing years inside them (2021, 2023, 2024).
+- ✅ It compiles and runs (2026-08-25, 1,443 lines). The token ceiling was the risk and it cleared.
+- **208 trades in 9 years**, and it has never been run on a chart long enough to compare against
+  that.
+- ⚠ **EVERY YEAR IS POSITIVE AT THE TUNED SETTINGS, AND THAT IS A REASON FOR MORE SUSPICION, NOT
+  LESS.** The three losing years the shipped settings had (2018 −2.4R, 2021 −1.8R, 2024 −11.6R) all
+  turn: +7.6R, +4.8R, +3.4R. Nine from nine is the shape an over-fitted result has. **What argues
+  against that here is that only TWO knobs moved, each sits on a smooth hill rather than a spike,
+  and each holds up on both halves of the history separately** — but the honest reading is that the
+  earlier exit converts the marginal years, not that this strategy cannot have a losing one.
+
+| year | shipped | tuned |
+|---|---|---|
+| 2018 | −2.4R | **+7.6R** |
+| 2019 | +12.5R | +17.9R |
+| 2020 | +4.6R | +7.2R |
+| 2021 | −1.8R | **+4.8R** |
+| 2022 | +4.6R | +1.4R |
+| 2023 | +3.5R | +11.6R |
+| 2024 | −11.6R | **+3.4R** |
+| 2025 | +22.0R | +15.5R |
+| 2026 | +23.7R | +13.8R |
+
+⚠ **2025 and 2026 are LOWER tuned than shipped** — the earlier exit gives up the big runners, and in
+the two years that had them that costs real money. It buys back more than it costs everywhere else.
+
 - The rule set was found by testing ~20 combinations and reporting what scored. It survived a time
   split, a knob sweep and a change of broker feed; it is not out-of-sample.
 - It reads the same structure stream as A+ on the same instrument, so the two are **not**

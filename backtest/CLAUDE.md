@@ -606,6 +606,24 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **`--min-risk-atr` defaults to 0** (honest for a study, wrong for a strategy) and it is the
   cut that decides whether structure's edge clears 2σ. Quote both.
 
+- **`tools/pre_sos_leg_queued.py` and `tools/pre_sos_leg_tune.py`** (2026-08-25) — the one-position
+  version of the study below, and the settings sweep built on it. Both IMPORT the study rather than
+  restating any rule, so they cannot drift from it.
+  🔴 **A STUDY WITH NO POSITION SLOT REPORTS AN UPPER BOUND, AND THE TOOL BELOW SAYS SO IN ITS OWN
+  DOCSTRING WHILE ITS NUMBERS WERE QUOTED AS THE STRATEGY'S.** Measured: 228 setups → **200** a
+  one-position strategy can reach, and the 28 it cannot are BETTER than average. **Ask what a study
+  assumes about concurrency before quoting it at a strategy that holds one trade.**
+  🔴 **SWEEP WITH THE SLOT ON — it changes which setting WINS, not just the score.** An exit that
+  ends a trade sooner hands the slot back and buys the next setup, so it is worth more than its
+  average outcome says: the winning exit here rates +0.349R against +0.310R with no slot (marginal)
+  and +0.400R against +0.276R with one (decisive).
+  🔴 **A ONE-AT-A-TIME SWEEP CANNOT SEE AN INTERACTION, SO ITS WINNERS ARE CANDIDATES.** The single
+  best change measured alone — two liquidity levels agreeing — cut the return by more than half once
+  the winning exit was also in, and its two time-halves fell apart. **Run the combination before
+  believing any of it**, and re-check on both halves of the history.
+  ⚠ The exit walks return the bar a trade was let go on, which is what the slot needs; that value
+  was always computed and thrown away. Adding it moved no number the study reports — verified by
+  re-running and diffing the whole report.
 - **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The A+ bot waits for the
   shift and fades the retracement; this asks whether the move that CREATES it is tradeable.** Added
   2026-08-24 on Aaron's question. Stdlib only, runs off `backtest/cache/`. Full record:

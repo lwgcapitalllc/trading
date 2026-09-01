@@ -293,6 +293,7 @@ class Signal:
     r_available: float
     outcome: str  # "win" | "loss" | "open"
     mfe: float  # best fraction of the way to the target, before it resolved
+    exit_i: int  # the bar it was let go on — what a one-position strategy needs, see walk()
     families: Tuple[str, ...]
     counter_trend: bool
 
@@ -305,7 +306,16 @@ def walk(
     stop: float,
     target: float,
     horizon: int,
-) -> Tuple[str, float]:
+) -> Tuple[str, float, int]:
+    """Which came first, the stop or the target — and on WHICH bar.
+
+    The third return value is the bar the position was let go on, and it is a fact this
+    walk has always computed and thrown away. It is what `pre_sos_leg_queued.py` needs to
+    know when a one-position strategy's slot frees up: this study deliberately has no slot
+    (see the module docstring), so the number of setups it reports is an upper bound on the
+    number a strategy can actually take. A run that never resolves reports the last bar it
+    looked at, because the slot is genuinely occupied for that whole span.
+    """
     span = abs(target - entry)
     best = 0.0
     end = min(i + 1 + horizon, len(rows))
@@ -316,18 +326,18 @@ def walk(
             if v > best:
                 best = v
             if r.l <= stop:
-                return "loss", best
+                return "loss", best, j
             if r.h >= target:
-                return "win", best
+                return "win", best, j
         else:
             v = (entry - r.l) / span
             if v > best:
                 best = v
             if r.h >= stop:
-                return "loss", best
+                return "loss", best, j
             if r.l <= target:
-                return "win", best
-    return "open", best
+                return "win", best, j
+    return "open", best, max(i, end - 1)
 
 
 def walk_breakeven(
@@ -339,9 +349,13 @@ def walk_breakeven(
     target: float,
     horizon: int,
     arm_at: float,
-) -> str:
+) -> Tuple[str, int]:
     """Same walk, except the stop moves to the entry price once price has travelled `arm_at` of
-    the way to the target. Returns "win" | "scratch" | "loss" | "open".
+    the way to the target. Returns ("win" | "scratch" | "loss" | "open", the bar it was let go on).
+
+    ⚠ The exit bar is here for the same reason it is on `walk()` — a one-position strategy needs
+    to know when the slot frees up, and an earlier exit is worth more to it than the average
+    outcome alone says. See `pre_sos_leg_queued.py`.
 
     ⚠ THE ARM IS DECIDED ON A BAR CLOSE, not intrabar. A bar that reaches the arm level and then
     retraces to the entry within that same bar does NOT scratch — nothing in a bar tells you the
@@ -360,19 +374,19 @@ def walk_breakeven(
         live_stop = entry if armed else stop
         if direction > 0:
             if r.l <= live_stop:
-                return "scratch" if armed else "loss"
+                return ("scratch" if armed else "loss"), j
             if r.h >= target:
-                return "win"
+                return "win", j
             if not armed and r.h >= arm_price:
                 armed = True
         else:
             if r.h >= live_stop:
-                return "scratch" if armed else "loss"
+                return ("scratch" if armed else "loss"), j
             if r.l <= target:
-                return "win"
+                return "win", j
             if not armed and r.l <= arm_price:
                 armed = True
-    return "open"
+    return "open", max(i, end - 1)
 
 
 def _last_at_or_before(times: List[int], t: int) -> Optional[int]:
@@ -457,7 +471,7 @@ def collect(
                 _last_at_or_before(base.swept[(f, side)], t)
             )
         )
-        outcome, mfe = walk(fast, i, direction, entry, stop, target, horizon)
+        outcome, mfe, exit_i = walk(fast, i, direction, entry, stop, target, horizon)
         out.append(
             Signal(
                 i=i,
@@ -472,6 +486,7 @@ def collect(
                 r_available=abs(target - entry) / risk,
                 outcome=outcome,
                 mfe=mfe,
+                exit_i=exit_i,
                 families=fams,
                 counter_trend=(direction > 0 and base.direction[bi] < 0)
                 or (direction < 0 and base.direction[bi] > 0),
@@ -507,7 +522,7 @@ class Control:
                 entry = self.rows[j].c + s.direction * half
                 stop = entry - s.direction * risk
                 target = entry + s.direction * risk * s.r_available
-                outcome, _ = walk(self.rows, j, s.direction, entry, stop, target, self.horizon)
+                outcome, _, _ = walk(self.rows, j, s.direction, entry, stop, target, self.horizon)
                 total += 1
                 if outcome == "win":
                     wins += 1
@@ -619,7 +634,7 @@ def report(sigs: List[Signal], ctl: Control, args, fast_rows: Sequence[Row], hor
                 if arm is None:
                     outcome = s_.outcome
                 else:
-                    outcome = walk_breakeven(
+                    outcome, _ = walk_breakeven(
                         fast_rows, s_.i, s_.direction, s_.entry, s_.stop, s_.target, horizon, arm
                     )
                 if outcome == "win":
@@ -649,6 +664,7 @@ def report(sigs: List[Signal], ctl: Control, args, fast_rows: Sequence[Row], hor
             w.writerow(
                 [
                     "bar",
+                    "exit_bar",
                     "dir",
                     "year",
                     "hour",
@@ -665,6 +681,7 @@ def report(sigs: List[Signal], ctl: Control, args, fast_rows: Sequence[Row], hor
                 w.writerow(
                     [
                         s.i,
+                        s.exit_i,
                         s.direction,
                         s.year,
                         s.hour,

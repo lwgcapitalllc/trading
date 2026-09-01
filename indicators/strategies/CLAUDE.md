@@ -182,9 +182,16 @@ move that CREATES the shift — extreme up to the swing whose break IS the shift
 and the numbers behind them: `docs/mpc_extreme_leg_strategy.md`. The study that produced the rules
 is `../../docs/PRE_SOS_LEG_STUDY.md`.** Only what is true of THIS directory lives here.
 
-🔴 **WRITTEN, NEVER COMPILED. Paste before trusting.** It is 1,417 lines carrying two copies of
-the external state machine, and the token ceiling is the first thing that could stop it — the same
-risk this file already recorded for H4, unresolved there too.
+✅ **COMPILES AND RUNS** (2026-08-25). It is 1,443 lines carrying two copies of the external state
+machine; the token ceiling was the risk and it cleared. ⚠ Its first run blew the account — the
+defect and the standing rule it produced are in the 🔴 block further down this file.
+
+🔴 **TUNED 2026-08-25, and the rule worth carrying to the next strategy: SWEEP WITH THE POSITION
+SLOT ON.** An exit that ends sooner hands the slot back, so it is worth more than its average
+outcome says — scored one-trade-at-a-time the winning exit here looks marginal, and with one
+position it is the largest gain available. Two defaults moved as a result. Numbers, the
+risk-percent table and the interaction that killed the most promising change:
+`docs/mpc_extreme_leg_strategy.md`.
 
 🔴 **IT IS THE FIRST FILE HERE WHOSE SECOND ENGINE INSTANCE IS GENERATED RATHER THAN FORKED.**
 `tools/derive_htf_structure.py` regenerates the 15-minute copy from the block in
