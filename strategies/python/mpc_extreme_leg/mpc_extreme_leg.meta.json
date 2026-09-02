@@ -253,7 +253,7 @@
       "name": "skip_transitioning",
       "group": "Not on the chart",
       "label": "Skip a transitioning market",
-      "desc": "Refuses a setup while the market is between a trend and a range. TradingView cannot make this check, so switching it on makes the bot and the chart different strategies and the parity check refuses to run. Off by default.",
+      "desc": "Refuses a setup while the market is between a trend and a range. On by default: it drops some trades, makes slightly more money, and cuts the worst losing streak by about a quarter. TradingView cannot make this check, so the chart takes trades the bot refuses.",
       "widget": "toggle",
       "options": {
         "off": "Take them",
@@ -265,7 +265,7 @@
       "name": "skip_news",
       "group": "Not on the chart",
       "label": "Skip around big news",
-      "desc": "Refuses a setup close to a high-impact US release or a holiday. Same catch as the setting above: the chart cannot do it, so the parity check refuses to run while it is on. Measured worse on both money and worst losing streak. Off by default.",
+      "desc": "Refuses a setup close to a high-impact US release or a holiday. Off by default: it was measured worse on both money and worst losing streak, and it could not answer at all on part of the history. The chart cannot make this check either.",
       "widget": "toggle",
       "options": {
         "off": "Take them",

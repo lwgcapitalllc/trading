@@ -390,22 +390,29 @@ def test_a_profile_that_moves_fills_is_refused_rather_than_half_honoured():
 
 # ── the two cuts TradingView cannot make (2026-09-02) ────────────────────────────
 #
-# Both default OFF. What these pin is that they are INERT while off, that they sit after every
-# refusal the Pine can also make, and that "could not ask" is not the same answer as "no".
+# The market cut SHIPS ON; the news cut ships off. What these pin is that each is INERT while off,
+# that they sit after every refusal the Pine can also make, that "could not ask" is not the same
+# answer as "no", and that the pair which ships is the pair that was MEASURED to be worth it — a
+# default nobody has re-measured is a guess with an authoritative face.
 
 from ..execution import BLK_NEWS, BLK_TRANSITIONING  # noqa: E402
 from ..filters import ALLOW, REFUSE, UNKNOWN, NewsCut, TransitioningCut  # noqa: E402
 
 
-def test_both_cuts_are_OFF_by_default():
-    """Mutation: flip either default to True in config.py.
+def test_the_shipped_cuts_are_the_ones_that_were_MEASURED_to_be_worth_it():
+    """Mutation: flip either shipped default in config.py.
 
-    Not a style preference. On, this side stops being a port of the Pine and the parity gate
-    refuses to run — so an accidental default is a strategy that can never be validated again.
+    🔴 Each of these is a DECISION with a number behind it, not a preference, and the two went
+    opposite ways over 470,995 PU Prime M5 bars:
+      market cut ON  — 132 trades/+57.10R/worst run 8.13R → 113/+58.53R/6.00R. Better on both.
+      news cut  OFF  — it scored +51.45R with a DEEPER worst run of 8.87R, and could not answer
+                       on 51 of 550 setups because the calendar does not cover the window.
+    ⚠ Turning either one on costs something real: the chart cannot make these checks, so the
+    parity gate can only ever prove the SHARED logic and says so on its verdict line.
     """
     cfg = ExtremeLegConfig()
-    assert cfg.skip_transitioning is False
-    assert cfg.skip_news is False
+    assert cfg.skip_transitioning is True, "measured better on BOTH money and worst run"
+    assert cfg.skip_news is False, "measured worse on both, on 91% calendar coverage"
 
 
 def test_a_cut_that_is_OFF_cannot_refuse_even_when_its_answer_is_yes():
@@ -414,7 +421,7 @@ def test_a_cut_that_is_OFF_cannot_refuse_even_when_its_answer_is_yes():
     This is what keeps the decision stream bit-identical to the chart's while the cuts are off.
     Both answers are forced True here and both flags are off, so the ladder must still accept.
     """
-    cfg = ExtremeLegConfig(min_r=1.0)
+    cfg = ExtremeLegConfig(min_r=1.0, skip_transitioning=False, skip_news=False)
     code = MpcExtremeLegStrategy._ladder(
         cfg, False, 110.0, 100.0, 5.0, 2.0, above=True, transitioning=True, news=True
     )

@@ -15,6 +15,65 @@ the other one did.
 
 ## Latest
 
+### The guard that died in the first minute it was ever true (2026-09-02)
+
+The extreme-leg strategy carries two refusals TradingView cannot make: skip a transitioning market
+(it reads `engines/regime/`) and skip around a macro release (it reads `engines/news/`). Neither
+engine has a Pine source, by construction, so no export column can carry them and the parity gate
+can never check them.
+
+Both were built OFF, and `compare_extreme_leg.py` was given a hard REFUSAL: it would not run at all
+while either was on. That looked like the careful choice. A gate that quietly compared a filtered
+Python against an unfiltered Pine would report a disagreement per refused setup, on a real column at
+a real bar, and send the next reader into the refusal ladder hunting a porting bug that is not
+there — so refusing seemed like the safe direction.
+
+**Then the market cut was measured, found to be worth it, and switched on — and the guard walled the
+only check the strategy has.** All 14 of the gate's own tests failed. Parity of the SHARED logic —
+the 20,327 bars of ladder, sweep and arming behaviour that the two implementations genuinely do have
+in common, and that had gone green the previous day — became unprovable, not because anything had
+diverged, but because the tool would no longer start.
+
+🔴 **The guard had been written while both cuts were off, so it had never once run in the state it
+existed for.** It was a prediction about a configuration nobody had, and it was wrong the first
+minute the configuration arrived. That is the same shape as the lab-stack verification test this
+file already records: a check written before the thing exists is a prediction, and this one would
+have condemned a correct implementation.
+
+✅ **The fix was to notice the refusal was never the part doing the work.** What prevents the
+false-divergence report is FORCING the cuts off for the comparison — and that is not a workaround,
+because off is the configuration every TradingView export is necessarily taken at. It is the only
+correct one. The refusal added nothing to that; it only decided who got punished for the cut being
+on. The gate now forces both off, compares, and puts what it could not check on the verdict line
+itself:
+
+```
+✓ PARITY OF THE SHARED LOGIC — the Python made the same decisions as the Pine on every compared
+  bar, but this is NOT a check of the shipped strategy: the transitioning-market cut is switched
+  ON in config.py, the chart cannot make it, and this run was necessarily measured with it OFF.
+  What ships takes FEWER trades than what was just compared.
+```
+
+⚠ **A qualified green and a plain green are different claims, and a qualifier printed on every run
+would be neither.** There is a test that goes red if the qualifier ever becomes unconditional, and a
+second that goes red if it stops appearing while a Pine-less cut ships on. Both were watched red by
+mutation, along with four more: the gate ceasing to force the cuts off, the market cut switched back
+off, the news cut switched on, and the OFF switch ceasing to work.
+
+⚠ **The test fixture carried the same fault in miniature and had to be fixed in the same pass.** It
+built its synthetic export from this side's own SHIPPED settings, so it recorded a refusal code the
+chart cannot produce, and the gate correctly reported it as a divergence — a test failing because
+its fixture described a system nobody has. Rule 13, arriving from the direction the rule does not
+usually name: the fixture was not more capable than production, it was differently configured, and
+that was enough.
+
+**The standing lesson is about WHEN a guard is proven, not about this gate.** A refusal that has
+only ever been exercised in the state it permits is untested in the only state that matters. Turn
+the condition on once, deliberately, before shipping the guard — and if turning it on makes the
+work impossible rather than merely careful, the guard is wrong, because a guard that blocks the work
+gets bypassed and a bypassed guard reads as checked.
+
+
 ### The overlap audit learned a second bar frame, and the old one could not say which broker it read (2026-09-01)
 
 The extreme-leg bot trades off 5-minute bars; A+ trades off 15-minute ones. The overlap audit

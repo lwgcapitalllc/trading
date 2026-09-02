@@ -99,6 +99,13 @@ def config_from_export(df: pd.DataFrame) -> Tuple[ExtremeLegConfig, List[str]]:
     to be told which one.
     """
     cfg = ExtremeLegConfig()
+    # 🔴 FORCED OFF, ALWAYS, WHATEVER THIS SIDE'S DEFAULT SAYS. This config describes THE EXPORT,
+    # and the Pine cannot make either cut — there is no input, so no `cfg_*` column, so an export
+    # taken with them "on" cannot exist. Reading them off this side's defaults would configure the
+    # Python differently from the chart it is being compared against, which is the one thing this
+    # function's own docstring forbids. See `config.py` → section 8.
+    cfg.skip_transitioning = False
+    cfg.skip_news = False
     missing: List[str] = []
     if "cfg_flags" in df.columns and df["cfg_flags"].notna().any():
         bits = int(round(float(df["cfg_flags"].dropna().iloc[0])))
@@ -209,26 +216,22 @@ def main(argv=None) -> int:
     cfg, missing = config_from_export(df)
 
     # 🔴 THE TWO CUTS THE PINE CANNOT MAKE. `engines/regime/` and `engines/news/` have no Pine
-    # source, so no export column carries these and this gate can never check them. Running with
-    # one on would compare a FILTERED Python against an UNFILTERED Pine: every refused setup would
-    # surface as a disagreement, on a real column, at a real bar — a red gate that looks exactly
-    # like a porting bug and sends the reader into the ladder to find one. **This refusal is the
-    # only reason those settings are allowed to exist at all**; see `config.py` → section 8.
-    # ⚠ It reads the CONFIG, not the export, because that is where the setting can be turned on.
-    on = [n for n in ("skip_transitioning", "skip_news") if getattr(cfg, n, False)]
-    if on:
-        label = {"skip_transitioning": "the transitioning-market cut",
-                 "skip_news": "the news blackout cut"}
-        print("✗ " + " and ".join(label[n] for n in on) + " is switched on, and this gate cannot "
-              "check it.")
-        print("  Those cuts read engines with NO Pine source, so the chart cannot make them. A run "
-              "with one on\n"
-              "  compares a filtered Python against an unfiltered Pine, and every setup the cut "
-              "refused reports\n"
-              "  as a disagreement at a real bar — which reads exactly like a porting bug.")
-        print("  Turn them off, prove parity, and switch them back on afterwards. They are a "
-              "deliberate\n  divergence, not a ported rule.")
-        return 2
+    # source, so no export column carries them and this gate can never check them.
+    #
+    # 🔴 THIS WAS A HARD REFUSAL UNTIL 2026-09-02 AND THE REFUSAL WAS WRONG — it was written while
+    # both cuts were off, and the first time one was actually switched on it walled the entire gate:
+    # 14 of this tool's own tests could no longer run, and nobody could prove parity of the SHARED
+    # logic either. **A guard that blocks the work gets bypassed, and this repo has already paid for
+    # that lesson twice.** The comparison above now forces both cuts OFF, which is not a workaround
+    # — it is the correct configuration, because it is the one the export was taken at.
+    #
+    # What remains true is that a green run then covers LESS than the shipped strategy. That is said
+    # on the verdict line itself rather than in a footnote, because a reader who meets the caveat
+    # after the conclusion has already formed the conclusion.
+    shipped = ExtremeLegConfig()
+    unchecked = [lbl for name, lbl in (("skip_transitioning", "the transitioning-market cut"),
+                                       ("skip_news", "the news blackout cut"))
+                 if getattr(shipped, name, False)]
 
     tf = int(pd.Series(df.index).diff().dropna().dt.total_seconds().min() // 60)
     print(f"{a.csv.name}: {len(df):,} bars  {df.index[0]} → {df.index[-1]}  ({tf}m)")
@@ -344,7 +347,19 @@ def main(argv=None) -> int:
 
     bad = {k: v for k, v in counts.items() if not k.startswith(("_", "blk"))}
     if not bad:
-        print("\n✓ PARITY — the Python made the same decisions as the Pine on every compared bar.")
+        if unchecked:
+            # On the verdict line, not under it. "✓ PARITY" read alone is exactly the sentence
+            # somebody quotes six weeks later.
+            print("\n✓ PARITY OF THE SHARED LOGIC — the Python made the same decisions as the "
+                  "Pine on every compared bar,\n"
+                  "  but this is NOT a check of the shipped strategy: " + " and ".join(unchecked) +
+                  " is switched ON\n"
+                  "  in config.py, the chart cannot make it, and this run was necessarily "
+                  "measured with it OFF.\n"
+                  "  What ships takes FEWER trades than what was just compared.")
+        else:
+            print("\n✓ PARITY — the Python made the same decisions as the Pine on every compared "
+                  "bar.")
         return 0
     print(f"\n✗ {len(bad)} field(s) diverged. The FIRST bar of each, so a cascade reads as one "
           f"cause rather than many:")

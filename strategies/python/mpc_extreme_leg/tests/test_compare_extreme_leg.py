@@ -115,7 +115,12 @@ def export() -> pd.DataFrame:
         pytest.skip(f"no cached bars at {BARS}")
     df = pd.read_csv(BARS, parse_dates=["time"]).set_index("time").iloc[SLICE[0]:SLICE[1]]
     df = df[["open", "high", "low", "close"]]
-    cfg = ExtremeLegConfig()
+    # 🔴 BOTH PINE-LESS CUTS OFF, EXPLICITLY, WHATEVER SHIPS. This fixture stands in for a
+    # TradingView export, and the chart cannot make either cut — an export taken with one on
+    # cannot exist. Reading today's shipped default here made the fixture record refusal code 8,
+    # which the gate (correctly replaying with the cuts off) then reported as a divergence: a
+    # test failing because the FIXTURE described a system nobody has.
+    cfg = ExtremeLegConfig(skip_transitioning=False, skip_news=False)
     s = MpcExtremeLegStrategy(cfg, initial_capital=10_000.0)
     s.run(df)
     out = _synthetic_export(cfg, df, s.states)
@@ -292,25 +297,19 @@ def test_gate_says_so_when_the_export_carries_no_settings(export, tmp_path):
     assert "cfg_flags" in r.stdout and "NARROWER" in r.stdout.upper()
 
 
-def test_gate_REFUSES_to_run_when_a_pine_less_cut_is_switched_on(export, tmp_path, capsys):
-    """The gate must refuse while either Python-only cut is on, and name which.
+def test_gate_QUALIFIES_its_verdict_when_a_pine_less_cut_ships_on(export, tmp_path, capsys):
+    """A green run must say so on the VERDICT LINE when the shipped strategy is not what it checked.
 
-    🔴 **This refusal is the only reason those two settings are allowed to exist.** They read
-    engines with no Pine source, so no export column carries them and this gate can never check
-    them. Run with one on, the Python refuses setups the Pine took, and every one surfaces as a
-    disagreement on a real column at a real bar — a red gate that reads exactly like a porting bug
-    and sends the reader into the ladder to hunt for one that is not there.
+    🔴 **THIS WAS A HARD REFUSAL UNTIL 2026-09-02 AND THE REFUSAL WAS WRONG.** It was written while
+    both cuts were off — untested against the state it existed for — and the first time one was
+    actually switched on it walled the whole gate: 14 of this file's cases could no longer run, and
+    parity of the SHARED logic became unprovable too. **A guard that blocks the work gets bypassed,
+    and this repo has paid for that lesson twice already.**
 
-    ⚠ **Called IN-PROCESS, unlike every other case in this file, and that is the point rather than
-    a shortcut.** The gate builds its config, then decides. A subprocess reads `config.py` off the
-    disk, so nothing this test can patch reaches it — the first version patched the dataclass field
-    and passed a GREEN run through while asserting a refusal, twice over: a subprocess cannot see
-    the patch, and **a dataclass bakes its defaults into `__init__` at decoration time**, so even
-    in-process the field object is not what the constructor reads.
-
-    ⚠ So it patches what the gate actually RECEIVES — the config that comes back from the export
-    reader. That is one step downstream of how it will really happen (somebody edits a default),
-    and it pins the half that matters: given a config with a cut on, this gate refuses.
+    The comparison now forces both cuts off, which is the CORRECT configuration rather than a
+    workaround: no export can carry them, so the config describing the export must have them off.
+    What is left to say is that the green covers less than what ships — and it is said on the
+    verdict line, because a reader who meets the caveat after the conclusion has already formed it.
     """
     import dataclasses
 
@@ -319,27 +318,52 @@ def test_gate_REFUSES_to_run_when_a_pine_less_cut_is_switched_on(export, tmp_pat
 
     for field, phrase in (("skip_transitioning", "transitioning"), ("skip_news", "news")):
         tool = _load_tool()
-        real = tool.config_from_export
+        real = tool.ExtremeLegConfig
 
-        def patched(df, _f=field, _r=real):
-            cfg, missing = _r(df)
-            return dataclasses.replace(cfg, **{_f: True}), missing
+        def shipped(_f=field, _r=real, **kw):
+            return dataclasses.replace(_r(**kw), **{_f: True})
 
-        tool.config_from_export = patched
+        tool.ExtremeLegConfig = shipped
         code = tool.main([str(csv)])
         out = capsys.readouterr().out
-        assert code == 2, f"{field} on and the gate still ran:\n{out}"
+        assert code == 0, f"the gate must still RUN with {field} on:\n{out}"
+        assert "PARITY OF THE SHARED LOGIC" in out, out
         assert phrase in out.lower(), out
-        # It must say what to DO. A gate that only says no gets switched off.
-        assert "turn them off" in out.lower(), out
+        assert "NOT a check of the shipped strategy" in out, out
 
 
-def test_gate_RUNS_normally_while_both_pine_less_cuts_are_off(export, tmp_path):
-    """The other half, and the one that stops the refusal above from being a wall.
+def test_gate_gives_an_UNQUALIFIED_verdict_when_nothing_pine_less_ships_on(export, tmp_path,
+                                                                          capsys):
+    """The other half. A qualifier that is always printed carries no information.
 
-    A guard that fires on the ordinary case is a guard people learn to route around. Both cuts
-    default off, so the everyday run must be untouched by any of this.
+    ⚠ It patches the shipped config to have BOTH cuts off, rather than reading today's default —
+    the shipped default is a decision that moves, and this case is about the gate's wording.
     """
-    r = _run(export, tmp_path)
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "cannot check it" not in r.stdout
+    import dataclasses
+
+    csv = tmp_path / "export.csv"
+    export.to_csv(csv, index=False)
+    tool = _load_tool()
+    real = tool.ExtremeLegConfig
+    tool.ExtremeLegConfig = lambda **kw: dataclasses.replace(
+        real(**kw), skip_transitioning=False, skip_news=False)
+    code = tool.main([str(csv)])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "PARITY OF THE SHARED LOGIC" not in out, out
+    assert "✓ PARITY —" in out, out
+
+
+def test_the_gate_configures_the_python_with_both_cuts_OFF_whatever_ships(export):
+    """The config built from an export describes THE EXPORT, and no export can carry these.
+
+    Mutation: delete the two forced assignments in `config_from_export`. With the market cut
+    shipping ON, the gate would then replay a filtered Python against an unfiltered Pine and
+    report a disagreement per refused setup — on a real column, at a real bar, blaming the ladder.
+    """
+    tool = _load_tool()
+    cfg, _ = tool.config_from_export(export)
+    assert cfg.skip_transitioning is False
+    assert cfg.skip_news is False
+
+

@@ -2,10 +2,17 @@
 
 🔴 **NEITHER OF THESE HAS A PINE COUNTERPART AND NEITHER EVER WILL.** `engines/regime/` and
 `engines/news/` have no Pine source by construction — they are not ports of anything — so no
-input, no `cfg_*` column, and nothing a parity gate could ever check. Both cuts default OFF, and
-`tools/compare_extreme_leg.py` REFUSES to run with either on. **That refusal is the only reason
-this file is allowed to exist**: without it, a gate would compare a filtered Python against an
-unfiltered Pine, report a disagreement per refused setup, and send the reader at the wrong code.
+input, no `cfg_*` column, and nothing a parity gate could ever check. The market cut SHIPS ON, the
+news cut ships off, and `tools/compare_extreme_leg.py` forces BOTH off for its own comparison —
+the configuration every TradingView export is necessarily taken at — then prints a verdict naming
+what it could not check. **That is the only reason this file is allowed to exist**: without it, a
+gate would compare a filtered Python against an unfiltered Pine, report a disagreement per refused
+setup, and send the reader at the wrong code.
+
+🔴 **The gate used to REFUSE to run while either cut was on, and that guard died the first minute
+it was ever true** — it walled all 14 of its own tests and made parity of the shared logic
+unprovable too. A guard that blocks the work gets bypassed. Story: `CLAUDE.md` → *The two cuts
+TradingView cannot make*.
 
 ⚠ **This is a CONSUMER of two canonical engines, never a second implementation.** Both are
 imported by their bare public names, the same seam every other consumer here uses.

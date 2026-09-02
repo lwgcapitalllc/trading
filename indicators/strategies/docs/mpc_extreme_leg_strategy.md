@@ -347,7 +347,7 @@ return, not that the data proves Friday is cursed. ⚠ Weekend carry is not the 
 trades ran past Friday and they booked **+5.2R**.
 
 ✅ **THE TRANSITIONING-MARKET REFUSAL WAS BUILT ON THE PYTHON SIDE ON 2026-09-02 (Aaron's call),
-SWITCHED OFF BY DEFAULT, AND RE-MEASURED FROM SCRATCH.** Over 470,995 PU Prime `XAUUSD.p` M5 bars
+MEASURED WHILE STILL OFF, AND THEN SWITCHED ON — IT SHIPS.** Over 470,995 PU Prime `XAUUSD.p` M5 bars
 (2020-01-01 → 2026-08-23) it takes the worst losing run from **8.13R to 6.00R while the money goes
 UP, +57.10R → +58.53R** — 40 refusals out of 550 setups asked. A news blackout cut was built at the
 same time and is **worse on both counts** (+51.45R, worst run 8.87R), so it stays off.
@@ -356,8 +356,16 @@ this repository's history reads the transitioning label for this strategy**, so 
 +0.060R / 7.9R → 5.9R figures have no committed tooling behind them. The re-measurement agrees in
 direction and roughly in size, which corroborates them — it does not recover them. Quote
 `strategies/python/mpc_extreme_leg/CLAUDE.md` → *The two cuts TradingView cannot make*.
-⚠ **It still cannot be built in the PINE, and that half is unchanged.** Switching it on makes the
-bot and the chart different strategies, and the parity gate refuses to run until it is off again.
+🔴 **IT CANNOT BE BUILT IN THE PINE, SO THIS FILE NO LONGER DESCRIBES WHAT THE BOT DOES.**
+The chart takes 19 trades the Python refuses. Every backtest figure in this document — the tables,
+the drawdowns, the optimisation record — is the UNFILTERED strategy, and that is not a defect to
+fix here: `engines/regime/` has no Pine source by construction, so putting it in this file means a
+second implementation of a canonical engine in a second language with no parity gate to hold it
+honest. ⚠ **The parity gate no longer refuses over this** — it forces the cut off for the
+comparison (the configuration every export is taken at) and prints a verdict saying the shipped
+strategy takes fewer trades than the one just compared. Why the refusal was removed, and the
+minute it broke: `strategies/python/mpc_extreme_leg/CLAUDE.md` → *The two cuts TradingView cannot
+make*.
 
 🔴 **The transitioning-market refusal is the bigger win and it CANNOT be built here yet.**
 `engines/regime/` is Python-only — it has no Pine source, by construction, so putting it in this

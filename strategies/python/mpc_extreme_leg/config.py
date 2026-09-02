@@ -56,22 +56,41 @@ class ExtremeLegConfig:
     min_stop_usd: float = 0.0
 
     # ── 8 · The two cuts TradingView cannot make (2026-09-02, Aaron's call) ──────────────────
-    # 🔴 **BOTH DEFAULT OFF AND MUST STAY OFF UNTIL SOMEBODY DELIBERATELY TURNS ONE ON.** They
-    # read `engines/regime/` and `engines/news/`, and NEITHER ENGINE HAS A PINE SOURCE — by
-    # construction, not by omission. So no `cfg_*` column can carry them and the parity gate can
-    # never check them. That is exactly the thing this file's opening rule forbids, and it is
-    # allowed here only because the hole is closed at the other end: **`compare_extreme_leg.py`
-    # REFUSES to run with either one on** and says why. A gate that quietly compared a filtered
-    # Python against an unfiltered Pine would report a disagreement per refused setup and blame
-    # the wrong code.
+    # 🔴 **THE MARKET CUT SHIPS ON; THE NEWS CUT SHIPS OFF.** They read `engines/regime/` and
+    # `engines/news/`, and NEITHER ENGINE HAS A PINE SOURCE — by construction, not by omission.
+    # So no `cfg_*` column can carry them and the parity gate can never check them. That is
+    # exactly the thing this file's opening rule forbids, and it is allowed here only because the
+    # hole is closed at the other end: **`compare_extreme_leg.py` forces both OFF for its
+    # comparison** — the configuration every TradingView export is necessarily taken at — and
+    # then prints a verdict naming the cut it could not check. A gate that quietly compared a
+    # filtered Python against an unfiltered Pine would report a disagreement per refused setup and
+    # blame the wrong code.
     #
     # ⚠ **With both off, this side's decision stream is bit-identical to the chart's** — the two
     # checks sit at the END of the refusal ladder, after everything the Pine can also refuse, so
-    # a setup the Pine accepts still records the same code here.
+    # a setup the Pine accepts still records the same code here. **That property is what makes
+    # forcing them off a valid comparison rather than a convenient one.**
     #
     # ⚠ **Turning one on makes the bot and the chart different strategies.** That is a real cost,
     # not a caveat: the chart stops being a picture of what the bot does.
-    skip_transitioning: bool = False
+    #
+    # 🔴 **THE MARKET CUT IS ON AS OF 2026-09-02 (Aaron's call), SO THE PARAGRAPH ABOVE IS A LIVE
+    # COST RATHER THAN A WARNING: the chart takes 19 trades this side refuses.** MEASURED over
+    # 470,995 PU Prime M5 bars 2020-01-01 → 2026-08-23:
+    #     132 trades / +57.10R / worst losing run 8.13R   →   113 / +58.53R / worst run 6.00R
+    # Better on BOTH counts, which is rare and is the whole reason it was worth the cost. The news
+    # cut stays OFF: worse on both (+51.45R, worst run 8.87R) and it could not answer on 51 of the
+    # 550 setups it was asked about.
+    #
+    # ⚠ **YOU DO NOT NEED TO TOGGLE THIS TO RUN THE PARITY GATE, AND YOU MUST NOT.**
+    # `compare_extreme_leg.py` forces both cuts OFF for its own comparison — that IS the
+    # configuration a TradingView export is taken at, so it is the only correct one — and then
+    # prints a verdict naming the cut it could not check. An earlier version REFUSED to run while
+    # either was on; it had been written while both were off, so it had never run in the state it
+    # existed for, and the minute this line became True it walled all 14 of the gate's own tests
+    # and made parity of the shared logic unprovable too. A guard that blocks the work gets
+    # bypassed. Story: `CLAUDE.md` → *The two cuts TradingView cannot make*.
+    skip_transitioning: bool = True
     skip_news: bool = False
     news_before_min: int = 30
     news_after_min: int = 30

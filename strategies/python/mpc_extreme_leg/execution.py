@@ -55,12 +55,14 @@ BLK_ATR_NOT_READY = 7
 # 🔴 CODES 8 AND 9 HAVE NO PINE COUNTERPART EITHER, AND FOR A DIFFERENT REASON FROM 7's.
 # 7 is a warm-up bug the Pine has and this side refuses to reproduce. These two are CUTS THE PINE
 # CANNOT MAKE AT ALL: `engines/regime/` and `engines/news/` have no Pine source by construction, so
-# there is no input, no `cfg_*` column, and nothing a parity gate could ever check. Both are OFF by
-# default and `compare_extreme_leg.py` REFUSES to run with either on — that refusal is the only
-# reason they are allowed to exist here. See `config.py` → section 8.
+# there is no input, no `cfg_*` column, and nothing a parity gate could ever check. 8 SHIPS ON and
+# 9 ships off; `compare_extreme_leg.py` forces both off for its comparison — the configuration
+# every export is taken at — and prints a verdict naming what it therefore could not check. That
+# is the only reason these two are allowed to exist here. See `config.py` → section 8.
 # ⚠ They sit LAST in the ladder on purpose. With both off the code stream is bit-identical to the
 # chart's; with one on, a setup the Pine accepts records 8 or 9 here, which is the divergence made
-# visible rather than hidden.
+# visible rather than hidden. **That ordering is what makes the gate's forced-off run a valid
+# comparison and not a convenient one, so do not move these two up the ladder.**
 BLK_TRANSITIONING = 8
 BLK_NEWS = 9
 

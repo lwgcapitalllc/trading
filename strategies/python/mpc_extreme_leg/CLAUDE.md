@@ -26,8 +26,17 @@ rather than the argument for it.**
 ⚠ **WHAT A GREEN RUN HERE DOES NOT SAY, stated before the number gets quoted without it:**
 **7 entries, 3.5 months, and refusal codes 2, 4, 5 and 7 never reached once.** Everything this
 package has measured over 6.6 years — the trade counts, the R, the two cuts, the clash audit — sits
-on bars this gate has never seen. **It proves the port, not the numbers.** A wider export is the
-single most valuable thing anyone can add to this strategy.
+on bars this gate has never seen. **It proves the port, not the numbers.**
+
+🔴 **THAT COVERAGE IS A CEILING, NOT A FIRST ATTEMPT — STOP CHASING A WIDER EXPORT**
+(Aaron, 2026-09-02: *"I gave you as much export as TV allows"*). Both exports taken for this gate
+came back at ~21,300 M5 bars over the same ~3.5 months, and scrolling further loads no more history
+on that account. ⚠ **Earlier revisions of this very file called a wider export the single most
+valuable thing anyone could add to this strategy, which sends the next reader at a door that does
+not open.** ⚠ **It does not retire the warning above — it makes the warning PERMANENT.** The
+only two routes to wider gate coverage are a COARSER frame (the same Pine on 15m reaches three
+times the calendar for the same bar count, but that is no longer the strategy that ships) or a
+fresh export taken months from now and read as a NEW window rather than a longer one.
 
 ### The first run, and why it was worth reading rather than explaining away
 
@@ -224,28 +233,57 @@ moving those numbers.
 
 ## The two cuts TradingView cannot make (2026-09-02, Aaron's call)
 
-**Both default OFF and the parity gate REFUSES to run with either on.** They read
-`engines/regime/` and `engines/news/`, neither of which has a Pine source — by construction, not
-by omission — so no `cfg_*` column can carry them and this gate can never check them. That is the
-thing `config.py`'s opening rule forbids, and it is allowed only because the hole is closed at the
-other end. **A gate that quietly compared a filtered Python against an unfiltered Pine would report
-a disagreement per refused setup, on a real column at a real bar, and send the reader into the
-ladder to hunt for a porting bug that is not there.**
+🔴 **THE MARKET CUT SHIPS ON; THE NEWS CUT SHIPS OFF (Aaron's call, 2026-09-02).** Both were
+built OFF and both were measured before either was switched — the table below is why exactly one of
+them survived. **So the shipped strategy is no longer the thing the parity gate compares**, and that
+sentence is now printed by the gate itself rather than left here for someone to remember.
+
+They read `engines/regime/` and `engines/news/`, neither of which has a Pine source — by
+construction, not by omission — so no `cfg_*` column can carry them and this gate can never check
+them. That is the thing `config.py`'s opening rule forbids, and it is allowed only because the hole
+is closed at the other end.
+
+🔴 **THE GATE USED TO REFUSE TO RUN WITH EITHER CUT ON, AND THAT DESIGN DIED IN THE FIRST
+MINUTE IT WAS EVER TRUE.** It was written while both cuts were off, so it had never once run in the
+state it existed for; switching the market cut on walled all 14 of the gate's own tests AND made
+parity of the SHARED logic unprovable as well. **A guard that blocks the work gets bypassed, and
+this one blocked the only check the strategy has.** ✅ **It now forces both cuts OFF for the
+comparison** — which is not a climbdown: that IS the configuration every export is taken at, so it
+is the only correct one — **and says what it could not check, on the verdict line itself:**
+
+```
+✓ PARITY OF THE SHARED LOGIC — the Python made the same decisions as the Pine on every
+  compared bar, but this is NOT a check of the shipped strategy: the transitioning-market cut
+  is switched ON in config.py, the chart cannot make it, and this run was necessarily measured
+  with it OFF. What ships takes FEWER trades than what was just compared.
+```
+
+⚠ **A green run with a qualified verdict and a green run with a plain one are DIFFERENT CLAIMS,
+and holding them apart is the whole point.** `test_gate_gives_an_UNQUALIFIED_verdict_when_nothing_pine_less_ships_on`
+goes red if the qualifier ever prints unconditionally, because a warning on every run is a warning
+nobody reads.
+
+⚠ **The reason a filtered Python must never be compared against an unfiltered Pine is unchanged:**
+it reports a disagreement per refused setup, on a real column at a real bar, and sends the reader
+into the ladder hunting a porting bug that is not there. **Forcing the cuts off is what prevents
+that. The refusal was never the part doing the work** — it only decided who got punished for it.
 
 ⚠ **They sit LAST in the refusal ladder.** With both off this side's decision stream is
 bit-identical to the chart's; with one on, the divergence lands on its own code (8 or 9) rather
 than changing which of the Pine's codes a bar records. `test_the_new_cuts_sit_AFTER_every_refusal_the_pine_can_also_make`
 pins it and the whole design rests on it.
 
-⚠ **Turning one on makes the bot and the chart different strategies.** The chart stops being a
-picture of what the bot does. That is the cost, not a caveat.
+🔴 **One IS on, so the bot and the chart are now different strategies.** The chart is no longer
+a picture of what the bot does — it takes 19 trades the bot refuses. That is the price of the row
+below, not a caveat on it, and anyone reading a TradingView result for this strategy is reading the
+unfiltered version.
 
 ### What they are worth — MEASURED 2026-09-02, 470,995 PU Prime `XAUUSD.p` M5 bars, 2020-01-01 → 2026-08-23
 
 | | trades | R | worst losing run | asked | refused |
 |---|---|---|---|---|---|
-| **shipped (both off)** | 132 | +57.10R | 8.13R | — | — |
-| + skip a transitioning market | 113 | **+58.53R** | **6.00R** | 550 | 40 |
+| neither cut (what the chart does) | 132 | +57.10R | 8.13R | — | — |
+| **← SHIPPED: skip a transitioning market** | **113** | **+58.53R** | **6.00R** | 550 | 40 |
 | + skip around news | 121 | +51.45R | 8.87R | 550 | 79 |
 | both | 104 | +53.18R | 5.99R | — | — |
 
@@ -292,9 +330,19 @@ runs can differ.
 ⚠ **Asked only when a setup exists, not per bar.** 550 questions over 6.6 years rather than 470,995;
 the classifier walks its whole frame on every call.
 
-⚠ **If either cut is ever switched on, RE-RUN `backtest/tools/overlap_audit.py`.** It changes what
-this bot trades, so the clash figures against the live A+ bot stop describing it. That audit has
-already gone stale twice in this repo by being left until afterwards.
+✅ **THE CLASH AUDIT WAS RE-RUN THE MOMENT THE CUT WENT ON (2026-09-02), AND THE ANSWER HOLDS.**
+Switching it on drops 19 trades, so the previous day's figures stopped describing this bot within a
+day of being written. Re-measured over the same 470,995 PU Prime `XAUUSD.p` M5 bars: **1,049 shared
+bars** with the live A+ bot — 3.5% of A+'s hold time, down from 1,066 / 3.6% — of which **ZERO are
+same-side**, 6 trade pairs touch at all, none same-direction, and no same-direction entry lands
+within four hours of the other's in 6.6 years. Monthly R correlation +0.035 over 79 months.
+⚠ **It does not retire the account-level allocator**: peak concurrent positions is still 2.
+
+🔴 **THE RULE THIS OBEYS IS THE ONE THIS REPO KEEPS RE-LEARNING: a cross-cutting measurement is
+re-run by whoever MOVES the inputs, not by whoever wrote the conclusion.** The B-LEG audit went
+stale twice exactly that way. Anything that changes what this bot trades — a cut, a threshold, a
+ladder change — invalidates the root `CLAUDE.md` clash paragraph, and the person making the change
+is the only one who knows it happened.
 
 ---
 
