@@ -654,6 +654,31 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   re-ran byte-identical afterwards, so no documented baseline moves.
   ⚠ `MINUTES` in the study gained a 4-hour entry so the timeframe question could be ASKED. Additive
   only — every existing default names its own frame, so nothing that ran before runs differently.
+  🔴 **`--stage ladder` GOT ITS ANSWER WRONG THE FIRST TIME, PURELY FROM ITS AXES.** It offered
+  only two-stage exits whose second leg ran FURTHER than the shipped one; every one lost, by up to
+  5.5R, because with a single slot the runner holds 625 minutes against 400 and blocks ten setups
+  doing it. Widening the axes so a ladder could also finish SOONER moved the best from −5.5R to
+  +1.8R. **A search that can only move a setting one way has decided the answer before it runs —
+  ask which direction an axis is allowed to go before believing what it reports.** (The +1.8R was
+  then refused anyway: its four nearest neighbours span +81.8R to +85.8R around a shipped +84.0R.)
+  🔴 **`--stage costs` EXISTS BECAUSE THE PARENT STUDY CHARGES HALF THE SPREAD AT ENTRY AND NOTHING
+  ELSE**, and that model was quoted at a strategy about to trade money. Measured on the live tier:
+  the whole bill is 4.0R over eight years, ~4.6% of gross, and **financing is the largest part of it
+  (2.46R) rather than commission (0.63R)**. ⚠ **The live account is CHEAPER than the feed every
+  number was measured on** — half the spread beats the commission it charges — so the honest
+  correction went the good way for once, and it also clears two extra setups because a tighter entry
+  leaves the target further away in stops.
+  ⚠ **The tier's spread goes into the COLLECTION, never on top of the result.** It moves the entry
+  price, which moves how far the target is in stops, which moves what qualifies — re-pricing a
+  finished trade list would miss all of that.
+  ⚠ **The spread is charged twice for a loser and once for a winner**: entry is a market fill, the
+  target is a resting limit that fills at its own price, the stop is a market order that pays again.
+  ⚠ **Costs are in R and that makes a TIGHT stop expensive** — one lot risks the stop distance times
+  the contract size, so a fixed commission is a far larger slice of a small risk.
+  ⚠ **The cost constants are COPIED from `fills.py` rather than imported**, because that module
+  needs the whole replay stack and this tool is stdlib-only by design. Each is quoted with its
+  source. **Re-read them before quoting the table again — this symbol's swap moved 1.7% in three
+  weeks with nothing to announce it.**
 - **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The A+ bot waits for the
   shift and fades the retracement; this asks whether the move that CREATES it is tradeable.** Added
   2026-08-24 on Aaron's question. Stdlib only, runs off `backtest/cache/`. Full record:

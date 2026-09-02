@@ -396,3 +396,71 @@ hours. That is the closest thing to an overlap number this strategy has, and it 
 overlap audit — `backtest/tools/overlap_audit.py` needs a Python package and none exists.
 
 Full tooling and how to re-run any of it: `backtest/tools/pre_sos_leg_grid.py`.
+
+---
+
+## The two remaining optimisations, both now measured (2026-09-01)
+
+### A two-stage exit does not beat one exit
+
+**160 ladders — take part of the position at one distance and let the rest run to another,
+with and without moving the stop up after the first fill.** The best of them scores **+85.8R
+against the single exit's +84.0R**: a 2% gain for three new inputs.
+
+⚠ **It is inside the noise of its own neighbours and that is why it is refused.** The four
+ladders nearest the winner score +81.8R, +82.1R, +84.5R and +85.8R — the shipped single exit
+sits in the middle of that band. **A winner you cannot distinguish from the configurations
+beside it is not a winner.**
+
+🔴 **THE FIRST SEARCH GOT THE ANSWER WRONG BECAUSE OF ITS AXES, AND THAT IS THE LESSON.** It
+only offered ladders whose second leg ran FURTHER than the shipped exit — 70%, 80%, the whole
+swing. Every one of those lost, by up to 5.5R, and they lost for a reason that took the slot to
+see: **the runner keeps the position open 625 minutes against 400, and blocks ten setups doing
+it.** Only when the axes were widened to allow a ladder that finishes SOONER did anything come
+close. **A search that can only move a setting one way has decided the answer before it runs.**
+
+⚠ For the record, since the temptation will come back: the best ladder is 75% off at half way
+with the rest at 60% and the stop moved up after the first fill. It is not shipped.
+
+### The real bill, on the account this will actually trade
+
+🔴 **EVERY NUMBER IN THIS DOCUMENT ABOVE THIS LINE CHARGES HALF THE SPREAD AT ENTRY AND NOTHING
+ELSE** — no commission, no financing, nothing on the way out. That was the parent study's model
+and it was honest for a study. Quoted at a strategy about to trade money it is optimistic, and
+by how much had never been measured.
+
+| | Vantage demo (what everything above used) | **PU Prime ECN (the live account)** |
+|---|---|---|
+| spread / commission | $0.22 / none | **$0.12 / $1.00 a side a lot** |
+| trades | 169 | **171** |
+| gross | +84.01R | **+86.19R** |
+| the spread paid getting stopped out | −1.56R | **−0.90R** |
+| commission | −0.00R | **−0.63R** |
+| overnight financing | −2.44R | **−2.46R** |
+| **net** | **+80.01R** | **+82.19R** |
+| worst run, after costs | 8.4R | **8.18R** |
+| at 5% risk | 30.2x, 34.5% down | **33.3x, 34.4% down** |
+
+✅ **The headline survives: the whole bill is 4.0R over eight years, about 4.6% of the gross.**
+✅ **And the live broker is CHEAPER than the one every number was measured on** — half the
+spread, which is worth more than its commission costs. It also clears two extra setups, because
+a tighter entry leaves the target marginally further away in stops.
+
+⚠ **Financing is the largest single cost, not commission** — 2.46R against 0.63R. That is the
+price of a six-hour median hold that sometimes crosses a rollover, and it is charged at the
+measured −79.60 / +30.25 per lot per night with Wednesday carrying the weekend.
+⚠ **Costs are charged in R, which makes them size-independent AND makes a tight stop expensive**:
+one lot risks the stop distance times the contract size, so the same commission is a far larger
+slice of a small risk. The 88-cent stop noted earlier pays roughly eight times the commission,
+in R, that a $7 stop does.
+⚠ **The spread is charged twice for a loser and once for a winner, on purpose.** Entry is a
+market fill and pays the offer; the target is a resting limit and fills at its own price; the
+stop is a market order and pays again on the way out.
+⚠ **The swap figures move** — this symbol read 1.7% adrift in three weeks with nothing to
+announce it. Re-read with `algos/tools/broker_facts.py` before quoting this table again.
+
+### What is still not done
+
+🔴 **NOTHING HAS COMPARED THE STRATEGY FILE AGAINST ANY OF THIS.** There is no TradingView export
+of its trades, so no check exists that the file books what the model measured. It is the largest
+outstanding item on this strategy and no amount of further searching substitutes for it.

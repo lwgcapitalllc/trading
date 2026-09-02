@@ -50,7 +50,7 @@ import statistics
 import sys
 import time
 from argparse import Namespace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -1008,6 +1008,348 @@ def stage_losers(args) -> None:
         print(f"  {lab(shipped_cell[0])}  {shipped_cell[0].row()}")
 
 
+# ----------------------------------------------------------------------------- the ladder
+
+# Fractions of the way to the swing for the FIRST exit, the SECOND exit, and how much of the
+# position leaves at the first. The shipped rule is the degenerate member of this family:
+# everything off at half way, which is w1 = 1.0.
+AX_TP1 = (0.2, 0.3, 0.4, 0.5, 0.6)
+# 0.5 and 0.6 are here because a ladder can be FASTER than the shipped single exit as
+# well as slower, and a search that only offers slower ones has decided the answer.
+AX_TP2 = (0.5, 0.6, 0.7, 0.8, 1.0)
+AX_SPLIT = (0.25, 0.33, 0.5, 0.67, 0.75)
+
+
+def walk_ladder(
+    rows: Sequence[Row],
+    i: int,
+    direction: int,
+    entry: float,
+    stop: float,
+    target: float,
+    horizon: int,
+    r_available: float,
+    risk: float,
+    spread: float,
+    tp1: float,
+    tp2: float,
+    split: float,
+    be_after_first: bool,
+) -> Tuple[bool, float, int]:
+    """Take `split` of the position at `tp1` of the way, the rest at `tp2`. Returns (any part
+    won, R booked, the bar the last part was let go on).
+
+    ⚠ THE PESSIMISTIC CONVENTIONS ARE THE PARENT'S AND MUST STAY THAT WAY, or a ladder is
+    compared against a single exit that was scored more harshly than it was. A bar holding
+    both the stop and a target books the STOP. A move to breakeven arms only AFTER the bar
+    that reached the trigger has finished, so the original stop governs that bar — nothing in
+    a bar tells you the order its extremes came in. A trade that reaches neither end inside
+    the horizon books the unfinished part as a FULL loss.
+
+    ⚠ Exiting at the entry price is not free: the entry already carries half the spread and
+    getting out gives the other half back, so a breakeven exit is charged, not zero.
+    """
+    span = abs(target - entry)
+    p1 = entry + direction * span * tp1
+    p2 = entry + direction * span * tp2
+    live_stop = stop
+    first_done = False
+    booked = 0.0
+    rest = 1.0
+    end = min(i + 1 + horizon, len(rows))
+    for j in range(i + 1, end):
+        r = rows[j]
+        hit_stop = r.l <= live_stop if direction > 0 else r.h >= live_stop
+        if hit_stop:
+            loss = -(spread / 2.0) / risk if (first_done and be_after_first) else -1.0
+            return first_done, booked + rest * loss, j
+        hit_2 = r.h >= p2 if direction > 0 else r.l <= p2
+        if hit_2:
+            return True, booked + rest * r_available * tp2, j
+        if not first_done:
+            hit_1 = r.h >= p1 if direction > 0 else r.l <= p1
+            if hit_1:
+                first_done = True
+                booked += split * r_available * tp1
+                rest = 1.0 - split
+                if be_after_first:
+                    live_stop = entry
+    return first_done, booked + rest * -1.0, max(i, end - 1)
+
+
+def stage_ladder(args) -> None:
+    """Is one exit price the best this can do, or is there money in letting part of it run?
+
+    WHY IT IS WORTH ASKING. The parent study measured that a trade which gets 70% of the way
+    to the swing finishes 79% of the time. A single exit at half way collects none of that.
+    A ladder is the only way to hold both facts at once — most trades do not get far, and the
+    ones that do usually arrive.
+
+    ⚠ AND WHY IT MIGHT STILL LOSE: the strategy holds ONE position, so a ladder keeps the slot
+    occupied longer than a single exit does. Whatever the remainder earns has to beat whatever
+    the next setup would have earned in the time it was held. That is invisible to any test
+    that scores trades one at a time, and it is why the slot is applied here too.
+    """
+    base_rows, fast, base, shifts, a_fast = prepare(
+        args.broker, args.symbol, args.base, args.confirm
+    )
+    horizon = args.horizon_minutes // MINUTES[args.confirm]
+    span_years = (fast[-1].ts - fast[0].ts) / (1000 * 60 * 60 * 24 * 365.25)
+    mid = len(fast) // 2
+    sigs = pool_for(
+        fast,
+        base,
+        shifts,
+        a_fast,
+        args,
+        args.extreme_minutes,
+        args.swept_minutes,
+        args.stop_buffer_atr,
+    )
+    keep = [
+        s.r_available >= args.min_r
+        and s.counter_trend
+        and len(s.families) >= args.min_families
+        and not (args.skip_friday and datetime.utcfromtimestamp(fast[s.i].ts / 1000).weekday() == 4)
+        for s in sigs
+    ]
+    print(
+        f"\n=== two-stage exits, {sum(keep)} qualifying setups"
+        f"{', Friday refused' if args.skip_friday else ''} ==="
+    )
+    print("    the slot is applied, so a longer hold has to pay for the setups it blocks")
+
+    def run(tp1, tp2, split, be):
+        """One ladder, through a single position slot."""
+        rs: List[float] = []
+        wins = 0
+        holds: List[int] = []
+        first: List[float] = []
+        free_at = -1
+        for k, s in enumerate(sigs):
+            if not keep[k] or s.i < free_at:
+                continue
+            won, r, ex = walk_ladder(
+                fast,
+                s.i,
+                s.direction,
+                s.entry,
+                s.stop,
+                s.target,
+                horizon,
+                s.r_available,
+                s.risk,
+                args.spread,
+                tp1,
+                tp2,
+                split,
+                be,
+            )
+            free_at = ex
+            rs.append(r)
+            holds.append(ex - s.i)
+            wins += 1 if won else 0
+            if s.i < mid:
+                first.append(r)
+        return rs, wins, holds, first
+
+    rows_out = []
+    for tp1, tp2, split, be in itertools.product(AX_TP1, AX_TP2, AX_SPLIT, (False, True)):
+        if tp2 <= tp1:
+            continue
+        rs, wins, holds, first = run(tp1, tp2, split, be)
+        if not rs:
+            continue
+        tot, dd = sum(rs), drawdown(rs)
+        fh = sum(first)
+        rows_out.append(
+            (
+                2.0 * min(fh, tot - fh),
+                f"{split:.0%} off at {tp1:.0%}, rest at {tp2:.0%}"
+                f"{', then breakeven' if be else ''}",
+                len(rs),
+                wins,
+                tot,
+                dd,
+                fh,
+                tot - fh,
+                statistics.median(holds) * MINUTES[args.confirm],
+            )
+        )
+
+    # the shipped single exit, scored by the SAME code path (split = everything, so the second
+    # leg never exists). A control that runs through different code is not a control.
+    rs, wins, holds, first = run(args.tp, args.tp + 1e-9, 1.0, False)
+    ship = (
+        2.0 * min(sum(first), sum(rs) - sum(first)),
+        f"ALL of it at {args.tp:.0%} (what ships)",
+        len(rs),
+        wins,
+        sum(rs),
+        drawdown(rs),
+        sum(first),
+        sum(rs) - sum(first),
+        statistics.median(holds) * MINUTES[args.confirm],
+    )
+
+    hdr = (
+        f"  {'exit rule':44s} {'n':>4s} {'hit':>6s} {'total':>8s} {'DD':>6s} "
+        f"{'R/DD':>6s} {'halves':>15s} {'hold':>6s}"
+    )
+    print("\n-- best twelve by the worse calendar half --")
+    print(hdr)
+    for w, name, n, wins_, tot, dd, a, b, hold in sorted(rows_out, reverse=True)[:12]:
+        print(
+            f"  {name:44s} {n:4d} {wins_ / n:6.1%} {tot:+7.1f}R {dd:5.1f}R "
+            f"{tot / dd if dd else 0:6.2f} {a:+7.1f}/{b:+6.1f} {hold:5.0f}m"
+        )
+    print("\n-- what ships today, through the same code --")
+    w, name, n, wins_, tot, dd, a, b, hold = ship
+    print(hdr)
+    print(
+        f"  {name:44s} {n:4d} {wins_ / n:6.1%} {tot:+7.1f}R {dd:5.1f}R "
+        f"{tot / dd if dd else 0:6.2f} {a:+7.1f}/{b:+6.1f} {hold:5.0f}m"
+    )
+    best = max(rows_out)
+    print(
+        f"\n  best ladder beats the single exit by {best[4] - ship[4]:+.1f}R "
+        f"and its worse half by {best[0] - ship[0]:+.1f}R"
+    )
+
+
+# ----------------------------------------------------------------------------- the real bill
+
+# Read off `backtest/fills.py`, which is where these are MEASURED and which refuses rather than
+# borrowing a sibling tier's number. They are copied here rather than imported because that module
+# needs the whole replay stack and this tool is stdlib-only by design; the values are quoted with
+# their source so a drift is findable. ⚠ RE-READ THEM before quoting this table again: the swap on
+# this symbol moved 1.7% in three weeks with nothing to announce it.
+TIERS = {
+    # name: (spread, commission per side per lot, swap long $/lot/night, swap short, label)
+    "Vantage demo (what every number so far used)": (0.22, 0.00, -74.84, 26.98),
+    "PU Prime ECN (the live account)": (0.12, 1.00, -79.60, 30.25),
+}
+CONTRACT = 100.0  # ounces per lot, both tiers
+ROLLOVER_UTC = 21  # the hour financing is booked; an approximation of the broker's 17:00 New York
+TRIPLE_WEEKDAY = 2  # Wednesday carries the weekend, Monday-based
+
+
+def nights_held(fast: Sequence[Row], i: int, exit_i: int) -> int:
+    """How many financing rollovers the trade was open across, weekend triple included."""
+    a = datetime.utcfromtimestamp(fast[i].ts / 1000)
+    b = datetime.utcfromtimestamp(fast[min(exit_i, len(fast) - 1)].ts / 1000)
+    n = 0
+    cur = a.replace(hour=ROLLOVER_UTC, minute=0, second=0, microsecond=0)
+    if cur <= a:
+        cur += timedelta(days=1)
+    while cur <= b:
+        n += 3 if cur.weekday() == TRIPLE_WEEKDAY else 1
+        cur += timedelta(days=1)
+    return n
+
+
+def stage_costs(args) -> None:
+    """What this strategy costs on the account it will actually trade.
+
+    🔴 EVERY NUMBER IN THIS STRATEGY'S DOCS CHARGES HALF THE SPREAD AT ENTRY AND NOTHING ELSE.
+    No commission, no financing, and nothing on the way out. That is the parent study's model
+    and it was honest for a study; quoted at a strategy about to trade money it is optimistic,
+    and by how much has never been measured. This measures it.
+
+    ⚠ THE SPREAD IS CHARGED TWICE FOR A LOSER AND ONCE FOR A WINNER, on purpose. The entry is a
+    market fill and pays the offer. The target is a resting limit and fills at its own price. The
+    stop is a market order and pays the spread again on the way out. Charging it symmetrically
+    would overstate every winner.
+
+    ⚠ COSTS ARE IN R AND THAT MAKES THEM SIZE-INDEPENDENT. One lot risks the stop distance times
+    the contract size, so a commission of C per side is 2C / (stop x 100) of one R however big
+    the account is. It also means a TIGHT stop is expensive: the same commission is a far larger
+    fraction of a small risk. `CLAUDE.md` rule 6 - compare R, never dollars.
+    """
+    base_rows, fast, base, shifts, a_fast = prepare(
+        args.broker, args.symbol, args.base, args.confirm
+    )
+    horizon = args.horizon_minutes // MINUTES[args.confirm]
+    print(f"\n=== what the strategy costs, per account tier ({args.base}/{args.confirm}) ===")
+    for name, (spread, comm, sw_long, sw_short) in TIERS.items():
+        a2 = Namespace(**{**vars(args), "spread": spread})
+        # the tier's spread goes into the COLLECTION, not on top of the result: it moves the
+        # entry price, which moves how far the target is in stops, which moves what qualifies.
+        sigs = pool_for(
+            fast,
+            base,
+            shifts,
+            a_fast,
+            a2,
+            args.extreme_minutes,
+            args.swept_minutes,
+            args.stop_buffer_atr,
+        )
+        walked = rewalk(sigs, fast, horizon, args.tp, None)
+        keep = [
+            s.r_available >= args.min_r
+            and s.counter_trend
+            and len(s.families) >= args.min_families
+            and not (
+                args.skip_friday and datetime.utcfromtimestamp(fast[s.i].ts / 1000).weekday() == 4
+            )
+            for s in sigs
+        ]
+        gross = exit_sp = commission = swap = 0.0
+        n = wins = 0
+        free_at = -1
+        net_rs: List[float] = []
+        for k, s in enumerate(sigs):
+            if not keep[k] or s.i < free_at:
+                continue
+            outcome, ex = walked[k]
+            if outcome == "skip":
+                continue
+            free_at = ex
+            n += 1
+            lot_risk = s.risk * CONTRACT  # dollars of risk in one lot, i.e. what 1R buys
+            if outcome == "win":
+                wins += 1
+                gross += s.r_available * args.tp
+            else:
+                gross -= 1.0
+                # a stop is a market order and pays the spread again on the way out
+                exit_sp += (spread / 2.0) / s.risk
+            c_trade = 2.0 * comm / lot_risk
+            rate = sw_long if s.direction > 0 else sw_short
+            s_trade = -nights_held(fast, s.i, ex) * rate / lot_risk
+            commission += c_trade
+            swap += s_trade
+            # the same trade's R after every charge, kept IN ORDER — a drawdown is a property of
+            # the sequence, so it cannot be recovered from the totals above
+            exit_trade = 0.0 if outcome == "win" else (spread / 2.0) / s.risk
+            won_r = s.r_available * args.tp if outcome == "win" else -1.0
+            net_rs.append(won_r - exit_trade - c_trade - s_trade)
+        net = gross - exit_sp - commission - swap
+        print(f"\n  {name}")
+        print(
+            f"    spread ${spread:.2f}, commission ${comm:.2f}/side/lot, "
+            f"swap {sw_long:+.2f}/{sw_short:+.2f} per lot per night"
+        )
+        print(f"    {n} trades, {wins} winners ({wins / n:.1%})")
+        print(f"    gross, entry spread already inside it   {gross:+8.2f}R")
+        print(f"    less the spread paid getting stopped    {-exit_sp:+8.2f}R")
+        print(f"    less commission                         {-commission:+8.2f}R")
+        print(f"    less overnight financing                {-swap:+8.2f}R")
+        print(
+            f"    NET                                     {net:+8.2f}R   ({net / n:+.3f}R a trade)"
+        )
+        print(f"    worst peak-to-trough after costs        {drawdown(net_rs):8.2f}R")
+        print("    compounding, after every charge above:")
+        for pct in (2.5, 5.0, 10.0):
+            mult, dd = compounded(net_rs, pct)
+            deep = compounded([r * 2 if r < 0 else r for r in net_rs], pct)[1]
+            print(
+                f"      {pct:4.1f}% a trade -> {mult:8.1f}x, worst drop {dd:5.1f}%, "
+                f"{deep:5.1f}% if the worst run is twice as deep"
+            )
+
+
 # ----------------------------------------------------------------------------- entry
 
 
@@ -1022,7 +1364,7 @@ def main() -> None:
     ap.add_argument(
         "--stage",
         default="grid",
-        choices=("timeframe", "grid", "families", "risk", "extras", "losers"),
+        choices=("timeframe", "grid", "families", "risk", "extras", "losers", "ladder", "costs"),
     )
     ap.add_argument(
         "--pairs",
@@ -1056,6 +1398,11 @@ def main() -> None:
     ap.add_argument("--min-stop", type=float, default=SHIPPED["min_stop"])
     ap.add_argument("--tp", type=float, default=SHIPPED["tp"])
     ap.add_argument("--arm", type=float, default=-1.0, help="negative = never move to breakeven")
+    ap.add_argument(
+        "--skip-friday",
+        action="store_true",
+        help="refuse a Friday entry, which the strategy has done by default since 2026-09-01",
+    )
     args = ap.parse_args()
 
     if args.stage == "timeframe":
@@ -1068,6 +1415,10 @@ def main() -> None:
         stage_extras(args)
     elif args.stage == "losers":
         stage_losers(args)
+    elif args.stage == "ladder":
+        stage_ladder(args)
+    elif args.stage == "costs":
+        stage_costs(args)
     else:
         stage_risk(args)
 
