@@ -156,6 +156,51 @@ value). **So stage 2 is not "place one more order"** — the entry can be placed
 would still have nowhere to go. Either the bridge learns to bank, or the re-entry's banking goes to
 zero and the `+32.50R` is re-measured without it.
 
+## ✅ The bridge can BANK part of a position (2026-09-01) — and still cannot close the last of it
+
+**`_sync_partials` is the exit path this bridge never had.** Its only order calls were place /
+modify / cancel a resting limit and move a stop, so every exit reached the broker as a stop move
+and any rung taking size off AT A PRICE simply never happened.
+
+🔴 **IT IS A RECONCILIATION, NOT AN EVENT, AND THAT IS THE WHOLE DESIGN.** It does not watch for a
+rung being touched; it asks *how much should be open* and closes the difference. A partial missed
+by a restart, a dropped link or a skipped bar is taken on the next sync, and one already done is a
+no-op. An event-driven version has to remember what it has done, and this bridge's history is a
+list of things that went wrong with exactly that state.
+
+🔴 **WHAT IT STILL CANNOT DO IS CLOSE THE LAST OF A POSITION AT A PRICE**, so the refusal narrowed
+rather than lifted: `full_exit_at_price` now refuses a ladder whose rungs SUM to 100 and allows one
+that leaves a runner. ⚠ **SUMMED, not per field** — 50 + 50 also reaches zero, and a check reading
+`== 100` on one rung waves it through. Two shipped configurations are still refused and both are
+worth naming: `exec_short_hold` (its rung defaults to 100) and the RECLAIM re-entry
+(`exec_rec_tp1_pct` = 100) — **which is the setting that MEASURED BEST for that trigger**, so the
+reclaim waits on a full-exit path while the gap trigger does not.
+
+⚠ **IT FILLS AT MARKET ON A CLOSED PRIMARY BAR; THE LAB FILLS AT THE RUNG PRICE.** A permanent
+divergence, not a bug to tune away — `sync` runs once per closed 15m bar, so a rung touched
+mid-bar banks at whatever the market is when the bar shuts. Named on every `partial_banked` record
+(`fill="market_on_bar_close"`) so a shadow diff attributes it rather than rediscovering it.
+
+⚠ **A configuration that banks nothing never enters the path, and that is load-bearing.** The
+shipped bot runs 0/0, so there is no size to take off; without the gate the first version alerted
+*cannot read the intended size* on 18 existing tests whose doubles quite reasonably have no `_qty`.
+**An always-on reconciliation against a book nobody is scaling is noise, and noise is how a real
+partial failure gets scrolled past.**
+
+⚠ **It only ever CLOSES.** A broker holding LESS than the strategy expects is a disagreement about
+the book and belongs to the halt machinery; re-opening size here would be the bridge inventing a
+trade. ⚠ **`None` from the size read is not zero** — zero would mean bank the whole position, which
+is a full exit, the most destructive misreading available here.
+
+⚠ **It reads `_qty`/`_filled_qty` off the emulator**, the same private coupling the bridge already
+has with `_pend_long` and `_pos_dir`. A public seam on `Execution` is the better shape and was
+deliberately NOT taken: that is a strategy file, and rule 22 says a changed strategy does not ship
+until its parity gate has actually RUN on a real export — a decision to make with an export in
+hand, not while wiring a bridge.
+
+🔴 **NO LIVE PARTIAL HAS EVER EXECUTED.** Twelve offline tests and seven mutations; the broker call
+under it had zero callers before today. Rule 9 stands: watch the first one.
+
 ✅ **`price_triggered_banks` MIRRORS `_tp1_pct` branch for branch and must be re-read against it
 when that changes.** It returns a LIST of `(field, percent)` rather than a bool, so the refusal
 names the fields — *"partial take-profits are on"* sends nobody anywhere. ⚠ **`exec_sec_tp2_x` is

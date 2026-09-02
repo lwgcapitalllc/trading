@@ -1739,6 +1739,28 @@ UNDERSTATED IT THREE WAYS.**
 and is re-measured.** The second is cheaper and is a strategy decision, not a tidy-up: `+32.50R
 over 44 trades` was measured WITH the bank, so the figure does not survive turning it off.
 
+✅ **THE FIRST ROUTE LANDED 2026-09-01 — `bridge._sync_partials` — AND IT CHANGES WHICH TRIGGER CAN
+GO LIVE.** The bridge reconciles the broker's volume down to the size the strategy believes is
+still open, so a ladder that banks part and rides the rest is now mirrored. ⚠ **It still cannot
+close the LAST of a position at a price**, so the refusal narrowed rather than lifted:
+`full_exit_at_price` refuses a ladder whose rungs SUM to 100 and allows one that leaves a runner.
+
+| trigger | banks | live on this build? |
+|---|---|---|
+| **gap** (`FVG in zone` — what `config.json` states) | 50%, runner behind | ✅ banking is no longer a blocker; the missing second ENTRY still is |
+| **reclaim** (`Reclaim Entry` — what every published figure was measured on) | 100%, no runner | ❌ a full exit at a price, and no path exists |
+
+🔴 **AND THE MEASUREMENT SAYS THOSE TWO WANT OPPOSITE EXITS, WHICH IS THE PART TO CARRY FORWARD.**
+Over the same 6.6 years, off the LIVE config with only the named field moved: the reclaim NEEDS
+its 100% (+21.00R with, +7.16R without — two thirds of the edge), while the gap is BETTER without
+its 50% (+20.11R at zero against +12.62R at fifty). **So the trigger the bot is actually set to is
+both the one that can go live and the one whose best setting needs no banking at all.** Full table
+and caveats: `strategies/python/mpc_sos_fade/CLAUDE.md`.
+
+⚠ **NO LIVE PARTIAL HAS EVER EXECUTED**, and the broker call under it had ZERO callers before that
+day — it also clamped UP to the broker minimum, closing more than asked and reporting success.
+Twelve offline tests and seven mutations do not make it a run. Rule 9: watch the first one.
+
 ✅ **The check that would have caught it is in place** — `bridge.price_triggered_banks` now mirrors
 `execution.Execution._tp1_pct` branch for branch, so no rung can reach a live bot unmirrored. It
 found a second, unrelated hole while landing: **`exec_short_hold` was reachable today.** One

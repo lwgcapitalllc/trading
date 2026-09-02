@@ -767,7 +767,12 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1
   have nowhere to go and the bot would RIDE where this file's numbers BANKED. ⚠ **Either the bridge
   learns to bank, or `exec_sec_tp1_pct` / `exec_rec_tp1_pct` go to 0 and every re-entry figure here
   is re-measured** — `+32.50R over 44 trades` was measured WITH the bank and does not survive
-  turning it off. ⚠ **`exec_short_hold` had the same shape and was reachable TODAY** (its
+  turning it off. ✅ **HALF-RESOLVED 2026-09-01: the bridge can now bank PART of a position**
+  (`_sync_partials`), so the GAP trigger's 50% is no longer a live blocker — its remaining blocker
+  is the missing second ENTRY. ⚠ **The RECLAIM's 100% still is one**: taking the WHOLE position off
+  at a price needs a full-exit path that does not exist, and 100 is the value that measured best
+  for that trigger. **So on today's build the gap trigger can reach live and the reclaim cannot**,
+  which is the opposite way round from where every published figure came from. ⚠ **`exec_short_hold` had the same shape and was reachable TODAY** (its
   `exec_sh_tp1_pct` defaults to 100 and nothing refused it); `bridge.price_triggered_banks` now
   mirrors `Execution._tp1_pct` branch for branch, so **re-read it against this ladder whenever a
   rung changes.**

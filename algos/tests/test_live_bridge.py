@@ -108,6 +108,8 @@ class _FakeMt5Ops:
         # What the broker says when asked to cancel. True (gone), False (still there), or
         # `broker_result.UNKNOWN`.
         self.cancel_result = True
+        # True / False / UNKNOWN, same three answers `mt5_ops.partial_close` really gives.
+        self.partial_result = True
 
     def get_open_positions(self, symbol=None):
         # Remember every ticket that has ever been open, so `_book()` can keep a filled order
@@ -209,6 +211,19 @@ class _FakeMt5Ops:
         self.actions.append(("modify", ticket, price, sl))
         return True
 
+    # ⚠ Like `cancel_pending` below, this has THREE outcomes because production has three, and
+    # it MOVES ITS OWN BOOK on success. A fake that recorded the call and left the position at
+    # its old volume would let the bridge reconcile forever against a size that never changed —
+    # and "it banked every bar" is precisely the failure this reconciliation could have.
+    def partial_close(self, ticket, lots, direction):
+        self.actions.append(("partial", ticket, round(lots, 4), direction))
+        if self.partial_result is not True:
+            return self.partial_result
+        for p in self.positions:
+            if p.ticket == ticket:
+                p.volume = round(p.volume - lots, 8)
+        return True
+
     def cancel_pending(self, ticket):
         """Three outcomes, because production has three: gone, still there, or unknown.
 
@@ -233,7 +248,16 @@ class _FakeMt5Ops:
 
 
 class _FakeExecution:
-    def __init__(self, pos_dir=0, pend_long=None, pend_short=None):
+    def __init__(self, pos_dir=0, pend_long=None, pend_short=None, qty=None, filled=0.0, cfg=None):
+        # `_qty` / `_filled_qty` are what the bridge reconciles the broker's SIZE against, the
+        # same private coupling it already has with `_pend_long` and `_pos_dir`. They default to
+        # None so every test written before banking existed describes a strategy that scales
+        # nothing — which is what those tests are about.
+        self._qty = qty
+        self._filled_qty = filled
+        # The bridge asks THIS whether anything banks at all, and returns immediately if not.
+        # None means the same as a config with every rung at zero: nothing to take off.
+        self._cfg = cfg
         self._pos_dir = pos_dir
         self._pend_long = pend_long
         self._pend_short = pend_short
@@ -387,13 +411,27 @@ def _bridge(
 
 
 # ── configuration guards ──────────────────────────────────────────────────────
-def test_partial_take_profits_are_refused_not_ignored():
-    """The bridge places one entry and one stop. A configured scale-out that silently never
-    happens would make the live curve diverge from every backtest with nothing to point at."""
+def test_a_partial_ladder_that_leaves_a_runner_is_SUPPORTED_since_the_bank_path_landed():
+    """30 + 40 = 70, so 30% still rides out to the stop — and `_sync_partials` can reconcile the
+    broker down to it. ⚠ This asserted a REFUSAL until 2026-09-01, and the refusal was right for
+    as long as the bridge had no exit path at all."""
     cfg = types.SimpleNamespace(
         exec_tp1_pct=30.0, exec_tp2_pct=40.0, exec_secondary=False, fill_model="bar"
     )
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="bank size AT A PRICE"):
+    assert live_bridge.full_exit_at_price(cfg) == []
+    live_bridge.assert_supported(cfg)  # no raise
+
+
+def test_a_ladder_that_SUMS_to_the_whole_position_is_still_refused():
+    """50 + 50 reaches zero at a price, and the last of a position can only leave as a stop move.
+    ⚠ SUMMED, never tested field by field — a check reading `== 100` on one rung waves this
+    straight through."""
+    cfg = types.SimpleNamespace(
+        exec_tp1_pct=50.0, exec_tp2_pct=50.0, exec_secondary=False, fill_model="bar"
+    )
+    with pytest.raises(
+        live_bridge.UnsupportedStrategyConfig, match="WHOLE position off at a price"
+    ):
         live_bridge.assert_supported(cfg)
 
 
@@ -473,18 +511,23 @@ def test_short_hold_REPLACES_the_shared_rung_rather_than_adding_to_it():
     assert [name for name, _ in banks] == ["exec_sh_tp1_pct"]
 
 
-def test_the_reclaim_re_entry_banks_everything_and_is_refused():
-    """The shipped re-entry trigger. `exec_rec_tp1_pct` is 100 — the whole position off at its
-    target, no runner — and it is the configuration that measured 6,740x in the lab."""
+def test_the_reclaim_re_entry_takes_the_WHOLE_position_and_is_still_refused():
+    """`exec_rec_tp1_pct` is 100 — the whole position off at its target, no runner. It is ALSO the
+    setting that measured best for that trigger (+21.00R against +7.16R without), which is why
+    this refusal has to be loud: the best configuration is the unsupported one, so the reclaim
+    waits on a full-exit path while the gap trigger does not."""
     with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_rec_tp1_pct=100"):
         live_bridge.assert_supported(_shipped(exec_secondary=True))
 
 
-def test_the_gap_re_entrys_half_bank_is_refused():
-    """G18 stage 2's real scope: placing the re-entry's ENTRY is not enough while half of it is
-    meant to come off at the first target with nowhere to go."""
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_sec_tp1_pct=50"):
-        live_bridge.assert_supported(_shipped(exec_secondary=True, exec_sec_trigger="FVG in zone"))
+def test_the_gap_re_entrys_half_bank_is_no_longer_a_BANKING_refusal():
+    """Its 50% leaves a runner, so the bank path can serve it. What still stops it is the missing
+    SECOND ENTRY — and the two must not be confused, because different work fixes each.
+    ⚠ This asserted the banking refusal until the bank path landed on 2026-09-01."""
+    cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone")
+    assert live_bridge.full_exit_at_price(cfg) == []
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
+        live_bridge.assert_supported(cfg)
 
 
 def test_a_combined_trigger_names_BOTH_rungs():
@@ -1146,3 +1189,161 @@ def test_a_per_order_refusal_is_reported_BEFORE_the_account_cap(_stub_mt5):
     assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == [
         "zero_stop_distance"
     ]
+
+
+# ── banking part of a position (2026-09-01) ───────────────────────────────────
+#
+# 🔴 The bridge had NO exit path of any kind: its only order calls were place / modify / cancel
+# a resting limit, and move a stop. Every exit reached the broker as a stop move, so any rung
+# that takes size off AT A PRICE simply never happened. `_sync_partials` is the reconciliation
+# that closes that gap.
+#
+# ⚠ It is a RECONCILIATION, not an event: it asks how much SHOULD be open and closes the
+# difference. That is why a missed bar, a restart or a dropped connection self-heals, and why
+# every test below drives it by setting a size rather than by firing a rung.
+
+
+def _banking_cfg(**over):
+    """A config that banks something, so the bridge enters the partial path at all."""
+    base = dict(
+        exec_tp1_pct=50.0,
+        exec_tp2_pct=0.0,
+        exec_secondary=False,
+        exec_short_hold=False,
+        exec_scale_in=False,
+        fill_model="bar",
+    )
+    base.update(over)
+    return types.SimpleNamespace(**base)
+
+
+def _open_bank(qty=1.0, filled=0.5, held=1.0, cfg=None, partial=True):
+    """An open long of `held` lots where the strategy believes `qty - filled` should remain."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 0, 3290.0, held, 3280.0)]
+    ops.partial_result = partial
+    ex = _FakeExecution(pos_dir=1, qty=qty, filled=filled, cfg=cfg or _banking_cfg())
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._contract_size = lambda: 1.0  # the units→lots conversion has its own test below
+    return b, ops, ledger, notes
+
+
+def test_a_position_larger_than_the_strategy_expects_is_BANKED_DOWN():
+    b, ops, ledger, _ = _open_bank(qty=1.0, filled=0.5, held=1.0)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert ("partial", 555, 0.5, "bullish") in ops.actions
+    assert "event:partial_banked" in ledger.kinds()
+    assert ops.positions[0].volume == 0.5
+
+
+def test_a_SHORT_is_banked_in_its_own_direction():
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 1, 3290.0, 1.0, 3300.0)]
+    ex = _FakeExecution(pos_dir=-1, qty=1.0, filled=0.5, cfg=_banking_cfg())
+    b, ops, _, _ = _bridge(ex, mt5ops=ops)
+    b._contract_size = lambda: 1.0
+    b.sync(_Dec(stop=3300.0), _Sig())
+    assert ("partial", 555, 0.5, "bearish") in ops.actions
+
+
+def test_a_position_that_ALREADY_matches_is_left_alone():
+    """The reconciliation must be a no-op once it has run, or it banks every bar until the
+    position is gone — the worst failure this shape has."""
+    b, ops, ledger, _ = _open_bank(qty=1.0, filled=0.5, held=0.5)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert not any(a[0] == "partial" for a in ops.actions)
+    assert "event:partial_banked" not in ledger.kinds()
+
+
+def test_banking_TWICE_does_not_happen_because_the_second_pass_sees_the_new_size():
+    b, ops, ledger, _ = _open_bank(qty=1.0, filled=0.5, held=1.0)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert [a for a in ops.actions if a[0] == "partial"] == [("partial", 555, 0.5, "bullish")]
+
+
+def test_a_config_that_banks_NOTHING_never_enters_the_path():
+    """The shipped bot runs 0/0 — bank nothing, ride the runner. It must behave byte for byte as
+    it did before this feature existed, and asking a strategy that never scales how much should
+    be open would answer 'all of it' on every bar."""
+    b, ops, ledger, _ = _open_bank(
+        qty=1.0, filled=0.5, held=1.0, cfg=_banking_cfg(exec_tp1_pct=0.0)
+    )
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert not any(a[0] == "partial" for a in ops.actions)
+
+
+def test_a_broker_holding_LESS_than_expected_is_never_re_opened():
+    """A disagreement about the book belongs to the halt machinery. Quietly buying size back
+    here would be the bridge inventing a trade."""
+    b, ops, _, _ = _open_bank(qty=1.0, filled=0.0, held=0.4)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert not any(a[0] == "partial" for a in ops.actions)
+
+
+def test_a_REFUSED_partial_is_alerted_and_recorded_rather_than_retried_silently():
+    """`partial_close` refuses a size the broker cannot express (rule 17). The position stays
+    over-sized — the safe half — but the two books now differ, so it must be SAID."""
+    b, ops, ledger, notes = _open_bank(held=1.0, partial=False)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert "event:partial_refused" in ledger.kinds()
+    assert any("PARTIAL NOT BANKED" in str(m) for m in notes), notes
+    assert ops.positions[0].volume == 1.0
+
+
+def test_a_repeated_refusal_alerts_ONCE():
+    """The identical problem re-offers itself on every 15m bar. An alert per bar is one nobody
+    reads by the third."""
+    b, ops, ledger, notes = _open_bank(held=1.0, partial=False)
+    for _ in range(4):
+        b.sync(_Dec(stop=3280.0), _Sig())
+    assert len([m for m in notes if "PARTIAL NOT BANKED" in str(m)]) == 1
+    assert len([k for k in ledger.kinds() if k == "event:partial_refused"]) == 4, (
+        "the LOG and the ledger record every attempt; only the ALERT is latched"
+    )
+
+
+def test_an_UNKNOWN_partial_stops_rather_than_retrying():
+    """Rule 1. A retry could bank twice, and 'I could not find out' is not 'it did not happen'."""
+    b, ops, ledger, notes = _open_bank(held=1.0, partial=live_bridge.UNKNOWN)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert "event:partial_unknown" in ledger.kinds()
+    assert "event:partial_banked" not in ledger.kinds()
+    assert ops.positions[0].volume == 1.0
+
+
+def test_a_strategy_whose_size_CANNOT_be_read_banks_nothing():
+    """`None` is not zero. Zero would mean bank the WHOLE position, which is a full exit — the
+    single most destructive misreading available here."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 0, 3290.0, 1.0, 3280.0)]
+    ex = _FakeExecution(pos_dir=1, qty=None, cfg=_banking_cfg())
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._contract_size = lambda: 1.0
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert not any(a[0] == "partial" for a in ops.actions)
+    assert any("PARTIAL NOT BANKED" in str(m) for m in notes)
+
+
+def test_the_intended_size_is_converted_from_UNITS_to_LOTS():
+    """The emulator counts instrument UNITS and the broker takes LOTS. Getting this wrong is how
+    a 54.82-lot order reached a $2,000 account."""
+    b, ops, _, _ = _open_bank(qty=200.0, filled=100.0, held=1.5)
+    b._contract_size = lambda: 100.0
+    b.sync(_Dec(stop=3280.0), _Sig())
+    # 100 units still wanted / 100 per lot = 1.00 lot; 1.50 held, so 0.50 comes off.
+    assert ("partial", 555, 0.5, "bullish") in ops.actions
+    # ⚠ The FIRST version of this test asserted a NO-OP (200/100 wanted against 1.0 held) and was
+    # VACUOUS: unconverted, the bridge wants 100 lots against 1.5 held, the excess goes negative
+    # and it banks nothing — the same observable answer. It survived the mutation that deletes
+    # the division. A test whose two branches agree is describing neither.
+
+
+def test_the_banked_record_says_it_filled_at_MARKET_not_at_the_rung():
+    """A permanent divergence from the lab, which fills at the rung's own price. It is named on
+    the record so a shadow diff attributes it rather than rediscovering it."""
+    b, ops, ledger, _ = _open_bank(qty=1.0, filled=0.5, held=1.0)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    payload = next(kw for kind, kw in ledger.rows if kind == "event:partial_banked")
+    assert payload["fill"] == "market_on_bar_close"
+    assert payload["held_before"] == 1.0 and payload["held_after"] == 0.5

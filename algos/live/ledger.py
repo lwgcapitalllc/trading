@@ -118,6 +118,19 @@ _DECISION_EVENTS = {
     # happened. The name cannot be dropped.
     "secondary_shadow_fill",
     "secondary_shadow_stop",
+    # ── banking part of a position (2026-09-01). All three are about what happened to a TRADE'S
+    # SIZE, which is the decision stream's subject, and two of them exist nowhere else at all:
+    # a broker statement records the deals that happened and has no way to say "the ladder asked
+    # to bank 0.003 lots and this broker cannot express that size". A refused or unresolved
+    # partial is the reason a live trade will not match its backtest, so it belongs beside the
+    # trade rather than in a health file read only when something is already wrong.
+    # ⚠ `partial_banked` carries `fill="market_on_bar_close"` because it is NOT the rung's price:
+    # the bridge reconciles once per closed primary bar, so a rung touched mid-bar banks at
+    # whatever the market is when the bar shuts. A shadow diff must attribute that rather than
+    # rediscover it.
+    "partial_banked",
+    "partial_refused",
+    "partial_unknown",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

@@ -76,14 +76,16 @@ def test_the_config_that_killed_the_bot_is_now_refused_by_the_preview(tmp_path):
     assert startup["fast_feed_minutes"] == 5, "the strategy now asks for its own fill clock"
     refusals = promote.startup_refusals(startup, cfg.timeframe)
     assert refusals, "the preview must refuse what the restart refuses"
-    # ⚠ The BANKING refusal, not the second-feed one — and that is not a bug in either. This bot
-    # runs the reclaim trigger at `exec_rec_tp1_pct = 100`, so switching the re-entry on asks for
-    # a whole-position bank the bridge cannot place, and `assert_supported` raises on the FIRST
-    # problem exactly as the runner would. The restart would die here too.
-    assert any("bank size AT A PRICE" in r for r in refusals), refusals
-    assert not any("SECOND bar stream" in r for r in refusals), (
-        "assert_supported raises once; a test expecting every bridge refusal at once is "
-        "describing a function this repo does not have"
+    # ⚠ **The SECOND-FEED refusal, and which one fires is worth reading carefully.** This bot's
+    # config states the GAP trigger (`exec_sec_trigger = "FVG in zone"`), whose 50% bank leaves a
+    # runner — so since the bank path landed on 2026-09-01 that is no longer a reason to refuse,
+    # and what remains is the missing second ENTRY. Point the same bot at the RECLAIM trigger and
+    # a different refusal fires first, because its 100% is a full exit the bridge still cannot do.
+    # ⚠ An earlier version of this comment claimed this bot runs the reclaim. It does not, and
+    # every published re-entry figure was measured as though it did — see the strategy's notes.
+    assert any("SECOND bar stream" in r for r in refusals), refusals
+    assert not any("WHOLE position off at a price" in r for r in refusals), (
+        "the gap trigger's half-bank leaves a runner and is supported now"
     )
 
 

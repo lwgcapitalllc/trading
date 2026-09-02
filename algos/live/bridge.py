@@ -158,22 +158,53 @@ def price_triggered_banks(strategy_config) -> list:
     return found
 
 
+def full_exit_at_price(strategy_config) -> list:
+    """The rungs that take a position to ZERO at a price — which the bridge still cannot do.
+
+    🔴 **THE DISTINCTION IS THE WHOLE POINT AND IT IS EASY TO MISS.** Since 2026-09-01 the bridge
+    CAN bank part of a position: `_sync_partials` reconciles the broker's volume down to the size
+    the strategy believes is still open. What it cannot do is close the LAST of it at a price —
+    `mt5_ops.partial_close` refuses a request for the whole position, because that is a full exit
+    and a different decision, and no other exit path exists. Every exit still leaves the broker
+    as a stop move.
+
+    So a ladder that banks 50% and rides the rest is now supported, and one that banks 100% at
+    its target is NOT. That excludes two shipped configurations and they must be named rather
+    than discovered:
+
+      - `exec_short_hold` — `exec_sh_tp1_pct` defaults to **100**, the whole position off at the
+        R target with no runner. Still refused.
+      - the RECLAIM re-entry — `exec_rec_tp1_pct` defaults to **100**, which is the
+        configuration that measured best (see the strategy's notes). Still refused, and it is
+        the reason the reclaim cannot go live on this build while the gap trigger can.
+
+    ⚠ **It sums the rungs rather than testing any one of them.** 50 + 50 also reaches zero, and
+    a check reading `== 100` on a single field would wave it through.
+
+    Returns [] when the ladder always leaves a runner behind.
+    """
+    banks = price_triggered_banks(strategy_config)
+    if not banks:
+        return []
+    total = sum(pct for _name, pct in banks)
+    return banks if total >= 100.0 - 1e-9 else []
+
+
 def assert_supported(strategy_config) -> None:
     """Refuse a configuration the bridge would silently mis-execute.
 
     Better to not start than to run a strategy whose scale-outs quietly never happen — the
     equity curve would diverge from every backtest and nothing would say why.
     """
-    banks = price_triggered_banks(strategy_config)
-    if banks:
-        named = ", ".join(f"{name}={pct:g}" for name, pct in banks)
+    closes_all = full_exit_at_price(strategy_config)
+    if closes_all:
+        named = ", ".join(f"{name}={pct:g}" for name, pct in closes_all)
         raise UnsupportedStrategyConfig(
-            f"{named} — these bank size AT A PRICE, and the live bridge does not place an exit "
-            f"of any kind: it mirrors one entry limit and one ratcheting stop, so every exit "
-            f"reaches the broker as a stop move. Left unrefused the bot would RIDE where the "
-            f"backtest BANKED, and nothing would say why the two disagree. Set them to 0 (the "
-            f"shipped default: bank nothing, ride the runner), or build the scale-out path "
-            f"first. See docs/LIVE_TRADING_PIPELINE.md G18."
+            f"{named} — these take the WHOLE position off at a price, and the live bridge has no "
+            f"full-exit path: it can now bank PART of a position, but the last of it leaves only "
+            f"as a stop move. Left unrefused the bot would RIDE where the backtest CLOSED, and "
+            f"nothing would say why the two disagree. Leave a runner behind (the rungs must sum "
+            f"to under 100), or build the full-exit path. See docs/LIVE_TRADING_PIPELINE.md G18."
         )
     if getattr(strategy_config, "exec_secondary", False):
         # 🔴 **THIS MESSAGE SAID "a 1-minute bar stream" UNTIL 2026-09-01 AND WAS WRONG.** The
@@ -271,6 +302,11 @@ class OrderBridge:
         # One alert per distinct refusal per side. Re-stating an unaffordable setup every bar
         # for the six hours it rests is how a channel gets muted before the day it matters.
         self._refusal_alerted: dict[int, str] = {1: "", -1: ""}
+        # The same idea for the PARTIAL path, keyed on the cause rather than on a side: a
+        # position that cannot be banked re-offers the identical problem on every 15m bar, and
+        # an alert per bar is one nobody reads by the third. Cleared when a bank succeeds and
+        # when a position opens, so a later genuine problem still speaks.
+        self._partial_alerted: str = ""
         self._pos_ticket: Optional[int] = None
         self._pos_dir: int = 0
         self._pos_entry: float = 0.0
@@ -608,6 +644,10 @@ class OrderBridge:
 
         if self._ex._pos_dir != 0:
             self._cancel_all_rest("a position is open")
+            # BEFORE the stop, matching the emulator's own order: it banks the rung, then moves
+            # the stop behind what is left. Reversed, a stop staged for the post-bank size would
+            # be sent while the broker still holds the pre-bank size.
+            self._sync_partials(positions)
             self._sync_stop(dec)
         else:
             self._sync_side(1, self._ex._pend_long, sig)
@@ -726,6 +766,9 @@ class OrderBridge:
         self._log.info(
             f"POSITION OPENED | T{p.ticket} {side} {p.volume}L @ {p.price_open} | SL={p.sl}"
         )
+        # A new trade is a new chance to bank. Whatever the LAST position could not bank must not
+        # silence this one — a latch that outlives its cause is a guard that has stopped guarding.
+        self._partial_alerted = ""
         self._ledger.trade_opened(
             ticket=p.ticket,
             direction=side,
@@ -1217,6 +1260,155 @@ class OrderBridge:
             self._ledger.event(
                 "order_refused", dir=direction, lots=lots, price=pend.edge, stop=pend.sl
             )
+
+    def _alert_once(self, code: str, body: str) -> None:
+        """Say something ONCE per cause, and log it every time.
+
+        ⚠ The log is unconditional and only the ALERT is latched. A problem that persists for
+        forty bars should be forty lines in the log — that is the record — and one message on
+        the phone, which is the part that stops being read when it repeats.
+        """
+        self._log.error(body)
+        if self._partial_alerted == code:
+            return
+        self._partial_alerted = code
+        self._notify(
+            alert(
+                "⚠️",
+                "PARTIAL NOT BANKED",
+                self._mt5.bot_label,
+                body,
+                "The position keeps its broker stop and the strategy keeps managing it. This "
+                "will not alert again for the same reason.",
+            ),
+            notify.HEALTH,
+        )
+
+    def _intended_open_lots(self):
+        """How much the STRATEGY believes is still open, in LOTS. `None` = could not ask.
+
+        ⚠ **`None` is not zero.** Zero would mean *bank the whole position*, which is a full
+        exit — the single most destructive misreading available here. A strategy this bridge
+        cannot interrogate must stop it acting, not licence it to close everything (rule 1).
+
+        ⚠ **It reads the emulator's own fields**, the same coupling this bridge already has with
+        `_pend_long`, `_pend_short` and `_pos_dir`. `_qty` is everything the position has been
+        given (adds included) and `_filled_qty` is everything that has left it, so the difference
+        is the intended size whether or not the strategy has scaled. A public seam on `Execution`
+        would be the better shape and is deliberately NOT taken here: `execution.py` is a
+        strategy file, and rule 22 says a changed strategy does not ship until its parity gate
+        has actually RUN on a real export. That is a decision to make with an export in hand, not
+        while wiring a bridge.
+        """
+        qty = getattr(self._ex, "_qty", None)
+        filled = getattr(self._ex, "_filled_qty", None)
+        if qty is None or filled is None:
+            return None
+        cs = self._contract_size()
+        if not cs:
+            return None
+        return max(0.0, (float(qty) - float(filled))) / cs
+
+    def _sync_partials(self, positions) -> None:
+        """Bank the broker down to the size the strategy believes is still open.
+
+        🔴 **A RECONCILIATION, NOT AN EVENT — and that is the whole design.** It does not watch
+        for a rung being touched; it asks *how much should be open* and closes the difference.
+        So a partial missed by a restart, a dropped connection or a skipped bar is simply taken
+        on the next sync, and a partial that already happened is a no-op. An event-driven version
+        has to remember what it has done, and this bridge's whole history says that is the
+        state which goes wrong.
+
+        ⚠ **IT FILLS AT MARKET, ON A CLOSED PRIMARY BAR — THE LAB FILLS AT THE RUNG PRICE.** That
+        is a real and permanent divergence, not a bug to be tuned away: `sync` runs once per
+        closed 15m bar, so a rung touched mid-bar is banked at whatever the market is when the
+        bar shuts. It makes the live result WORSE than the backtest in a rising market and better
+        in a falling one, and it is the first thing to check when a live partial's price does not
+        match the lab's. Recorded on every `partial_banked` event so a shadow diff can attribute
+        it rather than rediscover it.
+
+        ⚠ **It only ever CLOSES.** If the broker holds LESS than the strategy expects, that is a
+        disagreement about the book and belongs to `_agrees`/`_observe_vanished`, which halt.
+        Quietly re-opening size here would be this bridge inventing a trade.
+        """
+        if self._pos_ticket is None:
+            return
+        # 🔴 **A CONFIGURATION THAT BANKS NOTHING NEVER ENTERS THIS PATH, AND THAT IS LOAD-BEARING
+        # RATHER THAN AN OPTIMISATION.** The shipped bot runs `exec_tp1_pct = exec_tp2_pct = 0` —
+        # bank nothing, ride the runner — so there is no size to take off, and asking "how much
+        # should be open" of a strategy that never banks would answer "all of it" on every bar.
+        # Without this gate the first version alerted *cannot read the intended size* on 18
+        # existing tests, whose doubles quite reasonably have no `_qty`. **An always-on
+        # reconciliation against a book nobody is scaling is noise, and noise is how a real
+        # partial failure gets scrolled past.** With it, a bot at 0/0 behaves byte for byte as it
+        # did before this feature existed.
+        if not price_triggered_banks(getattr(self._ex, "_cfg", None)):
+            return
+        want = self._intended_open_lots()
+        if want is None:
+            self._alert_once(
+                "partials_unreadable",
+                "Cannot read how much of the position should still be open, so nothing was "
+                "banked. The broker keeps whatever it holds and its stop.",
+            )
+            return
+        held = next((float(p.volume) for p in positions if p.ticket == self._pos_ticket), None)
+        if held is None:
+            return  # not our position to reconcile this bar; `_observe_close` owns that
+        excess = held - want
+        if excess <= 1e-9:
+            return
+        direction = "bullish" if self._ex._pos_dir > 0 else "bearish"
+        res = self._exec(
+            lambda: self._mt5.partial_close(self._pos_ticket, excess, direction),
+            f"bank {excess:.2f}L of T{self._pos_ticket} ({held:.2f}L held, {want:.2f}L wanted)",
+        )
+        if res is UNKNOWN:
+            # Rule 1: a retry could bank twice. Stop until a later bar reads a consistent size.
+            self._alert_once(
+                "partial_unknown",
+                f"A partial close of {excess:.2f}L on T{self._pos_ticket} returned an unknown "
+                f"result. Nothing further will be banked until the position reads consistently.",
+            )
+            self._ledger.event(
+                "partial_unknown",
+                ticket=self._pos_ticket,
+                lots=round(excess, 2),
+                held=round(held, 2),
+                wanted=round(want, 2),
+            )
+            return
+        if not res:
+            # `partial_close` REFUSES a size the broker cannot express exactly rather than
+            # rounding it (rule 17), so this is the expected answer for a slice below the volume
+            # minimum. The position stays over-sized and the strategy keeps managing it — which
+            # is the safe half — but the two books now differ, so it must be SAID.
+            self._alert_once(
+                "partial_refused",
+                f"Could not bank {excess:.2f}L of T{self._pos_ticket}: the broker cannot express "
+                f"that size. The position is still {held:.2f}L where the strategy expects "
+                f"{want:.2f}L, so the live result will differ from the backtest on this trade.",
+            )
+            self._ledger.event(
+                "partial_refused",
+                ticket=self._pos_ticket,
+                lots=round(excess, 2),
+                held=round(held, 2),
+                wanted=round(want, 2),
+            )
+            return
+        self._pos_lots = want
+        self._partial_alerted = ""
+        self._ledger.event(
+            "partial_banked",
+            ticket=self._pos_ticket,
+            lots=round(excess, 2),
+            held_before=round(held, 2),
+            held_after=round(want, 2),
+            # ⚠ NAMED, not implied: this fill is a MARKET close on a closed bar, never the
+            # rung's own price. A shadow diff comparing it to the lab must know that.
+            fill="market_on_bar_close",
+        )
 
     def _sync_stop(self, dec) -> None:
         """Keep the broker's stop on the open position equal to the strategy's current stop.
