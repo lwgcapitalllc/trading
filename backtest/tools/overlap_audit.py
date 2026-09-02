@@ -61,12 +61,19 @@ if str(_ROOT) not in sys.path:
 _STRATEGIES = {
     "mpc_sos_fade": "strategies.python.mpc_sos_fade",
     "mpc_bleg": "strategies.python.mpc_bleg",
+    "mpc_extreme_leg": "strategies.python.mpc_extreme_leg",
 }
 
-# Same-direction entries this many bars apart or fewer are reported as a CLUSTER — the
-# proxy for "both bots read the same structure break". 16 bars = 4 hours on M15, which is
-# comfortably wider than the retrace a B-LEG waits for after an A+ entry would have fired.
-_CLUSTER_BARS = 16
+# Same-direction entries this far apart or less are reported as a CLUSTER — the proxy for
+# "both bots read the same structure break". Four hours is comfortably wider than the retrace
+# a B-LEG waits for after an A+ entry would have fired.
+#
+# ⚠ **IT IS A DURATION, NOT A BAR COUNT, AND THAT CHANGED ON 2026-09-01.** It was 16 bars,
+# which meant four hours only while both bots shared a 15-minute frame. Two bots on different
+# frames make a bar count mean two different things at once, and the flag would have silently
+# narrowed the window to 80 minutes the first time one of them ran on 5-minute bars. The
+# 15-minute case still resolves to exactly 16 units, so nothing already measured moved.
+_CLUSTER_MINUTES = 240
 
 
 class Hold:
@@ -88,8 +95,77 @@ class Hold:
         self.idx = idx
 
 
-def _holds(trades) -> list[Hold]:
-    return [Hold(t.dir, t.entry_index, t.exit_index, t.r, i) for i, t in enumerate(trades)]
+def _holds(trades, df, grid) -> list[Hold]:
+    """Map one bot's trades onto the SHARED grid.
+
+    🔴 **THE TWO BOTS NEED NOT BE ON THE SAME BAR FRAME, AND BAR INDICES CANNOT EXPRESS THAT.**
+    Bar 400 of a 15-minute frame and bar 400 of a 5-minute frame are eleven hours apart, so a
+    comparison built on indices silently compares two different afternoons. Every hold is
+    therefore converted to its own bar's TIMESTAMPS and then located on the finer frame's own
+    index, which is the one grid both frames' bars land on.
+
+    ⚠ **When the two frames are the SAME, the grid IS that frame and this is the identity** —
+    every number the tool produced before this existed reproduces exactly. That was the
+    constraint the design had to meet: the A+/B-LEG result is quoted in `CLAUDE.md`.
+
+    ⚠ The half-open [entry, exit) convention is unchanged and still applies to both sides. A
+    trade that opens and closes on ONE of its own bars occupies that bar's whole width on the
+    grid — `grid.span` — rather than a single fine unit, or a 15-minute bot would report a
+    third of its real exposure against a 5-minute one.
+    """
+    idx = df.index
+    last = len(idx) - 1
+    # Once, not per trade: it is a diff over the whole index, and a 5-minute frame over eight
+    # years is half a million rows. The first version called it inside the loop.
+    span = grid.span(df)
+    out: list[Hold] = []
+    for i, t in enumerate(trades):
+        start = grid.unit(idx[min(t.entry_index, last)])
+        end = grid.unit(idx[min(t.exit_index, last)])
+        out.append(Hold(t.dir, start, max(end, start + span), t.r, i))
+    return out
+
+
+class Grid:
+    """The shared time axis — the FINER of the two frames' own bar index.
+
+    A regular clock grid was the obvious alternative and is wrong here: it would count the
+    weekend as bars, so `in the market X% of all bars` would fall by a third and every figure
+    already recorded against this tool would move. The finer frame's own index carries only
+    the bars the market actually printed, and the coarser frame's bar opens are a subset of it.
+    """
+
+    def __init__(self, df):
+        self.index = df.index
+        self._pos = {t.value: i for i, t in enumerate(df.index)}
+        self.minutes = int(df.index.to_series().diff().min().total_seconds() // 60)
+        # How many bar opens the coarse frame held that the fine one does not. Counted rather
+        # than raised, and PRINTED rather than counted in silence — see `unit`.
+        self.misses = 0
+
+    def __len__(self):
+        return len(self.index)
+
+    def unit(self, ts) -> int:
+        """Where this bar's open sits on the grid.
+
+        ⚠ A timestamp the grid does not hold falls to the NEXT grid bar rather than raising —
+        the fine feed can be missing a bar the coarse one has, and dying on one absent
+        five-minute candle would throw away an eight-year replay. But it is COUNTED and the
+        count is printed once at the end of the run, because the silent version of this is the
+        trap this repo keeps re-learning: a hole in the feed and a clean feed would produce
+        the same confident output, and the reader has no way to tell which one they got.
+        """
+        hit = self._pos.get(ts.value)
+        if hit is not None:
+            return hit
+        self.misses += 1
+        return int(self.index.searchsorted(ts))
+
+    def span(self, df) -> int:
+        """How many grid units one bar of `df` covers."""
+        m = int(df.index.to_series().diff().min().total_seconds() // 60)
+        return max(1, m // self.minutes)
 
 
 def _occupancy(holds: list[Hold], n_bars: int) -> list[int]:
@@ -111,11 +187,16 @@ def _occupancy(holds: list[Hold], n_bars: int) -> list[int]:
     return occ
 
 
-def _replay(key: str, df, warmup: int, capital: float, overrides: dict):
+def _replay(key: str, df, warmup: int, capital: float, overrides: dict, symbol: str):
     mod = importlib.import_module(_STRATEGIES[key])
     spec = mod.LAB_STRATEGY
     StrategyCls, ConfigCls = spec["strategy"], spec["config"]
-    cfg = ConfigCls(fill_model="bar", symbol="XAUUSD")
+    # ⚠ Only the fields this strategy DECLARES. `LAB_STRATEGY` is an open contract — a config
+    # is not required to have a fill model or to name a symbol, and passing one that does not
+    # exist is a TypeError at construction rather than anything a reader could act on.
+    wanted = {"fill_model": "bar", "symbol": symbol}
+    have = getattr(ConfigCls, "__dataclass_fields__", {})
+    cfg = ConfigCls(**{k: v for k, v in wanted.items() if k in have})
     if overrides:
         import dataclasses
 
@@ -161,7 +242,12 @@ def main(argv=None) -> int:
     ap.add_argument("--a", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--b", default="mpc_bleg", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
-    ap.add_argument("--tf", default="15")
+    ap.add_argument("--tf", default="15", help="the frame BOTH bots run on, unless overridden")
+    # ⚠ A bot's frame is not a preference — `mpc_extreme_leg` measures its trigger on 5-minute
+    # bars and builds its 15-minute half in code, so handing it a 15-minute frame makes the
+    # trigger and the target the same series and there is no trade left to take.
+    ap.add_argument("--tf-a", default=None, help="override the frame for --a")
+    ap.add_argument("--tf-b", default=None, help="override the frame for --b")
     ap.add_argument(
         "--start",
         default=None,
@@ -171,10 +257,18 @@ def main(argv=None) -> int:
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
     ap.add_argument(
-        "--cluster-bars",
+        "--cluster-minutes",
         type=int,
-        default=_CLUSTER_BARS,
-        help="same-direction entries this close are reported as one cluster",
+        default=_CLUSTER_MINUTES,
+        help="same-direction entries this close in TIME are reported as one cluster",
+    )
+    ap.add_argument(
+        "--server",
+        default=None,
+        help="the broker whose cached bars to read, e.g. VantageMarkets-Demo. Without it the "
+        "bar source asks whichever MT5 terminal is attached, which needs the SSH tunnel up — "
+        "so a re-run with the app down fails at the fetch rather than reading the cache it "
+        "already holds. Name the server this audit was measured on.",
     )
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
@@ -185,31 +279,52 @@ def main(argv=None) -> int:
     from backtest.data.history import floor_for
     from backtest.data.source import BarSource
 
+    tf_a = args.tf_a or args.tf
+    tf_b = args.tf_b or args.tf
+
+    # ⚠ The window is bounded by the SHALLOWEST frame either bot needs. A start date the
+    # 15-minute feed can serve and the 5-minute one cannot is a run that dies at the fetch,
+    # after both replays have been queued.
     start = args.start
     if start is None:
-        fl = floor_for(args.symbol, args.tf)
-        if fl is None:
-            raise SystemExit(
-                f"cannot measure the broker's earliest {args.tf}m history for {args.symbol}. "
-                f"Pass --start explicitly rather than guessing one."
-            )
-        start = fl.isoformat()
+        floors = []
+        for tf in {tf_a, tf_b}:
+            # ⚠ `floor_for` measures the ATTACHED terminal, so with the app down it cannot
+            # answer and the refusal below says to pass `--start`. That is right — a history
+            # floor is a fact about a broker and there is no honest default to substitute.
+            fl = floor_for(args.symbol, tf)
+            if fl is None:
+                raise SystemExit(
+                    f"cannot measure the broker's earliest {tf}m history for {args.symbol}. "
+                    f"Pass --start explicitly rather than guessing one."
+                )
+            floors.append(fl)
+        start = max(floors).isoformat()
     end = args.end or dt.date.today().isoformat()
 
-    print(f"loading {args.symbol} {args.tf}m  {start} -> {end} ...", flush=True)
-    df = BarSource().load(args.symbol, args.tf, start, end)
-    if df.empty:
-        print("no bars returned")
-        return 1
-    n = len(df)
-    print(f"  {n:,} bars  {df.index[0]} -> {df.index[-1]}", flush=True)
+    frames: dict[str, object] = {}
+    for tf in sorted({tf_a, tf_b}, key=int):
+        print(f"loading {args.symbol} {tf}m  {start} -> {end} ...", flush=True)
+        d = BarSource(server=args.server).load(args.symbol, tf, start, end)
+        if d.empty:
+            print(f"no {tf}m bars returned")
+            return 1
+        print(f"  {len(d):,} bars  {d.index[0]} -> {d.index[-1]}", flush=True)
+        frames[tf] = d
 
-    sa = _replay(args.a, df, args.warmup, args.capital, {})
-    sb = _replay(args.b, df, args.warmup, args.capital, {})
+    df_a, df_b = frames[tf_a], frames[tf_b]
+    # The finer frame is the grid — see `Grid`. `min` on the timeframe as an INT, because
+    # "5" < "15" is false as strings and the grid would silently be the coarser one.
+    grid = Grid(frames[min(frames, key=int)])
+    n = len(grid)
+
+    sa = _replay(args.a, df_a, args.warmup, args.capital, {}, args.symbol)
+    sb = _replay(args.b, df_b, args.warmup, args.capital, {}, args.symbol)
 
     ta, tb = sa.execution.trades, sb.execution.trades
-    ha, hb = _holds(ta), _holds(tb)
+    ha, hb = _holds(ta, df_a, grid), _holds(tb, df_b, grid)
     oa, ob = _occupancy(ha, n), _occupancy(hb, n)
+    cluster_units = max(1, args.cluster_minutes // grid.minutes)
 
     in_a = sum(1 for v in oa if v)
     in_b = sum(1 for v in ob if v)
@@ -243,10 +358,10 @@ def main(argv=None) -> int:
             d = y.start - x.start
             if best is None or abs(d) < abs(best[1]):
                 best = (y, d)
-        if best is not None and abs(best[1]) <= args.cluster_bars:
+        if best is not None and abs(best[1]) <= cluster_units:
             clusters.append((x, best[0], best[1]))
 
-    ma, mb = _monthly_r(ta, df), _monthly_r(tb, df)
+    ma, mb = _monthly_r(ta, df_a), _monthly_r(tb, df_b)
     months = sorted(set(ma) | set(mb))
     xs = [ma.get(m, 0.0) for m in months]
     ys = [mb.get(m, 0.0) for m in months]
@@ -257,10 +372,21 @@ def main(argv=None) -> int:
     w = 100
     print("\n" + "=" * w)
     print(
-        f"OVERLAP AUDIT   {args.a}  vs  {args.b}"
-        f"   {df.index[0].date()} -> {df.index[-1].date()}   {n:,} bars"
+        f"OVERLAP AUDIT   {args.a} ({tf_a}m)  vs  {args.b} ({tf_b}m)"
+        f"   {grid.index[0].date()} -> {grid.index[-1].date()}"
+        f"   {n:,} bars of {grid.minutes}m"
     )
     print("=" * w)
+
+    # Said BEFORE the numbers, not in a footnote. A gappy fine feed shifts a coarse bot's
+    # holds onto the next bar that exists, which is the safe direction but is not free — and
+    # a reader who meets the caveat after the conclusion has already formed the conclusion.
+    if grid.misses:
+        print(
+            f"\n⚠ {grid.misses:,} bar opens on a coarser frame have no {grid.minutes}m bar of "
+            f"their own and were placed on the NEXT one that exists. The fine feed has holes; "
+            f"treat the bar counts below as approximate to that extent."
+        )
 
     print(
         f"\n{args.a:<18} {len(ta):4d} trades   {sum(t.r for t in ta):8.2f}R"
@@ -300,20 +426,20 @@ def main(argv=None) -> int:
     )
 
     print(
-        f"\n--- SAME STRUCTURE BREAK? (same-direction entries <= {args.cluster_bars} bars apart) ---"
+        f"\n--- SAME STRUCTURE BREAK? (same-direction entries <= {args.cluster_minutes} minutes apart) ---"
     )
     if clusters:
         gaps = [abs(c[2]) for c in clusters]
         print(
             f"  {len(clusters)} of {len(ta)} {args.a} trades have a same-direction {args.b} entry"
-            f" within {args.cluster_bars} bars"
+            f" within {args.cluster_minutes} minutes"
         )
         print(
             f"  gap in bars: min {min(gaps)}  median {statistics.median(gaps):.0f}  max {max(gaps)}"
         )
         for x, y, d in clusters[:15]:
             side = "long " if x.dir > 0 else "short"
-            when = df.index[x.start]
+            when = grid.index[x.start]
             print(
                 f"    {when}  {side}  {args.b} entered {d:+d} bars"
                 f"   A {x.r:+6.2f}R   B {y.r:+6.2f}R"
@@ -323,7 +449,7 @@ def main(argv=None) -> int:
     else:
         print(
             f"  NONE. No {args.a} trade has a same-direction {args.b} entry within"
-            f" {args.cluster_bars} bars."
+            f" {args.cluster_minutes} minutes."
         )
 
     print("\n--- WHAT ONE ACCOUNT WOULD HAVE CARRIED ---")
@@ -369,16 +495,16 @@ def main(argv=None) -> int:
                 "b_r",
                 "shared_bars",
                 "same_direction",
-                "entry_gap_bars",
+                "entry_gap_grid_bars",
             ]
         )
         for x, y, shared in sorted(pairs, key=lambda p: p[0].start):
             wr.writerow(
                 [
-                    df.index[x.start].isoformat(),
+                    grid.index[x.start].isoformat(),
                     x.dir,
                     round(x.r, 3),
-                    df.index[y.start].isoformat(),
+                    grid.index[y.start].isoformat(),
                     y.dir,
                     round(y.r, 3),
                     shared,
@@ -389,9 +515,9 @@ def main(argv=None) -> int:
 
     with open(out / "clusters.csv", "w", newline="") as fh:
         wr = csv.writer(fh)
-        wr.writerow(["a_entry_utc", "dir", "gap_bars", "a_r", "b_r"])
+        wr.writerow(["a_entry_utc", "dir", "gap_grid_bars", "a_r", "b_r"])
         for x, y, d in clusters:
-            wr.writerow([df.index[x.start].isoformat(), x.dir, d, round(x.r, 3), round(y.r, 3)])
+            wr.writerow([grid.index[x.start].isoformat(), x.dir, d, round(x.r, 3), round(y.r, 3)])
 
     with open(out / "monthly.csv", "w", newline="") as fh:
         wr = csv.writer(fh)

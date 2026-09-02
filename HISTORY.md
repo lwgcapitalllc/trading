@@ -15,6 +15,63 @@ the other one did.
 
 ## Latest
 
+### The overlap audit learned a second bar frame, and the old one could not say which broker it read (2026-09-01)
+
+The extreme-leg bot trades off 5-minute bars; A+ trades off 15-minute ones. The overlap audit
+replayed **two bots over ONE frame**, so the clash check between them could not be run at all.
+
+**The naive generalisation is wrong in a way that produces confident numbers.** Bar 400 of a
+15-minute frame and bar 400 of a 5-minute frame are eleven hours apart. Feeding the tool two frames
+and leaving the bar-index arithmetic alone compares two different afternoons and prints the result
+in the same format as the truth — the exact failure shape this repo keeps naming.
+
+**The fix is a shared time axis, and the obvious candidate was the wrong one.** A regular clock grid
+counts the weekend as bars, so every `% of all bars` already recorded against this tool would have
+moved by a third. The grid is the **finer frame's own bar index**: it carries only the bars the
+market actually printed, and the coarser frame's bar opens are a subset of it. A coarse bar occupies
+its **whole width** on that grid — score a 15-minute trade as one 5-minute unit and it reports a
+third of its real exposure, an error that only ever runs one way and always understates overlap.
+
+**The same-frame case had to stay the identity, and that was PROVEN rather than argued.** The
+A+/B-LEG figures are quoted in the root `CLAUDE.md`. The pre-change tool was extracted and run
+against the post-change one on identical bars: byte-identical output, only the header labels differ.
+
+🔴 **Eight of the tool's own unit tests broke on the signature change and the suite that was green
+an hour earlier had been run before it.** They were repointed through one helper that pins the
+same-frame path as the identity, so if it ever stops being the identity they go red rather than
+quietly measuring something else. Eight new cases cover the grid, and all eight were watched red by
+mutating the tool six ways.
+
+🔴 **The cluster window was 16 BARS, which meant four hours only while both bots shared a 15-minute
+frame.** On 5-minute bars the same number silently becomes 80 minutes — a stricter test reported
+under the old test's name. It is a duration now; 15m still resolves to exactly 16, so nothing moved.
+
+🔴 **A docstring claimed missing fine bars were "reported once by the caller" and nothing reported
+them.** A hole in the fine feed and a clean feed produced identical output. Now counted and printed
+*above* the numbers, not in a footnote — a reader who meets the caveat after the conclusion has
+already formed the conclusion. MEASURED: PU Prime is missing 4 of 157,004 15-minute opens, Vantage 15
+of 156,819. Neither is enough to move a figure, which is exactly why it needed measuring rather than
+assuming.
+
+🔴 **THE PART WORTH KEEPING IS THE ONE THAT COST THE MOST TIME: the 2026-09-01 A+/B-LEG audit
+recorded neither the broker nor the symbol.** Re-running it produced 156,819 bars against the
+documented 157,004 — along with different R, different overlap, different correlation, and *the same
+trade counts*, which is the most misleading combination available. Three replays established that
+156,819 is Vantage's count for that window and 157,004 is PU Prime's, and that every documented
+figure reproduces to the digit on PU Prime. **Nothing was wrong with the tool or the conclusion; the
+basis was simply never written down.** `--server` now exists because the audit also could not be
+re-run offline at all — the bar source asks whichever MT5 terminal is attached, so it died at the
+fetch while a complete cache sat on disk. **A basis nobody wrote down is a number nobody can check,
+and it reads as healthy right up until someone tries.**
+
+**The clash check itself passed.** A+ (15m) vs the extreme-leg bot (5m) over 470,995 M5 bars of PU
+Prime `XAUUSD.p`: 1,066 shared bars, 3.6% of A+'s hold time, **zero same-side**, no same-direction
+entry within four hours in 6.6 years, monthly r **+0.025**. ⚠ It is a weaker claim than the A+/B-LEG
+one — the extreme-leg bot has no parity gate result yet, so it describes the Python port rather than
+a proven twin of the Pine. ⚠ Peak concurrent positions is still 2, so the allocator is not retired,
+and this bot contributes **24× more shared bars than B-LEG does**.
+
+
 ### The banner was right, and nothing was maintaining the thing it watched (2026-09-01)
 
 Aaron, on the Command Center overview: *"What does this banner mean? And what do we need to do to

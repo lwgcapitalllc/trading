@@ -480,7 +480,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   honest or the numbers get quoted without them. Current: `2026-07-29_xauusd_15m_full_history/`
   (A+ and B-LEG, 2018-09-13 → 2026-07-29, bar fills).
 - **`tools/overlap_audit.py`** — do two strategies actually trade DIFFERENT legs of the move? Replays
-  two `strategies/python/` bots over ONE bar frame and reports the bars both held a position (split
+  two `strategies/python/` bots and reports the bars both held a position (split
   same-side vs opposite), which trades pair up, how far apart same-direction ENTRIES land (the direct
   test of "both fired on one structure break"), what a single account would have carried, and the
   monthly R correlation. **Built 2026-08-04 to close the standing A+/B-LEG overlap question**, which
@@ -493,6 +493,40 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   either bot** — the output is a fact about today's config. The bar arithmetic is unit-tested
   (`tests/test_overlap_audit.py`), because a slip in it would report "the legs never overlap" exactly
   as cleanly as the truth does.
+
+  🔴 **IT TAKES TWO BAR FRAMES SINCE 2026-09-01, AND BAR INDICES CANNOT EXPRESS THAT.** Bar 400 of a
+  15-minute frame and bar 400 of a 5-minute frame are eleven hours apart, so the one-frame version
+  would have compared two different afternoons **in exactly the same confident format as the truth**.
+  Both bots' holds are now converted to their own bars' TIMESTAMPS and located on the FINER frame's
+  own index. ⚠ **A regular clock grid was the obvious alternative and is wrong**: it counts the
+  weekend as bars, so every `% of all bars` already recorded against this tool would move by a third.
+  ⚠ **A coarse bar occupies its WHOLE width on the grid**, or a 15-minute bot reports a third of its
+  real exposure against a 5-minute one — and that error only ever runs one way, understating overlap.
+  ✅ **The same-frame case is the IDENTITY and that was proven, not argued**: the pre-change tool and
+  this one give byte-identical output on the same bars, and `test_the_same_frame_maps_every_trade_onto_its_own_bar_index`
+  pins it, because the A+/B-LEG figures quoted in the root `CLAUDE.md` were measured before the grid
+  existed. **No documented baseline moves.**
+
+  ⚠ **The cluster window is a DURATION now, not a bar count.** It was 16 bars, which meant four hours
+  only while both bots shared a 15-minute frame; on 5-minute bars that same number silently becomes
+  80 minutes — a stricter test reported under the old test's name. 15m still resolves to exactly 16.
+
+  🔴 **A bar the fine feed is MISSING falls forward to the next one that exists, and the count is
+  PRINTED above the numbers.** Dying on one absent candle would throw away an eight-year replay, but
+  the silent version is this repo's oldest trap: a gappy feed and a clean feed would produce the same
+  confident output with no way to tell which you got. MEASURED on the two caches here — PU Prime is
+  missing **4** of 157,004, Vantage **15** of 156,819.
+
+  🔴 **`--server` exists because the audit could not be RE-RUN without the app up.** Without it the
+  bar source asks whichever MT5 terminal is attached, so a re-run offline dies at the fetch while a
+  complete cache sits on disk. ⚠ **Name the server every audit was measured on** — the 2026-09-01
+  re-measurement of A+/B-LEG recorded neither the broker nor the symbol, and reproducing it took
+  three replays to work out that 157,004 bars is PU Prime and 156,819 is Vantage. **A basis nobody
+  wrote down is a number nobody can check.**
+
+  Its first two-frame run (A+ 15m vs the extreme-leg bot 5m) is a fact about those two BOTS rather
+  than about this tool, so it lives in the root `CLAUDE.md` next to the A+/B-LEG result it belongs
+  beside; story and full numbers in `HISTORY.md`.
 - **`tools/jitter_audit.py`** — how much of a backtest survives a few cents of feed difference?
   Replays a `strategies/python/` bot over the same bars N times with a small random offset added to
   each BAR's four prices, and classifies every jittered trade against the baseline: **flipped** (the
