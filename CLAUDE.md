@@ -820,6 +820,20 @@ the other on every commit.
 ## Branches
 
 - `main` — active development, all code changes go here
+- `wip/secondary-pine` — **parked TradingView work, rescued from a stash 2026-09-01.** The
+  1m-engine / drift / secondary rewrite of the A+ Pine strategy, one file, 276 insertions.
+  ⚠ **It does NOT apply to `main` and is not meant to** — it was taken on **f70053e9
+  (2026-07-19)** against `indicators/mpc_strategy.pine`, a path that stopped existing at the
+  2026-08-13 split into `indicators/strategies/` and `indicators/engines/`. Reviving it means
+  re-applying the ideas onto the current file, not merging the branch.
+  🔴 **The reason it is a branch is that a stash is the most losable place git has**: it is
+  addressed by an INDEX, so every new stash renumbers it, nothing pushes it, and a clone does
+  not carry it. This one had already shifted from `stash@{2}` to `stash@{3}` and back inside a
+  single session. ⚠ **The stash was deliberately NOT dropped** — two copies until somebody who
+  knows the work confirms the branch is the one they want.
+  ⚠ **Made with `git branch <name> stash@{N}`, which needs no checkout.** Two sessions share
+  this clone, so switching branches to rescue a stash would yank the working tree out from
+  under whoever else is in it.
 
 ---
 
