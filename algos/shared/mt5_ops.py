@@ -1024,10 +1024,25 @@ class BotMT5:
                 f"keeps, so nothing was closed and the position is still {held}L."
             )
             return False
-        if want > held + 1e-9:
+        # 🔴 **`>=`, NOT `>`, AND THE DIFFERENCE IS A FULL EXIT (fixed 2026-09-01, hours after
+        # this method was rewritten).** The first version guarded `want > held`, which refuses only
+        # a size LARGER than what is open — so a request for EXACTLY the held volume passed every
+        # check, reached the wire as a complete close, emptied the position and returned True
+        # while logging "PARTIAL CLOSE". **The refusal message directly below claimed it refused
+        # that case, and it never fired for it.** PROVEN by running it, not by reading: 1.00 lots
+        # asked against 1.00 held → True, position 1.00 → 0.00.
+        # ⚠ Two things let it survive being written, reviewed and shipped in the same hour: the
+        # only test near it asserted 2.00 against 1.00 held — a size larger, never the BOUNDARY —
+        # and `bridge.full_exit_at_price`'s docstring repeated the false claim, so the next reader
+        # had two documents agreeing with each other and neither with the code.
+        # ⚠ **This method is now strictly PARTIAL.** Closing the last of a position is
+        # `close_position`, a different call with a different name, so it can never be reached by
+        # an off-by-one in a comparison.
+        if want >= held - 1e-9:
             self.log.error(
-                f"Partial close REFUSED T{ticket}: asked for {want}L but only {held}L is open. "
-                f"Closing what is there would be a FULL exit, which is a different decision."
+                f"Partial close REFUSED T{ticket}: asked for {want}L against {held}L open. "
+                f"Taking all of it is a FULL EXIT, which is a different decision and a different "
+                f"call (`close_position`). Nothing was closed."
             )
             return False
         snapped = round(round(want / step) * step, 8)

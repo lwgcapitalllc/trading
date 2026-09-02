@@ -234,6 +234,30 @@ request was accepted; the position's volume says what is actually open. A move b
 amount — a race with the stop, a partial fill, another hand on the account — is `UNKNOWN`, never
 success, because the bridge reconciles against that number.
 
+🔴 **AND THE REWRITE SHIPPED ITS OWN BUG, FOUND HOURS LATER: THE GUARD REFUSED A FULL EXIT
+EVERYWHERE EXCEPT IN THE CODE.** It read `want > held`, which refuses only a size LARGER than the
+position — so a request for EXACTLY the held volume passed every check, reached the wire, emptied
+the position and returned True while logging *"PARTIAL CLOSE"*. PROVEN by running it: 1.00 lots
+asked against 1.00 held → `True`, position 1.00 → 0.00.
+
+⚠ **Two documents asserted the refusal and neither was the code.** `partial_close`'s own message
+said *"Closing what is there would be a FULL exit, which is a different decision"* on a branch that
+never fired for that case, and `bridge.full_exit_at_price`'s docstring repeated it. **A doc and a
+comment agreeing with each other is not evidence** — they agreed with each other and neither agreed
+with the line above them.
+
+⚠ **The test beside it looked like coverage and was not.** It asserted 2.00 against 1.00 held — a
+size LARGER, never the BOUNDARY. **The one value that mattered was the one nobody wrote down**, and
+the test's own name said *is_REFUSED_because_that_is_a_full_exit*, which is exactly the case it did
+not exercise.
+
+⚠ **It was LATENT rather than live-reachable, and that was luck rather than design.** The only
+caller is `_sync_partials`, gated behind a ladder that `assert_supported` permits only when the
+rungs sum to under 100 — so the requested slice was always strictly less than the position. **The
+guard was the last line of defence and it was wrong; an upstream check happened to stand in for
+it.** Fixed to `>=`, boundary tested, and closing the last of a position is now a differently
+NAMED call (`close_position`) so it cannot be reached by an off-by-one in a comparison.
+
 ⚠ **The tests carry their own fake terminal rather than reusing `test_mt5_ops_pending.py`'s.**
 That one returns every position whatever ticket you ask for and can NEVER return `None`, so it
 cannot express the case under test — a fixture that cannot fail the way production fails would

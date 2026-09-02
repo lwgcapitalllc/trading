@@ -163,10 +163,18 @@ def full_exit_at_price(strategy_config) -> list:
 
     🔴 **THE DISTINCTION IS THE WHOLE POINT AND IT IS EASY TO MISS.** Since 2026-09-01 the bridge
     CAN bank part of a position: `_sync_partials` reconciles the broker's volume down to the size
-    the strategy believes is still open. What it cannot do is close the LAST of it at a price —
+    the strategy believes is still open. What it cannot do is close the LAST of it at a price:
     `mt5_ops.partial_close` refuses a request for the whole position, because that is a full exit
     and a different decision, and no other exit path exists. Every exit still leaves the broker
     as a stop move.
+
+    ⚠ **THAT SENTENCE WAS FALSE FOR THE FIRST FEW HOURS OF THIS FUNCTION'S LIFE.** The broker
+    call's guard read `want > held`, so a request for EXACTLY the held volume passed every check,
+    executed a complete close and reported a partial. Two docstrings asserted the refusal while
+    nothing implemented it. Fixed the same day to `>=`, with the boundary case tested. **The shape
+    is the lesson: a doc and a comment agreeing with each other is not evidence, and the test
+    beside it asserted a size LARGER than the position rather than equal to it — the one value
+    that mattered was the one nobody wrote down.**
 
     So a ladder that banks 50% and rides the rest is now supported, and one that banks 100% at
     its target is NOT. That excludes two shipped configurations and they must be named rather

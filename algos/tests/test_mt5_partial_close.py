@@ -145,6 +145,32 @@ def test_closing_MORE_than_is_open_is_REFUSED_because_that_is_a_full_exit():
     assert fake.sent == []
 
 
+def test_closing_EXACTLY_what_is_open_is_REFUSED_because_that_is_a_full_exit():
+    """🔴 **THE BOUNDARY, AND IT WAS THE ONE VALUE NOBODY WROTE DOWN.** For the first few hours of
+    this method's life the guard read `want > held`, which refuses only a size LARGER than the
+    position — so asking for exactly 1.00 against 1.00 held passed every check, reached the wire,
+    emptied the position and returned True while logging "PARTIAL CLOSE".
+
+    ⚠ The test above it (2.00 against 1.00) looked like it covered this and did not, and TWO
+    docstrings asserted the refusal that nothing implemented. **A doc and a comment agreeing with
+    each other is not evidence.** Closing the last of a position is `close_position` — a different
+    call with a different name, so it cannot be reached by an off-by-one in a comparison."""
+    fake = _fake_mt5()
+    bot, _ = _bot(fake)
+    assert bot.partial_close(77, 1.00, "bullish") is False
+    assert fake.sent == [], "nothing may reach the wire"
+    assert fake._positions[0].volume == 1.00, "the position must be untouched"
+
+
+def test_a_slice_JUST_UNDER_the_whole_position_still_goes_through():
+    """A guard that refuses everything is not a guard. 0.99 of 1.00 leaves a runner, so it is a
+    genuine partial and must work."""
+    fake = _fake_mt5()
+    bot, _ = _bot(fake)
+    assert bot.partial_close(77, 0.99, "bullish") is True
+    assert fake._positions[0].volume == 0.01
+
+
 def test_a_zero_or_negative_slice_is_REFUSED():
     fake = _fake_mt5()
     bot, _ = _bot(fake)
