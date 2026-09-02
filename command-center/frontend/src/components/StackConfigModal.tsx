@@ -7,6 +7,7 @@ import {
   useRunningVpsJob,
   useStackPreview,
   useHistoryLimit,
+  useBrokerProfiles,
 } from '@/hooks/useLab'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
 import { useDebounced } from '@/lib/useDebounced'
@@ -37,7 +38,19 @@ export interface StackConfigInitial {
   // given, so omitting this turns "rerun" into "run today's defaults" with nothing on screen
   // saying so. It is the stack's version of carrying the baseline's costs into a tuning child.
   paramsByStrategy?: Record<string, Record<string, unknown>>
+  // What the stack being rerun was CHARGED. ⚠ A rerun reproduces the stack it is rerunning, not
+  // today's default — a stack stored before 2026-09-02 ran gross, and quietly defaulting it back
+  // ON would make the "same" stack a different experiment. `undefined` = no opinion, so a new
+  // stack gets the charged default.
+  chargeCosts?: boolean
+  brokerProfile?: string
 }
+
+// The per-trade risk knob. Resolved against each leg's OWN schema, so a strategy that does not
+// declare it simply gets no box rather than a control that writes a field it has never heard of.
+// ⚠ Named ONCE here: this is the only place the stack UI needs to know a field by name, and a
+// second copy of the name is how the two come to disagree.
+const RISK_FIELD = 'exec_risk_pct'
 
 // 🔴 THE MODE PICKER IS GONE AND EVERY NEW STACK IS A SHARED ACCOUNT (2026-08-10, Aaron's call):
 // *"I would never ever ever wanna do a screen. I would always wanna do a shared account, because
@@ -109,6 +122,44 @@ export function StackConfigModal({
   const [entryFloorPct, setEntryFloorPct] = useState(initial?.entryFloorPct ?? 0)
   const shared = mode === 'shared'
 
+  // ── Broker account, and what the stack is CHARGED ────────────────────────────
+  // 🔴 Neither existed on this form until 2026-09-02, and the single-run form has had both for
+  // weeks. A stack fell through to the two typed figures below — which default to zero — so
+  // **every stack this lab has produced is a gross number sitting where the answer goes.**
+  // ⚠ `null` until the profiles arrive, so nothing is submitted against a guess; the effect below
+  // fills it once, and only while the reader has not chosen for themselves. Same shape as the Run
+  // modal, deliberately — two forms that default differently is how one of them starts lying.
+  const [brokerProfile, setBrokerProfile] = useState<string | null>(initial?.brokerProfile ?? null)
+  const { data: brokerProfiles } = useBrokerProfiles()
+  const attachedProfile = brokerProfiles?.find((b) => b.attached) ?? null
+  useEffect(() => {
+    if (brokerProfile != null || !brokerProfiles?.length) return
+    setBrokerProfile(attachedProfile?.id ?? brokerProfiles[0].id)
+  }, [brokerProfile, brokerProfiles, attachedProfile])
+  const broker = brokerProfiles?.find((b) => b.id === brokerProfile) ?? null
+  // ⚠ Three answers, not two. `null` = the agent could not be asked, which must never render as a
+  // mismatch — the same rule the health dots follow.
+  const brokerMatches: boolean | null =
+    !broker || !attachedProfile ? null : broker.id === attachedProfile.id
+  // A tier whose spread has never been read carries the refusal sentinel rather than a number, and
+  // the backend REFUSES to run it charged. Say so before the button, not in a 400 after the click.
+  const brokerUnpriced = broker != null && broker.spread < 0
+  const [chargeCosts, setChargeCosts] = useState(initial?.chargeCosts ?? true)
+
+  // ── Per-leg risk ─────────────────────────────────────────────────────────────
+  // Only holds legs the reader has actually EDITED. An untouched leg must send no override at
+  // all: an override disables reuse for that leg, so pre-filling every one would silently turn
+  // every screen rerun into a full replay.
+  const [legRisk, setLegRisk] = useState<Record<string, number>>({})
+  // What a leg risks today — its rerun override if it has one, else its stored default. This is
+  // the number the box shows and the baseline an edit is compared against.
+  const baselineRisk = (id: string): number | undefined => {
+    const from = initial?.paramsByStrategy?.[id]?.[RISK_FIELD] ?? null
+    if (typeof from === 'number') return from
+    const d = pyStrategies.find((s) => s.id === id)?.default_params?.[RISK_FIELD]
+    return typeof d === 'number' ? d : undefined
+  }
+
   // Default the instrument to the first selected strategy's suggestion (New-stack case only).
   useEffect(() => {
     if (instrument) return
@@ -143,13 +194,32 @@ export function StackConfigModal({
   // outside `strategy_ids`, so this changes no result — but it does change the preview's query key,
   // and an unticked leg leaving its override behind would mint a new key for a body that means the
   // same thing.
+  //
+  // 🔴 **AN OVERRIDE REPLACES A LEG'S WHOLE SETTINGS — IT DOES NOT MERGE WITH THEM.** The backend
+  // reads `params_by_strategy[id] OR the strategy's stored defaults`, never both, so sending just
+  // the one field the reader edited would run that leg with ONE setting and silently drop every
+  // other. Nothing would fail: the leg replays, produces trades, and lands in the table looking
+  // ordinary. So an edited leg sends its COMPLETE set with the one field swapped in.
+  //
+  // ⚠ **An edit back to the leg's own baseline sends NOTHING**, because any override disables
+  // reuse for that leg — typing the number that was already there would silently cost a reuse and
+  // turn an instant stack into a full replay.
   const paramsByStrategy = useMemo(() => {
     const src = initial?.paramsByStrategy
-    if (!src) return {}
     const out: Record<string, Record<string, unknown>> = {}
-    for (const id of selected) if (src[id]) out[id] = src[id]
+    for (const id of selected) {
+      const base = src?.[id] ?? pyStrategies.find((s) => s.id === id)?.default_params ?? null
+      const edited = legRisk[id]
+      const baseline = baselineRisk(id)
+      if (edited !== undefined && edited !== baseline && base) {
+        out[id] = { ...base, [RISK_FIELD]: edited }
+      } else if (src?.[id]) {
+        out[id] = src[id]
+      }
+    }
     return out
-  }, [initial?.paramsByStrategy, selected])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial?.paramsByStrategy, selected, legRisk, pyStrategies])
 
   // The UNION of every selected leg's feed flags, which is exactly the floor a stack needs: the
   // legs share one window, so it is legal only if EVERY leg can be served, and one leg loading a
@@ -190,8 +260,27 @@ export function StackConfigModal({
       // leg — a preview that did not know about it would badge the leg green "Reuse" and then watch
       // it re-run.
       params_by_strategy: paramsByStrategy,
+      charge_costs: chargeCosts,
+      // Same reason, one level up: the cost basis is part of the reuse identity since 2026-09-02,
+      // so a preview that did not carry it would badge a free-book run reusable for a charged
+      // stack. ⚠ `broker_profile` is omitted rather than sent null while the profiles are still
+      // loading — the request model defaults it, and a null would refuse the whole stack with a
+      // message about an unknown broker, which is a contract mismatch reported as a broker fault.
+      ...(brokerProfile ? { broker_profile: brokerProfile } : {}),
     }),
-    [selected, instrument, barValue, start, end, commPerSide, slippageTicks, mode, paramsByStrategy]
+    [
+      selected,
+      instrument,
+      barValue,
+      start,
+      end,
+      commPerSide,
+      slippageTicks,
+      mode,
+      paramsByStrategy,
+      chargeCosts,
+      brokerProfile,
+    ]
   )
 
   // ⚠ NOT asked in shared mode, and the answer is not merely unused there — it is KNOWN. A shared
@@ -215,7 +304,14 @@ export function StackConfigModal({
   // right for a shared stack only because the preview happened to be in flight; the moment it is not
   // fetched at all, "we have no answer" and "nothing needs running" must not collapse into one.
   const nothingToRun = !shared && preview != null && preview.run_count === 0
-  const canRun = settingsReady && !triggerStack.isPending && (!pythonBusy || nothingToRun)
+  const canRun =
+    settingsReady &&
+    !triggerStack.isPending &&
+    (!pythonBusy || nothingToRun) &&
+    // A broker whose spread has never been measured refuses at the backend rather than borrowing a
+    // sibling tier's number — PU Prime's tiers measured 2.7x apart. Stopping here means the answer
+    // arrives before the click instead of as a 400 after it.
+    !(chargeCosts && brokerUnpriced)
 
   const submit = () => {
     if (!canRun) return
@@ -270,6 +366,93 @@ export function StackConfigModal({
               ? 'Layer 2 or more Python strategies onto ONE balance with ONE risk budget they compete for, replayed together on one clock — so you can see where a strategy was shrunk or blocked because another was already holding the capacity. Every leg is re-run; nothing is reused.'
               : 'This stack is a SCREEN: each strategy ran on its own full account and the results were added together, so no strategy could ever block another. Rerunning keeps it a screen. New stacks are shared accounts.'}
           </p>
+
+          {/* ── Broker account — FIRST, because everything under it depends on it ─────
+              Mirrors the single-run form, which puts it at the top for the same reason: it
+              decides which broker's bars are replayed AND what the run is charged. This form had
+              neither control until 2026-09-02. */}
+          <div className="flex items-center gap-2" data-testid="stack-broker">
+            <label className="text-[11px] text-text-secondary flex-shrink-0">Broker account</label>
+            <select
+              value={brokerProfile ?? ''}
+              onChange={(e) => setBrokerProfile(e.target.value)}
+              className="bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors min-w-0 flex-1 max-w-[300px]"
+            >
+              {(brokerProfiles ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.id}
+                  {b.attached ? ' — connected now' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ── Costs — ONE switch, on by default ───────────────────────────────────
+              🔴 Every stack this lab ran before 2026-09-02 was GROSS while its page showed a cost
+              row: a stack carried no broker and no layers, so it fell through to the two typed
+              figures below, which default to zero. The switch sends a BOOLEAN and the backend
+              resolves what that charges — the policy lives on the side that bills it. */}
+          <div data-testid="stack-costs">
+            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
+              Costs
+            </div>
+            <div className="flex items-start gap-2.5">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={chargeCosts}
+                onClick={() => setChargeCosts((v) => !v)}
+                className={`mt-[2px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
+                  chargeCosts ? 'bg-accent' : 'bg-border-default'
+                }`}
+              >
+                <span
+                  className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-bg-base transition-all ${
+                    chargeCosts ? 'left-[16px]' : 'left-[2px]'
+                  }`}
+                />
+              </button>
+              <span className="min-w-0">
+                <span className="block text-[12px] text-text-primary">
+                  {chargeCosts ? "Charge this account's real costs" : 'Run gross — charge nothing'}
+                </span>
+                <span className="block text-[11px] text-text-tertiary leading-snug">
+                  {chargeCosts
+                    ? 'Spread on every fill, commission and overnight financing, all measured on the account above.'
+                    : 'A diagnostic only. It answers how much of the edge is friction, never whether the stack works.'}
+                </span>
+              </span>
+            </div>
+            {!chargeCosts && (
+              <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                This stack will report a gross figure, and it is not comparable to a charged one —
+                real fills change which setups exist, not just what they pay.
+              </p>
+            )}
+            {/* ⚠ WARNS, never blocks. Measuring against a broker you are not pointed at is a
+                legitimate thing to do deliberately. */}
+            {chargeCosts && brokerMatches === false && (
+              <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                This charges {brokerProfile}&apos;s costs over bars from {attachedProfile?.id},
+                which is the terminal actually connected. Same stack, two brokers — pick{' '}
+                {attachedProfile?.id} unless you mean to compare.
+              </p>
+            )}
+            {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
+              <p className="mt-2 text-[11px] text-text-tertiary leading-snug">
+                Can&apos;t tell which terminal is connected, so nothing here confirms these costs
+                match the bars this stack will replay.
+              </p>
+            )}
+            {/* This one DOES block, because the backend refuses it — a tier nobody has measured
+                would otherwise borrow a sibling's number, and PU Prime's measured 2.7x apart. */}
+            {chargeCosts && brokerUnpriced && (
+              <p className="mt-2 text-[11px] text-neg-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                This account&apos;s spread has never been measured, so it cannot be run charged.
+                Measure it first, or pick an account that has been.
+              </p>
+            )}
+          </div>
 
           {shared && (
             <div data-testid="stack-account-fields">
@@ -342,46 +525,83 @@ export function StackConfigModal({
                 {pyStrategies.map((s) => {
                   const on = selected.has(s.id)
                   const action = on ? actionByStrategy.get(s.id) : undefined
+                  const base = baselineRisk(s.id)
+                  const shownRisk = legRisk[s.id] ?? base
+                  const edited = legRisk[s.id] !== undefined && legRisk[s.id] !== base
                   return (
-                    <button
-                      key={s.id}
-                      onClick={() => toggle(s.id)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
-                        on
-                          ? 'border-accent/40 bg-accent/5'
-                          : 'border-border-subtle bg-bg-sunken hover:border-border-default'
-                      }`}
-                    >
-                      <span
-                        className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${on ? 'bg-accent border-accent' : 'border-border-default'}`}
+                    <div key={s.id}>
+                      <button
+                        onClick={() => toggle(s.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
+                          on
+                            ? 'border-accent/40 bg-accent/5'
+                            : 'border-border-subtle bg-bg-sunken hover:border-border-default'
+                        }`}
                       >
-                        {on && <span className="text-bg-base text-[10px] font-bold">✓</span>}
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="text-[13px] font-medium text-text-primary">{s.name}</span>
-                        {s.suggested_instrument && (
-                          <span className="ml-2 text-[11px] text-text-tertiary font-mono">
-                            {s.suggested_instrument}
+                        <span
+                          className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${on ? 'bg-accent border-accent' : 'border-border-default'}`}
+                        >
+                          {on && <span className="text-bg-base text-[10px] font-bold">✓</span>}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="text-[13px] font-medium text-text-primary">
+                            {s.name}
+                          </span>
+                          {s.suggested_instrument && (
+                            <span className="ml-2 text-[11px] text-text-tertiary font-mono">
+                              {s.suggested_instrument}
+                            </span>
+                          )}
+                        </span>
+                        {action === 'reuse' && (
+                          <span
+                            className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-pos-text bg-pos-muted/40 border border-pos-text/20 rounded px-1.5 py-0.5"
+                            title="An existing completed run matches these exact settings — it will be reused, not re-run."
+                          >
+                            Reuse
                           </span>
                         )}
-                      </span>
-                      {action === 'reuse' && (
-                        <span
-                          className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-pos-text bg-pos-muted/40 border border-pos-text/20 rounded px-1.5 py-0.5"
-                          title="An existing completed run matches these exact settings — it will be reused, not re-run."
-                        >
-                          Reuse
-                        </span>
+                        {action === 'run' && (
+                          <span
+                            className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-warn-text bg-warn-muted/30 border border-warn-text/20 rounded px-1.5 py-0.5"
+                            title="No matching run exists — this leg will be backtested fresh at the chosen timeframe and costs."
+                          >
+                            Run
+                          </span>
+                        )}
+                      </button>
+                      {/* ── Per-leg risk ────────────────────────────────────────────
+                        🔴 The one thing the form could never say: how much of the shared budget
+                        each leg puts behind a trade. Without it both legs ran their stored
+                        default, so a stack was always "these two, as shipped" — and the whole
+                        point of one balance is deciding how it is divided.
+                        ⚠ Rendered OUTSIDE the row's button (an input inside a button is invalid
+                        and every keystroke would toggle the leg off).
+                        ⚠ Absent for a strategy whose schema does not declare the field — a box
+                        writing a setting the strategy has never heard of is worse than no box. */}
+                      {on && shownRisk !== undefined && (
+                        <div className="pl-6 pt-1 flex items-center gap-2">
+                          <label className="text-[11px] text-text-tertiary">
+                            Risk per trade (%)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0.1"
+                            value={shownRisk}
+                            onChange={(e) =>
+                              setLegRisk((prev) => ({ ...prev, [s.id]: Number(e.target.value) }))
+                            }
+                            className="w-[84px] bg-bg-sunken border border-border-subtle rounded-md px-2 py-1 text-[12px] font-mono focus:outline-none focus:border-accent transition-colors"
+                          />
+                          {edited && (
+                            <span className="text-[10px] text-warn-text">
+                              was {base} · this leg runs fresh
+                            </span>
+                          )}
+                        </div>
                       )}
-                      {action === 'run' && (
-                        <span
-                          className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-warn-text bg-warn-muted/30 border border-warn-text/20 rounded px-1.5 py-0.5"
-                          title="No matching run exists — this leg will be backtested fresh at the chosen timeframe and costs."
-                        >
-                          Run
-                        </span>
-                      )}
-                    </button>
+                    </div>
                   )
                 })}
                 {/* 🔴 THE RECOVERY LEG IS ADDED HERE, UNDER ITS PARENT, AND NOWHERE ELSE. It has

@@ -1341,6 +1341,13 @@ export interface StackRequest {
   account_size?: number
   risk_cap_pct?: number
   entry_floor_pct?: number
+  // What this stack is CHARGED. Same contract a single run carries, and it did not exist here
+  // until 2026-09-02 — before that every stack fell through to the two typed figures below,
+  // which default to zero, so it ran gross while its page showed a cost row.
+  // ⚠ `charge_costs` is a BOOLEAN and the backend resolves it into layers; sending layers from
+  // here would put a copy of the cost policy on the side that does not charge it.
+  charge_costs?: boolean | null
+  broker_profile?: string
 }
 
 export type StackMode = 'screen' | 'shared'
@@ -1366,6 +1373,11 @@ export interface StackPreviewRequest {
   // An override disables reuse for that leg, so the preview has to see it or it badges a leg
   // "Reuse" that the launch will re-run. Mirrors `StackRequest.params_by_strategy`.
   params_by_strategy?: Record<string, Record<string, unknown>>
+  // 🔴 The cost basis is part of the reuse identity, so the preview has to carry it too — a
+  // charged stack will not reuse a run measured on a free book. Without these the badges promise
+  // a reuse the launch then replays, which is the same defect one level up.
+  charge_costs?: boolean | null
+  broker_profile?: string
 }
 
 export interface StackPreviewLeg {

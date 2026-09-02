@@ -2190,6 +2190,63 @@ the same title. ⚠ **The button is a LABEL either way** — the gate is `router
 which refuses every endpoint that starts a job from a strategy id; see `backend/CLAUDE.md`. There
 is no automated test on either button, because Playwright is out of the suite by design.
 
+## The stack form gained a BROKER, a COST SWITCH and PER-LEG RISK (2026-09-02)
+
+🔴 **The single-run form has carried all three for weeks and this one had none of them, so every
+stack this lab has produced is a GROSS number sitting where the answer goes.** With no broker and
+no cost switch the request fell through to the two typed cost figures, which default to zero.
+Aaron: *"too many options are missing compared to when you actually try to run a backtest of a
+single strategy… stacking should have all the same things."* Backend contract and the measured
+size of the gap: `../backend/CLAUDE.md` → *A stack is CHARGED like a single run*.
+
+⚠ **All three MIRROR the Run modal rather than being invented here** — the broker select is first
+because everything under it depends on it, the cost switch is one toggle outside any fold and
+defaults ON, and an unpriced tier disables the run and says why before the click. **Two forms that
+default differently is how one of them starts lying**, so the defaults are copied deliberately.
+
+⚠ **`charge_costs` is a BOOLEAN and the page sends no layer list.** The policy lives on the side
+that charges it. Same rule as the Run modal, and it is rule 7 — a label is a claim about code
+somewhere else.
+
+⚠ **The broker starts `null` and an effect fills it once**, defaulting to the ATTACHED terminal and
+never overwriting a choice the reader has made. `broker_profile` is OMITTED while it is null rather
+than sent as one: the request model defaults it, and a null refuses the whole stack with a message
+about an unknown broker — a contract mismatch reported as a broker fault.
+
+🔴 **AN OVERRIDE REPLACES A LEG'S WHOLE SETTINGS — IT DOES NOT MERGE WITH THEM.** The backend reads
+`params_by_strategy[id] OR the strategy's stored defaults`, never both, so a risk box sending only
+the field it edited would run that leg with ONE setting and silently drop every other. **Nothing
+fails**: the leg replays, produces trades, and lands in the table looking ordinary. So an edited leg
+sends its COMPLETE set with the one field swapped in.
+
+⚠ **An untouched leg sends NO override at all, and an edit back to the leg's own baseline sends
+nothing either.** Any override disables reuse for that leg, so pre-filling every one would silently
+turn every screen rerun into a full replay, and typing the number that was already there would cost
+a reuse for no change.
+
+⚠ **The risk box is resolved against each leg's OWN schema and is absent for a strategy that does
+not declare the field** — a control writing a setting the strategy has never heard of is worse than
+no control. The field is named ONCE (`RISK_FIELD`); a second copy of the name is how two surfaces
+come to disagree.
+
+⚠ **It renders OUTSIDE the leg row's button.** An input inside a button is invalid markup and every
+keystroke would toggle the leg off.
+
+⚠ **The broker select carries no tight `max-w`.** A native select sizes to its WIDEST option and an
+option here is a whole account identity plus its attached suffix — clipped it read
+`puprime_ecn — connected n`, which looks like a rendering fault rather than a long label. **Second
+instance of this trap in this folder** (the Accounts tab's Move menu was the first, in the other
+direction).
+
+✅ **`tests/stack-config.spec.ts` — 6 checks, and they need NO BACKEND** (every response is
+intercepted, so no SSH tunnel and no live MT5 box; booting the backend is a person's decision
+because it can start things on the trading box). ⚠ **A fail-watch against HEAD is VACUOUS** — none
+of these controls existed, so every check would go red on an element being absent. **Non-vacuity is
+by MUTATION, one named per check, and all six were RUN**: the partial-override mutation reddens the
+sibling-settings assertions while the risk assertion above it stays green, which is exactly the
+shape of the defect. ⚠ **The fixture's ATTACHED profile is SECOND in the list on purpose** — one
+whose attached profile is also first cannot tell a working default from `useState(profiles[0])`.
+
 ## A NEW stack is always a SHARED ACCOUNT — the mode picker is gone
 
 **2026-08-10, Aaron's call:** *"I would never ever ever wanna do a screen. I would always wanna do
