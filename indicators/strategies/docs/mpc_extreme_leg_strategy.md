@@ -392,8 +392,22 @@ table applies here unchanged and with more force: this is now a rule set that ha
 positive years twice.
 
 ⚠ **It holds a position 5.76% of the time** (32,397 of 562,071 5-minute bars), median hold about six
-hours. That is the closest thing to an overlap number this strategy has, and it is **not** the
-overlap audit — `backtest/tools/overlap_audit.py` needs a Python package and none exists.
+hours. That was the closest thing to an overlap number this strategy had while it was a study only.
+
+✅ **THE REAL OVERLAP AUDIT HAS NOW RUN — 2026-09-01, once the Python package existed.** Against the
+LIVE A+ bot over 470,995 M5 bars of PU Prime `XAUUSD.p` (2020-01-01 → 2026-08-23): the two held a
+position at the same time on **1,066 bars, 3.6% of A+'s hold time, and ZERO of them same-side**. 7
+trade pairs touch at all, none same-direction, and not one same-direction entry lands within four
+hours of the other's in 6.6 years. Monthly R correlation **+0.025** over 79 months.
+⚠ **The 5.76% above is NOT that number and the two must not be compared** — it is this bot's own
+hold time over a longer window and a different broker, measured with nothing to overlap it against.
+⚠ **It does not retire the account-level risk cap**: peak concurrent positions is 2, so one account
+would have carried 2× the per-trade risk on those 1,066 bars — **24× more shared bars than the
+benched B-LEG contributes**.
+⚠ **It is a weaker claim than the A+/B-LEG audit, and the reason is the line below**: with no
+TradingView export these are the PYTHON port's trades, so the audit describes the port rather than a
+proven twin of this file. Re-run it after the gate goes green: `backtest/tools/overlap_audit.py
+--a mpc_sos_fade --b mpc_extreme_leg --tf-b 5 --symbol XAUUSD.p --server PUPrime-Demo`.
 
 Full tooling and how to re-run any of it: `backtest/tools/pre_sos_leg_grid.py`.
 
