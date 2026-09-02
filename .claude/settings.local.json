@@ -154,7 +154,13 @@
       "Bash(python3 final.py)",
       "Bash(python3 grid_sweep.py)",
       "Bash(python3 run_leg.py --start 2024-01-01 --end 2024-06-30)",
-      "Bash(python3 /private/tmp/claude-501/-Users-alwg-trading/772079c0-0855-4b78-a8fb-11a118e4513d/scratchpad/which_family.py)"
+      "Bash(python3 /private/tmp/claude-501/-Users-alwg-trading/772079c0-0855-4b78-a8fb-11a118e4513d/scratchpad/which_family.py)",
+      "Bash(mkdir -p strategies/tradingview/research)",
+      "Bash(git mv *)",
+      "Bash(git -C /Users/alwg/trading diff --stat strategies/python/mpc_sos_fade/strategy.py)",
+      "Bash(perl -ni -e 'print unless /TradingView strategy move on hold/' /Users/alwg/.claude/projects/-Users-alwg-trading/memory/MEMORY.md)",
+      "Bash(python3 -m pytest algos/tests/test_ledger_streams.py -q --no-header -p no:randomly)",
+      "Bash(python3 -m pytest algos/tests/test_audit_reentry.py -q --no-header -p no:randomly)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
