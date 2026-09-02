@@ -53,6 +53,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import pandas as pd
+
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -96,33 +98,45 @@ class Hold:
         self.idx = idx
 
 
-def _holds(trades, df, grid) -> list[Hold]:
-    """Map one bot's trades onto the SHARED grid.
+def _holds(trades, df, grid, fast_df=None) -> list[Hold]:
+    """Map one bot's trades onto the SHARED grid, by the TIME each trade happened.
 
     🔴 **THE TWO BOTS NEED NOT BE ON THE SAME BAR FRAME, AND BAR INDICES CANNOT EXPRESS THAT.**
     Bar 400 of a 15-minute frame and bar 400 of a 5-minute frame are eleven hours apart, so a
     comparison built on indices silently compares two different afternoons. Every hold is
-    therefore converted to its own bar's TIMESTAMPS and then located on the finer frame's own
-    index, which is the one grid both frames' bars land on.
+    therefore located by its own recorded TIMESTAMP on the finer frame's index, which is the one
+    grid both frames' bars land on.
+
+    🔴 **IT LOOKED THE BAR NUMBER UP IN THE PRIMARY FRAME UNTIL 2026-09-03, AND A BOT WITH
+    RE-ENTRIES HAS TWO NUMBERINGS.** A re-entry is stepped on the FILL CLOCK, so its bar number
+    counts 5-minute bars; reading it out of the 15-minute index put every one of them weeks or
+    months from where it happened, and the ones that ran past the end of the frame were clamped
+    onto the final bars, where they piled up on each other. MEASURED on 2024: 7 of 24 trades
+    misplaced, the worst by 5,355 hours, and the pile-up manufactured a bot holding two positions
+    at once — see `_occupancy`. **A bar number is meaningless without the frame it counts, and
+    nothing in a trade list says which frame that is.** The recorded milliseconds carry no such
+    ambiguity, which is the whole reason they are what is read now.
+
+    ⚠ **`kind` chooses the WIDTH, never the position.** A trade occupies at least one bar of the
+    frame it was stepped on, so a 15-minute primary covers `grid.span(df)` units and a re-entry
+    covers one fill-clock bar. Get this wrong and the error is one-directional — it can only
+    overstate the finer leg's exposure.
 
     ⚠ **When the two frames are the SAME, the grid IS that frame and this is the identity** —
-    every number the tool produced before this existed reproduces exactly. That was the
+    every number the tool produced before the grid existed reproduces exactly. That was the
     constraint the design had to meet: the A+/B-LEG result is quoted in `CLAUDE.md`.
 
-    ⚠ The half-open [entry, exit) convention is unchanged and still applies to both sides. A
-    trade that opens and closes on ONE of its own bars occupies that bar's whole width on the
-    grid — `grid.span` — rather than a single fine unit, or a 15-minute bot would report a
-    third of its real exposure against a 5-minute one.
+    ⚠ The half-open [entry, exit) convention is unchanged and still applies to both sides.
     """
-    idx = df.index
-    last = len(idx) - 1
-    # Once, not per trade: it is a diff over the whole index, and a 5-minute frame over eight
+    # Once, not per trade: each is a diff over a whole index, and a 5-minute frame over eight
     # years is half a million rows. The first version called it inside the loop.
-    span = grid.span(df)
+    span_slow = grid.span(df)
+    span_fast = grid.span(fast_df) if fast_df is not None else span_slow
     out: list[Hold] = []
     for i, t in enumerate(trades):
-        start = grid.unit(idx[min(t.entry_index, last)])
-        end = grid.unit(idx[min(t.exit_index, last)])
+        span = span_fast if str(getattr(t, "kind", "primary")) == "secondary" else span_slow
+        start = grid.unit_ms(t.entry_ms)
+        end = grid.unit_ms(t.exit_ms)
         out.append(Hold(t.dir, start, max(end, start + span), t.r, i))
     return out
 
@@ -143,6 +157,10 @@ class Grid:
         # How many bar opens the coarse frame held that the fine one does not. Counted rather
         # than raised, and PRINTED rather than counted in silence — see `unit`.
         self.misses = 0
+        # How many timestamps were not grid bar OPENS at all and were placed on the bar containing
+        # them — the normal state of a two-frame audit, and a different fact from a hole. See
+        # `unit_ms`; keeping one counter for both made a healthy run print a feed warning.
+        self.inside = 0
 
     def __len__(self):
         return len(self.index)
@@ -163,36 +181,79 @@ class Grid:
         self.misses += 1
         return int(self.index.searchsorted(ts))
 
+    def unit_ms(self, ms) -> int:
+        """The grid bar CONTAINING this epoch-millisecond.
+
+        🔴 **THIS IS THE ONLY WAY A HOLD IS PLACED, since 2026-09-03.** A bar NUMBER means
+        nothing without the frame it counts, and a bot running a re-entry produces trades numbered
+        in two different frames with nothing in the trade saying which — see `_holds`. A
+        millisecond is the same instant on every frame there will ever be.
+
+        🔴 **CONTAINING, NOT THE NEXT ONE, AND THE DIFFERENCE IS ROUTINE RATHER THAN EXCEPTIONAL.**
+        A re-entry fills on a 5-minute bar while the A+/B-LEG grid is 15-minute, so most re-entry
+        timestamps are simply NOT grid bar opens — 62 of them in one 6.6-year audit. `unit`'s
+        fall-FORWARD is right for its own case (a coarse frame's bar open that the fine feed is
+        missing) and wrong here: it would mark a trade opened at 10:05 as in the market from 10:15.
+        The bar that was in progress at 10:05 is the one it was in.
+
+        ⚠ **Counted separately from `misses` because they are different facts.** `misses` is a
+        HOLE in the feed and is worth alarming about; this is a finer timestamp inside a coarser
+        bar and is the normal state of a two-frame audit. Reporting one as the other is how a
+        healthy run comes to print a warning nobody can act on — and it did, for one run.
+        """
+        ns = int(ms) * 1_000_000
+        hit = self._pos.get(ns)
+        if hit is not None:
+            return hit
+        self.inside += 1
+        # `right` then step back: the bar whose open is at or before this instant. Clamped at 0
+        # for a timestamp before the first bar, which a warmed replay cannot produce but a
+        # hand-built case can.
+        return max(0, int(self.index.searchsorted(pd.Timestamp(ns, tz=self.index.tz), "right")) - 1)
+
     def span(self, df) -> int:
         """How many grid units one bar of `df` covers."""
         m = int(df.index.to_series().diff().min().total_seconds() // 60)
         return max(1, m // self.minutes)
 
 
-def _occupancy(holds: list[Hold], n_bars: int) -> list[tuple[int, int]]:
-    """Per-bar `(longs, shorts)` — HOW MANY positions this bot holds each way, not just which way.
+def _occupancy(holds: list[Hold], n_bars: int) -> list[int]:
+    """Per-bar direction: +1 long, -1 short, 0 flat.
 
-    🔴 **IT WAS A SINGLE DIRECTION PER BAR UNTIL 2026-09-02, AND THAT ASSUMPTION DIED THE MOMENT
-    THE RE-ENTRIES WERE REPLAYED.** A+ arms its re-entry when the primary reaches BREAKEVEN — the
-    primary is still open at that moment — so the bot genuinely holds two positions at once, and
-    the old cell could not represent it. To its great credit the old version REFUSED rather than
-    collapsing them (`assert rather than silently mis-measure`), which is why this was found
-    immediately instead of showing up as an understated exposure nobody could see.
+    Every bot here runs ONE position slot, so a bar can only carry one direction. If a strategy
+    ever gains concurrency this would collapse two positions into one cell and understate its own
+    exposure — so it REFUSES instead.
 
-    ⚠ **A count, not a flag, because the doubling is the finding.** Two same-way positions inside
-    ONE bot is that bot carrying 2x its stated risk on one idea — the same hazard this audit exists
-    to detect BETWEEN bots, arriving from inside one. Reducing it to "in the market" would hide it.
+    🔴 **THAT REFUSAL WAS REMOVED ON 2026-09-02 AND PUT BACK ON 2026-09-03, AND THE ROUND TRIP IS
+    THE LESSON.** It fired the first time A+'s re-entries were replayed, and it was read as a
+    discovery — *the bot holds two positions at once* — so the cell was widened to a count and the
+    finding was written into the root `CLAUDE.md` with a doubled-risk warning attached. It was
+    none of that. `_holds` was placing every re-entry at the wrong TIME, and several of them were
+    landing on top of each other at the end of the frame. **The guard was right, the reading of it
+    was wrong, and widening a guard is not the same as answering it.** Placed by timestamp the
+    same replay reports ZERO doubled bars, which is what the strategy can actually do: it fills a
+    re-entry only while flat (`Execution.step_secondary`, `_pos_dir == 0`).
+
+    ⚠ **So if this fires again, suspect the PLACEMENT first.** Two holds of one bot overlapping is
+    far more likely to be a frame mix-up than a strategy that grew a second position slot — and
+    the message says so, because the last reader of it did not have that sentence.
     """
-    occ = [(0, 0) for _ in range(n_bars)]
+    occ = [0] * n_bars
     for h in holds:
         for i in range(h.start, min(h.end, n_bars)):
-            longs, shorts = occ[i]
-            occ[i] = (longs + 1, shorts) if h.dir > 0 else (longs, shorts + 1)
+            if occ[i] != 0:
+                raise SystemExit(
+                    f"bar {i} is held by two positions of the same strategy — this tool assumes "
+                    f"one position slot per bot.\n"
+                    f"  SUSPECT THE PLACEMENT BEFORE THE STRATEGY: this fired in September 2026 "
+                    f"because a bot's re-entry trades were being located by a bar number counted "
+                    f"in a DIFFERENT frame, which stacked several of them on the last bars. "
+                    f"Check `_holds` and the trade's own entry_ms/exit_ms first.\n"
+                    f"  If the strategy really did gain a second position slot, re-write "
+                    f"_occupancy and overlap_counts before trusting either."
+                )
+            occ[i] = h.dir
     return occ
-
-
-def _held(cell: tuple[int, int]) -> bool:
-    return cell[0] > 0 or cell[1] > 0
 
 
 def overlap_counts(occ_a, occ_b) -> tuple[int, int, int]:
@@ -205,18 +266,18 @@ def overlap_counts(occ_a, occ_b) -> tuple[int, int, int]:
     already recorded that shape drifting in silence between a Python evaluator and its JavaScript
     twin. One definition, two callers.
 
-    🔴 **`same` and `opposite` DO NOT PARTITION `both`.** Since a bot can hold two positions
-    (2026-09-02) one bar can carry a doubled long against the other bot's long AND its short, so
-    it counts in both. Any caller subtracting one from the other is wrong.
+    ⚠ **`same` and `opposite` PARTITION `both`** — one bar, one direction each side, so the two
+    add up. They briefly did not, while `_occupancy` counted positions per side; that model is
+    gone and so is the caveat.
     """
     both = same = opp = 0
-    for (al, ash), (bl, bs) in zip(occ_a, occ_b):
-        if not (_held((al, ash)) and _held((bl, bs))):
+    for a, b in zip(occ_a, occ_b):
+        if a == 0 or b == 0:
             continue
         both += 1
-        if (al and bl) or (ash and bs):
+        if a == b:
             same += 1
-        if (al and bs) or (ash and bl):
+        else:
             opp += 1
     return both, same, opp
 
@@ -308,10 +369,19 @@ def _entry_mix(trades, fill_tf) -> str:
     return f"   [{fill_tf}m fill clock: {inline}]"
 
 
-def _monthly_r(trades, df) -> dict[str, float]:
+def _monthly_r(trades) -> dict[str, float]:
+    """Each month's total R, keyed by the month the trade was ENTERED.
+
+    🔴 **IT TOOK THE FRAME AND LOOKED THE BAR NUMBER UP IN IT UNTIL 2026-09-03**, which is the
+    same defect `_holds` carried: a re-entry's bar number counts fill-clock bars, so its R was
+    filed under a month weeks or months away, and the trades whose number ran past the end of the
+    frame were all filed under the LAST month. The correlation figures published from this tool
+    were computed that way. The recorded millisecond needs no frame at all, so the parameter is
+    gone rather than fixed — a frame that is never consulted cannot be the wrong one.
+    """
     out: dict[str, float] = defaultdict(float)
     for t in trades:
-        ts = df.index[min(t.entry_index, len(df.index) - 1)]
+        ts = dt.datetime.fromtimestamp(t.entry_ms / 1000.0, tz=dt.timezone.utc)
         out[f"{ts.year}-{ts.month:02d}"] += t.r
     return dict(out)
 
@@ -444,16 +514,16 @@ def main(argv=None) -> int:
     sb = _replay(spec_b, cls_b, cfg_b, df_b, args.warmup, args.capital, frames.get(fill_b))
 
     ta, tb = sa.execution.trades, sb.execution.trades
-    ha, hb = _holds(ta, df_a, grid), _holds(tb, df_b, grid)
+    # ⚠ The fill-clock frame is handed over so a re-entry occupies ONE of its own bars rather than
+    # one of the primary's — width only; the position comes from the trade's own timestamp.
+    ha = _holds(ta, df_a, grid, frames.get(fill_a))
+    hb = _holds(tb, df_b, grid, frames.get(fill_b))
     oa, ob = _occupancy(ha, n), _occupancy(hb, n)
     cluster_units = max(1, args.cluster_minutes // grid.minutes)
 
-    in_a = sum(1 for c in oa if _held(c))
-    in_b = sum(1 for c in ob if _held(c))
+    in_a = sum(1 for c in oa if c)
+    in_b = sum(1 for c in ob if c)
     both, same, opp = overlap_counts(oa, ob)
-    # Bars where ONE bot doubled up on its own — the same hazard from inside a single bot.
-    solo_double_a = sum(1 for lo, sh in oa if lo + sh > 1)
-    solo_double_b = sum(1 for lo, sh in ob if lo + sh > 1)
 
     # Which trades pair up.
     pairs: list[tuple[Hold, Hold, int]] = []
@@ -479,7 +549,7 @@ def main(argv=None) -> int:
         if best is not None and abs(best[1]) <= cluster_units:
             clusters.append((x, best[0], best[1]))
 
-    ma, mb = _monthly_r(ta, df_a), _monthly_r(tb, df_b)
+    ma, mb = _monthly_r(ta), _monthly_r(tb)
     months = sorted(set(ma) | set(mb))
     xs = [ma.get(m, 0.0) for m in months]
     ys = [mb.get(m, 0.0) for m in months]
@@ -505,6 +575,17 @@ def main(argv=None) -> int:
             f"their own and were placed on the NEXT one that exists. The fine feed has holes; "
             f"treat the bar counts below as approximate to that extent."
         )
+    # 🔴 A SEPARATE LINE FROM THE ONE ABOVE, AND IT MUST STAY SEPARATE. This is a trade whose
+    # timestamp is not a grid bar OPEN — a re-entry filling on a 5m bar inside a 15m grid — and
+    # it is the normal state of a two-frame audit, not a defect. Reported because the placement
+    # is then rounded to the grid's own resolution and a reader is owed that; reported apart
+    # because folding it into the holes count printed a feed warning on a perfectly healthy run.
+    if grid.inside:
+        print(
+            f"\n  {grid.inside:,} trade timestamp(s) fell INSIDE a {grid.minutes}m bar rather "
+            f"than on its open — a faster leg's fills — and were placed on the bar containing "
+            f"them. Expected on a two-frame audit; not a feed problem."
+        )
 
     print(
         f"\n{args.a:<18} {len(ta):4d} trades   {sum(t.r for t in ta):8.2f}R"
@@ -515,23 +596,15 @@ def main(argv=None) -> int:
         f"   in the market {in_b:6,d} bars ({_pct(in_b, n)} of all bars){_entry_mix(tb, fill_b)}"
     )
 
-    # 🔴 A bot holding TWO positions is carrying 2x its stated risk on one idea — the same hazard
-    # this audit measures BETWEEN bots, arriving from inside one, and it is invisible in every
-    # figure below. Printed whenever it happens, and stated as a measured zero when it does not,
-    # so "no doubling" is an answer somebody read rather than a subject the report never raised.
-    if solo_double_a or solo_double_b:
-        print("\n--- ONE BOT HOLDING TWO POSITIONS AT ONCE (2x its own stated risk) ---")
-        print(
-            f"  {args.a:<18} {solo_double_a:6,d} bars ({_pct(solo_double_a, in_a)} of its own "
-            f"hold time)\n  {args.b:<18} {solo_double_b:6,d} bars "
-            f"({_pct(solo_double_b, in_b)} of its own hold time)"
-        )
-        print(
-            "  ⚠ The account-level cap has to cover this too — it is not a clash BETWEEN the\n"
-            "    bots, so nothing in the sections below counts it."
-        )
-    else:
-        print("\nNeither bot ever held two positions at once — measured, not assumed.")
+    # 🔴 A bot holding TWO positions at once would carry 2x its stated risk on one idea — the same
+    # hazard this audit measures BETWEEN bots, arriving from inside one. There is no count to print
+    # because `_occupancy` REFUSES rather than representing it: every bot in this registry fills
+    # while flat and cannot do it. Said out loud rather than left silent, because a report that
+    # never raises the subject reads the same as one that checked.
+    print(
+        "\nNeither bot can hold two positions at once — one position slot each, and the bar "
+        "counter refuses rather than folding a second one in."
+    )
 
     print("\n--- BARS BOTH BOTS HELD A POSITION ---")
     print(

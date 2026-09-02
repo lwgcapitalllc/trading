@@ -16,6 +16,7 @@ this file green while making the tool worthless.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -227,3 +228,61 @@ def test_the_expected_risk_for_a_re_entry_is_a_FRACTION_of_the_primarys():
 def test_a_missing_risk_setting_gives_None_and_not_a_guess():
     assert audit.expected_risk_pct({}, "primary") is None
     assert audit.expected_risk_pct({"exec_risk_pct": 10.0}, "secondary") is None
+
+
+# ── reading the record: one file per day, never two ──────────────────────────
+#
+# Added 2026-09-03. `ledger_sync.py` COPIES a day into the archive rather than moving it, so a
+# synced day exists in both places and every row of it was being loaded twice. MEASURED on the
+# trading box before the fix: 25 files in both roots, 2,177 of 4,865 rows duplicated.
+
+
+def _box(tmp_path, monkeypatch):
+    """A throwaway trading box with BOTH ledger roots, which is what the real one has."""
+    archive = tmp_path / "algos" / "ledger_archive" / "bot" / "ledger"
+    live = tmp_path / "algos" / "markets" / "fx" / "instances" / "bot" / "ledger"
+    archive.mkdir(parents=True)
+    live.mkdir(parents=True)
+    monkeypatch.setattr(audit, "_REPO", tmp_path)
+    return archive, live
+
+
+def _rows(*events):
+    return "\n".join(json.dumps({"kind": "event", "event": e}) for e in events) + "\n"
+
+
+def test_a_day_in_BOTH_roots_is_read_ONCE(tmp_path, monkeypatch):
+    """🔴 The defect: the sync copies, so a synced day is in both places and every row doubled.
+
+    An audit counts EVENTS — stop moves, banked rungs, unreadable-stop records — so a doubled
+    read reports a stop that ratcheted eleven times as twenty-two, in a message written to be
+    trusted.
+
+    MUTATION: read every file from every root again and this goes red with 4 rows.
+    """
+    archive, live = _box(tmp_path, monkeypatch)
+    (archive / "decisions-2026-09-03.jsonl").write_text(_rows("a", "b"), encoding="utf-8")
+    (live / "decisions-2026-09-03.jsonl").write_text(_rows("a", "b"), encoding="utf-8")
+    assert [r["event"] for r in audit.load_ledger("bot", None)] == ["a", "b"]
+
+
+def test_the_LIVE_copy_wins_because_the_archive_is_only_a_SNAPSHOT(tmp_path, monkeypatch):
+    """⚠ The archive is written at the last sync, so it is a PREFIX of what the bot is still
+    appending to. Preferring it would silently drop everything since — which includes the trade
+    somebody is asking about.
+
+    MUTATION: let the archive win and this goes red, missing the newest row.
+    """
+    archive, live = _box(tmp_path, monkeypatch)
+    (archive / "decisions-2026-09-03.jsonl").write_text(_rows("a"), encoding="utf-8")
+    (live / "decisions-2026-09-03.jsonl").write_text(_rows("a", "b", "c"), encoding="utf-8")
+    assert [r["event"] for r in audit.load_ledger("bot", None)] == ["a", "b", "c"]
+
+
+def test_a_day_ONLY_in_the_archive_is_still_read(tmp_path, monkeypatch):
+    """The instance directory is pruned and the archive is the long history, so de-duplicating
+    must not become "only read the live directory"."""
+    archive, live = _box(tmp_path, monkeypatch)
+    (archive / "decisions-2026-08-01.jsonl").write_text(_rows("old"), encoding="utf-8")
+    (live / "decisions-2026-09-03.jsonl").write_text(_rows("new"), encoding="utf-8")
+    assert [r["event"] for r in audit.load_ledger("bot", None)] == ["old", "new"]

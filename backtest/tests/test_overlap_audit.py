@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 _TOOL = Path(__file__).resolve().parents[1] / "tools" / "overlap_audit.py"
@@ -23,12 +24,28 @@ _spec.loader.exec_module(oa)
 
 
 class _T:
-    """The three Trade fields the tool reads."""
+    """The Trade fields the tool reads.
 
-    def __init__(self, direction, entry, exit_, r=0.0):
+    🔴 **THE CASES STILL SPEAK IN BAR NUMBERS AND THE TOOL NO LONGER DOES (2026-09-03).** A bar
+    number is only meaningful with the frame it counts, and a bot running a re-entry produces
+    trades numbered in TWO frames — so `_holds` now places every trade by its recorded
+    millisecond. These doubles therefore STAMP the milliseconds off the frame the case is written
+    against, which keeps every hand-traced range readable while pinning what actually runs.
+
+    ⚠ **The double must not be more capable than the real thing.** A real trade cannot carry a bar
+    number that disagrees with its timestamp; this one could, so it derives one from the other
+    rather than taking both.
+    """
+
+    def __init__(self, direction, entry, exit_, r=0.0, df=None, kind="primary"):
+        df = _DF15 if df is None else df
+        last = len(df.index) - 1
         self.dir = direction
         self.entry_index = entry
         self.exit_index = exit_
+        self.kind = kind
+        self.entry_ms = int(df.index[min(entry, last)].value // 1_000_000)
+        self.exit_ms = int(df.index[min(exit_, last)].value // 1_000_000)
         self.r = r
 
 
@@ -75,16 +92,17 @@ def _overlap(holds_a, holds_b, n):
 # ── the bar range a trade occupies ───────────────────────────────────────────────
 
 
-# ⚠ These three moved their PREMISE on 2026-09-02, never their subject. `_occupancy` returns
-# `(longs, shorts)` per bar instead of a single direction, because a bot with re-entries genuinely
-# holds two positions at once. Half-open ranges, the same-bar round trip and direction being
-# carried across the hold are all still exactly what is being pinned — only the cell's shape moved.
+# ⚠ These three had their PREMISE moved on 2026-09-02 and moved back on 2026-09-03. `_occupancy`
+# briefly returned `(longs, shorts)` per bar, on a reading of A+ that turned out to be an artefact
+# of misplaced holds — see `test_two_positions_at_once_within_ONE_strategy_are_REFUSED`. One
+# direction per bar again. Half-open ranges, the same-bar round trip and direction being carried
+# across the hold are exactly what they always pinned.
 
 
 def test_a_hold_is_half_open_so_a_trade_occupies_its_entry_bar_not_its_exit_bar():
     # Entering on bar 10 and exiting on bar 13 = exposed on 10, 11, 12.
     holds = _holds([_T(1, 10, 13)])
-    assert sum(1 for longs, _ in oa._occupancy(holds, 20) if longs) == 3
+    assert sum(1 for c in oa._occupancy(holds, 20) if c) == 3
 
 
 def test_a_same_bar_entry_and_exit_still_occupies_one_bar():
@@ -92,14 +110,13 @@ def test_a_same_bar_entry_and_exit_still_occupies_one_bar():
     # half-open range would score it zero and quietly drop it from every count.
     holds = _holds([_T(-1, 5, 5)])
     occ = oa._occupancy(holds, 10)
-    assert sum(1 for _, shorts in occ if shorts) == 1
-    assert occ[5] == (0, 1)
+    assert sum(1 for c in occ if c) == 1
+    assert occ[5] == -1
 
 
 def test_direction_is_carried_onto_every_bar_of_the_hold():
     occ = oa._occupancy(_holds([_T(-1, 2, 5)]), 8)
-    flat, short = (0, 0), (0, 1)
-    assert occ == [flat, flat, short, short, short, flat, flat, flat]
+    assert occ == [0, 0, -1, -1, -1, 0, 0, 0]
 
 
 # ── overlap between the two bots ─────────────────────────────────────────────────
@@ -136,40 +153,43 @@ def test_overlap_beyond_the_frame_is_clipped_not_counted():
     assert _overlap(a, b, 10) == (2, 2, 0)
 
 
-def test_two_positions_at_once_within_ONE_strategy_are_COUNTED_not_collapsed():
-    """🔴 This test REPLACES one that asserted `_occupancy` RAISES here, and the swap is the
-    point rather than a detail.
+def test_two_positions_at_once_within_ONE_strategy_are_REFUSED():
+    """🔴 THIS ASSERTION HAS NOW BEEN DELETED ONCE AND PUT BACK, AND THE ROUND TRIP IS THE TEST.
 
-    That refusal was right for as long as every bot ran one position slot, and it earned its keep:
-    when the re-entries were finally replayed on 2026-09-02 it fired immediately instead of
-    letting the tool understate A+'s exposure. But A+ arms its re-entry when the primary reaches
-    BREAKEVEN — the primary is still open then — so two concurrent positions are now the bot's
-    real behaviour, and refusing to measure the truth is not a fix.
+    It refused, correctly, for as long as every bot ran one position slot. On 2026-09-02 A+'s
+    re-entries were replayed for the first time and it fired — and it was read as a DISCOVERY (*the
+    bot holds two at once*), so this case was rewritten to assert counting instead, and a
+    doubled-risk warning went into the root `CLAUDE.md`.
 
-    **The RISK the old test guarded is unchanged and is what this one pins: two positions must
-    never collapse into one cell**, because that is the reading that silently halves a bot's own
-    exposure. Overlapping bars 10-14 carry one long and one short at the same time.
+    **It was not a discovery. `_holds` was placing every re-entry at the wrong time**, and several
+    were landing on top of each other at the end of the frame. Placed by timestamp the same replay
+    reports zero doubled bars, and the strategy fills a re-entry only while flat.
+
+    **A guard firing is a question, not an answer. Widening it answers nothing.**
+
+    MUTATION: drop the raise and keep the last writer, and this goes red — which is the version
+    that silently halves a bot's own recorded exposure.
     """
-    occ = oa._occupancy(_holds([_T(1, 5, 15), _T(-1, 10, 20)]), 30)
-    assert occ[7] == (1, 0)  # the long alone
-    assert occ[12] == (1, 1)  # BOTH — the cell the old model could not represent
-    assert occ[17] == (0, 1)  # the short alone
-    assert sum(1 for lo, sh in occ if lo + sh > 1) == 5
+    holds = _holds([_T(1, 5, 15), _T(-1, 10, 20)])
+    with pytest.raises(SystemExit) as exc:
+        oa._occupancy(holds, 30)
+    assert "SUSPECT THE PLACEMENT" in str(exc.value), (
+        "the message must send the next reader at _holds first — the last one to see this "
+        "raise concluded the strategy had changed and rewrote the guard"
+    )
 
 
-def test_SAME_and_OPPOSITE_stop_partitioning_once_a_bot_holds_two_positions():
-    """⚠ They summed to `both` for as long as one bar meant one direction, and they no longer do.
+def test_SAME_and_OPPOSITE_PARTITION_the_shared_bars():
+    """One bar carries one direction each side, so the two halves add up to the total.
 
-    A holds a long AND a short across bars 10-14; B is long throughout. Those five bars are
-    same-side (A's long vs B's long) and opposite (A's short vs B's long) at the same instant, so
-    each counts once in both — 5 + 5 against a total of 5. A reader who subtracts one from the
-    other gets zero and concludes the bots never share a side, which is the exact wrong answer.
+    ⚠ They briefly did not, while `_occupancy` counted positions per side. A reader who cannot
+    add the two columns to the line above them reads the report as broken.
     """
-    a = _holds([_T(1, 5, 15), _T(-1, 10, 20)])
-    b = _holds([_T(1, 10, 15)])
-    both, same, opp = _overlap(a, b, 30)
-    assert (both, same, opp) == (5, 5, 5)
-    assert same + opp > both
+    a = _holds([_T(1, 10, 20), _T(-1, 30, 40)])
+    b = _holds([_T(1, 15, 35)])
+    both, same, opp = _overlap(a, b, 50)
+    assert (both, same, opp) == (10, 5, 5)
+    assert same + opp == both
 
 
 # ── correlation ──────────────────────────────────────────────────────────────────
@@ -277,3 +297,113 @@ def test_a_coarse_bar_covers_a_whole_number_of_fine_ones():
     assert grid.span(_DF15) == 3
     assert grid.span(_frame(5, 10)) == 1
     assert grid.span(_frame(60, 10)) == 12
+
+
+# ── a bot whose trades are numbered in TWO frames ────────────────────────────────
+#
+# Added 2026-09-03. A re-entry is stepped on the fill clock, so its bar number counts 5-minute
+# bars while its primaries count 15-minute ones — in ONE trade list, with nothing in a trade
+# saying which. Reading either out of the primary frame's index put re-entries weeks or months
+# from where they happened. These pin the placement that replaced it.
+
+
+def _fast_trade(direction, entry_unit, exit_unit, fine):
+    """A re-entry: bar numbers into the FINE frame, timestamps to match."""
+    t = _T(direction, entry_unit, exit_unit, df=fine, kind="secondary")
+    return t
+
+
+def test_a_RE_ENTRY_is_placed_by_its_own_TIME_not_by_its_bar_number():
+    """🔴 THE BUG THIS FILE MISSED FOR A DAY, and it produced published figures.
+
+    5-minute bar 30 is 02:30 — the same instant as 15-minute bar 10. Looking bar 30 up in the
+    15-minute index instead lands on 07:30, five hours away, and over a real replay the error
+    ran to months.
+
+    MUTATION: place from `df.index[t.entry_index]` again and this goes red by 20 grid units.
+    """
+    fine = _frame(5, 600)
+    grid = oa.Grid(fine)
+    holds = oa._holds([_fast_trade(1, 30, 33, fine)], _DF15, grid, fast_df=fine)
+    assert (holds[0].start, holds[0].end) == (30, 33)
+
+
+def test_a_PRIMARY_and_a_RE_ENTRY_in_ONE_list_are_both_placed_correctly():
+    """The case that actually occurs: one book, two numbering systems, no field marking which.
+
+    MUTATION: use one frame's index for every trade and one of the two moves.
+    """
+    fine = _frame(5, 600)
+    grid = oa.Grid(fine)
+    trades = [_T(1, 10, 13), _fast_trade(-1, 60, 63, fine)]
+    holds = oa._holds(trades, _DF15, grid, fast_df=fine)
+    assert (holds[0].start, holds[0].end) == (30, 39), "the 15m primary, at its own time"
+    assert (holds[1].start, holds[1].end) == (60, 63), "the 5m re-entry, at its own time"
+
+
+def test_a_RE_ENTRY_occupies_ONE_FILL_CLOCK_BAR_not_one_of_the_primarys():
+    """A re-entry that opens and closes inside one 5-minute bar is five minutes of exposure.
+
+    Giving it the primary's width would report three times its real hold, and the error only ever
+    runs one way — it can only overstate the finer leg.
+
+    MUTATION: use the primary span for every trade and this reads 3.
+    """
+    fine = _frame(5, 600)
+    grid = oa.Grid(fine)
+    holds = oa._holds([_fast_trade(1, 40, 40, fine)], _DF15, grid, fast_df=fine)
+    assert holds[0].end - holds[0].start == 1
+
+
+def test_MONTHLY_R_is_keyed_on_the_trades_OWN_month():
+    """The same defect one function along, and it fed both published correlation figures.
+
+    A re-entry entered in January must be filed under January whichever frame numbered it.
+
+    MUTATION: key it off `df.index[t.entry_index]` again and the fast trade lands in a
+    different month.
+    """
+    # 5-minute bar 3,000 is 10 days in — still January. The SAME number read off a 15-minute
+    # index is 31 days in, which is February, so the mutation moves the R into another month.
+    jan = _frame(15, 4000, start="2024-01-02 00:00:00")
+    fine = _frame(5, 4000, start="2024-01-02 00:00:00")
+    slow = _T(1, 10, 13, r=2.0, df=jan)
+    fast = _T(-1, 3000, 3003, r=1.0, df=fine, kind="secondary")
+    assert jan.index[3000].month == 2, "the frames must disagree, or this pins nothing"
+    assert oa._monthly_r([slow, fast]) == {"2024-01": 3.0}
+
+
+def test_a_FILL_CLOCK_timestamp_lands_on_the_grid_bar_CONTAINING_it():
+    """A re-entry fills at 10:05 on a 15-minute grid. It was in the market during the 10:00 bar.
+
+    🔴 `unit`'s fall-FORWARD is right for its own case — a coarse frame's bar open that the fine
+    feed is missing — and wrong here: it would mark the trade as in the market from 10:15, ten
+    minutes after it opened. 62 re-entry timestamps hit this in one 6.6-year audit, so it is the
+    normal case rather than an edge.
+
+    MUTATION: search `left` (fall forward) and this goes red at unit 41.
+    """
+    grid = oa.Grid(_frame(15, 200, start="2024-01-01 00:00:00"))
+    # 10:05 — inside 15-minute bar 40, which opens at 10:00.
+    ms = int(pd.Timestamp("2024-01-01 10:05:00").value // 1_000_000)
+    assert grid.unit_ms(ms) == 40
+
+
+def test_a_timestamp_INSIDE_a_bar_is_counted_APART_from_a_feed_hole():
+    """⚠ Two different facts. A hole is worth alarming about; a faster leg's fill inside a
+    coarser bar is what a two-frame audit does all day. One counter for both printed a feed
+    warning on a healthy run, which is a warning nobody can act on.
+
+    MUTATION: increment `misses` here instead and this goes red.
+    """
+    grid = oa.Grid(_frame(15, 200, start="2024-01-01 00:00:00"))
+    grid.unit_ms(int(pd.Timestamp("2024-01-01 10:05:00").value // 1_000_000))
+    assert (grid.inside, grid.misses) == (1, 0)
+
+
+def test_a_bar_OPEN_is_an_exact_hit_and_counts_as_neither():
+    """The common case, and it must stay free of both counters — otherwise every single-frame
+    audit reports thousands of them and the two lines above become noise."""
+    grid = oa.Grid(_frame(15, 200, start="2024-01-01 00:00:00"))
+    assert grid.unit_ms(int(pd.Timestamp("2024-01-01 10:00:00").value // 1_000_000)) == 40
+    assert (grid.inside, grid.misses) == (0, 0)

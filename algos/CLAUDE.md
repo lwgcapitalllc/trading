@@ -2242,6 +2242,21 @@ makes the comparison wrong with no symptom — pass `--config` an older copy.
 ⚠ **Exit 2 means NOTHING TO AUDIT**, deliberately not 0: *nothing to check* and *everything
 passed* must not be the same answer.
 
+🔴 **IT READ THE LEDGER TWICE FOR ITS FIRST DAY, AND THE CAUSE IS A RULE ABOUT THE SYNC RATHER THAN
+ABOUT THIS TOOL (fixed 2026-09-03).** It reads two roots on purpose — the committed archive for
+history, the bot's own directory for what closed an hour ago — and `ledger_sync.py` **COPIES** a day
+into the archive rather than moving it. So every synced day existed in both places and all of its
+rows were loaded twice: MEASURED on the trading box, 25 files in both roots, **2,177 of 4,865 rows
+duplicated**. ⚠ **The trade records survived it and the EVENT rows did not** — a stop that ratcheted
+eleven times would have been reported as twenty-two, in a message written to be trusted, and the
+watcher's health record over-counted the ledger by nearly half. ✅ One file per day now, keyed on the
+DAY, and **the live copy wins because the archive is only a snapshot** — preferring it would silently
+drop everything since the last sync, which is exactly the trade somebody is asking about. ⚠ **A day
+that exists only in the archive is still read**; de-duplicating must not become *only read the live
+directory*. **The standing point: when one writer COPIES into a second location, every reader of both
+is now responsible for the overlap — and the symptom is a doubled count, which reads as a fact.**
+Three tests in `test_audit_reentry.py`, each watched RED under its own mutation.
+
 🔴 **BUILDING IT FOUND TWO DEFECTS IN THE RECORD IT READS, AND THAT IS THE PART WORTH KEEPING.**
 The trade record could not tell a re-entry from a primary — one field, missing, in the only file
 meant to answer *what did this bot do* — and the risk it recorded was the PRIMARY's percentage for

@@ -85,29 +85,50 @@ def load_ledger(bot: str, date: Optional[str]) -> list[dict]:
     directory is what the bot is appending to right now. A trade that closed an hour ago is only
     in the second, and an audit that read the archive alone would report *no trades* for exactly
     the trade somebody is asking about.
+
+    🔴 **ONE FILE PER DAY, AND THE LIVE COPY WINS — IT READ BOTH UNTIL 2026-09-03.**
+    `ledger_sync.py` **copies** rather than moves, so a day that has been synced exists in both
+    places and every one of its rows was loaded TWICE. MEASURED on the trading box: 25 files in
+    both, **2,177 of 4,865 rows duplicated**. The trade records survived it (they are keyed by
+    ticket downstream), but the EVENT rows do not — a stop that ratcheted eleven times reported
+    twenty-two, and the health record's row count was inflated by nearly half. **A report built
+    to be trusted was quietly doubling its own evidence.**
+
+    ⚠ **The live copy wins because the archive is a SNAPSHOT taken at the last sync**, so it can
+    only ever be a prefix of the file the bot is still appending to. Preferring the archive would
+    silently drop everything since the last sync — which includes the trade somebody is asking
+    about.
+
+    ⚠ **A day that exists ONLY in the archive is still read.** The bot's instance directory is
+    pruned; the archive is the long history, and this tool has to be able to audit an old trade.
     """
     roots = [
         _REPO / "algos" / "ledger_archive" / bot / "ledger",
         _REPO / "algos" / "markets" / "fx" / "instances" / bot / "ledger",
     ]
     pattern = f"decisions-{date}.jsonl" if date else "decisions-*.jsonl"
-    rows, seen_files = [], []
+    # Keyed on the FILENAME, which is the day. Later roots overwrite earlier ones, so the live
+    # directory replaces the archive's copy of the same day rather than adding to it.
+    chosen: dict = {}
     for root in roots:
         if not root.is_dir():
             continue
         for path in sorted(root.glob(pattern)):
-            seen_files.append(path)
-            for line in path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    # A file being appended to can end mid-line. Dropping the torn tail is right;
-                    # dropping it SILENTLY is not, so say so — it could be the trade in question.
-                    print(f"  ⚠ torn line ignored in {path.name}", file=sys.stderr)
-    if not seen_files:
+            chosen[path.name] = path
+    rows = []
+    for name in sorted(chosen):
+        path = chosen[name]
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                # A file being appended to can end mid-line. Dropping the torn tail is right;
+                # dropping it SILENTLY is not, so say so — it could be the trade in question.
+                print(f"  ⚠ torn line ignored in {path.name}", file=sys.stderr)
+    if not chosen:
         print(
             f"  ⚠ no ledger files matched {pattern} under {[str(r) for r in roots]}",
             file=sys.stderr,

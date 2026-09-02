@@ -21,6 +21,138 @@ the other one did.
 
 ## Latest
 
+### The bot whose chart drew a box and nothing else (2026-09-02)
+
+Aaron, with two extreme-leg trades on screen beside the A+ bot's: *"why are my trades for extreme
+leg looking like this in the price chart; they should be the exact same style as sos fade trades and
+annotations where applicable."*
+
+**Because the strategy recorded almost nothing for the chart to draw, and the chart is DESIGNED to
+degrade quietly when it does.** `backtest/output.py` reads the rich per-trade fields off the trade
+object with a `getattr` default, and its own comment says what happens next — *"All optional — a
+runner/trade that doesn't carry them degrades to the plain entry→exit box."* So a strategy that
+records none ships zeros, the chart falls back to a bare rectangle, and **nothing raises, nothing
+goes red and no page says anything is missing.**
+
+**MEASURED on all 115 trades of run `29444bb4cbea`: the best price, the deepest price, the exit-fill
+ledger and the target ladder were empty on every single one.** Only the stop was recorded. So the
+best/deepest chips, the exit marker, the target lines and the faint bands that make an A+ trade read
+as layered had nothing to build from.
+
+🔴 **THE SCOPE WAS CHECKED RATHER THAN ASSUMED, AND IT IS ONE STRATEGY OF SIX.** `mpc_bleg`,
+`mpc_bos` and `mpc_realign` all SUBCLASS `mpc_sos_fade`'s execution layer and inherit its recording;
+`loss_recovery` records its own. **The extreme leg is the only strategy here with an execution layer
+of its own**, which is precisely why it is the only one that had to be taught separately — and the
+transferable half: the next strategy with its own execution layer starts in this same hole.
+
+**Shipped:** the excursion of the hold, the exit as a real FILL rather than as an average, and the
+single target as a rung that banks 100%. All reporting-only.
+
+✅ **PROVEN NOT TO HAVE MOVED A TRADE, rather than argued.** The decision stream was digested over
+189,331 M5 bars before and after: **51 trades and 174 refusals, byte-identical sha both sides.**
+⚠ **The first digest attempt used python's `hash()` and was worthless** — string hashing is
+randomised per process, so two runs of identical code disagreed and read as a real difference.
+`sha256` over the serialised stream is what makes the comparison mean anything.
+
+🔴 **AND THE INVARIANT THAT DECIDES WHAT THOSE NUMBERS MEAN IS NOT THE OBVIOUS ONE.** Neither
+extreme may sit beyond a level that CLOSED the trade — the widen runs before the bar's exits
+resolve, so the raw range includes price after the position is flat, and the chart draws these as
+chips. The A+ bot met this from the other end: **77 of 77 of its stopped-out trades once reported a
+deepest price beyond their own stop, one of them 2.22R against a 1.0R loss.**
+
+⚠ **But the bound is the bracket AS IT STOOD ON EACH BAR, never the exit price.** Clamping at close
+is the tempting simplification and it is wrong: a trade that sits deep, recovers far enough to arm
+breakeven and then scratches really did trade down there, and clamping collapses that drawdown to
+the exit so the trade reads as though it never went against you. ⚠ **And this bot bounds BOTH sides
+where the A+ bot bounds only one** — there the first target is partial and the runner stays open, so
+price beyond it is still the trade's move; here the target closes the whole position. **Copying
+either bot's shape onto the other is wrong in both directions.**
+
+⚠ **A probe's own tolerance can manufacture a finding.** The first invariant check reported 15
+trades with a drawdown beyond their stop; every one was the value stored at 5dp compared against a
+raw exit price at a tolerance of 1e-9. **The code was right and the check was wrong**, which cost a
+detour into an explanation (breakeven arming) that turned out to describe nothing.
+
+**Also shipped: a strategy can name its own setup on the chart.** The panel hard-coded `A+` — the A+
+bot's word — onto every strategy's primary trades, so this bot's trades wore another bot's label.
+The comment beside that constant had named both the cost and the fix since it was written; the fix
+is now built, package → scanner → column → spec → chip. ⚠ **Only `mpc_extreme_leg` declares one, and
+rule 22 is the reason rather than oversight**: declaring a tag edits a strategy package, which may
+not be committed until that package's parity harness has run green on a real export, and no export
+for the other four is on this machine. That is the `display_under` precedent exactly — built,
+reverted, and shipped only once the gate ran. **The fallback therefore stays `A+`**, because a
+neutral word would strip the CORRECT tag off the live bot's own charts.
+
+⚠ **One new test could NOT be made to go red and is labelled as a forward guard rather than left
+claiming otherwise.** Its docstring originally named a mutation that does not bite — deleting a
+null-id early-out leaves it green, because the lookup answers `None` for a null id instead of
+raising. Measured, then written down as measured.
+
+### The guard that was deleted for being right (2026-09-03)
+
+Aaron, closing the session: *"all the changes you did in this chat I want you to go audit then
+and see if you can find any bugs."*
+
+The audit found two, and the serious one was mine from the day before.
+
+**What happened.** On 2026-09-02 the clash audit was fixed: it had always replayed A+ on one bar
+frame, so the re-entries — which fill on a faster clock — could never fire, and every figure it
+had ever published was the primary half of the bot. That fix was right. What it exposed was not.
+
+The tool maps each trade onto a shared time axis. It did that by taking the trade's BAR NUMBER and
+looking it up in the bot's primary frame. That works for a bot with one clock. **A re-entry is
+stepped on the fill clock, so its bar number counts 5-minute bars — in the same trade list, with
+nothing in a trade saying which frame numbered it.** Read out of the 15-minute index, every
+re-entry landed weeks or months from where it happened, and the ones whose number ran past the end
+of the frame were clamped onto the last few bars, where they stacked on top of each other.
+
+**Then the guard fired, and that is the part worth keeping.** The bar counter had always refused
+to represent two positions in one bot — its own comment said *assert rather than silently
+mis-measure*. The stacked holds tripped it on the first real dual-feed run. **It was read as a
+discovery**: A+ arms its re-entry when the primary reaches breakeven, the primary is still open at
+that moment, so surely the bot holds two at once. On that reading the counter was widened to hold a
+count per side, its test was rewritten to assert counting, and a warning went into the root
+`CLAUDE.md` saying the bot carries twice its stated per-trade risk on 20 and 60 bars, with a note
+that the account-level cap has to cover it.
+
+**None of it was true.** The strategy fills a re-entry only while flat — one position slot, checked
+in the code and then measured. Placed by timestamp, the same replay reports **zero** doubled bars.
+
+MEASURED on 2024 to settle it, before touching anything:
+
+| | as the tool placed them | placed by timestamp |
+|---|---|---|
+| re-entry trades misplaced | 7 of 24 (worst 5,355 hours) | 0 |
+| in-market grid bars | 2,901 | 3,614 |
+| bars holding 2+ positions | 3 | **0** |
+
+**The lesson, and it is about guards rather than about this tool: a guard firing is a QUESTION, not
+an answer — and widening one answers nothing.** This repo already carries the other half of that
+shape, where a guard fires on work it should not be criticising and gets dismissed. This is the
+inverse: it fired correctly, was believed about the wrong thing, and was rewritten to permit
+exactly what it had caught. **The refusal was the only thing in the system that knew something was
+wrong, and it was removed for being right.** Its message now names the placement as the first thing
+to suspect, because the last person to see that raise did not have that sentence.
+
+Two corollaries worth carrying:
+
+- **A bar number is meaningless without the frame it counts, and a trade list does not carry the
+  frame.** Both defects here were one function reading a number out of the wrong index; the fix is
+  the trade's own recorded millisecond, which is the same instant on every frame there will ever be.
+- **The same defect was in the monthly-return function**, which fed both published correlation
+  figures. It no longer takes a frame at all — a frame that is never consulted cannot be the wrong
+  one.
+
+**The second bug, smaller.** The tool that grades a live re-entry reads the bot's decision record
+from two places: the committed archive for history, and the bot's own directory for what closed an
+hour ago. The sync **copies** into the archive rather than moving, so every synced day existed in
+both and all of its rows were read twice — measured on the trading box, 25 files in both, 2,177 of
+4,865 rows duplicated. Trade records survived it; event rows did not, so a stop that ratcheted
+eleven times would have been reported as twenty-two in a message written to be trusted. **When one
+writer copies into a second location, every reader of both inherits the overlap — and the symptom
+is a doubled count, which reads as a fact.**
+
+
 ### The costs switch had a strategy it could not charge at all (2026-09-02)
 
 Aaron, on a run that died four seconds in with a stack trace: *"Why is this strategy accounting

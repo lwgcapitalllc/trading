@@ -509,25 +509,34 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   a second copy of *which replay path does this config need* is how the two tools come to disagree
   about what a bot is.
 
-  🔴 **FIXING THE REPLAY IMMEDIATELY BROKE THE MEASUREMENT, WHICH IS THE MORE USEFUL HALF OF THE
-  STORY.** `_occupancy` carried ONE direction per bar on the stated assumption that every bot runs a
-  single position slot — and A+ arms its re-entry when the primary reaches BREAKEVEN, with the
-  primary still open, so it genuinely holds two at once. **To its great credit the old version
-  REFUSED rather than collapsing them** (its own comment: *assert rather than silently mis-measure*),
-  so the first real dual-feed run stopped dead instead of quietly understating A+'s exposure. It now
-  carries `(longs, shorts)` COUNTS per bar. ⚠ **A count, not a flag, because the doubling IS a
-  finding** — two same-way positions inside ONE bot is that bot carrying 2x its stated risk on one
-  idea, the same hazard this audit exists to detect between bots, arriving from inside one. The
-  report prints it, and prints a measured zero when it does not happen. ⚠ **SAME and OPPOSITE
-  STOPPED PARTITIONING the overlap**: one bar can carry a doubled long against the other bot's long
-  AND its short, so they can each count it and no longer sum to the total. The report says so when
-  it happens, because two figures that do not add up to the line above them read as a broken report.
-  ⚠ **The grid stays the finer PRIMARY frame and must** — `frames` now also holds fill clocks, and
-  reading the minimum off the whole dict would have re-based the A+/B-LEG audit from 15m onto 5m
-  purely because A+ fills re-entries there, tripling every bar count while nothing about the bots
-  had changed. ⚠ **`overlap_counts` is PUBLIC and the test suite CALLS it** rather than mirroring it;
-  the mirror it replaced was described in the tests as deliberate, and a hand-mirror is what this
-  repo has already recorded drifting in silence between two languages.
+  🔴 **A TRADE IS PLACED BY ITS OWN RECORDED MILLISECOND, NEVER BY A BAR NUMBER — A BOT WITH
+  RE-ENTRIES NUMBERS ITS TRADES IN TWO FRAMES.** A re-entry is stepped on the fill clock, so its
+  bar number counts 5-minute bars while its primaries count 15-minute ones, in ONE trade list with
+  no field saying which. `_holds` and `_monthly_r` both looked every number up in the primary frame
+  until 2026-09-03, which put re-entries weeks or months from where they happened and clamped the
+  ones running past the end of the frame onto the last bars. MEASURED on 2024: 7 of 24 trades
+  misplaced, worst by 5,355 hours. **A bar number is meaningless without the frame it counts.**
+  `Grid.unit_ms` is the only placement now; `kind` chooses the WIDTH alone.
+
+  🔴 **`_occupancy` REFUSES two positions in one bot, AND ITS REFUSAL WAS ONCE DELETED FOR BEING
+  RIGHT.** The guard fired on the misplaced holds above and was read as a discovery — *A+ holds two
+  at once* — so the cell was widened to counts, the tests rewritten, and a doubled-risk warning put
+  in the root `CLAUDE.md`. All of it was the placement bug. Placed by timestamp the same replay
+  reports **0** doubled bars, and the strategy fills a re-entry only while flat
+  (`Execution.step_secondary`, `_pos_dir == 0`). **A guard firing is a question, not an answer;
+  widening it answers nothing.** Its message now names the placement as the first suspect, because
+  the last reader of that raise did not have that sentence.
+
+  ⚠ **SAME and OPPOSITE PARTITION the overlap** — they briefly did not, as a consequence of the
+  wrong model. ⚠ **The grid stays the finer PRIMARY frame and must** — `frames` also holds fill
+  clocks, and reading the minimum off the whole dict would re-base the A+/B-LEG audit from 15m onto
+  5m purely because A+ fills re-entries there. ⚠ **`overlap_counts` is PUBLIC and the test suite
+  CALLS it** rather than mirroring it.
+
+  🔴 **EVERY CLASH FIGURE PUBLISHED 2026-09-02 → 2026-09-03 CARRIES THE PLACEMENT BUG** — shared
+  bars, the same/opposite split, trade pairs, entry clusters, both correlations. **Trade COUNTS and
+  R totals do NOT**: those come from the replay, which was already right. Root `CLAUDE.md` was
+  re-measured after the fix. Story: `HISTORY.md` → *The guard that was deleted for being right*.
 
   🔴 **IT TAKES TWO BAR FRAMES SINCE 2026-09-01, AND BAR INDICES CANNOT EXPRESS THAT.** Bar 400 of a
   15-minute frame and bar 400 of a 5-minute frame are eleven hours apart, so the one-frame version
