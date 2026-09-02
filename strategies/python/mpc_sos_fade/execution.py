@@ -652,6 +652,12 @@ class Execution:
         # close 3651.28 while Pine closed at bar 697's open 3651.23, one bar apart on every
         # clock-driven exit. See `### The time stop` in this package's CLAUDE.md.
         self._pending_close: Optional[Tuple[str, str]] = None
+        # A close a PERSON asked for, holding the reason to book it under, or None for the
+        # only state this has in the lab and in every parity run: nobody has asked. Nothing in
+        # `backtest/`, in the Pine, or in `compare_strategy.py` can reach `request_close`, so
+        # this stays None there and the strategy behaves exactly as it did — which is the
+        # property that keeps the parity gate meaningful rather than merely green.
+        self._close_requested: Optional[str] = None
         self._qty = 0.0
         self._entry = 0.0
         self._entry_index = 0
@@ -883,6 +889,41 @@ class Execution:
         # restored latch is a bar number from the PREVIOUS numbering and matches nothing.
         "_traded_sos_l_ms", "_traded_sos_s_ms",
     )
+
+    def request_close(self, reason: str = "commanded") -> bool:
+        """Ask this strategy to close its open position. Returns True if there was one.
+
+        🔴 **THE STRATEGY IS TOLD, NOT THE BROKER, AND THAT IS THE ENTIRE POINT.** Closing a
+        position by hand at the terminal leaves the emulator still holding it, and the bridge
+        HALTS on the next bar — correctly, because from the outside that is indistinguishable
+        from a position vanishing for a reason nobody can name. A partial close by hand is
+        worse: nothing notices at all, and every later size the strategy computes is against a
+        book it does not have. So the instruction has to arrive HERE, where it changes what the
+        strategy believes, and the broker is brought into line afterwards.
+
+        ⚠ **It does not close anything itself.** The exit happens on the next bar through the
+        one path every other market exit uses, so the trade is booked, recorded and alerted on
+        exactly like a time stop — same one-bar delay, same fill model, same record. A separate
+        exit path here would be a second implementation of the thing this file already does,
+        and it would be the one nobody's tests cover.
+
+        ⚠ **Asking twice before the next bar is not two closes.** The second call replaces the
+        first's reason and there is still one position to close. It is idempotent by being a
+        value rather than a queue.
+
+        ⚠ **`reason` is for the CALLER's record, not this trade's.** The trade is booked under
+        `L-CMD` / `S-CMD`, because that is the tag, and a tag is all `_close_at` keeps. Free
+        text about who asked and why belongs in the decision ledger, which can hold a sentence;
+        writing it here would look stored and would not be.
+
+        ⚠ **It refuses when flat rather than latching**, and the False is the useful half: a
+        request that quietly waited would fire on whatever the strategy opened next, which is a
+        trade the person asking had no opinion about. The caller reports "nothing to close".
+        """
+        if self._pos_dir == 0:
+            return False
+        self._close_requested = reason or "commanded"
+        return True
 
     def snapshot_position(self) -> dict:
         """Everything needed to carry on managing the open trade, as plain JSON types."""
@@ -1169,8 +1210,32 @@ class Execution:
             # tell the account this leg's live stop + remaining size, so its reservation is
             # current for any other leg sizing on the next tick (drops to 0 once stop = BE).
             self._account.update_stop(self._leg, dec.stop, self._qty - self._filled_qty)
+            # A CLOSE ASKED FOR BY A PERSON, and it outranks every rule below it. It is
+            # checked first because an operator instruction is not a competing strategy
+            # opinion — if somebody has said get me out, a time stop firing on the same bar
+            # must not relabel that exit as the clock's doing. The trade still leaves through
+            # the ONE exit path everything else uses, so it is booked, recorded and reported
+            # exactly like any other market close (one-bar delay included).
+            #
+            # ⚠ **Deliberately NOT persisted in `_POSITION_FIELDS`.** The request's home is the
+            # file the runner watches, and a restart re-reads it — so there is one source of
+            # truth rather than two that can disagree. Persisting it would also make every
+            # existing position record incomplete, which the promote gap-check reads as a
+            # migration. **And a latched close that survives a restart is the `stop.request`
+            # hazard exactly**: a stale instruction outliving the moment somebody meant it, then
+            # flattening a position an hour later with nobody expecting it. Losing the request
+            # on a restart is visible and cheap — the position is still open and you ask again.
+            if self._close_requested is not None:
+                # ⚠ **"CMD", not "CLOSE", and the distinction is load-bearing.** Only the TAG
+                # reaches the trade record — `_close_at` discards its reason argument and stores
+                # the order id built from this — and the opposite-break close above already uses
+                # "CLOSE". Sharing it would make *a person asked for this* and *structure broke
+                # against us* the same value in the record, which is this repo's oldest defect
+                # shape and would quietly corrupt any study of why trades ended.
+                self._pending_close = (self._close_requested, "CMD")
+                self._close_requested = None
             # optional force-close on an opposite SOS (Pine execCloseOppSOS)
-            if self._cfg.exec_close_opp_sos and (
+            elif self._cfg.exec_close_opp_sos and (
                 (self._pos_dir > 0 and sig.bear_sos) or (self._pos_dir < 0 and sig.bull_sos)
             ):
                 self._pending_close = ("opp-SOS", "CLOSE")

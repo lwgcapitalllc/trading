@@ -409,6 +409,59 @@ was wrong by two orders of magnitude**: "220 of 609 are divergence-armed and can
 window** — the counter that settles it existed the whole time. **A count that is easy to obtain is
 not the count you asked for.**
 
+## Closing a trade because a PERSON asked — `request_close()` (2026-09-02)
+
+**A seam, not a shipped feature.** It gives this strategy the one thing it had no way to be
+told: get out of this trade now. Nothing calls it yet — the runner and the bridge wiring are
+unbuilt — so **rule 9 applies in full: nobody has run this end to end.**
+
+🔴 **THE INSTRUCTION GOES TO THE STRATEGY, NOT THE BROKER, AND THAT IS THE WHOLE DESIGN.**
+Closing by hand at the terminal leaves the emulator holding a position the account no longer
+has, and the bridge HALTS on the next bar — correctly, because from outside that is
+indistinguishable from a position vanishing for a reason nobody can name. A partial close by
+hand is worse: nothing notices at all, and every later size is computed against a book that
+does not exist.
+
+⚠ **It closes nothing itself.** It latches a value; the exit happens on the next bar through
+`_pending_close`, the same path the time stop and the opposite-break close already use — same
+one-bar delay, same fill model, same record. A private exit path here would be a second
+implementation of what this file already does, and the one nobody's tests cover.
+
+🔴 **The record's tag is `L-CMD` / `S-CMD`, NOT `CLOSE`, and that was caught by reading
+`_close_at` rather than by a test.** Only the TAG reaches the trade record — the reason
+argument is discarded — and the opposite-break close already uses `CLOSE`. Sharing it would
+make *a person asked for this* and *structure broke against us* the same value, which is this
+repo's oldest defect shape and would quietly corrupt any later study of why trades ended.
+⚠ **So `reason` is for the CALLER's record**, and belongs in the decision ledger where a
+sentence fits.
+
+⚠ **Asking while FLAT refuses rather than latching.** A request that waited would fire on
+whatever the strategy opened next — a trade the person asking had no opinion about. The `False`
+is what lets a caller say *nothing to close* instead of reporting a close that never happened.
+
+⚠ **Deliberately NOT in `_POSITION_FIELDS`.** The request's home is the file the runner
+watches, and a restart re-reads it, so there is one source of truth rather than two that can
+disagree. Persisting it would also make every existing position record incomplete, which the
+promote gap-check reads as a migration. **And a latched close surviving a restart is the
+`stop.request` hazard exactly** — a stale instruction outliving the moment somebody meant it.
+Losing it on a restart is visible and cheap: the position is still open, so you ask again.
+
+🔴 **A GREEN PARITY GATE PROVES THIS IS INERT, NEVER THAT IT WORKS**, and the two are being
+stated apart on purpose. The Pine has no such lever and `compare_strategy.py` never enters the
+branch, so rule 14 applies in its exact stated form: the gate says nothing about a branch
+neither side entered. **PARITY: `compare_strategy.py "VANTAGE_XAUUSD, 15_2a817.csv"` exit 0 at
+warmups 100 / 200 / 500 / 1000, before AND after the change** (21,766 bars, 2025-10-01 →
+2026-09-02, full history — the truncation detector measured 0 missing warmup bars).
+⚠ **At warmup 0 it diverges at bar 16 and that is cold start, not a regression** — the same
+shape every export here shows, gone well before 100 and still gone at 1000.
+
+**Tests: 6 in `tests/test_commanded_close.py`.** Five go red against HEAD only as
+*AttributeError*, which proves little for a new method — **so each is pinned by MUTATION**:
+sharing the `CLOSE` tag, demoting the branch below the time stop, latching when flat, and
+firing with nobody asking each redden their own named test. ⚠ **The sixth passes at HEAD by
+design** — it is the inertness control the parity gate leans on, and it reddens under the
+fire-with-nobody-asking mutation.
+
 ## The restart seam — `snapshot_position()` / `restore_position()` (2026-08-10)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The restart seam — `snapshot_position()` / `restore_position()` (2026-08-10)*.
