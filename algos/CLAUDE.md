@@ -2257,6 +2257,28 @@ handed, so hardcoding the leg inside the ledger's own writer reddened nothing. `
 now drives the REAL writer to a real file. **Passed in and written out are two claims, and only
 the second is what an audit reads.**
 
+✅ **AND `SYS_REENTRYWATCH` IS WHAT NOTICES (2026-09-03).** `tools/watch_reentry.py`, hourly on the
+box beside the other watchdogs. It imports the audit rather than restating it, and reports TWICE
+per trade — on the open and on the close — because the exit reason, R against the prices and the
+costs cannot be answered while a position is still on, so one message at the open would file a
+verdict on the half that had happened.
+🔴 **IT REPLACED A WATCH THAT LIVED INSIDE ONE CLAUDE SESSION**, which is to say a watch that died
+when a window closed and would have gone on reading as armed. **A durable job is not a nicety here
+— the thing being watched for happens once.**
+🔴 **ITS NORMAL STATE IS SILENCE, AND THAT IS THE HAZARD THE DESIGN IS BUILT AROUND.** Most days
+there is no re-entry, so a working watcher and a dead one look identical for weeks. Three things
+follow, and none is optional: it **announces its own failure** rather than dying into a log; it
+writes a health-ledger record on **every** run including the quiet ones, so a GAP in that file is
+the evidence exactly as `pulse` is; and it sends **nothing** on a quiet run, because an hourly
+message nobody needs is how a channel gets muted before the day it matters.
+⚠ **A corrupt state file reads as *nothing reported yet*, deliberately.** The two failure
+directions are not equal — a repeat message is an annoyance, and treating an unreadable file as
+*all reported* swallows the one message the tool exists to send.
+⚠ **14 tests, each driving a path that is invisible in ordinary operation**, and one of them was a
+docstring with no body for about a minute — passing for free while its name claimed the case was
+covered. **Worse than no test.** Mutations watched red, including the one that stops it announcing
+its own failure.
+
 ✅ **SWITCHED ON FOR `mpc_sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
 50 → 0.** ⚠ **No promote, and none should be run for it** — a promote copies `strategies/`,
 `engines/` and `backtest/`, and everything this needs on the code side is in `algos/`, which

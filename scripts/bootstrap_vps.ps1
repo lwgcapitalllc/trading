@@ -121,6 +121,7 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'logbackup_task.xml';           Name = 'SYS_LOGBACKUP' }
     [pscustomobject]@{ Xml = 'logreview_task.xml';           Name = 'SYS_LOGREVIEW' }
     [pscustomobject]@{ Xml = 'ledgersync_task.xml';          Name = 'SYS_LEDGERSYNC' }
+    [pscustomobject]@{ Xml = 'reentrywatch_task.xml';        Name = 'SYS_REENTRYWATCH' }
 )
 # SYS_PNLTRACKER and SYS_REPORTER were removed 2026-08-05 with the scripts behind them.
 # SYS_DEADMAN and SYS_LOGBACKUP were added in the same pass: both had task XMLs sitting in
@@ -133,6 +134,13 @@ $Tasks = @(
 # pushes until somebody puts the token back. That degradation is deliberate (the Mac-side sync
 # has always run without one) but it is SILENT unless you look, so put the token back as part of
 # the rebuild rather than after the first missing day.
+# SYS_REENTRYWATCH was added 2026-09-03, when the re-entry went live having never placed a real
+# order. It grades each live re-entry against the strategy and reports on Telegram. ⚠ It is the
+# second task here whose NORMAL state is silence — most days there is no re-entry — so the same
+# hazard applies as to the dead-man's switch above: a missing watcher looks exactly like a quiet
+# month. That is why the script writes a health-ledger record on EVERY run, including the quiet
+# ones, and announces its own failure rather than dying into a log. ⚠ It needs no secret; it reads
+# the bot's own ledger and sends through the shared Telegram credentials the other tasks use.
 # BOT_ tasks are started by SYS_STARTUP only — disable so they never auto-fire.
 # No bots are registered yet, so this list is empty.
 $DisableTasks = @()
