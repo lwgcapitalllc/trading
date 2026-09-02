@@ -1528,12 +1528,16 @@ believing it works.** Offline green means the logic is right, not that the bot s
 
 ---
 
-### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **STAGES 1-2 DONE (2026-09-01, 2026-09-02), stages 3-4 OPEN**
+### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **STAGES 1-3 DONE (2026-09-01, 2026-09-02), stage 4 OPEN**
 
-**The gap in one line:** every re-entry this repo has is priced and filled on a FASTER clock than
-the 15-minute one the strategy arms on, and `algos/live/runner.py::_loop` polls exactly one
-timeframe. So the live bot cannot take a re-entry, and `algos/live/bridge.py::assert_supported`
-refuses to start rather than trade a configuration it would silently mis-execute.
+**The gap in one line, as it stood:** every re-entry this repo has is priced and filled on a FASTER
+clock than the 15-minute one the strategy arms on, and `algos/live/runner.py::_loop` polled exactly
+one timeframe. So the live bot could not take a re-entry, and `algos/live/bridge.py::assert_supported`
+refused to start rather than trade a configuration it would silently mis-execute.
+
+✅ **CLOSED IN THE CODE ON 2026-09-02.** The runner drives two feeds, the bridge places and manages
+the re-entry's own order, and the refusal is gone. ⚠ **What is NOT closed is the run** — no
+re-entry order has ever reached a broker, so every figure below is a lab finding. Stage 4.
 
 🔴 **PROVEN THE EXPENSIVE WAY ON 2026-08-28.** The re-entry was switched on for
 `mpc_sos_fade_demo` and the bot **would not start** — down until the setting was reverted:
@@ -1635,9 +1639,10 @@ FILLS in the emulator and occupies that slot; the bridge then reconciles on the 
 finds *the strategy believes it is in a position but MT5 has none*, and **HALTS** — correctly, and
 by the design that makes every other guard here work.
 
-⚠ So there is no "observe it live" step. **The order is: stage 2 (the bridge can mirror a
+⚠ So there is no "observe it live" step. **The order was: stage 2 (the bridge can mirror a
 re-entry) and stage 3 (the refusal becomes a capability check) BOTH land before anything runs on a
-bot at all.** ✅ Nothing is lost by that: the claim stage 1 exists to prove is about the MERGE, and
+bot at all.** ✅ **Both landed on 2026-09-02, so the next thing that happens here is a bot.**
+✅ Nothing is lost by that: the claim stage 1 exists to prove is about the MERGE, and
 the merge is proved better offline than live — against `run_dual` on the same bars, where a
 disagreement is a diff rather than something to be spotted in a log.
 
@@ -1799,8 +1804,9 @@ bot is flat, which is exactly when a re-entry can fill. Left until the next 15-m
 are a second position waiting to happen, for up to fifteen minutes; on the fill clock the window
 is one fast bar.
 
-⚠ **THE REFUSAL IS UNCHANGED AND MUST STAY** — `assert_supported` still rejects the configuration
-outright, so none of this is reachable on a bot. Stage 3's remaining half is what lifts it.
+⚠ **THE REFUSAL WAS UNCHANGED AT THIS POINT AND HAD TO STAY** — `assert_supported` still rejected
+the configuration outright, so none of this was reachable on a bot. ✅ **Stage 3 lifted it later
+the same day; see its record below.**
 
 #### ✅ AND STAGE 2's EXIT HALF LANDED THE SAME DAY — the bridge closes a position at a price
 
@@ -1837,9 +1843,7 @@ the bridge cannot tell whether the broker has already closed the trade or is sti
 Mirroring would market-close on top of a filling stop; ignoring would halt the bot. It comes off
 the refusal list when that exit gets its own tag.
 
-⚠ **WHAT IS LEFT OF STAGE 2: nothing, and stage 3 is now the only thing between this and a
-demo.** `assert_supported` still refuses `exec_secondary` outright — that refusal is stage 3's
-to lift, and it must not be softened before somebody has decided the capability check is right.
+⚠ **WHAT IS LEFT OF STAGE 2: nothing.** ✅ Stage 3 landed the same day and the refusal is gone.
 
 ⚠ **AND THE PROOF IS UNIT-LEVEL, NOT A REPLAY.** Nine tests, each watched RED under a named
 mutation, and two of those mutations were MEASURED to be duds and replaced — one mutated a helper
@@ -1848,12 +1852,50 @@ of proof: a window replayed through the real runner with the ORDERS mirrored and
 that runs, this is a mechanism with tests, not a measured behaviour. **Rule 9: nothing here has
 ever reached a broker.**
 
-**Stage 3 — turn the refusal into a CAPABILITY check. ✅ SECOND HALF LANDED 2026-09-01.**
-`assert_supported` should stop asking *"is this setting on"* and start asking *"do I have the feed
-this configuration needs"*. ⚠ **That half is BLOCKED on stage 2 and must keep refusing until then —
-the refusal is correct and must not be softened to get a bot started.**
+**Stage 3 — turn the refusal into a CAPABILITY check. ✅ DONE 2026-09-02 (first half; the preview
+half landed 2026-09-01).**
 
-✅ **The half that could land has: the preview now exercises the startup path it claims to
+✅ **The blanket refusal is GONE.** Both grounds it stated — no second bar stream, no path that
+places the re-entry's order — stopped being true across stages 1 and 2. ⚠ **A refusal is retired
+when the capability it stood in for EXISTS, never to get a bot started**; that is the whole test,
+and it is why `exec_close_opp_sos` and `exec_scale_in` are still refused.
+
+🔴 **THE REPLACEMENT ASKS A DIFFERENT QUESTION, AND MISSING THAT WOULD HAVE LEFT A SILENT HOLE
+WHERE A LOUD REFUSAL USED TO BE.** The setting is mirrorable now. What still is not supportable is
+a configuration asking for a re-entry the runner will never deliver — because **the runner builds
+the second feed by ASKING THE STRATEGY, not by reading the setting** (`algos/live/` holds no
+trading logic and does not know what a re-entry is). A strategy answering *no fill clock* while its
+config says *re-enter* got no second stream, and the bot would have started, traded the primary
+alone and re-entered never, with nothing in any log — the exact divergence the function exists to
+prevent, arriving through the seam instead of through a setting. `bridge.assert_secondary_wired`
+refuses it, and it is the SAME function `promote.py --dry-run` calls off shipped values.
+
+⚠ **`None` from the strategy carries two meanings and only the config beside it separates them** —
+*declines a second feed* and *cannot offer one*. Rule 1 is usually about not destroying that
+distinction at the bottom; here it is reconstructed at the top, in the one place holding both facts.
+
+⚠ **The merge half is NOT gated on the re-entry setting, and gating it was the near-miss.** Written
+the obvious way it stopped refusing a strategy that wants a fast feed for another reason and has no
+merge — which the preview had covered before this absorbed it. Two questions, deliberately
+different: *did the config order something the strategy cannot supply*, and *did the strategy order
+something it cannot itself handle*.
+
+🔴 **AND LIFTING IT EXPOSED A RESTART BUG NOTHING HAD EVER REACHED.** Which leg owns a trade is
+stamped at the FILL and defaults to the primary, so a restart holding a RE-ENTRY picked it back up
+as a primary: the 15-minute clock would have ratcheted its stop and booked its close, in a bar
+frame 3x the one that opened it. The emulator was never at fault — it restores that field from the
+record and refuses an incomplete one. **The bridge simply did not ask.** ⚠ **The transferable part:
+lifting a refusal makes a whole region of state reachable for the first time, so the question is
+not "does the new path work" but "what defaults has nothing ever exercised".**
+
+⚠ **PROOF IS UNIT-LEVEL AGAIN.** 886 green in `algos/`, nine new tests across this stage, each
+watched RED under a named mutation — including the two that reproduce the old behaviour exactly
+(the blanket refusal restored; the restored leg dropped). ⚠ **One test now builds the REAL shipped
+strategy with the re-entry ON and drives the runner's own feed builder**, so the seam fails if
+either end moves — but `BarFeed`'s constructor makes no call, so it proves *would start*, never
+*would work*. **Rule 9: no re-entry ORDER has ever reached a broker.**
+
+✅ **The preview half landed first, on 2026-09-01: it now exercises the startup path it claims to
 verify.** `promote.py --dry-run` printed *"verified"* for the configuration that killed the bot on
 2026-08-28, because importing and building is not running and every startup refusal lives in
 `algos/live/`, which the staged snapshot does not even contain. Now:
@@ -1872,9 +1914,14 @@ They were inline in `runner._build_fast_feed`, and inline meant only a restart c
 copy in the promote tool would have drifted the first time either moved — this repo has paid for
 that shape twice already.
 
-**Stage 4 — enable on demo, measure, then decide.**
+**Stage 4 — enable on demo, measure, then decide. THE ONLY STAGE LEFT, and nothing in the code
+blocks it now.**
 Demo only, one bot, and compare live decisions against the lab on the same bars before it goes near
-anything else. ⚠ **Blocked on stage 2, and on the banking decision above.**
+anything else. ⚠ **What it is waiting on is a DECISION and a run, not a build** — switching the
+setting on is a settings change plus a promote, and the first re-entry order to reach a broker is
+the thing rule 9 has been holding open since stage 1. ⚠ **Watch the first one by hand**: the entry,
+the 50% bank, and a restart while the trade is open, which is the path the restore fix above was
+written for and the one no test can prove.
 
 #### What must stay true throughout
 

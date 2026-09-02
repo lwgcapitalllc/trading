@@ -26,10 +26,12 @@ halt is never an unprotected position), Telegram fires, and a human decides. On 
 Aaron watching, "stop and tell me" is the honest response; silently continuing is how a live
 system loses the ability to explain itself.
 
-**What is deliberately NOT supported yet:** partial take-profits. At the shipped
-`exec_tp1_pct = exec_tp2_pct = 0` the whole position rides the runner, so each trade is one
-entry limit and one ratcheting stop. `assert_supported()` refuses to start with non-zero rungs
-rather than silently ignoring them.
+**What is deliberately NOT supported, and it is a SHORT list now.** Partial take-profits were on
+it until 2026-09-01 and a rung taking the WHOLE position until 2026-09-02; both are mirrored
+today. What remains is the force-close on an opposite structure break — refused because its fill
+carries the same tag an ordinary stop-out does, so nothing can tell the bridge which happened —
+and adding size to a winner, which needs an entry path this bridge does not have. Every one of
+them is a refusal in `assert_supported()`, not a silent skip.
 """
 
 from __future__ import annotations
@@ -308,23 +310,21 @@ def assert_supported(strategy_config) -> None:
             "would halt. Refusing is the answer until the strategy gives that exit its own tag. "
             "Turn it off. See docs/LIVE_TRADING_PIPELINE.md G18."
         )
-    if getattr(strategy_config, "exec_secondary", False):
-        # 🔴 **THIS MESSAGE SAID "a 1-minute bar stream" UNTIL 2026-09-01 AND WAS WRONG.** The
-        # re-entry's fill clock is `exec_sec_fill_tf_min` and has been FIVE minutes by default
-        # since 2026-08-21 — it is the caller's choice either way, and `run_dual`'s parameter is
-        # still named `df1m` only because renaming a public parameter moves every caller. A
-        # refusal that names the wrong feed is worse than a vague one: it sends the next reader
-        # to build the wrong thing, confidently. The number is read off the config here for the
-        # same reason the feed is built off it — one setting, one place, every surface pointing
-        # at it.
-        mins = int(getattr(strategy_config, "exec_sec_fill_tf_min", 5) or 5)
-        raise UnsupportedStrategyConfig(
-            f"exec_secondary needs a SECOND bar stream — a {mins}-minute one, per "
-            f"exec_sec_fill_tf_min — running alongside the strategy's own timeframe, and this "
-            f"bridge mirrors ONE entry limit and one ratcheting stop, so it has no path that "
-            f"places the re-entry's order. Turn it off, or build the second entry path. See "
-            f"docs/LIVE_TRADING_PIPELINE.md G18."
-        )
+    # 🔴 **`exec_secondary` WAS REFUSED OUTRIGHT HERE UNTIL 2026-09-02, ON TWO GROUNDS, AND BOTH
+    # HAVE SINCE STOPPED BEING TRUE.** The refusal said the re-entry *"needs a SECOND bar stream"*
+    # and that this bridge *"has no path that places the re-entry's order"*. The second stream is
+    # built by `runner._build_fast_feed` and merged by the strategy's own `DualClock`; the order
+    # is placed by `sync_fast`, on the re-entry's own slot. So the refusal is GONE rather than
+    # softened — the same distinction as the full-exit one above, and the only one worth making:
+    # a refusal is retired when the capability it stood in for exists, never to get a bot started.
+    #
+    # 🔴 **WHAT REPLACES IT ASKS A DIFFERENT QUESTION, AND THE DIFFERENCE IS THE WHOLE POINT.**
+    # The setting is now mirrorable, so it is no longer a reason to refuse. What IS still a reason
+    # is a configuration that asks for a re-entry the runner will never deliver — a strategy with
+    # no fill clock to offer, or no merge to interleave it with. That cannot be seen in the config
+    # alone, so it is `assert_secondary_wired` below, asked by every caller that can answer it.
+    #
+    # ⚠ It has never run against a broker. Rule 9 applies to the first one.
     if getattr(strategy_config, "exec_scale_in", False):
         raise UnsupportedStrategyConfig(
             "exec_scale_in adds SIZE to a winning position, and this bridge mirrors ONE entry "
@@ -341,6 +341,74 @@ def assert_supported(strategy_config) -> None:
             "fill_model must be 'bar' live. 'tick' is a BACKTEST cost model that resolves fills "
             "against historical tick data; live, the broker resolves fills and its real prices "
             "are recorded by the ledger."
+        )
+
+
+def assert_secondary_wired(strategy_config, *, fill_clock_minutes, has_merge: bool) -> None:
+    """Refuse a re-entry that is switched ON and has nothing to run on.
+
+    🔴 **THE FAILURE THIS EXISTS FOR IS SILENT, WHICH IS WHY IT IS A REFUSAL AND NOT A LOG LINE.**
+    The re-entry is placed by `sync_fast`, and `sync_fast` is only ever driven when the runner
+    built a second bar feed. The runner builds one by ASKING THE STRATEGY (`fast_feed_minutes`),
+    not by reading `exec_secondary` — `algos/live/` holds no trading logic and does not know what
+    a re-entry is. So a strategy whose config says *re-enter* but which offers no fill clock gets
+    no second feed, and the bot starts, trades the primary alone, and re-enters never. Nothing
+    fails. The backtest shows re-entries and the account does not, which is the exact divergence
+    `assert_supported` exists to prevent — arriving through the seam rather than through a setting.
+
+    🔴 **IT IS A SEPARATE FUNCTION BECAUSE THE QUESTION CANNOT BE ANSWERED FROM THE CONFIG.** Both
+    facts it needs live on the STRATEGY OBJECT, and the two callers reach that object in different
+    ways — the runner holds it, and `promote.py` cannot import it at all (the staged snapshot
+    carries no `algos/` tree, so the answers are shipped out of the verify subprocess as VALUES).
+    Passing them in is what lets one rule serve both. That is `feed.fast_feed_timeframe`'s shape
+    exactly, and for the same reason: a copy in the promote tool drifts the first time either
+    moves, and this repo has already paid for that twice.
+
+    ⚠ **`fill_clock_minutes=None` is *the strategy offers no fill clock*, and this function is the
+    place that decides what that MEANS** — nothing at all when the config wants no re-entry, and a
+    refusal when it does. One value, two meanings, separated by the only thing that can tell them
+    apart. Rule 1 is about not destroying that distinction at the bottom; here it is reconstructed
+    at the top, from the config beside it.
+
+    ⚠ **A caller that could not ASK must not call this with `None`.** `promote.startup_refusals`
+    reports the raised exception instead and skips this check, because *asking blew up* and *there
+    is no fill clock* are different answers and printing the same sentence for both is the defect
+    one layer down.
+
+    🔴 **THE MERGE HALF IS NOT GATED ON `exec_secondary`, AND THAT IS THE FIX FOR A HOLE THIS
+    FUNCTION NEARLY SHIPPED WITH.** Written the obvious way — return early unless the config wants
+    a re-entry — it stopped refusing a strategy that asks for a fast feed for some OTHER reason
+    and has no merge, which `promote.startup_refusals` had covered before this function absorbed
+    it. So the two halves ask different questions on purpose: *did the config order something the
+    strategy cannot supply* (a re-entry with no clock), and *did the strategy order something it
+    cannot itself handle* (a clock with no merge). Only the first is about the re-entry.
+
+    ⚠ **`runner._make_clock` raises on the merge too, and neither is redundant.** That raise
+    happens after the feed is built and the strategy is warmed; this one happens before either,
+    and it is the half `promote.py --dry-run` can reach.
+    """
+    if fill_clock_minutes is None:
+        if not getattr(strategy_config, "exec_secondary", False):
+            return
+        raise UnsupportedStrategyConfig(
+            "exec_secondary asks for a re-entry, but the strategy offers no fill clock — it "
+            "answers fast_feed_minutes() with nothing, or does not implement it. The runner "
+            "builds the second bar stream off that answer, so it would build none: the bot "
+            "would start, trade the primary alone, and place no re-entry ever, with nothing "
+            "in the logs saying so. Give the strategy a fast_feed_minutes(), or turn the "
+            "re-entry off. See docs/LIVE_TRADING_PIPELINE.md G18."
+        )
+    if not has_merge:
+        # ⚠ **It names the STRATEGY and not `exec_secondary`, because this branch is not about
+        # the re-entry** — see the note above. A message naming a setting that may well be off is
+        # the exact defect the old "1-minute bar stream" wording had: confidently wrong, and it
+        # sends the next reader to change the wrong thing.
+        raise UnsupportedStrategyConfig(
+            f"the strategy asks for a {fill_clock_minutes}-minute fill clock but provides no "
+            f"make_dual_clock(), so there is nothing to merge the two streams with — the runner "
+            f"would have two feeds and no rule for which bar is stepped when. A strategy that "
+            f"needs a second feed owns the merge; see "
+            f"strategies/python/mpc_sos_fade/dual_clock.py."
         )
 
 
@@ -673,10 +741,30 @@ class OrderBridge:
             )
             return False
         self._restored = True
+        # 🔴 **WHICH LEG OWNS THIS TRADE HAS TO COME BACK TOO, AND IT WAS THE ONE FIELD THAT DID
+        # NOT (fixed 2026-09-02, with the blanket re-entry refusal).** `_pos_intent` is stamped at
+        # the FILL and defaults to `"primary"` at construction, so a restart holding a RE-ENTRY
+        # picked it back up as a primary: the 15-minute clock would have ratcheted its stop and
+        # booked its close, and the fill clock — which is the one that opened it — would have sat
+        # out. A hold length is an index into ONE clock's bar numbering and these two differ by
+        # 3x, so the trade would also have been booked in the wrong frame.
+        #
+        # ⚠ **It is read off the EMULATOR rather than off the position record**, because the
+        # emulator has just restored that same field from that same record (`_POSITION_FIELDS`
+        # carries `_entry_kind`) and it refuses an incomplete record rather than defaulting. Two
+        # readers of one record is how the two ends drift; there is one reader, and this asks it.
+        #
+        # ⚠ **The `"primary"` fallback is for a strategy with no re-entry concept at all**, which
+        # is every other bot here — for one that has the concept the attribute always exists, so
+        # this is not a guess standing in for an unasked question.
+        # ⚠ **This was unreachable until today**: no configuration with a re-entry could start.
+        self._pos_intent = getattr(self._ex, "entry_kind", "primary")
         self._log.info(
             f"Restored position T{self._pos_ticket} — {self._side(self._pos_dir)} "
             f"{self._pos_lots} lots @ {self._pos_entry}, stop {self._pos_stop}, "
-            f"stage {getattr(self._ex, '_stage', '?')}. It will be managed from the next bar."
+            f"stage {getattr(self._ex, '_stage', '?')}, opened by the "
+            f"{'re-entry' if self._pos_intent == 'secondary' else 'primary'}. It will be managed "
+            f"from the next bar."
         )
         self._ledger.event(
             "position_restored",
@@ -686,6 +774,10 @@ class OrderBridge:
             entry=self._pos_entry,
             stop=self._pos_stop,
             stage=getattr(self._ex, "_stage", None),
+            # WHICH CLOCK picks the trade back up. Recorded because it decides who ratchets the
+            # stop from here, and because a restart is the only moment it can be got wrong — a
+            # fill stamps it from the order that filled, and that cannot disagree with itself.
+            intent=self._pos_intent,
             reason="restart" if announce else "rewarm",
         )
         # ⚠ A re-warm passes `announce=False` and the record above still lands. `_recover_link`
@@ -818,8 +910,10 @@ class OrderBridge:
         fill. Left until the next 15-minute close they are a second position waiting to happen —
         up to fifteen minutes of it. On this clock the window is one fill-clock bar.
 
-        ⚠ **`assert_supported` still refuses this configuration outright**, so nothing here can
-        reach a live bot yet. Stage 3 turns that refusal into a capability check.
+        ⚠ **THE BLANKET REFUSAL THAT KEPT THIS OFF EVERY LIVE BOT WAS LIFTED ON 2026-09-02**, so
+        a bot with the re-entry switched on now reaches this path. What refuses in its place is
+        `assert_secondary_wired`, and it refuses something else: a re-entry with no fill clock to
+        run on. ⚠ **Rule 9 has not been satisfied — no re-entry order has ever reached a broker.**
         """
         if self.state is not BridgeState.LIVE:
             # WARMING is the 15-minute path's transition to make: it owns the warm-up position

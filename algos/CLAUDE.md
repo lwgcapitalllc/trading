@@ -55,8 +55,11 @@ Think like one at all times:
 ratcheting stop — it has no path that places a second entry**, and `exec_scale_in` adds size to a
 winning position. Left unrefused the bot would have traded the base position, placed no adds, and
 reported nothing: the backtest would show a scaled book and the account an unscaled one, with
-nothing explaining the gap. That is the exact divergence this function exists to prevent, and it is
-why partial take-profits and the secondary are already refused.
+nothing explaining the gap. That is the exact divergence this function exists to prevent.
+⚠ **This paragraph cited partial take-profits and the re-entry as fellow refusals until
+2026-09-02; both are mirrored now and neither is refused.** Scale-in still is, and it needs the
+account-level allocator as well as an add path — margin sees the full stacked position even where
+risk-to-stop does not.
 
 ✅ **Watched both ways rather than assumed** — scale-in ON is refused with a message naming the
 cause, and the SHIPPED config still starts. A guard that refuses everything is not a guard.
@@ -416,9 +419,11 @@ shape; the live runner was the fourth and nobody had asked it.
 a second `BarFeed` on the re-entry's fill clock, warms it, and steps the re-entry through the SAME
 object the lab drives (`dual_clock.DualClock`, which `run_dual` was refactored onto in the same
 change). A would-be fill is written to the decision ledger as `secondary_shadow_fill`; no order is
-sent. **`assert_supported` still refuses the config outright and must not be softened until the
-bridge can place a second entry** — that is stage 2, and it is the bigger half. Full record, the
-five defects the merge cost and the proof: `docs/LIVE_TRADING_PIPELINE.md` → G18.
+sent. **`assert_supported` refused the config outright at the time and was not to be softened
+until the bridge could place a second entry** — that was stage 2, and it was the bigger half.
+⚠ **Both have since happened; the refusal is gone as of 2026-09-02** — see *The re-entry can be
+switched on* below. Full record, the five defects the merge cost and the proof:
+`docs/LIVE_TRADING_PIPELINE.md` → G18.
 
 🔴 **STAGE 1 CANNOT BE RUN ON A LIVE BOT, AND THE PLAN THAT SAID IT COULD IS CORRECTED.** The
 primary and the re-entry share ONE position slot in the same `Execution`. A "shadow" re-entry does
@@ -2146,15 +2151,10 @@ to the broker*, which was true of every run while the bridge placed nothing. It 
 a live bot that sentence is false — and the record would sit beside the real `trade_opened` the
 bridge writes from the broker's answer, putting one trade in the book twice.
 
-🔴 **NONE OF THIS CAN REACH A LIVE BOT YET, AND THAT IS DELIBERATE.** `assert_supported` still
-refuses the configuration outright (stage 3 turns the refusal into a capability check), and a bot
-with the re-entry off is handed a clock with no fast path at all — so `sync_fast` is never
-called. ⚠ **It has NEVER RUN against a broker.** Nine tests and their mutations are not a run;
-rule 9 stands.
-
-⚠ **Still missing before stage 2 is finished:** the bridge cannot close the LAST of a position at
-a price, so `full_exit_at_price` still refuses the reclaim trigger's 100% bank. The gap trigger
-(50% and a runner) is the one this unblocks.
+✅ **A LIVE BOT CAN REACH ALL OF IT SINCE 2026-09-02 — see *The re-entry can be switched on*
+below.** A bot with the re-entry off is still handed a clock with no fast path at all, so
+`sync_fast` is never called and that bot's behaviour is unchanged byte for byte.
+⚠ **It has NEVER RUN against a broker.** Tests and their mutations are not a run; rule 9 stands.
 
 ⚠ **`get_pending_orders` still flattens "empty" and "unreadable" into `[]`, deliberately.** Its
 callers only ask *is this ticket still there*, where a failed read costs one wasted cycle.
@@ -2182,6 +2182,49 @@ failure directly and never reaches the broker layer, so mutating the reconciliat
 it red — the sweep saves it instead. **A test naming the wrong mutation is worse than one naming
 none: it reports coverage that is not there.** The first draft did exactly that and it was only
 caught by running the mutation.
+
+### The re-entry can be switched on (G18 stage 3, 2026-09-02)
+
+**`assert_supported` no longer refuses the re-entry.** Its two stated grounds — no second bar
+stream, no path that places the re-entry's order — both stopped being true, so the refusal went.
+⚠ **A refusal is retired when the capability it stood in for EXISTS, never to get a bot started.**
+That is the only test it has to pass, and it is why the force-close on an opposite structure
+break and the add-to-a-winner path are still refused.
+
+🔴 **WHAT REPLACES IT ASKS A DIFFERENT QUESTION, AND MISSING THAT IS HOW THE LIFT NEARLY LEFT A
+SILENT HOLE.** The setting is mirrorable now, so it is no longer a reason to refuse. What still is:
+a configuration asking for a re-entry the runner will never deliver. **The runner builds the second
+feed by ASKING THE STRATEGY, not by reading the setting** — `algos/live/` holds no trading logic
+and does not know what a re-entry is — so a strategy that answers *no fill clock* while its config
+says *re-enter* got no second stream, and the bot would have started, traded the primary alone and
+re-entered never, with nothing in any log. `bridge.assert_secondary_wired` refuses that.
+
+⚠ **`None` from the strategy means two things and only the config beside it can separate them** —
+*declines a second feed* and *cannot offer one*. Rule 1 says do not destroy that distinction at
+the bottom; here it is reconstructed at the top, in the one place that holds both facts.
+
+⚠ **The merge half is NOT gated on the re-entry setting, and gating it was the near-miss.** A
+strategy can want a fast feed for another reason; what it may never do is want one and provide no
+merge rule. Two questions, deliberately different: *did the config order something the strategy
+cannot supply*, and *did the strategy order something it cannot itself handle*.
+
+⚠ **ONE function, asked by the runner and by `promote.py --dry-run`.** The preview cannot import
+the strategy (the staged snapshot carries no `algos/` tree) so it passes shipped VALUES — the
+`feed.fast_feed_timeframe` shape, for the same reason: a copy in the promote tool drifts the first
+time either moves. **The preview's own version had a hole the runner's did not** — it ran its
+merge check only when a fill clock existed — and that is what one shared function ends.
+
+🔴 **A RESTART PUT A RESTORED RE-ENTRY ON THE WRONG CLOCK, and it was found by asking what stage 3
+made reachable rather than by a test.** Which leg owns a trade is stamped at the FILL and defaults
+to the primary, so a restart holding a re-entry picked it up as a primary: the 15-minute clock
+would have ratcheted its stop and booked its close, in a bar frame 3x the one that opened it. The
+emulator was never the problem — it restores that field from the record and refuses an incomplete
+one. **The bridge simply did not ask.** ⚠ **The generalisation is worth more than the fix: lifting
+a refusal makes a whole region of state reachable for the first time, so the question to ask is
+not "does the new path work" but "what defaults has nothing ever exercised".**
+
+⚠ **Nothing here has run against a broker. Rule 9 stands** — and the first one to watch is a
+re-entry ORDER, not a re-entry decision; the decision half has been shadow-recorded since stage 1.
 
 ### The pending-order layer (added 2026-07-30) — four MT5 behaviours to know
 

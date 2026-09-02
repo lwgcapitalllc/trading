@@ -217,6 +217,66 @@ def test_a_restored_bot_announces_it_once(tmp_path):
     assert any("TRADE RESUMED" in n for n in notes)
 
 
+# ── a restart must not move the trade onto the other clock (2026-09-02) ───────
+#
+# 🔴 **THE FIELD THAT DID NOT COME BACK.** Which leg opened a trade is stamped at the FILL, and
+# construction defaults it to the primary — so a restart holding a RE-ENTRY picked it back up as
+# a primary. Everything else about the trade restored perfectly. It was unreachable until the
+# blanket re-entry refusal was lifted on the same day, which is why it had never bitten.
+#
+# ⚠ **The emulator was never the problem** — the real `Execution` carries `_entry_kind` in its
+# `_POSITION_FIELDS` and restores it. The bridge simply did not ask.
+
+
+def _reentry_snap():
+    """A record of a trade the RE-ENTRY opened. Same shape as `_SNAP`, one field different."""
+    return {**_SNAP, "_entry_kind": "secondary"}
+
+
+def test_a_restored_RE_ENTRY_comes_back_on_the_FILL_clock_not_the_15_minute_one(tmp_path):
+    """MUTATION: delete the `_pos_intent` line in `apply_restore` and this goes red — the trade
+    comes back as a primary and the 15-minute clock books its close."""
+    _record(tmp_path, strategy=_reentry_snap())
+    ex = _FakeExecution()
+    b, _, ledger, _ = _startup(tmp_path, positions=[_held()], execution=ex)
+
+    assert b._pos_intent == "primary", "the default before anything is restored"
+    assert b.apply_restore() is True
+    assert b._pos_intent == "secondary"
+
+    row = next(kw for kind, kw in ledger.rows if kind == "event:position_restored")
+    assert row["intent"] == "secondary", "a person reading the record must see which clock has it"
+
+
+def test_the_15_minute_clock_does_not_BOOK_a_restored_re_entrys_close(tmp_path):
+    """The consequence, not the field — a hold length is an index into ONE clock's bar numbering
+    and these two frames differ by 3x, so the wrong clock books the trade in the wrong frame and
+    every alert and ledger row goes with it.
+
+    MUTATION: same one line. Without it this books a closed trade on the 15-minute path.
+    """
+    _record(tmp_path, strategy=_reentry_snap())
+    b, _, ledger, _ = _startup(tmp_path, positions=[_held()], execution=_FakeExecution())
+    b.apply_restore()
+    b.begin_live()
+
+    # The broker no longer holds it. On the 15-MINUTE path, which does not own this trade.
+    b._observe_close([], _Dec(), _Sig(), owner="primary")
+    assert not any(kind == "closed" for kind, _ in ledger.rows), (
+        "the fill clock opened this trade and books it; the 15-minute clock must sit out"
+    )
+
+
+def test_a_restored_PRIMARY_still_comes_back_on_the_15_minute_clock(tmp_path):
+    """⚠ The other half, and it is not decoration: a fix that hands EVERY restored trade to the
+    fill clock would pass the two tests above and break every bot in this repo."""
+    _record(tmp_path)  # `_SNAP` carries no leg field at all — an older record
+    ex = _FakeExecution(entry_kind="primary")
+    b, _, _, _ = _startup(tmp_path, positions=[_held()], execution=ex)
+    assert b.apply_restore() is True
+    assert b._pos_intent == "primary"
+
+
 # ── every other shape still halts ────────────────────────────────────────────
 
 

@@ -54,7 +54,11 @@ for _p in (str(_REPO / "algos" / "live"),):
         sys.path.insert(0, _p)
 
 import live_config  # noqa: E402
-from bridge import UnsupportedStrategyConfig, assert_supported  # noqa: E402
+from bridge import (  # noqa: E402
+    UnsupportedStrategyConfig,
+    assert_secondary_wired,
+    assert_supported,
+)
 from feed import fast_feed_timeframe  # noqa: E402
 from live_config import deployed_record  # noqa: E402
 from version import current_commit, deployment_hash  # noqa: E402
@@ -320,12 +324,12 @@ def startup_refusals(startup: dict, primary_timeframe: str) -> list:
     parent must not import the STRATEGY, because doing so would satisfy itself from the repo
     rather than from the snapshot — which is the whole reason `verify` runs out of process.
 
-    ⚠ **Returns a LIST rather than raising**, so the FEED problems are all named at once. ⚠ The
-    bridge's half contributes at most ONE entry, because `assert_supported` raises on the first
-    refusal exactly as the runner does — so a config with two bridge problems is reported, fixed,
-    and reported again. That is deliberate (the list must describe the restart, and a restart
-    stops at the first raise too), and it is written down here because "names every problem at
-    once" is what the shape of the return value suggests and it is not true.
+    ⚠ **Returns a LIST rather than raising**, so the FEED problems are all named at once. ⚠ Each
+    of the two bridge checks contributes at most ONE entry, because both raise on their first
+    refusal exactly as the runner does — so a config with two problems inside one of them is
+    reported, fixed, and reported again. That is deliberate (the list must describe the restart,
+    and a restart stops at the first raise too), and it is written down here because "names every
+    problem at once" is what the shape of the return value suggests and it is not true.
 
     ⚠ **A missing `startup` payload returns [] — and that is the honest answer, not a pass.** It
     means an older snapshot's verify step did not ship one, so the question was NOT ASKED. The
@@ -339,22 +343,37 @@ def startup_refusals(startup: dict, primary_timeframe: str) -> list:
         assert_supported(cfg_ns)
     except UnsupportedStrategyConfig as exc:
         problems.append(str(exc))
+    minutes = startup.get("fast_feed_minutes")
     if startup.get("fast_feed_error"):
+        # ⚠ **AND THE SEAM CHECK BELOW IS SKIPPED WHEN ASKING BLEW UP.** The subprocess reports
+        # `fast_feed_minutes: None` after an exception, which is the same value a strategy with
+        # no fill clock produces — so running the check here would print *"the strategy offers no
+        # fill clock"* for a strategy that has one and raised. Rule 1, one layer up: the two
+        # answers must not print the same sentence.
         problems.append(
             f"asking the strategy how fast a second feed it needs raised "
             f"{startup['fast_feed_error']}"
         )
-    minutes = startup.get("fast_feed_minutes")
+    else:
+        # 🔴 **THE SAME FUNCTION THE RUNNER CALLS, off shipped VALUES.** It used to be a
+        # hand-written `has_make_dual_clock` branch here, which had a hole the runner's version
+        # did not: it only ran `if minutes is not None`, so a strategy with the re-entry ON and
+        # no fill clock at all passed the preview silently. That was invisible while
+        # `assert_supported` refused the setting outright and became reachable the moment it
+        # stopped. One rule, two callers — the reason `fast_feed_timeframe` exists.
+        try:
+            assert_secondary_wired(
+                cfg_ns,
+                fill_clock_minutes=minutes,
+                has_merge=bool(startup.get("has_make_dual_clock")),
+            )
+        except UnsupportedStrategyConfig as exc:
+            problems.append(str(exc))
     if minutes is not None:
         try:
             fast_feed_timeframe(minutes, primary_timeframe)
         except (ValueError, RuntimeError) as exc:
             problems.append(str(exc))
-        if not startup.get("has_make_dual_clock"):
-            problems.append(
-                f"the strategy asks for a {minutes}-minute fill clock but provides no "
-                f"make_dual_clock(), so there is nothing to merge the two streams with."
-            )
     return problems
 
 

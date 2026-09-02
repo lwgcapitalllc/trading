@@ -73,7 +73,12 @@ for _p in (
 
 import live_config  # noqa: E402  (algos/live/live_config.py)
 from alert_format import alert, joined, money  # noqa: E402
-from bridge import BridgeState, OrderBridge, assert_supported  # noqa: E402
+from bridge import (  # noqa: E402
+    BridgeState,
+    OrderBridge,
+    assert_secondary_wired,
+    assert_supported,
+)
 from feed import (  # noqa: E402
     BarFeed,
     fast_feed_timeframe,
@@ -484,6 +489,12 @@ class LiveRunner:
             return _SingleFeedClock(self.strategy, self.stack)
         make = getattr(self.strategy, "make_dual_clock", None)
         if not callable(make):
+            # ⚠ **A BACKSTOP SINCE 2026-09-02, NOT THE LIVE GUARD — edit the other one.**
+            # `bridge.assert_secondary_wired` asks the same question inside `_build_fast_feed`,
+            # before the feed is built and before the strategy is warmed, and that is also the
+            # half `promote.py --dry-run` can reach. So on today's paths this line cannot fire:
+            # a feed only exists if the merge did. It stays because `self.fast_feed` is an
+            # attribute and nothing stops a future path from setting one another way.
             raise RuntimeError(
                 f"{type(self.strategy).__name__} asked for a {self.fast_feed.timeframe} fill "
                 f"clock but provides no make_dual_clock(), so there is nothing to merge the two "
@@ -503,8 +514,22 @@ class LiveRunner:
         ⚠ **`None` means the strategy asked for no second feed.** It never means "asked and could
         not have one": an unusable fill clock RAISES, at startup, naming the legal values. Rule 1
         — *off* and *cannot* must not be the same answer.
+
+        🔴 **AND `None` STOPPED BEING AN ACCEPTABLE ANSWER WHEN THE CONFIG SAYS *re-enter*
+        (2026-09-02).** It was harmless while `bridge.assert_supported` refused the setting
+        outright — nothing with a re-entry ever got this far. With that refusal lifted, a strategy
+        that answers `None` here would leave the bot running the primary alone and re-entering
+        never, in silence. `assert_secondary_wired` is asked BEFORE the answer is acted on, and it
+        is the same call `promote.py --dry-run` makes off shipped values, so the preview refuses
+        what the restart refuses — the 2026-08-28 lesson, applied to the check that replaced the
+        one that taught it.
         """
         minutes = self._fast_feed_minutes(scfg)
+        assert_secondary_wired(
+            scfg,
+            fill_clock_minutes=minutes,
+            has_merge=callable(getattr(self.strategy, "make_dual_clock", None)),
+        )
         if minutes is None:
             return None
         # ⚠ **Both refusals live in `feed.fast_feed_timeframe`, not here (2026-09-01).** They were

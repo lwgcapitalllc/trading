@@ -54,6 +54,8 @@ for p in (
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import bridge as live_bridge  # noqa: E402
+from bridge import UnsupportedStrategyConfig  # noqa: E402
 from feed import timeframe_for_minutes  # noqa: E402
 from runner import LiveRunner, _SingleFeedClock  # noqa: E402
 
@@ -417,8 +419,12 @@ def test_a_fill_clock_MT5_has_no_timeframe_for_is_REFUSED_not_rounded():
 def test_a_fill_clock_that_is_not_faster_than_the_primary_is_REFUSED():
     """A re-entry fills INSIDE a 15m bar, so a 15m or slower second feed cannot express one.
 
-    ⚠ It refuses at STARTUP rather than running a second feed that can never help — the same
-    call `assert_supported` makes, one layer down.
+    ⚠ It refuses at STARTUP rather than running a second feed that can never help.
+
+    ⚠ **The double carries a `make_dual_clock` it never calls, and that is deliberate (2026-09-02).**
+    Without one it is a HALF-BUILT strategy, and the seam refusal fires first — so the test would
+    pass on a refusal that has nothing to do with the timeframe rule it is named after. A double
+    less capable than production hides a defect exactly as readily as one more capable.
 
     MUTATION: drop the comparison and a 15m 'fill clock' is accepted, giving two identical feeds.
     """
@@ -427,7 +433,7 @@ def test_a_fill_clock_that_is_not_faster_than_the_primary_is_REFUSED():
     r.feed = SimpleNamespace(bar_seconds=900)
     r.mt5 = SimpleNamespace(symbol="XAUUSD.p")
     r.log = SimpleNamespace(info=lambda *a, **k: None)
-    r.strategy = SimpleNamespace(fast_feed_minutes=lambda: 15)
+    r.strategy = SimpleNamespace(fast_feed_minutes=lambda: 15, make_dual_clock=lambda *a, **k: None)
     with pytest.raises(RuntimeError, match="not FASTER"):
         r._build_fast_feed(SimpleNamespace(exec_secondary=True))
 
@@ -439,8 +445,90 @@ def test_a_strategy_that_wants_no_second_feed_gets_None_rather_than_a_refusal():
     r.strategy = SimpleNamespace(fast_feed_minutes=lambda: None)
     assert r._build_fast_feed(SimpleNamespace(exec_secondary=False)) is None
 
+
+def test_a_re_entry_switched_ON_with_no_fill_clock_to_run_on_is_REFUSED():
+    """🔴 **THIS TEST ASSERTED THE OPPOSITE UNTIL 2026-09-02, AND IT WAS RIGHT TO.** While
+    `bridge.assert_supported` refused `exec_secondary` outright, no configuration with the
+    re-entry on could reach here, so `None` from a strategy with no opinion was harmless and the
+    old test pinned it as such. Lifting that refusal turned the same line into a live hole: the
+    bot would start, run the primary alone, and place no re-entry ever, with nothing in the logs
+    saying so — a backtest showing re-entries against an account that has none.
+
+    ⚠ **The hole is that the runner asks the STRATEGY, not the config.** `algos/live/` holds no
+    trading logic and does not know what a re-entry is, so *the strategy declines a second feed*
+    and *the strategy cannot offer one* both arrive as `None`. Rule 1, reconstructed at the top
+    from the config sitting beside it.
+
+    MUTATION: delete the `assert_secondary_wired` call in `_build_fast_feed` and this goes red
+    with the exact `None` the old test asserted.
+    """
+    r = LiveRunner.__new__(LiveRunner)
+
     r.strategy = SimpleNamespace()  # a strategy with no opinion at all
-    assert r._build_fast_feed(SimpleNamespace(exec_secondary=True)) is None
+    with pytest.raises(UnsupportedStrategyConfig, match="offers no fill clock"):
+        r._build_fast_feed(SimpleNamespace(exec_secondary=True))
+
+    # ⚠ And a strategy that HAS the method and answers `None` anyway is the same refusal — the
+    # runner reads one value and cannot tell a missing method from a negative answer.
+    r.strategy = SimpleNamespace(fast_feed_minutes=lambda: None)
+    with pytest.raises(UnsupportedStrategyConfig, match="offers no fill clock"):
+        r._build_fast_feed(SimpleNamespace(exec_secondary=True))
+
+
+def test_the_REAL_strategy_with_the_re_entry_ON_gets_a_real_second_feed():
+    """⚠ **Every other test on this path uses a stub, and a stub cannot show that the seam is
+    joined at both ends.** This one builds the actual shipped strategy with the re-entry switched
+    on and drives the runner's own feed builder, so it fails if either side of the contract moves
+    — the strategy dropping its fill-clock answer, or the runner refusing what it returns.
+
+    ⚠ **It is still not rule 9.** Nothing here talks to a broker or to MT5; `BarFeed`'s
+    constructor makes no call. What it proves is that a bot with this setting on would START and
+    would hold a second stream, which is precisely what the lifted refusal now permits.
+
+    MUTATION: make the strategy's `fast_feed_minutes` answer `None` regardless of the setting and
+    this goes red — with the seam refusal, which is the message a broken contract should produce.
+    """
+    from mpc_sos_fade import LAB_STRATEGY
+
+    cfg = LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_secondary=True)
+    strategy = LAB_STRATEGY["strategy"](cfg, initial_capital=10_000.0)
+
+    live_bridge.assert_supported(cfg)  # the config half: no longer a reason to refuse
+
+    r = LiveRunner.__new__(LiveRunner)
+    r.cfg = SimpleNamespace(timeframe="M15", symbol="XAUUSD.p")
+    r.feed = SimpleNamespace(bar_seconds=900)
+    r.mt5 = SimpleNamespace(symbol="XAUUSD.p")
+    r.log = SimpleNamespace(info=lambda *a, **k: None)
+    r.strategy = strategy
+
+    feed = r._build_fast_feed(cfg)
+    assert feed is not None, "the re-entry is on and got no second stream"
+    assert feed.timeframe == "M5", feed.timeframe
+    assert feed.bar_seconds < r.feed.bar_seconds, "a fill clock must be faster than the primary"
+
+
+def test_a_strategy_that_asks_for_a_fill_clock_it_cannot_MERGE_is_REFUSED_before_the_feed_is_built():
+    """⚠ **Not gated on the re-entry setting, on purpose.** A strategy can want a second stream
+    for some other reason; what it may never do is want one and provide no merge rule. `_make_clock`
+    raises on the same thing, but only after the feed is built and the strategy is warmed — and
+    `promote.py --dry-run` never reaches that at all.
+
+    ⚠ **The double is fully built even though a passing run never touches most of it**, so that
+    the mutation below reddens with DID NOT RAISE rather than with an `AttributeError` from a
+    half-made runner. A red that lands on the harness instead of the rule reads as a broken test.
+
+    MUTATION: gate the merge branch on `exec_secondary` and this goes red — which is the version
+    that was nearly shipped.
+    """
+    r = LiveRunner.__new__(LiveRunner)
+    r.cfg = SimpleNamespace(timeframe="M15", symbol="XAUUSD.p")
+    r.feed = SimpleNamespace(bar_seconds=900)
+    r.mt5 = SimpleNamespace(symbol="XAUUSD.p")
+    r.log = SimpleNamespace(info=lambda *a, **k: None)
+    r.strategy = SimpleNamespace(fast_feed_minutes=lambda: 5)
+    with pytest.raises(UnsupportedStrategyConfig, match="make_dual_clock"):
+        r._build_fast_feed(SimpleNamespace(exec_secondary=False))
 
 
 # ── the bridge is actually driven (G18 stage 2) ─────────────────────────────

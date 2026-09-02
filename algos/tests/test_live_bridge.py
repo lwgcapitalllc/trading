@@ -325,6 +325,14 @@ class _FakeExecution:
         self.restored = snap
         self._pos_dir = snap.get("_pos_dir", 0)
         self._stage = snap.get("_stage", 0)
+        # ⚠ **WHICH LEG owns the restored trade comes back too, because production does that**
+        # (`_entry_kind` is in the real `Execution._POSITION_FIELDS`, and `entry_kind` is the
+        # public read of it). Leaving it out made this fake LESS capable than the thing it
+        # stands for, in exactly the field a restart can get wrong — so a restored re-entry
+        # would have looked like a primary here no matter what the bridge did with it, and the
+        # test could not have failed. A double that cannot express the defect certifies it.
+        if "_entry_kind" in snap:
+            self.entry_kind = snap["_entry_kind"]
 
 
 class _Dec:
@@ -525,10 +533,15 @@ def test_the_shipped_config_is_supported():
 #     one: `exec_short_hold` is a single boolean on a bot that is armed today, nothing refused
 #     it, and the bot would have STARTED and ridden every trade past a target the backtest
 #     banked 100% at.
-#   - The two re-entry refusals failed on the MESSAGE, not on the refusal — the old bridge
-#     already refused that config for having no second feed. They pin that the banking reason
-#     SURVIVES once G18 stage 2 relaxes the feed refusal, which is the moment it starts
-#     mattering. A weaker red, and worth nothing if read as the first kind.
+#   - The two re-entry tests failed on the MESSAGE, not on the refusal — the old bridge already
+#     refused that config for having no second feed. They were the weakest reds here, and worth
+#     nothing if read as the first kind.
+#     🔴 **AND THE MOMENT THEY WERE WRITTEN FOR HAS PASSED, WHICH IS WHY THEY NOW ASSERT NO
+#     REFUSAL AT ALL (2026-09-02).** They were pinning that the banking reason would SURVIVE the
+#     feed refusal being lifted. It was lifted, and the banking reason had gone too — so the
+#     honest form of both is that the config starts. ⚠ Worth reading as a general warning about
+#     this shape: a test that proves its point by catching SOME refusal is only as good as the
+#     refusal it happens to catch, and it goes quietly meaningless the day that one is retired.
 #   - The rest exercise `price_triggered_banks` directly, so against HEAD they fail on the
 #     function not existing. Weakest red there is, so they were proved by MUTATION instead —
 #     six mutations, each reddening its own named test, none surviving:
@@ -575,27 +588,37 @@ def test_short_hold_REPLACES_the_shared_rung_rather_than_adding_to_it():
     assert [name for name, _ in banks] == ["exec_sh_tp1_pct"]
 
 
-def test_the_reclaim_re_entrys_WHOLE_position_bank_is_no_longer_a_BANKING_refusal():
+def test_the_reclaim_re_entry_that_banks_its_WHOLE_position_now_STARTS():
     """`exec_rec_tp1_pct` is 100 — the whole position off at its target, no runner — and it is
     ALSO the setting that measured best for that trigger (+21.00R against +7.16R without). That
     made it the one refusal where the best configuration was the unsupported one, and it is the
     reason the full-exit path was built.
 
-    ⚠ **What still refuses this config is the SECOND BAR STREAM, and the two must not be
-    confused**: different work fixes each, and reading the remaining refusal as "banking" would
-    send somebody to rebuild a path that already exists."""
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
-        live_bridge.assert_supported(_shipped(exec_secondary=True))
+    ⚠ **THIS CONFIG WAS REFUSED TWICE OVER AND IS NOW ACCEPTED, so read what changed rather than
+    the count.** Its 100% rung stopped being a refusal on 2026-09-02 when the bridge gained a
+    full exit; the blanket second-feed refusal went the same day when the re-entry's own order
+    path landed. ⚠ Nothing here has run against a broker — rule 9.
+
+    MUTATION: put either refusal back in `assert_supported` and this goes red.
+    """
+    cfg = _shipped(exec_secondary=True)
+    assert not _no_ladder_closes_fully(cfg), (
+        "the reclaim's 100% is the whole point of this test — if it stops closing fully, this "
+        "test has quietly become a different one"
+    )
+    live_bridge.assert_supported(cfg)  # no raise
 
 
-def test_the_gap_re_entrys_half_bank_is_no_longer_a_BANKING_refusal():
-    """Its 50% leaves a runner, so the bank path can serve it. What still stops it is the missing
-    SECOND ENTRY — and the two must not be confused, because different work fixes each.
-    ⚠ This asserted the banking refusal until the bank path landed on 2026-09-01."""
+def test_the_gap_re_entrys_half_bank_now_STARTS_too():
+    """Its 50% leaves a runner, so the ordinary bank path serves it — no full exit involved. This
+    is the shape the ARMED bot would run if the re-entry were switched on today.
+
+    ⚠ It asserted the banking refusal until the bank path landed on 2026-09-01, then the
+    second-feed refusal until that was lifted on 2026-09-02. Both reasons are gone; the config is
+    unchanged."""
     cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone")
     assert _no_ladder_closes_fully(cfg)
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
-        live_bridge.assert_supported(cfg)
+    live_bridge.assert_supported(cfg)  # no raise
 
 
 def test_a_combined_trigger_names_BOTH_rungs():
@@ -607,14 +630,17 @@ def test_a_combined_trigger_names_BOTH_rungs():
     assert sorted(name for name, _ in banks) == ["exec_rec_tp1_pct", "exec_sec_tp1_pct"]
 
 
-def test_a_re_entry_that_INHERITS_a_zero_rung_is_not_a_banking_refusal():
-    """-1.0 means 'inherit the shared field', which is 0 here — so nothing banks and this must
-    fall through to the SECOND-FEED refusal instead. A check that refuses everything is not a
-    check."""
+def test_a_re_entry_that_INHERITS_a_zero_rung_banks_NOTHING():
+    """-1.0 means 'inherit the shared field', which is 0 here — so nothing comes off at a price
+    and the whole position rides its stop. A rule that reported a bank here would send somebody
+    to mirror a scale-out that never happens.
+
+    ⚠ It leaned on the second-feed refusal to prove it "fell through" until 2026-09-02. That
+    refusal is gone, so it now reads the banking rule's own answer, which is what it was always
+    about."""
     cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone", exec_sec_tp1_pct=-1.0)
     assert live_bridge.price_triggered_banks(cfg) == []
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
-        live_bridge.assert_supported(cfg)
+    live_bridge.assert_supported(cfg)  # no raise
 
 
 def test_the_second_rungs_MULTIPLE_alone_does_not_refuse():
@@ -1511,9 +1537,10 @@ def test_a_primary_and_a_re_entry_are_DIFFERENT_positions_and_their_rungs_do_not
     )
 
     assert _no_ladder_closes_fully(cfg)
-    # Still refused, for the reason that is actually true of it — the missing second entry.
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
-        live_bridge.assert_supported(cfg)
+    # ⚠ And it STARTS. Until 2026-09-02 this line asserted the second-feed refusal instead, which
+    # made the test pass for a reason unrelated to what it is named after — a summed 40 + 60 would
+    # have refused it too, and nobody would have seen the difference.
+    live_bridge.assert_supported(cfg)  # no raise
 
 
 def test_each_TRIGGERS_rungs_are_grouped_as_their_own_ladder():
