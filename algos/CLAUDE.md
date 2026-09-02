@@ -2058,6 +2058,53 @@ must act on the difference tests `is UNKNOWN`.
    one layer down; MEASURED, not reasoned, when writing it as `kind` killed six tests on the fake
    ledger's signature.
 
+### The two clocks — `sync` and `sync_fast` (G18 stage 2, 2026-09-02)
+
+**`sync` owns the primary's two slots and any position the PRIMARY opened. `sync_fast` owns the
+re-entry's two slots and any position the RE-ENTRY opened. Neither reaches across.** The primary
+is decided on 15-minute closes; the re-entry is priced and filled on the fill clock (5 minutes by
+default), so one reconcile on one clock cannot serve both.
+
+**Why the split is a rule and not tidiness — two reasons, both measured in the code:**
+
+- **A stop belongs to the clock that computes it.** `execution.step` only writes a stop onto the
+  15-minute decision while the open trade is a primary, so the 15-minute path is *already* inert
+  on a re-entry's stop. The fill clock has to be equally inert on a primary's, or it ratchets to
+  a value the primary's own leg has not decided yet. ⚠ **That property is guarded TWICE** — once
+  where the stop is read (`_fast_decision`) and once where it is applied (`sync_fast`) — and
+  MEASURED: mutating either guard alone does not redden its test. Do not weaken one and read the
+  green suite as cover.
+- **A hold length is an index into ONE clock's bar numbering.** `_pos_opened_bar` is stamped by
+  whichever clock opened the trade, so booking a close on the other one measures its life in the
+  wrong frame — and these two frames differ by 3x. `_pos_intent` records which leg opened it and
+  `_observe_close` takes an `owner`, so exactly one clock books each trade.
+
+🔴 **`sync_fast` runs the WHOLE reconcile cycle, and the reason is the cancel rather than the
+placement.** The primary's limits are placed while the bot is flat — which is exactly when a
+re-entry can fill. Left resting until the next 15-minute close they are a second position waiting
+to happen, for up to fifteen minutes. On the fill clock that window is one fast bar.
+
+⚠ **`_observe_open` no longer knows which order filled from the position's side alone**, because
+both legs can have a limit resting on the same side. `_slot_that_filled` asks the TICKET first
+and falls back to the strategy's own `entry_kind`. **Nothing depends on the ticket matching** —
+where a triggered pending order carries its ticket through it settles the question outright, and
+where it does not, `entry_kind` is the only other thing that knows.
+
+⚠ **The shadow records are now a DRY-RUN report.** `secondary_shadow_fill` says *nothing was sent
+to the broker*, which was true of every run while the bridge placed nothing. It places now, so on
+a live bot that sentence is false — and the record would sit beside the real `trade_opened` the
+bridge writes from the broker's answer, putting one trade in the book twice.
+
+🔴 **NONE OF THIS CAN REACH A LIVE BOT YET, AND THAT IS DELIBERATE.** `assert_supported` still
+refuses the configuration outright (stage 3 turns the refusal into a capability check), and a bot
+with the re-entry off is handed a clock with no fast path at all — so `sync_fast` is never
+called. ⚠ **It has NEVER RUN against a broker.** Nine tests and their mutations are not a run;
+rule 9 stands.
+
+⚠ **Still missing before stage 2 is finished:** the bridge cannot close the LAST of a position at
+a price, so `full_exit_at_price` still refuses the reclaim trigger's 100% bank. The gap trigger
+(50% and a runner) is the one this unblocks.
+
 ⚠ **`get_pending_orders` still flattens "empty" and "unreadable" into `[]`, deliberately.** Its
 callers only ask *is this ticket still there*, where a failed read costs one wasted cycle.
 **Anything that ACTS on the answer uses `pending_orders_strict`, which returns `None` for "could

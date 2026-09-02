@@ -85,6 +85,29 @@ class _Rest:
     sl: float
 
 
+@dataclass
+class _FastSig:
+    """A fill-clock bar in the shape the booking path reads.
+
+    ⚠ **An ADAPTER, not a second signal.** The fast feed hands out a `ReplayBar`, whose time
+    field is named differently from the 15-minute signal's, and every read in the booking path
+    is a `getattr` with a default — so handing the raw bar over would silently record every
+    re-entry with no timestamp and nothing would fail.
+    """
+
+    index: Optional[int] = None
+    time_ms: Optional[int] = None
+
+
+@dataclass
+class _FastDec:
+    """What the re-entry wants at the broker on this fill-clock bar."""
+
+    stop: Optional[float] = None
+    tp1: float = 0.0
+    tp2: float = 0.0
+
+
 #: Every place an order can rest, as (INTENT, side).
 #:
 #: 🔴 **Keyed by intent and not by side alone, since 2026-09-02.** The primary and the re-entry
@@ -405,6 +428,11 @@ class OrderBridge:
         # when a position opens, so a later genuine problem still speaks.
         self._partial_alerted: str = ""
         self._pos_ticket: Optional[int] = None
+        # WHICH LEG opened the position, and therefore which clock manages it. The primary is
+        # decided on 15-minute closes and the re-entry on the fill clock, so the two must not
+        # both book the same trade or both ratchet the same stop. Read off the strategy at the
+        # fill (`entry_kind`) rather than inferred from which slot's order we think filled.
+        self._pos_intent: str = "primary"
         self._pos_dir: int = 0
         self._pos_entry: float = 0.0
         self._pos_lots: float = 0.0
@@ -749,7 +777,7 @@ class OrderBridge:
         # path below then books, alerts and records the trade exactly as it does every other
         # exit. Doing it afterwards would need a second booking path for one kind of exit.
         positions = self._close_on_command(positions, dec)
-        self._observe_close(positions, dec, sig)
+        self._observe_close(positions, dec, sig, owner="primary")
         self._observe_open(positions, dec, sig)
         # AFTER `_observe_open`, which consumes the filled slot's rest when a position appears
         # perfectly ordinary fill reads as a vanished order.
@@ -786,11 +814,102 @@ class OrderBridge:
             self._sync_slot(PRIMARY_LONG, self._ex._pend_long, sig)
             self._sync_slot(PRIMARY_SHORT, self._ex._pend_short, sig)
 
+    def sync_fast(self, step) -> None:
+        """Reconcile the RE-ENTRY, on the fill clock. **G18 stage 2.**
+
+        `sync` above owns the primary's two slots and any position the PRIMARY opened. This owns
+        the re-entry's two slots and any position the RE-ENTRY opened. Neither reaches across,
+        and the split is not tidiness:
+
+        - **A stop belongs to the clock that computes it.** The strategy only writes a stop onto
+          the 15-minute decision while the open trade is a primary (`execution.step`), so the
+          15-minute path is already inert on a re-entry's stop — and this path must stay equally
+          inert on a primary's, or it would ratchet to a value the primary's own leg has not
+          decided yet.
+        - **A hold length is an index into ONE clock's bar numbering.** Booking a trade on the
+          clock that did not open it would measure its life in the wrong frame, and here the two
+          differ by 3x.
+
+        🔴 **Cancelling every other resting order the moment a position appears is the safety
+        half, and it is why this runs the whole cycle rather than just placing an order.** The
+        primary's limits are placed while the bot is flat, which is exactly when a re-entry can
+        fill. Left until the next 15-minute close they are a second position waiting to happen —
+        up to fifteen minutes of it. On this clock the window is one fill-clock bar.
+
+        ⚠ **`assert_supported` still refuses this configuration outright**, so nothing here can
+        reach a live bot yet. Stage 3 turns that refusal into a capability check.
+        """
+        if self.state is not BridgeState.LIVE:
+            # WARMING is the 15-minute path's transition to make: it owns the warm-up position
+            # whose closing is the thing being waited for. HALTED places nothing, ever.
+            return
+
+        bar = getattr(step, "bar", None)
+        sig = _FastSig(
+            index=getattr(bar, "index", None),
+            time_ms=getattr(bar, "timestamp_ms", None),
+        )
+        dec = self._fast_decision()
+
+        positions = self._mt5.get_open_positions()
+        self._observe_close(positions, dec, sig, owner="secondary")
+        self._observe_open(positions, dec, sig)
+        self._observe_vanished()
+        self._observe_orphans()
+
+        if not self._agrees(positions):
+            return
+
+        if self._ex._pos_dir != 0:
+            self._cancel_all_rest("a position is open")
+            if self._pos_intent == "secondary":
+                self._sync_partials(positions)
+                self._sync_stop(dec)
+            return
+
+        pend = getattr(self._ex, "_pend_sec", None)
+        wanted = secondary_slot(pend.dir) if pend is not None else None
+        # BOTH slots every bar, so the side that is no longer armed has its order cancelled
+        # rather than left resting because nothing came back to look at it.
+        for slot in (SECONDARY_LONG, SECONDARY_SHORT):
+            self._sync_slot(slot, pend if slot == wanted else None, sig)
+
+    def _fast_decision(self) -> "_FastDec":
+        """The re-entry's live stop and targets, read off the strategy.
+
+        ⚠ **An unreadable stop is SAID, never treated as "no change".** Leaving the broker's stop
+        where it is happens to be the safe direction, but it is also exactly what a correctly
+        ratcheting trade looks like from outside — so a strategy object that cannot answer would
+        be indistinguishable from one with nothing to move. Rule 1.
+        """
+        if self._ex._pos_dir == 0 or self._pos_intent != "secondary":
+            return _FastDec()
+        getter = getattr(self._ex, "_current_stop", None)
+        if not callable(getter):
+            self._log.error(
+                "The re-entry is holding a position and the strategy cannot report its stop. "
+                "The broker's stop stands and is NOT being ratcheted."
+            )
+            self._ledger.event("secondary_stop_unreadable", ticket=self._pos_ticket)
+            return _FastDec()
+        return _FastDec(
+            stop=getter(),
+            tp1=getattr(self._ex, "_tp1", 0.0) or 0.0,
+            tp2=getattr(self._ex, "_tp2", 0.0) or 0.0,
+        )
+
     # ── observation ──────────────────────────────────────────────────────────
-    def _observe_close(self, positions, dec, sig) -> None:
+    def _observe_close(self, positions, dec, sig, owner: str = "primary") -> None:
         if self._pos_ticket is None:
             return
         if any(p.ticket == self._pos_ticket for p in positions):
+            return
+        if self._pos_intent != owner:
+            # The OTHER clock opened this trade and books it. Not a guess about who is faster:
+            # `_pos_opened_bar` is an index into the opening clock's own bar numbering, so the
+            # hold length this method reports is meaningless measured against the other one —
+            # and the two frames here differ by 3x. The same trade booked twice would also
+            # double every alert and every ledger row.
             return
         # NET of swap and commission, with the parts kept separate — see
         # `mt5_ops.get_deal_breakdown`. The R below is therefore the R the ACCOUNT got, not the
@@ -942,7 +1061,8 @@ class OrderBridge:
         p = positions[0]
         side = "LONG" if p.type == 0 else "SHORT"
         d = 1 if p.type == 0 else -1
-        slot = primary_slot(d)
+        slot = self._slot_that_filled(p, d)
+        self._pos_intent = slot[0]
         rest = self._rest.get(slot)
         intended = rest.price if rest else 0.0
         # The order that filled is no longer resting.
@@ -1004,6 +1124,28 @@ class OrderBridge:
         # Record it the moment it exists, not at the end of the bar: a process that dies between
         # the fill and the next stop move must still leave a resumable trade behind.
         self._save_position()
+
+    def _slot_that_filled(self, position, d: int):
+        """Which slot's resting order became this position?
+
+        The primary and the re-entry can both have a limit resting on side `d`, so "the position
+        is long" no longer names one order.
+
+        ⚠ **The TICKET is asked first, and nothing here depends on it matching.** Where a
+        triggered pending order carries its ticket through to the position it settles the
+        question outright; where it does not, the strategy's own `entry_kind` is the only other
+        thing that knows which leg filled, and `_agrees` has just checked that the two books
+        describe the same position.
+        """
+        for slot in (primary_slot(d), secondary_slot(d)):
+            rest = self._rest.get(slot)
+            if rest is not None and rest.ticket == position.ticket:
+                return slot
+        return (
+            secondary_slot(d)
+            if getattr(self._ex, "entry_kind", "primary") == "secondary"
+            else primary_slot(d)
+        )
 
     def _observe_orphans(self) -> None:
         """A resting order at the broker, under OUR magic, that this bot has no record of.

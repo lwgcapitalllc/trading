@@ -140,6 +140,13 @@ _DECISION_EVENTS = {
     "partial_banked",
     "partial_refused",
     "partial_unknown",
+    # ── the re-entry's stop, on the fill clock (G18 stage 2, 2026-09-02). A DECISION by exactly
+    # the reasoning above `partial_refused`: it says a live trade's stop is standing still where
+    # the strategy is ratcheting it, which is the reason that trade will not match its backtest,
+    # and it belongs beside the trade rather than in a file read only once something is already
+    # known to be wrong. ⚠ It is written because the alternative — a stop that simply does not
+    # move — is indistinguishable from a trade with nothing to ratchet. Rule 1.
+    "secondary_stop_unreadable",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

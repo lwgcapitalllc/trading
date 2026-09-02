@@ -202,6 +202,14 @@ def _live_pairing(df15, df5, boundary):
     r.fast_feed = _FakeFeed(df5, 300, "M5", now)
     r.stack = SimpleNamespace(step=lambda bar: SimpleNamespace(bar=bar))
     r.clock = _clock(r.strategy)
+    # A bridge that answers and does nothing. These tests are about the MERGE ORDER, not about
+    # orders reaching a broker — but production has never reached `_observe_secondary` without a
+    # bridge (it is built in `_run`, before the loop that pumps a single fast bar), so the
+    # harness must have one too. ⚠ A `self.bridge is not None` guard in the runner was the other
+    # way to make this pass and is the WRONG one: it would encode "the bridge might be missing"
+    # into the money path, and a missing bridge would then silently place nothing while the
+    # emulator filled — the exact divergence that halts a bot.
+    r.bridge = SimpleNamespace(sync_fast=lambda step: None, dry_run=True)
 
     seen = []
     real_step = r.clock.step_fast
@@ -433,3 +441,86 @@ def test_a_strategy_that_wants_no_second_feed_gets_None_rather_than_a_refusal():
 
     r.strategy = SimpleNamespace()  # a strategy with no opinion at all
     assert r._build_fast_feed(SimpleNamespace(exec_secondary=True)) is None
+
+
+# ── the bridge is actually driven (G18 stage 2) ─────────────────────────────
+
+
+class _RecordingBridge:
+    def __init__(self, dry_run):
+        self.dry_run = dry_run
+        self.steps: list = []
+
+    def sync_fast(self, step):
+        self.steps.append(step)
+
+
+class _CountingLedger:
+    def __init__(self):
+        self.names: list = []
+
+    def event(self, name, **kw):
+        self.names.append(name)
+
+
+def _observer(dry_run):
+    """A runner with only the three attributes `_observe_secondary` reads.
+
+    ⚠ The REAL method is called, unbound from the real class. Re-creating it here is how a
+    harness ends up testing itself — this file's own stage-1 notes record that trap.
+    """
+    r = LiveRunner.__new__(LiveRunner)
+    r.bridge = _RecordingBridge(dry_run)
+    r.ledger = _CountingLedger()
+    r.log = SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None)
+    return r
+
+
+def _armed_step(bar):
+    return SimpleNamespace(
+        bar=bar,
+        primaries=[],
+        arm=SimpleNamespace(l_src="fvg", s_src=None),
+        filled_dir=1,
+        stopped_dir=None,
+    )
+
+
+def test_every_fast_bar_reaches_the_bridge_even_when_nothing_is_armed():
+    """The bridge has to see EVERY fast bar, not only the interesting ones: a resting order it
+    placed two bars ago is cancelled by a bar on which nothing arms.
+
+    MUTATION: move the `self.bridge.sync_fast(step)` call below the `if step.arm is None: return`
+    and this goes red — the bridge stops being told about the quiet bars, which is most of them.
+    """
+    r = _observer(dry_run=True)
+    bar = _bars(_frames()[1])[0]
+
+    r._observe_secondary(
+        SimpleNamespace(bar=bar, primaries=[], arm=None, filled_dir=None, stopped_dir=None)
+    )
+
+    assert len(r.bridge.steps) == 1
+    assert r.ledger.names == [], "a bar with nothing armed wrote a record"
+
+
+def test_a_shadow_record_is_written_on_a_DRY_RUN_and_never_beside_a_real_order():
+    """🔴 The narrowing stage 2 forces. `secondary_shadow_fill` says *nothing was sent to the
+    broker*, which was true of every run while the bridge placed nothing. It places now, so on a
+    live bot that sentence is false — and the record would sit in the ledger beside the real
+    `trade_opened` the bridge writes from the broker's own answer, putting one trade in the book
+    twice.
+
+    MUTATION: drop the `if not self.bridge.dry_run: return` guard and the live half goes red with
+    a shadow record for a trade that really happened.
+    """
+    bar = _bars(_frames()[1])[0]
+
+    dry = _observer(dry_run=True)
+    dry._observe_secondary(_armed_step(bar))
+    assert dry.ledger.names == ["secondary_shadow_fill"]
+
+    live = _observer(dry_run=False)
+    live._observe_secondary(_armed_step(bar))
+    assert live.ledger.names == [], "a shadow record was written beside a real order"
+    assert len(live.bridge.steps) == 1, "the bridge was not driven"

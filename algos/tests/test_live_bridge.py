@@ -265,7 +265,18 @@ class _FakeMt5Ops:
 
 
 class _FakeExecution:
-    def __init__(self, pos_dir=0, pend_long=None, pend_short=None, qty=None, filled=0.0, cfg=None):
+    def __init__(
+        self,
+        pos_dir=0,
+        pend_long=None,
+        pend_short=None,
+        qty=None,
+        filled=0.0,
+        cfg=None,
+        pend_sec=None,
+        entry_kind="primary",
+        current_stop=None,
+    ):
         # `_qty` / `_filled_qty` are what the bridge reconciles the broker's SIZE against, the
         # same private coupling it already has with `_pend_long` and `_pos_dir`. They default to
         # None so every test written before banking existed describes a strategy that scales
@@ -278,6 +289,14 @@ class _FakeExecution:
         self._pos_dir = pos_dir
         self._pend_long = pend_long
         self._pend_short = pend_short
+        # The RE-ENTRY's resting order and the leg that owns any open position. Both exist on the
+        # real `Execution` (`_pend_sec`, and `entry_kind` as a public property), and the fill
+        # clock reads them every fast bar — so a fake without them would raise inside the path
+        # rather than describe a strategy that has no re-entry. Their defaults are what the
+        # shipped bot looks like: no re-entry armed, any position a primary's.
+        self._pend_sec = pend_sec
+        self.entry_kind = entry_kind
+        self._current_stop_value = current_stop
         self._entry = 0.0
         self._stage = 0
         self.blocks: list = []
@@ -288,6 +307,16 @@ class _FakeExecution:
         # production trap this file was already bitten by on 2026-08-07.
         self.snapshot: dict = {}
         self.restored = None
+
+    def _current_stop(self) -> float:
+        """What the strategy wants the stop to be RIGHT NOW.
+
+        ⚠ Present because the real `Execution` has it and the fill clock calls it on every bar a
+        re-entry is open. A fake that answered when production could not would hide the branch
+        that has to SAY it cannot (rule 1), so the tests that exercise that branch delete this
+        method rather than making it return a sentinel.
+        """
+        return self._current_stop_value
 
     def snapshot_position(self) -> dict:
         return dict(self.snapshot)
@@ -1649,3 +1678,185 @@ def test_the_slot_is_never_recorded_under_the_ledgers_own_record_type_field():
     for kw in placed:
         assert "kind" not in kw, "the payload collides with the record's own type field"
         assert kw["intent"] == "primary"
+
+
+# ── the fill clock (G18 stage 2) ────────────────────────────────────────────
+#
+# `sync_fast` mirrors the RE-ENTRY onto the broker between 15-minute closes. The primary is
+# still owned by `sync`, and the tests below are mostly about that line not being crossed.
+
+
+class _FastBar:
+    """A fill-clock bar, in the shape the fast feed hands out.
+
+    ⚠ Its time field is `timestamp_ms`, NOT the `time_ms` the 15-minute signal uses. That
+    difference is the whole reason the bridge adapts it instead of passing it through: every
+    read in the booking path is a `getattr` with a default, so the raw bar would record a
+    re-entry with no timestamp and nothing would fail.
+    """
+
+    def __init__(self, index=7, timestamp_ms=1_780_000_900_000):
+        self.index = index
+        self.timestamp_ms = timestamp_ms
+
+
+def _fast_step(bar=None, arm=None, filled_dir=None, stopped_dir=None):
+    return types.SimpleNamespace(
+        bar=bar or _FastBar(),
+        primaries=[],
+        arm=arm,
+        filled_dir=filled_dir,
+        stopped_dir=stopped_dir,
+    )
+
+
+def test_the_reentry_gets_its_own_resting_limit_on_the_fill_clock():
+    """The point of the stage: a second entry order, at its own price, with its own stop.
+
+    MUTATION: have `sync_fast` return before the loop over the two secondary slots and this goes
+    red with nothing at the broker.
+    """
+    ex = _FakeExecution(pend_sec=_Pend(1, 3270.0, 20.0, 3260.0))
+    b, ops, _, _ = _bridge(ex)
+
+    b.sync_fast(_fast_step())
+
+    assert len(ops.orders) == 1
+    assert b._rest[live_bridge.SECONDARY_LONG].price == 3270.0
+    assert b._rest[live_bridge.PRIMARY_LONG] is None, "it took the primary's slot"
+
+
+def test_the_fill_clock_does_not_touch_the_PRIMARYS_resting_orders():
+    """The two clocks own different slots. A primary limit is priced off a 15-minute bar, so a
+    fill-clock pass must leave it exactly where it is.
+
+    MUTATION: offer `PRIMARY_LONG` from `sync_fast` alongside the secondary slots and this goes
+    red — the primary's order is cancelled, because the fast pass has no primary intent to
+    re-offer and a slot offered `None` is a slot whose order is cancelled.
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, ops, _, _ = _bridge(ex)
+    b.sync(_Dec(), _Sig())
+    primary = b._rest[live_bridge.PRIMARY_LONG]
+    assert primary is not None
+
+    b.sync_fast(_fast_step())
+
+    assert b._rest[live_bridge.PRIMARY_LONG] is primary
+    assert len(ops.orders) == 1
+
+
+def test_the_side_the_reentry_ABANDONED_has_its_order_cancelled():
+    """The re-entry re-decides its limit every fast bar and can switch sides. Offering only the
+    armed slot would leave the other side's order resting with nothing coming back to look at it.
+
+    MUTATION: in `sync_fast`, loop over `(wanted,)` instead of both secondary slots and this goes
+    red with two live orders on opposite sides.
+    """
+    ex = _FakeExecution(pend_sec=_Pend(1, 3270.0, 20.0, 3260.0))
+    b, ops, _, _ = _bridge(ex)
+    b.sync_fast(_fast_step())
+    assert len(ops.orders) == 1
+
+    ex._pend_sec = _Pend(-1, 3330.0, 20.0, 3340.0)  # it flips to the other side
+    b.sync_fast(_fast_step())
+
+    assert b._rest[live_bridge.SECONDARY_LONG] is None
+    assert b._rest[live_bridge.SECONDARY_SHORT].price == 3330.0
+    assert len(ops.orders) == 1, "the abandoned side was left resting at the broker"
+
+
+def test_a_position_appearing_clears_every_other_resting_order_on_the_FILL_clock():
+    """🔴 The safety half, and the reason this runs the whole cycle rather than just placing.
+
+    The primary's limits are placed while the bot is FLAT — which is exactly when a re-entry can
+    fill. Left until the next 15-minute close they are a second position waiting to happen, for
+    up to fifteen minutes. Here the window is one fill-clock bar.
+
+    MUTATION: drop the `_cancel_all_rest` call from `sync_fast` and this goes red with the
+    primary's limit still live beside an open position.
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, ops, _, _ = _bridge(ex)
+    b.sync(_Dec(), _Sig())
+    assert len(ops.orders) == 1, "no primary order to leave behind, so this proves nothing"
+
+    # the re-entry fills at the broker, and the strategy is holding it
+    ops.positions = [_Pos(4242, 0, 3270.0, 0.2, 3260.0)]
+    ex._pos_dir = 1
+    ex.entry_kind = "secondary"
+
+    b.sync_fast(_fast_step(filled_dir=1))
+
+    assert ops.orders == [], "a resting limit survived beside an open position"
+    assert b._pos_intent == "secondary"
+
+
+def test_a_HALTED_bridge_places_nothing_on_the_fill_clock_either():
+    """The halt has to hold on both clocks or it is not a halt.
+
+    MUTATION: change the state guard in `sync_fast` to `is BridgeState.HALTED` and this goes red
+    with an order at the broker.
+    """
+    ex = _FakeExecution(pend_sec=_Pend(1, 3270.0, 20.0, 3260.0))
+    b, ops, _, _ = _bridge(ex)
+    b.halt("under test")
+
+    b.sync_fast(_fast_step())
+
+    assert ops.orders == []
+    assert b._rest[live_bridge.SECONDARY_LONG] is None
+
+
+def test_the_fill_clock_ratchets_a_RE_ENTRYS_stop_and_not_a_PRIMARYS():
+    """A stop belongs to the clock that computes it. The strategy only writes a stop onto the
+    15-minute decision while the open trade is a primary, so this path must be equally inert on
+    a primary's — otherwise it writes a value the primary's own leg has not decided yet.
+
+    MUTATION: the property is guarded TWICE and either guard alone holds it, so BOTH have to go
+    to redden this — drop the intent check in `_fast_decision` (which is what makes the stop
+    `None`) AND the one in `sync_fast` (which is what skips the call). Then the primary half goes
+    red with `move_sl` sending the re-entry's number to the primary's ticket.
+
+    ⚠ MEASURED: each guard was mutated alone first and NEITHER reddened it. That is the honest
+    reading of a doubled guard, and it is worth stating rather than leaving the next person to
+    weaken one of them, see this test still green, and conclude it was covered.
+    """
+    # a PRIMARY position: the fill clock must not move its stop
+    ex = _FakeExecution(pos_dir=1, entry_kind="primary", current_stop=3285.0)
+    b, ops, _, _ = _bridge(ex)
+    ops.positions = [_Pos(555, 0, 3290.0, 0.42, 3280.0)]
+    b.sync(_Dec(stop=3280.0), _Sig())
+    moved_before = [a for a in ops.actions if a[0] == "move_sl"]
+
+    b.sync_fast(_fast_step())
+
+    assert [a for a in ops.actions if a[0] == "move_sl"] == moved_before
+
+    # a RE-ENTRY position: the fill clock owns it
+    ex2 = _FakeExecution(pos_dir=1, entry_kind="secondary", current_stop=3285.0)
+    b2, ops2, _, _ = _bridge(ex2)
+    ops2.positions = [_Pos(556, 0, 3290.0, 0.42, 3280.0)]
+    b2.sync_fast(_fast_step())  # books the position
+    b2.sync_fast(_fast_step())  # ...and ratchets it
+
+    assert any(a[0] == "move_sl" for a in ops2.actions), "the re-entry's stop never ratcheted"
+
+
+def test_a_strategy_that_cannot_report_its_stop_SAYS_SO():
+    """🔴 Rule 1. Leaving the broker's stop alone happens to be the safe direction, but it is
+    also exactly what a correctly ratcheting trade looks like from outside — so "cannot ask" and
+    "nothing to move" must not be the same outcome.
+
+    MUTATION: return a bare `_FastDec()` from `_fast_decision` without logging or recording, and
+    this goes red: the bridge falls silent about a live trade whose stop it has stopped managing.
+    """
+    ex = _FakeExecution(pos_dir=1, entry_kind="secondary", current_stop=3285.0)
+    b, ops, ledger, _ = _bridge(ex)
+    ops.positions = [_Pos(557, 0, 3290.0, 0.42, 3280.0)]
+    b.sync_fast(_fast_step())  # books it while the strategy can still answer
+
+    del type(ex)._current_stop  # ...and now it cannot
+    b.sync_fast(_fast_step())
+
+    assert "event:secondary_stop_unreadable" in ledger.kinds()

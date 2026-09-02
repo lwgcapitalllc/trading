@@ -1528,7 +1528,7 @@ believing it works.** Offline green means the logic is right, not that the bot s
 
 ---
 
-### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **STAGE 1 DONE 2026-09-01, stages 2-4 OPEN**
+### G18 — The live runner drives ONE timeframe, so no re-entry can ever run live — **STAGES 1-2 DONE (2026-09-01, 2026-09-02), stages 3-4 OPEN**
 
 **The gap in one line:** every re-entry this repo has is priced and filled on a FASTER clock than
 the 15-minute one the strategy arms on, and `algos/live/runner.py::_loop` polls exactly one
@@ -1777,6 +1777,42 @@ and traces to something else entirely), and stage 2 unlocks **one**:
 | partial take-profits | an EXIT path the bridge does not have at all | ⚠ shares the exit half only |
 | `exec_scale_in` | an entry placed WHILE a position is open in the SAME direction, a MARKET order path (the bridge has none), and the unbuilt allocator (G10) | ❌ no |
 | `fill_model` | nothing — it is a backtest cost model, refused for its own reason | ❌ n/a |
+
+#### ✅ STAGE 2's ENTRY HALF LANDED 2026-09-02 — the bridge places the re-entry's own order
+
+**What shipped.** `bridge.sync_fast(step)`, driven from `runner._observe_secondary` on every fast
+bar. It runs the whole reconcile cycle on the fill clock and reconciles the RE-ENTRY's two slots
+against `execution._pend_sec` — placing its limit at its own price with its own stop, moving it
+as the strategy re-decides it, cancelling the side it abandons, and ratcheting its stop while it
+is open. Resting-order state was re-keyed from `(side)` to `(intent, side)` in the commit before
+it, because the primary and the re-entry both want a limit on the same side at the same moment —
+keyed by side alone the second placement overwrote the first's record, and `_observe_orphans`
+then cancelled the order nobody remembered within a bar.
+
+**Two rules the split put in place, both in `algos/CLAUDE.md` with their measurements:** a stop
+belongs to the clock that computes it (guarded twice, and MEASURED — neither guard alone reddens
+its test), and a hold length is an index into one clock's bar numbering, so exactly one clock
+books each trade.
+
+🔴 **The safety half is the CANCEL, not the placement.** The primary's limits are placed while the
+bot is flat, which is exactly when a re-entry can fill. Left until the next 15-minute close they
+are a second position waiting to happen, for up to fifteen minutes; on the fill clock the window
+is one fast bar.
+
+⚠ **THE REFUSAL IS UNCHANGED AND MUST STAY** — `assert_supported` still rejects the configuration
+outright, so none of this is reachable on a bot. Stage 3's remaining half is what lifts it.
+
+⚠ **STAGE 2 IS NOT FINISHED, and the missing half is named rather than implied:** the bridge
+still cannot close the LAST of a position at a price, so `full_exit_at_price` continues to refuse
+the **reclaim** trigger's 100% bank — the trigger every published re-entry figure was measured
+on. The **gap** trigger (50% and a runner) is the one this unblocks.
+
+⚠ **AND THE PROOF IS UNIT-LEVEL, NOT A REPLAY.** Nine tests, each watched RED under a named
+mutation, and two of those mutations were MEASURED to be duds and replaced — one mutated a helper
+its test never calls, the other hit a guard that is doubled. What does NOT exist is stage 1's kind
+of proof: a window replayed through the real runner with the ORDERS mirrored and diffed. Until
+that runs, this is a mechanism with tests, not a measured behaviour. **Rule 9: nothing here has
+ever reached a broker.**
 
 **Stage 3 — turn the refusal into a CAPABILITY check. ✅ SECOND HALF LANDED 2026-09-01.**
 `assert_supported` should stop asking *"is this setting on"* and start asking *"do I have the feed

@@ -660,13 +660,28 @@ class LiveRunner:
         return True
 
     def _observe_secondary(self, step) -> None:
-        """Record what the re-entry did on one fast bar. **Stage 1: it places no orders.**
+        """Mirror the re-entry onto the broker for one fast bar, then record what it did.
+
+        **The bridge goes FIRST.** Everything below is book-keeping; the order that has to reach
+        the broker is the one thing on this path with a deadline.
+
+        ⚠ **The shadow records are now a DRY-RUN report, and that is a narrowing, not a
+        rename.** Until stage 2 they were the honest description of every run, because the bridge
+        placed nothing at all. It places orders now, so *"nothing was sent to the broker"* is
+        only true when `--dry-run` is what stopped it — and on a live bot the real record is the
+        one the bridge writes from the broker's own answer. **A shadow record beside a real fill
+        would put a trade in the ledger twice**, which is the same failure the word `shadow`
+        being in the NAME was chosen to prevent, arriving from the other end.
 
         ⚠ **It writes only on a bar where something HAPPENED.** A record per fast bar is ~288 a
         day of *nothing armed*, and the decision ledger is the one file nothing else in the world
         holds a copy of — burying it is not free.
         """
+        self.bridge.sync_fast(step)
+
         if step.arm is None:
+            return
+        if not self.bridge.dry_run:
             return
         if step.filled_dir is not None:
             side = "long" if step.filled_dir > 0 else "short"
@@ -676,7 +691,7 @@ class LiveRunner:
             )
             self.log.info(
                 f"[shadow] the re-entry WOULD have filled {side} at {step.bar.time} "
-                f"(trigger {src}). Nothing was sent to the broker — G18 stage 1."
+                f"(trigger {src}). Nothing was sent to the broker — this is a dry run."
             )
         elif step.stopped_dir is not None:
             self.ledger.event("secondary_shadow_stop", dir=step.stopped_dir, bar=str(step.bar.time))
