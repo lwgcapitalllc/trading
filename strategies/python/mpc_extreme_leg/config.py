@@ -27,11 +27,26 @@ class ExtremeLegConfig:
     # "Risk % of equity" | "Fixed contracts" — the Pine's `sizeMode`, spelled the same way so the
     # lab's dropdown and the chart's read identically.
     size_mode: str = "Risk % of equity"
-    # ⚠ 1.0 because that is the PINE's default, not because it is the number to trade. Aaron runs
-    # this at 5 and the whole optimisation was ranked in R, which is size-independent — but a
-    # default here that disagreed with the chart would make every parity run configure one side
-    # differently from the other.
-    exec_risk_pct: float = 1.0
+    # 🔴 **5.0 SINCE 2026-09-02 — Aaron's explicit call, and it replaces a PLACEHOLDER rather than
+    # a measurement.** It read 1.0, the Pine's default, and this package's own notes already said
+    # so: *"a per-trade risk of 1.0 in `config.py` is a placeholder, not a measurement — every
+    # stacked figure moves with it, and nothing here has chosen it."* Now something has.
+    #
+    # ⚠ **THE OLD COMMENT'S STATED REASON WAS ALREADY FALSE and that is why this could move.** It
+    # said a default disagreeing with the chart would configure the two sides of a parity run
+    # differently. It cannot: `compare_extreme_leg.config_from_export` builds the port's config
+    # from the export's OWN `cfg_*` columns and says in its docstring that it never reads this
+    # side's defaults. So the gate sets this field from whatever the chart was exported at, and
+    # this number never participates in it. **A comment that outlives the mechanism it describes
+    # is how a free change comes to look expensive.**
+    #
+    # ⚠ **What it does and does not move.** `_qty` divides by the stop distance with no
+    # affordability refusal anywhere, so this scales the LOT and nothing else — the trade list and
+    # every R figure in this package's CLAUDE.md are unchanged. What DOES move is every dollar and
+    # drawdown-percentage figure, and every STACKED result: the shared-account run that reported
+    # zero contention was measured at 5% for BOTH legs against a 10% cap, and the live A+ bot runs
+    # at 10%. Two legs at 5% saturate that cap exactly; 10 + 5 does not fit it at all.
+    exec_risk_pct: float = 5.0
     fixed_qty: float = 1.0
 
     # ── 4 · What arms it ─────────────────────────────────────────────────────

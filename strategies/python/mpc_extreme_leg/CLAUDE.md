@@ -305,8 +305,20 @@ tests while describing an account nobody has, so they are written against the re
 at 1% — a 10:1 gap that came from each config's default and that the tool printed NOWHERE.** The
 bigger leg then fills the budget alone and the smaller one reads as harmless, which is a fact about
 the SETTINGS and not about the strategies. `stack_run.py` prints per-leg risk now and `--risk-pct`
-matches them. ⚠ **A per-trade risk of 1.0 in `config.py` is a placeholder, not a measurement** —
-every stacked figure moves with it, and nothing here has chosen it.
+matches them. 🔴 **THE PLACEHOLDER IS GONE: `exec_risk_pct` is 5.0 as of 2026-09-02, Aaron's
+explicit call.** This line read *"1.0 is a placeholder, not a measurement — nothing here has chosen
+it"*, and now something has.
+
+⚠ **What that change moves, and what it does not — CHECKED against the code path rather than
+assumed.** `_qty` scales the lot and the only size refusal beside it tests finite-and-positive, so
+**solo it cannot change a single decision**: every trade count and every R figure in this file
+stands, and so does the clash audit, which replays each bot off its OWN equity. **Every STACKED
+figure moves**, because a shared account grants `granted` rather than `qty`. ⚠ **The mixed stack
+above is now 10% + 5% against a 10% cap** — the "zero contention" row was measured at 5% for BOTH
+legs, which saturates that cap exactly, and 10 + 5 does not fit it at all. Re-run before quoting it.
+⚠ **The parity gate is unaffected and that was checked, not reasoned**:
+`compare_extreme_leg.config_from_export` builds the port's config from the export's own `cfg_*`
+columns and never reads this side's defaults.
 
 ⚠ **Two legs at 5% each SATURATE a 10% cap exactly**, so "no contention" above sits on a knife
 edge rather than describing headroom. Anything higher and they start refusing each other.

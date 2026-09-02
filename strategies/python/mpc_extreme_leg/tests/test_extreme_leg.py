@@ -534,6 +534,24 @@ def _shared(account, leg: str = "strat", **cfg) -> ExtremeLegExecution:
     )
 
 
+def _wanted_qty(balance: float, stop_distance: float) -> float:
+    """The size this leg asks for, DERIVED from the shipped risk setting.
+
+    🔴 **Three tests below hardcoded this arithmetic and all three went red on 2026-09-02**, when
+    the per-trade risk moved 1% → 5% — a deliberate settings change, made after the package's own
+    notes had called the old value a placeholder nobody had chosen. **A test that pins a SETTING
+    by value reddens on the day somebody exercises that setting, and what it teaches the next
+    reader is to edit the assertion.** The rules those tests are actually about — sizing off the
+    SHARED balance, reserving to the CURRENT stop, freeing the budget on close — have nothing to
+    do with which percentage is shipped, so they now say so.
+
+    ⚠ **It reads `ExtremeLegConfig()` rather than restating a number**, so the next move needs no
+    edit here at all. ⚠ It deliberately does NOT mirror `_qty`'s other branch — a fixed-contracts
+    config sizes differently and no test here uses one.
+    """
+    return balance * ExtremeLegConfig().exec_risk_pct / 100.0 / stop_distance
+
+
 def test_a_solo_leg_still_owns_its_own_balance():
     """The default must be byte-identical to the private float it replaced — every figure this
     package has measured was made without an account. RED by defaulting `account` to a
@@ -601,10 +619,11 @@ def test_breakeven_hands_the_room_back_to_the_shared_account():
     acct = _acct()
     ex = _shared(acct, use_breakeven=True)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    assert acct.reserved() == pytest.approx(100.0)
+    # Reserved = size x distance to the stop, so it is the risk itself whatever the setting is.
+    assert acct.reserved() == pytest.approx(_wanted_qty(10_000.0, 2.00) * 2.00)
     ex.arm_breakeven(11, high=103.0, low=100.0)   # span 4, arms at 70% = 102.8
     assert ex.pos.stop == pytest.approx(100.0)
-    assert acct.reserved() == pytest.approx(0.0)
+    assert acct.reserved() == pytest.approx(0.0), "the stop is at entry — nothing is at risk"
 
 
 def test_closing_books_the_pnl_and_frees_the_reservation():
@@ -616,9 +635,10 @@ def test_closing_books_the_pnl_and_frees_the_reservation():
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
     ex.resolve(11, 2, high=105.0, low=99.0, open_=100.0)
     assert ex.trades[-1].exit_reason == "target"
-    assert acct.balance == pytest.approx(10_200.0)   # (104-100) x 50 units
+    # 4.00 of price move on the size the account granted. The MONEY is what this half asserts.
+    assert acct.balance == pytest.approx(10_000.0 + 4.00 * _wanted_qty(10_000.0, 2.00))
     assert acct.has_position("strat") is False
-    assert acct.reserved() == pytest.approx(0.0)
+    assert acct.reserved() == pytest.approx(0.0), "the BUDGET is the other half, and it is freed"
 
 
 def test_a_stacked_leg_sizes_off_the_SHARED_balance_not_a_private_copy():
@@ -630,7 +650,10 @@ def test_a_stacked_leg_sizes_off_the_SHARED_balance_not_a_private_copy():
     acct.book_pnl("other", -5_000.0)              # the other leg loses half the account
     assert ex.equity == pytest.approx(5_000.0)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    assert ex.pos.qty == pytest.approx(25.0)      # 1% of 5,000 over a 2.00 stop, not 1% of 10,000
+    # Sized off the HALVED balance, not the opening one — which is the claim, and it holds at any
+    # risk setting. See `_wanted_qty`.
+    assert ex.pos.qty == pytest.approx(_wanted_qty(5_000.0, 2.00))
+    assert ex.pos.qty != pytest.approx(_wanted_qty(10_000.0, 2.00)), "it used its private copy"
 
 
 def test_the_strategy_passes_the_account_and_leg_key_through():
