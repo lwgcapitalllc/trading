@@ -50,20 +50,43 @@ def _cfg(tmp_path, **over):
 
 
 def test_the_verify_subprocess_really_ships_the_startup_facts(tmp_path):
-    """Not "my parser handles a dict" — the real snapshot, the real subprocess, the real payload."""
+    """Not "my parser handles a dict" — the real snapshot, the real subprocess, the real payload.
+
+    🔴 **IT PINNED THE SHIPPED BOT'S SETTINGS BY VALUE UNTIL 2026-09-02, AND THAT WENT RED THE DAY
+    SOMEBODY CHANGED ONE.** It read `exec_secondary is False` and `exec_sec_tp1_pct == 50.0` — both
+    true of the config that day and neither one this test's subject. **A test that hardcodes a
+    setting reddens on a deliberate settings change and teaches the next reader to edit the
+    assertion**, which is how a real red gets waved through. What it is actually about is the
+    SHIPPING: that a real subprocess against a real staged snapshot returns real facts.
+
+    ⚠ **So the expected values are read from the config file itself** — and the one thing that
+    cannot be read from there is asserted hard: a field NO rule looks at still has to travel, or a
+    rule that grows a field tomorrow reads a `getattr` default and is wrong in the direction of
+    saying yes.
+    """
     cfg = _cfg(tmp_path)
     staging, _n = promote.stage(cfg, promote.repo_trees(cfg))
     ok, detail = promote.verify(cfg, staging)
     assert ok, detail
     startup = json.loads(detail)["startup"]
-    assert startup["fast_feed_minutes"] is None, "the shipped bot asks for no second feed"
+
+    want = _live_params()
+    assert startup["settings"]["exec_secondary"] is want["exec_secondary"]
+    assert startup["settings"]["exec_sec_tp1_pct"] == want["exec_sec_tp1_pct"]
+    # Asked of the built STRATEGY, not read off the file — so it must AGREE with the file.
+    assert (startup["fast_feed_minutes"] is None) is (not want["exec_secondary"]), (
+        "the strategy and its config disagree about whether this bot wants a second feed"
+    )
     assert startup["has_make_dual_clock"] is True
-    assert startup["settings"]["exec_secondary"] is False
-    assert startup["settings"]["exec_sec_tp1_pct"] == 50.0, (
+
+    # Read by nothing in `startup_refusals`, which is exactly why it is here.
+    assert startup["settings"]["exec_sl_custom"] == want["exec_sl_custom"], (
         "every field must travel, not just the ones a check reads today"
     )
     assert not startup["opaque"], f"unexpected non-plain settings: {startup['opaque']}"
-    assert promote.startup_refusals(startup, cfg.timeframe) == []
+    assert promote.startup_refusals(startup, cfg.timeframe) == [], (
+        "the SHIPPED config must start — if this reddens, read it before touching the test"
+    )
 
 
 def test_the_config_that_killed_the_bot_now_STARTS(tmp_path):

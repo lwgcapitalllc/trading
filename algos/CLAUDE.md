@@ -2226,6 +2226,17 @@ not "does the new path work" but "what defaults has nothing ever exercised".**
 ⚠ **Nothing here has run against a broker. Rule 9 stands** — and the first one to watch is a
 re-entry ORDER, not a re-entry decision; the decision half has been shadow-recorded since stage 1.
 
+✅ **SWITCHED ON FOR `mpc_sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
+50 → 0.** ⚠ **No promote, and none should be run for it** — a promote copies `strategies/`,
+`engines/` and `backtest/`, and everything this needs on the code side is in `algos/`, which
+reaches the box by `git pull`. The deployed snapshot was CHECKED rather than assumed to carry the
+strategy half of the seam. ⚠ **It needs a RESTART**: only the per-trade risk figure reloads at
+runtime, so the running bot reports one blocked-config message and keeps its old values until then.
+⚠ **With that take-profit at zero the bot banks NOTHING at a price**, so the partial-bank and
+full-exit paths built on 2026-09-01/02 are not exercised by it and stay unproven. The measurement,
+the warnings and what does NOT change are in the bot's own `config.json` → `_re_entry_on_2026_09_02`
+— **not restated here**, because a second copy of a decision is how two files come to disagree.
+
 ### The pending-order layer (added 2026-07-30) — four MT5 behaviours to know
 
 `place_pending_limit` / `modify_pending` / `cancel_pending` / `cancel_all_pending` /
