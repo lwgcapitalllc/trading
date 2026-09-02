@@ -1002,7 +1002,7 @@ def test_a_resting_order_the_broker_deleted_is_noticed_and_reported():
     """
     b, ops, ledger, notes = _sizing_bridge(_Pend(1, 4300.0, 20.0, 4290.0))
     b.sync(_Dec(), _Sig())
-    assert b._rest[1] is not None
+    assert b._rest[live_bridge.PRIMARY_LONG] is not None
     ops.orders.clear()  # the broker deleted it; no position appeared
     b.sync(_Dec(), _Sig())
     assert "event:order_vanished" in ledger.kinds()
@@ -1573,3 +1573,79 @@ def test_a_DRY_RUN_asks_the_broker_for_nothing():
     b.sync(dec, _Sig())
 
     assert not any(a[0] == "close" for a in ops.actions)
+
+
+# ── the slot key ────────────────────────────────────────────────────────────
+#
+# Added 2026-09-02 with the move from side-keyed order state to intent-keyed. The three below
+# pin the property that move exists for; every one names the mutation that reddens it.
+
+
+def test_a_primary_limit_rests_in_the_primary_slot_and_leaves_the_reentry_slots_empty():
+    """The primary must not occupy the re-entry's key, or the two collide on one side.
+
+    MUTATION: pass `SECONDARY_LONG` from `sync` instead of `PRIMARY_LONG` and this goes red.
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, ops, _, _ = _bridge(ex)
+
+    b.sync(_Dec(), _Sig())
+
+    assert b._rest[live_bridge.PRIMARY_LONG] is not None
+    assert b._rest[live_bridge.SECONDARY_LONG] is None
+    assert b._rest[live_bridge.SECONDARY_SHORT] is None
+
+
+def test_a_primary_and_a_reentry_can_rest_on_the_SAME_side_without_colliding():
+    """🔴 The defect the slot key exists to prevent — and it bites through the ORPHAN SWEEP
+    rather than through bookkeeping.
+
+    Keyed by side alone, the second placement overwrites the first's record. `_observe_orphans`
+    then cancels every resting order the bridge cannot account for, so the forgotten order is
+    cancelled within a bar while the strategy still believes it is resting.
+
+    MUTATION: collapse the key back to the side inside `_sync_slot` — add
+    `slot = primary_slot(direction)` under its first line — and this goes red on the first
+    assertion: the re-entry's placement MODIFIES the primary's resting order instead of adding
+    its own, and one order reaches the broker where two were wanted.
+
+    ⚠ Mutating `secondary_slot` does NOT redden this and was the first mutation tried: the test
+    hands `_sync_slot` its slot directly, so that helper is never called here. A mutation has to
+    sit on the path the test actually drives.
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, ops, _, _ = _bridge(ex)
+
+    b.sync(_Dec(), _Sig())  # the primary's limit
+    b._sync_slot(live_bridge.SECONDARY_LONG, _Pend(1, 3270.0, 42.0, 3260.0), _Sig())
+
+    assert len(ops.orders) == 2, "the two intents did not both reach the broker"
+    assert b._rest[live_bridge.PRIMARY_LONG].price == 3290.0
+    assert b._rest[live_bridge.SECONDARY_LONG].price == 3270.0
+
+    b._observe_orphans()
+
+    assert len(ops.orders) == 2, "the sweep cancelled an order the bridge should have remembered"
+
+
+def test_the_slot_is_never_recorded_under_the_ledgers_own_record_type_field():
+    """`ledger._write` stamps every record with its own `kind`, so a payload key of that name
+    fights it.
+
+    🔴 MEASURED, not reasoned: writing the slot's intent as `kind=` killed six existing tests on
+    the fake ledger's signature. The fake was right — production has the same reserved word one
+    layer down, where it would have overwritten the record's type instead of raising.
+
+    MUTATION: rename `intent=slot[0]` back to `kind=slot[0]` in `_place` and this goes red (it
+    raises on the fake's signature before reaching the assertion, which is still red).
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, _, ledger, _ = _bridge(ex)
+
+    b.sync(_Dec(), _Sig())
+
+    placed = [kw for k, kw in ledger.rows if k == "event:order_placed"]
+    assert placed, "nothing was placed, so this proves nothing"
+    for kw in placed:
+        assert "kind" not in kw, "the payload collides with the record's own type field"
+        assert kw["intent"] == "primary"

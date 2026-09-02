@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "live"))
 # re-declared: a second fake of the same thing is a second thing to drift.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from bridge import PRIMARY_LONG  # noqa: E402
 from broker_result import UNKNOWN  # noqa: E402
 from test_live_bridge import (  # noqa: E402
     _bridge,
@@ -140,11 +141,13 @@ def test_an_unreadable_book_after_a_failed_send_blocks_the_side():
 
     b._mt5 = _Unreadable(ops)
     b.sync(_Dec(), _Sig())
-    assert b._unresolved[1] is True
+    assert b._unresolved[PRIMARY_LONG] is True
 
     ops.orders_readable = False  # still cannot read it
     b.sync(_Dec(), _Sig())
-    assert b._unresolved[1] is True, "the side was cleared without the book ever being read"
+    assert b._unresolved[PRIMARY_LONG] is True, (
+        "the side was cleared without the book ever being read"
+    )
     placed = [a for a in ops.actions if a[0] == "place"]
     assert len(placed) == 1, "it sent a second order while the first one's fate was unknown"
 
@@ -154,10 +157,10 @@ def test_the_side_reopens_once_the_book_can_be_read():
     would stop trading for good after one bad minute."""
     ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
     b, ops, ledger, notes = _bridge(ex)
-    b._unresolved[1] = True
+    b._unresolved[PRIMARY_LONG] = True
     ops.orders_readable = True
     b.sync(_Dec(), _Sig())
-    assert b._unresolved[1] is False
+    assert b._unresolved[PRIMARY_LONG] is False
 
 
 # ── 2. a cancel that was not confirmed ───────────────────────────────────────────────────────
@@ -181,7 +184,9 @@ def test_a_failed_cancel_is_never_followed_by_a_replacement():
 
     assert len(ops.orders) == 1, "a second order was placed while the first was still resting"
     assert ops.orders[0].ticket == first
-    assert b._rest[1] is not None, "the record was cleared for an order that is still there"
+    assert b._rest[PRIMARY_LONG] is not None, (
+        "the record was cleared for an order that is still there"
+    )
 
 
 def test_an_unconfirmable_cancel_is_treated_as_a_failed_one():
@@ -196,7 +201,7 @@ def test_an_unconfirmable_cancel_is_treated_as_a_failed_one():
     ex._pend_long = _Pend(1, 3290.0, 84.0, 3280.0)
     b.sync(_Dec(), _Sig())
     assert len(ops.orders) == 1
-    assert b._rest[1] is not None
+    assert b._rest[PRIMARY_LONG] is not None
 
 
 def test_the_unconfirmed_cancel_is_recorded():
@@ -312,7 +317,7 @@ def test_our_OWN_recorded_order_is_still_excluded():
         _FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0
     )
     b.sync(_Dec(), _Sig())  # places one, and RECORDS it
-    assert b._rest[1] is not None, "nothing was placed, so this proves nothing"
+    assert b._rest[PRIMARY_LONG] is not None, "nothing was placed, so this proves nothing"
     assert ops.orders, "the broker holds no order, so there is nothing to exclude"
 
     plan = b._plan(1, _cap_pend())  # the same setup again, one bar later

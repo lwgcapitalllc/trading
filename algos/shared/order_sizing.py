@@ -9,7 +9,7 @@ system had objected at any point before the fill.
 Two faults stacked, and BOTH were invisible:
 
 1. **Units.** `Execution` sizes in INSTRUMENT UNITS (`qty = equity·risk%/stop_distance`, so
-   ounces for gold, base-currency units for FX). `bridge._sync_side` handed that number to MT5
+   ounces for gold, base-currency units for FX). `bridge._sync_slot` handed that number to MT5
    as LOTS. Gold's contract is 100 oz, so every order was **100x** the intended size. The only
    place `trade_contract_size` appeared in the whole live path was reading a fill back.
 2. **Equity.** The strategy was built with the real balance and then replayed 5,000 warm-up

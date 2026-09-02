@@ -77,12 +77,48 @@ class BridgeState(str, Enum):
 
 @dataclass
 class _Rest:
-    """What we believe is resting at the broker on one side."""
+    """What we believe is resting at the broker in one slot."""
 
     ticket: int
     price: float
     lots: float
     sl: float
+
+
+#: Every place an order can rest, as (INTENT, side).
+#:
+#: 🔴 **Keyed by intent and not by side alone, since 2026-09-02.** The primary and the re-entry
+#: can both want a resting limit at the same moment, and on the same side — the re-entry arms
+#: while the bot is flat, which is exactly when the primary is offering its own limit. Keyed by
+#: direction alone the two collide on one key: the second placement overwrites the first's
+#: record, and `_observe_orphans` then cancels the order nobody remembers within a bar.
+#:
+#: ⚠ **The side is part of the key rather than read off the pending order.** It costs one unused
+#: slot and buys the property that every lookup in this file — a fill, a vanished order, a
+#: refusal — finds its slot by the two things it always knows, and no caller has to ask a
+#: pending order which way round it is.
+PRIMARY_LONG = ("primary", 1)
+PRIMARY_SHORT = ("primary", -1)
+SECONDARY_LONG = ("secondary", 1)
+SECONDARY_SHORT = ("secondary", -1)
+SLOTS = (PRIMARY_LONG, PRIMARY_SHORT, SECONDARY_LONG, SECONDARY_SHORT)
+
+
+def primary_slot(direction: int):
+    """The primary's slot on one side."""
+    return PRIMARY_LONG if direction > 0 else PRIMARY_SHORT
+
+
+def secondary_slot(direction: int):
+    """The re-entry's slot on one side."""
+    return SECONDARY_LONG if direction > 0 else SECONDARY_SHORT
+
+
+def slot_label(slot) -> str:
+    """How a slot is named in a log line or an alert a person reads."""
+    kind, direction = slot
+    side = "bullish" if direction > 0 else "bearish"
+    return f"{side} {'re-entry' if kind == 'secondary' else 'primary'}"
 
 
 class UnsupportedStrategyConfig(RuntimeError):
@@ -348,21 +384,21 @@ class OrderBridge:
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
         self.state = BridgeState.LIVE
-        self._rest: dict[int, Optional[_Rest]] = {1: None, -1: None}
-        # A side whose last placement came back UNKNOWN. It is NOT a refusal and NOT a rest: it
+        self._rest: dict[tuple, Optional[_Rest]] = {s: None for s in SLOTS}
+        # A slot whose last placement came back UNKNOWN. It is NOT a refusal and NOT a rest: it
         # means an order may or may not be at the broker under our magic, and the one thing we
         # must not do is send another. Cleared by the orphan sweep once the book can be read.
-        self._unresolved: dict[int, bool] = {1: False, -1: False}
+        self._unresolved: dict[tuple, bool] = {s: False for s in SLOTS}
         # Why the LAST refusal is remembered per side, rather than just logged and dropped.
         # A refused order is not by itself a broken state — the setup may never fill, and
         # halting on every unaffordable setup would stop a bot for a trade that never happened.
         # But if the EMULATOR then fills that same setup, the two ledgers part, and the halt
         # message must say *why the broker had no order* instead of the generic "your limit
         # filled here and not there". On 2026-08-07 that generic message was all Aaron got.
-        self._refused: dict[int, str] = {1: "", -1: ""}
+        self._refused: dict[tuple, str] = {s: "" for s in SLOTS}
         # One alert per distinct refusal per side. Re-stating an unaffordable setup every bar
         # for the six hours it rests is how a channel gets muted before the day it matters.
-        self._refusal_alerted: dict[int, str] = {1: "", -1: ""}
+        self._refusal_alerted: dict[tuple, str] = {s: "" for s in SLOTS}
         # The same idea for the PARTIAL path, keyed on the cause rather than on a side: a
         # position that cannot be banked re-offers the identical problem on every 15m bar, and
         # an alert per bar is one nobody reads by the third. Cleared when a bank succeeds and
@@ -715,7 +751,7 @@ class OrderBridge:
         positions = self._close_on_command(positions, dec)
         self._observe_close(positions, dec, sig)
         self._observe_open(positions, dec, sig)
-        # AFTER `_observe_open`, which consumes `_rest[d]` when a position appears — otherwise a
+        # AFTER `_observe_open`, which consumes the filled slot's rest when a position appears
         # perfectly ordinary fill reads as a vanished order.
         self._observe_vanished()
         # AFTER `_observe_vanished`, which is the last thing that can legitimately clear a
@@ -744,8 +780,11 @@ class OrderBridge:
             self._sync_partials(positions)
             self._sync_stop(dec)
         else:
-            self._sync_side(1, self._ex._pend_long, sig)
-            self._sync_side(-1, self._ex._pend_short, sig)
+            # The PRIMARY's two slots only. The re-entry's slot is reconciled on the fill
+            # clock by `sync_fast`, and reaching across from here would price its limit off a
+            # 15-minute bar it never saw.
+            self._sync_slot(PRIMARY_LONG, self._ex._pend_long, sig)
+            self._sync_slot(PRIMARY_SHORT, self._ex._pend_short, sig)
 
     # ── observation ──────────────────────────────────────────────────────────
     def _observe_close(self, positions, dec, sig) -> None:
@@ -903,10 +942,11 @@ class OrderBridge:
         p = positions[0]
         side = "LONG" if p.type == 0 else "SHORT"
         d = 1 if p.type == 0 else -1
-        rest = self._rest.get(d)
+        slot = primary_slot(d)
+        rest = self._rest.get(slot)
         intended = rest.price if rest else 0.0
         # The order that filled is no longer resting.
-        self._rest[d] = None
+        self._rest[slot] = None
         self._pos_ticket = p.ticket
         self._pos_dir = d
         self._pos_entry = p.price_open
@@ -977,7 +1017,7 @@ class OrderBridge:
         ⚠ **It CANCELS rather than adopting.** Adoption needs a decision about which strategy
         intent the order belongs to, and getting that wrong silently attaches a live order to
         the wrong side. Cancelling costs at most one bar: the strategy re-offers its limit on
-        the next close, and `_sync_side` places a fresh one it actually owns.
+        the next close, and `_sync_slot` places a fresh one it actually owns.
 
         ⚠ **An unreadable order book does nothing at all** — no cancels, and `_unresolved` stays
         set, so nothing is placed either. Fail closed: "cannot ask" is never "nothing there".
@@ -1019,7 +1059,7 @@ class OrderBridge:
             )
         # The book was READ, so any unknown placement is now resolved one way or the other:
         # it either showed up here and was cancelled, or it never landed.
-        self._unresolved = {1: False, -1: False}
+        self._unresolved = {s: False for s in SLOTS}
 
     def _observe_vanished(self) -> None:
         """A resting order that is gone from the broker WITHOUT having filled.
@@ -1031,7 +1071,7 @@ class OrderBridge:
         generic halt six hours later saying the two disagreed.
 
         A pending order can leave the book three ways: it FILLS (a position appears, handled one
-        method up), WE cancel it (`_rest[d]` is cleared at the same moment), or the BROKER removes
+        method up), WE cancel it (its slot is cleared at the same moment), or the BROKER removes
         it — margin, expiry, an admin action, a manual delete in the terminal. Only the third
         reaches here, and it is always worth a message: it means an order the strategy is still
         counting on does not exist.
@@ -1039,12 +1079,13 @@ class OrderBridge:
         if not any(self._rest.values()):
             return
         live = {o.ticket for o in (self._mt5.get_pending_orders() or [])}
-        for d, held in list(self._rest.items()):
+        for slot, held in list(self._rest.items()):
             if held is None or held.ticket in live:
                 continue
-            self._rest[d] = None
+            d = slot[1]
+            self._rest[slot] = None
             why = (
-                f"The {self._side(d)} limit T{held.ticket} ({held.lots} lots @ {held.price}) "
+                f"The {slot_label(slot)} limit T{held.ticket} ({held.lots} lots @ {held.price}) "
                 f"is no longer at the broker and never filled. The broker removed it — the "
                 f"usual cause is that the account could not afford to activate it."
             )
@@ -1085,10 +1126,15 @@ class OrderBridge:
             # Name the refusal if there was one. The generic sentence below is true but useless
             # on its own — it describes the symptom of every cause at once, and on 2026-08-07 it
             # sent the reader looking at the fill logic when the answer was the order size.
-            because = (
-                self._refused.get(self._ex._pos_dir, "")
-                or self._refused.get(1, "")
-                or self._refused.get(-1, "")
+            # Ordered: this side's slots first, then anything else that refused. A refusal on
+            # the side the emulator actually filled is the one that explains the disagreement.
+            because = next(
+                (
+                    self._refused.get(slot, "")
+                    for slot in sorted(SLOTS, key=lambda s: s[1] != self._ex._pos_dir)
+                    if self._refused.get(slot, "")
+                ),
+                "",
             )
             self._halt(
                 "The strategy believes it is in a position but MT5 has none. Its resting "
@@ -1107,42 +1153,48 @@ class OrderBridge:
         return True
 
     # ── action ───────────────────────────────────────────────────────────────
-    def _sync_side(self, direction: int, pend, sig) -> None:
-        """Make the broker's resting order on one side match the strategy's intent."""
-        if self._unresolved[direction]:
+    def _sync_slot(self, slot, pend, sig) -> None:
+        """Make the broker's resting order in one slot match the strategy's intent.
+
+        ⚠ **One slot, and only this slot.** The primary's two slots are reconciled on 15-minute
+        closes and the re-entry's on the fill clock, so a call that reached across would place an
+        order priced off a bar its own strategy leg has not seen.
+        """
+        direction = slot[1]
+        if self._unresolved[slot]:
             # Set by a placement whose outcome could not be established, cleared by the first
-            # sweep that manages to read the book. Nothing on this side moves in between - not a
+            # sweep that manages to read the book. Nothing in this slot moves in between - not a
             # placement, not a cancel - because every one of those needs to know what is already
             # there.
             self._log.error(
-                f"{self._side(direction)} side is unresolved - a previous placement's outcome is "
-                f"still unknown. Doing nothing on this side."
+                f"the {slot_label(slot)} slot is unresolved - a previous placement's outcome is "
+                f"still unknown. Doing nothing in this slot."
             )
             return
-        held = self._rest[direction]
+        held = self._rest[slot]
         if pend is None:
             if held is not None:
-                self._drop_rest(direction, held, "cancel")
-            self._refused[direction] = ""
-            self._refusal_alerted[direction] = ""
+                self._drop_rest(slot, held, "cancel")
+            self._refused[slot] = ""
+            self._refusal_alerted[slot] = ""
             return
 
         plan = self._plan(direction, pend)
         if not plan.ok:
-            self._record_refusal(direction, plan, pend)
+            self._record_refusal(slot, plan, pend)
             if held is not None:
                 # The strategy still wants this trade, but we cannot place it at the size it
                 # asked for. Leaving a stale order resting would mean the broker carries a size
                 # nobody currently endorses.
-                self._drop_rest(direction, held, "cancel (refused)")
+                self._drop_rest(slot, held, "cancel (refused)")
             return
 
-        self._refused[direction] = ""
-        self._refusal_alerted[direction] = ""
+        self._refused[slot] = ""
+        self._refusal_alerted[slot] = ""
         lots = plan.lots
 
         if held is None:
-            self._place(direction, lots, pend, sig, plan)
+            self._place(slot, lots, pend, sig, plan)
             return
 
         # MODIFY cannot change volume (see mt5_ops) — a size change is a cancel + re-place.
@@ -1152,20 +1204,20 @@ class OrderBridge:
             # an order resting that the bot had forgotten — and then placed a second one on top
             # of it. That is one of the three ways one order became five positions, and unlike
             # the other two it needs no timeout at all: an ordinary rejected cancel does it.
-            if not self._drop_rest(direction, held, "re-size"):
+            if not self._drop_rest(slot, held, "re-size"):
                 return
-            self._place(direction, lots, pend, sig, plan)
+            self._place(slot, lots, pend, sig, plan)
             return
 
         if self._moved(held.price, pend.edge) or self._moved(held.sl, pend.sl):
             ok = self._exec(
                 lambda t=held.ticket: self._mt5.modify_pending(t, pend.edge, pend.sl),
-                f"move {self._side(direction)} limit T{held.ticket} → {pend.edge} SL {pend.sl}",
+                f"move {slot_label(slot)} limit T{held.ticket} → {pend.edge} SL {pend.sl}",
             )
             if ok:
-                self._rest[direction] = _Rest(held.ticket, pend.edge, lots, pend.sl)
+                self._rest[slot] = _Rest(held.ticket, pend.edge, lots, pend.sl)
 
-    def _drop_rest(self, direction: int, held, why: str) -> bool:
+    def _drop_rest(self, slot, held, why: str) -> bool:
         """Cancel a resting order and forget it — **only if the broker agrees it is gone.**
 
         Returns True when the order is confirmed off the book. On False the record is KEPT, so
@@ -1177,17 +1229,19 @@ class OrderBridge:
         """
         ok = self._exec(
             lambda t=held.ticket: self._mt5.cancel_pending(t),
-            f"{why} {self._side(direction)} limit T{held.ticket}",
+            f"{why} {slot_label(slot)} limit T{held.ticket}",
         )
         if ok is True:
-            self._rest[direction] = None
+            self._rest[slot] = None
             return True
         self._log.error(
             f"Cancel of T{held.ticket} was not confirmed ({ok!r}). Keeping the record and "
             f"placing nothing on this side — a second order beside an uncancelled one is the "
             f"failure this check exists to prevent."
         )
-        self._ledger.event("cancel_unconfirmed", dir=direction, ticket=held.ticket, why=why)
+        self._ledger.event(
+            "cancel_unconfirmed", dir=slot[1], intent=slot[0], ticket=held.ticket, why=why
+        )
         return False
 
     # ── sizing ───────────────────────────────────────────────────────────────
@@ -1244,7 +1298,7 @@ class OrderBridge:
 
         ⚠ **This bot's own KNOWN exposure is excluded, and that is not a shortcut.** The strategy
         has ONE position slot, so an order of ours that this bot has a RECORD of is the thing this
-        order REPLACES (`_sync_side` cancels and re-places on a size change), never something it
+        order REPLACES (`_sync_slot` cancels and re-places on a size change), never something it
         adds to. Counting it would make the bot refuse its own re-sizes as soon as it was near the
         cap, which reads exactly like a broken strategy.
 
@@ -1258,7 +1312,7 @@ class OrderBridge:
         ✅ **So the exclusion is now by TICKET, not by magic.** Our open position and our recorded
         resting orders are excluded; anything else under our magic is COUNTED, because by
         definition we do not know what it is. In normal running the two sets are identical and
-        this changes nothing — `_observe_orphans` cancels unowned orders before `_sync_side` is
+        this changes nothing — `_observe_orphans` cancels unowned orders before `_sync_slot` is
         ever reached, so there is nothing left for it to find. That is the point: it is the
         backstop for the sweep having failed, and it costs nothing while the sweep works.
 
@@ -1337,13 +1391,15 @@ class OrderBridge:
         except Exception:
             return None
 
-    def _record_refusal(self, direction: int, plan, pend) -> None:
+    def _record_refusal(self, slot, plan, pend) -> None:
         """A refused order is loud once, then quiet — but never forgotten."""
+        direction = slot[1]
         detail = f"[{plan.code}] {plan.detail}"
-        self._refused[direction] = detail
+        self._refused[slot] = detail
         self._ledger.event(
             "order_refused",
             dir=direction,
+            intent=slot[0],
             code=plan.code,
             detail=plan.detail,
             wanted_units=pend.qty,
@@ -1351,27 +1407,28 @@ class OrderBridge:
             stop=pend.sl,
             sos_bar=getattr(pend, "sos_bar", None),
         )
-        self._log.error(f"Order REFUSED ({self._side(direction)}): {detail}")
-        if self._refusal_alerted.get(direction) == plan.code:
+        self._log.error(f"Order REFUSED ({slot_label(slot)}): {detail}")
+        if self._refusal_alerted.get(slot) == plan.code:
             return
-        self._refusal_alerted[direction] = plan.code
+        self._refusal_alerted[slot] = plan.code
         self._notify(
             alert(
                 "⚠️",
                 "ORDER REFUSED",
                 self._mt5.bot_label,
-                f"A {self._side(direction)} setup was ready and no order was placed.\n{plan.detail}",
+                f"A {slot_label(slot)} setup was ready and no order was placed.\n{plan.detail}",
                 "No position was opened. The strategy will keep re-offering it while the setup "
                 "lives, and this will not alert again for the same reason.",
             ),
             notify.HEALTH,
         )
 
-    def _place(self, direction: int, lots: float, pend, sig, plan=None) -> None:
+    def _place(self, slot, lots: float, pend, sig, plan=None) -> None:
+        direction = slot[1]
         side = "bullish" if direction > 0 else "bearish"
         ticket = self._exec(
             lambda: self._mt5.place_pending_limit(side, lots, pend.edge, pend.sl),
-            f"place {self._side(direction)} limit {lots}L @ {pend.edge} SL {pend.sl}",
+            f"place {slot_label(slot)} limit {lots}L @ {pend.edge} SL {pend.sl}",
         )
         if isinstance(ticket, tuple):
             ticket = ticket[0]
@@ -1381,20 +1438,26 @@ class OrderBridge:
             # happen is another send: that is precisely how four timed-out requests became four
             # live orders. Block this side until `_observe_orphans` can read the book and settle
             # it — cancelling anything it finds, or confirming nothing landed.
-            self._unresolved[direction] = True
+            self._unresolved[slot] = True
             self._log.error(
-                f"Placement outcome UNKNOWN for the {self._side(direction)} side. Placing nothing "
-                f"more on it until the order book can be read."
+                f"Placement outcome UNKNOWN for the {slot_label(slot)} slot. Placing nothing "
+                f"more in it until the order book can be read."
             )
             self._ledger.event(
-                "order_unknown", dir=direction, lots=lots, price=pend.edge, stop=pend.sl
+                "order_unknown",
+                dir=direction,
+                intent=slot[0],
+                lots=lots,
+                price=pend.edge,
+                stop=pend.sl,
             )
             return
         if ticket:
-            self._rest[direction] = _Rest(ticket, pend.edge, lots, pend.sl)
+            self._rest[slot] = _Rest(ticket, pend.edge, lots, pend.sl)
             self._ledger.event(
                 "order_placed",
                 dir=direction,
+                intent=slot[0],
                 ticket=ticket,
                 lots=lots,
                 price=pend.edge,
@@ -1588,13 +1651,13 @@ class OrderBridge:
             self._save_position()
 
     def _cancel_all_rest(self, why: str) -> None:
-        for d, held in list(self._rest.items()):
+        for slot, held in list(self._rest.items()):
             if held is not None:
                 self._exec(
                     lambda t=held.ticket: self._mt5.cancel_pending(t),
-                    f"cancel {self._side(d)} limit T{held.ticket} ({why})",
+                    f"cancel {slot_label(slot)} limit T{held.ticket} ({why})",
                 )
-                self._rest[d] = None
+                self._rest[slot] = None
 
     # ── plumbing ─────────────────────────────────────────────────────────────
     def _exec(self, action, description: str):

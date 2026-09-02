@@ -2018,7 +2018,7 @@ three unrelated test modules with a circular-import error naming neither file. I
 an old `if ticket:` site degrades to the conservative reading rather than crashing; anything that
 must act on the difference tests `is UNKNOWN`.
 
-**The four rules this leaves, and each one is a place the old code was wrong:**
+**The five rules this leaves, and each one is a place the old code was wrong:**
 
 1. **A send that does not confirm must ASK THE BROKER before reporting failure.**
    `place_pending_limit` snapshots the order book, sends, and on any non-DONE result diffs the
@@ -2030,7 +2030,7 @@ must act on the difference tests `is UNKNOWN`.
 2. **A cancel that is not CONFIRMED must never be followed by a replacement.** `_drop_rest`
    returns False and KEEPS the record, so the next bar retries the cancel instead of placing a
    second order beside the first. 🔴 **This one needs no timeout at all** — an ordinary rejected
-   cancel was enough, because `_sync_side` discarded the answer and cleared its record anyway.
+   cancel was enough, because `_sync_slot` discarded the answer and cleared its record anyway.
 3. **The order book is swept EVERY BAR for orders we have no record of** (`_observe_orphans`),
    not only at startup. Four orphans sat resting for five hours through twenty bars and the first
    thing that noticed was the position-count halt, after they had all filled. ⚠ **It cancels
@@ -2043,6 +2043,20 @@ must act on the difference tests `is UNKNOWN`.
    10% order read as an empty account. **A premise like that belongs written next to the exclusion
    it justifies**: this one was documented, reasoned and correct on the day it was written, and
    nothing announced the day it stopped being true.
+
+5. **A resting order is keyed by what it is FOR, not by which side it is on** (2026-09-02).
+   `_rest`, `_unresolved`, `_refused` and `_refusal_alerted` are keyed by `(intent, side)` —
+   `PRIMARY_LONG`, `SECONDARY_SHORT` and the other two — and `_sync_slot` reconciles exactly one
+   of them. 🔴 **The re-entry arms while the bot is FLAT, which is precisely when the primary is
+   offering its own limit, so the two want a resting order on the same side at the same moment.**
+   Keyed by side alone the second placement overwrites the first's record — and rule 3 above then
+   cancels the order nobody remembers, within a bar, while the strategy still believes it is
+   there. ⚠ **The side is part of the key rather than read off the pending order**: it costs one
+   slot that is never used and buys the property that every lookup here finds its slot from the
+   two things the caller always knows. ⚠ **The intent reaches the ledger as `intent`, never
+   `kind`** — `ledger._write` stamps every record with a `kind` of its own, so that name collides
+   one layer down; MEASURED, not reasoned, when writing it as `kind` killed six tests on the fake
+   ledger's signature.
 
 ⚠ **`get_pending_orders` still flattens "empty" and "unreadable" into `[]`, deliberately.** Its
 callers only ask *is this ticket still there*, where a failed read costs one wasted cycle.
