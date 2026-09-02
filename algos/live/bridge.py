@@ -1027,6 +1027,9 @@ class OrderBridge:
             reason=reason,
             lots=self._pos_lots,
             held_bars=held,
+            # ⚠ **And `held_bars` is counted in the OPENING clock's frame**, which is why the leg
+            # has to travel with it — a re-entry's 12 bars is an hour and a primary's is three.
+            intent=self._pos_intent,
             # The measurement this bot was armed to take. `entry_price`/`intended_price` give
             # entry slippage, gross-vs-net gives the real cost of the hold, and both are needed
             # per trade because a single netted figure cannot be taken apart afterwards.
@@ -1192,6 +1195,9 @@ class OrderBridge:
         # A new trade is a new chance to bank. Whatever the LAST position could not bank must not
         # silence this one — a latch that outlives its cause is a guard that has stopped guarding.
         self._partial_alerted = ""
+        # ONE balance read, shared by the record and the message below. Two reads of a moving
+        # number would let the ledger and the Telegram alert disagree about the same trade.
+        realised = self._realised_risk_pct()
         self._ledger.trade_opened(
             ticket=p.ticket,
             direction=side,
@@ -1207,7 +1213,12 @@ class OrderBridge:
             # would record the risk the bot started with rather than the one it sized on.
             # `Execution.cfg` is a real property; the nested getattr is only so a test
             # double without one does not break an alert.
+            # ⚠ This is the setting ASKED FOR and it is the PRIMARY's number even on a re-entry.
+            # What the trade actually got is the measured pair below. Rule 3.
             risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
+            risk_usd=self._pos_risk_usd or None,
+            risk_pct_realised=realised,
+            intent=self._pos_intent,
             confluences=self._confluences(dec, sig),
         )
         self._pos_alert_id = self._notify(
@@ -1224,7 +1235,18 @@ class OrderBridge:
                 # message that states the risk — the exit replies to it, so repeating it there is
                 # repeating what is one tap up the thread.
                 risk_usd=self._pos_risk_usd or None,
-                risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
+                # 🔴 **THE MEASURED PERCENTAGE, NOT THE SETTING (2026-09-02).** This message said
+                # the primary's figure for every trade, so the first live re-entry would have
+                # announced 10% while risking 5%. It falls back to the setting only when the
+                # balance cannot be read, which is the one case where nothing can be measured.
+                # ⚠ Read from the variable, not by calling again: a second call is a second
+                # balance read, and two readings of a moving number in one message is how a
+                # message comes to disagree with itself.
+                risk_pct=(
+                    realised
+                    if realised is not None
+                    else getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None)
+                ),
                 when=self._bar_time(sig),
             ),
             notify.TRADE,
@@ -1618,6 +1640,30 @@ class OrderBridge:
         if verdict.allowed:
             return plan
         return SizingRefusal(verdict.code, verdict.detail)
+
+    def _realised_risk_pct(self) -> Optional[float]:
+        """What this position ACTUALLY risks, as a % of the basis it was sized against.
+
+        🔴 **MEASURED off the position the broker opened, never restated from a setting.** The
+        distance from the fill to the stop that is really attached, times the size that was really
+        filled — so it catches a sizing bug, a broker-adjusted stop and a partial fill, none of
+        which a settings figure can see. That is the whole reason it exists beside `risk_pct`
+        rather than replacing it: one says what was asked for, the other what was got. Rule 3.
+
+        🔴 **AND IT IS THE FIELD THAT MAKES A RE-ENTRY AUDITABLE.** A re-entry sizes at a fraction
+        of the primary's percentage (`exec_sec_risk_pct`), so the setting alone says 10 for a trade
+        that risks 5. Deriving the true figure here — rather than copying the strategy's
+        multiplication into this file — keeps the sizing rule in exactly one place.
+
+        ⚠ **`None` means it could not be worked out**, and the two causes are deliberately not
+        separated here because neither is usable: an unreadable balance and a position with no
+        measurable risk both leave a percentage that would have to be invented. Rule 1 — the
+        caller must not print a number, and the ledger records the `None`.
+        """
+        basis = self._account_balance()
+        if not basis or not self._pos_risk_usd:
+            return None
+        return self._pos_risk_usd / basis * 100.0
 
     def _account_balance(self):
         """The balance the account CAP measures against, or None if it cannot be read.

@@ -258,6 +258,9 @@ class Ledger:
         tp2: float = 0.0,
         intended_price: float = 0.0,
         risk_pct: Optional[float] = None,
+        risk_usd: Optional[float] = None,
+        risk_pct_realised: Optional[float] = None,
+        intent: str = "primary",
         confluences: Optional[dict] = None,
     ) -> None:
         """`price` is the BROKER's fill; `intended_price` is where the strategy rested its
@@ -269,6 +272,25 @@ class Ledger:
         so without it a later reader has no way to explain why trade 14 was 0.05 lots and
         trade 15 was 0.02 — and the live-vs-lab comparison, which is the entire reason this
         ledger exists, becomes unreadable at exactly the point it starts to matter.
+
+        🔴 **`risk_pct` IS WHAT WAS ASKED FOR AND IT IS NOT ALWAYS WHAT THE TRADE GOT — which is
+        rule 3, and it was silently wrong for a re-entry until 2026-09-02.** A re-entry sizes at a
+        FRACTION of the primary's percentage, so this field said 10 for a trade that risked 5, in
+        the ledger AND in the Telegram message. `risk_usd` and `risk_pct_realised` are the other
+        half: MEASURED off the position the broker actually opened (its distance to its own stop,
+        times its own size), never restated from a setting. An audit that reads the setting cannot
+        catch a sizing bug; one that reads the measurement can, and that is the whole reason both
+        are here rather than one.
+
+        ⚠ **`risk_pct_realised` is `None` when the balance could not be read**, never 0 and never
+        the setting. Rule 1 — a percentage of an unknown basis is not a small number, it is an
+        unanswered question, and this is the field an audit trusts.
+
+        ⚠ **`intent` says WHICH LEG opened the trade** — the primary or the re-entry. Nothing in
+        this record distinguished them until 2026-09-02, so the first live re-entry would have
+        been indistinguishable from an ordinary trade in the one file that is meant to answer
+        exactly that. It defaults to `"primary"` because every trade this bot has ever taken was
+        one, so an old record read back means what it says rather than nothing.
         """
         self._write(
             DECISIONS,
@@ -278,6 +300,7 @@ class Ledger:
                 "ticket": ticket,
                 "dir": direction,
                 "symbol": symbol,
+                "intent": intent,
                 "lots": lots,
                 "price": price,
                 "intended_price": intended_price,
@@ -286,6 +309,8 @@ class Ledger:
                 "tp1": tp1,
                 "tp2": tp2,
                 "risk_pct": risk_pct,
+                "risk_usd": risk_usd,
+                "risk_pct_realised": risk_pct_realised,
                 "confluences": confluences or {},
             },
         )
@@ -307,8 +332,14 @@ class Ledger:
         commission_usd: Optional[float] = None,
         entry_price: Optional[float] = None,
         intended_price: Optional[float] = None,
+        intent: str = "primary",
     ) -> None:
         """Record a closed trade, with its COSTS kept apart from its price move.
+
+        ⚠ **`intent` is repeated here from the OPEN record for the same reason the prices are** —
+        the two halves of a trade are separate lines and joining them by ticket fails silently
+        across a log rotation. A study that quietly drops its oldest re-entries is worse than one
+        that cannot run.
 
         `pnl_usd` is NET — gross + swap + commission — because that is what the balance did.
         The parts ride alongside it rather than replacing it: a netted figure cannot be taken
@@ -331,6 +362,7 @@ class Ledger:
                 "ticket": ticket,
                 "dir": direction,
                 "symbol": symbol,
+                "intent": intent,
                 "lots": lots,
                 "price": price,
                 "pnl_usd": pnl_usd,

@@ -73,6 +73,64 @@ def test_trade_records_go_only_to_decisions(tmp_path):
     assert _rows(health) == [], "a trade record leaked into the health stream"
 
 
+def test_a_re_entrys_leg_and_measured_risk_really_REACH_THE_FILE(tmp_path):
+    """🔴 **THE GAP A FAKE LEDGER CANNOT SEE, and it was found by mutating and getting green.**
+    Every other test of these fields uses a test double that records the kwargs it was handed, so
+    it proves the BRIDGE passes them — and stays green if this module drops them on the floor.
+    Hardcoding the leg inside `_write` reddened nothing until this test existed.
+
+    ⚠ **Two claims, one boundary**: passed in, and written out. A field can be added to a
+    signature and never reach the record, and the record is the only thing an audit reads.
+    """
+    led = Ledger(tmp_path, "bot")
+    led.trade_opened(
+        ticket=1,
+        direction="long",
+        symbol="XAUUSD",
+        lots=0.1,
+        price=100.0,
+        stop=99.0,
+        risk_pct=10.0,
+        risk_usd=100.0,
+        risk_pct_realised=5.0,
+        intent="secondary",
+    )
+    led.trade_closed(
+        ticket=1,
+        direction="long",
+        symbol="XAUUSD",
+        price=101.0,
+        pnl_usd=10.0,
+        r_multiple=1.0,
+        reason="tp",
+        intent="secondary",
+    )
+
+    dec, _health = _streams(tmp_path)
+    opened, closed = _rows(dec)
+    assert opened["intent"] == "secondary" and closed["intent"] == "secondary"
+    assert opened["risk_usd"] == 100.0
+    assert opened["risk_pct_realised"] == 5.0
+    assert opened["risk_pct"] == 10.0, (
+        "the SETTING must survive beside the measurement — one says what was asked for, the "
+        "other what the trade got, and a reader needs both to see they disagree"
+    )
+
+
+def test_an_OLD_trade_record_read_back_still_means_what_it_says(tmp_path):
+    """⚠ The leg defaults to the primary rather than to `None`, and that is a decision. Every
+    trade this bot took before 2026-09-02 was a primary, so the default is the TRUE value for
+    them — not an unasked question. Rule 1 cuts the other way here, and it is worth saying so
+    rather than leaving a reader to wonder whether a missing field was ever checked."""
+    led = Ledger(tmp_path, "bot")
+    led.trade_opened(ticket=1, direction="long", symbol="XAUUSD", lots=0.1, price=100.0, stop=99.0)
+
+    dec, _health = _streams(tmp_path)
+    row = _rows(dec)[0]
+    assert row["intent"] == "primary"
+    assert row["risk_pct_realised"] is None, "unmeasured is None, never zero"
+
+
 def test_lifecycle_records_go_only_to_health(tmp_path):
     led = Ledger(tmp_path, "bot")
     led.event("startup", version="1")

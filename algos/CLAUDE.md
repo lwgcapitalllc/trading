@@ -2226,6 +2226,37 @@ not "does the new path work" but "what defaults has nothing ever exercised".**
 ⚠ **Nothing here has run against a broker. Rule 9 stands** — and the first one to watch is a
 re-entry ORDER, not a re-entry decision; the decision half has been shadow-recorded since stage 1.
 
+✅ **AND "WATCH IT" IS NOT A PLAN, SO IT IS A TOOL: `tools/audit_reentry.py`** (Aaron's call,
+2026-09-02 — *"I'm not gonna go check that. You check it."*). It reads the bot's own decision
+ledger and grades ONE trade against the settings it was supposed to follow: size, stop side, stop
+ratchet direction, banking against the configured rungs, the exit reason, R recomputed from the
+prices rather than read back, and whether the costs were recorded at all.
+🔴 **Its three-verdict design is the whole point: a check that cannot run reports NOT CHECKED,
+never PASS.** The failure being guarded against is a clean report on a trade nobody verified, and
+this repo has already shipped one — `check_tradingbox.py` certified two tools that had NEVER
+worked, because every case asserted what a tool REFUSES and a tool that always fails passes those
+beautifully. So every check here is driven BOTH ways in `tests/test_audit_reentry.py`, and the
+whole set was watched red by one mutation that makes the tool incapable of failing anything.
+⚠ **It grades against TODAY'S config**, so a setting that moved between the trade and the audit
+makes the comparison wrong with no symptom — pass `--config` an older copy.
+⚠ **Exit 2 means NOTHING TO AUDIT**, deliberately not 0: *nothing to check* and *everything
+passed* must not be the same answer.
+
+🔴 **BUILDING IT FOUND TWO DEFECTS IN THE RECORD IT READS, AND THAT IS THE PART WORTH KEEPING.**
+The trade record could not tell a re-entry from a primary — one field, missing, in the only file
+meant to answer *what did this bot do* — and the risk it recorded was the PRIMARY's percentage for
+a trade sized at half of it, in the ledger AND in the Telegram message a person reads. Both had
+been "obviously fine" for as long as one leg existed. **A record is only as good as the question
+somebody actually puts to it; nobody had put one.** The fix records the leg on both halves of a
+trade, and records the risk MEASURED off the position the broker really opened (`risk_usd`,
+`risk_pct_realised`) beside the setting that was asked for — rule 3, and the measurement is the
+half that can catch a sizing bug. ⚠ **`risk_pct_realised` is `None` when the balance could not be
+read**, never 0 and never the setting.
+⚠ **A test double hid the second half of this**: every bridge test records the kwargs it was
+handed, so hardcoding the leg inside the ledger's own writer reddened nothing. `test_ledger_streams.py`
+now drives the REAL writer to a real file. **Passed in and written out are two claims, and only
+the second is what an audit reads.**
+
 ✅ **SWITCHED ON FOR `mpc_sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
 50 → 0.** ⚠ **No promote, and none should be run for it** — a promote copies `strategies/`,
 `engines/` and `backtest/`, and everything this needs on the code side is in `algos/`, which

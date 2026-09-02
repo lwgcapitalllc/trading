@@ -771,6 +771,105 @@ def test_opening_a_position_reports_the_brokers_real_fill():
     assert notes and "ENTRY" in notes[0]
 
 
+# ── the trade record has to say WHICH LEG, and what the trade really risked ───
+#
+# 🔴 **NEITHER WAS RECORDED UNTIL 2026-09-02, and both were found by trying to write the audit
+# that reads this file.** The re-entry went live the same day, and the one record meant to answer
+# *what did this bot do* could not tell a re-entry from an ordinary trade, while the risk field
+# it did carry stated the PRIMARY's percentage for a trade sized at half of it. ⚠ **The
+# transferable part: a record is only as good as the question somebody actually puts to it. These
+# fields had been "obviously fine" for as long as one leg existed.**
+
+
+def _filled(ex, *, entry=3289.7, stop=3280.0, lots=0.42, ledger=None):
+    """Drive one PRIMARY limit through to a broker fill and hand back the bridge and its ledger."""
+    b, ops, led, notes = _bridge(ex, ledger=ledger)
+    b.sync(_Dec(), _Sig())
+    ops.positions = [_Pos(901, 0, entry, lots, stop)]
+    ex._pos_dir, ex._pend_long, ex._pend_sec = 1, None, None
+    return b, ops, led, notes
+
+
+def test_the_trade_record_says_which_LEG_opened_it():
+    """⚠ **The fill is driven through the RE-ENTRY's own order, not by labelling a primary one.**
+    A first draft set the strategy's leg marker and placed the order on the primary path, and the
+    record came back `primary` — CORRECTLY, because `_slot_that_filled` asks the ticket first and
+    the ticket is the stronger evidence. A test that had "fixed" that would have broken the one
+    thing standing between a mislabelled trade and a wrong audit.
+
+    MUTATION: drop `intent` from either ledger call and this goes red. Without it a re-entry and
+    a primary are the same row, and no audit of the re-entry can start.
+    """
+    ex = _FakeExecution(pend_sec=_Pend(1, 3270.0, 20.0, 3260.0), entry_kind="secondary")
+    b, ops, ledger, _ = _bridge(ex)
+    b.sync_fast(_fast_step())  # the re-entry's own limit goes out on the fill clock
+
+    ops.positions = [_Pos(ops.orders[0].ticket, 0, 3270.0, 0.20, 3260.0)]  # ...it fills
+    ex._pos_dir, ex._pend_sec = 1, None
+    b.sync_fast(_fast_step())
+
+    opened = [kw for k, kw in ledger.rows if k == "opened"][0]
+    assert opened["intent"] == "secondary"
+
+    ops.positions = []  # it closes
+    ex._pos_dir = 0
+    b.sync_fast(_fast_step())
+    closed = [kw for k, kw in ledger.rows if k == "closed"][0]
+    assert closed["intent"] == "secondary", "the two halves are separate lines; both must say"
+
+
+def test_a_PRIMARY_still_records_itself_as_one():
+    """⚠ Not decoration. A change that stamped every trade as a re-entry would pass the test
+    above and mislabel every trade this bot has ever taken."""
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, _ops, ledger, _ = _filled(ex)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["intent"] == "primary"
+
+
+def test_the_recorded_risk_is_MEASURED_off_the_position_not_read_off_a_setting():
+    """🔴 The defect this exists for: a re-entry sizes at a FRACTION of the primary's percentage,
+    so the setting says 10 for a trade risking 5 — in the ledger and in the Telegram message.
+
+    The measurement cannot be fooled that way: $9.70 to the stop on a $1,000 basis is 0.97%
+    whatever any setting says, and it also catches a broker-adjusted stop and a partial fill.
+
+    MUTATION: record `exec_risk_pct` as the realised figure and this goes red.
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, _ops, ledger, _ = _filled(ex)
+    b._account_balance = lambda: 10_000.0
+    b.sync(_Dec(stop=3280.0), _Sig())
+
+    opened = [kw for k, kw in ledger.rows if k == "opened"][0]
+    # $9.70 an ounce to the stop x 0.42 lots x 100 ounces a lot = $407.40, which is 4.074% of
+    # a $10,000 basis. ⚠ The contract size is the unit boundary here (rule 15) and getting it
+    # wrong is a 100x error in the field an audit reads — the first draft of this line did
+    # exactly that, and the code was right.
+    assert opened["risk_usd"] == pytest.approx(407.40, rel=1e-6)
+    assert opened["risk_pct_realised"] == pytest.approx(4.074, rel=1e-6)
+    assert opened["risk_pct"] != opened["risk_pct_realised"], (
+        "the setting and the measurement must stay separate fields — one says what was asked "
+        "for, the other what the trade got"
+    )
+
+
+def test_an_UNREADABLE_balance_records_None_rather_than_a_number():
+    """Rule 1. A percentage of an unknown basis is an unanswered question, not a small number,
+    and this is the field an audit trusts — so it must never be invented.
+
+    MUTATION: fall back to 0.0, or to the setting, and this goes red.
+    """
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, _ops, ledger, _ = _filled(ex)
+    b._account_balance = lambda: None  # the balance could not be read
+    b.sync(_Dec(stop=3280.0), _Sig())
+
+    opened = [kw for k, kw in ledger.rows if k == "opened"][0]
+    assert opened["risk_pct_realised"] is None
+    assert opened["risk_usd"] is not None, "the DOLLARS need no balance and must still be recorded"
+
+
 # ── which room each alert goes to ────────────────────────────────────────────────────────────
 # The bridge is the only thing in this repo that sends a TRADE message, and it also sends the
 # single most serious HEALTH one. Both are pinned, because the split is only worth anything if
