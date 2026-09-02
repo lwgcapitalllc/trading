@@ -348,6 +348,16 @@ def init_db() -> None:
             # Strategies page. Declared by the package (LAB_STRATEGY["display_under"]), never set
             # by hand, and it restricts nothing about how the strategy runs.
             "ALTER TABLE strategies ADD COLUMN display_under TEXT",
+            # 🔴 Can this strategy price the spread by MOVING THE FILL, or only as a flat charge?
+            # 1 (default) = it models bid/ask fills, which is what "costs ON" charges. 0 = it
+            # prices the spread as a flat round-trip fee and refuses a moved-fill profile at
+            # construction, so a charged run would die mid-job (`mpc_extreme_leg`). The cost
+            # resolver reads this and charges that strategy the FLAT spread instead — same three
+            # costs billed, one of them modelled the other way — because the alternative shipped
+            # for a week was a strategy that could not be run charged AT ALL while the switch
+            # said it could. Declared by the package (LAB_STRATEGY["supports_bid_ask_fills"]),
+            # never set by hand.
+            "ALTER TABLE strategies ADD COLUMN supports_bid_ask_fills INTEGER NOT NULL DEFAULT 1",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -2219,8 +2229,9 @@ def upsert_strategy(data: dict) -> None:
             INSERT INTO strategies
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
-                 avoid_news, self_sizing, requires_source, display_under)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 avoid_news, self_sizing, requires_source, display_under,
+                 supports_bid_ask_fills)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -2237,7 +2248,8 @@ def upsert_strategy(data: dict) -> None:
                 avoid_news=excluded.avoid_news,
                 self_sizing=excluded.self_sizing,
                 requires_source=excluded.requires_source,
-                display_under=excluded.display_under
+                display_under=excluded.display_under,
+                supports_bid_ask_fills=excluded.supports_bid_ask_fills
         """,
             (
                 data["id"],
@@ -2257,6 +2269,11 @@ def upsert_strategy(data: dict) -> None:
                 1 if data.get("self_sizing") else 0,
                 1 if data.get("requires_source") else 0,
                 data.get("display_under"),
+                # ⚠ `.get(..., True)` and not `.get(...)` — an absent key means "this package
+                # never declared it", which is every strategy but one, and those all DO model
+                # moved fills. Defaulting to 0 here would silently downgrade every charged run
+                # in the lab to the flat spread and nothing on any page would say so.
+                1 if data.get("supports_bid_ask_fills", True) else 0,
             ),
         )
 

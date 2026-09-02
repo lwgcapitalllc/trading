@@ -120,6 +120,10 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
         cost_layers=req.cost_layers,
         commission_per_side=req.commission_per_side,
         slippage_ticks=req.slippage_ticks,
+        # EVERY leg, not the first: the spread's model is a property of the whole stack, and one
+        # leg that cannot move fills drags them all onto the flat charge. Legs on one account
+        # measured under two fill models is not a portfolio, it is two experiments added up.
+        strategies=strategies,
     )
     legs: list[StackPreviewLeg] = []
     reuse = 0
@@ -214,6 +218,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
         cost_layers=req.cost_layers,
         commission_per_side=req.commission_per_side,
         slippage_ticks=req.slippage_ticks,
+        # EVERY leg, not the first: the spread's model is a property of the whole stack, and one
+        # leg that cannot move fills drags them all onto the flat charge. Legs on one account
+        # measured under two fill models is not a portfolio, it is two experiments added up.
+        strategies=strategies,
     )
 
     if req.mode == "shared":

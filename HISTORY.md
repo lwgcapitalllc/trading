@@ -21,6 +21,67 @@ the other one did.
 
 ## Latest
 
+### The costs switch had a strategy it could not charge at all (2026-09-02)
+
+Aaron, on a run that died four seconds in with a stack trace: *"Why is this strategy accounting
+for cost without me telling it to account for cost? If I have the checker off, it runs free. If
+I have the checker on, then it includes cost. Isn't that how it's supposed to work?"*
+
+**Yes, and it was not.** Run `100579c288ff` (extreme leg, PU Prime ECN, costs ON) raised
+`ValueError` out of the strategy's constructor before a single bar was replayed. The lab's one
+cost switch expands to a fixed layer set that leads with the moved-fill spread model — buys at
+the ask, sells at the bid — and this strategy prices the spread the OTHER way, as a flat
+round-trip charge, so it refuses a moved-fill profile at construction. **There was no third
+option on the page.** The form has one switch and sends no layer list, so for this strategy
+`costs ON` was not a worse measurement, it was NO measurement, while the page said costs were
+being charged.
+
+🔴 **That is rule 1 arriving somewhere new: *cannot be run* and *ran with costs* were reachable
+from the same switch, and only one of them existed.** The rule is usually about a VALUE — a null
+that reads as a zero. Here it is about a CONTROL: a switch with two labelled positions, one of
+which is unreachable for this input, is the same failure wearing a different hat. Nobody could
+have found it from the page, because the page's own state said the thing it could not do.
+
+🔴 **THE FIRST TWO ANSWERS GIVEN IN THAT SESSION WERE BOTH WRONG, AND THE ERROR MESSAGE IS WHY.**
+It said *"use a profile with bid_ask_fills off"*, so the advice given was to change the broker
+account — and every broker account fails identically, because the option comes from the RUN, not
+from the account. The second answer, *"untick bid/ask fills and tick spread"*, described tick
+boxes that do not exist anywhere in this app. **Both were read straight off the refusal.**
+⚠ **A refusal that names the wrong dial is WORSE than a bare stack trace**: a stack trace sends
+the reader to the code, and a confident wrong instruction sends them to a settings page where
+they can spend an afternoon proving that every option there fails.
+
+**Shipped, and deliberately as a CONTRACT rather than a fix for one strategy.** A strategy package
+declares which spread model it can be charged under; the scanner carries the declaration into the
+lab's strategy row (new column, defaulting to able, so every existing strategy is unchanged); the
+one shared cost resolver swaps the flat model in when any strategy in the run cannot move fills.
+The same three costs are still billed. ⚠ **A SWAP, never an addition** — the two models are
+alternatives, and appending would bill the spread twice. ⚠ **A whole STACK falls back together if
+ONE leg cannot**, because legs sharing one account measured on two different fill models is not a
+portfolio, it is two experiments added up. ⚠ **The stored layers record WHICH model was charged**,
+so the comparison tool refuses across the two on basis rather than reporting the gap as the
+strategy's doing — that property is what makes the fallback safe to ship at all.
+
+⚠ **It is not a free pass, and this is the caveat to repeat out loud.** The flat model cannot
+change WHICH setups fill; only the moved-fill model can. So this strategy's charged trade LIST is
+still its gross trade list, and a run of it is not directly comparable to a strategy that moves
+fills. The fallback buys a real charged number, not equivalence.
+
+⚠ **The constructor refusal was KEPT as the backstop and its wording rewritten** to name the run's
+cost options and to say the spread is still charged. A declaration and a refusal are two statements
+of one fact, so a drift test constructs the strategy with a moved-fill probe and asserts the two
+agree — watched red by flipping the declared value.
+
+**Proof:** 9 new backend tests, each watched RED under a named mutation — fallback dropped, default
+flipped, only the first leg consulted, layer appended instead of swapped. One test's docstring
+originally claimed it could not go red; the append mutation turned it red, and the docstring was
+corrected rather than the claim being left standing. Backend suite 1,206 passed; strategy suite 66
+passed; `scripts/run_all_tests.sh` all nine steps green.
+
+⚠ **No parity gate ran, and rule 22 is SILENT here rather than satisfied** — the extreme leg has no
+gate at all (`tools/compare_extreme_leg.py` has never run against an export). What changed in the
+strategy is a message string and a declaration key; no line that decides a trade was touched.
+
 ### The Pine strategies left the indicators tree, and the check built to catch it stayed green (2026-09-02)
 
 Aaron, on the layout: *"Look at under indicators then strategies. These are all my buying

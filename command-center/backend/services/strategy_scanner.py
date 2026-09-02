@@ -698,6 +698,15 @@ def _parse_python_package(
         # than a boolean "is a child" so the tree is declared by the packages, not hardcoded in
         # a page that would then go stale the first time a strategy is added.
         "display_under": (spec.get("display_under") or None),
+        # 🔴 Whether this strategy can price the spread by MOVING THE FILL — which is the model
+        # "costs ON" charges. Default TRUE: every package but one models it, and a default of
+        # False would quietly downgrade every charged run in the lab to the flat spread. A
+        # package that declares False gets the flat round-trip spread charged instead, resolved
+        # in `routers/_costs.py`, rather than dying at construction three seconds into the job.
+        # ⚠ This is a SECOND copy of a fact the strategy's own constructor already enforces, so
+        # each declaring package pins the two together with a test — a declaration that drifts
+        # from the refusal it describes is how a run gets charged a model the code then rejects.
+        "supports_bid_ask_fills": bool(spec.get("supports_bid_ask_fills", True)),
     }, None
 
 

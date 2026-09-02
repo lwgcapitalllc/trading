@@ -384,8 +384,62 @@ def test_a_profile_that_moves_fills_is_refused_rather_than_half_honoured():
     class _P:
         name = "moves_fills"
         bid_ask_fills = True
-    with pytest.raises(ValueError, match="bid_ask_fills"):
+    with pytest.raises(ValueError, match="bid/ask fills"):
         ExtremeLegExecution(ExtremeLegConfig(), profile=_P())
+
+
+def test_the_declaration_matches_what_the_constructor_actually_does():
+    """The lab is told which spread model this bot can be charged under, and the constructor is
+    what enforces it — two statements of one fact, which is exactly how a pair drifts.
+
+    A declaration that says the moved-fill model is fine, over a constructor that refuses it, gets
+    a run CHARGED a model the code then rejects — the dead job this declaration exists to prevent,
+    restored silently. The reverse is quieter and still wrong: the lab would downgrade every
+    charged run of this bot to the flat spread for no reason anyone could find.
+
+    RED by mutation on either side — flipping the declared value, or dropping the refusal.
+    """
+    from strategies.python.mpc_extreme_leg import LAB_STRATEGY
+
+    declared = LAB_STRATEGY.get("supports_bid_ask_fills", True)
+
+    class _P:
+        name = "probe"
+        bid_ask_fills = True
+
+    try:
+        ExtremeLegExecution(ExtremeLegConfig(), profile=_P())
+        refuses = False
+    except ValueError:
+        refuses = True
+
+    assert refuses is not declared, (
+        f"the package declares supports_bid_ask_fills={declared} while the constructor "
+        f"{'refuses' if refuses else 'accepts'} a moved-fill profile"
+    )
+
+
+def test_the_refusal_points_at_the_run_option_and_not_at_the_broker_account():
+    """The refusal used to read "account profile 'lab:puprime_ecn' has bid_ask_fills on … use a
+    profile with bid_ask_fills off", and a reader spent a session changing brokers because of it.
+    The flag is switched on by the RUN's cost layers, so no account change can ever clear it.
+
+    RED against the old wording on both halves: it carried neither "cost option" nor "untick", and
+    its "Use a profile with" is exactly the instruction asserted absent here. Watched RED by
+    restoring the old string.
+    """
+    class _P:
+        name = "lab:puprime_ecn"
+        bid_ask_fills = True
+    with pytest.raises(ValueError) as e:
+        ExtremeLegExecution(ExtremeLegConfig(), profile=_P())
+    msg = str(e.value)
+    # It must send the reader to the dial that actually controls this.
+    assert "cost option" in msg
+    assert "untick" in msg
+    # And it must not send them at the broker, which cannot fix it.
+    assert "use a profile with" not in msg.lower()
+    assert "would not help" in msg
 
 
 # ── the two cuts TradingView cannot make (2026-09-02) ────────────────────────────

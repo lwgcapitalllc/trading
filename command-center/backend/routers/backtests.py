@@ -677,6 +677,10 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         cost_layers=req.cost_layers,
         commission_per_side=req.commission_per_side,
         slippage_ticks=req.slippage_ticks,
+        # The strategy decides which of the SPREAD's two models it can be charged under — see
+        # `_costs`. Omitting it charges the moved-fill model to a strategy that refuses one at
+        # construction, which is a job that dies seconds in under a switch saying costs are on.
+        strategies=[strategy],
     )
 
     lab_db.insert_run(

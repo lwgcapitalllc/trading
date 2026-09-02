@@ -150,11 +150,25 @@ class ExtremeLegExecution:
             # Refusing, rather than charging the spread twice or ignoring the flag. `bid_ask_fills`
             # MOVES FILLS — it tests a long's entry against bid+spread — so honouring it changes
             # which trades exist, and half-honouring it would report a trade list nothing produced.
+            #
+            # 🔴 **NAME THE RUN'S COST OPTIONS, NEVER THE BROKER ACCOUNT.** This message used to
+            # read "account profile 'lab:puprime_ecn' has bid_ask_fills on … use a profile with
+            # bid_ask_fills off", and it sent a real reader at the broker for a whole session. The
+            # broker contributes the spread's SIZE; the flag is switched on by the run's own cost
+            # layers (`python_runner._profile_for`), so EVERY broker fails identically and no
+            # amount of changing accounts can clear it. **A refusal that names the wrong dial is
+            # worse than a bare stack trace — the reader trusts it and searches where it points.**
             raise ValueError(
-                f"account profile {profile.name!r} has bid_ask_fills on, which moves fills rather "
-                f"than charging a cost. This strategy prices the spread as a flat round-trip "
-                f"charge and does not model ask-side fills, so running it here would report a "
-                f"trade list neither model produces. Use a profile with bid_ask_fills off."
+                f"this run asked for 'bid/ask fills', which pays the spread by MOVING the fill "
+                f"price. This strategy pays it the other way — it fills at the bar price and "
+                f"deducts the spread as a flat round-trip charge — so the two are alternative "
+                f"models of one cost, never layers, and honouring half of either would report a "
+                f"trade list neither produces. Moving fills also changes WHICH setups trigger, so "
+                f"this is not a pricing difference that could be corrected afterwards. Fix it in "
+                f"the run's cost options, NOT on the broker account: untick 'bid/ask fills' and "
+                f"tick 'spread'. The spread is still charged. (Changing broker would not help — "
+                f"{profile.name!r} only supplies the spread's size, and every account fails the "
+                f"same way while this option is on.)"
             )
         self.trades: List[Trade] = []
         self.blocks: List[Blocked] = []

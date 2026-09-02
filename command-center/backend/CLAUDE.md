@@ -4159,6 +4159,53 @@ layer nobody ticked — the implication had been stated in `_cost_profile` since
 the WRITING side honoured it. Pinned by `test_bid_ask_fills_counts_as_the_spread_already_charged`
 and `test_a_fully_charged_run_has_nothing_left_to_reprice`, both watched RED by mutation.
 
+## The SPREAD has two models, and a strategy says which one it can be charged under (2026-09-02)
+
+`strategies.supports_bid_ask_fills` (INTEGER NOT NULL DEFAULT 1), declared by the package as
+`LAB_STRATEGY["supports_bid_ask_fills"]`, carried by the scanner, read by
+`_costs._spread_model_for`.
+
+🔴 **"Costs ON" ALWAYS resolved to the moved-fill model, so a strategy that prices the spread FLAT
+could not be run charged AT ALL.** `CHARGED_LAYERS` leads with `bid_ask_fills`; `mpc_extreme_leg`
+refuses a moved-fill profile at construction; so the job died three seconds in with a stack trace
+**while the run form's switch said costs were being charged.** That is rule 1 in a new place —
+*cannot be run* and *ran with costs* must never be reachable from the same switch, and here the
+second was simply unavailable. There is no per-layer control on the form, so the operator had no
+way out except running gross.
+
+**When any strategy in the run declares it cannot move fills, the spread is charged FLAT instead.**
+
+- ⚠ **The same three costs are still billed.** The switch means what it says; only the spread's
+  MODEL bends. A fallback that quietly made a charged run cheaper would be worse than the crash.
+- ⚠ **SWAPPED in the layer list, never appended.** The two models are alternatives — appending
+  bills one spread twice, and the result is a plausible number nothing downstream can question.
+- ⚠ **A whole STACK falls back together if ONE leg cannot**, so every call site passes EVERY leg.
+  Legs on one account measured under two fill models is not a portfolio, it is two experiments
+  added up.
+- ⚠ **The stored layers record which model was used**, so `run_diff.py` and the lab MCP refuse a
+  comparison across the two on BASIS rather than reading the gap as the strategy's doing. That
+  property is why the fallback swaps the layer instead of leaving `bid_ask_fills` on the row.
+- ⚠ **It is NOT a free pass.** The flat model cannot change which setups fill, so such a strategy's
+  charged trade LIST is its gross trade list. Say that out loud when comparing it to one that moves
+  fills.
+- ⚠ **The default is TRUE and an absent key means TRUE.** Every package but one models moved fills;
+  defaulting the other way would silently downgrade every charged run in the lab.
+- ⚠ **A caller passing NO strategies keeps the moved-fill model** — stating nothing is not stating
+  the weaker answer.
+- 🔴 **It is a SECOND copy of a fact the strategy's own constructor already enforces**, so the
+  declaring package PINS the two together by test
+  (`test_the_declaration_matches_what_the_constructor_actually_does`). A declaration that drifts
+  from its refusal gets a run charged a model the code then rejects — the dead job this whole
+  mechanism removes, restored in silence.
+
+⚠ **The strategy's own refusal is the backstop and its wording is a rule of its own** — it must
+name the run's cost options rather than the broker account, which cannot clear it. Lives with the
+code that raises it: `strategies/python/mpc_extreme_leg/CLAUDE.md`.
+
+**Tests:** `tests/test_cost_spread_model.py` (9), watched RED by four mutations — the fallback
+dropped, the absent-key default flipped, only the first leg asked, and the layer appended rather
+than swapped.
+
 ## A RERUN reads the broker the run was MADE on (2026-08-24)
 
 🔴 Reported from the screen: *"when we click rerun charged it should still rerun against the broker

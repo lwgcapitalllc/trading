@@ -173,6 +173,21 @@ nothing.
 
 ⚠ **A profile with `bid_ask_fills` on is REFUSED, not approximated.** That flag moves fills rather
 than charging a cost, so honouring half of it would report a trade list neither model produces.
+It is one of TWO models of the same cost — flat round-trip charge, or moved fills — never a layer
+on top, so a run that asks for both is billing the spread twice.
+
+🔴 **THE REFUSAL NAMED THE WRONG DIAL FOR ITS WHOLE LIFE, AND THAT COST A READER A SESSION
+(2026-09-02).** It read *"account profile 'lab:puprime_ecn' has bid_ask_fills on … Use a profile
+with bid_ask_fills off"*, so the reader went looking at the BROKER. The broker supplies only the
+spread's SIZE; the flag is switched on by the run's own cost options
+(`python_runner._profile_for`), which means **every account fails identically and no amount of
+changing brokers can clear it.** The message now names the run's cost options, says which box to
+untick, and says plainly that the spread is still charged — because *"it refuses costs"* was the
+other conclusion a reader reasonably drew from it. ⚠ **The generalisation is worth more than the
+wording: a refusal that names the wrong dial is WORSE than a bare stack trace, because the reader
+trusts it and searches where it points.** A refusal must name the control the reader can actually
+move. Pinned by `test_the_refusal_points_at_the_run_option_and_not_at_the_broker_account`, watched
+RED by restoring the old string.
 
 ---
 

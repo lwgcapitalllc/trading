@@ -56,6 +56,19 @@ LAB_STRATEGY = {
     "suggested_instrument": "XAUUSD",
     "category": "reversal",
     "self_sizing": True,
+    # 🔴 THIS BOT PRICES THE SPREAD AS A FLAT ROUND-TRIP CHARGE AND CANNOT MOVE THE FILL, so the
+    # lab charges it the flat spread when costs are on instead of the bid/ask model every other
+    # package gets. Without this the lab had no way to know: "costs ON" always resolved to moved
+    # fills, `ExtremeLegExecution` refused that profile at construction, and the run died three
+    # seconds in with a stack trace — i.e. THIS STRATEGY COULD NOT BE RUN CHARGED AT ALL while
+    # the switch on the page said it could. Same three costs are billed either way; only the
+    # spread's model differs, and the stored cost layers record which was used so a comparison
+    # across the two refuses rather than reading the gap as the strategy's doing.
+    # ⚠ It is a SECOND copy of what `execution.py` already enforces —
+    # `tests/test_extreme_leg.py::test_the_declaration_matches_what_the_constructor_actually_does`
+    # pins them together, because a declaration that drifts from its refusal gets a run charged a
+    # model the code then rejects, which is the exact failure this key exists to remove.
+    "supports_bid_ask_fills": False,
     # 🔴 **NO `display_under` — THIS ROW IS TOP LEVEL, AND THAT IS A DECISION (Aaron, 2026-09-02:
     # "move it to root").** It was listed under the A+ bot until then, on the reasoning that the
     # suite is carved up by LEG off one structure stream and this is the leg BEFORE the one A+

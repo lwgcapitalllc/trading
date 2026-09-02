@@ -21,14 +21,54 @@ The rules it enforces, each of which fails silently if it moves:
   records the figure that was billed rather than one somebody typed beside three measurements.
 * **Slippage stays OPT-IN inside "costs on"** — it is the one cost nobody has measured, so it is
   added only when a tick count was actually stated, which is somebody saying the guess out loud.
+* **The SPREAD'S MODEL bends to what the strategies can run; the spread itself never goes away.**
+  See below.
+
+🔴 **THE SPREAD HAS TWO MODELS AND "COSTS ON" USED TO ASSUME ONE OF THEM (fixed 2026-09-02).**
+Moving the fill (buys at the ask, sells at the bid) and charging a flat round-trip fee are
+ALTERNATIVE models of one cost, never layers — bill both and the spread is paid twice. `costs ON`
+resolves to the moved-fill model, which is the better one: it is the only layer that can change
+WHICH setups fill. But a strategy that implements only the flat model refuses a moved-fill profile
+at construction, so for such a strategy **`costs ON` was not a worse measurement, it was NO
+measurement** — the job died seconds in with a stack trace while the page's switch said costs were
+being charged. That is this repo's rule 1 arriving in a new place: *cannot be run* and *ran with
+costs* must never be reachable from the same switch, and here the second was simply unavailable.
+
+So when any strategy in the run declares it cannot move fills, the spread is charged FLAT instead.
+⚠ **The same three costs are still billed** — the switch means what it says and no run silently
+goes cheaper. ⚠ **A whole STACK falls back together if ONE leg cannot**, because legs sharing one
+account measured on two different fill models is not a portfolio, it is two experiments added up.
+⚠ **The stored layers record which model was used**, so a comparison across the two refuses on
+basis rather than reading the gap as the strategy's doing — that is the property that makes this
+safe, and it is why the fallback swaps the layer rather than quietly leaving `bid_ask_fills` on
+the row. ⚠ **It is NOT a free pass**: the flat model cannot change which setups fill, so such a
+strategy's charged trade LIST is still its gross trade list. Say that out loud when comparing it
+to one that moves fills.
 """
 
 from __future__ import annotations
+
+from typing import Any, Mapping, Sequence
 
 from fastapi import HTTPException
 from services import python_runner
 
 __all__ = ["resolve_costs"]
+
+
+def _spread_model_for(strategies: Sequence[Mapping[str, Any]] | None) -> str:
+    """`"bid_ask_fills"` unless some strategy here can only price the spread flat.
+
+    ⚠ Reads the declaration, never a strategy id — the next package that prices the spread flat
+    inherits this by declaring it, with no change here. That is the same call `_source_guard`
+    makes and for the same reason.
+    ⚠ `None` (no strategies passed) keeps the moved-fill model: a caller with no opinion must not
+    silently downgrade what a run is measured on.
+    """
+    for strat in strategies or ():
+        if not strat.get("supports_bid_ask_fills", True):
+            return "spread"
+    return "bid_ask_fills"
 
 
 def resolve_costs(
@@ -39,12 +79,16 @@ def resolve_costs(
     cost_layers: list[str] | None,
     commission_per_side: float,
     slippage_ticks: int | None,
+    strategies: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[list[str] | None, float]:
     """`(cost_layers, commission_per_side)` as they must be STORED on the row.
 
     Raises `HTTPException(400)` for a broker whose spread or swap has never been measured —
     refusing is the answer, because the alternative is charging a sibling tier's number and PU
     Prime's tiers measured 2.7x apart.
+
+    `strategies` is every strategy this run will execute — one for a solo run, every leg for a
+    stack. It decides only which of the spread's two models is charged; see the module docstring.
     """
     if runner != "python" or charge_costs is None:
         return cost_layers, commission_per_side
@@ -52,6 +96,11 @@ def resolve_costs(
         resolved = list(python_runner.charged_layers(broker_profile)) if charge_costs else []
     except python_runner.UnpricedBrokerError as exc:
         raise HTTPException(400, str(exc))
+    # The spread's MODEL, swapped in place so the row records which one was actually charged.
+    # ⚠ A swap, never an addition: the two never stack, and appending would bill the spread twice.
+    model = _spread_model_for(strategies)
+    if model != "bid_ask_fills":
+        resolved = [model if layer == "bid_ask_fills" else layer for layer in resolved]
     if charge_costs and int(slippage_ticks or 0) > 0:
         resolved = [*resolved, "slippage"]
     return resolved, python_runner.measured_commission(broker_profile)
