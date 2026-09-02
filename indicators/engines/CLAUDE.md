@@ -202,7 +202,7 @@ runs, and it has not been pasted into TradingView either, so it is not even know
 ## Standing instructions
 
 **Do**
-- Write input tooltips in plain English, one or two short sentences: what the setting does, what Off does, the unit, what 0 means. **The rule and the reason live in [`../strategies/CLAUDE.md`](../strategies/CLAUDE.md) → *TOOLTIPS ARE PLAIN ENGLISH*** — it is one rule for every `.pine` here, kept in the folder holding 588 of the 672 tooltips rather than copied into both. The 84 in this folder were rewritten with them on 2026-08-16. ⚠ Measured results, defaults rationale and cross-file warnings go in `../docs/`, never in a tooltip.
+- Write input tooltips in plain English, one or two short sentences: what the setting does, what Off does, the unit, what 0 means. **The rule and the reason live in [`strategies/tradingview/CLAUDE.md`](../../strategies/tradingview/CLAUDE.md) → *TOOLTIPS ARE PLAIN ENGLISH*** — it is one rule for every `.pine` here, kept in the folder holding 588 of the 672 tooltips rather than copied into both. The 84 in this folder were rewritten with them on 2026-08-16. ⚠ Measured results, defaults rationale and cross-file warnings go in `../docs/`, never in a tooltip.
 - Confirm swings only by the 3-candle pullback method: a swing high needs 3 consecutive candles each closing below the previous candle's low; a swing low needs 3 consecutive candles each closing above the previous candle's high.
 - Reset the pullback count to zero at a new extreme if price prints a new high (while seeking a high) or new low (while seeking a low) before the count reaches 3.
 - Keep detection to a single fixed constant (3). No numeric tuning inputs for detection.
