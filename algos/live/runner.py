@@ -1373,6 +1373,7 @@ class LiveRunner:
         # would otherwise stop this one seconds after boot, which reads as a bot refusing to
         # start — see `clear_stop_request`.
         self.clear_stop_request()
+        self.clear_close_request()
 
         if not self.connect():
             self.log.error("Could not connect to MT5 — see the attempts above.")
@@ -1610,6 +1611,7 @@ class LiveRunner:
                                 return 6, f"10 consecutive bar errors, last: {e}"
                             break
 
+                    self._check_close_request()
                     self._maybe_reload_runtime()
                     # Same FLAT seam as the reload above, for the same reason: between trades
                     # nothing is sized, so the emulator's balance can be pulled back onto the
@@ -1708,6 +1710,87 @@ class LiveRunner:
             # shutdown immediately after boot, which is visible and recoverable. Refusing to
             # start a trading bot because a marker file would not delete is worse.
             self.log.warning(f"Could not clear {self.STOP_FILE}: {e}")
+
+    # A close a PERSON asked for. Same channel as the stop request above, for the same
+    # reason: this loop already polls its own instance directory, and that directory is the
+    # one thing the command centre and a running bot both reach.
+    #
+    # ⚠ **It closes ONE trade — it does not stop the bot.** After the close the bot goes on
+    # looking for its next setup, which is deliberately different from `stop.request` and is
+    # why it is a second file rather than a flag on the first. Somebody wanting both asks for
+    # both.
+    CLOSE_FILE = "close.request"
+
+    def close_file_path(self) -> Path:
+        return self.cfg.instance_dir / self.CLOSE_FILE
+
+    def clear_close_request(self) -> None:
+        """Remove a close request left over from a previous run. Always safe to call.
+
+        🔴 **Cleared at STARTUP, and that is the stop request's hardest-won lesson applied
+        before it could bite here.** A file in an instance directory outlives whatever meant
+        it: left behind by a crash, a failed shutdown or an aborted SSH call, it would flatten
+        the FIRST trade of every later run, seconds after that trade opened, with nobody
+        expecting it. The file only ever means *somebody asked while this process was alive*.
+        """
+        try:
+            p = self.close_file_path()
+            if p.exists():
+                p.unlink()
+                self.log.info(f"Cleared a stale {self.CLOSE_FILE} from a previous run.")
+        except OSError as e:
+            self.log.warning(f"Could not clear {self.CLOSE_FILE}: {e}")
+
+    def _check_close_request(self) -> None:
+        """Hand a close request to the STRATEGY, then delete the file.
+
+        ⚠ **The strategy is told, never the broker.** It exits on its next bar through the
+        path every other market exit uses, and the bridge then brings the account into line.
+        Closing at the broker from here would leave the strategy holding a position that is
+        gone, which is precisely the halt this feature exists to avoid.
+
+        ⚠ **The file is deleted whatever the answer**, including *nothing to close*. A request
+        that survived being answered would fire again on the next bar, and then on the trade
+        after that — the stale-instruction hazard the startup clear above already names.
+
+        ⚠ **An unreadable directory is not a request.** Same default as the stop file: a
+        transient filesystem error must not be able to flatten a live trade.
+        """
+        try:
+            p = self.close_file_path()
+            if not p.exists():
+                return
+            reason = ""
+            try:
+                reason = p.read_text(encoding="utf-8", errors="replace").strip()[:200]
+            except OSError:
+                # The file is THERE, which is the request. Being unable to read the note
+                # inside it is not a reason to ignore what somebody asked for.
+                pass
+            p.unlink()
+        except OSError:
+            return
+
+        reason = reason or "asked by hand"
+        ex = getattr(self.strategy, "execution", None)
+        took = bool(ex is not None and ex.request_close(reason))
+        self.log.info(
+            f"Close requested ({reason}) — {'the open trade will close on the next bar' if took else 'nothing open to close'}."
+        )
+        self.ledger.event("close_requested", reason=reason, accepted=took)
+        self._notify_health(
+            alert(
+                "🛑" if took else "ℹ️",
+                "CLOSE REQUESTED" if took else "NOTHING TO CLOSE",
+                self.cfg.display_name,
+                reason,
+                (
+                    "It closes on the next bar and the bot keeps looking for setups."
+                    if took
+                    else "It was asked to close a trade and is not in one. Nothing changed."
+                ),
+            )
+        )
 
     def _stop_file_present(self) -> bool:
         try:

@@ -68,6 +68,73 @@ shipped 4 adds x 2.0x cap that is several times the base size.
 
 
 
+## ✅ A trade can be CLOSED ON DEMAND (2026-09-02) — and the instruction goes to the STRATEGY
+
+**Three pieces, and the order they run in is the design.** A file in the instance directory
+(`close.request`) → the runner hands it to the strategy → the strategy exits on its next bar
+through the path every other market exit uses → the bridge closes the broker position to match.
+
+🔴 **CLOSING BY HAND AT THE TERMINAL IS WHAT THIS REPLACES, AND IT HALTS THE BOT.** The strategy
+goes on believing it holds a position the account no longer has, and the bridge stops on the next
+bar — correctly, because from outside that is indistinguishable from a position vanishing for a
+reason nobody can name. **A partial close by hand is worse: nothing notices at all**, and every
+size computed afterwards is against a book that does not exist.
+
+⚠ **It closes ONE trade and does not stop the bot** — that is why it is a second file rather than
+a flag on `stop.request`. Afterwards the bot goes on looking for its next setup. Somebody wanting
+both asks for both.
+
+⚠ **The strategy is told, never the broker.** `algos/live/` holds no trading logic, so the
+instruction changes what the strategy BELIEVES and the bridge mirrors that — the same rule that
+keeps a live result comparable to a backtest. The exit is booked, alerted and recorded exactly
+like a time stop, one-bar delay included.
+
+🔴 **THE BROKER SIDE RUNS BEFORE THE ORDINARY CLOSE OBSERVER, NOT AFTER.** `_close_on_command`
+brings the account into line FIRST, and `_observe_close` then books the trade the way it books
+every other exit. Reversed, one kind of exit would need its own booking path — the second
+implementation this package exists to avoid.
+
+⚠ **A REFUSED close is left to halt the bot, deliberately.** The two ledgers really have parted,
+and carrying on would compute every later decision against a trade that is still open. **Retrying
+here would be a recovery tool repeating the fault it is recovering from** — the rule
+`close_orphans.py` already records.
+
+⚠ **The verdict is re-read off the ACCOUNT, never off a return code**, same as everywhere else on
+this path.
+
+🔴 **The trade is recorded under `L-CMD` / `S-CMD`, not `CLOSE`, and that was caught by READING
+`_close_at` rather than by a test.** Only the tag survives into the record — the reason argument
+is discarded — and the opposite-break close already uses `CLOSE`. Sharing it would make *a person
+asked for this* and *structure broke against us* the same value, which is this repo's oldest
+defect shape and would quietly corrupt any later study of why trades ended.
+
+⚠ **The request file is CLEARED AT STARTUP**, the `stop.request` lesson applied before it could
+bite: left behind by a crash or an aborted SSH call it would otherwise flatten the FIRST trade of
+every later run, seconds after it opened. The file may only ever mean *somebody asked while this
+process was alive*. ⚠ **And it is consumed whatever the answer**, including *nothing to close* —
+a request surviving its own answer would fire again on the next bar, and on the trade after that.
+
+⚠ **Asking while FLAT is reported, not latched.** A waiting request would fire on whatever the
+bot opened next, which is a trade nobody had an opinion about.
+
+⚠ **Three new ledger events, all DECISIONS** (`close_requested`, `commanded_close`,
+`commanded_close_failed`) — each answers *why did this trade end*, which is that stream's
+question. `close_requested` is written even when nothing was open, so an instruction that did
+nothing is still answerable later.
+
+🔴 **NOBODY HAS RUN THIS AGAINST A REAL BROKER. Treat the first one as a FIRST RUN** — rule 9.
+The strategy half is gated (`compare_strategy.py` exit 0 at warmups 100/200/500/1000 on the
+2026-09-02 export, before AND after), but **a green gate proves the lever is INERT in a parity
+run, never that it works** — rule 14, a branch neither side enters.
+
+**Tests: 4 in `test_live_bridge.py`, 7 in `test_close_request.py`, 6 in the strategy's own
+`test_commanded_close.py`.** ⚠ **The bridge's two controls pass without the feature and are
+pinned by MUTATION** — firing on any exit fill, and ignoring the dry run, each redden their own
+named test. ⚠ **One mutation was written, measured to be a NO-OP and replaced**: it guarded on a
+field the test always sets, so it changed nothing and would have been reported as proof of a
+test that was never exercised. ⚠ **The fake broker learned to REFUSE a close**, because the
+failure branch halts a live bot and is the one most worth being able to produce.
+
 ## 🔴 THE HALT DID NOT HOLD — a reconnect, a bar gap or a settings edit put a halted bot back to trading (2026-09-02)
 
 **`begin_live` was written as a once-per-start call and is not one.** Three paths call it again on

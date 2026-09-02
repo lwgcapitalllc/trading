@@ -706,6 +706,13 @@ class OrderBridge:
             return
 
         positions = self._mt5.get_open_positions()
+        # BEFORE `_observe_close`, and the order is the whole design. A commanded exit leaves
+        # the emulator flat with the broker still holding, which `_agrees` halts on — correctly,
+        # because that is otherwise indistinguishable from a position vanishing for a reason
+        # nobody can name. So the broker is brought into line FIRST, and the ordinary close
+        # path below then books, alerts and records the trade exactly as it does every other
+        # exit. Doing it afterwards would need a second booking path for one kind of exit.
+        positions = self._close_on_command(positions, dec)
         self._observe_close(positions, dec, sig)
         self._observe_open(positions, dec, sig)
         # AFTER `_observe_open`, which consumes `_rest[d]` when a position appears — otherwise a
@@ -828,6 +835,67 @@ class OrderBridge:
         self._restored = False
         if self._instance_dir is not None:
             position_state.clear(self._instance_dir)
+
+    def _close_on_command(self, positions, dec):
+        """Close the broker position when a PERSON asked the strategy to get out.
+
+        The strategy has already exited in its own book (`execution.request_close` → the
+        `-CMD` exit fill on this bar's decision). This is the other half: the broker still
+        holds the position, and nothing else in this bridge can take it off at market.
+
+        ⚠ **It acts on the strategy's own exit record, never on a flag this layer invents.**
+        `algos/live/` holds no trading logic — the strategy decides it is out, and the bridge
+        mirrors that, which is the same rule that keeps a live result comparable to a backtest.
+
+        ⚠ **A FAILED close is left to halt.** It returns the book unchanged, so `_agrees` sees
+        the emulator flat against a live broker position and stops the bot — which is the right
+        outcome: the two ledgers genuinely have parted, and carrying on would compute every
+        later decision against a trade that is still open. Retrying here would be a recovery
+        tool repeating the fault it is recovering from.
+
+        Returns the position list to reconcile against — re-read from the broker after a
+        successful close, so the verdict comes from the ACCOUNT rather than from a return code.
+        """
+        if self._pos_ticket is None:
+            return positions
+        fills = getattr(dec, "fills", ()) or ()
+        if not any(f.kind == "exit" and str(f.order_id).endswith("-CMD") for f in fills):
+            return positions
+        if not any(p.ticket == self._pos_ticket for p in positions):
+            # Already gone — it filled a stop in the same instant, or a previous pass closed it.
+            # Not an error, and not a second close: the ordinary path books it.
+            return positions
+
+        side = "bullish" if self._pos_dir > 0 else "bearish"
+        if self.dry_run:
+            self._log.info(f"[DRY RUN] would close T{self._pos_ticket} at market (commanded)")
+            self._ledger.event("dry_run_action", action="commanded_close")
+            return positions
+
+        self._log.info(f"COMMANDED CLOSE | closing T{self._pos_ticket} at market")
+        ok, price, _pnl = self._mt5.close_position(self._pos_ticket, side, "CMD")
+        if not ok:
+            self._log.error(
+                f"Commanded close of T{self._pos_ticket} FAILED. The strategy is flat and the "
+                f"broker is not; the bridge will halt on the next check rather than trade "
+                f"against a position it does not believe it has."
+            )
+            self._ledger.event("commanded_close_failed", ticket=self._pos_ticket)
+            self._notify(
+                alert(
+                    "⛔",
+                    "CLOSE FAILED",
+                    self._mt5.bot_label,
+                    "It was asked to close the open trade and the broker refused.",
+                    "The position is STILL OPEN and the bot will halt. Close it by hand.",
+                ),
+                notify.HEALTH,
+            )
+            return positions
+
+        self._ledger.event("commanded_close", ticket=self._pos_ticket, price=price)
+        # Re-read rather than assuming: the account is what says whether it is gone.
+        return self._mt5.get_open_positions()
 
     def _observe_open(self, positions, dec, sig) -> None:
         if self._pos_ticket is not None or not positions:

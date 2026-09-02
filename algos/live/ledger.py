@@ -87,6 +87,15 @@ STREAM_RE = re.compile(r"^(decisions|health)-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 # FAILS `test_ledger_streams.py`. That is the point — the choice is made when the event is
 # written, by the person who knows what it means.
 _DECISION_EVENTS = {
+    # A close a PERSON asked for, and what became of it. DECISIONS, not health: all three
+    # answer "why did THIS trade end", which is this stream's question. The subject test
+    # settles it the same way it settles `order_refused` — a record about a trade or an order
+    # is a decision; `halted` is health because it is about the machinery placing them.
+    # ⚠ `close_requested` is recorded even when nothing was open (`accepted: false`), so an
+    # instruction that did nothing is still answerable later. That is the point of writing it.
+    "close_requested",
+    "commanded_close",
+    "commanded_close_failed",
     # the broker's answer to an order the strategy asked for
     "order_placed",
     # ⚠ `order_refused` absorbed the old `order_too_small` on 2026-08-07. Both were "the

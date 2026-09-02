@@ -110,6 +110,8 @@ class _FakeMt5Ops:
         self.cancel_result = True
         # True / False / UNKNOWN, same three answers `mt5_ops.partial_close` really gives.
         self.partial_result = True
+        # Whether a full close at market succeeds. See `close_position` below.
+        self.close_result = True
 
     def get_open_positions(self, symbol=None):
         # Remember every ticket that has ever been open, so `_book()` can keep a filled order
@@ -223,6 +225,21 @@ class _FakeMt5Ops:
             if p.ticket == ticket:
                 p.volume = round(p.volume - lots, 8)
         return True
+
+    def close_position(self, ticket, direction, reason=""):
+        """Close the WHOLE position at market — the real signature, returning the same
+        `(ok, price, pnl)` triple `mt5_ops.close_position` does.
+
+        ⚠ **`close_result` can say False, because the broker can.** A fake that could only
+        succeed is exactly why a discarded cancel result went unnoticed for as long as it did
+        (see `cancel_pending` below) — the bridge's failure branch here halts a live bot, so it
+        is the branch most worth being able to produce.
+        """
+        self.actions.append(("close", ticket, direction, reason))
+        if not self.close_result:
+            return False, 0.0, 0.0
+        self.positions = [p for p in self.positions if p.ticket != ticket]
+        return True, 3300.0, 12.5
 
     def cancel_pending(self, ticket):
         """Three outcomes, because production has three: gone, still there, or unknown.
@@ -1480,3 +1497,79 @@ def test_the_shared_second_rung_appears_ONCE_across_the_ladders_that_share_it():
     names = [name for name, _ in live_bridge.price_triggered_banks(cfg)]
 
     assert names.count("exec_tp2_pct") == 1
+
+
+# ── closing a trade because a PERSON asked ────────────────────────────────────
+# The strategy exits in its own book first (`execution.request_close` → a `-CMD` exit fill on
+# that bar's decision). This is the other half: the broker still holds, and nothing else in this
+# bridge can take a position off at market. Without it `_agrees` halts — correctly, because a
+# position vanishing from one ledger and not the other is otherwise unexplainable.
+def _cmd_fill(direction=1):
+    return types.SimpleNamespace(
+        kind="exit",
+        order_id="L-CMD" if direction > 0 else "S-CMD",
+        price=3300.0,
+        qty=1.0,
+        dir=direction,
+    )
+
+
+def _open_for_close(**kw):
+    ops = _FakeMt5Ops(**kw)
+    ops.positions = [_Pos(777, 0, 3290.0, 1.0, 3280.0)]
+    ex = _FakeExecution(pos_dir=0)  # the strategy has ALREADY exited its own book
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._pos_ticket, b._pos_dir, b._pos_lots = 777, 1, 1.0
+    b._pos_entry, b._pos_stop, b._pos_risk_usd = 3290.0, 3280.0, 100.0
+    return b, ops, ledger, notes
+
+
+def test_a_commanded_exit_closes_the_broker_position_at_market():
+    b, ops, _, _ = _open_for_close()
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_cmd_fill()]
+
+    b.sync(dec, _Sig())
+
+    assert ("close", 777, "bullish", "CMD") in ops.actions
+    assert b.state is not live_bridge.BridgeState.HALTED
+
+
+def test_an_ORDINARY_exit_never_triggers_a_market_close():
+    """The control, and the one that matters most: every other exit reaches the broker as a
+    stop that has already filled. A bridge closing at market on any flat emulator would turn
+    each of those into a second, unasked-for order."""
+    b, ops, _, _ = _open_for_close()
+    dec = _Dec(stop=3280.0)
+    dec.fills = [types.SimpleNamespace(kind="exit", order_id="L-RUN", price=3280.0, qty=1.0, dir=1)]
+
+    b.sync(dec, _Sig())
+
+    assert not any(a[0] == "close" for a in ops.actions)
+
+
+def test_a_REFUSED_close_leaves_the_position_and_lets_the_bot_halt():
+    """The two ledgers really have parted, so carrying on would compute every later decision
+    against a trade that is still open. Retrying here would be a recovery tool repeating the
+    fault it is recovering from."""
+    b, ops, ledger, _ = _open_for_close()
+    ops.close_result = False
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_cmd_fill()]
+
+    b.sync(dec, _Sig())
+
+    assert ops.positions, "the position was reported closed when the broker refused"
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "event:commanded_close_failed" in ledger.kinds()
+
+
+def test_a_DRY_RUN_asks_the_broker_for_nothing():
+    b, ops, _, _ = _open_for_close()
+    b.dry_run = True
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_cmd_fill()]
+
+    b.sync(dec, _Sig())
+
+    assert not any(a[0] == "close" for a in ops.actions)
