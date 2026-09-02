@@ -2816,7 +2816,20 @@ parent in others, which is the same "no" / "cannot ask" collapse as rule 1.
 what a strategy with no parent looks like, so nothing on screen is wrong and the nesting has just
 gone missing. `test_every_declared_parent_IS_a_real_strategy` is the only thing that catches it.
 
-**Tests:** `tests/test_strategy_nesting.py` (6), watched RED by seven mutations — dropping the
+🔴 **THE EXTREME LEG WAS MOVED BACK OUT TO THE TOP LEVEL ON 2026-09-02 (Aaron: "move it to
+root"), AND THE REASON GENERALISES TO WHOEVER DECLARES THIS FIELD NEXT.** It had nested under the
+A+ bot on the same leg-of-one-move argument B-LEG uses, and that argument was true. **An indent
+reads as "child of", and that bot is a SIBLING** — its own Pine source, its own parity gate, and it
+runs standalone in any stack on any instrument. What made it misread is that ONE VISUAL LEVEL WAS
+CARRYING TWO RELATIONSHIPS: `loss_recovery` sits at that same indent and genuinely cannot run
+without its parent (`requires_source`, refused at every endpoint that starts a job). A row that
+cannot exist alone and a row that competes as an equal were drawn identically. ⚠ **B-LEG was NOT
+moved** — only the row Aaron named — so whether the same reasoning applies to it is open, not
+decided. ⚠ **Before declaring this field, ask whether the relationship you mean is DEPENDENCY or
+FAMILY.** The page can only draw one of them.
+
+**Tests:** `tests/test_strategy_nesting.py` (8 — two added with the move above, pinning that the
+row is top-level AND that it stayed standalone-runnable, both watched RED by mutation), watched RED by seven mutations — dropping the
 field, returning `""` instead of `None`, a typo'd parent, a missing declaration, a strategy listed
 under itself, dropping the B-LEG declaration, and giving B-LEG the standalone-refusal flag.
 MEASURED live: a rescan updated 3 rows and the two grouping values landed in the DB.

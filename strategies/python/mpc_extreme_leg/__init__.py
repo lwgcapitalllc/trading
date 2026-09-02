@@ -56,8 +56,21 @@ LAB_STRATEGY = {
     "suggested_instrument": "XAUUSD",
     "category": "reversal",
     "self_sizing": True,
-    # Display grouping only — it moves the row and nothing else. It sits under the A+ bot because
-    # the suite is carved up by LEG off one structure stream, and this is the leg BEFORE the one
-    # the A+ bot trades. A flat alphabetical list hid that relationship entirely.
-    "display_under": "mpc_sos_fade",
+    # 🔴 **NO `display_under` — THIS ROW IS TOP LEVEL, AND THAT IS A DECISION (Aaron, 2026-09-02:
+    # "move it to root").** It was listed under the A+ bot until then, on the reasoning that the
+    # suite is carved up by LEG off one structure stream and this is the leg BEFORE the one A+
+    # trades. That reasoning is still true and it is still the wrong thing to draw as an indent:
+    # **nesting reads as "child of", and this bot is a SIBLING, not a descendant.** It has its own
+    # Pine source, its own parity gate, its own config, and it runs standalone, in any stack, on
+    # any instrument. Measured over 6.6 years it holds ZERO same-side overlap with A+, correlates
+    # +0.035 month to month, and on one shared account the two refuse each other essentially never.
+    #
+    # ⚠ **The indent was carrying two different relationships at one level, which is what made it
+    # misread.** `loss_recovery` sits under A+ too and genuinely CANNOT run without it — it arms
+    # off that bot's closed losses and declares `requires_source`. A row that cannot exist alone
+    # and a row that competes for the account as an equal were drawn identically.
+    #
+    # ⚠ **Do not re-add the field without saying why here.** Its failure mode is silent in both
+    # directions: a dropped declaration and a typo'd parent both render at the top level, so
+    # nothing on screen would show the decision had been reversed. `tests/` pins it.
 }

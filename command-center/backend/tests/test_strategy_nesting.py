@@ -88,3 +88,33 @@ def test_nesting_the_B_LEG_leaves_it_runnable_on_its_own():
     bleg = _scan("mpc_bleg")
     assert not bleg.get("requires_source")
     assert bleg["runner"] == "python"
+
+
+def test_the_extreme_leg_is_TOP_LEVEL_and_that_is_a_decision():
+    """It was listed under the A+ bot until 2026-09-02, when Aaron moved it to root.
+
+    🔴 The reason is worth keeping, because the original reasoning was not wrong — it was drawing
+    the wrong thing. The suite IS carved up by leg off one structure stream and this IS the leg
+    before the one A+ trades; but an indent reads as "child of", and this bot is a SIBLING. It has
+    its own Pine source, its own parity gate, and it runs standalone, in any stack, on any
+    instrument. What made the indent misread is that `loss_recovery` sits at the same level and
+    genuinely cannot run without its parent — one visual level was carrying two relationships.
+
+    ⚠ This test exists because the field's failure mode is SILENT IN BOTH DIRECTIONS. A dropped
+    declaration and a typo'd parent both render at the top level, so re-adding it — or reversing
+    this decision by accident — would show up nowhere on the page. Watched RED by putting
+    `"display_under": "mpc_sos_fade"` back in the package.
+    """
+    assert _scan("mpc_extreme_leg")["display_under"] is None
+
+
+def test_the_extreme_leg_still_stands_alone_after_the_move():
+    """The mirror of the B-LEG check above: moving a row must change where it is DRAWN and nothing
+    else. It must not pick up the flag that refuses a standalone run, and it must stay a python
+    row the stack builder can tick.
+
+    Watched RED by adding `requires_source` to the package alongside the move.
+    """
+    xl = _scan("mpc_extreme_leg")
+    assert not xl.get("requires_source")
+    assert xl["runner"] == "python"

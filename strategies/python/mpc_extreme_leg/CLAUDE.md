@@ -231,6 +231,35 @@ moving those numbers.
 
 ---
 
+## It is a TOP-LEVEL row on the Strategies page, not a child of the A+ bot (2026-09-02)
+
+**Aaron's call, and the reasoning is worth keeping because the version it replaced was not wrong.**
+This package declared `display_under: "mpc_sos_fade"` until today, on the grounds that the suite is
+carved up by LEG off one structure stream and this is the leg BEFORE the one A+ trades. That is
+still true. It is still the wrong thing to draw as an indent.
+
+🔴 **AN INDENT READS AS "CHILD OF", AND THIS BOT IS A SIBLING.** It has its own Pine source, its own
+parity gate, its own config, and it runs standalone, in any stack, on any instrument. Measured over
+6.6 years it holds ZERO same-side overlap with A+, correlates +0.035 month to month, and on one
+shared account the two refuse each other essentially never.
+
+🔴 **What made it misread is that ONE VISUAL LEVEL WAS CARRYING TWO RELATIONSHIPS.** `loss_recovery`
+sits under A+ as well and genuinely cannot run without it — it arms off that bot's closed losses and
+declares `requires_source`, so the page refuses to run it alone. A row that cannot exist without its
+parent and a row that competes with it as an equal were drawn identically, and nothing on screen
+separated them.
+
+⚠ **Do not re-add the field without recording why.** Its failure mode is silent in BOTH directions —
+a dropped declaration and a typo'd parent both render at the top level, so reversing this decision by
+accident would show up nowhere. `command-center/backend/tests/test_strategy_nesting.py` pins it, and
+a second check pins that the move took nothing else away (the row must still be standalone-runnable).
+Both watched RED by mutation.
+
+⚠ **B-LEG still nests, and that was NOT changed here.** Only the row Aaron asked about moved.
+Whether the same argument applies to it is an open question, not something this change decided.
+
+---
+
 ## It can share an account now (2026-09-02)
 
 **`backtest/portfolio/run_stack` REFUSED this bot outright until today**, and the refusal was the
