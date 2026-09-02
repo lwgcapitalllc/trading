@@ -40,6 +40,8 @@ from models import (
 from services import chart_spec, history_limits, lab_db, portfolio_runner
 from services.sweep_runner import run_sweep
 
+from routers import _costs
+
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 
 router = APIRouter(prefix="/backtests", tags=["stacks"])
@@ -108,6 +110,17 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
     """Which legs would be reused from an existing completed run vs re-run fresh, for the
     given shared settings. Pure lookup — runs nothing. Drives the modal's live badges."""
     strategies = _validate_stack_strategies(list(dict.fromkeys(req.strategy_ids)))
+    # Resolved the SAME way `trigger_stack` resolves it — the basis is part of the reuse
+    # identity, so a preview that resolved it differently would promise a reuse the launch
+    # cannot honour.
+    cost_layers, commission_per_side = _costs.resolve_costs(
+        runner="python",
+        charge_costs=req.charge_costs,
+        broker_profile=req.broker_profile,
+        cost_layers=req.cost_layers,
+        commission_per_side=req.commission_per_side,
+        slippage_ticks=req.slippage_ticks,
+    )
     legs: list[StackPreviewLeg] = []
     reuse = 0
     for strat in strategies:
@@ -125,8 +138,10 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
                 req.bar_value,
                 req.start_date,
                 req.end_date,
-                req.commission_per_side,
+                commission_per_side,
                 req.slippage_ticks,
+                cost_layers,
+                req.broker_profile,
             )
         )
         if match:
@@ -188,8 +203,23 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     stack_id = "st_" + uuid.uuid4().hex[:10]
     now = int(time.time())
 
+    # 🔴 What this stack is CHARGED, resolved ONCE and BEFORE the mode branch. Both modes must
+    # get the identical answer: a screen and a shared run over the same legs measured on
+    # different physics would make the delta column report the cost gap as the risk cap's doing,
+    # which is the one comparison this whole page exists to make.
+    cost_layers, commission_per_side = _costs.resolve_costs(
+        runner="python",
+        charge_costs=req.charge_costs,
+        broker_profile=req.broker_profile,
+        cost_layers=req.cost_layers,
+        commission_per_side=req.commission_per_side,
+        slippage_ticks=req.slippage_ticks,
+    )
+
     if req.mode == "shared":
-        return _trigger_shared_stack(req, strategies, stack_id, now)
+        return _trigger_shared_stack(
+            req, strategies, stack_id, now, cost_layers, commission_per_side
+        )
 
     run_specs: list[dict] = []  # only the fresh legs actually need running
     job_specs: list[dict] = []
@@ -210,8 +240,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
                 req.bar_value,
                 req.start_date,
                 req.end_date,
-                req.commission_per_side,
+                commission_per_side,
                 req.slippage_ticks,
+                cost_layers,
+                req.broker_profile,
             )
         plan.append((strat, match))
 
@@ -227,8 +259,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
-            "commission_per_side": req.commission_per_side,
+            "commission_per_side": commission_per_side,
             "slippage_ticks": req.slippage_ticks,
+            "cost_layers": cost_layers,
+            "broker_profile": req.broker_profile,
             "created_at": now,
         }
     )
@@ -255,8 +289,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
                 "bar_value": req.bar_value,
                 "start_date": req.start_date,
                 "end_date": req.end_date,
-                "commission_per_side": req.commission_per_side,
+                "commission_per_side": commission_per_side,
                 "slippage_ticks": req.slippage_ticks,
+                "cost_layers": cost_layers,
+                "broker_profile": req.broker_profile,
                 "status": "running",
                 "created_at": now,
                 "stack_id": stack_id,
@@ -285,8 +321,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
                 "bar_value": req.bar_value,
                 "start_date": req.start_date,
                 "end_date": req.end_date,
-                "commission_per_side": req.commission_per_side,
+                "commission_per_side": commission_per_side,
                 "slippage_ticks": req.slippage_ticks,
+                "cost_layers": cost_layers,
+                "broker_profile": req.broker_profile,
             }
         )
 
@@ -398,7 +436,12 @@ def _leg_param_sets(req: StackRequest, strategies: list[dict]) -> list[dict]:
 
 
 def _trigger_shared_stack(
-    req: StackRequest, strategies: list[dict], stack_id: str, now: int
+    req: StackRequest,
+    strategies: list[dict],
+    stack_id: str,
+    now: int,
+    cost_layers: list[str] | None,
+    commission_per_side: float,
 ) -> StackResponse:
     """One balance, one risk budget, every leg replayed together.
 
@@ -425,8 +468,10 @@ def _trigger_shared_stack(
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
-            "commission_per_side": req.commission_per_side,
+            "commission_per_side": commission_per_side,
             "slippage_ticks": req.slippage_ticks,
+            "cost_layers": cost_layers,
+            "broker_profile": req.broker_profile,
             "created_at": now,
             "mode": "shared",
             "account_size": req.account_size,
@@ -452,8 +497,10 @@ def _trigger_shared_stack(
                 "bar_value": req.bar_value,
                 "start_date": req.start_date,
                 "end_date": req.end_date,
-                "commission_per_side": req.commission_per_side,
+                "commission_per_side": commission_per_side,
                 "slippage_ticks": req.slippage_ticks,
+                "cost_layers": cost_layers,
+                "broker_profile": req.broker_profile,
                 "status": "running",
                 "created_at": now,
                 "stack_id": stack_id,
@@ -488,8 +535,10 @@ def _trigger_shared_stack(
                 "bar_value": req.bar_value,
                 "start_date": req.start_date,
                 "end_date": req.end_date,
-                "commission_per_side": req.commission_per_side,
+                "commission_per_side": commission_per_side,
                 "slippage_ticks": req.slippage_ticks,
+                "cost_layers": cost_layers,
+                "broker_profile": req.broker_profile,
                 "status": "running",
                 "created_at": now,
                 "stack_id": stack_id,
@@ -509,12 +558,13 @@ def _trigger_shared_stack(
             }
         )
 
-    # ⚠ No `cost_layers` / `broker_profile` here, and that is the CURRENT state of stacks
-    # rather than a decision: the stacks table does not carry those columns, so a stack takes
-    # the legacy commission/slippage branch of `python_runner._cost_profile` like every other
-    # stack in this app. Wire them before anyone expects a priced shared stack — and wire them
-    # for BOTH modes at once, or a screen and a shared run over the same legs would be measured
-    # on different physics and the delta column would report the cost gap as the cap's doing.
+    # ✅ `cost_layers` / `broker_profile` ARE carried since 2026-09-02, and both modes resolve
+    # them from the ONE call in `trigger_stack` — which is what the previous note here asked for.
+    # Before that a stack fell into the legacy commission/slippage branch of
+    # `python_runner._cost_profile` and charged only what had been typed into the form, which
+    # defaults to zero: **every stack in this app before that date is GROSS while its page shows
+    # a cost row.** ⚠ Those stored stacks are NOT re-priced — their rows keep the NULL that
+    # honestly says they predate the columns; re-run one to charge it.
     portfolio_runner.launch(
         stack_id,
         legs,
@@ -524,8 +574,10 @@ def _trigger_shared_stack(
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
-            "commission_per_side": req.commission_per_side,
+            "commission_per_side": commission_per_side,
             "slippage_ticks": req.slippage_ticks,
+            "cost_layers": cost_layers,
+            "broker_profile": req.broker_profile,
             "account_size": req.account_size,
             "risk_cap_pct": req.risk_cap_pct,
             "entry_floor_pct": req.entry_floor_pct,

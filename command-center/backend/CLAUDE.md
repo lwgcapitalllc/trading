@@ -2492,7 +2492,8 @@ A **stack** layers 2+ Python strategies over ONE shared instrument + timeframe +
 - **`stacks`** — the stack's own settings (`instrument`, `bar_type`, `bar_value`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `created_at`). Persisted so a stack whose legs are ALL reused (zero owned child runs) still knows what it is — `list_stacks`/`get_stack` read settings from here, not from a child row.
 - **`stack_members(stack_id, run_id, owned, position)`** — membership. `owned=1` = a fresh run the stack created (carries `backtest_runs.stack_id`, hidden from the Runs tab, **deleted with the stack**). `owned=0` = a pre-existing standalone run REUSED as-is (`stack_id` stays NULL, **stays in the Runs tab, survives stack deletion**). `list_stack_runs` INNER JOINs members→runs so a reused run the user later deletes simply drops from the stack instead of 500-ing.
 
-**Smart reuse on create (`trigger_stack`).** For each leg, `find_matching_stack_run()` looks for the most-recent COMPLETED **standalone** Python run (`stack_id IS NULL AND stress_test_id IS NULL AND sweep_id IS NULL AND optimization_id IS NULL`) matching the leg's EXACT identity — strategy + instrument + `bar_type` + `bar_value` + window + `commission_per_side` + `slippage_ticks`. Match → add an `owned=0` member, no re-run. No match → create an `owned=1` child and queue it through `run_sweep` (unchanged). The python job lock is only taken when ≥1 leg needs a fresh run; an all-reused stack is assembled instantly and returns `status="complete"`. A per-strategy `params_by_strategy` override **disables reuse for that leg** ("run it my way", not "reuse whatever exists").
+**Smart reuse on create (`trigger_stack`).** For each leg, `find_matching_stack_run()` looks for the most-recent COMPLETED **standalone** Python run (`stack_id IS NULL AND stress_test_id IS NULL AND sweep_id IS NULL AND optimization_id IS NULL`) matching the leg's EXACT identity — strategy + instrument + `bar_type` + `bar_value` + window + `commission_per_side` + `slippage_ticks` + (since 2026-09-02) `cost_layers` +
+`broker_profile`. Match → add an `owned=0` member, no re-run. No match → create an `owned=1` child and queue it through `run_sweep` (unchanged). The python job lock is only taken when ≥1 leg needs a fresh run; an all-reused stack is assembled instantly and returns `status="complete"`. A per-strategy `params_by_strategy` override **disables reuse for that leg** ("run it my way", not "reuse whatever exists").
 
 **Matching is STRICT by Aaron's call (2026-07-25)** — any difference (even a one-day window shift or a different cost field) misses and the leg re-runs. Do NOT loosen it without asking. **Cost defaults are 0/0** (`commission_per_side=0`, `slippage_ticks=0`, `bar_value=15`) — matching the Pine strategies, which are all pinned `commission=0, slippage=0` for TV↔Python parity (costs are modeled inside the strategy via the 30-tick breakeven buffer). **These fields are cosmetic for Python runs** — `python_runner` never reads them; the real cost comes from the strategy's account profile (`backtest/fills.py` `PROFILES["vantage_demo"]` = commission 0.00) + measured (tick) / 0 (bar) slippage. So they're the displayed + leg-matching values, not the applied ones. The stack's original bug was the **5m timeframe** (vs the designed 15m), not costs — a stacked leg read ~⅓ of the same strategy's standalone run because it ran on entirely different signals. The forex rulesets (`personal_forex_demo`, `unconstrained`) also seed `default_slippage_ticks=0` (converged on existing DBs in `init_db`) so the Run modal shows 0/0 too; futures rulesets keep `2.25/1` (NT8/MT5 platforms genuinely apply them).
 
@@ -2669,11 +2670,91 @@ progress line. `lab_progress.json` was read for a job id on 2026-08-06 and a Sto
 unrelated platform's job; the rule that came out of it is that a channel built to carry a STATUS
 must never be asked who something is.
 
-⚠ **No `cost_layers` / `broker_profile` yet**, which is the current state of stacks generally
-rather than a decision — the `stacks` table does not carry those columns, so a shared stack takes
-the legacy commission/slippage branch like every other stack. **Wire them for BOTH modes at
-once**, or a screen and a shared run over the same legs would be measured on different physics and
-the delta column would report the cost gap as the cap's doing.
+✅ **`cost_layers` / `broker_profile` LANDED 2026-09-02** — see *A stack is CHARGED like a single
+run* below. Both modes resolve them from one call, which is what the note that stood here asked for.
+
+## A stack is CHARGED like a single run — `routers/_costs.py` (2026-09-02)
+
+🔴 **EVERY STACK THIS APP RAN BEFORE THIS DATE IS GROSS, AND ITS PAGE SHOWED A COST ROW THE WHOLE
+TIME.** `StackRequest` carried neither `cost_layers` nor `broker_profile`, so a stack reached
+`python_runner._cost_profile` with the legacy commission/slippage pair — which the modal defaults
+to **zero**. Nothing failed, nothing was empty, and the number that came out was simply the
+frictionless one sitting where the answer goes. ⚠ **Stored stacks are NOT re-priced**: their rows
+keep the NULL that honestly says they predate the columns, and re-running one is how it gets
+charged. ⚠ **The gap is not small.** MEASURED on one matched pair — the A+ and extreme-leg stack on
+PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23, $2,000 opening, 10% cap, identical in every other
+input — free book **+215.17R → $4,704,587**, ECN costs charged **+204.50R → $2,911,177**. That is
+**−5.0% of the edge and −38.1% of the closing balance**, because the shortfall compounds. ⚠ **The
+trade count MOVED, 314 → 315** — charging the spread through the fill model changes WHICH setups
+fill, which is the half a flat per-trade deduction can never reproduce.
+
+`StackRequest` and `StackPreviewRequest` now carry `charge_costs` (nullable bool, **default True**),
+`broker_profile` and `cost_layers` — the same contract `BacktestRunRequest` has carried since
+2026-08-24, with the same three rules (resolved at CREATION, python-only, `None` = no opinion). The
+full rule list is in *Costs are charged BY DEFAULT* and is **not restated here**.
+
+🔴 **The resolver was EXTRACTED to `routers/_costs.py` rather than copied, and that is the point of
+the change.** The block lived inline in `routers/backtests.py`; the stack path needed the identical
+thing. This app has already shipped the same defect three times by copying a measurement basis
+instead of sharing it — the tuning workbench, the stress children and the stack rerun each carried a
+parent's PARAMS and not its costs, then put the two side by side. **A second copy drifts, and the
+symptom is a comparison table where the cost gap reads as the feature under test.**
+
+⚠ **Resolved ONCE, BEFORE the mode branch.** A screen and a shared run over the same legs measured
+on different physics would make the delta column report the cost gap as the risk cap's doing — the
+one comparison the whole page exists to make.
+
+⚠ **`broker_profile` is DEFAULTED, not nullable, and it matches `BacktestRunRequest` deliberately.**
+The layer resolver reads a real `PROFILES` key, so a null refuses every stack with *broker None
+unknown* — a contract mismatch reported as a broker problem, which sends the reader at the wrong
+half of the system.
+
+🔴 **THE COST BASIS IS PART OF THE REUSE IDENTITY.** Without it a CHARGED stack silently reuses a
+leg run measured on a FREE book and stands it beside legs that paid spread, commission and swap.
+That is the mixed-basis defect above arriving in the one place it lands **inside a single result**
+rather than across two, where nothing downstream can separate them.
+
+⚠ **`find_matching_stack_run` compares them with `IS`, never `=`.** Both columns are legitimately
+NULL on a pre-layer row and `= NULL` matches nothing in SQL, so an equality test would quietly stop
+reusing every older run — a failure that preserves correctness and just re-runs everything, which is
+exactly the kind nobody investigates.
+
+⚠ **The layer list is matched as its STORED JSON, so it depends on the resolver emitting a stable
+order.** `charged_layers` returns a fixed tuple and slippage is appended last, so it does. A
+resolver that ever sorted differently would stop matching rather than match wrongly — the safe
+direction, and worth keeping that way.
+
+🔴 **THE PREVIEW MUST RESOLVE COSTS THE SAME WAY THE LAUNCH DOES, and it did not on the first
+attempt.** The modal's per-leg **Reuse** / **Run** badges come from `preview_stack`; giving only the
+launch the new basis made the preview promise a reuse the launch then replayed. Caught by
+`test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run`, which existed already and went
+red for exactly this. **A preview that defaults differently from the thing it previews is the same
+defect one level up** — both requests carry identical defaults on purpose.
+
+⚠ **One older test moved its PREMISE, not its subject**: it seeds free-book runs and asserts the
+preview reuses them, so it now says `charge_costs: False` out loud. The new behaviour is pinned
+separately by `test_a_CHARGED_stack_will_not_reuse_a_run_that_was_measured_FREE` — a test whose
+premise is quietly edited to keep it green is a test that has stopped guarding anything.
+
+⚠ **`stacks` gained the two columns in BOTH the migration list and the CREATE TABLE**, per this
+file's own standing note: a fresh database is built from the CREATE and an existing one from the
+migrations, and a column added to only one of them works perfectly on whichever machine you tested.
+
+🔴 **NOTHING HAD EVER STARTED A STACK IN A TEST, AND THAT IS THE BIGGER FINDING HERE.** Threading
+the costs through added two arguments to the shared-launch helper and its own signature was not
+updated — **every shared launch would have raised at the call site**, a 500 on the one button the
+Stacks page exists for. **All 1,196 backend tests passed with it**; it was the linter that noticed.
+The cause is that `test_shared_stack.py` seeds its rows straight through `lab_db` and posts only to
+`/preview`, so the trigger endpoint had no test **in either mode**. ⚠ **This is the shape
+`.claude/mcp/check_tradingbox.py` already names in its own docstring** — a suite whose cases all
+assert what a feature REFUSES certifies a feature with no working happy path, because something
+that always fails satisfies every refusal test beautifully. Both cost tests above are that kind:
+they assert a reuse is *declined*. ✅ Closed by `test_the_shared_LAUNCH_can_actually_be_CALLED`,
+which drives the real endpoint with the runner stubbed and was watched RED on exactly this
+(`TypeError`, 36 others still green). ⚠ **The screen mode's trigger is still undriven** — worth a
+matching test before anyone threads something new through it. ⚠ **The trigger route is
+`/backtests/stack`, SINGULAR**, where every other route on that router is plural; posting the
+plural returns 405, which does not read like a missing endpoint.
 
 ## A stack leg may READ ANOTHER LEG'S LOSSES — `recovery_parent` (2026-08-21)
 

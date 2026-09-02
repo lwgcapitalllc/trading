@@ -1221,6 +1221,11 @@ def test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run(client, tmp_
         "commission_per_side": 0.0,
         "slippage_ticks": 0,
         "mode": "screen",
+        # ⚠ Costs OFF, because the seeded runs above are free-book ones and since 2026-09-02 the
+        # cost basis is part of the reuse identity — a charged stack will not reuse a run that
+        # never paid a spread. Stating it keeps this test about the OVERRIDE rule rather than
+        # accidentally about the cost default, which is a separate rule with its own test below.
+        "charge_costs": False,
     }
     # Without an override BOTH reuse — this half is what makes the assertion below mean something
     # rather than passing on legs that could never have been reused.
@@ -1233,6 +1238,168 @@ def test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run(client, tmp_
     assert out["reuse_count"] == 1
     by_id = {leg["strategy_id"]: leg["action"] for leg in out["legs"]}
     assert by_id == {"mpc_bleg": "run", "mpc_sos_fade": "reuse"}
+
+
+def test_a_CHARGED_stack_will_not_reuse_a_run_that_was_measured_FREE(client, tmp_path, monkeypatch):
+    """🔴 The cost basis is part of a leg's identity, and the failure it prevents lands INSIDE
+    one result rather than across two.
+
+    Reuse exists so a stack does not replay a leg it already has. But a finished run measured on
+    a FREE book, dropped into a stack that charges spread, commission and swap, puts one
+    un-costed leg beside costed ones — and the combined line, the per-leg contribution and every
+    delta on the page are then a mixture of the strategies and the physics. This app has shipped
+    that defect three times across two runs (the tuning workbench, the stress-test children, the
+    stack rerun); here it would sit in a single stack with nothing to compare against.
+
+    Watched RED by dropping the two cost columns from `find_matching_stack_run`'s WHERE clause:
+    the charged request then reuses both free runs and `reuse_count` is 2.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    _stack_leg_with_params(
+        tmp_path / "lab.db", tmp_path / "reports", {"exec_risk_pct": 2.5}, mode="screen"
+    )
+    lab_db.upsert_strategy(
+        {
+            "id": "mpc_sos_fade",
+            "name": "MPC SOS Fade",
+            "runner": "python",
+            "class_name": "MpcSosFadeStrategy",
+            "source_path": "strategies/python/mpc_sos_fade",
+            "scanned_at": 1,
+            "param_schema": [],
+            "default_params": {},
+        }
+    )
+    for i, sid in enumerate(("mpc_bleg", "mpc_sos_fade")):
+        lab_db.insert_run(
+            {
+                "run_id": f"r_free_{i}",
+                "strategy_id": sid,
+                "instrument": "XAUUSD",
+                "params": {},
+                "bar_type": "Minute",
+                "bar_value": 15,
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "commission_per_side": 0.0,
+                "slippage_ticks": 0,
+                "status": "complete",
+                "created_at": 2,
+                "runner": "python",
+                "cost_layers": [],
+            }
+        )
+        lab_db.update_run_complete(
+            f"r_free_{i}",
+            {"trade_count": 1, "net_pnl": 1.0},
+            {"equity_curve": None, "trades": None, "daily_pnl": None},
+        )
+
+    body = {
+        "strategy_ids": ["mpc_bleg", "mpc_sos_fade"],
+        "instrument": "XAUUSD",
+        "bar_type": "Minute",
+        "bar_value": 15,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "commission_per_side": 0.0,
+        "slippage_ticks": 0,
+        "mode": "screen",
+    }
+    # The control: asking on the SAME basis the runs were measured on reuses both, so the
+    # refusal below is about the basis rather than about anything else being mismatched.
+    free = client.post("/backtests/stacks/preview", json={**body, "charge_costs": False}).json()
+    assert free["reuse_count"] == 2
+
+    charged = client.post("/backtests/stacks/preview", json={**body, "charge_costs": True}).json()
+    assert charged["reuse_count"] == 0
+    assert {leg["action"] for leg in charged["legs"]} == {"run"}
+
+
+def test_the_shared_LAUNCH_can_actually_be_CALLED(client, tmp_path, monkeypatch):
+    """🔴 NOTHING IN THIS SUITE EVER STARTED A STACK, so a launch that could not even be called
+    passed all 1,196 backend tests (found 2026-09-02 by the linter, not by a test).
+
+    `_trigger_shared_stack` was handed two new arguments and its own signature was not updated —
+    every shared launch would have died on a `TypeError` at the call site, a 500 on the one
+    button the whole page exists for. It survived because this file seeds its rows straight
+    through `lab_db` and posts only to `/preview`: **the trigger endpoint had no test at all, in
+    either mode.**
+
+    That is the shape `.claude/mcp/check_tradingbox.py` already names in its own docstring — a
+    suite whose cases all assert what a feature REFUSES certifies a feature with no working happy
+    path, because a thing that always fails satisfies every refusal test beautifully. The cost
+    tests above are exactly that kind: they assert a reuse is declined. This one asserts the
+    thing runs.
+
+    It also pins the cost basis onto the LAUNCH, which is the half no stored row can show: the
+    settings dict is what `run_stack` prices the replay from, so a stack could store a charged
+    basis and still replay free.
+
+    MUTATION: remove `cost_layers` / `commission_per_side` from `_trigger_shared_stack`'s
+    parameter list and this goes red while the other 36 tests here stay green — which is the
+    whole point of it existing.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    for sid, cls in (("mpc_bleg", "MpcBLegStrategy"), ("mpc_sos_fade", "MpcSosFadeStrategy")):
+        lab_db.upsert_strategy(
+            {
+                "id": sid,
+                "name": sid,
+                "runner": "python",
+                "class_name": cls,
+                "source_path": f"strategies/python/{sid}",
+                "scanned_at": 1,
+                "param_schema": [],
+                "default_params": {},
+            }
+        )
+
+    # Capture instead of replay — the simulation is `backtest/portfolio/`'s to test, and firing
+    # it here would run two real backtests inside the unit suite.
+    fired: dict = {}
+    monkeypatch.setattr(
+        "routers.stacks.portfolio_runner.launch",
+        lambda stack_id, legs, settings: fired.update(
+            stack_id=stack_id, legs=legs, settings=settings
+        ),
+    )
+
+    # ⚠ The trigger is `/backtests/stack`, SINGULAR — every other route on this router is
+    # `/stacks`, and posting the plural returns 405 rather than anything that reads like a
+    # missing endpoint. Worth pinning by using it.
+    resp = client.post(
+        "/backtests/stack",
+        json={
+            "strategy_ids": ["mpc_bleg", "mpc_sos_fade"],
+            "instrument": "XAUUSD",
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "mode": "shared",
+            "account_size": 10_000.0,
+            "risk_cap_pct": 10.0,
+            "entry_floor_pct": 0.0,
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    stack_id = resp.json()["stack_id"]
+
+    # It reached the runner at all — this is the assertion the missing parameters broke.
+    assert fired["stack_id"] == stack_id
+
+    # ⚠ Costs default ON, so the resolved layers must be on the settings the replay is priced
+    # from. Asserting non-empty rather than a fixed list: WHICH layers a broker charges is
+    # `python_runner.charged_layers`'s business and has its own tests — pinning the list here
+    # would make this test fail for a reason that has nothing to do with what it is guarding.
+    assert fired["settings"]["cost_layers"]
+    assert fired["settings"]["broker_profile"]
+
+    # And the same basis is STORED, or the page would describe a run it did not price.
+    stored = lab_db.get_stack_settings(stack_id)
+    assert json.loads(stored["cost_layers"]) == fired["settings"]["cost_layers"]
 
 
 # ── The Stacks LIST could not be read without opening every row ────────────────────────────

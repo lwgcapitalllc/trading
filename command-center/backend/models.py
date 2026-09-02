@@ -1402,6 +1402,25 @@ class StackRequest(BaseModel):
     # displayed/leg-matching values, not the applied ones.
     commission_per_side: float = 0.0
     slippage_ticks: int = 0
+    # 🔴 WHAT THIS STACK IS CHARGED — the same contract a single backtest carries, and it did not
+    # exist here until 2026-09-02. A stack reached `python_runner._cost_profile` with neither
+    # field, fell into the legacy branch, and charged only whatever commission and slippage had
+    # been typed into the form — which defaults to zero. **So every stack ever run in this app is
+    # GROSS while its page shows a cost row**, and the compounding makes the gap large: measured
+    # on the two live bots over 6.6 years, real costs take ~5% off the edge and ~38% off the
+    # closing balance.
+    # ⚠ Resolved at CREATION by `routers/_costs.py`, never inside the runner (rule 3), and shared
+    # with the single-run path rather than copied — see that module's docstring.
+    # ⚠ `charge_costs = None` means the caller has no opinion and leaves `cost_layers` alone,
+    # which is what a RERUN of a stack stored before this must do: it reproduces the stack it is
+    # rerunning, not today's default.
+    charge_costs: Optional[bool] = True
+    # ⚠ Defaulted, not nullable, and it MATCHES `BacktestRunRequest` deliberately: the layer
+    # resolver reads a real `PROFILES` key, so a null here refuses every stack with "broker
+    # None unknown" — a contract mismatch reported as a broker problem. The modal overrides it
+    # with the attached terminal, exactly as the Run modal does.
+    broker_profile: str = "vantage_demo"
+    cost_layers: Optional[list[str]] = None
     ruleset_ids: list[str] = []  # optional — scored per child run, like a normal run
     # Optional per-strategy param override, keyed by strategy id. A strategy not present here
     # uses its stored default_params. Lets the two sleeves carry different risk knobs.
@@ -1472,6 +1491,13 @@ class StackPreviewRequest(BaseModel):
     end_date: str
     commission_per_side: float = 0.0  # match the Pine (0/0) — see StackRequest
     slippage_ticks: int = 0
+    # 🔴 THE COST BASIS IS PART OF THE REUSE IDENTITY, so the preview has to carry it or it
+    # badges a leg green **Reuse** and then watches the launch replay it. Defaults MIRROR
+    # `StackRequest` exactly — a preview defaulting differently from the thing it previews is
+    # the same defect one level up.
+    charge_costs: Optional[bool] = True
+    broker_profile: str = "vantage_demo"
+    cost_layers: Optional[list[str]] = None
     # A SHARED stack reuses nothing — a finished standalone run was measured on its own full
     # account with nothing able to block it, so dropping one in would put an un-contended leg
     # beside contended ones. The preview has to say that, or the modal offers a reuse count for

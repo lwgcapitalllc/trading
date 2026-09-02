@@ -384,6 +384,15 @@ def init_db() -> None:
             "ALTER TABLE stacks ADD COLUMN account_size REAL",
             "ALTER TABLE stacks ADD COLUMN risk_cap_pct REAL",
             "ALTER TABLE stacks ADD COLUMN entry_floor_pct REAL",
+            # 2026-09-02 — layered costs for a STACK, the same two columns `backtest_runs` has
+            # carried since 2026-08-02. Until now a stack reached `_cost_profile` with neither,
+            # fell into the legacy branch, and charged only whatever commission and slippage had
+            # been typed into the form — which defaults to zero. So every stack ever run here is
+            # GROSS while its page shows a cost row.
+            # ⚠ NULL `cost_layers` still means the row predates the column, exactly as it does on
+            # `backtest_runs`; '[]' is the explicit "charge nothing".
+            "ALTER TABLE stacks ADD COLUMN cost_layers TEXT",
+            "ALTER TABLE stacks ADD COLUMN broker_profile TEXT",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -833,7 +842,9 @@ def init_db() -> None:
                 mode                TEXT NOT NULL DEFAULT 'screen',
                 account_size        REAL,
                 risk_cap_pct        REAL,
-                entry_floor_pct     REAL
+                entry_floor_pct     REAL,
+                cost_layers         TEXT,
+                broker_profile      TEXT
             );
 
             -- Membership is separate from ownership. owned=1 = a fresh run this stack
@@ -3347,8 +3358,8 @@ def insert_stack(data: dict) -> None:
         conn.execute(
             "INSERT INTO stacks (stack_id, instrument, bar_type, bar_value, start_date, "
             "end_date, commission_per_side, slippage_ticks, created_at, "
-            "mode, account_size, risk_cap_pct, entry_floor_pct) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "mode, account_size, risk_cap_pct, entry_floor_pct, cost_layers, broker_profile) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 data["stack_id"],
                 data["instrument"],
@@ -3363,6 +3374,15 @@ def insert_stack(data: dict) -> None:
                 data.get("account_size") if shared else None,
                 data.get("risk_cap_pct") if shared else None,
                 data.get("entry_floor_pct") if shared else None,
+                # Same three-state rule as `insert_run`: explicit None → NULL (a pre-layer row),
+                # anything else → JSON. They are NOT the same and collapsing them silently
+                # re-prices every stored stack the moment one is rerun.
+                (
+                    None
+                    if "cost_layers" in data and data["cost_layers"] is None
+                    else json.dumps(data.get("cost_layers") or [])
+                ),
+                data.get("broker_profile") or None,
             ),
         )
 
@@ -3391,11 +3411,29 @@ def find_matching_stack_run(
     end_date: str,
     commission_per_side: float,
     slippage_ticks: int,
+    cost_layers: Optional[list] = None,
+    broker_profile: Optional[str] = None,
 ) -> Optional[dict]:
     """Most-recent COMPLETED standalone Python run that matches a stack leg's exact
     backtest identity, so it can be reused instead of re-run. Standalone only
     (stack_id IS NULL, no stress child) so a reused run stays a real Runs-tab row and
-    never gets deleted out from under another stack."""
+    never gets deleted out from under another stack.
+
+    🔴 **THE COST BASIS IS PART OF THE IDENTITY (2026-09-02).** Without it a CHARGED stack
+    silently reuses a run measured on a FREE book and puts it beside legs that paid spread,
+    commission and swap — the mixed-basis defect this app has already shipped three times, and
+    the one place it would land inside a single result rather than across two.
+
+    ⚠ **Compared with `IS`, not `=`.** Both columns are legitimately NULL on a pre-layer row and
+    `= NULL` matches nothing in SQL, so an equality test would silently stop reusing every older
+    run — a correctness-preserving failure that just quietly re-runs everything, which is exactly
+    the kind nobody notices.
+
+    ⚠ **The layer list is compared as its STORED JSON**, so it depends on the resolver emitting a
+    stable order. `python_runner.charged_layers` returns a fixed tuple and slippage is appended
+    last, so it does; a resolver that ever sorted differently would stop matching rather than
+    match wrongly, which is the safe direction.
+    """
     with _connect() as conn:
         row = conn.execute(
             """
@@ -3406,6 +3444,7 @@ def find_matching_stack_run(
               AND r.bar_type = ? AND r.bar_value = ?
               AND r.start_date = ? AND r.end_date = ?
               AND r.commission_per_side = ? AND r.slippage_ticks = ?
+              AND r.cost_layers IS ? AND r.broker_profile IS ?
               AND r.status = 'complete' AND r.runner = 'python'
               AND r.stack_id IS NULL AND r.stress_test_id IS NULL
               AND r.sweep_id IS NULL AND r.optimization_id IS NULL
@@ -3421,6 +3460,8 @@ def find_matching_stack_run(
                 end_date,
                 commission_per_side,
                 slippage_ticks,
+                None if cost_layers is None else json.dumps(cost_layers),
+                broker_profile,
             ),
         ).fetchone()
     return _parse_json_fields(dict(row), ["params"]) if row else None
@@ -3435,8 +3476,9 @@ def insert_run_stack(data: dict) -> None:
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, started_at, stack_id, runner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, stack_id, runner,
+                 cost_layers, broker_profile)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["run_id"],
@@ -3454,6 +3496,12 @@ def insert_run_stack(data: dict) -> None:
                 data.get("started_at", data["created_at"]),
                 data["stack_id"],
                 data.get("runner", "python"),
+                (
+                    None
+                    if "cost_layers" in data and data["cost_layers"] is None
+                    else json.dumps(data.get("cost_layers") or [])
+                ),
+                data.get("broker_profile") or None,
             ),
         )
 
