@@ -25,14 +25,36 @@ pre-flight bounds it, the date picker moves, and the retry modal explains itself
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, NamedTuple, Optional
+
 
 # param flag -> the timeframe (minutes) it makes the run ALSO load.
 #
 # ⚠ Keyed on BOOLEAN params. A future feed selected by a string or a number ("bias_tf":
 # "H1") needs its own branch in `required_timeframes`, not a row here — and the frontend
 # sends only truthy flag NAMES, so a non-boolean would never arrive.
-EXTRA_FEEDS: dict[str, int] = {
+class FeedSpec(NamedTuple):
+    """How to work out ONE extra feed's timeframe: the run's own setting, or a default.
+
+    🔴 **`default` USED TO BE THE WHOLE ANSWER, AND THAT MADE A LIVE CONTROL DEAD (2026-09-01).**
+    The strategy declares "Re-entry fill clock (minutes)" as a 1–15 number widget whose own
+    description tells the reader it changes how accurate the test is. This module ignored it and
+    `python_runner` fetched at the constant, so a run set to 1 or to 15 still bounded and still
+    replayed 5m bars — the stored params saying one thing and the measurement being another. The
+    command-line tool honoured it the whole time, so the two sides disagreed about what a run had
+    been measured at, and nothing said so.
+
+    ⚠ **`default` is still load-bearing and is NOT the strategy's field read at import.** This
+    module bounds the window before any strategy is constructed, so it cannot import the value; a
+    run that never states the setting has to be bounded at something, and that something is a
+    COPY pinned to the strategy's own default by `tests/test_run_feeds.py`.
+    """
+
+    param: Optional[str]  # the run param that OVERRIDES it, or None if the feed is fixed
+    default: int  # what a run that does not state that param loads
+
+
+EXTRA_FEEDS: dict[str, FeedSpec] = {
     # The re-entry's FILL CLOCK. `python_runner` replays the 15m PRIMARY and the re-entry on one
     # merged clock via `strategy.run_dual`, so this feed's measured history floor bounds the run's
     # window just as hard as the chart's does.
@@ -45,7 +67,7 @@ EXTRA_FEEDS: dict[str, int] = {
     # ⚠ It is a measurement-accuracy figure, not a strategy one: live, the broker fills a resting
     # limit at the price that trades. MEASURED over 7.9 years — 1m +147.56R, 5m +145.61R (1/5 the
     # bars), 15m +136.36R. Full table in the strategy's config beside the field.
-    "exec_secondary": 5,
+    "exec_secondary": FeedSpec(param="exec_sec_fill_tf_min", default=5),
 }
 
 # The one extra feed the runner knows how to LOAD (`strategy.run_dual`). Adding a row to
@@ -73,6 +95,38 @@ def timeframe_minutes(bar_type: Optional[str], bar_value: Optional[int]) -> int:
     if bt != "Minute":
         return 60
     return max(1, bv)
+
+
+def extra_feed_minutes(flag: str, params: Any = None) -> int:
+    """The timeframe one extra feed loads for THIS run — its own setting, or the default.
+
+    ⚠ **The one place that decides, and both the FETCH and the FLOOR ask it.** They used to read
+    `EXTRA_FEEDS[flag]` separately, which was fine only while the answer was a constant. Two
+    call sites independently resolving a value is the shape this module was created to end.
+
+    ⚠ **A stated value that is not a positive whole number falls back to the default** rather
+    than raising. This runs inside a date-picker request as well as a run, and a picker that
+    500s because somebody is mid-typing in a number box is worse than one bounded at the
+    default — the RUN still refuses properly, because the strategy's own config validates it.
+    """
+    spec = EXTRA_FEEDS[flag]
+    if spec.param is None:
+        return spec.default
+    raw = _value(params, spec.param)
+    try:
+        got = int(raw)
+    except (TypeError, ValueError):
+        return spec.default
+    return got if got > 0 else spec.default
+
+
+def _value(params: Any, name: str):
+    """One param off a params dict OR a built config object. `None` when it is not stated."""
+    if params is None:
+        return None
+    if isinstance(params, Mapping):
+        return params.get(name)
+    return getattr(params, name, None)
 
 
 def _flag(params: Any, name: str) -> bool:
@@ -103,9 +157,9 @@ def required_timeframes(
     chart timeframe alone is still a valid question to ask.
     """
     minutes = {timeframe_minutes(bar_type, bar_value)}
-    for name, tf in EXTRA_FEEDS.items():
+    for name in EXTRA_FEEDS:
         if _flag(params, name):
-            minutes.add(tf)
+            minutes.add(extra_feed_minutes(name, params))
     return sorted(minutes)
 
 
@@ -128,11 +182,30 @@ def enabled_feed_flags(params: Any) -> list[str]:
     return sorted(name for name in EXTRA_FEEDS if _flag(params, name))
 
 
-def feeds_from_flags(flags: Optional[Iterable[str]]) -> dict[str, bool]:
-    """`flags` query param -> a params-shaped mapping `required_timeframes` can read.
+def feeds_from_flags(
+    flags: Optional[Iterable[str]], values: Optional[Iterable[str]] = None
+) -> dict:
+    """`flags` (+ optional `name:value` pairs) -> a params-shaped mapping for `required_timeframes`.
 
-    Unknown names are dropped rather than rejected: the UI sends every truthy param name
-    it happens to hold, so most of what arrives here is not a feed flag at all.
+    Unknown names are dropped rather than rejected: the UI sends every truthy param name it
+    happens to hold, so most of what arrives here is not a feed flag at all.
+
+    ⚠ **`values` exists because a flag alone stopped being enough (2026-09-01).** A feed's
+    timeframe can now come from a run param, and the picker was sending names only — so it would
+    have bounded every run at the DEFAULT while the run itself loaded something else, which is
+    the 2026-08-15 defect arriving one level down. The UI sends its numeric params the same way
+    it sends its flags — everything it holds — and this keeps only the ones a feed reads, so the
+    frontend still carries no copy of that list.
     """
     names = {f.strip() for f in (flags or []) if f and f.strip()}
-    return {name: True for name in EXTRA_FEEDS if name in names}
+    out: dict = {name: True for name in EXTRA_FEEDS if name in names}
+    wanted = {spec.param for spec in EXTRA_FEEDS.values() if spec.param}
+    for pair in values or []:
+        key, _, raw = (pair or "").partition(":")
+        key = key.strip()
+        if key in wanted:
+            try:
+                out[key] = int(raw)
+            except (TypeError, ValueError):
+                pass  # mid-typing, or a non-numeric: the default stands
+    return out

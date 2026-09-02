@@ -1663,10 +1663,20 @@ therefore wait out the real poll — which is why one test is 65s and says so.
 ## `useHistoryLimit` takes the run's PARAMS, and omitting them is the defect (2026-08-15)
 
 **A run can load more than its chart timeframe** — `exec_secondary` adds a second feed, **5m
-since 2026-08-21 and NOT 1m** (`services/run_feeds.py::EXTRA_FEEDS` owns the number) — and each
-feed has its own broker floor, so the earliest legal date depends on the PARAMS, not just the
-instrument and bar size. The hook takes them and sends the names of every truthy one as repeated
-`&flags=`; the backend keeps the ones that mean a feed. Backend rules and the incident:
+by default since 2026-08-21 and NOT 1m** (`services/run_feeds.py::EXTRA_FEEDS` owns the default)
+— and each feed has its own broker floor, so the earliest legal date depends on the PARAMS, not
+just the instrument and bar size. The hook takes them and sends the names of every truthy one as
+repeated `&flags=`; the backend keeps the ones that mean a feed.
+
+🔴 **AND SINCE 2026-09-01 IT SENDS NUMBERS TOO (`&pv=name:value`), BECAUSE A FLAG STOPPED BEING
+ENOUGH.** A feed's timeframe can now come from a run param (the re-entry's fill clock), so names
+alone would have bounded every run at the DEFAULT while the run itself loaded something else —
+the 2026-08-15 defect one level down, and it would have looked exactly like a date bug again.
+⚠ **The rule is unchanged and it is the reason this works: the hook sends EVERYTHING it holds —
+every truthy name, every finite number — and the backend keeps only what a feed reads.** A list
+of feed params here would be the second claim about one rule, which is the thing this file keeps
+warning about. ⚠ **Both are in the query key**, or two runs differing only by fill clock share a
+cached floor. ⚠ MEASURED before choosing the shape: 60 numeric params, ~1.4 KB of query string. Backend rules and the incident:
 `../backend/CLAUDE.md` → *THE FLOOR IS PER-RUN*.
 
 - ⚠ **Omitting `params` asks the chart-only question and gets a floor that is too EARLY**, which

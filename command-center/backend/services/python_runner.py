@@ -424,11 +424,15 @@ def _execute(job_id: str, spec: dict) -> None:
         # cost of the wrong figure was not a bad run, it was that this feature went unmeasured
         # for three weeks because the only windows anyone believed reachable were too short for a
         # setup this rare to fire in. A 1m window is SLOW to load and replay, not unavailable.
-        # The fill clock comes from `run_feeds.EXTRA_FEEDS`, which is also what BOUNDED the
-        # window — loading a different one here would replay a feed the window was never
-        # checked against. 5m since 2026-08-21; it was hardcoded 1 and cost 2.8M bars a run
-        # for 1.3% of accuracy.
-        fill_tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+        # The fill clock comes from `run_feeds.extra_feed_minutes`, which is also what BOUNDED
+        # the window — loading a different one here would replay a feed the window was never
+        # checked against. 5m by default since 2026-08-21; it was hardcoded 1 and cost 2.8M bars
+        # a run for 1.3% of accuracy.
+        # 🔴 **IT IS THE RUN'S OWN SETTING SINCE 2026-09-01, NOT THE REGISTRY CONSTANT.** Reading
+        # the constant here made the strategy's "Re-entry fill clock (minutes)" control DEAD on
+        # this path: the run form moved, the run did not, and the stored params claimed a value
+        # nothing had been measured at. Ask the resolver, never the table.
+        fill_tf = run_feeds.extra_feed_minutes(run_feeds.SECONDARY_FLAG, config)
         _set(job_id, pct=2, message=f"Loading {symbol} {fill_tf}m bars for the re-entry…")
         df1m = BarSource(server=bar_server(spec)).load(
             symbol, fill_tf, spec["start_date"], spec["end_date"]

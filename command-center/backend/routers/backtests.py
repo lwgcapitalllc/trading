@@ -379,6 +379,7 @@ def get_history_limit(
     runner: str = "python",
     refresh: bool = False,
     flags: Optional[list[str]] = Query(default=None),
+    pv: Optional[list[str]] = Query(default=None),
 ) -> Optional[HistoryLimit]:
     """The earliest date a backtest of this shape may start, or null if unbounded.
 
@@ -390,10 +391,16 @@ def get_history_limit(
     on a guess would be worse than letting the data layer's spacing check catch it.
 
     `flags` = the names of the run's params that are switched ON. A run can load more than
-    its chart timeframe (`exec_secondary` adds a 1m feed) and each feed has its own floor,
-    so the answer depends on the params, not just the timeframe. The UI sends every truthy
-    param name and `run_feeds` keeps the ones that mean a feed — so the frontend never
+    its chart timeframe (`exec_secondary` adds a second feed) and each feed has its own
+    floor, so the answer depends on the params, not just the timeframe. The UI sends every
+    truthy param name and `run_feeds` keeps the ones that mean a feed — so the frontend never
     carries its own copy of that list, which is what would drift.
+
+    `pv` = the same idea for NUMBERS, as `name:value` pairs, added 2026-09-01. A feed's
+    timeframe can come from a run param (`exec_sec_fill_tf_min`), and a flag alone would have
+    bounded every run at the DEFAULT while the run itself loaded something else — the
+    2026-08-15 defect one level down. Same rule as `flags`: the UI sends what it holds and
+    this keeps only what a feed reads.
 
     ⚠ Omitting `flags` answers the CHART-ONLY question, which is a real question and a
     dangerous default: it is what shipped a floor one day too early on run `50331c7cbe96`.
@@ -406,7 +413,7 @@ def get_history_limit(
         bar_value,
         runner,
         refresh=refresh,
-        params=run_feeds.feeds_from_flags(flags),
+        params=run_feeds.feeds_from_flags(flags, pv),
     )
     return HistoryLimit(**lim) if lim else None
 

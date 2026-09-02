@@ -37,7 +37,7 @@ FLOORS = {1: "2018-09-14", 15: "2018-09-13"}
 # because they had quietly become assertions about a number that lives somewhere else. A test that
 # fails on an unrelated config change is a test nobody trusts the next time it speaks.
 # ⚠ The REAL value is asserted once, at the bottom, against the strategy that owns it.
-SHALLOW_FEED = {"exec_secondary": 1}
+SHALLOW_FEED = {"exec_secondary": run_feeds.FeedSpec(param="exec_sec_fill_tf_min", default=1)}
 
 
 def _describe(symbol, minutes, refresh=False):
@@ -89,7 +89,7 @@ def test_the_secondary_adds_its_own_fill_feed():
     """Named for the MECHANISM, not the number. It read `== [1, 15]` and went red on
     2026-08-21 when the re-entry's fill clock moved to 5m — an assertion about a value that
     lives in the strategy, wearing the clothes of an assertion about this module."""
-    tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+    tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG].default
     assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": True}) == [tf, 15]
     assert tf != 15, "a fill feed equal to the chart proves nothing here"
 
@@ -102,7 +102,7 @@ def test_a_built_config_object_answers_the_same_as_a_params_dict():
     class Cfg:
         exec_secondary = True
 
-    tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+    tf = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG].default
     assert run_feeds.required_timeframes("Minute", 15, Cfg()) == [tf, 15]
 
 
@@ -220,7 +220,11 @@ def test_an_unmeasurable_feed_does_not_silently_drop_the_floor(floors):
     from a SUBSET of the feeds. The remaining feeds must still bound the window — answering
     None because one feed is unknown would leave the run unbounded, which is the reassuring
     direction and the wrong one."""
-    with patch.dict(run_feeds.EXTRA_FEEDS, {**SHALLOW_FEED, "exec_bias_h4": 240}, clear=False):
+    with patch.dict(
+        run_feeds.EXTRA_FEEDS,
+        {**SHALLOW_FEED, "exec_bias_h4": run_feeds.FeedSpec(param=None, default=240)},
+        clear=False,
+    ):
         lim = history_limits.limits_for(
             "XAUUSD", "Minute", 15, params={"exec_secondary": True, "exec_bias_h4": True}
         )
@@ -246,4 +250,93 @@ def test_the_reentry_fill_clock_matches_the_strategy_that_owns_it():
         sys.path.insert(0, str(root))
     from strategies.python.mpc_sos_fade.config import SosFadeConfig
 
-    assert run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG] == SosFadeConfig().exec_sec_fill_tf_min
+    spec = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
+    assert spec.default == SosFadeConfig().exec_sec_fill_tf_min
+    # The override's NAME is pinned too. A typo here would not fail anything on its own — the
+    # resolver would simply never find the param and fall back to the default, which is the
+    # dead-control defect this table was changed to fix, silently restored.
+    assert spec.param in SosFadeConfig.__dataclass_fields__
+
+
+# ── the run's OWN fill clock, not the registry's default (2026-09-01) ─────────
+#
+# 🔴 The strategy declares "Re-entry fill clock (minutes)" as a 1-15 number widget whose own
+# description says it changes how accurate the test is. This module ignored it and
+# `python_runner` fetched at the constant, so a run set to 1 or to 15 still bounded and still
+# replayed 5m bars while its stored params claimed otherwise. The command-line tool
+# (`backtest/tools/run_report.py`) honoured it the whole time, so the two sides disagreed about
+# what a run had been measured at and nothing said so.
+#
+# ⚠ Every test below was watched RED against the module as it stood before that date: each one
+# returned the DEFAULT whatever the run asked for.
+
+
+def test_a_run_that_states_a_faster_fill_clock_is_bounded_at_it():
+    assert run_feeds.required_timeframes(
+        "Minute", 15, {"exec_secondary": True, "exec_sec_fill_tf_min": 1}
+    ) == [1, 15]
+
+
+def test_a_run_that_states_a_slower_fill_clock_is_bounded_at_it():
+    """The widget's other end. 15 is legal in the LAB (the live bot separately refuses a clock
+    that is not faster than the stream it trades) and it must not be read as the default."""
+    assert run_feeds.required_timeframes(
+        "Minute", 15, {"exec_secondary": True, "exec_sec_fill_tf_min": 15}
+    ) == [15]
+
+
+def test_a_run_that_states_nothing_still_gets_the_default():
+    """The whole reason the default stays: this module bounds the window before a strategy
+    exists, so a run that never stated the setting has to be bounded at something."""
+    assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": True}) == [5, 15]
+
+
+def test_the_fill_clock_is_ignored_when_the_feed_itself_is_OFF():
+    """A value with its flag off must not conjure a feed the run never loads."""
+    assert run_feeds.required_timeframes(
+        "Minute", 15, {"exec_secondary": False, "exec_sec_fill_tf_min": 1}
+    ) == [15]
+
+
+def test_a_nonsense_fill_clock_falls_back_rather_than_raising():
+    """This runs inside a date-picker request too. A picker that 500s because somebody is
+    mid-typing in a number box is worse than one bounded at the default — and the RUN still
+    refuses properly, because the strategy's own config validates the value."""
+    for bad in ("", "abc", None, 0, -3):
+        assert (
+            run_feeds.extra_feed_minutes(run_feeds.SECONDARY_FLAG, {"exec_sec_fill_tf_min": bad})
+            == 5
+        )
+
+
+def test_a_built_config_object_answers_the_same_as_a_params_dict_for_the_clock():
+    class Cfg:
+        exec_secondary = True
+        exec_sec_fill_tf_min = 1
+
+    assert run_feeds.required_timeframes("Minute", 15, Cfg()) == [1, 15]
+
+
+def test_the_picker_carries_the_VALUE_and_not_only_the_flag():
+    """`flags` alone bounded every run at the default while the run loaded something else — the
+    2026-08-15 defect one level down."""
+    params = run_feeds.feeds_from_flags(["exec_secondary"], ["exec_sec_fill_tf_min:1"])
+    assert params == {"exec_secondary": True, "exec_sec_fill_tf_min": 1}
+    assert run_feeds.required_timeframes("Minute", 15, params) == [1, 15]
+
+
+def test_the_picker_drops_numeric_params_no_feed_reads():
+    """Same rule as `flags`: the UI sends everything it holds and this keeps what matters, so
+    the frontend never carries its own copy of the feed list."""
+    params = run_feeds.feeds_from_flags(
+        ["exec_secondary"], ["exec_risk_pct:12.5", "exec_sec_fill_tf_min:1", "junk:9"]
+    )
+    assert params == {"exec_secondary": True, "exec_sec_fill_tf_min": 1}
+
+
+def test_a_malformed_value_pair_is_dropped_rather_than_breaking_the_picker():
+    params = run_feeds.feeds_from_flags(
+        ["exec_secondary"], ["exec_sec_fill_tf_min", "exec_sec_fill_tf_min:x", ""]
+    )
+    assert params == {"exec_secondary": True}
+    assert run_feeds.required_timeframes("Minute", 15, params) == [5, 15]

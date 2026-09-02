@@ -268,16 +268,37 @@ export function useHistoryLimit(
         .filter((k) => params[k] === true)
         .sort()
     : []
+  // The same rule as `flags`, for NUMBERS (2026-09-01). A feed's timeframe can come from a run
+  // param, so a flag alone bounded every run at the DEFAULT while the run loaded something else.
+  // We send every numeric param and the backend keeps the ones a feed reads — deliberately NOT a
+  // list of feed params here, for exactly the reason above this function.
+  const pv = params
+    ? Object.keys(params)
+        .filter((k) => typeof params[k] === 'number' && Number.isFinite(params[k] as number))
+        .sort()
+        .map((k) => `${k}:${params[k]}`)
+    : []
   return useQuery({
-    // `flags` is in the key: two runs of one strategy that differ only by `exec_secondary` have
-    // DIFFERENT floors, so they must not share a cache entry.
-    queryKey: ['lab', 'history-limit', instrument, barType, barValue, runner, flags.join(',')],
+    // `flags` and `pv` are in the key: two runs of one strategy that differ only by
+    // `exec_secondary`, or only by its fill clock, have DIFFERENT floors and must not share a
+    // cache entry.
+    queryKey: [
+      'lab',
+      'history-limit',
+      instrument,
+      barType,
+      barValue,
+      runner,
+      flags.join(','),
+      pv.join(','),
+    ],
     queryFn: () =>
       api.get<HistoryLimit | null>(
         `/backtests/history-limit?instrument=${encodeURIComponent(instrument!)}` +
           `&bar_type=${encodeURIComponent(barType)}&bar_value=${barValue}` +
           `&runner=${encodeURIComponent(runner)}` +
-          flags.map((f) => `&flags=${encodeURIComponent(f)}`).join('')
+          flags.map((f) => `&flags=${encodeURIComponent(f)}`).join('') +
+          pv.map((p) => `&pv=${encodeURIComponent(p)}`).join('')
       ),
     enabled: !!instrument,
     staleTime: 60 * 60_000,

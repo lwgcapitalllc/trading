@@ -3891,8 +3891,8 @@ window *before* any strategy is constructed, so it cannot import the value it ne
 cannot read is a value it would have to guess. `tests/test_run_feeds.py` asserts the two agree and
 was watched RED by setting the registry back to 1.
 
-🔴 **AND THE COPY HAS A CONSEQUENCE NOBODY WROTE DOWN: THE RUN FORM'S "Re-entry fill clock
-(minutes)" CONTROL IS DEAD ON THIS PATH — OPEN, RAISED 2026-09-01, NOT FIXED.** The strategy
+🔴 **AND THE COPY HAD A CONSEQUENCE NOBODY WROTE DOWN: THE RUN FORM'S "Re-entry fill clock
+(minutes)" CONTROL WAS DEAD ON THIS PATH — RAISED AND ✅ FIXED 2026-09-01.** The strategy
 declares it as a live number widget (`mpc_sos_fade.meta.json`, range 1–15, shown whenever the
 re-entry is on) whose own description tells the reader it changes how accurate the test is. This
 module ignores it. `required_timeframes` only ever adds the registry's constant, and
@@ -3910,11 +3910,33 @@ print(run_feeds.required_timeframes('Minute', 15, {'exec_secondary': True, 'exec
 run_report.py:448` reads `getattr(cfg, "exec_sec_fill_tf_min", 1)` off the built config and DOES
 honour it. So the same params produce a different fill clock depending on which side ran them, and
 nothing says so. ⚠ **This is rule 7 arriving through the pre-flight** — the label is a claim about
-code somewhere else, and here that code reads a constant. ⚠ **The fix is not simply "read the
-config"**: this module bounds the window before a config exists, which is the whole reason the
-copy is here — so it needs the raw param plumbed through `required_timeframes`, with the registry
-value kept as the default for the case where no params arrive. **It changes what a run MEASURES,
-so it is a decision rather than a tidy-up.**
+code somewhere else, and here that code read a constant.
+
+✅ **HOW IT WAS FIXED, and the shape is the point.** `EXTRA_FEEDS` now holds a `FeedSpec(param,
+default)` rather than an int: `param` is the run setting that OVERRIDES the feed's timeframe,
+`default` is what a run that never states it loads. **One resolver — `extra_feed_minutes(flag,
+params)` — and BOTH the fetch and the floor ask it**, where they previously read the table
+separately. ⚠ **The default is still load-bearing and is NOT the strategy's field read at
+import**: this module bounds the window before any strategy is constructed, so it cannot import
+the value, and `tests/test_run_feeds.py` pins both the default AND the override's NAME — a typo
+in the name would fail nothing on its own, it would just never find the param and silently
+restore the dead control.
+
+⚠ **The PICKER needed a second half, and without it the fix would have been the 2026-08-15 defect
+one level down.** The UI sent flag NAMES only, so it would have bounded every run at the default
+while the run loaded something else. It now sends its numeric params as `name:value` pairs
+(`&pv=`) exactly the way it sends its flags — **everything it holds, with this module keeping only
+what a feed reads** — so the frontend still carries no copy of the feed list. MEASURED before
+choosing that shape: 60 numeric params, ~1.4 KB of query string.
+
+⚠ **A stated value that is not a positive whole number falls back to the default rather than
+raising.** This resolver runs inside a date-picker request, and a picker that 500s because
+somebody is mid-typing in a number box is worse than one bounded at the default — the RUN still
+refuses properly, because the strategy's own config validates the value.
+
+⚠ **It changes what a run MEASURES.** A stored run whose params state a clock other than 5 was
+measured at 5; re-running it now will not reproduce it. That is the correction landing, not a
+regression, but it is the kind of thing that reads as a lab bug six months from now.
 
 🔴 **FOUR FLOOR TESTS WENT RED ON THIS CHANGE AND NONE OF THEM WAS ABOUT IT.** They prove a
 mechanism — the window is bounded by the shallowest feed a run loads — and they had used the
