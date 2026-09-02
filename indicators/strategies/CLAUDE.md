@@ -253,6 +253,10 @@ and the daily and lower families on a wick (`engine.py:228`, citing `mpc_assista
 1427). **The house engine and the parent indicator agreed with each other; this strategy file was
 the odd one out.** The tracker now takes a close-through flag, passed only for weekly.
 
+✅ **CONFIRMED GREEN THE SAME DAY.** A second export off the regenerated twin — same window, same
+shape — compared 20,327 bars and the gate exited 0. **That is what confirms the fix; the argument
+for it only decided which half to change.**
+
 ⚠ **MEASURED, and it is why the gate was worth building rather than reasoning about**: over 20,319
 compared bars the weekly family differed on **ten bars** and every other family agreed on **all**
 of them. All seven diverged columns cascaded from those ten. ⚠ **The direction was decided by the
