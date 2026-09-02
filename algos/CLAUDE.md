@@ -2058,6 +2058,57 @@ must act on the difference tests `is UNKNOWN`.
    one layer down; MEASURED, not reasoned, when writing it as `kind` killed six tests on the fake
    ledger's signature.
 
+### Exits — which ones the BRIDGE has to execute (2026-09-02)
+
+**`_mirror_strategy_exit` closes the broker position when the strategy has exited a trade the
+broker cannot.** The strategy exits in its own book and stamps a tag on the exit fill;
+`BRIDGE_OWNED_EXITS` is the allow-list of tags this bridge must act on: `-CMD`, `-TIME`, `-TP1`,
+`-TP2`.
+
+🔴 **The list is what the BROKER cannot do for itself.** A stop is already an order sitting at the
+broker, so a stop-out needs nothing from here. Everything on the list is a decision the strategy
+made against a closed bar — a target that took the whole position, an operator's instruction, the
+clock running out — and the broker has never heard of any of them.
+
+🔴 **THIS IS THE FULL-EXIT-AT-A-PRICE PATH, and it is why a ladder banking 100% is no longer
+refused at startup.** `_sync_partials` reconciles the broker DOWN to the size the strategy still
+wants, and that cannot express zero: a rung taking the last of a position finalises the trade in
+the same step, so by the time the bridge looks the strategy is simply flat and there is no
+intended size to reconcile towards. The two are complementary — **a bank that leaves a runner is
+a reconciliation, and a bank that ends the trade is an exit.**
+
+🔴 **THE STRATEGY MUST BE FLAT, and that test is what separates the two.** A rung banking 50% and
+riding the rest emits *exactly the same* `-TP1` exit fill as one taking the lot. Acting on the tag
+alone would market-close the whole position and delete a runner the strategy is still managing —
+turning every scale-out into a full exit, silently.
+
+🔴 **IT ALSO CLOSED A HOLE THAT WAS LIVE.** The time stop is ON for the armed bot (36 hours,
+before-breakeven only) and nothing mirrored it: the strategy would have exited in its own book,
+the broker would have kept the position, and the bridge would have halted on the next bar with
+the trade still open and nothing ratcheting its stop. Only the operator's own close was ever
+wired. ⚠ MEASURED: the committed decision record holds two exits, both by stop, so it never
+fired — the exposure was real and had not yet been reached.
+
+⚠ **`-CLOSE` is ABSENT because it is AMBIGUOUS, not because it is safe.** `execution._close_at`
+defaults to that tag, so an ordinary stop-out and the opposite-structure force-close both arrive
+stamped `L-CLOSE` and nothing in the fill tells them apart. **So `exec_close_opp_sos` is REFUSED
+at startup instead** — mirroring would market-close on top of a filling stop, ignoring would halt
+the bot, and an unsupported thing that says so beats either guess. It comes off the refusal list
+when that exit gets its own tag.
+
+⚠ **Adding an exit leg to the strategy means adding it here.** This is an allow-list, so a new tag
+defaults to *not mirrored*: the bot exits in its own book, the broker keeps the position, and the
+bridge halts. Loud rather than silent — which is why the allow-list is the safe direction — but
+still a halt somebody has to come and read.
+
+⚠ **`full_exit_at_price` was DELETED rather than left behind.** Its whole subject was *the bridge
+cannot do this*, and a function whose docstring describes behaviour the code no longer has is
+worse than no function: the next reader takes it for a live rule. The property underneath it —
+that rungs sum within ONE ladder and never across two — still matters to
+`price_triggered_banks`, so the tests now assert it against `bank_ladders` directly.
+
+⚠ **None of this has run against a broker.** Rule 9 applies to the first one.
+
 ### The two clocks — `sync` and `sync_fast` (G18 stage 2, 2026-09-02)
 
 **`sync` owns the primary's two slots and any position the PRIMARY opened. `sync_fast` owns the

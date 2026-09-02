@@ -456,6 +456,21 @@ def _bridge(
     return b, mt5ops, ledger, notes
 
 
+def _no_ladder_closes_fully(cfg) -> bool:
+    """No single ladder takes its position to zero at a price.
+
+    ⚠ This asserted `full_exit_at_price(cfg) == []` until 2026-09-02, when that function was
+    DELETED rather than left behind: the bridge gained a full-exit path, so a check whose whole
+    subject was "the bridge cannot do this" became a rule describing behaviour the code no longer
+    has. The property these tests are really about is `bank_ladders` — that rungs are summed
+    within ONE position's ladder and never across two — so they now say that directly.
+    """
+    return all(
+        sum(pct for _name, pct in rungs) < 100.0 - 1e-9
+        for _kind, rungs in live_bridge.bank_ladders(cfg)
+    )
+
+
 # ── configuration guards ──────────────────────────────────────────────────────
 def test_a_partial_ladder_that_leaves_a_runner_is_SUPPORTED_since_the_bank_path_landed():
     """30 + 40 = 70, so 30% still rides out to the stop — and `_sync_partials` can reconcile the
@@ -464,21 +479,23 @@ def test_a_partial_ladder_that_leaves_a_runner_is_SUPPORTED_since_the_bank_path_
     cfg = types.SimpleNamespace(
         exec_tp1_pct=30.0, exec_tp2_pct=40.0, exec_secondary=False, fill_model="bar"
     )
-    assert live_bridge.full_exit_at_price(cfg) == []
+    assert _no_ladder_closes_fully(cfg)
     live_bridge.assert_supported(cfg)  # no raise
 
 
-def test_a_ladder_that_SUMS_to_the_whole_position_is_still_refused():
-    """50 + 50 reaches zero at a price, and the last of a position can only leave as a stop move.
-    ⚠ SUMMED, never tested field by field — a check reading `== 100` on one rung waves this
-    straight through."""
+def test_a_ladder_that_SUMS_to_the_whole_position_is_SUPPORTED_since_the_exit_path_landed():
+    """50 + 50 reaches zero at a price, which the bridge can now execute.
+
+    ⚠ **This asserted a REFUSAL until 2026-09-02, and the refusal was right for as long as every
+    exit reached the broker as a stop move.** `_mirror_strategy_exit` is the path: the rung
+    finalises the trade in the strategy's book and the bridge closes the broker's position to
+    match. What made it possible is that a full bank leaves the strategy FLAT, which is what
+    separates it from a partial — see `test_a_PARTIAL_target_is_left_to_the_banking_path`.
+    """
     cfg = types.SimpleNamespace(
         exec_tp1_pct=50.0, exec_tp2_pct=50.0, exec_secondary=False, fill_model="bar"
     )
-    with pytest.raises(
-        live_bridge.UnsupportedStrategyConfig, match="WHOLE position off at a price"
-    ):
-        live_bridge.assert_supported(cfg)
+    live_bridge.assert_supported(cfg)  # no raise
 
 
 def test_tick_fill_model_is_refused():
@@ -543,11 +560,12 @@ def _shipped(**over):
     return types.SimpleNamespace(**cfg)
 
 
-def test_the_short_hold_variant_is_refused():
-    """One boolean, and the whole position is meant to come off at 2R. The bridge can only move a
-    stop, so nothing would come off — and before this check the bot STARTED."""
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_sh_tp1_pct=100"):
-        live_bridge.assert_supported(_shipped(exec_short_hold=True))
+def test_the_short_hold_variant_is_SUPPORTED_since_the_exit_path_landed():
+    """One boolean, and the whole position comes off at 2R. ⚠ Refused from 2026-09-01 to
+    2026-09-02 — before that check existed the bot STARTED and would have ridden past a target
+    its backtest closed at, which is the defect the refusal was written for. The bridge executes
+    that exit now, so the refusal is gone rather than softened."""
+    live_bridge.assert_supported(_shipped(exec_short_hold=True))  # no raise
 
 
 def test_short_hold_REPLACES_the_shared_rung_rather_than_adding_to_it():
@@ -557,12 +575,16 @@ def test_short_hold_REPLACES_the_shared_rung_rather_than_adding_to_it():
     assert [name for name, _ in banks] == ["exec_sh_tp1_pct"]
 
 
-def test_the_reclaim_re_entry_takes_the_WHOLE_position_and_is_still_refused():
-    """`exec_rec_tp1_pct` is 100 — the whole position off at its target, no runner. It is ALSO the
-    setting that measured best for that trigger (+21.00R against +7.16R without), which is why
-    this refusal has to be loud: the best configuration is the unsupported one, so the reclaim
-    waits on a full-exit path while the gap trigger does not."""
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_rec_tp1_pct=100"):
+def test_the_reclaim_re_entrys_WHOLE_position_bank_is_no_longer_a_BANKING_refusal():
+    """`exec_rec_tp1_pct` is 100 — the whole position off at its target, no runner — and it is
+    ALSO the setting that measured best for that trigger (+21.00R against +7.16R without). That
+    made it the one refusal where the best configuration was the unsupported one, and it is the
+    reason the full-exit path was built.
+
+    ⚠ **What still refuses this config is the SECOND BAR STREAM, and the two must not be
+    confused**: different work fixes each, and reading the remaining refusal as "banking" would
+    send somebody to rebuild a path that already exists."""
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
         live_bridge.assert_supported(_shipped(exec_secondary=True))
 
 
@@ -571,7 +593,7 @@ def test_the_gap_re_entrys_half_bank_is_no_longer_a_BANKING_refusal():
     SECOND ENTRY — and the two must not be confused, because different work fixes each.
     ⚠ This asserted the banking refusal until the bank path landed on 2026-09-01."""
     cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone")
-    assert live_bridge.full_exit_at_price(cfg) == []
+    assert _no_ladder_closes_fully(cfg)
     with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
         live_bridge.assert_supported(cfg)
 
@@ -1488,30 +1510,42 @@ def test_a_primary_and_a_re_entry_are_DIFFERENT_positions_and_their_rungs_do_not
         exec_sec_tp1_pct=60.0,
     )
 
-    assert live_bridge.full_exit_at_price(cfg) == []
+    assert _no_ladder_closes_fully(cfg)
     # Still refused, for the reason that is actually true of it — the missing second entry.
     with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
         live_bridge.assert_supported(cfg)
 
 
-def test_the_refusal_names_only_the_ladder_that_reaches_ZERO():
-    """Under the combined trigger the reclaim banks 100 and the gap banks 50. Only the reclaim
-    takes a position to zero, and only it may be named — a message listing the gap sends the
-    reader to change a setting that is already fine, and its trade is not the one refused."""
+def test_each_TRIGGERS_rungs_are_grouped_as_their_own_ladder():
+    """Under the combined trigger the reclaim banks 100 and the gap banks 50, and they belong to
+    two different positions that are never on the same rung.
+
+    ⚠ **This asserted the wording of a REFUSAL until 2026-09-02**, when the full-exit path made
+    that refusal go away. The property underneath it did not go away — `price_triggered_banks`
+    still derives what the bridge banks from `bank_ladders`, so the grouping has to stay right —
+    so the test now says it directly instead of through a message that no longer exists.
+    """
     cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone + Reclaim Entry")
 
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig) as e:
-        live_bridge.assert_supported(cfg)
+    ladders = dict(live_bridge.bank_ladders(cfg))
+    totals = {kind: sum(pct for _n, pct in rungs) for kind, rungs in ladders.items()}
 
-    assert "exec_rec_tp1_pct" in str(e.value)
-    assert "exec_sec_tp1_pct" not in str(e.value)
+    assert len(ladders) >= 2, "the two triggers were folded into one ladder"
+    assert any(t >= 100.0 for t in totals.values()), "the reclaim's full bank vanished"
+    assert any(t < 100.0 for t in totals.values()), "the gap's runner vanished"
 
 
-def test_two_rungs_on_ONE_ladder_DO_still_sum():
-    """The other half, and it fails the mutation that gives every rung its own ladder. 50 + 50 on
-    one position is a full exit — a check reading `== 100` on a single field waves it through."""
-    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_tp1_pct=50"):
-        live_bridge.assert_supported(_shipped(exec_tp1_pct=50.0, exec_tp2_pct=50.0))
+def test_two_rungs_on_ONE_ladder_belong_to_ONE_ladder():
+    """The other half of the grouping, and it fails the mutation that gives every rung its own.
+    Both rungs of one position's ladder are that position's, so they are reported together.
+
+    ⚠ Also asserted through a refusal message until 2026-09-02. Same reason, same replacement.
+    """
+    ladders = live_bridge.bank_ladders(_shipped(exec_tp1_pct=50.0, exec_tp2_pct=50.0))
+    primary = next(rungs for kind, rungs in ladders if kind == "the primary")
+
+    assert sum(pct for _n, pct in primary) == 100.0
+    assert len(primary) == 2
 
 
 def test_the_shared_second_rung_appears_ONCE_across_the_ladders_that_share_it():
@@ -1860,3 +1894,112 @@ def test_a_strategy_that_cannot_report_its_stop_SAYS_SO():
     b.sync_fast(_fast_step())
 
     assert "event:secondary_stop_unreadable" in ledger.kinds()
+
+
+# ── the full exit at a price, and the hole it turned up (2026-09-02) ────────
+#
+# `_mirror_strategy_exit` generalises the commanded close to every exit leg the BROKER cannot
+# execute for itself. Two of them were unreachable before: a target that takes the whole
+# position, and the time stop — which was switched ON for the armed bot the whole time.
+
+
+def _exit_fill(tag, direction=1, qty=1.0, price=3300.0):
+    return types.SimpleNamespace(
+        kind="exit",
+        order_id=("L-" if direction > 0 else "S-") + tag,
+        price=price,
+        qty=qty,
+        dir=direction,
+    )
+
+
+def test_a_TIME_STOP_exit_closes_the_broker_position():
+    """🔴 A LIVE HOLE, not a new capability. The time stop is ON for the armed bot — 36 hours,
+    before-breakeven only — and nothing mirrored it: the strategy would exit in its own book, the
+    broker would keep the position, and the bridge would halt on the next bar with the trade
+    still open and nobody managing its stop. Only the operator's own close was ever wired.
+
+    MUTATION: drop "-TIME" from `BRIDGE_OWNED_EXITS` and this goes red with nothing closed.
+    """
+    b, ops, _, _ = _open_for_close()
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_exit_fill("TIME")]
+
+    b.sync(dec, _Sig())
+
+    assert ("close", 777, "bullish", "TIME") in ops.actions
+    assert b.state is not live_bridge.BridgeState.HALTED
+
+
+def test_a_target_that_takes_the_WHOLE_position_closes_it_at_the_broker():
+    """The full exit at a price. `_sync_partials` cannot express this: a rung taking the last of
+    a position finalises the trade in the same step, so by the time the bridge looks there is no
+    intended size left to reconcile towards — the strategy is simply flat.
+
+    MUTATION: drop "-TP1" from `BRIDGE_OWNED_EXITS` and this goes red, which is the bot RIDING
+    where the backtest CLOSED — the exact divergence the old refusal existed to prevent.
+    """
+    b, ops, _, _ = _open_for_close()
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_exit_fill("TP1")]
+
+    b.sync(dec, _Sig())
+
+    assert ("close", 777, "bullish", "TP1") in ops.actions
+
+
+def test_a_PARTIAL_target_is_left_to_the_banking_path():
+    """🔴 THE DANGEROUS CASE, and the reason the flatness test exists rather than a tag test.
+
+    A rung that banks 50% and rides the rest emits exactly the same `-TP1` exit fill as one that
+    takes the lot. Acting on the tag alone would market-close the WHOLE position and delete a
+    runner the strategy is still managing — turning a scale-out into a full exit, silently, on
+    every partial.
+
+    MUTATION: remove the `self._ex._pos_dir != 0` guard in `_mirror_strategy_exit` and this goes
+    red with the runner closed.
+    """
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(777, 0, 3290.0, 1.0, 3280.0)]
+    ex = _FakeExecution(pos_dir=1)  # the strategy is STILL HOLDING the runner
+    b, ops, _, _ = _bridge(ex, mt5ops=ops)
+    b._pos_ticket, b._pos_dir, b._pos_lots = 777, 1, 1.0
+    b._pos_entry, b._pos_stop = 3290.0, 3280.0
+
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_exit_fill("TP1", qty=0.5)]
+
+    b.sync(dec, _Sig())
+
+    assert not any(a[0] == "close" for a in ops.actions), "a scale-out was turned into a full exit"
+
+
+def test_a_STOP_OUT_is_never_mirrored():
+    """The control for the tag the allow-list deliberately omits. `execution._close_at` stamps an
+    ordinary stop-out `L-CLOSE`, and the broker's own stop order has already filled it — closing
+    at market here would be a second, unasked-for order against a position that is gone.
+
+    ⚠ It is the SAME tag the opposite-structure force-close carries, which is why that
+    configuration is refused at startup instead of guessed at.
+
+    MUTATION: add "-CLOSE" to `BRIDGE_OWNED_EXITS` and this goes red.
+    """
+    b, ops, _, _ = _open_for_close()
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_exit_fill("CLOSE")]
+
+    b.sync(dec, _Sig())
+
+    assert not any(a[0] == "close" for a in ops.actions)
+
+
+def test_the_opposite_structure_close_is_REFUSED_rather_than_guessed_at():
+    """Refusing is the answer (rule 17's shape, applied to an exit). The bridge cannot tell this
+    exit from a stop-out, and either guess is wrong in a way nothing would report: mirroring
+    market-closes on top of a filling stop, ignoring leaves the broker holding a trade the
+    strategy has exited and halts the bot.
+
+    MUTATION: delete the `exec_close_opp_sos` branch in `assert_supported` and this goes red.
+    """
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SAME tag"):
+        live_bridge.assert_supported(_shipped(exec_close_opp_sos=True))

@@ -1802,10 +1802,44 @@ is one fast bar.
 ⚠ **THE REFUSAL IS UNCHANGED AND MUST STAY** — `assert_supported` still rejects the configuration
 outright, so none of this is reachable on a bot. Stage 3's remaining half is what lifts it.
 
-⚠ **STAGE 2 IS NOT FINISHED, and the missing half is named rather than implied:** the bridge
-still cannot close the LAST of a position at a price, so `full_exit_at_price` continues to refuse
-the **reclaim** trigger's 100% bank — the trigger every published re-entry figure was measured
-on. The **gap** trigger (50% and a runner) is the one this unblocks.
+#### ✅ AND STAGE 2's EXIT HALF LANDED THE SAME DAY — the bridge closes a position at a price
+
+`bridge._mirror_strategy_exit` generalises the commanded close to every exit leg the BROKER
+cannot execute for itself, by the tag the strategy stamps on the fill: `-CMD`, `-TIME`, `-TP1`,
+`-TP2`. A stop is already an order at the broker and needs nothing; everything on that list is a
+decision the strategy made against a closed bar.
+
+**So the refusal is GONE rather than softened** — `assert_supported` no longer rejects a ladder
+that banks 100%, because the capability it stood in for now exists. **That unblocks the reclaim
+re-entry's 100% bank (+21.00R against +7.16R without) and `exec_short_hold`.**
+
+🔴 **`_sync_partials` could never have done this, and the reason is worth keeping.** It
+reconciles the broker DOWN to the size the strategy still wants, which cannot express zero: a
+rung taking the last of a position finalises the trade in the same step, so by the time the
+bridge looks the strategy is flat and there is no intended size to reconcile towards. **A bank
+that leaves a runner is a reconciliation; a bank that ends the trade is an exit.**
+
+🔴 **THE STRATEGY-IS-FLAT TEST IS WHAT SEPARATES THEM, and without it this would have been a
+disaster.** A rung banking 50% emits *exactly the same* `-TP1` fill as one banking 100%. Acting
+on the tag alone would market-close the whole position and delete the runner, silently, on every
+scale-out.
+
+🔴 **AND IT TURNED UP A HOLE THAT WAS LIVE.** The time stop is ON for the armed bot — 36 hours,
+before-breakeven only — and nothing mirrored it. The strategy would have exited in its own book,
+the broker would have kept the position, and the bridge would have halted on the next bar with
+the trade still open and nothing ratcheting its stop. Only the operator's own close was ever
+wired. ⚠ MEASURED: the committed decision record holds two exits, both by stop, so it had never
+fired.
+
+⚠ **The opposite-structure close is now REFUSED at startup** (`exec_close_opp_sos`, off on the
+armed bot). `execution._close_at` stamps it with the SAME tag an ordinary stop-out carries, so
+the bridge cannot tell whether the broker has already closed the trade or is still holding it.
+Mirroring would market-close on top of a filling stop; ignoring would halt the bot. It comes off
+the refusal list when that exit gets its own tag.
+
+⚠ **WHAT IS LEFT OF STAGE 2: nothing, and stage 3 is now the only thing between this and a
+demo.** `assert_supported` still refuses `exec_secondary` outright — that refusal is stage 3's
+to lift, and it must not be softened before somebody has decided the capability check is right.
 
 ⚠ **AND THE PROOF IS UNIT-LEVEL, NOT A REPLAY.** Nine tests, each watched RED under a named
 mutation, and two of those mutations were MEASURED to be duds and replaced — one mutated a helper

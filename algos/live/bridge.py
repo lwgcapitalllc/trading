@@ -108,6 +108,27 @@ class _FastDec:
     tp2: float = 0.0
 
 
+#: The exit legs the BRIDGE has to execute, by the tag the strategy stamps on the fill.
+#:
+#: 🔴 **The list is what the BROKER cannot do for itself.** A stop is already an order sitting at
+#: the broker, so a stop-out needs nothing from this bridge. Everything here is a decision the
+#: strategy made against a closed bar — a target that took the whole position, an operator's
+#: instruction, the clock running out — and the broker has never heard of any of them.
+#:
+#: ⚠ **`CLOSE` is deliberately ABSENT, and it is absent because it is AMBIGUOUS rather than
+#: because it is safe.** `execution._close_at` defaults to that tag, so an ordinary STOP-OUT and
+#: an opposite-structure force-close both arrive stamped `L-CLOSE` and nothing in the fill tells
+#: them apart. Mirroring it would market-close on a stop the broker is already filling; ignoring
+#: it silently mis-executes the force-close. So the force-close is REFUSED at startup instead —
+#: an unsupported thing that says so beats either guess.
+#:
+#: ⚠ **Adding an exit leg to the strategy means adding it here.** This is an allow-list, so a new
+#: tag defaults to *not mirrored* — the bot exits in its own book, the broker keeps the position,
+#: and the bridge halts on the next bar. That is loud rather than silent, which is why the
+#: allow-list is the safe direction, but it is still a halt somebody has to come and read.
+BRIDGE_OWNED_EXITS = ("-CMD", "-TIME", "-TP1", "-TP2")
+
+
 #: Every place an order can rest, as (INTENT, side).
 #:
 #: 🔴 **Keyed by intent and not by side alone, since 2026-09-02.** The primary and the re-entry
@@ -262,69 +283,30 @@ def bank_ladders(strategy_config) -> list:
     return ladders
 
 
-def full_exit_at_price(strategy_config) -> list:
-    """The rungs that take a position to ZERO at a price — which the bridge still cannot do.
-
-    🔴 **THE DISTINCTION IS THE WHOLE POINT AND IT IS EASY TO MISS.** Since 2026-09-01 the bridge
-    CAN bank part of a position: `_sync_partials` reconciles the broker's volume down to the size
-    the strategy believes is still open. What it cannot do is close the LAST of it at a price:
-    `mt5_ops.partial_close` refuses a request for the whole position, because that is a full exit
-    and a different decision, and no other exit path exists. Every exit still leaves the broker
-    as a stop move.
-
-    ⚠ **THAT SENTENCE WAS FALSE FOR THE FIRST FEW HOURS OF THIS FUNCTION'S LIFE.** The broker
-    call's guard read `want > held`, so a request for EXACTLY the held volume passed every check,
-    executed a complete close and reported a partial. Two docstrings asserted the refusal while
-    nothing implemented it. Fixed the same day to `>=`, with the boundary case tested. **The shape
-    is the lesson: a doc and a comment agreeing with each other is not evidence, and the test
-    beside it asserted a size LARGER than the position rather than equal to it — the one value
-    that mattered was the one nobody wrote down.**
-
-    So a ladder that banks 50% and rides the rest is now supported, and one that banks 100% at
-    its target is NOT. That excludes two shipped configurations and they must be named rather
-    than discovered:
-
-      - `exec_short_hold` — `exec_sh_tp1_pct` defaults to **100**, the whole position off at the
-        R target with no runner. Still refused.
-      - the RECLAIM re-entry — `exec_rec_tp1_pct` defaults to **100**, which is the
-        configuration that measured best (see the strategy's notes). Still refused, and it is
-        the reason the reclaim cannot go live on this build while the gap trigger can.
-
-    ⚠ **It sums the rungs of ONE LADDER, never a field on its own and never across ladders.**
-    Both halves matter and each was wrong at some point. A check reading `== 100` on a single
-    field waves 50 + 50 straight through; a check summing everything the config banks refuses a
-    primary at 40% beside a gap re-entry at 60%, which are two different positions that never
-    meet — that one was live until 2026-09-02 and its message named two fields belonging to two
-    trades. See `bank_ladders`.
-
-    ⚠ **It returns the FIRST offending ladder rather than all of them**, so the message names
-    one thing to change. `assert_supported` raises on the first problem anyway, and a refusal
-    listing four fields across two trades is the shape that sends a reader to the wrong setting.
-
-    Returns [] when every ladder leaves a runner behind.
-    """
-    for _kind, rungs in bank_ladders(strategy_config):
-        if sum(pct for _name, pct in rungs) >= 100.0 - 1e-9:
-            return rungs
-    return []
-
-
 def assert_supported(strategy_config) -> None:
     """Refuse a configuration the bridge would silently mis-execute.
 
     Better to not start than to run a strategy whose scale-outs quietly never happen — the
     equity curve would diverge from every backtest and nothing would say why.
     """
-    closes_all = full_exit_at_price(strategy_config)
-    if closes_all:
-        named = ", ".join(f"{name}={pct:g}" for name, pct in closes_all)
+    # 🔴 **A LADDER THAT BANKS 100% AT A PRICE WAS REFUSED HERE UNTIL 2026-09-02.** The bridge
+    # had no full-exit path — every exit reached the broker as a stop move — so a rung taking the
+    # last of a position would have been silently skipped and the bot would have RIDDEN where the
+    # backtest CLOSED. `_mirror_strategy_exit` is that path now: the rung finalises the trade in
+    # the strategy's book and the bridge closes the broker's position to match. The refusal is
+    # gone rather than softened, which is the distinction worth keeping — the capability it was
+    # standing in for actually exists.
+    # ⚠ It has never run against a broker. Rule 9 applies to the first one.
+    if getattr(strategy_config, "exec_close_opp_sos", False):
         raise UnsupportedStrategyConfig(
-            f"{named} — these take the WHOLE position off at a price, and the live bridge has no "
-            f"full-exit path: it can now bank PART of a position, but the last of it leaves only "
-            f"as a stop move. Left unrefused the bot would RIDE where the backtest CLOSED, and "
-            f"nothing would say why the two disagree. Leave a runner behind (these rungs are ONE "
-            f"position's ladder and must sum to under 100 between them), or build the full-exit "
-            f"path. See docs/LIVE_TRADING_PIPELINE.md G18."
+            "exec_close_opp_sos closes the position at market when structure breaks against it, "
+            "and the bridge cannot mirror that exit: `execution._close_at` stamps it with the "
+            "SAME tag an ordinary stop-out carries, so nothing in the fill tells the bridge "
+            "whether the broker has already closed the trade with its own stop order or is "
+            "still holding it. Mirroring would market-close on top of a filling stop; ignoring "
+            "it would leave the broker holding a trade the strategy has exited, and the bot "
+            "would halt. Refusing is the answer until the strategy gives that exit its own tag. "
+            "Turn it off. See docs/LIVE_TRADING_PIPELINE.md G18."
         )
     if getattr(strategy_config, "exec_secondary", False):
         # 🔴 **THIS MESSAGE SAID "a 1-minute bar stream" UNTIL 2026-09-01 AND WAS WRONG.** The
@@ -776,7 +758,7 @@ class OrderBridge:
         # nobody can name. So the broker is brought into line FIRST, and the ordinary close
         # path below then books, alerts and records the trade exactly as it does every other
         # exit. Doing it afterwards would need a second booking path for one kind of exit.
-        positions = self._close_on_command(positions, dec)
+        positions = self._mirror_strategy_exit(positions, dec)
         self._observe_close(positions, dec, sig, owner="primary")
         self._observe_open(positions, dec, sig)
         # AFTER `_observe_open`, which consumes the filled slot's rest when a position appears
@@ -994,12 +976,26 @@ class OrderBridge:
         if self._instance_dir is not None:
             position_state.clear(self._instance_dir)
 
-    def _close_on_command(self, positions, dec):
-        """Close the broker position when a PERSON asked the strategy to get out.
+    def _mirror_strategy_exit(self, positions, dec):
+        """Close the broker position when the STRATEGY has exited a trade the broker cannot.
 
-        The strategy has already exited in its own book (`execution.request_close` → the
-        `-CMD` exit fill on this bar's decision). This is the other half: the broker still
-        holds the position, and nothing else in this bridge can take it off at market.
+        The strategy has already exited in its own book — a target that took the whole position,
+        a person asking to get out, or the clock running out — and each leaves an exit fill on
+        this bar's decision. This is the other half: the broker still holds the position, and
+        without this nothing in this bridge can take it off at market.
+
+        🔴 **THIS IS THE FULL-EXIT-AT-A-PRICE PATH, and it is why `assert_supported` no longer
+        refuses a ladder that banks 100%.** `_sync_partials` reconciles the broker DOWN to the
+        size the strategy still wants, which cannot express zero: a rung taking the last of the
+        position finalises the trade in the same step, so by the time the bridge looks, the
+        strategy is flat and there is no "intended size" left to reconcile towards. The two are
+        complementary rather than alternatives — a bank that leaves a runner is a reconciliation,
+        and a bank that ends the trade is an exit.
+
+        🔴 **IT ALSO CLOSES A HOLE THAT WAS LIVE.** The time stop is ON for the armed bot
+        (36 hours, before-breakeven only) and nothing mirrored it: the strategy would exit in its
+        own book, the broker would keep the position, and the bridge would halt on the next bar
+        with the trade still open and unmanaged. Only the operator's own close was ever wired.
 
         ⚠ **It acts on the strategy's own exit record, never on a flag this layer invents.**
         `algos/live/` holds no trading logic — the strategy decides it is out, and the bridge
@@ -1017,28 +1013,46 @@ class OrderBridge:
         if self._pos_ticket is None:
             return positions
         fills = getattr(dec, "fills", ()) or ()
-        if not any(f.kind == "exit" and str(f.order_id).endswith("-CMD") for f in fills):
+        tag = next(
+            (
+                t
+                for f in fills
+                if f.kind == "exit"
+                for t in BRIDGE_OWNED_EXITS
+                if str(f.order_id).endswith(t)
+            ),
+            None,
+        )
+        if tag is None:
+            return positions
+        # 🔴 **THE STRATEGY MUST BE FLAT, AND THIS IS WHAT SEPARATES A FULL EXIT FROM A BANK.**
+        # A target that takes 50% and rides the rest emits exactly the same `-TP1` exit fill as
+        # one that takes the lot. Acting on the tag alone would close the WHOLE position on a
+        # partial and delete a runner the strategy is still managing. `_sync_partials` owns the
+        # case where the trade continues; this owns only the case where it ended.
+        if self._ex._pos_dir != 0:
             return positions
         if not any(p.ticket == self._pos_ticket for p in positions):
             # Already gone — it filled a stop in the same instant, or a previous pass closed it.
             # Not an error, and not a second close: the ordinary path books it.
             return positions
 
+        label = tag.lstrip("-")
         side = "bullish" if self._pos_dir > 0 else "bearish"
         if self.dry_run:
-            self._log.info(f"[DRY RUN] would close T{self._pos_ticket} at market (commanded)")
-            self._ledger.event("dry_run_action", action="commanded_close")
+            self._log.info(f"[DRY RUN] would close T{self._pos_ticket} at market ({label})")
+            self._ledger.event("dry_run_action", action="mirrored_exit", exit=label)
             return positions
 
-        self._log.info(f"COMMANDED CLOSE | closing T{self._pos_ticket} at market")
-        ok, price, _pnl = self._mt5.close_position(self._pos_ticket, side, "CMD")
+        self._log.info(f"MIRRORING {label} EXIT | closing T{self._pos_ticket} at market")
+        ok, price, _pnl = self._mt5.close_position(self._pos_ticket, side, label)
         if not ok:
             self._log.error(
-                f"Commanded close of T{self._pos_ticket} FAILED. The strategy is flat and the "
+                f"{label} close of T{self._pos_ticket} FAILED. The strategy is flat and the "
                 f"broker is not; the bridge will halt on the next check rather than trade "
                 f"against a position it does not believe it has."
             )
-            self._ledger.event("commanded_close_failed", ticket=self._pos_ticket)
+            self._ledger.event("commanded_close_failed", ticket=self._pos_ticket, exit=label)
             self._notify(
                 alert(
                     "⛔",
@@ -1051,7 +1065,7 @@ class OrderBridge:
             )
             return positions
 
-        self._ledger.event("commanded_close", ticket=self._pos_ticket, price=price)
+        self._ledger.event("commanded_close", ticket=self._pos_ticket, price=price, exit=label)
         # Re-read rather than assuming: the account is what says whether it is gone.
         return self._mt5.get_open_positions()
 
