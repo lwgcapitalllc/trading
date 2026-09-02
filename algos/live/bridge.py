@@ -124,38 +124,83 @@ def price_triggered_banks(strategy_config) -> list:
     refusal can name the fields — "partial take-profits are on" sends nobody anywhere.
     """
 
+    seen = set()
+    flat = []
+    for _kind, rungs in bank_ladders(strategy_config):
+        for name, pct in rungs:
+            if name not in seen:
+                seen.add(name)
+                flat.append((name, pct))
+    return flat
+
+
+def bank_ladders(strategy_config) -> list:
+    """The same rungs, grouped into the LADDERS a single position can actually walk.
+
+    Returns `[(kind, [(field, percent), ...]), ...]` — one entry per ladder that can exist under
+    this configuration, `kind` naming it in words a reader can act on.
+
+    🔴 **THIS GROUPING IS THE WHOLE POINT, AND ITS ABSENCE MADE THE FULL-EXIT CHECK REFUSE
+    CONFIGURATIONS THAT ARE FINE.** The flat list above is right for the question *does anything
+    bank at a price at all*, and wrong for *does any position reach zero* — because a primary and
+    a re-entry are DIFFERENT POSITIONS and their percentages never meet. Added together, a
+    primary banking 40% and a gap re-entry banking 60% reached a full exit that neither one
+    performs, and the refusal then named two fields belonging to two trades that are never on the
+    same rung.
+
+    The ladders, and which field supplies each rung (`execution.Execution._tp1_pct` decides the
+    first, `_remaining_brackets` reads `exec_tp2_pct` for the second whatever the trade is):
+
+      | ladder                     | first rung          | second rung     |
+      |----------------------------|---------------------|-----------------|
+      | primary, short-hold ON     | `exec_sh_tp1_pct`   | `exec_tp2_pct`  |
+      | primary, short-hold OFF    | `exec_tp1_pct`      | `exec_tp2_pct`  |
+      | re-entry under a reclaim   | `exec_rec_tp1_pct`  | `exec_tp2_pct`  |
+      | re-entry under a gap       | `exec_sec_tp1_pct`  | `exec_tp2_pct`  |
+
+    ⚠ **Exactly ONE primary ladder is live at a time** — short-hold is a boolean, and the
+    strategy tests the secondary branch FIRST, so short-hold never applies to a re-entry.
+    ⚠ **The two re-entry ladders BOTH exist only under the combined trigger**, and even then a
+    given re-entry is one or the other — never both — which is precisely why they are separate
+    rows rather than one summed list.
+    ⚠ **`exec_tp2_pct` therefore appears in EVERY ladder and is not double-counted**, because a
+    ladder is only ever summed against itself.
+    """
+
     def g(name, default):
         return getattr(strategy_config, name, default)
 
     shared_tp1 = float(g("exec_tp1_pct", 0) or 0)
     shared_tp2 = float(g("exec_tp2_pct", 0) or 0)
-    found = []
+    tail = [("exec_tp2_pct", shared_tp2)] if shared_tp2 else []
+    ladders = []
 
-    # ── the PRIMARY's rungs ────────────────────────────────────────────────────────────────
+    # ── the PRIMARY's ladder ───────────────────────────────────────────────────────────────
     if g("exec_short_hold", False):
         # REPLACES the shared first rung for a primary, so the shared field is not also read.
         sh = float(g("exec_sh_tp1_pct", 100.0) or 0)
-        if sh:
-            found.append(("exec_sh_tp1_pct", sh))
-    elif shared_tp1:
-        found.append(("exec_tp1_pct", shared_tp1))
-    if shared_tp2:
-        found.append(("exec_tp2_pct", shared_tp2))
+        first = [("exec_sh_tp1_pct", sh)] if sh else []
+    else:
+        first = [("exec_tp1_pct", shared_tp1)] if shared_tp1 else []
+    if first or tail:
+        ladders.append(("the primary", first + tail))
 
-    # ── the RE-ENTRY's own rung, gated exactly as `config.py` gates it ─────────────────────
+    # ── the RE-ENTRY's ladders, gated exactly as `config.py` gates them ────────────────────
     if g("exec_secondary", False):
         trigger = g("exec_sec_trigger", "Reclaim Entry")
         if trigger in ("Reclaim Entry", "FVG in zone + Reclaim Entry"):
             own = float(g("exec_rec_tp1_pct", 100.0))
             pct = shared_tp1 if own == -1.0 else own
-            if pct:
-                found.append(("exec_rec_tp1_pct", pct))
+            first = [("exec_rec_tp1_pct", pct)] if pct else []
+            if first or tail:
+                ladders.append(("the re-entry after a stop-out", first + tail))
         if trigger in ("FVG in zone", "Structure shift", "FVG in zone + Reclaim Entry"):
             own = float(g("exec_sec_tp1_pct", -1.0))
             pct = shared_tp1 if own == -1.0 else own
-            if pct:
-                found.append(("exec_sec_tp1_pct", pct))
-    return found
+            first = [("exec_sec_tp1_pct", pct)] if pct else []
+            if first or tail:
+                ladders.append(("the re-entry into a gap", first + tail))
+    return ladders
 
 
 def full_exit_at_price(strategy_config) -> list:
@@ -186,16 +231,23 @@ def full_exit_at_price(strategy_config) -> list:
         configuration that measured best (see the strategy's notes). Still refused, and it is
         the reason the reclaim cannot go live on this build while the gap trigger can.
 
-    ⚠ **It sums the rungs rather than testing any one of them.** 50 + 50 also reaches zero, and
-    a check reading `== 100` on a single field would wave it through.
+    ⚠ **It sums the rungs of ONE LADDER, never a field on its own and never across ladders.**
+    Both halves matter and each was wrong at some point. A check reading `== 100` on a single
+    field waves 50 + 50 straight through; a check summing everything the config banks refuses a
+    primary at 40% beside a gap re-entry at 60%, which are two different positions that never
+    meet — that one was live until 2026-09-02 and its message named two fields belonging to two
+    trades. See `bank_ladders`.
 
-    Returns [] when the ladder always leaves a runner behind.
+    ⚠ **It returns the FIRST offending ladder rather than all of them**, so the message names
+    one thing to change. `assert_supported` raises on the first problem anyway, and a refusal
+    listing four fields across two trades is the shape that sends a reader to the wrong setting.
+
+    Returns [] when every ladder leaves a runner behind.
     """
-    banks = price_triggered_banks(strategy_config)
-    if not banks:
-        return []
-    total = sum(pct for _name, pct in banks)
-    return banks if total >= 100.0 - 1e-9 else []
+    for _kind, rungs in bank_ladders(strategy_config):
+        if sum(pct for _name, pct in rungs) >= 100.0 - 1e-9:
+            return rungs
+    return []
 
 
 def assert_supported(strategy_config) -> None:
@@ -211,8 +263,9 @@ def assert_supported(strategy_config) -> None:
             f"{named} — these take the WHOLE position off at a price, and the live bridge has no "
             f"full-exit path: it can now bank PART of a position, but the last of it leaves only "
             f"as a stop move. Left unrefused the bot would RIDE where the backtest CLOSED, and "
-            f"nothing would say why the two disagree. Leave a runner behind (the rungs must sum "
-            f"to under 100), or build the full-exit path. See docs/LIVE_TRADING_PIPELINE.md G18."
+            f"nothing would say why the two disagree. Leave a runner behind (these rungs are ONE "
+            f"position's ladder and must sum to under 100 between them), or build the full-exit "
+            f"path. See docs/LIVE_TRADING_PIPELINE.md G18."
         )
     if getattr(strategy_config, "exec_secondary", False):
         # 🔴 **THIS MESSAGE SAID "a 1-minute bar stream" UNTIL 2026-09-01 AND WAS WRONG.** The

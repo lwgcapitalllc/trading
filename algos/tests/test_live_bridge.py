@@ -1428,3 +1428,55 @@ def test_a_HEALTHY_bridge_still_goes_live():
     b.begin_live()
 
     assert b.state is live_bridge.BridgeState.LIVE
+
+
+# ── the full-exit check sums ONE LADDER, never across trades ──────────────────
+# 🔴 It summed everything the config banks, which made a PRIMARY at 40% and a GAP RE-ENTRY at
+# 60% add up to a full exit that neither position performs — and the refusal then named two
+# fields belonging to two trades that are never on the same rung. Live until 2026-09-02.
+def test_a_primary_and_a_re_entry_are_DIFFERENT_positions_and_their_rungs_do_not_add():
+    cfg = _shipped(
+        exec_tp1_pct=40.0,
+        exec_secondary=True,
+        exec_sec_trigger="FVG in zone",
+        exec_sec_tp1_pct=60.0,
+    )
+
+    assert live_bridge.full_exit_at_price(cfg) == []
+    # Still refused, for the reason that is actually true of it — the missing second entry.
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SECOND bar stream"):
+        live_bridge.assert_supported(cfg)
+
+
+def test_the_refusal_names_only_the_ladder_that_reaches_ZERO():
+    """Under the combined trigger the reclaim banks 100 and the gap banks 50. Only the reclaim
+    takes a position to zero, and only it may be named — a message listing the gap sends the
+    reader to change a setting that is already fine, and its trade is not the one refused."""
+    cfg = _shipped(exec_secondary=True, exec_sec_trigger="FVG in zone + Reclaim Entry")
+
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig) as e:
+        live_bridge.assert_supported(cfg)
+
+    assert "exec_rec_tp1_pct" in str(e.value)
+    assert "exec_sec_tp1_pct" not in str(e.value)
+
+
+def test_two_rungs_on_ONE_ladder_DO_still_sum():
+    """The other half, and it fails the mutation that gives every rung its own ladder. 50 + 50 on
+    one position is a full exit — a check reading `== 100` on a single field waves it through."""
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="exec_tp1_pct=50"):
+        live_bridge.assert_supported(_shipped(exec_tp1_pct=50.0, exec_tp2_pct=50.0))
+
+
+def test_the_shared_second_rung_appears_ONCE_across_the_ladders_that_share_it():
+    """Every ladder ends on `exec_tp2_pct` — the second rung's size is the same field whatever
+    the trade is. Listing it per ladder would report one setting three times as three problems."""
+    cfg = _shipped(
+        exec_tp2_pct=25.0,
+        exec_secondary=True,
+        exec_sec_trigger="FVG in zone + Reclaim Entry",
+    )
+
+    names = [name for name, _ in live_bridge.price_triggered_banks(cfg)]
+
+    assert names.count("exec_tp2_pct") == 1

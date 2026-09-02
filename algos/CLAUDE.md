@@ -257,6 +257,37 @@ deliberately NOT listed**: it moves where the second rung sits, while how much c
 list carries at most one bridge refusal — written down because the list shape suggests otherwise.
 Six mutations, each reddening its own named test, none surviving.
 
+🔴 **AND THAT CHECK OVER-REFUSED, BECAUSE IT ADDED UP PERCENTAGES BELONGING TO DIFFERENT TRADES
+(fixed 2026-09-02).** It summed every rung the config banks and asked whether the total reached
+100. But **a primary and a re-entry are different positions and their percentages never meet** —
+so a primary banking 40% beside a gap re-entry banking 60% read as a full exit that neither one
+performs, and the refusal named two fields belonging to two trades that are never on the same
+rung. **A refusal that names the wrong setting is worse than a vague one: the reader changes
+something that was already fine, and is refused again.**
+
+✅ **`bank_ladders` groups the rungs into the ladders ONE position can actually walk**, and the
+full-exit check sums each ladder against itself. Four ladders exist and at most three are live at
+once: the primary (short-hold's rung or the shared one, plus the shared second rung), and the
+re-entry's own — one under a reclaim trigger, one under a gap. ⚠ **The shared second rung sits in
+EVERY ladder and is not double-counted**, because a ladder is only ever summed against itself.
+⚠ **The flat list is still right for the other question** — *does anything bank at a price at
+all* — and is now DERIVED from the ladders, so there is one source of truth rather than two lists
+free to drift.
+
+⚠ **Both halves of the rule are load-bearing and each was wrong at some point.** A check reading
+`== 100` on a single field waves 50 + 50 on one position straight through; a check summing across
+ladders refuses configurations that are fine. **Two tests, one per direction, and each reddens
+under the mutation that breaks its own half.**
+
+⚠ **The refusal returns the FIRST offending ladder rather than all of them**, so the message names
+one thing to change — `assert_supported` raises on the first problem anyway, and a list of four
+fields across two trades is the shape that sends a reader to the wrong setting.
+
+⚠ **No verdict changed for anything shipped** — the live bot banks nothing, the reclaim at 100 is
+still refused, and the gap at 50 is still allowed. What changed is the message, and a false
+refusal nobody had hit yet.
+
+
 ## 🔴 `partial_close` had never run once, and it CLAMPED UP to the broker minimum (2026-09-01)
 
 **Building the exit path started by reading the one broker call that takes size off a live
