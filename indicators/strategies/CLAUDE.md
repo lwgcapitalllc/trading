@@ -245,6 +245,26 @@ asserts the column count against Pine's 64-plot ceiling. **Every other twin in t
 kept by hand, and a twin that has drifted from its parent proves parity against a file nobody
 trades.** ⚠ **Edit the generator, never either `.pine`.**
 
+🔴 **THIS FILE TOOK EVERY LIQUIDITY LEVEL ON A WICK, AND ITS OWN PARENT DOES NOT (found by the
+first real parity run, 2026-09-02, fixed the same day).** The sweep tracker used `high > level` /
+`low < level` for all four families. `engines/liquidity/` — 100% parity-validated against
+`indicators/engines/mpc_assistant.pine` — takes a **WEEKLY** level only on a **CLOSE** through it
+and the daily and lower families on a wick (`engine.py:228`, citing `mpc_assistant.pine` line
+1427). **The house engine and the parent indicator agreed with each other; this strategy file was
+the odd one out.** The tracker now takes a close-through flag, passed only for weekly.
+
+⚠ **MEASURED, and it is why the gate was worth building rather than reasoning about**: over 20,319
+compared bars the weekly family differed on **ten bars** and every other family agreed on **all**
+of them. All seven diverged columns cascaded from those ten. ⚠ **The direction was decided by the
+house standard, not by which rule made more money** — the same call as the session-clock fix the
+day before, and the same instruction follows: **do not re-optimise around it.** ⚠ **No Python
+baseline moves** — that side already followed the engine; only the chart changed.
+
+✅ **THE SAME RUN CONFIRMED THE SESSION-CLOCK FIX.** That was made on 2026-09-01 against a
+cross-map with no export to check it. The session families now agree on every one of the 20,319
+compared bars. **A fix argued from a cross-map and a fix proven by an export are not the same
+thing, and this is the export.**
+
 ✅ **ONE DEAD INPUT REMOVED IN THE SAME PASS.** "Enter on the change-of-character close" appeared
 exactly once in 1,443 lines — its own declaration — and nothing read it. Its tooltip promised that
 turning it off would wait for the next 15-minute close; turning it off did nothing at all. It was

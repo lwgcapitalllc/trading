@@ -261,7 +261,16 @@ var int highSweepBar = na
 var int lowFamilies  = 0
 var int highFamilies = 0
 
-f_track(float lvl, bool isHigh, bool enabled) =>
+// A level is TAKEN when price goes through it, once per level.
+//
+// 🔴 `needClose` EXISTS BECAUSE THIS FILE DISAGREED WITH ITS OWN PARENT (found by the first real
+// parity run, 2026-09-02). Every family was tracked on a WICK. `engines/liquidity/` — which is
+// 100% parity-validated against `indicators/engines/mpc_assistant.pine` — takes a WEEKLY level
+// only on a CLOSE through it, and the daily and lower families on a wick. The house engine and
+// the parent indicator agreed with each other; this strategy file was the odd one out.
+// ⚠ The direction was decided by the house standard, NOT by which rule made more money — the
+// same call as the session-clock fix the day before. Do not re-optimise around it.
+f_track(float lvl, bool isHigh, bool enabled, bool needClose = false) =>
     var float held = na
     var bool  taken = false
     bool fired = false
@@ -270,10 +279,12 @@ f_track(float lvl, bool isHigh, bool enabled) =>
             held := lvl
             taken := false
         if not taken
-            if isHigh and high > held
+            float above = needClose ? close : high
+            float below = needClose ? close : low
+            if isHigh and above > held
                 taken := true
                 fired := true
-            if not isHigh and low < held
+            if not isHigh and below < held
                 taken := true
                 fired := true
     fired
@@ -282,8 +293,8 @@ bool swH4H  = f_track(h4H,  true,  useH4Level)
 bool swH4L  = f_track(h4L,  false, useH4Level)
 bool swDH   = f_track(dH,   true,  useDailyLevel)
 bool swDL   = f_track(dL,   false, useDailyLevel)
-bool swWH   = f_track(wH,   true,  useWeeklyLevel)
-bool swWL   = f_track(wL,   false, useWeeklyLevel)
+bool swWH   = f_track(wH,   true,  useWeeklyLevel, true)   // weekly: CLOSE through, per the engine
+bool swWL   = f_track(wL,   false, useWeeklyLevel, true)
 bool swAsH  = f_track(asiaH, true,  useSessionLevel)
 bool swAsL  = f_track(asiaL, false, useSessionLevel)
 bool swLdH  = f_track(ldnH,  true,  useSessionLevel)

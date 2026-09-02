@@ -21,7 +21,14 @@ gate at all and every number it has produced is a lab finding for exactly this r
 feed is irrelevant here. Whether MT5's candles match TradingView's is a different question and a
 different tool (`backtest/tools/compare_feeds.py`).
 
-🔴 **TWO DISAGREEMENTS ARE EXPECTED ON THE FIRST RUN AND ARE WRITTEN DOWN BEFORE IT, so that a red
+✅ **THE FIRST REAL RUN HAPPENED ON 2026-09-02 AND BOTH PREDICTIONS BELOW WERE RIGHT — one still
+open, one already gone.** #1 was the ONLY cause of all 7 diverged fields: ten weekly-sweep bars in
+20,319, every other family agreeing exactly. #2 had already been fixed the day before and this
+export confirms it — the session families agree on every compared bar. **Writing them down before
+the run is what made a red gate readable in one pass instead of a day in the ladder.** The Pine
+turned out to be the wrong half of #1 and has been fixed; full record in this package's CLAUDE.md.
+
+🔴 **TWO DISAGREEMENTS WERE EXPECTED ON THE FIRST RUN AND WERE WRITTEN DOWN BEFORE IT, so that a red
 gate is read rather than explained away.** Both are in the LIQUIDITY layer, and both are real
 differences of rule rather than bugs on either side:
 

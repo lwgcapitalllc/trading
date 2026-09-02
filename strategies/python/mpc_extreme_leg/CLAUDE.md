@@ -5,10 +5,63 @@ that runs INTO the shift of structure, which is the move the A+ bot's setup begi
 **Scope:** This package only. The strategy's design, its optimisation record and the evidence
 behind each default live in `indicators/strategies/docs/mpc_extreme_leg_strategy.md`; the porting
 process lives in `docs/STRATEGY_WORKFLOW.md`. Neither is restated here.
-**Status:** 🔴 **STAGE 5 OF SIX. NO PARITY GATE HAS RUN.** Written 2026-09-01. It imports, it
-replays, it registers in the lab — and until `tools/compare_extreme_leg.py` exits 0 on a real
-export, every number it produces is a lab finding, not a measurement.
+**Status:** 🟠 **THE GATE HAS RUN ON A REAL EXPORT AND IS RED FOR ONE KNOWN REASON (2026-09-02).**
+Written 2026-09-01. The disagreement is the weekly-level rule this file predicted before the run,
+it was traced to the PINE being wrong, and the Pine is fixed — but **a fixed Pine needs a fresh
+export, so the gate is still red until somebody re-exports.** Until it exits 0, every number this
+package produces is a lab finding, not a measurement.
 **Last reviewed:** 2026-09-01
+
+---
+
+## The first real parity run — RED, for the reason written down before it (2026-09-02)
+
+Export: `engines/VANTAGE_XAUUSD, 5_2b302.csv`, 21,320 M5 bars **2026-05-17 → 2026-09-02**,
+20,319 compared after warm-up.
+
+```
+✗ 7 field(s) diverged — px_high_age, px_swept, high_armed, px_high_fam,
+                        px_low_fam, low_armed, px_low_age
+```
+
+✅ **EVERY ONE IS THE SAME SINGLE CAUSE, AND IT IS PREDICTED DISAGREEMENT #1 IN THE TABLE BELOW.**
+Decoding the sweep column family by family over the 20,319 compared bars:
+
+| family | only the CHART saw it | only PYTHON saw it |
+|---|---|---|
+| H4 low / high | 0 | 0 |
+| session low / high | 0 | 0 |
+| daily low / high | 0 | 0 |
+| **weekly low** | **3** | **3** |
+| **weekly high** | **2** | **2** |
+
+**Ten bars in 20,319, all weekly, and each appears on both sides because the sweep is TIMED
+differently rather than missed.** Everything downstream — the ages, the family counts, the two
+armings — cascades from those ten.
+
+✅ **PREDICTED DISAGREEMENT #2 IS GONE, WHICH CONFIRMS THE SESSION FIX.** The session families
+agree on every one of the 20,319 bars. That fix was made on 2026-09-01 against a cross-map, with no
+export to check it; this export checks it.
+
+🔴 **THE PINE WAS THE ONE THAT WAS WRONG, AND IT DISAGREED WITH ITS OWN PARENT.** Its sweep tracker
+took EVERY family on a wick. `engines/liquidity/` takes a weekly level only on a **CLOSE** through
+it (`engine.py:228`, citing `mpc_assistant.pine` line 1427) and the lower families on a wick — so
+the house engine and the parent indicator agreed with each other and this strategy file was the odd
+one out. ✅ **Fixed in `indicators/strategies/tools/build_extreme_leg.py`** (`f_track` gained a
+close-through mode, passed only for weekly). ⚠ **The direction was decided by the house standard,
+not by which rule made more money** — same call as the session clock. Do not re-optimise around it.
+
+⚠ **NO PYTHON BASELINE MOVES.** This side already followed the engine; only the chart changed.
+Every figure in this file and in `indicators/strategies/docs/mpc_extreme_leg_strategy.md` stands.
+
+🔴 **NOT ONE TRADE DIVERGED — AND THAT IS A NARROWER CLAIM THAN IT SOUNDS.** No entry, stop,
+target, fill, R or equity column appears in the diff, so on this window the ten weekly-sweep
+differences never reached a position. But the window is **3.5 months, not 6.6 years**, and it
+contains only **7 entries**. **Refusal codes 2, 4, 5 and 7 were never reached at all**, so this run
+says nothing whatever about them. A green re-run on this same export would still be a narrow gate.
+
+⚠ **The next export must come from the REGENERATED twin.** The one above predates the weekly fix,
+so re-running the gate against it will reproduce the same ten bars for ever.
 
 ---
 
