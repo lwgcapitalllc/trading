@@ -15,6 +15,48 @@ the other one did.
 
 ## Latest
 
+### Stacking the extreme leg on the A+ bot's account, and the basis field nobody could see (2026-09-02)
+
+Aaron asked to run the new bot on one account with the live A+ bot. Four things stood between the
+question and an answer, and three of them were invisible.
+
+**The stack REFUSED the new bot, and that was the system working.** Its execution layer owned a
+private balance and entered whenever its own ladder said yes, so replaying it as a leg would have
+given it an uncapped account **while the run reported the risk budget enforced.** Nothing would
+have raised, no test would have gone red, and the result would have looked ordinary. `build_leg`
+checks for the seam and refuses instead. The seam it wanted is five points — the balance read
+through the account rather than stored, a grant asked for before opening, a stop move reported so
+the room comes back, P&L and the reservation released separately at close, and the leg able to say
+whether it is flat — and **every one of them fails silently when dropped**, which is why all eight
+mutations of them were watched red before any of this shipped.
+
+**The CLI could only load ONE bar frame, and the simulator had supported two all along.** The
+merged clock's own docstring says a 5m leg steps three times inside a 15m leg's bar. So a mixed
+stack looked impossible while being one flag away — the same shape as the overlap audit a day
+earlier, and worth stating as a pattern: **when a tool cannot do something, check whether the
+engine under it already can.**
+
+**The default start would have handed the coarser leg history the finer one does not have.** Each
+frame's floor was measured separately, so the 15m leg would have compounded ALONE before the 5m
+leg existed, and every later trade of both would have been sized off a balance one built
+unopposed. It does not error; it answers a different question. The start is now the latest floor
+across the frames, and the common window is printed.
+
+🔴 **THE REAL FINDING IS THE ONE THAT ALMOST GOT REPORTED AS A RESULT.** The first mixed stack ran
+A+ at 10% risk per trade against the extreme leg at 1% — a 10:1 asymmetry that came from the two
+config defaults and that **the tool printed nowhere.** The big leg fills the shared budget on its
+own, so the small one never contends and the run reads as *these two do not fight for an account*.
+That sentence is true of those SETTINGS and says nothing about the strategies. Re-run with both at
+5%: **+190.30R, zero contention, every leg posting the same R shared as solo.** The conclusion
+survived; it just had not been earned yet. **Per-trade risk is a basis field, and a basis field
+that is not printed is one nobody checks.**
+
+⚠ **And one honest limit on this repo's own rule.** Rule 6 says compare R, never dollars. A SHRUNK
+entry is invisible in R — R is measured against each trade's own risk, so a trade cut to half size
+reports the same R. The A+ leg's shared and solo R were identical despite the cap shrinking it
+once. R is still the right default; it just cannot see this, and the contention log is what can.
+
+
 ### The guard that died in the first minute it was ever true (2026-09-02)
 
 The extreme-leg strategy carries two refusals TradingView cannot make: skip a transitioning market

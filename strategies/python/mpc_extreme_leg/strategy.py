@@ -126,13 +126,20 @@ class MpcExtremeLegStrategy:
     # they are not config fields.
     def __init__(self, config: Optional[ExtremeLegConfig] = None,
                  initial_capital: float = 10_000.0, cost_profile=None, *,
+                 account=None, leg: str = "strat",
                  major_length: int = 15, htf_minutes: int = 15, atr_length: int = 50) -> None:
         self.config = config or ExtremeLegConfig()
         self.major_length = major_length
         self.htf_minutes = htf_minutes
         self.atr_length = atr_length
+        # `account` is the SHARED account when this bot is one leg of a stack; omit it and the
+        # execution layer builds its own uncapped one, which is the standalone behaviour every
+        # figure in this package was measured on. `leg` must be distinct per leg — see
+        # `execution.py`. The stack REFUSES a strategy that does not accept these two rather than
+        # replaying it with a private balance, so leaving them off is not a quiet half-feature.
         self.execution = ExtremeLegExecution(
-            self.config, initial_capital=initial_capital, profile=cost_profile
+            self.config, initial_capital=initial_capital, profile=cost_profile,
+            account=account, leg=leg,
         )
         self.states: List[LegState] = []
         self.htf = HtfStructure(htf_minutes, major_length)

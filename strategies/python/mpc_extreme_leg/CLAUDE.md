@@ -231,6 +231,67 @@ moving those numbers.
 
 ---
 
+## It can share an account now (2026-09-02)
+
+**`backtest/portfolio/run_stack` REFUSED this bot outright until today**, and the refusal was the
+right one: its execution layer owned a private balance and entered whenever its own ladder said
+yes, so replaying it as a leg would have given it an uncapped account **while the run reported the
+risk budget enforced.** Nothing would have raised. The seam is now the same one `mpc_sos_fade` has
+— `account=None, leg="strat"`, defaulting to an uncapped solo account.
+
+⚠ **Solo behaviour is unchanged and that was PROVEN, not reasoned.** The parity gate was re-run on
+the same export after the wiring: still green on all 20,327 compared bars, so not one decision
+moved. Every 6.6-year figure in this file still describes the same strategy.
+
+**Five points carry the seam, and each one fails silently if it is dropped:**
+
+| | what it does | what breaking it looks like |
+|---|---|---|
+| the balance is a PROPERTY, never a stored number | solo → own ledger; stacked → the shared one | solo run fine, every stacked run quietly sizes off a stale balance |
+| the entry asks before it opens | the account scales the size down to the room | the position appears, the cap is breached, nothing reports it |
+| breakeven reports the new stop | risk is reserved to the CURRENT stop, so the room comes back | the cap binds on risk nobody carries and the other leg is refused affordable entries |
+| close books P&L **and** frees the reservation | two calls, because money and budget are separate | balance right, budget permanently spent, the account slowly grants nothing |
+| it can say whether it is flat | the simulator steps a holding leg FIRST, so closing frees room before the other is sized | room that just came free is silently denied |
+
+🔴 **AN ACCOUNT REFUSAL IS DELIBERATELY NOT A REFUSAL CODE.** Those codes are the decision stream
+the parity gate compares against the chart, and a portfolio refusal is a decision made ABOUT this
+strategy rather than BY it. Writing one there would put a Pine-less value in the one stream that
+has to stay comparable, and the gate would then report a divergence at a real bar and send the
+reader hunting a porting bug that does not exist. The account's own contention log is where a stack
+reader looks — it timestamps every refusal and every shrink.
+
+⚠ **8 mutations watched RED, each on exactly its own test** (the balance one reddens two, correctly
+— solo and stacked). A stub account that granted whatever it was asked would have passed all ten
+tests while describing an account nobody has, so they are written against the real
+`PortfolioAccount`.
+
+### What it does stacked against the live A+ bot — MEASURED 2026-09-02
+
+470,995 PU Prime `XAUUSD.p` M5 bars + 157,004 M15, one $10,000 account, 10% cap.
+**At a matched 5% per trade each: +190.30R together, and every leg posts the SAME R shared as solo
+— zero contention, not one decision moved.** At the two configs' own defaults (10% and 1%) it is
++191.30R with the budget binding twice in 6.6 years.
+
+🔴 **READ THE RISK COLUMN BEFORE THE R COLUMN. The first mixed stack ran A+ at 10% against this bot
+at 1% — a 10:1 gap that came from each config's default and that the tool printed NOWHERE.** The
+bigger leg then fills the budget alone and the smaller one reads as harmless, which is a fact about
+the SETTINGS and not about the strategies. `stack_run.py` prints per-leg risk now and `--risk-pct`
+matches them. ⚠ **A per-trade risk of 1.0 in `config.py` is a placeholder, not a measurement** —
+every stacked figure moves with it, and nothing here has chosen it.
+
+⚠ **Two legs at 5% each SATURATE a 10% cap exactly**, so "no contention" above sits on a knife
+edge rather than describing headroom. Anything higher and they start refusing each other.
+
+⚠ **A shrunk entry is INVISIBLE IN R.** R is measured against each trade's own risk, so a trade cut
+to half size reports the same R — the A+ leg's shared and solo R are identical despite being
+shrunk once. This repo's standing rule is to compare R rather than dollars, and this is the one
+place R cannot see what the cap did. Read the contention log for that.
+
+⚠ **The A+ leg in ANY stack is not the live A+**: its 1-minute re-entry is pinned off, because a
+leg is one bar frame. Its figures here sit below the live bot's by construction.
+
+---
+
 ## The two cuts TradingView cannot make (2026-09-02, Aaron's call)
 
 🔴 **THE MARKET CUT SHIPS ON; THE NEWS CUT SHIPS OFF (Aaron's call, 2026-09-02).** Both were

@@ -55,14 +55,33 @@ _STRATEGIES = {
     "mpc_sos_fade": "strategies.python.mpc_sos_fade",
     "mpc_bleg": "strategies.python.mpc_bleg",
     "mpc_bos": "strategies.python.mpc_bos",
+    "mpc_extreme_leg": "strategies.python.mpc_extreme_leg",
 }
 
 
-def _spec(key: str, df, symbol: str) -> LegSpec:
+def _spec(key: str, df, symbol: str, risk_pct: float | None = None) -> LegSpec:
     mod = importlib.import_module(_STRATEGIES[key])
     lab = mod.LAB_STRATEGY
     ConfigCls = lab["config"]
-    cfg = ConfigCls(fill_model="bar", symbol=symbol)
+    # ⚠ Only the fields this strategy DECLARES. `LAB_STRATEGY` is an OPEN CONTRACT — a config
+    # may predate a kwarg, and `mpc_extreme_leg` has no `fill_model` at all (its fills are bar
+    # fills with no switch). Passing every field unconditionally is a TypeError three lines into
+    # the run; passing them conditionally by name is what `overlap_audit.py` already does, and
+    # keeping the two tools the same shape is the point of the note on `_STRATEGIES`.
+    wanted = {"fill_model": "bar", "symbol": symbol}
+    have = getattr(ConfigCls, "__dataclass_fields__", {})
+    cfg = ConfigCls(**{k: v for k, v in wanted.items() if k in have})
+    # 🔴 PER-TRADE RISK IS A BASIS FIELD AND IT WAS INVISIBLE HERE UNTIL 2026-09-02.
+    # Each leg was built at its OWN config default and the number was printed nowhere, so the
+    # first mixed stack silently ran `mpc_sos_fade` at 10% against `mpc_extreme_leg` at 1% — a
+    # 10:1 asymmetry nobody chose. The bigger leg then fills the shared budget on its own and
+    # the smaller one reads as harmless, which is a fact about the SETTINGS rather than about
+    # the strategies. It is printed in the leg table now, and `--risk-pct` matches them when
+    # what you want is the two competing rather than one dwarfing the other.
+    if risk_pct is not None and "exec_risk_pct" in have:
+        import dataclasses
+
+        cfg = dataclasses.replace(cfg, exec_risk_pct=risk_pct)
     # The 1m re-entry needs a second bar stream, which a leg does not have. `build_leg`
     # refuses it rather than replaying primary-only, so state the pin here where a reader
     # can see it instead of letting the run die three lines into the replay.
@@ -88,7 +107,21 @@ def main(argv=None) -> int:
         help=f"comma-separated, from {sorted(_STRATEGIES)}",
     )
     ap.add_argument("--symbol", default="XAUUSD")
-    ap.add_argument("--tf", default="15")
+    ap.add_argument(
+        "--tf",
+        default="15",
+        help="the frame a leg runs on unless it names its own as `leg:tf` in --legs",
+    )
+    ap.add_argument(
+        "--server",
+        default=None,
+        help="the broker whose cached bars to read, e.g. PUPrime-Demo. Without it the bar "
+        "source asks whichever MT5 terminal is attached, which needs the SSH tunnel up — so "
+        "a re-run with the app down fails at the fetch rather than reading the cache it "
+        "already holds. Two brokers' gold histories differ in LENGTH, so a stack re-run on "
+        "the wrong cache disagrees with every figure while looking perfectly healthy. Name "
+        "the server this stack was measured on.",
+    )
     ap.add_argument(
         "--start",
         default=None,
@@ -108,6 +141,14 @@ def main(argv=None) -> int:
         help="max open risk as a %% of the LIVE balance, across all legs",
     )
     ap.add_argument(
+        "--risk-pct",
+        type=float,
+        default=None,
+        help="force EVERY leg to this per-trade risk %%, so the legs compete on one basis. "
+        "Default: each leg keeps its own config default, which may differ between legs by a "
+        "lot — the table prints what was used.",
+    )
+    ap.add_argument(
         "--entry-floor",
         type=float,
         default=0.0,
@@ -115,7 +156,14 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
 
-    keys = [k.strip() for k in args.legs.split(",") if k.strip()]
+    keys, tf_of = [], {}
+    for token in (t.strip() for t in args.legs.split(",")):
+        if not token:
+            continue
+        name, _, tf = token.partition(":")
+        name = name.strip()
+        keys.append(name)
+        tf_of[name] = tf.strip() or args.tf
     unknown = [k for k in keys if k not in _STRATEGIES]
     if unknown:
         raise SystemExit(f"unknown strategies: {unknown}. Known: {sorted(_STRATEGIES)}")
@@ -128,25 +176,47 @@ def main(argv=None) -> int:
     from backtest.data.history import floor_for
     from backtest.data.source import BarSource
 
+    frames = sorted({tf_of[k] for k in keys}, key=lambda t: int(t))
+
+    # 🔴 THE START MUST BE THE LATEST FLOOR ACROSS THE FRAMES, NEVER EACH FRAME'S OWN.
+    # The legs share one balance. Giving a 15m leg a year the 5m leg does not have lets it
+    # compound alone before the other exists, and every later trade of BOTH legs is then sized
+    # off a balance one of them built unopposed. The run would not be wrong so much as it would
+    # be answering a different question, and nothing in the output says which.
     start = args.start
     if start is None:
-        fl = floor_for(args.symbol, args.tf)
-        if fl is None:
-            raise SystemExit(
-                f"cannot measure the broker's earliest {args.tf}m history for {args.symbol}. "
-                f"Pass --start explicitly rather than guessing one."
+        floors = {}
+        for tf in frames:
+            fl = floor_for(args.symbol, tf)
+            if fl is None:
+                raise SystemExit(
+                    f"cannot measure the broker's earliest {tf}m history for {args.symbol}. "
+                    f"Pass --start explicitly rather than guessing one."
+                )
+            floors[tf] = fl
+        start = max(floors.values()).isoformat()
+        if len(set(floors.values())) > 1:
+            binding = max(floors, key=lambda t: floors[t])
+            print(
+                "  common window: "
+                + ", ".join(f"{tf}m from {floors[tf]}" for tf in frames)
+                + f" — starting at {start}, set by the {binding}m frame, so both legs "
+                f"see the same history."
             )
-        start = fl.isoformat()
     end = args.end or dt.date.today().isoformat()
 
-    print(f"loading {args.symbol} {args.tf}m  {start} -> {end} ...", flush=True)
-    df = BarSource().load(args.symbol, args.tf, start, end)
-    if df.empty:
-        print("no bars returned")
-        return 1
-    print(f"  {len(df):,} bars  {df.index[0]} -> {df.index[-1]}", flush=True)
+    src = BarSource(server=args.server)
+    dfs = {}
+    for tf in frames:
+        print(f"loading {args.symbol} {tf}m  {start} -> {end} ...", flush=True)
+        d = src.load(args.symbol, tf, start, end)
+        if d.empty:
+            print(f"no {tf}m bars returned")
+            return 1
+        print(f"  {len(d):,} bars  {d.index[0]} -> {d.index[-1]}", flush=True)
+        dfs[tf] = d
 
-    specs = [_spec(k, df, args.symbol) for k in keys]
+    specs = [_spec(k, dfs[tf_of[k]], args.symbol, args.risk_pct) for k in keys]
     print(f"replaying {len(specs)} legs shared + {len(specs)} solo controls ...", flush=True)
     run = run_stack(
         specs,
@@ -162,17 +232,24 @@ def main(argv=None) -> int:
     )
     print(f"                 closing ${run.closing_balance:,.2f}")
     print()
+    # The frame is printed PER LEG because a mixed-frame stack is otherwise indistinguishable
+    # from a single-frame one in this table, and the two are different runs.
     print(
-        f"{'leg':<16}{'shared trades':>15}{'shared R':>11}"
+        f"{'leg':<18}{'tf':>4}{'risk%':>7}{'shared trades':>15}{'shared R':>11}"
         f"{'solo trades':>14}{'solo R':>10}{'solo close':>14}"
     )
     for spec in specs:
         sn, sr = _book(run.per_leg.get(spec.name, []))
         on, orr = _book(run.solo_per_leg.get(spec.name, []))
         close = run.solo_closing.get(spec.name, 0.0)
-        print(f"{spec.name:<16}{sn:>15}{sr:>11.2f}{on:>14}{orr:>10.2f}{close:>14,.2f}")
+        tf = f"{tf_of[spec.name]}m"
+        rp = getattr(spec.config, "exec_risk_pct", None)
+        rps = f"{rp:.2f}" if rp is not None else "?"
+        print(
+            f"{spec.name:<18}{tf:>4}{rps:>7}{sn:>15}{sr:>11.2f}{on:>14}{orr:>10.2f}{close:>14,.2f}"
+        )
     tn, tr = _book(run.trades)
-    print(f"{'TOTAL':<16}{tn:>15}{tr:>11.2f}")
+    print(f"{'TOTAL':<18}{'':>4}{'':>7}{tn:>15}{tr:>11.2f}")
 
     print()
     print(

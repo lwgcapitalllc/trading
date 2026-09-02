@@ -1032,7 +1032,40 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   the version that competes for the budget; the switch cannot compete by construction, because it
   reads a book that has already finished.
 - **`tools/stack_run.py`** — the CLI. Prints the shared book beside the solo controls, what the
-  account CARRIED, and the contention log.
+  account CARRIED, and the contention log. ⚠ **It builds each leg from that strategy's CONFIG
+  DEFAULTS**, so anything a leg does not declare it does not get: only fields a config actually
+  has are passed (`LAB_STRATEGY` is an open contract — `mpc_extreme_leg` has no fill-model field
+  at all), which is the same rule `overlap_audit.py` follows.
+
+  🔴 **IT GAINED PER-LEG BAR FRAMES ON 2026-09-02, AND THE SIMULATOR HAD SUPPORTED THEM ALL ALONG.**
+  `--legs mpc_sos_fade:15,mpc_extreme_leg:5` runs each leg on its own frame; bare `--legs` still
+  uses `--tf` for all of them. The merged clock was built for this from the start — *"a 5m leg
+  simply steps three times inside a 15m leg's bar"* — so the single-frame limit was **the CLI's
+  alone**, and it made a mixed stack look impossible when it was one flag away.
+
+  🔴 **THE DEFAULT START IS NOW THE LATEST FLOOR ACROSS THE FRAMES, NEVER EACH FRAME'S OWN.** The
+  legs share one balance, so giving a 15m leg history the 5m leg does not have lets it compound
+  ALONE before the other exists, and every later trade of BOTH is then sized off a balance one
+  built unopposed. The run would not error — it would answer a different question, and nothing in
+  the output would say which. The common window is printed when the floors differ.
+
+  🔴 **PER-TRADE RISK IS A BASIS FIELD AND IT WAS PRINTED NOWHERE UNTIL 2026-09-02.** The first
+  mixed stack ran `mpc_sos_fade` at 10% against `mpc_extreme_leg` at 1% — a 10:1 asymmetry that
+  came from the two config defaults and that nobody chose. **The bigger leg fills the budget on
+  its own and the smaller one reads as harmless, which is a fact about the SETTINGS rather than
+  about the strategies.** It is a column in the leg table now, and `--risk-pct` forces every leg
+  onto one basis. ⚠ **This is rule 11 in the place it is easiest to miss**: the two runs differ in
+  what they are measured on, and both look like "the stack".
+
+  ⚠ **`--server` was added for the same reason `overlap_audit.py` has one** — without it the bar
+  source asks whichever terminal is attached, so a re-run with the app down fails at the fetch,
+  and two brokers' gold histories differ in LENGTH, so a re-run on the wrong cache disagrees with
+  every figure while looking perfectly healthy.
+
+  ⚠ **A SHRUNK ENTRY IS INVISIBLE IN R.** R is measured against each trade's own risk, so a trade
+  cut to half size reports the same R it would have at full size. On the 2026-09-02 mixed stack the
+  A+ leg's shared and solo R were identical despite one shrink. Rule 6 says compare R rather than
+  dollars, and **this is the one place R cannot see what the cap did** — read the contention log.
 - **The LAB drives the same object** (`command-center/backend/services/portfolio_runner.py`,
   2026-08-09) — it CALLS `run_stack` and owns no account model of its own. ⚠ **Anything tuned here
   is the rule the live allocator has to enforce**, or the stacked backtest stops predicting the

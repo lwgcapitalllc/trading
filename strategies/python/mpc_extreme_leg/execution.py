@@ -30,7 +30,14 @@ from typing import List, Optional
 _PYPKGS = Path(__file__).resolve().parents[1]
 if str(_PYPKGS) not in sys.path:
     sys.path.insert(0, str(_PYPKGS))
+# Repo root on the path so `backtest.portfolio` imports standalone. ⚠ Added explicitly rather
+# than leaning on `mpc_sos_fade.execution` (imported below) having already done it — that works
+# today and breaks silently the day this file's import order changes or that shim moves.
+_ROOT = Path(__file__).resolve().parents[3]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+from backtest.portfolio.account import SoloAccount  # noqa: E402
 from mpc_sos_fade.execution import Trade  # noqa: E402
 
 NA = float("nan")
@@ -126,9 +133,18 @@ class ExtremeLegExecution:
     holds, and it would do it most often on exactly the fast bars this strategy enters on.
     """
 
-    def __init__(self, config, initial_capital: float = 10_000.0, profile=None) -> None:
+    def __init__(self, config, initial_capital: float = 10_000.0, profile=None, *,
+                 account=None, leg: str = "strat") -> None:
         self._cfg = config
-        self.equity = float(initial_capital)
+        # `account` is the SHARED account when this bot is one leg of a stack: it owns the balance
+        # every leg sizes against and the risk budget they compete for. Omit it (the default) and
+        # this builds its own uncapped SoloAccount, which is byte-identical to the standalone
+        # behaviour every figure in this package was measured on. `leg` is this leg's key in that
+        # account and MUST be distinct per leg — the account holds one open position per key, so
+        # two legs sharing a name overwrite each other's reservation and the cap silently
+        # under-counts the open risk while reporting itself enforced. See `backtest/portfolio/`.
+        self._account = account if account is not None else SoloAccount(balance=initial_capital)
+        self._leg = leg
         self._profile = profile
         if profile is not None and getattr(profile, "bid_ask_fills", False):
             # Refusing, rather than charging the spread twice or ignoring the flag. `bid_ask_fills`
@@ -147,6 +163,30 @@ class ExtremeLegExecution:
         # Set by the lab's replay loop and by `run()`. Unused here — carried so the object matches
         # the shape every other strategy's execution layer presents to the runner.
         self.bar_ms: int = 0
+
+    @property
+    def equity(self) -> float:
+        """The balance this bot sizes against.
+
+        🔴 **A PROPERTY, NEVER A STORED NUMBER, AND THAT IS THE WHOLE POINT OF THE SEAM.** Solo,
+        it is this leg's own ledger and behaves exactly as the plain attribute it replaced. In a
+        stack it is the account ALL legs share, so a loss on the other leg shrinks this one's next
+        trade — which is the thing a shared-account run exists to measure. A cached copy updated at
+        close would be right on a solo run and quietly stale on every stacked one, and the run
+        would look completely ordinary.
+        """
+        return self._account.balance
+
+    @property
+    def is_flat(self) -> bool:
+        """Whether this leg is holding nothing. Part of the contract a portfolio leg must meet.
+
+        ⚠ **Read by the simulator to ORDER the legs within one tick**, so that a leg already
+        holding a position is stepped BEFORE one that might open — a closing trade frees its room
+        before the other leg is sized against it. Getting it inverted would not raise anything: it
+        would quietly deny room that had just come free, and the run would look ordinary.
+        """
+        return self.pos is None
 
     # ── sizing ───────────────────────────────────────────────────────────────
     def _qty(self, risk: float) -> float:
@@ -241,7 +281,9 @@ class ExtremeLegExecution:
         gross = (price - pos.entry_price) * pos.dir * pos.qty * self._cfg.point_value
         pnl = gross - costs
         risk_usd = abs(pos.entry_price - pos.open_stop) * pos.qty * self._cfg.point_value
-        self.equity += pnl
+        # Realized onto the SHARED balance as it happens, so a leg entering later in the same bar
+        # sizes off the result rather than off a stale number.
+        self._account.book_pnl(self._leg, pnl)
         self.trades.append(
             Trade(
                 dir=pos.dir,
@@ -264,6 +306,10 @@ class ExtremeLegExecution:
                 kind="primary",
             )
         )
+        # P&L is already booked above; this frees the RESERVATION so the other leg can use the
+        # room on the very next tick. Two calls rather than one because the account separates
+        # money from budget — a trade can book P&L (a partial) without giving its room back.
+        self._account.close_position(self._leg)
         self.pos = None
 
     def enter(self, state) -> bool:
@@ -288,9 +334,26 @@ class ExtremeLegExecution:
                             entry, stop, tp)
                 )
                 return False
+            # The budget gate runs HERE, at the fill — this bot enters at market on the close, so
+            # there is no resting order and nothing reserves room before this moment. The account
+            # scales this leg's OWN desired size down to the room it has; solo it grants the lot.
+            granted = self._account.request_fill(
+                self._leg, direction, entry, stop, qty, self._cfg.point_value
+            )
+            if granted <= 0.0:
+                # Refused: no room, or the grant fell under the stack's entry floor. Take nothing
+                # and let the setup re-arm next bar if it still holds.
+                #
+                # ⚠ **Deliberately NOT recorded as a refusal code.** Those codes are the decision
+                # stream the parity gate compares against the chart, and an account refusal is not
+                # a decision this strategy made — it is one the portfolio made about it. Adding a
+                # code here would put a Pine-less value in the one stream that must stay
+                # comparable. The account's own contention log is where a stack reader looks, and
+                # it records every refusal and every shrink with a timestamp.
+                return False
             self.pos = _Open(
                 dir=direction, entry_index=state.index, entry_ms=state.ts_ms,
-                entry_price=entry, qty=qty, stop=stop, open_stop=stop, take_profit=tp,
+                entry_price=entry, qty=granted, stop=stop, open_stop=stop, take_profit=tp,
             )
             return True
         return False
@@ -317,6 +380,10 @@ class ExtremeLegExecution:
         if reached:
             pos.be_armed = True
             pos.stop = pos.entry_price
+            # The account reserves risk to the CURRENT stop, so a move to breakeven frees this
+            # leg's room for the other one. Without this call the reservation stays at the
+            # original stop for the life of the trade and the cap binds on risk nobody carries.
+            self._account.update_stop(self._leg, pos.stop, pos.qty)
 
     def record_blocks(self, state) -> None:
         """Book every refusal the ladder made on this bar."""

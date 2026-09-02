@@ -507,3 +507,137 @@ def test_an_empty_calendar_is_UNKNOWN_never_ALLOW():
     assert cut.unknown_count == 1
     assert cut.refused == 0
     assert cut.asked == 1
+
+
+# ── the shared-account seam (2026-09-02) ─────────────────────────────────────
+#
+# This bot became stackable on 2026-09-02. Before that it owned a private balance and entered
+# whenever its own ladder said yes, and `backtest/portfolio/run_stack` REFUSED it outright rather
+# than replaying it with an uncapped account while reporting the risk budget enforced.
+#
+# 🔴 What these pin is the half that has no symptom when it breaks. A leg wired wrongly to a shared
+# account does not raise: it trades, it books P&L, it produces a full and ordinary-looking result,
+# and the only thing wrong is that the cap was never really enforced. Every test below is written
+# against the REAL `PortfolioAccount` for that reason — a stub that grants whatever it is asked
+# would pass all of them while describing an account nobody has.
+
+from backtest.portfolio.account import PortfolioAccount  # noqa: E402
+
+
+def _acct(balance: float = 10_000.0, cap_pct: float = 0.10) -> PortfolioAccount:
+    return PortfolioAccount(balance=balance, risk_cap_pct=cap_pct)
+
+
+def _shared(account, leg: str = "strat", **cfg) -> ExtremeLegExecution:
+    return ExtremeLegExecution(
+        ExtremeLegConfig(**cfg), initial_capital=10_000.0, account=account, leg=leg
+    )
+
+
+def test_a_solo_leg_still_owns_its_own_balance():
+    """The default must be byte-identical to the private float it replaced — every figure this
+    package has measured was made without an account. RED by defaulting `account` to a
+    PortfolioAccount with a cap: the solo run then starts refusing its own entries."""
+    ex = _exec()
+    assert ex.equity == 10_000.0
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    ex.resolve(11, 2, high=105.0, low=99.0, open_=100.0)
+    assert ex.trades[-1].exit_reason == "target"
+    assert ex.equity > 10_000.0
+
+
+def test_is_flat_answers_the_runner_rather_than_the_other_way_round():
+    """The simulator orders the legs within one tick by this, so a leg already holding steps FIRST
+    and its closing trade frees room before the other is sized against it. RED by inverting the
+    return: nothing raises, room that just came free is silently denied."""
+    ex = _exec()
+    assert ex.is_flat is True
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    assert ex.is_flat is False
+
+
+def test_a_shared_account_with_no_room_refuses_the_entry():
+    """RED by ignoring the granted quantity and opening at the desired one — the position appears,
+    the cap is breached, and nothing anywhere reports it."""
+    acct = _acct()
+    # a rival leg takes the whole 10% cap: |100-90| x 100 units = $1,000 of a $1,000 budget
+    assert acct.request_fill("other", 1, 100.0, 90.0, 100.0, 1.0) > 0.0
+    ex = _shared(acct)
+    assert ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0)) is False
+    assert ex.pos is None
+
+
+def test_an_account_refusal_is_NOT_written_into_the_refusal_codes():
+    """🔴 The codes are the decision stream the parity gate compares against the chart. An account
+    refusal is a decision the PORTFOLIO made, not one this strategy made, and writing it there
+    would put a Pine-less value in the one stream that has to stay comparable — the gate would
+    then report a divergence at a real bar and send the reader hunting a porting bug.
+    RED by recording any block code on the no-room path."""
+    acct = _acct()
+    acct.request_fill("other", 1, 100.0, 90.0, 100.0, 1.0)
+    ex = _shared(acct)
+    st = _state(index=10, go_long=True, stop_long=98.0, tp_long=104.0)
+    ex.enter(st)
+    assert ex.blocks == []
+    assert st.blk_long == BLK_NONE
+
+
+def test_a_shrunk_grant_is_the_size_actually_taken():
+    """The account scales a contested entry down to the room left. RED by storing `qty` instead of
+    `granted` in the position — the trade then carries more risk than the budget allowed and every
+    later P&L, R and cost figure on it is computed from a size the account never issued."""
+    acct = _acct()
+    # rival takes $950 of the $1,000 budget, leaving $50 of a wanted $100
+    acct.request_fill("other", 1, 100.0, 90.0, 95.0, 1.0)
+    ex = _shared(acct)
+    assert ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0)) is True
+    assert ex.pos.qty == pytest.approx(25.0)      # half of the 50 it asked for
+
+
+def test_breakeven_hands_the_room_back_to_the_shared_account():
+    """The account reserves to the CURRENT stop. RED by deleting the `update_stop` call: the
+    reservation stays at the original stop for the life of the trade, so the cap binds on risk
+    nobody is carrying and the other leg is refused entries it could have afforded."""
+    acct = _acct()
+    ex = _shared(acct, use_breakeven=True)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    assert acct.reserved() == pytest.approx(100.0)
+    ex.arm_breakeven(11, high=103.0, low=100.0)   # span 4, arms at 70% = 102.8
+    assert ex.pos.stop == pytest.approx(100.0)
+    assert acct.reserved() == pytest.approx(0.0)
+
+
+def test_closing_books_the_pnl_and_frees_the_reservation():
+    """Two calls, because the account separates MONEY from BUDGET. RED by dropping
+    `close_position`: the balance is right, the budget is permanently spent, and the account
+    slowly stops granting anything at all."""
+    acct = _acct()
+    ex = _shared(acct)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    ex.resolve(11, 2, high=105.0, low=99.0, open_=100.0)
+    assert ex.trades[-1].exit_reason == "target"
+    assert acct.balance == pytest.approx(10_200.0)   # (104-100) x 50 units
+    assert acct.has_position("strat") is False
+    assert acct.reserved() == pytest.approx(0.0)
+
+
+def test_a_stacked_leg_sizes_off_the_SHARED_balance_not_a_private_copy():
+    """🔴 This is the whole reason a stack is not N solo runs added up: the other leg's losses
+    shrink this one's next trade. RED by caching the balance in `__init__` instead of reading the
+    account — the solo run is unaffected and every stacked run is quietly wrong."""
+    acct = _acct()
+    ex = _shared(acct)
+    acct.book_pnl("other", -5_000.0)              # the other leg loses half the account
+    assert ex.equity == pytest.approx(5_000.0)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    assert ex.pos.qty == pytest.approx(25.0)      # 1% of 5,000 over a 2.00 stop, not 1% of 10,000
+
+
+def test_the_strategy_passes_the_account_and_leg_key_through():
+    """Rule 7: the switch is a CLAIM about code somewhere else. RED by dropping either keyword
+    from the Execution call — the strategy still builds, still trades, and quietly runs on its own
+    uncapped balance inside a stack that reports the cap enforced."""
+    acct = _acct()
+    strat = MpcExtremeLegStrategy(ExtremeLegConfig(), account=acct, leg="xl")
+    assert strat.execution._account is acct
+    assert strat.execution._leg == "xl"
