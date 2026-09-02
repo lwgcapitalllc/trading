@@ -1,2 +1,22 @@
 2026-09-02 15:00:12,280 [INFO] place LONG limit 0.47L @ 4316.865760000001 SL 4295.68368
 2026-09-02 15:00:13,048 [INFO] PENDING PLACED | ticket=360600748 | bullish 0.47L @ 4316.87 | SL=4295.68
+2026-09-02 16:05:04,539 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-02 16:05:04,608 [INFO] Stop requested — shutting down.
+2026-09-02 16:05:04,608 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-02 16:05:08,515 [INFO] MT5 disconnected.
+2026-09-02 16:05:31,421 [INFO] MPC SOS Fade | MpcSosFadeStrategy v277 | hash 94a1b9c550bb | commit de9ecafa | frozen | LIVE
+2026-09-02 16:05:32,234 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-02 16:05:32,241 [INFO] MT5 connection lock released
+2026-09-02 16:05:32,823 [INFO] Sizing basis 10,020.65 = broker balance 14,538.88 - 4,518.23 stated adjustment
+2026-09-02 16:05:32,824 [INFO] Sizing against account balance $10,020.65
+2026-09-02 16:05:32,826 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-09-02 16:05:32,830 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-02 16:05:32,831 [INFO] Cancelling stale pending order T360600748 from a previous run
+2026-09-02 16:05:32,831 [INFO] cancel stale pending T360600748
+2026-09-02 16:05:32,925 [INFO] PENDING CANCELLED | T360600748
+2026-09-02 16:05:38,250 [INFO] Warmed 5000 bars (2026-06-18 00:00:00+00:00 → 2026-09-02 15:45:00+00:00) in 5.2s
+2026-09-02 16:05:38,261 [INFO] Equity re-anchored to the account after warm-up: 10,925.03 → 10,020.65
+2026-09-02 16:05:39,717 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-02 16:07:30,928 [INFO] Close requested (probe-after-deploy) — nothing open to close.
+2026-09-02 16:15:08,363 [INFO] place LONG limit 0.47L @ 4316.865760000001 SL 4295.68368
+2026-09-02 16:15:08,454 [INFO] PENDING PLACED | ticket=360702468 | bullish 0.47L @ 4316.87 | SL=4295.68
