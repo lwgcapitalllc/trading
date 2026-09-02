@@ -576,6 +576,16 @@ still happens; only the message is hidden. Run plain `pytest` to see it.
 ⚠ **A hook that is not executable is skipped by git in silence** — same "looks installed, does
 nothing" shape one level down. The installer chmods every hook every run.
 
+### `./go` is also the only thing that maintains the news calendar cache (2026-09-01)
+
+🔴 **Its step 6 asked whether the cache FILE EXISTS, which is not a question about the dates inside
+it.** The file had been there since July while its coverage stopped four weeks back, so every launch
+said fine and the backend's own startup banner was the only thing that ever noticed. **Presence is
+not freshness.** Step 6 now tops the cache up, costs nothing on the days there is nothing to fetch,
+and never kills the launcher when it cannot. The cache is git-ignored, so this is per-machine by
+design and there is no second writer. Rules, the tool, and the wiring bug that made a refusal read
+as an all-clear: `engines/news/CLAUDE.md` → *Keeping the cache current*; story in `HISTORY.md`.
+
 ---
 
 ## Formatting, linting and the test gate

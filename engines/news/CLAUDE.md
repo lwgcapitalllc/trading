@@ -8,10 +8,14 @@ skip or trade.
 **Scope:** Economic-calendar (scheduled macro releases: NFP/CPI/FOMC/PCE/ISM/EIA…) blackout gating +
 coverage tracking. NOT headline/sentiment NLP, NOT single-stock earnings, NOT trading decisions, NOT
 position sizing, NOT UI. The engine emits facts; a bot owns the policy and the skip/trade call.
-**Status:** Built 2026-07-05. Unit-tested (29 tests, green) + validated live end-to-end against the
+**Status:** Built 2026-07-05. Unit-tested (47 tests, green) + validated live end-to-end against the
 real Forex Factory calendar (live weekly feed + a real Feb-2025 history backfill → cache → engine
 blackout). **Off the roadmap and NOT a Pine port** — see "Validation".
-**Last reviewed:** 2026-08-02 — no engine code changed; a **third consumer** was recorded. The
+**Last reviewed:** 2026-09-01 — the cache had gone a month stale on this machine and the backend's
+readiness banner was the only thing that noticed, because **nothing on either machine was topping
+the cache up**. `backfill.py` gained `--top-up` (+ `--if-stale`) and `./go` now runs it. Engine core
+unchanged. See "Keeping the cache current". Earlier:
+2026-08-02 — no engine code changed; a **third consumer** was recorded. The
 command center now checks this cache at backend startup (`services/readiness.py`) and warns when it
 is empty or stops more than 30 days back, because the honest-coverage rule is invisible from
 outside: an unbackfilled range makes the lab's News & Holiday filter *inert*, which is
@@ -59,9 +63,11 @@ engines/news/
 ├── tools/
 │   ├── refresh.py      ← live pipeline: pull the free weekly feed + upsert the cache (schedule it)
 │   ├── backfill.py     ← history: fetch missing months from the website into the cache (curl_cffi)
+│   │                     `--top-up` resumes from the cache's own coverage end — the scheduled one
 │   └── fetch_smoke.py  ← manual live-feed sanity check (stands in for the Pine parity harness)
 ├── tests/          ← test_engine.py, test_store.py, test_forex_factory.py, test_history_parser.py,
-│                     test_tradingview.py (offline parser tests on a saved sample)
+│                     test_tradingview.py (offline parser tests on a saved sample),
+│                     test_backfill_top_up.py (the top-up's decisions — no network)
 ├── __init__.py     ← public API
 └── CLAUDE.md       ← this file
 ```
@@ -177,11 +183,71 @@ eng.set_events(new_events, covered_ranges=new_ranges)  # live refresh without lo
 
 Data pipelines (both write the one cache; run from repo root):
 ```bash
-python engines/news/tools/refresh.py                       # live: current week, no deps (schedule it)
-python engines/news/tools/backfill.py --from 2024-01       # history: scrape months -> cache (curl_cffi)
+python engines/news/tools/refresh.py                       # live: current week, no deps
+python engines/news/tools/backfill.py --from 2021-01       # first fill: scrape months -> cache (curl_cffi)
+python engines/news/tools/backfill.py --top-up --if-stale  # keep it current — what ./go runs
 ```
 `backfill.py` only fetches months not already cached (static history), so the first run over a long
 range does the work once and later runs are instant.
+
+---
+
+## Keeping the cache current (2026-09-01)
+
+**The cache does not maintain itself, and until this date NOTHING maintained it.** It was filled by
+hand to 2026-07-31, and on 2026-09-01 the backend's startup banner said *"news calendar cache ends
+2026-07-31 (32d ago) — trades after that date come back untagged, not unaffected"*. That banner is
+the readiness check working exactly as designed. **It was also the only thing in the whole system
+that knew**, which is a reporting layer doing a maintenance layer's job.
+
+**Top it up with the tool, and do not hand it a date:**
+
+```bash
+python engines/news/tools/backfill.py --top-up             # resume from the cache's coverage end
+python engines/news/tools/backfill.py --top-up --if-stale  # ...and do nothing if it is current
+```
+
+`--top-up` reads its own start month off `EventStore.coverage_end_ms()`, so nothing has to remember
+when the cache was last filled. ⚠ **It REFUSES on an empty cache rather than defaulting to a start
+year** — the repo rule that a default start date is a hardcode with better manners, failing quietly
+in the direction nobody checks. An empty cache needs a deliberate `--from`.
+
+⚠ **`--if-stale` answers from the cache alone and never touches the network**, so a launcher can ask
+on every run for nothing. It is also why the answer is usually *no*: a fetched month records the
+WHOLE month as covered, so coverage normally runs to month end and the top-up genuinely fires about
+once a month.
+
+⚠ **The start month is clamped to the CURRENT month even when coverage already runs past today.**
+The current month is the one still publishing its released figures, so a resume point after it would
+freeze those rows at whatever they were on the day it was fetched.
+
+**MEASURED 2026-09-01:** stale by one month → 2 months fetched, 750 events, **3.7s** end to end.
+Already current → **1.1s**, no network (that second is python starting and reading a 28k-event JSON).
+
+### 🔴 The launcher had been asking the wrong question for a month
+
+`./go` step 6 checked that `data/events.json` EXISTS. The file has existed since July, so every
+launch printed *"news calendar present"* while the calendar inside it stopped four weeks back.
+**Presence is not freshness, and the check that reads a file's existence cannot tell you a thing
+about the dates inside it.** It now runs `--top-up --if-stale`, and reports *current*, *topped up*,
+or a warning that names what went wrong. It is never fatal: coverage that stops early leaves the app
+completely usable, and killing a launcher over a git-ignored data file would be the worse trade.
+
+🔴 **The first version of that wiring reproduced this engine's own oldest bug and was caught by
+RUNNING it, not by reading it.** It decided worked-or-not by grepping the tool's output for
+*"nothing to top up"* — and the tool's REFUSAL on an empty cache contained that same phrase, so a
+machine with no calendar at all was told its calendar was current. **A failure and a success arrived
+as the same value**, which is rule 1 of the monorepo, one level up from where it usually bites. The
+launcher now branches on the EXIT CODE, which is structural, and the two messages were pulled apart
+so the text cannot collide again either.
+
+⚠ **This is per-machine and always will be.** The cache is git-ignored, so each clone keeps its own
+and each machine tops up its own on its own `./go`. There is deliberately no shared copy and no
+second writer — see the monorepo's ledger-sync story for what two machines committing one file costs.
+
+⚠ **`./go` is the only thing that runs this today, so a machine that does not launch the Command
+Center does not top up.** That is enough for both machines here; if that stops being true the answer
+is a scheduled task, not a second checker.
 
 ---
 
@@ -215,6 +281,11 @@ is renamed, that check degrades to a startup warning about an unreadable cache (
 everything — it runs inside the startup hook, and raising there would stop the backend booting over
 a git-ignored file).
 
+**Fourth consumer — the Command Center launcher** (2026-09-01). `./go` step 6 runs
+`tools/backfill.py --top-up --if-stale` before it starts the app. It is the only thing that KEEPS
+the cache current on either machine; the readiness check next to it only reports. Root
+`CLAUDE.md` routes here rather than restating any of it.
+
 ---
 
 ## Do
@@ -228,6 +299,8 @@ a git-ignored file).
   the tests must import + run with no third-party deps.
 - Backfill gently: the history source sleeps between month requests. Do not hammer the FF website;
   rely on the cache (a fetched month is static — never re-fetch it).
+- Top up with `--top-up`, and let it read its own start date off the cache. A tool that is HANDED a
+  date is a tool somebody has to remember to update.
 - When you add a field or event, update this file's Public API + the tests in the same commit.
 
 ## Never do
@@ -237,6 +310,12 @@ a git-ignored file).
   its `NewsPolicy`, same as it owns its `REGIME_RISK_TABLE`.
 - Do not draw the coverage line or any visual here — expose `coverage_start_ms`; the UI draws it.
 - Do not commit `data/events.json` — it is fetched/cached data (git-ignored), not source.
+- Do not give the top-up a default start date to fall back on when the cache is empty. Refusing is
+  the answer; a default would silently narrow every run that did not pass `--from`.
+- Do not judge this cache by whether its FILE exists. Coverage is what the filter reads, and a
+  present file with month-old coverage is the exact case the readiness banner exists to catch.
+- Do not read a tool's MESSAGE to decide whether it worked — read its exit code. The refusal and the
+  all-clear here were one grep apart, and the launcher believed the wrong one.
 - Do not make the engine core, the live feed, or the tests depend on `curl_cffi` — history only.
 - Do not build a second economic-calendar/news engine anywhere. This is the canonical one.
 
@@ -244,10 +323,13 @@ a git-ignored file).
 
 ## Validation (no Pine parity — tests + live checks)
 
-**Unit tests — GREEN:** `PYTHONPATH=engines python3 -m pytest engines/news/tests/ -q` (35 tests:
+**Unit tests — GREEN:** `PYTHONPATH=engines python3 -m pytest engines/news/tests/ -q` (47 tests:
 blackout window inclusivity + merging, the three coverage modes, next/active/last phases, edges,
 policy filtering, whole-day bank-holiday blackout + the `block_holidays`/currency switches, the three
-parsers on saved samples — incl. the TradingView `actual`/unit/category parse — and the cache store).
+parsers on saved samples — incl. the TradingView `actual`/unit/category parse — the cache store, and
+the top-up's decisions). The 12 top-up tests were watched RED against HEAD (9 of 12 fail there; the 3
+argparse cases pass by accident and are named as such) and every one is pinned by a mutation that was
+watched to kill it — the list is in `tests/test_backfill_top_up.py`'s docstring.
 
 **`NewsEvent.category`** (added 2026-07-17) is a display-only grouping label (Labor, Prices, …) a
 source sets if it has one, else `None`. It rides through `to_dict`/`from_dict` but the engine core

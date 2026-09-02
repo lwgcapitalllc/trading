@@ -87,6 +87,17 @@ class EventStore:
         _, ranges = self.load()
         return ranges[0][0] if ranges else None
 
+    def coverage_end_ms(self) -> Optional[int]:
+        """Latest covered ms in the store — where a top-up has to resume from. None if empty.
+
+        The mirror of coverage_start_ms, and it exists so a top-up can work out its own start
+        date instead of being handed one. A default start date is a hardcode with better
+        manners: it fails quietly in the direction nobody checks. None here means the store has
+        never been filled, and the caller must REFUSE rather than pick a year to begin at.
+        """
+        _, ranges = self.load()
+        return ranges[-1][1] if ranges else None
+
     def _save(self, events: List[NewsEvent], covered_ranges: List[Interval]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {

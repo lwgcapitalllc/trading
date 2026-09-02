@@ -15,6 +15,74 @@ the other one did.
 
 ## Latest
 
+### The banner was right, and nothing was maintaining the thing it watched (2026-09-01)
+
+Aaron, on the Command Center overview: *"What does this banner mean? And what do we need to do to
+fix it?"* The banner: **news calendar cache ends 2026-07-31 (32d ago) — trades after that date come
+back untagged, not affected.**
+
+**It meant the lab's news filter had quietly stopped filtering.** The calendar engine reports
+`has_coverage=False` outside the fetched range and tags nothing there — deliberately, so a backtest
+trades normally where there is no data rather than guessing. So every backtest touching August ran
+with the news filter effectively off, and looked identical to one where the filter was on and found
+nothing. Nothing was broken. Nothing was wrong. There was just no calendar past 31 July.
+
+**Fixed in four minutes: two months scraped, 750 events, coverage 2021-01-01 → 2026-09-30 with no
+gaps, and the readiness check came back clean.** That was the easy half.
+
+**The half that mattered: nothing on either machine was topping the cache up, and nothing ever had.**
+It had been filled by hand in July. The readiness check written on 2026-08-02 was the only thing in
+the entire system that knew it had gone stale — a reporting layer doing a maintenance layer's job,
+which works right up until the person who reads the report is busy.
+
+🔴 **And `./go` step 6 had been actively reassuring about it for a month.** It checked that
+`engines/news/data/events.json` EXISTS, printed *"news calendar present"*, and had printed that on
+every launch since July while the calendar inside stopped four weeks back. **A check on a file's
+existence cannot tell you anything about the dates inside it — presence is not freshness.** This is
+the repo's own rule 7 (a label is a claim about code somewhere else) pointed at a data file instead
+of a feature.
+
+**What was built.** `backfill.py --top-up` resumes from the cache's own coverage end
+(`EventStore.coverage_end_ms()`), so nothing has to remember when it was last filled, and it
+**refuses on an empty cache** rather than defaulting to a start year — the repo already knows what a
+"sensible" default start date costs (`run_report.py`, 2026-07-29). `--if-stale` answers "has coverage
+fallen behind" from the cache alone with **no network at all**, so `./go` can ask on every launch for
+nothing. Step 6 now runs `--top-up --if-stale`.
+
+| | measured 2026-09-01 |
+|---|---|
+| stale by one month → fetch | 2 months, 750 events, **3.7s** |
+| already current → skip | **1.1s**, no network (python start + a 28k-event JSON read) |
+| how often it actually fetches | ~monthly — a fetched month records the WHOLE month as covered |
+
+🔴 **The first version of the launcher wiring reproduced rule 1 and was caught by RUNNING it, not by
+reading it.** It decided worked-or-not by grepping the tool's stdout for *"nothing to top up"* — and
+the tool's REFUSAL on an empty cache contained that same phrase. So a machine with **no calendar at
+all** was told *"news calendar current"*. **A failure and a success arrived as the same value**, one
+level up from where that rule usually bites, in a shell script, in code written by the same session
+that had just finished writing the rule into a docstring. It only surfaced because the four branches
+were each exercised against a real fake root rather than reasoned about. Fixed by branching on the
+**exit code** — structural, cannot drift with a reworded message — and the two messages were pulled
+apart so the text cannot collide again either.
+
+**Tests: 12 new, watched RED against HEAD (8bd0ceae).** 9 fail there on the missing functions; the 3
+argparse cases **pass against HEAD by accident** (`--from` was required and the new flags unknown, so
+all three exited 2 for reasons unrelated to the rule being pinned) and are named as such in the
+docstring rather than counted as evidence. Every case is also pinned by a mutation watched to kill
+it — seven of them, including one that sent the run to the network, which is exactly what the guard
+under test prevents. News engine suite 35 → 47 green.
+
+⚠ **`./go` is the only thing that runs this, so a machine that never launches the Command Center
+never tops up.** That covers both machines here. If it stops being true the answer is a scheduled
+task, not a second checker — and deliberately not a shared cache: this file is git-ignored, and the
+ledger-sync entry below is what two machines writing one file costs.
+
+⚠ **Pre-existing and untouched:** the backend suite has 3 reds in `tests/test_strategies.py` — the
+scan finds 8 strategies against 7 expected, because `strategies/python/mpc_extreme_leg/` is another
+session's untracked work in progress. Nothing to do with this pass.
+
+---
+
 ### A full-history backtest went from ten minutes to a minute, and three of the four fixes were defects (2026-08-26/27)
 
 Aaron, on the lab: *"If we have a Python runner and we have all the price data cached, why does a

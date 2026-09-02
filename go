@@ -132,12 +132,45 @@ EOF
 fi
 
 # ── 6. Economic calendar ──────────────────────────────────────────────────────
-if [ -s "$ROOT/engines/news/data/events.json" ]; then
-  ok "news calendar present"
-else
+# This used to check that the file EXISTS, which is the wrong question and was quietly wrong for
+# a month: the file has been there since July while the calendar inside it stopped at 31 July, so
+# every launch reported it fine and the backend's own startup banner was the only thing that ever
+# noticed. What the news filter reads is COVERAGE, and nothing on this machine was topping it up.
+#
+# So top it up here. `--if-stale` answers "has coverage fallen behind" from the cache alone, with
+# no network at all, so a launch pays nothing on the days there is nothing to do — which is most
+# of them, since a fetched month covers the whole month. When it does run it fetches only the
+# months that are missing (measured 2026-09-01: ~2s for one month).
+CAL_PY="$ROOT/command-center/backend/.venv/bin/python"
+if [ ! -x "$CAL_PY" ]; then
+  # start.sh below builds this venv on a first run, so there is nothing to do yet and this is
+  # not a warning — the next ./go tops the calendar up.
+  say "news calendar: skipped until the backend venv exists (start.sh builds it on this run)"
+elif [ ! -s "$ROOT/engines/news/data/events.json" ]; then
   warn "No news calendar. The News filter will report no coverage."
-  say  "Backfill it any time (needs internet, not the VPS):"
+  say  "Fill it once (needs internet, not the VPS):"
   say  "  command-center/backend/.venv/bin/python engines/news/tools/backfill.py --from 2021-01"
+else
+  # Never fatal. A calendar that could not be topped up leaves the app entirely usable on the
+  # coverage it already has, and killing the launcher over it would be the worse trade — but it
+  # must SAY so, because stale coverage and a working filter look identical from the outside.
+  #
+  # Worked / did not work is read from the EXIT CODE, never from the message. The first version
+  # of this grepped stdout for "nothing to top up" and the tool's REFUSAL on an empty cache
+  # contains that phrase — so a machine with no calendar at all was told its calendar was
+  # current. Same shape as every other lesson here: a failure and a success must never arrive as
+  # the same value. Inside the success branch the wording only picks which good news to print.
+  if CAL_OUT="$("$CAL_PY" "$ROOT/engines/news/tools/backfill.py" --top-up --if-stale 2>&1)"; then
+    if printf '%s' "$CAL_OUT" | grep -q 'nothing to fetch'; then
+      ok "news calendar current"
+    else
+      ok "news calendar topped up"
+      printf '%s\n' "$CAL_OUT" | sed 's/^/    /'
+    fi
+  else
+    warn "news calendar could NOT be topped up - the filter still runs, on coverage that stops early"
+    printf '%s\n' "$CAL_OUT" | sed 's/^/    /'
+  fi
 fi
 
 # ── 7. Open the browser once the frontend is actually up ──────────────────────

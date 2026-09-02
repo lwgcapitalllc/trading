@@ -144,7 +144,9 @@ Unzip it at the root of your clone. The paths inside already match.
   ```bash
   command-center/backend/.venv/bin/python engines/news/tools/backfill.py --from 2021-01
   ```
-  (Run that *after* Step 4, since it needs the venv to exist.)
+  (Run that *after* Step 4, since it needs the venv to exist. It takes a few minutes for
+  five years and only has to be done once — after that `./go` keeps it current by itself,
+  and refuses to guess a start date if it ever finds the cache empty.)
 
 ---
 
