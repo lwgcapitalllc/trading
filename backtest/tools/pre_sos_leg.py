@@ -33,6 +33,27 @@ a control drawn from all hours hands the sweep rows an edge made entirely of wha
 inside the horizon is not a scratch here. That is pessimistic and it is applied to the control
 too, so the EDGE is unaffected while the absolute expectancy is the low end.
 
+🔴 THE ARMING RULE HERE IS SLIGHTLY LOOSER THAN THE ONE THE STRATEGY SHIPS, MEASURED 2026-09-01,
+AND EVERY NUMBER THIS TOOL HAS PRODUCED CARRIES IT. Two differences, both in when a sweep counts
+as fresh, both found by diffing this tool against `indicators/strategies/mpc_extreme_leg_strategy.pine`:
+
+  1. WHEN THE SWEEP IS STAMPED. This tool feeds the liquidity engine the BASE frame and dates a
+     sweep at that bar's CLOSE (see `replay_base`), so a level taken early in a 15-minute candle is
+     dated up to 15 minutes late. The strategy runs the same engine on the 5-minute chart and dates
+     it on the bar that actually crossed. The window therefore reaches 5-15 minutes further back
+     here than it does on the chart.
+  2. WHAT THE WINDOW IS COUNTED IN. This tool counts wall-clock MINUTES; the strategy counts BARS
+     (`math.round(sweptMinutes / chart_minutes)`). They agree while bars are contiguous and part
+     company across a weekend or any gap in the feed, where 36 bars reaches back much further than
+     180 minutes.
+
+⚠ NEITHER INVALIDATES A RESULT AND BOTH CHANGE WHAT ONE DESCRIBES. The grid, the timeframe answer,
+the two filters and the cost bill were all taken through this tool, so they describe an arming rule
+marginally looser than the file being traded. The thing that settles it is the parity gate on the
+port (`strategies/python/mpc_extreme_leg/tools/compare_extreme_leg.py`), not another run of this.
+⚠ DO NOT "FIX" THIS TOOL TO MATCH. Changing it silently re-bases every number already recorded
+against it, and a study is allowed to be a study — what it may not be is undocumented.
+
 ⚠ ONE BROKER PER RUN. Spread differs per broker and per account tier, and the confirmation frame
 has to come from the same feed as the base frame or the two disagree about what a bar is. The
 tool refuses to mix them.

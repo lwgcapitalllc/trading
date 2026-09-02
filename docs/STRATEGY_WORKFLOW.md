@@ -97,7 +97,7 @@ commit. A lab row saying something different from the chart is how a rule gets r
 
 ---
 
-## Current status — 2026-08-07
+## Current status — 2026-09-01
 
 | Strategy | 1 Spec | 2 Pine | 3 Export twin | 4 CSV | 5 Python | 6 Parity | Can you sweep it? |
 |---|---|---|---|---|---|---|---|
@@ -106,6 +106,7 @@ commit. A lab row saying something different from the chart is how a rule gets r
 | **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
 | **D** (`mpc_d`) | ❌ deleted | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and it is GONE (2026-08-15).** Its one measurement was indistinguishable from zero and it was never going further. Both `.pine` files and `docs/MPC_D_STRATEGY_SPEC.md` removed; recover from git history. Its VOCABULARY was the second reason — "shakeout" now means one thing in this repo, and it belongs to RSO. |
 | **OB Fade** (`mpc_ob_fade`) | ❌ withdrawn | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and do not restart it.** Its spec was DELETED once the measurement closed the question — the record of what was tried is `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` |
+| **Extreme Leg** (`mpc_extreme_leg`) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | **Not yet — stage 4 is waiting on a human.** Stages 1/2/3/5 landed 2026-09-01: the Pine, a GENERATED export twin, and `strategies/python/mpc_extreme_leg/`. Take the export off `mpc_extreme_leg_strategy_export.pine` on a XAUUSD **5-minute** chart and run `compare_extreme_leg.py`. ⚠ Its numbers so far come from a STUDY (`backtest/tools/pre_sos_leg.py`) whose arming rule is measurably looser than the file being traded — see that package's CLAUDE.md. |
 | **H4 sweep** | study only | ✅ | ❌ | ❌ | ❌ | ❌ | No |
 
 ### BOS — green as of 2026-08-07, and what that is worth

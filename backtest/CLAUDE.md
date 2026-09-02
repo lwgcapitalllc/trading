@@ -695,6 +695,16 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   trend still opposing, target ≥2 stops away.** n=228 over 9 years, hit 28.1% at medR 3.67,
   **+0.296R against a matched control at 21.6% (+2.2σ)**; two level families agreeing n=112,
   +0.386R (+2.4σ). ≈25 trades a year.
+  🔴 **ITS ARMING RULE IS LOOSER THAN THE STRATEGY IT MEASURED, MEASURED 2026-09-01 BY DIFFING THE
+  TWO, AND EVERY NUMBER ABOVE CARRIES IT.** Two differences, both in when a sweep counts as fresh:
+  this tool dates a sweep at the BASE frame's bar CLOSE while the strategy dates it on the 5-minute
+  bar that crossed (so the window reaches 5–15 minutes further back here), and this tool counts
+  wall-clock MINUTES while the strategy counts BARS (they agree while bars are contiguous and part
+  company across a weekend). ⚠ **Neither invalidates a result and both change what one DESCRIBES.**
+  ⚠ **Do not "fix" this tool to match** — that silently re-bases every number already recorded
+  against it. A study is allowed to be a study; what it may not be is undocumented. The thing that
+  settles the question is the port's parity gate
+  (`strategies/python/mpc_extreme_leg/tools/compare_extreme_leg.py`), not another run of this.
   🔴 **The SWEEP is the ingredient and it is not close: the identical trigger with no level under
   it is 18.2% and −0.186R.** Session (+14.4%) and daily (+16.7%) are the strong families, h4
   (+5.7%) the weak one that still works, weekly n=8 and unanswerable.

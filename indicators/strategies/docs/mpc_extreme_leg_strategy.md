@@ -464,3 +464,71 @@ announce it. Re-read with `algos/tools/broker_facts.py` before quoting this tabl
 🔴 **NOTHING HAS COMPARED THE STRATEGY FILE AGAINST ANY OF THIS.** There is no TradingView export
 of its trades, so no check exists that the file books what the model measured. It is the largest
 outstanding item on this strategy and no amount of further searching substitutes for it.
+
+---
+
+## 🔴 The session windows were on the wrong clock, and the port that found it (2026-09-01)
+
+The Python port landed (`strategies/python/mpc_extreme_leg/`), which meant the Pine's decisions and
+the study's decisions could be diffed against each other for the first time. It found three
+differences. **Only one of them is in the file you trade, and it had been there since the file was
+written.**
+
+### 1. Every session window sat 4–5 hours later than its own name — FIXED
+
+The file built its session highs and lows from three fixed clock strings with **no timezone**, and
+a session string with no timezone resolves in the SYMBOL'S EXCHANGE clock — New York for gold,
+daylight saving and all. So:
+
+| the input said | it actually tracked |
+|---|---|
+| Asia `0000-0900` | 05:00–14:00 UTC in winter — the London morning |
+| London `0800-1700` | 13:00–22:00 UTC — **the New York session** |
+| New York `1300-2200` | 18:00–03:00 UTC — the New York evening and the Asian open |
+
+**MEASURED over 38,747 M15 bars: the old "London" high and low equalled the house New York
+session's on 100.0% of bars.** The other eight pairings agreed on 0.0–8.0%. So two of the three
+windows tracked no real session at all, and the third was the right session under the wrong name.
+
+Each window now names its own city, which is what `indicators/engines/mpc_assistant.pine` — the
+file this was ported from — has always passed, and what `engines/sessions/` carries. Three sources
+now agree where two used to disagree with one.
+
+⚠ **It changes what this strategy trades**, and the direction was decided by the house standard and
+by the parent file, **never by which clock made more money**. Do not re-optimise around it: picking
+a session clock for its profit is picking a result and calling it a rule.
+
+⚠ **Nothing failed, nothing repainted, and the chart looked right the whole time.** A session box in
+the wrong place still looks like a session box. The generalisation is worth more than the fix:
+**an omitted argument is a default you did not choose** — a wrong timezone gets noticed because
+somebody typed it, while a missing one inherits whatever the platform decides, silently, and the
+platform's choice here depends on the SYMBOL.
+
+### 2 and 3. The STUDY's arming rule is slightly looser than this file's — NOT a defect
+
+Both differences are in `backtest/tools/pre_sos_leg.py`, and both are recorded there rather than
+fixed. It dates a sweep at the 15-minute bar's CLOSE where the strategy dates it on the 5-minute bar
+that crossed (so its window reaches 5–15 minutes further back), and it counts wall-clock MINUTES
+where the strategy counts BARS (they part company across a weekend).
+
+🔴 **Every number in this document came through that study, so every one of them describes an
+arming rule marginally LOOSER than the file being traded.** They are not wrong and they are not
+re-measured here. The thing that settles it is the parity gate, which is why the gate exists.
+
+### One dead input was removed in the same pass
+
+**"Enter on the change-of-character close"** appeared exactly once in 1,443 lines — its own
+declaration — and nothing read it. Its tooltip promised that turning it off would wait for the next
+15-minute close; turning it off did nothing at all. It was DELETED rather than wired, because the
+branch it promised was measured and is worth **8R less** (+75.1R against +83.3R over the same bars).
+
+⚠ A control that does nothing costs nothing to ship and is indistinguishable from one that works.
+
+### Where the port stands
+
+Five of the six porting stages are done (`docs/STRATEGY_WORKFLOW.md`). **Stage 4 — a bar-by-bar CSV
+off `mpc_extreme_leg_strategy_export.pine` — is the one step no machine here can take**, and until
+`compare_extreme_leg.py` exits 0 on one, the port's numbers are lab findings rather than
+measurements. Over the full cached history at the shipped defaults it replays **178 trades /
++97.4R / 50.6% hit / worst losing run 7.9R, every year positive** — the same place the study landed
+(169 / +84.0R / 7.9R), which is the only claim that comparison supports.

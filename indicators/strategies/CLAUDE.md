@@ -216,6 +216,43 @@ Refusing a transitioning market takes the worst run to 5.9R and the 5%-risk draw
 implementation of a canonical engine in another language with no parity gate. That is a project.
 Every number, the four dead ends, and the risk table: `docs/mpc_extreme_leg_strategy.md`.
 
+🔴 **ITS THREE SESSION WINDOWS WERE READ ON THE WRONG CLOCK FOR AS LONG AS THE FILE EXISTED
+(found and fixed 2026-09-01), AND THE LESSON IS ABOUT AN ABSENT ARGUMENT RATHER THAN A WRONG ONE.**
+It built its session highs and lows from three fixed strings with **no timezone**, and a session
+string with no timezone resolves in the SYMBOL'S EXCHANGE clock — New York for gold, daylight
+saving and all. So every window sat 4–5 hours later than its own name: two of the three tracked no
+real session at all, and the one labelled "London" WAS the New York session under a wrong name.
+MEASURED over 38,747 M15 bars — the old "London" high and low equalled the house New York session's
+on **100.0%** of bars, while the other eight pairings agreed on 0.0–8.0%. ✅ Each window now names
+its own city, which is what `../engines/mpc_assistant.pine` — the file this was ported from — has
+always passed, and what `engines/sessions/` carries.
+⚠ **Nothing failed, nothing repainted, and the chart looked right the whole time**: a session box
+in the wrong place still looks like a session box. The only symptom was a strategy arming on levels
+its own documentation did not describe.
+⚠ **It CHANGES WHAT THIS TRADES**, and the direction was decided by the house standard and by the
+parent file, never by which clock made more money. **Do not re-optimise around it** — picking a
+session clock for its P&L is picking a result and calling it a rule.
+⚠ **The generalisation, and it is the one to carry: an omitted argument is a DEFAULT you did not
+choose.** A wrong timezone gets noticed because somebody typed it. A missing one inherits whatever
+the platform decides, silently, and the platform's choice here depends on the SYMBOL — so the same
+file is wrong by a different number of hours on a different instrument.
+
+✅ **IT HAS AN EXPORT TWIN SINCE 2026-09-01, AND THE TWIN IS GENERATED RATHER THAN MAINTAINED.**
+`tools/build_extreme_leg.py` now writes both files from ONE body: the strategy, and
+`mpc_extreme_leg_strategy_export.pine`, which is the same body with a different title and 62
+`plot()` columns appended. The build asserts the two bodies are byte-identical apart from that, and
+asserts the column count against Pine's 64-plot ceiling. **Every other twin in this directory is
+kept by hand, and a twin that has drifted from its parent proves parity against a file nobody
+trades.** ⚠ **Edit the generator, never either `.pine`.**
+
+✅ **ONE DEAD INPUT REMOVED IN THE SAME PASS.** "Enter on the change-of-character close" appeared
+exactly once in 1,443 lines — its own declaration — and nothing read it. Its tooltip promised that
+turning it off would wait for the next 15-minute close; turning it off did nothing at all. It was
+DELETED rather than wired, because the branch it promised was measured and is worth 8R less
+(+75.1R against +83.3R over the same bars). ⚠ **Rule 7 found it in ten seconds and only because
+somebody went looking** — a control that does nothing costs nothing to ship and is indistinguishable
+from one that works.
+
 🔴 **IT IS THE FIRST FILE HERE WHOSE SECOND ENGINE INSTANCE IS GENERATED RATHER THAN FORKED.**
 `tools/derive_htf_structure.py` regenerates the 15-minute copy from the block in
 `mpc_h4_sweep_strategy.pine` — renaming the type and method, swapping the four bar globals for

@@ -1,7 +1,7 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
 // [doc 1] MPC EXTREME LEG — the run INTO the shift of structure, not the fade after it  -> docs/mpc_extreme_leg_strategy.md
-strategy("MPC Extreme Leg", overlay = true, initial_capital = 10000,
+strategy("MPC Extreme Leg Export", overlay = true, initial_capital = 10000,
   default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0,
   calc_on_every_tick = false, process_orders_on_close = true,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
@@ -1469,3 +1469,192 @@ f_lvl(wL, color.purple, "PWL", drawLevels)
 
 if showDebug and barstate.islast
     label.new(bar_index, high, "15m dir " + str.tostring(st15.dir) + "\n15m swing H " + str.tostring(st15.ash, format.mintick) + "\n15m swing L " + str.tostring(st15.asl, format.mintick), style = label.style_label_down, color = color.new(color.black, 30), textcolor = color.white, size = size.small)
+
+// [doc 14] ═══════════════════════════════════════════════════════════════════════
+// THE EXPORT BLOCK — this file's only difference from the strategy, and why it exists
+//
+// TradingView will not tell you WHY it did something; it will only show you what it did. A trade
+// list says two runs disagree and nothing about where. These plots write the decision itself —
+// every level, every sweep, every candidate and every refusal — into the CSV, so a disagreement
+// lands on a named column at a named bar instead of on "trade 14 is missing".
+//
+// HOW TO TAKE THE EXPORT (the one step no machine here can do):
+//   1. Paste this file into a new Pine editor tab on a XAUUSD 5-minute chart.
+//   2. Leave every input at its default unless you are testing a specific setting.
+//   3. Scroll the chart LEFT until it stops loading more history — the export only holds
+//      what the chart has loaded.
+//   4. ⋮ (top right of the Strategy Tester) -> Export chart data -> Bar data and indicator values.
+//   5. Save the CSV under `engines/`. It is git-ignored there on purpose.
+//
+// ⚠ EVERY COLUMN IS `na` WHERE IT HAS NO MEANING, and that is deliberate. A column that reports 0
+// for "no candidate" cannot be told apart from a candidate whose value really is 0 — the same
+// distinction this repo lost once already when a dead terminal read as a quiet market.
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// [doc 15] ── The bar's classification, bit-packed ──────────────────────────────
+// One column rather than ten, because plots are capped at 64 and each of these is one bit of
+// information. Read it with a bit test, never with an equality.
+//   1 a 15-minute period closed here     ·   2 5m bullish change of character
+//   4 5m bearish change of character     ·   8 the low side is armed
+//  16 the high side is armed             ·  32 a raw long setup existed
+//  64 a raw short setup existed          · 128 entered long
+// 256 entered short                      · 512 went flat here
+float _xSeq = (periodClosed ? 1 : 0) + (st.bull_sos ? 2 : 0) + (st.bear_sos ? 4 : 0) +
+  (lowArmed ? 8 : 0) + (highArmed ? 16 : 0) + (rawLong ? 32 : 0) + (rawShort ? 64 : 0) +
+  (tookLong ? 128 : 0) + (tookShort ? 256 : 0) +
+  (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 512 : 0)
+
+// [doc 16] ── Which level family was taken ON THIS BAR ────────────────────────
+// ⚠ This is the FIRING edge, not the armed state. A level fires once and is then dead until it is
+// replaced, so a column reporting "a level is currently under us" would be a different fact and
+// would agree with Python for the wrong reason.
+//  1 h4 low · 2 h4 high · 4 session low · 8 session high
+// 16 prev-day low · 32 prev-day high · 64 prev-week low · 128 prev-week high
+float _xSwept = (swH4L ? 1 : 0) + (swH4H ? 2 : 0) + (sessLowSwept ? 4 : 0) + (sessHighSwept ? 8 : 0) +
+  (swDL ? 16 : 0) + (swDH ? 32 : 0) + (swWL ? 64 : 0) + (swWH ? 128 : 0)
+
+float _xLowAge  = na(lowSweepBar)  ? na : bar_index - lowSweepBar
+float _xHighAge = na(highSweepBar) ? na : bar_index - highSweepBar
+
+// [doc 17] ── The candidate, on every bar one existed — TAKEN OR REFUSED ──────
+// A refused setup is the more valuable half of this export. A port that agrees on every trade and
+// disagrees about what it REFUSED has a filter bug that has not surfaced yet, and it will surface
+// on a bar neither side has seen.
+float _xCandDir   = rawLong ? 1.0 : rawShort ? -1.0 : na
+float _xCandEntry = rawLong or rawShort ? entryPx : na
+float _xCandStop  = rawLong ? stopLong : rawShort ? stopShort : na
+float _xCandTgt   = rawLong ? tgtLong  : rawShort ? tgtShort  : na
+float _xCandTp    = rawLong ? tpLong   : rawShort ? tpShort   : na
+float _xCandR     = rawLong ? rLong    : rawShort ? rShort    : na
+float _xBlk       = rawLong ? blkLong  : rawShort ? blkShort  : na
+
+// [doc 18] ── The open trade ──────────────────────────────────────────────────
+// ⚠ The entry price, the opening stop and the direction are latched HERE rather than read back off
+// `strategy.position_avg_price`, because the bar that places the order still reports flat — see
+// [doc 12a]. Reading the platform on that bar returns `na` and every R below it would be `na` too.
+var float _xEntry    = na
+var float _xOpenStop = na
+var float _xOpenTp   = na
+var float _xDir      = na
+if tookLong
+    _xEntry := entryPx
+    _xOpenStop := stopLong
+    _xOpenTp := tpLong
+    _xDir := 1
+if tookShort
+    _xEntry := entryPx
+    _xOpenStop := stopShort
+    _xOpenTp := tpShort
+    _xDir := -1
+
+float _x1r = na(_xEntry) or na(_xOpenStop) ? na : math.abs(_xEntry - _xOpenStop)
+
+var float _xMfe = na
+var float _xMae = na
+if tookLong or tookShort
+    _xMfe := 0.0
+    _xMae := 0.0
+if strategy.position_size != 0 and not na(_x1r) and _x1r > 0
+    _xMfe := math.max(nz(_xMfe, 0.0), (_xDir > 0 ? high - _xEntry : _xEntry - low) / _x1r)
+    _xMae := math.min(nz(_xMae, 0.0), (_xDir > 0 ? low - _xEntry : _xEntry - high) / _x1r)
+
+bool  _held  = strategy.position_size != 0 or tookLong or tookShort
+float _xFill = tookLong or tookShort ? _xEntry : na
+float _xRisk = tookLong or tookShort ? _x1r : na
+float _xStop = tookLong or tookShort ? _xOpenStop : na
+float _xTp   = tookLong or tookShort ? _xOpenTp : na
+float _xLive = _held ? tStop : na
+float _xMfeC = _held ? _xMfe : na
+float _xMaeC = _held ? _xMae : na
+
+// The trade's own R, on the bar it closed. Taken from the platform's own book rather than
+// recomputed from the exit price: a rounded fill, a gap through the stop and a bar that touched
+// both ends all land here, and this is what the account actually received.
+float _xClosedR = na
+if strategy.closedtrades > nz(strategy.closedtrades[1], 0) and not na(_x1r) and _x1r > 0
+    int _ix = strategy.closedtrades - 1
+    float _sz = strategy.closedtrades.size(_ix)
+    if _sz != 0
+        _xClosedR := (strategy.closedtrades.profit(_ix) / math.abs(_sz)) / _x1r
+
+// [doc 19] ── The aggregated 15-minute bar, on the bar it completes ───────────
+// ⚠ The single most valuable four columns here. The 15-minute half of this strategy is built in
+// code out of 5-minute bars, so a port can disagree about the TREND for a reason that has nothing
+// to do with trading logic — an off-by-one in where a period starts. Without these the symptom is
+// a missing trade eleven hours later.
+float _xAggO = periodClosed ? doneO : na
+float _xAggH = periodClosed ? doneH : na
+float _xAggL = periodClosed ? doneL : na
+float _xAggC = periodClosed ? doneC : na
+
+// [doc 20] ═══════════════════════════════════════════════════════════════════
+plot(_xSeq,          "px_seq",          _INV, editable = false)
+plot(_xSwept,        "px_swept",        _INV, editable = false)
+plot(_xLowAge,       "px_low_age",      _INV, editable = false)   // bars since the low side was taken
+plot(_xHighAge,      "px_high_age",     _INV, editable = false)
+plot(lowFamilies,    "px_low_fam",      _INV, editable = false)   // families counted, low side
+plot(highFamilies,   "px_high_fam",     _INV, editable = false)
+plot(st15.dir,       "px_dir15",        _INV, editable = false)   // the 15m trend: 1 up, -1 down
+plot(st15.ash,       "px_swing_hi",     _INV, editable = false)   // the 15m swing being aimed at
+plot(st15.asl,       "px_swing_lo",     _INV, editable = false)
+plot(extremeLow,     "px_extreme_lo",   _INV, editable = false)   // the stop anchor
+plot(extremeHigh,    "px_extreme_hi",   _INV, editable = false)
+plot(atrNow,         "px_atr",          _INV, editable = false)
+plot(_xCandDir,      "px_cand_dir",     _INV, editable = false)
+plot(_xCandEntry,    "px_cand_entry",   _INV, editable = false)
+plot(_xCandStop,     "px_cand_stop",    _INV, editable = false)
+plot(_xCandTgt,      "px_cand_tgt",     _INV, editable = false)
+plot(_xCandTp,       "px_cand_tp",      _INV, editable = false)
+plot(_xCandR,        "px_cand_r",       _INV, editable = false)   // R to the SWING, not to the exit
+plot(_xBlk,          "px_blk",          _INV, editable = false)   // 0 taken · 1-6 refused, see [doc 12d]
+plot(_xFill,         "px_fill",         _INV, editable = false)
+plot(_xRisk,         "px_1r",           _INV, editable = false)   // 1R in PRICE, so R and dollars reconcile
+plot(_xStop,         "px_stop",         _INV, editable = false)   // the FROZEN opening stop
+plot(_xTp,           "px_tp",           _INV, editable = false)
+plot(_xLive,         "px_cur_stop",     _INV, editable = false)   // the LIVE stop — watch breakeven move it
+plot(beArmed ? 1 : 0, "px_be_armed",    _INV, editable = false)
+plot(_xMfeC,         "px_mfe_r",        _INV, editable = false)
+plot(_xMaeC,         "px_mae_r",        _INV, editable = false)
+plot(_xClosedR,      "px_closed_r",     _INV, editable = false)
+plot(strategy.equity, "px_equity",      _INV, editable = false)
+plot(strategy.position_size, "px_pos",  _INV, editable = false)
+plot(_xAggO,         "px_agg_o",        _INV, editable = false)
+plot(_xAggH,         "px_agg_h",        _INV, editable = false)
+plot(_xAggL,         "px_agg_l",        _INV, editable = false)
+plot(_xAggC,         "px_agg_c",        _INV, editable = false)
+plot(ph15,           "px_ph15",         _INV, editable = false)   // the 15m pivots, as detected
+plot(pl15,           "px_pl15",         _INV, editable = false)
+plot(h4H,            "px_h4h",          _INV, editable = false)
+plot(h4L,            "px_h4l",          _INV, editable = false)
+plot(dH,             "px_dh",           _INV, editable = false)
+plot(dL,             "px_dl",           _INV, editable = false)
+plot(wH,             "px_wh",           _INV, editable = false)
+plot(wL,             "px_wl",           _INV, editable = false)
+plot(asiaH,          "px_asia_h",       _INV, editable = false)
+plot(asiaL,          "px_asia_l",       _INV, editable = false)
+plot(ldnH,           "px_ldn_h",        _INV, editable = false)
+plot(ldnL,           "px_ldn_l",        _INV, editable = false)
+plot(nyH,            "px_ny_h",         _INV, editable = false)
+plot(nyL,            "px_ny_l",         _INV, editable = false)
+plot(barsBack,       "px_bars_back",    _INV, editable = false)   // the minutes->bars conversions,
+plot(lookbackBars,   "px_lookback",     _INV, editable = false)   // exported so a rounding gap shows
+
+// [doc 21] ── The settings this run was taken with ─────────────────────────────
+// ⚠ The harness configures the PYTHON side from these columns rather than from its own defaults.
+// A port replayed at its defaults against an export taken at somebody else's is comparing two
+// different strategies and will spend a day looking for the bug in the wrong half.
+plot((execLongs ? 1 : 0) + (execShorts ? 2 : 0) + (reqCounterTrend ? 4 : 0) + (useH4Level ? 8 : 0) +
+  (useSessionLevel ? 16 : 0) + (useDailyLevel ? 32 : 0) + (useWeeklyLevel ? 64 : 0) +
+  (skipFriday ? 128 : 0) + (useBreakeven ? 256 : 0), "cfg_flags", _INV, editable = false)
+plot(sweptMinutes,   "cfg_swept_min",   _INV, editable = false)
+plot(minFamilies,    "cfg_min_fam",     _INV, editable = false)
+plot(extremeMinutes, "cfg_extreme_min", _INV, editable = false)
+plot(stopBufferAtr,  "cfg_stop_buf",    _INV, editable = false)
+plot(tpFrac,         "cfg_tp_frac",     _INV, editable = false)
+plot(beArmFrac,      "cfg_be_arm",      _INV, editable = false)
+plot(minR,           "cfg_min_r",       _INV, editable = false)
+plot(minStopUsd,     "cfg_min_stop",    _INV, editable = false)
+plot(riskPct,        "cfg_risk_pct",    _INV, editable = false)
+plot(fixedQty,       "cfg_fixed_qty",   _INV, editable = false)
+plot(sizeMode == "Risk % of equity" ? 0 : 1, "cfg_size_mode", _INV, editable = false)
