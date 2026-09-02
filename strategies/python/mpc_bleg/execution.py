@@ -80,7 +80,7 @@ class BLegExecution(Execution):
     # hangs off `_place_entries`, overridden below); the miss watch runs from `step()`, which this
     # fork delegates to the parent, so it needs this explicit opt-out. A B-LEG version of either
     # needs its own code set — new design work, not a port. Same call as
-    # `indicators/strategies/mpc_b_leg_strategy.pine`, which drops the pink tags for the same reason.
+    # `strategies/tradingview/mpc_b_leg_strategy.pine`, which drops the pink tags for the same reason.
     _records_misses = False
 
     def step(self, sig, seq, bleg):  # type: ignore[override]

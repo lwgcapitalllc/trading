@@ -5,7 +5,7 @@
  * two labels describing a NEIGHBOURING widget rather than what this one does, neither of which
  * names the stop it produces. It also stayed live with `Stop fib level` already at `1.0`, where
  * both of its states place the stop in the same spot. The Pine has greyed it out since it was
- * written (`indicators/strategies/mpc_strategy.pine:116` → `active = execSlLevel != "1.0"`); this
+ * written (`strategies/tradingview/mpc_strategy.pine:116` → `active = execSlLevel != "1.0"`); this
  * is the Python UI catching up, not a new idea.
  *
  * ⚠ IT DRIVES THE REAL `mpc_sos_fade` SCHEMA off the running backend, deliberately — the same rule

@@ -1,28 +1,49 @@
 # Moving the Pine strategies to `strategies/tradingview/` — survey and instruction set
 
-> # 🟡 ON HOLD — DO NOT START YET
+> # ✅ DONE — EXECUTED 2026-09-02
 >
-> **Aaron's instruction, 2026-09-01: do this right after the in-flight work is finished.**
+> **The move has happened.** 24 tracked files moved from `indicators/strategies/` to
+> `strategies/tradingview/`, the two research files dropped to `strategies/tradingview/research/`,
+> and 177 references across 71 files were swept or deliberately left. Everything below is kept as
+> the RECORD of what was surveyed and decided — **it is no longer an instruction set, so do not
+> run §4 again.**
 >
-> Two sessions are working this repo with uncommitted changes. This plan moves 23 files and
-> rewrites 147 references across 66 files, so it must not land under half-finished work.
+> **The two open questions were settled Aaron's way, both on the recommendation:**
 >
-> **Before starting, require all three:**
+> - **§3 → Option A.** `london_breakout.pine` and `ny_orb.pine` went to
+>   `strategies/tradingview/research/`. The top level is gated source; `research/` is scratch.
+> - **§2.1 → Option A.** The Pine strategies now match the root-anchored `/strategies/` fragment
+>   and collect its reminder as well as the `.pine` one. The reminder is correct for them, so it
+>   was kept rather than special-cased away.
 >
-> 1. `git status` is clean — no modified files, no untracked work from another session.
-> 2. The live-bot workstream (`algos/live/bridge.py`, `feed.py`, `runner.py`,
->    `algos/tests/test_live_bridge.py`) is committed and pushed.
-> 3. The Extreme Leg workstream (`backtest/tools/pre_sos_leg.py`,
->    `backtest/tools/pre_sos_leg_grid.py`) is committed and pushed.
->    ⚠ `pre_sos_leg_grid.py` is UNTRACKED today and already references `indicators/strategies`.
->    Moving the folder before it lands breaks a file nobody can cleanly merge.
+> **What was done differently from the plan, and why:**
 >
-> ⚠ **Re-measure §1 when the hold lifts.** Every count below was taken on 2026-09-01 against a
-> tree that will have moved. Run the commands in §1 again; do not trust these numbers.
+> 1. 🔴 **§2.1's prediction that the guard check would go RED on its own was WRONG, and the way it
+>    was wrong is worth more than the plan was.** `check_guard.py` names its path as a STRING, and
+>    nothing asks whether that path still exists — so after the move the case stayed GREEN while
+>    asserting behaviour for a file that was no longer there. It only went red once it was pointed
+>    at the real path, and only then was the assertion flipped. **A guard case pinned to a moved
+>    path is not testing anything; it is describing a repo you no longer have, in green.**
+> 2. **No `.pine` file's content was touched at all**, including one comment in
+>    `indicators/engines/mss_sweeps_mpc.pine` that now points at a moved doc. Rule 22 is about
+>    `.pine` content rather than about whether an edit could plausibly matter, and that file has no
+>    `compare_*.py` that could clear it. The dead pointer is recorded in
+>    `indicators/engines/CLAUDE.md`.
+> 3. **The relative links inside the moved CLAUDE.md broke and the plan never mentioned them** —
+>    12 `../` links resolved into `indicators/` and now resolve into `strategies/`. All were
+>    repointed and each was checked to resolve. §1's reference sweep counted the path STRING and
+>    was blind to every link that names no path at all.
+> 4. **§1's counts were stale by the time the hold lifted**, exactly as its own banner warned: 23
+>    files → 24, 147 occurrences → 177, 66 files → 71. The extreme-leg export twin landed in
+>    between.
+>
+> ⚠ **§8's ordering advice still stands and is now urgent**: `docs/DEBRAND_RENAME_PLAN.md`
+> renames these same files and its paths were rewritten to match this layout.
 
-**Written 2026-09-01. Nothing has been moved — this file is the survey and the instruction set.**
+**Written 2026-09-01 as a survey and instruction set. EXECUTED 2026-09-02 — see the banner above.**
 
-**Who this is for:** the session that does the work, on a day when nothing else is running.
+**Who this is for:** originally the session that did the work; now anyone asking why the Pine
+strategies are where they are, or what was checked before they were moved.
 
 ---
 

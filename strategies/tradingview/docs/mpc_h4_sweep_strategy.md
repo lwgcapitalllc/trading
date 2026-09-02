@@ -334,7 +334,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ════════════════════════════════════════════════════════════════════════════
 //  MARKET STRUCTURE — the canonical engine, DRAWING ONLY in this file
 // ════════════════════════════════════════════════════════════════════════════
-// Lifted BYTE-FOR-BYTE from the since-deleted indicators/strategies/mpc_d_strategy.pine
+// Lifted BYTE-FOR-BYTE from the since-deleted strategies/tradingview/mpc_d_strategy.pine
 // (removed 2026-08-15 — recover from git history), which lifted it from
 // indicators/engines/structure_engine.pine, itself the external+internal half of mpc_assistant.pine.
 // It is not re-implemented here — a second structure engine is forbidden by CLAUDE.md and
@@ -788,7 +788,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ⚠ REGENERATE WITH THIS EXACT RECIPE — and CHECK THE PLOT COUNT AFTERWARDS.
 //     B=$(grep -n 'PARITY / ANALYSIS EXPORT' <export> | head -1 | cut -d: -f1)
 //     sed -n "$((B-2)),\$p" <export> > /tmp/blk
-//     cp indicators/strategies/mpc_h4_sweep_strategy.pine <export>
+//     cp strategies/tradingview/mpc_h4_sweep_strategy.pine <export>
 //     sed -i '' '166s/strategy("MPC H4 Sweep"/strategy("MPC H4 Sweep Export"/' <export>
 //     cat /tmp/blk >> <export>
 //     grep -c '^plot(' <export>      # MUST be 43  (42 here + the parent's Trend EMA)

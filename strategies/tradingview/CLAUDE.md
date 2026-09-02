@@ -1,4 +1,4 @@
-# CLAUDE.md — indicators/strategies/
+# CLAUDE.md — strategies/tradingview/
 
 **Purpose:** The Pine `strategy()` sources — the files that place orders in the TradingView
 Strategy Tester, plus their instrumented `_export` twins.
@@ -6,14 +6,32 @@ Strategy Tester, plus their instrumented `_export` twins.
 contract, the trade annotations, and the colour palette. It does NOT cover the `indicator()`
 sources those strategies were cut from — that is `indicators/engines/CLAUDE.md` — and it does
 not cover the Python ports, which own their own CLAUDE.md under `strategies/python/`.
-**Last reviewed:** 2026-08-15 — **`mpc_m15_playbook_strategy.pine` is now
-`smc_session_sweep_strategy.pine`, and `../engines/mpc_m15_playbook.pine` was DELETED** (Aaron,
-2026-08-15; see *The session sweep strategy* below). Before that it was brought onto the panel
-contract and the palette, then had two drawing bugs found on a chart. Full narrative in
-`../docs/INDICATORS_BUILD_NOTES.md`. The `active =`
-declaration-order check this file has been asking for since 2026-08-12 now exists and has been
-run on all twelve files. 2026-08-13: split out of `indicators/CLAUDE.md` when the Pine sources
-were divided into `strategies/` and `engines/`; the rules below moved verbatim.
+🔴 **THIS FOLDER MOVED ON 2026-09-02, AND SO DID THIS FILE.** It was
+`indicators/strategies/CLAUDE.md`. A Pine `strategy()` file is strategy source for the TradingView
+runner platform, so these files now sit beside the MT5, NinjaTrader and Python strategies rather
+than under `indicators/`, which is organised by language. The `indicator()` engines they were cut
+from did NOT move and are still `indicators/engines/`. Full survey, and the four things that were
+not a text substitution: `../../docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+
+⚠ **`research/` next door is a DIFFERENT KIND OF FILE and none of the rules below apply to it.**
+Two hand-tested Pine ideas with no panel contract, no export twin, no parity gate and no Python
+port. A new strategy starts there and moves up here when it earns a twin. ⚠ **Read the folder, not
+the filename** — this is the same mistake the declaration rule already exists to stop.
+
+⚠ **Every `../` link in this file was repointed in that move and each was checked to resolve.** The
+one exception is `mpc_m15_playbook.pine`, which is dead on purpose — the file was deleted on
+2026-08-15 and the sentence around the link says so.
+
+**Last reviewed:** 2026-09-02 — moved here from `indicators/strategies/`; nothing in any `.pine`
+changed and the three panel checks were re-run green on all fourteen at the new paths.
+2026-08-15: **`mpc_m15_playbook_strategy.pine` is now `smc_session_sweep_strategy.pine`, and
+`../../indicators/engines/mpc_m15_playbook.pine` was DELETED** (Aaron, 2026-08-15; see *The session
+sweep strategy* below). Before that it was brought onto the panel contract and the palette, then
+had two drawing bugs found on a chart. Full narrative in
+`../../indicators/docs/INDICATORS_BUILD_NOTES.md`. The `active =` declaration-order check this file
+has been asking for since 2026-08-12 now exists and has been run on all fourteen files.
+2026-08-13: split out of `indicators/CLAUDE.md` when the Pine sources were divided into
+`strategies/` and `engines/`; the rules below moved verbatim.
 
 
 ## `mpc_recovery_strategy.pine` — the A+ book plus a LOSS RECOVERY leg (new 2026-08-19)
@@ -224,7 +242,7 @@ saving and all. So every window sat 4–5 hours later than its own name: two of 
 real session at all, and the one labelled "London" WAS the New York session under a wrong name.
 MEASURED over 38,747 M15 bars — the old "London" high and low equalled the house New York session's
 on **100.0%** of bars, while the other eight pairings agreed on 0.0–8.0%. ✅ Each window now names
-its own city, which is what `../engines/mpc_assistant.pine` — the file this was ported from — has
+its own city, which is what `../../indicators/engines/mpc_assistant.pine` — the file this was ported from — has
 always passed, and what `engines/sessions/` carries.
 ⚠ **Nothing failed, nothing repainted, and the chart looked right the whole time**: a session box
 in the wrong place still looks like a session box. The only symptom was a strategy arming on levels
@@ -409,7 +427,7 @@ has run on any of them. **Paste before trusting.**
 
 ## What lives here, and the one thing that decides it
 
-A file is in this folder if its declaration is `strategy(`, and in `../engines/` if it is
+A file is in this folder if its declaration is `strategy(`, and in `../../indicators/engines/` if it is
 `indicator()`. That is the whole rule, and it is mechanical on purpose. **Check the declaration,
 never the filename**: `structure_engine.pine` reads like a strategy component and is an indicator,
 and `smc_session_sweep_strategy.pine` had an `indicator()` twin next door under a near-identical
@@ -432,7 +450,7 @@ on commentary that was not the question — sessions ran out of tokens inside a 
 
 | | |
 |---|---|
-| where prose goes | `indicators/strategies/docs/<family>.md` |
+| where prose goes | `strategies/tradingview/docs/<family>.md` |
 | what stays in the Pine | line 1 licence, `//@version`, **1–2 line comments**, the anchors |
 | the anchor | `// [doc N] <title>  -> docs/<family>.md` |
 | finding one | grep the md for `## [N]` |
@@ -460,7 +478,7 @@ in the full-line blocks and none of the risk was.
 That second claim is true and is exactly the confident reasoning rule 22 exists so nobody has
 to trust it. ⚠ **No parity gate was re-run — that is a gap, not a pass**: the gates need a
 fresh TradingView export only a human can take, so this is proof about the SOURCE, not a run.
-Numbers, method and the three tests that read these files: `../docs/INDICATORS_BUILD_NOTES.md`.
+Numbers, method and the three tests that read these files: `../../indicators/docs/INDICATORS_BUILD_NOTES.md`.
 
 ---
 
@@ -469,7 +487,7 @@ Numbers, method and the three tests that read these files: `../docs/INDICATORS_B
 **A tooltip says what the setting DOES, in words a person can read at a glance.** They had grown
 into paragraphs of measured history, parity warnings and rationale — hover one and you could not
 tell what the toggle was for. All 663 were rewritten on 2026-08-16; numbers and method are in
-`../docs/INDICATORS_BUILD_NOTES.md`.
+`../../indicators/docs/INDICATORS_BUILD_NOTES.md`.
 
 **The rule for writing one:**
 
@@ -1092,7 +1110,7 @@ history at the commit that deleted them.
 **`smc_session_sweep_strategy.pine`, called `mpc_m15_playbook_strategy.pine` until 2026-08-15.**
 The old name named the timeframe the DIRECTION is read on, said nothing about the setup, and wore
 the `mpc_` prefix of a Pine family this file was never part of — it came from a video note, not
-from `mpc_assistant.pine`. Its `indicator()` twin, `../engines/mpc_m15_playbook.pine`, was deleted
+from `mpc_assistant.pine`. Its `indicator()` twin, `../../indicators/engines/mpc_m15_playbook.pine`, was deleted
 in the same pass: 270 KB of dashboard that placed no orders, so the Strategy Tester could never
 score it. ⚠ **That deleted file is where this strategy's structure-engine block was lifted from
 byte-for-byte**, so its provenance now points at `engines/market_structure/` — the canonical
@@ -1100,7 +1118,7 @@ implementation and the only other copy. ⚠ **The old names are deliberately lef
 `HISTORY.md` and the build notes**: a diary entry records what a file was called when the thing
 happened, and rewriting it makes the record false.
 
-**Full narrative: `../docs/INDICATORS_BUILD_NOTES.md` → *the playbook joins the contract*.** What
+**Full narrative: `../../indicators/docs/INDICATORS_BUILD_NOTES.md` → *the playbook joins the contract*.** What
 is here is the instruction; that file is the evidence. Six rules, each learned by something on a
 chart being wrong in a way nothing errored about.
 
@@ -1109,7 +1127,7 @@ chart being wrong in a way nothing errored about.
 **Six defaults were changed to whatever Aaron had dialled in on his own chart, at his request:
 confirmation OFF, first target 3.5R, 80% banked there, 4% risk per trade, minimum stop floor 0.07%,
 sessions drawn.** The gap requirement stays ON (`pbPoiTf = "5"`). Table and the reasoning per line:
-`../docs/SMC_SESSION_SWEEP_SPEC.md` → *The shipped defaults*.
+`../../docs/SMC_SESSION_SWEEP_SPEC.md` → *The shipped defaults*.
 
 ✅ **ONE OF THEM NOW IS: the minimum stop became `Fixed $` `4.00` on 2026-08-17 and it was
 MEASURED.** The target was the average LOSER, which is −1.27R over 214 positions where a stop that
@@ -1966,13 +1984,13 @@ Every comment that pointed at the file was retargeted rather than left dangling.
 
 ## Key paths & entry points
 
-- `indicators/strategies/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
-- `indicators/strategies/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `mpc_m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
-- `indicators/strategies/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
-- `indicators/strategies/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
+- `strategies/tradingview/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
+- `strategies/tradingview/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `mpc_m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
+- `strategies/tradingview/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
+- `strategies/tradingview/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
 
-- `indicators/strategies/mpc_realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `mpc_strategy.pine`: it embeds `mpc_assistant.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/mpc_realign/` (its own CLAUDE.md); spec: `docs/MPC_REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `mpc_d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
-- `indicators/strategies/mpc_realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
+- `strategies/tradingview/mpc_realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `mpc_strategy.pine`: it embeds `mpc_assistant.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/mpc_realign/` (its own CLAUDE.md); spec: `docs/MPC_REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `mpc_d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
+- `strategies/tradingview/mpc_realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
 
 ---
 

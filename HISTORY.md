@@ -7,6 +7,12 @@ cost. Newest first.
 gets read every session. If a lesson here is binding on future work, it belongs as one line
 in `CLAUDE.md` → *The Rules*, with the detail staying here.
 
+⚠ **The Pine strategy sources moved on 2026-09-02: `indicators/strategies/` → `strategies/tradingview/`.**
+The entries below are left exactly as they were written, so read any older `indicators/strategies/…`
+path as `strategies/tradingview/…`. A diary edited to match today stops being a record of what
+happened. Why they moved and what else changed with them: `docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+
+
 **How to add an entry:** put the new one under *Latest*, and move the previous *Latest* to
 the top of *Earlier*. Do not delete old entries — this file is how each machine learns what
 the other one did.
@@ -14,6 +20,96 @@ the other one did.
 ---
 
 ## Latest
+
+### The Pine strategies left the indicators tree, and the check built to catch it stayed green (2026-09-02)
+
+Aaron, on the layout: *"Look at under indicators then strategies. These are all my buying
+strategies. Right? But if you go to the root of the repo, you would also see a follow-up
+strategies, and then there is a trading view directory. Logically, shouldn't all my buying
+strategies live under this folder instead?"*
+
+**Yes, and the taxonomy argument was made to survive a coupling check rather than a tidiness
+one.** `indicators/` is organised by LANGUAGE — every Pine source in the repo; `strategies/` is
+organised by RUNNER PLATFORM. Pine runs only on TradingView, so for these files the two
+taxonomies pick the same set and the tie has to be broken by what actually depends on what.
+Three things were CHECKED before anything moved: the Pine strategies contain **zero** `import`
+statements (they INLINE their engine rather than importing one, so nothing under `indicators/`
+is upstream of them), their real dependants are the parity gates under `strategies/python/*/tools/`
+— one folder over from the destination — and the lab's strategy scanner rglobs `.cs` and `.mq5`
+only and has never globbed `.pine`, so moving 16 Pine files under `strategies/` could not register
+a single new strategy in the lab.
+
+**Shipped:** 24 tracked files from `indicators/strategies/` to `strategies/tradingview/`, the two
+research ideas dropped to `strategies/tradingview/research/`, and 177 path references across 71
+files swept or deliberately left. Every `.pine` moved with `git mv` and `git diff --cached --stat
+-- '*.pine'` shows **16 files, 0 insertions, 0 deletions** — which is what makes rule 22 silent
+here rather than satisfied. Full survey and the decisions: `docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+
+🔴 **THE GUARD CHECK THAT EXISTS FOR EXACTLY THIS STAYED GREEN THROUGH THE MOVE, AND THAT IS THE
+FINDING.** `.claude/hooks/guard_sensitive_paths.py` matches a top-level subsystem fragment anchored
+at the repo root, and `check_guard.py` carries a case asserting that a Pine strategy does NOT
+collect the `/strategies/` reminder — a case written on 2026-08-13 precisely because *a directory
+rename can silently re-aim a guard*. After the move those files sit under the top-level
+`strategies/` for the first time, so the assertion is false. **It passed anyway.** The case names
+its path as a STRING and nothing asks whether that path still exists, so it went on happily
+testing a file that was no longer there. It went red the moment it was pointed at the real path,
+and only then was the assertion flipped. ⚠ **A guard case pinned to a path that has been moved out
+from under it is not testing anything — it is describing a repo you no longer have, in green.**
+The generalisation is the reusable half: **a hardcoded path in a test needs re-aiming by hand
+whenever that path moves, and nothing will tell you.**
+
+✅ **The extra reminder was KEPT rather than special-cased away (Option A of the plan).** A Pine
+strategy file is half of a parity gate, so *"if a default moves, every documented baseline needs
+pinning or re-measuring"* is straightforwardly true of it. Excluding the new folder from the
+fragment would have preserved 2026-08-13's behaviour exactly and left a special case behind — and
+a special case is the half that goes stale.
+
+🔴 **THE REFERENCE SWEEP WAS BLIND TO FOUR REAL CALL SITES, AND THE SUITE IS WHAT FOUND THEM.**
+The plan's survey greps for the path as a STRING, so it never saw
+`_ROOT / "indicators" / "strategies" / name` — a path assembled from segments, in three tests in
+`mpc_bleg` and one in `mpc_sos_fade` that read the Pine to prove a default and a tooltip are
+shared with it. Four tests failed with `FileNotFoundError` on the first full run. ⚠ **Grep for the
+segments as well as for the path, and never conclude a sweep is complete from a clean grep alone.**
+✅ Second run all green: `scripts/run_all_tests.sh`, 2,443 root tests + the backend suite + all nine
+gate steps.
+
+🔴 **12 RELATIVE LINKS INSIDE THE MOVED CLAUDE.md BROKE AND NO SWEEP COULD HAVE SEEN THEM EITHER —
+THEY NAME NO PATH AT ALL.** `../docs/…` and `../engines/…` resolved into `indicators/` from the old
+home and into `strategies/` from the new one; the `../../` links to the repo root survived by luck,
+because both folders happen to be two levels deep. All were repointed and each was checked to
+resolve. ⚠ **The same blindness bit twice in one move, from two directions: an assembled path and a
+relative link are both references that carry no searchable string.**
+
+⚠ **Two files in that folder were a different kind of thing and the folder now says so once instead
+of per file.** `london_breakout.pine` and `ny_orb.pine` are hand-tested scratch — no panel contract,
+no export twin, no gate, no port — and after the move they would have been two files in fifteen that
+every rule in the folder's CLAUDE.md did not apply to. They went to `research/`. **A new Pine
+strategy starts there and moves up when it earns an export twin.**
+
+⚠ **No `.pine` content was touched, and one dead pointer is the price.** A comment in
+`indicators/engines/mss_sweeps_mpc.pine` cites the CLAUDE.md that moved. Rule 22 is about `.pine`
+CONTENT rather than about whether an edit could plausibly matter — this repo already recorded that
+*"layout cannot change behaviour"* is exactly the confident argument a gate exists so you do not
+have to trust — and that file has no `compare_*.py` that could clear it. The pointer is recorded in
+`indicators/engines/CLAUDE.md` for whoever next touches that file for a real reason.
+
+⚠ **The dated records were NOT rewritten.** `HISTORY.md` and the four `*_BUILD_NOTES.md` keep every
+old path and carry a forward-pointer note at the top instead; a diary edited to match today stops
+being a record. The one exception is `INDICATORS_BUILD_NOTES.md`, whose *Key paths & entry points*
+section is a live index rather than a diary entry and WAS rewritten — so the two halves of that file
+deliberately disagree, and it says so, because otherwise the next reader reads it as a missed sweep.
+**Two lines had already been swept into a lie before that rule was applied and were reverted by
+hand: the 2026-08-13 split went into `indicators/strategies/`, and no rewrite may make it read
+otherwise.**
+
+⚠ **The plan's own counts were stale when the hold lifted, exactly as its banner warned** — 23 files
+became 24 and 147 references became 177, because the extreme-leg export twin landed in between.
+**Re-measure a survey before acting on it, even one written the day before.**
+
+⚠ **What is LOST, said here rather than discovered later:** `indicators/` was one place to read every
+Pine file in the repo, which is how drift between a strategy's inlined engine copy and the canonical
+`indicators/engines/` version got spotted by eye. Those are now two trees apart. **Nothing enforced
+that they agree before the move either** — this is a loss of convenience, not of a gate.
 
 ### Stacking the extreme leg on the A+ bot's account, and the basis field nobody could see (2026-09-02)
 

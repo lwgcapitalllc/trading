@@ -2,7 +2,7 @@
 
 **Purpose:** Generic trading strategy implementations, organized by runner platform.
 **Scope:** Strategy source files (`.cs` for NT8, `.mq5` for MT5, `.pine` for TradingView, Python packages for the local Python runner). Does NOT cover backtest infrastructure (see `command-center/` and top-level `backtest/`), live bot runtime logic (see `algos/`), or regime classification (see `engines/regime/`).
-**Status:** Production. NT8 has one strategy (ORB.cs), deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). Python has **five** strategies (`python/mpc_sos_fade/`, `python/mpc_bleg/`, `python/mpc_bos/`, `python/mpc_realign/` and `python/mpc_extreme_leg/`, run locally — no deploy), plus `python/loss_recovery/`, which is a RULE rather than a strategy. ⚠ **Count them with `ls strategies/python/`, never from this line** — it read "four" while there were five. 🔴 **`mpc_realign` (new 2026-08-13) is the one that is NOT parity-validated** — it has no export twin, no real CSV and no `compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are outstanding and every number it has produced is a lab finding. It is also the first fork here to enter at MARKET rather than resting a fib-priced limit. Read `python/mpc_realign/CLAUDE.md` before quoting it. ✅ **`mpc_extreme_leg` (new 2026-09-01) went parity GREEN on 2026-09-02**, on its second export — the first was red and named one cause, the weekly-level rule, which turned out to be the PINE disagreeing with its own parent. ⚠ **Its gate is NARROW: 3.5 months, 7 entries, and four of eight refusal codes never reached.** Its 6.6-year figures sit on bars the gate has never seen. Read `python/mpc_extreme_leg/CLAUDE.md` → *The parity gate* before quoting one. 🔴 **It is also the first strategy here whose SHIPPED form the gate can never check**: a market-condition refusal that reads `engines/regime/` was switched ON on 2026-09-02, Pine has no such engine, so the gate forces it off, compares the shared logic, and prints a verdict saying the shipped bot takes fewer trades than the run just compared. A green gate here is a narrower claim than a green gate anywhere else in this folder. **The other three are parity-validated; `mpc_bos` went green 2026-08-07 on its first real export** — ⚠ but only at the SHIPPED defaults, which have the gap entry OFF, so its whole FVG ladder is still unverified. Read its own CLAUDE.md → *The parity run* before quoting a number from it. `tradingview/` holds Pine research strategies tested in the TradingView Strategy Tester only (NOT scanned/deployed by the command center).
+**Status:** Production. NT8 has one strategy (ORB.cs), deployed via the command center. MT5 has one strategy (LondonBreakout.mq5). Python has **five** strategies (`python/mpc_sos_fade/`, `python/mpc_bleg/`, `python/mpc_bos/`, `python/mpc_realign/` and `python/mpc_extreme_leg/`, run locally — no deploy), plus `python/loss_recovery/`, which is a RULE rather than a strategy. ⚠ **Count them with `ls strategies/python/`, never from this line** — it read "four" while there were five. 🔴 **`mpc_realign` (new 2026-08-13) is the one that is NOT parity-validated** — it has no export twin, no real CSV and no `compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are outstanding and every number it has produced is a lab finding. It is also the first fork here to enter at MARKET rather than resting a fib-priced limit. Read `python/mpc_realign/CLAUDE.md` before quoting it. ✅ **`mpc_extreme_leg` (new 2026-09-01) went parity GREEN on 2026-09-02**, on its second export — the first was red and named one cause, the weekly-level rule, which turned out to be the PINE disagreeing with its own parent. ⚠ **Its gate is NARROW: 3.5 months, 7 entries, and four of eight refusal codes never reached.** Its 6.6-year figures sit on bars the gate has never seen. Read `python/mpc_extreme_leg/CLAUDE.md` → *The parity gate* before quoting one. 🔴 **It is also the first strategy here whose SHIPPED form the gate can never check**: a market-condition refusal that reads `engines/regime/` was switched ON on 2026-09-02, Pine has no such engine, so the gate forces it off, compares the shared logic, and prints a verdict saying the shipped bot takes fewer trades than the run just compared. A green gate here is a narrower claim than a green gate anywhere else in this folder. **The other three are parity-validated; `mpc_bos` went green 2026-08-07 on its first real export** — ⚠ but only at the SHIPPED defaults, which have the gap entry OFF, so its whole FVG ladder is still unverified. Read its own CLAUDE.md → *The parity run* before quoting a number from it. 🔴 **`tradingview/` STOPPED BEING SCRATCH ON 2026-09-02** — the 14 Pine `strategy()` files moved in from `indicators/strategies/`, so it now holds the source Aaron actually runs in the TradingView Strategy Tester, six of them export twins that are half of a parity gate. The two research files went down one level into `tradingview/research/`. **Nothing under `tradingview/` is scanned or deployed by the command center** — the scanner globs `.cs` and `.mq5` only and has never globbed `.pine`.
 
 ---
 
@@ -23,12 +23,40 @@ strategies/
 │   └── loss_recovery/       (NOT a strategy — a RULE that replays a counter-trade over another
 │                             strategy's losses. LAB ONLY, `enabled` defaults False, no Pine twin
 │                             and therefore no parity gate. Own CLAUDE.md)
-└── tradingview/    ← Pine v6 research strategies (.pine) — TV Strategy Tester only
-    ├── london_breakout.pine
-    └── ny_orb.pine
+└── tradingview/    ← Pine v6 `strategy()` source — TradingView Strategy Tester only
+    ├── CLAUDE.md            (the panel contract, the annotations, the palette — read it first)
+    ├── mpc_strategy.pine + mpc_strategy_export.pine        (A+ SOS Fade; the LIVE bot's twin)
+    ├── mpc_b_leg_strategy.pine + _export                   (B-LEG)
+    ├── mpc_bos_strategy.pine + _export                     (BOS continuation)
+    ├── mpc_extreme_leg_strategy.pine + _export             (extreme leg)
+    ├── mpc_h4_sweep_strategy.pine + _export                (H4 sweep)
+    ├── smc_session_sweep_strategy.pine + _export           (session sweep)
+    ├── mpc_realign_strategy.pine, mpc_recovery_strategy.pine   (no export twin — see below)
+    ├── docs/                (one <family>.md per strategy — the prose lifted out of the Pine)
+    ├── tools/               (build_extreme_leg.py, derive_htf_structure.py)
+    └── research/            ← scratch: hand-tested only, no twin, no gate, no port
+        ├── london_breakout.pine
+        └── ny_orb.pine
 ```
 
-`tradingview/` is research scratch space: hand-tested in the TradingView Strategy Tester, not picked up by the command-center scanner (which only rglobs `.cs` and `.mq5`). Promote a validated Pine idea by porting it to NT8/MT5.
+🔴 **THE TOP LEVEL AND `research/` ARE TWO DIFFERENT KINDS OF FILE AND THE FOLDER SPLIT IS HOW THAT
+IS SAID ONCE INSTEAD OF PER FILE.** A file at the top level is Aaron's real strategy source: it
+carries the numbered input-panel contract, most have an instrumented `_export` twin, and six of
+them are half of a Pine↔Python parity gate — a default moved there invalidates every baseline
+measured before today. A file in `research/` is an idea being hand-tested in the Strategy Tester:
+no twin, no gate, no Python port, nothing depends on it. **A new Pine strategy starts in
+`research/` and is moved up when it earns an export twin.**
+
+⚠ **Neither half is scanned or deployed by the command center.** The scanner rglobs `.cs` and
+`.mq5` only, plus directories under `python/`, and has never globbed `.pine` — moving 16 Pine files
+in here did not register a single new strategy in the lab, which was CHECKED before the move rather
+than hoped for afterwards.
+
+⚠ **They moved here on 2026-09-02 from `indicators/strategies/`.** `indicators/` is organised by
+LANGUAGE, this folder by RUNNER PLATFORM, and Pine runs only on TradingView — so the tie was broken
+by what actually depends on what: the parity gates that consume these files live one folder over in
+`python/`. The engines the strategies INLINE stay under `indicators/engines/`. Full survey:
+`docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
 
 ---
 
@@ -105,6 +133,37 @@ strategies/
 
 ---
 
+## Adding a new TradingView strategy
+
+1. **Write it into `tradingview/research/`.** It has no panel contract to honour there, nothing
+   imports it, and no gate can go red because of it.
+2. **Read `tradingview/CLAUDE.md` before it graduates.** The numbered input panel, the trade
+   annotations and the colour palette are a contract shared across every file at the top level, and
+   a new file that ignores them is a file the next reader cannot compare against its siblings.
+3. 🔴 **The declaration decides where a Pine file lives, never the filename.** `strategy(` belongs
+   here; `indicator()` belongs in `indicators/engines/` and is not a strategy at all. A file called
+   `..._strategy.pine` that declares `indicator()` is in the wrong tree.
+4. **Move it up to `tradingview/` only when it has an instrumented `_export` twin.** The twin is
+   what makes a Python port checkable, and the top level is where a reader is entitled to assume
+   one exists. ⚠ **A twin moves, lands and changes in the SAME commit as its parent** — a gate
+   whose two halves arrive separately was red in between.
+5. **Run the three panel checks** — they take seconds and each catches a defect that only shows up
+   when Aaron pastes the file into TradingView:
+
+   ```bash
+   python3 indicators/tools/check_active_order.py strategies/tradingview/*.pine
+   python3 indicators/tools/check_scope.py        strategies/tradingview/*.pine
+   python3 indicators/tools/check_flat_reset.py   strategies/tradingview/*.pine
+   ```
+
+   ⚠ **The tools stayed in `indicators/tools/` when the strategies left** — they read Pine as
+   Pine, so they are about the language rather than about this folder.
+6. **Do NOT run the scanner for it.** Nothing here is registered in the lab or deployed anywhere;
+   a Pine strategy reaches the lab only by being PORTED to `python/`, and that route is
+   `docs/STRATEGY_WORKFLOW.md`, gate and all.
+
+---
+
 ## Current strategies
 
 **Deleted 2026-06-21:** `VWAP_MR.cs` and `Momentum.cs`. They embedded their own
@@ -120,7 +179,7 @@ lingering DB rows/runs clear on the next **Scan Strategies** (the scanner warns 
 | `ORB.cs` | ORB | ninjatrader | Opening Range Breakout — entry on ORB high/low break. The only live NT8 strategy. **Reshaped to the gated-layer rules 2026-06-21:** trades unit size (1 contract), self-policing halts removed (moved to the engine), keeps only signal + stop/target + time rules; emits the per-trade record to `engine_trades.csv` (the runner→engine contract). Needs VPS compile + backtest to verify. |
 | `LondonBreakout.mq5` | LondonBreakout | mt5 | Asian-range → London breakout, instrument-agnostic. Reshaped to the gated-layer rules 2026-06-22 (v3). Needs VPS compile + backtest to verify — cannot be tested locally. See `mt5/LONDON_BREAKOUT.md` for design + reshape detail and backtest record. |
 | `python/mpc_sos_fade/` | MpcSosFadeStrategy | python | MPC SOS Fade bot (XAUUSD 15m) — Python port of the brother's MPC-JARVIS A+ grade, replaying the canonical `engines/` via `backtest/`. **Logic-parity GREEN vs the Pine 2026-07-16** (bar-for-bar, exit 0). Runs locally in the lab (backtests + optimizer). **Parity RE-VALIDATED GREEN 2026-07-26** (exit 0) on a fresh 21,230-bar 15m export after the exit levers landed — the run caught an unpinned FVG engine input. **Re-validated again 2026-07-27** (exit 0, 21,320 bars) at the settings Aaron actually trades — SL fib 0.886 + the new 0/0 TP rungs — which was the first run of the whole-position-on-the-runner exit path against the Pine. Full rules in `python/mpc_sos_fade/CLAUDE.md`, exit levers in its `## The exit ladder` register. |
-| `python/mpc_bleg/` | MpcBLegStrategy | python | MPC B-LEG bot (XAUUSD) — the late-retrace setup (the SOS whose retrace arrived late), split out of `mpc_strategy.pine` to run PARALLEL to A+ (2026-07-24). Port of `indicators/strategies/mpc_b_leg_strategy.pine`; REUSES `mpc_sos_fade`'s engine + A+ sequence + fill machinery, adds only the B-LEG tracker + a thin execution subclass. Built + 19 unit tests green. **Pine-parity GREEN (exit 0), latest 2026-07-31** on a fresh 6,329-bar 15m export off the session-window build (`--warmup 800`; the longer skip is a partial chart export, not a mask) — harness is `tools/compare_bleg.py` + `indicators/strategies/mpc_b_leg_strategy_export.pine`, wired into `verify_parity.py`. ⚠ **STILL NO ESTABLISHED EDGE, but the DEFAULTS MOVED 2026-08-06 and the old figures no longer describe this bot.** Shipped now: **112 trades / +12.02R / PF 1.23 / maxDD −8.89R over 7.9 years with spread and swap charged**, against **59 / −1.73R / PF 0.94 / maxDD −16.00R** on the same bars and charges before the change — and both halves of the history are positive where the old defaults lost 8R in the first. **Two defaults did it: `exec_trail_pct` 1.0 → 0.05 and `bleg_max_days` 1.25 → 4.0 (Pine `maxval` 3 → 6).** 🔴 **Neither was a tuning miss. The trail step is a percent of PRICE while a B leg's whole 1R is 0.13%–1.25% of price, so the inherited 1.0 made one step larger than the entire risk and the ratchet was INERT — the runner banked exactly +1.00R (a B leg's TP1 is 1R by construction) and handed back the rest, on 9 of 50 measured trades, one after running +6.82R. And the staleness `maxval` of 3 was cutting off the best region, so 1.25 was a cap nobody had checked rather than a value anybody chose.** ⚠ **The 95% CI on mean R is −0.140 → +0.355 and still contains zero** — the measurement moved up and narrowed, it did not become an edge. ⚠ **Four levers were measured and REJECTED** (the minimum-stop guard does nothing here; the deeper 0.618 entry is a 28-trade first-half mirage at PF 2.43; shorts-only is the same mirage in the other half; and dropping the A+ priority gate — this bot's own documented first tuning candidate — adds one trade and it loses), and **one unshipped lead is recorded** (no Asia/late-day entries: 79 trades / PF 1.37 / maxDD −4.98R, positive in both halves, but it is new code on both sides rather than a default). **Still not a candidate for bot #2.** ✅ It DID pass the A+/B-LEG overlap audit comfortably — **45 shared bars in 157,004 and ZERO of them same-side, re-run 2026-09-01** (the 27-bar figure this line carried was the 2026-08-04 run, measured on a B-LEG that no longer existed and superseded twice since). Figures: root `CLAUDE.md` → *Trading Philosophy*; gate record: `docs/LIVE_TRADING_PIPELINE.md` → G14. ⚠ Re-run `backtest/tools/overlap_audit.py` INSIDE any change that moves either bot's entry logic — it has gone stale twice by being left until afterwards. Full rules in `python/mpc_bleg/CLAUDE.md`. |
+| `python/mpc_bleg/` | MpcBLegStrategy | python | MPC B-LEG bot (XAUUSD) — the late-retrace setup (the SOS whose retrace arrived late), split out of `mpc_strategy.pine` to run PARALLEL to A+ (2026-07-24). Port of `strategies/tradingview/mpc_b_leg_strategy.pine`; REUSES `mpc_sos_fade`'s engine + A+ sequence + fill machinery, adds only the B-LEG tracker + a thin execution subclass. Built + 19 unit tests green. **Pine-parity GREEN (exit 0), latest 2026-07-31** on a fresh 6,329-bar 15m export off the session-window build (`--warmup 800`; the longer skip is a partial chart export, not a mask) — harness is `tools/compare_bleg.py` + `strategies/tradingview/mpc_b_leg_strategy_export.pine`, wired into `verify_parity.py`. ⚠ **STILL NO ESTABLISHED EDGE, but the DEFAULTS MOVED 2026-08-06 and the old figures no longer describe this bot.** Shipped now: **112 trades / +12.02R / PF 1.23 / maxDD −8.89R over 7.9 years with spread and swap charged**, against **59 / −1.73R / PF 0.94 / maxDD −16.00R** on the same bars and charges before the change — and both halves of the history are positive where the old defaults lost 8R in the first. **Two defaults did it: `exec_trail_pct` 1.0 → 0.05 and `bleg_max_days` 1.25 → 4.0 (Pine `maxval` 3 → 6).** 🔴 **Neither was a tuning miss. The trail step is a percent of PRICE while a B leg's whole 1R is 0.13%–1.25% of price, so the inherited 1.0 made one step larger than the entire risk and the ratchet was INERT — the runner banked exactly +1.00R (a B leg's TP1 is 1R by construction) and handed back the rest, on 9 of 50 measured trades, one after running +6.82R. And the staleness `maxval` of 3 was cutting off the best region, so 1.25 was a cap nobody had checked rather than a value anybody chose.** ⚠ **The 95% CI on mean R is −0.140 → +0.355 and still contains zero** — the measurement moved up and narrowed, it did not become an edge. ⚠ **Four levers were measured and REJECTED** (the minimum-stop guard does nothing here; the deeper 0.618 entry is a 28-trade first-half mirage at PF 2.43; shorts-only is the same mirage in the other half; and dropping the A+ priority gate — this bot's own documented first tuning candidate — adds one trade and it loses), and **one unshipped lead is recorded** (no Asia/late-day entries: 79 trades / PF 1.37 / maxDD −4.98R, positive in both halves, but it is new code on both sides rather than a default). **Still not a candidate for bot #2.** ✅ It DID pass the A+/B-LEG overlap audit comfortably — **45 shared bars in 157,004 and ZERO of them same-side, re-run 2026-09-01** (the 27-bar figure this line carried was the 2026-08-04 run, measured on a B-LEG that no longer existed and superseded twice since). Figures: root `CLAUDE.md` → *Trading Philosophy*; gate record: `docs/LIVE_TRADING_PIPELINE.md` → G14. ⚠ Re-run `backtest/tools/overlap_audit.py` INSIDE any change that moves either bot's entry logic — it has gone stale twice by being left until afterwards. Full rules in `python/mpc_bleg/CLAUDE.md`. |
 | `ny_orb.pine` | — | tradingview | **In TradingView research/tuning (2026-06-20), not yet promoted.** NY Opening Range Breakout, instrument-agnostic (FX + futures). Built on `london_breakout.pine`'s skeleton. Range = wick-to-wick high/low of the opening window; sessions anchored to `America/New_York` (DST-safe). Entry = break candle (excluded from count) + N direction-filtered confirmation closes (`confirmCloses`, 0 = enter on the break candle itself; bullish closes for longs, bearish for shorts). Two entry methods: **Breakout Close** (market) and **Retest** (limit at the broken box edge). Far-side stop, RR target, optional partial + step-trail. Win/loss boxes recolour like London Breakout (no labels). Guards: forced `orderQty` (futures otherwise round to 0 contracts — see notes), weekend skip, and a volume-based thin/holiday-day filter (Pine has no calendar; OR volume < % of lookback average ⇒ skip). |
 
 ---

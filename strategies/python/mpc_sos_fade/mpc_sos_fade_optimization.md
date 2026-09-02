@@ -11,7 +11,7 @@ Standing rules for anything recorded here:
 - **Record per-year and per-half splits**, so a config that only worked in one regime is
   visible without re-running the grid.
 - **A result here is a measurement, not a default.** Adopting one means a single commit
-  across `config.py`, `indicators/strategies/mpc_strategy.pine`, `indicators/strategies/mpc_strategy_export.pine`
+  across `config.py`, `strategies/tradingview/mpc_strategy.pine`, `strategies/tradingview/mpc_strategy_export.pine`
   and `compare_strategy.py`, with Pine↔Python parity re-run green.
 - **Sweep in bar mode, validate the winner in tick mode.** A tick pass is ~100x slower, so
   the grid runs at zero costs and only the survivor gets real spread, slippage and swap.
@@ -179,7 +179,7 @@ a useful honesty check that no row is quietly cherry-picked. Winner's per-year R
    full-runner config holds positions longer, so it carries more swap than the partial-heavy
    configs it beat — bar mode cannot see that.
 2. Any default change lands in **one commit** across `config.py`,
-   `indicators/strategies/mpc_strategy.pine`, `indicators/strategies/mpc_strategy_export.pine` and
+   `strategies/tradingview/mpc_strategy.pine`, `strategies/tradingview/mpc_strategy_export.pine` and
    `compare_strategy.py`, with Pine↔Python parity re-run and green.
 3. 187 trades is the largest sample this bot has ever been tuned on (4x the 2-year window,
    8x the 365-day window) but it is still 187. Treat the size of the win as approximate and
@@ -1071,8 +1071,8 @@ fallback if `pct` ever misbehaves at a different price regime.
 
 ## What adoption requires (the standing rule)
 
-`exec_min_stop_pct` (default 0.1) in `config.py` **and** in `indicators/strategies/mpc_strategy.pine` **and**
-`indicators/strategies/mpc_strategy_export.pine` (new `cfg_*` column) **and** `compare_strategy.py`
+`exec_min_stop_pct` (default 0.1) in `config.py` **and** in `strategies/tradingview/mpc_strategy.pine` **and**
+`strategies/tradingview/mpc_strategy_export.pine` (new `cfg_*` column) **and** `compare_strategy.py`
 (`_TOGGLE_COLS`), in ONE commit, with `compare_strategy.py` re-run green on a fresh export. Note
 `mpc_bleg` inherits `_place_entries` — decide explicitly whether the B-LEG's band-origin stop wants
 the same floor before shipping.
@@ -3786,7 +3786,7 @@ elsewhere in this log stands unchanged, and `soft_stop_r=-0.3` is available as a
 if the smaller losses are wanted.
 
 ⚠ **No parity gate exists and none can yet** — there is no Pine twin of `loss_recovery`, so every
-figure above is a LAB finding. `indicators/strategies/mpc_recovery_strategy.pine` is a FORK for
+figure above is a LAB finding. `strategies/tradingview/mpc_recovery_strategy.pine` is a FORK for
 eyeballing entries on a chart and **its P&L is not this rule's P&L**: TradingView holds ONE net
 position, so it closes the recovery when the primary enters the other way.
 

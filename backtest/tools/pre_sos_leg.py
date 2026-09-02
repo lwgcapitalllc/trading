@@ -35,7 +35,7 @@ too, so the EDGE is unaffected while the absolute expectancy is the low end.
 
 🔴 THE ARMING RULE HERE IS SLIGHTLY LOOSER THAN THE ONE THE STRATEGY SHIPS, MEASURED 2026-09-01,
 AND EVERY NUMBER THIS TOOL HAS PRODUCED CARRIES IT. Two differences, both in when a sweep counts
-as fresh, both found by diffing this tool against `indicators/strategies/mpc_extreme_leg_strategy.pine`:
+as fresh, both found by diffing this tool against `strategies/tradingview/mpc_extreme_leg_strategy.pine`:
 
   1. WHEN THE SWEEP IS STAMPED. This tool feeds the liquidity engine the BASE frame and dates a
      sweep at that bar's CLOSE (see `replay_base`), so a level taken early in a 15-minute candle is

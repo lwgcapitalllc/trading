@@ -13,7 +13,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // SMC SESSION SWEEP STRATEGY — five-step session-sweep continuation model,
 // ported from Lewis Kelly's "This SMC Strategy Is Too Simple to Ignore".
 //
-// 🔴 THE REASONING LIVES IN `indicators/strategies/CLAUDE.md`, NOT HERE.
+// 🔴 THE REASONING LIVES IN `strategies/tradingview/CLAUDE.md`, NOT HERE.
 // This file carried ~670 lines of explanation until 2026-08-16 — 45% of it, and
 // every byte loaded on every read. Aaron: "realistically I will never read these
 // comments." Read the doc before changing anything: what each rule is FOR, which

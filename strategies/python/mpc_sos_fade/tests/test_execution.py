@@ -963,7 +963,7 @@ def test_the_shipped_default_is_the_measured_guard_not_off():
     not comparable to one replayed at defaults before it.** Every A+ figure in this folder measured
     at "Off" describes a different configuration. Pin the mode explicitly when reproducing one.
 
-    ⚠ It must stay in lockstep with `indicators/strategies/mpc_strategy.pine`'s `execMinStopMode` /
+    ⚠ It must stay in lockstep with `strategies/tradingview/mpc_strategy.pine`'s `execMinStopMode` /
     `execMinStopVal` defaults and its export mirror — toggle parity is a hard requirement, and a
     default that differs between the two silently makes `compare_strategy.py` compare two
     strategies whenever an export predates the column.

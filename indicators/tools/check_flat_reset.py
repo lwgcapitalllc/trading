@@ -19,7 +19,7 @@ silence is one question answered, not a clean bill of health.
 
 WATCHED RED by running it against the version of the strategy that blew the account.
 
-    python3 indicators/tools/check_flat_reset.py indicators/strategies/*.pine
+    python3 indicators/tools/check_flat_reset.py strategies/tradingview/*.pine
 """
 
 import re

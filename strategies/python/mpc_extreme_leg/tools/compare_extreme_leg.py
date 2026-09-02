@@ -2,7 +2,7 @@
 
 The fourth of the family, beside `mpc_sos_fade/tools/compare_strategy.py`,
 `mpc_bleg/tools/compare_bleg.py` and `mpc_bos/tools/compare_bos.py`. It reads a TradingView
-"Export chart data" CSV of `indicators/strategies/mpc_extreme_leg_strategy_export.pine`, replays
+"Export chart data" CSV of `strategies/tradingview/mpc_extreme_leg_strategy_export.pine`, replays
 the export's OWN bars through the Python port CONFIGURED FROM THE EXPORT's own `cfg_*` columns,
 and diffs the two decision streams bar by bar.
 
@@ -186,7 +186,7 @@ def _wrong_export(path: Path) -> "str | None":
         f"✗ {path.name} is {what}.\n"
         f"{why}"
         f"  Take the export off the TWIN, not off the strategy:\n"
-        f"    1. Paste indicators/strategies/mpc_extreme_leg_strategy_export.pine onto XAUUSD 5m\n"
+        f"    1. Paste strategies/tradingview/mpc_extreme_leg_strategy_export.pine onto XAUUSD 5m\n"
         f"    2. ⋮ (top right of the chart) → Export chart data\n"
         f"    3. Choose 'Bar data and indicator values' — NOT 'List of trades'\n"
         f"  The file that comes back has hundreds of columns and one row per candle."

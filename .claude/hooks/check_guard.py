@@ -146,8 +146,21 @@ CASES = [
     ),
     # The subsystem reminders are anchored at the repo root. Before 2026-08-13 they were a
     # substring test over the absolute path, so the two Pine cases below were told they were
-    # canonical Python code. Both halves are asserted: the Pine files must NOT get the Python
-    # subsystem advice, and the real Python subsystems must still get it.
+    # canonical Python code. Both halves are asserted: the Pine ENGINE source must NOT get the
+    # canonical-engine advice, and the real Python subsystems must still get it.
+    #
+    # 🔴 THE SECOND CASE INVERTED ON 2026-09-02, AND THAT IS THE POINT OF HAVING IT. The Pine
+    # strategy sources moved out of `indicators/strategies/` to `strategies/tradingview/`, so
+    # they sit under the top-level `strategies/` for the first time and now match BOTH the
+    # `.pine` reminder and the "what a bot actually trades" one. The case was pointed at the
+    # new path and WATCHED FAIL before this assertion was flipped — a guard case edited to
+    # agree with new behaviour without first being seen red proves nothing.
+    #
+    # The second reminder is KEPT rather than special-cased away, because it is CORRECT here:
+    # a Pine strategy file is half of a parity gate, so a default moving in one really does
+    # invalidate every baseline measured before today. Excluding `strategies/tradingview/`
+    # from the fragment would have preserved 2026-08-13's behaviour exactly, at the price of a
+    # special case — and a special case is the thing that goes stale.
     (
         "Pine ENGINE source is not a canonical Python engine",
         {
@@ -158,13 +171,13 @@ CASES = [
         lambda s: "CANONICAL engine" not in s and "Pine file" in s,
     ),
     (
-        "Pine STRATEGY source is not a deployed Python strategy",
+        "Pine STRATEGY source under strategies/ gets BOTH reminders",
         {
-            "file_path": "/Users/alwg/trading/indicators/strategies/mpc_strategy.pine",
+            "file_path": "/Users/alwg/trading/strategies/tradingview/mpc_strategy.pine",
             "old_string": "a",
             "new_string": "b",
         },
-        lambda s: "what a bot actually trades" not in s and "Pine file" in s,
+        lambda s: "what a bot actually trades" in s and "Pine file" in s,
     ),
     (
         "a real canonical engine still gets its reminder",

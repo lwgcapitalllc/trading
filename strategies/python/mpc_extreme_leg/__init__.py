@@ -1,6 +1,6 @@
 """MPC EXTREME LEG — the run INTO the shift of structure, not the fade after it.
 
-Ported from `indicators/strategies/mpc_extreme_leg_strategy.pine`. The A+ bot waits for structure
+Ported from `strategies/tradingview/mpc_extreme_leg_strategy.pine`. The A+ bot waits for structure
 to shift and then fades the retracement; this takes the move that CREATES the shift — from the
 extreme up to the swing whose break IS the shift. Stop beyond the extreme, exit part of the way to
 the swing, one position at a time.

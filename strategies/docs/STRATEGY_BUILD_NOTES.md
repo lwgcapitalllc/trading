@@ -5,6 +5,12 @@ war-story detail moved OUT of `strategies/CLAUDE.md` on 2026-08-12 so that file 
 and current status. **Nothing here was deleted from the record** - same pattern as
 `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
+⚠ **The Pine strategy sources moved on 2026-09-02: `indicators/strategies/` → `strategies/tradingview/`.**
+The entries below are left exactly as they were written, so read any older `indicators/strategies/…`
+path as `strategies/tradingview/…`. A diary edited to match today stops being a record of what
+happened. Why they moved and what else changed with them: `docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+
+
 **Why it moved.** `strategies/CLAUDE.md` had grown to 62,335 bytes, most of it dated narrative,
 and every byte loaded into context whenever anyone worked in this area. Worse than the size:
 the diary sat in 1 paragraph(s), the largest **42,571 bytes on a

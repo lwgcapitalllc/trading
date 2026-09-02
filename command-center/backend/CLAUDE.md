@@ -1245,7 +1245,7 @@ PASSED**: it is what makes `custom_from` resolvable, and without it a dropdown r
 1.0 gates differently here than it does on screen. The default is `None`, so a caller that forgets
 it gets an answer that looks correct and is simply blind to the second gate. ⚠ **A THIRD gate landed the same day and it is NOT the same shape as the other two.** A SETTLED param (`hidden` in the meta AND still on its default, i.e. off the editor entirely) is excluded — but shifting one is not a no-op, the strategy really reads it and the result really moves. The reason to exclude it is that sensitivity would RANK a parameter no page renders, and a ranking that points at nothing is worse than a shorter one. ⚠ **`_is_settled` mirrors `ParamEditor.settled`, never `p.hidden` alone** — a hidden param MOVED off its default is back on screen, so it must be back in the ranking; gating on `hidden` would silently drop a param the reader can see and edit. Both are pinned by
 `tests/test_param_gates.py` (non-vacuous by run mutations); the editor side is in
-`../frontend/CLAUDE.md` → `ParamEditor.tsx`.
+`../frontend/CLAUDE.md` → `ParamEditor.tsx`. ⚠ **Both of those tests cite the Pine file that greyed the control out first, and that file MOVED on 2026-09-02** — the `strategy()` sources left `indicators/strategies/` for `strategies/tradingview/`, so the docstrings were repointed. **The Pine is still the source of truth for which controls are dead**: the lab is catching up to a decision made there, never making a new one.
 
 🔴 **A CONDITION'S RIGHT-HAND SIDE TAKES A THIRD SHAPE SINCE 2026-08-27: `{"gt": n}`, "a number
 above n".** Some switches have no OFF value to name — a rule arming the stop after a move of N R is

@@ -38,7 +38,7 @@ This is repo rule 1 in its own shape: never let "no" and "cannot ask" be the sam
    which flags are fallbacks you must NOT pass.
 
 3. Find the export. If the caller gave a path, use it. Otherwise look where they said.
-   If there is no CSV, stop and report NOT RUN naming the `indicators/engines/` or `indicators/strategies/` `*_export.pine` the
+   If there is no CSV, stop and report NOT RUN naming the `indicators/engines/` or `strategies/tradingview/` `*_export.pine` the
    docstring says produces it. Do not hunt for a substitute CSV from another engine.
 
 4. Run it with NO config flags unless the docstring says otherwise. Most harnesses build

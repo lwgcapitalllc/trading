@@ -163,14 +163,29 @@ def subsystem_matches(fragment: str, rel: str) -> bool:
     into `indicators/strategies/` and `indicators/engines/` broke that assumption instantly:
     `indicators/engines/fib_export.pine` contains `/engines/`, so a Pine file would have
     been told it is a canonical Python engine and must not be committed until its
-    `compare_*.py` gate passes — advice aimed at the OTHER half of that gate. Same for
-    `/strategies/` and the "what a bot actually trades" reminder.
+    `compare_*.py` gate passes — advice aimed at the OTHER half of that gate. That is still
+    the live example: `indicators/engines/` exists and its files must not collect the
+    canonical-engine reminder.
 
     That matters more than the miss itself. A guard that fires on work it should not be
     criticising is a guard people learn to dismiss, and a dismissed guard is worth LESS
     than none, because the next reader takes silence for checked. So a fragment naming a
     top-level subsystem now only matches paths actually under it, and the `.pine` reminder
     — which is about the FILE TYPE, not where it sits — still matches anywhere.
+
+    🔴 THE OTHER HALF OF THAT 2026-08-13 EXAMPLE IS GONE, AND A MOVE IS WHY. `/strategies/`
+    used to be the twin case: `indicators/strategies/mpc_strategy.pine` contained
+    `/strategies/` and was wrongly told it was what a bot actually trades. On 2026-09-02
+    those files MOVED to `strategies/tradingview/`, so they are now genuinely under the
+    top-level `strategies/` and collect that reminder on purpose — a Pine strategy is half
+    of a parity gate, so a default moving in one really does invalidate every baseline
+    measured before today.
+
+    ⚠ THE STANDING LESSON SURVIVES ITS OWN EXAMPLE, AND IS NOW TWICE PROVEN: A DIRECTORY
+    MOVE SILENTLY RE-AIMS THIS FUNCTION. Nothing fails and no import breaks — the only
+    symptom is correct-looking advice about the wrong file, or a case in `check_guard.py`
+    that stays green while describing a layout the repo no longer has, which is exactly
+    what happened here until that case was pointed at the new path.
     """
     if fragment.startswith("/"):
         return ("/" + rel).startswith(fragment)

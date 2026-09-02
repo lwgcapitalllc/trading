@@ -31,7 +31,7 @@ was not enough, and the reason is worth carrying: a table of numbers reads as a 
 what sentence sits under it. The check that falsified this was ONE Strategy Tester run.
 
 
-This is the tool that chose the defaults `indicators/strategies/mpc_bos_strategy.pine` ships with today
+This is the tool that chose the defaults `strategies/tradingview/mpc_bos_strategy.pine` ships with today
 (2026-08-07, Run 7 in `docs/MPC_BOS_OPTIMIZATION.md`). It exists so that answer is reproducible
 rather than asserted.
 

@@ -829,9 +829,10 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   doc records. That is the evidence the bump was orthogonal to the clock. **Pin a floor when you
   mean a floor, and ask what a version bump actually CHANGED before refusing on it.**
 
-- **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `indicators/strategies/mpc_bos_strategy.pine`
-  since 2026-08-13; the `.pine` sources were split into `indicators/strategies/` and
-  `indicators/engines/` by their DECLARATION, so a path here from before that date is stale.
+- **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/mpc_bos_strategy.pine`.
+  It has moved TWICE and a path from before either date is stale: on 2026-08-13 the `.pine` sources
+  were split by their DECLARATION into `indicators/strategies/` and `indicators/engines/`, and on
+  2026-09-02 the `strategy(` half left `indicators/` altogether for `strategies/tradingview/`.
   **Comment-only — no documented baseline in this file moves and no stored run re-prices.**
   🔴 **DO NOT QUOTE ITS NUMBERS. FALSIFIED 2026-08-07, the day it was
   written.** On the same symbol, timeframe and window, with the config confirmed identical by the

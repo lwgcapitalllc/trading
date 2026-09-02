@@ -20,7 +20,7 @@ doubles this trigger's edge over a matched random control (+4.4% → +6.8%) and 
 own result. ⚠ **The file is still NOT COMPILED**, and VWAP was removed from it in July under
 `CE10117`, so the paste is where that risk lands. Set `bosVwapReq = "Off"` to reproduce anything
 described before this date.
-**Target file:** `indicators/strategies/mpc_bos_strategy.pine` (a strategy fork, same pattern as
+**Target file:** `strategies/tradingview/mpc_bos_strategy.pine` (a strategy fork, same pattern as
 `mpc_b_leg_strategy.pine`).
 **Engine source:** `indicators/engines/mpc_assistant.pine` — the engine block is copied byte-identical
 (structure + External fib + FVG + Sniper Zone + RSI divergence). Only the EXECUTION layer is new.
@@ -392,13 +392,13 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
 
 ## 10. Build order
 
-1. ~~`indicators/strategies/mpc_bos_strategy.pine`~~ — **DONE 2026-07-29.** Engine block = lines 1-3028 of
+1. ~~`strategies/tradingview/mpc_bos_strategy.pine`~~ — **DONE 2026-07-29.** Engine block = lines 1-3028 of
    `mpc_strategy.pine`, byte-identical. The A+ sequence tracker, the B-LEG tracker and the
    missed-setup callout were not copied (nothing here reads them, and the compile-token budget is
    why). Execution layer written to this spec. Awaiting a TradingView compile.
 2. Backtest on XAUUSD 15m, the same window the other two were measured on. Baseline first with
    every optional filter off, then sweep F1 → F4 → the SL model.
-3. ~~`indicators/strategies/mpc_bos_strategy_export.pine` + a `compare_bos.py` harness~~ — **BOTH DONE.**
+3. ~~`strategies/tradingview/mpc_bos_strategy_export.pine` + a `compare_bos.py` harness~~ — **BOTH DONE.**
    The export twin landed 2026-08-07 (59 plots: the full decision stream, the two anchor
    endpoints, every input as `cfg_*`); `strategies/python/mpc_bos/tools/compare_bos.py` landed
    the same day and is unit-tested. ✅ **RUN 2026-08-07 and GREEN** — see below.

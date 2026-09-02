@@ -453,7 +453,7 @@ most profit.
 | Backtest data synopsis | `education/smc/05-my-full-trading-strategy/transcripts/25-full-data-synopsis.txt` |
 | Risk management | `education/smc/03-risk-management/` |
 | Visual playbook (8 plays + 4 confluence categories) | `education/smc/playbooks/` (see its `README.md`) |
-| The indicator | `indicators/engines/mpc_assistant.pine`; strategy twin `indicators/strategies/mpc_strategy.pine` |
+| The indicator | `indicators/engines/mpc_assistant.pine`; strategy twin `strategies/tradingview/mpc_strategy.pine` |
 | Canonical detectors | `engines/*/` (each has its own `CLAUDE.md`) |
 | Per-bar strategy API | `backtest/replay/stack.py` (`EngineStack` / `BarState`) |
 | Existing setup-as-strategy template | `strategies/python/mpc_sos_fade/` |

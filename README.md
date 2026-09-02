@@ -76,7 +76,7 @@ Read these in order for full context:
 17. `engines/candlesticks/CLAUDE.md` — candlestick-pattern engine, the boundary-tie rule, measured frequencies
 18. `engines/news/CLAUDE.md` — news/economic-calendar blackout engine, data paths, validation (no Pine source)
 19. `strategies/CLAUDE.md` — strategy source files, runner layout, deployment flow
-20. `indicators/CLAUDE.md` — Pine source map + build narrative. The RULES live in `indicators/strategies/CLAUDE.md` (input-panel contract, annotations, palette) and `indicators/engines/CLAUDE.md` (extraction track + `smc_engine_v2` detection rules)
+20. `indicators/CLAUDE.md` — Pine source map + build narrative. The RULES live in `strategies/tradingview/CLAUDE.md` (input-panel contract, annotations, palette) and `indicators/engines/CLAUDE.md` (extraction track + `smc_engine_v2` detection rules)
 21. `docs/LWG_Project_State_Snapshot.md` — current platform state across all subsystems
 22. `docs/LWG_Roadmap_And_Open_Questions.md` — forward plan and open questions
 

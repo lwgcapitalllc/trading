@@ -5,6 +5,12 @@ war-story detail moved OUT of `strategies/python/mpc_sos_fade/CLAUDE.md` on 2026
 and current status. **Nothing here was deleted from the record** - same pattern as
 `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
+⚠ **The Pine strategy sources moved on 2026-09-02: `indicators/strategies/` → `strategies/tradingview/`.**
+The entries below are left exactly as they were written, so read any older `indicators/strategies/…`
+path as `strategies/tradingview/…`. A diary edited to match today stops being a record of what
+happened. Why they moved and what else changed with them: `docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+
+
 **Why it moved.** `strategies/python/mpc_sos_fade/CLAUDE.md` had grown to 207,701 bytes, most of it dated narrative,
 and every byte loaded into context whenever anyone worked in this area. Worse than the size:
 the diary sat in 2 paragraph(s), the largest **58,936 bytes on a
@@ -1109,7 +1115,7 @@ moved VERBATIM and nothing was edited. Headings mirror the ones in `CLAUDE.md`.
 ## `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
 
 Every `label` in the meta file is byte-identical to that input's title in
-`indicators/strategies/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
+`strategies/tradingview/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
 input's tooltip **verbatim**. One parameter, one name, one explanation, two UIs.
 
 **Change a label or a desc and change the Pine in the same commit.** Otherwise the lab and
@@ -2335,7 +2341,7 @@ was done about them: `docs/SOS_FADE_BUILD_NOTES.md` → *The short-hold variant*
 ## References
 
 - Spec: `docs/MPC_SOS_FADE_SPEC.md`; build plan + order: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-- Pine source of truth: `indicators/strategies/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
+- Pine source of truth: `strategies/tradingview/mpc_strategy.pine` (A+ block ~3708-3972, execution ~4112-4735).
 - Upstream runner: `backtest/CLAUDE.md`; engines: `engines/*/CLAUDE.md`.
 
 ---

@@ -13,7 +13,7 @@
 > keeps this file from growing back.
 
 **Purpose:** The MPC SOS Fade strategy in Python — a line-for-line port of the A+ block +
-execution layer in `indicators/strategies/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
+execution layer in `strategies/tradingview/mpc_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
 the canonical engine stack's per-bar output and turns the A+ sequence into trades.
 **Scope:** This strategy only — its state machine, order logic, config, and parity harness. It does
 NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`command-center/`).
@@ -57,12 +57,12 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *`mpc_sos_fad
 
 🔴 **39 `desc` fields were rewritten to plain English on 2026-08-16, and the trigger was the
 PINE side.** Every input tooltip in all 29 Pine files was cut to one or two plain sentences
-(rule: `indicators/strategies/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*), and because a `desc`
+(rule: `strategies/tradingview/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*), and because a `desc`
 IS that tooltip verbatim, this file had to move with it or the lab panel would have gone on
 teaching the old wording. ⚠ **Strings only — every param's `name`, `group`, `core`, `widget`
 and `options` is unchanged, verified by diffing and counting the changed lines that do not
 contain `"desc"`.** The measured detail those descs used to carry now lives in
-`indicators/strategies/docs/mpc_strategy.md` and the specs.
+`strategies/tradingview/docs/mpc_strategy.md` and the specs.
 
 🔴 **`short` IS THE ONE KEY WITH NO PINE TWIN, AND IT IS EXEMPT FROM THE SYNC RULE BELOW
 (2026-08-20).** All 83 params gained one. It is the same setting named in as few words as
@@ -1602,7 +1602,7 @@ hold advances the clock by the whole weekend on a handful of bars, which is deli
 
 ⚠ **`mpc_bleg` INHERITS it, unlike the minimum-stop guard which that fork pins Off.** The lever
 lives in the parent's `step()`, which `BLegExecution` delegates to, and both bots share ONE exit
-ladder. `indicators/strategies/mpc_b_leg_strategy.pine` got the identical inputs in the same commit so the two
+ladder. `strategies/tradingview/mpc_b_leg_strategy.pine` got the identical inputs in the same commit so the two
 sides cannot drift. **But the 24h–40h plateau was measured on A+ trades only** — a B leg waits for a
 LATE retrace by construction, so treat any value there as untested until it is replayed.
 

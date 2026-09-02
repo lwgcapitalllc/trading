@@ -1657,7 +1657,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // Exit 0 = the Python bot's decision stream is bar-for-bar identical to this Pine.
 //
 // REGENERATE whenever mpc_b_leg_strategy.pine changes — the split point is exact:
-//   sed -n '1,4580p' indicators/strategies/mpc_b_leg_strategy.pine > indicators/strategies/mpc_b_leg_strategy_export.pine
+//   sed -n '1,4580p' strategies/tradingview/mpc_b_leg_strategy.pine > strategies/tradingview/mpc_b_leg_strategy_export.pine
 //   (4580 = `strategy.close("Short", comment = "opp SOS")`, the last line before the
 //    DIAGNOSTIC LOG header at 4583 — re-grep it, this number moves on every edit)
 //   then re-append this block and restore the line-40 title.

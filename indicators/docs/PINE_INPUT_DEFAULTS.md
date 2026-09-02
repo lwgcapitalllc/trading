@@ -556,7 +556,7 @@ and the only column the reorder is expected to change.
 
 🔴 **DELETED 2026-08-15 — the file no longer exists and this table describes nothing shippable.**
 Left in place so a reader who finds the name elsewhere lands here rather than nowhere. Recover from
-git history; reason in `indicators/strategies/CLAUDE.md` → *DELETED 2026-08-15*.
+git history; reason in `strategies/tradingview/CLAUDE.md` → *DELETED 2026-08-15*.
 
 | # | type | ord | group | title | default | var | line |
 |---|---|---|---|---|---|---|---|

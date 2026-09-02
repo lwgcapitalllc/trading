@@ -99,7 +99,7 @@ do **not** carry the name of whoever taught them.
 `mpc_d_strategy.pine` used the word for a different setup entirely — its middle leg, with an input
 literally documented as "how much the shakeout may break before it stops being a shakeout". Two
 setups sharing one term is how a rule gets read backwards, so D was removed on 2026-08-15 (see
-`indicators/strategies/CLAUDE.md`). **Do not reintroduce the word for anything but RSO.**
+`strategies/tradingview/CLAUDE.md`). **Do not reintroduce the word for anything but RSO.**
 
 ⚠ **Aaron's own pullback entry is an ELS ENTRY MODE, not a third strategy.** He waits for
 RSO-style confirmation but takes an ELS level. Building it as a separate package would give one

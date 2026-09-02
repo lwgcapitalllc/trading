@@ -1934,7 +1934,10 @@ cases. ⚠ **`fillTokens` runs here too**, against this run's own values, or a t
 
 ⚠ **`tests/param-gates.spec.ts` asserts on the WORDS** (`RSI length`, not `div_rsi_len`) — every
 param in `mpc_sos_fade`'s metadata carries a unique short name, so a name still identifies a row
-exactly. Three checks, all watched RED by mutation: the fold, sections-start-open (flip the set to
+exactly. ⚠ **Its docstring cites the Pine file that greyed the control out first, and that file
+MOVED on 2026-09-02** — the `strategy()` sources left `indicators/strategies/` for
+`strategies/tradingview/`, so the path was repointed. Nothing the test asserts changed; the
+Pine is still where a dead control is decided and this page is still catching up to it. Three checks, all watched RED by mutation: the fold, sections-start-open (flip the set to
 track what is open), and the all-in-one icon.
 
 ### Efficiency, measured

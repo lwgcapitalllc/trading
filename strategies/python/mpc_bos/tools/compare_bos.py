@@ -2,7 +2,7 @@
 
 The third of the family, beside `mpc_sos_fade/tools/compare_strategy.py` and
 `mpc_bleg/tools/compare_bleg.py`. Reads a TradingView "Export chart data" CSV of
-`indicators/strategies/mpc_bos_strategy_export.pine` — the instrumented strategy that plots its per-bar
+`strategies/tradingview/mpc_bos_strategy_export.pine` — the instrumented strategy that plots its per-bar
 DECISION STREAM plus the tracker's own state plus every input as a column — replays the
 export's OWN bars through the Python bot CONFIGURED FROM THE EXPORT, and diffs the two streams
 bar by bar.
@@ -110,7 +110,7 @@ def _require(df: pd.DataFrame, columns) -> None:
     if missing:
         raise ExportIncomplete(
             f"export is missing {missing}. Re-export from the CURRENT "
-            "indicators/strategies/mpc_bos_strategy_export.pine — a column added to the Pine after an "
+            "strategies/tradingview/mpc_bos_strategy_export.pine — a column added to the Pine after an "
             "export was taken is not in that CSV, and diffing without it would check less "
             "than this tool claims to."
         )

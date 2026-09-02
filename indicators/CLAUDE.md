@@ -1,20 +1,28 @@
 # CLAUDE.md — indicators/
 
-**Purpose:** Every Pine Script source in the repo — the charting engines the 13 canonical Python
-engines were ported from, the `strategy()` files Aaron runs in the TradingView Strategy Tester,
-and the instrumented `_export` twins that are half of every parity gate.
-**Scope:** This file ROUTES and keeps the dated build narrative. The RULES live in the two child
-CLAUDE.md files next to the code they describe. It does not cover any Python port — those live
-under `engines/` and `strategies/python/`, each owning its own CLAUDE.md.
-**Last reviewed:** 2026-08-15 — `tools/check_active_order.py` landed (see above). 2026-08-13: the 28 `.pine` files were split into `strategies/` and `engines/`
-and the rules that applied to only one half moved into that half's CLAUDE.md.
+**Purpose:** The Pine Script INDICATOR sources — the charting engines the 13 canonical Python
+engines were ported from, the from-scratch `smc_engine_v2` rebuild, and the instrumented `_export`
+twins that are half of every ENGINE parity gate.
+🔴 **The `strategy()` half LEFT ON 2026-09-02 AND IS NOT IN THIS TREE ANY MORE.** Those files are
+strategy source for the TradingView runner platform, so they now sit beside the MT5, NinjaTrader
+and Python strategies at [`strategies/tradingview/`](../strategies/tradingview/CLAUDE.md) — the
+numbered input-panel contract, the trade annotations, the colour palette and the per-family prose
+rule all travelled with them, along with `docs/` and `tools/`. Why, and what else moved:
+`docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+**Scope:** This file ROUTES and keeps the dated build narrative. The RULES live in
+[`engines/CLAUDE.md`](engines/CLAUDE.md), next to the code they describe. It does not cover any
+Python port — those live under `engines/` and `strategies/python/`, each owning its own CLAUDE.md.
+**Last reviewed:** 2026-09-02 — the `strategy()` half moved out to `strategies/tradingview/`.
+2026-08-15: `tools/check_active_order.py` landed (see above). 2026-08-13: the 28 `.pine` files were
+split into `strategies/` and `engines/` on their declaration, and the rules that applied to only
+one half moved into that half's CLAUDE.md.
 
 ## The split — where a `.pine` file goes, and the one thing that decides it
 
-**The Pine DECLARATION decides it, not the filename.** A file declaring `strategy(` goes in
-`strategies/`; a file declaring `indicator()` goes in `engines/`. Nothing else is consulted,
-which is the point — `structure_engine.pine` reads like a strategy component and is an
-indicator. ⚠ **`mpc_m15_playbook.pine` / `mpc_m15_playbook_strategy.pine` used to be the
+**The Pine DECLARATION decides it, not the filename.** A file declaring `indicator()` goes in
+`engines/`, here; a file declaring `strategy(` goes in `strategies/tradingview/` and is NOT in
+this tree at all. Nothing else is consulted, which is the point — `structure_engine.pine` reads
+like a strategy component and is an indicator. ⚠ **`mpc_m15_playbook.pine` / `mpc_m15_playbook_strategy.pine` used to be the
 textbook example of this — a near-identical pair split across both folders on the declaration
 alone. On 2026-08-15 the indicator was DELETED and the strategy renamed to
 `smc_session_sweep_strategy.pine`**; the note that says why is in
@@ -24,8 +32,11 @@ binding on the survivors.
 
 | folder | declaration | count | owns |
 |---|---|---|---|
-| [`strategies/`](strategies/CLAUDE.md) | `strategy(` | 12 | the numbered input-panel contract, the trade annotations, the colour palette, and the `docs/<family>.md` prose rule |
+| [`strategies/tradingview/`](../strategies/tradingview/CLAUDE.md) — **not here since 2026-09-02** | `strategy(` | 16 | the numbered input-panel contract, the trade annotations, the colour palette, and the `docs/<family>.md` prose rule |
 | [`engines/`](engines/CLAUDE.md) | `indicator()` | 17 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
+
+⚠ **Count both with `ls`, never off this table** — the `strategy(` column read 12 for weeks while
+there were 16, and the row above is the third place in this repo that number has been wrong.
 
 ⚠ **Ask the folder, then read that folder's CLAUDE.md — not this one.** A fact lives in exactly
 ONE CLAUDE.md, the one next to the code. This file keeping its own copy of the panel contract is
@@ -33,7 +44,8 @@ how three files in this repo came to disagree about whether a bot was live.
 
 ⚠ **`CLAUDE.md` is the only file left at this level, and that is structural rather than tidy** —
 the commit hook finds a changed file's OWNING doc by walking up from its folder, so this file has
-to sit above both children to be the thing `strategies/` and `engines/` fall back to.
+to sit above `engines/` to be the thing it falls back to. ⚠ **It kept that job when the strategy
+half left**, because `docs/` and `tools/` still sit here and both need an owner.
 
 ## `tools/` — the panel checks, run by hand
 
@@ -43,10 +55,10 @@ ABOVE it; Pine resolves top-down and a violation is `CE10272`, which **only appe
 carried the same defect because a twin is a copy. Run it after ANY panel edit:
 
 ```bash
-python3 indicators/tools/check_active_order.py indicators/strategies/*.pine
+python3 indicators/tools/check_active_order.py strategies/tradingview/*.pine
 ```
 
-**All twelve strategy files pass as of 2026-08-15.** ⚠ **Its first two versions each reported four
+**All FOURTEEN gated strategy files pass, re-run 2026-09-02 at the new paths** (it read twelve on 2026-08-15 and two more have landed since). ⚠ **The two files under `strategies/tradingview/research/` are deliberately outside that glob** — they carry no numbered panel, so the check has nothing to say about them. ⚠ **Its first two versions each reported four
 false failures and the shape of that is the warning, not a footnote.** Version one ran the
 `active =` expression past its own argument and swallowed the next one, so `step = 0.05` read as a
 dependency on an identifier called `step` — which a local 4,900 lines away happened to be. Version
@@ -65,7 +77,7 @@ function or method body is a parameter of it or assigned in it. Pine calls the f
 and **it only appears on the paste**, so a file can look finished in the repo for days.
 
 ```bash
-python3 indicators/tools/check_scope.py indicators/strategies/*.pine
+python3 indicators/tools/check_scope.py strategies/tradingview/*.pine
 ```
 
 **All thirteen strategy files pass as of 2026-08-25.** It exists because
@@ -89,7 +101,7 @@ never close: one unprotected trade held to the end of the chart.** The check fla
 entry block sets and a bare flat test clears.
 
 ```bash
-python3 indicators/tools/check_flat_reset.py indicators/strategies/*.pine
+python3 indicators/tools/check_flat_reset.py strategies/tradingview/*.pine
 ```
 
 **All thirteen strategy files pass as of 2026-08-25.** ✅ Watched RED against the exact file that
@@ -104,10 +116,12 @@ that lives only in the Pine file. ⚠ **It is a PROMPT, not enforcement.**
 `INDICATORS_BUILD_NOTES.md`. They were NOT split across the two children: each describes both
 halves, and splitting them would have made two half-true copies.
 
-⚠ **Not to be confused with [`strategies/docs/`](strategies/CLAUDE.md), which is a different
-thing with a different job:** one `<family>.md` per strategy holding the commentary that used to
-sit inline in that Pine, anchored from the source by `// [doc N]`. Prose ABOUT a strategy file
-goes there; prose about the indicators subsystem goes here.
+⚠ **Not to be confused with [`strategies/tradingview/docs/`](../strategies/tradingview/CLAUDE.md),
+which is a different thing with a different job:** one `<family>.md` per strategy holding the
+commentary that used to sit inline in that Pine, anchored from the source by `// [doc N]`. Prose
+ABOUT a strategy file goes there; prose about the indicators subsystem goes here. ⚠ **That folder
+left this tree on 2026-09-02 with the strategies it describes** — it used to be `strategies/docs/`
+one level down from here.
 
 ---
 
@@ -1054,7 +1068,7 @@ while the mode is "Off" (the default), wrong the moment it is not.
 
 ## 2026-07-29 — `mpc_bos_strategy.pine`, the third strategy off the shared engine
 
-**New file `indicators/strategies/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
+**New file `strategies/tradingview/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
 trades the CONTINUATION: an SOS sets a regime, and every BOS after it in that direction is a fresh
 leg whose retrace is bought/sold. A+ fades the shift; this rides what the shift started.
 
@@ -1165,7 +1179,7 @@ The trade annotations were rebuilt so a chart can be read without decoding text,
 
 ## 2026-07-24 — the B-LEG fork + 500x leverage pin
 
-**New file `indicators/strategies/mpc_b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/mpc_bleg/`.
+**New file `strategies/tradingview/mpc_b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/mpc_bleg/`.
 
 **500x leverage pinned in the `strategy()` call** to match Aaron's demo account. `mpc_strategy.pine`, `mpc_strategy_export.pine` and `mpc_b_leg_strategy.pine` now carry `margin_long = 0.2, margin_short = 0.2` (margin % = 100 / leverage → 500x = 0.2%), and the two `tradingview/` research strategies (`ny_orb.pine`, `london_breakout.pine`) got the same. Like `slippage = 0`, this only sets the Strategy Tester Properties defaults so a fresh paste reproduces Aaron's account — it is not signal logic and does not touch the `px_*`/`cfg_*` decision stream, so `compare_strategy.py` parity is unaffected.
 
@@ -1330,7 +1344,7 @@ no `cfg_exitmode` (i.e. taken before this change) instead of guessing.
    this class of gap by editing the Pine** — it is the source of truth; the pin belongs in the port.
 
 `mpc_b_leg_strategy.pine` compiles (confirmed on TradingView), and its parity harness was built the
-same day: **`indicators/strategies/mpc_b_leg_strategy_export.pine`** = that file with the body byte-identical
+same day: **`strategies/tradingview/mpc_b_leg_strategy_export.pine`** = that file with the body byte-identical
 (only the line-40 `strategy()` title differs) + an appended PARITY EXPORT block, diffed by
 `strategies/python/mpc_bleg/tools/compare_bleg.py` and registered in `backtest/tools/verify_parity.py`.
 It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this fork), the band's 0.5 edge,

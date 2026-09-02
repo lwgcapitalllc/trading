@@ -1,6 +1,6 @@
 """Hand-traced tests for the BOS tracker — regime, arm, anchor fib, death, VWAP.
 
-Every test here pins a rule against `indicators/strategies/mpc_bos_strategy_export.pine` by LINE, so a
+Every test here pins a rule against `strategies/tradingview/mpc_bos_strategy_export.pine` by LINE, so a
 future edit that "simplifies" one has something to fail against. The weighting is deliberate:
 most of these cover the ways the tracker can be quietly WRONG (arm a leg it should not, keep a
 dead leg alive, answer a gate it cannot compute) rather than the ways it can be loudly broken.

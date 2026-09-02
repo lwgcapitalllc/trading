@@ -39,7 +39,7 @@ The 15-minute half supplies the trend and the target; the 5-minute half supplies
 are the same external state machine on different bars.
 
 **The second instance is DERIVED, never retyped** —
-`indicators/strategies/tools/derive_htf_structure.py` regenerates it from the block in
+`strategies/tradingview/tools/derive_htf_structure.py` regenerates it from the block in
 `mpc_h4_sweep_strategy.pine`, renaming the type and method and swapping the four bar globals for
 passed-in values. A hand-transcribed copy is a second implementation that drifts the first time
 somebody patches one and not the other, which this repo has already had happen across eleven
@@ -80,8 +80,8 @@ see the other one at all.
 ⚠ **Regenerate after ANY change to the source block**, including a cross-cutting structure fix:
 
 ```
-python3 indicators/strategies/tools/derive_htf_structure.py
-python3 indicators/strategies/tools/build_extreme_leg.py
+python3 strategies/tradingview/tools/derive_htf_structure.py
+python3 strategies/tradingview/tools/build_extreme_leg.py
 ```
 
 ⚠ **`request.security` was considered and rejected for the 15-minute half.** A state machine has

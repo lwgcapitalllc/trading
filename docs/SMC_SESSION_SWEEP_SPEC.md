@@ -1,6 +1,6 @@
 # SMC Session Sweep — strategy spec
 
-**File:** `indicators/strategies/smc_session_sweep_strategy.pine`
+**File:** `strategies/tradingview/smc_session_sweep_strategy.pine`
 **Source of the idea:** `education/learned/2026-08-11-smc-strategy-too-simple-to-ignore-1150-trades.md`
 (Lewis Kelly, "This SMC Strategy Is Too Simple to Ignore", https://youtu.be/lTrDQPVfJyI)
 **Status:** built 2026-08-11; standardised onto the house input panel and colour palette
@@ -104,9 +104,9 @@ slice of the remainder every bar.
 
 ## The panel and the palette (2026-08-14)
 
-The inputs use the numbered groups every strategy in `indicators/strategies/` uses, so section 5
+The inputs use the numbered groups every strategy in `strategies/tradingview/` uses, so section 5
 is Entry whichever file you open. The contract, and the rule deciding which section a new toggle
-goes in, live in `indicators/strategies/CLAUDE.md` — not here.
+goes in, live in `strategies/tradingview/CLAUDE.md` — not here.
 
 **Sections 3, 4, 5, 6, 7, 8, 10, 11 are present. 1, 2, 9 and 12 are absent and the numbering does
 not close up**, because the number is the address:
@@ -280,7 +280,7 @@ $3.93 stop, **22%** at $1, **over half** at $0.40. Script:
 (`execBeOnShift`, `execUseWindows`, `execTp1Mode = Fixed R`), all defaulted ON, all UNMEASURED.
 Four course rules still absent: order blocks as entry objects, POI quality grading, the news
 blackout, and six of his eight setups. Detail and the caveats on each:
-`indicators/strategies/CLAUDE.md` → *Three rules added from the course*.
+`strategies/tradingview/CLAUDE.md` → *Three rules added from the course*.
 
 ---
 
@@ -312,7 +312,7 @@ sizer and a stop a few ticks wide**, so it is the number to check first if a res
 
 ⚠ **Turning confirmation off does NOT retire the confirmation timeframe.** `pbConfTf` still drives
 breakeven-on-shift, cancel-on-flip, and the SOS marker. Both it and `showSosMark` were ungated in
-the same pass for exactly that reason — see `indicators/strategies/CLAUDE.md` → *A CASCADE AUDIT*.
+the same pass for exactly that reason — see `strategies/tradingview/CLAUDE.md` → *A CASCADE AUDIT*.
 
 ⚠ **A default change resets nothing on an existing chart.** TradingView keeps whatever is saved
 there, so Aaron's chart already shows these and someone else's will keep the old ones until they

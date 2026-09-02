@@ -326,7 +326,7 @@ exists to settle, and the parity gate does not exist.**
 | `execution.py` | `RealignExecution` — the market entry, sizing, the stop |
 | `strategy.py` | `MpcRealignStrategy` — wiring, `engine_config()`, `run_dual` refusal |
 | `tests/test_realign.py` | 15 tests, weighted toward the silent failures |
-| `indicators/strategies/mpc_realign_strategy.pine` | the TradingView side |
+| `strategies/tradingview/mpc_realign_strategy.pine` | the TradingView side |
 | `docs/MPC_REALIGN_SPEC.md` | the stage-1 spec and the full measurement record |
 | `backtest/tools/internal_realign_scan.py` | the counting/geometry scan |
 

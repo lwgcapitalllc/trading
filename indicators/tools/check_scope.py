@@ -21,7 +21,7 @@ bill of health, it is one specific question answered.
 drawing reddens exactly that line (and its chart-frame twin, which shares the text), and
 nothing else. Re-run that mutation if this file is ever changed.
 
-Usage:  python3 indicators/tools/check_scope.py indicators/strategies/*.pine
+Usage:  python3 indicators/tools/check_scope.py strategies/tradingview/*.pine
 """
 
 from __future__ import annotations

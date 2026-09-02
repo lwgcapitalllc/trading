@@ -2,7 +2,7 @@
 
 🔴 THE SUBJECT: `exec_sl_deep` on `mpc_sos_fade` cannot change anything when `exec_sl_level` is
 already `1.0` — both of its states place the stop in the same spot. The Pine has greyed it out
-since it was written (`indicators/strategies/mpc_strategy.pine:116`, `active = execSlLevel != "1.0"`)
+since it was written (`strategies/tradingview/mpc_strategy.pine:116`, `active = execSlLevel != "1.0"`)
 and the Python UI never had the mechanism, so the lab offered a control that did nothing.
 
 Two things had to be true for that to be more than cosmetic:

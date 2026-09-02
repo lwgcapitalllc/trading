@@ -129,7 +129,7 @@ def test_the_PINE_side_ships_the_SAME_value_and_still_gates_both_entries():
     from pathlib import Path
 
     pine = (Path(__file__).resolve().parents[4]
-            / "indicators" / "strategies" / "mpc_strategy.pine").read_text()
+            / "strategies" / "tradingview" / "mpc_strategy.pine").read_text()
 
     assert 'execMinAtrPct = input.float(0.08,' in pine, "Pine default no longer matches Python's"
     assert SosFadeConfig().exec_min_atr_pct == 0.08, "Python default no longer matches Pine's"

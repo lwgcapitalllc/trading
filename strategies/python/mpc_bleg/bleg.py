@@ -1,6 +1,6 @@
 """BLegTracker — the B-LEG setup state machine.
 
-A line-for-line port of the B LEG SETUP block in `indicators/strategies/mpc_b_leg_strategy.pine`
+A line-for-line port of the B LEG SETUP block in `strategies/tradingview/mpc_b_leg_strategy.pine`
 (~3683-3758). The B LEG is the SOS whose retrace arrived LATE: an A+ SOS fires, price
 expands and prints a continuation BOS BEFORE it ever retraces, so the A+ reversal leg
 dies at 2/3 (no 0.5/0.618 latch). On a higher timeframe that is ONE clean leg and the
