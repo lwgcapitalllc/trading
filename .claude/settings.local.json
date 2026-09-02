@@ -160,7 +160,9 @@
       "Bash(git -C /Users/alwg/trading diff --stat strategies/python/mpc_sos_fade/strategy.py)",
       "Bash(perl -ni -e 'print unless /TradingView strategy move on hold/' /Users/alwg/.claude/projects/-Users-alwg-trading/memory/MEMORY.md)",
       "Bash(python3 -m pytest algos/tests/test_ledger_streams.py -q --no-header -p no:randomly)",
-      "Bash(python3 -m pytest algos/tests/test_audit_reentry.py -q --no-header -p no:randomly)"
+      "Bash(python3 -m pytest algos/tests/test_audit_reentry.py -q --no-header -p no:randomly)",
+      "Bash(cp /tmp/wr.bak algos/tools/watch_reentry.py)",
+      "Bash(python3 -m pytest algos/tests/test_watch_reentry.py -q --no-header -p no:randomly)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
