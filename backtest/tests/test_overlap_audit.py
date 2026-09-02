@@ -61,24 +61,30 @@ def _holds(trades, df=None, grid=None):
 
 
 def _overlap(holds_a, holds_b, n):
-    """The tool's own bar-overlap arithmetic, mirrored so a change to it fails here."""
-    oa_, ob_ = oa._occupancy(holds_a, n), oa._occupancy(holds_b, n)
-    both = same = opp = 0
-    for x, y in zip(oa_, ob_):
-        if x and y:
-            both += 1
-            same += x == y
-            opp += x != y
-    return both, same, opp
+    """The tool's OWN arithmetic, called — not mirrored (2026-09-02).
+
+    ⚠ This used to be a hand-written copy, described here as "mirrored so a change to it fails
+    here". It did fail here, which was the good half; the bad half is that a mirror has to be
+    re-derived by hand by whoever changes the rule, and this repo has already recorded that exact
+    shape drifting in silence between a Python evaluator and its JavaScript twin. Calling the
+    tool's `overlap_counts` means these cases pin the thing that actually runs.
+    """
+    return oa.overlap_counts(oa._occupancy(holds_a, n), oa._occupancy(holds_b, n))
 
 
 # ── the bar range a trade occupies ───────────────────────────────────────────────
 
 
+# ⚠ These three moved their PREMISE on 2026-09-02, never their subject. `_occupancy` returns
+# `(longs, shorts)` per bar instead of a single direction, because a bot with re-entries genuinely
+# holds two positions at once. Half-open ranges, the same-bar round trip and direction being
+# carried across the hold are all still exactly what is being pinned — only the cell's shape moved.
+
+
 def test_a_hold_is_half_open_so_a_trade_occupies_its_entry_bar_not_its_exit_bar():
     # Entering on bar 10 and exiting on bar 13 = exposed on 10, 11, 12.
     holds = _holds([_T(1, 10, 13)])
-    assert oa._occupancy(holds, 20).count(1) == 3
+    assert sum(1 for longs, _ in oa._occupancy(holds, 20) if longs) == 3
 
 
 def test_a_same_bar_entry_and_exit_still_occupies_one_bar():
@@ -86,13 +92,14 @@ def test_a_same_bar_entry_and_exit_still_occupies_one_bar():
     # half-open range would score it zero and quietly drop it from every count.
     holds = _holds([_T(-1, 5, 5)])
     occ = oa._occupancy(holds, 10)
-    assert occ.count(-1) == 1
-    assert occ[5] == -1
+    assert sum(1 for _, shorts in occ if shorts) == 1
+    assert occ[5] == (0, 1)
 
 
 def test_direction_is_carried_onto_every_bar_of_the_hold():
     occ = oa._occupancy(_holds([_T(-1, 2, 5)]), 8)
-    assert occ == [0, 0, -1, -1, -1, 0, 0, 0]
+    flat, short = (0, 0), (0, 1)
+    assert occ == [flat, flat, short, short, short, flat, flat, flat]
 
 
 # ── overlap between the two bots ─────────────────────────────────────────────────
@@ -129,12 +136,40 @@ def test_overlap_beyond_the_frame_is_clipped_not_counted():
     assert _overlap(a, b, 10) == (2, 2, 0)
 
 
-def test_two_positions_at_once_within_ONE_strategy_raises():
-    # Every bot here runs a single position slot. If that ever changes, collapsing the
-    # two into one direction cell would understate the bot's own exposure and silently
-    # halve the overlap — refuse rather than mis-measure.
-    with pytest.raises(SystemExit):
-        oa._occupancy(_holds([_T(1, 5, 15), _T(-1, 10, 20)]), 30)
+def test_two_positions_at_once_within_ONE_strategy_are_COUNTED_not_collapsed():
+    """🔴 This test REPLACES one that asserted `_occupancy` RAISES here, and the swap is the
+    point rather than a detail.
+
+    That refusal was right for as long as every bot ran one position slot, and it earned its keep:
+    when the re-entries were finally replayed on 2026-09-02 it fired immediately instead of
+    letting the tool understate A+'s exposure. But A+ arms its re-entry when the primary reaches
+    BREAKEVEN — the primary is still open then — so two concurrent positions are now the bot's
+    real behaviour, and refusing to measure the truth is not a fix.
+
+    **The RISK the old test guarded is unchanged and is what this one pins: two positions must
+    never collapse into one cell**, because that is the reading that silently halves a bot's own
+    exposure. Overlapping bars 10-14 carry one long and one short at the same time.
+    """
+    occ = oa._occupancy(_holds([_T(1, 5, 15), _T(-1, 10, 20)]), 30)
+    assert occ[7] == (1, 0)  # the long alone
+    assert occ[12] == (1, 1)  # BOTH — the cell the old model could not represent
+    assert occ[17] == (0, 1)  # the short alone
+    assert sum(1 for lo, sh in occ if lo + sh > 1) == 5
+
+
+def test_SAME_and_OPPOSITE_stop_partitioning_once_a_bot_holds_two_positions():
+    """⚠ They summed to `both` for as long as one bar meant one direction, and they no longer do.
+
+    A holds a long AND a short across bars 10-14; B is long throughout. Those five bars are
+    same-side (A's long vs B's long) and opposite (A's short vs B's long) at the same instant, so
+    each counts once in both — 5 + 5 against a total of 5. A reader who subtracts one from the
+    other gets zero and concludes the bots never share a side, which is the exact wrong answer.
+    """
+    a = _holds([_T(1, 5, 15), _T(-1, 10, 20)])
+    b = _holds([_T(1, 10, 15)])
+    both, same, opp = _overlap(a, b, 30)
+    assert (both, same, opp) == (5, 5, 5)
+    assert same + opp > both
 
 
 # ── correlation ──────────────────────────────────────────────────────────────────

@@ -494,6 +494,41 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   (`tests/test_overlap_audit.py`), because a slip in it would report "the legs never overlap" exactly
   as cleanly as the truth does.
 
+  🔴 **IT REPLAYED A BOT NOBODY RUNS FOR ITS ENTIRE LIFE, AND EVERY FIGURE IT PUBLISHED BEFORE
+  2026-09-02 IS A PRIMARY-ONLY NUMBER.** It always called the one-frame `run()`, while
+  `mpc_sos_fade`'s re-entries need two frames — and that switch is ON in the strategy's DEFAULT
+  config *and* in the live bot's own instance config. So the tool built a config saying re-entries
+  were on, ran a path that cannot fire one, and printed a clean report. **Nothing failed and nothing
+  was empty**: A+ simply arrived with a third of its trades missing, which looks exactly like a bot
+  whose re-entries never triggered. ⚠ **Only A+ was affected** — `mpc_bleg` sets the switch False and
+  `mpc_extreme_leg` has no such field, both checked rather than assumed. ✅ Fixed by loading each
+  bot's own fill clock as a THIRD frame and calling `run_dual`; it **refuses** rather than
+  downgrading when a bot wants a fill clock it cannot supply, and `--no-secondary` SETS the flag
+  False so the config reported is the config that ran. ⚠ **`_choose_replay` is IMPORTED from
+  `run_report.py`, never re-implemented** — that tool met this identical defect on 2026-08-16, and
+  a second copy of *which replay path does this config need* is how the two tools come to disagree
+  about what a bot is.
+
+  🔴 **FIXING THE REPLAY IMMEDIATELY BROKE THE MEASUREMENT, WHICH IS THE MORE USEFUL HALF OF THE
+  STORY.** `_occupancy` carried ONE direction per bar on the stated assumption that every bot runs a
+  single position slot — and A+ arms its re-entry when the primary reaches BREAKEVEN, with the
+  primary still open, so it genuinely holds two at once. **To its great credit the old version
+  REFUSED rather than collapsing them** (its own comment: *assert rather than silently mis-measure*),
+  so the first real dual-feed run stopped dead instead of quietly understating A+'s exposure. It now
+  carries `(longs, shorts)` COUNTS per bar. ⚠ **A count, not a flag, because the doubling IS a
+  finding** — two same-way positions inside ONE bot is that bot carrying 2x its stated risk on one
+  idea, the same hazard this audit exists to detect between bots, arriving from inside one. The
+  report prints it, and prints a measured zero when it does not happen. ⚠ **SAME and OPPOSITE
+  STOPPED PARTITIONING the overlap**: one bar can carry a doubled long against the other bot's long
+  AND its short, so they can each count it and no longer sum to the total. The report says so when
+  it happens, because two figures that do not add up to the line above them read as a broken report.
+  ⚠ **The grid stays the finer PRIMARY frame and must** — `frames` now also holds fill clocks, and
+  reading the minimum off the whole dict would have re-based the A+/B-LEG audit from 15m onto 5m
+  purely because A+ fills re-entries there, tripling every bar count while nothing about the bots
+  had changed. ⚠ **`overlap_counts` is PUBLIC and the test suite CALLS it** rather than mirroring it;
+  the mirror it replaced was described in the tests as deliberate, and a hand-mirror is what this
+  repo has already recorded drifting in silence between two languages.
+
   🔴 **IT TAKES TWO BAR FRAMES SINCE 2026-09-01, AND BAR INDICES CANNOT EXPRESS THAT.** Bar 400 of a
   15-minute frame and bar 400 of a 5-minute frame are eleven hours apart, so the one-frame version
   would have compared two different afternoons **in exactly the same confident format as the truth**.
@@ -1700,7 +1735,11 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   populated column) is `None` for the same reason. The A+ and B-LEG paths never read it, so
   their replays are byte-identical.
 
-## Reading the numbers — two standing caveats
+## Reading the numbers — standing caveats
+
+<!-- ⚠ Deliberately NOT "two": it said that while carrying three, and now four. A count in a
+     heading is a second claim about the list under it, and it is always the half that goes stale. -->
+
 
 - **Annualized Sharpe is inflated across ALL runners (NT8/MT5/Python).** `output.py:build_daily_pnl`
   records only days that had a closed trade; flat days are deliberately absent (the trailing-drawdown
@@ -1718,6 +1757,19 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   (2) TV's Sharpe is a RAW MONTHLY figure — multiply by √12 (≈3.464) before comparing to our
   annualized daily one. Normalize for both before calling any TV-vs-lab gap a bug; `verify_parity.py`
   proves the SIGNALS match bar-for-bar, it does not make the two summary reports directly comparable.
+- 🔴 **A COMPOUNDED RUN EVENTUALLY ASKS FOR ORDERS THE BROKER WILL NOT ACCEPT, AND NOTHING IN THE
+  RESULT SAYS SO (2026-09-02).** PU Prime's ceiling on `XAUUSD.p` is **100 lots** (min 0.01, step
+  0.01) — MEASURED live off account 700152905 that day, and identical to the 2026-08-14 reading in
+  the bot's own instance config, so it has not drifted. The live A+ config replayed on its own two
+  feeds from $10,000 asks for **more than 100 lots on 25 of its 205 trades (12.2%)**; the first is
+  at a balance of **$927,540**, and the largest ask is **742.60 lots — 7.4× the ceiling**. Rule 17
+  says an order above the maximum is NO TRADE, never shrunk to fit, so **$4.9M of that book is
+  profit from trades the broker would have refused.** ⚠ **Below ~$900k none of this bites**, which
+  is why it has never shown up. ⚠ **The lab does not model the ceiling at all** — no refusal, no
+  warning, no column — so a stacked or long-window figure quietly stops describing a tradeable
+  account somewhere past that balance. ⚠ **It is a PER-ORDER limit, so the honest fixes are fewer
+  compounding rungs, a lower risk %, or splitting across accounts — not a clamp**, which would
+  report a trade the strategy is not holding.
 - **If a real backtest must be run, the MT5 runner is much faster than NT8** (NT8's Strategy Analyzer
   is driven by slow pywinauto UI automation). Prefer an MT5-runner strategy/symbol when the goal allows.
 

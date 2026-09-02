@@ -9,7 +9,8 @@ the whole portfolio argument — if two bots fire on the same structure break in
 direction, they are not two strategies diversifying an account, they are one position at
 2x the size, and every drawdown estimate built on stacking them is wrong.
 
-This tool measures it. It replays two strategies over ONE bar frame and answers:
+This tool measures it. It replays two strategies — each on its OWN primary frame, and on its
+re-entry fill clock too when its config asks for one — onto a shared time axis, and answers:
 
   1. **How much of each bot's in-market time is shared with the other**, split by
      SAME direction (doubled risk on one idea) vs OPPOSITE (a partial hedge).
@@ -168,26 +169,70 @@ class Grid:
         return max(1, m // self.minutes)
 
 
-def _occupancy(holds: list[Hold], n_bars: int) -> list[int]:
-    """Per-bar direction: +1 long, -1 short, 0 flat.
+def _occupancy(holds: list[Hold], n_bars: int) -> list[tuple[int, int]]:
+    """Per-bar `(longs, shorts)` — HOW MANY positions this bot holds each way, not just which way.
 
-    Each bot here runs ONE position slot, so a bar can only carry one direction. If a
-    strategy ever gains concurrency this collapses two positions into one cell and would
-    understate its own exposure — assert rather than silently mis-measure.
+    🔴 **IT WAS A SINGLE DIRECTION PER BAR UNTIL 2026-09-02, AND THAT ASSUMPTION DIED THE MOMENT
+    THE RE-ENTRIES WERE REPLAYED.** A+ arms its re-entry when the primary reaches BREAKEVEN — the
+    primary is still open at that moment — so the bot genuinely holds two positions at once, and
+    the old cell could not represent it. To its great credit the old version REFUSED rather than
+    collapsing them (`assert rather than silently mis-measure`), which is why this was found
+    immediately instead of showing up as an understated exposure nobody could see.
+
+    ⚠ **A count, not a flag, because the doubling is the finding.** Two same-way positions inside
+    ONE bot is that bot carrying 2x its stated risk on one idea — the same hazard this audit exists
+    to detect BETWEEN bots, arriving from inside one. Reducing it to "in the market" would hide it.
     """
-    occ = [0] * n_bars
+    occ = [(0, 0) for _ in range(n_bars)]
     for h in holds:
         for i in range(h.start, min(h.end, n_bars)):
-            if occ[i] != 0:
-                raise SystemExit(
-                    f"bar {i} is held by two positions of the same strategy — this tool "
-                    f"assumes one position slot per bot. Re-write _occupancy before trusting it."
-                )
-            occ[i] = h.dir
+            longs, shorts = occ[i]
+            occ[i] = (longs + 1, shorts) if h.dir > 0 else (longs, shorts + 1)
     return occ
 
 
-def _replay(key: str, df, warmup: int, capital: float, overrides: dict, symbol: str):
+def _held(cell: tuple[int, int]) -> bool:
+    return cell[0] > 0 or cell[1] > 0
+
+
+def overlap_counts(occ_a, occ_b) -> tuple[int, int, int]:
+    """`(both, same, opposite)` bars, from two occupancy series.
+
+    ⚠ **PUBLIC, and the test suite calls THIS rather than mirroring it.** It was a private loop
+    in `main` with a hand-written copy in `test_overlap_audit.py` — whose own docstring called it
+    "mirrored so a change to it fails here". It does fail there, which is the good half; the bad
+    half is that a hand-mirror has to be re-derived by whoever changes the rule, and this repo has
+    already recorded that shape drifting in silence between a Python evaluator and its JavaScript
+    twin. One definition, two callers.
+
+    🔴 **`same` and `opposite` DO NOT PARTITION `both`.** Since a bot can hold two positions
+    (2026-09-02) one bar can carry a doubled long against the other bot's long AND its short, so
+    it counts in both. Any caller subtracting one from the other is wrong.
+    """
+    both = same = opp = 0
+    for (al, ash), (bl, bs) in zip(occ_a, occ_b):
+        if not (_held((al, ash)) and _held((bl, bs))):
+            continue
+        both += 1
+        if (al and bl) or (ash and bs):
+            same += 1
+        if (al and bs) or (ash and bl):
+            opp += 1
+    return both, same, opp
+
+
+def _build(key: str, symbol: str, overrides: dict, no_secondary: bool):
+    """Resolve a bot's config and WHICH replay path it needs — BEFORE any bars are loaded.
+
+    Split out from `_replay` on 2026-09-02 because the fill-clock frame has to be known while
+    the frames are still being chosen; deciding it after the loading loop is how this tool ended
+    up replaying a config it had not loaded the bars for.
+
+    Returns `(spec, StrategyCls, cfg, fill_tf)` where `fill_tf` is the re-entry's own frame as a
+    string, or `None` for a bot that runs on one frame.
+    """
+    from backtest.tools.run_report import _choose_replay
+
     mod = importlib.import_module(_STRATEGIES[key])
     spec = mod.LAB_STRATEGY
     StrategyCls, ConfigCls = spec["strategy"], spec["config"]
@@ -201,14 +246,66 @@ def _replay(key: str, df, warmup: int, capital: float, overrides: dict, symbol: 
         import dataclasses
 
         cfg = dataclasses.replace(cfg, **overrides)
+    # ⚠ SHARED with `run_report.py`, never reimplemented — that tool met this exact defect on
+    # 2026-08-16 and the rule it enforces is *the config that gets REPORTED must be the config
+    # that RAN*. A second copy of that decision is how the two tools come to disagree about what
+    # a bot is.
+    cfg, wants_secondary, note = _choose_replay(cfg, no_secondary)
+    if note:
+        print(f"  {key}: {note}")
+    # WHICH feed the re-entry's resting order fills against — the STRATEGY owns it, because it is
+    # the thing that knows what its own order needs. A bot that declares none keeps 1m.
+    fill_tf = str(int(getattr(cfg, "exec_sec_fill_tf_min", 1) or 1)) if wants_secondary else None
+    return spec, StrategyCls, cfg, fill_tf
+
+
+def _replay(spec, StrategyCls, cfg, df, warmup: int, capital: float, fast_df):
+    """Replay one bot. `fast_df` is its re-entry fill clock, or `None` for a one-frame bot.
+
+    🔴 **A CONFIG THIS TOOL CANNOT REPLAY IS REFUSED, NEVER SILENTLY DOWNGRADED.** Until
+    2026-09-02 this always called `run(df)`, so a bot whose config says re-entries are ON — which
+    is `mpc_sos_fade`'s DEFAULT and its LIVE setting — produced a primary-only book that looks
+    exactly like a bot whose re-entries never fired. Every clash figure this tool has published
+    was measured on a bot nobody runs. Same defect `run_report.py` fixed on 2026-08-16 and the
+    same refusal shape `portfolio/legs.py` already uses.
+    """
     strat = StrategyCls(config=cfg, initial_capital=capital)
-    print(f"  replaying {spec['name']} (warmup {warmup}) ...", flush=True)
-    strat.run(df, warmup=warmup)
+    if fast_df is None:
+        print(f"  replaying {spec['name']} (warmup {warmup}) ...", flush=True)
+        strat.run(df, warmup=warmup)
+        return strat
+    if not hasattr(strat, "run_dual"):
+        # Never silently downgrade to the one-frame path — that is the whole defect.
+        raise SystemExit(
+            f"{spec['name']} sets exec_secondary=True but has no run_dual(), so its re-entries "
+            f"cannot be replayed. Pass --no-secondary to measure the primary alone (it will set "
+            f"the flag False, so the config this audit reports is the one that ran)."
+        )
+    print(f"  replaying {spec['name']} DUAL (warmup {warmup}) ...", flush=True)
+    strat.run_dual(df, fast_df, warmup=warmup)
     return strat
 
 
 def _pct(part: int, whole: int) -> str:
     return f"{100.0 * part / whole:.1f}%" if whole else "—"
+
+
+def _entry_mix(trades, fill_tf) -> str:
+    """How the book SPLITS by entry kind, for a bot replayed on a fill clock.
+
+    🔴 **Zero re-entries and a bot that could not fire one must not look the same**, which is the
+    whole reason the old silence here was dangerous: this tool replayed A+ on one frame for its
+    entire life, so its re-entries could not fire, and the report simply did not mention them.
+    Printing the split makes *0 re-entries* an answer somebody stated rather than a subject the
+    report never raised. A one-frame bot gets nothing, because for it there is no split to make.
+    """
+    if not fill_tf:
+        return ""
+    mix: dict[str, int] = defaultdict(int)
+    for t in trades:
+        mix[str(getattr(t, "kind", "?"))] += 1
+    inline = "  ".join(f"{k} {v}" for k, v in sorted(mix.items()))
+    return f"   [{fill_tf}m fill clock: {inline}]"
 
 
 def _monthly_r(trades, df) -> dict[str, float]:
@@ -257,6 +354,13 @@ def main(argv=None) -> int:
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
     ap.add_argument(
+        "--no-secondary",
+        action="store_true",
+        help="measure the PRIMARY entries alone. It SETS exec_secondary=False rather than only "
+        "picking the one-frame path, so the config this audit reports is the config that ran. "
+        "Without it, a bot whose re-entries are on is replayed on both of its frames.",
+    )
+    ap.add_argument(
         "--cluster-minutes",
         type=int,
         default=_CLUSTER_MINUTES,
@@ -282,13 +386,23 @@ def main(argv=None) -> int:
     tf_a = args.tf_a or args.tf
     tf_b = args.tf_b or args.tf
 
+    # 🔴 RESOLVE BOTH CONFIGS BEFORE CHOOSING FRAMES. A bot whose re-entries are on fills them on
+    # a SECOND frame, so which bars this audit has to load is a property of the config — decide it
+    # after the loading loop and the tool replays a bot whose bars it never fetched, which is
+    # exactly the shape of the defect being fixed here.
+    spec_a, cls_a, cfg_a, fill_a = _build(args.a, args.symbol, {}, args.no_secondary)
+    spec_b, cls_b, cfg_b, fill_b = _build(args.b, args.symbol, {}, args.no_secondary)
+    # Every frame either bot needs, primary and fill clock alike. A set, so a fill clock that
+    # happens to equal the other bot's primary frame is loaded ONCE and genuinely shared.
+    need_tfs = {tf_a, tf_b} | {t for t in (fill_a, fill_b) if t}
+
     # ⚠ The window is bounded by the SHALLOWEST frame either bot needs. A start date the
     # 15-minute feed can serve and the 5-minute one cannot is a run that dies at the fetch,
     # after both replays have been queued.
     start = args.start
     if start is None:
         floors = []
-        for tf in {tf_a, tf_b}:
+        for tf in need_tfs:
             # ⚠ `floor_for` measures the ATTACHED terminal, so with the app down it cannot
             # answer and the refusal below says to pass `--start`. That is right — a history
             # floor is a fact about a broker and there is no honest default to substitute.
@@ -303,7 +417,7 @@ def main(argv=None) -> int:
     end = args.end or dt.date.today().isoformat()
 
     frames: dict[str, object] = {}
-    for tf in sorted({tf_a, tf_b}, key=int):
+    for tf in sorted(need_tfs, key=int):
         print(f"loading {args.symbol} {tf}m  {start} -> {end} ...", flush=True)
         d = BarSource(server=args.server).load(args.symbol, tf, start, end)
         if d.empty:
@@ -315,27 +429,31 @@ def main(argv=None) -> int:
     df_a, df_b = frames[tf_a], frames[tf_b]
     # The finer frame is the grid — see `Grid`. `min` on the timeframe as an INT, because
     # "5" < "15" is false as strings and the grid would silently be the coarser one.
-    grid = Grid(frames[min(frames, key=int)])
+    #
+    # 🔴 **THE GRID IS THE FINER PRIMARY FRAME, NEVER A FILL CLOCK, AND THE DISTINCTION ARRIVED
+    # WITH THE FILL CLOCKS (2026-09-02).** `frames` now also holds the re-entry feeds, so reading
+    # the minimum off the whole dict would have re-based the A+/B-LEG audit from 15m onto 5m
+    # purely because A+ fills its re-entries there — silently tripling every bar count in the
+    # report while nothing about the bots had changed. A bot HOLDS a position across its primary
+    # bars; the fill clock only decides where a resting order gets hit. Measuring occupancy on it
+    # would answer a question nobody asked, in a unit no previous reading can be compared against.
+    grid = Grid(frames[min({tf_a, tf_b}, key=int)])
     n = len(grid)
 
-    sa = _replay(args.a, df_a, args.warmup, args.capital, {}, args.symbol)
-    sb = _replay(args.b, df_b, args.warmup, args.capital, {}, args.symbol)
+    sa = _replay(spec_a, cls_a, cfg_a, df_a, args.warmup, args.capital, frames.get(fill_a))
+    sb = _replay(spec_b, cls_b, cfg_b, df_b, args.warmup, args.capital, frames.get(fill_b))
 
     ta, tb = sa.execution.trades, sb.execution.trades
     ha, hb = _holds(ta, df_a, grid), _holds(tb, df_b, grid)
     oa, ob = _occupancy(ha, n), _occupancy(hb, n)
     cluster_units = max(1, args.cluster_minutes // grid.minutes)
 
-    in_a = sum(1 for v in oa if v)
-    in_b = sum(1 for v in ob if v)
-    both = same = opp = 0
-    for x, y in zip(oa, ob):
-        if x and y:
-            both += 1
-            if x == y:
-                same += 1
-            else:
-                opp += 1
+    in_a = sum(1 for c in oa if _held(c))
+    in_b = sum(1 for c in ob if _held(c))
+    both, same, opp = overlap_counts(oa, ob)
+    # Bars where ONE bot doubled up on its own — the same hazard from inside a single bot.
+    solo_double_a = sum(1 for lo, sh in oa if lo + sh > 1)
+    solo_double_b = sum(1 for lo, sh in ob if lo + sh > 1)
 
     # Which trades pair up.
     pairs: list[tuple[Hold, Hold, int]] = []
@@ -390,12 +508,30 @@ def main(argv=None) -> int:
 
     print(
         f"\n{args.a:<18} {len(ta):4d} trades   {sum(t.r for t in ta):8.2f}R"
-        f"   in the market {in_a:6,d} bars ({_pct(in_a, n)} of all bars)"
+        f"   in the market {in_a:6,d} bars ({_pct(in_a, n)} of all bars){_entry_mix(ta, fill_a)}"
     )
     print(
         f"{args.b:<18} {len(tb):4d} trades   {sum(t.r for t in tb):8.2f}R"
-        f"   in the market {in_b:6,d} bars ({_pct(in_b, n)} of all bars)"
+        f"   in the market {in_b:6,d} bars ({_pct(in_b, n)} of all bars){_entry_mix(tb, fill_b)}"
     )
+
+    # 🔴 A bot holding TWO positions is carrying 2x its stated risk on one idea — the same hazard
+    # this audit measures BETWEEN bots, arriving from inside one, and it is invisible in every
+    # figure below. Printed whenever it happens, and stated as a measured zero when it does not,
+    # so "no doubling" is an answer somebody read rather than a subject the report never raised.
+    if solo_double_a or solo_double_b:
+        print("\n--- ONE BOT HOLDING TWO POSITIONS AT ONCE (2x its own stated risk) ---")
+        print(
+            f"  {args.a:<18} {solo_double_a:6,d} bars ({_pct(solo_double_a, in_a)} of its own "
+            f"hold time)\n  {args.b:<18} {solo_double_b:6,d} bars "
+            f"({_pct(solo_double_b, in_b)} of its own hold time)"
+        )
+        print(
+            "  ⚠ The account-level cap has to cover this too — it is not a clash BETWEEN the\n"
+            "    bots, so nothing in the sections below counts it."
+        )
+    else:
+        print("\nNeither bot ever held two positions at once — measured, not assumed.")
 
     print("\n--- BARS BOTH BOTS HELD A POSITION ---")
     print(
@@ -411,6 +547,16 @@ def main(argv=None) -> int:
         f"    OPPOSITE direction {opp:6,d} bars  ({_pct(opp, both)} of the overlap)"
         f"   <- partially hedged"
     )
+    # ⚠ These two STOPPED partitioning the overlap when a bot gained concurrency (2026-09-02): one
+    # bar can carry a doubled long against the other bot's long AND its short, so it counts in
+    # both rows. Said out loud, because two figures that no longer add up to the line above them
+    # read as a broken report, and the reader would be right to distrust the rest of it.
+    if same + opp > both:
+        print(
+            f"  ⚠ SAME and OPPOSITE overlap on {same + opp - both:,d} bars and do not sum to the "
+            f"total — a bot\n    holding two positions can be on both sides of the other bot at "
+            f"once. Not double counting."
+        )
 
     print("\n--- TRADES THAT OVERLAP AT ALL ---")
     print(
