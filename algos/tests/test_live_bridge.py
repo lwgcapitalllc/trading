@@ -1347,3 +1347,84 @@ def test_the_banked_record_says_it_filled_at_MARKET_not_at_the_rung():
     payload = next(kw for kind, kw in ledger.rows if kind == "event:partial_banked")
     assert payload["fill"] == "market_on_bar_close"
     assert payload["held_before"] == 1.0 and payload["held_after"] == 0.5
+
+
+# ── the halt latch ────────────────────────────────────────────────────────────
+# 🔴 `begin_live` is NOT called once. Three paths in `runner.py` call it again on a bot that has
+# been trading for weeks — a reconnect after a link outage, the bar-gap re-warm, and a settings
+# change applied while flat — and every branch of it ASSIGNS the state. So a halted bot went back
+# to placing orders on the next blip, and nothing re-halted it: both runner-side latches
+# (`_fleet_halted`, `_account_mismatch_halted`) had already fired and return early forever.
+#
+# The account-identity case is the one that costs money. It halts BECAUSE the terminal is logged
+# into an account this bot was not pointed at, and a reconnect put the bot straight back to
+# trading that account. These tests are at the BRIDGE rather than at the three call sites for the
+# same reason the guard is: a rule enforced at every caller is one the fourth caller has never
+# heard of.
+def test_a_halted_bridge_stays_halted_when_a_rewarm_calls_begin_live():
+    b, _, _, _ = _bridge(_FakeExecution(pos_dir=0))
+    b.halt("account mismatch — terminal is on 999")
+
+    b.begin_live()
+
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_a_RESTORED_position_does_not_lift_a_halt_either():
+    """The restore branch returns FIRST and sets LIVE on its way out, so it is the one that
+    would have resurrected a halted bot carrying an open trade — the worst of the three."""
+    b, _, _, _ = _bridge(_FakeExecution(pos_dir=1))
+    b._restored = True
+    b.halt("fleet halt — kill switch")
+
+    b.begin_live()
+
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_a_warmup_position_does_not_lift_a_halt_either():
+    """The third branch. Its answer is WARMING rather than LIVE, which places nothing today —
+    but it is still the bridge leaving the state a human was told to restart it out of."""
+    b, _, _, _ = _bridge(_FakeExecution(pos_dir=1))
+    b.halt("emulator and broker disagree")
+
+    b.begin_live()
+
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_the_STATE_and_the_REASON_never_disagree():
+    """⚠ Asserting the reason ALONE is vacuous — nothing ever cleared it, so that test passes
+    against the very bug it names. The property worth pinning is the PAIR: a resurrected bridge
+    read LIVE while still carrying the reason it had been halted for, and the Bots page renders
+    both. A bot reporting live with a standing halt reason is the state nobody can act on."""
+    b, _, _, _ = _bridge(_FakeExecution(pos_dir=0))
+    b.halt("account mismatch — terminal is on 999")
+
+    b.begin_live()
+
+    assert (b.state is live_bridge.BridgeState.HALTED) == bool(b.halt_reason)
+    assert b.halt_reason == "account mismatch — terminal is on 999"
+
+
+def test_the_refusal_is_RECORDED_rather_than_silent():
+    """Rule 1 in its ordinary form: *refused to resume* and *never asked* must not be the same
+    thing in the record. Without this the only trace of a suppressed re-warm is the absence of a
+    `went_live`, which is also what an ordinary healthy bar looks like."""
+    b, _, ledger, _ = _bridge(_FakeExecution(pos_dir=0))
+    b.halt("fleet halt — kill switch")
+
+    b.begin_live()
+
+    assert "event:begin_live_refused_while_halted" in ledger.kinds()
+
+
+def test_a_HEALTHY_bridge_still_goes_live():
+    """The other half, and it is the one that fails the always-refuse mutation. A guard that
+    stops every bot going live is not a guard — it is an outage."""
+    b, _, _, _ = _bridge(_FakeExecution(pos_dir=0))
+    b.state = live_bridge.BridgeState.WARMING
+
+    b.begin_live()
+
+    assert b.state is live_bridge.BridgeState.LIVE

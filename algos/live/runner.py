@@ -885,14 +885,23 @@ class LiveRunner:
         self._link_lost_at = None
         self.log.info(f"MT5 link restored after {down / 60:.1f} min — engines re-warmed.")
         self.ledger.event("mt5_link_restored", down_seconds=round(down))
+        # ⚠ A reconnect does NOT clear a halt (see `bridge.begin_live`), so the all-clear has
+        # to say which of the two states the bot came back into. "Nothing to do." on a bot that
+        # is halted and placing nothing is the one sentence that would stop somebody looking.
+        halted = self.bridge.state is BridgeState.HALTED
         self._notify_health(
             alert(
-                "🟢",
-                "RECONNECTED",
+                "🟢" if not halted else "⛔",
+                "RECONNECTED" if not halted else "RECONNECTED — STILL HALTED",
                 self.cfg.display_name,
                 f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
                 f"missed.",
-                "Nothing to do.",
+                (
+                    "Nothing to do."
+                    if not halted
+                    else f"It is still halted ({self.bridge.halt_reason}) and will place "
+                    f"nothing. Check the account, then restart it."
+                ),
             )
         )
 
@@ -2034,13 +2043,22 @@ class LiveRunner:
 
         self.log.info(f"Runtime config applied while flat (strategy rebuilt): {detail}")
         self.ledger.event("config_applied", changes=detail)
+        # ⚠ Same rule as the reconnect all-clear: a settings change does not clear a halt, so
+        # the message must not read as one. The new values ARE loaded — they just cannot reach
+        # an order until somebody restarts the bot.
+        halted = self.bridge.state is BridgeState.HALTED
         self._notify_health(
             alert(
-                "⚙️",
-                "SETTINGS APPLIED",
+                "⚙️" if not halted else "⛔",
+                "SETTINGS APPLIED" if not halted else "SETTINGS LOADED — STILL HALTED",
                 self.cfg.display_name,
                 detail,
-                "Applied straight away — the bot was flat. Nothing to do.",
+                (
+                    "Applied straight away — the bot was flat. Nothing to do."
+                    if not halted
+                    else f"Loaded, but this bot is halted ({self.bridge.halt_reason}) and will "
+                    f"place nothing. Restart it."
+                ),
             )
         )
 

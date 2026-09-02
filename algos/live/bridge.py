@@ -350,7 +350,33 @@ class OrderBridge:
         the bridge sits in WARMING and places nothing until the emulator flattens naturally.
         This is why a bot's first live trade is always one whose entry decision was made on a
         live bar.
+
+        🔴 **"Once" is a lie, and the halt guard below is why this docstring keeps the word
+        anyway.** Three paths in `runner.py` call this again on a bot that has been trading for
+        weeks — `_recover_link` after a link outage, the `gap > 4` re-warm, and
+        `_maybe_reload_runtime` when a setting changes while flat. Each rebuilds the strategy
+        and replays history, and this is the line that hands the rebuilt one back.
         """
+        if self.state is BridgeState.HALTED:
+            # 🔴 **THE HALT LATCHES, AND THIS IS THE LINE THAT MAKES THAT TRUE.** Every
+            # branch below ASSIGNS `self.state`, so before this guard existed a halted bot went
+            # back to LIVE on the next reconnect, bar gap or settings edit — and nothing
+            # re-halted it, because both runner-side latches (`_fleet_halted`,
+            # `_account_mismatch_halted`) had already fired and return early forever. The
+            # account-identity case is the one that costs money: it halts *because the terminal
+            # is logged into an account this bot was not pointed at*, and a reconnect put the
+            # bot back to placing orders on exactly that account.
+            #
+            # The guard lives HERE, not at the three call sites, for the same reason the latch
+            # exists at all: a rule enforced at every caller is one the fourth caller has never
+            # heard of. `_halt` already refuses to re-halt an already-halted bridge; this is
+            # that same rule arriving from the other side. Only a restart clears it.
+            self._log.error(
+                f"Re-warmed, but this bot is HALTED ({self.halt_reason}) and stays halted. It "
+                f"will keep observing and place nothing. Restart it."
+            )
+            self._ledger.event("begin_live_refused_while_halted", reason=self.halt_reason)
+            return
         if self._restored:
             # A RESTORED position is not a warm-up artefact: its entry is a real fill this bot
             # made and recorded, and the broker is holding it right now. The bridge must go

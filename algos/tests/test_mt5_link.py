@@ -37,6 +37,7 @@ for _p in (str(_REPO), str(_REPO / "algos" / "live")):
         sys.path.insert(0, _p)
 
 import runner as runner_mod  # noqa: E402
+from bridge import BridgeState  # noqa: E402
 from runner import LiveRunner  # noqa: E402
 
 
@@ -52,10 +53,16 @@ class _Ledger:
 
 
 class _Bridge:
-    def __init__(self):
+    def __init__(self, state=None):
         self._ex = "OLD"
         self.began = 0
-        self.state = SimpleNamespace(value="live")
+        # A REAL `BridgeState`, not a look-alike with a `.value`. The reconnect path asks
+        # `state is BridgeState.HALTED` before it sends its all-clear, and an identity test
+        # against a stand-in is False for every value — so a fake that only quacked would pass
+        # the halted case without ever entering the branch. It was a `SimpleNamespace` until
+        # 2026-09-02, when the halt was found not to survive a reconnect.
+        self.state = state or BridgeState.LIVE
+        self.halt_reason = "" if self.state is not BridgeState.HALTED else "test halt"
         # The real bridge exposes this and the loop reads it every pass (the FLAT seam that the
         # runtime config reload and the equity re-anchor both hang off). A fake missing it makes
         # the loop raise, which reads as a link failure — the wrong diagnosis entirely.
@@ -69,6 +76,12 @@ class _Bridge:
 
     def begin_live(self):
         self.began += 1
+        # Mirrors the real bridge: the halt LATCHES, so a re-warm cannot put a halted bridge
+        # back to live. Kept in step deliberately — a double that resumed here would leave the
+        # runner's own all-clear tested against a bot that is halted in production and live in
+        # the test, which is the fixture trap this file's header already names.
+        if self.state is BridgeState.HALTED:
+            return
 
     def stage_rewarm(self):
         self.staged += 1
@@ -323,6 +336,49 @@ def test_recovery_re_warms_rather_than_resuming(monkeypatch):
     assert r._link_lost_at is None
     assert "mt5_link_restored" in r.ledger.kinds()
     assert any("reconnected" in a.lower() for a in r.alerts)
+
+
+# 🔴 THE LATCH ITSELF IS NOT TESTED HERE, AND THAT IS DELIBERATE. The recovery path undid
+# the halt — it rebuilds the strategy and hands it back, and every branch of the handover ASSIGNED
+# the state — so a bot halted *because the terminal was logged into the wrong account* went
+# straight back to trading that account, with nothing left to re-halt it (both runner-side latches
+# had already fired and return early forever). The fix lives in the bridge and is watched red
+# there, in `test_live_bridge.py`. ⚠ **A test at THIS level asserting the state stays halted would
+# be VACUOUS** — the double below latches too, so it would be the fixture enforcing the property,
+# not the code. Measured, not reasoned: written that way, it passed against the bug. What this
+# file can honestly pin is what the RUNNER says afterwards.
+def test_the_reconnect_all_clear_SAYS_the_bot_is_still_halted(monkeypatch):
+    """ "Nothing to do." on a bot that is halted and placing nothing is the one sentence that
+    would stop somebody looking. The link really did come back, so the message still goes — it
+    just may not read as an all-clear."""
+    r = _runner(monkeypatch, account_info=_dead())
+    r.bridge = _Bridge(state=BridgeState.HALTED)
+    monkeypatch.setattr(r, "connect", lambda: True)
+    monkeypatch.setattr(r, "_build_strategy", lambda: (SimpleNamespace(execution="NEW"), None))
+    monkeypatch.setattr(r, "warm", lambda: None)
+    r._link_lost_at = time.time() - 600
+
+    r._recover_link()
+
+    said = " ".join(str(a) for a in r.alerts)
+    assert "HALTED" in said
+    assert "Nothing to do" not in said
+
+
+def test_a_healthy_reconnect_still_reads_as_an_all_clear(monkeypatch):
+    """The other half. A message that always warns is one nobody reads — same rule as the doc
+    guard that had to stop firing on trims."""
+    r = _runner(monkeypatch, account_info=_dead())
+    monkeypatch.setattr(r, "connect", lambda: True)
+    monkeypatch.setattr(r, "_build_strategy", lambda: (SimpleNamespace(execution="NEW"), None))
+    monkeypatch.setattr(r, "warm", lambda: None)
+    r._link_lost_at = time.time() - 600
+
+    r._recover_link()
+
+    said = " ".join(str(a) for a in r.alerts)
+    assert "Nothing to do" in said
+    assert "HALTED" not in said
 
 
 # ── the loop ────────────────────────────────────────────────────────────────────

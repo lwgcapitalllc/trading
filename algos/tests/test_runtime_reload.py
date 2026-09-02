@@ -27,18 +27,31 @@ for p in (str(_REPO), str(_REPO / "algos" / "live")):
         sys.path.insert(0, p)
 
 import live_config  # noqa: E402
-from bridge import OrderBridge  # noqa: E402
+from bridge import BridgeState, OrderBridge  # noqa: E402
 from runner import LiveRunner  # noqa: E402
 
 
 class _Bridge:
-    def __init__(self, flat=True):
+    def __init__(self, flat=True, state=None):
         self.is_flat = flat
         self._ex = None
         self.began = 0
+        # A REAL `BridgeState`, not a stand-in with a `.value`. The reload path asks whether
+        # this bot is halted before it claims the new settings are in force, and an identity
+        # check (`is BridgeState.HALTED`) against a look-alike is False for every value —
+        # so a fake that only quacked would pass the halted test while never entering the
+        # branch. The halt latch is exactly the kind of thing that trap hides.
+        self.state = state or BridgeState.LIVE
+        self.halt_reason = "" if self.state is not BridgeState.HALTED else "test halt"
 
     def begin_live(self):
         self.began += 1
+        # Mirrors the real one: the halt LATCHES, so a re-warm cannot put a halted bridge
+        # back to live. Kept in step deliberately — a double that resumed here would let
+        # the runner's own all-clear message go on being tested against a bot that is
+        # halted in production and live in the test.
+        if self.state is BridgeState.HALTED:
+            return
 
 
 class _Ledger:
@@ -338,3 +351,36 @@ def test_a_comment_only_edit_changes_nothing(runner):
     runner._maybe_reload_runtime()
     assert runner.ledger.kinds() == []
     assert runner.strategy.execution.cfg.exec_risk_pct == 10.0
+
+
+# ── the halt is not lifted by a settings change ──────────────────────────────────
+# 🔴 The reload rebuilds the strategy and calls `begin_live`, which ASSIGNED the state — so an
+# edit to this bot's own config file put a halted bot back to trading. Owned by
+# `bridge.begin_live`; these pin that the reload path honours it and says so.
+# ⚠ **The latch itself is pinned in `test_live_bridge.py`, not here.** A test at this level
+# asserting the state stays halted would be VACUOUS — the double above latches too, so it would be
+# the fixture enforcing the property rather than the code. Measured, not reasoned: written that
+# way it passed against the bug. What this file can honestly pin is what the runner SAYS.
+def test_the_settings_message_SAYS_the_new_values_cannot_reach_an_order(runner):
+    """The values really are loaded, so the change is not refused — but a message reading
+    "Applied straight away. Nothing to do." on a bot that will place nothing is the shape this
+    repo has already measured to be worse than no message."""
+    runner.bridge = _Bridge(flat=True, state=BridgeState.HALTED)
+    _rewrite(runner, exec_risk_pct=5.0)
+
+    runner._maybe_reload_runtime()
+
+    said = " ".join(str(n) for n in runner.notes)
+    assert "HALTED" in said
+    assert "Nothing to do" not in said
+
+
+def test_a_healthy_bot_still_gets_the_plain_applied_message(runner):
+    """The control. A message that always warns is one nobody reads."""
+    _rewrite(runner, exec_risk_pct=5.0)
+
+    runner._maybe_reload_runtime()
+
+    said = " ".join(str(n) for n in runner.notes)
+    assert "Nothing to do" in said
+    assert "HALTED" not in said

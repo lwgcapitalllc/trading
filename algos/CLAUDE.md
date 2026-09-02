@@ -68,6 +68,54 @@ shipped 4 adds x 2.0x cap that is several times the base size.
 
 
 
+## 🔴 THE HALT DID NOT HOLD — a reconnect, a bar gap or a settings edit put a halted bot back to trading (2026-09-02)
+
+**`begin_live` was written as a once-per-start call and is not one.** Three paths call it again on
+a bot that has been trading for weeks — the reconnect after a link outage, the bar-gap re-warm, and
+a runtime settings change applied while flat — and **every branch of it ASSIGNED the state.** So
+any of the three lifted a halt, and **nothing re-halted the bot afterwards**: both runner-side
+latches return early forever once they have fired, exactly as designed.
+
+🔴 **The account-identity case is the one that costs money.** That halt fires *because the terminal
+is logged into an account this bot was not pointed at* — the thing that happened under a running
+bot on 2026-08-12 — and a reconnect put the bot straight back to placing orders on that account.
+The fleet kill switch was equally undone: flip the switch, wait for one blip, and the fleet is
+trading again.
+
+✅ **Fixed in `bridge.begin_live`, not at the three call sites**, and the placement is the rule: a
+constraint enforced at every caller is one the fourth caller has never heard of. `_halt` already
+refuses to re-halt an already-halted bridge; this is that same latch arriving from the other side.
+**Only a restart clears it.**
+
+✅ **The refusal is RECORDED** (`begin_live_refused_while_halted`, HEALTH). Rule 1: without it the
+only trace of a suppressed re-warm is a MISSING `went_live`, which is also what an ordinary healthy
+bar looks like.
+
+🔴 **The two all-clears were lying, and that half is not cosmetic.** The reconnect said
+*"Nothing to do."* and the settings change said *"Applied straight away."* — on a bot that is
+halted and will place nothing. **A message that stops somebody looking is worse than no message**,
+which is this file's own standing rule about alarms arriving from the other direction. Both now say
+the bot is still halted and name the reason; a healthy one still reads as a plain all-clear,
+because an alert that always warns is one nobody reads.
+
+⚠ **The settings values really ARE loaded** — the change is not refused, it simply cannot reach an
+order until somebody restarts the bot. Saying *refused* there would send the reader to re-edit a
+file that is already correct.
+
+**Tests: 6 in `test_live_bridge.py`, 4 in `test_mt5_link.py` / `test_runtime_reload.py`.** Five
+watched RED against HEAD; the two "a healthy bot still goes live / still reads as an all-clear"
+controls pass both ways by design and are non-vacuous by MUTATION — always-refuse reddens them.
+
+🔴 **Two tests were WRITTEN, MEASURED VACUOUS AND DELETED, and that is the transferable half.**
+A runner-level test asserting *the bridge is still halted after a reconnect* passed against the
+bug: the bridge DOUBLE latches, so the fixture was enforcing the property, not the code. **When
+the fix lives in a collaborator, a test one layer up proves the double, never the fix.** What the
+runner level can honestly pin is what it SAYS afterwards — and those two went red.
+
+⚠ **Both bridge doubles were upgraded to carry a REAL `BridgeState`** rather than a look-alike
+with a `.value`. The check is an identity test, which is False for every stand-in — so a fake that
+merely quacked would pass the halted case without ever entering the branch.
+
 ## ⚠ Before splitting the 10% cap between two strategies — three live-side facts the lab cannot show you (2026-08-20)
 
 `backtest/tools/recovery_stack.py` now replays the loss-recovery rule as a LEG sharing this bot's

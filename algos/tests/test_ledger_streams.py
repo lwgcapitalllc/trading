@@ -151,6 +151,11 @@ def test_every_event_written_in_algos_live_is_classified():
         "config_change_refused",
         "halted",
         "went_live",
+        # A re-warm finishing on a bot that is HALTED, which stays halted. Health rather
+        # than a decision: it says nothing about a setup or an order, it says this process
+        # refused to resume placing them. Rule 1 — without it the only trace is a MISSING
+        # `went_live`, which is also what an ordinary healthy bar looks like.
+        "begin_live_refused_while_halted",
         # HEALTH rather than a decision, and the line is the usual one: it is about the
         # machinery correcting its own book-keeping, not about a setup. No order changes
         # because of it — the next one is merely sized off a number that is true.
