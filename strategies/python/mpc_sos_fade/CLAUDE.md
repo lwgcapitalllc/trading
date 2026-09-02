@@ -772,6 +772,55 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1
   mirrors `Execution._tp1_pct` branch for branch, so **re-read it against this ladder whenever a
   rung changes.**
 
+#### 🔴 THE TWO TRIGGERS WANT OPPOSITE EXITS — MEASURED 2026-09-01, AND IT DECIDES THE LIVE ROUTE
+
+**157,004 M15 + 470,995 M5 bars, 2020-01-01 → 2026-08-23, PU Prime demo bars, one `run_dual`
+replay per row.** Base params are the LIVE BOT'S OWN `config.json` with only the named field
+moved — ⚠ **not** the stage-1 proof file, which sets `exec_sec_trigger` to the reclaim while the
+bot states the gap, and that field decides which banking percentage is even READ.
+
+| configuration | trades | total R | primaries | re-entries | re-entry R | maxDD R |
+|---|---|---|---|---|---|---|
+| re-entry OFF (control) | 158 | +104.09 | 158 / +104.09 | 0 | +0.00 | −4.22 |
+| **reclaim** · `exec_rec_tp1_pct` **100** | 188 | +125.09 | 158 / +104.09 | 30 | **+21.00** | −6.66 |
+| **reclaim** · `exec_rec_tp1_pct` **0** | 188 | +111.26 | 158 / +104.09 | 30 | +7.16 | −6.66 |
+| **gap** · `exec_sec_tp1_pct` **50** | 205 | +116.72 | 158 / +104.09 | 47 | +12.62 | −4.65 |
+| **gap** · `exec_sec_tp1_pct` **0** | 205 | +124.21 | 158 / +104.09 | 47 | **+20.11** | −5.16 |
+
+🟢 **BEST SETTING, AND IT IS DIFFERENT FOR EACH TRIGGER — DO NOT CARRY ONE ACROSS TO THE OTHER.**
+
+- **Reclaim Entry → BANK IT ALL: `exec_rec_tp1_pct` = 100.** Turning the bank off costs
+  **−13.84R of a +21.00R contribution — two thirds of the edge.** Its target is far out
+  (`exec_rec_tp_r` = 3.25) and the trade does not survive the retrace back from it.
+- **FVG in zone (the gap) → BANK NOTHING: `exec_sec_tp1_pct` = 0.** Banking half COSTS
+  **−7.49R** against letting it run (+12.62R vs +20.11R). Its target is near
+  (`exec_sec_tp_r` = 1.25), so taking half off there caps the trades that were going much
+  further while doing nothing for the ones that fail.
+- **The shipped 50 is therefore the WRONG value for the trigger the bot is actually set to**, and
+  the two facts were never read against each other because every published re-entry figure came
+  from the reclaim while `config.json` states the gap.
+
+🟢 **AND IT IS THE ROUTE TO LIVE.** The bridge could not bank at a price at all, so a re-entry
+that banks cannot go live as measured. The gap trigger does not need to bank — **at 0 it is both
+better AND live-compatible with no new order path**. The reclaim needs the bank, so it waits on
+the partial-exit path.
+
+⚠ **The primaries are IDENTICAL in all five rows — 158 trades, +104.09R every time.** The
+re-entry never displaces a primary here, because it only arms after the primary on that leg has
+CLOSED. So its contribution reads directly off the difference, which is unusually clean for this
+repo and worth not squandering: **do not re-derive it from a run with a different basis.**
+
+⚠ **LAB FINDINGS, and there will never be anything else.** No parity gate covers a re-entry —
+the Pine has none — so `compare_strategy.py` has exercised exactly ZERO of these trades.
+⚠ **30 and 47 trades over 6.6 years.** Enough to act on, not enough to be precise about; the
+error bars on a per-trigger figure are wide and stacking does not narrow them.
+⚠ **Re-run before trusting it after any entry-logic change**, and re-run
+`backtest/tools/overlap_audit.py` with it — both were stale for three weeks the last time.
+
+Reproduce: `command-center/backend/.venv/bin/python` on a script that loads the live
+`config.json`, flips `exec_secondary` on, and varies only the named field — the five rows differ
+in nothing else.
+
 ### Reclaim Entry, and the combined value that runs it beside the gap
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Reclaim Entry, and the combined value that runs it beside the gap*.

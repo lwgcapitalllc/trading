@@ -163,6 +163,36 @@ deliberately NOT listed**: it moves where the second rung sits, while how much c
 `exec_tp2_pct` alone. ⚠ **`assert_supported` still raises on the FIRST problem**, so the preview's
 list carries at most one bridge refusal — written down because the list shape suggests otherwise.
 Six mutations, each reddening its own named test, none surviving.
+
+## 🔴 `partial_close` had never run once, and it CLAMPED UP to the broker minimum (2026-09-01)
+
+**Building the exit path started by reading the one broker call that takes size off a live
+position — and repo-wide it had ZERO callers.** Every line of it had been written, reviewed and
+shipped against nothing. Rule 9, in its purest form: a feature nobody has RUN is not a feature.
+Treat the first live partial as a FIRST RUN, not as a regression risk.
+
+🔴 **Its last sizing line was `max(volume_min, min(lots, held))`, which is rule 17 inverted.** A
+slice below the broker's minimum — or one that ROUNDED TO ZERO against the volume step — silently
+closed `volume_min` instead, **and returned True.** Watched RED: asking for 0.003 lots against a
+0.01 minimum reported SUCCESS while closing 0.01. Banking size the backtest keeps is not the
+trade the strategy is holding, and the two books part company on the next bar with nothing saying
+why. **It refuses now, naming the number**, and the caller is left with an over-sized position it
+KNOWS about rather than a quietly different one.
+
+⚠ **`positions_get` returning None means the terminal could not be ASKED, not that the position
+is gone** — the old `if not pos: return False` read the two the same way. That is the identical
+defect `cancel_pending` was fixed for on 2026-08-25, sitting one method below it the whole time.
+**When you fix a rule-1 hole, grep the file for the same call.**
+
+⚠ **The verdict is re-read off the POSITION, never off the retcode.** A DONE code says the
+request was accepted; the position's volume says what is actually open. A move by the WRONG
+amount — a race with the stop, a partial fill, another hand on the account — is `UNKNOWN`, never
+success, because the bridge reconciles against that number.
+
+⚠ **The tests carry their own fake terminal rather than reusing `test_mt5_ops_pending.py`'s.**
+That one returns every position whatever ticket you ask for and can NEVER return `None`, so it
+cannot express the case under test — a fixture that cannot fail the way production fails would
+have passed the bug (rule 13).
 ⚠ **The same limitation is why `compare_strategy.py` can never gate the re-entry** (single frame,
 no fill clock) and why `mpc_bleg` and `mpc_bos` pin it off. Three places had already recorded this
 shape; the live runner was the fourth and nobody had asked it.

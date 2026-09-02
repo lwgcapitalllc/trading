@@ -28,7 +28,8 @@ CLASS BotMT5:
     Order execution — market:
         place_order(dir, lots, sl, tp, comment)
         move_sl(ticket, new_sl, tp)
-        partial_close(ticket, lots, direction)
+        partial_close(ticket, lots, direction) — True / False / UNKNOWN; REFUSES a size the
+                                  broker cannot express exactly, never rounds it to fit
 
     Order execution — pending / resting limits (the MPC strategies enter this way):
         place_pending_limit(dir, lots, price, sl, tp, comment)
@@ -964,32 +965,88 @@ class BotMT5:
             self.log.error(f"Move SL failed T{ticket} -> {new_sl}: {refusal_detail(result)}")
         return ok
 
-    def partial_close(self, ticket: int, close_lots: float, direction: str) -> bool:
-        """
-        Close a portion of an open position to bank partial profit.
+    def partial_close(self, ticket: int, close_lots: float, direction: str):
+        """Bank part of an open position. True (closed), False (did not), or `UNKNOWN`.
 
-        Reads the position's own symbol from MT5 — works correctly for any
-        instrument. close_lots is rounded to the symbol's volume step and
-        clamped to the position's current volume.
-        Returns True if MT5 accepted the order.
+        🔴 **REWRITTEN 2026-09-01, AND IT HAD NEVER RUN ONCE.** Repo-wide there was not one
+        caller — so every line below was written, reviewed and shipped against nothing. It is
+        the shape rule 9 names: a feature nobody has RUN is not a feature. Treat the first live
+        partial as a first run, not as a regression risk.
+
+        🔴 **IT CLAMPED UP TO THE BROKER MINIMUM, WHICH IS RULE 17 EXACTLY.** The old body ended
+        `max(si.volume_min, min(close_lots, pos.volume))`, so a slice smaller than the minimum —
+        or one that ROUNDED to zero against the volume step — silently closed `volume_min`
+        instead. **That is not the trade the strategy is holding.** Banking 0.01 lots where the
+        ladder asked for 0.003 takes size off a live position that the backtest keeps, and the
+        two books part company on the next bar with nothing saying why. **Refusing is the
+        answer** — the caller then has an over-sized position it KNOWS about, which it can alert
+        on, rather than a quietly different one.
+
+        ⚠ **`positions_get` returning None means the terminal could not be ASKED, not that the
+        position is gone**, and the old `if not pos: return False` read the two the same way —
+        the identical defect `cancel_pending` was fixed for on 2026-08-25. Both now answer
+        `UNKNOWN`.
+
+        ⚠ **The verdict is re-read off the POSITION, never off the return code.** A retcode says
+        the request was accepted; the position's own volume says what is actually open, which is
+        the only thing the caller can safely reconcile against.
         """
         pos = mt5.positions_get(ticket=ticket)
+        if pos is None:
+            self.log.error(
+                f"Partial close T{ticket}: the position book could not be read, so whether "
+                f"there is anything to close is not known."
+            )
+            return UNKNOWN
         if not pos:
+            self.log.error(f"Partial close T{ticket}: no such open position.")
             return False
+        held = float(pos[0].volume)
         sym = pos[0].symbol
         si = mt5.symbol_info(sym)
         if not si:
+            self.log.error(
+                f"Partial close T{ticket}: no symbol info for {sym}, so the volume step and "
+                f"minimum are unknown and nothing may be sized against them."
+            )
+            return UNKNOWN
+
+        want = float(close_lots)
+        step, vmin = float(si.volume_step), float(si.volume_min)
+        # REFUSE, never resize. Each arm names the number so the alert is actionable.
+        if want <= 0:
+            self.log.error(f"Partial close T{ticket}: asked for {want}L, which is not a size.")
             return False
+        if want < vmin - 1e-9:
+            self.log.error(
+                f"Partial close REFUSED T{ticket}: the ladder asked for {want}L and this broker's "
+                f"minimum is {vmin}L. Closing the minimum instead would bank size the backtest "
+                f"keeps, so nothing was closed and the position is still {held}L."
+            )
+            return False
+        if want > held + 1e-9:
+            self.log.error(
+                f"Partial close REFUSED T{ticket}: asked for {want}L but only {held}L is open. "
+                f"Closing what is there would be a FULL exit, which is a different decision."
+            )
+            return False
+        snapped = round(round(want / step) * step, 8)
+        if abs(snapped - want) > 1e-9:
+            self.log.error(
+                f"Partial close REFUSED T{ticket}: {want}L does not fit this broker's volume "
+                f"step of {step}L (nearest is {snapped}L). Rounding would close a size nobody "
+                f"chose."
+            )
+            return False
+
         bid, ask = self.get_tick(sym)
         price = bid if direction == "bullish" else ask
         close_type = mt5.ORDER_TYPE_SELL if direction == "bullish" else mt5.ORDER_TYPE_BUY
-        close_lots = round(round(close_lots / si.volume_step) * si.volume_step, 2)
-        close_lots = max(si.volume_min, min(close_lots, pos[0].volume))
         result = mt5.order_send(
             {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": sym,
-                "volume": close_lots,
+                "volume": snapped,
                 "type": close_type,
                 "position": ticket,
                 "price": price,
@@ -1000,11 +1057,34 @@ class BotMT5:
                 "type_filling": mt5.ORDER_FILLING_IOC,
             }
         )
-        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-            self.log.info(f"PARTIAL CLOSE | T{ticket} | {close_lots}L @ {price:.2f}")
+        # Ask the POSITION what happened, exactly as `cancel_pending` asks the order book.
+        after = mt5.positions_get(ticket=ticket)
+        if after is None:
+            self.log.error(
+                f"Partial close T{ticket} ({snapped}L): {refusal_detail(result)} — and the "
+                f"position could not be re-read, so how much is open is not known. Do NOT retry "
+                f"until it can be."
+            )
+            return UNKNOWN
+        left = float(after[0].volume) if after else 0.0
+        if abs((held - left) - snapped) <= 1e-9:
+            self.log.info(
+                f"PARTIAL CLOSE | T{ticket} | {snapped}L @ {price:.2f} | {held}L -> {left}L"
+            )
             return True
-        self.log.error(f"Partial close failed T{ticket} ({close_lots}L): {refusal_detail(result)}")
-        return False
+        if left == held:
+            self.log.error(
+                f"Partial close failed T{ticket} ({snapped}L): {refusal_detail(result)} — the "
+                f"position is still {held}L."
+            )
+            return False
+        # Moved, but not by what was asked: a race with a stop, a partial fill, or someone else.
+        self.log.error(
+            f"Partial close T{ticket}: asked to close {snapped}L, the position went "
+            f"{held}L -> {left}L. That is neither the requested close nor no change, so what "
+            f"happened is not known."
+        )
+        return UNKNOWN
 
     # ── Position lifecycle ────────────────────────────────────────────────────
 
