@@ -90,6 +90,16 @@ def simulate(
         if sample is not None:
             sample()
 
+    # A two-feed leg queues its slow bars and steps them when a fast bar reaches their close, so
+    # the tail of the window — the primary bars closing after the last fast bar — is still
+    # pending here. `finish` steps them. Optional on the contract, because a scripted fake and
+    # every single-frame leg have nothing to drain.
+    if not cancelled:
+        for leg in legs:
+            done = getattr(leg, "finish", None)
+            if done is not None:
+                done()
+
     per_leg = {leg.name: list(leg.trades) for leg in legs}
     combined = [t for leg in legs for t in leg.trades]
     return PortfolioResult(

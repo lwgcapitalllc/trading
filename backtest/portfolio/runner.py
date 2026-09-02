@@ -58,6 +58,12 @@ class LegSpec:
     df: Any
     cost_profile: Any = None
     source: str | None = None
+    # The SECOND bar frame, for a strategy that trades on two (the A+ bot's re-entry fills on a
+    # faster clock than its primary). `None` for the single-frame legs, which is most of them.
+    # ⚠ It must cover the SAME window as `df`: the leg merges the two itself, and a fast frame
+    # that starts later simply produces no re-entries over the part it does not reach — a
+    # smaller book that reads exactly like a rule which found fewer setups.
+    df_fast: Any = None
 
 
 @dataclass
@@ -132,6 +138,7 @@ def run_stack(
             account=account,
             initial_capital=balance,
             cost_profile=s.cost_profile,
+            df_fast=s.df_fast,
         )
         if s.source is not None:
             _wire_source(leg, built[s.source], s.df)
@@ -187,6 +194,7 @@ def run_stack(
                 account=solo,
                 initial_capital=balance,
                 cost_profile=spec.cost_profile,
+                df_fast=spec.df_fast,
             )
             # 🔴 A SOURCED LEG ALONE HAS NOTHING TO RECOVER, so its control needs a private copy
             # of its source running beside it — on its OWN account, so only the leg being measured
@@ -205,6 +213,7 @@ def run_stack(
                     src_spec.strategy_cls,
                     src_spec.config,
                     src_spec.df,
+                    df_fast=src_spec.df_fast,
                     account=SoloAccount(balance=balance),
                     initial_capital=balance,
                     cost_profile=src_spec.cost_profile,

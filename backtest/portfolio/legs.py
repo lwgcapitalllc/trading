@@ -17,6 +17,7 @@ Pure and offline — pandas + the replay loop, no app imports.
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -26,7 +27,7 @@ if str(_ROOT) not in sys.path:
 
 from backtest.replay import EngineStack, build_strategy, iter_bars  # noqa: E402
 
-__all__ = ["StrategyLeg", "build_leg"]
+__all__ = ["DualFeedLeg", "FeedBar", "StrategyLeg", "build_leg"]
 
 
 class StrategyLeg:
@@ -69,16 +70,121 @@ class StrategyLeg:
         return self.strategy.execution.trades
 
 
+def _frame_ms(df) -> int:
+    """One bar's duration on this frame, in ms."""
+    if len(df.index) < 2:
+        raise ValueError("a leg needs at least two bars to know its own timeframe")
+    return int(df.index.to_series().diff().min().total_seconds() * 1000)
+
+
+@dataclass(frozen=True)
+class FeedBar:
+    """One bar plus WHICH of a two-feed leg's streams it came from.
+
+    A leg hands the simulator ONE stream, and the simulator merges legs on `timestamp_ms`
+    alone — so a two-feed leg merges its own two frames first and has to carry the answer to
+    *which frame is this* with the bar. Reading it back off the timestamp is not an option: a
+    15m bar and a 5m bar share an open time four times an hour, which is exactly the pair that
+    must be routed differently.
+    """
+
+    bar: Any
+    fast: bool
+
+    @property
+    def timestamp_ms(self) -> int:
+        return self.bar.timestamp_ms
+
+
+class DualFeedLeg:
+    """A leg whose strategy trades on TWO frames — a slow primary and a faster fill clock.
+
+    🔴 **The merge is NOT reimplemented here.** `DualClock` on the strategy owns it and is the
+    same object the live runner drives bar-at-a-time, so a stacked leg and the live bot order
+    their two streams by one rule. A second copy of *which bar steps when* is precisely the
+    duplication this repo keeps paying for.
+
+    ⚠ **`bar_ms` is the PRIMARY's duration, never the fast frame's.** The strategy's swap clock
+    and time stop are counted in primary bars; taking the merged stream's minimum gap would put
+    both on the fast frame and silently shorten every hold.
+    """
+
+    def __init__(self, name: str, strategy: Any, df_primary, df_fast) -> None:
+        self.name = name
+        self.strategy = strategy
+        self._df_primary = df_primary
+        self._df_fast = df_fast
+        cfg = (
+            strategy.stack_config()
+            if hasattr(strategy, "stack_config")
+            else strategy.engine_config()
+        )
+        self._stack = EngineStack(cfg)
+        tf_primary_ms = _frame_ms(df_primary)
+        strategy.execution.bar_ms = tf_primary_ms
+        self._clock = strategy.make_dual_clock(
+            self._stack, tf_primary_ms=tf_primary_ms, engine_config=cfg
+        )
+
+    def bars(self) -> Iterator[FeedBar]:
+        """The two frames merged, PRIMARY FIRST when both open on the same instant.
+
+        ⚠ The order at an equal timestamp is the contract, not a detail. A fast bar is stepped
+        against the last CLOSED primary context, and `DualClock.step_fast` flushes the primaries
+        that have closed by its open — so a primary must be queued before the fast bar sharing
+        its open time is stepped, or the flush has nothing to find.
+        """
+        import heapq
+
+        slow = ((b.timestamp_ms, 0, FeedBar(b, False)) for b in iter_bars(self._df_primary))
+        fast = ((b.timestamp_ms, 1, FeedBar(b, True)) for b in iter_bars(self._df_fast))
+        for _, _, fb in heapq.merge(slow, fast, key=lambda x: (x[0], x[1])):
+            yield fb
+
+    def step(self, fb: FeedBar) -> None:
+        if fb.fast:
+            self._clock.step_fast(fb.bar)
+        else:
+            self._clock.push_primary(fb.bar)
+
+    def finish(self) -> None:
+        """Step whatever primary bars the fast clock never reached.
+
+        The window's tail: the last primary bars close after the final fast bar, so nothing
+        flushes them. Without this the leg silently drops its last bars — and a book that stops
+        a few bars early looks exactly like a book that found no more setups.
+        """
+        self._clock.drain_primary()
+
+    def in_position(self) -> bool:
+        return not self.strategy.execution.is_flat
+
+    @property
+    def trades(self) -> list:
+        return self.strategy.execution.trades
+
+
 def build_leg(
-    name: str, strategy_cls, config, df, *, account, initial_capital: float, cost_profile=None
-) -> StrategyLeg:
+    name: str,
+    strategy_cls,
+    config,
+    df,
+    *,
+    account,
+    initial_capital: float,
+    cost_profile=None,
+    df_fast=None,
+):
     """Construct one leg bound to `account`.
 
     `name` is the leg's key in the account and must be distinct within a stack — the account
     holds one open position per key, so a duplicate would overwrite a live reservation and the
     risk cap would under-count the open risk while reporting itself enforced.
+
+    `df_fast` is the SECOND bar frame for a strategy that wants one. Supply it and the leg is a
+    `DualFeedLeg`; leave it out and a config needing one is refused rather than run half.
     """
-    _refuse_unreplayable(name, config)
+    _refuse_unreplayable(name, config, df_fast=df_fast)
     strategy = build_strategy(
         strategy_cls,
         config,
@@ -87,10 +193,12 @@ def build_leg(
         account=account,
         leg=name,
     )
+    if df_fast is not None and getattr(strategy, "make_dual_clock", None) is not None:
+        return DualFeedLeg(name, strategy, df, df_fast)
     return StrategyLeg(name, strategy, df)
 
 
-def _refuse_unreplayable(name: str, config) -> None:
+def _refuse_unreplayable(name: str, config, *, df_fast=None) -> None:
     """Refuse a config this simulator structurally cannot run.
 
     A leg is ONE bar frame. `mpc_sos_fade`'s `exec_secondary` (the 1-minute re-entry) needs a
@@ -100,12 +208,12 @@ def _refuse_unreplayable(name: str, config) -> None:
     the shipped baseline — has the re-entries in it. Same refusal `optimizer.run_sweep` makes,
     for the same reason.
     """
-    if getattr(config, "exec_secondary", False):
+    if getattr(config, "exec_secondary", False) and df_fast is None:
         raise ValueError(
-            f"leg {name!r}: exec_secondary is on and a shared-account stack cannot run it — the "
-            f"1m re-entry needs a second bar stream (run_dual) and a leg is one frame. This leg "
-            f"would be primary-only while everything it is compared against is not. Set "
-            f"exec_secondary=False on this leg's config."
+            f"leg {name!r}: exec_secondary is on but no second bar frame was supplied, and this "
+            f"leg would run primary-only while everything it is compared against — its own solo "
+            f"control, the screen, the shipped baseline — has the re-entries in it. Give the leg "
+            f"its fast frame (LegSpec.df_fast) or set exec_secondary=False on its config."
         )
     # 🔴 The strategy-page recovery switch is INERT in a stack and says nothing about it. That
     # switch runs through `finalize(df)`, a hook nothing here calls — the simulator steps bars and

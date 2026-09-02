@@ -983,9 +983,42 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   A+ forces it on), so one shared stack would replay at least one of them against a market it never
   saw. It uses `stack_config()`, never `engine_config()` — the second is the static Pine constants
   and a config whose POI source is order blocks needs the OB engine switched on. `exec_secondary`
-  is **REFUSED**, the same call `run_sweep` makes: a leg is one bar frame, the re-entry needs
-  `run_dual`, and replaying it single-stream returns a primary-only book that is then compared
-  against controls that have the re-entries in them.
+  is **REFUSED when the leg was handed only ONE frame**, the same call `run_sweep` makes: replaying
+  it single-stream returns a primary-only book that is then compared against controls that have the
+  re-entries in them. ✅ **Since 2026-09-02 a leg may instead be GIVEN its second frame**
+  (`LegSpec.df_fast`) and then it runs whole — `DualFeedLeg`, below. The refusal is now about a
+  MISSING frame rather than about stacking, and it names the way out.
+
+- 🔴 **`DualFeedLeg` — a leg on TWO bar frames (2026-09-02).** A+'s re-entry fills on a faster clock
+  than its primary, so pinning that switch off was pinning off a third of the bot's trades:
+  MEASURED 2020-01-01 → 2026-08-23 on PU Prime `XAUUSD.p` with ECN costs charged, the A+ leg goes
+  158 → **235 trades, +183.04R** when it is given its fast frame. **A stack that cannot run the
+  shipped config is not measuring the bot you own.**
+  ⚠ **Defaults `None`, so NO documented baseline moves** — with no fast frame the build, the solo
+  controls and the simulate call are unchanged, and every stored stack replays byte-identically.
+  🔴 **The merge is NOT reimplemented — `DualClock` on the strategy owns it**, and it is the same
+  object the live runner drives bar-at-a-time, so a stacked leg and the live bot order their two
+  streams by ONE rule. A second copy of *which bar steps when* is exactly the duplication this repo
+  keeps paying for.
+  ⚠ **The bar carries WHICH FRAME it came from (`FeedBar.fast`) because the TIMESTAMP cannot answer
+  it.** A 15m bar and a 5m bar share an open time four times an hour, and that is precisely the pair
+  that has to be routed differently.
+  ⚠ **PRIMARY FIRST at an equal timestamp, and the ordering is the contract.** A fast bar is stepped
+  against the last CLOSED primary context, and the fast step flushes the primaries that closed by its
+  open — so a primary must be queued before the fast bar sharing its open time, or the flush finds
+  nothing.
+  ⚠ **`bar_ms` is the PRIMARY's duration, never the merged stream's minimum gap.** The swap clock and
+  the time stop are counted in primary bars; reading it off the merged stream puts both on the fast
+  frame and silently shortens every hold.
+  ⚠ **The TAIL has to be drained.** The last primary bars close after the final fast bar, so nothing
+  flushes them; `simulate` calls `finish()` after the loop on any leg that has one, and **only when
+  the run was not cancelled** — a partial book must not gain bars a complete one would have. Without
+  it the leg drops its last bars, and a book that stops early looks exactly like a book that found no
+  more setups.
+  ⚠ **`df_fast` must cover the SAME window as the primary.** A fast frame that starts later produces
+  no re-entries over the part it does not reach — a smaller book that reads exactly like a rule that
+  found fewer setups.
+  8 tests in `tests/test_dual_feed_leg.py`, each watched RED by its own mutation.
 - **`runner.py`** — `run_stack(specs, balance=, risk_cap_pct=)`: build the account, build the legs,
   simulate, **and replay each leg SOLO on the same bars**. The solo control is not a convenience —
   without it a difference in the shared book is a mixture of *the cap bit* and *the shared balance
@@ -997,6 +1030,10 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   over the FULL history beside a book that stopped a year in is not a control — it is two
   different experiments in one table, and the screen-vs-shared delta would read the missing year
   as the cap's doing.
+  ⚠ **`df_fast` reaches the SOLO CONTROL and the private source copy too, not only the shared
+  build.** A control replayed without the fast frame holds a different set of trades from the leg it
+  is the control for, and the screen-vs-shared delta would then report the missing re-entries as the
+  cap's doing — the same failure the cancelled-run rule above exists to prevent.
 - 🔴 **`LegSpec.source` — a leg may READ ANOTHER LEG'S CLOSED TRADES (2026-08-21).** The mechanism
   the loss-recovery rule needs: it has no setups of its own and arms off a primary's losses, so it
   cannot be an ordinary leg. `source` names another leg in the same stack; `run_stack` builds
