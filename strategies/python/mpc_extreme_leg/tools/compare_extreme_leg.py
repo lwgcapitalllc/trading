@@ -179,7 +179,7 @@ def _wrong_export(path: Path) -> "str | None":
     )
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", type=Path)
@@ -191,7 +191,7 @@ def main() -> int:
                          "as a logic bug.")
     ap.add_argument("--price-tol", type=float, default=0.01)
     ap.add_argument("--max-report", type=int, default=8)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     wrong = _wrong_export(a.csv)
     if wrong:
@@ -200,6 +200,29 @@ def main() -> int:
 
     df = load_export(a.csv)
     cfg, missing = config_from_export(df)
+
+    # 🔴 THE TWO CUTS THE PINE CANNOT MAKE. `engines/regime/` and `engines/news/` have no Pine
+    # source, so no export column carries these and this gate can never check them. Running with
+    # one on would compare a FILTERED Python against an UNFILTERED Pine: every refused setup would
+    # surface as a disagreement, on a real column, at a real bar — a red gate that looks exactly
+    # like a porting bug and sends the reader into the ladder to find one. **This refusal is the
+    # only reason those settings are allowed to exist at all**; see `config.py` → section 8.
+    # ⚠ It reads the CONFIG, not the export, because that is where the setting can be turned on.
+    on = [n for n in ("skip_transitioning", "skip_news") if getattr(cfg, n, False)]
+    if on:
+        label = {"skip_transitioning": "the transitioning-market cut",
+                 "skip_news": "the news blackout cut"}
+        print("✗ " + " and ".join(label[n] for n in on) + " is switched on, and this gate cannot "
+              "check it.")
+        print("  Those cuts read engines with NO Pine source, so the chart cannot make them. A run "
+              "with one on\n"
+              "  compares a filtered Python against an unfiltered Pine, and every setup the cut "
+              "refused reports\n"
+              "  as a disagreement at a real bar — which reads exactly like a porting bug.")
+        print("  Turn them off, prove parity, and switch them back on afterwards. They are a "
+              "deliberate\n  divergence, not a ported rule.")
+        return 2
+
     tf = int(pd.Series(df.index).diff().dropna().dt.total_seconds().min() // 60)
     print(f"{a.csv.name}: {len(df):,} bars  {df.index[0]} → {df.index[-1]}  ({tf}m)")
     if tf != 5:

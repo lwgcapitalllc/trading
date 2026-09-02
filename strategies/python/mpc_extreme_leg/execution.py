@@ -52,6 +52,17 @@ BLK_TARGET_TOO_NEAR = 6
 # ATR warm-up, which every parity run excludes by warm-up anyway — but it fires LOUDLY into the
 # blocked-setup list rather than silently, because a divergence nobody can see is the worse half.
 BLK_ATR_NOT_READY = 7
+# 🔴 CODES 8 AND 9 HAVE NO PINE COUNTERPART EITHER, AND FOR A DIFFERENT REASON FROM 7's.
+# 7 is a warm-up bug the Pine has and this side refuses to reproduce. These two are CUTS THE PINE
+# CANNOT MAKE AT ALL: `engines/regime/` and `engines/news/` have no Pine source by construction, so
+# there is no input, no `cfg_*` column, and nothing a parity gate could ever check. Both are OFF by
+# default and `compare_extreme_leg.py` REFUSES to run with either on — that refusal is the only
+# reason they are allowed to exist here. See `config.py` → section 8.
+# ⚠ They sit LAST in the ladder on purpose. With both off the code stream is bit-identical to the
+# chart's; with one on, a setup the Pine accepts records 8 or 9 here, which is the divergence made
+# visible rather than hidden.
+BLK_TRANSITIONING = 8
+BLK_NEWS = 9
 
 BLOCK_TEXT = {
     BLK_FRIDAY: "Friday - refused by the calendar",
@@ -61,6 +72,8 @@ BLOCK_TEXT = {
     BLK_STOP_UNDER_FLOOR: "stop tighter than the floor",
     BLK_TARGET_TOO_NEAR: "the swing is nearer than the minimum",
     BLK_ATR_NOT_READY: "the average range is not known yet (warm-up)",
+    BLK_TRANSITIONING: "the market is transitioning - refused (not a Pine rule)",
+    BLK_NEWS: "a macro release is inside the blackout window - refused (not a Pine rule)",
 }
 
 # Gold rolls at 21:00 UTC (17:00 New York), and Wednesday's roll is charged three times. Both

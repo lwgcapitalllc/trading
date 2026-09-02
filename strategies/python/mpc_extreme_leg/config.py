@@ -55,6 +55,27 @@ class ExtremeLegConfig:
     min_r: float = 2.0
     min_stop_usd: float = 0.0
 
+    # ── 8 · The two cuts TradingView cannot make (2026-09-02, Aaron's call) ──────────────────
+    # 🔴 **BOTH DEFAULT OFF AND MUST STAY OFF UNTIL SOMEBODY DELIBERATELY TURNS ONE ON.** They
+    # read `engines/regime/` and `engines/news/`, and NEITHER ENGINE HAS A PINE SOURCE — by
+    # construction, not by omission. So no `cfg_*` column can carry them and the parity gate can
+    # never check them. That is exactly the thing this file's opening rule forbids, and it is
+    # allowed here only because the hole is closed at the other end: **`compare_extreme_leg.py`
+    # REFUSES to run with either one on** and says why. A gate that quietly compared a filtered
+    # Python against an unfiltered Pine would report a disagreement per refused setup and blame
+    # the wrong code.
+    #
+    # ⚠ **With both off, this side's decision stream is bit-identical to the chart's** — the two
+    # checks sit at the END of the refusal ladder, after everything the Pine can also refuse, so
+    # a setup the Pine accepts still records the same code here.
+    #
+    # ⚠ **Turning one on makes the bot and the chart different strategies.** That is a real cost,
+    # not a caveat: the chart stops being a picture of what the bot does.
+    skip_transitioning: bool = False
+    skip_news: bool = False
+    news_before_min: int = 30
+    news_after_min: int = 30
+
     # ── Platform facts — NOT Pine inputs, and no `cfg_*` column carries them ──
     # These are the Strategy Properties tab and the account behind it. The parity harness leaves
     # every one of them alone; a run that changed one would be comparing two different accounts.
@@ -89,4 +110,13 @@ class ExtremeLegConfig:
                 f"'Levels that must agree' is {self.min_families} but only {enabled} level "
                 f"families are switched on, so nothing can ever arm. Turn a family on or lower "
                 f"the requirement — this refuses instead of running silently empty."
+            )
+        # A blackout window of zero minutes on both sides is a news filter that is switched on and
+        # blacks out nothing — it would report as ACTIVE on the strategy page and refuse no setup
+        # in eight years. Refuse it: "on but inert" is the shape this repo keeps mistaking for
+        # "on and finding nothing".
+        if self.skip_news and self.news_before_min <= 0 and self.news_after_min <= 0:
+            raise ValueError(
+                "the news cut is switched on but its window is zero minutes on both sides, so it "
+                "can never refuse anything. Give it a window, or turn it off."
             )

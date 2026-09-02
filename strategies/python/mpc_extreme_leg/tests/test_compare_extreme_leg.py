@@ -133,6 +133,20 @@ def export() -> pd.DataFrame:
     return out
 
 
+def _load_tool():
+    """Import the gate as a module so a case can drive `main()` in this process.
+
+    ⚠ Only for the cases that must patch something the subprocess cannot see. Everything else
+    stays on the subprocess path, which is what actually gets run by a person.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("compare_extreme_leg_inproc", TOOL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _run(df: pd.DataFrame, tmp_path: Path, extra=()) -> subprocess.CompletedProcess:
     p = tmp_path / "export.csv"
     df.to_csv(p, index=False)
@@ -276,3 +290,56 @@ def test_gate_says_so_when_the_export_carries_no_settings(export, tmp_path):
     bad = export.drop(columns=["cfg_flags", "cfg_min_r"])
     r = _run(bad, tmp_path)
     assert "cfg_flags" in r.stdout and "NARROWER" in r.stdout.upper()
+
+
+def test_gate_REFUSES_to_run_when_a_pine_less_cut_is_switched_on(export, tmp_path, capsys):
+    """The gate must refuse while either Python-only cut is on, and name which.
+
+    🔴 **This refusal is the only reason those two settings are allowed to exist.** They read
+    engines with no Pine source, so no export column carries them and this gate can never check
+    them. Run with one on, the Python refuses setups the Pine took, and every one surfaces as a
+    disagreement on a real column at a real bar — a red gate that reads exactly like a porting bug
+    and sends the reader into the ladder to hunt for one that is not there.
+
+    ⚠ **Called IN-PROCESS, unlike every other case in this file, and that is the point rather than
+    a shortcut.** The gate builds its config, then decides. A subprocess reads `config.py` off the
+    disk, so nothing this test can patch reaches it — the first version patched the dataclass field
+    and passed a GREEN run through while asserting a refusal, twice over: a subprocess cannot see
+    the patch, and **a dataclass bakes its defaults into `__init__` at decoration time**, so even
+    in-process the field object is not what the constructor reads.
+
+    ⚠ So it patches what the gate actually RECEIVES — the config that comes back from the export
+    reader. That is one step downstream of how it will really happen (somebody edits a default),
+    and it pins the half that matters: given a config with a cut on, this gate refuses.
+    """
+    import dataclasses
+
+    csv = tmp_path / "export.csv"
+    export.to_csv(csv, index=False)
+
+    for field, phrase in (("skip_transitioning", "transitioning"), ("skip_news", "news")):
+        tool = _load_tool()
+        real = tool.config_from_export
+
+        def patched(df, _f=field, _r=real):
+            cfg, missing = _r(df)
+            return dataclasses.replace(cfg, **{_f: True}), missing
+
+        tool.config_from_export = patched
+        code = tool.main([str(csv)])
+        out = capsys.readouterr().out
+        assert code == 2, f"{field} on and the gate still ran:\n{out}"
+        assert phrase in out.lower(), out
+        # It must say what to DO. A gate that only says no gets switched off.
+        assert "turn them off" in out.lower(), out
+
+
+def test_gate_RUNS_normally_while_both_pine_less_cuts_are_off(export, tmp_path):
+    """The other half, and the one that stops the refusal above from being a wall.
+
+    A guard that fires on the ordinary case is a guard people learn to route around. Both cuts
+    default off, so the everyday run must be untouched by any of this.
+    """
+    r = _run(export, tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "cannot check it" not in r.stdout

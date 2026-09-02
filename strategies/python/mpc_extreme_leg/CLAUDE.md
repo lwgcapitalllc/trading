@@ -119,13 +119,13 @@ export column can carry them; the A+ bot exposes the same pair the same way.
 ## The tests, and what they are worth
 
 ```bash
-python3 -m pytest strategies/python/mpc_extreme_leg/tests -q       # 44 tests
+python3 -m pytest strategies/python/mpc_extreme_leg/tests -q       # 54 tests
 # ~2 min serial. Under the suite's own `-n auto --dist load` it MEASURED 24s on an idle machine and
 # 52s on a busy one — quoted as a range because both readings are real and a single number here
 # would be the tighter one, which is the reading nobody reproduces.
 ```
 
-`tests/test_extreme_leg.py` — 31 hand-traced rules, ~2s. **Every one was watched RED, and each
+`tests/test_extreme_leg.py` — 39 hand-traced rules, ~2s. **Every one was watched RED, and each
 docstring names the mutation that does it**, so the next reader can repeat it in ten seconds
 instead of trusting a sentence.
 
@@ -148,6 +148,82 @@ setup**, so the test that raises the minimum-target setting passed against a gat
 have failed. Bars 12,000–20,000 carry 6 acceptances and refusal codes 0/1/3/6, and the fixture now
 ASSERTS an acceptance, a refusal and an opened trade rather than hoping for them. Re-measure before
 moving those numbers.
+
+---
+
+## The two cuts TradingView cannot make (2026-09-02, Aaron's call)
+
+**Both default OFF and the parity gate REFUSES to run with either on.** They read
+`engines/regime/` and `engines/news/`, neither of which has a Pine source — by construction, not
+by omission — so no `cfg_*` column can carry them and this gate can never check them. That is the
+thing `config.py`'s opening rule forbids, and it is allowed only because the hole is closed at the
+other end. **A gate that quietly compared a filtered Python against an unfiltered Pine would report
+a disagreement per refused setup, on a real column at a real bar, and send the reader into the
+ladder to hunt for a porting bug that is not there.**
+
+⚠ **They sit LAST in the refusal ladder.** With both off this side's decision stream is
+bit-identical to the chart's; with one on, the divergence lands on its own code (8 or 9) rather
+than changing which of the Pine's codes a bar records. `test_the_new_cuts_sit_AFTER_every_refusal_the_pine_can_also_make`
+pins it and the whole design rests on it.
+
+⚠ **Turning one on makes the bot and the chart different strategies.** The chart stops being a
+picture of what the bot does. That is the cost, not a caveat.
+
+### What they are worth — MEASURED 2026-09-02, 470,995 PU Prime `XAUUSD.p` M5 bars, 2020-01-01 → 2026-08-23
+
+| | trades | R | worst losing run | asked | refused |
+|---|---|---|---|---|---|
+| **shipped (both off)** | 132 | +57.10R | 8.13R | — | — |
+| + skip a transitioning market | 113 | **+58.53R** | **6.00R** | 550 | 40 |
+| + skip around news | 121 | +51.45R | 8.87R | 550 | 79 |
+| both | 104 | +53.18R | 5.99R | — | — |
+
+✅ **The market cut is the one that pays: the worst run drops 26% and the money goes UP.** Cutting
+risk without paying for it is rare and is why this was worth building.
+🔴 **The news cut is worse on BOTH counts and stays off** — it costs 5.65R and makes the worst run
+*deeper*, which is the opposite of what a news filter is for. ⚠ It also could not answer on **51 of
+550** setups (the calendar is git-ignored and per-machine, and does not cover ~9% of this window),
+so that verdict rests on the other 91%. Re-measure after topping the cache up before treating it as
+settled.
+
+⚠ **A refusal is not a lost trade.** The news cut refused 79 setups and cost only 11 trades: a
+setup refused at one bar can re-arm later and still be taken. Do not read the two counts as if they
+were the same quantity.
+
+🔴 **THE NUMBER THAT JUSTIFIED THE MARKET CUT CANNOT BE REPRODUCED FROM ANYTHING IN THIS REPO.**
+`indicators/strategies/docs/mpc_extreme_leg_strategy.md` quotes 24 trades at +0.060R each and a
+worst run of 7.9R → 5.9R. **No file in this repository's entire history reads the transitioning
+label for this strategy** — searched across `backtest/tools/` and every commit. So the figure has
+no committed tooling behind it and the table above was measured from scratch rather than inherited.
+✅ **The two agree in direction and roughly in size** (worst run down to ~6R), which corroborates
+the original rather than contradicting it — but the windows and brokers differ and they are not the
+same measurement. **Quote the table above, not that line.**
+
+### What each cut refuses to guess
+
+🔴 **"Cannot ask" and "no" are different answers and are kept different.** Each returns REFUSE,
+ALLOW or UNKNOWN, never a bool. An UNKNOWN **allows** the trade — a filter that refused whenever it
+could not see would silently become a different strategy on any day its data was thin — but it is
+counted, and the count is readable on the strategy.
+
+🔴 **EACH CUT ALSO COUNTS HOW OFTEN IT WAS ASKED, AND THAT FIELD EXISTS BECAUSE ITS ABSENCE ALREADY
+FOOLED THIS SESSION.** Without it, a cut that was never wired up and a cut asked 550 times that
+allowed every one print the same zero — the run comes back identical to the baseline and reads as
+*nothing to refuse here*. That is exactly what the first run of `filters.py` produced, and the
+numbers looked perfectly reasonable. **`asked` says the thing is connected; `refused` says it did
+something.**
+
+⚠ **Which two frames the market cut reads is a CHOICE**: the strategy's own 5-minute bars and the
+15-minute bars it already aggregates. Nothing else was available without giving the strategy a
+second data source, and a strategy that quietly loads its own bars is one whose backtest and live
+runs can differ.
+
+⚠ **Asked only when a setup exists, not per bar.** 550 questions over 6.6 years rather than 470,995;
+the classifier walks its whole frame on every call.
+
+⚠ **If either cut is ever switched on, RE-RUN `backtest/tools/overlap_audit.py`.** It changes what
+this bot trades, so the clash figures against the live A+ bot stop describing it. That audit has
+already gone stale twice in this repo by being left until afterwards.
 
 ---
 

@@ -386,3 +386,117 @@ def test_a_profile_that_moves_fills_is_refused_rather_than_half_honoured():
         bid_ask_fills = True
     with pytest.raises(ValueError, match="bid_ask_fills"):
         ExtremeLegExecution(ExtremeLegConfig(), profile=_P())
+
+
+# ── the two cuts TradingView cannot make (2026-09-02) ────────────────────────────
+#
+# Both default OFF. What these pin is that they are INERT while off, that they sit after every
+# refusal the Pine can also make, and that "could not ask" is not the same answer as "no".
+
+from ..execution import BLK_NEWS, BLK_TRANSITIONING  # noqa: E402
+from ..filters import ALLOW, REFUSE, UNKNOWN, NewsCut, TransitioningCut  # noqa: E402
+
+
+def test_both_cuts_are_OFF_by_default():
+    """Mutation: flip either default to True in config.py.
+
+    Not a style preference. On, this side stops being a port of the Pine and the parity gate
+    refuses to run — so an accidental default is a strategy that can never be validated again.
+    """
+    cfg = ExtremeLegConfig()
+    assert cfg.skip_transitioning is False
+    assert cfg.skip_news is False
+
+
+def test_a_cut_that_is_OFF_cannot_refuse_even_when_its_answer_is_yes():
+    """Mutation: drop `cfg.skip_transitioning and` (or `cfg.skip_news and`) from the ladder.
+
+    This is what keeps the decision stream bit-identical to the chart's while the cuts are off.
+    Both answers are forced True here and both flags are off, so the ladder must still accept.
+    """
+    cfg = ExtremeLegConfig(min_r=1.0)
+    code = MpcExtremeLegStrategy._ladder(
+        cfg, False, 110.0, 100.0, 5.0, 2.0, above=True, transitioning=True, news=True
+    )
+    assert code == 0
+
+
+def test_each_cut_refuses_with_its_OWN_code_when_switched_on():
+    """Mutation: return BLK_NONE from either new branch, or swap the two codes."""
+    cfg_t = ExtremeLegConfig(min_r=1.0, skip_transitioning=True)
+    assert MpcExtremeLegStrategy._ladder(
+        cfg_t, False, 110.0, 100.0, 5.0, 2.0, above=True, transitioning=True
+    ) == BLK_TRANSITIONING
+
+    cfg_n = ExtremeLegConfig(min_r=1.0, skip_news=True)
+    assert MpcExtremeLegStrategy._ladder(
+        cfg_n, False, 110.0, 100.0, 5.0, 2.0, above=True, news=True
+    ) == BLK_NEWS
+
+
+def test_the_new_cuts_sit_AFTER_every_refusal_the_pine_can_also_make():
+    """Mutation: move either new branch above the Friday check in `_ladder`.
+
+    A Friday setup that is ALSO inside a news blackout must record Friday — the code the chart
+    records. Ordering the new cuts first would change which of the Pine's own codes appears on a
+    bar, so a gate run with the cuts off would still diverge. The whole design rests on this.
+    """
+    cfg = ExtremeLegConfig(min_r=1.0, skip_news=True, skip_transitioning=True)
+    code = MpcExtremeLegStrategy._ladder(
+        cfg, True, 110.0, 100.0, 5.0, 2.0, above=True, transitioning=True, news=True
+    )
+    assert code == BLK_FRIDAY
+
+
+def test_a_news_cut_switched_on_with_a_zero_window_is_REFUSED_not_accepted():
+    """Mutation: delete the zero-window check in `__post_init__`.
+
+    On-but-inert is the state this repo keeps mistaking for on-and-finding-nothing. It would show
+    as an active filter on the strategy page and refuse nothing in eight years.
+    """
+    with pytest.raises(ValueError, match="never refuse"):
+        ExtremeLegConfig(skip_news=True, news_before_min=0, news_after_min=0)
+
+
+def test_a_cut_counts_being_ASKED_not_only_saying_no():
+    """Mutation: delete `self.asked += 1` from either cut.
+
+    🔴 This is the bug the first run of `filters.py` actually had. A cut that was never wired and
+    a cut asked two hundred times that allowed every one both print a zero — the run comes back
+    identical to the baseline and reads as "nothing to refuse here". `asked` is what says the
+    thing is connected at all.
+    """
+    cut = TransitioningCut()
+    assert cut.asked == 0
+    cut.ask()
+    assert cut.asked == 1
+
+
+def test_too_little_history_is_UNKNOWN_and_allows_rather_than_refusing():
+    """Mutation: return REFUSE (or ALLOW) instead of UNKNOWN on a short frame.
+
+    A filter that refused whenever it could not see would quietly become a different strategy for
+    the first hours of every run. It allows — and the count is what stops that being silent.
+    """
+    cut = TransitioningCut()
+    for _ in range(10):
+        cut.on_bar(1.0, 2.0, 0.5, 1.5)
+        cut.on_htf_bar(1.0, 2.0, 0.5, 1.5)
+    assert cut.ask() == UNKNOWN
+    assert cut.unknown_count == 1
+    assert cut.refused == 0
+
+
+def test_an_empty_calendar_is_UNKNOWN_never_ALLOW():
+    """Mutation: return ALLOW when the store has no events.
+
+    An empty calendar and a checked-and-clear calendar are different facts. Reading them the same
+    way is what let a stale cache look like an active news filter for a month (2026-09-01).
+    """
+    cut = NewsCut(30, 30, "XAUUSD")
+    cut._built = True
+    cut._engine = None
+    assert cut.ask(0, 0) == UNKNOWN
+    assert cut.unknown_count == 1
+    assert cut.refused == 0
+    assert cut.asked == 1

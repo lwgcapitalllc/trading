@@ -36,13 +36,16 @@ from .config import ExtremeLegConfig  # noqa: E402
 from .execution import (  # noqa: E402
     BLK_EXTREME_WRONG_SIDE,
     BLK_FRIDAY,
+    BLK_NEWS,
     BLK_NO_SWING,
     BLK_NONE,
     BLK_STOP_UNDER_FLOOR,
     BLK_SWING_WRONG_SIDE,
     BLK_TARGET_TOO_NEAR,
+    BLK_TRANSITIONING,
     ExtremeLegExecution,
 )
+from .filters import REFUSE, NewsCut, TransitioningCut
 from .htf import HtfStructure  # noqa: E402
 
 NA = float("nan")
@@ -133,6 +136,13 @@ class MpcExtremeLegStrategy:
         )
         self.states: List[LegState] = []
         self.htf = HtfStructure(htf_minutes, major_length)
+        # ⚠ Built whether or not they are switched on, so that turning one on mid-session is not a
+        # different code path from starting with it on — but they are only ASKED when their config
+        # flag is set AND a setup exists, so an off filter costs one attribute and nothing else.
+        # Both default off; see `config.py` → section 8 and `filters.py`.
+        self.cut_regime = TransitioningCut()
+        self.cut_news = NewsCut(self.config.news_before_min, self.config.news_after_min,
+                                self.config.symbol)
         self._tf_min: Optional[int] = None
         self._prev_ms: Optional[int] = None
         # ATR(50), Wilder — `na` until it has 50 true ranges, then seeded with their mean. The NA
@@ -193,7 +203,14 @@ class MpcExtremeLegStrategy:
         self._prev_ms = bar.timestamp_ms
 
         # 2. The 15-minute half.
+        # ⚠ Both frames are fed on EVERY bar even when the cuts are off. Feeding only when a cut
+        # is enabled would give it 34 bars of history starting from whenever somebody flipped the
+        # switch, so the first hours after a restart would answer UNKNOWN and read as "nothing to
+        # refuse". Cheap: two four-float tuples into bounded deques.
+        self.cut_regime.on_bar(bar.open, bar.high, bar.low, bar.close)
         self.htf.update(bar.timestamp_ms, bar.open, bar.high, bar.low, bar.close)
+        if self.htf.period_closed and self.htf.done is not None:
+            self.cut_regime.on_htf_bar(*self.htf.done)
         st.period_closed = self.htf.period_closed
         st.htf_bar = self.htf.done
         st.dir15 = self.htf.dir
@@ -325,18 +342,31 @@ class MpcExtremeLegStrategy:
         st.tp_long = entry + (st.tgt_long - entry) * cfg.tp_frac
         st.tp_short = entry - (entry - st.tgt_short) * cfg.tp_frac
 
+        # ⚠ Asked ONCE per bar and only when a setup exists, not per side and not per bar. The
+        # classifier walks its whole frame on every call; per bar over eight years of 5-minute
+        # gold that is half a million walks. An answer of UNKNOWN allows the trade and is counted
+        # on the cut — see `filters.py` for why those are three answers rather than a bool.
+        transitioning = news_blocked = False
+        if (st.raw_long or st.raw_short) and cfg.skip_transitioning:
+            transitioning = self.cut_regime.ask() == REFUSE
+        if (st.raw_long or st.raw_short) and cfg.skip_news:
+            news_blocked = self.cut_news.ask(st.index, st.ts_ms) == REFUSE
+
         if st.raw_long:
             st.blk_long = self._ladder(cfg, st.is_friday, st.tgt_long, entry, risk_long,
-                                       st.r_long, above=True)
+                                       st.r_long, above=True, transitioning=transitioning,
+                                       news=news_blocked)
         if st.raw_short:
             st.blk_short = self._ladder(cfg, st.is_friday, st.tgt_short, entry, risk_short,
-                                        st.r_short, above=False)
+                                        st.r_short, above=False, transitioning=transitioning,
+                                        news=news_blocked)
         st.go_long = st.raw_long and st.blk_long == BLK_NONE
         st.go_short = st.raw_short and st.blk_short == BLK_NONE
 
     @staticmethod
     def _ladder(cfg, is_friday: bool, target: float, entry: float, risk: float,
-                r: float, *, above: bool) -> int:
+                r: float, *, above: bool, transitioning: bool = False,
+                news: bool = False) -> int:
         """The refusal ladder, in the Pine's order. First match wins; 0 means nothing refused it.
 
         ⚠ **Every comparison here is deliberately allowed to be NaN and read as false**, which is
@@ -355,6 +385,14 @@ class MpcExtremeLegStrategy:
             return BLK_STOP_UNDER_FLOOR
         if r < cfg.min_r:
             return BLK_TARGET_TOO_NEAR
+        # ── past this line the CHART would have taken the trade ──────────────────────────────
+        # Both cuts are last on purpose: with them off the code stream is bit-identical to the
+        # Pine's, and with one on the divergence lands on its own code rather than changing which
+        # of the Pine's codes gets recorded. See `config.py` → section 8.
+        if cfg.skip_transitioning and transitioning:
+            return BLK_TRANSITIONING
+        if cfg.skip_news and news:
+            return BLK_NEWS
         return BLK_NONE
 
     # ── drivers ──────────────────────────────────────────────────────────────
