@@ -1681,6 +1681,22 @@ direction.
 this app would be a second claim about what a setting does, which is this repo's most-repeated
 defect; the same discipline the trade-fib layer follows.
 
+🔴 **THE TEST THAT CHECKS EVERY SETTING HAS A DESCRIPTION CHECKED ONE STRATEGY OUT OF SIX, UNDER A
+NAME THAT SAYS "EVERY" (fixed 2026-09-02).** `test_every_tunable_param_is_documented` named
+`mpc_sos_fade` outright, so a green run said nothing about the other five — a setting with no
+description renders as a raw field name and a dash on the strategy page, and four new ones landed
+that way the day this was found. MEASURED by scanning each package the way the lab does:
+`loss_recovery` 0 undocumented, `mpc_sos_fade` 0, `mpc_extreme_leg` 0, **`mpc_bleg` 98, `mpc_bos`
+91, `mpc_realign` 120.**
+
+⚠ **It is now a RATCHET rather than a blanket rule, and the reason is this file's own lesson about
+walls.** Turning it on everywhere fails 309 params at once with nothing that can auto-fix them, and
+a wall gets `--no-verify`'d, which leaves no trace and reads as checked. The three clean packages
+are locked clean; the three others are named with their counts in a second test that fails if a
+count goes UP — which an ignore-list can never do — **and also fails when one reaches zero**, so a
+package that gets fixed is promoted rather than left permanently exempt. **Moving a package out of
+that list is the unit of work.**
+
 ⚠ **`areas` on a change names which TREE a commit touched and is not a claim about trades.**
 `backtest/` holds both the fill model the bot runs on and the lab's own cache, and no path can tell
 those apart. Naming the area is derived; naming the effect would be a guess wearing a label.

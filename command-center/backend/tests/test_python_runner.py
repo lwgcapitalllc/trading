@@ -182,7 +182,30 @@ def test_meta_json_matches_the_config_dataclass():
     assert len(named) == len(set(named)), "a param is listed twice in meta.json"
 
 
-def test_every_tunable_param_is_documented():
+# 🔴 THE GUARD BELOW CHECKED ONE STRATEGY OUT OF SIX UNTIL 2026-09-02, UNDER A NAME THAT SAYS
+# "EVERY". It named `mpc_sos_fade` outright, so `mpc_bleg`, `mpc_bos`, `mpc_realign`,
+# `loss_recovery` and `mpc_extreme_leg` were never covered — a green run said nothing about any of
+# them. MEASURED the day it was widened, by scanning each package the way the lab does:
+#
+#     loss_recovery      11 settings,   0 undocumented
+#     mpc_bleg          117 settings,  98 undocumented
+#     mpc_bos           137 settings,  91 undocumented
+#     mpc_extreme_leg    26 settings,   0 undocumented
+#     mpc_realign       126 settings, 120 undocumented
+#     mpc_sos_fade      116 settings,   0 undocumented
+#
+# ⚠ **It is a RATCHET, not a blanket rule, and that is deliberate.** Turning it on everywhere makes
+# 309 params fail at once with nothing that can auto-fix them — a wall, and this repo already knows
+# what happens to walls: they get bypassed, and `--no-verify` leaves no trace. So the three CLEAN
+# packages are locked clean, and the three others are named here with their counts rather than left
+# to be discovered. **Moving a package out of the un-covered list is the unit of work.** Do not add
+# a package to the clean list without running the scan above.
+_DOCUMENTED_PACKAGES = ("mpc_sos_fade", "mpc_extreme_leg", "loss_recovery")
+_NOT_YET = {"mpc_bleg": 98, "mpc_bos": 91, "mpc_realign": 120}
+
+
+@pytest.mark.parametrize("package", _DOCUMENTED_PACKAGES)
+def test_every_tunable_param_is_documented(package):
     """A param with no description renders as '—' on the strategy page. The foundational ones
     (instrument facts, fill model) are deliberately not user-facing and are excluded."""
     from pathlib import Path
@@ -190,22 +213,43 @@ def test_every_tunable_param_is_documented():
     import config as cfg
     from services import strategy_scanner
 
-    from strategies.python.mpc_sos_fade import SosFadeConfig
-
-    schema = strategy_scanner._py_param_schema(SosFadeConfig)
-    meta_path = (
-        Path(cfg.MONOREPO_ROOT)
-        / "strategies"
-        / "python"
-        / "mpc_sos_fade"
-        / "mpc_sos_fade.meta.json"
-    )
-    schema = strategy_scanner._apply_param_meta(schema, meta_path)
+    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / package
+    schema, _ = strategy_scanner._parse_python_package(pkg, Path(cfg.MONOREPO_ROOT))
+    schema = schema.get("param_schema") or []
 
     undocumented = [
         p["name"] for p in schema if p.get("category") != "foundational" and not p.get("desc")
     ]
-    assert not undocumented, f"params with no description: {undocumented}"
+    assert not undocumented, f"{package}: params with no description: {undocumented}"
+
+
+def test_the_uncovered_packages_are_still_uncovered_and_this_says_by_how_much():
+    """The other half of the ratchet: the named packages must not get WORSE, and must be removed
+    from the list when they are fixed.
+
+    ⚠ Without this, the carve-out above is an ignore-list that silently grows. A package whose
+    count has dropped to zero fails here, which is the nudge to move it into the clean list; a
+    package whose count has GONE UP fails here too, which is the thing an ignore-list can never do.
+    """
+    from pathlib import Path
+
+    import config as cfg
+    from services import strategy_scanner
+
+    for package, expected in _NOT_YET.items():
+        pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / package
+        schema, _ = strategy_scanner._parse_python_package(pkg, Path(cfg.MONOREPO_ROOT))
+        schema = schema.get("param_schema") or []
+        n = len([p for p in schema if p.get("category") != "foundational" and not p.get("desc")])
+        assert n <= expected, (
+            f"{package} now has {n} undocumented params, up from {expected}. Adding a param "
+            f"without a description makes the strategy page show a raw field name and a dash."
+        )
+        if n == 0:
+            raise AssertionError(
+                f"{package} is fully documented now — move it into _DOCUMENTED_PACKAGES and "
+                f"delete its entry from _NOT_YET, so it is locked clean rather than exempted."
+            )
 
 
 def test_enum_defaults_are_legal_choices():
