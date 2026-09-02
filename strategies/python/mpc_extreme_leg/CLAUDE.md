@@ -22,9 +22,22 @@ Nothing here can do it. Then:
 python3 strategies/python/mpc_extreme_leg/tools/compare_extreme_leg.py '<export>.csv' --warmup 1000
 ```
 
-⚠ **A TRADE LIST IS NOT AN EXPORT and the tool refuses one** (exit 2). The first file handed to
-this strategy was a trade list, which says two runs disagree and nothing about where. The twin
-plots 62 per-bar columns so a disagreement lands on a named column at a named bar.
+🔴 **A TRADE LIST IS NOT AN EXPORT, and the refusal that says so was UNREACHABLE until 2026-09-02.**
+The first real file handed to this gate was a trade list (Strategy Tester → List of Trades), and it
+did not refuse — it died with a traceback out of `mpc_sos_fade`'s loader saying *export has no
+'time' column*, which points the reader at a different strategy's module. The check ran AFTER the
+shared loader, and the loader raises first. It now reads the HEADER before anything else and names
+the exact menu to use instead.
+
+🔴 **Its test passed the whole time, and that is the part to keep.** The fixture was a bar CSV with
+a `time` column and no sequence column — a shape TradingView never produces. **A fixture more
+capable than the real thing describes a system you do not have**, and the assertion happened to
+match text in the old message, so nothing looked wrong. The fixture is now the real header from the
+file that arrived, BOM included, and there is a second case for a wrong-script export that is *not*
+a trade list, because naming a fault a file does not have sends somebody to the wrong menu.
+
+The twin plots 62 per-bar columns so a disagreement lands on a named column at a named bar; a trade
+list says two runs disagree and nothing about where.
 
 ⚠ **The twin and the strategy are GENERATED FROM ONE BODY** by
 `indicators/strategies/tools/build_extreme_leg.py`, so they cannot drift. Edit the generator, never
@@ -106,13 +119,13 @@ export column can carry them; the A+ bot exposes the same pair the same way.
 ## The tests, and what they are worth
 
 ```bash
-python3 -m pytest strategies/python/mpc_extreme_leg/tests -q       # 42 tests
+python3 -m pytest strategies/python/mpc_extreme_leg/tests -q       # 44 tests
 # ~2 min serial. Under the suite's own `-n auto --dist load` it MEASURED 24s on an idle machine and
 # 52s on a busy one — quoted as a range because both readings are real and a single number here
 # would be the tighter one, which is the reading nobody reproduces.
 ```
 
-`tests/test_extreme_leg.py` — 30 hand-traced rules, ~2s. **Every one was watched RED, and each
+`tests/test_extreme_leg.py` — 31 hand-traced rules, ~2s. **Every one was watched RED, and each
 docstring names the mutation that does it**, so the next reader can repeat it in ten seconds
 instead of trusting a sentence.
 

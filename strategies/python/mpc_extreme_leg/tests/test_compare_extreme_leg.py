@@ -149,18 +149,57 @@ def test_gate_is_green_on_an_undisturbed_export(export, tmp_path):
     assert "PARITY" in r.stdout
 
 
-def test_gate_refuses_a_trade_list(tmp_path):
-    """A trade list has no per-bar columns, and the gate must say so rather than compare nothing.
+# The real header TradingView writes for Strategy Tester → List of Trades, byte for byte from
+# the first one that arrived (2026-09-01), leading BOM included. Hand-written fixtures are how
+# this refusal came to be untested: see `test_gate_refuses_a_REAL_trade_list`.
+_REAL_TRADE_LIST_HEADER = (
+    "\ufeffTrade number,Type,Date and time,Signal,Price USD,Size (qty),Size (value),"
+    "Net PnL USD,Return %,Commission USD,Favorable excursion USD,Favorable excursion %,"
+    "Adverse excursion USD,Adverse excursion %,Cumulative PnL USD,Cumulative PnL %,"
+    "Duration (bars)\n"
+)
 
-    ⚠ This is the shape the first real export arrived in. A tool that quietly compared zero bars
-    would have exited 0 and been read as a green gate.
+
+def test_gate_refuses_a_REAL_trade_list(tmp_path):
+    """The gate must REFUSE a trade list, and refuse it in its own words.
+
+    🔴 **THIS TEST EXISTED AND PASSED WHILE THE REFUSAL WAS UNREACHABLE (fixed 2026-09-02).** Its
+    fixture was a bar CSV with a `time` column and no sequence column. A real trade list has no
+    `time` column at all, so the shared loader raised first and the gate died with a traceback
+    pointing at a DIFFERENT strategy's module — while this test went on passing, because the old
+    refusal text happened to contain the words it asserted.
+
+    ⚠ **A fixture more capable than the real thing describes a system you do not have.** The
+    header below is copied from the file that actually arrived rather than composed here, and the
+    BOM is part of it — strip it and the first column name silently stops matching.
     """
-    p = tmp_path / "trades.csv"
+    p = tmp_path / "MPC_Extreme_Leg_VANTAGE_XAUUSD_2026-09-01_bca53.csv"
+    p.write_text(_REAL_TRADE_LIST_HEADER + "1,Exit short,2025-09-10 15:35,S-x,3635.29,107.7,"
+                 "393224.547,1703.81,0.43,0,1703.81,0.43,-666.66,-0.17,1703.81,17.04,103\n",
+                 encoding="utf-8")
+    r = subprocess.run([sys.executable, str(TOOL), str(p)], capture_output=True, text=True)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "TRADE LIST" in r.stdout.upper()
+    # The message has to name the fix, not just the fault. A gate that says "wrong file" sends
+    # somebody back to TradingView to guess which of two export menus they wanted.
+    assert "mpc_extreme_leg_strategy_export.pine" in r.stdout
+    assert "Bar data and indicator values" in r.stdout
+    assert "Traceback" not in r.stderr
+
+
+def test_gate_refuses_a_wrong_csv_that_is_not_a_trade_list_either(tmp_path):
+    """Anything without the per-bar sequence column is refused, not only a trade list.
+
+    The other half of the refusal, and the one that keeps the message honest: a bar export of the
+    WRONG script parses perfectly and would otherwise be compared against nothing.
+    """
+    p = tmp_path / "some_other_indicator.csv"
     pd.DataFrame({"time": ["2026-01-01T00:00:00"], "open": [1], "high": [1],
                   "low": [1], "close": [1]}).to_csv(p, index=False)
     r = subprocess.run([sys.executable, str(TOOL), str(p)], capture_output=True, text=True)
-    assert r.returncode == 2
-    assert "px_seq" in r.stdout and "TRADE LIST" in r.stdout.upper()
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "TRADE LIST" not in r.stdout.upper(), "it is not one, and saying so misdirects the fix"
+    assert "mpc_extreme_leg_strategy_export.pine" in r.stdout
 
 
 # Every compared column, so a name this side reads but the twin never plots is caught here rather

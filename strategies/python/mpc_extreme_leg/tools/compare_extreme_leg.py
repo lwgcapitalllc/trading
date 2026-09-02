@@ -136,6 +136,49 @@ def _same(a: float, b: float, tol: float) -> bool:
     return abs(a - b) <= tol
 
 
+def _wrong_export(path: Path) -> "str | None":
+    """Refuse a CSV that is not an export of the twin, reading the HEADER and nothing else.
+
+    🔴 **THIS RAN AFTER `load_export` UNTIL 2026-09-02 AND WAS THEREFORE UNREACHABLE.** The shared
+    loader raises `export has no 'time' column` on a trade list, so the first real trade list handed
+    to this gate produced a raw traceback out of another strategy's module — a message that sends
+    the reader at the wrong file — and the careful refusal below never ran. It passed its own test
+    because that fixture had a time column and only lacked the sequence column: **a fixture more
+    capable than the real thing, which is the exact failure mode this repo has caught four times.**
+
+    ⚠ Header only, on purpose. Whatever is wrong with the file, the answer is the same sentence, and
+    parsing a bad file further just picks a different way to fail.
+    """
+    with path.open("r", encoding="utf-8-sig", newline="") as fh:
+        header = fh.readline()
+    cols = {c.strip().strip('"').lower() for c in header.split(",")}
+
+    if "px_seq" in cols:
+        return None
+
+    if "trade number" in cols:
+        what = "a TRADE LIST (Strategy Tester → List of Trades)"
+        why = (
+            "  It says two runs disagree and nothing about WHERE, which is the one thing a\n"
+            "  parity gate is for — this gate diffs a decision per bar, not a total.\n"
+        )
+    else:
+        # ⚠ Deliberately does NOT mention a trade list. Naming a fault the file does not have
+        # sends the reader to the wrong menu, and a wrong-script bar export parses perfectly.
+        what = "not an export of mpc_extreme_leg_strategy_export.pine"
+        why = "  It carries no per-bar decision column, so there is nothing here to diff.\n"
+
+    return (
+        f"✗ {path.name} is {what}.\n"
+        f"{why}"
+        f"  Take the export off the TWIN, not off the strategy:\n"
+        f"    1. Paste indicators/strategies/mpc_extreme_leg_strategy_export.pine onto XAUUSD 5m\n"
+        f"    2. ⋮ (top right of the chart) → Export chart data\n"
+        f"    3. Choose 'Bar data and indicator values' — NOT 'List of trades'\n"
+        f"  The file that comes back has hundreds of columns and one row per candle."
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -150,15 +193,12 @@ def main() -> int:
     ap.add_argument("--max-report", type=int, default=8)
     a = ap.parse_args()
 
-    df = load_export(a.csv)
-    if "px_seq" not in df.columns:
-        print(f"✗ {a.csv.name} has no `px_seq` column, so it is not an export of "
-              f"mpc_extreme_leg_strategy_export.pine.\n"
-              f"  A TRADE LIST is not enough for this gate — it says two runs disagree and nothing "
-              f"about where. Take the export off the twin: ⋮ → Export chart data → "
-              f"Bar data and indicator values.")
+    wrong = _wrong_export(a.csv)
+    if wrong:
+        print(wrong)
         return 2
 
+    df = load_export(a.csv)
     cfg, missing = config_from_export(df)
     tf = int(pd.Series(df.index).diff().dropna().dt.total_seconds().min() // 60)
     print(f"{a.csv.name}: {len(df):,} bars  {df.index[0]} → {df.index[-1]}  ({tf}m)")
