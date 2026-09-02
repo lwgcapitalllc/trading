@@ -3,9 +3,12 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) + 4 Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
+2026-06-22) + Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
 mpc_bleg 2026-07-24, mpc_bos deleted 2026-08-04 and re-added 2026-08-07,
-mpc_realign 2026-08-13). NT8 and Python strategies get a suggested_instrument; MT5 does
+mpc_realign 2026-08-13, the loss-recovery leg 2026-08-21, mpc_extreme_leg 2026-09-01).
+⚠ The count used to be written out here as a number and it said FOUR while the roster below
+held six — a second statement of the same fact, in the same file, going stale exactly the way
+the callout further down warns about. `len(EXPECTED_CLASS_NAMES)` is the count. NT8 and Python strategies get a suggested_instrument; MT5 does
 not. Param types span int/double/bool (NT8), string (MT5), and all four off a dataclass
 (Python).
 
@@ -45,6 +48,13 @@ EXPECTED_CLASS_NAMES = {
     # subclasses `MpcSosFadeStrategy`, so grepping for the base class name would not have found
     # it either: the thing to grep for is `LAB_STRATEGY`, which is what the scanner reads.
     "MpcRealignStrategy",
+    # Added 2026-09-01 with `strategies/python/mpc_extreme_leg` — the FIFTH time these three tests
+    # have gone red for this one cause, and the third in the "new strategy not added" direction.
+    # ⚠ It went red on the SAME COMMIT that added the package this time, rather than days later,
+    # and only because the whole suite was run before committing. The callout at the top of this
+    # file is the fix that keeps not working: a roster stated once per file is still stated N times
+    # across the repo, and nothing makes anyone read this one.
+    "MpcExtremeLegStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\
