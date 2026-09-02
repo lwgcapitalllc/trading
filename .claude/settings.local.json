@@ -145,7 +145,14 @@
       "Bash(ls -t /Users/alwg/trading/.playwright-mcp/*.yml 2>/dev/null | head -3; find /Users/alwg -name \"configure-tab.yml\" -newermt \"-5 minutes\" 2>/dev/null | head -3)",
       "mcp__playwright__browser_evaluate",
       "Bash(npx prettier *)",
-      "Bash(./scripts/run_all_tests.sh)"
+      "Bash(./scripts/run_all_tests.sh)",
+      "Bash(nohup python3 -u live_merge_proof.py 2025-01-01 2025-04-01 params_reentry_on.json proof_short.json 500)",
+      "Bash(nohup python3 -u backtest/tools/pre_sos_leg_grid.py --stage timeframe --pairs M5/M5)",
+      "Bash(cp algos/live/bridge.py /private/tmp/claude-501/-Users-alwg-trading/2a064c6d-0253-4110-a3c5-ba062c691f8c/scratchpad/bridge_hardened.py)",
+      "Bash(cp algos/shared/mt5_ops.py /private/tmp/claude-501/-Users-alwg-trading/2a064c6d-0253-4110-a3c5-ba062c691f8c/scratchpad/mt5_ops_fixed.py)",
+      "Bash(python3 pine_side.py)",
+      "Bash(python3 final.py)",
+      "Bash(python3 grid_sweep.py)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
