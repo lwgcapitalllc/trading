@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -118,6 +118,7 @@ import {
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
 import { useStickyBanner } from '@/components/StickyHeader'
+import { usePeriodWindow, dateOf, type PeriodWindow } from '@/hooks/usePeriodWindow'
 
 // Lazy so klinecharts + the chart fixture only load when the Price chart section opens — but the
 // import is NAMED so the run page can start it in the background on mount (`preloadChartPanel`)
@@ -2856,12 +2857,15 @@ function personalStreakPass(ev: EvaluationDetail): boolean {
 // the accent treatment and a clear button rather than merely showing different dates. A page
 // showing a subset in the same colours as the whole run is the defect this control could most
 // easily introduce.
-function PeriodFilterChip({
+export function PeriodFilterChip({
   dates,
   blocked,
   compact = false,
 }: {
-  dates: DateFilter
+  // Structurally `PeriodWindow`, NOT this page's `DateFilter` — the chip reads only the window's
+  // own fields, and typing it to the run-shaped wrapper is what would have forced `StackDetail` to
+  // grow a second copy of this control. One chip, both pages.
+  dates: PeriodWindow
   blocked: string | null
   compact?: boolean
 }) {
@@ -5351,6 +5355,11 @@ export type DateFilter = ReturnType<typeof useDateFilter>
 
 // ── A PERIOD of a finished run, read as if it were the whole run ──────────────────────────────
 //
+// 🔴 THE WINDOW AND THE REBASE LIVE IN `hooks/usePeriodWindow.ts` AND THAT FILE OWNS THE RULES.
+// This is the run-shaped wrapper over it: it supplies the trades and the bounds, and turns the
+// window back into a `Run` the rest of the page already knows how to draw. `StackDetail` wraps the
+// same hook its own way. Do not restate the rebase reasoning here — read it there.
+//
 // Aaron, 2026-08-16: *"Is there a way to not rerun a specific period… just have a filter on the
 // backtest details page where I could look at trades within a specific period? And once I select
 // that period, then everything on the page adjusts — the equity curve, all the KPIs, the price
@@ -5387,139 +5396,29 @@ export type DateFilter = ReturnType<typeof useDateFilter>
 // arithmetic — but because a firm's account opened at ITS account_size and rebasing that to the
 // run's own deposit would state a prop account that never existed.
 function useDateFilter(run: Run | undefined) {
-  // Page-level view state lives in the URL, per the frontend's standing rule: a window you picked
-  // has to survive a refresh, a Back out of the price chart, and being sent to somebody else. Both
-  // writes MERGE — `setSearchParams({from})` alone drops every other param, which is how a tab
-  // switch silently clears a filter (already recorded on the Bots page).
-  const [searchParams, setSearchParams] = useSearchParams()
-  const from = searchParams.get('from') || ''
-  const to = searchParams.get('to') || ''
-
-  const setRange = useCallback(
-    (nextFrom: string, nextTo: string) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev)
-          if (nextFrom) next.set('from', nextFrom)
-          else next.delete('from')
-          if (nextTo) next.set('to', nextTo)
-          else next.delete('to')
-          return next
-        },
-        { replace: true }
-      )
-    },
-    [setSearchParams]
-  )
-  const clear = useCallback(() => setRange('', ''), [setRange])
-
   // The run's own bounds. `start_date`/`end_date` are what was REQUESTED; the trades are what
   // arrived, and a run can trade neither on its first day nor its last. The picker is bounded by
-  // the requested window (that is the run's identity) while `spanFrom`/`spanTo` report the traded
-  // span, so "the whole run" and "the window I typed" cannot silently be different things.
+  // the requested window (that is the run's identity) while the hook reports the traded span, so
+  // "the whole run" and "the window I typed" cannot silently be different things.
   const rawTrades = useMemo(
     () => (run?.equity_curve ?? []).filter((p) => p.profit != null || p.direction),
     [run?.equity_curve]
   )
-  const minDate = run?.start_date ?? ''
-  const maxDate = run?.end_date ?? ''
-  const dateOf = (p: EquityPoint) => (p.date ?? '').slice(0, 10)
-
-  const enabled = rawTrades.length > 0 && rawTrades.every((p) => !!p.date)
-
-  const view = useMemo(() => {
-    if (!enabled || (!from && !to)) return { kept: rawTrades, narrowed: false }
-    const kept = rawTrades.filter((p) => {
-      const d = dateOf(p)
-      if (!d) return false
-      if (from && d < from) return false
-      if (to && d > to) return false
-      return true
-    })
-    return { kept, narrowed: kept.length !== rawTrades.length }
-  }, [enabled, rawTrades, from, to])
-
-  // The window rebuilt as a curve the main equity chart can draw, rebased onto the run's own
-  // opening deposit. Trades are renumbered so trade-# mode counts the trades actually shown.
-  //
-  // ⚠ THE LEADING BALANCE ANCHOR IS DROPPED, not carried through the way the news filter carries
-  // it. That point is the account at the run's START, and on a window opening in 2023 it belongs to
-  // a period that is no longer on screen — keeping it would draw the chart's left edge three years
-  // before the first trade. The rebased first point supplies the anchor instead.
-  const rebased = useMemo<{ curve: EquityPoint[]; scale: number } | null>(() => {
-    if (!enabled || !view.narrowed || !view.kept.length || !rawTrades.length) return null
-    const openBal = rawTrades[0].equity - (rawTrades[0].profit ?? 0)
-    const windowBal = view.kept[0].equity - (view.kept[0].profit ?? 0)
-    // A window whose entering balance is zero or negative cannot be rebased — the scale is
-    // undefined, and inventing one would be the "refuse, don't guess" rule broken on the one number
-    // every dollar on the page is then multiplied by. Refused, and the pill says so.
-    if (!(openBal > 0) || !(windowBal > 0)) return null
-    const scale = openBal / windowBal
-    let cum = 0
-    const curve = view.kept.map((p, i) => {
-      const profit = (p.profit ?? 0) * scale
-      cum += profit
-      return {
-        ...p,
-        index: i + 1,
-        equity: openBal + cum,
-        profit,
-        // Every dollar-denominated field on the point scales by the SAME constant, or the
-        // excursion halo stops containing its own net result — the exact shape the cost filter
-        // already had to clamp for. `r` is deliberately untouched: it is P&L over the risk the
-        // trade was sized to, so it is invariant under a change of account size, which is the
-        // whole reason this page leads with it.
-        ...(p.favorable != null ? { favorable: p.favorable * scale } : {}),
-        ...(p.adverse != null ? { adverse: p.adverse * scale } : {}),
-        ...(p.costs_usd != null ? { costs_usd: p.costs_usd * scale } : {}),
-      }
-    })
-    return { curve, scale }
-  }, [enabled, view.narrowed, view.kept, rawTrades])
+  const win = usePeriodWindow(rawTrades, run?.start_date ?? '', run?.end_date ?? '')
 
   const filteredRun = useMemo<Run | null>(() => {
-    if (!run || !rebased) return null
+    if (!run || !win.rebasedCurve) return null
     return {
-      ...buildFilteredRun(run, rebased.curve, rebased.curve),
+      ...buildFilteredRun(run, win.rebasedCurve, win.rebasedCurve),
       // The window IS the run's period now. The header chip, the price chart's clamp and the
       // cadence line all read these, and leaving the requested dates here would date a window by
       // the run it was cut from.
-      start_date: from || dateOf(rebased.curve[0]),
-      end_date: to || dateOf(rebased.curve[rebased.curve.length - 1]),
+      start_date: win.from || dateOf(win.rebasedCurve[0]),
+      end_date: win.to || dateOf(win.rebasedCurve[win.rebasedCurve.length - 1]),
     }
-  }, [run, rebased, from, to])
+  }, [run, win.rebasedCurve, win.from, win.to])
 
-  // `active` = a window is set AND it actually narrows the run AND the rebase was possible. All
-  // three, because a window covering everything must leave the page reference-identical to the
-  // unfiltered run rather than routing it through a rebuild that changes nothing.
-  const active = filteredRun != null
-  return {
-    enabled,
-    from,
-    to,
-    setRange,
-    clear,
-    minDate,
-    maxDate,
-    // The TRADED span, which is what a preset like "last 12 months" should snap to.
-    spanFrom: rawTrades.length ? dateOf(rawTrades[0]) : '',
-    spanTo: rawTrades.length ? dateOf(rawTrades[rawTrades.length - 1]) : '',
-    kept: view.kept,
-    filteredCurve: rebased?.curve ?? null,
-    filteredRun,
-    scale: rebased?.scale ?? 1,
-    openBalance: rawTrades.length ? rawTrades[0].equity - (rawTrades[0].profit ?? 0) : null,
-    // What the account really held entering the window — stated on the pill beside the rebased
-    // figure, because "$10,000" on a 2023 window is a restatement and the reader has to be able to
-    // tell it from the balance that was actually there.
-    windowBalance: view.kept.length ? view.kept[0].equity - (view.kept[0].profit ?? 0) : null,
-    totalTrades: rawTrades.length,
-    set: !!from || !!to,
-    active,
-    // Set but produced nothing — a window with no trades in it. A real answer (the strategy stood
-    // still), and it must not read as the filter being off.
-    emptyWindow: enabled && (!!from || !!to) && view.kept.length === 0,
-  }
+  return { ...win, filteredCurve: win.rebasedCurve, filteredRun }
 }
 
 export type CostFilter = ReturnType<typeof useCostFilter>

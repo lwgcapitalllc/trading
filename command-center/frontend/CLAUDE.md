@@ -1087,6 +1087,48 @@ UTC, matching the emitter, or the edge shifts by the reader's offset. ⚠ Memois
   row of `null`, and nulls compare equal to nulls, so that passes too. Use `allTextContents()`
   scoped to `.xAxis`, and assert a VALUE (`Jul '20` → `Jan 3 '23`), not merely that two rows differ.
 
+### The same window on a STACK, and the module both pages now share (2026-09-03)
+
+Aaron: *"one thing that is missing is the date filter feature I have on standalone backtest doesn't
+exist on stacked backtest."* It does now, and the interesting part is what had to move.
+
+🔴 **THE ARITHMETIC LEFT THIS PAGE RATHER THAN BEING COPIED TO THE OTHER ONE.** The filter, the
+bounds and the rebase constant live in `src/components/periodWindow.ts` (pure) wrapped by
+`src/hooks/usePeriodWindow.ts` (URL state); `useDateFilter` here is now a thin run-shaped wrapper
+that adds `buildFilteredRun`, and `StackDetail` wraps the same hook its own way. **`PeriodFilterChip`
+is exported and typed to the window's own shape, not to this page's filter** — typing it to
+`DateFilter` is precisely what would have forced a second chip. Both pages multiply every dollar
+they show by that one constant, and two implementations of it means two pages that can disagree
+about what a window is worth while both look right — the shape the rule/evaluator pair already
+drifted into across the python/javascript boundary here.
+
+⚠ **On a stack the window is handed to `composeCombined`, never applied to its result.** That
+function derives EVERYTHING — per-leg counts and R, the KPIs, the drawdown, the daily series, the
+overlay lines — so filtering the books at the source is what keeps them in step. Filtering the
+composed object instead leaves each of those a separate place to remember, which is how a filtered
+headline ends up over unfiltered rows. ⚠ **The opening balance is read off the UNWINDOWED books
+on purpose**: under a window a leg's first point is the first trade IN it, so taking the deposit
+from there would redefine the account as whatever it had already grown to — the one number every
+dollar is then divided by. ⚠ **A leg's R is windowed but never rebased** — R is normalised to each
+trade's own risk, so the scale cannot touch it, which is what makes a windowed row comparable to a
+full one. ⚠ **Refused on the `unmeasured` basis** rather than windowing nothing, or an unreplayed
+combination would report "this stack did nothing in 2023" instead of "nobody ever ran this".
+
+🔴 **TWO GREEN SUITES EACH HID A MUTATION THAT SURVIVED THEM, ON THE SAME DAY, AND ONE WAS A REAL
+DEFECT SITTING IN THE PAGE.** The browser suite asserted on the per-leg R column and nothing else,
+so a build that never applied the window to the composed books at all passed — and so did the
+Trades column, which was still reading the count the backend stored for the WHOLE run while the R
+one cell over was windowed. Two figures touching in one row, one filtered and one not. Separately,
+four scaling cases in the node check were written against a window whose scale happened to be
+exactly **1**, where *"this field is scaled"* and *"this field is left alone"* are the same
+assertion; scaling `r` survived them. **Both were found by running the mutations, not by reading
+the tests.** The maps now live in each file's header and both were RUN.
+
+⚠ **Gated in two places, deliberately.** `scripts/check_period_window.mjs` drives the pure module
+outside a browser and is **step 10** of `scripts/run_all_tests.sh`; `tests/stack-period-filter.spec.ts`
+covers the page. The arithmetic is the half that can be wrong without looking wrong, so it is the
+half that does not need the app running.
+
 ---
 
 ## What's built (status)

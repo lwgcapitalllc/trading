@@ -50,6 +50,7 @@ import {
   PanelRows,
   usePerfCollapsed,
   PerfCollapseToggle,
+  PeriodFilterChip,
   type FallbackMetrics,
   type PanelRow,
 } from '@/pages/BacktestDetail'
@@ -62,18 +63,10 @@ import type {
   StackSharedReport,
   StackMode,
 } from '@/types'
+import { usePeriodWindow } from '@/hooks/usePeriodWindow'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
-// Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
-// Greenwich. Same fix in BacktestDetail/SweepDetail/OptimizationDetail/StressTestDetail.
-function fmtDate(iso: string) {
-  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 function fmtMoney(v: number, signed = true): string {
   const sign = v >= 0 ? (signed ? '+' : '') : '-'
   return `${sign}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
@@ -163,7 +156,8 @@ interface Combined {
 function composeCombined(
   legs: StackStrategyLeg[],
   enabled: Set<string>,
-  mode: StackMode
+  mode: StackMode,
+  win?: { from: string; to: string }
 ): Combined {
   const complete = legs.filter((l) => l.status === 'complete')
   const active = complete.filter((l) => enabled.has(l.strategy_id))
@@ -191,18 +185,15 @@ function composeCombined(
       : { leg: l, equity_curve: l.equity_curve, daily_pnl: l.daily_pnl }
   )
 
-  // Portfolio daily P&L = per-date sum across enabled legs.
-  const dailyMap = new Map<string, number>()
-  for (const b of books)
-    for (const d of b.daily_pnl) dailyMap.set(d.date, (dailyMap.get(d.date) ?? 0) + d.pnl)
-  const dailyPnl: DailyPnlPoint[] = Array.from(dailyMap.entries())
-    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([date, pnl]) => ({ date, pnl }))
-
   // ONE shared account. Every leg was backtested against the SAME opening balance, so the portfolio
   // starts THERE — not at the sum of the legs. Summing showed $20k for two legs of a $10k account and
   // halved every balance-relative KPI. (A stack configures all legs together so their starts agree;
   // max is the safe pick if a reused run ever carried a different one.)
+  //
+  // ⚠ Read off the UNWINDOWED books on purpose. Under a period window a leg's first point is the
+  // first trade IN the window, and taking the opening balance from there would silently redefine
+  // the account as whatever it had already grown to — which is the one number every dollar below is
+  // then divided by.
   const legStart = new Map<string, number>()
   for (const b of books) {
     const e0 = b.equity_curve[0]
@@ -210,9 +201,78 @@ function composeCombined(
   }
   const balance = legStart.size ? Math.max(...legStart.values()) : 10_000
 
+  // ── A PERIOD of this stack, read as if it were the whole stack ──────────────────────────────
+  //
+  // 🔴 THE WINDOW IS APPLIED HERE, TO THE BOOKS, RATHER THAN TO THE COMPOSED RESULT. Every figure
+  // this function returns — the per-leg trade counts and R, the KPIs, the drawdown, the daily
+  // series, the overlay lines — is derived from `books` below. Filtering at the source means they
+  // all describe the window with nothing to keep in step by hand. Filtering the composed object
+  // instead leaves each of those a separate place to remember, which is exactly how a filtered
+  // headline ends up sitting over unfiltered rows.
+  //
+  // ⚠ The REBASE constant and its proof live in `hooks/usePeriodWindow.ts`, which both this page
+  // and the single-backtest page read. Do not re-derive it here.
+  const winFrom = win?.from ?? ''
+  const winTo = win?.to ?? ''
+  const windowed = !!(winFrom || winTo)
+  const inWindow = (date: string | undefined) => {
+    const d = (date ?? '').slice(0, 10)
+    if (!d) return false
+    if (winFrom && d < winFrom) return false
+    if (winTo && d > winTo) return false
+    return true
+  }
+
+  // The portfolio balance ENTERING the window: every enabled leg's trades in time order, run
+  // forward from the opening balance until the first trade inside it. This is the divisor, so it
+  // is computed from the full book rather than from anything already filtered.
+  const scale = (() => {
+    if (!windowed) return 1
+    const all = books
+      .flatMap((b) => b.equity_curve.filter((p) => p.direction))
+      .sort((a, b) => (a.entry_ms ?? dateMsOf(a.date)) - (b.entry_ms ?? dateMsOf(b.date)))
+    let bal = balance
+    for (const p of all) {
+      if (inWindow(p.date)) break
+      bal += p.profit ?? 0
+    }
+    // A window whose entering balance is zero or negative cannot be rebased — the scale is
+    // undefined, and inventing one would be "refuse, don't guess" broken on the one number every
+    // dollar below is multiplied by. Left at 1, and the pill reports the window as inactive.
+    return balance > 0 && bal > 0 ? balance / bal : 1
+  })()
+
+  // ⚠ `r` is deliberately NOT scaled: it is P&L over the risk the trade was sized to, so it is
+  // invariant under a change of account size — which is the whole reason a leg's row leads with it.
+  const scalePoint = (p: EquityPoint): EquityPoint => ({
+    ...p,
+    profit: (p.profit ?? 0) * scale,
+    ...(p.favorable != null ? { favorable: p.favorable * scale } : {}),
+    ...(p.adverse != null ? { adverse: p.adverse * scale } : {}),
+    ...(p.costs_usd != null ? { costs_usd: p.costs_usd * scale } : {}),
+  })
+
+  const wbooks = !windowed
+    ? books
+    : books.map((b) => ({
+        ...b,
+        equity_curve: b.equity_curve.filter((p) => inWindow(p.date)).map(scalePoint),
+        daily_pnl: b.daily_pnl
+          .filter((d) => inWindow(d.date))
+          .map((d) => ({ ...d, pnl: d.pnl * scale })),
+      }))
+
+  // Portfolio daily P&L = per-date sum across enabled legs.
+  const dailyMap = new Map<string, number>()
+  for (const b of wbooks)
+    for (const d of b.daily_pnl) dailyMap.set(d.date, (dailyMap.get(d.date) ?? 0) + d.pnl)
+  const dailyPnl: DailyPnlPoint[] = Array.from(dailyMap.entries())
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, pnl]) => ({ date, pnl }))
+
   // Union of every leg's trades in time order → one portfolio equity curve. Each point also records
   // EVERY leg's running balance (the overlay lines), so a strategy's line rides the same x-axis.
-  const tagged = books.flatMap((b) =>
+  const tagged = wbooks.flatMap((b) =>
     b.equity_curve.filter((p) => p.direction).map((p) => ({ p, legId: b.leg.strategy_id }))
   )
   tagged.sort((a, b) => (a.p.entry_ms ?? dateMsOf(a.p.date)) - (b.p.entry_ms ?? dateMsOf(b.p.date)))
@@ -244,8 +304,14 @@ function composeCombined(
   // ⚠ Both maps cover every COMPLETE leg, not only the switched-on ones. A leg's trade count and
   // its R are facts about that leg, so a row must not fall back to a different unit the moment the
   // reader switches it off — that made one row read `+17.87R` and the other `160` on the same card.
+  // ⚠ Windowed with the same predicate the books were, or a leg's row would report its whole-run
+  // trade count under a filtered headline — the precise contradiction this control could most
+  // easily introduce. A leg that traded nothing in the window reads 0, which is an answer.
   const legTrades = new Map(
-    complete.map((l) => [l.strategy_id, l.equity_curve.filter((p) => p.direction).length])
+    complete.map((l) => [
+      l.strategy_id,
+      l.equity_curve.filter((p) => p.direction && (!windowed || inWindow(p.date))).length,
+    ])
   )
 
   // R per leg — the Verdict card's row value. It is the ONE figure that does not move between the
@@ -253,10 +319,16 @@ function composeCombined(
   // position cannot touch it), which is exactly why the row leads with it rather than with dollars.
   // `shared_summary.json` stores the same number per leg and the two agree to 4dp; deriving it here
   // means the row still has an answer on a screen, which has no summary at all.
+  // ⚠ Windowed like the count above, and deliberately NOT rebased — R is normalised to each trade's
+  // own risk, so the scale that moves every dollar on this page cannot touch it. That invariance is
+  // the reason the row leads with R, and it is what makes a windowed row comparable to a full one.
   const legR = new Map(
     complete.map((l) => [
       l.strategy_id,
-      l.equity_curve.reduce((a, p) => a + (p.direction ? (p.r ?? 0) : 0), 0),
+      l.equity_curve.reduce(
+        (a, p) => a + (p.direction && (!windowed || inWindow(p.date)) ? (p.r ?? 0) : 0),
+        0
+      ),
     ])
   )
 
@@ -287,11 +359,27 @@ function composeCombined(
   // Weighted by the trades in the book actually on screen, NOT by `legTrades` — that map covers
   // every complete leg so the rows stay in one unit, and weighting an average by legs that are
   // switched off would describe a portfolio nobody is looking at.
-  const durLegs = books.filter((b) => b.leg.avg_trade_duration_min != null)
-  const durCount = (b: (typeof books)[number]) => b.equity_curve.filter((p) => p.direction).length
+  const durLegs = wbooks.filter((b) => b.leg.avg_trade_duration_min != null)
+  const durCount = (b: (typeof wbooks)[number]) => b.equity_curve.filter((p) => p.direction).length
   const durTrades = durLegs.reduce((a, b) => a + durCount(b), 0)
-  const avgDuration =
-    durTrades > 0
+  // 🔴 UNDER A WINDOW THE LEG'S STORED AVERAGE IS THE WRONG INPUT AND MUST NOT BE WEIGHTED BY A
+  // WINDOWED COUNT. That figure describes the leg's whole run, so pairing it with a subset's count
+  // yields a number that describes neither — a plausible average nobody measured, on a card whose
+  // every other figure is exact. The trade points carry their own open and close stamps, so the
+  // window's real average is computed from them; it is only the legs' stored averages, which cannot
+  // be sliced, that force the weighted form when no window is set.
+  const spans = windowed
+    ? tagged
+        .map(({ p }) => p)
+        .filter((p) => p.entry_ms != null && p.exit_ms != null)
+        .map((p) => (p.exit_ms! - p.entry_ms!) / 60_000)
+        .filter((m) => m >= 0)
+    : []
+  const avgDuration = windowed
+    ? spans.length
+      ? spans.reduce((a, b) => a + b, 0) / spans.length
+      : null
+    : durTrades > 0
       ? durLegs.reduce((a, b) => a + b.leg.avg_trade_duration_min! * durCount(b), 0) / durTrades
       : null
 
@@ -1015,7 +1103,33 @@ export function StackDetail() {
     }
   }, [stack, shared, sharedInBanner, nameFor])
 
-  const combined = useMemo(() => composeCombined(legs, enabled, mode), [legs, enabled, mode])
+  // ── The period window ────────────────────────────────────────────────────────────────────────
+  //
+  // Composed TWICE and that is deliberate. The unwindowed pass is what the window is measured
+  // against — its trades are the picker's span and its opening balance is the rebase divisor — so
+  // it has to exist before a window can mean anything. Both passes are client-side arithmetic over
+  // arrays already in memory.
+  //
+  // ⚠ The window is handed to `composeCombined`, never applied to its result. It owns every figure
+  // on this page, so it is the only place that can filter them all at once. See the block inside it.
+  const combinedFull = useMemo(() => composeCombined(legs, enabled, mode), [legs, enabled, mode])
+  const dates = usePeriodWindow(combinedFull.equity, stack?.start_date ?? '', stack?.end_date ?? '')
+  // ⚠ Refused on the `unmeasured` basis rather than silently windowing nothing. That basis means
+  // the reader has switched legs to a combination this stack never replayed, so there is no book to
+  // cut a period out of — and a window that quietly returned an empty answer would read as "this
+  // stack did nothing in 2023" instead of "nobody ever ran this".
+  const periodBlocked =
+    combinedFull.basis === 'unmeasured'
+      ? 'This combination of strategies was never replayed, so there is no book to cut a period out of. Switch every strategy back on, or leave just one.'
+      : null
+
+  const combined = useMemo(
+    () =>
+      dates.active
+        ? composeCombined(legs, enabled, mode, { from: dates.from, to: dates.to })
+        : combinedFull,
+    [dates.active, dates.from, dates.to, legs, enabled, mode, combinedFull]
+  )
   const hasResults = combined.hasResults
 
   const toggle = (id: string) =>
@@ -1031,11 +1145,16 @@ export function StackDetail() {
 
   // Calendar span of the stack's window, for the Verdict card's trades-per-month cadence — the
   // same reading a single backtest prints there.
+  // ⚠ Follows the window. This feeds the per-leg cadence ("a trade every N days"), and dividing a
+  // windowed trade count by the whole stack's span would understate every leg's rate by whatever
+  // fraction of the run is hidden — a wrong number wearing the same label.
   const spanDays = useMemo(() => {
     if (!stack) return null
-    const ms = dateMsOf(stack.end_date) - dateMsOf(stack.start_date)
+    const from = dates.active ? dates.from || dates.spanFrom : stack.start_date
+    const to = dates.active ? dates.to || dates.spanTo : stack.end_date
+    const ms = dateMsOf(to) - dateMsOf(from)
     return ms > 0 ? ms / 86_400_000 : null
-  }, [stack])
+  }, [stack, dates.active, dates.from, dates.to, dates.spanFrom, dates.spanTo])
 
   // Built once and rendered by BOTH branches of the Performance block — the leg toggles live in
   // this card, so a selection with no book to compute KPIs from still has to show it, or the
@@ -1395,9 +1514,13 @@ export function StackDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {stack.instrument}
               </span>
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
-                {fmtDate(stack.start_date)} → {fmtDate(stack.end_date)}
-              </span>
+              {/* The window is a CONTROL, not a label — the same one the single-backtest page
+                  carries, imported rather than rebuilt. Aaron, 2026-09-03: the period filter he
+                  had on a standalone backtest did not exist here. It reshapes every number below
+                  it, so it takes the header slot the static date range used to occupy; a page
+                  showing a subset in the same chrome as the whole stack is the defect this control
+                  could most easily introduce, and the chip's own accent state is what prevents it. */}
+              <PeriodFilterChip dates={dates} blocked={periodBlocked} />
               {/* The mode belongs in the header, beside the window: a screen and a shared run over
                   the same legs report different numbers, and the reader has to know which one they
                   are looking at BEFORE reading any of them. */}
@@ -1707,8 +1830,14 @@ export function StackDetail() {
                           <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                             {leg.sharpe != null ? leg.sharpe.toFixed(2) : '—'}
                           </td>
+                          {/* 🔴 The COMPOSED count, never `leg.trade_count`. That field is what the
+                              backend stored for the whole run, so under a period window it sat next
+                              to a narrowed R in the same row — a filtered figure and an unfiltered
+                              one, touching, with nothing to say which was which. Found by mutation
+                              on 2026-09-03: windowing this column's neighbour changed nothing here,
+                              because this column was never reading the windowed map at all. */}
                           <td className="px-3 py-[9px] tabular-nums text-text-secondary">
-                            {leg.trade_count ?? '—'}
+                            {combined.legTrades.get(leg.strategy_id) ?? leg.trade_count ?? '—'}
                           </td>
                           <td className="px-3 py-[9px]">
                             {done && (

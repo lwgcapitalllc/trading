@@ -745,6 +745,18 @@ fails on the side that did not learn it. ✅ It found a real disagreement on its
 you write the same rule on both sides of a boundary, make the two answer ONE list of cases** —
 mirroring them by hand is how they drift, and neither side looks wrong alone.
 
+🔴 **Step 10 (2026-09-03) gates the one number two different pages multiply every dollar by.**
+`check_period_window.mjs` drives the period window's rebase — the constant that reads a slice of a
+finished book as though it were the whole book — for the single-backtest page and the stack page
+at once. It lived inside a React hook until that day, reachable only from a browser, which is the
+same shape rule that put steps 8 and 9 here. ⚠ **A wrong scale here is not a broken chart; it is a
+plausible dollar figure with nothing on screen to say it is wrong.** 🔴 **Its mutation map caught
+the sharper lesson: four scaling cases were written against a window whose scale happened to be
+exactly 1, where *"this field is scaled"* and *"this field is left alone"* are the same assertion.
+They were green and two mutations survived them.** A scale of 1 is the arithmetic version of a
+fixture more capable than production — the test describes a system where the thing under test does
+nothing. **Check that a test's inputs can distinguish the behaviours it names.**
+
 ⚠ **Playwright is deliberately NOT in the gate.** Its config has no `webServer` block on purpose —
 this backend talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand can
 start things on the trading box. `./start.sh` then `npm test` stays a person's decision; `tsc
