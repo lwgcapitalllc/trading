@@ -51,6 +51,19 @@ from mpc_sos_fade.tools.compare_strategy import (  # noqa: E402
     timeframe_refusal,
 )
 
+# How many bars at the END of an export cannot be compared.
+#
+# 🔴 **DERIVED from the structure engine's own pivot length, never typed as a number here.** Swings
+# come from `ta.pivothigh(high, majorLength, majorLength)`, which cannot confirm a pivot until
+# `majorLength` further bars exist — so on an export pulled from a LIVE chart the final
+# `majorLength` bars have unsettled structure on the Pine side, and Python is entitled to a
+# different answer there. MEASURED 2026-09-02: a fresh export ran green on every bar except the
+# last 10, and trimming 10 turned the whole run green.
+#
+# ⚠ **A number typed here would go stale silently the day `major_length` moves** — the gate would
+# then either nag about settled bars or, far worse, stop checking bars that had settled.
+UNCONFIRMED_TAIL = MpcBLegStrategy.engine_config().major_length
+
 
 def config_from_export(df: pd.DataFrame, base: Optional[BLegConfig] = None) -> BLegConfig:
     """Decode a BLegConfig from the export's cfg_* columns.
@@ -190,11 +203,24 @@ def _py_row(dec, bleg) -> dict:
 
 
 def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
-            price_tol: float = 0.01, r_tol: float = 0.02) -> List[str]:
+            price_tol: float = 0.01, r_tol: float = 0.02,
+            tail: int = UNCONFIRMED_TAIL) -> List[str]:
     """Diff the Pine export against the Python stream. Returns the mismatch list (empty
     = exit 0). Bars are aligned by POSITION — `run(bars, warmup=0)` keeps one decision per
     CSV row, and `warmup` only suppresses REPORTING, so a cold-start engine cannot mask a
-    late drift by shifting the alignment."""
+    late drift by shifting the alignment.
+
+    `tail` drops the final N bars, and it is the same idea as `warmup` at the other end of the
+    export: the structure engine's swings come from `ta.pivothigh(high, majorLength, majorLength)`,
+    which needs `majorLength` bars of LOOKAHEAD, so the last `majorLength` bars of any export taken
+    from a live chart cannot have confirmed pivots yet. Pine and Python are entitled to disagree
+    there and the disagreement means nothing.
+
+    🔴 **This is a REPORTING window, never a shortened replay** — every bar is still stepped, so a
+    real drift that starts inside the tail and would have persisted still shows on the next export.
+    ⚠ **It is announced on every run, including a clean one.** A silently-trimmed comparison that
+    prints PARITY OK is a gate claiming ground it never covered.
+    """
     ex = _expand(df)
     msgs: List[str] = []
     bar_offset, strays = _bar_index_offset(ex, bleg_states)
@@ -205,6 +231,12 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
         print(f"WARNING: {strays} armed-bar reading(s) do not sit at the measured offset — "
               f"that is real drift, not the origin, and they are reported below.")
     n = min(len(ex), len(decisions), len(bleg_states))
+    tail = max(0, int(tail))
+    if tail:
+        print(f"NOTE: the last {tail} bars are NOT compared — a swing needs {tail} bars of "
+              f"lookahead to confirm, so an export taken from a live chart cannot have settled "
+              f"pivots there. Pass --tail 0 to diff them anyway.")
+    n = max(warmup, n - tail)
     for i in range(warmup, n):
         row = ex.iloc[i]
         if not row["_px_present"]:
@@ -252,8 +284,13 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
 
 def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.02,
                base_config: Optional[BLegConfig] = None,
-               eq_exempt: Optional[bool] = None) -> List[str]:
-    """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
+               eq_exempt: Optional[bool] = None,
+               tail: int = UNCONFIRMED_TAIL) -> List[str]:
+    """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0).
+
+    ⚠ The replay is always the FULL export — `tail` narrows only what is COMPARED, so the engine
+    state carried into the compared bars is the state the whole export produced.
+    """
     df = load_export(path)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
@@ -263,7 +300,7 @@ def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.
     eng = _engine_config_from_export(df, MpcBLegStrategy.engine_config(), eq_exempt)
     # keep all bars aligned to CSV rows
     strat = MpcBLegStrategy(cfg).run(bars, engine_config=eng, warmup=0)
-    return compare(df, strat.decisions, strat.bleg_states, warmup, price_tol, r_tol)
+    return compare(df, strat.decisions, strat.bleg_states, warmup, price_tol, r_tol, tail)
 
 
 def main() -> int:
@@ -276,6 +313,10 @@ def main() -> int:
                     help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
                          "surviving the FVG cap). Only needed for an export with no "
                          "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
+    ap.add_argument("--tail", type=int, default=UNCONFIRMED_TAIL,
+                    help=f"skip the last N bars (default {UNCONFIRMED_TAIL} = the structure "
+                         f"pivot's lookahead; an export off a LIVE chart cannot have confirmed "
+                         f"swings there). 0 diffs them anyway.")
     ap.add_argument("--allow-fast-timeframe", action="store_true",
                     help="diff an export from a chart faster than 15m anyway. Only correct "
                          "if the inherited engine pins have been changed to match what that "
@@ -299,12 +340,18 @@ def main() -> int:
 
     eq = None if a.eq_exempt is None else (a.eq_exempt == "on")
     try:
-        msgs = run_parity(Path(a.csv), a.warmup, a.price_tol, a.r_tol, eq_exempt=eq)
+        msgs = run_parity(Path(a.csv), a.warmup, a.price_tol, a.r_tol, eq_exempt=eq, tail=a.tail)
     except EqExemptUnknown as exc:
         print(f"CANNOT DIFF — {exc}")
         return 2
     if not msgs:
-        print(f"PARITY OK — Python == Pine on every bar from {a.warmup} on.")
+        # The window is stated in the SUCCESS line, not only in the note above it. A reader who
+        # scrolls to the verdict must not be able to read "every bar" as covering bars nobody
+        # compared — that is the shape of every over-claiming green this repo has recorded.
+        span = f"from {a.warmup} on"
+        if a.tail > 0:
+            span = f"from {a.warmup} to the last {a.tail} (unconfirmed swings, not compared)"
+        print(f"PARITY OK — Python == Pine on every bar {span}.")
         return 0
     print("PARITY MISMATCH — first diverging bar:")
     for m in msgs[:10]:

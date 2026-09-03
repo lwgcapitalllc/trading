@@ -318,3 +318,84 @@ def test_the_BLEG_refusal_can_be_overridden_deliberately(tmp_path, capsys):
     finally:
         sys.argv = argv
     assert "CANNOT DIFF" not in capsys.readouterr().out
+
+
+# ── the unconfirmed tail (2026-09-02) ──────────────────────────────────────────
+#
+# An export pulled from a LIVE chart ends with bars whose swings cannot have confirmed yet:
+# `ta.pivothigh(high, majorLength, majorLength)` needs `majorLength` bars of lookahead. Pine and
+# Python are entitled to disagree there, so the last `UNCONFIRMED_TAIL` bars are not compared.
+#
+# 🔴 These are THREE tests and the third is the one that matters. A trim that also swallowed real
+# drift would be worse than the red it replaced — it would read as a gate while covering less
+# ground every time somebody widened it. The first two are a PAIR for the same reason the
+# partial-export tests above are: the "it is ignored" half alone would pass just as happily if the
+# tool had stopped diffing altogether.
+
+
+def _plant_at(df: pd.DataFrame, i: int) -> pd.DataFrame:
+    """Flip the long-arm bit on bar `i` — the same perturbation the decision test above uses."""
+    out = df.copy()
+    out.loc[i, "px_dec_bits"] = int(out.loc[i, "px_dec_bits"]) ^ 1
+    return out
+
+
+def test_a_mismatch_inside_the_unconfirmed_tail_is_NOT_reported(tmp_path):
+    """The point of the tail. RED when `compare` stops subtracting it from `n`."""
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    i = len(df) - 3                       # inside the last UNCONFIRMED_TAIL bars
+    p2 = tmp_path / "tail_in.csv"
+    _plant_at(df, i).to_csv(p2, index=False)
+    assert cb.run_parity(p2, warmup=100) == [], "a bar inside the tail was compared"
+
+
+def test_that_SAME_mismatch_IS_reported_with_the_tail_switched_off(tmp_path):
+    """The other half of the pair — proves the tail is what hid it, rather than the diff having
+    quietly stopped reading that column. RED when `--tail 0` is not honoured."""
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    i = len(df) - 3
+    p2 = tmp_path / "tail_off.csv"
+    _plant_at(df, i).to_csv(p2, index=False)
+    msgs = cb.run_parity(p2, warmup=100, tail=0)
+    assert msgs, "tail=0 did not diff the final bars"
+    assert f"bar {i} " in msgs[0], msgs[0]
+
+
+def test_a_mismatch_OUTSIDE_the_tail_is_still_reported(tmp_path):
+    """🔴 The one that stops this becoming a way to hide drift. A bar one clear of the tail must
+    still be caught with the DEFAULT settings.
+
+    RED when the tail is subtracted twice, or applied as `n - tail` against a `warmup`-relative
+    index.
+
+    ⚠ **It canNOT catch the trim being WIDENED, and saying so is the point.** Its plant sits at
+    `len - UNCONFIRMED_TAIL - 1`, so raising that constant moves this test's own plant with it and
+    it stays green — MEASURED by mutation on 2026-09-02, where a 10x widening reddened nothing.
+    **A test defined relative to the number it is meant to police cannot police it.** The value
+    itself is pinned by `test_the_tail_is_the_pivot_lookahead_and_nothing_wider` below.
+    """
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    i = len(df) - cb.UNCONFIRMED_TAIL - 1   # the last bar that IS still compared
+    p2 = tmp_path / "tail_out.csv"
+    _plant_at(df, i).to_csv(p2, index=False)
+    msgs = cb.run_parity(p2, warmup=100)
+    assert msgs, "a bar outside the tail was skipped — the trim is swallowing real drift"
+    assert f"bar {i} " in msgs[0], msgs[0]
+
+
+def test_the_tail_is_the_pivot_lookahead_and_nothing_wider():
+    """🔴 Pins the trim's SIZE, because no behavioural test above can.
+
+    The trim is only defensible while it equals the structure pivot's lookahead — those are the
+    bars whose swings genuinely cannot have confirmed. One bar wider and the gate is skipping
+    settled bars, silently, and every future export covers less ground than the reader believes.
+
+    ⚠ It asserts the DERIVATION, not the number 15: a typed constant would go stale the day
+    `major_length` moves, which is the failure this is guarding.
+
+    RED when `UNCONFIRMED_TAIL` is hardcoded, scaled, or padded "to be safe".
+    """
+    assert cb.UNCONFIRMED_TAIL == MpcBLegStrategy.engine_config().major_length

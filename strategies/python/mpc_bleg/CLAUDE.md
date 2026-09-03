@@ -666,3 +666,59 @@ EXPERIMENT from every number in this file, and has to say so.
 bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
+
+## 🔴 The gate was RED for seventeen days and the CODE was innocent — the export was stale (2026-09-02)
+
+`compare_bleg.py` failed at `px_l_stage: py=3 pine=2` on 2026-05-08 02:30. Nothing was wrong with
+this bot. **The export was taken on 2026-08-16 and two STRUCTURE fixes landed after it** —
+`700f7f65` (the tied-extreme duplicate swing) and `f4b0410b` (a break may not install a swing the
+break itself refused). Both change the swing anchor the fib is measured from, so Python extended
+its anchor where the older chart did not, which moved the 0.5 level below the bar's low and latched
+the half-retrace the Pine never saw. A fresh export cleared it.
+
+🔴 **THE PROOF THAT IT WAS THE EXPORT, NOT THE CODE, IS THAT THE TWO PINE EXPORTS DISAGREED WITH
+EACH OTHER.** The A+ export (2026-09-02) and the B-LEG export (2026-08-16) start on the same bar of
+the same Vantage 15m chart, and at that timestamp one says stage 3 and the other says 2. **Python
+matched the newer one.** Two exports of one chart disagreeing is a statement about WHEN they were
+taken; nothing in either Python package can produce it.
+
+⚠ **The diagnosis cost four wrong hypotheses, and every one was ruled out by MEASUREMENT rather
+than by reading**: a re-armed SOS carrying its predecessor's latch (zero re-arms in the whole run),
+the EQ/FVG coupling (flipping it moves no stage), the packed structure codes (they carry only the
+stop level and the HTF flags), and the two fib toggles (Python already matched the export).
+**A source comparison cannot settle this class of question** — the fib logic, the anchor
+assignment and the inlined structure engine are all byte-identical between the two Pine files.
+
+⚠ **This is the SECOND time a stale twin has reddened this gate** (the first is recorded under
+*The parity gate*). **Check the export's DATE against the Pine's git log before hunting a defect**,
+and prove the red at HEAD first — it was, in a throwaway worktree, byte-identical failure.
+
+## The gate does not compare the UNCONFIRMED TAIL (2026-09-02)
+
+The last `UNCONFIRMED_TAIL` bars of an export are skipped, and the number is **DERIVED from
+`major_length`, never typed**. Swings come from `ta.pivothigh(high, majorLength, majorLength)`,
+which cannot confirm a pivot until `majorLength` further bars exist — so an export pulled from a
+LIVE chart ends with bars whose structure has not settled on the Pine side, and Python is entitled
+to a different answer there. MEASURED on the fresh export: green on every bar except the last 10,
+and trimming turned the whole run green.
+
+⚠ **It is a REPORTING window, never a shortened replay.** Every bar is still stepped, so the state
+carried into the compared bars is the state the whole export produced, and a real drift starting in
+the tail still shows on the next export.
+
+⚠ **It ANNOUNCES itself on every run, and the SUCCESS line carries it too** — *"every bar from N to
+the last 15 (unconfirmed swings, not compared)"*. A silently-trimmed comparison printing PARITY OK
+is a gate claiming ground nobody covered, which is the over-claiming green this repo keeps
+recording. `--tail 0` diffs them anyway.
+
+🔴 **A TEST DEFINED RELATIVE TO THE NUMBER IT POLICES CANNOT POLICE IT, and that was MEASURED here
+rather than reasoned.** `test_a_mismatch_OUTSIDE_the_tail_is_still_reported` plants at
+`len - UNCONFIRMED_TAIL - 1`, so widening the constant moves its own plant with it — a 10x widening
+reddened nothing. The value is pinned separately by
+`test_the_tail_is_the_pivot_lookahead_and_nothing_wider`, which asserts the DERIVATION rather than
+the number 15. **Its docstring says what it cannot catch**, because a test naming the wrong
+mutation reports coverage that is not there.
+
+**Tests: 4 in `tests/test_compare_bleg.py`, 5 mutations each watched RED against its own named
+test** with an unrelated control staying green. The first two are a PAIR — *it is ignored* alone
+would pass just as happily if the diff had stopped reading that column.
