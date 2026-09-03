@@ -278,6 +278,28 @@ def _health(bot: str, **fields) -> None:
         print(f"  warning: could not write the health record: {exc}", file=sys.stderr)
 
 
+def console_line(reading: dict, verdict: dict) -> str:
+    """The line a person reads in the TASK LOG — a different output from the Telegram message.
+
+    \U0001f534 It has to keep apart the same three states `assess` does, and it did not. It said
+    "nothing moved since the last reading" on a FIRST reading for its whole life: an assertion
+    about a previous reading that does not exist, printed in the one place somebody scrolling a
+    scheduled task's log actually looks. The Telegram half was correct throughout, which is
+    exactly why nothing caught it — the tests all read the message.
+
+    \u26a0 Found by RUNNING it against the live terminal (2026-09-03), not by reading it. That is
+    the second defect in this file found that way and the third overall; treat "it reads
+    correctly" as unproven here.
+    """
+    if verdict["first_reading"]:
+        tail = "first reading on record, nothing to compare against"
+    else:
+        tail = f"{', '.join(verdict['moved']) or 'nothing'} moved since the last reading"
+    return (
+        f"{reading['symbol']}: long {reading['long']:+.2f} short {reading['short']:+.2f} ({tail})"
+    )
+
+
 def run(bot: str, dry_run: bool = False) -> int:
     import broker_facts
 
@@ -316,11 +338,7 @@ def run(bot: str, dry_run: bool = False) -> int:
         broker_moved=bool(verdict["moved"]),
         message_sent=bool(speak),
     )
-    moved = ", ".join(verdict["moved"]) or "nothing"
-    print(
-        f"{reading['symbol']}: long {reading['long']:+.2f} short {reading['short']:+.2f} "
-        f"({moved} moved since the last reading)"
-    )
+    print(console_line(reading, verdict))
     return 0
 
 

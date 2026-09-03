@@ -224,3 +224,43 @@ def test_an_ordinary_exception_still_raises_the_alarm(monkeypatch):
 
     assert watch.main(["--bot", "mpc_sos_fade_demo"]) == 1
     assert len(sent) == 1 and "the terminal lied" in sent[0]
+
+
+# ── the third defect found by RUNNING it (2026-09-03) ─────────────────────────────────
+#
+# Every test above reads the TELEGRAM message, and the Telegram message was right all along.
+# The line printed to the task log is a second, separate rendering of the same verdict, and it
+# collapsed "there is no previous reading" into "nothing moved since the last reading" — rule 1,
+# in the one output a person scrolling a scheduled task's log actually sees.
+def test_a_FIRST_reading_does_not_claim_a_previous_one_in_the_console_line():
+    """🔴 MEASURED against the live terminal: it printed "(nothing moved since the last reading)"
+    on a run that had no last reading. RED if the line stops consulting `first_reading`."""
+    v = watch.assess(READING, None, LAB)
+    line = watch.console_line(READING, v)
+    assert "first reading" in line
+    assert "since the last reading" not in line, "it is asserting a reading that does not exist"
+
+
+def test_an_UNCHANGED_reading_still_says_nothing_moved():
+    """The control for the case above. Fixing the first-reading path must not have cost the
+    ordinary quiet line, which is what this task prints on almost every day it runs."""
+    v = watch.assess(READING, {"long": -80.54, "short": 32.67}, LAB)
+    line = watch.console_line(READING, v)
+    assert "nothing moved since the last reading" in line
+    assert "first reading" not in line
+
+
+def test_a_MOVED_reading_names_the_sides_in_the_console_line():
+    v = watch.assess(READING, {"long": -81.18, "short": 31.29}, LAB)
+    line = watch.console_line(READING, v)
+    assert "long" in line and "short" in line
+    assert "moved since the last reading" in line
+    assert "nothing moved" not in line
+
+
+def test_the_console_line_carries_the_numbers_a_reader_needs():
+    """The log line is the whole record on a quiet day — the Telegram message is not sent. If it
+    does not carry the reading, a month of silence records nothing at all."""
+    v = watch.assess(READING, {"long": -80.54, "short": 32.67}, LAB)
+    line = watch.console_line(READING, v)
+    assert "XAUUSD.p" in line and "-80.54" in line and "+32.67" in line

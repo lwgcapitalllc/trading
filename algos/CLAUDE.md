@@ -2611,7 +2611,7 @@ the READING, not just a verdict** — the four values above lived in three diffe
 (`fills.py` comments, this bot's config, a chat log) and **a doc paragraph restating the series
 from two of the three got one of them wrong.** The health stream is the one place it accumulates.
 
-🔴 **TWO DEFECTS WERE FOUND BY RUNNING IT, NEITHER VISIBLE FROM READING IT, AND ONE MADE THE ALARM
+🔴 **THREE DEFECTS WERE FOUND BY RUNNING IT, NONE VISIBLE FROM READING IT, AND ONE MADE THE ALARM
 UNREACHABLE.** `broker_facts.attach()` raises `SystemExit` for every reason a terminal cannot be
 read — not running, not logged in, **logged into the wrong account** — and `SystemExit` is not an
 `Exception`, so the failure handler let all three straight past: MEASURED, the message reached
@@ -2622,10 +2622,32 @@ bot's own config while that config plainly names a tier. ⚠ **The lookup is now
 so a test can exercise the real one** — the first test re-derived the lookup inline and would have
 stayed green under the mutation that restores the bug.
 
-**Tests: 20 in `tests/test_watch_broker_costs.py`, 11 mutations watched RED with a surviving
+🔴 **THE THIRD (2026-09-03) IS THE SAME RULE-1 DEFECT THIS FILE ARGUES AGAINST, IN THE OUTPUT
+NOBODY TESTED.** The verdict is rendered TWICE — once as the Telegram message, once as the line
+printed to the task log — and the log line was built from *did anything move* alone, so a run with
+no previous reading printed **"nothing moved since the last reading"**, asserting a reading that
+does not exist. **The Telegram half was correct throughout, and that is exactly why nothing caught
+it: every test read the message.** ⚠ **Two renderings of one verdict are two places the three
+states can collapse, and a test on one says nothing about the other** — the fix names the log line
+as its own function so a test can reach it, and the mutation that restores the bug leaves the
+Telegram test green. ⚠ **The first mutation aimed at it hit BOTH renderings and reddened a test it
+had no business touching; a mutation that lands on two sites proves nothing about either.**
+
+**Tests: 24 in `tests/test_watch_broker_costs.py`, 13 mutations watched RED with a surviving
 control each.** ⚠ **One control was mis-chosen and reported a FAIL that was not one** — the
 mutation compared only the long side, and the control asserted both sides move, so it died
 legitimately. **A control that the mutation should be allowed to kill proves nothing.**
+
+✅ **REGISTERED ON THE BOX 2026-09-03 and PROVEN against the live terminal**, which is a
+separate fact from being written: it existed in `scripts/bootstrap_vps.ps1` for the length of a
+session while the running machine had never heard of it, because nothing re-runs the bootstrap on
+a pull. ⚠ **`schtasks` reporting SUCCESS is not evidence it will launch** — this repo has already
+lost every task on the box for two months to exactly that, so it was proven by RUNNING the tool,
+which is also how the third defect above was found. ⚠ **The proving run used the print-only flag,
+and that was checked rather than assumed to be safe: the state file is written only on a real run,
+so the dry run does not consume tomorrow's first reading.** ⚠ **A hand run is not the scheduled
+run** — SSH runs it as the logged-in user and the task runs as SYSTEM, so the first genuine 06:40
+firing is still unproven.
 
 ✅ **SWITCHED ON FOR `mpc_sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
 50 → 0.** ⚠ **No promote, and none should be run for it** — a promote copies `strategies/`,
