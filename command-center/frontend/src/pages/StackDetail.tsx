@@ -943,9 +943,12 @@ export function StackDetail() {
   // running and the report is genuinely still in flight — a `failed` phase has a sentence to show,
   // not a percentage, so it keeps its own panel and this stays false.
   //
-  // ⚠ The three states this deliberately does NOT absorb are failed, cancelled and abandoned. Each
-  // is a replay that has STOPPED, and folding a stopped replay into a progress bar is how a dead
-  // job comes to look like a slow one.
+  // ⚠ No STOPPED replay is absorbed — folding one into a progress bar is how a dead job comes to
+  // look like a slow one — but the three states get there by two different mechanisms, and reading
+  // this expression as the whole story is a mistake. `failed` is excluded HERE, because it is the
+  // one that can be reported while the legs are still replaying. `cancelled` and abandoned are
+  // excluded by the banner not existing: the panel renders their sentence only when the stack is
+  // NOT running (see `SharedAccountPanel`), and this is false then anyway.
   const sharedInBanner =
     isRunning && !!shared && !shared.available && shared.progress?.phase !== 'failed'
 

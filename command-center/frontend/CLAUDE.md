@@ -90,7 +90,7 @@ frontend/src/
     │   ├── ConfigureTab.tsx  risk caps + deploy
     │   └── UsersTab.tsx      Telegram users
     ├── Rulesets.tsx          own top-level page (/rulesets) — firm-grouped prop tables + personal group
-    ├── Backtests.tsx         lab landing — Runs / Sweeps / Stacks tabs. `CreateStackModal` (Stacks tab) picks 2+ Python strategies + one shared instrument/timeframe/costs/window; a live `useStackPreview` shows a green **Reuse** or amber **Run** chip per leg (reuse = a completed standalone run already matches these exact settings) + a summary; when every leg reuses, no backtest fires and the button reads **Create stack**
+    ├── Backtests.tsx         lab landing — Runs / Sweeps / Stacks tabs. `StackConfigModal` (Stacks tab) picks 2+ Python strategies over one shared instrument/costs/window, with **its own timeframe and risk per LEG** — each prefilled from the frame that strategy declares it was measured on (see *The stack form: one timeframe PER LEG*); a live `useStackPreview` shows a green **Reuse** or amber **Run** chip per leg (reuse = a completed standalone run already matches these exact settings) + a summary; when every leg reuses, no backtest fires and the button reads **Create stack**
     ├── BacktestDetail.tsx    **Tune button carries a COUNT badge** of the iterations already run from this run (`source_run_id === runId`, off the unfiltered `useBacktestRuns()` so it shares the Runs list's cache entry) — clicking it opens the workbench where they all live. Without the badge the only way to discover a run had ever been tuned was to go back to the Runs list and spot the nested Tune rows. Full run detail — params side panel, per-firm evaluation + KPIs, tabbed charts, logs, News & Holiday filter (inline `NewsFilterPill`/`ExcludeRule`/`PerformanceHeader`, driven by the page's `useNewsFilter` hook — which feeds the KPI grid AND the Equity chart)
     ├── StrategyDetail.tsx    strategy "spec sheet" — overview + grouped param reference tables
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
@@ -1125,7 +1125,7 @@ UTC, matching the emitter, or the edge shifts by the reader's offset. ⚠ Memois
 | Sidebar health strip | ✅ Live | 4 dots: API, **SSH (3-state)**, NT8 (3-state), **MT5 Agent (3-state)**. Two of them were reporting something other than what they were named until 2026-08-02 — see *Two dots that were not measuring what they said* below |
 | Price-chart panel | ✅ Live | Lazy klinecharts candlestick panel on BacktestDetail (`components/ChartPanel/`, own CLAUDE.md): TF switch (display resample up to **D1** + M1→H1 drill-down, the drill window ANCHORED ON THE VIEWPORT and paged like any other history + red "no earlier data" edge), sessions, generic overlays, … [Detail](../docs/FRONTEND_BUILD_NOTES.md#price-chart-panel) |
 | News & Holiday filter | ✅ Live (NT8 + Python) | **A pill on the Performance header that reshapes the page's REAL numbers** — no duplicated tiles, no section of its own (both were removed 2026-07-30). [Detail](../docs/FRONTEND_BUILD_NOTES.md#news--holiday-filter) |
-| Portfolio stacks | ✅ Live | Stacks tab on Backtests + `StackDetail` page. Layer 2+ Python strategies over one shared instrument/timeframe/costs/window. [Detail](../docs/FRONTEND_BUILD_NOTES.md#portfolio-stacks) |
+| Portfolio stacks | ✅ Live | Stacks tab on Backtests + `StackDetail` page. Layer 2+ Python strategies over one shared instrument/costs/window — but **each leg runs on its OWN timeframe** since 2026-09-03. [Detail](../docs/FRONTEND_BUILD_NOTES.md#portfolio-stacks) |
 
 ---
 
@@ -2301,9 +2301,11 @@ Measured record: `../docs/FRONTEND_BUILD_NOTES.md` → *The stack page's two pro
 - ⚠ **`sharedInBanner` is the ONE expression deciding who owns the readout**, read by the banner AND
   by the shared-account section's render guard. Two hand-written conditions is how the page draws
   both again, or neither.
-- 🔴 **A FAILED, CANCELLED or ABANDONED replay is NOT folded in, and that exclusion is load-bearing.**
-  Each has a SENTENCE to show, not a percentage, and **folding a stopped replay into a progress bar
-  is how a dead job comes to look like a slow one.** Only the in-flight branch is absorbed.
+- 🔴 **No STOPPED replay is folded in** — each has a SENTENCE to show, not a percentage, and
+  **folding one into a progress bar is how a dead job comes to look like a slow one.** ⚠ **Two
+  mechanisms, not one, and the expression is only half of it**: `failed` is excluded THERE because it
+  is the one reportable while the legs still replay; cancelled and abandoned are excluded by the
+  banner not existing, since the panel shows their sentence only when the stack is NOT running.
 - 🔴 **The phase is said in WORDS.** `solo:mpc_bleg` / `shared` is the backend's vocabulary — **a
   progress line the reader has to decode only reports to its author.** The bar counter is kept
   after it; the finer measurement drives the bar and the leg count becomes its caption.
@@ -2412,7 +2414,9 @@ different numbers, with nothing to tell them apart, is a comparison the reader c
 - ⚠ **`available: false` is THREE answers** — this is a screen, it is still replaying, or it
   failed — and the panel renders a different thing for each. `progress` separates the second;
   `stack.mode` separates the first. The **test seam is on all three branches**, not only the
-  finished one, or a check for "it says what it is doing while running" can never find it.
+  finished one. 🔴 **Since 2026-09-03 the still-replaying branch renders only while the STACK is
+  NOT running** — the banner at the top of the page owns that readout — so a check for "it says what
+  it is doing while running" belongs on the banner and can never find it here.
 - **The seam check is rendered.** With a full budget a leg must post the same R shared as solo (R
   is normalised to the trade's own risk), so a difference is the shared account moving a decision
   it must not touch. That is invisible in a table of numbers unless something says it.
@@ -2425,7 +2429,7 @@ Every measured run so far refuses nothing, so a marker layer would be a generic 
 has ever exercised — the trap this folder already records for the `BOX` template's label path,
 whose first real user was its first test. The events are served and rendered as a table instead.
 
-### `tests/stacks.spec.ts` — 10 checks, and three of them were vacuous first
+### `tests/stacks.spec.ts` — the first 10 checks, and three of them were vacuous first
 
 Non-vacuity here is by **MUTATION** and could not be anything else: none of this existed at HEAD,
 so every check would go red on an element being absent, which proves the locator and nothing more.
