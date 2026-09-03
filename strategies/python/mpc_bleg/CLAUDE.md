@@ -289,6 +289,36 @@ register and run side by side — the parallel-stack use case.
 
 ## The parity gate — `tools/compare_bleg.py` + `mpc_b_leg_strategy_export.pine` (built 2026-07-26)
 
+### The unsettled tail is a DAY, and the pivot lookahead was too small (2026-09-03)
+
+🟢 **GREEN on a fresh 15m export — `engines/VANTAGE_XAUUSD, 15_b480e.csv`, 21,702 bars compared,
+exit 0 at warmups 100 / 500 / 1000.**
+
+🔴 **THE TRIM ADDED ON 2026-09-02 WAS SIZED TO THE SWING LOOKAHEAD AND DID NOT COVER THIS FORK'S
+OTHER UNSETTLED DEPENDENCY.** It inherits A+'s DAY-HIGH liquidity line, which is time-based: on
+the fresh export Python placed a new Day High at 2026-09-03 00:45 and swept it while Pine still
+pointed at the previous one, **65 bars from the end — four times outside a 15-bar trim.** ~230
+COMPLETED day boundaries in the same file agree exactly, which is what says settling rather than a
+bug. The trim is now the export's final calendar day, **floored by `major_length`** so a file
+ending minutes into a new day still covers unconfirmed pivots.
+
+⚠ **`unsettled_tail` is IMPORTED from `mpc_sos_fade/tools/compare_strategy.py`, not copied** — this
+gate already imports that module's decoders, and two copies of a trim rule is how the two drift.
+A+ hit the identical defect the same day; the transferable half is that **a sibling gate's tail
+constant is sized to ITS unsettled dependency and does not transfer**, and neither does a bar count
+fitted to one export.
+
+🔴 **`test_the_tail_is_the_pivot_lookahead_and_nothing_wider` IS RETRACTED AND RENAMED.** Its claim
+— one bar wider and the gate skips settled bars — was right about padding and wrong about the set
+of things that do not settle. **It stayed green through the whole period the gate was red.** The
+constant is now a FLOOR, and the widening is measured rather than "to be safe".
+
+⚠ **Three mutations SURVIVED the entire suite when this landed** — reverting the trim to the bare
+constant, dropping the lookahead floor, and disabling the empty-window refusal. The first was
+caught only by one real export on one machine, which is exactly the fragility rule 22 warns about.
+Three tests now cover them; all three were watched RED.
+
+
 🟢 **GREEN, re-run 2026-08-23 on `engines/VANTAGE_XAUUSD, 5_f8228.csv` — 20,573 M5 bars, identical
 from bar 0, no warmup needed.** ⚠ Rule 14 still applies: it says the two AGREE, never that either is
 RIGHT, and nothing about a branch neither entered. 🔴 **The export before it was RED, and the code was

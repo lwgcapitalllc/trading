@@ -370,15 +370,21 @@ def test_a_mismatch_OUTSIDE_the_tail_is_still_reported(tmp_path):
     RED when the tail is subtracted twice, or applied as `n - tail` against a `warmup`-relative
     index.
 
-    ⚠ **It canNOT catch the trim being WIDENED, and saying so is the point.** Its plant sits at
-    `len - UNCONFIRMED_TAIL - 1`, so raising that constant moves this test's own plant with it and
-    it stays green — MEASURED by mutation on 2026-09-02, where a 10x widening reddened nothing.
-    **A test defined relative to the number it is meant to police cannot police it.** The value
-    itself is pinned by `test_the_tail_is_the_pivot_lookahead_and_nothing_wider` below.
+    ⚠ **It canNOT catch the trim being WIDENED, and saying so is the point.** Its plant tracks the
+    trim, so widening the trim moves this test's own plant with it and it stays green — MEASURED by
+    mutation on 2026-09-02, where a 10x widening reddened nothing. **A test defined relative to the
+    number it is meant to police cannot police it.** The size is pinned by
+    `test_the_tail_is_never_narrower_than_the_pivot_lookahead` below.
+
+    🔴 **The plant is placed off the REAL tail, not off `UNCONFIRMED_TAIL`.** It used that constant
+    until 2026-09-03, when the trim became the export's final calendar day floored by it — the
+    plant then landed INSIDE the trim, was never compared, and this test failed. That failure was
+    the honest outcome: had it been written to always pass, the widening would have silently
+    stopped it testing anything.
     """
     p, _ = _write(tmp_path)
     df = pd.read_csv(p)
-    i = len(df) - cb.UNCONFIRMED_TAIL - 1   # the last bar that IS still compared
+    i = len(df) - cb.unsettled_tail(cb.load_export(p)) - 1   # the last bar that IS still compared
     p2 = tmp_path / "tail_out.csv"
     _plant_at(df, i).to_csv(p2, index=False)
     msgs = cb.run_parity(p2, warmup=100)
@@ -386,16 +392,102 @@ def test_a_mismatch_OUTSIDE_the_tail_is_still_reported(tmp_path):
     assert f"bar {i} " in msgs[0], msgs[0]
 
 
-def test_the_tail_is_the_pivot_lookahead_and_nothing_wider():
-    """🔴 Pins the trim's SIZE, because no behavioural test above can.
+def test_the_tail_is_never_narrower_than_the_pivot_lookahead():
+    """🔴 Pins the trim's FLOOR, because no behavioural test above can.
 
-    The trim is only defensible while it equals the structure pivot's lookahead — those are the
-    bars whose swings genuinely cannot have confirmed. One bar wider and the gate is skipping
-    settled bars, silently, and every future export covers less ground than the reader believes.
+    🔴 **THIS TEST USED TO SAY "AND NOTHING WIDER", AND THAT CLAIM IS RETRACTED (2026-09-03).**
+    The argument was that the trim is only defensible while it EQUALS the pivot lookahead, since
+    those are the bars whose swings cannot have confirmed — one wider and the gate skips settled
+    bars silently. That reasoning covered the only unsettled thing this fork was known to have.
+    It was wrong about the set: this fork inherits A+'s DAY-HIGH liquidity line, which is
+    time-based, and on a fresh export the two sides disagreed **65 bars** from the end, four times
+    outside a 15-bar trim. The gate was RED for it while this test stayed green.
+
+    ⚠ **So the widening is MEASURED, not padding "to be safe"** — which is what the old wording
+    was right to forbid. The trim is the export's final calendar day, floored by this constant so a
+    file ending minutes into a new day still covers unconfirmed swings.
 
     ⚠ It asserts the DERIVATION, not the number 15: a typed constant would go stale the day
     `major_length` moves, which is the failure this is guarding.
 
-    RED when `UNCONFIRMED_TAIL` is hardcoded, scaled, or padded "to be safe".
+    RED when `UNCONFIRMED_TAIL` is hardcoded, or when the floor is dropped from `unsettled_tail`.
     """
-    assert cb.UNCONFIRMED_TAIL == MpcBLegStrategy.engine_config().major_length
+    look = MpcBLegStrategy.engine_config().major_length
+    assert cb.UNCONFIRMED_TAIL == look
+    # A frame whose final day is shorter than the lookahead must still trim the lookahead.
+    idx = pd.date_range("2025-01-06", periods=3 * 96 + 2, freq="15min")
+    short_last_day = pd.DataFrame(
+        {"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=idx)
+    assert cb.unsettled_tail(short_last_day, MpcBLegStrategy.engine_config()) == look
+
+
+def test_the_lookahead_FLOOR_is_actually_applied_by_run_parity(tmp_path):
+    """🔴 The floor existing is not the floor being USED, and only this tells them apart.
+
+    `test_the_tail_is_never_narrower_than_the_pivot_lookahead` calls `unsettled_tail` directly, so
+    it stays green even if `run_parity` stops handing it the engine config — and dropping that one
+    argument silently returns the bare calendar day. MEASURED by mutation on 2026-09-03: that
+    change survived the ENTIRE suite and the real export too, because a normal export's final day
+    is far wider than the lookahead and the floor never binds on it.
+
+    So this builds the one shape where the floor decides the answer: a file ending a few bars into
+    a new day. The plant sits inside the lookahead but outside that short day — trimmed when the
+    floor applies, compared and reported when it does not.
+    """
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    look = MpcBLegStrategy.engine_config().major_length
+    bars_per_day = 96
+    short_day = 5
+    assert short_day < look, "the fixture must end INSIDE the lookahead or this proves nothing"
+    n = (len(df) // bars_per_day - 1) * bars_per_day + short_day
+    trimmed = df.iloc[:n].reset_index(drop=True)
+    assert cb.unsettled_tail(
+        cb.load_export(p).iloc[:n], MpcBLegStrategy.engine_config()) == look
+
+    i = n - short_day - 2          # inside the lookahead, outside the final short day
+    p2 = tmp_path / "floor.csv"
+    _plant_at(trimmed, i).to_csv(p2, index=False)
+    msgs = cb.run_parity(p2, warmup=100)
+    assert not msgs, (
+        f"bar {i} sits inside the {look}-bar lookahead and was compared anyway — the floor is not "
+        f"being applied, so unconfirmed swings are being diffed: {msgs[:2]}")
+
+
+def test_comparing_nothing_REFUSES_instead_of_reporting_parity(tmp_path):
+    """🔴 A gate that compares zero bars and prints PARITY OK is the worst shape it has.
+
+    A+'s gate shipped exactly that for one afternoon (`--tail 99999` → `PARITY OK`). This fork
+    imports the same refusal; MEASURED by mutation on 2026-09-03, disabling it survived the whole
+    suite, which is why this exists rather than being assumed covered by the parent's test.
+    """
+    p, _ = _write(tmp_path)
+    with pytest.raises(cb.NothingToCompare):
+        cb.run_parity(p, warmup=100, tail=99_999)
+
+
+def test_the_tail_is_the_CALENDAR_DAY_when_the_day_is_the_wider_one(tmp_path):
+    """🔴 The other half of the floor test, and the one that catches a revert.
+
+    The floor test proves the lookahead still binds on a file ending minutes into a new day. This
+    proves the DAY binds on every normal export — reverting the trim to the bare pivot constant
+    (its behaviour before 2026-09-03, which left this gate red on a real export) makes the plant
+    below land in the compared window and get reported.
+
+    ⚠ MEASURED by mutation on 2026-09-03: before this existed, that revert survived the entire
+    suite and was caught only by one real export sitting on one machine — the same fragility rule
+    22 already warns about, since a fresh clone can gate almost nothing.
+    """
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    look = MpcBLegStrategy.engine_config().major_length
+    tail = cb.unsettled_tail(cb.load_export(p), MpcBLegStrategy.engine_config())
+    assert tail > look, "fixture's final day must be wider than the lookahead or this proves nothing"
+
+    i = len(df) - look - 5          # inside the day-wide trim, OUTSIDE the bare pivot constant
+    p2 = tmp_path / "day.csv"
+    _plant_at(df, i).to_csv(p2, index=False)
+    msgs = cb.run_parity(p2, warmup=100)
+    assert not msgs, (
+        f"bar {i} sits inside the {tail}-bar unsettled day and was compared anyway — the trim has "
+        f"reverted to the {look}-bar pivot constant: {msgs[:2]}")
