@@ -3572,3 +3572,48 @@ which is the common case — open the modal, press Run); and **a null suffix is 
 bare**, so the symbol is left exactly as typed and the form says nobody has recorded that broker's
 naming. **The backend binds** — this is the half that makes the answer visible, never the half that
 guarantees it.
+
+### The redesign, and the control that changed nothing (2026-09-03)
+
+Aaron, on the form above: *"the layout is really, really bad… things are not logically grouped…
+make it the same size as the run strategy one… that way the two models don't feel dramatically
+different."* It was 520px with every control stacked in one column, so nothing could sit beside
+what it belongs with.
+
+- **Same shell as the run modal** — 1180px, 92vh, header / scrolling body / footer — and the mode
+  is a header BADGE rather than a sentence buried in a paragraph.
+- **`ModalKit.tsx` is the shared kit** (`SectionHead`, `InfoTooltip`, `Divider`, `inputCls`,
+  `labelCls`), extracted from the run modal and imported by both. ⚠ **Mirroring the styles by hand
+  is what made them drift in the first place**, so a second copy is not the cheaper option here.
+  ⚠ **Presentational only** — the moment one of these takes a run, a broker or a cost it stops
+  being shareable and the copy comes back.
+- **Broker, instrument and period sit on ONE row**, in that order, because the broker decides
+  which bars are replayed, what is charged, AND how the instrument beside it is spelled. Those
+  three were four sections apart with the strategy list between them.
+- 🔴 **ONE LEG IS ONE ROW, carrying everything true of that leg** — its timeframe and its risk per
+  trade, inline. The timeframe had its own section further down while the risk sat under the row:
+  **the same leg's two settings in two places is how you end up reading a stack you did not
+  configure.** ⚠ **The row is a `div` and only the NAME is the button** — an input inside a button
+  is invalid markup and every keystroke would toggle the leg off, which is why those controls were
+  exiled in the first place.
+- **The account and the costs are side by side**, because they are the two halves of one question
+  and each is short.
+
+🔴 **THE COMMISSION BOX IS GONE, AND IT HAD NEVER DONE ANYTHING.** `routers/_costs.py` reads
+commission off the BROKER ACCOUNT and has ignored whatever was typed here since the cost switch
+landed — so the field asked the reader for a number, showed it back to them, and changed nothing.
+**That is rule 7 in miniature: a control is a CLAIM about code somewhere else, and this one was
+false.** ⚠ **The value is still SENT**, because a rerun of a stack stored before that has to
+reproduce the figure it was stored with. ⚠ **Slippage KEEPS its box** and now sits inside Costs
+tagged *a guess*, exactly as on the run modal — it is the one cost nobody has measured, so charging
+it is somebody saying a guess out loud, and folding it in beside three measurements would make them
+indistinguishable.
+
+⚠ **The Playwright checks for this form were NOT run** — they need the app and the backend up, and
+they are deliberately outside the gate. The hooks they grab were preserved deliberately
+(`stack-mode-blurb` and its two phrases, `stack-broker` with its select, `stack-costs` with its
+switch and three messages, `stack-account-fields`, `recovery-toggle`, the `e.g. XAUUSD`
+placeholder, and each leg's name still being a button). ⚠ **`openModal`'s
+`ancestor::div[3]` locator in `stack-config.spec.ts` is dead** — nothing reads its return value —
+so the new nesting cannot break it, but **a positional locator that survives only because nobody
+uses it is one edit away from failing**, and a `data-testid="stack-modal"` now exists to replace it.

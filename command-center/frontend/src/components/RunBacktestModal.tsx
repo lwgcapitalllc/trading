@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, Play, Info, ChevronDown, ChevronRight } from 'lucide-react'
+import { X, Play } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
 import {
   useFirms,
@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useLab'
 import { ParamEditor, isChanged, visibleParams, type ParamValue } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
+import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import type { Strategy, Firm, SizingMode, BrokerProfile } from '@/types'
 
@@ -115,75 +116,7 @@ function getAllowedSymbols(firms: Firm[]): string[] {
   return Array.from(set).sort()
 }
 
-// ── Tooltip ───────────────────────────────────────────────────────────────────
-
-function InfoTooltip({ content, side = 'right' }: { content: string; side?: 'right' | 'left' }) {
-  // 'right' → tooltip opens rightward from the icon (left-side icons)
-  // 'left'  → tooltip opens leftward from the icon (right-side icons)
-  const anchorCls = side === 'right' ? 'left-0' : 'right-0'
-  return (
-    <span className="relative group/tip inline-flex items-center ml-1 flex-shrink-0">
-      <Info
-        size={10}
-        className="text-text-tertiary group-hover/tip:text-accent cursor-help transition-colors"
-      />
-      <span
-        className={`absolute ${anchorCls} bottom-[calc(100%+5px)] z-50 hidden group-hover/tip:block w-56 rounded-md bg-bg-surface border border-border-default px-2.5 py-2 text-[11px] text-text-secondary shadow-xl pointer-events-none leading-relaxed`}
-      >
-        {content}
-      </span>
-    </span>
-  )
-}
-
 // ── Small UI pieces ───────────────────────────────────────────────────────────
-
-/**
- * A section title. With `onToggle` it becomes the section's collapse control.
- *
- * ⚠ A collapsed section MUST pass `summary` — the header is then the only thing standing for
- * everything folded away, and a reader who cannot see what a hidden section is set to will open
- * every one of them, which is worse than never having collapsed anything.
- */
-function SectionHead({
-  label,
-  tooltip,
-  open,
-  onToggle,
-  summary,
-}: {
-  label: string
-  tooltip?: string
-  open?: boolean
-  onToggle?: () => void
-  summary?: string
-}) {
-  const head = (
-    <>
-      {label}
-      {tooltip && <InfoTooltip content={tooltip} />}
-    </>
-  )
-  const cls =
-    'flex items-center gap-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.7px]'
-  if (!onToggle) return <div className={`${cls} mb-3`}>{head}</div>
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      className={`${cls} w-full ${open ? 'mb-3' : 'mb-0'} hover:text-text-secondary transition-colors`}
-    >
-      {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-      {head}
-      {summary && (
-        <span className="ml-auto normal-case tracking-normal font-normal text-[11px] text-text-tertiary truncate">
-          {summary}
-        </span>
-      )}
-    </button>
-  )
-}
 
 /** Account-currency swap for ONE lot for ONE night, from the broker's quoted POINTS.
  *  The broker's own formula: points x contract size x 10^-digits. Doing it here rather than
@@ -193,10 +126,6 @@ function SectionHead({
 function swapPerNight(b: BrokerProfile, side: 'long' | 'short'): number {
   const pts = (side === 'long' ? b.swap_long_points : b.swap_short_points) ?? 0
   return pts * b.contract_size * 0.01
-}
-
-function Divider() {
-  return <div className="border-t border-border-subtle" />
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -222,10 +151,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // the one that can state them exactly rather than in the platform's general terms.
   const isPython = strategy.runner === 'python'
   const isFutures = runnerMarket(strategy.runner) === 'futures'
-
-  const inputCls =
-    'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
-  const labelCls = 'block text-[11px] text-text-secondary mb-1'
 
   // ── Broker account — the first thing decided, because everything reads it ────
   // ⚠ **Lifted above the Instrument section on 2026-08-26 because the SYMBOL now depends on it**,

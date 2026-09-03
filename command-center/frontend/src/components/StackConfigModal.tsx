@@ -10,6 +10,7 @@ import {
   useBrokerProfiles,
 } from '@/hooks/useLab'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
+import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
 import { useDebounced } from '@/lib/useDebounced'
 import type { StackMode } from '@/types'
 
@@ -137,7 +138,11 @@ export function StackConfigModal({
   const [legBar, setLegBar] = useState<Record<string, number>>(initial?.barValuesByStrategy ?? {})
   // 0/0 matches the Pine strategies (all pinned commission=0, slippage=0). The Python fill engine
   // applies real cost via the account profile (vantage_demo = 0), so these display values stay honest.
-  const [commPerSide, setCommPerSide] = useState(initial?.commPerSide ?? 0)
+  // 🔴 NOT A CONTROL, and not state — `routers/_costs.py` reads commission off the BROKER
+  // ACCOUNT and has ignored whatever was typed here since the cost switch landed. The box
+  // asked for a number, showed it back, and changed nothing. It is still SENT, because a
+  // rerun of a stack stored before that has to reproduce the figure it was stored with.
+  const commPerSide = initial?.commPerSide ?? 0
   const [slippageTicks, setSlippageTicks] = useState(initial?.slippageTicks ?? 0)
   // A NEW stack is always shared; a RERUN keeps whatever the stored stack was, so rerunning one of
   // the three existing screens does not silently turn it into a different experiment.
@@ -431,11 +436,31 @@ export function StackConfigModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[520px] shadow-2xl flex flex-col max-h-[88vh]">
-        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Layers size={16} className="text-gold-text" />
-            <div className="text-[15px] font-semibold">{title}</div>
+      {/* 🔴 THE SAME SHELL AS THE RUN MODAL — 1180px, 92vh, header / scrolling body / footer.
+          It was 520px, which is why this form read as a different app from the one beside it:
+          every control was stacked in one narrow column, so the account, the legs and the costs
+          arrived as an undifferentiated ribbon and nothing could sit next to what it belongs
+          with. Reported from the screen 2026-09-03. */}
+      <div
+        data-testid="stack-modal"
+        className="bg-bg-surface border border-border-default rounded-xl w-full max-w-[1180px] max-h-[92vh] flex flex-col shadow-2xl"
+      >
+        {/* ── Header ─────────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Layers size={16} className="text-gold-text flex-shrink-0" />
+            <span className="text-[15px] font-semibold truncate">{title}</span>
+            {/* The mode is a BADGE, the way the run modal badges its market. It is the single most
+                consequential fact about a stack and it used to be buried in a paragraph. */}
+            <span
+              className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border flex-shrink-0 ${
+                shared
+                  ? 'bg-accent/10 text-accent border-accent/20'
+                  : 'bg-warn-muted text-warn-text border-warn-text/30'
+              }`}
+            >
+              {shared ? 'Shared account' : 'Screen'}
+            </span>
           </div>
           <button
             onClick={onClose}
@@ -445,424 +470,457 @@ export function StackConfigModal({
           </button>
         </div>
 
-        <div className="px-5 py-4 overflow-y-auto space-y-5">
-          <p className="text-[12px] text-text-secondary" data-testid="stack-mode-blurb">
+        {/* ── Scrollable body ────────────────────────────────────────────────── */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          <p
+            className="text-[12px] text-text-secondary leading-snug"
+            data-testid="stack-mode-blurb"
+          >
             {shared
               ? 'Layer 2 or more Python strategies onto ONE balance with ONE risk budget they compete for, replayed together on one clock — so you can see where a strategy was shrunk or blocked because another was already holding the capacity. Every leg is re-run; nothing is reused.'
               : 'This stack is a SCREEN: each strategy ran on its own full account and the results were added together, so no strategy could ever block another. Rerunning keeps it a screen. New stacks are shared accounts.'}
           </p>
 
-          {/* ── Broker account — FIRST, because everything under it depends on it ─────
-              Mirrors the single-run form, which puts it at the top for the same reason: it
-              decides which broker's bars are replayed AND what the run is charged. This form had
-              neither control until 2026-09-02. */}
-          <div className="flex items-center gap-2" data-testid="stack-broker">
-            <label className="text-[11px] text-text-secondary flex-shrink-0">Broker account</label>
-            <select
-              value={brokerProfile ?? ''}
-              onChange={(e) => setBrokerProfile(e.target.value)}
-              className="bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors min-w-0 flex-1 max-w-[300px]"
-            >
-              {(brokerProfiles ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.id}
-                  {b.attached ? ' — connected now' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* ── Costs — ONE switch, on by default ───────────────────────────────────
-              🔴 Every stack this lab ran before 2026-09-02 was GROSS while its page showed a cost
-              row: a stack carried no broker and no layers, so it fell through to the two typed
-              figures below, which default to zero. The switch sends a BOOLEAN and the backend
-              resolves what that charges — the policy lives on the side that bills it. */}
-          <div data-testid="stack-costs">
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              Costs
-            </div>
-            <div className="flex items-start gap-2.5">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={chargeCosts}
-                onClick={() => setChargeCosts((v) => !v)}
-                className={`mt-[2px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
-                  chargeCosts ? 'bg-accent' : 'bg-border-default'
-                }`}
+          {/* ── Setup — the three facts every leg shares, on ONE row ────────────
+              Broker first because everything under it depends on it: it decides which broker's
+              bars are replayed, what the run is charged, AND how the instrument beside it is
+              spelled. Instrument and period used to be four sections apart with the strategy
+              list between them, so the window and the symbol could not be read as one decision. */}
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(180px,240px)_minmax(150px,200px)_minmax(340px,1fr)] gap-x-4 gap-y-3 items-start">
+            <div className="min-w-0" data-testid="stack-broker">
+              <label className={labelCls}>Broker account</label>
+              <select
+                value={brokerProfile ?? ''}
+                onChange={(e) => setBrokerProfile(e.target.value)}
+                className={inputCls}
               >
-                <span
-                  className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-bg-base transition-all ${
-                    chargeCosts ? 'left-[16px]' : 'left-[2px]'
-                  }`}
-                />
-              </button>
-              <span className="min-w-0">
-                <span className="block text-[12px] text-text-primary">
-                  {chargeCosts ? "Charge this account's real costs" : 'Run gross — charge nothing'}
-                </span>
-                <span className="block text-[11px] text-text-tertiary leading-snug">
-                  {chargeCosts
-                    ? 'Spread on every fill, commission and overnight financing, all measured on the account above.'
-                    : 'A diagnostic only. It answers how much of the edge is friction, never whether the stack works.'}
-                </span>
-              </span>
+                {(brokerProfiles ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.id}
+                    {b.attached ? ' — connected now' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
-            {!chargeCosts && (
-              <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                This stack will report a gross figure, and it is not comparable to a charged one —
-                real fills change which setups exist, not just what they pay.
-              </p>
-            )}
-            {/* ⚠ WARNS, never blocks. Measuring against a broker you are not pointed at is a
-                legitimate thing to do deliberately. */}
-            {chargeCosts && brokerMatches === false && (
-              <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                This charges {brokerProfile}&apos;s costs over bars from {attachedProfile?.id},
-                which is the terminal actually connected. Same stack, two brokers — pick{' '}
-                {attachedProfile?.id} unless you mean to compare.
-              </p>
-            )}
-            {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
-              <p className="mt-2 text-[11px] text-text-tertiary leading-snug">
-                Can&apos;t tell which terminal is connected, so nothing here confirms these costs
-                match the bars this stack will replay.
-              </p>
-            )}
-            {/* This one DOES block, because the backend refuses it — a tier nobody has measured
-                would otherwise borrow a sibling's number, and PU Prime's measured 2.7x apart. */}
-            {chargeCosts && brokerUnpriced && (
-              <p className="mt-2 text-[11px] text-neg-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                This account&apos;s spread has never been measured, so it cannot be run charged.
-                Measure it first, or pick an account that has been.
-              </p>
-            )}
-          </div>
 
-          {shared && (
-            <div data-testid="stack-account-fields">
-              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-                The shared account
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <div className="text-[11px] text-text-tertiary mb-1.5">Balance ($)</div>
-                  <input
-                    type="number"
-                    step="100"
-                    min="1"
-                    value={accountSize}
-                    onChange={(e) => setAccountSize(Number(e.target.value))}
-                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
-                  />
+            <div className="min-w-0">
+              <label className={labelCls}>Instrument</label>
+              <input
+                value={instrument}
+                onChange={(e) => setInstrument(e.target.value.toUpperCase())}
+                placeholder="e.g. XAUUSD"
+                className={`${inputCls} font-mono`}
+              />
+              {/* Three states, not two: silence here would read as "this broker quotes it bare",
+                  which is a guess, and a guessed symbol is what the rewrite exists to prevent. */}
+              {brokerNamingUnknown && (
+                <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
+                  Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
+                  exactly as typed.
                 </div>
-                <div>
-                  <div className="text-[11px] text-text-tertiary mb-1.5">Risk cap (%)</div>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    value={riskCapPct}
-                    onChange={(e) => setRiskCapPct(Number(e.target.value))}
-                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
-                  />
-                </div>
-                <div>
-                  <div className="text-[11px] text-text-tertiary mb-1.5">Entry floor (%)</div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={entryFloorPct}
-                    onChange={(e) => setEntryFloorPct(Number(e.target.value))}
-                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-text-tertiary mt-1.5">
-                The cap is the most OPEN risk all strategies may hold at once, as a % of the
-                <strong className="text-text-secondary"> live </strong> balance — and an open trade
-                only reserves risk down to its{' '}
-                <strong className="text-text-secondary">current</strong> stop, so a stop moved to
-                breakeven frees its room. An entry with no room is shrunk to fit, or skipped if what
-                is left falls under the floor.
-              </p>
-              {!accountValid && (
-                <p className="text-[11px] text-neg-text mt-1.5">
-                  Balance and risk cap must both be above zero — a cap of zero refuses every entry,
-                  which is a stopped bot rather than a portfolio.
-                </p>
               )}
             </div>
-          )}
 
-          <div>
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              Strategies{' '}
-              <span className="text-text-tertiary normal-case font-normal">· pick at least 2</span>
+            <div className="min-w-0">
+              <div className="flex items-center mb-1">
+                <label className={labelCls.replace(' mb-1', '')}>Period</label>
+                <InfoTooltip content="One window for every leg. It is bounded by the FINEST timeframe in the stack, because a broker holds less history the finer the bars — where the fast leg's bars do not reach, the slower leg would compound on its own." />
+              </div>
+              <PeriodPicker
+                compact
+                start={start}
+                end={end}
+                onChange={(s, e) => {
+                  setStart(s)
+                  setEnd(e)
+                }}
+                limit={historyLimit}
+              />
             </div>
+          </div>
+
+          <Divider />
+
+          {/* ── The legs ───────────────────────────────────────────────────────
+              🔴 ONE LEG IS ONE ROW, carrying everything that is true of that leg. Its timeframe
+              lived in a section of its own further down the form while its risk sat under the
+              row — the same leg's two settings in two places, which is how you end up reading a
+              stack you did not configure. */}
+          <div>
+            <SectionHead
+              label="Strategies"
+              tooltip="Each leg keeps its own timeframe and its own risk per trade. The timeframe starts on the frame that bot was measured on; another frame is a legal run and simply a different experiment."
+            />
             {pyStrategies.length === 0 ? (
               <div className="text-[12px] text-text-tertiary py-3">
                 No Python strategies found. Scan strategies first.
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {pyStrategies.map((s) => {
-                  const on = selected.has(s.id)
-                  const action = on ? actionByStrategy.get(s.id) : undefined
-                  const base = baselineRisk(s.id)
-                  const shownRisk = legRisk[s.id] ?? base
-                  const edited = legRisk[s.id] !== undefined && legRisk[s.id] !== base
-                  return (
-                    <div key={s.id}>
+              <>
+                {/* Column headings, so the two numbers on each row are not a guess. */}
+                <div className="flex items-center gap-2 px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">
+                  <span className="flex-1">Pick at least 2</span>
+                  <span className="w-[96px] text-center flex-shrink-0">Timeframe</span>
+                  <span className="w-[104px] text-center flex-shrink-0">Risk / trade</span>
+                </div>
+                <div className="space-y-1.5">
+                  {pyStrategies.map((s) => {
+                    const on = selected.has(s.id)
+                    const action = on ? actionByStrategy.get(s.id) : undefined
+                    const base = baselineRisk(s.id)
+                    const shownRisk = legRisk[s.id] ?? base
+                    const edited = legRisk[s.id] !== undefined && legRisk[s.id] !== base
+                    const offMeasured =
+                      s.suggested_bar_value != null && barByLeg[s.id] !== s.suggested_bar_value
+                    return (
+                      <div key={s.id}>
+                        {/* ⚠ The ROW is a div and only the NAME is the button. An input inside a
+                            button is invalid markup and every keystroke would toggle the leg off
+                            — which is why these controls used to be exiled to their own block. */}
+                        <div
+                          className={`flex items-center gap-2 rounded-lg border transition-colors ${
+                            on
+                              ? 'border-accent/40 bg-accent/5'
+                              : 'border-border-subtle bg-bg-sunken hover:border-border-default'
+                          }`}
+                        >
+                          <button
+                            onClick={() => toggle(s.id)}
+                            className="flex items-center gap-2.5 flex-1 min-w-0 px-3 py-2 text-left"
+                          >
+                            <span
+                              className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${on ? 'bg-accent border-accent' : 'border-border-default'}`}
+                            >
+                              {on && <span className="text-bg-base text-[10px] font-bold">✓</span>}
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="text-[13px] font-medium text-text-primary">
+                                {s.name}
+                              </span>
+                              {s.suggested_instrument && (
+                                <span className="ml-2 text-[11px] text-text-tertiary font-mono">
+                                  {s.suggested_instrument}
+                                </span>
+                              )}
+                            </span>
+                            {action === 'reuse' && (
+                              <span
+                                className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-pos-text bg-pos-muted/40 border border-pos-text/20 rounded px-1.5 py-0.5"
+                                title="An existing completed run matches these exact settings — it will be reused, not re-run."
+                              >
+                                Reuse
+                              </span>
+                            )}
+                            {action === 'run' && (
+                              <span
+                                className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-warn-text bg-warn-muted/30 border border-warn-text/20 rounded px-1.5 py-0.5"
+                                title="No matching run exists — this leg will be backtested fresh at the chosen timeframe and costs."
+                              >
+                                Run
+                              </span>
+                            )}
+                          </button>
+
+                          {/* The leg's own two settings, on the leg's own row. Present only when
+                              the leg is IN — a control for a strategy nobody picked is a setting
+                              with nowhere to go. */}
+                          <div className="flex items-center gap-2 pr-3 py-2 flex-shrink-0">
+                            {on ? (
+                              <select
+                                value={barByLeg[s.id]}
+                                onChange={(e) =>
+                                  setLegBar((prev) => ({ ...prev, [s.id]: Number(e.target.value) }))
+                                }
+                                title={
+                                  s.suggested_bar_value != null
+                                    ? `Measured on ${barLabel(s.suggested_bar_value)}`
+                                    : 'This strategy states no measured timeframe'
+                                }
+                                className={`${inputCls} w-[96px] py-[4px] ${offMeasured ? 'border-warn-text/50 text-warn-text' : ''}`}
+                              >
+                                {BAR_PRESETS.map(([v, label]) => (
+                                  <option key={v} value={v}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="w-[96px]" />
+                            )}
+                            {on && shownRisk !== undefined ? (
+                              <div className="relative w-[104px]">
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0.1"
+                                  value={shownRisk}
+                                  onChange={(e) =>
+                                    setLegRisk((prev) => ({
+                                      ...prev,
+                                      [s.id]: Number(e.target.value),
+                                    }))
+                                  }
+                                  className={`${inputCls} py-[4px] pr-6 font-mono ${edited ? 'border-warn-text/50' : ''}`}
+                                />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-text-tertiary pointer-events-none">
+                                  %
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="w-[104px]" />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Why a row is not on its defaults. Both of these change what the leg IS
+                            measured on, so neither may be silent. */}
+                        {on && (offMeasured || edited) && (
+                          <div className="pl-9 pt-1 flex flex-wrap gap-x-4 text-[10px] text-warn-text">
+                            {offMeasured && (
+                              <span>
+                                {s.name} was measured on {barLabel(s.suggested_bar_value as number)}{' '}
+                                — this is a different experiment
+                              </span>
+                            )}
+                            {edited && <span>risk was {base} · this leg runs fresh</span>}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* 🔴 THE RECOVERY LEG IS ADDED HERE, UNDER ITS PARENT, AND NOWHERE ELSE. It has
+                      no setups of its own, so a picker row for it could build a stack with nothing
+                      to read — an empty book that looks exactly like a rule that found nothing.
+                      Nesting it under the leg whose losses it follows makes the dependency
+                      impossible to get wrong rather than something the backend has to refuse.
+                      ⚠ It shows no timeframe of its own: it is PINNED to its parent's frame,
+                      because it counts its wait in the parent's bars. */}
+                  {shared && recoveryRule && selected.size > 0 && (
+                    <div className="pl-6 pt-0.5">
                       <button
-                        onClick={() => toggle(s.id)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors ${
-                          on
+                        onClick={() => {
+                          const parent = recoveryFor
+                            ? null
+                            : (Array.from(selected).find((id) =>
+                                pyStrategies.some((p) => p.id === id)
+                              ) ?? null)
+                          setRecoveryFor(parent)
+                        }}
+                        data-testid="recovery-toggle"
+                        className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg border text-left transition-colors ${
+                          recoveryFor
                             ? 'border-accent/40 bg-accent/5'
                             : 'border-border-subtle bg-bg-sunken hover:border-border-default'
                         }`}
                       >
                         <span
-                          className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${on ? 'bg-accent border-accent' : 'border-border-default'}`}
+                          className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${recoveryFor ? 'bg-accent border-accent' : 'border-border-default'}`}
                         >
-                          {on && <span className="text-bg-base text-[10px] font-bold">✓</span>}
+                          {recoveryFor && (
+                            <span className="text-bg-base text-[10px] font-bold">✓</span>
+                          )}
                         </span>
                         <span className="flex-1 min-w-0">
-                          <span className="text-[13px] font-medium text-text-primary">
-                            {s.name}
+                          <span className="text-[12px] text-text-secondary">
+                            Also run loss recovery on{' '}
+                            {pyStrategies.find(
+                              (p) => p.id === (recoveryFor ?? Array.from(selected)[0])
+                            )?.name ?? 'the first leg'}
+                            &apos;s losses
                           </span>
-                          {s.suggested_instrument && (
-                            <span className="ml-2 text-[11px] text-text-tertiary font-mono">
-                              {s.suggested_instrument}
-                            </span>
-                          )}
                         </span>
-                        {action === 'reuse' && (
-                          <span
-                            className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-pos-text bg-pos-muted/40 border border-pos-text/20 rounded px-1.5 py-0.5"
-                            title="An existing completed run matches these exact settings — it will be reused, not re-run."
-                          >
-                            Reuse
-                          </span>
-                        )}
-                        {action === 'run' && (
-                          <span
-                            className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-warn-text bg-warn-muted/30 border border-warn-text/20 rounded px-1.5 py-0.5"
-                            title="No matching run exists — this leg will be backtested fresh at the chosen timeframe and costs."
-                          >
-                            Run
-                          </span>
-                        )}
+                        <span
+                          className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5"
+                          title="It has no setups of its own — after that strategy loses, it takes a smaller trade the other way. It competes for the same risk budget, so it can shrink or block the leg it follows. It runs on its parent's timeframe."
+                        >
+                          Extra leg
+                        </span>
                       </button>
-                      {/* ── Per-leg risk ────────────────────────────────────────────
-                        🔴 The one thing the form could never say: how much of the shared budget
-                        each leg puts behind a trade. Without it both legs ran their stored
-                        default, so a stack was always "these two, as shipped" — and the whole
-                        point of one balance is deciding how it is divided.
-                        ⚠ Rendered OUTSIDE the row's button (an input inside a button is invalid
-                        and every keystroke would toggle the leg off).
-                        ⚠ Absent for a strategy whose schema does not declare the field — a box
-                        writing a setting the strategy has never heard of is worse than no box. */}
-                      {on && shownRisk !== undefined && (
-                        <div className="pl-6 pt-1 flex items-center gap-2">
-                          <label className="text-[11px] text-text-tertiary">
-                            Risk per trade (%)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0.1"
-                            value={shownRisk}
-                            onChange={(e) =>
-                              setLegRisk((prev) => ({ ...prev, [s.id]: Number(e.target.value) }))
-                            }
-                            className="w-[84px] bg-bg-sunken border border-border-subtle rounded-md px-2 py-1 text-[12px] font-mono focus:outline-none focus:border-accent transition-colors"
-                          />
-                          {edited && (
-                            <span className="text-[10px] text-warn-text">
-                              was {base} · this leg runs fresh
-                            </span>
-                          )}
-                        </div>
-                      )}
                     </div>
-                  )
-                })}
-                {/* 🔴 THE RECOVERY LEG IS ADDED HERE, UNDER ITS PARENT, AND NOWHERE ELSE. It has
-                    no setups of its own, so a picker row for it could build a stack with nothing
-                    to read — an empty book that looks exactly like a rule that found nothing.
-                    Nesting it under the leg whose losses it follows makes the dependency
-                    impossible to get wrong rather than something the backend has to refuse. */}
-                {shared && recoveryRule && selected.size > 0 && (
-                  <div className="pl-6 pt-0.5">
-                    <button
-                      onClick={() => {
-                        const parent = recoveryFor
-                          ? null
-                          : (Array.from(selected).find((id) =>
-                              pyStrategies.some((p) => p.id === id)
-                            ) ?? null)
-                        setRecoveryFor(parent)
-                      }}
-                      data-testid="recovery-toggle"
-                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg border text-left transition-colors ${
-                        recoveryFor
-                          ? 'border-accent/40 bg-accent/5'
-                          : 'border-border-subtle bg-bg-sunken hover:border-border-default'
-                      }`}
-                    >
-                      <span
-                        className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${recoveryFor ? 'bg-accent border-accent' : 'border-border-default'}`}
-                      >
-                        {recoveryFor && (
-                          <span className="text-bg-base text-[10px] font-bold">✓</span>
-                        )}
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="text-[12px] text-text-secondary">
-                          Also run loss recovery on{' '}
-                          {pyStrategies.find(
-                            (p) => p.id === (recoveryFor ?? Array.from(selected)[0])
-                          )?.name ?? 'the first leg'}
-                          &apos;s losses
-                        </span>
-                      </span>
-                      <span
-                        className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5"
-                        title="It has no setups of its own — after that strategy loses, it takes a smaller trade the other way. It competes for the same risk budget, so it can shrink or block the leg it follows."
-                      >
-                        Extra leg
-                      </span>
-                    </button>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </>
             )}
-          </div>
 
-          <div>
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              Instrument
-            </div>
-            <input
-              value={instrument}
-              onChange={(e) => setInstrument(e.target.value)}
-              placeholder="e.g. XAUUSD"
-              className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
-            />
-            <p className="text-[11px] text-text-tertiary mt-1.5">
-              Every strategy in the stack runs on this one instrument, window and cost profile, on
-              one account. Each picks its own timeframe below.
-            </p>
-            {brokerNamingUnknown && (
-              <p className="text-[11px] text-warning mt-1.5">
-                Nobody has recorded how {brokerProfile} names its symbols, so this is being sent
-                exactly as typed. Check it matches what that account quotes.
-              </p>
-            )}
-          </div>
-
-          {/* 🔴 ONE TIMEFRAME PER LEG, prefilled from the frame each strategy states it was
-              MEASURED on. A single box for the whole stack put a 5-minute bot on 15-minute bars
-              beside a 15-minute one and called the combined table a portfolio result — the
-              simulator has always merged two frames on one account, this form was the half that
-              could only ask for one. ⚠ It is a DEFAULT, not a lock: another frame is a legal run
-              and simply a different experiment from the one the strategy's figures come from. */}
-          <div data-testid="stack-timeframes">
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              Timeframe per strategy
-            </div>
-            {selected.size === 0 ? (
-              <p className="text-[11px] text-text-tertiary">Pick a strategy first.</p>
-            ) : (
-              <div className="space-y-2">
-                {pyStrategies
-                  .filter((s) => selected.has(s.id))
-                  .map((s) => (
-                    <div key={s.id} className="flex items-center justify-between gap-3">
-                      <span className="text-[12px] text-text-secondary truncate">
-                        {s.name}
-                        {s.suggested_bar_value != null &&
-                          barByLeg[s.id] !== s.suggested_bar_value && (
-                            <span className="ml-1.5 text-[10px] text-warning">
-                              measured on {barLabel(s.suggested_bar_value)}
-                            </span>
-                          )}
-                      </span>
-                      <div className="flex gap-1.5 flex-shrink-0">
-                        {BAR_PRESETS.map(([v, label]) => (
-                          <button
-                            key={v}
-                            onClick={() => setLegBar((prev) => ({ ...prev, [s.id]: v }))}
-                            className={`px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors ${
-                              barByLeg[s.id] === v
-                                ? 'border-accent bg-accent/10 text-accent'
-                                : 'border-border-subtle bg-bg-sunken text-text-secondary hover:border-border-default'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
             {mixedFrames && (
-              <p className="text-[11px] text-text-tertiary mt-1.5">
+              <p className="text-[11px] text-text-tertiary mt-2 leading-snug">
                 Two timeframes on one account: the faster leg steps several times inside the slower
-                one&apos;s bar. The window has to be one the {barLabel(finestBar)} bars reach —
-                where they do not, the slower leg would compound on its own and size every later
+                one&apos;s bar. The window above has to be one the {barLabel(finestBar)} bars reach
+                — where they do not, the slower leg would compound on its own and size every later
                 trade off a balance it built unopposed.
               </p>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-                Commission / side
+          <Divider />
+
+          {/* ── How it runs: the account it shares, and what it is charged ──────
+              Side by side, because they are the two halves of one question and each is short.
+              Stacked in a 520px column they read as two more items on a list of eight. */}
+          <div className={`grid gap-5 ${shared ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+            {shared && (
+              <div data-testid="stack-account-fields">
+                <SectionHead
+                  label="The shared account"
+                  tooltip="One balance and one risk budget for every leg. This is what makes a stack a portfolio rather than a sum of separate runs."
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className={labelCls}>Balance ($)</label>
+                    <input
+                      type="number"
+                      step="100"
+                      min="1"
+                      value={accountSize}
+                      onChange={(e) => setAccountSize(Number(e.target.value))}
+                      className={`${inputCls} font-mono`}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Risk cap (%)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      value={riskCapPct}
+                      onChange={(e) => setRiskCapPct(Number(e.target.value))}
+                      className={`${inputCls} font-mono`}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Entry floor (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={entryFloorPct}
+                      onChange={(e) => setEntryFloorPct(Number(e.target.value))}
+                      className={`${inputCls} font-mono`}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-text-tertiary mt-1.5 leading-snug">
+                  The cap is the most OPEN risk all strategies may hold at once, as a % of the
+                  <strong className="text-text-secondary"> live </strong> balance — and an open
+                  trade only reserves risk down to its{' '}
+                  <strong className="text-text-secondary">current</strong> stop, so a stop moved to
+                  breakeven frees its room. An entry with no room is shrunk to fit, or skipped if
+                  what is left falls under the floor.
+                </p>
+                {!accountValid && (
+                  <p className="text-[11px] text-neg-text mt-1.5">
+                    Balance and risk cap must both be above zero — a cap of zero refuses every
+                    entry, which is a stopped bot rather than a portfolio.
+                  </p>
+                )}
               </div>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={commPerSide}
-                onChange={(e) => setCommPerSide(Number(e.target.value))}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
+            )}
+
+            {/* ── Costs — ONE switch, on by default ─────────────────────────────
+                🔴 Every stack this lab ran before 2026-09-02 was GROSS while its page showed a
+                cost row: a stack carried no broker and no layers, so it fell through to two typed
+                figures that default to zero. The switch sends a BOOLEAN and the backend resolves
+                what that charges — the policy lives on the side that bills it. */}
+            <div data-testid="stack-costs">
+              <SectionHead
+                label="Costs"
+                tooltip="Every figure charged here is MEASURED on the broker account above — they are facts about that account, not settings. A free run is a diagnostic that says how much of the edge is friction."
               />
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-                Slippage (ticks)
+              <div className="flex items-start gap-2.5">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={chargeCosts}
+                  onClick={() => setChargeCosts((v) => !v)}
+                  className={`mt-[2px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
+                    chargeCosts ? 'bg-accent' : 'bg-border-default'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-bg-base transition-all ${
+                      chargeCosts ? 'left-[16px]' : 'left-[2px]'
+                    }`}
+                  />
+                </button>
+                <span className="min-w-0">
+                  <span className="block text-[12px] text-text-primary">
+                    {chargeCosts
+                      ? "Charge this account's real costs"
+                      : 'Run gross — charge nothing'}
+                  </span>
+                  <span className="block text-[11px] text-text-tertiary leading-snug">
+                    {chargeCosts
+                      ? 'Spread on every fill, commission and overnight financing, all measured on the account above.'
+                      : 'A diagnostic only. It answers how much of the edge is friction, never whether the stack works.'}
+                  </span>
+                </span>
               </div>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={slippageTicks}
-                onChange={(e) => setSlippageTicks(Number(e.target.value))}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
-              />
+              {!chargeCosts && (
+                <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                  This stack will report a gross figure, and it is not comparable to a charged one —
+                  real fills change which setups exist, not just what they pay.
+                </p>
+              )}
+              {/* ⚠ WARNS, never blocks. Measuring against a broker you are not pointed at is a
+                  legitimate thing to do deliberately. */}
+              {chargeCosts && brokerMatches === false && (
+                <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                  This charges {brokerProfile}&apos;s costs over bars from {attachedProfile?.id},
+                  which is the terminal actually connected. Same stack, two brokers — pick{' '}
+                  {attachedProfile?.id} unless you mean to compare.
+                </p>
+              )}
+              {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
+                <p className="mt-2 text-[11px] text-text-tertiary leading-snug">
+                  Can&apos;t tell which terminal is connected, so nothing here confirms these costs
+                  match the bars this stack will replay.
+                </p>
+              )}
+              {/* This one DOES block, because the backend refuses it — a tier nobody has measured
+                  would otherwise borrow a sibling's number, and PU Prime's measured 2.7x apart. */}
+              {chargeCosts && brokerUnpriced && (
+                <p className="mt-2 text-[11px] text-neg-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                  This account&apos;s spread has never been measured, so it cannot be run charged.
+                  Measure it first, or pick an account that has been.
+                </p>
+              )}
+
+              {/* 🔴 SLIPPAGE IS THE ONE TYPED COST, AND COMMISSION IS NOT A FIELD AT ALL.
+                  Commission is a MEASURED fact about the broker account — `routers/_costs.py`
+                  reads it off the account and has ignored whatever was typed here since the day
+                  the switch landed. So the box asked the reader for a number, showed it back to
+                  them, and changed nothing: the worst kind of control, and it is rule 7 in
+                  miniature. Slippage stays because it is the one cost nobody has measured, and
+                  charging it is somebody saying a guess out loud. */}
+              {chargeCosts && !brokerUnpriced && (
+                <div className="mt-2 px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken">
+                  <span className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[12px] text-text-primary">Slippage</span>
+                    <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                      a guess
+                    </span>
+                  </span>
+                  <span className="block text-[11px] text-text-tertiary leading-snug mb-1.5">
+                    Nobody has measured this. Leave it at 0 unless you mean to charge an assumption;
+                    it is charged on market exits only.
+                  </span>
+                  <div className="max-w-[220px]">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={slippageTicks}
+                      onChange={(e) => setSlippageTicks(Number(e.target.value))}
+                      className={`${inputCls} font-mono`}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          <div>
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              Period
-            </div>
-            <PeriodPicker
-              start={start}
-              end={end}
-              onChange={(s, e) => {
-                setStart(s)
-                setEnd(e)
-              }}
-              limit={historyLimit}
-            />
-          </div>
-
+          {/* ── What pressing the button will actually do ─────────────────────── */}
           {settingsReady && shared && (
             <div className="text-[12px] text-text-secondary bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2">
               <span className="text-warn-text font-semibold">{selected.size + 1} replays</span> —
@@ -905,7 +963,8 @@ export function StackConfigModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-subtle flex-shrink-0">
+        {/* ── Footer ─────────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-border-subtle flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-[7px] rounded-md text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
