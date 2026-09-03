@@ -2011,6 +2011,42 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The three pa
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The parity gate — `tools/compare_strategy.py` + `/audit-strategy`*.
 
+### The gate skips the export's final calendar day, and the CODE WAS INNOCENT (2026-09-03)
+
+🔴 **RED FROM 2026-09-02 TO 2026-09-03 ON A DEFECT THAT WAS NOT IN THE BOT.** On a fresh full
+export the two sides are identical for **21,702 bars**; the only disagreement was the short side's
+stage on the still-forming final day — Python placed a new Day-High liquidity level at
+2026-09-03 00:45 and swept it, Pine still pointed at the previous one. **~230 COMPLETED day
+boundaries in the same export agree exactly**, which is what makes this settling rather than a
+day-roll bug: only the day that has not finished disagrees.
+
+🔴 **THE CUT-OFF IS A DAY, NOT A BAR COUNT, AND COPYING THE SIBLING GATE'S NUMBER WOULD HAVE LEFT
+THIS RED WHILE LOOKING FIXED.** `compare_bleg.py` gained the same guard a day earlier sized to its
+STRUCTURE lookahead (15 bars) because its unsettled dependency is a swing. This bot's is a DAILY
+liquidity line, which is time-based — the divergence sat **65 bars** from the end, four times
+outside a 15-bar tail. ⚠ **Nor is 65 the answer**: a number fitted to one export hides the next
+real drift that starts inside the tail. `unsettled_tail()` computes the final calendar day from
+the export itself, floored by the structure lookahead so a file ending minutes into a new day
+still covers unconfirmed swings.
+
+⚠ **The final day is dropped whether or not it happens to be complete** — an export from a live
+chart ends mid-day by construction and nothing distinguishes a day that closed from one that
+merely stopped. A settled day costs one day of coverage the next export gets back; an unsettled
+one costs a red gate nobody can act on. ⚠ **The replay is always the FULL export**; the tail
+narrows only what is COMPARED, so the engines stay warm and a drift beginning in the tail shows up
+next time.
+
+🔴 **THE FIRST VERSION OF THE GUARD COULD REPORT PARITY IT NEVER CHECKED.** `--tail 99999` compared
+ZERO bars and printed `PARITY OK`. It now **refuses** (exit 2), and every `PARITY OK` states how
+many bars the verdict rests on — *"could not run"* and *"ran and passed"* must never be the same
+outcome, and a narrowed window is invisible without the count. ⚠ **Three distinct exits: 0 agreed,
+1 real mismatch, 2 cannot run.**
+
+⚠ **One mutation SURVIVES BY CONSTRUCTION and is named rather than left looking covered**:
+truncating the REPLAY instead of the comparison changes nothing observable in a single run, because
+the tail sits at the end and no diffed decision depends on it. That invariant only shows on the
+NEXT export, so it is enforced by reading the code, not by a test.
+
 ### The 2026-07-22 re-sync (the export was 7 days stale)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-22 re-sync (the export was 7 days stale)*.

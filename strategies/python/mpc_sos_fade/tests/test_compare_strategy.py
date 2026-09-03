@@ -209,6 +209,15 @@ def test_detects_a_planted_mismatch(tmp_path):
     armed = df.index[(df["px_dec_bits"].astype(int) & 1) == 1].tolist()
     target = next((r for r in armed if r >= 100), None)
     assert target is not None, "synthetic run never armed a long — adjust the fixture"
+    # ⚠ The planted bar must land INSIDE the compared window, or this test stops testing anything
+    # and says so by passing. `run_parity` drops the export's final calendar day (bars that cannot
+    # have settled on a live chart), so a fixture whose first armed bar drifted into that day would
+    # plant a mismatch nothing looks at. Asserted against the tool's own rule rather than a
+    # hardcoded 96, so it stays true if that rule changes.
+    _tail = cs.unsettled_tail(cs.load_export(p))
+    assert target < len(df) - _tail, (
+        f"planted bar {target} sits inside the unsettled tail (last {_tail} bars) — it would not "
+        f"be compared, and this test would pass without detecting anything")
     df.loc[target, "px_dec_bits"] = int(df.loc[target, "px_dec_bits"]) & ~1  # clear armed bit
     df.to_csv(p, index=False)
     msgs = cs.run_parity(p, warmup=100)
@@ -475,3 +484,60 @@ def test_a_frame_too_short_to_measure_is_not_refused():
     """
     assert cs.export_bar_ms(_frame(5, rows=1)) is None
     assert cs.timeframe_refusal(_frame(5, rows=1)) is None
+
+
+# ── the UNSETTLED TAIL (2026-09-03) ───────────────────────────────────────────
+#
+# 🔴 THESE EXIST BECAUSE A MUTATION SURVIVED. Deleting the tail entirely — making the gate diff the
+# export's still-forming final day again, which is the exact state it was RED in for a day — broke
+# nothing in this file. The synthetic fixtures cannot reproduce the divergence that motivated the
+# guard (a day-high liquidity line that had not settled), so without these the guard's whole
+# purpose rested on one real export sitting on one machine.
+
+
+def _day_frame(days: int, bars_last_day: int = 96):
+    """`days` full 96-bar days, then a partial final day of `bars_last_day` bars."""
+    n = days * 96 + bars_last_day
+    idx = pd.date_range(start="2025-01-06", periods=n, freq="15min")
+    return pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=idx)
+
+
+def test_the_tail_is_the_final_calendar_day_not_a_fixed_bar_count():
+    # The number differs per export by construction — that is the whole reason it is computed
+    # rather than copied from the sibling gate, whose tail is a fixed structure lookahead.
+    assert cs.unsettled_tail(_day_frame(3, bars_last_day=40)) == 40
+    assert cs.unsettled_tail(_day_frame(5, bars_last_day=96)) == 96
+    # ⚠ With no engine config there is no lookahead to floor with, so the day stands alone.
+    assert cs.unsettled_tail(_day_frame(3, bars_last_day=7)) == 7
+
+
+def test_a_short_final_day_is_floored_by_the_structure_lookahead():
+    # ⚠ The daily cut subsumes the swing lookahead on any normal export (69 bars against 15 on the
+    # export this was built from), but a file ending minutes into a new day would leave unconfirmed
+    # swings compared. `max`, never the day alone.
+    look = MpcSosFadeStrategy.engine_config().major_length
+    assert cs.unsettled_tail(_day_frame(3, bars_last_day=2), MpcSosFadeStrategy.engine_config()) == look
+
+
+def test_comparing_nothing_REFUSES_instead_of_reporting_parity(tmp_path):
+    # 🔴 The failure this refusal was written for: `--tail 99999` compared ZERO bars and printed
+    # `PARITY OK`. *Could not run* and *ran and passed* must never be the same outcome.
+    p, _ = _write(tmp_path)
+    with pytest.raises(cs.NothingToCompare):
+        cs.run_parity(p, warmup=100, tail=99_999)
+
+
+def test_a_defaulted_tail_and_an_explicit_zero_agree_on_a_clean_export(tmp_path):
+    """Both settings report parity on a fixture that has none of the settling problem.
+
+    ⚠ NAMED FOR WHAT IT CHECKS. It was first written as "the tail narrows the COMPARISON and never
+    the REPLAY" and it does NOT prove that: truncating the replay was mutated in and SURVIVED.
+    That is a fact about the property rather than a weak test — the tail sits at the very end, so
+    removing those bars from the replay changes no decision the diff ever reads. The difference
+    only shows on the NEXT export, where a drift that began inside the old tail must still be
+    there; no single-run test can observe it. The invariant is enforced by reading `run_parity`,
+    which passes the full frame to `.run()` and applies the tail only to the diff.
+    """
+    p, _ = _write(tmp_path)
+    assert cs.run_parity(p, warmup=100, tail=0) == []
+    assert cs.run_parity(p, warmup=100) == []

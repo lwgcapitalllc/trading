@@ -461,12 +461,78 @@ def _decision_row(dec: Decision) -> Dict[str, object]:
     }
 
 
+# ── The UNSETTLED TAIL ────────────────────────────────────────────────────────────────────────
+#
+# 🔴 THIS GATE WAS RED FROM 2026-09-02 TO 2026-09-03 AND THE CODE WAS INNOCENT. Over 21,800 bars
+# of a fresh export the two sides were identical; the ONLY disagreement was the short side's
+# day-high sweep, on the final still-forming day — Python placed a new "Day High" level at
+# 2026-09-03 00:45 and swept it, Pine still pointed at the previous one. Roughly 230 COMPLETED day
+# boundaries in the same export agree exactly, which is what says this is settling rather than a
+# day-roll bug: only the one day that has not finished disagrees.
+#
+# 🔴 THE CUT-OFF IS A DAY, NOT A BAR COUNT, AND THAT IS THE WHOLE POINT. `compare_bleg.py` gained
+# the same guard on 2026-09-02 sized to its STRUCTURE lookahead (`major_length`, 15 bars) because
+# its unsettled dependency is a swing. This bot's unsettled dependency is a DAILY liquidity line,
+# which is time-based — the divergence here sits 65 bars from the end, four times outside a 15-bar
+# tail. **Copying the sibling gate's constant across would have left this gate red while looking
+# fixed**, and picking 65 to make one export pass would be a number fitted to one file, which
+# hides the next real drift that starts inside the tail.
+#
+# ⚠ The FINAL CALENDAR DAY is dropped whether or not it happens to be complete. An export taken
+# from a live chart ends mid-day by construction, and there is no way to tell a day that closed
+# from one that merely stopped. Dropping a settled day costs one day of coverage that the next
+# export gets back; keeping an unsettled one costs a red gate nobody can act on.
+#
+# ⚠ It is `max`ed with the structure lookahead so a SHORT final day still covers unconfirmed
+# swings — the daily cut subsumes it on any normal export (69 bars against 15 here), but a file
+# ending minutes into a new day would not.
+#
+# ⚠ The replay is always the FULL export — this narrows only what is COMPARED, so the engines stay
+# warm and a drift that starts inside the tail persists and shows on the next export.
+class NothingToCompare(Exception):
+    """The warmup and the tail together leave no bars to diff.
+
+    🔴 REFUSING IS THE ANSWER, because the alternative is what this gate did on its first run with
+    a tail: `--tail 99999` compared ZERO bars and printed `PARITY OK`. *Could not run* and *ran and
+    passed* must never be the same outcome — that is the rule this repo keeps re-learning, and a
+    parity gate reporting agreement it never checked is the worst shape it has.
+    """
+
+
+def unsettled_tail(df: pd.DataFrame, engine_cfg=None) -> int:
+    """How many trailing bars cannot have settled. See the block above for why it is a day."""
+    lookahead = int(getattr(engine_cfg, "major_length", 0) or 0)
+    if len(df.index) == 0:
+        return lookahead
+    try:
+        last_day = df.index[-1].date()
+        in_last_day = sum(1 for ts in df.index if ts.date() == last_day)
+    except AttributeError:
+        return lookahead
+    return max(in_last_day, lookahead)
+
+
 def compare(df: pd.DataFrame, decisions: List[Decision], warmup: int,
-            price_tol: float, r_tol: float) -> List[str]:
+            price_tol: float, r_tol: float, tail: int = 0,
+            tail_is_default: bool = True) -> List[str]:
     """Diff the Python decision stream against the export's px_* columns from `warmup`
     on. Returns a list of human-readable mismatch messages (empty = parity)."""
     msgs: List[str] = []
     n = min(len(df), len(decisions))
+    tail = max(0, int(tail))
+    if tail:
+        why = ("they are the export's final calendar day, whose daily liquidity levels cannot have "
+               "settled on a live chart" if tail_is_default
+               else "asked for on the command line")
+        print(f"NOTE: the last {tail} bars are NOT compared — {why}. "
+              f"Pass --tail 0 to diff them anyway.")
+    # ⚠ REFUSE rather than clamp. Clamping to `max(warmup, n - tail)` looks safer and is not: it
+    # turns an over-wide tail into an empty loop, an empty message list, and `PARITY OK`.
+    if n - tail <= warmup:
+        raise NothingToCompare(
+            f"warmup {warmup} + tail {tail} leaves no bars of the {n} in this export to diff. "
+            f"Lower one of them, or export more history.")
+    n -= tail
     for i in range(warmup, n):
         row = df.iloc[i]
         if "_px_present" in df.columns and not bool(row["_px_present"]):
@@ -532,8 +598,12 @@ def _num_match(a: Optional[float], b: Optional[float], tol: float) -> bool:
 
 def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
                r_tol: float = 0.02, base_config: Optional[SosFadeConfig] = None,
-               eq_exempt: Optional[bool] = None) -> List[str]:
-    """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
+               eq_exempt: Optional[bool] = None, tail: Optional[int] = None) -> List[str]:
+    """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0).
+
+    `tail` drops the final N bars from the COMPARISON only — see `unsettled_tail`, which computes
+    the default from the export itself. Pass 0 to diff the unsettled tail anyway.
+    """
     df = load_export(path)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
@@ -542,7 +612,10 @@ def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
     strat = MpcSosFadeStrategy(cfg).run(bars, engine_config=eng, warmup=0)
     for line in warn_unexercised(cfg, df):
         print(f"  \u26a0 {line}")
-    return compare(df, strat.decisions, warmup, price_tol, r_tol)
+    tail_is_default = tail is None
+    if tail_is_default:
+        tail = unsettled_tail(df, eng)
+    return compare(df, strat.decisions, warmup, price_tol, r_tol, tail, tail_is_default)
 
 
 # ── arming-diagnostic mode (needs the export's dbg_* columns) ─────────────────────
@@ -713,6 +786,17 @@ def timeframe_refusal(df: pd.DataFrame) -> Optional[str]:
     )
 
 
+def _compared_bars(args) -> int:
+    """How many bars the verdict actually rests on — reported beside every PARITY OK."""
+    try:
+        df = load_export(args.csv)
+        eng = engine_config_from_export(df, MpcSosFadeStrategy.engine_config(), None)
+        tail = unsettled_tail(df, eng) if args.tail is None else max(0, int(args.tail))
+        return max(0, len(df) - tail - args.warmup)
+    except Exception:
+        return -1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="A+ strategy logic-parity check (Python vs Pine export)")
     ap.add_argument("csv", type=Path, help="mpc_strategy_export.pine chart-data CSV")
@@ -730,6 +814,12 @@ def main(argv=None) -> int:
     ap.add_argument("--debug-arm", action="store_true",
                     help="diff the A+ arming INPUTS (recentSSL / session-gap / arm-state) "
                          "against the export's dbg_* columns, to locate an arming gap")
+    # Default is computed from the export (see `unsettled_tail`), NOT a constant — the region that
+    # cannot have settled here is a calendar day, so it is a different number in every file.
+    ap.add_argument("--tail", type=int, default=None,
+                    help="skip the last N bars. Default: the export's final calendar day, whose "
+                         "daily liquidity levels cannot have settled on a live chart. Pass 0 to "
+                         "diff them anyway.")
     args = ap.parse_args(argv)
 
     # A truncated export (Pine's bar_index runs past the CSV row count) means Pine warmed its
@@ -778,12 +868,21 @@ def main(argv=None) -> int:
 
     eq = None if args.eq_exempt is None else (args.eq_exempt == "on")
     try:
-        msgs = run_parity(args.csv, args.warmup, args.price_tol, args.r_tol, eq_exempt=eq)
+        msgs = run_parity(args.csv, args.warmup, args.price_tol, args.r_tol, eq_exempt=eq,
+                          tail=args.tail)
     except EqExemptUnknown as exc:
         print(f"CANNOT DIFF — {exc}")
         return 2
+    except NothingToCompare as exc:
+        print(f"CANNOT DIFF — {exc}")
+        return 2
     if not msgs:
-        print(f"PARITY OK — Python == Pine on every bar from {args.warmup} on.")
+        # ⚠ The COUNT is part of the verdict, not decoration. "PARITY OK" over 40 bars and over
+        # 21,000 read identically without it, and a tail or warmup that quietly swallowed the
+        # export is exactly the failure the refusal above exists to stop — this is the half that
+        # catches a window merely narrowed rather than emptied.
+        print(f"PARITY OK — Python == Pine on every bar from {args.warmup} on "
+              f"({_compared_bars(args)} bars compared).")
         return 0
     print("PARITY MISMATCH — first diverging bar:")
     print("  " + msgs[0])
