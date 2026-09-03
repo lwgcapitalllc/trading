@@ -1005,8 +1005,11 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   **scales the leg's own desired qty** to the room (shrink-to-floor) — it never re-derives the qty,
   which is what preserves strategy parity (the bot sized off the limit price at placement).
   `request_fills` batch-splits same-bar ties by weight. `book_pnl`/`close_position` (or `on_close`),
-  `update_stop`, a `contention` log stamped with `now`. **`SoloAccount`** = one leg, no cap, always
-  full size = standalone behaviour, and the parity anchor.
+  `update_stop`, a `contention` log stamped with `now`. **`SoloAccount`** = one leg, an infinite RISK
+  budget (`room()` is `inf`), so contention never binds and the desired size is granted whole.
+  ⚠ **It is NOT capless** — it still carries the VENUE ceiling (`max_lots`, default 100), which
+  sits outside the budget and binds on a solo run, so it is not a pure passthrough and the
+  parity anchor needs `max_lots=None` passed explicitly. See *the VENUE CEILING* below.
 - **`clock.py`** — `merge_streams`: k-way merge of the legs' bar streams into time-ordered `Tick`s,
   co-timed bars grouped, stable leg order.
 - **`simulator.py`** — `simulate(legs, account)`: steps the legs on the clock, orders
@@ -1281,8 +1284,9 @@ SoloAccount is the gate that the seam didn't move standalone behaviour.
 
 ⚠ **`build_strategy` REFUSES a strategy that cannot accept the account**, and for a sharper reason
 than the `cost_profile` refusal it sits beside: a dropped cost profile under-charges a run, while
-a dropped ACCOUNT sends the leg back to its own `SoloAccount`, which has an **infinite** budget and
-always grants full size. The run would then report a capped, shared portfolio while that leg sized
+a dropped ACCOUNT sends the leg back to its own `SoloAccount`, whose RISK budget is **infinite**,
+so nothing about the shared cap binds it. (The venue ceiling is the one limit it still carries,
+and that is not a risk gate — see *the VENUE CEILING* below.) The run would then report a capped, shared portfolio while that leg sized
 off the whole balance and contended with nobody — a risk cap claimed on screen and enforced nowhere.
 
 ## Data layer (A0) — how it works

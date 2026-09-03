@@ -13,8 +13,12 @@ model lives here:
     floor. It SCALES the leg's qty, it never re-derives it — so a leg run alone is untouched.
   * same-bar ties split the room by each leg's desired risk.
 
-`SoloAccount` is the same object with no cap and no floor — one leg, always granted in full,
-i.e. standalone behaviour. Standalone = a portfolio of one. This is the parity anchor.
+`SoloAccount` is the same object with no RISK cap and no floor — one leg, granted the full size
+the budget could fund, i.e. standalone behaviour. Standalone = a portfolio of one.
+🔴 **THIS SAID `no cap ... always granted in full` AND THAT STOPPED BEING TRUE ON 2026-09-02.**
+It still carries the VENUE ceiling (`max_lots`, default 100 lots), which sits outside the budget
+and binds anyway — so it is not a pure passthrough, and the parity anchor is
+`SoloAccount(max_lots=None)`, which the harness has to pass. The class docstring owns the rule.
 Pure, offline, no app imports.
 """
 
