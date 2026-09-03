@@ -1274,3 +1274,46 @@ stayed there; the evidence is here, verbatim, unedited.
 
 **It is drivable from the LAB as of the same day, and doing so refuted the plan's own success test.** A stack in `command-center/` is now either a **screen** (N standalone runs added together — every leg on its own full account, so nothing can block anything and it is an UPPER BOUND) or a **shared account**, and the page says which in the header before any number below it. 🔴 **`command-center/docs/SHARED_RISK_STACK.md` had stated that a shared run must close LOWER than the screen and that a higher one means the risk gate is not being enforced. The first real run closes $36,806 against the screen's $26,870 — HIGHER — with the cap working and nothing refused.** The prediction assumed refusals are the only difference between the two views; they are not. **A screen gives each leg a private balance and a shared account COMPOUNDS both onto one**, so the second leg sizes off a balance the first has grown — more money on the same trades, rather than less risk. Two effects in opposite directions, and the compounding one is unbounded while the refusal one is capped by how often the budget is genuinely full. ⚠ **So compare R, never net dollars**: the checks that say the gate is enforced are `peak_open_risk_pct <= risk_cap_pct` and every R difference tracing to a row in the contention log. **The standing lesson is about the criterion rather than the code: a verification test written before the thing exists is a prediction, and this one would have condemned a correct implementation.**
 
+
+---
+
+## A stack leg gets its own timeframe, and the doc sweep that followed (2026-09-03)
+
+**Aaron, on the stack form:** the A+ bot and the extreme leg were being run on ONE frame the reader
+picked, and the extreme leg only works on five minutes. So a 5-minute bot silently replayed on 15
+and the combined table read as a portfolio result. **The simulator was never the problem** — per-leg
+bar frames have worked since the shared-account stack landed, and the command line already accepted
+one. It was the form and the router that had nowhere to put the answer.
+
+**The fix is a DECLARATION, not a control.** Each strategy package now states the frame it was
+measured on, the form fills each leg's box from it, and a per-leg override stays available. Values
+are the frames each bot's gate actually ran on: A+, B-LEG and BOS 15, realign and the extreme leg 5.
+⚠ **It is a default and never a refusal** — sweeping a bot across frames is a real question, so
+nothing rejects another frame; the box just stops lying about which one was measured. ⚠ **Undeclared
+means UNDECLARED** rather than "any frame will do" — that is rule 1 in its smallest form.
+
+🔴 **A WORKTREE RED-WATCH GAVE A FALSE GREEN, AND THE REASON GENERALISES TO EVERY BACKEND TEST HERE.**
+Five new declaration tests were run in a worktree checked out at HEAD, expecting red. They passed.
+The backend resolves the strategy tree through an ABSOLUTE path from machine config, so a backend
+test imports the MAIN working tree whatever checkout pytest was launched from — the worktree changed
+the test files and nothing else. **The tests were then proven by MUTATION instead** (wrong value,
+then the key deleted), which is what rule 12 asks for and what a worktree cannot supply here.
+⚠ **The failure shape is the dangerous one: it does not error, it agrees with you.**
+
+🔴 **THE CHANGE KILLED A JUSTIFICATION THREE FILES AWAY AND NOTHING FAILED.** The stack's price chart
+carries the base leg's structure overlays, and the stated reason was that every leg's copy is
+byte-identical because they share candles. Legs no longer share candles. **The behaviour is
+unchanged and is now a limitation rather than a free choice** — a 5-minute leg has its trades drawn
+over swings and gaps it never saw, on the drawing only, with that leg's own page still correct.
+⚠ **Nothing could have caught this**: no test asserts a comment, and the premise was true when
+written. It was found by sweeping every doc for the sentence the change falsified.
+
+**The sweep found 21 stale sites across 9 files**, all of one shape — a summary somewhere far from
+the code repeating a property that had just stopped holding. Two counts, six "one shared
+instrument/timeframe/window" sentences, a schema comment on the very table that changed, a form
+control removed the same day, and — unrelated to this work but caught by the same pass — three
+places still calling the standalone account capless after the venue ceiling landed on it.
+⚠ **The parent/child doc rule did not prevent this and was not supposed to.** Every one of those
+sentences was a legitimate summary in its owning file; the fact they shared was simply no longer
+true. **A doc goes stale where a property is RESTATED, and restating is unavoidable — so the
+maintenance job is to sweep for the falsified sentence at the moment you falsify it.**

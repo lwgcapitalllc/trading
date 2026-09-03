@@ -136,7 +136,7 @@ MC (10k reshuffles + 1k bootstrap), walk-forward (IS/OOS windows), sensitivity (
 
 **Status:** ✅ Live
 
-`routers/stacks.py` + `services/lab_db.py` — layer 2+ **Python** strategies over ONE shared instrument/timeframe/window/cost profile to see combined P&L (summed client-side from each leg's `daily_pnl`; toggling a leg off never re-runs). **Smart reuse** (2026-07-25): on create, each leg that already has a COMPLETED standalone run at the EXACT same settings is reused as-is; only legs with no match are backtested fresh. `POST /backtests/stacks/preview` reports reuse-vs-run per leg without running anything (drives the modal's badges). See "Portfolio stacks (smart reuse)" below.
+`routers/stacks.py` + `services/lab_db.py` — layer 2+ **Python** strategies over ONE shared instrument/timeframe/window/cost profile to see combined P&L (summed client-side from each leg's `daily_pnl`; toggling a leg off never re-runs). **Smart reuse** (2026-07-25): on create, each leg that already has a COMPLETED standalone run at the EXACT same settings is reused as-is; only legs with no match are backtested fresh. `POST /backtests/stacks/preview` reports reuse-vs-run per leg without running anything (drives the modal's badges). See "Portfolio stacks (smart reuse)" below. 🔴 **SUPERSEDED 2026-09-03 on the timeframe: it is no longer shared.** Each leg runs on ITS OWN frame and the stack-level one is only the fallback for a leg whose package declares none. This file is an archive and the sentence above is left as written, but a live status row links here as [Detail] — the rule is `command-center/backend/CLAUDE.md` → *A stack leg runs on ITS OWN frame*.
 
 ### Telegram notifications
 

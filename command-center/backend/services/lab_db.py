@@ -844,12 +844,18 @@ def init_db() -> None:
                 ON instrument_intraday_ohlc(instrument, timeframe);
 
             -- Portfolio stacks. A stack layers 2+ Python strategies over ONE shared
-            -- instrument/timeframe/window/cost profile. Its own settings live here so a
-            -- stack whose legs are ALL reused (no fresh child run) still knows what it is.
+            -- instrument/window/cost profile. Its own settings live here so a stack whose
+            -- legs are ALL reused (no fresh child run) still knows what it is.
             CREATE TABLE IF NOT EXISTS stacks (
                 stack_id            TEXT PRIMARY KEY,
                 instrument          TEXT NOT NULL,
                 bar_type            TEXT NOT NULL,
+                -- 🔴 THE STACK-LEVEL FALLBACK FRAME, NOT THE FRAME EVERY LEG RAN ON.
+                -- The comment above this table said the timeframe was shared, and that
+                -- stopped being true on 2026-09-03. Each leg resolves its own frame
+                -- (`routers/stacks.py::_leg_bar_value`) and stores it on that leg's run
+                -- row; this column is only what a leg falls back to when its package
+                -- declares none. Read a leg's frame off the LEG.
                 bar_value           INTEGER NOT NULL,
                 start_date          TEXT NOT NULL,
                 end_date            TEXT NOT NULL,
@@ -3379,7 +3385,7 @@ def _backfill_stack_membership(conn) -> None:
 
 
 def insert_stack(data: dict) -> None:
-    """Persist a stack's shared settings (instrument/timeframe/window/costs, and — for a
+    """Persist a stack's shared settings (instrument/window/costs, the FALLBACK frame, and — for a
     SHARED-mode stack — the account the legs compete over).
 
     ⚠ The account knobs are written as `None` on a screen rather than as zeros. A screen has no

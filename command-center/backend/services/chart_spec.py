@@ -1184,9 +1184,15 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
         carrying both layers (`_overlay_identity`), and it draws while EITHER leg is shown. Keeping
         two would double the box count the menu reports and stack two identical rectangles.
 
-    ⚠ **The structure overlays and the indicators still come from the BASE leg alone**, unchanged:
-    they are computed from the candles rather than from any leg's trades, so every leg's copy is
-    byte-identical and a merge would be N copies of one answer.
+    🔴 **The structure overlays and the indicators come from the BASE leg alone — and since
+    2026-09-03 that is a LIMITATION, not the free choice this said it was.** They are computed
+    from the candles rather than from any leg's trades, so while every leg shared one frame each
+    copy was byte-identical and a merge would have been N copies of one answer. A stack leg now
+    runs on its OWN frame (`routers/stacks.py::_leg_bar_value`), so a 5-minute leg beside a
+    15-minute one gets its trades drawn over swings, gaps and an ATR it never saw. ⚠ **Nothing
+    about the RUN is affected** — this is the drawing only, and that leg's own run page shows its
+    real structure. Carrying them per leg needs the chart to swap overlay sets with the layer
+    toggle, which it cannot do today.
 
     ⚠ **CANDLESTICK REVERSALS ARE STILL DROPPED, and this is the one genuine refusal left.** A
     candle mark carries `spans` / `deepestOf` / `deepestNames` as INDICES into its own run's anchor
@@ -1269,10 +1275,13 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
 
     all_trades.sort(key=lambda t: t.get("entryTime", 0))
     # Structure overlays + indicators are a property of the MARKET on these candles, not of any one
-    # strategy — identical for every leg (same instrument/timeframe/window). So the stack's price
-    # chart carries the base leg's, giving it full BacktestDetail parity (structure layers, ATR pane,
-    # fib/measurement tools all read the same spec). The anchored groups are merged above instead,
-    # and the candle marks are dropped — see the docstring for why that one cannot be merged.
+    # strategy. So the stack's price chart carries the BASE leg's, giving it full BacktestDetail
+    # parity (structure layers, ATR pane, fib/measurement tools all read the same spec).
+    # 🔴 This line read `identical for every leg (same instrument/timeframe/window)` and that
+    # justification died on 2026-09-03: the legs share an instrument and a window but NOT a
+    # frame, so these describe the base leg's candles and no longer every leg's. Docstring above
+    # for what that costs a reader. The anchored groups are merged above instead, and the candle
+    # marks are dropped — see the docstring for why that one cannot be merged.
     overlays = [
         dict(o)
         for o in src.get("overlays", [])
