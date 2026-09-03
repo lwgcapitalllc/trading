@@ -152,6 +152,72 @@ function sharedReport(over: Record<string, unknown> = {}) {
   }
 }
 
+/**
+ * A shared report that has NOT arrived yet — `available: false` with a live phase.
+ *
+ * ⚠ Every scalar is explicitly `null` rather than omitted. That is what the backend really sends
+ * while a replay is in flight, and a fixture that quietly leaves them out is describing a payload
+ * shape the server never produces.
+ */
+function replaying(progress?: { phase: string; pct: number; message: string }) {
+  return {
+    stack_id: SHARED_ID,
+    available: false,
+    legs: [],
+    events: [],
+    neutral: null,
+    opening_balance: null,
+    closing_balance: null,
+    risk_cap_pct: null,
+    entry_floor_pct: null,
+    peak_open_risk_pct: null,
+    peak_concurrent_legs: null,
+    leg_count: null,
+    combined_trades: null,
+    combined_r: null,
+    contention_events: null,
+    progress: progress ?? {
+      phase: 'solo:mpc_bleg',
+      pct: 86,
+      message: 'solo:mpc_bleg · bar 15,872 / 23,712',
+    },
+  }
+}
+
+/**
+ * Re-point the stack detail at a stack that is still RUNNING, with no leg finished.
+ *
+ * ⚠ Registered AFTER `mock`, and it has to be — Playwright matches the most recently registered
+ * route first, so calling this before `mock` leaves the finished fixture in place and the check
+ * asserts on a stack that is not running.
+ */
+async function runningStack(page: Page) {
+  await page.route(
+    (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+    (r) => {
+      const d = stackDetail('shared')
+      return r.fulfill({
+        json: {
+          ...d,
+          status: 'running',
+          completed_at: null,
+          completed_strategies: 0,
+          strategies: d.strategies.map((s) => ({
+            ...s,
+            status: 'running',
+            net_pnl: null,
+            trade_count: null,
+            equity_curve: [],
+            solo_equity_curve: [],
+            daily_pnl: [],
+            solo_daily_pnl: [],
+          })),
+        },
+      })
+    }
+  )
+}
+
 // ⚠ Route on `u.pathname` against the `/api` PREFIX, never on an `http://localhost:8000` string.
 // The app fetches through the Vite proxy (`api/client.ts` → `const BASE = '/api'`), so a route
 // keyed on the backend's own origin matches NOTHING and the page quietly reads the live lab
@@ -487,6 +553,47 @@ test.describe('shared-account stacks', () => {
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     await expect(page.getByTestId('shared-account-panel')).toContainText('bar 15,872')
     await expect(page.getByTestId('shared-account-panel')).toContainText('86%')
+  })
+
+  test('a RUNNING stack has one progress readout, not two', async ({ page }) => {
+    // MUTATION: drop `!sharedInBanner` from the shared-account section's render guard → red on the
+    // second assertion, with two live progress readouts on screen exactly as reported.
+    //
+    // 🔴 The banner counted finished STRATEGIES while the panel below it counted BARS inside the
+    // current leg, each under its own heading. Two readouts of ONE job, saying different numbers,
+    // with nothing on screen saying they are the same job.
+    await mock(page, 'shared', replaying())
+    await runningStack(page)
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    // ⚠ Wait for the progress block FIRST. `toHaveCount(0)` on the panel is satisfied while the
+    // whole page is still loading, so asserting it straight after `goto` passes against the
+    // mutation — the vacuous-pass trap this file has now recorded four times.
+    await expect(page.getByTestId('stack-progress')).toBeVisible()
+    await expect(page.getByTestId('shared-account-panel')).toHaveCount(0)
+    // The bar counter is the finer measurement and survives the merge; the leg count becomes its
+    // caption. Losing either is losing half of what the reader was watching.
+    await expect(page.getByTestId('stack-progress')).toContainText('bar 15,872')
+    await expect(page.getByTestId('stack-progress')).toContainText('0 of 2 strategies complete')
+    // 🔴 And the phase is said in WORDS. `solo:mpc_bleg` is the machine's name for it and tells the
+    // person watching nothing — asserting only the bar count would pass against a banner printing
+    // the raw phase straight through.
+    await expect(page.getByTestId('stack-progress')).toContainText('Replaying MPC B-LEG')
+    await expect(page.getByTestId('stack-progress')).not.toContainText('solo:')
+  })
+
+  test('a FAILED shared replay keeps its own panel even while the stack runs', async ({ page }) => {
+    // MUTATION: drop the `phase !== 'failed'` clause from `sharedInBanner` → red. This is the
+    // load-bearing exclusion: a failure has a SENTENCE to show, not a percentage, and folding a
+    // stopped replay into a progress bar is how a dead job comes to look like a slow one.
+    await mock(
+      page,
+      'shared',
+      replaying({ phase: 'failed', pct: 41, message: 'no bars for XAUUSD.p' })
+    )
+    await runningStack(page)
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('shared-account-panel')).toContainText('shared replay failed')
+    await expect(page.getByTestId('shared-account-panel')).toContainText('no bars for XAUUSD.p')
   })
 
   test('a seam failure is called out rather than left in a column to be spotted', async ({

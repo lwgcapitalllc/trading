@@ -457,3 +457,48 @@ failed on its OPENING assertion — the chip already read `0`. The mock served a
 measured from `page.route(...)` registration, and the page's boot (navigate → bot snapshot → version
 queries) spends more than that before anything asks, so the very first answer came back settled. It
 anchors on the first REQUEST now. The failure looked exactly like the feature working.
+
+## The stack page's two progress readouts (2026-09-03)
+
+Reported off the screen while a two-strategy shared stack replayed. Rules:
+`../frontend/CLAUDE.md` → *A running stack has ONE progress readout*.
+
+**What was on screen.** A banner reading `Running — 0 of 2 strategies complete · auto-refreshing`,
+and directly beneath it a section headed `THE SHARED ACCOUNT` whose only content was a second
+spinner reading `shared · bar 43,520 / 630,993 · 5%`. Both were live, both described the same
+replay, and the two numbers cannot be reconciled from the screen: one counts strategies, the other
+counts bars inside the leg currently replaying. Aaron: *"I don't know why I have two terminal
+looking things showing the progress of the strategies… you could do that with any same terminal."*
+
+Below those sat a third statement of the same fact — a bordered box, ten rem tall, centred text,
+reading *"Waiting for the first strategy to finish…"* — occupying the slot the charts use on a
+finished stack.
+
+**Neither extra element was a bug.** Each was individually reasonable and each had its own test.
+The shared-account panel's spinner exists because `available: false` means *still replaying* and a
+multi-minute replay with no feedback reads as a page that failed; that reasoning is sound and is
+still why the branch exists. The defect is that nothing asked what the page looks like with all
+three rendering at once, which is the ordinary state of every running stack.
+
+**What the merge kept.** The bar counter is the finer measurement, so it drives the bar; the leg
+count became its caption. Both numbers are still on screen, now under one heading, with the phase
+translated out of the backend's own vocabulary (`solo:mpc_bleg` → *Replaying MPC B-LEG on its own
+account*).
+
+**What it deliberately did not absorb.** `SharedAccountPanel` has four branches and only ONE is
+progress. Failed, cancelled and abandoned each carry a sentence — *the shared replay failed*, *this
+will not arrive on its own, rerun it* — and a percentage cannot say any of them. `sharedInBanner`
+excludes them explicitly, and the check that pins it renders a failed replay under a running stack
+and asserts the failure text is still on the panel.
+
+**Proof.** `tests/stacks.spec.ts`, 29 → 31 checks, all 31 green. Non-vacuity by mutation, three run:
+
+| mutation | what went red |
+|---|---|
+| drop `!sharedInBanner` from the section's render guard | the panel COUNT — two readouts on screen, the reported defect exactly |
+| drop `phase !== 'failed'` from `sharedInBanner` | the failure sentence swallowed into a progress bar |
+| print `p.message` raw instead of the words | the banner reads `solo:mpc_bleg` |
+
+⚠ **The panel-count assertion had to wait on the progress block first.** `toHaveCount(0)` is
+satisfied while the whole page is still loading, so asserting it straight after `goto` passes
+against its own mutation — the fifth instance of that trap recorded in this app.

@@ -934,6 +934,51 @@ export function StackDetail() {
     return (id: string) => LEG_COLORS[(idx.get(id) ?? 0) % LEG_COLORS.length]
   }, [legs])
 
+  const nameFor = useCallback(
+    (id: string) => legs.find((l) => l.strategy_id === id)?.strategy_name ?? id,
+    [legs]
+  )
+
+  // Is the shared replay's own progress being carried by the banner above? Only while the STACK is
+  // running and the report is genuinely still in flight — a `failed` phase has a sentence to show,
+  // not a percentage, so it keeps its own panel and this stays false.
+  //
+  // ⚠ The three states this deliberately does NOT absorb are failed, cancelled and abandoned. Each
+  // is a replay that has STOPPED, and folding a stopped replay into a progress bar is how a dead
+  // job comes to look like a slow one.
+  const sharedInBanner =
+    isRunning && !!shared && !shared.available && shared.progress?.phase !== 'failed'
+
+  // The ONE readout the running banner draws. The shared replay's phase is the finer measurement —
+  // it counts bars inside the leg currently replaying — so it drives the bar whenever it exists,
+  // and the finished-strategy count becomes the caption beneath it.
+  const progress = useMemo(() => {
+    const done = stack?.completed_strategies ?? 0
+    const total = stack?.total_strategies ?? 0
+    const legs_ = `${done} of ${total} ${total === 1 ? 'strategy' : 'strategies'} complete`
+    const p = sharedInBanner ? shared?.progress : null
+    if (!p) {
+      return {
+        headline: `Running — ${legs_}`,
+        pct: total > 0 ? Math.round((done / total) * 100) : 0,
+        detail: 'Auto-refreshing every few seconds.',
+      }
+    }
+    // The phase is machine vocabulary (`shared`, `solo:mpc_bleg`) and the message repeats it before
+    // the part worth reading. Say what is happening in words, and keep the bar counter after it.
+    const phase = p.phase.startsWith('solo:')
+      ? `Replaying ${nameFor(p.phase.slice(5))} on its own account`
+      : p.phase === 'shared'
+        ? 'Replaying the strategies together on one account'
+        : p.message.split(' · ')[0]
+    const bars = p.message.split(' · ').slice(1).join(' · ')
+    return {
+      headline: phase,
+      pct: p.pct,
+      detail: bars ? `${bars} · ${legs_}` : legs_,
+    }
+  }, [stack, shared, sharedInBanner, nameFor])
+
   const combined = useMemo(() => composeCombined(legs, enabled, mode), [legs, enabled, mode])
   const hasResults = combined.hasResults
 
@@ -1340,22 +1385,49 @@ export function StackDetail() {
             </div>
           </div>
 
-          {/* Running / cancel banner */}
+          {/* ── ONE progress block, and it is the only one on the page while a stack replays ──
+              🔴 There were TWO until 2026-09-03: this banner, counting finished strategies, and the
+              shared-account panel below it rendering its own spinner and its own bar counter under
+              its own heading. Two live readouts of one job, stacked, each saying a different number
+              — and the reader has no way to know they describe the same replay. Aaron, from the
+              screen: *"I don't know why I have two terminal looking things showing the progress…
+              you could do that with any same terminal."*
+
+              ⚠ The shared replay's phase is the FINER of the two measurements (a bar count inside
+              the current leg), so it drives the bar; the leg count is the caption. ⚠ The panel's
+              other three branches — failed, cancelled, abandoned — are NOT folded in here and must
+              not be: each carries a sentence about a replay that has stopped, which is not
+              progress. See `sharedInBanner`. */}
           {isRunning && (
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3">
-              <div className="flex items-center gap-2 text-[13px] text-accent">
-                <Loader2 size={14} className="animate-spin" />
-                Running — {stack.completed_strategies} of {stack.total_strategies} strategies
-                complete
-                <span className="text-text-tertiary text-[11px]">· auto-refreshing</span>
+            <div
+              data-testid="stack-progress"
+              className="rounded-xl border border-accent/20 bg-accent/[0.045] px-4 py-3.5"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 min-w-0 text-[13px] font-medium text-accent">
+                  <Loader2 size={14} className="animate-spin shrink-0" />
+                  <span className="truncate">{progress.headline}</span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="font-mono tabular-nums text-[12px] text-accent">
+                    {progress.pct}%
+                  </span>
+                  <button
+                    onClick={() => cancelStack.mutate(stackId!)}
+                    disabled={cancelStack.isPending}
+                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-neg-text/30 text-neg-text hover:bg-neg-muted disabled:opacity-50 transition-colors"
+                  >
+                    <Square size={11} /> {cancelStack.isPending ? 'Cancelling…' : 'Cancel'}
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => cancelStack.mutate(stackId!)}
-                disabled={cancelStack.isPending}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-neg-text/30 text-neg-text hover:bg-neg-muted disabled:opacity-50 transition-colors"
-              >
-                <Square size={11} /> {cancelStack.isPending ? 'Cancelling…' : 'Cancel'}
-              </button>
+              <div className="mt-2.5 h-[4px] rounded-full bg-bg-sunken overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-500"
+                  style={{ width: `${Math.max(2, progress.pct)}%` }}
+                />
+              </div>
+              <div className="mt-2 text-[11px] text-text-tertiary">{progress.detail}</div>
             </div>
           )}
 
@@ -1401,8 +1473,14 @@ export function StackDetail() {
           {/* The shared account — the ONE section a single backtest has no counterpart for, which
               is exactly why it is the only thing on this page that does not mirror one. It sits
               BELOW Performance and is deliberately not driven by the leg toggles above: the budget
-              is a property of the run as it happened, not of whichever legs are currently on. */}
-          {isShared && shared && (
+              is a property of the run as it happened, not of whichever legs are currently on.
+
+              ⚠ WITHHELD while the banner is carrying this replay's progress (`sharedInBanner`). A
+              heading over a spinner says nothing the bar above already said, and printing the same
+              job's progress twice is what made this page read as two terminals. Every state that
+              has something of its OWN to say — a finished report, a failure, a cancellation, an
+              abandoned run — still renders here. */}
+          {isShared && shared && !sharedInBanner && (
             <div>
               <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
                 The shared account
@@ -1410,7 +1488,7 @@ export function StackDetail() {
               <SharedAccountPanel
                 report={shared}
                 colorFor={colorFor}
-                nameFor={(id) => legs.find((l) => l.strategy_id === id)?.strategy_name ?? id}
+                nameFor={nameFor}
                 running={stackRunning}
               />
             </div>
@@ -1453,11 +1531,14 @@ export function StackDetail() {
               {legs.some((l) => l.status.startsWith('failed')) &&
                 'Some runs failed — check the chips above.'}
             </div>
-          ) : (
-            <div className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center text-[13px] text-text-tertiary">
-              Waiting for the first strategy to finish…
-            </div>
-          )}
+          ) : /* 🔴 Nothing while it is RUNNING either, and for the same reason one branch up
+                 (2026-09-03). This slot held a 10-rem empty card reading "Waiting for the first
+                 strategy to finish…" — a third statement of what the progress bar at the top of
+                 the page is already saying, drawn at the size of a chart. **A section with nothing
+                 to show is not a section**: it costs a screenful of scroll to repeat a sentence,
+                 and it puts a placeholder where the reader has learned to expect the charts. The
+                 banner says what is happening; when there IS a book, the charts appear here. */
+          null}
 
           {/* ── Per-strategy results ──
               Each row opens that leg's own backtest (its Back returns here).
@@ -1634,32 +1715,56 @@ export function StackDetail() {
               reader's only route to it was opening a leg's own page and knowing to look.
 
               ⚠ It is per LEG rather than one merged list: two strategies can hold the same key at
-              different values, and a merged view would have to pick one. */}
+              different values, and a merged view would have to pick one.
+
+              🔴 IT WAS N FLOATING BARS AND THEY READ AS A DIFFERENT PAGE (2026-09-03). Each leg was
+              its own rounded card in a `space-y-2` column, so the last thing on a page built out of
+              framed sections was an unframed list of pills — Aaron: *"the settings section just
+              looks out of place."* It is ONE card now, legs as rows inside it, divided rather than
+              detached, which is the same anatomy the per-strategy table above it already uses.
+              ⚠ Every rule below the surface is unchanged: still per leg, still a disclosure, still
+              rendering a `false` as the word. */}
           {legs.some((l) => l.params && Object.keys(l.params).length > 0) && (
             <div>
-              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
-                Settings
-              </h2>
-              <div className="space-y-2" data-testid="stack-settings">
+              <div className="flex items-baseline gap-2 mb-3">
+                <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
+                  Settings
+                </h2>
+                <span className="text-[11px] text-text-tertiary">
+                  what each strategy was actually replayed with
+                </span>
+              </div>
+              <div
+                data-testid="stack-settings"
+                className="rounded-xl border border-border-default bg-bg-surface overflow-hidden"
+              >
                 {legs
                   .filter((l) => l.params && Object.keys(l.params).length > 0)
                   .map((leg) => (
                     <details
                       key={leg.strategy_id}
-                      className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden"
+                      className="group border-border-subtle [&:not(:first-child)]:border-t"
                     >
-                      <summary className="px-4 py-2.5 cursor-pointer select-none flex items-center gap-2 text-[12px]">
+                      <summary
+                        className="px-4 py-[11px] cursor-pointer select-none list-none flex items-center gap-2.5
+                                   text-[12px] hover:bg-bg-sunken/40 transition-colors
+                                   [&::-webkit-details-marker]:hidden"
+                      >
+                        <ChevronDown
+                          size={13}
+                          className="shrink-0 text-text-tertiary transition-transform -rotate-90 group-open:rotate-0"
+                        />
                         <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          className="w-2 h-2 rounded-full shrink-0"
                           style={{ background: colorFor(leg.strategy_id) }}
                         />
                         <span className="font-medium text-text-primary">{leg.strategy_name}</span>
-                        <span className="text-text-tertiary">
+                        <span className="ml-auto font-mono tabular-nums text-[11px] text-text-tertiary">
                           {Object.keys(leg.params!).length} settings
                         </span>
                       </summary>
                       <div
-                        className="border-t border-border-subtle px-4 py-3 grid gap-x-6 gap-y-1
+                        className="border-t border-border-subtle bg-bg-sunken/30 px-4 py-3 grid gap-x-7 gap-y-[3px]
                                     grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
                       >
                         {Object.entries(leg.params!)
@@ -1667,7 +1772,8 @@ export function StackDetail() {
                           .map(([k, v]) => (
                             <div
                               key={k}
-                              className="flex items-baseline justify-between gap-3 text-[11px] py-[2px]"
+                              className="flex items-baseline justify-between gap-3 text-[11px] py-[2px]
+                                         border-b border-border-subtle/40"
                             >
                               <span className="text-text-tertiary truncate" title={k}>
                                 {k}

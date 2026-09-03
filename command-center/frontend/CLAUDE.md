@@ -2291,6 +2291,51 @@ away.** Two in particular, and both have a browser check that HOVERS rather than
 ⚠ **The per-strategy table stays behind a disclosure that OPENS ITSELF when there is contention** —
 on every run measured so far its Shrunk / Blocked / Risk-refused columns are entirely em-dashes.
 
+## A running stack has ONE progress readout (2026-09-03)
+
+🔴 **TWO LIVE READOUTS OF ONE JOB, STACKED, SAYING DIFFERENT NUMBERS** — the banner counting
+finished STRATEGIES, the shared-account panel under its own heading counting BARS inside the current
+leg. Nothing said they were the same replay, so the honest reading was that two things were running.
+Measured record: `../docs/FRONTEND_BUILD_NOTES.md` → *The stack page's two progress readouts*.
+
+- ⚠ **`sharedInBanner` is the ONE expression deciding who owns the readout**, read by the banner AND
+  by the shared-account section's render guard. Two hand-written conditions is how the page draws
+  both again, or neither.
+- 🔴 **A FAILED, CANCELLED or ABANDONED replay is NOT folded in, and that exclusion is load-bearing.**
+  Each has a SENTENCE to show, not a percentage, and **folding a stopped replay into a progress bar
+  is how a dead job comes to look like a slow one.** Only the in-flight branch is absorbed.
+- 🔴 **The phase is said in WORDS.** `solo:mpc_bleg` / `shared` is the backend's vocabulary — **a
+  progress line the reader has to decode only reports to its author.** The bar counter is kept
+  after it; the finer measurement drives the bar and the leg count becomes its caption.
+- 🔴 **A section with nothing to show is NOT a section.** The *"Waiting for the first strategy to
+  finish…"* card was a chart-sized box restating the bar at the top of the page, in the slot where
+  the reader expects the charts. Gone; the charts appear there when there is a book.
+- ⚠ **`shared-account-panel`'s own still-replaying branch is untouched and still tested** — it
+  renders whenever the STACK is not running. **Do not read the merge as that branch being deleted.**
+- ⚠ **The bar carries a 2% floor** so it is visible from the first frame, which is why the checks
+  assert its CONTENT and never its width — the run page's own trap.
+
+### The Settings section is ONE card, not N floating bars
+
+🔴 **An unframed column of detached pills, last on a page built out of framed sections.** It is one
+bordered card with the legs as divided rows — the anatomy the per-strategy table above it uses.
+
+- ⚠ **Every rule underneath is unchanged**: per LEG rather than one merged list (two strategies can
+  hold one key at different values, and a merged view would have to pick), still a disclosure, and
+  still rendering `false` as the word — **a boolean dropped as falsy hides exactly the pinned value
+  this section exists to show.**
+- ⚠ **The heading carries the sentence saying what it IS.** "Settings" names a category, not a fact,
+  and this section's job is a value that exists nowhere else on the page — a param the STACK pinned.
+- ⚠ **Suppressing the native disclosure marker means ADDING one** (`list-none` +
+  `[&::-webkit-details-marker]:hidden`, with a `group-open` chevron), or a row opens with nothing
+  saying it could be opened.
+
+✅ **`tests/stacks.spec.ts` (29 → 31).** ⚠ **A fail-watch against HEAD is vacuous** — the merged
+block did not exist, so a red proves the locator only. **Non-vacuity is by MUTATION, three named and
+all three RUN.** ⚠ **The panel-count assertion waits on the progress block FIRST** —
+`toHaveCount(0)` is satisfied while the page is still loading, so asserting it straight after `goto`
+passes against its own mutation. **Fifth instance of that trap in this folder.**
+
 ## The regime overlay is OFF by default, from ONE hook
 
 **2026-08-10.** Aaron: *"Regimes, take it off by default. I don't wanna see the regimes on the
