@@ -4,7 +4,7 @@
   "bot_key": "mpc_bleg_demo",
   "display_name": "MPC B-LEG",
   "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
-  "account": 700152905,
+  "account": null,
   "server": "PUPrime-Demo",
   "symbol": "XAUUSD.p",
   "magic": 770116,
