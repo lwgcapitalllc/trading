@@ -1,2 +1,18 @@
 2026-09-03 01:15:11,812 [INFO] cancel bullish primary limit T361029533
 2026-09-03 01:15:11,903 [INFO] PENDING CANCELLED | T361029533
+2026-09-03 02:51:40,394 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-03 02:51:40,401 [INFO] Stop requested — shutting down.
+2026-09-03 02:51:40,402 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-03 02:51:42,526 [INFO] MT5 disconnected.
+2026-09-03 02:51:56,928 [INFO] MPC SOS Fade | MpcSosFadeStrategy v286 | hash ff3013535900 | commit 36161c34 | frozen | LIVE
+2026-09-03 02:51:57,479 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-03 02:51:57,492 [INFO] MT5 connection lock released
+2026-09-03 02:51:57,713 [INFO] Sizing basis 10,020.65 = broker balance 14,538.88 - 4,518.23 stated adjustment
+2026-09-03 02:51:57,715 [INFO] Sizing against account balance $10,020.65
+2026-09-03 02:51:57,727 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-03 02:51:57,727 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-09-03 02:51:57,732 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-03 02:52:02,576 [INFO] Warmed 5000 bars (2026-06-18 09:45:00+00:00 → 2026-09-03 02:30:00+00:00) in 4.7s
+2026-09-03 02:52:07,508 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-18 09:50:00+00:00 → 2026-09-03 02:45:00+00:00).
+2026-09-03 02:52:07,508 [INFO] Equity re-anchored to the account after warm-up: 10,925.03 → 10,020.65
+2026-09-03 02:52:08,979 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
