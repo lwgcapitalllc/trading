@@ -212,6 +212,130 @@ def test_r_is_measured_against_the_stop_the_trade_was_sized_to():
     assert t.r == pytest.approx(0.0, abs=1e-9)
 
 
+# ── what the chart draws: entry, DD, best, exit ──────────────────────────────
+# Every test below is about REPORTING, and none of them may change a trade. The proof that they
+# do not is not in this file: the decision stream was digested over 189,331 M5 bars before and
+# after the fields landed and came back identical (51 trades, 174 refusals, same sha).
+def test_every_closed_trade_carries_the_four_things_a_chart_annotates():
+    """Entry, the deepest it went against us, the best it ever showed, and where it came off.
+
+    🔴 The whole point: `backtest.output` reads these off the trade with a DEFAULT, so a strategy
+    that does not record them ships zeros and the price chart silently draws a flat entry→exit box
+    with no chips on it. Nothing raises and no test goes red — the only symptom is a blank chart,
+    which is exactly how this bot shipped. RED by deleting any one of the four keyword arguments
+    in `_close`."""
+    ex = _exec()
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    ex.resolve(11, 2, high=101.0, low=99.0, open_=100.0)
+    ex.resolve(12, 3, high=105.0, low=100.0, open_=100.5)
+    t = ex.trades[-1]
+    assert t.entry_price == pytest.approx(100.0)
+    assert t.mae_price == pytest.approx(99.0)          # DD
+    assert t.mfe_price == pytest.approx(104.0)         # best, bounded by the target it closed at
+    assert t.exit_price == pytest.approx(104.0)
+    assert t.legs and t.legs[0]["price"] == pytest.approx(104.0)
+    assert t.tp_rungs == ((104.0, 100.0),)
+
+
+def test_the_deepest_price_is_never_beyond_the_stop_that_closed_the_trade():
+    """The widen runs before the bar's exits resolve, so the raw range includes price AFTER the
+    position is flat. MEASURED on the A+ bot: 77 of 77 stopped-out trades reported a deepest price
+    beyond their own stop, and the chart drew the marker outside the stop line.
+
+    RED by widening with the bar's raw low — the trade below then reports 95.0, five points past a
+    stop that closed it at 98.0."""
+    ex = _exec()
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    ex.resolve(11, 2, high=101.0, low=95.0, open_=100.0)
+    t = ex.trades[-1]
+    assert t.exit_reason == "stop"
+    assert t.exit_price == pytest.approx(98.0)
+    assert t.mae_price == pytest.approx(98.0)
+
+
+def test_the_best_price_is_never_beyond_the_target_that_closed_the_trade():
+    """The mirror, and it is where this bot differs from the A+ one. There the first target is
+    PARTIAL and the runner stays open, so price beyond it is still the trade's move and the
+    favourable side is deliberately left alone. Here the target closes the WHOLE position, which
+    makes this side determinate in exactly the way the adverse side is.
+
+    RED by widening with the bar's raw high — the trade below then claims a best of 108.0 on a
+    position that was flat from 104.0."""
+    ex = _exec()
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    ex.resolve(11, 2, high=108.0, low=99.5, open_=100.0)
+    t = ex.trades[-1]
+    assert t.exit_reason == "target"
+    assert t.mfe_price == pytest.approx(104.0)
+
+
+def test_the_entry_bar_contributes_no_excursion_because_the_fill_is_its_close():
+    """This bot enters at market on the bar's CLOSE, so no part of the entry bar's range happens
+    after the fill — none of it is the trade's move. Both sides therefore seed AT the fill.
+
+    ⚠ The A+ bot seeds asymmetrically for the opposite reason: its entry is a resting limit filled
+    mid-bar, so the rest of that bar IS its move. Copying either shape onto the other is wrong.
+    RED by dropping the `ext_high=` / `ext_low=` seeds — they fall back to 0.0, and a price of zero
+    then reads downstream as a measurement rather than as an unset field."""
+    ex = _exec()
+    ex.enter(_state(index=10, close=100.0, go_long=True, stop_long=98.0, tp_long=104.0))
+    assert ex.pos.ext_high == pytest.approx(100.0)
+    assert ex.pos.ext_low == pytest.approx(100.0)
+
+
+def test_a_drawdown_taken_before_breakeven_armed_survives_the_stop_moving():
+    """The bound is the stop AS IT STOOD ON EACH BAR, not the price the trade finally exited at.
+
+    A trade that sits deep, recovers far enough to arm breakeven and then scratches really did
+    trade down there, and that is the single most useful thing its chart can show. RED by clamping
+    the extremes against the exit price in `_close` instead of per bar — the drawdown below then
+    collapses from 98.5 to 100.0 and the trade reads as though it never went against us at all."""
+    ex = _exec(use_breakeven=True, be_arm_frac=0.5)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    ex.resolve(11, 2, high=100.5, low=98.5, open_=100.0)      # deep, but not stopped
+    ex.resolve(12, 3, high=102.5, low=100.0, open_=100.5)
+    ex.arm_breakeven(12, high=102.5, low=100.0)               # stop moves to 100.0
+    assert ex.pos.stop == pytest.approx(100.0)
+    ex.resolve(13, 4, high=101.0, low=99.0, open_=100.5)      # scratched at breakeven
+    t = ex.trades[-1]
+    assert t.exit_price == pytest.approx(100.0)
+    assert t.mae_price == pytest.approx(98.5)
+
+
+def test_best_and_worst_are_resolved_by_DIRECTION_and_not_by_which_number_is_larger():
+    """A short's best price is its LOW. RED by returning the high as the favourable extreme
+    regardless of direction — every short then reports its drawdown as its best price and its best
+    price as its drawdown, and both chips sit on the wrong side of the entry."""
+    ex = _exec()
+    ex.enter(_state(index=10, go_short=True, stop_short=102.0, tp_short=96.0))
+    ex.resolve(11, 2, high=101.0, low=97.0, open_=100.0)
+    ex.resolve(12, 3, high=98.0, low=95.0, open_=97.0)
+    t = ex.trades[-1]
+    assert t.exit_reason == "target"
+    assert t.mfe_price == pytest.approx(96.0)     # best for a short is the low
+    assert t.mae_price == pytest.approx(101.0)    # worst is the high
+    assert t.mfe_usd > 0 and t.mae_usd < 0
+
+
+def test_the_exit_is_recorded_as_a_FILL_and_the_target_is_reported_as_banking_all_of_it():
+    """One leg, because this bot closes in one piece — there is no ladder and no runner.
+
+    Recording the fill matters even though it equals the average on a single-fill trade: the chart
+    reads a leg list as *the fills are KNOWN*, which is a different statement from having none, and
+    it draws the exit at a real fill rather than at an average of one. The rung's 100% is what
+    tells `backtest.output` this is a profit target rather than a level that only steps the stop —
+    a rung reported without it is drawn as an unknown. RED by dropping either the leg's `qty` (the
+    chart then draws a zero-size fill) or the 100.0 (the target is drawn as an unknown rung)."""
+    ex = _exec()
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    qty = ex.pos.qty
+    ex.resolve(11, 2, high=105.0, low=99.5, open_=100.0)
+    t = ex.trades[-1]
+    assert len(t.legs) == 1
+    assert t.legs[0] == {"reason": "target", "price": 104.0, "ms": 2, "qty": qty}
+    assert t.tp_rungs == ((104.0, 100.0),)
+
+
 # ── the arming state ─────────────────────────────────────────────────────────
 @dataclass
 class _Lvl:

@@ -479,6 +479,94 @@ above, and it is not a reason to skip stage 4.
 
 ---
 
+## What the CHART draws: entry, DD, best, exit (2026-09-02)
+
+🔴 **THIS BOT'S TRADES DREW AS A FLAT BOX WITH NOTHING ON IT, AND NOTHING ANYWHERE REPORTED THAT.**
+`backtest/output.py` reads the chart's rich fields off the trade with a `getattr` DEFAULT, so a
+strategy that records none ships zeros and the price chart **degrades in silence** to a plain
+entry→exit rectangle. Its own comment says so out loud — *"All optional — a runner/trade that
+doesn't carry them degrades to the plain entry→exit box"* — and this bot was the one hitting it.
+Aaron, looking at two of its trades beside the A+ bot's: *"they should be the exact same style as
+sos fade trades and annotations where applicable."*
+
+**MEASURED on all 115 trades of run `29444bb4cbea` before the fix**: the best price, the deepest
+price, the exit-fill ledger and the target ladder were empty on **every single one**; only the stop
+was recorded. So the chips built from them — best, deepest, the exit marker, the target lines — had
+nothing to draw from, and the faint bands that make an A+ trade read as layered had no extremes to
+span.
+
+⚠ **It is the ONLY strategy here that was affected, and that was CHECKED rather than assumed.**
+`mpc_bleg`, `mpc_bos` and `mpc_realign` all SUBCLASS `mpc_sos_fade`'s execution layer and inherit
+its recording; `loss_recovery` records its own. This bot is the only one with an execution layer of
+its own, which is exactly why it is the only one that had to be taught separately — **a fact worth
+carrying forward: the next strategy with its own execution layer starts here too.**
+
+**What it records now, all of it REPORTING ONLY:** the best and worst price of the hold
+(`mfe_price` / `mae_price`, plus their dollar twins), the exit as a real FILL rather than as an
+average, and its single target as a rung that banks 100%.
+
+✅ **PROVEN NOT TO HAVE MOVED A TRADE, rather than argued.** The decision stream was digested over
+**189,331 M5 bars** (PU Prime `XAUUSD.p`, 2024-01-01 → 2026-09-01) before and after: **51 trades and
+174 refusals, byte-identical sha both sides.** ⚠ **The digest is `sha256` over the serialised
+stream, NOT python's `hash()`** — string hashing is randomised per process, so two `hash()` values
+disagree on identical code, and the first attempt here did exactly that and read as a real
+difference.
+
+### The three rules that decide what those numbers MEAN
+
+🔴 **NEITHER EXTREME MAY SIT BEYOND A LEVEL THAT CLOSED THE TRADE.** The widen runs before the
+bar's exits resolve, so the raw range includes price *after* the position is flat — and the chart
+draws these as its `DD` and `Best` chips, so an unbounded extreme puts a marker outside the trade's
+own stop or target line. **MEASURED on the A+ bot when it hit this: 77 of 77 stopped-out trades
+reported a deepest price beyond their stop, one of them 2.22R against a 1.0R loss.** It is not an
+intrabar-ordering guess — a bracket is triggered BY the move that reaches it.
+
+⚠ **BOTH sides are bounded here, and that is the one place this differs from the A+ bot.** There the
+favourable side is deliberately left alone, because its first target is PARTIAL and the runner stays
+open, so price beyond it is still the trade's move. **This bot's target closes the whole position**,
+which makes the favourable side determinate in exactly the way the adverse side is. ⚠ **Copying
+either bot's shape onto the other is wrong in both directions.**
+
+⚠ **The bound is the bracket AS IT STOOD ON EACH BAR, never the price the trade finally exited at.**
+A trade that sits deep, recovers far enough to arm breakeven and then scratches really did trade
+down there, and that is the single most useful thing its chart can show. Clamping at close instead
+collapses that drawdown to the exit and the trade reads as though it never went against you.
+
+⚠ **The entry bar contributes NOTHING, and that is a fact about this entry rather than a
+simplification.** This bot enters at market on the bar's CLOSE, so no part of that bar's range
+happens after the fill — none of it is the trade's move, and both extremes seed AT the fill. The A+
+bot seeds asymmetrically for the opposite reason: its entry is a resting limit filled mid-bar, so
+the rest of that bar IS its move.
+
+⚠ **Best and worst are resolved by DIRECTION, not by which number is larger** — a short's best price
+is its low. Getting it inverted puts both chips on the wrong side of the entry and nothing raises.
+
+⚠ **Recording the exit fill matters even though it equals the average here.** This bot closes in one
+piece, so the two are the same number — but a leg list is how the chart is told the fills are
+KNOWN, which is a different statement from having none, and it draws the exit at a fill rather than
+at an average of one.
+
+⚠ **The target's 100% is not decoration.** `backtest/output.py` uses it to tell a real profit target
+from a level that banks nothing and only steps a stop; a rung reported without it is drawn as an
+unknown rather than as a target.
+
+⚠ **A run finished before this landed carries none of it, and there is no backfill** — recovering
+the numbers means replaying the strategy. Re-run it. A run that HAS them but a cached `chart_spec.json`
+needs **Reload charts**.
+
+## Its chips say XLEG, not A+ (2026-09-02)
+
+`LAB_STRATEGY["chart_tag"]`. 🔴 **The price chart hard-coded `A+` — the A+ bot's own word for ITS
+setup — onto every strategy's primary trades**, so this bot's trades wore a label belonging to a
+different bot. The panel's own comment had named the cost and the fix since it was written; this is
+that fix. ⚠ **A LABEL and nothing else** — no run, no cost and no decision reads it, so changing it
+repaints chips and moves no trade. ⚠ **Keep it SHORT**: it is drawn in a chip beside the entry price
+and a long word pushes the price off the marker. ⚠ **Undeclared is still `A+`**, because a package
+that has not declared one must not lose its chip entirely — so a chart reading `A+` now means
+EITHER the A+ bot or a strategy that has yet to declare its own word.
+
+---
+
 ## Never do
 
 - Quote a number from this package as a measurement before `compare_extreme_leg.py` exits 0.

@@ -121,6 +121,12 @@ class _Open:
     take_profit: float
     be_armed: bool = False
     costs_usd: float = 0.0
+    # Reporting-only excursion: the highest and lowest price this hold ever reached. Seeded at the
+    # entry FILL and widened once per bar in `resolve` — never read by a decision, so it cannot
+    # move the trade list the parity gate compares. Resolved into `mfe_price`/`mae_price` by
+    # direction at close. See `_widen_hold` for why the adverse side is bounded by the stop.
+    ext_high: float = 0.0
+    ext_low: float = 0.0
 
 
 class ExtremeLegExecution:
@@ -258,6 +264,45 @@ class ExtremeLegExecution:
         return cost
 
     # ── the bar ──────────────────────────────────────────────────────────────
+    def _widen_hold(self, pos: _Open, high: float, low: float, open_: float) -> None:
+        """This bar's contribution to the hold's high and low, BOUNDED BY BOTH BRACKETS.
+
+        🔴 **NEITHER EXTREME MAY SIT BEYOND A LEVEL THAT CLOSED THE TRADE.** This runs before the
+        bar's exits resolve, so the raw range includes price AFTER the position is flat — and the
+        chart draws the deepest and best prices as its `DD` and `Best` chips, so an unbounded
+        extreme puts a marker outside the trade's own stop or target line. That exact defect was
+        MEASURED on the A+ bot: 77 of 77 stopped-out trades reported a deepest price beyond their
+        stop, one of them 2.22R against a 1.0R loss. It is not an intrabar-ordering guess — a
+        bracket is triggered BY the move that reaches it, so anything past it happened at or after
+        the fill.
+
+        ⚠ **BOTH sides are bounded here, and that is the one place this differs from the A+ bot.**
+        There the favourable side is deliberately left alone, because its first target is PARTIAL
+        and the runner stays open, so price beyond it is still the trade's move. This bot's target
+        closes the whole position, which makes the favourable side determinate in exactly the way
+        the adverse side is. ⚠ Copying either bot's shape onto the other would be wrong.
+
+        ⚠ **The bound is the bracket EXCEPT on a bar that opens already past it** — there the fill
+        is the open, worse (or better) than the order asked for, and that fill is real. Taking the
+        `min`/`max` against the open covers both cases without asking which happened.
+
+        ⚠ On a bar that touches BOTH brackets the two bounds together are the trade's full possible
+        range, which is the honest answer: bar data cannot say which came first, and the stop is
+        what books by convention.
+
+        ⚠ Neither extreme can be better or worse than the ENTRY, because both are seeded there —
+        so a trade that only ever ran one way reports a zero on the other side, meaning "it never
+        went that way" rather than "not measured". Reporting only; no decision reads either.
+        """
+        if pos.dir > 0:
+            lo = max(low, min(pos.stop, open_))
+            hi = min(high, max(pos.take_profit, open_)) if math.isfinite(pos.take_profit) else high
+        else:
+            hi = min(high, max(pos.stop, open_))
+            lo = max(low, min(pos.take_profit, open_)) if math.isfinite(pos.take_profit) else low
+        pos.ext_high = max(pos.ext_high, hi)
+        pos.ext_low = min(pos.ext_low, lo)
+
     def resolve(self, index: int, ts_ms: int, high: float, low: float, open_: float) -> None:
         """Fill the bracket placed on an EARLIER bar against this bar's range.
 
@@ -270,6 +315,9 @@ class ExtremeLegExecution:
         pos = self.pos
         if pos is None or pos.entry_index >= index:
             return
+        # Excursion widens BEFORE the exits resolve, so the closing bar's own extreme counts.
+        # Reporting only — nothing below reads it, so the trade list cannot move.
+        self._widen_hold(pos, high, low, open_)
         if pos.dir > 0:
             hit_stop = low <= pos.stop
             hit_tp = high >= pos.take_profit
@@ -298,6 +346,10 @@ class ExtremeLegExecution:
         # Realized onto the SHARED balance as it happens, so a leg entering later in the same bar
         # sizes off the result rather than off a stale number.
         self._account.book_pnl(self._leg, pnl)
+        # Resolved by DIRECTION, not by which number is larger: a short's best price is the low.
+        mfe_price = pos.ext_high if pos.dir > 0 else pos.ext_low
+        mae_price = pos.ext_low if pos.dir > 0 else pos.ext_high
+        pv = self._cfg.point_value
         self.trades.append(
             Trade(
                 dir=pos.dir,
@@ -318,6 +370,26 @@ class ExtremeLegExecution:
                 stop_distance=abs(pos.entry_price - pos.open_stop),
                 exit_reason=reason,
                 kind="primary",
+                # ── everything below is REPORTING ONLY: the chart's entry / DD / best / exit ──
+                # No decision reads any of it, so the decision stream the parity gate compares
+                # cannot move. They are here because without them the price chart has nothing to
+                # draw but a flat entry→exit box — `backtest.output` degrades silently when a
+                # trade does not carry them, so a missing field costs a blank chart and no error.
+                mfe_price=round(mfe_price, 5),
+                mae_price=round(mae_price, 5),
+                mfe_usd=round((mfe_price - pos.entry_price) * pos.dir * pos.qty * pv, 2),
+                mae_usd=round((mae_price - pos.entry_price) * pos.dir * pos.qty * pv, 2),
+                # ONE leg, because this bot closes in ONE piece — there is no ladder and no
+                # runner. The chart draws the exit at a real FILL rather than at an average, and
+                # for a single-fill trade the two are the same number; recording it anyway is what
+                # tells the chart that the fills are KNOWN, which is a different statement from
+                # having none. `qty` is the whole position for the same reason.
+                legs=[{"reason": reason, "price": round(price, 5), "ms": ts_ms, "qty": pos.qty}],
+                # The single target, and it banks 100% — this rung closes the position rather than
+                # stepping a stop. ⚠ The percentage is not decoration: `backtest.output` uses it to
+                # tell a real profit target from a level that banks nothing, and a rung reported
+                # without it is drawn as an unknown rather than as a target.
+                tp_rungs=((pos.take_profit, 100.0),) if math.isfinite(pos.take_profit) else (),
             )
         )
         # P&L is already booked above; this frees the RESERVATION so the other leg can use the
@@ -368,6 +440,13 @@ class ExtremeLegExecution:
             self.pos = _Open(
                 dir=direction, entry_index=state.index, entry_ms=state.ts_ms,
                 entry_price=entry, qty=granted, stop=stop, open_stop=stop, take_profit=tp,
+                # Excursion seeds BOTH sides at the fill, and that is a fact about THIS entry
+                # rather than a simplification. This bot enters at market on the bar's CLOSE, so
+                # no part of the entry bar's range happens after the fill — none of it is the
+                # trade's move. ⚠ The A+ bot seeds asymmetrically because its entry is a resting
+                # limit filled mid-bar, where the rest of the bar IS the trade's move; do not
+                # copy that shape here, and do not copy this one there.
+                ext_high=entry, ext_low=entry,
             )
             return True
         return False

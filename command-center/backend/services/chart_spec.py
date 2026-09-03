@@ -161,6 +161,31 @@ def _bar_server(row: dict) -> Optional[str]:
         return None
 
 
+def _chart_tag(strategy_id: Optional[str]) -> Optional[str]:
+    """The word this strategy's PRIMARY trades wear on the chart, or None.
+
+    🔴 **The panel hard-coded the A+ bot's own word for its setup and painted it on every
+    strategy's trades**, so three other bots' charts carried a fourth bot's label. The comment
+    beside it named the cost and the fix — a per-strategy tag travelling on the spec — and this is
+    it. ⚠ **Declared by the package (`LAB_STRATEGY["chart_tag"]`), never written here**: a map of
+    strategy id to label in this file would be a second claim about what a strategy calls its
+    setup, and it goes stale the first time somebody adds one.
+
+    ⚠ **None is an ANSWER — the package declared no tag — and the panel falls back to a neutral
+    word rather than to another strategy's.** A blank string is not that answer, so the caller
+    omits the key entirely.
+    ⚠ **Best-effort, like every other lookup here: a chart must never fail to build over a label.**
+    """
+    if not strategy_id:
+        return None
+    try:
+        row = lab_db.get_strategy(strategy_id) or {}
+        tag = row.get("chart_tag")
+        return str(tag).strip() or None if isinstance(tag, str) else None
+    except Exception:  # noqa: BLE001 — a missing label is not a reason to lose the whole chart
+        return None
+
+
 def _build_candles(
     instrument: str,
     start_date: str,
@@ -1039,8 +1064,15 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     if vwap:
         indicators = indicators + [vwap]
 
+    # The word this strategy's PRIMARY trades wear on the chart — its own name for its setup.
+    # ⚠ The key is ABSENT, never `""`, when the package declared none: the panel then falls back to
+    # a neutral word, and an empty string would read as "this strategy asked for a blank tag".
+    # It was hardcoded to the A+ bot's word for every strategy on every chart until 2026-09-02.
+    trade_tag = _chart_tag(row.get("strategy_id"))
+
     spec = {
         "instrument": instrument,
+        **({"tradeTag": trade_tag} if trade_tag else {}),
         "baseTimeframe": base_tf,
         # Same thing now that the window is what gets capped, not the bars — kept so a frontend or a
         # cached spec that reads either name gets the same answer.

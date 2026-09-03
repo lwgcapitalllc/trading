@@ -390,6 +390,10 @@ export interface ChartIndicator {
 
 export interface ChartSpec {
   instrument: string // e.g. "AUDJPY.s"
+  // The word THIS run's strategy calls its own setup, worn by its primary trades. Declared by the
+  // strategy package, carried on the strategies table. ⚠ ABSENT is an answer — the package
+  // declared none — and the chip then falls back to `PRIMARY_TAG`; it is never an empty string.
+  tradeTag?: string
   // The bars SHIPPED in `candles` — always the timeframe the run TRADED. A long run is capped by
   // trimming the WINDOW (newest slice), never by coarsening the bars.
   baseTimeframe: string

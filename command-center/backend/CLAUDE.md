@@ -4206,6 +4206,46 @@ code that raises it: `strategies/python/mpc_extreme_leg/CLAUDE.md`.
 dropped, the absent-key default flipped, only the first leg asked, and the layer appended rather
 than swapped.
 
+## A strategy names its own setup on the chart — `chart_tag` (2026-09-02)
+
+`strategies.chart_tag` (TEXT, nullable), declared by the package as `LAB_STRATEGY["chart_tag"]`,
+carried by the scanner, read by `chart_spec._chart_tag` and shipped as `spec.tradeTag`.
+
+🔴 **The price chart hard-coded `A+` — `mpc_sos_fade`'s word for ITS setup — onto every strategy's
+PRIMARY trades**, so three other bots' charts carried a fourth bot's label. `overlays.ts` had named
+the cost and the fix in a comment since it was written (*"the honest fix is a per-strategy tag
+travelling on the spec, and that needs a column on the strategies table for a chart LABEL"*); this
+is that column. **Nothing was broken and nothing went red — a wrong label renders exactly as
+confidently as a right one**, which is rule 7 in its quietest form.
+
+- ⚠ **A LABEL, and nothing about a run reads it.** Changing it repaints chips and moves no trade,
+  no cost and no decision. That is the whole contract.
+- ⚠ **`None` is an ANSWER — the package declared none — and the key is then ABSENT from the spec,
+  never `""`.** The panel falls back to `PRIMARY_TAG` on absent; an empty string would read as
+  *this strategy asked for a blank chip* in some checks and as no tag in others.
+- ⚠ **Undeclared still renders `A+`, deliberately.** Untagged is not an option (telling the books
+  apart at a glance is the point), and a neutral fallback would strip the CORRECT tag off the live
+  A+ bot's charts. **So a chart reading `A+` means EITHER that bot or one that has not declared its
+  own word yet.**
+- 🔴 **Only `mpc_extreme_leg` declares one so far, and the reason is rule 22, not oversight.**
+  Declaring a tag edits a strategy package, which may not be committed until that package's parity
+  harness has run green on a real export, and no export for the other four is on this machine.
+  Same call as `display_under` — story in `HISTORY.md`.
+- ⚠ **Declared by the package, never mapped here.** A strategy-id→label map in this backend would
+  be a second claim about what a strategy calls its setup, and it goes stale the first time
+  somebody adds one.
+- ⚠ **The lookup is best-effort like every other in `chart_spec`** — a chart that refuses to build
+  because a LABEL could not be read has traded a missing word for a missing chart.
+- ⚠ **The column is declared in BOTH the migration list and the `strategies` CREATE TABLE**, per
+  this file's own standing note.
+
+**Tests:** `tests/test_chart_trade_tag.py` (16), watched RED by five mutations — the scanner key
+dropped, the raw value passed through unvalidated, the upsert unable to CLEAR a dropped
+declaration, the chart stringifying `None`, and the lookup no longer best-effort. ⚠ **A sixth
+mutation did NOT bite and its test is LABELLED as a forward guard rather than left claiming
+otherwise**: deleting the null-id early-out leaves it green, because `get_strategy` answers `None`
+for a null id rather than raising (measured, not assumed).
+
 ## A RERUN reads the broker the run was MADE on (2026-08-24)
 
 🔴 Reported from the screen: *"when we click rerun charged it should still rerun against the broker

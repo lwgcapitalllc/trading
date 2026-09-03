@@ -22,15 +22,19 @@ export const SESSION_BOX = 'lwgSessionBox'
 /** Entry arrow + dashed line to exit + exit dot for one trade (Step 4). */
 export const TRADE = 'lwgTrade'
 
-/** The tag a PRIMARY trade wears — the setup itself, as opposed to a re-entry or a recovery.
+/** The FALLBACK tag a PRIMARY trade wears when its strategy declares none of its own.
  *
- *  ⚠ `A+` is `mpc_sos_fade`'s own word for its setup, and this panel draws every strategy's
- *  trades, so on a `mpc_bleg` chart it is the wrong word for the right trade. It is hard-coded
- *  anyway, on purpose and with the cost named: the honest fix is a per-strategy tag travelling
- *  on the spec, and that needs a column on the strategies table for a chart LABEL. Change this
- *  one line, or wire the spec, the day a second strategy's chart is read often enough to care.
- *  ⚠ Untagged is NOT an option any more — Aaron's ask was to tell the books apart at a glance,
- *  and "no tag" is only readable as "primary" once you already know that is the rule. */
+ *  🔴 It was the only tag until 2026-09-02 — `A+` is `mpc_sos_fade`'s word for ITS setup, and this
+ *  panel draws every strategy's trades, so three other bots' charts carried a fourth bot's label.
+ *  The fix the old note here asked for is now built: a strategy declares `chart_tag`, the scanner
+ *  carries it to the strategies table, and it reaches the panel as `spec.tradeTag`.
+ *  ⚠ This constant survives as the fallback rather than being deleted, because a package that has
+ *  not declared a tag yet must not lose its chip: untagged is NOT an option — Aaron's ask was to
+ *  tell the books apart at a glance, and "no tag" is only readable as "primary" once you already
+ *  know that is the rule.
+ *  ⚠ So a chart still reading `A+` means EITHER the A+ bot OR a strategy that has not declared its
+ *  own word. Declaring one is a change to that strategy's package, which rule 22 gates behind its
+ *  parity harness — that is why they did not all land together. */
 export const PRIMARY_TAG = 'A+'
 /** A SCALE-IN LOT, drawn by the trade renderer itself — same box, same `Furthest`/`Deepest`/
  *  exit labels, same outcome colouring. A separate overlay NAME rather than a separate
@@ -268,6 +272,11 @@ interface TradeExtend {
    *  `mt5_link` everywhere else here: never let "no" and "cannot ask" be the same value.
    *  ⚠ A name, not a tick: `Won · ✓` reads as *confirmed win*, which is a different claim. */
   patternName?: string
+  /** The word THIS strategy calls its own setup, off the spec (`tradeTag`). `undefined` = the
+   *  package declared none, and the chip falls back to `PRIMARY_TAG` — see the note on that
+   *  constant for why a fallback rather than no tag at all. Primary trades only: a re-entry and a
+   *  recovery leg already wear tags naming what they ARE, which is the more useful fact there. */
+  tag?: string
   entryPrice?: number
   exitPrice?: number
   mfePrice?: number
@@ -463,7 +472,7 @@ export function registerChartOverlays(): void {
           : d.kind === 'recovery'
             ? 'REC'
             : d.kind === 'primary' || d.kind === undefined
-              ? PRIMARY_TAG
+              ? d.tag || PRIMARY_TAG
               : null
       const sign: Sign = isLong ? 1 : -1 // favourable ⇔ (price − entry) * sign > 0
 

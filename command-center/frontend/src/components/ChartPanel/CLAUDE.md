@@ -771,9 +771,12 @@ here**, so the chart shows exactly what the strategy saw.
   is what "we cannot tell" looks like, and only a re-run turns it into `BE+` / `SL+`. ⚠ **A PRIMARY
   now wears `A+` where it wore nothing**, because "no tag" is only readable as "primary" once you
   already know that is the rule. 🔴 **`A+` is `mpc_sos_fade`'s own word and this panel draws every
-  strategy's trades**, so on a `mpc_bleg` chart it is the wrong word for the right trade; it is
-  hard-coded in `overlays.ts::PRIMARY_TAG` with that cost named, because the honest fix is a
-  per-strategy tag on the spec and that needs a column on the strategies table for a LABEL. **The bug that prompted it was
+  strategy's trades**, so on a `mpc_bleg` chart it is the wrong word for the right trade. ✅ **FIXED
+  2026-09-02 the way this paragraph asked for**: a strategy declares `chart_tag`, it rides the spec
+  as `tradeTag`, and `overlays.ts::PRIMARY_TAG` survives only as the FALLBACK for a package that has
+  not declared one — so a chart reading `A+` now means EITHER that bot or one still undeclared. ⚠ **Only `mpc_extreme_leg` declares one so far, and rule 22 is why** — declaring a tag edits a
+  strategy package, which needs that package's parity gate. Backend half:
+  `command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*. **The bug that prompted it was
   NOT a missing tag.** Recovery trades reached the chart with no `mfe_price`/`mae_price` on them, so
   every one took the DEGRADED path and drew as a bare rectangle with a direction triangle and nothing
   else — no `Entry`, no `SL`, no bands, no chip. Screenshotted beside a normal loser wearing its full

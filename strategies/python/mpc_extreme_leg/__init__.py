@@ -69,6 +69,12 @@ LAB_STRATEGY = {
     # pins them together, because a declaration that drifts from its refusal gets a run charged a
     # model the code then rejects, which is the exact failure this key exists to remove.
     "supports_bid_ask_fills": False,
+    # This bot's own word for its setup, worn by its trades on the price chart. Until 2026-09-02
+    # that chip was hard-coded to the A+ bot's word on EVERY strategy's chart, so these trades
+    # carried another bot's label. ⚠ A LABEL and nothing else — no run, no cost and no decision
+    # reads it, so changing it repaints chips and moves nothing. ⚠ Keep it SHORT: it is drawn in a
+    # chip beside the entry price and a long word pushes the price off the marker.
+    "chart_tag": "XLEG",
     # 🔴 **NO `display_under` — THIS ROW IS TOP LEVEL, AND THAT IS A DECISION (Aaron, 2026-09-02:
     # "move it to root").** It was listed under the A+ bot until then, on the reasoning that the
     # suite is carved up by LEG off one structure stream and this is the leg BEFORE the one A+

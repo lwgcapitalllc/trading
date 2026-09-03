@@ -746,6 +746,10 @@ class Strategy(BaseModel):
     # Display grouping only: the id of the strategy this one is listed UNDER on the Strategies
     # page. It restricts nothing — a nested strategy runs, stacks and optimizes exactly as before.
     display_under: Optional[str] = None
+    # The short word the price chart puts on this strategy's PRIMARY trades — its own name for its
+    # setup. `None` = the package declared none, and the chart falls back to a neutral word rather
+    # than to another strategy's. A LABEL: nothing about a run reads it.
+    chart_tag: Optional[str] = None
 
     @field_validator("steps", mode="before")
     @classmethod

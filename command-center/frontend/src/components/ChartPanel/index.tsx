@@ -2925,6 +2925,9 @@ export default function ChartPanel({
         extendData: {
           dir: tr.dir,
           kind: tr.kind,
+          // This strategy's own word for its setup. Absent ⇒ the renderer falls back to
+          // `PRIMARY_TAG`, which is the A+ bot's word and was every strategy's until 2026-09-02.
+          tag: spec.tradeTag,
           // What the trade this one FOLLOWED did — decides `BE+` vs `SL+` on a re-entry. Absent on
           // every primary, and on any run stored before the field existed.
           after: tr.after,

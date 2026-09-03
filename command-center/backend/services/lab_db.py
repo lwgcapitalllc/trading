@@ -358,6 +358,13 @@ def init_db() -> None:
             # said it could. Declared by the package (LAB_STRATEGY["supports_bid_ask_fills"]),
             # never set by hand.
             "ALTER TABLE strategies ADD COLUMN supports_bid_ask_fills INTEGER NOT NULL DEFAULT 1",
+            # The short word the price chart puts on this strategy's PRIMARY trades — its own name
+            # for its setup. NULL means the package never declared one, and the chart then falls
+            # back to a neutral word rather than to another strategy's. It was hard-coded to the
+            # A+ bot's word for every strategy on every chart until 2026-09-02, which put "A+" on
+            # trades three other bots took. Declared by the package (LAB_STRATEGY["chart_tag"]),
+            # never set by hand, and it is a LABEL — nothing about the run reads it.
+            "ALTER TABLE strategies ADD COLUMN chart_tag TEXT",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -2230,8 +2237,8 @@ def upsert_strategy(data: dict) -> None:
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
                  avoid_news, self_sizing, requires_source, display_under,
-                 supports_bid_ask_fills)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 supports_bid_ask_fills, chart_tag)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -2249,7 +2256,8 @@ def upsert_strategy(data: dict) -> None:
                 self_sizing=excluded.self_sizing,
                 requires_source=excluded.requires_source,
                 display_under=excluded.display_under,
-                supports_bid_ask_fills=excluded.supports_bid_ask_fills
+                supports_bid_ask_fills=excluded.supports_bid_ask_fills,
+                chart_tag=excluded.chart_tag
         """,
             (
                 data["id"],
@@ -2274,6 +2282,7 @@ def upsert_strategy(data: dict) -> None:
                 # moved fills. Defaulting to 0 here would silently downgrade every charged run
                 # in the lab to the flat spread and nothing on any page would say so.
                 1 if data.get("supports_bid_ask_fills", True) else 0,
+                data.get("chart_tag"),
             ),
         )
 
