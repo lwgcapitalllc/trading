@@ -336,3 +336,184 @@ def test_a_RUNNING_bot_refuses_to_be_moved(client, monkeypatch):
     r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700107749})
     assert r.status_code == 409
     assert "running" in r.json()["detail"]
+
+
+# ── the shares may not add up to more than the ceiling (2026-09-03) ───────────
+#
+# Aaron: "the risk per trade cannot add up to more than that cap". `cap_takes_turns` already
+# stated the fact — a cap that lets both hold has to exceed the SUM — and nothing enforced it.
+def _bot(key, risk):
+    return ba.AccountBot(
+        key=key,
+        display=key.upper(),
+        symbol="XAUUSD.p",
+        magic=1,
+        strategy_package="p",
+        risk_pct=risk,
+    )
+
+
+def test_two_five_percent_shares_FIT_a_ten_percent_cap():
+    """🔴 The intended configuration, so it must not be a near miss. Binary floating point is
+    what makes this worth a test rather than an assumption."""
+    assert ba.share_overflow([_bot("a", 5.0), _bot("b", 5.0)], 10.0) is None
+
+
+def test_shares_that_EXCEED_the_cap_are_refused():
+    assert ba.share_overflow([_bot("a", 5.0), _bot("b", 10.0)], 10.0) is not None
+
+
+def test_a_THIRD_bot_is_what_tips_a_five_five_account_over():
+    """The case Aaron asked about outright. Two fit exactly; a third of any size does not."""
+    assert ba.share_overflow([_bot("a", 5.0), _bot("b", 5.0), _bot("c", 5.0)], 10.0) is not None
+
+
+def test_the_refusal_NAMES_the_shares_and_the_total():
+    """A refusal a reader cannot act on is a wall. It has to say what is on the account and by
+    how much, or the only way forward is opening three config files."""
+    msg = ba.share_overflow([_bot("a", 5.0), _bot("b", 10.0)], 10.0)
+    assert "15%" in msg and "10%" in msg
+    assert "A" in msg and "B" in msg
+
+
+def test_an_UNCAPPED_account_has_nothing_to_check():
+    """`None` is a deliberate, supported state — the honest one for a single-bot account — and is
+    not a cap of zero. RED if an uncapped account starts refusing."""
+    assert ba.share_overflow([_bot("a", 10.0), _bot("b", 10.0)], None) is None
+
+
+def test_an_UNREADABLE_share_REFUSES_rather_than_counting_as_zero():
+    """🔴 Rule 1. A bot whose risk cannot be read is not a bot risking nothing, and scoring it 0
+    would let a genuinely over-subscribed account save cleanly — the one outcome this prevents."""
+    unknown = _bot("b", None)
+    assert ba.share_overflow([_bot("a", 10.0), unknown], 10.0) is not None
+
+
+def test_an_unreadable_CONFIG_refuses_too():
+    broken = _bot("b", 5.0)
+    broken.unreadable = True
+    assert ba.share_overflow([_bot("a", 5.0), broken], 10.0) is not None
+
+
+def test_ONE_bot_at_the_cap_is_fine():
+    """The live account today: one bot, its share equal to the ceiling. It must not be refused —
+    a cap EQUAL to the only share is full allocation, not over-allocation."""
+    assert ba.share_overflow([_bot("a", 10.0)], 10.0) is None
+
+
+# ── the per-trade risk has ONE definition ────────────────────────────────────
+def test_the_risk_read_is_the_SAME_one_the_grouping_uses():
+    """🔴 A caller assembling a hypothetical account (a bot about to be MOVED) must read this
+    number the way every other bot's is read. Two ways is two answers, and the hypothetical is
+    the one that drifts. RED if the grouping stops going through `risk_pct_of`."""
+    cfg = _cfg("a", risk=7.5)
+    assert ba.risk_pct_of(cfg) == 7.5
+    assert ba.group_by_account({"a": cfg})[0].bots[0].risk_pct == 7.5
+
+
+def test_a_config_stating_no_risk_reads_as_UNKNOWN_not_zero():
+    assert ba.risk_pct_of({"strategy_params": {}}) is None
+    assert ba.risk_pct_of({}) is None
+
+
+# ── the three write points that can create an over-subscribed account ─────────
+#
+# The rule is only real where it is ENFORCED. Each of these is a different way to arrive at the
+# same broken state: lower the ceiling under the shares, add a bot, or raise one bot's share.
+def _group(*bots, cap=10.0, account=700152905):
+    g = ba.AccountGroup(account=account, server="PUPrime-Demo", kind="account")
+    g.bots = list(bots)
+    g.risk_cap_pct = cap
+    g.cap_agrees = True
+    return g
+
+
+def test_LOWERING_the_cap_under_the_existing_shares_is_refused(client, monkeypatch):
+    """The shares do not move, so the ceiling coming down under them is the same broken state
+    arrived at from the other side."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=10.0)],
+    )
+    r = client.patch("/bots/accounts/700152905/risk-cap", json={"risk_cap_pct": 8.0})
+    assert r.status_code == 409
+    assert "add up to" in r.json()["detail"]
+
+
+def test_a_cap_the_shares_FIT_is_not_refused_for_overflow(client, monkeypatch):
+    """The control. RED if the check fires on a configuration that is exactly right — which is
+    the failure mode that makes a guard get switched off."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=8.0)],
+    )
+    r = client.patch("/bots/accounts/700152905/risk-cap", json={"risk_cap_pct": 10.0})
+    assert "add up to" not in str(r.json().get("detail", ""))
+
+
+def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeypatch):
+    """The case Aaron asked about: a third bot onto an account whose budget is fully allocated.
+    Refused at the MOVE, where it can still be reasoned about, rather than at 3am by whichever
+    bot happens to ask last."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
+    # The password pre-check SSHes to the box and runs BEFORE this one; the VPS interlock
+    # refuses it, which is the interlock working rather than anything about this rule.
+    monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=10.0)],
+    )
+    r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700152905, "deploy": False})
+    assert r.status_code == 409
+    assert "add up to" in r.json()["detail"]
+
+
+def test_RAISING_a_bots_own_risk_past_the_room_left_is_refused(client, monkeypatch):
+    """The third way in, and the easiest to reach — it is one number in a box on the Configure
+    tab, and it is the one field that reaches a RUNNING bot."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("mpc_sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
+    )
+    r = client.patch(
+        "/bots/mpc_sos_fade_demo/runtime",
+        json={"values": {"exec_risk_pct": 9.0}, "deploy": False},
+    )
+    assert r.status_code == 409
+    assert "add up to" in r.json()["detail"]
+
+
+def test_LOWERING_a_bots_own_risk_is_always_allowed(client, monkeypatch):
+    """The control for the case above — freeing room can never over-subscribe an account, and a
+    guard that blocked it would make an over-subscribed account unfixable."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("mpc_sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
+    )
+    # Stopped before the write: this test is about the CHECK not firing, and letting it
+    # through would edit the LIVE bot's own config on the machine running the suite.
+    written = []
+    monkeypatch.setattr(
+        bots_router, "_write_instance_config", lambda key, data: written.append(key)
+    )
+    r = client.patch(
+        "/bots/mpc_sos_fade_demo/runtime",
+        json={"values": {"exec_risk_pct": 2.0}, "deploy": False},
+    )
+    assert written == ["mpc_sos_fade_demo"], "it should have reached the write"
+    assert "add up to" not in str(r.json().get("detail", ""))

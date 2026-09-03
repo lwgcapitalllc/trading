@@ -32,7 +32,7 @@ import re
 import subprocess
 import threading
 import time as _time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -1299,6 +1299,14 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+    # Aaron, 2026-09-03: the per-trade shares may not add up to more than the ceiling. Refused
+    # rather than warned, because the page has no place to put a warning somebody must then
+    # remember — and an over-subscribed account is not a broken one, it is one whose bots quietly
+    # stop being the bots that were backtested. See `bot_accounts.share_overflow`.
+    overflow = bot_accounts.share_overflow(group.bots, update.risk_cap_pct)
+    if overflow:
+        raise HTTPException(status_code=409, detail=overflow)
+
     bot_keys = [b.key for b in group.bots]
     if not targets:
         # Nothing to write, and therefore nothing to restart — but the bots may still be
@@ -1462,6 +1470,32 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+    # Aaron, 2026-09-03: the shares on an account may not add up to more than its ceiling.
+    # Checked on the account this bot is JOINING, with this bot counted in — benching is always
+    # allowed, since leaving an account can only ever free room.
+    if update.account is not None:
+        joining = [b for b in (target.bots if target is not None else []) if b.key != bot_key]
+        joining.append(
+            bot_accounts.AccountBot(
+                key=bot_key,
+                display=_KEY_DISPLAY.get(bot_key, bot_key),
+                symbol=str(data.get("symbol") or ""),
+                magic=int(data.get("magic") or 0),
+                strategy_package=str(data.get("strategy_package") or ""),
+                # The bot's OWN per-trade risk, read through the SAME function
+                # `group_by_account` reads every other bot's with — a second way of finding this
+                # number is a second answer, and the hypothetical is the one that drifts.
+                risk_pct=bot_accounts.risk_pct_of(data),
+            )
+        )
+        # The cap it ADOPTS, which is the account's, not whatever this bot states today.
+        joining_cap = plan.fields.get("account_risk_cap_pct")
+        if joining_cap is None and target is not None and target.cap_agrees:
+            joining_cap = target.risk_cap_pct
+        overflow = bot_accounts.share_overflow(joining, joining_cap)
+        if overflow:
+            raise HTTPException(status_code=409, detail=overflow)
 
     if plan.adopt_terminal_from and not plan.fields.get("mt5_path"):
         # The registry names the terminal directly; this is the fallback for an account that is
@@ -2296,6 +2330,27 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     before = {k: params.get(k) for k in values}
     if all(params.get(k) == v for k, v in values.items()):
         return {"status": "ok", "changed": False, "detail": "Already at those values."}
+
+    # Aaron, 2026-09-03: the shares on one account may not add up to more than its ceiling.
+    # Checked with THIS bot's new number substituted in, and only when the risk actually moved —
+    # every other runtime field is none of the account's business.
+    if "exec_risk_pct" in values:
+        for g in _account_groups():
+            if g.kind != "account" or not any(b.key == bot_key for b in g.bots):
+                continue
+            # A bot whose bots disagree about the cap has no account cap to check against, and
+            # `live_config._assert_account_cap_agrees` already refuses to start it. Reporting a
+            # share overflow there would name the wrong fault.
+            if not g.cap_agrees:
+                break
+            proposed = [
+                replace(b, risk_pct=float(values["exec_risk_pct"])) if b.key == bot_key else b
+                for b in g.bots
+            ]
+            overflow = bot_accounts.share_overflow(proposed, g.risk_cap_pct)
+            if overflow:
+                raise HTTPException(status_code=409, detail=overflow)
+            break
 
     params.update(values)
     _write_instance_config(bot_key, data)

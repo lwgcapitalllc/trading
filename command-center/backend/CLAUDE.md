@@ -1370,6 +1370,65 @@ whose child data is gone is left alone rather than being given a number nothing 
 
 ---
 
+## The shares may not add up to more than the ceiling (2026-09-03)
+
+Aaron: *"the risk per trade cannot add up to more than that cap"*. `bot_accounts.share_overflow`
+is the rule; it returns the reason to refuse, or `None` when the shares fit.
+
+🔴 **`AccountGroup.cap_takes_turns` had STATED this since 2026-08-09 — *a cap that lets both hold
+has to exceed the sum* — and nothing enforced it.** A fact a module computes and reports is not a
+rule; three separate writes could each produce an over-subscribed account and every one of them
+saved cleanly.
+
+⚠ **It is about the CONFIGURATION being coherent, not about safety, and the message says so.** The
+live cap already stops an account exceeding its ceiling — it does that by making whoever asks LAST
+take less, or nothing. So an over-subscribed account is not unsafe; it is a set of bots that
+quietly stop being the bots that were backtested, because each only gets its full size when it
+happens to ask first. **Refusing prevents a silent demotion, not a loss.**
+
+🔴 **THREE write points, because there are three ways into the same broken state**, and guarding
+one would have read as a rule while leaving two doors open: lower the ceiling under the shares
+(`set_account_risk_cap`), add a bot (`set_bot_account`), or raise one bot's share
+(`save_bot_runtime`).
+
+⚠ **`share_overflow` is checked with the HYPOTHETICAL account assembled** — the joining bot counted
+in, or the changed share substituted — never against what is on disk today. Checking the current
+state would pass every write that creates the problem.
+
+⚠ **`risk_pct_of` is the ONE definition of what a bot risks per trade**, used by
+`group_by_account` and by the router assembling that hypothetical. Two ways of reading the number
+is two answers, and the hypothetical is the one that drifts.
+
+⚠ **An unreadable or unstated share REFUSES rather than counting as zero** (rule 1). A bot whose
+risk cannot be read is not a bot risking nothing, and scoring it 0.0 would let a genuinely
+over-subscribed account save cleanly — the one outcome the rule exists to prevent.
+
+⚠ **No cap means nothing to check.** Uncapped is deliberate and supported; it is not a cap of zero.
+
+⚠ **`_SHARE_EPS` exists because the INTENDED configuration is an exact fit.** Two bots at 5.0
+against a ceiling of 10.0 must pass, and so must today's single bot at 5.0 under 10.0. A strict
+comparison reddens both — measured, not reasoned.
+
+⚠ **Benching is never refused, and lowering a share never is either** — leaving an account or
+freeing room cannot over-subscribe anything, and a guard that blocked them would make an
+over-subscribed account unfixable.
+
+⚠ **A bot whose account has DISAGREEING caps is skipped rather than refused.** There is no account
+cap to check against, and `live_config._assert_account_cap_agrees` already refuses to start it;
+reporting a share overflow there names the wrong fault.
+
+⚠ **THE PAGE DOES NOT YET SHOW THE RUNNING TOTAL.** The refusal is the enforcement and it arrives
+at the moment of the write, which is the useful moment — but a reader planning a three-bot split
+still has to add the column up by hand. **That is a stated gap, not a finished feature.**
+
+**Tests:** 15 in `tests/test_bot_accounts.py` — 10 on the rule, 5 driving the three endpoints.
+⚠ **A fail-watch is vacuous for a rule that did not exist**, so non-vacuity is by MUTATION: six
+were run and each turned its own named test red — a strict comparison (which reddens BOTH exact-fit
+cases), an unreadable share counted as zero, uncapped read as a cap of zero, and each of the three
+endpoint checks deleted in turn. ⚠ **One mutation did NOT APPLY on its first attempt and proved
+nothing** — the pattern did not match, the suite stayed green, and that reads exactly like a
+surviving mutation. Assert the edit landed before believing the result.
+
 ## The account REGISTRY — the gap that made moving a bot a manual afternoon (2026-08-12)
 
 `services/bot_account_registry.py` + `algos/markets/fx/accounts.json` + four endpoints under

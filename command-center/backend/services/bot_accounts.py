@@ -60,6 +60,8 @@ __all__ = [
     "AssignPlan",
     "group_by_account",
     "cap_change_plan",
+    "risk_pct_of",
+    "share_overflow",
     "assign_plan",
 ]
 
@@ -195,7 +197,6 @@ def group_by_account(
             kind = "unknown"
             server = ""
         else:
-            params = raw.get("strategy_params") or {}
             account = raw.get("account")
             kind = "account" if account is not None else "bench"
             server = raw.get("server") or ""
@@ -205,7 +206,7 @@ def group_by_account(
                 symbol=raw.get("symbol") or "",
                 magic=int(raw.get("magic") or 0),
                 strategy_package=raw.get("strategy_package") or "",
-                risk_pct=_num(params.get("exec_risk_pct")),
+                risk_pct=risk_pct_of(raw),
                 cap_pct=_num(raw.get("account_risk_cap_pct")),
             )
 
@@ -249,6 +250,74 @@ def cap_change_plan(group: AccountGroup, new_cap: Optional[float]) -> list[str]:
             f"the unreadable config first."
         )
     return [b.key for b in group.bots if b.cap_pct != new_cap]
+
+
+# The tolerance on the shares-vs-ceiling comparison. Two bots at 5.0 against a cap of 10.0 must
+# FIT — that is the intended configuration, not a near miss — and binary floating point is not
+# guaranteed to make the sum land exactly on the ceiling once a third share or a decimal like 3.3
+# is involved. Same reasoning and same size as `_GRANT_EPS` in `backtest/portfolio/account.py`.
+def risk_pct_of(raw: dict) -> Optional[float]:
+    """What ONE bot risks per trade, read out of its instance config.
+
+    The single definition, so a caller assembling a hypothetical account (a bot about to be
+    MOVED onto one) reads this number exactly the way `group_by_account` reads every other bot's.
+    Two ways of finding it is two answers, and the one that drifts is the hypothetical.
+
+    `None` when the config states nothing readable — never 0.0, which would read as a bot that
+    risks nothing and let an over-subscribed account save cleanly.
+    """
+    return _num((raw.get("strategy_params") or {}).get("exec_risk_pct"))
+
+
+_SHARE_EPS = 1e-9
+
+
+def share_overflow(bots: list, cap_pct: Optional[float]) -> Optional[str]:
+    """Do the per-trade shares handed out on this account fit under its ceiling?
+
+    Returns `None` when they fit — or when there is nothing to check — and the reason to REFUSE
+    otherwise. Aaron, 2026-09-03: *"the risk per trade cannot add up to more than that cap"*.
+
+    🔴 **WHY A SUM, when the cap is enforced live per order anyway.** The live cap already stops
+    an account exceeding its ceiling; it does that by making whoever asks LAST take less, or
+    nothing. So an over-subscribed account is not unsafe — it is a set of bots that quietly stop
+    being the bots that were backtested, because each one only gets its full size when it happens
+    to ask first. **This check is about the CONFIGURATION being coherent, not about safety**, and
+    that distinction belongs in the message: refusing here prevents a silent demotion, not a loss.
+
+    ⚠ **An unreadable or unstated share REFUSES rather than counting as zero** (rule 1). A bot
+    whose risk cannot be read is not a bot risking nothing, and treating it as 0.0 would let an
+    account that is genuinely over its ceiling save cleanly — which is the one outcome this
+    function exists to prevent.
+
+    ⚠ **No cap means nothing to check.** Uncapped is a supported, deliberate state; it is not a
+    cap of zero, and it is not an error.
+    """
+    if cap_pct is None:
+        return None
+
+    unknown = [b.key for b in bots if b.unreadable or b.risk_pct is None]
+    if unknown:
+        return (
+            f"cannot check the risk shares on this account: {', '.join(sorted(unknown))} "
+            f"{'does' if len(unknown) == 1 else 'do'} not state a readable risk per trade. "
+            f"An unreadable share is not a share of zero — fix the config first."
+        )
+
+    total = sum(float(b.risk_pct) for b in bots)
+    if total <= float(cap_pct) + _SHARE_EPS:
+        return None
+
+    shares = ", ".join(
+        f"{b.display} {float(b.risk_pct):g}%" for b in sorted(bots, key=lambda x: x.key)
+    )
+    return (
+        f"the risk shares on this account add up to {total:g}%, which is more than its "
+        f"{float(cap_pct):g}% ceiling ({shares}). Over the ceiling the bots do not share the "
+        f"budget, they take turns: whoever asks first gets its full size and the others are cut "
+        f"down or refused, so each one stops being the bot that was backtested. Lower a share, "
+        f"or raise the cap."
+    )
 
 
 @dataclass
