@@ -562,3 +562,85 @@ def test_the_strategy_page_recovery_switch_is_REFUSED_in_a_stack():
         _refuse_unreplayable("aplus", _Cfg())
     assert "does NOTHING" in str(e.value)
     assert "its own leg" in str(e.value)
+
+
+# ── the venue lot ceiling (2026-09-03, Aaron's call) ──────────────────────────────────
+# Aaron: "for all tests, for all strategies, there should be a setting showing the max lot size
+# to trade. All strategies will default to one hundred lots. Don't ever refuse. Just resize."
+#
+# The ceiling is honoured by building the run's ACCOUNT here rather than by threading a kwarg
+# through five strategy packages — the account is the one seam every strategy's sizing already
+# reaches. These pin the three states apart and the one refusal.
+def test_a_stated_lot_ceiling_reaches_the_account():
+    """RED when `max_lots` is accepted and dropped — the exact shape of the bug that let the lab
+    collect costs for months and charge none. Mutation: delete the `SoloAccount(...)` line."""
+    built = build_strategy(_FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0, max_lots=5.0)
+    assert built.execution._account is not None, "no account was built at all"
+    assert built.execution._account.max_lots == 5.0
+
+
+def test_saying_nothing_about_a_ceiling_constructs_exactly_as_before():
+    """The control. `UNSTATED` must take the untouched early-return path, so a caller with no
+    opinion cannot be given an account it never asked for. RED if the sentinel check flips to a
+    truthiness or `is not None` test."""
+    built = build_strategy(_FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0)
+    assert built.execution._account is None
+
+
+def test_an_explicit_null_ceiling_is_NOT_the_same_as_saying_nothing():
+    """Rule 1, at this seam. `None` is a real instruction — *do not clamp this run* — and the
+    account it builds must exist and carry no ceiling. RED if `None` is folded into `UNSTATED`."""
+    built = build_strategy(_FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0, max_lots=None)
+    assert built.execution._account is not None, "an explicit `no ceiling` built no account"
+    assert built.execution._account.max_lots is None
+
+
+def test_a_shared_account_and_a_ceiling_together_are_REFUSED():
+    """A shared account carries ONE ceiling for every leg on it. Honouring a second one named
+    here would clamp this leg alone while the run reported a ceiling it enforced unevenly."""
+    from backtest.portfolio.account import SoloAccount
+
+    with pytest.raises(ValueError) as e:
+        build_strategy(
+            _FakeStrategy,
+            {"entry_bar": 0},
+            initial_capital=1000.0,
+            account=SoloAccount(balance=1000.0),
+            max_lots=5.0,
+        )
+    assert "never both" in str(e.value)
+
+
+def test_a_solo_ceiling_does_not_RENAME_the_leg():
+    """🔴 The quiet one. Passing an account used to force the leg key to the CLASS NAME, so
+    stating a ceiling would have re-filed every trade under 'MpcSosFadeStrategy' instead of the
+    strategy's own default — changing recorded output for a setting that is about size.
+    RED on restoring `kwargs['leg'] = leg or strategy_cls.__name__`."""
+    built = build_strategy(_FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0, max_lots=5.0)
+    assert built.execution._leg == "strat"
+
+
+def test_a_named_leg_still_wins_over_the_strategys_default():
+    """The other half of the line above — a stack names its legs and those names must travel,
+    or two legs key to 'strat' and the second fill overwrites the first's reservation."""
+    from backtest.portfolio.account import SoloAccount
+
+    built = build_strategy(
+        _FakeStrategy,
+        {"entry_bar": 0},
+        initial_capital=1000.0,
+        account=SoloAccount(balance=1000.0),
+        leg="bleg",
+    )
+    assert built.execution._leg == "bleg"
+
+
+def test_the_ceiling_RESIZES_a_fill_rather_than_refusing_it():
+    """Aaron's instruction in one assertion: an oversized ask comes back SMALLER, never zero.
+    The fake asks for 100 units = 1 lot at a 0.5-lot ceiling, so it must be granted half."""
+    built = build_strategy(
+        _FakeStrategy, {"entry_bar": 0}, initial_capital=1_000_000.0, max_lots=0.5
+    )
+    built.execution.step(0)
+    assert built.execution.granted == 50.0, "an oversized ask was not resized to the ceiling"
+    assert built.execution._account.lot_capped, "the clamp was not recorded"

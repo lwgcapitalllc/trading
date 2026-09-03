@@ -950,6 +950,27 @@ class BacktestRunRequest(BaseModel):
     # risk % you set). Ignored entirely for a self-sizing strategy — it sizes its own trades.
     sizing_mode: str = "consistent"
     manual_risk_pct: Optional[float] = None  # required when sizing_mode == 'manual'
+    # The VENUE LOT CEILING, in lots, for every strategy (2026-09-03, Aaron's call). An entry that
+    # wants more is RESIZED down to it and taken — never refused. Applied on the run's account,
+    # which is the one seam every strategy's sizing already reaches, so it cannot mean two things
+    # in two strategies. Root `CLAUDE.md` rule 17 has the reasoning and the reason it is clamped at
+    # the DECISION rather than at the order.
+    # ⚠ `None` means "do not clamp this run at all" and is a real instruction, distinct from the
+    # field being absent (which takes the 100 below). Do not collapse them.
+    # ⚠ **A retry of a run made before 2026-09-02 does NOT reproduce that run**, and this field is
+    # not what broke it — the account's own default became 100 lots that day, so every retry has
+    # been clamped since, silently. Storing the number is what makes it visible; send an explicit
+    # `null` to replay such a run the way it was actually made.
+    max_lots: Optional[float] = 100.0
+
+    @field_validator("max_lots")
+    @classmethod
+    def _max_lots_sane(cls, v):
+        # Refuses rather than coercing: a 0 or a negative ceiling can only be a mistake, and
+        # silently reading it as "unlimited" would be the widest possible reading of a typo.
+        if v is not None and not (v > 0):
+            raise ValueError("max_lots must be greater than 0 lots, or null for no ceiling")
+        return v
 
     @field_validator("manual_risk_pct")
     @classmethod
@@ -1129,6 +1150,16 @@ class BacktestDetail(BaseModel):
     # nothing on purpose"). The page must be able to say which, so the Optional is load-bearing.
     cost_layers: Optional[list[str]] = None
     broker_profile: Optional[str] = None
+    # The venue lot ceiling this run was measured under. TWO fields, because there are THREE
+    # answers and one nullable number can only carry two of them:
+    #   stated=False              -> the run predates the field. UNKNOWN, and the page must say so
+    #                                rather than print a number nobody chose.
+    #   stated=True,  lots=None   -> deliberately no ceiling.
+    #   stated=True,  lots=100.0  -> clamped at 100 lots.
+    # ⚠ Collapsing the first two would caption a run that WAS clamped (by the account's own
+    # default, from 2026-09-02) as one that deliberately was not.
+    max_lots_stated: bool = False
+    max_lots: Optional[float] = None
     status: str
     error_message: Optional[str] = None
     created_at: datetime

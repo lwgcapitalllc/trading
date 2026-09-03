@@ -301,6 +301,17 @@ def init_db() -> None:
             # Risk % per trade for sizing_mode='manual'. NULL for the automatic modes, which
             # derive the size from the ruleset instead of being told it.
             "ALTER TABLE backtest_runs ADD COLUMN manual_risk_pct REAL",
+            # The venue LOT CEILING this run was measured under, as a JSON scalar, because the
+            # question has THREE answers and a REAL column can only hold two of them:
+            #   NULL     -> the run predates the field. UNKNOWN, and it must not be guessed.
+            #   'null'   -> deliberately no ceiling.
+            #   '100.0'  -> clamped at 100 lots.
+            # 🔴 **Existing rows are NULL and are NOT back-filled, deliberately.** The account's
+            # own default became 100 lots on 2026-09-02, so rows either side of that date were
+            # measured differently while looking identical — and `created_at` is not evidence of
+            # what the code did, it is a date. Writing a number here for a run nobody measured
+            # under one would be rule 4 (a guessed number in place of a measurement).
+            "ALTER TABLE backtest_runs ADD COLUMN max_lots TEXT",
             # rulesets new columns (existing DBs had them as firms)
             "ALTER TABLE rulesets ADD COLUMN eval_cost_usd INTEGER",
             "ALTER TABLE rulesets ADD COLUMN activation_fee_usd INTEGER",
@@ -2694,8 +2705,9 @@ def insert_run(data: dict) -> None:
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, evaluate_firms, runner, optimization_id,
-                 source_run_id, sizing_mode, manual_risk_pct, cost_layers, broker_profile)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_run_id, sizing_mode, manual_risk_pct, cost_layers, broker_profile,
+                 max_lots)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["run_id"],
@@ -2733,6 +2745,12 @@ def insert_run(data: dict) -> None:
                     else json.dumps(data.get("cost_layers") or [])
                 ),
                 data.get("broker_profile") or "vantage_demo",
+                # ⚠ ABSENT is not None here either, and for a sharper reason than cost_layers:
+                # absent means nobody stated a ceiling, and the account then applies its OWN
+                # default. Storing that default as though the run had asked for it would put a
+                # number on the row that no caller ever chose — and the next reader would take
+                # it for a decision. NULL says "unknown", which is what it is.
+                json.dumps(data["max_lots"]) if "max_lots" in data else None,
             ),
         )
 
@@ -4791,8 +4809,8 @@ def insert_run_stress_test_child(data: dict) -> None:
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, stress_test_id, walk_forward_window_id, runner,
-                 cost_layers, broker_profile, sizing_mode, manual_risk_pct)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cost_layers, broker_profile, sizing_mode, manual_risk_pct, max_lots)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["run_id"],
@@ -4815,5 +4833,8 @@ def insert_run_stress_test_child(data: dict) -> None:
                 data.get("broker_profile"),
                 data.get("sizing_mode") or "consistent",
                 data.get("manual_risk_pct"),
+                # ⚠ ABSENT and None are different answers — see the column's comment. A child
+                # that does not record its ceiling cannot be checked against its parent.
+                json.dumps(data["max_lots"]) if "max_lots" in data else None,
             ),
         )

@@ -415,6 +415,9 @@ def test_build_results_has_the_lab_keys():
         "engine_trades",
         "blocked_setups",
         "missed_setups",
+        # 2026-09-03. Present on EVERY run, `None` when nothing recorded it — a clamp leaves no
+        # other trace, so an absent key would make "the sizes were cut" unaskable.
+        "lot_capped",
     }
 
 
@@ -676,3 +679,41 @@ def test_a_strategy_that_reports_neither_ships_no_ladder_rather_than_an_invented
 
 def test_an_unset_rung_is_dropped_rather_than_reported_at_price_zero():
     assert _targets(tp_rungs=((110.0, 50.0), (0.0, 0.0))) == [{"price": 110.0, "banks": True}]
+
+
+# ── the venue lot ceiling's own record (2026-09-03) ───────────────────────────────────
+#
+# 🔴 A clamp leaves NO other trace. A resized entry is still a trade, on the equity curve, with
+# the SAME R as a full-size one — R is profit over risk and both scale with quantity. So a run
+# whose sizes were quietly halved looks completely healthy, and this list is the only thing in
+# the whole pipeline that can say otherwise.
+def test_an_unrecorded_clamp_and_a_clamp_that_never_FIRED_are_different_answers():
+    """Rule 1 at the reporting layer. `None` = nobody looked; `[]` = looked, never bit. The
+    second is a reassuring MEASUREMENT and must not be indistinguishable from the first.
+    RED on `if not records: return []`."""
+    from backtest.output import build_lot_capped
+
+    assert build_lot_capped(None) is None
+    assert build_lot_capped([]) == []
+
+
+def test_a_clamp_is_carried_verbatim_rather_than_recomputed():
+    """What the account WROTE is what is stored — recomputing here would let the report drift
+    from what the clamp actually did to the order."""
+    from backtest.output import build_lot_capped
+
+    rec = {"leg": "strat", "desired_lots": 742.6, "max_lots": 100.0, "over_x": 7.426}
+    assert build_lot_capped([rec]) == [rec]
+
+
+def test_build_results_always_carries_the_clamp_key():
+    """The key must exist even when the value is None, or a consumer cannot tell "this run
+    recorded nothing" from "this pipeline version had no such field"."""
+    from backtest.output import build_results
+
+    r = build_results([], point_value=1.0)
+    assert "lot_capped" in r
+    assert r["lot_capped"] is None
+
+    r2 = build_results([], point_value=1.0, lot_capped=[])
+    assert r2["lot_capped"] == []

@@ -372,6 +372,35 @@ def _cancelled(job_id: str) -> bool:
         return bool(job and job["cancelled"])
 
 
+def _max_lots(spec: dict):
+    """The run's venue lot ceiling, in lots, as `build_strategy` wants it.
+
+    THREE states, and keeping them apart is the whole job (rule 1):
+
+      * key ABSENT      -> `UNSTATED`. The run predates the field. The strategy builds its own
+                           account and takes whatever that defaults to.
+      * key is `None`   -> `None`. A deliberate *do not clamp this run*, which is a real answer.
+      * key is a number -> that ceiling, in lots.
+
+    ⚠ A stored run from before 2026-09-02 does NOT replay as it was made, and this reader is not
+    why. The account's own default became 100 lots that day, so an absent key has been clamped
+    ever since — silently. Send an explicit `null` to reproduce such a run.
+    """
+    from backtest.replay import UNSTATED
+
+    if "max_lots" not in spec:
+        return UNSTATED
+    v = spec["max_lots"]
+    if v is None:
+        return None
+    v = float(v)
+    if v <= 0:
+        # Never read as "unlimited". That is the widest possible reading of a typo, and it would
+        # arrive as a run that quietly ignored the ceiling it says on screen that it has.
+        raise ValueError(f"max_lots must be greater than 0 lots, or null for no ceiling (got {v})")
+    return v
+
+
 def _execute(job_id: str, spec: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.output import build_results
@@ -405,7 +434,11 @@ def _execute(job_id: str, spec: dict) -> None:
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
     capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
     strategy = build_strategy(
-        entry["strategy"], config, initial_capital=capital, cost_profile=_cost_profile(spec)
+        entry["strategy"],
+        config,
+        initial_capital=capital,
+        cost_profile=_cost_profile(spec),
+        max_lots=_max_lots(spec),
     )
 
     # ONE question, asked of `run_feeds` by both this runner and the pre-flight floor check.
@@ -473,12 +506,18 @@ def _execute(job_id: str, spec: dict) -> None:
     _set(job_id, pct=99, message="Building results…")
     # `blocks` / `misses` are optional on the execution layer — a strategy that records no
     # refusals or near-misses (or an older one) yields an empty list, never a missing key.
+    # ⚠ `None` when this strategy has no account to ask — NOT `[]`. An empty list is the run
+    # saying "the ceiling never bit", which is a measurement; None is "nobody looked". A clamp
+    # leaves no other trace (a resized trade has the same R as a full-size one), so this is the
+    # only channel that fact reaches the lab through.
+    _acct = getattr(strategy.execution, "_account", None)
     results = build_results(
         strategy.execution.trades,
         point_value=config.point_value,
         initial_capital=capital,
         blocked=getattr(strategy.execution, "blocks", None),
         missed=getattr(strategy.execution, "misses", None),
+        lot_capped=getattr(_acct, "lot_capped", None),
     )
     _set(
         job_id,

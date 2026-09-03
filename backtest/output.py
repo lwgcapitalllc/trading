@@ -41,6 +41,7 @@ __all__ = [
     "engine_trades_csv",
     "build_blocked_setups",
     "build_missed_setups",
+    "build_lot_capped",
 ]
 
 
@@ -542,6 +543,30 @@ def build_missed_setups(missed: Optional[Sequence[Any]]) -> list[dict]:
     return out
 
 
+def build_lot_capped(records: Optional[Sequence[Any]]) -> Optional[list[dict]]:
+    """Where the venue lot ceiling actually RESIZED an entry — `PortfolioAccount.lot_capped`.
+
+    🔴 **`None` and `[]` are different answers and the return type says so.** `None` means this
+    run recorded nothing (an older strategy, or a runner with no account); `[]` means the run
+    was measured and the ceiling never bit. Collapsing them would make "the ceiling was never
+    reached" — a genuinely reassuring fact — indistinguishable from "nobody looked", which is
+    rule 1 and the failure this repo keeps paying for.
+
+    ⚠ **It matters more here than for a refused setup, because a clamp leaves NO other trace.**
+    A resized entry is still a trade, in the trade list, on the equity curve, with the same R as
+    an unclamped one — R is profit over risk and both scale with quantity. So a run whose sizes
+    were quietly halved looks completely healthy, and this list is the only thing that says so.
+    """
+    if records is None:
+        return None
+    out: list[dict] = []
+    for r in records:
+        # Plain dicts already: the account writes them, and they are stored rather than
+        # recomputed so this cannot drift from what the clamp actually did.
+        out.append({str(k): v for k, v in dict(r).items()})
+    return out
+
+
 def build_results(
     trades: Sequence[Any],
     *,
@@ -550,11 +575,15 @@ def build_results(
     commission_per_side: float = 0.0,
     blocked: Optional[Sequence[Any]] = None,
     missed: Optional[Sequence[Any]] = None,
+    lot_capped: Optional[Sequence[Any]] = None,
 ) -> dict:
     """Everything the lab needs from a finished Python backtest, in one call.
 
     `blocked` and `missed` are optional and reporting-only — a strategy that records neither
     yields empty lists, and no downstream consumer requires either key.
+
+    `lot_capped` is optional the same way but is NOT flattened to a list: `None` (unrecorded)
+    and `[]` (measured, never bit) stay apart all the way to disk. See `build_lot_capped`.
     """
     trades = list(trades)
     curve = build_equity_curve(trades, initial_capital=initial_capital)
@@ -570,4 +599,5 @@ def build_results(
         ),
         "blocked_setups": build_blocked_setups(blocked),
         "missed_setups": build_missed_setups(missed),
+        "lot_capped": build_lot_capped(lot_capped),
     }

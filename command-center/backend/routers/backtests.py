@@ -108,6 +108,36 @@ def _json_list(raw) -> Optional[list]:
     return parsed if isinstance(parsed, list) else None
 
 
+_NO_CEILING_STORED = object()  # the column held 'null': no ceiling, deliberately
+
+
+def _stored_max_lots(row: dict):
+    """The run's stored lot ceiling, or `None` when the column was never written.
+
+    THREE answers and the column is TEXT precisely so it can hold all three:
+
+      * column NULL / absent -> `None`. The run predates the field. UNKNOWN.
+      * column `'null'`      -> `_NO_CEILING_STORED`. Deliberately unclamped.
+      * column `'100.0'`     -> `100.0`.
+
+    ⚠ Do NOT collapse the first two. A run nobody stated a ceiling for was clamped by the
+    account's own default from 2026-09-02 onward, and reading that as "deliberately unclamped"
+    would send a retry off to reproduce a run that never happened.
+    """
+    raw = row.get("max_lots")
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None  # malformed reads as unknown, same as `_json_list`
+    if parsed is None:
+        return _NO_CEILING_STORED
+    return float(parsed) if isinstance(parsed, (int, float)) else None
+
+
 def _worthiness_from_row(row: dict) -> Optional[WorthinessScore]:
     if not row.get("worthiness_tier"):
         return None
@@ -227,6 +257,7 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
         else []
     )
 
+    ceiling = _stored_max_lots(row)
     return BacktestDetail(
         run_id=row["run_id"],
         strategy_id=row["strategy_id"],
@@ -241,6 +272,10 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
         slippage_ticks=row["slippage_ticks"],
         cost_layers=_json_list(row.get("cost_layers")),
         broker_profile=row.get("broker_profile"),
+        # Two fields, three states — see `BacktestDetail`. `_stored_max_lots` returns None only
+        # for a run that never recorded one, so "stated" is exactly "the column was written".
+        max_lots_stated=ceiling is not None,
+        max_lots=None if ceiling is _NO_CEILING_STORED else ceiling,
         status=row["status"],
         error_message=row.get("error_message"),
         created_at=row["created_at"],
@@ -704,6 +739,16 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
             "manual_risk_pct": req.manual_risk_pct,
             "cost_layers": cost_layers,
             "broker_profile": req.broker_profile,
+            # The ceiling this run is measured under. Stored because it CHANGES THE RESULT — a
+            # clamped entry books a smaller position, so balance and drawdown differ while R
+            # does not. A run that does not record it cannot be compared with one that does.
+            #
+            # ⚠ PYTHON-ONLY, and the KEY IS OMITTED for the others rather than written as null.
+            # NT8 and MT5 size inside their own platforms and never touch this account, so a
+            # ceiling recorded on one of their rows would be a claim about code that does not
+            # exist — rule 7, and the same reason `cost_layers` stays NULL for them. Omitted
+            # leaves the column NULL, which reads as "not recorded", which is the truth.
+            **({"max_lots": req.max_lots} if runner == "python" else {}),
         }
     )
 
@@ -720,6 +765,8 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "slippage_ticks": req.slippage_ticks,
         "cost_layers": cost_layers,
         "broker_profile": req.broker_profile,
+        # Same rule as the row above: only the python runner has an account to clamp.
+        **({"max_lots": req.max_lots} if runner == "python" else {}),
     }
 
     try:
@@ -905,6 +952,15 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         "cost_layers": _json_list(row.get("cost_layers")),
         "broker_profile": row.get("broker_profile"),
     }
+    # The lot ceiling, read back off the ROW for the same reason. ⚠ The key is OMITTED when the
+    # column is NULL rather than sent as None: absent means "nobody stated one, let the account
+    # decide", which is what that run actually did; None means "deliberately no ceiling", which
+    # it did not. Sending the wrong one of those two retries a different run.
+    _ceiling = _stored_max_lots(row)
+    if _ceiling is _NO_CEILING_STORED:
+        job_spec["max_lots"] = None
+    elif _ceiling is not None:
+        job_spec["max_lots"] = _ceiling
 
     try:
         await asyncio.to_thread(runner_dispatch.start_backtest, job_spec, runner)

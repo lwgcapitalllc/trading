@@ -253,3 +253,131 @@ def test_slimming_drops_nothing_but_the_timeline(client, seeded_run, monkeypatch
     assert {k: v for k, v in full.items() if k != "regime_timeline"} == {
         k: v for k, v in slim.items() if k != "regime_timeline"
     }
+
+
+# ── the venue lot ceiling on a stored run (2026-09-03) ─────────────────────────
+#
+# The column is TEXT holding a JSON scalar because the question has THREE answers and a REAL
+# column carries two. What is pinned here is that a RETRY reproduces the run it is retrying —
+# the failure mode is silent, because both wrong readings produce a run that finishes happily
+# and reports numbers from a different basis.
+
+
+def test_a_run_with_no_stored_ceiling_reads_as_UNKNOWN():
+    """Rule 1. Rows written before 2026-09-03 have NULL here, and NULL is not a ceiling and not
+    the absence of one — it is "nobody recorded it". RED if the reader returns 0 or a float."""
+    from routers.backtests import _stored_max_lots
+
+    assert _stored_max_lots({}) is None
+    assert _stored_max_lots({"max_lots": None}) is None
+    assert _stored_max_lots({"max_lots": ""}) is None
+
+
+def test_a_stored_null_means_DELIBERATELY_no_ceiling():
+    """The distinct third state. A run that explicitly asked for no clamp must retry that way,
+    not fall back to the account's 100 — that would retry a different run and say nothing."""
+    from routers.backtests import _NO_CEILING_STORED, _stored_max_lots
+
+    assert _stored_max_lots({"max_lots": "null"}) is _NO_CEILING_STORED
+
+
+def test_a_stored_number_comes_back_as_that_number():
+    from routers.backtests import _stored_max_lots
+
+    assert _stored_max_lots({"max_lots": "100.0"}) == 100.0
+    assert _stored_max_lots({"max_lots": 250.0}) == 250.0  # a REAL column, defensively
+
+
+def test_a_malformed_ceiling_reads_as_UNKNOWN_rather_than_raising():
+    """Same call as `_json_list` makes: unknown is the honest answer, and the page already knows
+    how to caption it. A retry must not die because a column got corrupted."""
+    from routers.backtests import _stored_max_lots
+
+    assert _stored_max_lots({"max_lots": "{not json"}) is None
+    assert _stored_max_lots({"max_lots": '"one hundred"'}) is None
+
+
+def _python_strategy_id(client) -> str:
+    """A scanned strategy whose runner is `python` and which can run on its own.
+
+    ⚠ `requires_source` is read rather than a name being hardcoded — it is the same fact
+    `routers/_source_guard.py` refuses on, so a new dependent rule cannot silently become the
+    one this picks and turn these tests into a 400.
+    """
+    client.post("/strategies/scan")
+    for s in client.get("/strategies").json():
+        if s.get("runner") == "python" and not s.get("requires_source"):
+            return s["id"]
+    raise AssertionError("no standalone python strategy was scanned; this test needs one")
+
+
+def test_a_new_run_records_the_ceiling_it_was_measured_under(client):
+    """The loop-closer: the field on the REQUEST must reach the ROW, or the run cannot be
+    compared with any other run and a retry has nothing to read back. RED if the key is dropped
+    anywhere between the two."""
+    from routers.backtests import _stored_max_lots
+    from services import lab_db
+
+    r = client.post(
+        "/backtests/run",
+        json={
+            "strategy_id": _python_strategy_id(client),
+            "instrument": "XAUUSD",
+            "params": {},
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "max_lots": 250.0,
+        },
+    )
+    assert r.status_code in (200, 202), r.text
+    row = lab_db.get_run(r.json()["run_id"])
+    assert _stored_max_lots(row) == 250.0
+
+
+def test_the_ceiling_DEFAULTS_to_one_hundred_lots_for_every_strategy(client):
+    """Aaron's instruction: "All strategies will default to one hundred lots." A caller that says
+    nothing must still get the ceiling — RED if the request model's default is removed."""
+    from routers.backtests import _stored_max_lots
+    from services import lab_db
+
+    r = client.post(
+        "/backtests/run",
+        json={
+            "strategy_id": _python_strategy_id(client),
+            "instrument": "XAUUSD",
+            "params": {},
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+        },
+    )
+    assert r.status_code in (200, 202), r.text
+    row = lab_db.get_run(r.json()["run_id"])
+    assert _stored_max_lots(row) == 100.0
+
+
+def test_a_nonpython_run_records_NO_ceiling_at_all(client):
+    """🔴 Rule 7. NT8 and MT5 size inside their own platforms and never reach this account, so a
+    ceiling written on one of their rows is a claim about code that does not exist. The column
+    must stay NULL — RED if the field is stored for every runner alike."""
+    from routers.backtests import _stored_max_lots
+    from services import lab_db
+
+    client.post("/strategies/scan")
+    other = [s for s in client.get("/strategies").json() if s.get("runner") != "python"]
+    assert other, "this test needs a non-python strategy"
+
+    r = client.post(
+        "/backtests/run",
+        json={
+            "strategy_id": other[0]["id"],
+            "instrument": "MNQ 06-26",
+            "params": {},
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "max_lots": 250.0,
+        },
+    )
+    assert r.status_code in (200, 202), r.text
+    row = lab_db.get_run(r.json()["run_id"])
+    assert row.get("max_lots") is None
+    assert _stored_max_lots(row) is None

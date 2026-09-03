@@ -92,6 +92,7 @@ BASE_RUN = {
     "broker_profile": "vantage_demo",
     "sizing_mode": "consistent",
     "manual_risk_pct": None,
+    "max_lots": 100.0,
     "params": {"exec_risk_pct": 10},
     "trade_count": 213,
     "win_rate": 0.64,
@@ -112,6 +113,7 @@ DIFFERENT = {
     "broker_profile": "pu_ecn",
     "sizing_mode": "manual",
     "manual_risk_pct": 2.0,
+    "max_lots": 250.0,
 }
 check(
     "every basis field is exercised by this test",

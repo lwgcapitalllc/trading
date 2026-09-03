@@ -890,6 +890,11 @@ export interface BacktestRunRequest {
   source_run_id?: string | null
   sizing_mode?: SizingMode
   manual_risk_pct?: number | null // required when sizing_mode === 'manual'
+  // The biggest single position, in lots. A setup that works out larger is RESIZED down to this
+  // and taken, never refused. Three values and they mean different things: a number is the
+  // ceiling, `null` is "no ceiling, deliberately", and leaving the key off takes the backend's
+  // own default of 100. Python runs only — the other runners size inside their own platforms.
+  max_lots?: number | null
 }
 
 /** Which costs a python run charges. Empty = free, and that is the DEFAULT: the baseline run
@@ -1048,6 +1053,11 @@ export interface BacktestDetail {
   runner: string
   sizing_mode: SizingMode // engine sizing mode this run used
   manual_risk_pct?: number | null // the risk % used, when sizing_mode === 'manual'
+  // TWO fields for THREE states, matching the backend. `max_lots_stated` false means the run
+  // never recorded a ceiling — which is NOT the same as having had none, because the account's
+  // own default has clamped at 100 since 2026-09-02. Caption it as unknown, never as a number.
+  max_lots_stated: boolean
+  max_lots?: number | null // the ceiling in lots; null with stated=true means none, on purpose
   sized: boolean // true once the engine sized the run (reshaped strategy emitted engine_trades)
   sized_timeline: SizedTimelineDay[] // the engine's day-by-day record (sized runs only)
 }

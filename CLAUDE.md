@@ -353,7 +353,12 @@ decides whether it changes what the run is measured on. ✅ **It caught a real o
 handing over the resolved field must PIN it or the lab re-resolves it and a copied basis is
 silently measured differently. Story: `HISTORY.md` → *The switch that overwrote the basis*. ⚠ **Net dollars are reported under the
 unit-free numbers, never above** (rule 6), and the breakeven-scratch count always travels with
-the win rate.
+the win rate. ✅ **The VENUE LOT CEILING joined the basis on 2026-09-03, and it is the case that
+shows why the check is read off the contract rather than curated by hand: R is IDENTICAL either
+side of a ceiling** — profit and risk both scale with the quantity — **so every instinct says it
+cannot matter, while balance, drawdown and CAGR all move.** MEASURED on the live A+ bot over 6.6
+years: same 205 trades, same +107.36R, closing balance $11,528,822 uncapped against $10,752,175 at
+100 lots. Nobody would have added it from memory.
 
 ⚠ **All three are FRONT DOORS onto the Command Center backend, never second implementations** —
 so the app must be running, and each says so plainly when it is not. The one exception is the

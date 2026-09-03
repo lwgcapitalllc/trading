@@ -702,6 +702,23 @@ async def _handle_complete(
     missed = result.get("missed_setups") or []
     _write_or_clear(run_dir / "missed_setups.json", missed)
 
+    # Where the venue lot ceiling RESIZED an entry.
+    #
+    # 🔴 NOT written through `_write_or_clear`, and the difference is the whole point. That helper
+    # deletes the file when there is nothing to write, so absence means "no data" — fine for a
+    # chart layer, wrong here. `[]` is a MEASUREMENT ("this run was clamped nowhere"), and it must
+    # not read the same as a run that never recorded it at all. A clamp leaves no other trace: a
+    # resized entry is still a trade, on the curve, with the SAME R as a full-size one (R is
+    # profit over risk and both scale with quantity), so this file is the only thing that can say
+    # the sizes were cut.
+    capped = result.get("lot_capped")
+    capped_path = run_dir / "lot_capped.json"
+    if capped is None:
+        if capped_path.exists():
+            capped_path.unlink()  # this attempt recorded nothing; a stale file would be a lie
+    else:
+        capped_path.write_text(json.dumps(capped, default=str))
+
     # Regime tagging — happens BEFORE DB update so the run stays "running" during tagging,
     # letting the frontend show the Tagging milestone step in the progress bar.
     if daily_pnl:

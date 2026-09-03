@@ -1973,6 +1973,46 @@ matters, read the account's `lot_capped` log, which is the only thing that recor
 1). Zero would refuse every order; infinite would hand the broker a size it rejects. The configured
 ceiling stands, and one bad read does not ratchet it down for the session.
 
+### Stating one — `replay/build.py`, and why it is not a strategy parameter (2026-09-03)
+
+**A caller states a ceiling with `build_strategy(..., max_lots=)`, which builds the run's account
+itself and hands it in through the `account=` seam that already existed.** No strategy package was
+touched, and that is the design rather than a shortcut: threading a parameter through five packages
+gives five places to disagree about what it means, and `strategies/` is under rule 22 — most of its
+gates cannot even run without an export sitting on the machine.
+
+🔴 **THREE states, and `None` is a real answer.** Leaving the parameter out means *nobody stated
+one* and the strategy builds its own account at the default 100; `None` means *do not clamp this
+run at all*. Collapsing them would make a run that never mentioned a ceiling indistinguishable from
+one that deliberately removed it — rule 1 — and it is the only way to reproduce a run made before
+2026-09-02 or to measure what the ceiling costs. The sentinel is exported as `UNSTATED`.
+
+⚠ **Stating a ceiling AND a shared account together is REFUSED.** A shared account carries one
+ceiling for every leg on it, so a second one named per-leg would clamp that leg alone while the run
+reported a ceiling it enforced unevenly.
+
+🔴 **Passing an account used to rename the leg, and that would have been a silent side effect of a
+SIZE setting.** `build_strategy` forced the leg key to the strategy CLASS NAME whenever an account
+was supplied, so stating a ceiling would have re-filed every trade under `MpcSosFadeStrategy`
+instead of the strategy's own default — and the strategies do not agree on a default (`strat` for
+most, `recovery` for the loss-recovery leg). The class-name fallback now applies only to a SHARED
+account, where a missing key really is a caller bug. ⚠ **Nothing was relying on it** — every real
+caller passes `leg=`, checked rather than assumed.
+
+### `output.py` — the clamp's own record, and the state that must not vanish (2026-09-03)
+
+**`build_results` carries `lot_capped` on every run.** `None` means nothing recorded it; `[]` means
+the run was measured and the ceiling never bit; a list means it did, with the overage per entry.
+
+🔴 **The three states matter more here than anywhere else in this file, because a clamp leaves NO
+other trace.** A resized entry is still a trade, in the trade list, on the equity curve, with the
+SAME R as an unclamped one — R is profit over risk and both scale with quantity. So a run whose
+sizes were quietly halved looks completely healthy from every number a page shows, and this is the
+only channel that can say otherwise. ⚠ **It is written to `lot_capped.json` WITHOUT the
+write-or-delete helper the other optional artefacts use**: that helper deletes the file when there
+is nothing to write, which is right for a chart layer and wrong here — it would turn the
+measurement *"clamped nowhere"* into the absence *"nobody looked"*.
+
 ⚠ **ONE contract size for the whole account.** Every stack here is gold at 100 oz/lot; a stack
 pairing gold with an index would silently measure one against the other's lot size. Refuse that
 when it first appears rather than passing an average.

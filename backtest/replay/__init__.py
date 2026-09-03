@@ -11,12 +11,13 @@ engines and drives them; it never reimplements detection.
         state.bar.close, state.structure, state.fib, state.fvg, state.liquidity, ...
 """
 
-from .build import build_strategy
+from .build import UNSTATED, build_strategy
 from .loop import ReplayBar, iter_bars
 from .stack import BarState, EngineConfig, EngineStack, run
 
 __all__ = [
     "build_strategy",
+    "UNSTATED",
     "ReplayBar",
     "iter_bars",
     "BarState",

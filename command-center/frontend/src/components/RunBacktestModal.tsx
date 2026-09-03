@@ -264,6 +264,19 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const manualPctValid =
     sizingMode !== 'manual' || (!isNaN(manualPctNum) && manualPctNum > 0 && manualPctNum <= 100)
 
+  // ── Lot ceiling — the most any ONE entry may be, in lots ───────────────────────
+  // Aaron, 2026-09-03: every test, every strategy, 100 lots by default, and an entry that wants
+  // more is RESIZED down to it rather than skipped.
+  // ⚠ It lives on the run's ACCOUNT, which every strategy's sizing already passes through — so
+  // it applies to a self-sizing strategy too, which is why this section is NOT hidden alongside
+  // the sizing mode above.
+  // ⚠ Off is a real instruction, not an empty box: it sends `null`, meaning "do not clamp this
+  // run at all", which is the only way to reproduce a run made before 2026-09-02.
+  const [capLots, setCapLots] = useState(true)
+  const [maxLots, setMaxLots] = useState('100')
+  const maxLotsNum = parseFloat(maxLots)
+  const maxLotsValid = !capLots || (!isNaN(maxLotsNum) && maxLotsNum > 0)
+
   function barLabel(v: number) {
     if (v < 60) return `${v}m`
     const h = v / 60
@@ -509,6 +522,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     startDate < endDate &&
     evalRequiredMet &&
     manualPctValid &&
+    maxLotsValid &&
     // A tier with no measured spread cannot be run charged, and the backend refuses it. Blocking
     // the button is the same refusal in the place the reader is looking.
     !(isPython && chargeCosts && brokerUnpriced) &&
@@ -549,6 +563,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         evaluate_rulesets: Array.from(selectedFirms),
         sizing_mode: sizingMode,
         manual_risk_pct: sizingMode === 'manual' ? manualPctNum : null,
+        // ⚠ THREE values, and they are not interchangeable. A number is the ceiling; `null` is
+        // "no ceiling, deliberately"; `undefined` drops the key so NT8/MT5 — which size inside
+        // their own platforms and never touch this account — record nothing at all rather than
+        // a ceiling nothing would enforce.
+        max_lots: isPython ? (capLots ? maxLotsNum : null) : undefined,
       },
       {
         onSuccess: (data) => {
@@ -877,6 +896,60 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
           )}
 
           {!selfSizing && <Divider />}
+
+          {/* Lot ceiling — the largest single position, in lots. Python only: the other runners
+              size inside their own platforms and never reach this account. */}
+          {isPython && (
+            <>
+              <div>
+                <SectionHead
+                  label="Max Lot Size"
+                  tooltip="The biggest single position this run may take, in lots. A setup that works out larger is TAKEN AT THIS SIZE rather than skipped. Past the ceiling the risk you actually take per trade falls as the balance grows, so a long run stops describing a tradeable account — the run page shows where it bit."
+                />
+                <div className="flex gap-2">
+                  <PresetBtn label="Cap at" active={capLots} onClick={() => setCapLots(true)} />
+                  <PresetBtn
+                    label="No ceiling"
+                    active={!capLots}
+                    onClick={() => setCapLots(false)}
+                  />
+                </div>
+                {capLots ? (
+                  <div className="mt-2.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="1"
+                        min="0.01"
+                        value={maxLots}
+                        onChange={(e) => setMaxLots(e.target.value)}
+                        className={`${inputCls} max-w-[120px]`}
+                      />
+                      <span className="text-[12px] text-text-tertiary">lots, per position</span>
+                    </div>
+                    {!maxLotsValid && (
+                      <p className="text-[11px] text-neg-text mt-1.5">
+                        Enter a lot ceiling greater than 0.
+                      </p>
+                    )}
+                    <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
+                      An oversized setup is resized down to this and taken — never refused. Risk per
+                      trade then falls below what the strategy asked for, and compounding turns
+                      linear, so treat a long run past the ceiling as a floor rather than a
+                      forecast.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
+                    No clamp at all. Sizes can reach levels no venue would fill, so read the result
+                    as the strategy's arithmetic rather than as a tradeable account. This is also
+                    how a run made before 2026-09-02 is reproduced.
+                  </p>
+                )}
+              </div>
+              <Divider />
+            </>
+          )}
 
           {/* Evaluate Against — prop firm challenges for futures, personal ruleset(s) for forex */}
           <div>

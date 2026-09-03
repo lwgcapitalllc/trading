@@ -410,3 +410,43 @@ def test_an_unknown_layer_or_broker_is_refused_loudly():
         _cost_profile({"cost_layers": ["spred"]})
     with _pytest.raises(ValueError):
         _cost_profile({"cost_layers": ["spread"], "broker_profile": "not_a_broker"})
+
+
+# ── the venue lot ceiling (2026-09-03) ────────────────────────────────────────
+#
+# The setting Aaron asked for: every test, every strategy, default 100 lots, resize rather than
+# refuse. The runner's only job is to keep THREE answers apart on the way to `build_strategy` —
+# absent, explicitly none, and a number. Collapsing any two of them is rule 1, and it is exactly
+# the shape that made `cost_layers` need the same three tests above.
+
+
+def test_a_spec_with_no_ceiling_leaves_the_account_to_decide():
+    """ABSENT is not a ceiling of zero and not a ceiling of infinity — it is "nobody said", and
+    the account's own default answers it. RED if the reader returns None or a number here."""
+    from backtest.replay import UNSTATED
+
+    assert python_runner._max_lots({}) is UNSTATED
+
+
+def test_an_explicit_null_ceiling_is_a_real_instruction():
+    """`null` means *do not clamp this run*, which is how a pre-2026-09-02 run is reproduced.
+    It must NOT come back as the sentinel, or the account silently clamps at 100 anyway."""
+    from backtest.replay import UNSTATED
+
+    got = python_runner._max_lots({"max_lots": None})
+    assert got is None
+    assert got is not UNSTATED
+
+
+def test_a_stated_ceiling_arrives_as_a_number():
+    assert python_runner._max_lots({"max_lots": 100}) == 100.0
+    assert isinstance(python_runner._max_lots({"max_lots": "250"}), float)
+
+
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_a_nonpositive_ceiling_is_REFUSED_not_read_as_unlimited(bad):
+    """The widest possible reading of a typo. A run that quietly ignored the ceiling printed on
+    its own page is worse than one that would not start."""
+    with pytest.raises(ValueError) as e:
+        python_runner._max_lots({"max_lots": bad})
+    assert "greater than 0" in str(e.value)

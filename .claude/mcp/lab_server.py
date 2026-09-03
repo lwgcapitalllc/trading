@@ -70,6 +70,12 @@ _BASIS = (
     "broker_profile",
     "sizing_mode",
     "manual_risk_pct",
+    # The venue lot ceiling. BASIS, and the reason is worth stating because the obvious test
+    # misses it: R is IDENTICAL either side of a ceiling (profit and risk both scale with the
+    # quantity), so a comparison in R shows nothing while balance, drawdown and CAGR all move.
+    # MEASURED 2026-09-02 on the live A+ bot over 6.6 years: same 205 trades, same +107.36R,
+    # closing balance $11,528,822 uncapped against $10,752,175 at 100 lots.
+    "max_lots",
 )
 
 # Inputs to a run that are NOT part of the basis, and why. Kept explicit so that adding an

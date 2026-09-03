@@ -415,6 +415,46 @@ Build history (the ORB/LondonBreakout reshape, the NT8/MT5 wiring order, the per
 `ruleset_sizing.json` rollout, and the MT5 tester-agent sandbox file-path gotcha) is in
 `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
+### The lot ceiling — a per-run setting on every python strategy (2026-09-03)
+
+Aaron: *"for all tests, for all strategies, there should be a setting showing the max lot size to
+trade. All strategies will default to one hundred lots. Don't ever refuse. Just resize."*
+
+Plumbed end to end: `BacktestRunRequest.max_lots` → the `backtest_runs.max_lots` column → the job
+spec → `python_runner._max_lots` → `backtest.replay.build_strategy`, which builds the run's account
+with it. The behaviour, and why a clamp at the sizing decision is coherent when a clamp at the
+order is not, belongs to `backtest/CLAUDE.md` — do not restate it here.
+
+🔴 **THREE states, one column, and the column is TEXT for exactly that reason.** NULL is *this run
+never recorded a ceiling*; `'null'` is *deliberately no ceiling*; `'100.0'` is a ceiling. A REAL
+column carries two of those and the third would have to be a magic number. `_stored_max_lots` in
+`routers/backtests.py` is the only reader, and a malformed value reads as unknown — the same call
+`_json_list` makes, for the same reason.
+
+🔴 **EXISTING ROWS ARE NOT BACK-FILLED, AND THAT IS A DECISION.** The account's own default became
+100 lots on 2026-09-02, so runs either side of that date were measured differently while looking
+identical — and `created_at` is not evidence of what the code did, it is a date. Writing a number
+onto a row nobody chose it for is rule 4 with extra steps. ⚠ **A retry of such a run therefore
+OMITS the key rather than sending null**, because absent reproduces what that run actually did
+(the account decides) while null would reproduce a run that never happened.
+
+⚠ **PYTHON ONLY, and the key is omitted for the others rather than stored as null.** NT8 and MT5
+size inside their own platforms and never reach this account, so a ceiling on one of their rows
+would be a claim about code that does not exist — root rule 7, and the same reason `cost_layers`
+stays NULL for them.
+
+⚠ **It is a BASIS field for `mcp__lab__compare_runs`, and the obvious test misses it.** R is
+identical either side of a ceiling — profit and risk both scale with the quantity — so a
+comparison in R shows nothing while balance, drawdown and CAGR all move. MEASURED on the live A+
+bot over 6.6 years: same 205 trades, same +107.36R, closing balance $11,528,822 uncapped against
+$10,752,175 at 100 lots.
+
+⚠ **A clamp is reported through `lot_capped.json`, which is written even when EMPTY.** Empty is the
+measurement *"the ceiling never bit"*; a missing file is *"nothing recorded it"*. Every other
+optional artefact here uses `_write_or_clear`, which deletes on empty — right for a chart layer,
+wrong for this, because a resized entry is otherwise indistinguishable from a full-size one on
+every number a page shows.
+
 ## Lens metrics (the per-run scoring layer)
 
 **Drawdown = EOD trailing max-loss** (`services/trailing_drawdown.compute_trailing_mll`), not whole-test max DD. Floor trails the highest EOD balance, capped at `mll_lock_balance` when set; a breach (balance falls through the floor) is the only thing that fails `drawdown_pass`. Detail columns on `evaluations`: `mll_final_floor`, `mll_highest_eod_balance`, `mll_breach_day`, `mll_min_floor_distance`.
