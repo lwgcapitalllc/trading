@@ -32,3 +32,42 @@
 2026-09-03 03:20:42,392 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-18 10:20:00+00:00 → 2026-09-03 03:15:00+00:00).
 2026-09-03 03:20:42,394 [INFO] Equity re-anchored to the account after warm-up: 10,925.03 → 10,020.65
 2026-09-03 03:20:43,287 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-03 19:20:19,449 [INFO] Sizing against account balance $10,020.65
+2026-09-03 19:20:22,434 [INFO] Warmed 5000 bars (2026-06-19 03:15:00+00:00 → 2026-09-03 19:00:00+00:00) in 2.9s
+2026-09-03 19:20:26,722 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-19 03:20:00+00:00 → 2026-09-03 19:15:00+00:00).
+2026-09-03 19:20:26,742 [INFO] Equity re-anchored to the account after warm-up: 10,524.80 → 10,020.65
+2026-09-03 19:20:26,744 [INFO] Runtime config applied while flat (strategy rebuilt): exec_risk_pct 10.0 → 5.0
+2026-09-03 19:31:51,378 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-03 19:31:51,378 [INFO] Stop requested — shutting down.
+2026-09-03 19:31:51,380 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-03 19:31:51,924 [INFO] MT5 disconnected.
+2026-09-03 19:32:04,704 [INFO] MPC SOS Fade | MpcSosFadeStrategy v294 | hash 28b24f3cea51 | commit 904a432c | frozen | LIVE
+2026-09-03 19:32:05,238 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-03 19:32:05,239 [INFO] MT5 connection lock released
+2026-09-03 19:32:05,443 [INFO] Sizing basis 10,020.65 = broker balance 14,538.88 - 4,518.23 stated adjustment
+2026-09-03 19:32:05,444 [INFO] Sizing against account balance $10,020.65
+2026-09-03 19:32:05,456 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-03 19:32:05,456 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-03 19:32:05,460 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-03 19:32:09,081 [INFO] Warmed 5000 bars (2026-06-19 03:30:00+00:00 → 2026-09-03 19:15:00+00:00) in 3.5s
+2026-09-03 19:32:13,645 [INFO] Fast feed bookmarked at 2026-09-03 19:29:59.999000+00:00 — the 15m context is already past it.
+2026-09-03 19:32:13,646 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-19 03:30:00+00:00 → 2026-09-03 19:25:00+00:00).
+2026-09-03 19:32:13,647 [INFO] Equity re-anchored to the account after warm-up: 10,524.80 → 10,020.65
+2026-09-03 19:32:14,382 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-03 20:00:24,596 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-03 20:00:24,598 [INFO] Stop requested — shutting down.
+2026-09-03 20:00:24,606 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-03 20:00:25,329 [INFO] MT5 disconnected.
+2026-09-03 20:00:40,974 [INFO] MPC SOS Fade | MpcSosFadeStrategy v294 | hash 28b24f3cea51 | commit 904a432c | frozen | LIVE
+2026-09-03 20:00:41,524 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-03 20:00:41,525 [INFO] MT5 connection lock released
+2026-09-03 20:00:41,842 [INFO] Sizing basis 10,020.65 = broker balance 14,538.88 - 4,518.23 stated adjustment
+2026-09-03 20:00:41,843 [INFO] Sizing against account balance $10,020.65
+2026-09-03 20:00:41,878 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-03 20:00:41,879 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-03 20:00:41,884 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-03 20:00:46,551 [INFO] Warmed 5000 bars (2026-06-19 04:00:00+00:00 → 2026-09-03 19:45:00+00:00) in 4.5s
+2026-09-03 20:00:51,277 [INFO] Fast feed bookmarked at 2026-09-03 19:59:59.999000+00:00 — the 15m context is already past it.
+2026-09-03 20:00:51,277 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-19 04:00:00+00:00 → 2026-09-03 19:55:00+00:00).
+2026-09-03 20:00:51,281 [INFO] Equity re-anchored to the account after warm-up: 10,524.80 → 10,020.65
+2026-09-03 20:00:51,986 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
