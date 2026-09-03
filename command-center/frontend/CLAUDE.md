@@ -2301,14 +2301,28 @@ Measured record: `../docs/FRONTEND_BUILD_NOTES.md` → *The stack page's two pro
 - ⚠ **`sharedInBanner` is the ONE expression deciding who owns the readout**, read by the banner AND
   by the shared-account section's render guard. Two hand-written conditions is how the page draws
   both again, or neither.
-- 🔴 **No STOPPED replay is folded in** — each has a SENTENCE to show, not a percentage, and
-  **folding one into a progress bar is how a dead job comes to look like a slow one.** ⚠ **Two
-  mechanisms, not one, and the expression is only half of it**: `failed` is excluded THERE because it
-  is the one reportable while the legs still replay; cancelled and abandoned are excluded by the
-  banner not existing, since the panel shows their sentence only when the stack is NOT running.
-- 🔴 **The phase is said in WORDS.** `solo:mpc_bleg` / `shared` is the backend's vocabulary — **a
-  progress line the reader has to decode only reports to its author.** The bar counter is kept
-  after it; the finer measurement drives the bar and the leg count becomes its caption.
+- 🔴 **No STOPPED replay is folded in, and ONE list decides which those are** — read by the
+  banner's ownership test AND by the panel's own branch, because they are two halves of one
+  decision. Each stopped state has a SENTENCE to show, not a percentage, and **folding one into a
+  progress bar is how a dead job comes to look like a slow one.**
+- 🔴 **That list held FAILURES ONLY until 2026-09-03, and in the gap the two halves disagreed.**
+  The panel showed its cancelled sentence only once nothing was running, so a cancellation arriving
+  mid-replay was drawn by NEITHER and fell through to raw machine text — the backend's own word
+  beside a spinner at 100%. ✅ **A cancellation is a fact about the shared replay whoever else is
+  still going**, so that branch is no longer gated on the stack running. ⚠ **The ABANDONED half
+  still is, and the two read alike while asking different questions**: silence while the legs run is
+  *a beat behind*, and the same silence once nothing runs is *this will not arrive*.
+- ⚠ **An UNRECOGNISED phase IS absorbed, deliberately — the one judgement in this merge.** Absorbing
+  only the known phases hands an unknown one to the panel, which draws its own spinner and puts the
+  page back to TWO readouts, the defect this exists to fix. **One readout a beat coarse beats two
+  that disagree.** The cost is real and is the thing to remember: **a STOPPED phase added to the
+  backend must join the list in the SAME change**, or it arrives here wearing a progress bar.
+- 🔴 **Every phase the backend can emit is named in WORDS.** `solo:mpc_bleg` / `shared` is the
+  backend's vocabulary — **a progress line the reader has to decode only reports to its author** —
+  and ⚠ **the log MESSAGE is not a fallback worth relying on**, since it is written for a log line
+  and repeats the phase before the part worth reading. An unnamed phase degrades to that message's
+  first segment. Vocabulary: `backend/services/portfolio_runner.py`. The bar counter is kept after
+  the words; the finer measurement drives the bar and the leg count becomes its caption.
 - 🔴 **A section with nothing to show is NOT a section.** The *"Waiting for the first strategy to
   finish…"* card was a chart-sized box restating the bar at the top of the page, in the slot where
   the reader expects the charts. Gone; the charts appear there when there is a book.
@@ -2332,9 +2346,10 @@ bordered card with the legs as divided rows — the anatomy the per-strategy tab
   `[&::-webkit-details-marker]:hidden`, with a `group-open` chevron), or a row opens with nothing
   saying it could be opened.
 
-✅ **`tests/stacks.spec.ts` (29 → 31).** ⚠ **A fail-watch against HEAD is vacuous** — the merged
-block did not exist, so a red proves the locator only. **Non-vacuity is by MUTATION, three named and
-all three RUN.** ⚠ **The panel-count assertion waits on the progress block FIRST** —
+✅ **`tests/stacks.spec.ts` (29 → 34).** ⚠ **A fail-watch against HEAD is vacuous** — the merged
+block did not exist, so a red proves the locator only. **Non-vacuity is by MUTATION, seven named and
+all seven RUN**, and two of them are ONE defect: the stopped-phase list and the panel's own branch
+have to be mutated separately, because neither alone is what went wrong. ⚠ **The panel-count assertion waits on the progress block FIRST** —
 `toHaveCount(0)` is satisfied while the page is still loading, so asserting it straight after `goto`
 passes against its own mutation. **Fifth instance of that trap in this folder.**
 

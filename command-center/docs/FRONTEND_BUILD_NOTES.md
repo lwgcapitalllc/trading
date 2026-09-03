@@ -502,3 +502,42 @@ and asserts the failure text is still on the panel.
 ⚠ **The panel-count assertion had to wait on the progress block first.** `toHaveCount(0)` is
 satisfied while the whole page is still loading, so asserting it straight after `goto` passes
 against its own mutation — the fifth instance of that trap recorded in this app.
+
+### The window the merge left behind (same day)
+
+The merge above excluded a FAILED shared replay from the banner and left cancelled and abandoned
+to the panel. That was reasoned, not measured, and it was half right. The panel only speaks about
+a cancellation once nothing is running — so a cancellation arriving while the legs were still
+replaying belonged to neither half. Rendered, it read `cancelled · 100%` beside a spinner: the
+backend's word for a stopped job, wearing the costume of a running one.
+
+Nothing about it was a regression. The old panel did exactly the same thing in exactly the same
+window, because that gate predates this page's redesign by a month. It surfaced only because the
+merge made ownership an explicit question, and answering it exposed that the two halves had never
+agreed on the answer.
+
+What changed:
+
+- The stopped-phase list is now ONE constant, read by the banner's ownership test and the panel's
+  branch. Two hand-written conditions is how they came to disagree.
+- Cancellation is no longer gated on the stack running. Abandonment still is — the two look alike
+  and are different questions. Silence while the legs run means the backend has not written
+  progress yet; the same silence once nothing runs means nobody is going to.
+- Every phase the backend can emit is named in words. The log message is now a last resort rather
+  than the normal path, so rewording a log line cannot rewrite this page's headline.
+- An unrecognised phase is absorbed into the banner on purpose. The alternative reintroduces the
+  original defect for any phase added later, and one readout that is a beat coarse beats two that
+  disagree. The bill for that choice is that a future stopped phase has to join the list in the
+  same change.
+
+Four mutations, all run:
+
+| mutation | what went red |
+|---|---|
+| drop cancellation from the stopped list | the panel vanishes; the banner headlines the raw word |
+| re-gate the panel's cancelled branch on the stack running | the panel renders `cancelled · 100%` |
+| delete the loading phase's words | the banner headlines the log line instead |
+| absorb only the phases we know | panel count 1, not 0 — two readouts, the original defect |
+
+The first two are one defect and neither alone produces it. A check that only mutated one side
+would have passed against the other, which is the whole reason both are named in the test.

@@ -605,6 +605,28 @@ const CHART_SUBS: Record<string, string> = {
   breakdown: 'Drawdown from peak, daily P&L, and long vs short — for the combined portfolio.',
 }
 
+// The shared replay's phase vocabulary, and the ONE list that says which of them have STOPPED.
+// Source of truth is `backend/services/portfolio_runner.py::_set_progress`, which can emit
+// `starting`, `shared`, `solo:<leg>`, `persisting`, `complete`, `failed` and `cancelled`.
+//
+// 🔴 It is read in TWO places — the running banner's ownership test and this panel's own
+// branch — on purpose. They are the two halves of one decision (who draws a stopped replay), and
+// when they were two hand-written conditions they disagreed: the banner excluded only `failed`
+// while the panel showed its cancelled sentence only when the stack was not running, so a
+// cancellation arriving mid-replay was drawn by neither and fell through to raw machine text.
+const STOPPED_PHASES = new Set(['failed', 'cancelled'])
+
+// What each in-flight phase is called in words. ⚠ The MESSAGE is not a fallback worth relying on
+// — it is written for a log line and repeats the phase before the part worth reading — so every
+// phase the backend can emit is named here, and an unrecognised one degrades to the message's own
+// first segment rather than to nothing.
+const PHASE_WORDS: Record<string, string> = {
+  starting: 'Loading the bars',
+  shared: 'Replaying the strategies together on one account',
+  persisting: 'Writing the shared-account result',
+  complete: 'Finishing the shared-account result',
+}
+
 // ── The shared account ────────────────────────────────────────────────────────
 //
 // A screen cannot answer any of this: it runs each leg on its own full account, so nothing was
@@ -660,7 +682,13 @@ function SharedAccountPanel({
     // "no progress, nothing running" is that whatever was replaying this is gone. A CANCELLED run
     // lands here too (its phase is `cancelled`, which is not `failed`), and both want the same
     // sentence: this will not arrive on its own, rerun it.
-    if (!running && (!p || p.phase === 'cancelled')) {
+    // 🔴 The CANCELLED half is NOT gated on `running`, and the ABANDONED half is. They read
+    // alike and are different questions. A cancellation is a fact about the shared replay whoever
+    // else is still going, so it says so immediately — gated, it fell through to the spinner below
+    // and a stopped replay span. No progress AT ALL while the stack runs is the honest "a beat
+    // behind", which is what that spinner is for; the same silence once nothing is running is the
+    // abandoned case.
+    if (p?.phase === 'cancelled' || (!running && !p)) {
       return (
         <div
           data-testid="shared-account-panel"
@@ -940,17 +968,24 @@ export function StackDetail() {
   )
 
   // Is the shared replay's own progress being carried by the banner above? Only while the STACK is
-  // running and the report is genuinely still in flight — a `failed` phase has a sentence to show,
-  // not a percentage, so it keeps its own panel and this stays false.
+  // running and the report is genuinely still in flight.
   //
-  // ⚠ No STOPPED replay is absorbed — folding one into a progress bar is how a dead job comes to
-  // look like a slow one — but the three states get there by two different mechanisms, and reading
-  // this expression as the whole story is a mistake. `failed` is excluded HERE, because it is the
-  // one that can be reported while the legs are still replaying. `cancelled` and abandoned are
-  // excluded by the banner not existing: the panel renders their sentence only when the stack is
-  // NOT running (see `SharedAccountPanel`), and this is false then anyway.
+  // 🔴 A STOPPED replay is NOT absorbed, and `STOPPED_PHASES` is the one list that decides it —
+  // read here AND by the panel's own branch, so a phase added to one half cannot be missed by the
+  // other. Folding a stopped replay into a progress bar is how a dead job comes to look like a slow
+  // one, and until 2026-09-03 only `failed` was excluded: a CANCELLED replay reaching this while
+  // the legs were still going put the backend's own word `cancelled` in the headline, next to a
+  // spinner and a full bar.
+  //
+  // ⚠ An UNRECOGNISED phase is absorbed, deliberately, and it is the one judgement here. The
+  // alternative — absorb only the phases we know — hands an unknown one to the panel, which draws
+  // its own spinner and puts the page back to TWO readouts of one job, the defect this merge
+  // exists to fix. One readout that is a beat coarse beats two that disagree.
   const sharedInBanner =
-    isRunning && !!shared && !shared.available && shared.progress?.phase !== 'failed'
+    isRunning &&
+    !!shared &&
+    !shared.available &&
+    !(shared.progress && STOPPED_PHASES.has(shared.progress.phase))
 
   // The ONE readout the running banner draws. The shared replay's phase is the finer measurement —
   // it counts bars inside the leg currently replaying — so it drives the bar whenever it exists,
@@ -971,9 +1006,7 @@ export function StackDetail() {
     // the part worth reading. Say what is happening in words, and keep the bar counter after it.
     const phase = p.phase.startsWith('solo:')
       ? `Replaying ${nameFor(p.phase.slice(5))} on its own account`
-      : p.phase === 'shared'
-        ? 'Replaying the strategies together on one account'
-        : p.message.split(' · ')[0]
+      : (PHASE_WORDS[p.phase] ?? p.message.split(' · ')[0])
     const bars = p.message.split(' · ').slice(1).join(' · ')
     return {
       headline: phase,

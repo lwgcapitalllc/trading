@@ -582,9 +582,9 @@ test.describe('shared-account stacks', () => {
   })
 
   test('a FAILED shared replay keeps its own panel even while the stack runs', async ({ page }) => {
-    // MUTATION: drop the `phase !== 'failed'` clause from `sharedInBanner` → red. This is the
-    // load-bearing exclusion: a failure has a SENTENCE to show, not a percentage, and folding a
-    // stopped replay into a progress bar is how a dead job comes to look like a slow one.
+    // MUTATION: drop 'failed' from `STOPPED_PHASES` → red. This is the load-bearing exclusion: a
+    // failure has a SENTENCE to show, not a percentage, and folding a stopped replay into a
+    // progress bar is how a dead job comes to look like a slow one.
     await mock(
       page,
       'shared',
@@ -594,6 +594,67 @@ test.describe('shared-account stacks', () => {
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     await expect(page.getByTestId('shared-account-panel')).toContainText('shared replay failed')
     await expect(page.getByTestId('shared-account-panel')).toContainText('no bars for XAUUSD.p')
+  })
+
+  test('a CANCELLED shared replay says so instead of spinning at 100%', async ({ page }) => {
+    // MUTATION 1: drop 'cancelled' from `STOPPED_PHASES` → red, the panel gone and the banner
+    // headlining the backend's own word `cancelled` beside a spinner and a full bar.
+    // MUTATION 2: put the panel's cancelled branch back behind its `running` gate → red the same
+    // way, because the branch that has the sentence never runs.
+    //
+    // \u{1F534} BOTH mutations are needed and neither alone is the bug. The two halves are one
+    // decision — who draws a stopped replay — and until 2026-09-03 they disagreed: the banner
+    // excluded failures only, the panel spoke only once nothing was running, so a cancellation
+    // arriving mid-replay was drawn by NEITHER and fell through to raw machine text.
+    await mock(page, 'shared', replaying({ phase: 'cancelled', pct: 100, message: 'cancelled' }))
+    await runningStack(page)
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('shared-account-panel')).toContainText(
+      'shared replay was cancelled'
+    )
+    await expect(page.getByTestId('shared-account-panel')).toContainText('Rerun the stack')
+    // And the banner must not be drawing the same replay a second time. The stopped one belongs to
+    // the panel, so the banner falls back to the leg count — and never puts a stopped phase's name
+    // next to a spinner, which is how a dead job comes to look like a slow one.
+    await expect(page.getByTestId('stack-progress')).toContainText('0 of 2 strategies complete')
+    await expect(page.getByTestId('stack-progress')).not.toContainText('cancelled')
+  })
+
+  test('the loading phase is said in words, not in its log line', async ({ page }) => {
+    // MUTATION: delete the `starting` entry from `PHASE_WORDS` → red, the banner falling back to
+    // the message and reading 'loading bars…'.
+    //
+    // The message is written for a log line and is not a fallback worth relying on, so every phase
+    // the backend can emit is named. This is the check that the map is CONSULTED — without it a
+    // backend message reworded tomorrow silently becomes this page's headline.
+    await mock(page, 'shared', replaying({ phase: 'starting', pct: 1, message: 'loading bars…' }))
+    await runningStack(page)
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('stack-progress')).toContainText('Loading the bars')
+  })
+
+  test('an UNRECOGNISED phase still draws exactly ONE readout', async ({ page }) => {
+    // MUTATION: make the banner absorb only the phases it knows (`solo:` / `shared` / `PHASE_WORDS`)
+    // → red, the panel drawing its own spinner alongside the banner and the page back to TWO
+    // readouts of one job.
+    //
+    // \u{1F534} This pins a JUDGEMENT rather than a fact, and it is the one in this merge. An
+    // unknown phase is absorbed on purpose: handing it to the panel is the defect this whole
+    // change exists to fix, and one readout a beat coarse beats two that disagree. If a future
+    // STOPPED phase is added to the backend it must be added to `STOPPED_PHASES` in the same
+    // change — that is the cost of this direction, and it is the cheaper of the two.
+    await mock(
+      page,
+      'shared',
+      replaying({ phase: 'warming', pct: 12, message: 'warming · bar 4 / 9' })
+    )
+    await runningStack(page)
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('stack-progress')).toBeVisible()
+    await expect(page.getByTestId('shared-account-panel')).toHaveCount(0)
+    // Degrades to the message's own first segment — machine-ish, but the bar count is kept and the
+    // reader is never shown two disagreeing readouts.
+    await expect(page.getByTestId('stack-progress')).toContainText('bar 4 / 9')
   })
 
   test('a seam failure is called out rather than left in a column to be spotted', async ({
