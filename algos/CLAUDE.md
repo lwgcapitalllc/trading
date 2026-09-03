@@ -204,8 +204,25 @@ distance to get a quantity, the other re-multiplies) and disagreed in the last b
 summing EXACTLY to the cap — 8% + 2% against a 10% cap — puts the second order on precisely that
 edge.** ⚠ **Live it is strictly worse than the lab, and the lab CANNOT reproduce it**: the lab's
 arithmetic is exact, while real open risk here is computed from the broker's ROUNDED lot size and
-its actual stop, so an "8%" position is never 8.000%. Land the tolerance before adopting a split
-that sums to the cap, or leave slack in the split.
+its actual stop, so an "8%" position is never 8.000%.
+
+✅ **MEASURED 2026-09-03 AND THE EDGE IS NOT REACHABLE — DO NOT BUILD THE TOLERANCE.** Two findings,
+and the second retires the concern. **First, `>` already ALLOWS an order exactly equal to the room**
+— equality is not greater — so the *"8% + 2% against a 10% cap"* case the paragraph above names is
+permitted, not refused; only an order exceeding the room refuses. **Second, the quantisation dwarfs
+the noise.** Risk here moves in whole lot steps: on `XAUUSD.p` at 0.01 lots × 100 oz, one step is
+one dollar per dollar of stop distance — $10 on a $10 stop — while one float ulp of a $999.70 room
+is ~2e-13. The grid is **9 trillion to 227 trillion times coarser** than the noise a tolerance would
+absorb, and the nearest order a broker can actually accept sits **97% of a lot step below the
+edge** ($990.00 against $999.70). **The rounding this paragraph cites as making it "strictly worse
+than the lab" is the very thing that makes the boundary unreachable.**
+
+⚠ **So the lab's defect does NOT transfer, and the reason is worth keeping.** There the two sides
+were continuous and genuinely met; here one side is quantised at a step ~1e13 times the disagreement
+a tolerance guards against. **Same comparison, same operator, different reachability — a defect
+shape is not a defect.** ⚠ **Leave slack in a split anyway**, for the ordinary reason that a cap
+equal to the sum of its parts leaves the second bot refused whenever the first is on, which is
+arithmetic rather than floating point.
 
 ⚠ **2. This side REFUSES; the lab side SHRINKS.** Refusing is correct (rule 17 — a resized order is
 not the trade the strategy is holding) and it is not changing. But it means every lab cell reporting

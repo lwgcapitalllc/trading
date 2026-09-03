@@ -547,14 +547,31 @@ version), but that tracks lab deploys of `.cs`/`.mq5` files, not running process
 No live trade log exists (there are no live trades). `decision_log.py` is the right tool and is
 unwired. Nothing backs up any VPS log anywhere — `algos/` logs live only on the VPS disk.
 
-### G10 — No account-level risk allocator — **BACKTEST HALF BUILT 2026-08-09, LIVE HALF STILL OPEN**
+### G10 — Account-level risk allocator — **BOTH HALVES BUILT 2026-08-09. What is open is the SPLIT**
 
-`exec_risk_pct` is per-trade with nothing above it, and the account-level cap is a prerequisite for
-running more than one bot live.
+🔴 **THIS HEADING SAID "LIVE HALF STILL OPEN" UNTIL 2026-09-03, AND ITS OWN BODY SIX PARAGRAPHS
+DOWN HAD SAID "THE LIVE HALF IS BUILT TOO" SINCE THE DAY IT WAS BUILT.** The root `CLAUDE.md`
+believed the heading, so *"the live allocator is unbuilt"* was the repo's stated position for three
+and a half weeks, and it read as a blocker on deploying a second bot. **A heading is a summary of
+the section under it, and a summary is a second copy — this one went stale against text a screen
+away.** Verified by tracing the code rather than by re-reading either: `algos/shared/account_risk.py`
+(the arithmetic), `mt5_ops.account_exposure()` (the one unfiltered read),
+`bridge._account_cap_check` called from `_plan` (the seam), `account_risk_cap_pct` on the instance
+config (the setting), 21 tests in `algos/tests/test_account_risk.py`.
+
+🔴 **WHAT IS ACTUALLY OPEN IS A NUMBER.** `exec_risk_pct` is **10.0** and `account_risk_cap_pct` is
+**10.0** on `mpc_sos_fade_demo`, so one full-size A+ trade fills the entire account budget and a
+second bot is REFUSED until that room comes back. The allocator arbitrates correctly; there is
+simply nothing to arbitrate over until the pool is split. **That is a decision about risk, not code
+to write.**
+
+⚠ **A cap that EQUALS one bot's per-trade risk means the two take turns, it does not mean they
+share.** A cap letting both trade at once would have to be 20% — stated because it is not obvious
+from the number, and the take-turns behaviour is what Aaron asked for.
 
 **Consequence for this plan is unchanged: start with ONE bot.** A+ alone needs no allocator.
 
-**Split the gap in two, because only one half moved.**
+**The history below is kept as written, because it records how each half arrived.**
 
 ✅ **The BACKTEST can now run a shared account.** `backtest/portfolio/run_stack` replays several
 `strategies/python/` bots on ONE balance and ONE risk budget: every leg sizes off the shared balance,

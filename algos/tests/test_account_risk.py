@@ -320,3 +320,39 @@ def test_an_unreadable_SIBLING_config_does_not_stop_a_healthy_bot_starting(tmp_p
     broken.mkdir()
     (broken / "config.json").write_text("{ not json", encoding="utf-8")
     assert live_config.load("bot_a").magic == 770115
+
+
+# ── the boundary, and why no rounding tolerance was added (2026-09-03) ─────────────────
+#
+# `algos/CLAUDE.md` carried a warning that this comparison needed the tolerance the backtest
+# allocator grew on 2026-08-20, where a bare `>` refused 3,650 entries over 7.9 years. It was
+# MEASURED before being mirrored, and it does not transfer: the boundary here is not reachable.
+# These two pin the reason, so the tolerance is not added back on the strength of the shape.
+def test_an_order_EXACTLY_filling_the_room_is_ALLOWED():
+    """🔴 The case the warning named — a split summing exactly to the cap — and `>` already
+    permits it, because equality is not greater. RED on `>=`, which would refuse an order that
+    fits precisely and is the actual defect a reader might 'fix' this into."""
+    balance, cap_pct = 9_996.99, 10.0
+    room = balance * cap_pct / 100.0
+    v = check_account_cap(
+        new_order_risk_ccy=room,
+        open_risk=AccountRisk(total_ccy=0.0, positions=0, resting=0, per_magic={}),
+        balance=balance,
+        cap_pct=cap_pct,
+    )
+    assert v.allowed is True, "an order that exactly fills the room must not be refused"
+
+
+def test_an_order_OVER_the_room_is_still_refused():
+    """The control. Making equality pass must not make the cap stop binding — RED on `<` or on
+    dropping the check, which is the failure that matters far more than a spurious refusal."""
+    balance, cap_pct = 9_996.99, 10.0
+    room = balance * cap_pct / 100.0
+    v = check_account_cap(
+        new_order_risk_ccy=room + 0.01,
+        open_risk=AccountRisk(total_ccy=0.0, positions=0, resting=0, per_magic={}),
+        balance=balance,
+        cap_pct=cap_pct,
+    )
+    assert v.allowed is False
+    assert v.code == "account_risk_cap"
