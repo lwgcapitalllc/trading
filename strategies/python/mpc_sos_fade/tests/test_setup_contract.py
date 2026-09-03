@@ -74,7 +74,8 @@ def _real_context(ex, is_long=True):
     m = _MissWatch()
     m.open(sos_bar=7, arm_src="SWP", swp_nm="Day Low")
     return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
-                             veto=False, late=False, htf_any=False)
+                             veto=False, late=False, htf_any=False,
+                             tight=False, quiet=False)
 
 
 def test_drain_clears_resolved_setups_so_they_are_not_re_sent_every_bar():
@@ -191,7 +192,8 @@ def _ctx_at(ex, low, high, is_long=True, sos_bar=7):
     m = _MissWatch()
     m.open(sos_bar=sos_bar, arm_src="SWP", swp_nm="Day Low")
     return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
-                             veto=False, late=False, htf_any=False)
+                             veto=False, late=False, htf_any=False,
+                             tight=False, quiet=False)
 
 
 def test_a_limit_is_not_announced_until_price_retraces_to_the_configured_fib():

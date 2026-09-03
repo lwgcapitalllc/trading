@@ -114,29 +114,47 @@ replaced by a collector:
 
 | message | count | per month |
 |---|---|---|
-| 👀 SETUP FORMING | 608 | 7.7 |
-| 👋 NO TRADE | 449 | 5.7 |
-| 🎯 BUY/SELL LIMIT RESTING | 301 | 3.8 |
-| ✅ ENTERED | 158 | 2.0 |
-| 🚫 BLOCKED | 55 | 0.7 |
-| **total** | **1,571** | **19.9** |
+| 👀 SETUP FORMING | 599 | 7.5 |
+| 👋 NO TRADE | 444 | 5.6 |
+| 🎯 BUY/SELL LIMIT RESTING | 293 | 3.7 |
+| ✅ ENTERED | 155 | 1.9 |
+| 🚫 BLOCKED | 67 | 0.8 |
+| **total** | **1,558** | **19.5** |
 
-**608 threads, one per setup. Roughly one message every 1.5 days. 26% of announced setups became
+**599 threads, one per setup. Roughly one message every 1.6 days. 26% of announced setups became
 trades.**
+
+🔴 **RE-MEASURED 2026-09-03 over 157,004 M15 bars (PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23),
+and the table above is that run — every earlier figure here described a bot that no longer
+exists.** The previous table (608 / 449 / 301 / 158 / 55, total 1,571) was taken to 2026-08-06 and
+**predates the dead-market entry filter that landed 2026-08-26**, which is why its trade count is
+159 against today's 156. ⚠ **A volume delta read across those two tables spans a config change and
+measures the wrong thing** — the standing rule about carrying a basis forward, arriving in a doc.
 
 ⚠ **Re-measured 2026-08-14 after the retrace gate landed** (§5.2): the resting alert went 332 → 301
 and the total 1,602 → 1,571. The 31 suppressed messages are setups where price never retraced to
-0.236, i.e. never came close to filling — the invariant below is unchanged at 159 / 158.
+0.236, i.e. never came close to filling — the invariant was unchanged at 159 / 158. ⚠ **Those are
+the figures of that day and are kept as history; the current run is the table above.**
 
 ✅ **THE INVARIANT HOLDS, and it is checked by the tool rather than asserted here.** Aaron's
 requirement, 2026-08-13: *"the same trade signals that are going to the LWG Capital Algo trades
-group will originate from the signals that are going to this new group."* **159 trades closed, 158
-announced as ENTERED.** The one is the warm-up boundary — a setup that opened before the window
+group will originate from the signals that are going to this new group."* **156 trades closed, 155
+announced as ENTERED** (re-measured 2026-09-03; it read 159 / 158 before the dead-market filter). The one is the warm-up boundary — a setup that opened before the window
 began is discarded rather than posted, which is also what stops the first live bar dumping years of
 history into Telegram. `alert_rate.py` prints this check every run and says 🔴 BROKEN if more than
 one trade arrives unannounced, because that is the failure mode of the `tradeable` filter:
 suppress one setup too many and a real trade reaches the broker having never been signalled, with
 nothing anywhere reporting a skipped message.
+
+🔴 **BLOCKED GAINED THE TWO PRICE REFUSALS ON 2026-09-03, AND THEY ARE THE REASON IT WAS 58 AND
+IS NOW 67.** The minimum stop floor and the dead-market gate are both ON in the live bot's
+promoted params and neither could send a message — a ready setup refused by either was
+indistinguishable from a quiet market. Both sides measured on the ONE window above: **58 → 67,
+0.7 → 0.8 per month, nine extra messages in 79.7 months**, with every other row unmoved. The
+closing `👋 NO TRADE` reply was also corrected — it had been booking those deaths as "the limit
+rested and price never came back" when no limit was ever placed. Rules and the replay that proves
+it reporting-only: `strategies/python/mpc_sos_fade/CLAUDE.md` → *The two price refusals now report
+themselves*.
 
 ⚠ **BLOCKED came in at 0.7/month, not the 4.1 the transition counts above predicted, and the gap
 is a FIX rather than a discrepancy.** `BlockedSetup` counts a refusal each time a *ready* setup is
@@ -146,7 +164,7 @@ and fill — under a sentence reading "the setup was ready and this rule stopped
 same readiness question `BlockedSetup` does. **Found by rendering the messages against real bars,
 not by reading the code.**
 
-⚠ **158 ENTERED against 159 trades is correct.** One trade's setup opened during warm-up, and
+⚠ **155 ENTERED against 156 trades is correct.** One trade's setup opened during warm-up, and
 warm-up snapshots are discarded rather than announced — otherwise the first live bar would post
 years of history in one burst.
 

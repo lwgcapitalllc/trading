@@ -252,6 +252,11 @@ _BLOCK_LABEL = {
     # 8 and 9 are the short-hold variant's own refusals — no Pine counterpart, see `_block_codes`.
     8: "Short-hold time block",
     9: "Entry too deep",
+    # 10 has no Pine counterpart either, and it is the one that was MISSING rather than merely
+    # unported. The dead-market gate rides INSIDE `_stop_clears_floor`, so until 2026-09-03 it
+    # refused live entries while booking nothing anywhere — no block record, no miss code, no
+    # Telegram message. It was the only shipped rule that could skip a trade and leave no trace.
+    10: "Market too quiet",
 }
 # The hover text, word-for-word from Pine `f_blkWhy` so the chart and TradingView agree.
 _BLOCK_REASON = {
@@ -267,12 +272,16 @@ _BLOCK_REASON = {
     8: "Short-hold time block — this hour is inside the window the short-hold variant refuses.",
     9: "Entry too deep — the limit would rest deeper into the retrace than the short-hold "
        "variant allows, and a deep entry measured negative on every pool tested.",
+    10: "Minimum market volatility — the 15m ATR is under your floor as a share of price, so "
+        "there is not enough range for a fade to have anywhere to go. A DIFFERENT question "
+        "from the stop floor, which asks whether the leg is long enough to size against.",
 }
 
 
 def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
                  htf_brk: bool, htf_bias: bool, tight: bool = False,
-                 sh_hours: bool = False, sh_deep: bool = False) -> List[int]:
+                 sh_hours: bool = False, sh_deep: bool = False,
+                 quiet: bool = False) -> List[int]:
     """Every rule refusing this side, in the Pine's `f_blkCode` precedence order.
     Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned.
 
@@ -280,13 +289,18 @@ def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
     the only code that depends on price rather than on a toggle — a caller that has not
     computed the stop distance yet simply omits it.
 
-    ⚠ **8 and 9 are the short-hold variant's refusals and have NO Pine counterpart** — the Pine's
-    `f_blkCode` stops at 7. They are appended rather than inserted so every existing code keeps
-    its number, and they can only fire with `exec_short_hold` on, so a shipped run never sees
-    them. `BlockedSetup` is reporting-only (nothing reads a record back), which is what makes a
-    new code parity-safe rather than merely convenient."""
+    ⚠ **8, 9 and 10 have NO Pine counterpart** — the Pine's `f_blkCode` stops at 7. They are
+    appended rather than inserted so every existing code keeps its number, and `codes[0]` stays
+    exactly what `f_blkCode` would have returned for every combination the Pine can produce.
+    `BlockedSetup` is reporting-only (nothing reads a record back) and the parity gate diffs the
+    `px_*` decision stream only, which is what makes a new code parity-safe rather than merely
+    convenient.
+
+    ⚠ **8 and 9 can only fire with `exec_short_hold` on, so a shipped run never sees them. 10
+    IS SHIPPED AND ON** (`exec_min_atr_pct` 0.08 on the live bot), so unlike its two neighbours
+    it changes what a real run reports the day it lands."""
     return [c for c, on in enumerate(
-        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight, sh_hours, sh_deep),
+        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight, sh_hours, sh_deep, quiet),
         start=1) if on]
 
 
@@ -346,6 +360,15 @@ _MISS_LABEL = {
     5: "Final hour",
     6: "HTF filter",
     7: "Never filled",
+    # 🔴 **8 and 9 were carved OUT of 7, and that is a CORRECTION rather than an addition.**
+    # Code 7's sentence claims the limit rested and price never came back. For a setup the two
+    # price gates refused, no limit ever rested — so 7 was telling the reader a story about an
+    # order that did not exist, on the one message that explains why a setup died.
+    # ⚠ **A separate vocabulary from `_BLOCK_LABEL`, so these numbers are unrelated to block 8/9.**
+    # That was already true (block 3 and miss 5 are both the final hour) and is why every
+    # consumer reads `labels` / `reasons` rather than the integer.
+    8: "Stop too tight",
+    9: "Market too quiet",
 }
 #: ⚠ **These are read in TWO places and shortening them moved both**: the Telegram `NO TRADE`
 #: reply, and the lab's miss report. They are always rendered UNDER their `_MISS_LABEL`
@@ -359,6 +382,8 @@ _MISS_REASON = {
     5: "All three met. The final-hour rule (16:00-18:00 New York) refused the entry.",
     6: "All three met. The HTF breakout / bias filter refused the entry.",
     7: "All three met and the limit rested — price never came back to touch it.",
+    8: "All three met. The stop sat closer than your minimum distance, so no limit was placed.",
+    9: "All three met. Volatility was under your floor — no limit was placed in a dead market.",
 }
 
 
@@ -457,10 +482,13 @@ class _MissWatch:
     blk_v: bool = False               # a veto was live while in the zone
     blk_l: bool = False               # the final-hour rule was live while in the zone
     blk_h: bool = False               # an HTF filter was live while in the zone
+    blk_t: bool = False               # the stop floor refused it while in the zone
+    blk_q: bool = False               # the market was too quiet while in the zone
 
     def open(self, sos_bar: Optional[int], arm_src: str, swp_nm: str) -> None:
         self.watch, self.sos_bar, self.arm_src, self.swp_nm = True, sos_bar, arm_src, swp_nm
         self.zone = self.fvg = self.blk_v = self.blk_l = self.blk_h = False
+        self.blk_t = self.blk_q = False
         self.edge = self.fib = self.zone_ms = None
         self.zone_turn_ms = self.zone_turn_px = None
         self.run_bar = self.run_ms = self.run_turn_ms = self.run_turn_px = None
@@ -1402,6 +1430,11 @@ class Execution:
                 m.fib = sig.fibo_p3
                 if m.edge is None and edge is not None:
                     m.edge = edge
+                # The two PRICE refusals, off this bar's own edge. Read here and not from
+                # `_record_blocks` because that runs later in the bar, inside `_place_entries` —
+                # and `mpc_bleg` overrides that method, so a miss watch reading its output would
+                # go quiet on a fork rather than fail.
+                tight, quiet = self._price_blocks(sig, edge, is_long)
                 if zone_hit:
                     m.visit(sig, is_long)
                     m.zone = True
@@ -1409,6 +1442,8 @@ class Execution:
                     m.blk_v = m.blk_v or veto
                     m.blk_l = m.blk_l or late
                     m.blk_h = m.blk_h or htf_any
+                    m.blk_t = m.blk_t or tight
+                    m.blk_q = m.blk_q or quiet
                 # Reporting only, and captured AFTER the accumulate above — the block that sets
                 # `m.zone` on the bar price first tags the band. Capturing before it reported a
                 # setup as still waiting on a retrace on the very bar it got one, so the alert
@@ -1417,7 +1452,7 @@ class Execution:
                 # gates are already resolved through the enable-toggles exactly as `_armed`
                 # reads them — so "armed" means the same thing in an alert as in a decision.
                 self._setup_ctx[slot] = self._setup_context(
-                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any)
+                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any, tight, quiet)
                 continue
 
             # it died (or traded) — book the miss, then close the watch either way
@@ -1452,7 +1487,10 @@ class Execution:
             elif not zone_met:
                 code = 3
             else:
-                code = 4 if m.blk_v else 5 if m.blk_l else 6 if m.blk_h else 7
+                # Precedence matches `_block_codes` — toggles first, then the stop floor, then
+                # the dead-market gate, and only then "the limit rested and nothing came".
+                code = (4 if m.blk_v else 5 if m.blk_l else 6 if m.blk_h
+                        else 8 if m.blk_t else 9 if m.blk_q else 7)
             if arm_met:
                 arm_text = ("Sweep + RSI div" if (arm_swp and arm_div)
                             else "Sweep" if arm_swp else "RSI divergence")
@@ -1642,8 +1680,15 @@ class Execution:
         return False
 
     def _setup_context(self, sig, m: _MissWatch, is_long: bool, arm_swp: bool, arm_div: bool,
-                       veto: bool, late: bool, htf_any: bool) -> dict:
+                       veto: bool, late: bool, htf_any: bool, tight: bool,
+                       quiet: bool) -> dict:
         """Freeze what this side's live setup looks like on this bar.
+
+        ⚠ **`tight` / `quiet` carry NO DEFAULT, and that is deliberate.** A default of False
+        would make a caller that forgot them indistinguishable from a setup nothing is refusing —
+        a declared field standing in for a measured one, which is the failure this repo keeps
+        paying for. There is exactly one caller; a second that forgets now fails loudly at the
+        call rather than going quiet on a live rule.
 
         ⚠ **`arm_swp` / `arm_div` are the ENABLE-FILTERED flags** — the same ones `_armed` reads.
         A setup armed by a source the config has switched off can never trade, and announcing it
@@ -1703,6 +1748,15 @@ class Execution:
                 blocked.append("Final hour (16:00-18:00 New York)")
             if htf_any:
                 blocked.append("HTF breakout / bias filter")
+            # 🔴 **The two PRICE refusals, added 2026-09-03 — until then they were the only
+            # shipped rules that could skip a ready setup and send NOTHING.** Both are live on
+            # `mpc_sos_fade_demo` (`exec_min_stop_mode` "% of price" 0.08, `exec_min_atr_pct`
+            # 0.08), so this is not a hypothetical branch — it is the gap the reader was
+            # actually experiencing as silence.
+            if tight:
+                blocked.append("Stop too tight for your minimum")
+            if quiet:
+                blocked.append("Market too quiet to fade")
 
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
@@ -1822,30 +1876,20 @@ class Execution:
              and self._pos_dir == 0
              and not self._same_leg(self._traded_sos_s, self._traded_sos_s_ms, seq.s_sos_bar)),
         )
-        # The min-stop refusal itself happens at order placement; it is recomputed here so a
-        # setup refused on PRICE gets a record like every other refusal (Pine 4167-4172). A
-        # missing fib leaves the anchor unknown, which reads as "not tight" — the same way na
-        # propagates through the Pine's comparison.
+        # Both PRICE refusals happen at order placement; they are recomputed here so a setup
+        # refused on price gets a record like every other refusal (Pine 4167-4172).
         # Per SIDE, not once: with `exec_sl_deep` on, the anchor depends on that side's own
         # entry edge (Pine 4264-4265 calls f_slAnchor twice for the same reason).
-        buf = cfg.exec_sl_buf_tk * cfg.mintick
-        tight_l = tight_s = False
-        if long_edge is not None:
-            anchor_l = self._sl_anchor(sig, long_edge, True)
-            if anchor_l is not None:
-                tight_l = self._stop_is_tight(long_edge - (anchor_l - buf), long_edge)
-        if short_edge is not None:
-            anchor_s = self._sl_anchor(sig, short_edge, False)
-            if anchor_s is not None:
-                tight_s = self._stop_is_tight((anchor_s + buf) - short_edge, short_edge)
+        tight_l, quiet_l = self._price_blocks(sig, long_edge, True)
+        tight_s, quiet_s = self._price_blocks(sig, short_edge, False)
 
         codes = (
             _block_codes(not cfg.exec_longs, not arm_ok_l, late,
                          dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l, tight_l,
-                         sh_hours, self._too_deep(sig, long_edge, True)),
+                         sh_hours, self._too_deep(sig, long_edge, True), quiet_l),
             _block_codes(not cfg.exec_shorts, not arm_ok_s, late,
                          dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s, tight_s,
-                         sh_hours, self._too_deep(sig, short_edge, False)),
+                         sh_hours, self._too_deep(sig, short_edge, False), quiet_s),
         )
         for slot, (is_long, ok, cs, edge, sos_bar) in enumerate((
             (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
@@ -2303,6 +2347,38 @@ class Execution:
             return False
         floor = self._min_stop_floor(edge)
         return floor is not None and dist < floor
+
+    def _price_blocks(self, sig, edge: Optional[float], is_long: bool) -> Tuple[bool, bool]:
+        """The two refusals that depend on PRICE rather than on a toggle: `(tight, quiet)`.
+
+        REPORTING ONLY — nothing here places, prices or cancels anything. It asks the SAME two
+        helpers the placement path asks, with the same edge, so a message can never describe a
+        refusal the strategy did not make. One implementation, three readers (the blocked-setup
+        record, the miss record and the Telegram setup snapshot); a second copy of either rule is
+        exactly how two claims about one setup end up disagreeing.
+
+        ⚠ **No edge means NEITHER rule has been reached, so both answer False and the caller
+        reports nothing.** That is *not applicable*, not *passed* — with nothing to rest a limit
+        on, the setup is stopped a step earlier and by something else.
+
+        ⚠ **An unseeded ATR refuses the entry WITHOUT being reportable as a quiet market**, which
+        is the convention `_stop_is_tight` already follows for a missing floor. "Cannot measure
+        the range yet" and "the range is too small" are different sentences, and only the second
+        one is true in those words. Unreachable for a setup that has reached all three
+        confluences — that takes far more than the 14 bars the ATR needs — and written this way
+        so it stays honest if that ever stops being true.
+        """
+        if edge is None:
+            return False, False
+        quiet = self._atr is not None and not self._market_has_range(edge)
+        anchor = self._sl_anchor(sig, edge, is_long)
+        if anchor is None:
+            # A missing fib leaves the anchor unknown, which reads as "not tight" — the same way
+            # na propagates through the Pine's comparison.
+            return False, quiet
+        buf = self._cfg.exec_sl_buf_tk * self._cfg.mintick
+        dist = (edge - (anchor - buf)) if is_long else ((anchor + buf) - edge)
+        return self._stop_is_tight(dist, edge), quiet
 
     # ── entry fill (Phase A) ─────────────────────────────────────────────────────
     def _try_entry_fill(self, sig, dec) -> bool:

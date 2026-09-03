@@ -409,6 +409,72 @@ was wrong by two orders of magnitude**: "220 of 609 are divergence-armed and can
 window** — the counter that settles it existed the whole time. **A count that is easy to obtain is
 not the count you asked for.**
 
+### 🔴 THE TWO PRICE REFUSALS NOW REPORT THEMSELVES — THEY COULD SKIP A LIVE TRADE IN SILENCE (2026-09-03)
+
+**The minimum stop floor and the dead-market gate are both ON in the live bot's promoted params
+(`exec_min_stop_mode` "% of price" 0.08, `exec_min_atr_pct` 0.08), and until this date neither
+could produce a message a human would ever see.** Every other rule that refuses a ready setup —
+the veto, the final hour, the HTF filter — sent a `🚫 BLOCKED` reply. These two sent nothing, so
+a skipped trade was indistinguishable from a quiet market. Aaron asked which skip reasons reach
+Telegram, and this was the honest answer to *"which ones do not"*.
+
+🔴 **The dead-market gate was WORSE than unreported: it had no code anywhere.** It rides INSIDE
+`_stop_clears_floor`, so `_record_blocks` never saw it — no block record, no miss code, no lab
+row, no message. The floor at least booked block code 7. **A rule with no vocabulary cannot be
+under-reported, because there is nothing to report** — that is why this was silence rather than
+an omission, and it is the shape to look for in the next gate that hides inside another one.
+
+🔴 **A SECOND DEFECT FELL OUT OF IT, AND IT WAS THE ONE ACTUALLY LYING TO THE READER.** When
+either price rule refused a setup, the `👋 NO TRADE` reply that closes its thread booked miss
+code 7 — *"All three met and the limit rested — price never came back to touch it."* **No limit
+had ever been placed.** The message named a resting order that did not exist, on the one line
+whose whole job is to say why a setup died. Miss codes 8 and 9 are carved OUT of 7 for exactly
+this, and `_MISS_REASON` for both says *no limit was placed*.
+
+⚠ **One implementation, three readers — `_price_blocks`.** The blocked record, the miss record
+and the Telegram snapshot all ask it, so a message can never describe a refusal the strategy did
+not make. It asks the SAME two helpers the placement path asks, with the same edge; it does not
+re-derive either rule. A second copy is how two claims about one setup disagree.
+
+⚠ **No edge means BOTH answer False, and that is *not applicable*, never *passed*.** With nothing
+to rest a limit on, neither rule has been reached — the setup is stopped a step earlier by
+something else, and the reader is not told a dead market cleared a test it was never given.
+
+⚠ **An unseeded ATR still REFUSES the entry but is not reportable as a quiet market.** "Cannot
+measure the range yet" and "the range is too small" are different sentences and only the second
+is true in those words — the convention `_stop_is_tight` already follows for a missing floor.
+
+⚠ **`tight` / `quiet` carry NO DEFAULT on `_setup_context`.** A default of False makes a caller
+that forgot them indistinguishable from a setup nothing is refusing — a declared field standing
+in for a measured one. There is one caller; a second that forgets fails loudly at the call.
+
+⚠ **The readiness guard is UNCHANGED and the new rules obey it.** A price rule live while a setup
+is merely forming is not what stopped it, and reporting that is the defect recorded two sections
+up — setups announced as blocked which then rested and filled.
+
+⚠ **Block code 10 is APPENDED, so `codes[0]` still equals what the Pine's `f_blkCode` would have
+returned** and a per-reason count off the primary still reconciles with TradingView. Unlike its
+neighbours 8 and 9 (short-hold only, never seen by a shipped run), **10 is SHIPPED AND ON** — it
+changes what a real run reports the day it lands.
+
+✅ **REPORTING ONLY, PROVED BY REPLAY, not by argument.** `replay_fingerprint.py` over
+157,004 M15 bars + M5 (PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23, dual-frame so the re-entry
+path is covered): **bars IDENTICAL, trades 200 → 200 IDENTICAL.** ⚠ **The baseline had to be
+captured in a scratch worktree with its `monorepo_root` REPOINTED AT ITSELF** — `python_runner`
+resolves the strategy through that absolute path, so a worktree left alone loads the MAIN repo's
+modified code and the comparison certifies anything at all. It was verified to load HEAD (no code
+10, no helper) before the capture was trusted.
+
+✅ **MEASURED message volume, both sides on ONE window** (`alert_rate.py`, same 157,004 bars):
+`🚫 BLOCKED` **58 → 67**, i.e. 0.7 → 0.8 per month — **nine extra messages in 79.7 months.**
+Every other line is unmoved (599 setups, 444 no-trade, 155 entered, 293 resting), which is the
+independent read on the same claim the fingerprint makes. ⚠ **Do not compare against the 55 in
+`docs/LIVE_SETUP_ALERTS.md`** — that was measured to 2026-08-06 and predates the dead-market gate
+entirely, so the delta across it spans a config change rather than this one.
+
+⚠ **NONE OF THIS REACHES THE LIVE BOT UNTIL A PROMOTE.** `mpc_sos_fade_demo` is frozen on
+`de9ecafa` (promoted 2026-09-02); a pull cannot move it.
+
 ## Closing a trade because a PERSON asked — `request_close()` (2026-09-02)
 
 **A seam, not a shipped feature.** It gives this strategy the one thing it had no way to be
