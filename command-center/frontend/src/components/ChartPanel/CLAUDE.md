@@ -774,9 +774,12 @@ here**, so the chart shows exactly what the strategy saw.
   strategy's trades**, so on a `mpc_bleg` chart it is the wrong word for the right trade. ✅ **FIXED
   2026-09-02 the way this paragraph asked for**: a strategy declares `chart_tag`, it rides the spec
   as `tradeTag`, and `overlays.ts::PRIMARY_TAG` survives only as the FALLBACK for a package that has
-  not declared one — so a chart reading `A+` now means EITHER that bot or one still undeclared. ⚠ **Only `mpc_extreme_leg` declares one so far, and rule 22 is why** — declaring a tag edits a
-  strategy package, which needs that package's parity gate. Backend half:
-  `command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*. **The bug that prompted it was
+  not declared one. 🔴 **THE TAG IS READ OFF THE TRADE (`tr.tag`), NEVER OFF `spec.tradeTag`** — a
+  stack merges N legs' trades into one list, so a spec-level read puts ONE strategy's word on every
+  leg's chips, which is this same defect one level down and harder to spot because the chips would
+  look per-strategy without being it. ⚠ **`loss_recovery` declares none on purpose**: its trades
+  carry `kind: 'recovery'` and take the `REC` branch above, so a tag there could never render.
+  Backend half: `command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*. **The bug that prompted it was
   NOT a missing tag.** Recovery trades reached the chart with no `mfe_price`/`mae_price` on them, so
   every one took the DEGRADED path and drew as a bare rectangle with a direction triangle and nothing
   else — no `Entry`, no `SL`, no bands, no chip. Screenshotted beside a normal loser wearing its full

@@ -169,6 +169,16 @@ export interface ChartTrade {
    *  precondition that asks nothing of the trade before it, and a run stored before 2026-08-21
    *  carries no `after` at all — both degrade to the plain `SEC` tag. */
   after?: 'breakeven' | 'stopped' | 'closed'
+  /** The word THIS trade's strategy calls its own setup, worn by the chip on a PRIMARY trade.
+   *
+   *  🔴 It rides the TRADE rather than the spec because a STACK merges N legs' trades into one
+   *  list: a spec-level tag would put one strategy's word on every leg's chips, which is the
+   *  hard-coded-`A+` defect one level down and harder to spot, since the chips would look
+   *  per-strategy without being it. It merges for free exactly as `layer` does.
+   *
+   *  ⚠ ABSENT means the package declared none, and the chip falls back to `PRIMARY_TAG` — so a
+   *  chip reading `A+` is EITHER that bot or one that has yet to declare its own word. */
+  tag?: string
   exitReason?: string // carried in data; never drawn on the chart
   // Profit-depth fields — all optional; absent ⇒ the trade falls back to the plain box.
   mfePrice?: number // deepest FAVOURABLE price the hold reached (bottom of the green for a short)

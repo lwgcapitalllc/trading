@@ -2726,3 +2726,12 @@ explains. ⚠ **Patch `type(strategy.execution)`, never the imported name**, and
 double-load this file already records under the 2.5× sweep arm that silently replayed stale code.
 ⚠ **A performance number is a CHECK on a correctness claim here, not just a headline** — the
 identity result alone could not tell the two apart.
+
+---
+
+## Its chips say `A+` on the price chart (2026-09-02)
+
+`LAB_STRATEGY["chart_tag"] = "A+"` — the grade its own Pine calls this setup. ⚠ **A LABEL: no run, no cost and no decision reads
+it**, so changing it repaints chips and moves no trade. ⚠ **Keep it SHORT** — it is drawn beside the
+entry price. Why it exists, what it does on a STACK, and why rule 22 is silent for it:
+`command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*.

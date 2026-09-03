@@ -388,7 +388,9 @@ def _trade_fib(p: dict, entry_price: float, mae_price: Optional[float]) -> Optio
     return out
 
 
-def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
+def _build_trades(
+    equity_curve: list[dict], candles: list[dict], tag: Optional[str] = None
+) -> list[dict]:
     """One trade per equity-curve point — every runner emits one point per CLOSED trade
     (NT8 `parse_trades_csv`, MT5 `_normalize_mt5_results`, Python `build_equity_curve`), so
     each point already carries the whole round trip: `entry_ms` (open), `date`/`exit_ms`
@@ -495,6 +497,13 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                 # produces (run 295a6ff29d21, 8 trades).
                 **({"outcome": outcomes[i]} if outcomes else {}),
                 "kind": p.get("kind") or "primary",
+                # 🔴 The strategy's own word for its setup, ON THE TRADE and not only on the spec.
+                # A STACK merges N legs' trades into one list, so a spec-level tag cannot survive
+                # the merge and every leg's trades would wear one strategy's word — the
+                # hard-coded-`A+` defect one level down, and harder to see, because the chips would
+                # look per-strategy without being it. On the trade it merges for free, like `layer`.
+                # ⚠ ABSENT when the package declared none; the panel falls back to `PRIMARY_TAG`.
+                **({"tag": tag} if tag else {}),
                 # For a re-entry, what the trade it FOLLOWED did. The chart draws a different tag
                 # for a re-entry after a scratch and one after a stop-out, because they are
                 # different situations and one `SEC` cannot say which. ⚠ Emitted only when the run
@@ -1005,7 +1014,13 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
             equity_curve = json.loads(Path(eq_path).read_text())
         except (ValueError, OSError):
             equity_curve = []
-    trades = _build_trades(equity_curve, candles)
+    # The word this strategy's PRIMARY trades wear on the chart — its own name for its setup.
+    # ⚠ `None`, never `""`, when the package declared none: the panel then falls back to a neutral
+    # word, and an empty string would read as "this strategy asked for a blank tag".
+    trade_tag = _chart_tag(row.get("strategy_id"))
+
+    # 🔴 The tag goes IN, so every trade carries it and survives a stack's merge. See `_build_trades`.
+    trades = _build_trades(equity_curve, candles, trade_tag)
 
     # Strategy structure (7b): recompute when we have intraday candles and the run is a
     # London-breakout (detected by its params). Needs daily bars (with warmup) for the ATR.
@@ -1064,14 +1079,11 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     if vwap:
         indicators = indicators + [vwap]
 
-    # The word this strategy's PRIMARY trades wear on the chart — its own name for its setup.
-    # ⚠ The key is ABSENT, never `""`, when the package declared none: the panel then falls back to
-    # a neutral word, and an empty string would read as "this strategy asked for a blank tag".
-    # It was hardcoded to the A+ bot's word for every strategy on every chart until 2026-09-02.
-    trade_tag = _chart_tag(row.get("strategy_id"))
-
     spec = {
         "instrument": instrument,
+        # ⚠ The SPEC-level copy is for a single-run chart only, and it is deliberately NOT what the
+        # panel reads — the trades carry their own. It is kept because a caller with no trades (an
+        # empty run) still has a strategy, and absent means "declared none" rather than "no trades".
         **({"tradeTag": trade_tag} if trade_tag else {}),
         "baseTimeframe": base_tf,
         # Same thing now that the window is what gets capped, not the bars — kept so a frontend or a

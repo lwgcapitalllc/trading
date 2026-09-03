@@ -338,3 +338,12 @@ this package's own suite passed the whole time while inheriting it.
 **The rule, and it is bigger than this field: "it overrides the method" is a claim about ONE call
 site. Find the line that consumes the value.** A fork is only insulated from a parent's gate where
 it stops calling the code the gate lives in, and a shared helper is exactly where a gate gets hung.
+
+---
+
+## Its chips say `BOS` on the price chart (2026-09-02)
+
+`LAB_STRATEGY["chart_tag"] = "BOS"` — the break of structure it continues into. ⚠ **A LABEL: no run, no cost and no decision reads
+it**, so changing it repaints chips and moves no trade. ⚠ **Keep it SHORT** — it is drawn beside the
+entry price. Why it exists, what it does on a STACK, and why rule 22 is silent for it:
+`command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*.

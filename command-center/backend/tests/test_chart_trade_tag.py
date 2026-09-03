@@ -76,10 +76,17 @@ def test_the_declaring_package_has_its_tag_carried_off_the_module():
 
 
 def test_a_package_that_declares_nothing_carries_None():
-    """The half that would go unnoticed. RED by defaulting the key to any string — every
-    undeclared strategy then wears a tag its package never asked for, which is the defect with a
-    different word in it."""
-    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+    """The half that would go unnoticed: a key defaulting to any string makes every undeclared
+    strategy wear a tag its package never asked for, which is the defect with a different word in
+    it.
+
+    ⚠ **It pointed at `mpc_sos_fade` until that bot declared its own `A+` on 2026-09-02, and it
+    went RED — correctly.** It is repointed at `loss_recovery`, which declares none DELIBERATELY:
+    its trades carry `kind="recovery"`, so the renderer tags them `REC` down a different branch and
+    a `chart_tag` there could never be read. That is a real case rather than a premise edited to
+    keep a test green — the one package that must stay untagged, for a reason.
+    RED by defaulting the scanner's key to a string."""
+    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "loss_recovery"
     row, err = strategy_scanner._parse_python_package(pkg, Path(cfg.MONOREPO_ROOT))
     assert err is None, err
     assert row["chart_tag"] is None
@@ -143,6 +150,111 @@ def test_the_column_exists_on_a_FRESH_database_as_well_as_a_migrated_one(tmp_pat
     assert "chart_tag" in cols
 
 
+# ── the STACK is the case it exists for ──────────────────────────────────────
+def test_the_builder_stamps_the_tag_on_EVERY_trade():
+    """The stamping itself, at the seam the stack depends on. RED by dropping the `tag` key from
+    the dict `_build_trades` appends — every trade then arrives untagged and every chart, single or
+    stacked, falls back to the A+ bot's word."""
+    curve = [
+        {
+            "entry_ms": 1_600_000_000_000,
+            "exit_ms": 1_600_000_600_000,
+            "direction": "Long",
+            "profit": 10.0,
+            "entry_price": 100.0,
+            "exit_price": 101.0,
+            "kind": "primary",
+        },
+        {
+            "entry_ms": 1_600_001_000_000,
+            "exit_ms": 1_600_001_600_000,
+            "direction": "Short",
+            "profit": -5.0,
+            "entry_price": 101.0,
+            "exit_price": 102.0,
+            "kind": "primary",
+        },
+    ]
+    built = chart_spec._build_trades(curve, [], "XLEG")
+    assert len(built) == 2
+    assert [t.get("tag") for t in built] == ["XLEG", "XLEG"]
+
+
+def test_no_tag_means_the_KEY_IS_ABSENT_rather_than_empty():
+    """Absent is what the panel reads as *fall back to `PRIMARY_TAG`*. A key present and empty
+    would render a blank chip instead. RED by stamping `tag` unconditionally."""
+    curve = [
+        {
+            "entry_ms": 1,
+            "exit_ms": 2,
+            "direction": "Long",
+            "profit": 1.0,
+            "entry_price": 1.0,
+            "exit_price": 2.0,
+            "kind": "primary",
+        }
+    ]
+    assert "tag" not in chart_spec._build_trades(curve, [], None)[0]
+
+
+def test_each_LEG_of_a_stack_keeps_its_OWN_tag_through_the_merge(monkeypatch):
+    """🔴 THE CASE THE WHOLE MECHANISM EXISTS FOR, and the first implementation got it wrong. A
+    stack merges N legs' trades into ONE list — so a tag carried on the SPEC cannot survive, and
+    every leg's trades would wear whichever single tag the merged spec happened to hold. That is
+    the hard-coded-`A+` defect one level down and HARDER to see, because the chips would look
+    per-strategy without being it, which is the exact thing a reader stacks two bots to tell apart.
+
+    ⚠ **Each leg's trades are built through the REAL `_build_trades`, not hand-written with a tag
+    already on them.** An earlier version of this test handed the merge pre-tagged dicts and was
+    VACUOUS — it proved a dict copy preserves keys, and stayed green under the mutation it was
+    written to catch. RED now by dropping the stamp: both legs come back untagged."""
+    legs = {"run_a": ("mpc_sos_fade", "A+"), "run_b": ("mpc_extreme_leg", "XLEG")}
+    curve = [
+        {
+            "entry_ms": 1_600_000_000_000,
+            "exit_ms": 1_600_000_600_000,
+            "direction": "Long",
+            "profit": 10.0,
+            "entry_price": 100.0,
+            "exit_price": 101.0,
+            "kind": "primary",
+        }
+    ]
+
+    def fake_spec(run_id, refresh=False):
+        _sid, tag = legs[run_id]
+        return {
+            "instrument": "XAUUSD.p",
+            "baseTimeframe": "M5",
+            "brokerGmtOffsetHours": 0,
+            "sessions": [],
+            "historyStartMs": 0,
+            "candles": [{"timestamp": 1, "open": 1, "high": 1, "low": 1, "close": 1}],
+            "trades": chart_spec._build_trades(curve, [], tag),
+            "blocks": [],
+            "misses": [],
+            "missNoise": [],
+            "overlays": [],
+            "indicators": [],
+        }
+
+    monkeypatch.setattr(
+        lab_db,
+        "list_stack_runs",
+        lambda sid: [
+            {"run_id": r, "strategy_id": s, "strategy_name": s, "status": "complete"}
+            for r, (s, _t) in legs.items()
+        ],
+    )
+    monkeypatch.setattr(chart_spec, "build_chart_spec", fake_spec)
+
+    merged = chart_spec.build_stack_chart_spec("st_probe")
+    by_layer = {t["layer"]: t.get("tag") for t in merged["trades"]}
+    assert by_layer == {"mpc_sos_fade": "A+", "mpc_extreme_leg": "XLEG"}, (
+        "each leg's trades must keep their OWN strategy's word on a merged chart"
+    )
+
+
 # ── the chart reads it ───────────────────────────────────────────────────────
 def test_the_chart_reads_the_declaring_strategys_tag(monkeypatch):
     """RED by hardcoding a tag in `_chart_tag`, or by returning the strategy id — both of which
@@ -188,3 +300,33 @@ def test_a_label_lookup_can_never_cost_the_whole_chart(monkeypatch):
 
     monkeypatch.setattr(lab_db, "get_strategy", boom)
     assert chart_spec._chart_tag("probe") is None
+
+
+def test_build_chart_spec_actually_PASSES_the_tag_to_the_builder():
+    """🔴 THE WIRING, and it was the one hole the other tests left. `_build_trades` stamping the tag
+    and `_chart_tag` resolving it are both covered — nothing asserted that `build_chart_spec` hands
+    the second to the first. MEASURED: dropping the argument from that call left all 19 other tests
+    GREEN while every chart shipped untagged trades.
+
+    That is this backend's own recorded failure shape — a value computed, declared and read, with
+    the CONSTRUCTOR never filling it (the `python` lock scope, 2026-08-06). Nothing is missing from
+    the response, so no shape check can catch it.
+
+    Read off the SOURCE rather than driven, because `build_chart_spec` needs a run row, candles, an
+    equity curve and six overlay engines; a test that stubbed all of that would be asserting against
+    its own scaffolding. RED by removing `trade_tag` from the call."""
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(chart_spec.build_chart_spec)))
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_build_trades"
+    ]
+    assert calls, "build_chart_spec no longer calls _build_trades — re-aim this test"
+    assert all(len(c.args) >= 3 for c in calls), (
+        "build_chart_spec must pass the resolved tag into _build_trades, or every trade on every "
+        "chart ships untagged and silently falls back to the A+ bot's word"
+    )

@@ -4227,10 +4227,23 @@ confidently as a right one**, which is rule 7 in its quietest form.
   apart at a glance is the point), and a neutral fallback would strip the CORRECT tag off the live
   A+ bot's charts. **So a chart reading `A+` means EITHER that bot or one that has not declared its
   own word yet.**
-- 🔴 **Only `mpc_extreme_leg` declares one so far, and the reason is rule 22, not oversight.**
-  Declaring a tag edits a strategy package, which may not be committed until that package's parity
-  harness has run green on a real export, and no export for the other four is on this machine.
-  Same call as `display_under` — story in `HISTORY.md`.
+- 🔴 **IT RIDES THE TRADE, NEVER THE SPEC, AND A STACK IS WHY.** `build_stack_chart_spec` merges N
+  legs' trades into ONE list and stamps each with its `layer`; a spec-level tag cannot survive that
+  merge, so every leg's trades would wear whichever single tag the merged spec held. **That is this
+  same defect one level down and HARDER to see** — the chips would look per-strategy without being
+  it, which is exactly what a reader stacks two bots to tell apart. The first implementation here
+  did put it on the spec, and it was caught by asking what a stack does with it.
+- **Five of six packages declare one** (`A+`, `B-LEG`, `BOS`, `REALIGN`, `XLEG`). ⚠ **`loss_recovery`
+  deliberately declares NONE**: its trades carry `kind="recovery"`, so the renderer tags them `REC`
+  down a different branch and a `chart_tag` there could never be read — a declared field nothing can
+  assign is rule 10's shape, so it is left off rather than added for symmetry.
+- 🔴 **RULE 22 IS SILENT FOR ALL OF THEM, NOT SATISFIED.** Declaring a tag edits a strategy package,
+  and no bar-data export is on this machine for any of these gates — the repo's own recorded state
+  for most of them. **What stands in its place is a grep, not an assurance**: `chart_tag` appears
+  only in the scanner, the strategies table, the model and the chart spec, and nowhere under any
+  strategy's own trading code, so it cannot reach a decision. Say that rather than implying a gate
+  ran. ⚠ The one export present for `mpc_extreme_leg` is a TRADE LIST, and its gate correctly
+  refuses that — a file existing is not a gate that can run.
 - ⚠ **Declared by the package, never mapped here.** A strategy-id→label map in this backend would
   be a second claim about what a strategy calls its setup, and it goes stale the first time
   somebody adds one.

@@ -643,3 +643,12 @@ rules with no gate able to see it.
 not currently reach the shared floor check the gate hangs off — but *"it overrides the method"* is a
 claim about one call site and the sibling `mpc_bos` disproved it the same day. **A pin costs one
 line; discovering an inherited entry filter costs a run nobody can explain.**
+
+---
+
+## Its chips say `B-LEG` on the price chart (2026-09-02)
+
+`LAB_STRATEGY["chart_tag"] = "B-LEG"` — the late-retrace leg the package is named for. ⚠ **A LABEL: no run, no cost and no decision reads
+it**, so changing it repaints chips and moves no trade. ⚠ **Keep it SHORT** — it is drawn beside the
+entry price. Why it exists, what it does on a STACK, and why rule 22 is silent for it:
+`command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*.

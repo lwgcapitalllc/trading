@@ -46,6 +46,14 @@ LAB_STRATEGY = {
     "suggested_instrument": "XAUUSD",
     "category": "reversal",
     "self_sizing": True,
+    # This bot's own word for its setup, worn by its trades on the price chart. Until
+    # 2026-09-02 that chip was hard-coded to the A+ bot's word on EVERY strategy's chart, so
+    # every other bot's trades carried a label belonging to a fourth. 🔴 **It is what tells the
+    # legs apart on a STACK**, where several strategies' trades share one chart — that is the
+    # case it exists for. ⚠ A LABEL and nothing else: no run, no cost and no decision reads it,
+    # so changing it repaints chips and moves no trade. ⚠ Keep it SHORT — it is drawn beside
+    # the entry price and a long word pushes the price off the marker. ⚠ the late-retrace leg, which is what the package is named for.
+    "chart_tag": "B-LEG",
     # 🔴 DISPLAY GROUPING ONLY — it changes where the row is drawn and NOTHING about what this
     # bot may be run with. B-LEG runs standalone, in any stack, against any instrument, exactly
     # as before; nothing reads this field except the strategies list. It sits under the A+ bot

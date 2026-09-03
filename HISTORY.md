@@ -21,6 +21,49 @@ the other one did.
 
 ## Latest
 
+### The tag that would have looked per-strategy without being it (2026-09-02, second pass)
+
+Aaron: *"All strategies should have their named chip on the price chart so that if I stack I see the
+different trades by strategy name."*
+
+🔴 **THE FIRST IMPLEMENTATION, SHIPPED HOURS EARLIER THE SAME DAY, PUT THE TAG ON THE SPEC — AND A
+STACK IS THE ONE PLACE THAT CANNOT WORK.** `build_stack_chart_spec` merges every leg's trades into
+ONE list and stamps each with its `layer`; a spec carries one tag. So on a stacked chart every
+leg's trades would have worn whichever single word the merged spec held. **That is the hard-coded
+`A+` defect one level down and strictly harder to see: the chips would look per-strategy without
+being it**, which is precisely what a reader stacks two bots to tell apart. It was found by asking
+what the merge does with the field rather than by anything failing.
+
+✅ The tag rides the TRADE now, so it survives the merge exactly as `layer` does.
+
+🔴 **AND THE FIRST TEST OF IT WAS VACUOUS — the mutation was RUN and stayed GREEN.** The fake leg
+specs handed the merge trades that already carried tags, so the test proved a dict copy preserves
+keys and never touched the stamping code at all. Rebuilt to construct each leg's trades through the
+REAL builder, it goes red properly. **A stack test that mocks the thing under test one layer too
+high passes against the bug it was written for.**
+
+🔴 **A THIRD HOLE SURVIVED BOTH: NOTHING ASSERTED THE WIRING.** `_build_trades` stamping the tag was
+covered and `_chart_tag` resolving it was covered — and removing the argument that connects them
+left **all 19 tests green while every chart shipped untagged trades.** That is this backend's own
+recorded failure shape (the `python` lock scope, 2026-08-06): a value computed, declared and read,
+with the constructor never filling it, so nothing is missing from the response and no shape check
+can see it. Closed with an AST check on the call site. **Two tests either side of a wire do not test
+the wire.**
+
+**Five of six packages now declare a tag** — `A+`, `B-LEG`, `BOS`, `REALIGN`, `XLEG`. ⚠
+**`loss_recovery` deliberately declares NONE**: its trades carry `kind="recovery"` and the renderer
+tags them `REC` down a different branch, so a tag there could never be read — a declared field
+nothing can assign, which is rule 10's shape, left off rather than added for symmetry.
+
+⚠ **RULE 22 IS SILENT FOR ALL FIVE, NOT SATISFIED, AND THE DISTINCTION IS THE POINT.** No bar-data
+export is on this machine for any of these gates. What stands in its place is a GREP rather than an
+assurance: `chart_tag` appears only in the lab's scanner, its strategies table, the model and the
+chart spec, and nowhere under any strategy's own trading code — so it cannot reach a decision.
+⚠ **An export for `mpc_extreme_leg` IS present and its gate still cannot run**: the file is a TRADE
+LIST, and the gate correctly refuses one, saying a total tells you two runs disagree and nothing
+about where. **A file existing is not a gate that can run**, and an earlier note in this session
+said the export was simply absent — right in effect, wrong in detail.
+
 ### The bot whose chart drew a box and nothing else (2026-09-02)
 
 Aaron, with two extreme-leg trades on screen beside the A+ bot's: *"why are my trades for extreme
