@@ -390,6 +390,26 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   moving a stop changes when it triggers, and this repo has two records of that arithmetic getting
   the SIGN wrong (`bos_sweep.py`, the minimum-stop guard). If the number is small, do not build the
   thing; if it is large, replay it.
+
+  ✅ **THE FOURTH READING OF THIS SYMBOL'S OVERNIGHT FINANCING LANDED 2026-09-02, AND IT IS NOISE —
+  MEASURED BOTH WAYS RATHER THAN ARGUED.** The live terminal read **-80.54 long / +32.67 short**
+  against the **-79.60 / +30.25** this module has held since 2026-08-06 (1.2% and 8.0% adrift).
+  Replayed on 157,004 M15 bars of PU Prime `XAUUSD.p` (2020-01-01 → 2026-08-23, `puprime_standard`,
+  the same 156 trades either way): **+125.79R on the stale number, +125.89R on the live one — a
+  +0.09R difference, against this strategy's own run-to-run spread of sd 15.06R.** The entire
+  overnight bill is **5.97R of +125.79R net**, so an 8% move on one side of it cannot reach a
+  conclusion.
+  ✅ **THE NUMBER WAS DELIBERATELY NOT UPDATED (2026-09-02).** Re-pricing re-bases every figure this
+  repo has published on a charged book, and rule 11 says a comparison carries forward everything
+  that decides what it was measured on — **paying that for a 0.09R correction buys an inconsistency,
+  not accuracy.** Update it when a reading moves something, and re-run the two-way replay to say so.
+  🔴 **WHAT IS STILL OPEN IS THE MONITORING, NOT THIS NUMBER: nothing announces a drift, so a move
+  large enough to matter would arrive exactly as silently as this one did.** Four readings in seven
+  weeks (−78.29 / −79.60 / −79.60 / −80.54) and every one was found by somebody looking. A broker
+  re-quotes swaps whenever it likes; this module cannot tell.
+  ⚠ **Read the SHORT side before assuming a drift is small.** Gold PAYS shorts, and this strategy's
+  scratch arithmetic rests on that credit — the credit moved 8.0% here while the charge moved 1.2%,
+  and a single netted percentage would have hidden it.
 - **`tools/cost_tiers.py`** (new 2026-08-10) — replays one strategy under several BROKER ACCOUNT
   TIERS and prints trades / total R / delta-vs-free, one real replay per row. It exists because
   `docs/LIVE_TRADING_PIPELINE.md` → G5a answers *which PU Prime account type* with exactly that
@@ -755,8 +775,10 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   the contract size, so a fixed commission is a far larger slice of a small risk.
   ⚠ **The cost constants are COPIED from `fills.py` rather than imported**, because that module
   needs the whole replay stack and this tool is stdlib-only by design. Each is quoted with its
-  source. **Re-read them before quoting the table again — this symbol's swap moved 1.7% in three
-  weeks with nothing to announce it.**
+  source. **Re-read them before quoting the table again — this symbol's overnight financing has now
+  been read FOUR times in seven weeks and moved on three of them, with nothing to announce it.**
+  ⚠ **A drift is not automatically worth re-pricing** — the 2026-09-02 reading was replayed both
+  ways and came to +0.09R. See `tools/swap_audit.py` above for the measurement and the decision.
 - **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The A+ bot waits for the
   shift and fades the retracement; this asks whether the move that CREATES it is tradeable.** Added
   2026-08-24 on Aaron's question. Stdlib only, runs off `backtest/cache/`. Full record:
