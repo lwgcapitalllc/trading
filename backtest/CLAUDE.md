@@ -1766,19 +1766,32 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   (2) TV's Sharpe is a RAW MONTHLY figure — multiply by √12 (≈3.464) before comparing to our
   annualized daily one. Normalize for both before calling any TV-vs-lab gap a bug; `verify_parity.py`
   proves the SIGNALS match bar-for-bar, it does not make the two summary reports directly comparable.
-- 🔴 **A COMPOUNDED RUN EVENTUALLY ASKS FOR ORDERS THE BROKER WILL NOT ACCEPT, AND NOTHING IN THE
-  RESULT SAYS SO (2026-09-02).** PU Prime's ceiling on `XAUUSD.p` is **100 lots** (min 0.01, step
-  0.01) — MEASURED live off account 700152905 that day, and identical to the 2026-08-14 reading in
-  the bot's own instance config, so it has not drifted. The live A+ config replayed on its own two
-  feeds from $10,000 asks for **more than 100 lots on 25 of its 205 trades (12.2%)**; the first is
-  at a balance of **$927,540**, and the largest ask is **742.60 lots — 7.4× the ceiling**. Rule 17
-  says an order above the maximum is NO TRADE, never shrunk to fit, so **$4.9M of that book is
-  profit from trades the broker would have refused.** ⚠ **Below ~$900k none of this bites**, which
-  is why it has never shown up. ⚠ **The lab does not model the ceiling at all** — no refusal, no
-  warning, no column — so a stacked or long-window figure quietly stops describing a tradeable
-  account somewhere past that balance. ⚠ **It is a PER-ORDER limit, so the honest fixes are fewer
-  compounding rungs, a lower risk %, or splitting across accounts — not a clamp**, which would
-  report a trade the strategy is not holding.
+- 🔴 **A COMPOUNDED RUN EVENTUALLY ASKS FOR ORDERS THE BROKER WILL NOT ACCEPT. THE LAB MODELS THAT
+  SINCE 2026-09-02 AND RESIZES THEM DOWN** (`portfolio/account.py` → `max_lots`, default 100 lots,
+  every strategy). PU Prime's ceiling on `XAUUSD.p` is **100 lots** (min 0.01, step 0.01) —
+  MEASURED live off account 700152905 that day, identical to the 2026-08-14 reading in the bot's
+  own instance config. The live A+ config replayed on its own two feeds from $10,000 asks for
+  **more than 100 lots on 25 of its 205 trades (12.2%)**; the first at a balance of **$927,540**,
+  the largest **742.60 lots — 7.4× the ceiling**. ⚠ **Below ~$927k nothing is touched**, which is
+  why it never showed up.
+  🔴 **WHAT THE CEILING COSTS, MEASURED BOTH WAYS ON THE SAME BARS: R IS IDENTICAL AND THE BALANCE
+  IS NOT.** Uncapped and capped both take **205 trades for +107.36R**; the balances are
+  **$11,528,822 vs $10,752,175**, a **−$776,647** difference (−6.7%). **R cannot see this and that
+  is not a defect in R — it is what R is for.** The ceiling refuses nothing and changes no
+  decision, so every trade's R is untouched; it only makes 25 positions smaller. **A run reported
+  in R alone is therefore IDENTICAL with the ceiling on or off, and a reader comparing R would
+  conclude the ceiling is free.** It is not: it costs compounding, which is a dollar effect.
+  ⚠ **This is the one place in this file where the dollar column carries information the R column
+  cannot**, and rule 6 still holds everywhere else.
+  🔴 **DO NOT CARRY THE OLD "$4.9M OF PROFIT IN REFUSABLE TRADES" FIGURE ACROSS — IT ANSWERED A
+  DIFFERENT QUESTION AND IS WRONG BY 6×.** That was the summed P&L of the over-ceiling trades under
+  the old REFUSE rule. Resizing keeps those trades at reduced size, and the effect on a compounding
+  balance is MULTIPLICATIVE rather than additive, so the real cost is $776,647, not $4.9M. **An
+  absolute-dollar figure measured on one path does not transfer to another path.**
+  ⚠ **Risk per trade FALLS past the ceiling**: on the largest ask the bot gets 13.5% of the size it
+  wanted, so that trade risks **1.35% instead of 10%**; the mildest capped trade risks 9.66%. Size
+  is frozen while the balance keeps growing, so **compounding becomes linear** — safe in the
+  direction that matters, and the real cost of the cap.
 - **If a real backtest must be run, the MT5 runner is much faster than NT8** (NT8's Strategy Analyzer
   is driven by slow pywinauto UI automation). Prefer an MT5-runner strategy/symbol when the goal allows.
 
@@ -1885,6 +1898,63 @@ for was refused. **MEASURED: A+ at 10% under a 10% cap with a 10% floor was refu
 over 7.9 years and took 31 trades instead of 181** — a book that reads like a savage allocator and
 is a rounding error. ⚠ **No stored run moves**: `entry_floor_pct` defaults to 0.0 and both forms
 answer identically at zero. Two tests at the boundary, both watched RED by their own mutation.
+
+## `portfolio/account.py` — the VENUE CEILING, and why a clamp is allowed here (2026-09-02)
+
+**`max_lots` is the largest position any leg may hold, in lots, defaulting to 100 for every
+strategy.** An entry asking for more is RESIZED down to it rather than refused. Aaron's call:
+a strategy asking for more lots than the venue takes should trade the maximum, not skip the setup.
+
+🔴 **It is the one gate here that is NOT about risk, and reading it as one gets it backwards.**
+Every other check in this file asks *can the account afford this*; this asks *will the broker
+accept it at all* — a question no amount of equity changes.
+
+🔴 **A CLAMP IS ONLY COHERENT BECAUSE IT HAPPENS AT THE SIZING DECISION.** Root rule 17 forbids
+resizing an ORDER, and that reasoning is intact: a clamped order is not the position the emulator
+holds, the two grade different R, and `algos/live/bridge.py::_agrees` halts the bot on a divergence
+the safety feature created. **This seam is where the strategy decides its own size**, so the
+emulator books the capped quantity as its own and neither side can disagree.
+`algos/shared/order_sizing.py` keeps its order-level refusal as a backstop that should now never
+fire; `bridge._reconcile_lot_ceiling` holds the ceiling at `min(configured, the broker's own
+maximum)` so it cannot.
+
+⚠ **The ceiling is applied BEFORE the risk arithmetic, and the order is load-bearing.** Cap
+afterwards and the leg reserves budget against a position it was never going to hold, blocking the
+other leg out of room nobody used. Pinned by a test that only sees the defect when the budget
+BINDS — **the first version of that test had an unlimited budget, passed, and stayed green under
+the very mutation it named.**
+
+⚠ **A clamp is recorded in `lot_capped`, deliberately NOT in `contention`.** Contention means the
+legs competed; a venue ceiling is not competition — a solo run with all the room in the world still
+hits it. Each record carries the overage, because a COUNT of capped trades cannot say whether the
+ceiling is a rare edge or the thing now driving the account.
+
+⚠ **`None` switches it off, and the parity anchor should use it.** The Pine twin has no such rule,
+so a capped Python run graded against an uncapped chart would report a policy difference as a
+parity break. `compare_strategy.py` is exit 0 with the ceiling ON at warmup 1000 on the 2026-09-02
+export.
+
+🔴 **THAT GREEN PROVES LESS THAN IT LOOKS, AND THE REASON GENERALISES: `compare_strategy.py`
+COMPARES R, AND R IS SIZE-INDEPENDENT.** R is profit over risk and both halves scale with the
+quantity, so **capping the size cannot move any field the gate reads** — decisions, stages, vetoes,
+stops and `px_closed_r` are all identical whether a trade is 100 lots or 742. So a green gate here
+does NOT establish that the ceiling never bit; it establishes that the gate is blind to it. **This
+is root rule 14 with a new edge: the gate says nothing about a dimension neither side measures.**
+⚠ **Do not cite this gate as evidence the ceiling is inert on an export.** If that question
+matters, read the account's `lot_capped` log, which is the only thing that records it.
+
+⚠ **A missing or non-positive broker maximum is CANNOT ASK, never NO LIMIT and never ZERO** (rule
+1). Zero would refuse every order; infinite would hand the broker a size it rejects. The configured
+ceiling stands, and one bad read does not ratchet it down for the session.
+
+⚠ **ONE contract size for the whole account.** Every stack here is gold at 100 oz/lot; a stack
+pairing gold with an index would silently measure one against the other's lot size. Refuse that
+when it first appears rather than passing an average.
+
+**Tests: 13 in `tests/test_account.py`, 6 in `algos/tests/test_live_bridge.py`. All 19 mutations
+watched RED**, each reddening its own named test while a control stayed green — two mutations that
+reddened everything were re-aimed rather than kept, because a mutation that breaks the module
+proves nothing.
 
 ## `optimizer.py::_replay_one` finalizes the strategy (2026-08-20)
 

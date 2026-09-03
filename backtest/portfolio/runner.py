@@ -29,9 +29,14 @@ markers on the chart) is Phase 2 and lives in `command-center/`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
-from .account import PortfolioAccount, SoloAccount
+from .account import (
+    DEFAULT_CONTRACT_SIZE,
+    DEFAULT_MAX_LOTS,
+    PortfolioAccount,
+    SoloAccount,
+)
 from .legs import build_leg
 from .simulator import simulate
 
@@ -96,6 +101,8 @@ def run_stack(
     risk_cap_pct: float,
     entry_floor_pct: float = 0.0,
     solo_control: bool = True,
+    max_lots: Optional[float] = DEFAULT_MAX_LOTS,
+    contract_size: float = DEFAULT_CONTRACT_SIZE,
     progress: Any = None,
     should_cancel: Any = None,
 ) -> StackRun:
@@ -104,6 +111,16 @@ def run_stack(
     `risk_cap_pct` is a FRACTION of the live balance (0.10 = 10%), matching
     `PortfolioAccount.cap()`. It is the account-level rule the live allocator has to enforce
     too — the same number, or the stacked backtest stops predicting the stacked account.
+
+    `max_lots` is the VENUE ceiling every leg's entries are resized down to, in lots — the
+    largest position a broker will accept, defaulting to 100 (see `account.DEFAULT_MAX_LOTS`).
+    `None` switches it off, which is what a parity harness wants. ⚠ **It is a resize, not a
+    refusal**, so a run above the ceiling still trades — smaller — and stops compounding.
+
+    ⚠ **ONE contract size for the whole account, so a stack mixing INSTRUMENTS would need a
+    per-leg figure and does not have one.** Every stack here is gold at 100 oz/lot, which is the
+    default; a stack pairing gold with an index would be silently measuring one of them against
+    the other's lot size. Refuse that when it first appears rather than passing an average.
 
     `progress(phase, tick_index)` and `should_cancel()` are for a caller driving this from a
     UI — this is `1 + len(specs)` full replays, so on a full history it is minutes of work.
@@ -122,7 +139,11 @@ def run_stack(
         )
 
     account = PortfolioAccount(
-        balance=balance, risk_cap_pct=risk_cap_pct, entry_floor_pct=entry_floor_pct
+        balance=balance,
+        risk_cap_pct=risk_cap_pct,
+        entry_floor_pct=entry_floor_pct,
+        max_lots=max_lots,
+        contract_size=contract_size,
     )
     # Sources first, so a dependent can be handed its source's live trade list at build time.
     # `_refuse_bad_sources` has already established that a source has no source of its own, so
@@ -185,7 +206,7 @@ def run_stack(
     if solo_control:
         by_name = {s.name: s for s in specs}
         for spec in specs:
-            solo = SoloAccount(balance=balance)
+            solo = SoloAccount(balance=balance, max_lots=max_lots, contract_size=contract_size)
             leg = build_leg(
                 spec.name,
                 spec.strategy_cls,
@@ -214,7 +235,9 @@ def run_stack(
                     src_spec.config,
                     src_spec.df,
                     df_fast=src_spec.df_fast,
-                    account=SoloAccount(balance=balance),
+                    account=SoloAccount(
+                        balance=balance, max_lots=max_lots, contract_size=contract_size
+                    ),
                     initial_capital=balance,
                     cost_profile=src_spec.cost_profile,
                 )

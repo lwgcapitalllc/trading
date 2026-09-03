@@ -588,3 +588,233 @@ def test_a_same_bar_tie_is_settled_BY_RANK_not_split_proportionally():
     assert out["aplus"] == 200.0, out  # full size, though listed second
     assert out["recovery"] == 50.0, out  # the real remainder, 250 of the 500 it wanted
     assert a.reserved() == 1250.0
+
+
+# ── the venue ceiling (max_lots) ────────────────────────────────────────────────
+#
+# Every test below was watched RED by mutation on 2026-09-02 before being kept. The mutations
+# are named per test, because "it went red" is worth nothing without "for the right reason" —
+# a test that goes red when the ceiling is deleted entirely proves only that the code runs.
+
+
+def _lot_acct(balance=10_000_000.0, max_lots=100.0, contract_size=100.0):
+    """A budget big enough that only the CEILING can ever bind. `risk_cap_pct` is a fraction, so
+    1.0 is the whole balance — the point is to isolate the venue limit from the risk limit."""
+    return PortfolioAccount(
+        balance=balance,
+        risk_cap_pct=1.0,
+        entry_floor_pct=0.0,
+        max_lots=max_lots,
+        contract_size=contract_size,
+    )
+
+
+def test_an_ask_over_the_ceiling_is_RESIZED_not_refused():
+    """The whole policy in one assertion. 742.60 lots is the largest ask in the real A+ book.
+
+    RED when `_cap_to_max_lots` returns `desired_qty` unchanged (granted 74,260.0), and RED the
+    other way when the over-max branch returns 0.0 the way the live path used to refuse.
+    """
+    a = _lot_acct()
+    qty = a.request_fill("A", +1, entry=100.0, stop=99.0, desired_qty=74_260.0, point_value=1.0)
+    assert qty == 10_000.0  # 100 lots × 100 oz — the ceiling, not zero and not what was asked
+    assert qty > 0.0, "a resize is not a refusal"
+
+
+def test_an_ask_UNDER_the_ceiling_is_untouched_and_logs_nothing():
+    """The half that proves the cap is not just clamping everything to 100 lots.
+
+    RED when the comparison is `<` instead of `<=`... only at exactly the ceiling, which is why
+    the exact-boundary case below exists separately. RED here when `_cap_to_max_lots` returns
+    `ceiling` unconditionally.
+    """
+    a = _lot_acct()
+    qty = a.request_fill("A", +1, entry=100.0, stop=99.0, desired_qty=5_000.0, point_value=1.0)
+    assert qty == 5_000.0  # 50 lots
+    assert a.lot_capped == []
+
+
+def test_an_ask_EXACTLY_at_the_ceiling_is_not_recorded_as_capped():
+    """Pins the boundary comparison itself. RED when `<=` becomes `<` — the qty is unchanged
+    either way, so ONLY the log can catch this one, which is the point of asserting on it."""
+    a = _lot_acct()
+    qty = a.request_fill("A", +1, entry=100.0, stop=99.0, desired_qty=10_000.0, point_value=1.0)
+    assert qty == 10_000.0
+    assert a.lot_capped == [], "exactly at the ceiling is not over it"
+
+
+def test_max_lots_None_switches_the_ceiling_off_for_the_parity_anchor():
+    """The escape hatch `compare_strategy.py` needs — the Pine twin has no ceiling, so grading a
+    capped run against it would report a policy difference as a parity break.
+
+    RED when the `self.max_lots is None` guard is dropped from `_cap_to_max_lots`.
+    """
+    a = _lot_acct(max_lots=None)
+    qty = a.request_fill("A", +1, entry=100.0, stop=99.0, desired_qty=74_260.0, point_value=1.0)
+    assert qty == 74_260.0
+    assert a.lot_capped == []
+
+
+def test_the_ceiling_applies_BEFORE_the_risk_arithmetic():
+    """The ordering property, and the subtle one.
+
+    A leg asking 742 lots must have its risk measured on the 100 lots it can actually hold, not
+    on the 742 it wanted. Cap afterwards and `desired_risk` describes a position that cannot
+    exist, so `_open` scales the real qty by `granted/desired` — a ratio computed against a
+    fiction — and shrinks a leg that fitted perfectly well.
+
+    🔴 **The budget has to BIND for this test to see anything, and the first version of it did
+    not — it was written with an unlimited budget, passed, and stayed green under the very
+    mutation it names.** With room to spare both orderings grant the same 10,000, because the
+    inflated desired_risk cancels itself in the scale factor. Caught by mutation on 2026-09-02;
+    kept as written proof that "reserved the right amount" and "computed it in the right order"
+    are different questions.
+
+    Room here is 20,000 — above the capped risk (10,000) and below the uncapped one (74,260),
+    which is the only window where the two orderings disagree.
+
+    RED when the `_cap_to_max_lots` call is moved BELOW the `_risk_of` line in `request_fill`:
+    the leg is handed 2,693 units instead of 10,000 and logged as contention that never happened.
+    """
+    a = _lot_acct(balance=10_000_000.0)
+    a.risk_cap_pct = 0.002  # room = 20,000
+    assert a.room() == 20_000.0, "the budget must bind between the two orderings"
+    qty = a.request_fill("A", +1, entry=100.0, stop=99.0, desired_qty=74_260.0, point_value=1.0)
+    assert qty == 10_000.0, "the ceiling fits inside the budget; nothing should have shrunk it"
+    assert a.reserved() == 10_000.0
+    assert a.contention == [], "a leg that fitted was logged as contended"
+
+
+def test_a_lot_cap_is_NOT_logged_as_contention():
+    """Contention means the legs competed for the budget. A venue ceiling is not competition —
+    this account has the whole balance available and still caps.
+
+    RED when `_cap_to_max_lots` appends to `self.contention` instead of `self.lot_capped`, which
+    is exactly the shortcut that makes a solo run look like it had a clash.
+    """
+    a = _lot_acct()
+    a.request_fill("A", +1, entry=100.0, stop=99.0, desired_qty=74_260.0, point_value=1.0)
+    assert a.contention == [], "the budget never bound; nothing competed"
+    assert len(a.lot_capped) == 1
+
+
+def test_the_cap_record_names_how_far_over_the_ask_was():
+    """A count of capped trades cannot tell you whether the ceiling is a rare edge or the thing
+    now driving the account. The overage can.
+
+    RED when `over_x` is computed against `contract_size` rather than the ceiling (74.26x), and
+    RED when `desired_lots` divides by `max_lots` instead (7.426).
+    """
+    a = _lot_acct()
+    a.request_fill("A", -1, entry=100.0, stop=101.0, desired_qty=74_260.0, point_value=1.0)
+    rec = a.lot_capped[0]
+    assert rec["desired_lots"] == 742.6
+    assert rec["over_x"] == 7.426
+    assert rec["granted_qty"] == 10_000.0
+    assert rec["dir"] == -1
+
+
+def test_the_ceiling_is_read_in_LOTS_so_contract_size_moves_it():
+    """Proves the units really are converted rather than the number being compared to raw qty.
+
+    RED when `_cap_to_max_lots` compares `desired_qty` against `self.max_lots` directly — then
+    both contract sizes give the same answer and this test's two branches collapse.
+    """
+    big = _lot_acct(contract_size=100.0)  # 100 lots = 10,000 units
+    small = _lot_acct(contract_size=1.0)  # 100 lots =    100 units
+    q_big = big.request_fill("A", +1, 100.0, 99.0, desired_qty=9_000.0, point_value=1.0)
+    q_small = small.request_fill("A", +1, 100.0, 99.0, desired_qty=9_000.0, point_value=1.0)
+    assert q_big == 9_000.0, "90 lots — under the ceiling"
+    assert q_small == 100.0, "9,000 lots — capped hard"
+
+
+def test_the_same_bar_TIE_path_caps_too():
+    """A leg must not dodge the ceiling by happening to fill on the same bar as another one.
+
+    RED when the capping list-comprehension is removed from `request_fills` — the proportional
+    split then hands the oversized leg its full 74,260.
+    """
+    a = _lot_acct()
+    out = a.request_fills(
+        [
+            {
+                "leg": "A",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 99.0,
+                "desired_qty": 74_260.0,
+                "point_value": 1.0,
+            },
+            {
+                "leg": "B",
+                "dir": +1,
+                "entry": 100.0,
+                "stop": 99.0,
+                "desired_qty": 500.0,
+                "point_value": 1.0,
+            },
+        ]
+    )
+    assert out["A"] == 10_000.0, out
+    assert out["B"] == 500.0, out
+    assert len(a.lot_capped) == 1
+
+
+def test_the_tie_path_does_not_mutate_the_callers_request_dicts():
+    """The by-rank path re-reads the same dicts through `request_fill`, so capping in place would
+    make the ceiling depend on which path ran first.
+
+    RED when the list-comprehension in `request_fills` assigns into `r` instead of copying.
+    """
+    reqs = [
+        {
+            "leg": "A",
+            "dir": +1,
+            "entry": 100.0,
+            "stop": 99.0,
+            "desired_qty": 74_260.0,
+            "point_value": 1.0,
+        }
+    ]
+    _lot_acct().request_fills(reqs)
+    assert reqs[0]["desired_qty"] == 74_260.0, "the caller's dict was rewritten"
+
+
+def test_SoloAccount_has_infinite_room_and_STILL_carries_the_ceiling():
+    """The two limits are independent, and this is the test that says so. A broker refusing a
+    742-lot order does not care that the account could afford it.
+
+    RED when `SoloAccount.__init__` stops forwarding `max_lots` to `super()`.
+    """
+    s = SoloAccount(balance=10_000_000.0)
+    assert s.room() == float("inf")
+    qty = s.request_fill("A", +1, 100.0, 99.0, desired_qty=74_260.0, point_value=1.0)
+    assert qty == 10_000.0
+    assert s.max_lots == 100.0
+
+
+def test_SoloAccount_defaults_to_ONE_HUNDRED_lots_for_every_strategy():
+    """The default itself, pinned. Aaron set it on 2026-09-02 and it applies to every bot, so a
+    strategy that never mentions a ceiling still gets this one.
+
+    RED when the default is changed to any other number, or to None.
+    """
+    assert SoloAccount(balance=1_000.0).max_lots == 100.0
+    assert PortfolioAccount(balance=1_000.0, risk_cap_pct=0.1).max_lots == 100.0
+
+
+def test_a_run_below_the_ceiling_is_byte_identical_to_its_uncapped_self():
+    """The claim the docs make about stored runs: nothing below the ceiling moves. Asserted by
+    running the SAME book through a capped and an uncapped account and comparing every grant.
+
+    RED when `_cap_to_max_lots` clamps unconditionally rather than only over the ceiling.
+    """
+    asks = [120.0, 4_000.0, 9_999.0, 10_000.0, 33.0]
+    capped = [
+        SoloAccount(balance=10_000_000.0).request_fill("A", +1, 100.0, 99.0, q, 1.0) for q in asks
+    ]
+    free = [
+        SoloAccount(balance=10_000_000.0, max_lots=None).request_fill("A", +1, 100.0, 99.0, q, 1.0)
+        for q in asks
+    ]
+    assert capped == free == asks

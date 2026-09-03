@@ -23,7 +23,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-__all__ = ["Position", "PortfolioAccount", "SoloAccount"]
+__all__ = [
+    "Position",
+    "PortfolioAccount",
+    "SoloAccount",
+    "DEFAULT_MAX_LOTS",
+    "DEFAULT_CONTRACT_SIZE",
+]
 
 # A grant within this much of the desired risk IS the desired risk.
 #
@@ -65,6 +71,26 @@ _GRANT_EPS = 1e-9
 # produce, so the log itself read as impossible while being perfectly accurate.
 _MIN_GRANT_USD = 0.01
 
+# The largest position any leg may hold, in LOTS, unless a caller says otherwise.
+#
+# 100 is the number Aaron set on 2026-09-02, and it is a POLICY that happens to coincide with a
+# MEASUREMENT rather than being derived from it: PU Prime's own ceiling on `XAUUSD.p` is also
+# 100 lots (read live off account 700152905, unchanged since the 2026-08-14 reading). He does not
+# want to trade more than 100 lots of gold whatever a future broker permits, so the default does
+# not track the venue and must not be "corrected" to it — a broker offering 200 does not raise it.
+#
+# ⚠ It is a DEFAULT, not a constant: `max_lots=None` switches the ceiling off, which is what a
+# parity harness wants when its Pine twin has no such rule.
+#
+# ⚠ **The live path takes `min(this, the broker's own maximum)`** — a configured ceiling above
+# what the venue accepts is not a ceiling, it is an order that gets rejected.
+DEFAULT_MAX_LOTS = 100.0
+
+# Instrument units in ONE lot. 100 oz of gold, and the same default `fills.AccountProfile` uses
+# for the identical conversion — the two must agree or costs and the ceiling disagree about what
+# a lot is.
+DEFAULT_CONTRACT_SIZE = 100.0
+
 
 @dataclass
 class Position:
@@ -98,10 +124,53 @@ class PortfolioAccount:
         all_or_nothing: bool = False,
         leg_priority: Optional[dict] = None,
         leg_risk_pct: Optional[dict] = None,
+        max_lots: Optional[float] = DEFAULT_MAX_LOTS,
+        contract_size: float = DEFAULT_CONTRACT_SIZE,
     ) -> None:
         self.balance = float(balance)
         self.risk_cap_pct = float(risk_cap_pct)
         self.entry_floor_pct = float(entry_floor_pct)
+        # THE VENUE CEILING — the largest position any leg may hold, in LOTS, whatever its risk
+        # % says it wants. `None` switches it off entirely.
+        #
+        # 🔴 This is the one gate here that is NOT about risk, and reading it as one gets it
+        # backwards. Every other check above asks "can the account afford this?"; this one asks
+        # "will the broker accept it at all?" — a question with a hard answer that no amount of
+        # equity changes. MEASURED 2026-09-02 on PU Prime `XAUUSD.p`: the ceiling is 100 lots,
+        # and a 6.6-year replay of the live A+ config from $10,000 asks for more on **25 of its
+        # 205 trades**, topping out at **742.60 lots — 7.4x what the venue will take**. Those
+        # orders do not get filled small; they get REJECTED, so a replay that books them is
+        # describing an account nobody can have.
+        #
+        # ⚠ **It clamps rather than refuses, and that reverses this repo's older rule.**
+        # `algos/shared/order_sizing.py` refused an over-max order for a real reason: a clamped
+        # broker order is not the position the emulator is holding, the two grade different R,
+        # and the bridge halts on the divergence. That reasoning is sound and is exactly why the
+        # clamp lives HERE instead — this is the seam where the strategy decides its own size, so
+        # the emulator books the capped qty as its own and the two sides never disagree. Clamping
+        # at the ORDER is still wrong; clamping at the DECISION is not. (Aaron's call, 2026-09-02.)
+        #
+        # ⚠ **It changes what a replay reports above ~$927,000 of balance and nothing below it.**
+        # That is the first trade in the A+ book that touches the ceiling. Runs stored before this
+        # existed did not model it, so a long compounding run will no longer reproduce its old
+        # number — deliberately, because the old number was untradeable past that point.
+        #
+        # ⚠ **Past the ceiling an account stops compounding and grows LINEARLY**: size is frozen
+        # while the balance keeps rising, so risk-per-trade falls away toward zero. That is the
+        # real cost of the cap, and it is a property of the venue rather than of this code.
+        self.max_lots: Optional[float] = None if max_lots is None else float(max_lots)
+        # Instrument units in ONE lot — 100 oz for gold. The cap is quoted in lots because that
+        # is the unit the broker refuses in; the legs size in units, so one of the two has to be
+        # converted and this is the number that does it. It mirrors `fills.AccountProfile`, which
+        # has needed the same conversion for costs since long before this.
+        self.contract_size = float(contract_size)
+        # Every entry this ceiling shrank: {when, leg, dir, desired_qty, granted_qty, ...}.
+        #
+        # ⚠ Deliberately NOT folded into `contention`. That log answers "did the legs compete for
+        # the budget", and a venue ceiling is not competition — a solo run with no cap and all the
+        # room in the world still hits it. Mixing them would make the contention log overstate
+        # itself on exactly the runs a reader is using it to judge a stack by.
+        self.lot_capped: list[dict] = []
         # THE CONTENTION RULE, stated rather than implied. False = shrink-to-fit: a contested
         # entry takes whatever room is left. True = *risk is never layered*: an entry that cannot
         # be granted in FULL is refused outright and the budget stays with whoever already holds
@@ -193,12 +262,48 @@ class PortfolioAccount:
         return abs(qty) * abs(entry - stop) * point_value
 
     # ── entries ───────────────────────────────────────────────────────────────
+    def _cap_to_max_lots(self, leg: str, dir: int, desired_qty: float) -> float:
+        """Clamp one leg's desired size to the venue ceiling. Returns the size it may actually ask
+        for, and records the clamp when it bites.
+
+        ⚠ **This runs BEFORE the risk arithmetic, not after it, and the order matters.** Every
+        number downstream — the desired risk, the share of the budget this leg is asking for, the
+        proportional split when two legs fill on one bar — has to describe the position that can
+        really be opened. Capping afterwards would let a leg reserve budget against 742 lots it
+        was never going to hold, and quietly block the other leg out of room nobody used.
+
+        ⚠ **It never rounds to the broker's volume STEP.** That belongs to the live path, which
+        knows the step and rounds DOWN; doing it here would put a broker's fill granularity into
+        every lab number and make the two disagree about what a clean replay is.
+        """
+        if self.max_lots is None or self.contract_size <= 0 or desired_qty <= 0:
+            return desired_qty
+        ceiling = self.max_lots * self.contract_size
+        if desired_qty <= ceiling:
+            return desired_qty
+        self.lot_capped.append(
+            {
+                "when": self.now,
+                "leg": leg,
+                "dir": dir,
+                "desired_qty": round(desired_qty, 6),
+                "granted_qty": round(ceiling, 6),
+                "desired_lots": round(desired_qty / self.contract_size, 4),
+                "max_lots": self.max_lots,
+                # How far over the ceiling the strategy actually wanted to be. This is the number
+                # that says whether the cap is a rare edge or the thing now driving the account.
+                "over_x": round(desired_qty / ceiling, 3),
+            }
+        )
+        return ceiling
+
     def request_fill(
         self, leg: str, dir: int, entry: float, stop: float, desired_qty: float, point_value: float
     ) -> float:
         """A leg fills and asks for `desired_qty` (its own sizing). Returns the granted qty
         (0.0 = blocked). The gate runs at FILL, so a resting order that never fills holds
         nothing. The desired qty is SCALED to the room, never recomputed."""
+        desired_qty = self._cap_to_max_lots(leg, dir, desired_qty)
         desired_risk = self._risk_of(desired_qty, entry, stop, point_value)
         granted_risk = min(desired_risk, self.room_for(leg))
         # a zero grant (no room) is a block, not a zero-size fill — even when the floor is 0.
@@ -229,6 +334,14 @@ class PortfolioAccount:
         # and the original proportional split runs, so no stored run moves.
         if self.leg_priority:
             return self._request_fills_by_rank(requests)
+        # The ceiling applies before the room is split, for the reason `_cap_to_max_lots` gives:
+        # a leg must not claim a share of the budget proportional to a size it cannot hold.
+        # ⚠ Copied rather than mutated — `requests` belongs to the caller, and the by-rank path
+        # above re-reads the same dicts through `request_fill`.
+        requests = [
+            {**r, "desired_qty": self._cap_to_max_lots(r["leg"], r["dir"], r["desired_qty"])}
+            for r in requests
+        ]
         room = self.room()
         risks = [
             self._risk_of(r["desired_qty"], r["entry"], r["stop"], r["point_value"])
@@ -390,12 +503,37 @@ class PortfolioAccount:
 
 
 class SoloAccount(PortfolioAccount):
-    """One leg, no cap, no floor — always grants the full desired qty. Reproduces standalone
-    behaviour exactly (scale == 1), so a bot run through this is unchanged. This is the parity
-    anchor: `compare_strategy.py` must stay exit 0 with a SoloAccount."""
+    """One leg, no RISK cap, no floor — grants the full desired qty out of the budget. Reproduces
+    standalone behaviour (scale == 1), so a bot run through this is unchanged by contention.
 
-    def __init__(self, *, balance: float) -> None:
-        super().__init__(balance=balance, risk_cap_pct=float("inf"), entry_floor_pct=0.0)
+    🔴 **It still carries the VENUE ceiling, and that is the one way it is no longer a pure
+    passthrough (2026-09-02).** `room()` is infinite, so the budget never binds; `max_lots` is not
+    part of the budget and does bind, because a broker refusing a 742-lot order does not care that
+    the account could afford it. A solo replay that never asks for more than `max_lots` is
+    byte-identical to its old self — MEASURED: the A+ book does not touch the ceiling until the
+    balance passes ~$927,000.
+
+    ⚠ **The parity anchor therefore needs `max_lots=None`, and the harness has to pass it.** The
+    Pine twin has no such rule, so leaving the ceiling on would grade a capped Python run against
+    an uncapped chart and report a parity break that is really a policy difference. This is the
+    same trap as any other feature the chart cannot express — the gate must compare like with
+    like or it is measuring the wrong thing. `compare_strategy.py` must stay exit 0.
+    """
+
+    def __init__(
+        self,
+        *,
+        balance: float,
+        max_lots: Optional[float] = DEFAULT_MAX_LOTS,
+        contract_size: float = DEFAULT_CONTRACT_SIZE,
+    ) -> None:
+        super().__init__(
+            balance=balance,
+            risk_cap_pct=float("inf"),
+            entry_floor_pct=0.0,
+            max_lots=max_lots,
+            contract_size=contract_size,
+        )
 
     def room(self) -> float:
         return float("inf")  # never the bottleneck; desired is always granted in full
