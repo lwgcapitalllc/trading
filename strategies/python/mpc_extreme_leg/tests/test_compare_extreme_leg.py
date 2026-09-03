@@ -367,3 +367,57 @@ def test_the_gate_configures_the_python_with_both_cuts_OFF_whatever_ships(export
     assert cfg.skip_news is False
 
 
+
+
+# ── the DERIVED warm-up (2026-09-03) ──────────────────────────────────────────
+#
+# 🔴 THESE EXIST BECAUSE THREE MUTATIONS SURVIVED THE WHOLE SUITE. Reverting the warm-up to a flat
+# 1000, computing the week for the wrong timeframe, and dropping the structure floor all passed
+# every test in this package; two were caught only by one real export on one machine and the third
+# by nothing at all. The derivation lived inside `main()`, reachable only by running the tool
+# end to end — the same "no seam a test can grab" shape this repo keeps paying for.
+
+
+def _dw():
+    from mpc_extreme_leg.tools.compare_extreme_leg import derived_warmup, STRUCTURE_WARMUP
+    return derived_warmup, STRUCTURE_WARMUP
+
+
+def test_the_warmup_covers_a_full_week_at_the_EXPORT_S_timeframe():
+    """🔴 The bug this replaces: 1000 bars is ~3.5 days on a 5m chart, so the weekly level had not
+    formed on the Python side while the chart already had one, and the gate called a cold start a
+    logic bug — 4 fields, cascading 375 bars, from ONE disagreeing bar in 19,265.
+
+    RED when the week is computed for a fixed timeframe instead of the export's.
+    """
+    derived_warmup, _ = _dw()
+    cfg = ExtremeLegConfig()
+    assert getattr(cfg, "use_weekly_level", False), "fixture assumes the weekly family ships ON"
+    assert derived_warmup(5, cfg) == 7 * 24 * 60 // 5      # 2016
+    assert derived_warmup(1, cfg) == 7 * 24 * 60           # 10080 — finer frame, longer warm-up
+    # The 5m case is the one that bit, and it must be strictly more than the old flat constant.
+    assert derived_warmup(5, cfg) > 1000
+    # ⚠ A 15m week is 672, BELOW the floor, so it returns the floor instead — that case belongs to
+    # `test_a_coarse_export_still_gets_the_structure_floor` and asserting 672 here was simply wrong.
+
+
+def test_a_coarse_export_still_gets_the_structure_floor():
+    """RED when the floor is dropped: one week of 15m bars is 672, which would leave the 15-minute
+    structure under-seeded and trade a cold-start bug for a different one."""
+    derived_warmup, floor = _dw()
+    cfg = ExtremeLegConfig()
+    assert 7 * 24 * 60 // 15 < floor, "fixture assumes a 15m week is under the floor"
+    assert derived_warmup(15, cfg) == floor
+
+
+def test_the_week_is_NOT_waited_for_when_the_weekly_family_is_off():
+    """⚠ Warming past what the engines need silently shrinks the compared window, which is the
+    quiet half of this trade-off. A config with no weekly level has no week to wait for.
+
+    RED when the derivation ignores the config and always widens.
+    """
+    derived_warmup, floor = _dw()
+    cfg = ExtremeLegConfig()
+    object.__setattr__(cfg, "use_weekly_level", False) if hasattr(cfg, "__dataclass_fields__") \
+        else setattr(cfg, "use_weekly_level", False)
+    assert derived_warmup(5, cfg) == floor

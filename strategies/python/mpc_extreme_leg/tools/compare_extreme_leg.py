@@ -193,16 +193,45 @@ def _wrong_export(path: Path) -> "str | None":
     )
 
 
+STRUCTURE_WARMUP = 1000
+"""The floor: enough bars to seed the 15m structure however the export is sliced."""
+
+
+def derived_warmup(tf_minutes: int, cfg) -> int:
+    """Bars to warm before anything is compared, DERIVED from the export.
+
+    🔴 IT WAS A FLAT 1000 AND THAT COST A DAY, EXACTLY AS THE `--warmup` HELP TEXT PREDICTED.
+    On a 5-minute chart 1000 bars is ~3.5 days — LESS THAN A WEEK — so the weekly level had not
+    formed on the Python side while the chart, carrying history from before the export window,
+    already had one. The gate reported a cold start as a logic bug: 4 diverged fields, the first
+    at 2026-05-29, cascading 375 bars. MEASURED 2026-09-03: exactly ONE bar of 19,265 disagreed
+    and it was the weekly-high family, every other family 0; at a full week's warm-up the same
+    export is GREEN over 18,248 bars.
+
+    ⚠ A number typed here goes stale the moment somebody exports a different timeframe — 1000 bars
+    is over a week on 15m and a third of one on 5m, so no one constant is right for both.
+
+    ⚠ Floored at `STRUCTURE_WARMUP` so a coarse export still gets its structure seeding, and only
+    widened when the weekly family is ON: a config with it off has no week to wait for, and warming
+    past what the engines need silently shrinks the compared window.
+    """
+    if not getattr(cfg, "use_weekly_level", False):
+        return STRUCTURE_WARMUP
+    week_bars = int(7 * 24 * 60 / tf_minutes) if tf_minutes > 0 else 0
+    return max(STRUCTURE_WARMUP, week_bars)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", type=Path)
-    ap.add_argument("--warmup", type=int, default=1000,
-                    help="bars to let the engines warm before anything is compared. The 15-minute "
-                         "structure needs ~31 completed 15m candles plus its own seeding, and the "
-                         "weekly level needs a completed week — on a 5m chart that is hundreds of "
-                         "bars. Too LOW is the failure that wastes a day: it reports a cold start "
-                         "as a logic bug.")
+    ap.add_argument("--warmup", type=int, default=None,
+                    help="bars to let the engines warm before anything is compared. Default: "
+                         "DERIVED from the export — one calendar week at its timeframe when the "
+                         "weekly level family is on, floored at 1000. The 15-minute structure "
+                         "needs ~31 completed 15m candles plus its own seeding, and the weekly "
+                         "level needs a completed week. Too LOW is the failure that wastes a day: "
+                         "it reports a cold start as a logic bug.")
     ap.add_argument("--price-tol", type=float, default=0.01)
     ap.add_argument("--max-report", type=int, default=8)
     a = ap.parse_args(argv)
@@ -243,6 +272,28 @@ def main(argv=None) -> int:
         print("⚠ the export does not carry: " + ", ".join(missing))
         print("  those settings are left at this side's defaults, so the gate is NARROWER than it "
               "looks — it cannot see a disagreement about them.")
+
+    # ── The WARM-UP, derived rather than typed ───────────────────────────────────────────────
+    #
+    # 🔴 THIS DEFAULT WAS 1000 AND IT COST A DAY, EXACTLY AS ITS OWN HELP TEXT PREDICTED. On a
+    # 5-minute chart 1000 bars is ~3.5 days — LESS THAN A WEEK — so the weekly level had not formed
+    # on the Python side while the chart, which carries history from before the export window,
+    # already had one. The gate reported it as a logic bug: 4 diverged fields, the first at
+    # 2026-05-29, cascading 375 bars. MEASURED 2026-09-03: exactly ONE bar of 19,265 disagreed and
+    # it was the weekly-high family; every other family was 0. At a warm-up covering a full week
+    # the same export is GREEN over 18,264 bars.
+    #
+    # ⚠ **A number typed here goes stale the moment somebody exports a different timeframe** — 1000
+    # bars is over a week on 15m and a third of one on 5m, so one constant cannot be right for both.
+    # It is computed from the export's own spacing.
+    #
+    # ⚠ Floored at the old 1000 so a coarse export still gets the structure seeding, and only
+    # widened when the weekly family is actually ON — a config with it off has no week to wait for,
+    # and warming past what the engines need would silently shrink the compared window.
+    if a.warmup is None:
+        a.warmup = derived_warmup(tf, cfg)
+        print(f"warm-up {a.warmup:,} bars (derived: "
+              f"{'one week at ' + str(tf) + 'm' if cfg.use_weekly_level else 'weekly level off'})")
 
     ohlc = df[["open", "high", "low", "close"]].copy()
     s = MpcExtremeLegStrategy(cfg, initial_capital=10_000.0)

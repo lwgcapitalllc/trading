@@ -15,6 +15,37 @@ The 6.6-year figures in this file were measured on the Python alone and are **no
 
 ---
 
+## The parity gate — GREEN on a fresh export, and the warm-up was the fault (2026-09-03)
+
+🟢 **GREEN on `engines/VANTAGE_XAUUSD, 5_821a8.csv` — 18,248 bars compared, exit 0**, at the
+derived warm-up of 2,016 bars.
+
+🔴 **IT READ AS FOUR DIVERGED FIELDS AND IT WAS ONE COLD-START BAR.** The tool's `--warmup` default
+was a flat **1000**, which on a 5-minute chart is ~3.5 days — **less than a week**. The weekly
+level had therefore not formed on the Python side, while the chart carries history from before the
+export window and already had one. MEASURED family by family over 19,265 compared bars: **exactly
+ONE disagreement, in the weekly-high family; h4, session, daily and weekly-low were all 0.** The
+other three fields (`px_high_age` for 375 bars, the arming and the family count) all cascade from
+that single bar.
+
+⚠ **The `--warmup` help text had predicted this exact failure in writing — *"the weekly level needs
+a completed week… too LOW is the failure that wastes a day: it reports a cold start as a logic
+bug"* — while its own default was too low to satisfy it.** A warning next to a wrong default is
+worth nothing; the default is now DERIVED (`derived_warmup`): one calendar week at the export's own
+timeframe, floored at the 1000 that seeds the 15m structure, and only widened when the weekly
+family is on. ⚠ **A typed number cannot be right for both frames** — 1000 bars is over a week on
+15m and a third of one on 5m.
+
+🔴 **THE DERIVATION WAS INSIDE `main()`, WHERE NO TEST COULD REACH IT, AND ALL THREE OF ITS FIRST
+MUTATIONS SURVIVED THE WHOLE SUITE** — two were caught only by one real export on one machine and
+the third by nothing at all. It is a function now, with four tests, each watched RED. Same lesson
+as the trade box and the period window: **logic with no seam a test can grab is logic nobody
+checks.**
+
+⚠ **This does NOT widen what the gate covers.** The export still spans 2026-05-24 → 2026-09-03 with
+7 entries, and refusal codes 2, 4, 5 and 7 are still never reached. A green run here is a NARROW
+green, and the warm-up growing by 1,016 bars made it slightly narrower still.
+
 ## The parity gate — RED, then GREEN the same day (2026-09-02)
 
 ✅ **THE SECOND RUN IS GREEN.** `engines/VANTAGE_XAUUSD, 5_29058.csv`, 21,328 M5 bars, 20,327
