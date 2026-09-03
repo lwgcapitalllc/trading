@@ -2129,3 +2129,119 @@ def test_the_opposite_structure_close_is_REFUSED_rather_than_guessed_at():
     """
     with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="SAME tag"):
         live_bridge.assert_supported(_shipped(exec_close_opp_sos=True))
+
+
+# ── the lot ceiling, reconciled against the venue (2026-09-02) ─────────────────
+#
+# The CLAMP lives in the strategy's sizing seam (`backtest/portfolio/account.py`); all the bridge
+# does is hold that ceiling at min(configured, what this broker accepts). Tests here cover only
+# that reconciliation — the clamping itself is pinned in `backtest/tests/test_account.py`.
+#
+# ⚠ These use the REAL `SoloAccount`, not a stand-in with a `max_lots` attribute. A stub would
+# accept any number this code wrote, including one the real object rejects, which is the
+# fixture-more-capable-than-production trap the GOLD_SPEC note above already records.
+
+
+class _ExWithAccount:
+    """The one thing the bridge touches for this: the strategy's account seam."""
+
+    def __init__(self, account):
+        self._account = account
+
+
+def _spec_with_max(volume_max):
+    return SymbolSpec(
+        symbol="XAUUSD",
+        contract_size=100.0,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=volume_max,
+        volume_step=0.01,
+        digits=2,
+    )
+
+
+def _ceiling_bridge(configured=100.0):
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExWithAccount(SoloAccount(balance=10_000.0, max_lots=configured))
+    b, _, _, _ = _bridge(ex)
+    return b, ex._account
+
+
+def test_a_venue_maximum_BELOW_the_configured_ceiling_lowers_it():
+    """The case the reconciliation exists for. A ceiling above what the broker takes is not a
+    ceiling — the strategy would size to 100 and the order would be refused at 50.
+
+    RED when `_reconcile_lot_ceiling` returns before assigning, or takes max() instead of min().
+    """
+    b, acct = _ceiling_bridge(configured=100.0)
+    b._reconcile_lot_ceiling(_spec_with_max(50.0))
+    assert acct.max_lots == 50.0
+
+
+def test_a_venue_maximum_ABOVE_the_configured_ceiling_does_NOT_raise_it():
+    """Aaron's rule, 2026-09-02: he does not want to trade more than his own ceiling whatever a
+    broker permits. A venue offering 200 must not move it.
+
+    RED when the min() becomes max(), or when the broker's figure is assigned unconditionally.
+    """
+    b, acct = _ceiling_bridge(configured=100.0)
+    b._reconcile_lot_ceiling(_spec_with_max(200.0))
+    assert acct.max_lots == 100.0
+
+
+def test_an_UNREADABLE_venue_maximum_leaves_the_configured_ceiling_alone():
+    """Rule 1 on this path. A terminal that has not said what the band is has not said the band
+    is zero — and a zero ceiling refuses every order for the rest of the session.
+
+    RED when the `broker_max <= 0` guard is dropped: the ceiling goes to 0.0 (or None, which
+    switches the cap off entirely — the opposite error, equally silent).
+    """
+    for unreadable in (None, 0.0, -1.0):
+        b, acct = _ceiling_bridge(configured=100.0)
+        b._reconcile_lot_ceiling(_spec_with_max(unreadable))
+        assert acct.max_lots == 100.0, unreadable
+
+
+def test_the_ceiling_does_not_RATCHET_down_after_one_bad_read():
+    """The startup-fact-that-drifts problem (rule 16) inverted: this runs per order, so a single
+    wrong or missing volume band must not pin the ceiling low for the rest of the session.
+
+    RED when the reconciliation reads `account.max_lots` as its base instead of remembering the
+    CONFIGURED value — the ceiling then stays at 50 forever once it has been there.
+    """
+    b, acct = _ceiling_bridge(configured=100.0)
+    b._reconcile_lot_ceiling(_spec_with_max(50.0))
+    assert acct.max_lots == 50.0
+    b._reconcile_lot_ceiling(_spec_with_max(100.0))  # the band reads correctly again
+    assert acct.max_lots == 100.0, "one bad read pinned the ceiling low"
+
+
+def test_a_strategy_with_no_ceiling_configured_is_left_switched_OFF():
+    """`max_lots=None` is the parity anchor's escape hatch. The bridge must not switch a cap ON
+    for a run that deliberately has none.
+
+    RED when the `max_lots is None` early return is dropped — the broker's band becomes a
+    ceiling nobody asked for.
+    """
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExWithAccount(SoloAccount(balance=10_000.0, max_lots=None))
+    b, _, _, _ = _bridge(ex)
+    b._reconcile_lot_ceiling(_spec_with_max(50.0))
+    assert ex._account.max_lots is None
+
+
+def test_an_execution_with_no_account_seam_does_not_raise():
+    """A notifier convenience must never be able to stop a trading loop, and neither may this.
+
+    RED when the `account is None` guard is dropped — AttributeError inside order planning.
+    """
+
+    class _NoAccount:
+        pass
+
+    b, _, _, _ = _bridge(_NoAccount())
+    b._reconcile_lot_ceiling(_spec_with_max(50.0))  # must not raise

@@ -1523,6 +1523,45 @@ class OrderBridge:
     # the strategy's units to MT5's lots did not exist anywhere, and there was no one place a
     # reviewer could have looked to notice.
 
+    def _reconcile_lot_ceiling(self, spec) -> None:
+        """Hold the emulator's lot ceiling at `min(what we configured, what the venue accepts)`.
+
+        🔴 **The clamp itself lives in the STRATEGY's sizing, never here, and that is the whole
+        reason a clamp is allowable at all.** `backtest/portfolio/account.py` caps the qty the
+        emulator books, so the position it holds and the order this bridge sends are the same
+        size. Clamping the ORDER instead is what `order_sizing.plan_order` still refuses to do:
+        it would leave the emulator holding 742 lots against a broker holding 100, the two would
+        grade different R, and `_agrees` would halt the bot on a divergence the safety feature
+        had created. **Clamping at the DECISION is safe; clamping at the ORDER is not.**
+
+        So all this does is tell the emulator what the venue will take. Without it a configured
+        ceiling ABOVE the broker's own maximum is not a ceiling — the strategy sizes to 100, the
+        broker refuses at 50, and `plan_order` is left to refuse an order nobody can place.
+
+        ⚠ **Both numbers are LOTS.** `spec.volume_max` is the broker's own volume band and
+        `max_lots` is the policy figure; no contract-size conversion happens on this path, and
+        introducing one here would be the 2026-08-07 units bug arriving by a new route.
+
+        ⚠ **It only ever LOWERS, and it re-reads the CONFIGURED value each time rather than the
+        current one.** Ratcheting off the live value would let one bad read pin the ceiling low
+        for the rest of the session — the startup-fact-that-drifts problem (rule 16) inverted.
+
+        ⚠ **A missing or non-positive `volume_max` is CANNOT ASK, not NO LIMIT and not ZERO.**
+        Rule 1: a terminal that has not said what the band is leaves the configured ceiling
+        exactly where it was. Treating it as 0 would refuse every order; treating it as infinite
+        would hand the broker a size it rejects.
+        """
+        account = getattr(self._ex, "_account", None)
+        if account is None or getattr(account, "max_lots", None) is None:
+            return  # no ceiling configured (or no account seam) — nothing to reconcile
+        if not hasattr(self, "_configured_max_lots"):
+            self._configured_max_lots = account.max_lots
+        broker_max = getattr(spec, "volume_max", None)
+        if broker_max is None or float(broker_max) <= 0:
+            account.max_lots = self._configured_max_lots
+            return
+        account.max_lots = min(self._configured_max_lots, float(broker_max))
+
     def _plan(self, direction: int, pend):
         """How many lots, or why not. See `algos/shared/order_sizing.py` for the reasoning."""
         spec = self._mt5.symbol_spec()
@@ -1534,6 +1573,8 @@ class OrderBridge:
                 f"the terminal returned no symbol info for {self._mt5.symbol}, so nothing is "
                 f"known about lot size, tick value or the volume band.",
             )
+
+        self._reconcile_lot_ceiling(spec)
 
         side = "bullish" if direction > 0 else "bearish"
         cfg = getattr(self._ex, "cfg", None)

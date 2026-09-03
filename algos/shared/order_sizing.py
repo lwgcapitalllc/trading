@@ -53,10 +53,24 @@ gold, EURUSD, USDJPY, an index CFD — on a laptop with no broker.
 
   * **Below the broker minimum → no trade.** Never round UP: that is a bigger bet than the
     strategy asked for, on an account already too small to take the one it wanted.
-  * **Above the broker maximum → no trade.** Never CLAMP: a clamped order risks less, which
-    sounds safe, but it is not the trade the emulator is holding — and an emulator and a broker
-    carrying different sizes is the same class of divergence that halts the bot, arriving
+  * **Above the broker maximum → no trade.** Never CLAMP *here*: a clamped order risks less,
+    which sounds safe, but it is not the trade the emulator is holding — and an emulator and a
+    broker carrying different sizes is the same class of divergence that halts the bot, arriving
     quietly instead of loudly.
+
+    🔴 **AS OF 2026-09-02 AN OVERSIZED POSITION IS RESIZED, AND THIS BRANCH IS THE BACKSTOP
+    RATHER THAN THE POLICY.** Aaron's call: a strategy asking for more lots than the venue takes
+    should trade the maximum, not skip the setup — MEASURED, 25 of the live A+ book's 205 trades
+    ask for more than PU Prime's 100-lot ceiling, topping out at 742.60. **The resize happens one
+    layer up, where the STRATEGY decides its size** (`backtest/portfolio/account.py`, which every
+    bot reaches through the same account seam), so the emulator books the capped quantity as its
+    own and the two sides never disagree. **Clamping at the DECISION is coherent; clamping at the
+    ORDER is the divergence described above, and that is why this line does not move.**
+
+    ⚠ **So this firing means the ceiling did not reach the strategy** — a configured maximum
+    above the venue's, or a bot whose sizing does not go through that seam. The fix is to lower
+    the configured ceiling, never to clamp here. `bridge._reconcile_lot_ceiling` holds the two
+    in step on the live path.
   * **Not affordable on margin → no trade.** Never shrink to fit. Same reason.
 
 ⚠ **"Cannot ask" is never "affordable".** A margin figure the terminal declines to compute is a
@@ -292,9 +306,12 @@ def plan_order(
     if lots > spec.volume_max:
         return SizingRefusal(
             "above_broker_maximum",
-            f"{lots} lots exceeds {spec.symbol}'s maximum {spec.volume_max}. NOT clamping -- a "
-            f"clamped order is a different position from the one the strategy is holding, and "
-            f"the two would diverge silently.",
+            f"{lots} lots exceeds {spec.symbol}'s maximum {spec.volume_max}. NOT clamping HERE "
+            f"-- a clamped ORDER is a different position from the one the strategy is holding, "
+            f"and the two would diverge silently. Since 2026-09-02 an oversized position is "
+            f"resized where the strategy SIZES it, so reaching this line means the lot ceiling "
+            f"never got to the strategy: lower the configured maximum to {spec.volume_max} or "
+            f"below.",
         )
 
     # ── can the account actually carry it? ──

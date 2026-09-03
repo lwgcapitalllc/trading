@@ -2063,6 +2063,56 @@ must act on the difference tests `is UNKNOWN`.
    one layer down; MEASURED, not reasoned, when writing it as `kind` killed six tests on the fake
    ledger's signature.
 
+### 🔴 An oversized position is RESIZED now, and the resize does NOT happen here (2026-09-02)
+
+**A strategy asking for more lots than the venue accepts trades the maximum instead of skipping
+the setup** (Aaron's call). Default ceiling **100 lots**, every bot. ⚠ **This reverses half of
+root rule 17 and only half** — below the broker minimum and unaffordable-on-margin still mean NO
+TRADE, and `order_sizing.plan_order` still refuses an over-max ORDER.
+
+🔴 **THE RESIZE IS IN THE STRATEGY'S OWN SIZING, NEVER IN THE ORDER, AND THAT DISTINCTION IS THE
+WHOLE SAFETY PROPERTY.** `backtest/portfolio/account.py` caps the quantity the emulator books, so
+the position it holds and the order this bridge sends are the same size. Clamping the ORDER
+instead is what rule 17 was written about: the emulator would hold 742 lots against a broker
+holding 100, the two grade different R, and `_agrees` halts the bot on a divergence the safety
+feature created. **Clamping at the DECISION is coherent; clamping at the ORDER is not.**
+
+**`bridge._reconcile_lot_ceiling` is this package's whole share of it** — it holds the emulator's
+ceiling at `min(what we configured, what this broker accepts)`, read off the symbol spec that
+`_plan` already fetches. Without it a configured ceiling ABOVE the venue's is not a ceiling: the
+strategy sizes to 100, the broker refuses at 50, and `plan_order` is left refusing an order nobody
+could place.
+
+⚠ **It only ever LOWERS, and it re-reads the CONFIGURED value each time.** Aaron does not want to
+trade past his own ceiling whatever a broker permits, so a venue offering 200 does not raise it —
+and ratcheting off the live value would let one bad read pin the ceiling low for the whole session,
+which is rule 16 inverted.
+
+⚠ **A missing or non-positive volume band is CANNOT ASK, not NO LIMIT and not ZERO** (rule 1). Zero
+refuses every order for the rest of the session; infinite hands the broker a size it rejects. The
+configured ceiling simply stands.
+
+⚠ **Both numbers are LOTS and nothing converts on this path.** Introducing a contract-size
+multiply here would be the 2026-08-07 units bug arriving by a new route — the conversion belongs in
+the account seam, which is the only place that knows the strategy sizes in units.
+
+⚠ **`plan_order`'s over-max refusal now firing means the ceiling never reached the strategy** — a
+configured maximum above the venue's, or a bot whose sizing does not go through the account seam.
+Its message says so and names the number to lower.
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER.** Rule 9. And the live bot cannot reach it until a
+promote: the frozen snapshot carries `backtest/`, so the account seam's ceiling arrives with the
+strategy, while this reconciliation is `algos/` and arrives on a `git pull` plus a restart.
+**MEASURED: the live A+ config does not touch the ceiling until the balance passes ~$927,000**, so
+this changes nothing about what that bot trades today.
+
+**Tests: 6 in `tests/test_live_bridge.py`, each watched RED under its own mutation** — the venue
+raising our ceiling, the assignment removed, an unreadable band taken at face value, the ratchet,
+a deliberately-uncapped run having one switched on, and a strategy with no account seam raising
+inside order planning. ⚠ **They use the REAL `SoloAccount`, not a stub with a `max_lots`
+attribute** — a stub accepts any number the code writes, including ones the real object rejects,
+which is the fixture-more-capable-than-production trap this file already records twice.
+
 ### Exits — which ones the BRIDGE has to execute (2026-09-02)
 
 **`_mirror_strategy_exit` closes the broker position when the strategy has exited a trade the
