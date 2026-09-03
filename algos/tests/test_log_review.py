@@ -462,12 +462,33 @@ def test_the_flag_file_is_written_and_carries_the_worst_level(tmp_path):
     assert len(got["findings"]) == 2
 
 
-def test_the_flag_is_cleared_when_the_bot_is_clean(tmp_path):
-    """A stale flag is worse than none — it trains you to ignore the chip."""
+def test_a_clean_run_still_writes_the_flag_so_its_own_death_is_visible(tmp_path):
+    """🔴 It DELETED the file when clean until 2026-09-03, which hid this reviewer's own death.
+
+    An absent file meant *nothing to review* and it also meant *nobody looked*, so a dead hourly
+    task left its last flag sitting on the page looking current and no reader could tell. Now the
+    timestamp is the evidence the reviewer is alive, and an empty findings list is a positive
+    statement that a run happened and found nothing. Watched RED against HEAD, which deleted it.
+    """
     lr.write_flag(tmp_path, "b", [lr.Finding("a:1", lr.ALERT, "t", "d")])
     lr.write_flag(tmp_path, "b", [])
+    got = json.loads((tmp_path / "review.json").read_text())
 
-    assert not (tmp_path / "review.json").exists()
+    assert got["findings"] == []
+    assert got["checked_at"]
+
+
+def test_a_clean_run_is_not_stamped_WARN(tmp_path):
+    """A clean flag carrying the worst-of-nothing level is a wrong value waiting for a reader.
+
+    The Bots page never sees it (it gates on a non-empty findings list), which is exactly why it
+    has to be right here — nothing downstream would correct it. Watched RED against HEAD, where
+    an empty list fell through the worst-of test onto WARN.
+    """
+    lr.write_flag(tmp_path, "b", [])
+
+    assert json.loads((tmp_path / "review.json").read_text())["level"] == lr.OK
+    assert lr.OK not in (lr.WARN, lr.ALERT)
 
 
 def test_the_flag_is_not_written_into_bot_state(tmp_path):

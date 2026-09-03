@@ -103,6 +103,11 @@ RESTART_LOOP = 4
 REWARM_STORM = 4
 
 ALERT, WARN = "alert", "warn"
+# The level a clean run writes. ⚠ NOT `WARN` by falling through the "worst of" test on an empty
+# list — a clean flag stamped `warn` is a wrong value sitting in a file waiting for a reader to
+# believe it. The Bots page never sees this (it gates on a non-empty findings list), which is
+# exactly why it has to be right here: nothing downstream would correct it.
+OK = "ok"
 
 
 class Finding:
@@ -527,18 +532,34 @@ def prune(seen: List[str], keep: int = 200) -> List[str]:
 
 # ── reporting ────────────────────────────────────────────────────────────────
 def write_flag(instance_dir: Path, bot_key: str, findings: List[Finding]) -> None:
-    """The standing flag the Bots page renders. Always written, cleared when clean.
+    """The standing flag the Bots page renders — written on EVERY run, clean or not.
 
     ⚠ Its own file, NOT `bot_state.json`: the runner rewrites that every poll through a
     read-modify-write, so a review written into it would race the heartbeat.
+
+    🔴 **It DELETED the file when clean until 2026-09-03, which made this reviewer's own death
+    invisible.** An absent file meant *nothing to review* and it also meant *nobody looked*, and
+    those are the two values this repo has now been bitten by six times for collapsing — here in
+    the module whose docstring says *never let "no" and "cannot ask" be the same value*. A dead
+    hourly task left the last flag it ever wrote sitting on the page looking current, with no way
+    for any reader to tell. Now the file always carries `checked_at`, so **its own freshness is
+    the evidence that the reviewer is alive**, and an empty `findings` list is a positive
+    statement that a run happened and found nothing.
+
+    ⚠ **The Bots page still shows the chip only for a non-empty `findings`** (`routers/bots.py`
+    gates on exactly that), so this changed no chip and needed no frontend change. What it added
+    is a reader for the staleness of the timestamp.
+
+    ⚠ **Do not "tidy" this back into deleting the file when clean.** The clean case is the whole
+    point: a flag that exists only when something is wrong cannot distinguish a healthy system
+    from a checker that stopped running.
     """
     path = instance_dir / "review.json"
     try:
         if not findings:
-            if path.exists():
-                path.unlink()
-            return
-        worst = ALERT if any(f.level == ALERT for f in findings) else WARN
+            worst = OK
+        else:
+            worst = ALERT if any(f.level == ALERT for f in findings) else WARN
         path.write_text(
             json.dumps(
                 {

@@ -633,7 +633,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | MT5 deployment | ✅ Live | MT5 agent upload/delete `.mq5`. `POST /compile` → MetaEditor. Backend: `POST/GET /strategy-files/compile-mt5`. |
 | MT5 native optimizer | ✅ Live | `mt5_agent.py` `POST /native-optimize` + `POST /native-walkforward`; `mt5_agent_client.py` typed wrappers. [Detail](../docs/BACKEND_BUILD_NOTES.md#mt5-native-optimizer) |
 | Python runner + optimizer | ✅ Live | `services/python_runner.py` — runs `strategies/python/` packages LOCALLY, in-process, via the top-level `backtest/` package (data cache → engine replay → `output.build_results`). [Detail](../docs/BACKEND_BUILD_NOTES.md#python-runner--optimizer) |
-| Portfolio stacks | ✅ Live | `routers/stacks.py` + `services/lab_db.py` — layer 2+ **Python** strategies over ONE shared instrument/timeframe/window/cost profile to see combined P&L (summed client-side from each leg's `daily_pnl`; toggling a leg off never re-runs). [Detail](../docs/BACKEND_BUILD_NOTES.md#portfolio-stacks) |
+| Portfolio stacks | ✅ Live | `routers/stacks.py` + `services/lab_db.py` — layer 2+ **Python** strategies over ONE shared instrument/window/cost profile, **each leg on its OWN timeframe since 2026-09-03**, to see combined P&L (summed client-side from each leg's `daily_pnl`; toggling a leg off never re-runs). [Detail](../docs/BACKEND_BUILD_NOTES.md#portfolio-stacks) |
 | Telegram notifications | ✅ Live | `services/notify.py` — urllib Telegram sender, no extra deps. **No token in the source (2026-07-30):** env var, else the git-ignored `algos/credentials.json` read by path. [Detail](../docs/BACKEND_BUILD_NOTES.md#telegram-notifications) |
 | Live calendar tab | ✅ Live | `routers/calendar.py` (`GET /calendar?from&to`) → `services/calendar_service.py` → `engines/news/` `TradingViewSource.fetch_window()` (never a 2nd impl). [Detail](../docs/BACKEND_BUILD_NOTES.md#live-calendar-tab) |
 | History floors | ✅ Live | `services/history_limits.py` + `GET /backtests/history-limit`. Refuses (400) any backtest window starting before the broker's REAL history for that timeframe — MT5 silently substitutes coarser bars, which would produce a plausible but fictional run. [Detail](../docs/BACKEND_BUILD_NOTES.md#history-floors) |
@@ -1786,10 +1786,68 @@ anywhere raises. `tests/test_bot_review_flag.py` pins that the two agree.
 bot's own record, and merging two into one file makes *which bot needs attention* unanswerable from
 the file whose entire job is answering it.
 
-⚠ **A missing file means NOTHING TO REVIEW, and that is the normal state** — `log_review.py` deletes
-it when a bot comes back clean, so absence must stay quiet. A malformed one is dropped rather than
-raised: this page must not invent an alarm out of its own plumbing failing, and the review job's own
-absence is visible where it belongs, as a DISABLED `SYS_LOGREVIEW` in the scheduled-jobs list.
+⚠ **A missing file is UNKNOWN and stays quiet — it is no longer the normal state.** `log_review.py`
+deleted it when a bot came back clean until 2026-09-03 and now always writes it, so an absence means
+the flag could not be read rather than that the bot is healthy. A malformed one is dropped rather
+than raised: this page must not invent an alarm out of its own plumbing failing. **The review job's
+own state is visible as the Record review entry in the scheduled-jobs list — which is true as of
+2026-09-03 and was false for as long as this sentence had been written.**
+
+🔴 **A DEAD REVIEWER FROZE THE CHIP ON WHATEVER IT LAST WROTE, AND NOTHING COULD SAY SO
+(2026-09-03).** Nothing read the flag's own `checked_at`, so an hour-old flag and a month-old one
+rendered identically — the page reporting a state that had stopped being true, with the reader
+having no way to ask. **Worse, the paragraph below this one PROMISED the safety net: it said the
+review job's own absence would show as a DISABLED job in the scheduled-jobs list.** That list held
+Monitor, the dead-man switch and log backup, and no reviewer entry had ever existed. ⚠ **A comment
+asserting a safety net that is not there is worse than no comment, because the next reader stops
+looking** — this file has now shipped that shape twice, and the other one was also a docstring about
+another program's control flow.
+
+✅ **Two halves, and neither works alone.** `SYS_LOGREVIEW` and `SYS_REENTRYWATCH` joined
+`_SYS_DISPLAY_NAMES` and `_SCHEDULED_JOBS`, so a disabled or stopped task is visible; and
+`_review_payload` raises an ALERT finding of its own when `checked_at` is older than
+`_REVIEW_STALE_SECONDS` (three missed hourly runs — the same three-in-a-row shape the reviewer's own
+stale-heartbeat check uses). ⚠ **Measured from the last flag the reviewer WROTE, never from the
+schedule**, so a task that is armed and crashing every run is caught — the case `schtasks` alone
+reports as a healthy ARMED.
+
+⚠ **Those two are the only jobs on that box whose normal state is SILENCE.** Every other watcher
+here says something when it runs, so its death surfaces as an absence somebody notices; a silent
+watcher that dies looks exactly like a quiet week. That is why they had to be listed rather than
+left to the flag alone.
+
+⚠ **`_parse_reviews` now returns EVERY readable flag, including a clean one, and the CHIP's gate
+moved into `_review_payload`.** It filtered on a non-empty findings list, which threw away the one
+field that says the reviewer is alive — so a clean flag and a dead reviewer arrived as the same
+nothing. The reviewer side of that (it no longer deletes the file when clean) is
+`algos/CLAUDE.md`; do not restate it here.
+
+⚠ **The stale finding goes FIRST in the list.** It is the reason not to trust the findings under it,
+so it cannot be buried below them.
+
+⚠ **An unparseable or missing `checked_at` is treated as STALE, never as fresh** — a flag that
+cannot say when it was written is exactly the one not to trust, and here the reassuring answer is
+the dangerous one. A naive timestamp is read as UTC rather than raising: an exception in this
+function would cost the whole Bots page, not just one chip.
+
+⚠ **An ABSENT flag stays quiet rather than becoming an alarm, and that is a decision with a stated
+gap.** The reviewer writes one per registered bot per run, so after one hourly pass an absence
+really would mean something — but it also looks exactly like *this change has not reached the box
+yet*, and a false alarm in the hour after a deploy is how a chip gets ignored. The gap closes on its
+own within an hour of the reviewer next running; until then the scheduled-jobs entry is what covers
+a dead task.
+
+⚠ **The job SCHEDULES in `_SCHEDULED_JOBS` are display text and nothing verifies them against the
+box.** Both were read off `schtasks /query /v` when they landed (hourly, starting :20 and :23) — a
+cadence changed there and not here reads as a lie in the calmest possible voice. Check the task.
+
+**Tests:** `tests/test_bot_review_flag.py` (19). ⚠ **None of the freshness cases can go RED** —
+`_review_payload` did not exist, and the old code never suppressed anything, so a test asserting
+*this case is still reported* passes against the bug it was written for. Ten MUTATIONS were run,
+each alone, and each took down exactly its own named test: the staleness window widened, an unknown
+age read as fresh, the stale finding appended rather than prepended, the empty gate removed, the
+timezone fill-in dropped, the finding type filter dropped, the level hardcoded, the reviewer entry
+deleted from the jobs list, a job name typo'd, and the task-membership filter dropped.
 
 ⚠ **It is NOT gated on `status == "RUNNING"`, unlike `mt5_link` directly above it.** The findings
 that matter most — it crashed, it was killed, it refused to start — are exactly the ones you can only
@@ -2486,7 +2544,7 @@ test confirmed red. That found a real hole — see `frontend/CLAUDE.md` → *The
 
 ## Portfolio stacks (smart reuse)
 
-A **stack** layers 2+ Python strategies over ONE shared instrument + timeframe + window + cost profile. The combined portfolio line and per-strategy toggles are composed CLIENT-SIDE from each leg's `daily_pnl`, so there is no stack-level result row and toggling a leg off never re-runs anything.
+A **stack** layers 2+ Python strategies over ONE shared instrument + window + cost profile. 🔴 **THE TIMEFRAME IS NOT SHARED, AND THIS SENTENCE SAID IT WAS UNTIL 2026-09-03.** Each leg carries its own frame and falls back to the stack's only when its package declares none — see *A stack leg runs on ITS OWN frame* below, which owns the rule. Applies to BOTH modes. The combined portfolio line and per-strategy toggles are composed CLIENT-SIDE from each leg's `daily_pnl`, so there is no stack-level result row and toggling a leg off never re-runs anything.
 
 **Ownership ≠ membership (the reuse enabler, 2026-07-25).** Two tables:
 - **`stacks`** — the stack's own settings (`instrument`, `bar_type`, `bar_value`, `start_date`, `end_date`, `commission_per_side`, `slippage_ticks`, `created_at`). Persisted so a stack whose legs are ALL reused (zero owned child runs) still knows what it is — `list_stacks`/`get_stack` read settings from here, not from a child row.
@@ -2495,9 +2553,9 @@ A **stack** layers 2+ Python strategies over ONE shared instrument + timeframe +
 **Smart reuse on create (`trigger_stack`).** For each leg, `find_matching_stack_run()` looks for the most-recent COMPLETED **standalone** Python run (`stack_id IS NULL AND stress_test_id IS NULL AND sweep_id IS NULL AND optimization_id IS NULL`) matching the leg's EXACT identity — strategy + instrument + `bar_type` + `bar_value` + window + `commission_per_side` + `slippage_ticks` + (since 2026-09-02) `cost_layers` +
 `broker_profile`. Match → add an `owned=0` member, no re-run. No match → create an `owned=1` child and queue it through `run_sweep` (unchanged). The python job lock is only taken when ≥1 leg needs a fresh run; an all-reused stack is assembled instantly and returns `status="complete"`. A per-strategy `params_by_strategy` override **disables reuse for that leg** ("run it my way", not "reuse whatever exists").
 
-**Matching is STRICT by Aaron's call (2026-07-25)** — any difference (even a one-day window shift or a different cost field) misses and the leg re-runs. Do NOT loosen it without asking. **Cost defaults are 0/0** (`commission_per_side=0`, `slippage_ticks=0`, `bar_value=15`) — matching the Pine strategies, which are all pinned `commission=0, slippage=0` for TV↔Python parity (costs are modeled inside the strategy via the 30-tick breakeven buffer). **These fields are cosmetic for Python runs** — `python_runner` never reads them; the real cost comes from the strategy's account profile (`backtest/fills.py` `PROFILES["vantage_demo"]` = commission 0.00) + measured (tick) / 0 (bar) slippage. So they're the displayed + leg-matching values, not the applied ones. The stack's original bug was the **5m timeframe** (vs the designed 15m), not costs — a stacked leg read ~⅓ of the same strategy's standalone run because it ran on entirely different signals. The forex rulesets (`personal_forex_demo`, `unconstrained`) also seed `default_slippage_ticks=0` (converged on existing DBs in `init_db`) so the Run modal shows 0/0 too; futures rulesets keep `2.25/1` (NT8/MT5 platforms genuinely apply them).
+**Matching is STRICT by Aaron's call (2026-07-25)** — any difference (even a one-day window shift or a different cost field) misses and the leg re-runs. Do NOT loosen it without asking. **Cost defaults are 0/0** (`commission_per_side=0`, `slippage_ticks=0`, `bar_value=15`) — matching the Pine strategies, which are all pinned `commission=0, slippage=0` for TV↔Python parity (costs are modeled inside the strategy via the 30-tick breakeven buffer). 🔴 **THIS SAID BOTH FIGURES WERE COSMETIC AND THAT NOTHING READ THEM. THAT WAS TRUE ONCE AND IS NOT NOW, IN TWO SEPARATE WAYS.** A charged run applies them (`routers/_costs.py`, since 2026-09-02) — and that resolver OVERWRITES the typed commission with the broker's MEASURED figure before the row is stored, so the number on the row is what was billed rather than what anybody typed. ⚠ **The stack form's commission box was removed on 2026-09-03 for exactly that reason** — it was a control whose value could not survive the request. Its stored value is still SENT, so that rerunning an older stack reproduces the figure it was saved with. Slippage keeps its control, because it is the one cost here nobody has measured. Rules: *A stack is CHARGED like a single run* below, and `routers/_costs.py`. The stack's original bug was the **5m timeframe** (vs the designed 15m), not costs — a stacked leg read ~⅓ of the same strategy's standalone run because it ran on entirely different signals. The forex rulesets (`personal_forex_demo`, `unconstrained`) also seed `default_slippage_ticks=0` (converged on existing DBs in `init_db`) so the Run modal shows 0/0 too; futures rulesets keep `2.25/1` (NT8/MT5 platforms genuinely apply them).
 
-**`POST /backtests/stacks/preview`** (`StackPreviewRequest` → `StackPreviewResponse`) reports per-leg `action` (`reuse`|`run`) + the matched run's `net_pnl`/`trade_count`/`profit_factor`, running nothing — it drives the modal's live Reuse/Run badges. **`GET /stacks/{id}`** (`StackDetail`, async) now also carries `commission_per_side`/`slippage_ticks` (from the settings row, for the Rerun modal) and a full-calendar `regime_timeline` for the shared window (drives the equity chart's regime overlay). Regime source: read from a leg's `regime_timeline.json` if present; sweep-child legs aren't regime-tagged, so when none exists it computes the timeline once via `build_regime_timeline_and_tag(..., runner="python")` (off-thread) and caches it to the base leg's dir so later polls read the file. **`build_stack_chart_spec`** carries the base leg's structure `overlays`/`indicators` (a property of the market on the shared candles, identical for every leg) and a `base_run_id` — so the stack's price chart has full BacktestDetail parity (structure layers, ATR pane, fib/measurement, and M1/M5 drill-down routed through the base leg's `/candles`). **`delete_stack`** removes only `owned=1` legs from `backtest_runs` (+ their report dirs, via the router) and clears the `stacks`/`stack_members` rows; reused legs are untouched. `_backfill_stack_membership` (in `init_db`, idempotent) materialises `stacks` + owned `stack_members` for any legacy pre-membership stack so old stacks survive. Python-only: summing daily P&L models independent sleeves, and NT8/MT5 have their own single-window terminals a lab stack has no reason to touch.
+**`POST /backtests/stacks/preview`** (`StackPreviewRequest` → `StackPreviewResponse`) reports per-leg `action` (`reuse`|`run`) + the matched run's `net_pnl`/`trade_count`/`profit_factor`, running nothing — it drives the modal's live Reuse/Run badges. **`GET /stacks/{id}`** (`StackDetail`, async) now also carries `commission_per_side`/`slippage_ticks` (from the settings row, for the Rerun modal) and a full-calendar `regime_timeline` for the shared window (drives the equity chart's regime overlay). Regime source: read from a leg's `regime_timeline.json` if present; sweep-child legs aren't regime-tagged, so when none exists it computes the timeline once via `build_regime_timeline_and_tag(..., runner="python")` (off-thread) and caches it to the base leg's dir so later polls read the file. **`build_stack_chart_spec`** carries the base leg's structure `overlays`/`indicators` and a `base_run_id`. 🔴 **The parenthetical here read *identical for every leg* and that justification died on 2026-09-03**: overlays are a property of the market ON THOSE CANDLES, and the legs no longer share candles, so a leg on a finer frame has its trades drawn over swings and gaps it never saw. The behaviour is unchanged and is now a LIMITATION rather than a free choice — that leg's own run page shows its real structure. ⚠ The chart itself is `services/chart_spec.py` — so the stack's price chart has full BacktestDetail parity (structure layers, ATR pane, fib/measurement, and M1/M5 drill-down routed through the base leg's `/candles`). **`delete_stack`** removes only `owned=1` legs from `backtest_runs` (+ their report dirs, via the router) and clears the `stacks`/`stack_members` rows; reused legs are untouched. `_backfill_stack_membership` (in `init_db`, idempotent) materialises `stacks` + owned `stack_members` for any legacy pre-membership stack so old stacks survive. Python-only: summing daily P&L models independent sleeves, and NT8/MT5 have their own single-window terminals a lab stack has no reason to touch.
 
 ## Shared-account stacks — one balance, one budget, N bots competing for it
 

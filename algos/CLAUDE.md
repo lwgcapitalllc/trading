@@ -1405,6 +1405,21 @@ precisely the one not to drop. ⚠ **It does not fix the underlying annoyance**,
 per-trade risk figure reloads under a running bot — changing anything else still writes a refusal.
 It stops that refusal outliving its own answer.
 
+🔴 **THE FLAG IS NOW WRITTEN ON EVERY RUN, CLEAN OR NOT, BECAUSE DELETING IT MADE THIS REVIEWER'S
+OWN DEATH INVISIBLE (2026-09-03).** An absent file meant *nothing to review* and it equally meant
+*nobody looked* — the two values this module's own docstring forbids collapsing, collapsed in the
+module that forbids it. A dead hourly task left the last flag it ever wrote sitting on the Bots page
+looking current, and no reader anywhere had a way to tell. **Its timestamp is now the evidence that
+the reviewer is alive**, and an empty findings list is a positive statement that a run happened and
+found nothing. ⚠ **Nothing on the page changed** — the Bots page has always shown the chip only for
+a non-empty findings list — so this added a reader for the timestamp rather than a new alarm; the
+staleness rule itself belongs to the page and lives in `command-center/backend/CLAUDE.md`.
+⚠ **A clean run stamps its own level (`OK`), never `WARN` by falling through the worst-of test on an
+empty list.** The page never reads it, which is exactly why it has to be right here: nothing
+downstream would correct a wrong value sitting in a file. ⚠ **Do not "tidy" this back into deleting
+the file when clean** — the clean case is the whole point. A flag that exists only when something is
+wrong cannot tell a healthy system from a checker that stopped running.
+
 **It reports in two places because they fail differently.** Telegram gets one message per new
 finding — an alert you scrolled past is gone. `<instance>/review.json` is a standing flag the command
 center renders as a **Needs review** chip on the Bots page, and it is still there tomorrow. ⚠ **Its
@@ -1845,9 +1860,10 @@ reason, so this is now a rule for **anything that prints on that box**: reconfig
 UTF-8 with `errors="replace"`, because an unencodable character must cost a glyph, never the message.
 ⚠ **It was found by RUNNING it, not by reading it** — the module's own tests all passed on the Mac.
 
-Tests: `tests/test_log_review.py` (**33** — this line read 23 while there were 27, so count them
+Tests: `tests/test_log_review.py` (**34** — this line read 23 while there were 27, so count them
 with `pytest --collect-only`). The six added on 2026-09-03 for the deploy-noise fix: **3 watched
-RED** against HEAD, and the other 3 proven by MUTATION because HEAD could not fail them — it never
+RED** against HEAD, and the other 3 proven by MUTATION because HEAD could not fail them; the two
+added the same day for the always-write flag were both watched RED — it never
 suppressed anything, so a test asserting *this case is still reported* passes against the bug it was
 written for. Each mutation was run alone and each took down exactly its own test. Weighted toward the ways a checker wrongly says "fine" — the
 same reason `test_deadman.py` is. **A bug in this module is silent by construction: every other alarm

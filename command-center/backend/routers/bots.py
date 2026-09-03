@@ -194,6 +194,16 @@ _SYS_DISPLAY_NAMES = {
     "SYS_MONITOR": "Monitor",
     "SYS_DEADMAN": "Dead-man switch",
     "SYS_LOGBACKUP": "Log backup",
+    # 🔴 These two were MISSING until 2026-09-03, and they are the two jobs on that box whose
+    # normal state is SILENCE — the record reviewer and the re-entry grader. Every other watcher
+    # here says something when it runs, so its death shows up as an absence somebody notices; a
+    # silent watcher that dies looks exactly like a quiet week. Worse, the docstring on
+    # `_parse_reviews` below promised that a dead reviewer would appear here as a DISABLED job,
+    # and for as long as this dict lacked the entry that sentence was simply false — a comment
+    # asserting a safety net that does not exist is worse than no comment, because the next
+    # reader stops looking.
+    "SYS_LOGREVIEW": "Record review",
+    "SYS_REENTRYWATCH": "Re-entry watch",
 }
 _DISPLAY_NAMES = {**{b.task: b.display for b in _BOTS}, **_SYS_DISPLAY_NAMES}
 _TASK_BOT_KEYS = {b.task: b.key for b in _BOTS}
@@ -206,6 +216,12 @@ _SCHEDULED_JOBS = [
     JobStatus(name="Monitor", schedule="every 1 min", status="UNKNOWN"),
     JobStatus(name="Dead-man switch", schedule="every 5 min", status="UNKNOWN"),
     JobStatus(name="Log backup", schedule="daily 00:30", status="UNKNOWN"),
+    # ⚠ Schedules are the ones registered by `scripts/bootstrap_vps.ps1`, both hourly at :20 and
+    # :23. They are DISPLAY text and nothing verifies them against the box, so a schedule changed
+    # there and not here reads as a lie in the calmest possible voice — check the task, not this
+    # string, before trusting a cadence.
+    JobStatus(name="Record review", schedule="hourly :20", status="UNKNOWN"),
+    JobStatus(name="Re-entry watch", schedule="hourly :23", status="UNKNOWN"),
 ]
 _SYS_TASK_BY_JOB = {v: k for k, v in _SYS_DISPLAY_NAMES.items()}
 
@@ -478,10 +494,17 @@ def _review_section(bot_key: str) -> str:
 def _parse_reviews(snap: dict[str, str]) -> dict[str, dict]:
     """{bot key: review flag} for every bot that has one.
 
-    ⚠ An absent section means NOTHING TO REVIEW, and a malformed one is dropped. Neither is
-    reported as a fault here on purpose: this page must not invent an alarm out of its own
-    plumbing failing, and the review job's own absence is visible where it belongs — as a
-    DISABLED `SYS_LOGREVIEW` in the scheduled-jobs list below.
+    ⚠ An absent section means the flag could not be read, and a malformed one is dropped. Neither
+    is reported as a fault here on purpose: this page must not invent an alarm out of its own
+    plumbing failing, and the review job's own state is visible where it belongs — as a
+    **Record review** entry in the scheduled-jobs list below. ⚠ **That sentence was FALSE from
+    the day it was written until 2026-09-03**, because no such entry existed; a comment promising
+    a safety net that is not there is worse than silence, since the next reader stops looking.
+
+    🔴 **This returns EVERY readable flag now, including a clean one, and the chip's gate moved
+    into `_review_payload`.** It filtered on a non-empty findings list here, which threw away the
+    one field that says the reviewer is alive — its timestamp — so a clean flag and a dead
+    reviewer arrived at this function as the same nothing.
     """
     out: dict[str, dict] = {}
     for b in _BOTS:
@@ -492,9 +515,78 @@ def _parse_reviews(snap: dict[str, str]) -> dict[str, dict]:
             data = json.loads(raw)
         except Exception:
             continue
-        if isinstance(data, dict) and data.get("findings"):
+        if isinstance(data, dict):
             out[b.key] = data
     return out
+
+
+# Three missed hourly runs. Deliberately the same shape as the reviewer's own stale-heartbeat
+# rule (three of the runner's 15-minute pulses): one missed run is a box that was busy, three is
+# a job that has stopped. ⚠ Measured from the last flag the reviewer WROTE, not from the schedule,
+# so a task that is armed and crashing every run is caught — which is the case `schtasks` alone
+# reports as a healthy ARMED.
+_REVIEW_STALE_SECONDS = 3 * 60 * 60
+
+
+def _review_payload(flag: dict | None, now: datetime) -> dict | None:
+    """The review a bot row carries, or `None` for nothing to show.
+
+    Two jobs, and they are separate on purpose:
+
+    1. **Findings** — passed through untouched. The chip has always been "the reviewer found
+       something", and that is unchanged.
+    2. **Freshness** — a flag whose `checked_at` is older than three hourly runs gets an ALERT
+       finding of its own, because from that moment its findings describe a state that is up to
+       hours old and it is the page's only warning that the reviewer stopped. The stale finding
+       goes FIRST: it is the reason not to trust the ones under it.
+
+    ⚠ **An absent flag stays quiet rather than becoming an alarm.** The reviewer writes one for
+    every registered bot on every run, so after one hourly pass an absence really would mean
+    something is wrong — but it also looks exactly like *this change has not reached the box yet*,
+    and a false alarm on the hour after a deploy is how a chip gets ignored. The gap closes on its
+    own within an hour of the reviewer next running, and until then the scheduled-jobs entry is
+    what covers a dead task.
+
+    ⚠ **An unparseable or missing `checked_at` is treated as STALE, never as fresh.** A flag that
+    cannot say when it was written is exactly the one not to trust — this is the rule that "no"
+    and "cannot ask" must not share a value, and here the reassuring answer is the dangerous one.
+    """
+    if flag is None:
+        return None
+
+    findings = [f for f in (flag.get("findings") or []) if isinstance(f, dict)]
+    age = _review_age_seconds(flag, now)
+    if age is None or age > _REVIEW_STALE_SECONDS:
+        stamp = str(flag.get("checked_at") or "never")
+        findings = [
+            {
+                "key": f"review_stale:{stamp}",
+                "level": "alert",
+                "title": "The record reviewer has stopped running",
+                "detail": (
+                    f"Its last pass was {stamp} and it runs hourly, so anything below this is a "
+                    f"report on an old state and a NEW problem would not appear at all.\n"
+                    f"Check the Record review job in the list below."
+                ),
+            },
+            *findings,
+        ]
+
+    if not findings:
+        return None
+    level = "alert" if any(f.get("level") == "alert" for f in findings) else "warn"
+    return {"level": level, "checked_at": str(flag.get("checked_at") or ""), "findings": findings}
+
+
+def _review_age_seconds(flag: dict, now: datetime) -> float | None:
+    """Seconds since the flag was written, or `None` if it does not say."""
+    try:
+        written = datetime.fromisoformat(str(flag.get("checked_at")))
+    except (TypeError, ValueError):
+        return None
+    if written.tzinfo is None:
+        written = written.replace(tzinfo=timezone.utc)
+    return (now - written).total_seconds()
 
 
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
@@ -740,6 +832,9 @@ def get_snapshot():
 
     bot_states = _parse_bot_states(snap)
     reviews = _parse_reviews(snap)
+    # Stamped ONCE for the whole snapshot rather than per bot, so two rows in one response can
+    # never disagree about whether the same flag is stale.
+    _now_utc = datetime.now(timezone.utc)
     task_statuses = _parse_tasks(snap)
     now = datetime.now(timezone.utc)
 
@@ -797,7 +892,7 @@ def get_snapshot():
                 # was killed, it refused to start — are precisely the ones you can only read once
                 # the bot is no longer running. Hiding the flag on a stopped bot would suppress the
                 # explanation at the exact moment somebody wants it.
-                review=reviews.get(bot_key),
+                review=_review_payload(reviews.get(bot_key), _now_utc),
                 status=status,
                 uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
                 total_pnl_pct=total_pnl,
