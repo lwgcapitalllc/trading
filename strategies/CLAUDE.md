@@ -130,6 +130,25 @@ by what actually depends on what: the parity gates that consume these files live
    without it the engine re-sizes the run, throwing the strategy's real size away and leaving the
    KPI cards disagreeing with the equity chart. A self-sizing strategy's risk knob is a normal
    strategy param, so it stays editable per run and sweepable in the optimizer.
+6. **The scanner reads EIGHT keys off `LAB_STRATEGY`, and this step exists because it listed one.**
+   Everything a package can declare is opt-in and its ABSENCE is a silent default — so a key you
+   have never heard of is a behaviour you get without choosing it. ⚠ **Read this list from the
+   SCANNER, never from this line** (`command-center/backend/services/strategy_scanner.py`, the row
+   dict): the same trap as counting engines from memory, and four of these were undocumented here
+   until 2026-09-02. Each is explained next to the code that consumes it — do not restate it here.
+
+   | key | what declaring it does | explained in |
+   |---|---|---|
+   | `name`, `category`, `suggested_instrument` | how the row reads on the Strategies page | — |
+   | `self_sizing` | step 5 above | — |
+   | `requires_source` | this rule CANNOT run alone; every endpoint that starts a job refuses it | `command-center/backend/CLAUDE.md` |
+   | `display_under` | which row it is LISTED under — display only, restricts nothing | `command-center/backend/CLAUDE.md` |
+   | `supports_bid_ask_fills` | `False` = it prices the spread FLAT, so a charged run bills the flat spread instead of moving fills | `command-center/backend/CLAUDE.md` |
+   | `chart_tag` | the word its trades wear on the price chart; undeclared falls back to the A+ bot's | `command-center/backend/CLAUDE.md` |
+
+   🔴 **A key the scanner does not read is dropped in SILENCE** — the package states a rule, the
+   scan reports success, and the lab behaves as though nobody wrote it. Adding a new one means
+   adding it to the scanner's row dict AND the `strategies` table in the same change.
 
 ---
 
