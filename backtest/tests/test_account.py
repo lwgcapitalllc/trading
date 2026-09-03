@@ -836,13 +836,44 @@ def test_an_UNSET_external_room_is_infinite_and_grants_in_full():
     assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 1_000.0
 
 
-def test_a_STATED_room_shrinks_the_fill_to_it():
-    """The whole point. A leg wanting $1,000 of risk against $400 of room takes $400 — the size
-    is SCALED, never recomputed, so the trade is the same trade at a smaller quantity."""
+def test_a_STATED_room_REFUSES_a_fill_it_cannot_cover_rather_than_shrinking_it():
+    """🔴 THIS ASSERTED A SHRINK UNTIL AN AUDIT ON 2026-09-03, AND THE SHRINK WAS INCOHERENT.
+
+    A stacked lab account may shrink because it is the only book — the leg opens at the granted
+    size and nothing else has an opinion. The LIVE caller's order is already RESTING AT THE
+    BROKER by the time this runs: `mpc_sos_fade.execution` sizes a pending order from
+    `equity * exec_risk_pct / dist` at PLACEMENT and never consults the account, and this gate
+    runs at the FILL. So a shrink books a smaller position in the emulator than the one the
+    broker just filled — and `bridge._agrees` compares DIRECTION and PRESENCE, not size, so it
+    does not even halt. Two books, silently different, and every stop move and R after it
+    computed against the wrong one.
+
+    ⚠ Refusing matches `bridge._account_cap_check`, which already refuses at PLACEMENT with a
+    Telegram message naming the reason. A real shrink needs the size decided where the ORDER is
+    decided, which is a `strategies/` change under rule 22.
+    """
     s = SoloAccount(balance=10_000.0)
     s.external_room = 400.0
     assert s.room() == 400.0
-    assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 400.0
+    assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 0.0
+    assert s.contention, "a refusal must be recorded, or nothing can report why"
+
+
+def test_a_STATED_room_that_COVERS_the_fill_grants_it_in_full():
+    """The other side of the same rule — a room big enough changes nothing at all."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 5_000.0
+    assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 1_000.0
+
+
+def test_a_room_that_is_never_stated_keeps_the_flag_OFF():
+    """The lab's contract. Deriving the refusal from a STATED room is what keeps every solo
+    replay byte-identical — an earlier version set the flag unconditionally and a pre-existing
+    test caught it."""
+    s = SoloAccount(balance=10_000.0)
+    assert s.all_or_nothing is False
+    s.external_room = 100.0
+    assert s.all_or_nothing is True
 
 
 def test_a_room_of_ZERO_BLOCKS_the_fill_rather_than_opening_a_dust_position():

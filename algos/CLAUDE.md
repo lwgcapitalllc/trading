@@ -2495,22 +2495,44 @@ docstring with no body for about a minute — passing for free while its name cl
 covered. **Worse than no test.** Mutations watched red, including the one that stops it announcing
 its own failure.
 
-### 🔴 The account cap can now SHRINK a bot instead of only refusing it (2026-09-03)
+### 🔴 The account budget is now MEASURED per bar — and it REFUSES, because a live shrink is incoherent (2026-09-03)
 
 **Aaron's split: extreme leg 5%, A+ 5%, account cap 10%.** *"If at any time a bot is occupying more
 than 5% then the other bot(s) will need to shrink accordingly. If no risk is available then we will
 refuse trades and send a telegram messaging saying why."*
 
+🔴 **THE SHRINK HALF WAS BUILT, AUDITED THE SAME DAY, AND BACKED OUT. Read this before rebuilding
+it.** A live bot's order is **already resting at the broker** by the time the account seam runs:
+`mpc_sos_fade.execution` sizes a pending order from `equity * exec_risk_pct / dist` at PLACEMENT
+and never consults the account, while `request_fill` runs at the FILL. So shrinking there books a
+smaller position in the emulator than the one the broker just filled — **and `_agrees` compares
+DIRECTION and PRESENCE, not size, so it does not even halt.** Two books, silently different, with
+every stop move, R and partial afterwards computed against the wrong one. MEASURED: a $0.50 room
+granted 0.0005 lots, below the 0.01 broker minimum, against a full-size order already resting.
+
+✅ **So a stated room REFUSES** (`SoloAccount.all_or_nothing`, derived from the room being stated
+so no solo replay moves). That matches `bridge._account_cap_check`, which has refused at PLACEMENT
+with a Telegram message naming the reason since the cap landed — one answer, not two.
+
+⚠ **A REAL shrink needs the size decided where the ORDER is decided** — the strategy consulting
+`room()` when it computes `qty`, so the bridge places the smaller order and both sides agree. That
+is a `strategies/` change under rule 22 and needs its parity gate run. **It is the outstanding half
+of Aaron's ask.**
+
+⚠ **It was never live-reachable.** The frozen `deployed/` snapshot carries no `external_room`, so
+`refresh_account_room` returned early on the running bot throughout. The defect would have arrived
+on the next promote.
+
 **Three pieces and the order is the design.** `bridge.refresh_account_room()` reads the broker and
 works out the dollars still free under the cap → the runner calls it at the TOP of every bar →
 `SoloAccount.external_room` makes the strategy's own sizing shrink to it at `request_fill`.
 
-🔴 **THIS REVERSES THE REFUSE-NEVER-SHRINK RULE, AND ONLY BECAUSE THE CLAMP MOVED.** That rule was
-right: nothing hands a size back across a process boundary, so a shrunk ORDER leaves the emulator
-holding a trade the broker does not have, the two grade different R, and `_agrees` halts the bot on
-a divergence the safety feature created. **The shrink now happens in the STRATEGY'S OWN SIZING**,
-which is the same seam and the same argument as the venue lot ceiling. `_account_cap_check` stays
-on as the backstop and should now rarely fire.
+🔴 **THE REFUSE-NEVER-SHRINK RULE STANDS, AND THE AUDIT ABOVE IS WHY.** It was briefly reversed on
+the reasoning that clamping at the account seam is "the strategy deciding its own size", the same
+argument the venue lot ceiling rests on. **That argument does not transfer, and the difference is
+WHEN.** The lot ceiling is applied before the order is placed, so the bridge sends the capped size;
+the account room was applied at the FILL, by which time a full-size order was already resting.
+**Same seam, same operator, different moment — and the moment is the whole property.**
 
 🔴 **IT MUST RUN BEFORE THE STRATEGY STEPS, WHICH IS WHY THE RUNNER CALLS IT AND NOT `_plan`.**
 `request_fill` happens *inside* the step; by the time the bridge reconciles, the fill is already

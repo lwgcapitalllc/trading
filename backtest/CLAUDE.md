@@ -2014,16 +2014,23 @@ share the others SHRINK to what is left rather than being refused; with nothing 
 and say why on Telegram.** Extreme leg 5%, A+ 5%, account cap 10%.
 
 **`PortfolioAccount` cannot cross an OS process boundary**, so the live side reads the BROKER and
-pushes the dollars still free onto this field each bar; `room()` then returns it and `request_fill`
-shrinks to it exactly as a stacked leg does here. Nothing about a backtest changes — the field is
-`None` everywhere in the lab, which means infinite, which is what this class has always done.
+pushes the dollars still free onto this field each bar. Nothing about a backtest changes — the field
+is `None` everywhere in the lab, which means infinite, which is what this class has always done.
 
-🔴 **THE PLACEMENT IS THE WHOLE SAFETY PROPERTY AND IT IS THE VENUE CEILING'S ARGUMENT AGAIN.**
-The live account cap REFUSED and never shrank, because a shrunk ORDER leaves the emulator holding
-a trade the broker does not have — the two grade different R and the bridge halts on a divergence
-the safety feature created. Shrinking HERE is the strategy deciding its own size, so both sides
-book the same quantity. **`bridge._account_cap_check` stays on as the backstop** and should now
-rarely fire, the same relationship the order-level lot refusal has to the ceiling.
+🔴 **A STATED ROOM REFUSES; IT DOES NOT SHRINK, AND THE FIRST VERSION SHRANK (audited out the same
+day).** The lab's stacked account may shrink because it is the only book. A live bot's order is
+**already resting at the broker** when this runs — the strategy sizes it at PLACEMENT from
+`equity * exec_risk_pct / dist` and never asks the account, while this gate runs at the FILL — so
+a shrink books a smaller emulator position than the broker just filled, and `bridge._agrees`
+compares direction and presence, **not size**, so nothing halts. MEASURED: a $0.50 room granted
+0.0005 lots, under the 0.01 broker minimum. `all_or_nothing` is derived from the room being stated,
+so no solo replay moves.
+
+🔴 **AND THE LOT CEILING'S ARGUMENT DOES NOT TRANSFER TO IT — the difference is WHEN.** The ceiling
+is applied before the order is placed, so the bridge sends the capped size and both sides agree.
+The account room is only knowable per bar and was applied at the fill, after the order was resting.
+**Same seam, same operator, different moment, opposite verdict.** A real live shrink needs the
+strategy to consult `room()` where it computes `qty`, which is a `strategies/` change under rule 22.
 
 ⚠ **THREE states, and only two are a number** (rule 1). `None` is *nobody has said*, which is
 every backtest; `0.0` is *somebody asked and there is none*, which blocks the fill. Collapsing

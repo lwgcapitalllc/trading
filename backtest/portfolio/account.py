@@ -558,6 +558,43 @@ class SoloAccount(PortfolioAccount):
         # blocks the fill. Collapsing them would make an unset field refuse every trade, or a
         # measured zero grant every one.
         self.external_room: Optional[float] = None
+        # 🔴 A STATED ROOM REFUSES RATHER THAN SHRINKING, AND THAT IS NOT THE PREFERENCE IT LOOKS
+        # LIKE — a shrink here is INCOHERENT for the live caller (found by audit, 2026-09-03).
+        #
+        # The lab's stacked account may shrink because it is the only book: the leg opens at the
+        # granted size and nothing else has an opinion. A LIVE bot's order is already RESTING AT
+        # THE BROKER by the time this runs — `mpc_sos_fade.execution` sizes a pending order from
+        # `equity * exec_risk_pct / dist` at PLACEMENT and never consults the account, and the
+        # gate here runs at the FILL. So a shrink books a smaller position in the emulator than
+        # the one the broker has just filled, and `bridge._agrees` compares DIRECTION and
+        # PRESENCE, not size — so it does not even halt. The two simply carry different books,
+        # and every stop move, R and partial after it is computed against the wrong one.
+        #
+        # ⚠ **Refusing is what `bridge._account_cap_check` already does at PLACEMENT**, with a
+        # Telegram message naming the reason, so this is consistent with the path that works
+        # rather than a second answer beside it.
+        #
+        # ⚠ **A real live shrink needs the size decided where the ORDER is decided** — the
+        # strategy consulting `room()` when it computes `qty` — which is a `strategies/` change
+        # under rule 22 and needs its parity gate run. Until then this refuses.
+        # (derived — see the `all_or_nothing` property below)
+
+    @property
+    def all_or_nothing(self) -> bool:
+        """A STATED room refuses; an unstated one is the passthrough this class has always been.
+
+        ⚠ Derived rather than assigned, so a solo replay with no stated room keeps the flag OFF
+        and no stored run moves — pinned by `test_all_or_nothing_defaults_OFF_so_no_stored_run_moves`,
+        which caught the first version of this setting it unconditionally.
+        """
+        return self.external_room is not None
+
+    @all_or_nothing.setter
+    def all_or_nothing(self, _value) -> None:
+        # `PortfolioAccount.__init__` assigns this; a SoloAccount derives it from the stated room
+        # instead. Silently ignored rather than raising, because the base class is entitled to
+        # set its own field and this subclass is entitled to have a different answer.
+        pass
 
     def room(self) -> float:
         """Infinite unless a caller has stated a budget — see `external_room`.
