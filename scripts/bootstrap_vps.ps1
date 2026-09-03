@@ -122,6 +122,7 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'logreview_task.xml';           Name = 'SYS_LOGREVIEW' }
     [pscustomobject]@{ Xml = 'ledgersync_task.xml';          Name = 'SYS_LEDGERSYNC' }
     [pscustomobject]@{ Xml = 'reentrywatch_task.xml';        Name = 'SYS_REENTRYWATCH' }
+    [pscustomobject]@{ Xml = 'brokercosts_task.xml';         Name = 'SYS_BROKERCOSTS' }
 )
 # SYS_PNLTRACKER and SYS_REPORTER were removed 2026-08-05 with the scripts behind them.
 # SYS_DEADMAN and SYS_LOGBACKUP were added in the same pass: both had task XMLs sitting in
@@ -141,6 +142,16 @@ $Tasks = @(
 # month. That is why the script writes a health-ledger record on EVERY run, including the quiet
 # ones, and announces its own failure rather than dying into a log. ⚠ It needs no secret; it reads
 # the bot's own ledger and sends through the shared Telegram credentials the other tasks use.
+# SYS_BROKERCOSTS was added 2026-09-03. Daily at 06:40 UTC, it reads the broker's overnight
+# financing off the live terminal and reports when the broker MOVES it. That rate has been caught
+# drifting four times in seven weeks and every one was found by a person who happened to look; on
+# a strategy designed to hold overnight it is the largest re-priceable cost. ⚠ It is the THIRD
+# task here whose normal state is silence, alongside the dead-man's switch and the re-entry watch,
+# so it carries the same hazard: a missing watcher and a rate that has not moved look identical.
+# That is why it writes a health record on EVERY run carrying the reading itself, and announces
+# its own failure rather than dying into a log. ⚠ It needs no secret. ⚠ It CHANGES NOTHING — it
+# never writes the lab's constant, because re-pricing re-bases every charged figure in the repo
+# and is a deliberate job with its own commit.
 # BOT_ tasks are started by SYS_STARTUP only — disable so they never auto-fire.
 # No bots are registered yet, so this list is empty.
 $DisableTasks = @()

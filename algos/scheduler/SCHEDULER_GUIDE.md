@@ -15,6 +15,21 @@ All tasks run as `trader` user on the VPS.
 | SYS_LOGBACKUP | Scheduled | Daily 00:30 | `tools/log_backup.py` |
 | SYS_LOGREVIEW | Scheduled | Hourly | `notifications/log_review.py` |
 | SYS_LEDGERSYNC | Scheduled | Hourly, :20 | `tools/ledger_sync.py --local --alert-on-failure` |
+| SYS_REENTRYWATCH | Scheduled | Hourly, :23 | `tools/watch_reentry.py --bot mpc_sos_fade_demo` |
+| SYS_BROKERCOSTS | Scheduled | Daily 06:40 | `tools/watch_broker_costs.py --bot mpc_sos_fade_demo` |
+
+🔴 **THE THREE SILENT TASKS ARE THE ONES TO CHECK AFTER A REBUILD.** `SYS_DEADMAN`,
+`SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` all report nothing on an ordinary day, so a box that came
+back without them looks exactly like a box where nothing has happened. Each writes a record on
+every run for that reason — the evidence is the record, never the quiet.
+
+⚠ **THIS PAGE WENT STALE BETWEEN 2026-09-03 AND 2026-09-03 AND THE GAP IS WORTH NAMING:
+`SYS_REENTRYWATCH` was registered in `scripts/bootstrap_vps.ps1` and never added here**, so the
+list above and the snippet below both described a box with two fewer alarms than the real one. **A
+recovery snippet that is a SECOND COPY of the bootstrap's task list drifts the moment somebody adds
+a task to one of them, and it drifts in the direction that quietly rebuilds a box without its
+alarms.** `bootstrap_vps.ps1` is the authority; this snippet is for a hand rebuild and must be
+re-checked against it.
 
 **No BOT_ tasks currently exist** — all four first-attempt bots were deleted 2026-06-22.
 When a new bot is deployed it gets a disabled `BOT_<NAME>` task; `SYS_STARTUP` uses
@@ -111,7 +126,9 @@ $tasks = @(
     "deadman_task.xml:SYS_DEADMAN",
     "logbackup_task.xml:SYS_LOGBACKUP",
     "logreview_task.xml:SYS_LOGREVIEW",
-    "ledgersync_task.xml:SYS_LEDGERSYNC"
+    "ledgersync_task.xml:SYS_LEDGERSYNC",
+    "reentrywatch_task.xml:SYS_REENTRYWATCH",
+    "brokercosts_task.xml:SYS_BROKERCOSTS"
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")

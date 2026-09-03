@@ -2478,6 +2478,51 @@ docstring with no body for about a minute — passing for free while its name cl
 covered. **Worse than no test.** Mutations watched red, including the one that stops it announcing
 its own failure.
 
+### `SYS_BROKERCOSTS` — the broker re-quotes its overnight rate and nothing said so (2026-09-03)
+
+`tools/watch_broker_costs.py`, daily at 06:40 UTC. It reads this bot's symbol swap off the live
+terminal and reports when the BROKER moves it. Aaron's call: the noticing is not a person's job.
+
+🔴 **FOUR READINGS IN SEVEN WEEKS, EVERY ONE FOUND BY SOMEBODY LOOKING** — -78.29 (2026-07-16),
+-79.60 (2026-08-06), -81.18 (2026-08-14), -80.54 (2026-09-02). On a strategy designed to hold
+overnight it is the largest re-priceable cost, and this bot's own `_measured` block already said
+*"treat swap as a rate that MOVES, never a constant"* — which is a note, not a mechanism.
+
+🔴 **IT FIRES ON THE EVENT, NOT ON A THRESHOLD.** A threshold would be a guessed number (rule 4)
+and there is no measurement saying which drift matters — the one drift that HAS been replayed came
+to +0.09R, and one measurement is not a rule. So it speaks when the reading CHANGES from the last
+one on record. **Silence therefore means the broker has not moved it, never *we decided it was
+small enough*.** The message carries the gap to the LAB's constant as a separate fact, because
+that is the one a reader acts on.
+
+⚠ **It reads through `broker_facts.py` rather than calling MT5 itself** — that module already
+refuses to report the wrong terminal's numbers, and this box runs two. ⚠ **It writes NOTHING to
+`backtest/fills.py`**: re-pricing re-bases every charged figure in the repo and is a deliberate
+job with its own commit, the same reason `broker_facts.py` does not rewrite `_measured`.
+
+🔴 **THIRD TASK HERE WHOSE NORMAL STATE IS SILENCE**, after the dead-man's switch and the re-entry
+watch, so it carries the same hazard and the same three answers: it announces its own failure, it
+writes a health record on EVERY run, and it sends nothing on a quiet one. ⚠ **That record carries
+the READING, not just a verdict** — the four values above lived in three different places
+(`fills.py` comments, this bot's config, a chat log) and **a doc paragraph restating the series
+from two of the three got one of them wrong.** The health stream is the one place it accumulates.
+
+🔴 **TWO DEFECTS WERE FOUND BY RUNNING IT, NEITHER VISIBLE FROM READING IT, AND ONE MADE THE ALARM
+UNREACHABLE.** `broker_facts.attach()` raises `SystemExit` for every reason a terminal cannot be
+read — not running, not logged in, **logged into the wrong account** — and `SystemExit` is not an
+`Exception`, so the failure handler let all three straight past: MEASURED, the message reached
+stderr and no alert was sent. **A watcher whose failure path is silent is the thing this whole
+design is built against, and it shipped that way inside the file arguing for it.** The second: the
+account profile lives under `strategy_params`, not at the top level, so it refused on the live
+bot's own config while that config plainly names a tier. ⚠ **The lookup is now a named function
+so a test can exercise the real one** — the first test re-derived the lookup inline and would have
+stayed green under the mutation that restores the bug.
+
+**Tests: 20 in `tests/test_watch_broker_costs.py`, 11 mutations watched RED with a surviving
+control each.** ⚠ **One control was mis-chosen and reported a FAIL that was not one** — the
+mutation compared only the long side, and the control asserted both sides move, so it died
+legitimately. **A control that the mutation should be allowed to kill proves nothing.**
+
 ✅ **SWITCHED ON FOR `mpc_sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
 50 → 0.** ⚠ **No promote, and none should be run for it** — a promote copies `strategies/`,
 `engines/` and `backtest/`, and everything this needs on the code side is in `algos/`, which

@@ -405,8 +405,16 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   not accuracy.** Update it when a reading moves something, and re-run the two-way replay to say so.
   🔴 **WHAT IS STILL OPEN IS THE MONITORING, NOT THIS NUMBER: nothing announces a drift, so a move
   large enough to matter would arrive exactly as silently as this one did.** Four readings in seven
-  weeks (−78.29 / −79.60 / −79.60 / −80.54) and every one was found by somebody looking. A broker
-  re-quotes swaps whenever it likes; this module cannot tell.
+  weeks — **−78.29 (2026-07-16), −79.60 (2026-08-06), −81.18 (2026-08-14), −80.54 (2026-09-02)** —
+  and every one was found by somebody looking. A broker re-quotes swaps whenever it likes; this
+  module cannot tell. ⚠ **The drift is NOT monotonic** (it came back down), so *"it only ever goes
+  one way"* is not available as a shortcut, and the gap to the lab's constant is not a running
+  total. 🔴 **The four readings are recorded in THREE different places and no two of them agree on
+  the series** — `fills.py`'s own comments hold the first two, the live bot's instance config
+  (`_measured`) holds the third, and the fourth was in a chat log until this paragraph. **An
+  earlier revision of this line listed the third as −79.60 because it reconstructed the sequence
+  from the two places it happened to read.** A number that lives nowhere in particular gets
+  restated wrongly; that is the case for collecting them, not just for watching them.
   ⚠ **Read the SHORT side before assuming a drift is small.** Gold PAYS shorts, and this strategy's
   scratch arithmetic rests on that credit — the credit moved 8.0% here while the charge moved 1.2%,
   and a single netted percentage would have hidden it.

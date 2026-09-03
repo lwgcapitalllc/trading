@@ -184,6 +184,14 @@ silence**, alongside the dead-man's switch, so it carries the same hazard: a mis
 quiet month look identical. That is why it announces its own failure and writes a health record on
 every run — **a task list that registers an alarm nobody can tell is dead is the 2026-08-05 failure
 with a different name.** Rules: `algos/CLAUDE.md` → *The re-entry can be switched on*.
+
+⚠ **And `SYS_BROKERCOSTS` on 2026-09-03** — daily at 06:40 UTC, it reads the broker's overnight
+financing off the live terminal and reports when the broker MOVES it. That rate was caught drifting
+four times in seven weeks and every one was found by a person who happened to look. It needs no
+secret and it CHANGES nothing — re-pricing the lab's constant re-bases every charged figure in the
+repo and stays a deliberate job. 🔴 **THIRD task here whose normal state is silence**, so same
+hazard and same answer: it announces its own failure and writes a health record carrying the
+reading on every run. Rules: `algos/CLAUDE.md` → *`SYS_BROKERCOSTS`*.
 🔴 `install_ledger_sync.sh` **no longer installs anything and refuses if you ask** — its Mac agent
 was a SECOND WRITER of an append-only file, and two appends to one file end cannot be merged at any
 content (eight hours of hourly conflicts, 2026-08-28). **`--no-push` did not save it: on a shared

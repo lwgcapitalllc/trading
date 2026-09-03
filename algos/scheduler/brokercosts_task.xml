@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>fxut9200941\trader</Author>
+    <URI>\SYS_BROKERCOSTS</URI>
+    <Description>Reads the broker's overnight financing off the live terminal and reports when it MOVES. Daily at 06:40 UTC — the rate has been caught drifting four times in seven weeks and every one was found by a person looking. Silence means the broker has not re-quoted it; a gap in the bot's health ledger is how a dead watcher is spotted.</Description>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+  </Settings>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T06:40:00</StartBoundary>
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
+      <Arguments>C:\trading\algos\tools\watch_broker_costs.py --bot mpc_sos_fade_demo</Arguments>
+      <WorkingDirectory>C:\trading\algos</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
