@@ -162,7 +162,10 @@
       "Bash(python3 -m pytest algos/tests/test_ledger_streams.py -q --no-header -p no:randomly)",
       "Bash(python3 -m pytest algos/tests/test_audit_reentry.py -q --no-header -p no:randomly)",
       "Bash(cp /tmp/wr.bak algos/tools/watch_reentry.py)",
-      "Bash(python3 -m pytest algos/tests/test_watch_reentry.py -q --no-header -p no:randomly)"
+      "Bash(python3 -m pytest algos/tests/test_watch_reentry.py -q --no-header -p no:randomly)",
+      "Bash(python3 probe_holds.py)",
+      "Bash(ln -s /Users/alwg/trading/backtest/cache /private/tmp/claude-501/-Users-alwg-trading/abd987d6-fc6b-4af2-b973-252aebeb2c7a/scratchpad/head-wt/backtest/cache)",
+      "Bash(git worktree *)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
