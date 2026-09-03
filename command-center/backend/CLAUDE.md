@@ -4386,3 +4386,68 @@ flipped to None; commission override deleted; refusal removed). The fourth — c
 reachable — passes throughout on purpose, so a later "simplification" that hard-wires charging
 cannot land quietly.
 
+
+## A stack leg runs on ITS OWN frame, and the stack asks the broker for the symbol it quotes (2026-09-03)
+
+Two defects reported off one screen, both of which looked like display faults and were not.
+
+🔴 **A STACK HAD ONE TIMEFRAME FOR EVERY LEG.** `mpc_extreme_leg` is measured on 5m and
+`mpc_sos_fade` on 15m, so putting them on one account replayed one of the two on a frame nobody has
+ever measured it on — and the combined table said *portfolio*. **The SIMULATOR always allowed
+this**: its merged clock steps a 5m leg three times inside a 15m leg's bar, and `LegSpec` has always
+carried a per-leg frame. This app was the half that could only LOAD one. Same shape as the overlap
+audit the day before, and worth stating as a pattern: **when a tool cannot do something, check
+whether the engine under it already can.**
+
+- **The frame is DECLARED by the strategy** (`LAB_STRATEGY["suggested_bar_value"]`), served by the
+  scanner, stored on the strategy row, and a form fills each leg's box from it. ⚠ **Three-state:
+  `None` means UNDECLARED, never "any frame will do"** — a leg whose package declares nothing keeps
+  the stack's fallback rather than being handed an invented number.
+- **It is a DEFAULT, never a refusal.** A run on another frame is legal and is simply a different
+  experiment from the one the strategy's own figures come from.
+- ⚠ **`_leg_bar_value` in `routers/stacks.py` is the ONE place it resolves**, so the history check,
+  the reuse lookup, the stored row and the runner cannot disagree about what a leg was measured on.
+  A leg's frame is part of the REUSE IDENTITY — the preview carries it too, or it badges a 15m run
+  green *Reuse* for a leg the launch then replays on 5m.
+- ⚠ **The stack row keeps only the stack-level FALLBACK frame, and each leg's own frame is on that
+  leg's run row.** `StackDetail.bar_value` reads the settings row rather than the first leg's — one
+  number on the parent describing children that no longer share it is a shape this app has been
+  bitten by before.
+- 🔴 **A DEPENDENT LEG IS PINNED TO ITS PARENT'S FRAME and never reads the request.** Loss recovery
+  has no setups of its own: it arms off the parent's CLOSED trades and counts its wait in the
+  parent's bars, so a frame of its own is a rule measuring a different clock from the book it reads.
+  Nothing raises — it arms, trades, and lands in the table as a different rule. `portfolio_runner`
+  takes its bar rate off the PARENT's own spec for the same reason.
+- 🔴 **THE LEGAL START IS THE LATEST FLOOR ACROSS THE FRAMES**, because a broker holds less history
+  the finer the bars. The window is checked PER LEG on that leg's frame. A window only the coarse
+  leg can reach does not error — it answers a different question: the 15m leg compounds ALONE over
+  the months the 5m leg does not exist for, and every later trade of BOTH is then sized off a
+  balance one leg built unopposed.
+- ⚠ **Bars are loaded ONCE PER FRAME and shared by every leg on it**, not once per leg — two legs on
+  15m must replay the identical bars, and a second load is a second chance to differ. An empty frame
+  REFUSES and names the frame: with two of them, *"no bars"* no longer identifies which.
+- ⚠ **Progress counts every leg's stream added together.** With two frames it is no longer any
+  single frame's length, and reading one would sit at 100% through the second half of the replay.
+
+🔴 **THE STACK PATH NEVER RESOLVED THE SYMBOL AGAINST THE BROKER, and the single-run path has since
+2026-08-26.** PU Prime quotes gold with a suffix and Vantage bare, so a stack under PU Prime asked
+for a symbol that broker does not quote and died four layers down in the bar loader — with the
+window and the timeframe named and the one wrong field not. It now resolves through the SAME
+`python_runner.run_symbol` the single run uses (one implementation, so the lab and the live side
+cannot drift about what gold is called), at CREATION, and the RESOLVED name is what is stored
+(rule 3). ⚠ **The PREVIEW resolves it identically**, or the badge describes a different stack.
+⚠ **A broker whose naming was never recorded leaves the symbol exactly as typed** — guessing hands
+the terminal a symbol nobody has seen it quote, which is the failure this fixes.
+
+Proof: `tests/test_leg_timeframes.py`, 28 checks. 21 were watched RED against HEAD; the five
+declaration checks could not be (see below) and were proven by MUTATION instead — a wrong frame and
+a deleted declaration each turn one red. One check is green on HEAD on purpose: a leg with no frame
+of its own must keep falling back to the stack's, which is every leg of every stack stored before
+this existed.
+
+🔴 **A WORKTREE AT HEAD DOES NOT ISOLATE THIS SUITE, and finding that out is worth more than the
+tests were.** `config.MONOREPO_ROOT` is an ABSOLUTE path read from machine config, so a backend test
+run from any checkout still imports `strategies/`, `engines/` and `backtest/` from the MAIN tree.
+Five tests "passed" against HEAD that way and the pass meant nothing — they were reading the edited
+files. **A fail-watch that runs the new code is not a fail-watch**, and nothing about the run says
+so: it is green, fast, and wrong. Watch repo-root code go red by MUTATING it in place.

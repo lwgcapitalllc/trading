@@ -146,16 +146,39 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     symbol = settings["instrument"]
     tf = _timeframe_minutes(settings)
 
+    # 🔴 ONE BAR SET PER DISTINCT FRAME, not one for the stack. A leg names its own frame since
+    # 2026-09-03 and the ones here do not agree: `mpc_extreme_leg` is measured on 5m and
+    # `mpc_sos_fade` on 15m, so a single load replayed one of the two somewhere it has never
+    # been measured while the combined table said portfolio. The SIMULATOR always allowed this —
+    # its merged clock steps a 5m leg three times inside a 15m leg's bar — and this app was the
+    # half that could only load one frame. Same lesson as the overlap audit the day before:
+    # when a tool cannot do something, check whether the engine under it already can.
+    #
+    # ⚠ Loaded ONCE per frame and shared by every leg on it, deliberately: two legs on 15m must
+    # replay the identical bars, and a second load is a second chance to differ.
     # Pinned to the stack's OWN broker, never to whatever terminal is attached — the bar cache is
     # broker-partitioned, and a stack replayed from the wrong partition either finds nothing or,
     # worse, silently replays a different broker's prices under the same symbol name.
-    df = BarSource(server=bar_server(settings)).load(
-        symbol, tf, settings["start_date"], settings["end_date"]
-    )
-    if df.empty:
-        raise ValueError(
-            f"no bars for {symbol} {tf}m over [{settings['start_date']}, {settings['end_date']}]"
-        )
+    source = BarSource(server=bar_server(settings))
+    frames: dict[int, Any] = {}
+
+    def _frame(minutes: int):
+        if minutes not in frames:
+            got = source.load(symbol, minutes, settings["start_date"], settings["end_date"])
+            if got.empty:
+                raise ValueError(
+                    f"no bars for {symbol} {minutes}m over "
+                    f"[{settings['start_date']}, {settings['end_date']}]"
+                )
+            frames[minutes] = got
+        return frames[minutes]
+
+    def _leg_frame(leg: dict):
+        """This leg's bars. A leg with no frame of its own falls back to the stack's — which is
+        every leg stored before per-leg frames existed, and they must keep replaying identically."""
+        return _frame(int(leg.get("bar_value") or tf))
+
+    df = _frame(tf)
 
     balance = float(settings["account_size"])
     profile = _cost_profile(settings)
@@ -174,7 +197,7 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
                 name=leg["strategy_id"],
                 strategy_cls=entry["strategy"],
                 config=config,
-                df=df,
+                df=_leg_frame(leg),
                 cost_profile=profile,
                 source=leg.get("source"),
             )
@@ -208,12 +231,20 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
             config=leg_config(
                 specs[i].config,
                 parent_cfg,
-                bars_per_day=_bars_per_day(df),
+                # 🔴 THE PARENT'S FRAME, never the stack's. This leg counts its wait and its
+                # time stop in the bars of the leg it reads, and since legs no longer share one
+                # frame, taking the stack's would put a 15m rule's clock on a 5m book — three
+                # times the bars for the same wait, and nothing raises: the leg arms, trades,
+                # and lands in the table with a different rule from the one that was measured.
+                bars_per_day=_bars_per_day(parent_spec.df),
                 major_length=parent_strategy_cls(parent_cfg).engine_config().major_length,
             ),
         )
 
-    total_ticks = len(df.index)
+    # Every leg's stream, added — that is what the merged clock ticks through, and with two
+    # frames in one stack it is no longer any single frame's length. A progress bar reading one
+    # frame's count would sit at 100% for the second half of the replay.
+    total_ticks = sum(len(s.df.index) for s in specs) or len(df.index)
     phases = 1 + len(specs)  # the shared replay, then one solo control per leg
     phase_names = ["shared"] + [f"solo:{s.name}" for s in specs]
 

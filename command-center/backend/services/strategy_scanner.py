@@ -674,6 +674,25 @@ def _parse_python_package(
         "source_path": rel_path,
         "category": spec.get("category") or _infer_category(strategy_id),
         "suggested_instrument": spec.get("suggested_instrument"),
+        # 🔴 THE FRAME THIS STRATEGY WAS MEASURED ON, in minutes, or `None` when the package
+        # never declared one. A strategy belongs to a frame the way it belongs to a setup —
+        # `mpc_extreme_leg` is a 5-minute bot and `mpc_sos_fade` a 15-minute one — and until
+        # 2026-09-03 nothing in this app could say so, so the stack page ran every leg on the
+        # ONE frame the reader picked and a 5m bot replayed on 15m read as a portfolio result.
+        # ⚠ THREE-STATE, and `None` means UNDECLARED rather than "any frame will do" (rule 1).
+        # The form fills the box from it and leaves an undeclared strategy on the stack default
+        # instead of pretending a measurement exists.
+        # ⚠ It is a DEFAULT, never a refusal: nothing rejects a run on another frame, because
+        # sweeping a bot across frames is a real question. It changes what the box says first.
+        # ⚠ A non-positive or non-integer declaration is dropped rather than served — a zero
+        # would divide by nothing three layers down in the bar loader.
+        "suggested_bar_value": (
+            int(spec["suggested_bar_value"])
+            if isinstance(spec.get("suggested_bar_value"), int)
+            and not isinstance(spec.get("suggested_bar_value"), bool)
+            and spec["suggested_bar_value"] > 0
+            else None
+        ),
         "default_params": {p["name"]: p["default"] for p in params if "default" in p},
         "param_schema": params,
         "scanned_at": int(time.time()),

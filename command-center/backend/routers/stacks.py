@@ -105,6 +105,41 @@ def _validate_stack_strategies(ids: list[str], *, extra_legs: int = 0) -> list[d
     return strategies
 
 
+def _leg_bar_value(req, strategy_id: str) -> int:
+    """The frame THIS leg runs on: its own if the caller named one, else the stack's.
+
+    🔴 Until 2026-09-03 there was no per-leg answer and every leg ran on the stack's ONE frame.
+    That is not a display fault: `mpc_extreme_leg` is measured on 5m and `mpc_sos_fade` on 15m,
+    so stacking them replayed one of the two on a frame nobody has ever measured it on, and the
+    combined table read as a portfolio result. The form declares each leg's frame now; this is
+    the one place that resolves it, so the history check, the reuse lookup, the stored row and
+    the runner cannot disagree about what a leg was measured on.
+
+    ⚠ A DEPENDENT leg never comes through here — see `_recovery_bar_value`.
+    """
+    return int(req.bar_values_by_strategy.get(strategy_id, req.bar_value))
+
+
+def _run_instrument(req) -> str:
+    """The symbol this stack must actually ask the broker for.
+
+    🔴 The single-run path has resolved the typed name against the broker since 2026-08-26 and
+    the stack path never did, so a stack under PU Prime asked for `XAUUSD` — a symbol that
+    broker does not quote — and died four layers down in the bar loader with a message naming
+    the window and the timeframe and never the field that was wrong. Same function, not a second
+    copy: one implementation is why the lab and the live side cannot drift about what gold is
+    called.
+
+    ⚠ Resolved at CREATION and the RESOLVED name is what is stored (rule 3) — a row holding the
+    typed name while the runner replayed another symbol is a row nothing can audit, and it
+    breaks the rerun the moment the two disagree.
+    ⚠ A broker whose naming was never recorded leaves the symbol exactly as typed.
+    """
+    from services import python_runner
+
+    return python_runner.run_symbol(req.instrument, req.broker_profile)
+
+
 @router.post("/stacks/preview", response_model=StackPreviewResponse)
 def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
     """Which legs would be reused from an existing completed run vs re-run fresh, for the
@@ -112,7 +147,10 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
     strategies = _validate_stack_strategies(list(dict.fromkeys(req.strategy_ids)))
     # Resolved the SAME way `trigger_stack` resolves it — the basis is part of the reuse
     # identity, so a preview that resolved it differently would promise a reuse the launch
-    # cannot honour.
+    # cannot honour. That now covers the SYMBOL as well as the costs: a preview asking about a
+    # bare name while the launch stores the broker's suffixed one badges every leg "run" and
+    # then reuses, or the reverse, and either way the badge is describing a different stack.
+    instrument = _run_instrument(req)
     cost_layers, commission_per_side = _costs.resolve_costs(
         runner="python",
         charge_costs=req.charge_costs,
@@ -137,9 +175,9 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
             if (req.mode == "shared" or forced)
             else lab_db.find_matching_stack_run(
                 strat["id"],
-                req.instrument,
+                instrument,
                 req.bar_type,
-                req.bar_value,
+                _leg_bar_value(req, strat["id"]),
                 req.start_date,
                 req.end_date,
                 commission_per_side,
@@ -185,19 +223,30 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
         if not lab_db.get_ruleset(rid):
             raise HTTPException(404, f"Ruleset '{rid}' not found")
 
-    # Broker-history floor. Stacks are python-only and every leg shares one WINDOW — but not
-    # its params, and params are what decide which bar feeds a leg loads (`run_feeds`). So the
-    # check is per LEG: one leg with `exec_secondary` on needs 1m history the others do not,
-    # and the window is only legal if EVERY leg can be served. A single chart-timeframe check
-    # would clear a stack that then dies on whichever leg asked for the extra feed.
-    for _leg_params in _leg_param_sets(req, strategies):
+    # The symbol the BROKER quotes, resolved before anything is checked or stored — the floor
+    # check below is per broker and per symbol, so asking it about the typed name would clear a
+    # window for a symbol this stack is never going to load.
+    instrument = _run_instrument(req)
+
+    # Broker-history floor. Stacks are python-only and every leg shares one WINDOW — but not its
+    # params and, since 2026-09-03, not its FRAME either, and both decide which bar feeds a leg
+    # loads (`run_feeds`). So the check is per LEG: one leg with `exec_secondary` on needs 1m
+    # history the others do not, a 5m leg's history is shallower than a 15m leg's, and the window
+    # is only legal if EVERY leg can be served.
+    #
+    # 🔴 **This is what makes the legal start the LATEST floor across the frames, and it is not a
+    # tidiness point.** A window the fine frame cannot reach but the coarse one can does not
+    # error — it answers a different question: the 15m leg compounds ALONE over the months the 5m
+    # leg does not exist for, and every later trade of BOTH is then sized off a balance one leg
+    # built unopposed. The refusal names the frame that cannot serve it.
+    for _strat, _leg_params in zip(strategies, _leg_param_sets(req, strategies)):
         try:
             history_limits.validate_window(
-                req.instrument,
+                instrument,
                 req.start_date,
                 req.end_date,
                 req.bar_type,
-                req.bar_value,
+                _leg_bar_value(req, _strat["id"]),
                 "python",
                 params=_leg_params,
             )
@@ -226,7 +275,7 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
 
     if req.mode == "shared":
         return _trigger_shared_stack(
-            req, strategies, stack_id, now, cost_layers, commission_per_side
+            req, strategies, stack_id, now, cost_layers, commission_per_side, instrument
         )
 
     run_specs: list[dict] = []  # only the fresh legs actually need running
@@ -243,9 +292,9 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
             # a custom override means "run it my way", not "reuse whatever exists".
             match = lab_db.find_matching_stack_run(
                 strat["id"],
-                req.instrument,
+                instrument,
                 req.bar_type,
-                req.bar_value,
+                _leg_bar_value(req, strat["id"]),
                 req.start_date,
                 req.end_date,
                 commission_per_side,
@@ -262,8 +311,12 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     lab_db.insert_stack(
         {
             "stack_id": stack_id,
-            "instrument": req.instrument,
+            "instrument": instrument,
             "bar_type": req.bar_type,
+            # ⚠ The stack row keeps the stack-level FALLBACK frame; each leg's own frame is on
+            # that leg's run row, where every reader of a leg already looks for its window, its
+            # costs and its params. One number on the parent describing legs that no longer
+            # share it is exactly the shape this app has been bitten by before.
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
@@ -291,10 +344,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
             {
                 "run_id": run_id,
                 "strategy_id": strat["id"],
-                "instrument": req.instrument,
+                "instrument": instrument,
                 "params": params,
                 "bar_type": req.bar_type,
-                "bar_value": req.bar_value,
+                "bar_value": _leg_bar_value(req, strat["id"]),
                 "start_date": req.start_date,
                 "end_date": req.end_date,
                 "commission_per_side": commission_per_side,
@@ -314,7 +367,7 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
                 "run_id": run_id,
                 "job_id": run_id,
                 "strategy_id": strat["id"],
-                "instrument": req.instrument,
+                "instrument": instrument,
                 "ruleset_ids": req.ruleset_ids,
                 "runner": "python",
             }
@@ -323,10 +376,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
             {
                 "job_id": run_id,
                 "strategy_class": strat["class_name"],
-                "instrument": req.instrument,
+                "instrument": instrument,
                 "params": params,
                 "bar_type": req.bar_type,
-                "bar_value": req.bar_value,
+                "bar_value": _leg_bar_value(req, strat["id"]),
                 "start_date": req.start_date,
                 "end_date": req.end_date,
                 "commission_per_side": commission_per_side,
@@ -450,6 +503,7 @@ def _trigger_shared_stack(
     now: int,
     cost_layers: list[str] | None,
     commission_per_side: float,
+    instrument: str,
 ) -> StackResponse:
     """One balance, one risk budget, every leg replayed together.
 
@@ -471,8 +525,9 @@ def _trigger_shared_stack(
     lab_db.insert_stack(
         {
             "stack_id": stack_id,
-            "instrument": req.instrument,
+            "instrument": instrument,
             "bar_type": req.bar_type,
+            # The stack-level FALLBACK frame — see the screen path's copy of this note.
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
@@ -499,10 +554,10 @@ def _trigger_shared_stack(
             {
                 "run_id": run_id,
                 "strategy_id": strat["id"],
-                "instrument": req.instrument,
+                "instrument": instrument,
                 "params": params,
                 "bar_type": req.bar_type,
-                "bar_value": req.bar_value,
+                "bar_value": _leg_bar_value(req, strat["id"]),
                 "start_date": req.start_date,
                 "end_date": req.end_date,
                 "commission_per_side": commission_per_side,
@@ -523,6 +578,11 @@ def _trigger_shared_stack(
                 "class_name": strat["class_name"],
                 "params": params,
                 "ruleset_ids": req.ruleset_ids,
+                # 🔴 THE LEG CARRIES ITS OWN FRAME, and the runner loads one bar set per distinct
+                # value rather than one for the stack. The merged clock has always allowed it —
+                # a 5m leg steps three times inside a 15m leg's bar — and this app was the half
+                # that could only load one.
+                "bar_value": _leg_bar_value(req, strat["id"]),
             }
         )
 
@@ -533,14 +593,19 @@ def _trigger_shared_stack(
         rec_run_id = uuid.uuid4().hex[:12]
         run_ids.append(rec_run_id)
         rec_params = dict(req.recovery_params or {})
+        # 🔴 PINNED TO THE PARENT'S FRAME, never read from the request. This leg has no setups
+        # of its own: it arms off the parent's CLOSED trades and counts its wait in the parent's
+        # bars, so a frame of its own would be a rule measuring a different clock from the book
+        # it reads. Nothing would raise — it would arm, trade, and land in the table smaller.
+        rec_bar_value = _leg_bar_value(req, req.recovery_parent)
         lab_db.insert_run_stack(
             {
                 "run_id": rec_run_id,
                 "strategy_id": _RECOVERY_ID,
-                "instrument": req.instrument,
+                "instrument": instrument,
                 "params": rec_params,
                 "bar_type": req.bar_type,
-                "bar_value": req.bar_value,
+                "bar_value": rec_bar_value,
                 "start_date": req.start_date,
                 "end_date": req.end_date,
                 "commission_per_side": commission_per_side,
@@ -561,6 +626,7 @@ def _trigger_shared_stack(
                 "class_name": "RecoveryLeg",
                 "params": rec_params,
                 "ruleset_ids": req.ruleset_ids,
+                "bar_value": rec_bar_value,
                 # The ONE field that makes this a dependent leg rather than a strategy.
                 "source": req.recovery_parent,
             }
@@ -577,8 +643,10 @@ def _trigger_shared_stack(
         stack_id,
         legs,
         {
-            "instrument": req.instrument,
+            "instrument": instrument,
             "bar_type": req.bar_type,
+            # The FALLBACK only — a leg with no frame of its own falls back to this. Each leg
+            # carries its own above, and the runner loads a bar set per distinct frame.
             "bar_value": req.bar_value,
             "start_date": req.start_date,
             "end_date": req.end_date,
@@ -819,6 +887,9 @@ async def get_stack(stack_id: str, timeline: bool = True) -> StackDetail:
             # are the only record of what the stack PINNED onto it (`_SHARED_LEG_PINS`) and the only
             # thing a rerun can carry forward — see the field's note on the model.
             params=r.get("params") or {},
+            # What this leg was replayed on. Legs no longer share the stack's frame, so this is
+            # the only honest source for it, and a rerun reads it rather than the stack row.
+            bar_value=r.get("bar_value"),
             daily_pnl=_load_json(r.get("daily_pnl_path")),
             equity_curve=_load_json(r.get("equity_curve_path")),
             # The mode comes off the SETTINGS row, the same source `StackDetail.mode` reads below —
@@ -868,7 +939,14 @@ async def get_stack(stack_id: str, timeline: bool = True) -> StackDetail:
         start_date=first["start_date"],
         end_date=first["end_date"],
         bar_type=first["bar_type"],
-        bar_value=first["bar_value"],
+        # 🔴 THE STACK-LEVEL FALLBACK, off the settings row — NOT the first leg's frame. Since
+        # 2026-09-03 the legs may each run on their own, so reading `first` would take one leg's
+        # frame and print it as the whole stack's, which is the exact shape this app has been
+        # bitten by: a number on the parent describing children that no longer share it. Each
+        # leg reports its own (`StackStrategyLeg.bar_value`) and the page reads those.
+        # ⚠ `first` remains the fallback for a stack stored before the settings row existed,
+        # where every leg genuinely did share one frame.
+        bar_value=(settings or first).get("bar_value") or first["bar_value"],
         commission_per_side=(settings or first).get("commission_per_side", 0.0) or 0.0,
         slippage_ticks=(settings or first).get("slippage_ticks", 0) or 0,
         total_strategies=len(rows),

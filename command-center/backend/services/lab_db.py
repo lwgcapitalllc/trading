@@ -365,6 +365,12 @@ def init_db() -> None:
             # trades three other bots took. Declared by the package (LAB_STRATEGY["chart_tag"]),
             # never set by hand, and it is a LABEL — nothing about the run reads it.
             "ALTER TABLE strategies ADD COLUMN chart_tag TEXT",
+            # The frame this strategy was MEASURED on, in minutes. NULL means the package
+            # never declared one, which must not read as "any frame will do" — the stack form
+            # leaves an undeclared leg on its own default rather than inventing a number.
+            # Declared by the package (LAB_STRATEGY["suggested_bar_value"]), never set by
+            # hand, and it is a DEFAULT: nothing refuses a run on another frame.
+            "ALTER TABLE strategies ADD COLUMN suggested_bar_value INTEGER",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -2237,8 +2243,8 @@ def upsert_strategy(data: dict) -> None:
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
                  avoid_news, self_sizing, requires_source, display_under,
-                 supports_bid_ask_fills, chart_tag)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 supports_bid_ask_fills, chart_tag, suggested_bar_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -2257,7 +2263,8 @@ def upsert_strategy(data: dict) -> None:
                 requires_source=excluded.requires_source,
                 display_under=excluded.display_under,
                 supports_bid_ask_fills=excluded.supports_bid_ask_fills,
-                chart_tag=excluded.chart_tag
+                chart_tag=excluded.chart_tag,
+                suggested_bar_value=excluded.suggested_bar_value
         """,
             (
                 data["id"],
@@ -2283,6 +2290,7 @@ def upsert_strategy(data: dict) -> None:
                 # in the lab to the flat spread and nothing on any page would say so.
                 1 if data.get("supports_bid_ask_fills", True) else 0,
                 data.get("chart_tag"),
+                data.get("suggested_bar_value"),
             ),
         )
 

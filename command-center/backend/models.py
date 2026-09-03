@@ -750,6 +750,11 @@ class Strategy(BaseModel):
     # setup. `None` = the package declared none, and the chart falls back to a neutral word rather
     # than to another strategy's. A LABEL: nothing about a run reads it.
     chart_tag: Optional[str] = None
+    # The frame this strategy was MEASURED on, in minutes. `None` = the package declared none,
+    # and a form must then leave the leg on its own default rather than invent a number — three
+    # states, and "undeclared" is not "any frame will do" (rule 1). It is a DEFAULT a form fills
+    # in, never a refusal: a run on another frame is legal and is simply a different experiment.
+    suggested_bar_value: Optional[int] = None
 
     @field_validator("steps", mode="before")
     @classmethod
@@ -1397,7 +1402,22 @@ class StackRequest(BaseModel):
     strategy_ids: list[str]  # 2+ Python strategy ids to layer
     instrument: str  # one shared instrument for the whole stack
     bar_type: str = "Minute"
+    # The frame every leg runs on UNLESS it names its own below. Kept as the fallback rather
+    # than removed: a strategy that declares no frame has to land somewhere, and a caller that
+    # sends nothing else must keep getting exactly the stack it used to get.
     bar_value: int = 15
+    # 🔴 THE FRAME EACH LEG RUNS ON, keyed by strategy id — minutes, missing means `bar_value`.
+    # A strategy belongs to a frame the way it belongs to a setup: `mpc_extreme_leg` is measured
+    # on 5m and `mpc_sos_fade` on 15m, and until 2026-09-03 a stack had ONE frame for every leg,
+    # so putting those two on one account silently replayed one of them somewhere it has never
+    # been measured — and the table said portfolio.
+    # ⚠ The window is still SHARED and is checked per leg, because a finer frame has a shallower
+    # history: the legal start is the LATEST floor across the frames, or the coarse leg compounds
+    # alone over months the fine one does not have and every later trade of both is sized off a
+    # balance one built unopposed.
+    # ⚠ A dependent leg (loss recovery) is NOT read from here — it is pinned to its parent's
+    # frame, because it arms off that leg's closed trades and counts its wait in that leg's bars.
+    bar_values_by_strategy: dict[str, int] = {}
     start_date: str
     end_date: str
     # Zero costs by default — matches the Pine strategies (all pinned commission=0, slippage=0)
@@ -1468,6 +1488,19 @@ class StackRequest(BaseModel):
             raise ValueError('mode must be "screen" or "shared"')
         return v
 
+    @field_validator("bar_values_by_strategy")
+    @classmethod
+    def _positive_frames(cls, v: dict) -> dict:
+        # A zero or negative frame is not a slower run, it is a division by nothing four layers
+        # down in the bar loader — and the traceback names the loader, never this field. Refused
+        # at the request, where the message can name the leg.
+        bad = sorted(k for k, m in v.items() if not isinstance(m, int) or m <= 0)
+        if bad:
+            raise ValueError(
+                f"timeframe must be a positive number of minutes, and is not for: {bad}"
+            )
+        return v
+
     @field_validator("risk_cap_pct")
     @classmethod
     def _positive_cap(cls, v: float) -> float:
@@ -1491,6 +1524,10 @@ class StackPreviewRequest(BaseModel):
     instrument: str
     bar_type: str = "Minute"
     bar_value: int = 15
+    # Mirrors `StackRequest` for the same reason its cost fields do: a leg's FRAME is part of the
+    # reuse identity, so a preview that did not carry it would badge a 15m run green "Reuse" for a
+    # leg the launch then replays on 5m.
+    bar_values_by_strategy: dict[str, int] = {}
     start_date: str
     end_date: str
     commission_per_side: float = 0.0  # match the Pine (0/0) — see StackRequest
@@ -1581,6 +1618,12 @@ class StackStrategyLeg(BaseModel):
     # leg to its stored defaults — the same class as a tuning child launched without its parent's
     # costs. `{}` = a leg row written before this was served, never "it had no params".
     params: dict = {}
+    # The frame THIS leg was replayed on, off the child run's own row. Legs stopped sharing one
+    # frame on 2026-09-03 — a 5-minute bot and a 15-minute one on one account is the whole point
+    # of a stack — so the stack's own number no longer describes its legs, and a rerun that read
+    # it would put every leg back on one frame while the word "rerun" says otherwise.
+    # ⚠ `None` = a leg row written before the column was served, never "it had no frame".
+    bar_value: Optional[int] = None
     daily_pnl: list[dict] = []  # [{date, pnl}]
     equity_curve: list[EquityPoint] = []
     # The SOLO CONTROL's book — this leg replayed ALONE on its own full account, which is the only
