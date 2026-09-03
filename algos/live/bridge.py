@@ -1555,11 +1555,25 @@ class OrderBridge:
 
         🔴 **THE SHRINK HAPPENS IN THE STRATEGY'S OWN SIZING, NEVER IN THE ORDER, AND THAT IS THE
         ONLY REASON IT IS ALLOWED AT ALL.** All this does is hand the emulator a number; the clamp
-        is `SoloAccount.room()` at `request_fill`, so the position the emulator books and the
+        is `Execution._fit_to_budget` at PLACEMENT, so the position the emulator books and the
         order this bridge sends are the same size. Shrinking the ORDER would leave the two holding
         different trades, grading different R, and `_agrees` would halt the bot on a divergence
         the safety feature created. **That is why the account cap REFUSED and never shrank until
         this existed, and `_account_cap_check` stays on as the backstop.**
+
+        🔴 **PLACEMENT, NOT THE FILL — and the first attempt got that wrong in a way worth
+        keeping on the record.** The clamp was originally `SoloAccount.room()` inside
+        `request_fill`. Same seam, same arithmetic, one step too late: by the time an order
+        fills, a full-size order has been resting at the broker for hours, so shrinking the
+        emulator's copy there produces exactly the two-different-books divergence this paragraph
+        forbids. MEASURED before it was backed out: a $0.50 budget granted 0.0005 lots against a
+        0.01 broker minimum. **A safety clamp is defined by its MOMENT as much as its seam.**
+
+        ⚠ **A residual case is left standing rather than papered over**: if the budget shrinks
+        between placement and fill, `request_fill` still refuses the emulator's side while the
+        broker's resting order may fill. That is the pre-existing behaviour, it is now rare
+        rather than routine, and it is a divergence either way — the only real fix is that the
+        budget is decided once, at placement, which is what this now does.
 
         🔴 **IT MUST RUN BEFORE THE STRATEGY STEPS, WHICH IS WHY THE RUNNER CALLS IT AND NOT
         `_plan`.** `request_fill` happens while the strategy is stepping a bar; by the time this

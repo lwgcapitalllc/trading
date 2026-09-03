@@ -69,6 +69,9 @@ def simulate(
     streams = {leg.name: leg.bars() for leg in legs}
     cancelled = False
 
+    # THIS loop owns the clock. Claimed once, outside the loop, so a leg stepping inside it
+    # cannot stamp its own bar open over the shared tick time — see `PortfolioAccount`.
+    account.clock_external = True
     for i, tick in enumerate(merge_streams(streams)):
         if i % _CHECK_EVERY == 0:
             if should_cancel is not None and should_cancel():

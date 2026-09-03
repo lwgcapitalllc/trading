@@ -2007,6 +2007,32 @@ most, `recovery` for the loss-recovery leg). The class-name fallback now applies
 account, where a missing key really is a caller bug. ⚠ **Nothing was relying on it** — every real
 caller passes `leg=`, checked rather than assumed.
 
+### `now` has an OWNER, and without one the clamp log was undateable (2026-09-03)
+
+🔴 **Every venue-ceiling clamp on a standalone run carried a NULL time, for as long as the ceiling
+had existed.** `account.now` was stamped only by `portfolio/simulator.py`, which drives a shared
+stack — so every run the lab's own Run button makes recorded *which* entries were resized and
+never *when*. **That log is the only trace a resized entry leaves anywhere**: the trade list and
+the equity curve are identical either way, because R is profit over risk and both scale with
+quantity. A record nobody can tie to a trade is most of the evidence gone.
+
+✅ **The strategy now stamps its own bar time (`Execution._stamp_account_clock`), unless something
+else owns the clock.** `PortfolioAccount.clock_external` is set by the simulator and by nothing
+else, because a shared stack must log every leg against ONE clock — a 15m leg and a 5m leg each
+reporting their own bar open would make the shared contention log disagree with itself about when
+a clash happened. ⚠ **The re-entry stamps too**, from its own faster feed, or a clamp on a
+re-entry would carry the 15m time of whenever the primary last stepped, which is worse than
+carrying nothing. ⚠ **A bar time of ZERO is a time** — the guard tests for `None`, never for
+truthiness. **MEASURED on a fresh replay of 23,714 M15 bars: 28 clamps, 28 of them dated**, the
+first at 2025-09-04 13:15 inside the replayed window; before the fix that column was null on all
+28. 🔴 **Found by RUNNING the feature end to end, not by reading it** — the code looked correct,
+and the null only appears once something actually clamps.
+
+⚠ **A change under `backtest/` needs the Command Center RESTARTED before it takes effect**, unlike
+a change under `strategies/`: the lab's runner purges `strategies.python.*` from the module cache
+before every run and nothing purges the shared library, so a long-running backend keeps whatever
+it booted with. Checked rather than assumed.
+
 ### `SoloAccount.external_room` — one account, several PROCESSES (2026-09-03)
 
 **Aaron's split: each bot gets a share of one account, and when one is occupying more than its
@@ -2017,20 +2043,40 @@ and say why on Telegram.** Extreme leg 5%, A+ 5%, account cap 10%.
 pushes the dollars still free onto this field each bar. Nothing about a backtest changes — the field
 is `None` everywhere in the lab, which means infinite, which is what this class has always done.
 
-🔴 **A STATED ROOM REFUSES; IT DOES NOT SHRINK, AND THE FIRST VERSION SHRANK (audited out the same
-day).** The lab's stacked account may shrink because it is the only book. A live bot's order is
-**already resting at the broker** when this runs — the strategy sizes it at PLACEMENT from
-`equity * exec_risk_pct / dist` and never asks the account, while this gate runs at the FILL — so
-a shrink books a smaller emulator position than the broker just filled, and `bridge._agrees`
-compares direction and presence, **not size**, so nothing halts. MEASURED: a $0.50 room granted
-0.0005 lots, under the 0.01 broker minimum. `all_or_nothing` is derived from the room being stated,
-so no solo replay moves.
+✅ **IT SHRINKS, AND THE SHRINK IS SIZED AT PLACEMENT — `PortfolioAccount.affordable_qty`, called
+from `Execution._fit_to_budget` (2026-09-03).** The strategy asks the account what it can still
+afford BEFORE it places the order, so the order that reaches the broker is already the size the
+emulator believes it holds and both sides book the same quantity. A room too small to place
+anything worth placing returns 0.0 and no order is placed at all.
 
-🔴 **AND THE LOT CEILING'S ARGUMENT DOES NOT TRANSFER TO IT — the difference is WHEN.** The ceiling
-is applied before the order is placed, so the bridge sends the capped size and both sides agree.
-The account room is only knowable per bar and was applied at the fill, after the order was resting.
-**Same seam, same operator, different moment, opposite verdict.** A real live shrink needs the
-strategy to consult `room()` where it computes `qty`, which is a `strategies/` change under rule 22.
+🔴 **THE FIRST VERSION CLAMPED AT THE FILL AND WAS WRONG — same seam, same arithmetic, one step
+too late.** A live bot's order is **already resting at the broker** by the time a fill happens, so
+shrinking the emulator's copy there books a smaller position than the broker just filled — and
+`bridge._agrees` compares direction and presence, **not size**, so nothing halts on it. MEASURED
+before it was backed out: a $0.50 room granted 0.0005 lots, under the 0.01 broker minimum.
+**A safety clamp is defined by its MOMENT as much as by its seam**, and the venue lot ceiling was
+right next to it doing the same operator at the right moment the whole time.
+
+⚠ **The placement answer and the fill answer come from ONE piece of arithmetic, on purpose.**
+`affordable_qty` and `request_fill` share `_risk_of`, `room_for`, `_MIN_GRANT_USD` and
+`_below_floor`; a placement sized by one rule and a fill judged by another is two answers to one
+question, and this repo has already paid for the general form of that twice. There is a test whose
+whole job is that a size the placement fitted is then granted **in full** at the fill.
+
+⚠ **An unbudgeted account returns the desired size UNCHANGED, and that is the parity guarantee.**
+Every solo run and every `compare_*.py` gate has no room stated, so the fit is the identity
+function there and cannot move a stored result. **Proven rather than argued:**
+`compare_strategy.py` on `VANTAGE_XAUUSD, 15_af500.csv` was run GREEN before the change and GREEN
+after it, 21,302 bars both times.
+
+⚠ **A green gate says nothing about the shrink itself** (rule 14) — the Pine has no account
+budget, so no export can ever enter this branch. The unit tests and their mutations are the only
+evidence this behaviour has, and they are the only evidence it will ever have.
+
+⚠ **ONE residual case, named rather than papered over**: if the budget shrinks BETWEEN placement
+and fill, `request_fill` still refuses the emulator's side while the broker's resting order may
+fill. That is the pre-existing behaviour, it is now rare rather than routine, and the only real
+fix is that the budget is decided once — at placement — which is what this now does.
 
 ⚠ **THREE states, and only two are a number** (rule 1). `None` is *nobody has said*, which is
 every backtest; `0.0` is *somebody asked and there is none*, which blocks the fill. Collapsing

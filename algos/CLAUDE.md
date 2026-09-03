@@ -2514,25 +2514,42 @@ granted 0.0005 lots, below the 0.01 broker minimum, against a full-size order al
 so no solo replay moves). That matches `bridge._account_cap_check`, which has refused at PLACEMENT
 with a Telegram message naming the reason since the cap landed — one answer, not two.
 
-⚠ **A REAL shrink needs the size decided where the ORDER is decided** — the strategy consulting
-`room()` when it computes `qty`, so the bridge places the smaller order and both sides agree. That
-is a `strategies/` change under rule 22 and needs its parity gate run. **It is the outstanding half
-of Aaron's ask.**
+✅ **BUILT 2026-09-03 — the size is now decided where the ORDER is decided.** The strategy asks
+the account what it can afford at PLACEMENT (`Execution._fit_to_budget` →
+`PortfolioAccount.affordable_qty`), so the bridge sends the already-shrunk order and both sides
+book the same quantity. Rule 22 satisfied: `compare_strategy.py` on `VANTAGE_XAUUSD, 15_af500.csv`
+GREEN before and after, 21,302 bars each time. ⚠ **The gate proves only that nothing MOVED** — the
+Pine has no account budget, so no export can exercise the shrink itself.
 
-⚠ **It was never live-reachable.** The frozen `deployed/` snapshot carries no `external_room`, so
-`refresh_account_room` returned early on the running bot throughout. The defect would have arrived
-on the next promote.
+⚠ **It was not live-reachable WHILE THE DEFECT EXISTED** — the frozen `deployed/` snapshot carried
+no `external_room`, so `refresh_account_room` returned early and the fill-time shrink never ran on
+a live bot. That stopped being true with the **2026-09-03 19:32 UTC promote from `904a432c`**,
+which is also the first snapshot to carry the budget seam at all.
+
+🔴 **THE SHRINK IS NOT LIVE UNTIL THE NEXT PROMOTE, AND THE TWO HALVES ARRIVE BY DIFFERENT ROUTES.**
+`algos/` reaches the box by `git pull`; `strategies/`, `engines/` and `backtest/` reach it only by
+`promote.py`. So the bridge half of this can be current while the sizing half is a snapshot behind
+— which is exactly the state that produces a *refusing* bot that every doc describes as *shrinking*.
+**Check `bot_version`'s built-from commit before believing either behaviour is live.**
 
 **Three pieces and the order is the design.** `bridge.refresh_account_room()` reads the broker and
 works out the dollars still free under the cap → the runner calls it at the TOP of every bar →
-`SoloAccount.external_room` makes the strategy's own sizing shrink to it at `request_fill`.
+the strategy sizes against it at PLACEMENT, so the order the bridge sends is already the size the
+emulator holds.
 
-🔴 **THE REFUSE-NEVER-SHRINK RULE STANDS, AND THE AUDIT ABOVE IS WHY.** It was briefly reversed on
-the reasoning that clamping at the account seam is "the strategy deciding its own size", the same
-argument the venue lot ceiling rests on. **That argument does not transfer, and the difference is
-WHEN.** The lot ceiling is applied before the order is placed, so the bridge sends the capped size;
-the account room was applied at the FILL, by which time a full-size order was already resting.
-**Same seam, same operator, different moment — and the moment is the whole property.**
+🔴 **THE RULE IS NOT "REFUSE, NEVER SHRINK" — IT IS "DECIDE AT THE PLACEMENT, NEVER AT THE FILL",
+and getting that wrong is what made the first attempt refuse.** Clamping at the account seam was
+justified by the argument the venue lot ceiling rests on, and the argument is sound; what was
+wrong was the MOMENT. The lot ceiling is applied before the order is placed, so the bridge sends
+the capped size. The account room was applied at the FILL, by which time a full-size order was
+already resting, and shrinking there books a position the broker never filled. **Same seam, same
+operator, different moment — and the moment is the whole property.** Moving the decision to
+placement is what made the shrink legitimate; nothing about the seam changed.
+
+⚠ **A residual case is named rather than papered over**: if the budget shrinks BETWEEN placement
+and fill, the emulator's side is still refused while the broker's resting order may fill. Rare
+rather than routine now, and unfixable except by deciding the budget once — which is what
+placement-time sizing does.
 
 🔴 **IT MUST RUN BEFORE THE STRATEGY STEPS, WHICH IS WHY THE RUNNER CALLS IT AND NOT `_plan`.**
 `request_fill` happens *inside* the step; by the time the bridge reconciles, the fill is already

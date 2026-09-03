@@ -1509,3 +1509,80 @@ def test_at_the_shipped_default_BOTH_rungs_report_that_they_bank_nothing():
     ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
     ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())
     assert [pct for _, pct in ex.trades[0].tp_rungs] == [0.0, 0.0]
+
+
+# ── sizing against the ACCOUNT's budget, at placement (2026-09-03) ────────────────────
+#
+# Aaron, 2026-09-03: "If at any time a bot is occupying more than 5% then the other bot(s) will
+# need to shrink accordingly. If no risk is available then we will refuse trades."
+#
+# 🔴 The moment is the whole point. The account has had a budget gate since 2026-08-09, but it
+# ran at the FILL — by which time a live bot's order is already resting at the broker, so
+# shrinking the emulator's copy leaves the two holding different books that grade different R.
+# These drive the size that actually reaches `_Pending`, which is what the bridge sends.
+def test_a_STATED_budget_SHRINKS_the_placed_size_rather_than_refusing_it():
+    """Half the budget this setup wants → half the size, taken rather than skipped.
+
+    RED if the fit is dropped, and RED the other way if it refuses: the size comes back either
+    as the formula's full answer or as no trade at all.
+    """
+    ex = Execution(_cfg(exec_risk_pct=10.0), initial_capital=100_000.0)
+    # The formula wants to risk 10% of 100,000 = $10,000 over a 3.82 stop. Grant it half.
+    ex._account.external_room = 5_000.0
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    assert ex._pos_dir == 1, "a shrunk setup is still TAKEN — that is the whole request"
+    assert abs(ex._qty - (5_000.0 / 3.82)) < 1e-6
+
+
+def test_NO_budget_left_places_NOTHING_at_all():
+    """"If no risk is available then we will refuse trades." A dust order would occupy the leg's
+    only position slot, so an empty budget has to mean no order, not a tiny one."""
+    ex = Execution(_cfg(exec_risk_pct=10.0), initial_capital=100_000.0)
+    ex._account.external_room = 0.0
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    assert ex._pos_dir == 0, "an empty budget must leave the bot flat"
+
+
+def test_an_UNBUDGETED_run_is_completely_unaffected():
+    """🔴 The parity guarantee, asserted rather than assumed. Every solo run and every
+    `compare_strategy.py` gate has no budget stated, so the fit must be the identity function
+    there — otherwise this change moves stored results and reddens a gate for no reason.
+    The number is the same one `test_position_size_uses_risk_pct_of_equity` pins."""
+    ex = Execution(_cfg(exec_risk_pct=10.0), initial_capital=100_000.0)
+    assert ex._account.room() == float("inf")
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6
+
+
+# ── the account learns what time it is (2026-09-03) ──────────────────────────────────
+def test_the_account_is_told_the_bar_time_so_a_CLAMP_CAN_BE_DATED():
+    """🔴 Every venue-ceiling clamp on a standalone run carried a null time until this landed,
+    and that record is the ONLY trace a resized entry leaves — the trade list and the equity
+    curve are identical either way, because R is profit over risk and both scale with quantity.
+    Found by running the feature end to end, not by reading it."""
+    ex = Execution(_cfg())
+    ex.step(_sig(3, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert ex._account.now == 3 * 900_000
+
+
+def test_a_bar_time_of_ZERO_is_still_a_time():
+    """⚠ The first bar of a series stamps 0, which is falsy. A truthiness check here would drop
+    it and leave the run's opening bars undateable — the same class of bug as reading a measured
+    zero as "not measured"."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert ex._account.now == 0
+
+
+def test_the_strategy_does_NOT_overwrite_a_clock_a_SHARED_STACK_owns():
+    """🔴 A shared stack's simulator stamps ONE tick time across every leg, because a 15m leg and
+    a 5m leg reporting their own bar opens would make the shared contention log disagree with
+    itself about when a clash happened. RED if the strategy stamps unconditionally."""
+    ex = Execution(_cfg())
+    ex._account.clock_external = True
+    ex._account.now = 12345
+    ex.step(_sig(7, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert ex._account.now == 12345, "the simulator's clock must survive a leg stepping"

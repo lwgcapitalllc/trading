@@ -315,6 +315,42 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The name (re
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Sizing — this bot sizes ITSELF*.
 
+## Sizing against the ACCOUNT's budget, at PLACEMENT (2026-09-03)
+
+🔴 **`_fit_to_budget` shrinks a size to what the account can still afford, BEFORE the order is
+placed.** Aaron's rule: a bot occupying more than its share makes the others shrink to what is
+left; with nothing left they place nothing and say why. The arithmetic is
+`PortfolioAccount.affordable_qty` — deliberately NOT a second copy here, because the fill gate
+uses the same one and a placement sized by one rule and a fill judged by another is two answers
+to one question.
+
+🔴 **The MOMENT is the whole point, and the first attempt got it wrong.** The clamp originally
+ran at the FILL, which is right for a shared backtest and wrong for a live bot: the order is
+already resting at the broker by then, so shrinking the emulator's copy leaves the two holding
+different books that grade different R — and the live bridge compares direction and presence,
+**not size**, so nothing halts on it. Same seam, same operator, one step too late.
+
+⚠ **All FOUR placement sites are fitted** — both primary sides and both re-entry sides. ⚠ **An
+unaffordable re-entry long falls THROUGH to the short check** rather than dropping the pair.
+
+⚠ **Inert without a stated budget, which is the parity guarantee**: a solo account has infinite
+room, so the fit is the identity function and no stored result moves. `compare_strategy.py` was
+run GREEN before and after on the same export, 21,302 bars each time. ⚠ **And a green gate says
+nothing about the shrink** — the Pine has no account budget, so no export can enter this branch.
+The unit tests and their mutations are the only evidence it will ever have.
+
+Detail, numbers and the audit that backed out the first version: `backtest/CLAUDE.md` →
+*`SoloAccount.external_room`*.
+
+## The account is told what TIME it is (2026-09-03)
+
+🔴 **`_stamp_account_clock`, because every venue-ceiling clamp on a standalone run carried a null
+time.** That log is the only trace a resized entry leaves — the trade list and the equity curve
+are identical either way — so a record nobody can date is most of the evidence gone. ⚠ **It does
+NOT stamp when a shared stack's simulator owns the clock**, or the legs would report their own
+bar opens into one shared log. ⚠ **The re-entry stamps from its own faster feed.** ⚠ **A bar time
+of zero is a time.** Found by running the feature, not by reading it.
+
 ## `live_setups()` — what this bot is WATCHING, for the pre-trade signals channel (2026-08-13)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *`live_setups()` — what this bot is WATCHING, for the pre-trade signals channel (2026-08-13)*.

@@ -208,6 +208,18 @@ class PortfolioAccount:
         # shrunk/blocked entry is logged with WHEN it happened. `contention` is the record of
         # every collision — the whole point of sharing an account. (SoloAccount never contends.)
         self.now: Optional[int] = None
+        # WHO STAMPS `now`. The simulator drives a shared stack and sets this True, because every
+        # leg's contention must be logged against ONE clock — a 15m leg and a 5m leg reporting
+        # their own bar opens would make the shared log disagree with itself about when a clash
+        # happened. Left False, the STRATEGY stamps its own bar time as it steps, which is the
+        # only clock a standalone run has.
+        #
+        # 🔴 It exists because the clamp record carried a null time on every run the lab's own
+        # Run button makes. The venue-ceiling log is the ONLY trace a resized entry leaves — the
+        # trade list and the equity curve look identical, since R is profit over risk and both
+        # scale with quantity — so a record nobody can tie to a trade is most of the evidence
+        # gone. Found by running the feature, not by reading it.
+        self.clock_external = False
         self.contention: list[dict] = []
         # What the account actually CARRIED, sampled by the simulator once per tick. The
         # contention log answers "was anything refused"; this answers the question underneath
@@ -326,6 +338,46 @@ class PortfolioAccount:
         return self._open(
             leg, dir, entry, stop, desired_qty, desired_risk, granted_risk, point_value
         )
+
+    def affordable_qty(
+        self, leg: str, entry: float, stop: float, point_value: float, desired_qty: float
+    ) -> float:
+        """The largest size this leg can still afford RIGHT NOW. 0.0 = place nothing.
+
+        🔴 **This is the PLACEMENT-time twin of `request_fill`, and the moment is the whole
+        point.** `request_fill` runs when an order FILLS, which is the right moment for a shared
+        backtest — one process, and the account hands the granted size straight back to the
+        emulator that opens at it. It is the WRONG moment for a live bot: by then a full-size
+        order is already resting at the broker, and shrinking or refusing the emulator's copy
+        leaves the two holding different books that grade different R. Nothing hands a size back
+        across a process boundary. **So the budget has to decide BEFORE the order is placed, and
+        that is what this answers.**
+
+        ⚠ **The arithmetic and the thresholds live HERE, once, and `request_fill` uses the same
+        ones** — a placement that sized against one rule and a fill that judged it by another is
+        how the two silently disagree about the same trade. This repo has already paid for the
+        general form of that twice.
+
+        ⚠ **An unbudgeted account returns the desired size UNCHANGED, including infinite room.**
+        That is what keeps every solo run and every parity gate byte-identical: with no budget
+        stated there is nothing to shrink to, so this cannot move a stored result.
+        """
+        room = self.room_for(leg)
+        if room == float("inf") or desired_qty <= 0:
+            return desired_qty
+        desired_risk = self._risk_of(desired_qty, entry, stop, point_value)
+        if desired_risk <= room:
+            return desired_qty
+        # Not enough for a trade worth placing. Same two tests `request_fill` blocks on, so a
+        # size this refuses to place could not have been granted at the fill either.
+        if room < _MIN_GRANT_USD or self._below_floor(room):
+            return 0.0
+        per_unit = abs(float(entry) - float(stop)) * float(point_value)
+        if per_unit <= 0:
+            # An unpriceable trade is not an unaffordable one. Refusing here would turn a missing
+            # tick value into a silent no-trade, which is the shape that reads as a broken engine.
+            return desired_qty
+        return room / per_unit
 
     def request_fills(self, requests: Sequence[dict]) -> dict[str, float]:
         """Several legs fill on the SAME bar. Split the room in proportion to each leg's

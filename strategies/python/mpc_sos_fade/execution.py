@@ -1071,6 +1071,10 @@ class Execution:
         direction filled this bar (+1/-1) or None. Bar-mode only for now; tick-mode secondary
         fills are a later add (the 1m tick seam isn't wired)."""
         self._sec_stop_dir = None            # cleared each step; _finalise_trade sets it on a stop-out
+        # The re-entry runs on its OWN faster clock, and it places orders too, so it stamps the
+        # account the same way `step` does — otherwise a clamp on a re-entry carries the 15m
+        # bar time of whenever the primary last stepped, which is worse than carrying nothing.
+        self._stamp_account_clock(sig1m)
         sink = Decision(index=sig1m.index)   # throwaway — trades land in self.trades regardless
         filled_dir: Optional[int] = None
 
@@ -1145,22 +1149,30 @@ class Execution:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
                 qty = (self.equity * risk_pct / 100.0) / dist
+                qty = self._fit_to_budget(qty, arm.l_edge, arm.l_sl)
+                # ⚠ An unaffordable long falls THROUGH to the short check rather than returning
+                # nothing. Only one side can be taken, and refusing the pair because the first
+                # one asked for too much would drop a re-entry the budget could have carried.
                 # `getattr`, because `arm` is a duck-typed record here and several tests build a
                 # bare stand-in for it. A missing field means "no trigger named itself", which the
                 # ladder reads as the shared settings — the behaviour every caller had before the
                 # reclaim half existed.
-                return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg,
-                                src=getattr(arm, "l_src", None),
-                                after=getattr(arm, "l_after", None),
-                                market=self._market_entry(getattr(arm, "l_src", None)))
+                if qty > 0:
+                    return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg,
+                                    src=getattr(arm, "l_src", None),
+                                    after=getattr(arm, "l_after", None),
+                                    market=self._market_entry(getattr(arm, "l_src", None)))
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
                 qty = (self.equity * risk_pct / 100.0) / dist
-                return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg,
-                                src=getattr(arm, "s_src", None),
-                                after=getattr(arm, "s_after", None),
-                                market=self._market_entry(getattr(arm, "s_src", None)))
+                qty = self._fit_to_budget(qty, arm.s_edge, arm.s_sl)
+                if qty > 0:
+                    return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2,
+                                    arm.s_leg,
+                                    src=getattr(arm, "s_src", None),
+                                    after=getattr(arm, "s_after", None),
+                                    market=self._market_entry(getattr(arm, "s_src", None)))
         return None
 
     # ── main step ───────────────────────────────────────────────────────────────
@@ -1169,6 +1181,11 @@ class Execution:
 
         # Before anything reads a bar number. See `_same_leg` for why a number is not enough.
         self._remember_bar(sig)
+
+        # Tell the account WHEN it is, unless a shared stack's simulator already owns the clock.
+        # Without this a standalone run stamps every budget and venue-ceiling record with a null
+        # time — and the venue-ceiling record is the only trace a resized entry leaves anywhere.
+        self._stamp_account_clock(sig)
 
         # Runs before anything can branch — see `_update_atr`.
         self._update_atr(sig)
@@ -1919,6 +1936,42 @@ class Execution:
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
                 codes=list(cs), edge=float(edge), sos_bar=int(sos_bar)))
 
+    def _stamp_account_clock(self, sig) -> None:
+        """Tell the account the current bar time — unless something else owns the clock.
+
+        🔴 A shared stack's simulator sets `clock_external` and stamps ONE tick time across every
+        leg, which is the only way a shared contention log can be read: two legs on different
+        timeframes reporting their own bar opens would make the log disagree with itself about
+        when a clash happened. This method must never overwrite that.
+
+        ⚠ Everywhere else NOBODY was stamping it, so a standalone run — including every run the
+        lab's own Run button makes — recorded each venue-ceiling clamp with a null time. That log
+        is the only evidence a resized entry leaves: the trade list and the equity curve are
+        identical either way, because R is profit over risk and both scale with quantity.
+        """
+        if getattr(self._account, "clock_external", False):
+            return
+        ms = getattr(sig, "time_ms", None)
+        if ms is not None:
+            self._account.now = int(ms)
+
+    def _fit_to_budget(self, qty: float, entry: float, stop: float) -> float:
+        """Shrink a size to what the ACCOUNT can still afford. 0.0 = place nothing.
+
+        🔴 **At PLACEMENT, which is the entire point.** The account has always had a budget gate,
+        but it ran at the FILL — right for a shared backtest, wrong for a live bot, where the
+        order is already resting at the broker by then and shrinking the emulator's copy leaves
+        the two holding different books. Sizing here means the order that reaches the broker is
+        already the size the strategy believes it holds, so both sides book the same quantity.
+        This is the same reasoning the venue lot ceiling is applied under: clamp at the DECISION,
+        never at the order.
+
+        ⚠ **Inert unless something states a budget.** A solo run's account has infinite room, so
+        this returns the desired size untouched and no stored result — or parity gate — moves.
+        """
+        return self._account.affordable_qty(
+            self._leg, entry, stop, self._cfg.point_value, qty)
+
     # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
         cfg = self._cfg
@@ -1942,7 +1995,9 @@ class Execution:
             if self._stop_clears_floor(dist, long_edge) \
                     and not self._too_deep(sig, long_edge, True):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
-                self._pend_long = _Pending(1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar, fib)
+                qty = self._fit_to_budget(qty, long_edge, sl)
+                self._pend_long = _Pending(
+                    1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar, fib) if qty > 0 else None
             else:
                 self._pend_long = None
         else:
@@ -1957,7 +2012,9 @@ class Execution:
             if self._stop_clears_floor(dist, short_edge) \
                     and not self._too_deep(sig, short_edge, False):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
-                self._pend_short = _Pending(-1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar, fib)
+                qty = self._fit_to_budget(qty, short_edge, sl)
+                self._pend_short = _Pending(
+                    -1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar, fib) if qty > 0 else None
             else:
                 self._pend_short = None
         else:

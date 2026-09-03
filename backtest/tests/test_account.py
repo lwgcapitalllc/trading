@@ -916,3 +916,78 @@ def test_the_stated_room_never_goes_NEGATIVE():
     s.request_fill("A", +1, 100.0, 99.0, 100.0, 1.0)
     s.external_room = 50.0  # the balance fell; this bot is now over its share
     assert s.room() == 0.0
+
+
+# ── sizing at PLACEMENT, not at the fill (2026-09-03) ─────────────────────────────────
+#
+# `request_fill` decides at the FILL, which is right for a shared backtest — one process, and
+# the granted size goes straight back to the emulator that opens at it. It is wrong for a live
+# bot: by then a full-size order is resting at the broker, and neither shrinking nor refusing the
+# emulator's copy can change that. `affordable_qty` is the same question asked one step earlier.
+def test_an_UNBUDGETED_account_returns_the_desired_size_UNTOUCHED():
+    """🔴 The parity-safety test. Every solo run and every `compare_*.py` gate runs on an account
+    with no budget, so this MUST be the identity function there or a stored result moves and a
+    gate goes red for a reason that has nothing to do with the strategy."""
+    s = SoloAccount(balance=10_000.0)
+    assert s.room() == float("inf")
+    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 1_234.5) == 1_234.5
+
+
+def test_a_size_that_FITS_the_budget_is_returned_untouched():
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 500.0
+    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 300.0) == 300.0
+
+
+def test_a_size_that_does_NOT_fit_is_SHRUNK_to_exactly_the_room():
+    """Aaron's rule, 2026-09-03: a bot occupying more than its share makes the others shrink.
+    RED if this refuses instead of shrinking, which is what it did before this date."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 250.0
+    # 1 point of stop distance at point value 1 → risk == qty. 1000 wanted, 250 affordable.
+    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0) == 250.0
+
+
+def test_the_shrunk_size_is_then_GRANTED_IN_FULL_at_the_fill():
+    """🔴 THE ANTI-DRIFT TEST, and the reason the arithmetic lives on the account rather than in
+    the strategy. A placement sized by one rule and a fill judged by another is two answers to
+    one question. RED if either side's thresholds move independently of the other's."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 250.0
+    fitted = s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0)
+    assert s.request_fill("A", +1, 100.0, 99.0, fitted, 1.0) == fitted, (
+        "the fill must not shrink a size the placement already fitted"
+    )
+
+
+def test_NO_ROOM_means_place_NOTHING_rather_than_a_dust_order():
+    """ "If no risk is available then we will refuse trades" — Aaron, 2026-09-03. A dust order
+    would occupy the leg's only position slot, which is the defect that once retired a leg for
+    five and a half years."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 0.0
+    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0) == 0.0
+
+
+def test_a_room_below_the_MINIMUM_GRANT_also_places_nothing():
+    """The same threshold `request_fill` blocks on, so a size this places could never be refused
+    at the fill for being dust. RED if the two constants drift apart."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 0.001
+    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0) == 0.0
+
+
+def test_an_UNPRICEABLE_trade_is_not_treated_as_an_unaffordable_one():
+    """A zero stop distance cannot be converted into money. Refusing here would turn a missing
+    tick value into a silent no-trade, which reads as a broken engine rather than a full budget."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 250.0
+    assert s.affordable_qty("A", 100.0, 100.0, 1.0, 1_000.0) == 1_000.0
+
+
+# ── who stamps the clock ──────────────────────────────────────────────────────────────
+def test_an_account_does_NOT_claim_the_clock_by_default():
+    """A standalone run has no simulator, so the strategy must be free to stamp its own bar time
+    — the state that left every venue-ceiling record with a null time."""
+    assert SoloAccount(balance=10_000.0).clock_external is False
+    assert PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10).clock_external is False
