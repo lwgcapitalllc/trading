@@ -2,9 +2,12 @@
 
 **Purpose:** The Python side of `strategies/tradingview/mpc_extreme_leg_strategy.pine` — the leg
 that runs INTO the shift of structure, which is the move the A+ bot's setup begins after.
-**Scope:** This package only. The strategy's design, its optimisation record and the evidence
-behind each default live in `strategies/tradingview/docs/mpc_extreme_leg_strategy.md`; the porting
-process lives in `docs/STRATEGY_WORKFLOW.md`. Neither is restated here.
+**Scope:** This package only. The strategy's design and the evidence behind each default live in
+`strategies/tradingview/docs/mpc_extreme_leg_strategy.md`; the porting process lives in
+`docs/STRATEGY_WORKFLOW.md`. Neither is restated here.
+**Every sweep run on this bot is `mpc_extreme_leg_optimization.md`, next to this file — read it
+BEFORE proposing a tuning idea.** Four searches have each landed back on the shipped settings, and
+a cut is scored on the setup pool BEFORE the one-position rule or its number is fiction.
 **Status:** ✅ **PARITY GREEN — `compare_extreme_leg.py` exits 0 (2026-09-02).** Stage 6 of six is
 done: the Python makes the same decisions as the Pine on every one of 20,327 compared bars.
 ⚠ **READ THE COVERAGE BEFORE QUOTING THAT.** The export is **3.5 months with 7 entries**, and

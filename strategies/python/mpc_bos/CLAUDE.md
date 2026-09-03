@@ -1,6 +1,9 @@
 # CLAUDE.md — mpc_bos (MPC BOS, the break-of-structure continuation bot)
 
 **Purpose:** Standing instructions for this strategy package.
+**Sweeps:** `mpc_bos_optimization.md`, next to this file — **empty on purpose**, because no sweep
+has ever been run here. Read its warning first: this bot's gate is narrow, so tuning a parameter
+whose branch no gate reaches moves the Python away from a Pine nobody has checked it against.
 **Scope:** This package only. It does NOT cover the engines it replays (`engines/`), the
 backtest infrastructure (`backtest/`), the lab that runs it (`command-center/`), or the A+ bot
 it subclasses (`strategies/python/mpc_sos_fade/` — read that one's `## The exit ladder` before

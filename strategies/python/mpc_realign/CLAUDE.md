@@ -5,6 +5,9 @@ trend on the 15m (SOS → BOS → BOS) is broken by a **bearish shift of structu
 BREAK** — a structural liquidity grab. On the 5m the internal structure then turns bearish and back
 bullish to **realign** with the original external direction, and the trade is taken on that
 realignment, **before** the external bullish SOS that later confirms it. Shorts are the exact mirror.
+**Sweeps:** `mpc_realign_optimization.md`, next to this file — **empty on purpose**, and it names
+what blocks the first sweep: this bot has NO parity gate, so tuning it optimises a Python program
+against itself.
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).

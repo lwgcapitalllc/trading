@@ -5,6 +5,9 @@
 B LEG is the SOS whose retrace arrived LATE: an A+ reversal dies at 2/3 on a continuation
 BOS before it retraces, the Sniper-Zone band (0.382–0.5) of that break is frozen, and a
 resting limit at the 0.5 edge waits for the late return.
+**Sweeps:** `mpc_bleg_optimization.md`, next to this file — **empty on purpose**, because no
+sweep has ever been run here. It carries the two named tuning candidates and the rule that must be
+obeyed before the first grid: state the out-of-sample split BEFORE it runs, at n=50.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).

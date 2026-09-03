@@ -2,6 +2,8 @@
 
 **Purpose:** After a strategy takes a real stop-out, take one counter-trade on the opposing
 external CHoCH, secure the loss back at +1R, and trail the rest.
+**Sweeps:** `loss_recovery_optimization.md`, next to this file — the size sweep and the nine-stop /
+six-ladder search, plus the standing rule that both sides must be COSTED or the verdict flips.
 **Scope:** Signal + trade management + R accounting. No sizing in lots, no broker calls, no UI,
 no structure detection of its own.
 **Status:** 🔴 **LAB ONLY.** `enabled` defaults False. No Pine twin exists, so there is no
