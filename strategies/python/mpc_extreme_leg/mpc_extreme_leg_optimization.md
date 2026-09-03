@@ -73,6 +73,7 @@ will actually trade*. Rankings survive the difference; totals do not.
 | 9 | 2026-09-03 | **Re-vet of the two structure settings Aaron asked about** — how recently a level must have been swept (shipped 3 hours) and how far back the extreme is looked for (shipped 2 hours), plus the stop cushion | **BOTH CONFIRMED. The sweep window is a sharp peak** — 1h +14.3R, 2h +40.8R, **3h +83.3R**, 4h +74.3R, 8h +59.7R — best money and lowest drawdown together. **The extreme lookback has one small open trade-off:** 2h makes the most money (+83.3R / 9.7R) but 3h, 4h and 6h are **identical** (+79.5R / 8.7R) — past 3 hours the extreme stops moving, so the real choice is 2h or "wide", and wide pays 3.8R for 1R off the worst run. Stop cushion 0.20 ATR re-confirmed as a smooth hill. | **shipped CONFIRMED; one open decision, see Run 9 below** |
 | 10 | 2026-09-03 | 🔴 **"WHAT DO THE LOSERS HAVE IN COMMON, AND CAN WE CLOSE EARLY?"** — Aaron's question. Every trade the shipped configuration books, profiled across 8 features, plus **a TIME STOP swept from 1 hour to 3 days** — the one exit rule this strategy has never had | **THE TIME STOP IS DEAD AND THE CURVE IS PERFECTLY MONOTONIC:** 1h −3.7R, 4h +6.2R, 12h +34.3R, 24h +60.6R, 48h +79.4R, 72h +81.1R, **no limit +84.0R**. It frees the slot (169 → 181 trades) and still loses. 🔴 **The mechanism is the finding: losers die fast and winners take days.** Quickest quarter of trades 32.6% hit / −9.9R; slowest quarter 69.0% hit / +63.0R. **A time stop cuts the winners.** 🔴 **And no early exit of any kind can work here: ZERO of 84 losers ever reached half way to the target** (median loser got 12%). Nothing else the losers share is cuttable. | **do not build it** — read the verdict |
 | 11 | 2026-09-03 | **The two cuts Run 10's profile pointed at** — a CEILING on stop size (the widest quarter paid +0.052R a trade) and a higher FLOOR on distance to the swing (the nearest quarter paid +0.284R). Applied to the setup pool, before the slot | **BOTH FAIL.** Every stop ceiling loses: 4.0 → +32.9R, 5.0 → +71.7R, 6.0 → +73.4R, 8.0 → +82.6R against the control's **+84.0R**. Only 7.0 beats it, by +1.2R, with neighbours +79.7R / **+85.2R** / +82.6R — a lone bump. The target floor declines monotonically: 2.5 → +71.3R, 3.0 → +69.0R, 4.0 → +51.7R. Combining them does not rescue either (best pairing +73.1R). 🔴 **THE TRANSFERABLE RESULT: on the finished book the widest-stop trades looked like +2.2R across 42 trades, obviously free to delete. Refusing them properly costs 10R,** because the slot they occupied was going to be occupied anyway. | **do not build either** |
+| 12 | 2026-09-03 | 🔴 **THE TIMEFRAME QUESTION, RE-ASKED ON THE CURRENT BASIS** — Aaron: *"my goal is I'm looking for more frequent trades so we could build a smoother equity curve."* **8 chart pairs, each RE-TUNED FROM SCRATCH** over five axes (a pair scored on 15m/5m's settings only proves settings do not transfer) | **NO OTHER PAIR WORKS, AND FREQUENCY IS AVAILABLE EVERYWHERE — IT JUST COSTS THE EDGE.** 15m/1m delivers **220.5 trades a year against 26.3** and earns **less** (+54.6R vs +83.3R) with a **six times deeper** worst losing run (57.3R vs 9.7R). Return-over-drawdown: shipped **8.60**, best alternative 2.38 (at 4.5 trades a year). **Every pair that adds trades destroys more drawdown than it adds return — no exception in eight.** Hit rate falls monotonically as the chart speeds up: 47.6% → 39.5% → 27.4% → 22.0% → 18.1%. | **shipped pair CONFIRMED — the answer to "more trades" is another INSTRUMENT** |
 
 ⚠ **Runs 1–7 are BACK-FILLED from `strategies/tradingview/docs/mpc_extreme_leg_strategy.md` on
 2026-09-03 and were NOT re-run that day.** They are recorded here so the file is a complete
@@ -411,3 +412,59 @@ will endorse almost any cut you propose.
 ⚠ **This is the standing reason every cut in this file is applied to the setup pool before the
 one-position rule, and it is the single most important line in the document.** Any future
 "let's just stop taking those" idea must be run this way or its number is fiction.
+
+---
+
+# Run 12 — the timeframe question, re-asked
+
+**Date:** 2026-09-03
+**Question:** Aaron — *"why are we taking these trades on the five minute chart? Have we ever
+tried an optimization on other time frames to see if we could capture more trades? My goal is
+I'm looking for more frequent trades so we could build a smoother equity curve."*
+**Basis:** the standard basis above, per pair.
+
+**Why it was re-asked:** the committed answer is from 2026-09-01 and was not re-run when the
+four sweeps of 2026-09-03 went through. **This is the third time the question has been asked**,
+which is the reason this file exists.
+
+🔴 **EVERY PAIR WAS RE-TUNED FROM SCRATCH** — its own sweep window, extreme lookback, stop
+cushion, minimum target distance and exit fraction. **Holding one chart's settings and applying
+them to another only proves that settings do not transfer, which nobody doubts.**
+
+**Control:** starting fresh, the search independently rediscovered all five shipped settings
+(180m window, 120m extreme, 0.20 ATR, target ≥ 2.0, exit 50%) and reproduced
+**208 trades / 47.6% / +83.3R / 9.7R** exactly.
+
+| base / trigger | trades/yr | hit | total | worst run | return / drawdown |
+|---|---|---|---|---|---|
+| **15m / 5m (shipped)** | **26.3** | **47.6%** | **+83.3R** | **9.7R** | **8.60** |
+| 15m / 1m | 220.5 | 27.4% | +54.6R | 57.3R | 0.95 |
+| 30m / 1m | 162.8 | 22.0% | −1.0R | 67.3R | −0.01 |
+| 5m / 1m | 102.1 | 18.1% | −36.9R | 81.6R | −0.45 |
+| 30m / 5m | 50.9 | 39.5% | +23.4R | 29.0R | 0.81 |
+| 1h / 5m | 14.9 | 25.4% | +2.8R | 13.5R | 0.21 |
+| 4h / 15m | 8.1 | 7.8% | −30.2R | 41.1R | −0.74 |
+| 30m / 15m | 4.5 | 41.7% | +16.7R | 7.0R | 2.38 |
+
+🔴 **THE ANSWER TO THE ACTUAL GOAL: you can have 220 trades a year instead of 26, and it is a
+ROUGHER equity curve that ends LOWER.** Frequency was never the constraint — the edge is.
+
+⚠ **The hit rate falls monotonically as the chart speeds up** — 47.6% → 39.5% → 27.4% → 22.0%
+→ 18.1%. **A faster chart lowers the bar for what counts as a shift of structure, which is
+loosening the filter under another name**, and the root `CLAUDE.md` → *Trading Philosophy* has
+already measured what that does with one position slot.
+
+⚠ **Two honest limits on this run, stated so a future reader does not over-read it.**
+**(1) It is a coordinate descent, not a full grid.** On 30m/5m it found +23.4R where the
+2026-09-01 pass's 252,000-configuration grid found +35.9R — **better than this run, same
+verdict.** Where the two disagree the bigger search wins. **(2) Every pair started its descent
+from 15m/5m's settings**, which biases it toward that neighbourhood, so **these alternatives'
+figures are a FLOOR rather than a ceiling.** Ruling out a good configuration far from the start
+point needs a full grid per pair, and on this evidence it is not worth the compute.
+
+✅ **WHERE THE SMOOTHER CURVE ACTUALLY COMES FROM, and it is now the named open lever: ANOTHER
+INSTRUMENT.** Every number ever measured on this strategy is XAUUSD. That is the one route to
+more trades that does not touch the entry rule, and it is untested. Aaron's call, 2026-09-03:
+*"I will test on more instruments later."* ⚠ Sample size was always meant to arrive at the
+PORTFOLIO level rather than the strategy level — this run is the measurement saying it cannot
+come from this strategy's chart.
