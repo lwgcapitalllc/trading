@@ -53,6 +53,16 @@ LAB_STRATEGY = {
     "config": RealignConfig,
     "strategy": MpcRealignStrategy,
     "suggested_instrument": "XAUUSD",
+    # 🔴 THE FRAME THIS BOT WAS MEASURED ON, in minutes — it trades the 5m and reads the 15m
+    # through its own aggregator — every figure here is a 5m replay (CLAUDE.md: 467,352 M5 bars,
+    # 2020-01-02 → 2026-08-06). A single-frame M15 run gives 9 setups in 5.6 years, i.e. no
+    # strategy to measure.
+    # ⚠ It is a DEFAULT the lab fills in, never a refusal: nothing here stops a run on
+    #   another frame, so a figure quoted off one is a different experiment and has to say
+    #   so. Before this key existed the stack page ran every leg on ONE frame the reader
+    #   picked, so a 5m bot silently replayed on 15m beside a 15m one and the table read
+    #   as a portfolio result.
+    "suggested_bar_value": 5,
     "category": "reversal",
     "self_sizing": True,
     # This bot's own word for its setup, worn by its trades on the price chart. Until

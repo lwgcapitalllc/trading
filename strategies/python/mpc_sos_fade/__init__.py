@@ -46,6 +46,15 @@ LAB_STRATEGY = {
     "config": SosFadeConfig,
     "strategy": MpcSosFadeStrategy,
     "suggested_instrument": "XAUUSD",   # Vantage demo name (no ".s"; that was PU Prime) — backtests pull from MT5_Lab = Vantage
+    # 🔴 THE FRAME THIS BOT WAS MEASURED ON, in minutes — every parity export and every shipped
+    # figure is M15 (CLAUDE.md: the 21,060-bar `VANTAGE_XAUUSD, 15m` gate, the 155,807-bar full-
+    # history replays).
+    # ⚠ It is a DEFAULT the lab fills in, never a refusal: nothing here stops a run on
+    #   another frame, so a figure quoted off one is a different experiment and has to say
+    #   so. Before this key existed the stack page ran every leg on ONE frame the reader
+    #   picked, so a 5m bot silently replayed on 15m beside a 15m one and the table read
+    #   as a portfolio result.
+    "suggested_bar_value": 15,
     "category": "reversal",
     # This bot sizes ITSELF: qty = equity * exec_risk_pct / stop_distance, every trade (the Pine
     # does the same). So the lab's dynamic sizing engine must not re-size it — `exec_risk_pct` IS

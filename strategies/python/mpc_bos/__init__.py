@@ -51,6 +51,14 @@ LAB_STRATEGY = {
     "config": BosConfig,
     "strategy": MpcBosStrategy,
     "suggested_instrument": "XAUUSD",
+    # 🔴 THE FRAME THIS BOT WAS MEASURED ON, in minutes — its parity export is 7,200 closed M15
+    # bars (CLAUDE.md, 2026-08-07).
+    # ⚠ It is a DEFAULT the lab fills in, never a refusal: nothing here stops a run on
+    #   another frame, so a figure quoted off one is a different experiment and has to say
+    #   so. Before this key existed the stack page ran every leg on ONE frame the reader
+    #   picked, so a 5m bot silently replayed on 15m beside a 15m one and the table read
+    #   as a portfolio result.
+    "suggested_bar_value": 15,
     "category": "continuation",
     "self_sizing": True,
     # This bot's own word for its setup, worn by its trades on the price chart. Until

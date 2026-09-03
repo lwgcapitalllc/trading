@@ -579,3 +579,17 @@ EITHER the A+ bot or a strategy that has yet to declare its own word.
   disagree, one of them is wrong and the gate says which — see the table above for how that went.
 - Add a field to `ExtremeLegConfig` that has no Pine input behind it. No `cfg_*` column can carry
   it, so the gate would leave it at this side's default and never see a disagreement about it.
+
+## The frame it is measured on is DECLARED (2026-09-03)
+
+`LAB_STRATEGY["suggested_bar_value"] = 5` — its Pine is exported from a 5-minute chart and its gate is 21,328 M5 bars. The lab reads it and every form fills a leg's
+timeframe box from it, so nobody has to remember which bot runs on which frame.
+
+⚠ **It is a DEFAULT, never a refusal.** Nothing rejects a run on another frame — sweeping a bot
+across frames is a real question — so a figure quoted off a different frame is a DIFFERENT
+EXPERIMENT from every number in this file, and has to say so.
+
+🔴 **Why it had to be declared: the stack page had ONE timeframe for the whole stack**, so a 5m
+bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
+measured it on — and the combined table said *portfolio*. Rules for the lab side:
+`command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.

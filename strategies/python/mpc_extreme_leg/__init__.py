@@ -54,6 +54,14 @@ LAB_STRATEGY = {
     "config": ExtremeLegConfig,
     "strategy": MpcExtremeLegStrategy,
     "suggested_instrument": "XAUUSD",
+    # 🔴 THE FRAME THIS BOT WAS MEASURED ON, in minutes — its Pine is exported from a 5-minute
+    # chart and its gate is 21,328 M5 bars (CLAUDE.md, 2026-09-02).
+    # ⚠ It is a DEFAULT the lab fills in, never a refusal: nothing here stops a run on
+    #   another frame, so a figure quoted off one is a different experiment and has to say
+    #   so. Before this key existed the stack page ran every leg on ONE frame the reader
+    #   picked, so a 5m bot silently replayed on 15m beside a 15m one and the table read
+    #   as a portfolio result.
+    "suggested_bar_value": 5,
     "category": "reversal",
     "self_sizing": True,
     # 🔴 THIS BOT PRICES THE SPREAD AS A FLAT ROUND-TRIP CHARGE AND CANNOT MOVE THE FILL, so the
