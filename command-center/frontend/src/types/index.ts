@@ -739,6 +739,11 @@ export interface Strategy {
   source_path: string
   category: string | null
   suggested_instrument: string | null
+  // The frame this strategy was MEASURED on, in minutes. `null` = the package declared none,
+  // and a form must then leave the leg on its own default rather than invent a number — three
+  // states, and "undeclared" is not "any frame will do". It is a DEFAULT a form fills in, never
+  // a refusal: a run on another frame is legal and is simply a different experiment.
+  suggested_bar_value?: number | null
   description: string | null
   default_params: Record<string, unknown>
   param_schema: ParamSchemaEntry[]
@@ -1434,6 +1439,11 @@ export interface StackStrategyLeg {
   // rerun carries forward — without it a stack built on per-strategy overrides quietly reverts
   // each leg to its stored defaults. `{}` on a leg served before this existed.
   params?: Record<string, unknown>
+  // The frame THIS leg was replayed on, in minutes. Legs stopped sharing the stack's one frame on
+  // 2026-09-03 — a 5-minute bot beside a 15-minute one on one account is the point of a stack —
+  // so this is the only honest source for it, and a rerun reads it rather than the stack row.
+  // `undefined` = a leg row written before the column was served, never "it had no frame".
+  bar_value?: number | null
   daily_pnl: Array<{ date: string; pnl: number }>
   equity_curve: EquityPoint[]
   // The SOLO CONTROL — this leg replayed ALONE on its own full account. On a SHARED stack it holds

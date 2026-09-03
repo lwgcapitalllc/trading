@@ -21,6 +21,12 @@ const BAR_PRESETS: [number, string][] = [
   [240, '4H'],
 ]
 
+// A frame's label, resolved off the ONE preset list above. A strategy may declare a frame that
+// is not a preset (nothing stops it), so this falls back to plain minutes rather than blank.
+function barLabel(minutes: number): string {
+  return BAR_PRESETS.find(([v]) => v === minutes)?.[1] ?? `${minutes}m`
+}
+
 export interface StackConfigInitial {
   strategyIds?: string[]
   instrument?: string
@@ -38,6 +44,10 @@ export interface StackConfigInitial {
   // given, so omitting this turns "rerun" into "run today's defaults" with nothing on screen
   // saying so. It is the stack's version of carrying the baseline's costs into a tuning child.
   paramsByStrategy?: Record<string, Record<string, unknown>>
+  // The frame each leg actually RAN on, keyed by strategy id. Same reason as the params above: a
+  // rerun that dropped this would silently re-run a 5m leg on the stack's fallback frame and call
+  // it the same stack.
+  barValuesByStrategy?: Record<string, number>
   // What the stack being rerun was CHARGED. ⚠ A rerun reproduces the stack it is rerunning, not
   // today's default — a stack stored before 2026-09-02 ran gross, and quietly defaulting it back
   // ON would make the "same" stack a different experiment. `undefined` = no opinion, so a new
@@ -109,7 +119,22 @@ export function StackConfigModal({
   const [instrument, setInstrument] = useState(initial?.instrument ?? '')
   const [start, setStart] = useState(initial?.start ?? yearsAgo(1))
   const [end, setEnd] = useState(initial?.end ?? today())
-  const [barValue, setBarValue] = useState(initial?.barValue ?? 15)
+  // The stack's FALLBACK frame — what a leg runs on when its package declares none and the
+  // reader has not picked. Kept rather than removed: a strategy that has never stated a frame has
+  // to land somewhere, and a rerun of an older stack must reproduce exactly what it ran.
+  // ⚠ NOT state, and that is the point: nothing on this form sets it any more. Every leg picks
+  // its own frame below, and this is only what a leg falls back to when its package declares
+  // none — plus what a rerun of a stack stored before per-leg frames has to reproduce.
+  const barValue = initial?.barValue ?? 15
+  // 🔴 THE FRAME EACH LEG RUNS ON, and only the ones the reader has actually CHANGED. A strategy
+  // states the frame it was measured on (`mpc_extreme_leg` 5m, `mpc_sos_fade` 15m) and that is
+  // what a leg gets unless it is overridden here. Until 2026-09-03 this form had ONE frame for
+  // the whole stack, so putting those two on one account replayed one of them on a frame nobody
+  // has ever measured it on — and the combined table said portfolio.
+  // ⚠ Holds only EDITS, deliberately, the same shape as the per-leg risk box above: seeded from
+  // the declarations it would go stale the moment a package's declaration moved, and a rerun
+  // would then carry a frame from a strategy that has since been re-measured.
+  const [legBar, setLegBar] = useState<Record<string, number>>(initial?.barValuesByStrategy ?? {})
   // 0/0 matches the Pine strategies (all pinned commission=0, slippage=0). The Python fill engine
   // applies real cost via the account profile (vantage_demo = 0), so these display values stay honest.
   const [commPerSide, setCommPerSide] = useState(initial?.commPerSide ?? 0)
@@ -144,6 +169,34 @@ export function StackConfigModal({
   // A tier whose spread has never been read carries the refusal sentinel rather than a number, and
   // the backend REFUSES to run it charged. Say so before the button, not in a 400 after the click.
   const brokerUnpriced = broker != null && broker.spread < 0
+  // ── Switching broker REWRITES the symbol in the box ──────────────────────────
+  // 🔴 **The instrument is the strategy's and the suffix is the broker's, and nobody should have
+  // to hold both in their head.** Every strategy here suggests a bare gold name — correctly,
+  // because a strategy does not belong to a broker — while PU Prime quotes it with a suffix and
+  // Vantage bare. The Run modal has rewritten the field since 2026-08-26; this form got the
+  // broker picker on 2026-09-02 and never got the rewrite, so a stack under PU Prime asked for a
+  // symbol that broker does not quote and died four layers down in the bar loader with a message
+  // naming the window and the timeframe and never the field that was wrong.
+  //
+  // ⚠ **Keyed on the BROKER only** — not on the symbol. Rebasing on every keystroke would append
+  // a suffix before somebody had finished typing the base.
+  //
+  // ⚠ **An EFFECT rather than the select's `onChange`, and it must stay one.** onChange fires
+  // only when a HUMAN picks a broker, and the common case is the broker arriving on its own once
+  // the profiles load and the default lands on the attached terminal — open the modal, press Run.
+  //
+  // ⚠ **A null suffix is UNRECORDED, never bare**, so the symbol is left exactly as typed:
+  // stripping on a guess hands the terminal a symbol nobody has seen it quote.
+  //
+  // ⚠ **The BACKEND binds** — `routers/stacks.py` resolves again at creation and stores the
+  // RESOLVED name. This is the half that makes the answer visible, never the half that
+  // guarantees it.
+  const suffix = broker?.symbol_suffix
+  useEffect(() => {
+    if (suffix == null) return
+    setInstrument((prev) => (prev ? `${prev.split('.')[0]}${suffix}` : prev))
+  }, [suffix])
+  const brokerNamingUnknown = broker != null && broker.symbol_suffix == null
   const [chargeCosts, setChargeCosts] = useState(initial?.chargeCosts ?? true)
 
   // ── Per-leg risk ─────────────────────────────────────────────────────────────
@@ -159,6 +212,33 @@ export function StackConfigModal({
     const d = pyStrategies.find((s) => s.id === id)?.default_params?.[RISK_FIELD]
     return typeof d === 'number' ? d : undefined
   }
+
+  // What each SELECTED leg actually runs on: the reader's edit, else the frame the package says
+  // it was measured on, else the stack fallback. One expression, so the picker, the window check
+  // and the request cannot disagree about what a leg is about to be measured on.
+  const barByLeg = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const st of pyStrategies) {
+      if (!selected.has(st.id)) continue
+      out[st.id] = legBar[st.id] ?? st.suggested_bar_value ?? barValue
+    }
+    return out
+  }, [pyStrategies, selected, legBar, barValue])
+
+  // 🔴 THE WINDOW IS BOUNDED BY THE FINEST FRAME IN THE STACK, because a broker holds less
+  // history the finer the bars — so the legal start is the LATEST floor across the frames, never
+  // the coarsest leg's. A window only the 15m leg can reach does not error: the 5m leg simply
+  // does not exist over the early months, the 15m one compounds ALONE there, and every later
+  // trade of BOTH is sized off a balance one leg built unopposed. The backend refuses it per leg;
+  // this is the half that says so before the click.
+  const finestBar = useMemo(() => {
+    const vals = Object.values(barByLeg)
+    return vals.length ? Math.min(...vals) : barValue
+  }, [barByLeg, barValue])
+
+  // Do the legs disagree about their frame? Worth saying out loud when they do: a mixed stack is
+  // legal and is the point of per-leg frames, but it changes what the window has to satisfy.
+  const mixedFrames = new Set(Object.values(barByLeg)).size > 1
 
   // Default the instrument to the first selected strategy's suggestion (New-stack case only).
   useEffect(() => {
@@ -240,7 +320,7 @@ export function StackConfigModal({
   const { data: historyLimit } = useHistoryLimit(
     instrument || null,
     'Minute',
-    barValue,
+    finestBar,
     'python',
     feedParams
   )
@@ -251,6 +331,10 @@ export function StackConfigModal({
       instrument: instrument.trim(),
       bar_type: 'Minute',
       bar_value: barValue,
+      // Sent to the PREVIEW as well as the launch: a leg's frame is part of the reuse identity,
+      // so a preview that did not carry it would badge a 15m run green "Reuse" for a leg the
+      // launch then replays on 5m.
+      bar_values_by_strategy: barByLeg,
       start_date: start,
       end_date: end,
       commission_per_side: commPerSide,
@@ -272,6 +356,7 @@ export function StackConfigModal({
       selected,
       instrument,
       barValue,
+      barByLeg,
       start,
       end,
       commPerSide,
@@ -667,30 +752,71 @@ export function StackConfigModal({
               className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
             />
             <p className="text-[11px] text-text-tertiary mt-1.5">
-              Every strategy in the stack runs on this one instrument, timeframe, and cost profile —
-              so its P&amp;L matches the standalone run you designed.
+              Every strategy in the stack runs on this one instrument, window and cost profile, on
+              one account. Each picks its own timeframe below.
             </p>
+            {brokerNamingUnknown && (
+              <p className="text-[11px] text-warning mt-1.5">
+                Nobody has recorded how {brokerProfile} names its symbols, so this is being sent
+                exactly as typed. Check it matches what that account quotes.
+              </p>
+            )}
           </div>
 
-          <div>
+          {/* 🔴 ONE TIMEFRAME PER LEG, prefilled from the frame each strategy states it was
+              MEASURED on. A single box for the whole stack put a 5-minute bot on 15-minute bars
+              beside a 15-minute one and called the combined table a portfolio result — the
+              simulator has always merged two frames on one account, this form was the half that
+              could only ask for one. ⚠ It is a DEFAULT, not a lock: another frame is a legal run
+              and simply a different experiment from the one the strategy's figures come from. */}
+          <div data-testid="stack-timeframes">
             <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              Timeframe
+              Timeframe per strategy
             </div>
-            <div className="flex gap-1.5">
-              {BAR_PRESETS.map(([v, label]) => (
-                <button
-                  key={v}
-                  onClick={() => setBarValue(v)}
-                  className={`px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors ${
-                    barValue === v
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-border-subtle bg-bg-sunken text-text-secondary hover:border-border-default'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {selected.size === 0 ? (
+              <p className="text-[11px] text-text-tertiary">Pick a strategy first.</p>
+            ) : (
+              <div className="space-y-2">
+                {pyStrategies
+                  .filter((s) => selected.has(s.id))
+                  .map((s) => (
+                    <div key={s.id} className="flex items-center justify-between gap-3">
+                      <span className="text-[12px] text-text-secondary truncate">
+                        {s.name}
+                        {s.suggested_bar_value != null &&
+                          barByLeg[s.id] !== s.suggested_bar_value && (
+                            <span className="ml-1.5 text-[10px] text-warning">
+                              measured on {barLabel(s.suggested_bar_value)}
+                            </span>
+                          )}
+                      </span>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        {BAR_PRESETS.map(([v, label]) => (
+                          <button
+                            key={v}
+                            onClick={() => setLegBar((prev) => ({ ...prev, [s.id]: v }))}
+                            className={`px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors ${
+                              barByLeg[s.id] === v
+                                ? 'border-accent bg-accent/10 text-accent'
+                                : 'border-border-subtle bg-bg-sunken text-text-secondary hover:border-border-default'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+            {mixedFrames && (
+              <p className="text-[11px] text-text-tertiary mt-1.5">
+                Two timeframes on one account: the faster leg steps several times inside the slower
+                one&apos;s bar. The window has to be one the {barLabel(finestBar)} bars reach —
+                where they do not, the slower leg would compound on its own and size every later
+                trade off a balance it built unopposed.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

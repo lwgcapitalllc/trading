@@ -3533,3 +3533,42 @@ next trigger"* dot with the same tooltip — which was already the correct thing
 still counts only `RUNNING`, so the summary tile is unchanged too. **The type learned a value the
 UI already handled correctly**; rendering armed differently from unrecognised is a separate decision
 nobody has made.
+
+## The stack form: one timeframe PER LEG, and the broker's own symbol (2026-09-03)
+
+Both reported off one screen, both looked like display faults and neither was. The backend half —
+what is stored, what is replayed, and why a dependent leg is pinned — is in
+`../backend/CLAUDE.md` → *A stack leg runs on its own frame*, and is not restated here.
+
+🔴 **THE TIMEFRAME BOX IS PER LEG, PREFILLED FROM THE FRAME EACH STRATEGY STATES IT WAS MEASURED
+ON.** One box for the whole stack put a 5-minute bot on 15-minute bars beside a 15-minute one and
+called the combined table a portfolio result.
+
+- ⚠ **`legBar` holds only the reader's EDITS, never a seeded copy of the declarations** — the same
+  shape as the per-leg risk box beside it. Seeded, it would go stale the moment a package's declared
+  frame moved, and a rerun would then carry a frame from a strategy that has since been re-measured.
+- ⚠ **`barByLeg` is the ONE expression that resolves a leg's frame** (edit → declaration →stack
+  fallback), so the picker, the window check and the request cannot disagree about what a leg is
+  about to be measured on.
+- ⚠ **The window question asks about the FINEST frame in the stack**, because a broker holds less
+  history the finer the bars. Asking about the coarsest clears a window the fine leg cannot reach,
+  where the coarse leg compounds alone and sizes every later trade off a balance it built unopposed.
+- ⚠ **A leg whose package declares no frame keeps the stack fallback** rather than being handed an
+  invented number, and a leg running on something other than what it was measured on says so beside
+  its name. **It is a DEFAULT, not a lock** — another frame is a legal run and simply a different
+  experiment.
+- ⚠ **A RERUN reads each leg's OWN stored frame** (`StackStrategyLeg.bar_value`), never the stack's
+  single number — otherwise it quietly puts a 5-minute leg back on 15-minute bars and still says
+  *rerun*. A leg stored before the column contributes nothing and correctly falls back to what its
+  package declares.
+
+🔴 **SWITCHING BROKER REWRITES THE SYMBOL IN THE BOX, and this form was the half left behind.** The
+Run modal has done it since 2026-08-26; this form got its broker picker on 2026-09-02 and never got
+the rewrite, so a stack under PU Prime carried a bare gold name that broker does not quote. The
+rules are the Run modal's, for the same reasons, and are worth repeating only as pointers: keyed on
+the BROKER and not the symbol (or it appends a suffix while somebody is still typing the base); an
+EFFECT and not the select's `onChange` (the broker also arrives on its own once the profiles load,
+which is the common case — open the modal, press Run); and **a null suffix is UNRECORDED, never
+bare**, so the symbol is left exactly as typed and the form says nobody has recorded that broker's
+naming. **The backend binds** — this is the half that makes the answer visible, never the half that
+guarantees it.

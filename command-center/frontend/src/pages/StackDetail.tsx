@@ -1252,6 +1252,16 @@ export function StackDetail() {
                 .filter((l) => l.params && Object.keys(l.params).length)
                 .map((l) => [l.strategy_id, l.params as Record<string, unknown>])
             ),
+            // The frame each leg ACTUALLY ran on, for exactly the same reason. Legs may each
+            // run on their own since 2026-09-03, so rerunning off the stack's single number
+            // would quietly put a 5-minute leg back on 15-minute bars and still say "rerun". A
+            // leg stored before the column contributes nothing and correctly falls back to what
+            // its package declares.
+            barValuesByStrategy: Object.fromEntries(
+              legs
+                .filter((l) => typeof l.bar_value === 'number' && l.bar_value > 0)
+                .map((l) => [l.strategy_id, l.bar_value as number])
+            ),
           }}
           onClose={() => setShowRerun(false)}
         />
