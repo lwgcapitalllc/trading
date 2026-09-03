@@ -236,14 +236,48 @@ def test_a_clean_restart_is_not_reported(tmp_path):
 
 
 def test_repeated_restarts_are_an_alert(tmp_path):
+    """Four ends nobody recorded is a loop: something is killing it, or it keeps failing."""
     rows = _healthy()
     for h in (11, 12, 13, 14):
-        rows.append(_event("startup", f"2026-08-05T{h}:00:00+00:00", previous_run_clean=True))
+        rows.append(_event("startup", f"2026-08-05T{h}:00:00+00:00", previous_run_clean=False))
     _write(tmp_path, rows)
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
     assert "restart_loop" in _keys(found)
     assert next(f for f in found if f.key.startswith("restart_loop")).level == lr.ALERT
+
+
+def test_deliberate_restarts_are_not_a_restart_loop(tmp_path):
+    """🔴 The finding this test exists for fired on a normal week of deploying.
+
+    Four promotes inside the window is ordinary, and while every start was counted the chip on
+    the Bots page never went out — the old text even ended "Expected if you deployed today",
+    which is an alarm apologising for itself. Watched RED against HEAD: it reported a loop.
+    """
+    rows = _healthy()
+    for h in (11, 12, 13, 14):
+        rows.append(
+            _event("shutdown", f"2026-08-05T{h}:59:00+00:00", exit_code=0, reason="stop requested")
+        )
+        rows.append(_event("startup", f"2026-08-05T{h}:00:00+00:00", previous_run_clean=True))
+    _write(tmp_path, rows)
+
+    assert "restart_loop" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_start_that_cannot_say_how_the_last_run_ended_is_counted(tmp_path):
+    """`None` is UNKNOWN, and unknown may not buy the reassuring answer — rule 1.
+
+    ⚠ Cannot go red against HEAD, which counted every start regardless. Proven by MUTATION:
+    relaxing the test to `is False` makes this pass silently on four unexplained restarts, and
+    the assertion below goes red.
+    """
+    rows = _healthy()
+    for h in (11, 12, 13, 14):
+        rows.append(_event("startup", f"2026-08-05T{h}:00:00+00:00", previous_run_clean=None))
+    _write(tmp_path, rows)
+
+    assert "restart_loop" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_refused_config_change_is_reported(tmp_path):
@@ -253,6 +287,81 @@ def test_a_refused_config_change_is_reported(tmp_path):
         tmp_path,
         _healthy()
         + [_event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_risk_pct")],
+    )
+
+    assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_refused_change_stops_being_reported_once_it_has_restarted(tmp_path):
+    """🔴 It told you to restart for two days after you had restarted.
+
+    A start reads the settings file fresh, so the refusal has been answered and the finding's own
+    instruction has been carried out. It is the same defect as the halt wording (2026-08-07): a
+    sticky present-tense claim that has stopped being true. Watched RED against HEAD.
+    """
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_secondary"),
+            _event("startup", "2026-08-05T14:05:00+00:00", previous_run_clean=True),
+        ],
+    )
+
+    assert "config_refused" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_an_ungraceful_restart_still_takes_the_settings(tmp_path):
+    """A start loads the file however the run before it ended, so this must suppress too.
+
+    Watched RED against HEAD, which never suppressed at all. It also pins the seam: asking how
+    the previous run ENDED is the restart-loop question, not this one, and conflating them would
+    suppress nothing while looking careful.
+    """
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_secondary"),
+            _event("startup", "2026-08-05T14:05:00+00:00", previous_run_clean=False),
+        ],
+    )
+
+    assert "config_refused" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_restart_at_the_same_second_does_not_clear_the_refusal(tmp_path):
+    """The refusal is written by the already-running bot, so a start on the same second cannot
+    be shown to have loaded the new settings. Ambiguity keeps the finding.
+
+    ⚠ Cannot go red against HEAD. Proven by MUTATION: loosening the comparison to `>=` drops
+    the finding and this goes red.
+    """
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_secondary"),
+            _event("startup", "2026-08-05T14:00:00+00:00", previous_run_clean=True),
+        ],
+    )
+
+    assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_refusal_with_an_unreadable_time_is_never_suppressed(tmp_path):
+    """A refusal that cannot be placed in time is precisely the one not to drop.
+
+    ⚠ Cannot go red against HEAD. Proven by MUTATION: dropping the guard on the parsed
+    timestamp suppresses it (or raises), and this goes red either way.
+    """
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            {"ts": "?", "bot": "b", "kind": "event", "event": "config_change_refused"},
+            _event("startup", "2026-08-05T14:05:00+00:00", previous_run_clean=True),
+        ],
     )
 
     assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))

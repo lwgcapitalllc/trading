@@ -1377,6 +1377,34 @@ dangerous one: a checker with nothing to say is indistinguishable from a system 
 The other half matters just as much: **a bot you stopped on purpose has no record to write**, and an
 alarm that fires every time you stop one is an alarm you learn to ignore.
 
+🔴 **TWO OF ITS FINDINGS FIRED ON THE DEPLOY ITSELF, SO THE CHIP NEVER WENT OUT ON A BOT ANYBODY
+WAS WORKING ON (fixed 2026-09-03, Aaron's call — "since I am always working on the bots it is always
+going to show that warning").** The restart-loop alarm counted every start, and four promotes inside
+the two-day window is an ordinary week; its own text ended *"Expected if you deployed today"*, which
+is an alarm apologising for itself. The refused-settings finding kept telling you to restart for the
+full window **after** you had restarted, because it replayed a log line and never asked what happened
+next. ⚠ **MEASURED on the live bot's own record for 2026-09-02/03: 2 findings before, 0 after, and
+the ALERT one was red.** Both fixes are about the same thing — **an alarm that fires when you press
+the button is one you learn to scroll past, and then it cannot tell you about the thing it exists
+for.** This repo already paid for that lesson on the deploy workflow that told you to KILL the bot
+and so tripped the silent-death detector on every restart anybody performed on purpose (2026-08-13),
+and the halt wording that stayed in the present tense hours after the halt ended (2026-08-07). **This
+is the third time, so treat it as a standing question rather than three incidents: for every finding,
+ask what a NORMAL day of your own work does to it.**
+
+⚠ **The restart count now reads the previous run's end as `is not True`, never `is False`** — a start
+records it as clean, unclean, or `None` for *nothing on record*, and `None` may not buy the
+reassuring answer (rule 1, met here for the sixth time). It is rare by construction, so counting it
+costs no noise, and the wording says *recorded no clean shutdown* rather than claiming a kill.
+
+⚠ **The refusal is dropped on any LATER start, clean or not, and that seam is deliberate.** A start
+reads the settings file fresh however the run before it ended, so asking whether that start was clean
+would suppress nothing while looking careful — that is the restart-loop question, not this one. An
+unparseable timestamp on either side KEEPS the finding: a refusal that cannot be placed in time is
+precisely the one not to drop. ⚠ **It does not fix the underlying annoyance**, which is that only the
+per-trade risk figure reloads under a running bot — changing anything else still writes a refusal.
+It stops that refusal outliving its own answer.
+
 **It reports in two places because they fail differently.** Telegram gets one message per new
 finding — an alert you scrolled past is gone. `<instance>/review.json` is a standing flag the command
 center renders as a **Needs review** chip on the Bots page, and it is still there tomorrow. ⚠ **Its
@@ -1817,7 +1845,11 @@ reason, so this is now a rule for **anything that prints on that box**: reconfig
 UTF-8 with `errors="replace"`, because an unencodable character must cost a glyph, never the message.
 ⚠ **It was found by RUNNING it, not by reading it** — the module's own tests all passed on the Mac.
 
-Tests: `tests/test_log_review.py` (23), weighted toward the ways a checker wrongly says "fine" — the
+Tests: `tests/test_log_review.py` (**33** — this line read 23 while there were 27, so count them
+with `pytest --collect-only`). The six added on 2026-09-03 for the deploy-noise fix: **3 watched
+RED** against HEAD, and the other 3 proven by MUTATION because HEAD could not fail them — it never
+suppressed anything, so a test asserting *this case is still reported* passes against the bug it was
+written for. Each mutation was run alone and each took down exactly its own test. Weighted toward the ways a checker wrongly says "fine" — the
 same reason `test_deadman.py` is. **A bug in this module is silent by construction: every other alarm
 here fails loudly and gets reported, this one fails by having nothing to say, and having nothing to
 say is also what a healthy day looks like.**

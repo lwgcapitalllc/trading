@@ -97,6 +97,8 @@ PULSE_SECONDS = 15 * 60
 PULSE_GAP_ALERT = 3 * PULSE_SECONDS
 
 # Restarts in the window that stop looking like maintenance and start looking like a loop.
+# ⚠ Counted over the starts that did NOT follow a clean shutdown, never over every start — see
+# the finding itself for why, and do not "fix" the count back to all starts.
 RESTART_LOOP = 4
 REWARM_STORM = 4
 
@@ -330,16 +332,34 @@ def review_bot(
                 )
             )
 
+    # 🔴 Only starts that did NOT follow a clean shutdown are counted, and that difference is the
+    # whole value of this finding. Counting every start meant a normal week of deploying kept the
+    # chip permanently lit — four promotes inside the window is ordinary — and the text had to end
+    # "Expected if you deployed today", which is an alarm apologising for itself. **An alarm that
+    # fires when you press the button is one you learn to scroll past, and then it cannot tell you
+    # about the thing it exists for.** This repo already paid for that lesson once, on the deploy
+    # workflow that said to kill the bot and so tripped the silent-death detector on every
+    # restart anybody performed on purpose (2026-08-13).
+    #
+    # ⚠ `is not True`, never `is False`. A start records the previous run's end as True, False, or
+    # None for "nothing on record", and None must not buy its way into the reassuring answer —
+    # rule 1, met here for the sixth time. It is rare by construction
+    # (`ledger.previous_run_was_clean` walks every health file the instance has, so only a
+    # first-ever start or an unreadable directory produces it), which is why counting it costs no
+    # noise. The wording says "recorded no clean shutdown" rather than claiming a kill, because
+    # for the None case a kill is exactly what is not known.
     starts = _of("startup")
-    if len(starts) >= RESTART_LOOP:
+    unclean_starts = [r for r in starts if r.get("previous_run_clean") is not True]
+    if len(unclean_starts) >= RESTART_LOOP:
         findings.append(
             Finding(
-                f"restart_loop:{_ts(starts[-1])}",
+                f"restart_loop:{_ts(unclean_starts[-1])}",
                 ALERT,
-                f"Restarted {len(starts)} times",
-                f"{len(starts)} starts since {_at(starts[0])}.\n"
-                f"Either something is killing it, or it is failing and being brought back. "
-                f"Expected if you deployed today.",
+                f"Restarted {len(unclean_starts)} times without a clean stop",
+                f"{len(unclean_starts)} of {len(starts)} starts since {_at(starts[0])} followed a "
+                f"run that recorded no clean shutdown.\n"
+                f"Either something is killing it, or it is failing and being brought back. A "
+                f"restart you asked for is not counted here.",
             )
         )
 
@@ -398,7 +418,31 @@ def review_bot(
         )
 
     # ── a settings change did not take ──────────────────────────────────────
+    #
+    # 🔴 Dropped once the bot has STARTED since the refusal. A start reads the settings file
+    # fresh, so the refusal has already been answered and this finding's own instruction —
+    # *restart it to take them* — has already been carried out. Without this it re-raised for the
+    # full two-day window, telling you to do a thing you did minutes earlier; and since every
+    # change to a setting that cannot be reloaded live writes one of these, a bot under active
+    # work never cleared the chip at all.
+    #
+    # ⚠ The TENSE is the defect, exactly as it was for the halt findings above: this says *it is
+    # still trading the OLD settings*, in the present, off a line written in the past. A sticky
+    # present-tense claim that has stopped being true is what Aaron reported on the halt wording
+    # (2026-08-07), and suppressing the answered case is the same fix rather than a new idea.
+    #
+    # ⚠ An unparseable timestamp on either side KEEPS the finding. A refusal that cannot be
+    # placed in time is precisely the one not to drop.
+    #
+    # ⚠ It does NOT need the start to be clean, and must not: an ungraceful restart still reads
+    # the file fresh, so the settings took either way. This asks what the bot LOADED, not how the
+    # run before it ended — that is the question above's, and conflating the two would suppress
+    # nothing while looking careful.
+    start_times = [t for t in (_parse_ts(r) for r in starts) if t is not None]
     for row in _of("config_change_refused"):
+        at = _parse_ts(row)
+        if at is not None and any(s > at for s in start_times):
+            continue
         findings.append(
             Finding(
                 f"config_refused:{_ts(row)}",
