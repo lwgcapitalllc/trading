@@ -2501,6 +2501,17 @@ its own failure.
 than 5% then the other bot(s) will need to shrink accordingly. If no risk is available then we will
 refuse trades and send a telegram messaging saying why."*
 
+🔴 **THE SPLIT IS THE INTENT AND IT IS NOT IN FORCE — A+ WENT BACK TO 10% ON 2026-09-03, HOURS AFTER
+MOVING TO 5%.** The 5% was making room for a second bot that **cannot be created as a config
+change**, so the split was buying nothing: one bot at 5% with the other 5% unclaimed, i.e. this
+account earning half its measured return with nothing taking the other half, for as long as the
+adapter took. **A share reserved for a bot that cannot start is not a split, it is an idle half.**
+⚠ **The cap stays 10% throughout** — only the per-trade share moved, and one bot at 10% under a 10%
+cap is an exact fit that the Command Center's share rule allows. ⚠ **Restore the 5/5 BEFORE
+assigning the second bot**, never after: the share rule refuses the assignment while the numbers
+still sum past the cap. Why the second bot is a project: *The extreme leg cannot be a bot yet*
+below.
+
 🔴 **THE SHRINK HALF WAS BUILT, AUDITED THE SAME DAY, AND BACKED OUT. Read this before rebuilding
 it.** A live bot's order is **already resting at the broker** by the time the account seam runs:
 `mpc_sos_fade.execution` sizes a pending order from `equity * exec_risk_pct / dist` at PLACEMENT
@@ -2571,13 +2582,15 @@ reason `halted` is: they answer *why no trading at all right now*, never *why no
 of the time the budget is full while no setup exists, and a decision record there would record a
 decision nobody made. A setup actually turned away still lands in the decisions stream.
 
-⚠ **The live bot's own risk moved 10% → 5% in the same change, and it is the ONE runtime-reloadable
-field** — so it reaches the RUNNING bot on the next VPS `git pull`, with no promote and no restart,
-applied at the next moment it is FLAT. **It halves this bot's return and its drawdown together, so
-every figure measured at 10% describes the old setting.** ⚠ **The second bot does not exist yet**:
-`mpc_extreme_leg` has no instance directory, so until it does this account simply runs one bot at
-half its previous risk. ⚠ **`mpc_bleg_demo` is benched and still states 10.0** — if it is ever put
-on this account that number has to move first or the shares no longer sum to the cap.
+⚠ **The live bot's own risk moved 10% → 5% in the same change, and then straight back to 10% the
+same day once the second bot turned out to be unbuildable — it is the ONE runtime-reloadable
+field**, so both moves reached the RUNNING bot on the next VPS `git pull`, with no promote and no
+restart, applied at the next moment it is FLAT. 🔴 **10% is where it waits, and that is a decision
+about which number is DESCRIBED rather than about appetite: every published figure for this bot —
+the -54.9% max drawdown over 6.5 years, Run 12's finding that the drawdown is a losing STREAK at
+this risk rather than give-back — was measured at 10%. At 5% not one of them described the running
+bot.** ⚠ **`mpc_bleg_demo` is benched and still states 10.0** — if it is ever put on this account
+that number has to move first or the shares no longer sum to the cap.
 
 ⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and the first thing to watch is a bot being
 SHRUNK rather than refused, which no test can prove and no bot has ever done.
@@ -2598,6 +2611,43 @@ third pinning that an orphan under our own magic is still COUNTED.
 ⚠ **And deduplicating them briefly collapsed two refusal codes into one** — *the terminal would not
 answer* and *the book carries something unmeasurable* call for different work, and a pre-existing
 test caught it. Two failures must never share one message.
+
+### The extreme leg cannot be a bot yet — it is an ADAPTER, not an instance directory (2026-09-03)
+
+🔴 **`mpc_extreme_leg` has no instance directory, and adding one would produce a bot that appears in
+the list, looks deployable, and cannot start.** Its execution layer does not implement the contract
+`algos/live/` drives. Checked against the runner and the bridge rather than assumed:
+
+| What the live path calls | `mpc_sos_fade` | `mpc_extreme_leg` |
+|---|---|---|
+| one per-bar `step(sig, seq) -> Decision` | ✅ | ❌ four calls — `resolve` / `arm_breakeven` / `enter` / `record_blocks`, sequenced by the caller, and `enter` returns a bare bool |
+| `request_close(reason)` | ✅ | ❌ absent |
+| `snapshot_position()` / `restore_position(snap)` | ✅ | ❌ absent |
+| account-budget clamp at the sizing seam | ✅ | ❌ sizes in its own `_qty(risk)` |
+
+⚠ **The missing save/restore is the expensive one.** `bridge.py` calls it at **three** sites, and it
+is what lets a bot come back from a restart holding a position. Writing it means serialising the
+open position *and every latch that decides its exit* — not a shim over an existing call.
+
+⚠ **The missing commanded close is the dangerous one.** The fleet kill switch, the Command Center's
+Stop button and flat-by-close all resolve through it. A bot without it can be started and cannot be
+told to flatten.
+
+🔴 **So this is a rewrite of that strategy's execution layer against a different contract, on the
+live money path — and for a strategy whose parity gate covers 3.5 months and 7 entries and cannot
+cover its shipped form at all** (the chart has no engine for the market-condition refusal that
+produced its current numbers). **Rule 9 applies twice over: nothing here has run against a broker,
+and the half that would carry the money is the half no gate reaches.**
+
+⚠ **What was done instead (2026-09-03): A+ went back to 10% and the account waits.** Holding 5% for
+a bot that cannot start was costing half this account's measured return for nothing. ⚠ **When the
+adapter is built, move A+ back to 5% BEFORE assigning the second bot** — the Command Center's share
+rule refuses an assignment whose shares sum past the cap, so doing it in the other order fails at
+the moment of assignment.
+
+⚠ **Do not read "no instance directory" as the blocker.** That is the symptom. The blocker is four
+missing methods, and a config file written before they exist is a bot that lies about being
+runnable.
 
 ### `SYS_BROKERCOSTS` — the broker re-quotes its overnight rate and nothing said so (2026-09-03)
 
