@@ -507,8 +507,22 @@ class PortfolioAccount:
 
 
 class SoloAccount(PortfolioAccount):
-    """One leg, no RISK cap, no floor — grants the full desired qty out of the budget. Reproduces
-    standalone behaviour (scale == 1), so a bot run through this is unchanged by contention.
+    """One leg, no floor, and no risk cap UNLESS somebody hands it one. Grants the full desired
+    qty out of the budget by default (scale == 1), so a bot run through this is unchanged by
+    contention.
+
+    🔴 **`external_room` is how a LIVE bot shares an account with bots in other PROCESSES
+    (2026-09-03, Aaron's call).** `PortfolioAccount` cannot be shared across an OS process
+    boundary, so the live side reads the BROKER instead and pushes the dollars still available
+    under the account cap onto this field each bar. The strategy's own sizing then shrinks to fit
+    at `request_fill`, exactly as a stacked leg does in the lab.
+
+    🔴 **THE PLACEMENT IS THE SAFETY PROPERTY, AND IT IS THE SAME ARGUMENT AS THE VENUE CEILING.**
+    Shrinking the ORDER would leave the emulator holding a trade the broker does not have: the two
+    grade different R and `algos/live/bridge.py::_agrees` halts the bot on a divergence the safety
+    feature created. That is why the live account cap REFUSED and never shrank. Shrinking HERE is
+    the strategy deciding its own size, so both sides book the same quantity and the refusal in
+    `bridge._account_cap_check` stays on as a backstop that should now rarely fire.
 
     🔴 **It still carries the VENUE ceiling, and that is the one way it is no longer a pure
     passthrough (2026-09-02).** `room()` is infinite, so the budget never binds; `max_lots` is not
@@ -538,6 +552,21 @@ class SoloAccount(PortfolioAccount):
             max_lots=max_lots,
             contract_size=contract_size,
         )
+        # ⚠ THREE states and only two are a number (rule 1). `None` = nobody has said what the
+        # room is, which is every backtest and every solo replay, and it means INFINITE — the
+        # behaviour this class has always had. `0.0` = somebody asked and there is none, which
+        # blocks the fill. Collapsing them would make an unset field refuse every trade, or a
+        # measured zero grant every one.
+        self.external_room: Optional[float] = None
 
     def room(self) -> float:
-        return float("inf")  # never the bottleneck; desired is always granted in full
+        """Infinite unless a caller has stated a budget — see `external_room`.
+
+        ⚠ This leg's OWN open risk is subtracted, because `external_room` is what the ACCOUNT has
+        left after the other bots, and this bot's own position spends that same budget. The live
+        side excludes this bot's known tickets from its broker read for exactly this reason: they
+        are counted here instead, from the emulator that actually knows about them.
+        """
+        if self.external_room is None:
+            return float("inf")  # never the bottleneck; desired is always granted in full
+        return max(0.0, self.external_room - self.reserved())

@@ -2245,3 +2245,226 @@ def test_an_execution_with_no_account_seam_does_not_raise():
 
     b, _, _, _ = _bridge(_NoAccount())
     b._reconcile_lot_ceiling(_spec_with_max(50.0))  # must not raise
+
+
+# ── the ACCOUNT room — sharing one balance across separate PROCESSES (2026-09-03) ──────
+#
+# Aaron: each bot gets a share of the account, and when one is occupying more than its share the
+# others SHRINK to what is left rather than being refused; with nothing left they refuse and say
+# why. The shrink itself is `SoloAccount.room()` inside the strategy's own sizing — all the
+# bridge does is hand it the number, which is the same division of labour the venue lot ceiling
+# uses and the only reason a live shrink is safe at all.
+#
+# ⚠ These use the REAL `SoloAccount` for the same reason the ceiling tests do: a stub accepts any
+# number this code writes, including ones the real object rejects.
+def _room_bridge(cap_pct=10.0, balance=10_000.0):
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExWithAccount(SoloAccount(balance=balance))
+    b, m, ledger, notes = _bridge(ex, account_risk_cap_pct=cap_pct)
+    b._account_balance = lambda: balance
+    return b, m, ledger, notes, ex._account
+
+
+def _other_bot_lots(volume=0.5, entry=3300.0, stop=3290.0, ticket=9001):
+    """A position under ANOTHER bot's magic, stated in LOTS — 0.5 lots on a $10 stop is $500.
+
+    ⚠ **Deliberately NOT called `_other_bot`.** One already exists above taking RISK DOLLARS, and
+    naming this the same shadowed it: `_other_bot(200.0)` silently became 200 LOTS — a $200,000
+    position where the test meant $200 — and reddened a refusal test that had nothing to do with
+    this work. Two helpers for one idea in one file is how that happens; the units are in the name
+    now so a reader cannot pick the wrong one by accident.
+    """
+    from account_risk import Exposure
+
+    return Exposure(
+        ticket=ticket,
+        symbol="XAUUSD",
+        magic=424242,
+        direction=1,
+        volume=volume,
+        entry=entry,
+        stop=stop,
+        resting=False,
+    )
+
+
+def test_an_EMPTY_account_leaves_this_bot_the_whole_cap():
+    b, m, _, _, acct = _room_bridge()
+    b.refresh_account_room()
+    assert acct.external_room == 1_000.0  # 10% of $10,000
+
+
+def test_ANOTHER_BOTS_position_takes_its_risk_out_of_this_bots_room():
+    """The whole feature. $500 held elsewhere against a $1,000 cap leaves $500, and the strategy
+    then sizes into that instead of being refused outright."""
+    b, m, _, _, acct = _room_bridge()
+    m.external = [_other_bot_lots(volume=0.5)]
+    b.refresh_account_room()
+    assert acct.external_room == 500.0
+
+
+def test_a_FULL_account_leaves_no_room_at_all():
+    b, m, _, _, acct = _room_bridge()
+    m.external = [_other_bot_lots(volume=1.0)]  # $1,000 — the entire cap
+    b.refresh_account_room()
+    assert acct.external_room == 0.0
+
+
+def test_an_OVERSPENT_account_reads_as_zero_room_not_a_negative_one():
+    """A negative would sail through `min(desired, room)` as the smaller number and grant a
+    negative size. It happens whenever the balance falls under an open position."""
+    b, m, _, _, acct = _room_bridge()
+    m.external = [_other_bot_lots(volume=2.0)]  # $2,000 against a $1,000 cap
+    b.refresh_account_room()
+    assert acct.external_room == 0.0
+
+
+def test_an_UNREADABLE_account_leaves_NO_room_rather_than_all_of_it():
+    """ "Cannot ask" is never "affordable". A budget that opens itself when the terminal wobbles
+    is absent exactly when the account is least healthy."""
+    b, m, _, _, acct = _room_bridge()
+    m.exposure_readable = False
+    b.refresh_account_room()
+    assert acct.external_room == 0.0
+
+
+def test_an_UNREADABLE_BALANCE_leaves_NO_room():
+    """A cap is a fraction of something. With nothing to take a fraction OF, refuse."""
+    b, m, _, _, acct = _room_bridge()
+    b._account_balance = lambda: None
+    b.refresh_account_room()
+    assert acct.external_room == 0.0
+
+
+def test_a_position_with_NO_STOP_leaves_no_room():
+    """Its risk is UNBOUNDED, not absent — a hand trade left running is exactly that. Scoring it
+    zero would let the one thing the cap exists to bound sit invisibly underneath it."""
+    b, m, _, _, acct = _room_bridge()
+    m.external = [_other_bot_lots(volume=0.5, stop=0.0)]
+    b.refresh_account_room()
+    assert acct.external_room == 0.0
+
+
+def test_NO_CAP_configured_leaves_the_room_UNSET_rather_than_zero():
+    """Rule 1. An uncapped bot is a supported state and must behave exactly as it always has —
+    `None`, meaning infinite, never 0.0, which would refuse every trade it ever tried."""
+    b, m, _, _, acct = _room_bridge(cap_pct=None)
+    b.refresh_account_room()
+    assert acct.external_room is None
+
+
+def test_this_bots_OWN_RESTING_ORDER_does_not_eat_its_own_share():
+    """🔴 Counted in BOTH places this would halve the bot's share whenever it had anything on.
+    The broker read excludes our known tickets because the emulator's own `reserved()` already
+    subtracts them inside `room()`.
+
+    ⚠ **This drives the RESTING path specifically** — an earlier version set `_pos_ticket` and
+    cleared `_rest`, so despite its name it only ever exercised the position exclusion and
+    survived a mutation that emptied the resting one. The two lines are separate and each needs
+    its own test.
+    """
+    from account_risk import Exposure
+
+    b, m, _, _, acct = _room_bridge()
+    b.refresh_account_room()
+    empty = acct.external_room
+
+    slot = next(iter(b._rest))
+    b._rest[slot] = live_bridge._Rest(ticket=555, price=3300.0, lots=0.5, sl=3290.0)
+    m.external = [
+        Exposure(
+            ticket=555,
+            symbol="XAUUSD",
+            magic=m.magic,
+            direction=1,
+            volume=0.5,
+            entry=3300.0,
+            stop=3290.0,
+            resting=True,
+        )
+    ]
+    b.refresh_account_room()
+    assert acct.external_room == empty, "our own resting order must not spend our own share"
+
+
+def test_this_bots_OWN_OPEN_POSITION_does_not_eat_its_own_share():
+    """The other half, and it is a separate line in the exclusion — see the note above."""
+    from account_risk import Exposure
+
+    b, m, _, _, acct = _room_bridge()
+    b.refresh_account_room()
+    empty = acct.external_room
+
+    b._pos_ticket = 777
+    m.external = [
+        Exposure(
+            ticket=777,
+            symbol="XAUUSD",
+            magic=m.magic,
+            direction=1,
+            volume=0.5,
+            entry=3300.0,
+            stop=3290.0,
+            resting=False,
+        )
+    ]
+    b.refresh_account_room()
+    assert acct.external_room == empty, "our own position must not spend our own share"
+
+
+def test_something_under_our_magic_we_have_NO_RECORD_OF_is_COUNTED():
+    """🔴 The 2026-08-25 premise, pinned. "Known" is the load-bearing word: excluding by MAGIC
+    rather than by TICKET is what let five copies of one order read as an empty account. Anything
+    under our magic we cannot account for must spend the budget like anybody else's."""
+    from account_risk import Exposure
+
+    b, m, _, _, acct = _room_bridge()
+    m.external = [
+        Exposure(
+            ticket=31337,  # ours by magic, and we have no record of it
+            symbol="XAUUSD",
+            magic=m.magic,
+            direction=1,
+            volume=0.5,
+            entry=3300.0,
+            stop=3290.0,
+            resting=False,
+        )
+    ]
+    b.refresh_account_room()
+    assert acct.external_room == 500.0, "an orphan under our own magic must still be counted"
+
+
+def test_a_strategy_with_no_account_seam_is_left_alone():
+    """A strategy that does not size through the account seam has no room to hand it, and must
+    not crash the bar because of it."""
+
+    class _NoAccount:
+        pass
+
+    b, _, _, _ = _bridge(_NoAccount(), account_risk_cap_pct=10.0)
+    b.refresh_account_room()  # must not raise
+
+
+def test_running_OUT_of_room_says_so_ONCE_and_the_RECOVERY_speaks(monkeypatch):
+    """🔴 The recovery message is what makes the silence safe. Without it, quiet would mean
+    either "there is room again" or "still full, not worth repeating", and the reader would have
+    to go and look — which is the work the alert exists to save."""
+    b, m, ledger, notes, _ = _room_bridge()
+
+    m.external = [_other_bot_lots(volume=1.0)]
+    b.refresh_account_room()
+    b.refresh_account_room()  # still full — must NOT repeat itself
+    exhausted = [n for n in notes if "NO ACCOUNT RISK LEFT" in n]
+    assert len(exhausted) == 1, "an alarm that repeats hourly is one people scroll past"
+
+    m.external = []
+    b.refresh_account_room()
+    back = [n for n in notes if "ACCOUNT RISK AVAILABLE" in n]
+    assert len(back) == 1, "silence after an alarm must not be ambiguous"
+    # ⚠ The fake records an event as "event:<name>" — asserted against its real shape rather
+    # than the name alone, which counted 0 and passed nothing while both records were present.
+    kinds = [k for k, _ in ledger.rows]
+    assert kinds.count("event:account_room_exhausted") == 1
+    assert kinds.count("event:account_room_restored") == 1

@@ -209,6 +209,14 @@ def test_every_event_written_in_algos_live_is_classified():
         "config_change_refused",
         "halted",
         "went_live",
+        # The ACCOUNT-level risk budget running out, and coming back. HEALTH rather than a
+        # decision, for the same reason `halted` is: it answers "why no trading AT ALL right
+        # now", never "why not this setup". Most of the time the budget is full while no setup
+        # exists, so writing a decision here would record a decision nobody made. ⚠ When a setup
+        # DOES arrive and is turned away, that still lands in the decisions stream through the
+        # existing `blocked` / `order_refused` records — the per-setup answer is not lost.
+        "account_room_exhausted",
+        "account_room_restored",
         # A re-warm finishing on a bot that is HALTED, which stays halted. Health rather
         # than a decision: it says nothing about a setup or an order, it says this process
         # refused to resume placing them. Rule 1 — without it the only trace is a MISSING

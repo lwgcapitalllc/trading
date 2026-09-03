@@ -2495,6 +2495,71 @@ docstring with no body for about a minute — passing for free while its name cl
 covered. **Worse than no test.** Mutations watched red, including the one that stops it announcing
 its own failure.
 
+### 🔴 The account cap can now SHRINK a bot instead of only refusing it (2026-09-03)
+
+**Aaron's split: extreme leg 5%, A+ 5%, account cap 10%.** *"If at any time a bot is occupying more
+than 5% then the other bot(s) will need to shrink accordingly. If no risk is available then we will
+refuse trades and send a telegram messaging saying why."*
+
+**Three pieces and the order is the design.** `bridge.refresh_account_room()` reads the broker and
+works out the dollars still free under the cap → the runner calls it at the TOP of every bar →
+`SoloAccount.external_room` makes the strategy's own sizing shrink to it at `request_fill`.
+
+🔴 **THIS REVERSES THE REFUSE-NEVER-SHRINK RULE, AND ONLY BECAUSE THE CLAMP MOVED.** That rule was
+right: nothing hands a size back across a process boundary, so a shrunk ORDER leaves the emulator
+holding a trade the broker does not have, the two grade different R, and `_agrees` halts the bot on
+a divergence the safety feature created. **The shrink now happens in the STRATEGY'S OWN SIZING**,
+which is the same seam and the same argument as the venue lot ceiling. `_account_cap_check` stays
+on as the backstop and should now rarely fire.
+
+🔴 **IT MUST RUN BEFORE THE STRATEGY STEPS, WHICH IS WHY THE RUNNER CALLS IT AND NOT `_plan`.**
+`request_fill` happens *inside* the step; by the time the bridge reconciles, the fill is already
+sized. The lot ceiling can lag a bar because a venue's volume band is a standing broker property —
+an account's remaining risk is not, and a bar-old figure is exactly the window another bot fills.
+
+⚠ **EVERY unreadable input means NO ROOM, never unlimited** — an unreadable balance, an unreadable
+book, a position carrying no stop. A budget that opens itself when the account is least healthy is
+not a budget.
+
+⚠ **The refusal half already existed and was NOT rebuilt.** `_record_refusal` has sent a HEALTH
+Telegram message naming the reason since the cap landed, loud once per slot and reason then quiet.
+What is new is the message for the account budget itself running out — **and its RECOVERY message
+is what makes the silence safe**, because without it quiet means either *there is room again* or
+*still full, not worth repeating*.
+
+⚠ **`account_room_exhausted` / `account_room_restored` are HEALTH, not decisions**, for the same
+reason `halted` is: they answer *why no trading at all right now*, never *why not this setup*. Most
+of the time the budget is full while no setup exists, and a decision record there would record a
+decision nobody made. A setup actually turned away still lands in the decisions stream.
+
+⚠ **The live bot's own risk moved 10% → 5% in the same change, and it is the ONE runtime-reloadable
+field** — so it reaches the RUNNING bot on the next VPS `git pull`, with no promote and no restart,
+applied at the next moment it is FLAT. **It halves this bot's return and its drawdown together, so
+every figure measured at 10% describes the old setting.** ⚠ **The second bot does not exist yet**:
+`mpc_extreme_leg` has no instance directory, so until it does this account simply runs one bot at
+half its previous risk. ⚠ **`mpc_bleg_demo` is benched and still states 10.0** — if it is ever put
+on this account that number has to move first or the shares no longer sum to the cap.
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and the first thing to watch is a bot being
+SHRUNK rather than refused, which no test can prove and no bot has ever done.
+
+**Tests: 6 in `backtest/tests/test_account.py`, 13 in `tests/test_live_bridge.py`. 14 mutations
+watched RED with a surviving control each.** Three findings came out of running those mutations
+rather than out of writing the code, and all three are the same lesson — *a test that cannot fail
+is not a test*:
+🔴 **A second floor at zero made the negative-room case untestable** — no single mutation could
+produce a negative room, so the test asserting one cannot happen passed for free. One guard now.
+🔴 **The exclusion rule was written TWICE**, here and in `_account_cap_check`, and it was caught by
+two mutation anchors matching in two places. The premise inside it has already been wrong once
+(2026-08-25, five copies of one order read as an empty account), and a premise in two copies is one
+that gets corrected in one of them. `_others_risk` is the single definition now.
+🔴 **A test named for a RESTING order was setting the position ticket**, so it exercised the wrong
+half of a two-line exclusion and survived a mutation that emptied the other. Split in two, plus a
+third pinning that an orphan under our own magic is still COUNTED.
+⚠ **And deduplicating them briefly collapsed two refusal codes into one** — *the terminal would not
+answer* and *the book carries something unmeasurable* call for different work, and a pre-existing
+test caught it. Two failures must never share one message.
+
 ### `SYS_BROKERCOSTS` — the broker re-quotes its overnight rate and nothing said so (2026-09-03)
 
 `tools/watch_broker_costs.py`, daily at 06:40 UTC. It reads this bot's symbol swap off the live

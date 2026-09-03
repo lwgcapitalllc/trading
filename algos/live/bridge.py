@@ -472,6 +472,12 @@ class OrderBridge:
         # One alert per distinct refusal per side. Re-stating an unaffordable setup every bar
         # for the six hours it rests is how a channel gets muted before the day it matters.
         self._refusal_alerted: dict[tuple, str] = {s: "" for s in SLOTS}
+        # Has the ACCOUNT budget run out? Latched so the alert is loud once and then quiet, and
+        # so RECOVERY speaks — without the second message, silence would mean either "there is
+        # room again" or "still full", and the reader would have to go and look.
+        # ⚠ Starts False, meaning "not blocked as far as we know". The first refresh that finds
+        # no room announces it; a bot that starts with a full account says so on its first bar.
+        self._room_blocked: bool = False
         # The same idea for the PARTIAL path, keyed on the cause rather than on a side: a
         # position that cannot be banked re-offers the identical problem on every 15m bar, and
         # an alert per bar is one nobody reads by the third. Cleared when a bank succeeds and
@@ -1540,6 +1546,162 @@ class OrderBridge:
     # the strategy's units to MT5's lots did not exist anywhere, and there was no one place a
     # reviewer could have looked to notice.
 
+    def refresh_account_room(self) -> None:
+        """Tell the emulator how many dollars of ACCOUNT budget are still free, before it sizes.
+
+        Aaron, 2026-09-03: each bot gets a share of one account, and when one is occupying more
+        than its share **the others shrink to what is left** rather than being refused outright;
+        with nothing left they refuse and say why on Telegram.
+
+        🔴 **THE SHRINK HAPPENS IN THE STRATEGY'S OWN SIZING, NEVER IN THE ORDER, AND THAT IS THE
+        ONLY REASON IT IS ALLOWED AT ALL.** All this does is hand the emulator a number; the clamp
+        is `SoloAccount.room()` at `request_fill`, so the position the emulator books and the
+        order this bridge sends are the same size. Shrinking the ORDER would leave the two holding
+        different trades, grading different R, and `_agrees` would halt the bot on a divergence
+        the safety feature created. **That is why the account cap REFUSED and never shrank until
+        this existed, and `_account_cap_check` stays on as the backstop.**
+
+        🔴 **IT MUST RUN BEFORE THE STRATEGY STEPS, WHICH IS WHY THE RUNNER CALLS IT AND NOT
+        `_plan`.** `request_fill` happens while the strategy is stepping a bar; by the time this
+        bridge reconciles, the fill has already been sized. The lot ceiling can afford to lag a
+        bar because a venue's volume band is a standing broker property — an account's remaining
+        risk is not, and a bar-old figure is exactly the window another bot fills.
+
+        ⚠ **EVERY unreadable input means NO ROOM, never unlimited.** The terminal that cannot be
+        asked, a balance that will not read, a position carrying no stop — all of them refuse.
+        A budget that opens itself when the account is least healthy is not a budget, and this is
+        the same call `_account_cap_check` already makes one layer down.
+
+        ⚠ **This bot's own known tickets are EXCLUDED from the broker read on purpose** — they are
+        counted by the emulator's own `reserved()`, which `SoloAccount.room()` subtracts. Counting
+        them in both places would halve this bot's share every time it held anything.
+        """
+        account = getattr(self._ex, "_account", None)
+        if account is None or not hasattr(account, "external_room"):
+            return  # a strategy whose sizing does not go through the account seam
+        if self._risk_cap_pct is None:
+            account.external_room = None  # uncapped, and that is a supported state
+            return
+
+        room, why = self._account_room()
+        account.external_room = room
+        self._announce_room(room, why)
+
+    def _others_risk(self, spec):
+        """What everybody ELSE has on, as `(risk, code, why)`.
+
+        `risk` is `None` when it cannot be measured, and `code` then names WHICH failure — the
+        two have different causes and call for different work.
+
+        🔴 **ONE definition, used by the budget refresh AND by `_account_cap_check`'s backstop.**
+        It was briefly written twice, and the duplication was caught by two mutation anchors
+        matching in two places — which is the cheap version of the lesson: the exclusion rule
+        below carries a premise that has already been wrong once (2026-08-25, five copies of one
+        order), and a premise living in two copies is one that gets corrected in one of them.
+
+        ⚠ **This bot's own KNOWN tickets are excluded, and "known" is load-bearing.** Anything
+        else under our own magic is COUNTED, because by definition we do not know what it is.
+        """
+        from account_risk import RiskUnmeasurable, measure_exposure
+
+        items = self._mt5.account_exposure()
+        if items is None:
+            return (
+                None,
+                "account_risk_unreadable",
+                (
+                    "the account's open positions and orders could not be read, so the account-level "
+                    "risk cap cannot be checked. Refusing rather than assuming the account is empty."
+                ),
+            )
+        mine = {r.ticket for r in self._rest.values() if r is not None}
+        if self._pos_ticket is not None:
+            mine.add(self._pos_ticket)
+        try:
+            return (
+                measure_exposure(
+                    [it for it in items if it.magic != self._mt5.magic or it.ticket not in mine],
+                    spec,
+                ),
+                "",
+                "",
+            )
+        except RiskUnmeasurable as e:
+            # A position with no stop. Its risk is UNBOUNDED, not absent — scoring it zero would
+            # hide the one thing this cap exists to bound.
+            #
+            # ⚠ Its OWN code, not the unreadable one. "The terminal would not answer" and "the
+            # account is carrying something whose risk cannot be computed" call for completely
+            # different work, and this repo already records that two failures must never share
+            # one message. Collapsing them is exactly what this refactor did for an hour, and a
+            # pre-existing test caught it.
+            return None, "account_risk_unmeasurable", str(e)
+
+    def _account_room(self):
+        """The dollars still free under the account cap, and the reason when there are none.
+
+        ⚠ **There is exactly ONE floor at zero, deliberately.** A `max(0.0, ...)` here as well
+        made the negative case untestable: no single mutation could produce a negative room, so
+        the test asserting one cannot happen passed for free. Two guards for one rule is how a
+        test stops being able to fail.
+        """
+        balance = self._account_balance()
+        if balance is None or balance <= 0:
+            return 0.0, "the account balance could not be read"
+        spec = self._mt5.symbol_spec()
+        if spec is None:
+            return 0.0, "the symbol specification could not be read"
+        others, _code, why = self._others_risk(spec)
+        if others is None:
+            return 0.0, why
+
+        cap = balance * self._risk_cap_pct / 100.0
+        room = cap - others.total_ccy
+        if room <= 0.0:
+            return 0.0, (
+                f"the account already has ${others.total_ccy:,.2f} at risk against a "
+                f"${cap:,.2f} cap ({self._risk_cap_pct}% of ${balance:,.2f})"
+            )
+        return room, ""
+
+    def _announce_room(self, room: float, why: str) -> None:
+        """Say it ONCE when the budget runs out, and say so again when it comes back.
+
+        ⚠ **The recovery message is what makes the silence safe.** Without it, quiet would mean
+        either *there is room again* or *still full, not worth repeating*, and the reader would
+        have to go and look — which is the work the alert exists to save. This repo already
+        records that rule from the ledger sync's own alarm.
+        """
+        blocked = room <= 0.0
+        if blocked == self._room_blocked:
+            return
+        self._room_blocked = blocked
+        if blocked:
+            self._ledger.event("account_room_exhausted", reason=why)
+            self._notify(
+                alert(
+                    "⚠️",
+                    "NO ACCOUNT RISK LEFT",
+                    self._mt5.bot_label,
+                    f"This bot cannot open a trade: {why}.",
+                    "Setups will be refused until room comes back — which happens as another "
+                    "bot's stop moves up or its trade closes. Nothing is wrong with this bot.",
+                ),
+                notify.HEALTH,
+            )
+        else:
+            self._ledger.event("account_room_restored", room_ccy=round(room, 2))
+            self._notify(
+                alert(
+                    "✅",
+                    "ACCOUNT RISK AVAILABLE",
+                    self._mt5.bot_label,
+                    f"${room:,.2f} of account risk budget is free again.",
+                    "This bot can take setups again. Nothing to do.",
+                ),
+                notify.HEALTH,
+            )
+
     def _reconcile_lot_ceiling(self, spec) -> None:
         """Hold the emulator's lot ceiling at `min(what we configured, what the venue accepts)`.
 
@@ -1656,33 +1818,24 @@ class OrderBridge:
         created. The backtest allocator SHRINKS instead, which is coherent there because the
         account hands the granted size back; nothing hands a size back across a process boundary.
         """
-        from account_risk import RiskUnmeasurable, check_account_cap, measure_exposure
+        from account_risk import check_account_cap
 
         if self._risk_cap_pct is None or not plan.ok:
             return plan
 
         from order_sizing import SizingRefusal
 
-        items = self._mt5.account_exposure()
-        if items is None:
-            # The terminal could not be asked. Same call as an uncomputable margin: "cannot ask"
-            # is never "affordable", and a cap that opens itself when the terminal wobbles is a
-            # cap that is absent exactly when the account is least healthy.
-            return SizingRefusal(
-                "account_risk_unreadable",
-                "the account's open positions and orders could not be read, so the account-level "
-                "risk cap cannot be checked. Refusing rather than assuming the account is empty.",
-            )
-        mine = {r.ticket for r in self._rest.values() if r is not None}
-        if self._pos_ticket is not None:
-            mine.add(self._pos_ticket)
-        try:
-            open_risk = measure_exposure(
-                [it for it in items if it.magic != self._mt5.magic or it.ticket not in mine],
-                spec,
-            )
-        except RiskUnmeasurable as e:
-            return SizingRefusal("account_risk_unmeasurable", str(e))
+        # ⚠ ONE definition of what everybody else is holding, shared with the budget refresh —
+        # see `_others_risk`. It was written twice for about an hour and the premise inside it
+        # has already been wrong once, so a second copy is the thing to avoid rather than the
+        # convenience to keep.
+        open_risk, code, why = self._others_risk(spec)
+        if open_risk is None:
+            # The terminal could not be asked, or something on the book carries no stop — and the
+            # CODE says which, because they call for different work. Same call as an uncomputable
+            # margin either way: "cannot ask" is never "affordable", and a cap that opens itself
+            # when the terminal wobbles is absent exactly when the account is least healthy.
+            return SizingRefusal(code, why)
 
         # `risk_ccy`, not `intended_risk_ccy` — the cap bounds what actually goes ON THE BOOK,
         # and rounding to the broker's volume step is always DOWN, so the intended figure would

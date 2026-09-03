@@ -818,3 +818,70 @@ def test_a_run_below_the_ceiling_is_byte_identical_to_its_uncapped_self():
         for q in asks
     ]
     assert capped == free == asks
+
+
+# ── the external room — a live bot sharing an account across PROCESSES (2026-09-03) ────
+#
+# Aaron: each bot gets 5% of the account, and when one is occupying more than its share the
+# others shrink to what is left rather than being refused outright. `PortfolioAccount` cannot be
+# shared between OS processes, so the live side reads the BROKER and pushes the remaining dollars
+# onto `SoloAccount.external_room`; the shrink then happens in the strategy's own sizing, which
+# is what keeps the emulator and the broker holding the same quantity.
+def test_an_UNSET_external_room_is_infinite_and_grants_in_full():
+    """The control, and it covers every backtest and every solo replay — none of which knows
+    anything about an account budget. RED if `None` is read as zero room."""
+    s = SoloAccount(balance=10_000.0)
+    assert s.external_room is None
+    assert s.room() == float("inf")
+    assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 1_000.0
+
+
+def test_a_STATED_room_shrinks_the_fill_to_it():
+    """The whole point. A leg wanting $1,000 of risk against $400 of room takes $400 — the size
+    is SCALED, never recomputed, so the trade is the same trade at a smaller quantity."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 400.0
+    assert s.room() == 400.0
+    assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 400.0
+
+
+def test_a_room_of_ZERO_BLOCKS_the_fill_rather_than_opening_a_dust_position():
+    """🔴 "No risk available" must mean NO TRADE, not a trade of essentially no size. A leg holds
+    one position at a time, so a dust fill would occupy its only slot — the defect that silently
+    retired a leg for five and a half years. RED if a zero room grants anything at all."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 0.0
+    assert s.room() == 0.0
+    assert s.request_fill("A", +1, 100.0, 99.0, 1_000.0, 1.0) == 0.0
+    assert s.contention, "a blocked fill must be recorded, or nothing can report why"
+
+
+def test_NOBODY_ASKED_and_NO_ROOM_are_different_answers():
+    """Rule 1 at this seam. `None` is every backtest ever run; `0.0` is a live account with its
+    budget spent. Collapsing them either refuses every backtest or grants every live trade."""
+    unset, none_left = SoloAccount(balance=10_000.0), SoloAccount(balance=10_000.0)
+    none_left.external_room = 0.0
+    assert unset.room() != none_left.room()
+    assert unset.request_fill("A", +1, 100.0, 99.0, 500.0, 1.0) == 500.0
+    assert none_left.request_fill("A", +1, 100.0, 99.0, 500.0, 1.0) == 0.0
+
+
+def test_this_bots_OWN_open_risk_is_subtracted_from_the_stated_room():
+    """`external_room` is what the ACCOUNT has left after the OTHER bots — this bot's own
+    position spends the same budget, and the live read excludes its own tickets precisely because
+    they are counted here instead. RED if `reserved()` is not subtracted, which would let one bot
+    hold two positions worth its whole share each."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 500.0
+    assert s.request_fill("A", +1, 100.0, 99.0, 300.0, 1.0) == 300.0
+    assert s.room() == 200.0, "the open position must consume the stated room"
+
+
+def test_the_stated_room_never_goes_NEGATIVE():
+    """A bot already over its share must read as no room, not as a negative one — a negative
+    would sail through `min(desired, room)` as the smaller number and grant a negative size."""
+    s = SoloAccount(balance=10_000.0)
+    s.external_room = 100.0
+    s.request_fill("A", +1, 100.0, 99.0, 100.0, 1.0)
+    s.external_room = 50.0  # the balance fell; this bot is now over its share
+    assert s.room() == 0.0

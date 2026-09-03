@@ -2030,6 +2030,12 @@ class LiveRunner:
             low=float(row["low"]),
             close=float(row["close"]),
         )
+        # 🔴 BEFORE ANYTHING STEPS. The account-level budget is what the strategy's own sizing
+        # shrinks against, and `request_fill` runs INSIDE the step — so a refresh after this point
+        # would size this bar's fill against last bar's budget, which is exactly the window
+        # another bot fills. ⚠ It never raises: a budget refresh that broke the bar stream would
+        # trade a sizing question for a bot that stops trading altogether.
+        self._refresh_account_room()
         # BEFORE the push. Every fast bar opening before this bar CLOSES belongs in front of it,
         # and `flush_fast_before` says why that question is asked instead of the cheaper one.
         if self.fast_feed is not None:
@@ -2037,6 +2043,28 @@ class LiveRunner:
         self.clock.push_primary(bar)
         for ps in self.clock.drain_primary():
             self._settle_primary(ps)
+
+    def _refresh_account_room(self) -> None:
+        """Hand the strategy's account seam the dollars still free under the account cap.
+
+        ⚠ **It swallows everything, and that is the opposite call from the bridge's own sync.**
+        A failure here costs one bar sized against a stale budget; a raise would break the bar
+        stream and stop the bot managing a live position. The two are not close.
+
+        ⚠ **A bot with no bridge (a dry run built without one) simply has no budget to refresh.**
+        """
+        if self.bridge is None:
+            return
+        try:
+            self.bridge.refresh_account_room()
+        except Exception as exc:  # noqa: BLE001 — see the docstring
+            # ⚠ The logger is fetched DEFENSIVELY. This is an error path, and an error path that
+            # depends on another attribute existing is one that can raise while reporting — which
+            # is exactly what it did: a runner built without `_log` turned a swallowed warning
+            # into the very exception this block exists to swallow, and broke three merge tests.
+            log = getattr(self, "_log", None)
+            if log is not None:
+                log.warning(f"could not refresh the account risk budget: {exc}")
 
     def _settle_primary(self, ps) -> None:
         """One primary bar the clock has STEPPED: ledger → broker → alerts.

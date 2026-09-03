@@ -2007,6 +2007,37 @@ most, `recovery` for the loss-recovery leg). The class-name fallback now applies
 account, where a missing key really is a caller bug. ⚠ **Nothing was relying on it** — every real
 caller passes `leg=`, checked rather than assumed.
 
+### `SoloAccount.external_room` — one account, several PROCESSES (2026-09-03)
+
+**Aaron's split: each bot gets a share of one account, and when one is occupying more than its
+share the others SHRINK to what is left rather than being refused; with nothing left they refuse
+and say why on Telegram.** Extreme leg 5%, A+ 5%, account cap 10%.
+
+**`PortfolioAccount` cannot cross an OS process boundary**, so the live side reads the BROKER and
+pushes the dollars still free onto this field each bar; `room()` then returns it and `request_fill`
+shrinks to it exactly as a stacked leg does here. Nothing about a backtest changes — the field is
+`None` everywhere in the lab, which means infinite, which is what this class has always done.
+
+🔴 **THE PLACEMENT IS THE WHOLE SAFETY PROPERTY AND IT IS THE VENUE CEILING'S ARGUMENT AGAIN.**
+The live account cap REFUSED and never shrank, because a shrunk ORDER leaves the emulator holding
+a trade the broker does not have — the two grade different R and the bridge halts on a divergence
+the safety feature created. Shrinking HERE is the strategy deciding its own size, so both sides
+book the same quantity. **`bridge._account_cap_check` stays on as the backstop** and should now
+rarely fire, the same relationship the order-level lot refusal has to the ceiling.
+
+⚠ **THREE states, and only two are a number** (rule 1). `None` is *nobody has said*, which is
+every backtest; `0.0` is *somebody asked and there is none*, which blocks the fill. Collapsing
+them either refuses every backtest or grants every live trade.
+
+⚠ **This leg's OWN open risk is subtracted from the stated room**, because the room is what the
+ACCOUNT has left after the OTHER bots and this bot's position spends the same budget. The live
+read excludes this bot's known tickets for exactly that reason — they are counted here instead,
+from the emulator that actually knows about them. Counting them in both places halves its share.
+
+⚠ **A zero room BLOCKS rather than granting a dust position.** A leg holds one position at a time,
+so a fill of essentially no size occupies its only slot — the defect that silently retired a leg
+for five and a half years, and `_MIN_GRANT_USD` is what stops it here.
+
 ### `output.py` — the clamp's own record, and the state that must not vanish (2026-09-03)
 
 **`build_results` carries `lot_capped` on every run.** `None` means nothing recorded it; `[]` means
