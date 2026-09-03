@@ -1405,6 +1405,40 @@ precisely the one not to drop. ⚠ **It does not fix the underlying annoyance**,
 per-trade risk figure reloads under a running bot — changing anything else still writes a refusal.
 It stops that refusal outliving its own answer.
 
+🔴 **THE PRESENT TENSE NOW NEEDS A HEARTBEAT THAT COULD STILL DESCRIBE THE PRESENT (2026-09-03).**
+*Bridge is HALTED right now* was decided by the newest row on file and nothing else — so a bot that
+halted and was then STOPPED went on saying *"it is still running and still looks healthy everywhere
+else — check the account"* for the rest of the two-day window, with every clause of it false. It
+now takes three things: the newest heartbeat says halted, the bot is meant to be running, and that
+heartbeat is recent enough to describe now.
+
+⚠ **THREE tenses, not two, and the third is the whole fix** — *it recovered* and *the record cannot
+say* were sharing a value, which is the rule this module meets five times over in its own docstring.
+A halt that cannot be placed in the present gets its own WARN saying so, rather than being dressed
+as either neighbour. It is still a standing chip: it is the only line anywhere that will tell you a
+stopped bot went down with its bridge halted.
+
+⚠ **It is NOT a live probe and must not become one.** `monitor.py` owns *now*; this owns *the
+record*. A probe here would be a second watchdog reporting one event twice, which is how a channel
+gets muted. **The fix is narrower than the complaint sounds: stop ASSERTING the present tense when
+the record cannot support it.**
+
+⚠ **An UNPARSEABLE pulse timestamp keeps the present tense**, deliberately — of the two wrong
+answers, over-reporting a halt sends somebody to look at an account and under-reporting hides a bot
+placing nothing.
+
+⚠ **Demoting a STALE heartbeat costs no severity**, which is what makes it safe: a bot that should
+be running and has gone quiet already raises its own ALERT further down. Claiming *halted right now*
+off a twenty-hour-old row is a second alarm for one event, stated more confidently than the record
+allows.
+
+⚠ **A stopped bot whose newest heartbeat said LIVE still reads as RECOVERED** — that sentence stays
+true after a deliberate stop, and it is the reassuring half of the same question.
+
+⚠ **Third time a sticky present-tense claim has been reported here**, after the halt wording
+(2026-08-07) and the refused settings (earlier the same day). That is why the answer is a named
+function with three values rather than another inline boolean.
+
 🔴 **THE FLAG IS NOW WRITTEN ON EVERY RUN, CLEAN OR NOT, BECAUSE DELETING IT MADE THIS REVIEWER'S
 OWN DEATH INVISIBLE (2026-09-03).** An absent file meant *nothing to review* and it equally meant
 *nobody looked* — the two values this module's own docstring forbids collapsing, collapsed in the
@@ -1860,10 +1894,18 @@ reason, so this is now a rule for **anything that prints on that box**: reconfig
 UTF-8 with `errors="replace"`, because an unencodable character must cost a glyph, never the message.
 ⚠ **It was found by RUNNING it, not by reading it** — the module's own tests all passed on the Mac.
 
-Tests: `tests/test_log_review.py` (**34** — this line read 23 while there were 27, so count them
+Tests: `tests/test_log_review.py` (**40** — this line read 23 while there were 27, so count them
 with `pytest --collect-only`). The six added on 2026-09-03 for the deploy-noise fix: **3 watched
 RED** against HEAD, and the other 3 proven by MUTATION because HEAD could not fail them; the two
-added the same day for the always-write flag were both watched RED — it never
+added the same day for the always-write flag were both watched RED, and of the six for the halt
+tense **2 were watched RED** with the other four proven by MUTATION (one of those "fails" at HEAD
+with an AttributeError, which is a vacuous red and is labelled as one).
+🔴 **One PRE-EXISTING test went red on the tense change and the FIXTURE was what was wrong.** It
+wrote its heartbeats once and moved the clock an hour — a halted bot that stopped heartbeating,
+which is a different incident with its own alarm. A halted bot is still turning its loop, so it
+keeps beating every 15 minutes; satisfying the old fixture would have meant claiming *right now* off
+a stale row. **A fixture LESS capable than production hides the fix exactly as an over-capable one
+hides the defect** — it never
 suppressed anything, so a test asserting *this case is still reported* passes against the bug it was
 written for. Each mutation was run alone and each took down exactly its own test. Weighted toward the ways a checker wrongly says "fine" — the
 same reason `test_deadman.py` is. **A bug in this module is silent by construction: every other alarm

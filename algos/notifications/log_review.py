@@ -109,6 +109,12 @@ ALERT, WARN = "alert", "warn"
 # exactly why it has to be right here: nothing downstream would correct it.
 OK = "ok"
 
+# How the record can describe a halt. 🔴 THREE, not two — "it recovered" and "the record cannot
+# say" must not share a value, which is the rule this module already meets five times over. It was
+# two until 2026-09-03, and the missing third is why a stopped bot's last halted heartbeat read as
+# a present-tense incident for up to two days. See `_halt_tense`.
+HALT_NOW, HALT_RECOVERED, HALT_UNKNOWN = "now", "recovered", "unknown"
+
 
 class Finding:
     """One thing worth a human's attention.
@@ -196,6 +202,55 @@ def _parse_ts(row: dict) -> Optional[datetime]:
         return None
 
 
+def _halt_tense(pulses: List[dict], supposed_to_run: bool, now: datetime) -> str:
+    """Which tense the RECORD can support for a halt — never a live probe.
+
+    🔴 **It answered from the newest row on file alone until 2026-09-03, so a bot that halted and
+    was then STOPPED went on saying *"Bridge is HALTED right now … it is still running and still
+    looks healthy everywhere else"* for the rest of the two-day window.** Every clause of that was
+    false: it was not running, and nothing had looked. A sticky present-tense claim off a line
+    written in the past is the same defect as the halt wording (2026-08-07) and the refused-settings
+    finding (2026-09-03) — met here for the third time, which is why it is now a named function
+    rather than an inline test.
+
+    ⚠ **This does NOT probe anything, and must not.** `monitor.py` owns *now*; this module owns
+    *the record*, and a live probe here would be a second watchdog reporting one event twice —
+    which is how a channel gets muted. The fix is narrower than the complaint sounds: stop
+    ASSERTING the present tense when the record cannot support it.
+
+    The present tense needs the newest heartbeat to be one this bot could still be acting on:
+
+    * **`HALT_NOW`** — the newest heartbeat says halted, the bot is meant to be running, and that
+      heartbeat is recent enough to describe the present.
+    * **`HALT_RECOVERED`** — the newest heartbeat says something other than halted, so the bridge
+      came back. Reported whatever the bot's status is: *its last heartbeat said live* stays true
+      after a deliberate stop, and it is the reassuring half of the same question.
+    * **`HALT_UNKNOWN`** — the newest heartbeat says halted and it cannot be read as current: the
+      bot has been stopped since, or it has not sent one in `PULSE_GAP_ALERT`. The halt is the last
+      thing on record and nothing here can say what it would do if started.
+
+    ⚠ **An UNPARSEABLE pulse timestamp keeps the PRESENT tense**, deliberately, and it is the one
+    place this function fails loud. Of the two wrong answers, over-reporting a halt sends somebody
+    to look at an account, and under-reporting hides a bot placing nothing. A halt is the most
+    consequential thing this module reports.
+
+    ⚠ **A stale pulse costs no severity**, which is what makes demoting it safe: a bot that is
+    supposed to be running and has stopped heartbeating already raises its own ALERT further down
+    (`silent:`). Claiming *halted right now* off a twenty-hour-old row would be a second alarm for
+    one event, stated more confidently than the record allows.
+    """
+    if not pulses:
+        return HALT_UNKNOWN
+    if str(pulses[-1].get("bridge_state", "")).lower() != "halted":
+        return HALT_RECOVERED
+    if not supposed_to_run:
+        return HALT_UNKNOWN
+    last = _parse_ts(pulses[-1])
+    if last is None:
+        return HALT_NOW
+    return HALT_NOW if (now - last).total_seconds() <= PULSE_GAP_ALERT else HALT_UNKNOWN
+
+
 # ── the checks ───────────────────────────────────────────────────────────────
 def review_bot(
     bot_key: str, instance_dir: Path, state: dict, now: Optional[datetime] = None
@@ -245,9 +300,9 @@ def review_bot(
     # is `halted:<the halt's own timestamp>`, so re-rendering the same incident in the past tense
     # updates the chip WITHOUT re-announcing it. This is the split `_ts` (the key) and `_at` (the
     # display) exist for — improving wording must never wake the channel up.
-    still_halted = bool(pulses) and str(pulses[-1].get("bridge_state", "")).lower() == "halted"
+    tense = _halt_tense(pulses, supposed_to_run, now)
     for row in _of("halted"):
-        if still_halted:
+        if tense == HALT_NOW:
             findings.append(
                 Finding(
                     f"halted:{_ts(row)}",
@@ -259,7 +314,7 @@ def review_bot(
                     f"and the Bots page both read RUNNING. Check the account.",
                 )
             )
-        else:
+        elif tense == HALT_RECOVERED:
             # Recovered. Still worth a standing chip — a halt is the most consequential thing
             # this module reports and one that came and went unexamined is how the next one gets
             # shrugged at — but it is WARN, and it says so in the past tense.
@@ -274,8 +329,26 @@ def review_bot(
                     f"what happened rather than something to act on. Worth knowing WHY it halted.",
                 )
             )
+        else:
+            # 🔴 The third case, and the one that used to be reported as the FIRST. The last thing
+            # this bot said was that it had stopped placing orders, and it has said nothing since —
+            # so the halt is a fact about the record and NOT a statement about now. Still WARN and
+            # still a standing chip: this is the most consequential thing here, and it is the only
+            # line anywhere that will tell you a stopped bot went down with its bridge halted.
+            findings.append(
+                Finding(
+                    f"halted:{_ts(row)}",
+                    WARN,
+                    "Bridge halted earlier — the record cannot say whether it still is",
+                    f"It stopped placing orders at {_at(row)}: "
+                    f"{row.get('reason', 'no reason recorded')}.\n"
+                    f"That is the last thing its heartbeat said, and nothing has arrived since — it "
+                    f"has been stopped, or it went quiet. Nothing here can say what it would do if "
+                    f"you started it, so check WHY it halted before you do.",
+                )
+            )
 
-    if still_halted:
+    if tense == HALT_NOW:
         # 🔴 The key is the timestamp of the HALT, never of the pulse that reports it.
         #
         # It was `_ts(pulses[-1])` until 2026-08-07, and a pulse is written every 15 minutes —

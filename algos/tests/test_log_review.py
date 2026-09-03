@@ -409,11 +409,22 @@ def test_the_still_halted_finding_keys_on_the_HALT_not_on_the_heartbeat(tmp_path
     is in both. A finding that re-keys itself every run is invisible to a test that only asks
     whether *something* matched. Assert on the key that is supposed to be stable, by name.
     """
-    rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="x")]
-    rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
-    _write(tmp_path, rows)
 
     def _now_key(at):
+        # 🔴 The pulse is re-stamped for each run, and that is the FIXTURE being realistic rather
+        # than a convenience. A halted bot is still turning its loop — that is the entire point of
+        # this finding — so it keeps heartbeating every 15 minutes and its newest pulse is always
+        # recent. The first version of this test wrote the pulses ONCE and moved the clock an hour,
+        # i.e. a halted bot that stopped heartbeating, which is a different incident with its own
+        # ALERT. It went red when the present tense started requiring a current heartbeat
+        # (2026-09-03), and satisfying it would have meant claiming "right now" off a stale row.
+        # **A fixture LESS capable than production hides the fix the same way an over-capable one
+        # hides the defect.**
+        rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="x")]
+        rows[-2] = _pulse(
+            (at - timedelta(minutes=5)).isoformat(timespec="seconds"), bridge_state="halted"
+        )
+        _write(tmp_path, rows)
         found = lr.review_bot("b", tmp_path, RUNNING, now=at)
         return next(f.key for f in found if f.key.startswith("halted_now:"))
 
@@ -588,3 +599,116 @@ def test_the_key_is_the_SAME_whether_it_recovered_or_not(tmp_path):
     }
 
     assert a == b
+
+
+# ── the tense the record can actually support ────────────────────────────────
+#
+# 🔴 Every test below is one failure: the newest row on file said HALTED, and the finding read that
+# as the present tense whatever else was true. A bot that halted and was then STOPPED went on
+# saying *"Bridge is HALTED right now … it is still running and still looks healthy everywhere
+# else"* for the rest of the two-day window — every clause false. Third time a sticky present-tense
+# claim has been reported here, after the halt wording (2026-08-07) and the refused settings
+# (2026-09-03), which is why the answer is a named function with three values instead of a bool.
+
+
+def _halted_last(at_minutes_ago: int = 5) -> list:
+    """A record whose newest heartbeat says the bridge is halted."""
+    rows = _healthy(minutes_back=at_minutes_ago) + [
+        _event("halted", "2026-08-05T14:00:00+00:00", reason="they disagree")
+    ]
+    rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
+    return rows
+
+
+def _halt_finding(tmp_path, rows, state):
+    _write(tmp_path, rows)
+    found = lr.review_bot("b", tmp_path, state, now=NOW)
+    return [f for f in found if f.key.startswith("halted:")], _keys(found)
+
+
+def test_a_STOPPED_bot_is_not_reported_as_halted_RIGHT_NOW(tmp_path):
+    """🔴 The reported defect, watched RED against HEAD.
+
+    A bot that halted and was then stopped is not running, so nothing about it is happening right
+    now — but the chip claimed it was, in the present tense, for up to two days.
+    """
+    halted, keys = _halt_finding(tmp_path, _halted_last(), STOPPED)
+
+    assert "halted_now" not in keys
+    assert len(halted) == 1
+    assert halted[0].level == lr.WARN
+    assert "cannot say" in halted[0].title
+    assert "is placing nothing" not in halted[0].detail
+
+
+def test_a_STALE_heartbeat_cannot_support_the_present_tense(tmp_path):
+    """A bot that is meant to be running and has not heartbeat in hours cannot be described as
+    halted *now* off a row that old. Watched RED against HEAD.
+
+    ⚠ No severity is lost: a running bot that went quiet raises its own ALERT (`silent:`), so
+    demoting this one removes a second, over-confident alarm for one event rather than a warning.
+    """
+    halted, keys = _halt_finding(tmp_path, _halted_last(at_minutes_ago=200), RUNNING)
+
+    assert "halted_now" not in keys
+    assert "silent" in keys
+    assert (
+        next(
+            f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW) if f.key.startswith("silent")
+        ).level
+        == lr.ALERT
+    )
+    assert halted[0].level == lr.WARN
+
+
+def test_a_FRESH_halted_heartbeat_on_a_running_bot_is_still_urgent(tmp_path):
+    """The half that must not soften. This is the one finding nothing else in the system sees.
+
+    ⚠ Cannot go red against HEAD, which reported the present tense unconditionally. Proven by
+    MUTATION: forcing the tense to unknown reddens it.
+    """
+    halted, keys = _halt_finding(tmp_path, _halted_last(), RUNNING)
+
+    assert "halted_now" in keys
+    assert halted[0].level == lr.ALERT
+    assert "is placing nothing" in halted[0].title
+
+
+def test_a_heartbeat_with_an_unreadable_TIME_keeps_the_present_tense(tmp_path):
+    """Of the two wrong answers, over-reporting a halt sends somebody to look at an account and
+    under-reporting hides a bot placing nothing. This one fails loud on purpose.
+
+    ⚠ Cannot go red against HEAD. Proven by MUTATION: treating an unreadable timestamp as stale
+    reddens it.
+    """
+    rows = _halted_last()
+    rows[-2] = {"ts": "?", "bot": "b", "kind": "pulse", "link": True, "bridge_state": "halted"}
+    halted, keys = _halt_finding(tmp_path, rows, RUNNING)
+
+    assert "halted_now" in keys
+    assert halted[0].level == lr.ALERT
+
+
+def test_a_STOPPED_bot_whose_last_heartbeat_was_LIVE_still_reads_as_RECOVERED(tmp_path):
+    """ "It recovered" and "the record cannot say" are the two values that must not merge, and this
+    is the reassuring side. Its last heartbeat said live, which stays true after a deliberate stop.
+
+    ⚠ Cannot go red against HEAD. Proven by MUTATION: deciding the tense from the bot's status
+    before reading the heartbeat reddens it.
+    """
+    rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="they disagree")]
+    halted, keys = _halt_finding(tmp_path, rows, STOPPED)
+
+    assert "halted_now" not in keys
+    assert "again" in halted[0].title
+    assert halted[0].level == lr.WARN
+
+
+def test_the_three_tenses_are_three_distinct_values(tmp_path):
+    """A bool cannot express "the record cannot say", which is why this used to be one.
+
+    ⚠ It "fails" against HEAD with an AttributeError, which proves the constants are missing and
+    nothing about behaviour — a vacuous red. Proven by MUTATION instead: collapsing unknown onto
+    recovered reddens it, and reddens the stopped-bot case beside it.
+    """
+    assert len({lr.HALT_NOW, lr.HALT_RECOVERED, lr.HALT_UNKNOWN}) == 3
