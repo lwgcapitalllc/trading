@@ -286,12 +286,22 @@ A real order exists at a price and has NOT filled. ~4.2/month. **Deduped per set
 these per setup, ever, whatever the order does afterwards.
 
 ```
-🎯 SELL LIMIT RESTING
+🎯 0.35 lots · SELL LIMIT RESTING
 2 of 3
 Limit 3,412.55 · stop 3,428.90
 TP1 3,389.20 · TP2 3,371.05
 Still missing: Retrace zone
 ```
+
+🔴 **THE SIZE ARRIVED 2026-09-03 (Aaron: *"I need to see how much lots are going to be traded"*),
+AND GETTING IT MEANT MOVING WHEN THIS MESSAGE IS WRITTEN.** It used to be composed BEFORE the
+bridge placed the order, so there was no lot count to report — and, worse, a limit the bridge then
+REFUSED was still announced as resting. The alerts now run after the broker has been asked, and a
+message only goes out when an order really exists. ⚠ **The figure is READ OFF the placed order,
+never derived here**: the strategy sizes in ounces and MT5 takes lots, and a second conversion is
+the 54.82-lots-on-$2,000 defect. ⚠ **A run with no broker — every backtest, and `alert_rate.py` —
+still sends this message with NO size**, because *no broker to ask* and *no order* must not render
+the same thing. Rules: `algos/CLAUDE.md` → *The resting message carries its lot size*.
 
 🔴 **It was headed `ENTRY ZONE LIVE` for one day and was read as a FILL by the only person who
 reads this channel** (Aaron, 2026-08-14: *"I thought the trade entered when you just did a limit

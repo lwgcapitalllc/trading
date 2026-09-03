@@ -837,6 +837,23 @@ class OrderBridge:
             )
 
     # ── the per-bar entry point ──────────────────────────────────────────────
+    def resting_lots(self, direction: int) -> Optional[float]:
+        """The lot size ACTUALLY resting in the primary slot on one side, or `None` if nothing is.
+
+        🔴 **Read from `_rest`, never recomputed, and that is the entire safety property.** The
+        strategy sizes in INSTRUMENT UNITS (ounces for gold); MT5 takes LOTS. Deriving a display
+        figure here would be a second conversion competing with `order_sizing`'s one seam — the
+        defect that rested 54.82 lots on a $2,000 account, 221x the intent. This returns the
+        number that was sent to the broker and is showing in the terminal, or nothing.
+
+        ⚠ **`None` means NO ORDER IS RESTING — it is never "cannot ask".** A caller with no bridge
+        at all does not hold this method; absence of the bridge is how *cannot ask* is expressed
+        (`setup_alerts.SetupAlerts`, whose `lots_for` defaults to None). Collapsing the two would
+        let a refused order and an offline backtest render the same message.
+        """
+        held = self._rest.get(primary_slot(direction))
+        return None if held is None else float(held.lots)
+
     def sync(self, dec, sig) -> None:
         """Reconcile once, for the bar that just closed. Order matters: observe what the broker
         did during the bar, THEN compare, THEN act."""

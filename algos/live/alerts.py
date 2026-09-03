@@ -171,7 +171,7 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 
-def format_entry_zone(snap, digits: int = 2) -> str:
+def format_entry_zone(snap, digits: int = 2, lots: Optional[float] = None) -> str:
     """A limit order is RESTING at a price, unfilled. Replies to `format_watching`.
 
     Sent ONCE per setup. The resting price is recomputed every bar and can shift when a new gap
@@ -197,6 +197,18 @@ def format_entry_zone(snap, digits: int = 2) -> str:
 
     ⚠ **The targets are NUMBERED.** `TP 3,296.10 · 3,311.75` leaves the reader to infer that the
     first is TP1 — true here, and an inference the message should not be asking for.
+
+    🔴 **`lots` is the size ACTUALLY SENT TO THE BROKER, handed in by the live layer — it is never
+    derived here and this module must never learn how (2026-09-03, Aaron: *"I need to see how much
+    lots are going to be traded"*).** The strategy sizes in INSTRUMENT UNITS (ounces for gold) and
+    MT5 takes LOTS; a message that converted for itself would be a second answer competing with
+    `order_sizing`'s one seam, which is the 54.82-lots-on-$2,000 defect exactly. `bridge.
+    resting_lots` reads the placed order and this renders whatever it is given.
+
+    ⚠ **`None` prints NO SIZE rather than a zero or a guess**, because it means the caller had no
+    broker to ask — a backtest, or `alert_rate.py`. The unit is NAMED in the title for the same
+    reason the conversion is not done here: a bare number on this message is the one place a
+    reader could take ounces for lots.
     """
     order = []
     if snap.entry is not None:
@@ -212,7 +224,8 @@ def format_entry_zone(snap, digits: int = 2) -> str:
     # thing in three lines and buried it among two that were fine.
     lines.append(_outstanding(snap))
     side = "BUY" if snap.side > 0 else "SELL"
-    return alert("🎯", f"{side} LIMIT RESTING", "", *lines)
+    size = f"{lots:.2f} lots · " if lots is not None else ""
+    return alert("🎯", f"{size}{side} LIMIT RESTING", "", *lines)
 
 
 def format_blocked(snap, digits: int = 2) -> str:

@@ -1016,6 +1016,11 @@ class LiveRunner:
                 categories=cats,
                 digits=getattr(self.cfg, "digits", 2),
                 display=self.cfg.display_name,
+                # The size the BROKER is holding, read off the placed order. Passing the
+                # bridge's own method rather than a number is what makes the alert layer
+                # broker-free: it never learns what a lot is, it is handed one. A bot with no
+                # bridge passes nothing, and the message renders exactly as it always did.
+                lots_for=self.bridge.resting_lots,
             )
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(
@@ -2034,21 +2039,37 @@ class LiveRunner:
             self._settle_primary(ps)
 
     def _settle_primary(self, ps) -> None:
-        """One primary bar the clock has STEPPED: ledger → alerts → broker.
+        """One primary bar the clock has STEPPED: ledger → broker → alerts.
 
-        This ordering is the whole contract — the broker is reconciled only AFTER the strategy has
-        seen the same bar.
+        The broker is reconciled only AFTER the strategy has seen the same bar; that half of the
+        ordering is unchanged and is the whole contract.
+
+        🔴 **THE ALERTS MOVED AFTER THE BRIDGE ON 2026-09-03, REVERSING A DELIBERATE DECISION, AND
+        THE REASON IS THAT THE OLD ORDER MADE THE RESTING MESSAGE A PREDICTION.** It used to run
+        first, so that an alert never depended on a network round trip. But the message it sends
+        says an order EXISTS AT THE BROKER — and it was being composed before the order had been
+        placed, from a strategy that sizes in ounces and cannot know a lot count. So it could not
+        carry the size (Aaron, 2026-09-03: *"I need to see how much lots are going to be traded"*)
+        and, worse, it announced a resting limit that the bridge could then refuse outright,
+        leaving a message naming an order nobody held. **A message about the broker has to be
+        written after the broker has been asked.**
+
+        ⚠ **The property that ordering bought is KEPT, by `finally` rather than by sequence.**
+        `bridge.sync` makes live MT5 calls and an exception here breaks the bar stream, so a bare
+        reorder would let a broker wobble silence the signals channel — trading one defect for a
+        quieter one. Alerts now fire whatever the bridge did. ⚠ **They still never raise on their
+        own** (`setup_alerts.SetupAlerts`), so this cannot mask a bridge failure.
         """
         self.ledger.bar(ps.dec, ps.sig, ps.seq)
         self._drain_records()
-        # AFTER the strategy has stepped — the resting order is rebuilt inside `execution.step`,
-        # so reading it any earlier reports last bar's price beside this bar's confluences. It
-        # sits BEFORE the bridge deliberately: this is a read of what the strategy decided, and
-        # ordering it after a broker call would make an alert depend on a network round trip.
-        # It never raises; see `setup_alerts.SetupAlerts`.
-        if self.setup_alerts is not None:
-            self.setup_alerts.on_bar(self.strategy)
-        self.bridge.sync(ps.dec, ps.sig)
+        try:
+            self.bridge.sync(ps.dec, ps.sig)
+        finally:
+            # AFTER the strategy has stepped — the resting order is rebuilt inside
+            # `execution.step`, so reading it any earlier reports last bar's price beside this
+            # bar's confluences.
+            if self.setup_alerts is not None:
+                self.setup_alerts.on_bar(self.strategy)
 
         if self.bridge.state is BridgeState.HALTED:
             self.log.error("Bridge halted — the loop will keep observing but place nothing.")

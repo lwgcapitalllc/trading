@@ -78,6 +78,7 @@ class SetupAlerts:
         categories: Sequence[str] = DEFAULT_CATEGORIES,
         digits: int = 2,
         display: str = "",
+        lots_for: Optional[Callable[[int], Optional[float]]] = None,
     ) -> None:
         self._send = send
         self._log = log
@@ -87,6 +88,17 @@ class SetupAlerts:
         #: `MPC SOS Fade`. Empty falls back to the class name, so a caller that does not set it
         #: still renders something true.
         self._display = display
+        #: side -> the lots ACTUALLY resting at the broker, or None when nothing is.
+        #:
+        #: 🔴 **Three states, and flattening any two of them breaks a different message.**
+        #: `lots_for is None` means there is no broker to ask (a backtest, `alert_rate.py`) and
+        #: the resting alert sends WITHOUT a size, exactly as it always did. A callable that
+        #: returns a float means an order of that size is live. A callable that returns None
+        #: means it was ASKED and nothing is resting — the order was refused or cancelled — and
+        #: the alert is not sent at all, because its entire job is to say an order EXISTS.
+        #: **"No order" and "no broker" must not render the same message**, which is rule 1
+        #: arriving in the signals channel.
+        self._lots_for = lots_for
         self._categories = tuple(c for c in categories if c in CATEGORIES)
         #: setup key -> the Telegram message id of its root, so every outcome replies to it.
         self._threads: Dict[str, Optional[int]] = {}
@@ -190,9 +202,23 @@ class SetupAlerts:
         # → `announce_resting`). This layer must never learn what a fib is; it only respects the
         # answer. A strategy that does not implement it defaults True and behaves as before.
         if snap.state == RESTING and snap.announce_resting and ENTRY_ZONE_MSG not in sent:
-            sent.add(ENTRY_ZONE_MSG)
-            if self._on(ENTRY_ZONE_MSG):
-                self._post(alerts.format_entry_zone(snap, self._digits), reply_to=root)
+            # 🔴 **ASKED BEFORE `sent` IS MARKED, for the same reason `announce_resting` is.** A
+            # setup whose order was refused on THIS bar can rest on the next one; consuming its
+            # one resting-message slot here would mean the announcement never arrives — the
+            # bookkeeping-before-the-guard mistake this method is written twice to avoid.
+            asked = self._lots_for is not None
+            lots = self._lots_for(snap.side) if asked else None
+            # Asked, and nothing is resting => the order was refused or cancelled. Saying
+            # "LIMIT RESTING" would name an order the broker does not hold, which is the exact
+            # misreading this message was reworded to end. Skipped WITHOUT marking it sent.
+            # ⚠ Written as a condition rather than an early `return`: a terminal setup is
+            # handled below, and today a RESTING snapshot can never also be terminal — a guard
+            # that is only correct because of an invariant somewhere else is one that breaks
+            # silently the day that invariant moves.
+            if not (asked and lots is None):
+                sent.add(ENTRY_ZONE_MSG)
+                if self._on(ENTRY_ZONE_MSG):
+                    self._post(alerts.format_entry_zone(snap, self._digits, lots), reply_to=root)
 
         if snap.is_terminal:
             if RESOLVED_MSG not in sent and self._on(RESOLVED_MSG):

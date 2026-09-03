@@ -2815,3 +2815,32 @@ EXPERIMENT from every number in this file, and has to say so.
 bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
+
+## The venue ceiling reaches THIS bot's default account too (2026-09-03)
+
+`backtest/portfolio/account.py` gained a broker lot ceiling on 2026-09-02 — 100 lots of gold,
+measured on the live account — and `SoloAccount` carries it. **This class builds a `SoloAccount`
+whenever it is constructed without one, so the ceiling is on by default here**, and the comment
+in `execution.py` saying otherwise was true until that day and is now corrected rather than left
+to be believed. The rules for the ceiling itself live in `backtest/CLAUDE.md`; only what it means
+for this bot is here.
+
+- ⚠ **The default opening balance is $1,000,000 and the ceiling first bites above ~$927,000**, so
+  anything constructing `Execution` with neither an account nor a capital figure is already sizing
+  under the clamp. That is not hypothetical — it is what turned `test_sizing_matches_risk_over_stop_distance`
+  red: the test asserted the sizing FORMULA through a clamp that has nothing to do with it.
+- ✅ **Two tests now, because they measure two different things.** The formula test runs at
+  $100,000, under any of these ceilings, so only its own subject is acting;
+  `test_the_venue_ceiling_clamps_a_size_the_broker_would_REJECT` keeps the $1m case as COVERAGE of
+  the clamp. **The failing case was kept rather than deleted** — a red test is the one moment the
+  behaviour is easy to pin.
+- ⚠ **The ceiling's measured numbers are written out in that test, not imported.** Importing them
+  would make it agree with whatever the ceiling becomes, so a ceiling raised by accident would stay
+  green. 100 lots is a measured fact about the venue, not a preference.
+
+🔴 **THE PARITY GATE IS RED AND IT IS NOT THIS.** `compare_strategy.py` on the newest decision
+export (`VANTAGE_XAUUSD, 15_2a817.csv`, 21,767 rows) exits 1 at **bar 16, `px_s_stage`: py=1
+pine=0** — and the IDENTICAL red reproduces at `392dc89f`, i.e. before any of 2026-09-03's work.
+**Proving the red at an older commit first is the rule here, because a stale export reds this gate
+exactly like a bug does**, and that is what stopped the lot ceiling being blamed for it. ⚠ It is
+not diagnosed: nobody has yet established whether the export or the code is the older side.

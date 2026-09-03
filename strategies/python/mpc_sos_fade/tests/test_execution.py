@@ -144,11 +144,49 @@ def test_entry_fills_next_bar_not_this_bar():
 
 
 def test_sizing_matches_risk_over_stop_distance():
+    """The sizing FORMULA: qty = equity x risk% / stop distance.
+
+    🔴 **The capital is $100,000 and it used to be $1,000,000, which is not a tidy-up.** Since
+    2026-09-02 the default account carries the VENUE CEILING — 100 lots of gold, measured on the
+    live account — and at $1m this setup asks for 261.78 lots, so the number this test asserted
+    was one the broker would reject. It was measuring the formula through a clamp that had
+    nothing to do with the formula. Below the ceiling the two are the same thing, so the test now
+    sits where its own subject is the only thing acting.
+    ⚠ The ceiling itself is pinned by the test below rather than dodged.
+    """
+    ex = Execution(_cfg(exec_risk_pct=10.0), initial_capital=100_000.0)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    # qty = equity*10% / (edge-sl) = 10000 / 3.82 = 2617.8 units = 26.18 lots, under the ceiling
+    assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6
+
+
+def test_the_venue_ceiling_clamps_a_size_the_broker_would_REJECT():
+    """The same setup at $1,000,000, where the formula asks for more than the venue will take.
+
+    🔴 **This is the case that made the old test red, kept as COVERAGE instead of deleted.** The
+    formula wants 100,000 / 3.82 = 26,178 oz = 261.78 lots; PU Prime's measured ceiling on
+    `XAUUSD.p` is 100 lots, and an order above it is not filled small, it is REJECTED — so a
+    replay that books 261.78 lots is describing an account nobody can have.
+
+    ⚠ It clamps rather than refusing, and only because this is the DECISION seam: the emulator
+    books the capped size as its own, so the two sides never grade different R. Clamping at the
+    ORDER is still wrong — see `algos/shared/order_sizing.py`, which refuses.
+
+    MUTATION: BOTH WATCHED. `max_lots=None` on the default `SoloAccount` reds it (the formula's
+    full 26,178 oz comes back), and so does a ceiling of 200 lots. ⚠ Neither touches the test
+    above, which sits under any of those ceilings — that is the point of the pair: one measures
+    the formula, the other measures the clamp, and no single change can move both.
+    """
     ex = Execution(_cfg(exec_risk_pct=10.0), initial_capital=1_000_000.0)
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
-    # qty = equity*10% / (edge-sl) = 100000 / 3.82
-    assert abs(ex._qty - (100_000.0 / 3.82)) < 1e-6
+    assert ex._qty < (100_000.0 / 3.82)  # the formula's answer was refused
+    # 🔴 The measured numbers are written out rather than imported from `account.py`. Importing
+    # them would make this test agree with whatever the ceiling becomes, so a ceiling raised by
+    # accident would stay green — and the ceiling is a MEASURED fact about the venue (100 lots,
+    # read off account 700152905), not a preference. Moving it should have to come here and say so.
+    assert ex._qty == 100.0 * 100.0  # 100 lots x 100 oz per lot
 
 
 # ------------------------------------------------------- winning ladder ---------

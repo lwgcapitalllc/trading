@@ -648,9 +648,19 @@ class Execution:
         # reads it, so parity is unaffected.
         self.initial_capital = float(initial_capital)
         self._equity_realized = initial_capital  # LEG-LOCAL ledger — R is measured against this
-        # The shared account owns the budget and sizes entries. Default = a SoloAccount (no cap,
-        # always grants full size), so a bot run alone is byte-identical to before the seam existed;
-        # a shared PortfolioAccount contends this leg against the others. See backtest/portfolio/.
+        # The shared account owns the budget and sizes entries. Default = a SoloAccount, which
+        # never contends for RISK (it always grants the full desired size out of the budget); a
+        # shared PortfolioAccount contends this leg against the others. See backtest/portfolio/.
+        #
+        # 🔴 **"No cap" was written here and stopped being true on 2026-09-02.** A SoloAccount
+        # still carries the VENUE ceiling — 100 lots of gold, measured on the live account — which
+        # is not part of the budget and binds regardless of what the account can afford, because a
+        # broker refusing a 742-lot order does not care how much equity is behind it. So a solo
+        # replay is byte-identical to its old self only while it never ASKS for more than that;
+        # measured, the A+ book first touches the ceiling above ~$927,000 of balance.
+        # ⚠ Which means the default $1,000,000 opening balance above is ALREADY past that point:
+        # anything constructing this class without an account and without a capital figure is
+        # sizing under the ceiling. `tests/test_execution.py` pins both sides of it.
         self._account = account if account is not None else SoloAccount(balance=initial_capital)
         self._leg = leg
         # A2: None ⇒ bar mode (the Pine guess, no costs). See the class docstring.

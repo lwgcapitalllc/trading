@@ -1646,6 +1646,50 @@ that has to put those in a message, parsed and stripped by the command center's 
 The prose line beside it is for a human; **scraping the prose is what the OK/FAIL markers already
 exist to avoid**, and a reworded `print` must not change what anything reads.
 
+### 🔴 THE RESTING MESSAGE CARRIES ITS LOT SIZE, AND THE BAR ORDERING HAD TO MOVE FOR IT (2026-09-03)
+
+Aaron: *"I need to see how much lots are going to be traded."* The message announcing a resting
+limit could not say, and the reason was ORDERING rather than a missing field.
+
+🔴 **THE ALERT WAS COMPOSED BEFORE THE ORDER WAS PLACED, SO IT WAS A PREDICTION.**
+`runner._settle_primary` ran the alerts first and `bridge.sync` second — deliberately, so that an
+alert never depended on a network round trip. But this message's whole job is to say **an order
+EXISTS AT THE BROKER**, and it was written before the broker had been asked. Two consequences, and
+the second is worse than the missing size: **a limit the bridge then REFUSED outright was still
+announced as resting**, naming an order nobody held.
+
+✅ **The alerts now run AFTER `bridge.sync`, and the property the old order bought is kept by
+`finally` rather than by sequence.** `sync` makes live MT5 calls and an exception there breaks the
+bar stream, so a bare reorder would let a broker wobble silence the signals channel — trading one
+defect for a quieter one, which is the worse direction every time. ⚠ **The bridge's exception is
+NOT swallowed**; it still propagates, because the stream break is how a broken bridge gets noticed.
+
+🔴 **THE SIZE IS READ OFF THE PLACED ORDER AND IS NEVER DERIVED IN THE ALERT PATH.** The strategy
+sizes in INSTRUMENT UNITS (ounces for gold); MT5 takes LOTS. A message converting for itself would
+be a second answer competing with `shared/order_sizing.py`'s one seam — **the defect that rested
+54.82 lots on a $2,000 account, 221x the intent.** `bridge.resting_lots(direction)` returns what
+`_rest` holds, i.e. what was sent and is showing in the terminal. ⚠ **`alerts.py` still knows
+nothing about lots** — it renders a number it is handed, and the unit is NAMED in the message
+because a bare figure here is the one place a reader could take ounces for lots.
+
+🔴 **THREE STATES, and flattening any two breaks a different message** — rule 1 arriving in the
+signals channel:
+
+| `lots_for` | means | the message |
+|---|---|---|
+| absent | there is no broker to ask — a backtest, `alert_rate.py` | sends, with NO size |
+| returns a float | an order of that size is live | sends, with the size |
+| returns `None` | ASKED, and nothing is resting (refused/cancelled) | is not sent at all |
+
+⚠ **The lookup happens BEFORE the message is marked sent**, for the same reason `announce_resting`
+does: an order refused on one bar can rest on the next, and consuming the setup's one resting-message
+slot early would mean the announcement never arrives. **This layer has now made the
+bookkeeping-before-the-guard mistake twice and been written against it three times.**
+
+⚠ **Absence of the callable is how *cannot ask* is expressed**, so a bot with no bridge renders
+exactly as it always did — that path is what `alert_rate.py` measures the channel's volume on, and
+silencing it would delete the measurement the channel is tuned by.
+
 ### One shape for every message — `shared/alert_format.py`
 
 **Aaron's brief, 2026-08-05, after picking from rendered samples in the health chat:** concise, but
