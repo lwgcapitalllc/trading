@@ -49,7 +49,7 @@ why the old port died.
 ### 4. Run the gate, and run it at several warm-ups
 
 ```
-python strategies/python/mpc_<name>/tools/compare_<name>.py --warmup 100
+python strategies/python/<name>/tools/compare_<name>.py --warmup 100
 ```
 
 Then 500, 1000, 2000. A single warm-up can hide a cold-start divergence, and it can equally

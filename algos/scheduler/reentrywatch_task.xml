@@ -32,7 +32,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
-      <Arguments>C:\trading\algos\tools\watch_reentry.py --bot mpc_sos_fade_demo</Arguments>
+      <Arguments>C:\trading\algos\tools\watch_reentry.py --bot sos_fade_demo</Arguments>
       <WorkingDirectory>C:\trading\algos</WorkingDirectory>
     </Exec>
   </Actions>
