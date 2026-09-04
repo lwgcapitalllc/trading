@@ -1,53 +1,45 @@
-# De-branding the strategies — assessment and hand-off prompt
+# De-branding the strategies — DONE 2026-09-04
 
-> ## ⚠ STALE SINCE 2026-09-02 — RE-SURVEY BEFORE RUNNING ANY OF IT
+> ## ✅ EXECUTED. This file is now a RECORD, not an instruction set.
 >
-> **The Pine strategies MOVED while this plan was on hold.** Everything that was under
-> `indicators/strategies/` is now under `strategies/tradingview/`, and the two research files are
-> under `strategies/tradingview/research/`. See `docs/TRADINGVIEW_STRATEGY_MOVE_PLAN.md`.
+> Landed in `0dfdcbf5` (the repo) and `435154cf` (the decision record), and the live bot was
+> re-promoted onto it the same night — **`sos_fade_demo` v184, hash `c05823a8a1c9`, started
+> 2026-09-04 00:58 UTC, flat, both feeds warmed, all five watchdogs armed.**
 >
-> **What that costs this plan:** the two path references in it have been rewritten to the new
-> layout, so it points at real files again — but **its §1 file counts and its reference sweeps were
-> measured on 2026-08-31 against a tree that has since moved 24 files and 177 path references.
-> Re-measure every count before acting on one.** The rename itself is unaffected in substance; it
-> is the arithmetic that went stale.
+> **Do not "run" this plan again.** Read §2 for what the names ARE and §2.6 for what deliberately
+> still carries MPC. Everything below §2 describes work that has happened; the §1 counts are the
+> pre-rename survey and are kept only as a record of the size of the job.
 >
-> ⚠ **This file is still UNTRACKED.** It has no committed version, so nothing above is backed up
-> and a second session cannot see it. Commit it before relying on it.
+> 🔴 **Two live-path defects the rename CREATED, both found and fixed here — read these before
+> touching either area:**
+>
+> 1. **Telegram ate the bot's name.** Alerts go out `parse_mode=Markdown` and the plain-text
+>    rescue only fires on an UNBALANCED entity. `sos_fade_demo` has an EVEN number of underscores,
+>    so it parsed cleanly and rendered as `sosfadedemo` — HTTP 200, no retry, nothing logged. The
+>    old `mpc_sos_fade_demo` had three underscores, was rejected, and the rescue delivered it
+>    intact: **the old name was safe by accident.** Fixed at the one seam every bot message passes
+>    through (`runner._notify` → `markdown=False`). Rules: `algos/CLAUDE.md`.
+> 2. **The promote preview went blank.** `bot_versions.setting_changes` reads `config.py` at both
+>    commits, and the old side does not exist under the new name — so the FIRST promote after the
+>    rename, the one that matters most, reported *not checked*. It asks git what the file was
+>    called now. Rules: `command-center/backend/CLAUDE.md`.
+>
+> ⚠ **One accepted cosmetic loss: the version counter restarted.** It is
+> `git rev-list --count <commit> -- <promoted trees>` with no rename following, so the strategy
+> package's pre-rename history no longer counts and the same deployment reads **v182 where it read
+> v294**. Nothing the bot trades depends on it, and post-rename subtraction still works — but
+> **do not compare a version number across 2026-09-04.**
+>
+> ⚠ **Two things the plan did not know about**, because they were built while it was on hold:
+> a fifth python package (`mpc_extreme_leg` → `extreme_leg`, class `ExtremeLegStrategy`) and a
+> twelfth Pine strategy file (`mpc_extreme_leg_strategy_export.pine`). Both were renamed with the
+> rest.
 
-> # 🔴 ON HOLD — DO NOT START
->
-> **Aaron's instruction, 2026-08-31: two other sessions are working this repo. Nothing in this
-> plan runs until both are finished and their work is committed.**
->
-> This is not caution for its own sake. This plan renames folders, classes and import paths that
-> both in-flight workstreams are editing right now, and a rename landing under an unfinished
-> change produces conflicts in files nobody can cleanly merge — plus §6 step 1 requires a clean
-> tree before anything moves.
->
-> **In flight at the time of writing (`git status`, 2026-08-31):**
->
-> | Workstream | Files | Collides with |
-> |---|---|---|
-> | Live bot feed / ledger / dual-clock | `algos/live/bridge.py`, `feed.py`, `ledger.py`, `runner.py`; `strategies/python/sos_fade/strategy.py` + new `dual_clock.py`; 4 test files + new `test_dual_feed_merge.py` | §2.1 (the package rename), §4.1 (the ledger), §3 (the live bot) — **the worst possible overlap** |
-> | Extreme Leg strategy | `strategies/tradingview/extreme_leg_strategy.pine` + its doc, `tools/build_extreme_leg.py`, `backtest/tools/pre_sos_leg*.py`, two CLAUDE.md files | §2.3 (the Pine rename) |
->
-> ⚠ **The live-bot workstream is the blocker that matters.** It is editing the very strategy
-> package this plan renames and the ledger this plan moves. Renaming under it would rewrite paths
-> in half-finished code.
->
-> **Before starting, re-check and require all four:**
->
-> 1. `git status` is clean — no modified files, no untracked work from another session.
-> 2. Both workstreams above are committed and pushed.
-> 3. The live bot is stopped and the account is flat (§3.2).
-> 4. The lab database is backed up (§4.2).
->
-> ⚠ **Re-measure §1 when the hold lifts.** Every count here was taken on 2026-08-31 against a tree
-> that has since moved, and the in-flight work adds new files carrying the old names.
+**Written 2026-08-31, executed 2026-09-04. Decisions settled with Aaron 2026-08-31 (§0).**
 
-**Written 2026-08-31. Decisions settled with Aaron 2026-08-31 (§0). Nothing has been renamed yet —
-this file is the survey and the instruction set.**
+**Why:** "MPC" is MentorPeak Consulting, Aaron's brother's company. Nothing in this repo that is a
+strategy, a bot, a lab row, a chart label or a Telegram message carries it any more. **One thing
+keeps the name: the assistant indicator, which is genuinely his brother's own.**
 
 **Why:** "MPC" is MentorPeak Consulting, Aaron's brother's company. Nothing in this repo that is a
 strategy, a bot, a lab row, a chart label or a Telegram message may carry it. **One thing keeps the
