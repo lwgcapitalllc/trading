@@ -80,3 +80,8 @@
 2026-09-03 22:15:08,618 [INFO] Fast feed bookmarked at 2026-09-03 22:14:59.999000+00:00 — the 15m context is already past it.
 2026-09-03 22:15:08,618 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-19 05:15:00+00:00 → 2026-09-03 22:10:00+00:00).
 2026-09-03 22:15:08,620 [INFO] Equity re-anchored to the account after warm-up: 10,524.80 → 10,020.65
+2026-09-03 23:06:56,405 [INFO] Sizing against account balance $10,020.65
+2026-09-03 23:06:58,832 [INFO] Warmed 5000 bars (2026-06-19 06:00:00+00:00 → 2026-09-03 22:45:00+00:00) in 2.3s
+2026-09-03 23:07:01,866 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-19 06:05:00+00:00 → 2026-09-03 23:00:00+00:00).
+2026-09-03 23:07:01,868 [INFO] Equity re-anchored to the account after warm-up: 10,925.03 → 10,020.65
+2026-09-03 23:07:01,869 [INFO] Runtime config applied while flat (strategy rebuilt): exec_risk_pct 5.0 → 10.0
