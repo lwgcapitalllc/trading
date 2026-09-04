@@ -139,7 +139,7 @@ Five strategies are registered in `lab.db`. Verified by direct query 2026-08-12:
 
 **The suite is carved up by LEG, not by signal.** The strategies share a confluence source on purpose and each takes a different part of the move. SOS Fade catches the reversal; B-LEG catches setups that take a long time to play out; BOS catches the legs in between. **Re-measured 2026-09-01 over 157,004 M15 bars: SOS Fade and B-LEG held a position at the same time on 45 bars — 0.5% of SOS Fade's hold time — and ZERO of those were same-side.** That does not make them independent (both read one structure stream on one instrument), and it does not retire the account-level allocator.
 
-Also on disk: three Pine strategies with no Python port yet — `mpc_d` and `mpc_h4_sweep` have export twins, and `smc_session_sweep` (renamed 2026-08-15 from `m15_playbook`) has **no twin, no compile and no measurement** — plus `ny_orb.pine` in TradingView research.
+Also on disk: three Pine strategies with no Python port yet — `mpc_d` and `h4_sweep` have export twins, and `smc_session_sweep` (renamed 2026-08-15 from `m15_playbook`) has **no twin, no compile and no measurement** — plus `ny_orb.pine` in TradingView research.
 
 ---
 

@@ -54,7 +54,7 @@ Smart Money stages 3–4 are blocked on API keys. ⚠ **The Smart Money UI is fl
 
 ## Smaller items raised but deferred
 
-- **Three Pine strategies have no Python port:** `mpc_d`, `mpc_h4_sweep`, `smc_session_sweep` (renamed 2026-08-15 from `m15_playbook`). ⚠ **"Each has an export twin ready" was WRONG about the third and this line said it anyway** — `smc_session_sweep_strategy.pine` has no export twin, has never been compiled, and has produced no number of any kind, so its port starts a stage earlier than the other two. `mpc_d`'s one measurement was indistinguishable from zero.
+- **Three Pine strategies have no Python port:** `mpc_d`, `h4_sweep`, `smc_session_sweep` (renamed 2026-08-15 from `m15_playbook`). ⚠ **"Each has an export twin ready" was WRONG about the third and this line said it anyway** — `smc_session_sweep_strategy.pine` has no export twin, has never been compiled, and has produced no number of any kind, so its port starts a stage earlier than the other two. `mpc_d`'s one measurement was indistinguishable from zero.
 - **`backtest/replay/EngineStack` does not yet wire EQ → FVG.** The `eqExemptFvg` coupling is modelled in the engines; the consumer wiring is a follow-up.
 - **The candlestick chart layer runs on a different tape from the indicator.** Measured: 15.9% of marks disagree, caused by 6 cents of feed difference between the MT5 cache and TradingView. **Accepted, no code change** — the chart must draw the bars the strategy traded. Never close it with a tolerance; that was measured and is strictly worse.
 - **Sweeps and stacks do not write the cost columns yet**, so they stay on the legacy frictionless branch. Wire them for both stack modes at once or the delta column lies.

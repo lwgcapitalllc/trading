@@ -94,7 +94,7 @@ what Aaron asked for (*"maybe one or two comments"*).
 
 **Result: 2,378,408 → 1,817,898 bytes, 23.6% smaller, ~140,000 tokens off a full read of the
 set.** Per family, largest first: `sos_fade_strategy` 25.4% / 27.9% (parent / export),
-`mpc_d` 28.6% / 32.0%, `mpc_h4_sweep` 26.3% / 28.8%, `realign` 24.6%, `mpc_b_leg`
+`mpc_d` 28.6% / 32.0%, `h4_sweep` 26.3% / 28.8%, `realign` 24.6%, `b_leg`
 20.1% / 21.0%, `bos` 19.0% / 20.4%. **`smc_session_sweep_strategy.pine` moved 1.3% and that
 is not a failure** — it was written recently and was already comment-light (16 comment lines
 against `sos_fade_strategy.pine`'s 1,435), which is the state this change is trying to get the rest to.

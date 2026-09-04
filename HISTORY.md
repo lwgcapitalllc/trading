@@ -1070,7 +1070,7 @@ build notes, and the `indicator()` count in the root file, which read **16 while
 exactly what it would have misled.** Both `docs/LWG_Roadmap_And_Open_Questions.md` and
 `docs/LWG_Project_State_Snapshot.md` listed three un-ported Pine strategies and said *"each has an
 export twin ready."* Two do. This one has **no twin, no compile, and no number of any kind** — its
-port starts a stage earlier than `mpc_d` and `mpc_h4_sweep` do. Both lines now say so. **This is
+port starts a stage earlier than `mpc_d` and `h4_sweep` do. Both lines now say so. **This is
 rule 4 in its quietest form: the sentence was true of the list's majority and was written as if true
 of the list.**
 
