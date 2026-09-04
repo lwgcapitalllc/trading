@@ -2771,6 +2771,12 @@ table is a LABEL; the XML is the line that consumes it, and only one of them rea
 is rule 7 arriving in the one place this repo had not thought to look — a scheduler argument is
 code that lives in a data file, so neither the doc sweep nor the code sweep owned it.
 
+🔴 **THE ROOT CAUSE IS AN EXTENSION LIST, AND IT IS THE THING TO CHECK ON THE NEXT RENAME.** The
+sweep that did the de-brand walked 23 text extensions and `.xml` was not one of them, so a Windows
+task definition was never opened. **A rename is only as complete as the file types its sweep can
+see, and a clean run tells you nothing about which types it skipped** — the report counts what it
+changed, never what it never looked at.
+
 ⚠ **The failure was loud, and only by luck of WHICH call failed first.** `watch_reentry.py` resolves
 the instance directory from the key, so a missing bot raised `FileNotFoundError`, which its top-level
 handler turns into a Telegram message and a health record. **Had the lookup returned an empty ledger
@@ -2787,36 +2793,6 @@ subject have to fail independently, or the record is worth nothing on the one oc
 
 ✅ Both XMLs fixed, both tasks re-registered from them, the phantom folder deleted, and the 00:23
 record — written before the rename and stamped with the old name — left exactly as it was.
-
-### 🔴 The de-brand left both silent watchers pointing at a bot that no longer exists (2026-09-04)
-
-`SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` are registered from `algos/scheduler/*.xml`, and both XMLs
-still passed `--bot mpc_sos_fade_demo` after the rename. **`SCHEDULER_GUIDE.md`'s table was already
-correct** — it listed both under the new key — so the page a person reads and the file that actually
-registers the task disagreed, and only the table had been renamed. **That is rule 7 with the label
-and its consumer one directory apart: the table is a CLAIM about the XML sitting beside it.**
-
-🔴 **THE ROOT CAUSE IS AN EXTENSION LIST, AND IT IS THE THING TO CHECK ON THE NEXT RENAME.** The
-sweep that did the de-brand walked 23 text extensions and `.xml` was not one of them, so a Windows
-task definition was never opened. **A rename is only as complete as the file types its sweep can
-see, and nothing about a clean run tells you which types it skipped** — the report counts what it
-changed, never what it never looked at.
-
-🔴 **The failure mode is the exact one this pair exists to prevent.** `watch_reentry.py` derives the
-instance directory from the key it is handed, so the missing bot made it raise — and its health
-record, *the evidence that it ran*, was written into a freshly created
-`instances/mpc_sos_fade_demo/`. **So the real bot's health stream shows a GAP, which this file tells
-you to read as "the watcher stopped", while the task itself reports success.** Both halves of the
-*"the evidence is the record, never the quiet"* design were defeated by one stale string.
-
-✅ **It announced itself anyway, and that is the half that worked.** The error reached Telegram on
-the 01:23 run. The 00:23 run had succeeded (2,789 rows) because the instance folder had not been
-renamed yet, so the two records an hour apart are the whole story — and the phantom folder holds
-nothing but that one error.
-
-⚠ **Re-register a task after ANY change to its scheduler XML.** `schtasks` keeps its own copy of the
-command line, so editing the file in the repo changes nothing on the box until the task is recreated
-from it — a fixed XML and a broken task look identical from the Mac.
 
 ### The pending-order layer (added 2026-07-30) — four MT5 behaviours to know
 
