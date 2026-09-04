@@ -154,6 +154,52 @@ by what actually depends on what: the parity gates that consume these files live
 
 ---
 
+## What makes a strategy LIVE-capable — the contract, not one bot's wiring
+
+**`strategies/python/live_contract.py` (new 2026-09-03).** Read it before trying to make any
+strategy a bot.
+
+🔴 **Until this existed the live contract had no definition.** It was whatever
+`sos_fade.execution.Execution` happened to implement, and a strategy became live-capable by
+SUBCLASSING that class — which `b_leg`, `bos` and `realign` all do. That works for a strategy
+shaped like SOS Fade and offers nothing to one that is not: `extreme_leg` is an independent
+implementation, so it inherited none of it and could not be a bot at all.
+
+🔴 **THE FAILURE MODE THAT HIDES IS THE REASON THIS IS A RULE.** `algos/live/` reads almost every
+decision field through `getattr(dec, name, default)`, so **a field a strategy never sets is
+indistinguishable from a field with nothing to report.** Omit the stop and the bridge never
+ratchets the broker's stop — no error, no halt, no log line, and a position rides its original
+stop while every dashboard stays green. **That is rule 1 in a new place, and a defensive read
+cannot tell the two apart, so the distinction has to be made before the bot starts.**
+
+⚠ **Of the thirteen decision fields, exactly TWO move money** — the stop the bridge ratchets and
+the fills that book the trade. The other eleven are reporting. **An adopter's tests must assert
+those two are POPULATED on a bar that should populate them**; asserting that a decision comes back
+passes against an adapter that sets nothing.
+
+⚠ **The contract lists are MEASURED off `algos/live/`, never remembered.**
+`python/tests/test_live_contract.py` re-derives them from that source, so a live path that starts
+reading something new goes RED here instead of going silent in a bot. **A hand-maintained list of
+what the live path needs is a second implementation of the live path.**
+
+⚠ **`verify_live_ready(strategy)` checks PRESENCE, never correctness.** It turns "AttributeError
+somewhere in the bar loop at 3am" into "refused at startup, by name". That is worth having and is
+not the same as being proven — rule 9 still applies to every adopter.
+
+⚠ **SOS Fade satisfies the contract WITHOUT importing it, and a test asserts exactly that.** It is
+the independent witness that keeps this module honest: anything the contract demands that the live
+bot does not provide is something the live path demonstrably does not need. **It is deliberately
+NOT being migrated onto the shared decision class** — that would change the strategy currently
+trading, for tidiness.
+
+⚠ **`_POSITION_FIELDS` is the WHOLE open-trade state and a missing entry is SILENT.** The record
+round-trips, the bot restarts, and the omitted latch returns at its class default — so a trade
+already moved to breakeven is managed as though it never was. Pin it with a test comparing the
+list against what the class actually assigns while a position is open. **Restore REFUSES an
+incomplete record rather than defaulting, and that refusal is the safety property.**
+
+---
+
 ## Adding a new TradingView strategy
 
 1. **Write it into `tradingview/research/`.** It has no panel contract to honour there, nothing
