@@ -593,8 +593,12 @@ def main(argv=None) -> int:
         return show(cfg)
 
     trees = repo_trees(cfg)
+    # ⚠ `exists()`, never `is_dir()`. A source may be a loose MODULE — the shared live contract is
+    # one — and a directory-only preflight refuses it while the resolver, the copier and the file
+    # list all handle it fine. That is where the first run of this landed on 2026-09-04: a check
+    # one layer above the fix, still assuming a tree is a folder.
     for src, _ in trees:
-        if not src.is_dir():
+        if not src.exists():
             print(f"  ! missing source tree: {src}")
             return 1
 

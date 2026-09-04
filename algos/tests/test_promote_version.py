@@ -217,3 +217,47 @@ def test_the_label_is_one_rendering_shared_by_every_reporter(tmp_path, monkeypat
     cfg = live_config.load("demo_bot")
     promote_tool.write_pin(cfg, "h" * 32, "abc1234", "2026-08-14", 7, version=165)
     assert live_config.load("demo_bot").version_label == "v165"
+
+
+# ── a source may be a loose MODULE, not only a folder (2026-09-04) ───────────────
+
+
+def test_a_borrowing_bot_carries_a_FILE_source_and_every_source_EXISTS():
+    """🔴 The shared live contract is a single `.py` beside the packages, and `repo_trees`
+    returns it as a source in its own right.
+
+    Measured against the real repo rather than a synthetic one, because the point is that a real
+    bot has this shape: `extreme_leg` borrows it. MUTATION: resolve only directories and the file
+    disappears from the list, turning this red.
+    """
+
+    class _Cfg:
+        strategy_package = "extreme_leg"
+
+    trees = promote_tool.repo_trees(_Cfg())
+    assert any(src.is_file() for src, _ in trees), "no file source — this case cannot catch it"
+    for src, _ in trees:
+        assert src.exists(), src
+
+
+def test_the_preflight_asks_whether_a_SOURCE_EXISTS_not_whether_it_is_a_FOLDER():
+    """🔴 This is where the first run of the borrowing fix actually failed, on the trading box:
+    the resolver, the copier and the file list all handled a loose module, and a check one layer
+    above them still said `is_dir()` — so the promote refused with *missing source tree* for a
+    file sitting right there.
+
+    ⚠ Read out of the source because the preflight lives inside `main()`, behind an argv parse
+    and a live config load; driving it would need a whole fake bot to assert one call. MUTATION:
+    put `is_dir()` back and this goes red.
+
+    ⚠ **COMMENTS ARE STRIPPED FIRST, and the first version of this test failed without them** —
+    the comment above the preflight explains the rule by naming the call it forbids, so a plain
+    substring check goes red on the prose that documents it. This backend has recorded the same
+    trap once already, on the `--no-verify` guard that failed on its own docstring.
+    """
+    src = (Path(promote_tool.__file__)).read_text(encoding="utf-8")
+    block = src.split("trees = repo_trees(cfg)", 1)[1].split("missing source tree", 1)[0]
+    body = "\n".join(ln for ln in block.splitlines() if not ln.lstrip().startswith("#"))
+    assert body.strip(), "could not find the preflight — the guard is vacuous"
+    assert "src.exists()" in body
+    assert "is_dir()" not in body

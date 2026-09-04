@@ -1087,6 +1087,15 @@ the first time somebody adds an import.
 exist raises, and the promote stops. A partial closure stages a snapshot that does not import,
 which is this defect exactly, except discovered later by a bot that will not start.
 
+🔴 **THE FIRST RUN OF THE FIX STILL FAILED ON THE BOX, ONE LAYER ABOVE THE FIX.** The resolver,
+the copier and the file list all handled a loose module; `main`'s preflight still asked
+`src.is_dir()` and refused with *missing source tree* for a file sitting right there. **The
+generalisation is worth more than the line: when a thing gains a second SHAPE, the audit is every
+place that asks it a question, not the place that produces it.** The preflight asks `exists()`
+now, and a test reads that block with its COMMENTS STRIPPED — the comment explaining the rule
+names the call it forbids, so the first version of the test went red on its own prose, which this
+repo has done once before on the `--no-verify` guard.
+
 ⚠ **`command-center/backend/services/bot_versions.trees_for` calls the SAME resolver.** What is
 COPIED and what is COUNTED were previously kept in step by MIRRORING, and that is precisely how
 both came to be wrong together — they matched each other perfectly while neither described the
