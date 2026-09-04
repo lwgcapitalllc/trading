@@ -18,7 +18,7 @@ regression.** Aaron's call, evidence and every warning in the `_exec_sl_deep` bl
 message, and that refusal is the guard working.** `RUNTIME_RELOADABLE` is `{"exec_risk_pct"}`
 alone, so the VPS `git pull` leaves this on disk and **the bot keeps trading the old rule until it
 is RESTARTED.** ⚠ A param change needs **no `promote.py`** — the frozen snapshot covers code, and
-the source-hash pin is re-checked on the restart regardless. `b_leg_demo` is registered and **BENCHED** (`account: null`) pending a fresh `compare_bleg.py` parity run at its moved defaults. The four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first; the pipeline that got the first Python strategy live is `docs/LIVE_TRADING_PIPELINE.md`.
+the source-hash pin is re-checked on the restart regardless. `b_leg_demo` is registered and **BENCHED** (`account: null`) pending a fresh `compare_bleg.py` parity run at its moved defaults. **`extreme_leg_demo` is registered and BENCHED too since 2026-09-03** — it satisfies the live contract and loads, and what is left is an ORDERING step rather than a build: the sibling drops to 5% before this one is assigned, never after. ⚠ **Its frame is M5 and on M15 it runs, logs cleanly and never fires.** ⚠ **Count the bots with `ls algos/markets/fx/instances`, never from this line.** The four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first; the pipeline that got the first Python strategy live is `docs/LIVE_TRADING_PIPELINE.md`.
 
 
 
@@ -2634,8 +2634,10 @@ adapter took. **A share reserved for a bot that cannot start is not a split, it 
 ⚠ **The cap stays 10% throughout** — only the per-trade share moved, and one bot at 10% under a 10%
 cap is an exact fit that the Command Center's share rule allows. ⚠ **Restore the 5/5 BEFORE
 assigning the second bot**, never after: the share rule refuses the assignment while the numbers
-still sum past the cap. Why the second bot is a project: *The extreme leg cannot be a bot yet*
-below.
+still sum past the cap. ⚠ **The reason the split was buying nothing ENDED on 2026-09-03** — the
+second bot is registered and benched, and what is left is the ordering above rather than a project.
+Do not restore the 5/5 until it is genuinely ready to be armed, or the idle half comes straight
+back. See *`extreme_leg_demo` — REGISTERED AND BENCHED* below.
 
 🔴 **THE SHRINK HALF WAS BUILT, AUDITED THE SAME DAY, AND BACKED OUT. Read this before rebuilding
 it.** A live bot's order is **already resting at the broker** by the time the account seam runs:
@@ -2708,9 +2710,11 @@ of the time the budget is full while no setup exists, and a decision record ther
 decision nobody made. A setup actually turned away still lands in the decisions stream.
 
 ⚠ **The live bot's own risk moved 10% → 5% in the same change, and then straight back to 10% the
-same day once the second bot turned out to be unbuildable — it is the ONE runtime-reloadable
-field**, so both moves reached the RUNNING bot on the next VPS `git pull`, with no promote and no
-restart, applied at the next moment it is FLAT. 🔴 **10% is where it waits, and that is a decision
+same day once the second bot turned out to need building rather than configuring — it is the ONE
+runtime-reloadable field**, so both moves reached the RUNNING bot on the next VPS `git pull`, with
+no promote and no restart, applied at the next moment it is FLAT. ⚠ **That bot was BUILT later the
+same day and is benched**, so this number moves back to 5.0 when it is ready to be armed — and
+before it is assigned, never after. 🔴 **10% is where it waits, and that is a decision
 about which number is DESCRIBED rather than about appetite: every published figure for this bot —
 the -54.9% max drawdown over 6.5 years, Run 12's finding that the drawdown is a losing STREAK at
 this risk rather than give-back — was measured at 10%. At 5% not one of them described the running
@@ -2737,43 +2741,55 @@ third pinning that an orphan under our own magic is still COUNTED.
 answer* and *the book carries something unmeasurable* call for different work, and a pre-existing
 test caught it. Two failures must never share one message.
 
-### The extreme leg cannot be a bot yet — it is an ADAPTER, not an instance directory (2026-09-03)
+### `extreme_leg_demo` — REGISTERED AND BENCHED (2026-09-03, was "cannot be a bot yet")
 
-🔴 **`extreme_leg` has no instance directory, and adding one would produce a bot that appears in
-the list, looks deployable, and cannot start.** Its execution layer does not implement the contract
-`algos/live/` drives. Checked against the runner and the bridge rather than assumed:
+**It has an instance directory, it loads, and it satisfies the live contract. `account` is `null`,
+so it trades nothing and the runner refuses to start it.** ✅ **All five rows of the table this
+section used to carry are now built** — the per-bar step, the commanded close, save/restore, the
+fields the bridge reads directly, and the account-budget clamp at the sizing seam. `verify_live_ready`
+returns nothing missing, and the last of them, a route that OPENS at market, is the section below.
 
-| What the live path calls | `sos_fade` | `extreme_leg` |
-|---|---|---|
-| one per-bar `step(sig, seq) -> Decision` | ✅ | ❌ four calls — `resolve` / `arm_breakeven` / `enter` / `record_blocks`, sequenced by the caller, and `enter` returns a bare bool |
-| a route that OPENS at market | ✅ **since 2026-09-03** | ✅ **no longer a blocker** — see *The bridge can OPEN AT MARKET* above |
-| `request_close(reason)` | ✅ | ❌ absent |
-| `snapshot_position()` / `restore_position(snap)` | ✅ | ❌ absent |
-| account-budget clamp at the sizing seam | ✅ | ❌ sizes in its own `_qty(risk)` |
+⚠ **THE FIVE ❌ IN THIS SECTION WERE TRUE ON THE MORNING OF 2026-09-03 AND FALSE BY THE EVENING, AND
+THE STALE VERSION READ AS A STANDING BLOCKER.** It said in as many words that adding an instance
+directory *"would produce a bot that appears in the list, looks deployable, and cannot start"* —
+which is exactly the sentence a reader acts on. **A doc that says a thing is impossible outlives the
+work that made it possible, because nobody re-reads a blocker they have already accepted.**
 
-⚠ **The missing save/restore is the expensive one.** `bridge.py` calls it at **three** sites, and it
-is what lets a bot come back from a restart holding a position. Writing it means serialising the
-open position *and every latch that decides its exit* — not a shim over an existing call.
+🔴 **THE FRAME IS `M5` AND GETTING IT WRONG FAILS SILENTLY.** This strategy measures its trigger on
+5-minute bars and builds its 15-minute half in code; on M15 the two collapse into one series and it
+never fires — no error, no refusal code, no alert, indistinguishable from a quiet market. It is the
+one field in that file that produces a bot which runs, logs cleanly and does nothing.
 
-⚠ **The missing commanded close is the dangerous one.** The fleet kill switch, the Command Center's
-Stop button and flat-by-close all resolve through it. A bot without it can be started and cannot be
-told to flatten.
+🔴 **WHAT STILL BLOCKS IT IS AN ORDERING TRAP, AND IT FAILS LOUDLY THE WRONG WAY ROUND.** Move
+`sos_fade_demo` to 5% **FIRST**, then assign this bot at 5%. The Command Center refuses a write whose
+shares sum past the account cap, so assigning first is refused: 10 + 5 > 10. ⚠ **Do NOT move the
+sibling down before this bot is genuinely ready to be armed** — an account holding 5% for a bot that
+is not trading earns half its measured return for nothing, which is the mistake this section already
+records once.
 
-🔴 **So this is a rewrite of that strategy's execution layer against a different contract, on the
-live money path — and for a strategy whose parity gate covers 3.5 months and 7 entries and cannot
-cover its shipped form at all** (the chart has no engine for the market-condition refusal that
-produced its current numbers). **Rule 9 applies twice over: nothing here has run against a broker,
-and the half that would carry the money is the half no gate reaches.**
+⚠ **`warmup_bars` is 15,000 M5 bars (52 days), and the floor under it is MEASURED at 1,008.** Twelve
+quarterly start dates, 34 reference trades, judging the 30 days after each: 1,008 bars and up
+reproduce a 20,000-bar reference everywhere, 504 does not. It is set ~15× the floor because being
+generous costs a few seconds at startup and being short is silent. 🔴 **The first version of that
+probe fingerprinted a bar NUMBER, which is local to each run's start, so every run-up disagreed with
+every other and it read exactly like an engine that never warms — and its first window held two
+trades, which cannot separate warm from cold at all.** Compare run-ups on DECISIONS; never on bar
+numbers, and never on dollar fields, because a longer run-up books more prior trades onto the
+emulator's compounding balance and moves every size legitimately.
 
-⚠ **What was done instead (2026-09-03): SOS Fade went back to 10% and the account waits.** Holding 5% for
-a bot that cannot start was costing half this account's measured return for nothing. ⚠ **When the
-adapter is built, move SOS Fade back to 5% BEFORE assigning the second bot** — the Command Center's share
-rule refuses an assignment whose shares sum past the cap, so doing it in the other order fails at
-the moment of assignment.
+⚠ **It is UNPROMOTED (`strategy_source_hash` empty), so it would import from the working tree
+rather than a frozen snapshot.** Promote before it ever runs.
 
-⚠ **Do not read "no instance directory" as the blocker.** That is the symptom. The blocker is four
-missing methods, and a config file written before they exist is a bot that lies about being
-runnable.
+⚠ **Its parity gate covers 3.5 months and 7 entries and cannot cover its shipped form at all** — the
+chart has no engine for the market-condition refusal that is switched ON in its params, so the gate
+forces that off and compares the shared logic. **The shipped bot takes fewer trades than any green
+gate has ever checked.** 🔴 **Rule 9 in full: nothing in this package has been near a broker, and
+neither has the bridge's market-entry path.** The live proving period in
+`docs/EXTREME_LEG_BOT_PLAN.md` §4.3 is the only thing that closes that.
+
+⚠ **Magic `770117`**, one above `b_leg_demo`. Both guards that would police it — the magic clash and
+the account-cap agreement — **exempt a benched bot**, so neither enforces anything today; the number
+is chosen now so assignment is never blocked by it.
 
 ### ✅ The bridge can OPEN AT MARKET, and the flag that asked for it finally has a consumer (2026-09-03)
 

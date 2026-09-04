@@ -642,8 +642,13 @@ the coherent side of the rule the SOS Fade bot had to be moved onto.
 BESIDE `_Open` rather than inside it would be dropped by a restart in silence. The test compares the
 record against `_Open`'s own fields so that day fails loudly.
 
-🔴 **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9, and it still has no instance directory.** What
-changed is that the blockers are gone, not that it is deployed.
+🔴 **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9.** What changed is that the blockers are gone,
+not that it is deployed. ⚠ **It HAS an instance directory since 2026-09-03** —
+`algos/markets/fx/instances/extreme_leg_demo/`, registered and BENCHED (`account: null`), so it
+trades nothing and the runner refuses to start it. The rules for that file live beside it in
+`algos/CLAUDE.md`; the two that reach back into this package are the frame (**M5** — on M15 the
+trigger and the target collapse into one series and it never fires) and the fact that
+`skip_transitioning` is ON in its params, which is the half no parity gate can ever check.
 
 ### It DECLARES that it enters at market, and without that it could not open a position at all
 

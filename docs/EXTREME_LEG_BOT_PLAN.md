@@ -1,7 +1,12 @@
 # Stacking the Extreme Leg bot on the demo account — plan
 
-**Written 2026-09-03. Nothing here is built yet.** This is the survey and the instruction set for
-the session that does the work.
+**Written 2026-09-03 as a survey and an instruction set.** ✅ **Steps 1–7 of §3 are DONE the same
+day; §0 is now a HISTORICAL record of what was missing, not a description of today's code.** What
+is left is steps 8–11: the risk split, the assignment, the promote, and the live proving period.
+
+🔴 **READ §3 FOR STATUS, NEVER §0.** Every ❌ in §0 has since been built, and a survey kept as
+though it were current is how a blocker outlives the work that cleared it — the same failure this
+repo has already recorded three times over, and once in this very document's own siblings.
 
 **Goal:** `extreme_leg` runs as a second LIVE bot on PU Prime ECN demo **700152905**, alongside
 `sos_fade_demo`, sharing one 10% account risk cap at 5% each.
@@ -16,11 +21,16 @@ the session that does the work.
 
 ---
 
-## 0. Why this is not a config file — MEASURED, not assumed
+## 0. Why this was not a config file — MEASURED, not assumed (HISTORICAL, all of it now built)
 
-**A bot is an instance directory plus a strategy that implements what `algos/live/` drives.** This
-strategy implements almost none of it. Read off `runner.py`, `bridge.py` and the two strategy
-packages on 2026-09-03:
+⚠ **EVERY GAP IN THIS SECTION IS CLOSED. It is kept because the reasoning is what makes the
+contract legible, and deleted it would read as though a bot had been wired without a survey.**
+For what is true today, read §3. **A survey that is left in the present tense becomes a blocker
+nobody re-examines** — this document was itself an example within hours of being written.
+
+**A bot is an instance directory plus a strategy that implements what `algos/live/` drives.** On
+2026-09-03, read off `runner.py`, `bridge.py` and the two strategy packages, this strategy
+implemented almost none of it:
 
 ### 0.1 The strategy-level pipeline does not exist
 
@@ -243,16 +253,33 @@ Each stage is committable and leaves the repo working.
    trades), so the baseline is the same experiment those numbers came from. ✅ **Determinism was
    proven rather than assumed** — a repeated six-month run gave an identical digest. **Re-run and
    diff after every later step.**
-2. **Build the adapter** (§1). Owning CLAUDE.md in the same commit; the message names its proof.
-3. **Diff the replay against step 1.** Byte-identical, or stop and find out why.
-4. **Run its parity gate on a real export.** Rule 22 — no strategy change is committed before its
-   `compare_*.py` has run and passed. See §4 for what that gate does and does not cover.
-5. **Unit-test the four new seams, and watch every test go RED first** (rule 12). The restart path
-   and the commanded close are the two that matter; neither can be proven live before it runs.
-6. **`scripts/run_all_tests.sh` green end to end.** A person runs it; no hook does.
-7. **Create the instance directory** from `algos/live/instance.template.json` — key, display name,
-   package, class, symbol, timeframe (**M5 — see below**), magic (a NEW number, never SOS Fade's 770115),
-   account 700152905, cap 10.0, risk 5.0.
+2. ✅ **DONE 2026-09-03 (`93c6bad9`) — the adapter is built**, and as a shared CONTRACT rather than
+   one bot's wiring: `strategies/python/live_contract.py` names what the live path needs, re-derives
+   its lists from `algos/live/` source so drift goes red, and is satisfied by the LIVE SOS Fade bot
+   without importing it. `verify_live_ready()` returns nothing missing for this strategy.
+3. ✅ **DONE — the replay is byte-identical**, checked after every step since: 113 trades, digest
+   `e4183861407c6b1e`, the same file three times over.
+4. ✅ **DONE — `compare_extreme_leg.py` exit 0** on `engines/VANTAGE_XAUUSD, 5_29058.csv`, 19,311
+   bars compared, with the seams in place. ⚠ Read §4 for what it does and does not cover; its own
+   verdict says the shipped bot takes fewer trades than the run it just compared.
+5. ✅ **DONE — 18 tests in `tests/test_live_seams.py`, 9 mutations watched RED**, plus 19 more in
+   `algos/tests/test_live_bridge.py` with 17 mutations for the bridge's half.
+6. ✅ **DONE — `scripts/run_all_tests.sh` green end to end**, 2,738 root + 1,294 backend, all 10 steps.
+7. ✅ **DONE 2026-09-03 — `algos/markets/fx/instances/extreme_leg_demo/config.json` exists and
+   LOADS.** Key `extreme_leg_demo`, magic **770117**, timeframe **M5**, symbol `XAUUSD.p`, server
+   `PUPrime-Demo`, cap 10.0, risk 5.0, warm-up 15,000 bars. ⚠ **`account` is `null` — it is BENCHED
+   on purpose**, because assigning it is step 9 and doing it before step 9's first line is refused.
+   ✅ **Wire-checked rather than assumed**: the config loads through `live_config.load`, the runner's
+   own build path constructs the strategy from it with no unknown params, `assert_supported` passes,
+   and `verify_live_ready` returns nothing missing.
+
+   ✅ **`warmup_bars` is MEASURED, not picked.** 15,000 M5 bars = 52 calendar days, the same span the
+   sibling bot gets. The floor under it is **1,008 bars**: twelve quarterly start dates, 34 reference
+   trades, judging the 30 days after each — 1,008 and up reproduce a 20,000-bar reference everywhere
+   and 504 does not. 🔴 **The first version of that probe fingerprinted a bar NUMBER, which is local
+   to one run's start, so every run-up disagreed and it read exactly like an engine that never warms;
+   its first window also held two trades, which cannot separate warm from cold at all.** Compare
+   run-ups on DECISIONS — never bar numbers, never dollar fields.
 
    🔴 **The frame is not a preference and getting it wrong FAILS SILENTLY.** This strategy measures
    its trigger on **5-minute** bars and builds its 15-minute half **in code**. Hand it a 15-minute
