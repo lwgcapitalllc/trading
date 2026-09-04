@@ -38,6 +38,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from backtest.portfolio.account import SoloAccount  # noqa: E402
+from live_contract import LiveDecision, LivePositionMixin  # noqa: E402
 from sos_fade.execution import Trade  # noqa: E402
 
 NA = float("nan")
@@ -110,6 +111,25 @@ class Blocked:
 
 
 @dataclass
+class _LiveFill:
+    """One fill this bar, in the shape `algos/live/bridge.py` reads.
+
+    ⚠ **Field names match `sos_fade.execution.Fill` exactly**, because the bridge reads them off
+    whatever object it is handed — `f.kind`, `f.order_id`. It is a separate class rather than an
+    import because this strategy is independent of that one, and inheriting a shape from a bot
+    it has nothing else to do with is how two packages end up coupled by accident.
+
+    🔴 **`order_id`'s SUFFIX decides whether the bridge acts.** See `_EXIT_TAGS`.
+    """
+
+    kind: str          # "entry" | "exit"
+    order_id: str      # "Long" | "Short" | "L-TP1" | "L-CMD" | "L-STOP" | (short mirror)
+    price: float
+    qty: float
+    dir: int
+
+
+@dataclass
 class _Open:
     dir: int
     entry_index: int
@@ -129,7 +149,7 @@ class _Open:
     ext_low: float = 0.0
 
 
-class ExtremeLegExecution:
+class ExtremeLegExecution(LivePositionMixin):
     """Places one order, brackets it, and books what came back.
 
     ⚠ **The bar that opens a trade can neither stop out nor take profit, and that mirrors the
@@ -180,6 +200,13 @@ class ExtremeLegExecution:
         self.blocks: List[Blocked] = []
         self.misses: List = []
         self.pos: Optional[_Open] = None
+        # A commanded exit waiting for the next bar. `None` = nobody asked; a string is the
+        # reason. Deliberately NOT in `_POSITION_FIELDS`: a request's home is the process that
+        # was asked, and one surviving a restart would flatten the first trade of the next run.
+        self._close_request: Optional[str] = None
+        # Set by `ExtremeLegStrategy.__init__` so `step()` can drive the strategy's own pipeline.
+        # `None` in a bare-execution test, which is why `step` says so rather than crashing.
+        self._strategy = None
         # Set by the lab's replay loop and by `run()`. Unused here — carried so the object matches
         # the shape every other strategy's execution layer presents to the runner.
         self.bar_ms: int = 0
@@ -196,6 +223,128 @@ class ExtremeLegExecution:
         would look completely ordinary.
         """
         return self._account.balance
+
+    # ── the LIVE contract ────────────────────────────────────────────────────
+    #
+    # See `strategies/python/live_contract.py`. Everything in this block exists so `algos/live/`
+    # can drive this strategy; NONE of it is reachable from a replay, and that is what makes the
+    # trade list provably unchanged rather than argued to be.
+    #
+    # ⚠ **The four underscored names below are read DIRECTLY by `algos/live/bridge.py`.** They are
+    # public surface wearing a private name — renaming one is a live change, not a tidy-up.
+
+    #: The whole open position. `_Open` is a flat dataclass, so one entry covers it — but a field
+    #: added to `_Open` and not carried here comes back at its class default after a restart, and
+    #: nothing reports that. `tests/test_live_seams.py` pins this against `_Open`'s own fields.
+    _POSITION_FIELDS = ("pos",)
+
+    #: This strategy enters AT MARKET on the bar's close and never rests an order, so there is
+    #: never a resting entry for the bridge to place or cancel. Stated as real attributes rather
+    #: than left missing: the bridge reads them unconditionally, and `None` here is the honest
+    #: answer (*nothing is resting*) rather than an absence it would have to interpret.
+    _pend_long = None
+    _pend_short = None
+
+    def _encode_position_field(self, name, value):
+        if name == "pos" and value is not None:
+            return dict(value.__dict__)
+        return value
+
+    def _decode_position_field(self, name, value):
+        if name == "pos" and value is not None:
+            return _Open(**value)
+        return value
+
+    @property
+    def _pos_dir(self) -> int:
+        """0 flat / +1 long / -1 short — the bridge's main gate, read ten times per reconcile."""
+        return 0 if self.pos is None else int(self.pos.dir)
+
+    @property
+    def _entry(self):
+        """The open position's fill price, or `None` when flat — never 0.0 (rule 1)."""
+        return None if self.pos is None else float(self.pos.entry_price)
+
+    def request_close(self, reason: str = "commanded") -> bool:
+        """Ask the strategy to exit its open trade on the next bar. Returns whether it will.
+
+        🔴 **It ARMS a request and does not close here**, deliberately. The exit then happens in
+        `resolve()`, through the same path a stop or a target takes, so it is booked, costed and
+        recorded exactly like every other exit rather than needing a second closing path. That is
+        the rule `algos/live/` already follows for the other bot: the strategy is told, and the
+        bridge mirrors what the strategy did.
+
+        ⚠ **Returns False while flat rather than latching.** A waiting request would fire on
+        whatever this bot opened next — a trade nobody had an opinion about.
+        """
+        if self.pos is None:
+            return False
+        self._close_request = reason or "commanded"
+        return True
+
+    #: How an exit REASON becomes the tag the bridge reads. The suffix decides whether the bridge
+    #: has to act, so this table is a live-behaviour decision and not a naming one.
+    #:
+    #: 🔴 **`stop` is deliberately NOT an owned suffix.** A stop is already an order sitting at the
+    #: broker, so it closes itself; tagging it `-CMD` would make the bridge send a market close on
+    #: top of a stop that is already filling. **`target` MUST be owned** — this bot sends `tp=0.0`
+    #: and manages its own target, so the broker has never heard of it and nothing else would
+    #: close the position.
+    _EXIT_TAGS = {"stop": "STOP", "target": "TP1"}
+
+    def step(self, sig, seq) -> LiveDecision:
+        """One bar, through the live contract. See `strategies/python/live_contract.py`.
+
+        🔴 **It DELEGATES to the strategy's own `step` and adds nothing.** The four calls this bot
+        makes per bar are sequenced there, in an order that is part of the strategy; re-sequencing
+        them here would be a second implementation of the thing the parity gate checks. What this
+        adds is a REPORT of what that bar did, in the shape `algos/live/` reads.
+
+        ⚠ **`sig` IS the bar state** — `PassThroughSignals` hands it straight through, because this
+        strategy decides in one call and pretending otherwise would mean splitting its logic to
+        suit the caller. `seq` is always `None` and is accepted only to match the signature.
+        """
+        if self._strategy is None:
+            raise RuntimeError(
+                "ExtremeLegExecution.step() needs the strategy that owns it; build the strategy "
+                "rather than the execution on its own."
+            )
+        before_trades = len(self.trades)
+        before_pos = self.pos
+
+        st = self._strategy.step(sig)
+
+        dec = LiveDecision(index=getattr(getattr(sig, "bar", None), "index", 0))
+        closed = self.trades[before_trades:]
+        for t in closed:
+            side = "L" if t.dir > 0 else "S"
+            tag = self._EXIT_TAGS.get(t.exit_reason, "CMD")
+            dec.fills.append(
+                _LiveFill("exit", f"{side}-{tag}", float(t.exit_price), float(t.qty), int(t.dir))
+            )
+            dec.exit_reason = t.exit_reason
+        # An entry that appeared on THIS bar. Compared by identity, never by `is not None`: a
+        # position that opened and closed inside one bar would otherwise report no entry at all.
+        if self.pos is not None and self.pos is not before_pos:
+            side = "Long" if self.pos.dir > 0 else "Short"
+            dec.fills.append(
+                _LiveFill("entry", side, float(self.pos.entry_price), float(self.pos.qty),
+                          int(self.pos.dir))
+            )
+        # 🔴 **THE STOP IS THE ONE FIELD THAT MOVES MONEY.** The bridge ratchets the broker's stop
+        # to whatever is here, and it reads it through a defensive `getattr` — so leaving it unset
+        # is indistinguishable from having nothing to report, and the broker's stop would simply
+        # never move. `None` while flat is correct and the bridge ignores it.
+        dec.stop = None if self.pos is None else float(self.pos.stop)
+        dec.tp1 = None if self.pos is None else float(self.pos.take_profit)
+        # What the bar decided, for the decision ledger. Reporting only.
+        dec.long_armed = bool(getattr(st, "go_long", False))
+        dec.short_armed = bool(getattr(st, "go_short", False))
+        dec.long_edge = getattr(st, "stop_long", None)
+        dec.short_edge = getattr(st, "stop_short", None)
+        dec.long_veto = bool(getattr(st, "blk_long", 0))
+        dec.short_veto = bool(getattr(st, "blk_short", 0))
+        return dec
 
     @property
     def is_flat(self) -> bool:
@@ -318,6 +467,16 @@ class ExtremeLegExecution:
         # Excursion widens BEFORE the exits resolve, so the closing bar's own extreme counts.
         # Reporting only — nothing below reads it, so the trade list cannot move.
         self._widen_hold(pos, high, low, open_)
+        # A commanded exit takes this bar's OPEN, before the bracket is tested. It is a decision
+        # made between bars, so the first price available to it is the open — testing the stop
+        # first would book an exit the operator's instruction had already superseded.
+        #
+        # ⚠ **Unreachable from a replay**: only `request_close` sets this, and nothing in the
+        # backtest path calls it. That is why the trade list is provably unchanged.
+        if self._close_request is not None:
+            reason, self._close_request = self._close_request, None
+            self._close(pos, index, ts_ms, open_, reason, market_exit=True)
+            return
         if pos.dir > 0:
             hit_stop = low <= pos.stop
             hit_tp = high >= pos.take_profit

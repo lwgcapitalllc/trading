@@ -32,6 +32,8 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
+
 from .config import ExtremeLegConfig  # noqa: E402
 from .execution import (  # noqa: E402
     BLK_EXTREME_WRONG_SIDE,
@@ -141,6 +143,19 @@ class ExtremeLegStrategy:
             self.config, initial_capital=initial_capital, profile=cost_profile,
             account=account, leg=leg,
         )
+        # ── the LIVE contract ────────────────────────────────────────────────
+        # `algos/live/runner.py` drives three stages per bar. This strategy has ONE — its whole
+        # decision happens in `step` — so the first two are honest empty seams rather than logic
+        # split up to suit the caller. See `strategies/python/live_contract.py`.
+        #
+        # ⚠ **The back-reference is what lets `execution.step(sig, seq)` delegate here** instead
+        # of re-sequencing the four calls `step` already makes in an order that is part of the
+        # strategy. A second sequencing would be a second implementation of the thing the parity
+        # gate checks.
+        self.signals = PassThroughSignals()
+        self.sequence = PassThroughSequence()
+        self.execution._strategy = self
+
         self.states: List[LegState] = []
         self.htf = HtfStructure(htf_minutes, major_length)
         # ⚠ Built whether or not they are switched on, so that turning one on mid-session is not a
