@@ -71,6 +71,13 @@ def repo(tmp_path, monkeypatch):
     root.mkdir()
     _git(root, "init", "-q")
     _commit(root, "README.md", "x\n", "root")
+    # The strategy package has to EXIST, because `repo_trees` resolves a package's borrowings by
+    # reading its imports rather than formatting its name (2026-09-04). ⚠ Written and NOT
+    # committed on purpose: committing it would touch the strategy tree and make every count
+    # below start at 1, which is the fixture quietly editing the thing under test.
+    pkg = root / "strategies" / "python" / "demo_pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
     monkeypatch.setattr(promote_tool, "_REPO", root)
     return root
 
@@ -132,6 +139,10 @@ def test_a_commit_this_clone_does_not_have_is_None_not_zero(repo):
 
 
 def test_a_directory_that_is_not_a_git_repo_is_None_not_zero(tmp_path, monkeypatch):
+    # The package exists so that the ONLY thing missing here is the git repo. Without it this
+    # would go red on an unresolvable package instead, i.e. pass its assertion for a reason that
+    # has nothing to do with what it is named after.
+    (tmp_path / "strategies" / "python" / "demo_pkg").mkdir(parents=True)
     monkeypatch.setattr(promote_tool, "_REPO", tmp_path)
     assert promote_tool.version_at("HEAD", _trees(tmp_path)) is None
 

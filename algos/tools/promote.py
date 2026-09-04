@@ -49,7 +49,7 @@ from typing import Optional
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parent.parent
-for _p in (str(_REPO / "algos" / "live"),):
+for _p in (str(_REPO / "algos" / "live"), str(_REPO / "strategies" / "python")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -61,23 +61,12 @@ from bridge import (  # noqa: E402
 )
 from feed import fast_feed_timeframe  # noqa: E402
 from live_config import deployed_record  # noqa: E402
+from package_deps import local_dependencies, snapshot_sources  # noqa: E402
 from version import current_commit, deployment_hash  # noqa: E402
-
-# Directory names never copied into a snapshot, at any depth.
-SKIP_DIRS = {"tests", "__pycache__", ".pytest_cache", ".git"}
 
 # Machine-readable "which versions did this move between", for a caller that has to report
 # it. Kept out of the prose lines so rewording one cannot break the other.
 _VERSION_MARK = "##VERSIONS"
-
-
-def _tree_sources(root: Path):
-    """Every `.py` under `root` that belongs in a snapshot, as (absolute, relative) pairs."""
-    for py in sorted(root.rglob("*.py")):
-        rel = py.relative_to(root)
-        if SKIP_DIRS & set(rel.parts):
-            continue
-        yield py, rel
 
 
 def repo_trees(cfg) -> list[tuple[Path, Path]]:
@@ -85,14 +74,58 @@ def repo_trees(cfg) -> list[tuple[Path, Path]]:
 
     The destination mirrors the repo exactly, so an import resolves the same way against the
     snapshot as against the repo — the freeze changes which copy is loaded, never how it is
-    spelled.
+    spelled. A source may be a DIRECTORY or a single loose module; `snapshot_files` composes
+    both, and the destination is always the source's own place in the repo.
+
+    🔴 **THE STRATEGY SIDE IS DERIVED, AND UNTIL 2026-09-04 IT WAS ONE HARDCODED PACKAGE.** A
+    strategy package borrows from its siblings by bare name — `extreme_leg` takes one class from
+    `sos_fade` and the shared live contract from `live_contract.py`, `b_leg` takes six things
+    across three files — and none of that was copied, so a snapshot for either could not import
+    at all. **Every promote that has ever run was green, because the only bot anybody has ever
+    promoted borrows nothing at module level.** Found by running the extreme leg's promote for
+    the first time: rule 9, a feature nobody has RUN is not a feature.
+
+    ⚠ **`strategies/python/package_deps.py` walks the imports and answers with the closure**, so
+    a dependency added tomorrow ships without anybody remembering. A hand-kept list of extra
+    trees per bot would be a second statement of what the code already says, going stale in
+    silence the first time somebody adds an import — the same failure one level up.
+
+    ⚠ **It RAISES rather than answering partially**, and this function lets that through. A
+    promote built on a partial dependency set stages a snapshot that does not import, which is
+    the defect this replaced, except discovered later by a bot that will not start.
+
+    ⚠ **`command-center/backend/services/bot_versions.trees_for` calls the SAME resolver**, so
+    what is COPIED and what is COUNTED cannot drift. A tree promoted but not counted is a change
+    that deploys while the Configure tab says you are up to date.
     """
-    rel_strategy = Path("strategies") / "python" / cfg.strategy_package
+    # ⚠ The root is passed from `_REPO`, never left to default, so the resolver answers about the
+    # checkout this promote is copying FROM rather than about wherever it happens to be imported.
+    py_root = _REPO / "strategies" / "python"
+    strategy = [
+        (_REPO / rel, Path(rel))
+        for rel in local_dependencies(cfg.strategy_package or "", root=py_root)
+    ]
     return [
-        (_REPO / rel_strategy, rel_strategy),
+        *strategy,
         (_REPO / "engines", Path("engines")),
         (_REPO / "backtest", Path("backtest")),
     ]
+
+
+def snapshot_files(trees) -> list[tuple[Path, Path]]:
+    """(source file, destination relative to the snapshot root) for every file a snapshot holds.
+
+    ⚠ **The branch lives HERE and nowhere else**, so a loose module is carried exactly like a
+    one-file tree and every caller — the copier, the dirty check, the version count — sees one
+    flat list of real destinations rather than each re-deciding what a file source means.
+    """
+    out: list[tuple[Path, Path]] = []
+    for src, dest in trees:
+        if src.is_file():
+            out.append((src, dest))
+        else:
+            out.extend((f, dest / rel) for f, rel in snapshot_sources(src))
+    return out
 
 
 def dirty_paths(trees) -> list[str]:
@@ -167,11 +200,7 @@ def stage(cfg, trees, dry_run: bool = False) -> tuple[Path, int]:
     tell you the new version is broken.
     """
     staging = cfg.deployed_dir.with_name("deployed.new")
-    files = [
-        (src_file, dest_rel / rel)
-        for src_tree, dest_rel in trees
-        for src_file, rel in _tree_sources(src_tree)
-    ]
+    files = snapshot_files(trees)
     if dry_run:
         return staging, len(files)
 

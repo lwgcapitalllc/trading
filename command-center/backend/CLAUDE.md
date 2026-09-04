@@ -1661,6 +1661,26 @@ but not counted is a change that deploys while the page says you are up to date 
 in the reassuring direction. The subsystem rule forbids importing into `algos/`, so the agreement
 is pinned by a test that READS that file, the same arrangement `test_notification_routing.py` uses.
 
+🔴 **MIRRORING IS EXACTLY HOW BOTH CAME TO BE WRONG TOGETHER (2026-09-04).** Each said
+`strategies/python/<package>` and they matched perfectly — while a strategy package borrows from
+its siblings by bare name, so neither described the code a bot runs. **Two implementations
+agreeing is not the same as either being right**, and a mirror test can only ever catch the
+FIRST of them drifting. ✅ **The strategy side of both lists now comes from ONE resolver**,
+`strategies/python/package_deps.py`, which walks the imports and returns the closure —
+`strategies/` is not `algos/`, and this app already scans and deploys it. The mirror test was
+replaced by one asserting each side CALLS that resolver, which is the only arrangement under
+which they cannot drift. Rules and the deploy half: `algos/CLAUDE.md` → *A snapshot carries what
+the package IMPORTS*.
+
+⚠ **A resolver failure returns `[]`, which `version_at` renders as *cannot say*.** Falling back
+to the shared trees would print a confident number that is quietly too small — the one outcome
+every function here refuses. A strategy file mid-edit is a real state, and the page saying so is
+correct.
+
+⚠ **A bot's version number MOVED when this landed.** `sos_fade` borrows `loss_recovery`, so
+commits touching it now count. The old number was too small; expect the Configure tab to read
+further behind than it did the day before, once.
+
 ⚠ **Every function answers `None` rather than a number it cannot stand behind**, and `compare`
 carries a plain-English `reason` instead. A missing commit (never fetched), an unreadable git, a
 bot with no package: `0` would mean *up to date*, the most reassuring answer available and the one

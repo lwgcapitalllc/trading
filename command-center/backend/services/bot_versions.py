@@ -47,12 +47,23 @@ from __future__ import annotations
 import ast
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import config as cfg
 
 # Mirrors algos/tools/promote.py::repo_trees. See the module docstring.
 _SHARED_TREES = ("engines", "backtest")
+
+# 🔴 **The strategy side of that list is DERIVED, and this imports the SAME resolver the promote
+# tool uses** (`strategies/python/package_deps.py`) rather than mirroring it. A strategy package
+# borrows from its siblings by bare name, so "the bot's trees" is a closure over its imports, not
+# a name — and two implementations of a closure is two answers, where the one that drifts is the
+# one nobody is watching. ⚠ **`strategies/` is not `algos/`**: the subsystem rule keeps this app
+# out of the live bot's code, and this app already scans and deploys `strategies/`.
+_PY_STRATEGIES = str(cfg.MONOREPO_ROOT / "strategies" / "python")
+if _PY_STRATEGIES not in sys.path:
+    sys.path.insert(0, _PY_STRATEGIES)
 
 _GIT_TIMEOUT = 20
 
@@ -65,10 +76,29 @@ def trees_for(strategy_package: str) -> list[str]:
 
     Empty for a bot with no strategy package — an unpromoted or misconfigured bot, where the
     honest answer is that there is nothing to count.
+
+    🔴 **The strategy side is the package's DEPENDENCY CLOSURE, not the package.** It read
+    `strategies/python/<package>` alone until 2026-09-04, while the promote tool copied the same
+    single directory — so the two agreed, and both were wrong: a bot that borrows from a sibling
+    ran code neither of them had ever heard of. `extreme_leg` borrows from `sos_fade` and the
+    shared live contract; `sos_fade` itself borrows `loss_recovery`. **Counting only the package
+    is the promoted-but-not-counted failure this module's docstring warns about**, which is why
+    the fix had to land on both sides rather than only in the copier.
+
+    ⚠ **A resolver failure returns `[]`, which `version_at` renders as *cannot say*.** Falling
+    back to the base trees would print a confident number that is quietly too small — the one
+    outcome every function here refuses. A strategy file that will not parse is a real state
+    (somebody is mid-edit), and the page saying so is the correct behaviour.
     """
     if not strategy_package:
         return []
-    return [f"strategies/python/{strategy_package}", *_SHARED_TREES]
+    try:
+        from package_deps import local_dependencies
+
+        strategy = local_dependencies(strategy_package, root=Path(_PY_STRATEGIES))
+    except Exception:
+        return []
+    return [*strategy, *_SHARED_TREES]
 
 
 def _git(*args: str) -> str | None:

@@ -1063,6 +1063,51 @@ would start, report the version it was promoted at, and trade different logic. S
 phantom-exit bug: a guard that looks fine while the thing beneath it moved. `verify_pin` therefore
 takes a LIST of roots — do not "fix" it back to one.
 
+### 🔴 A snapshot carries what the package IMPORTS, not what it is CALLED (2026-09-04)
+
+**`repo_trees` copied ONE strategy directory, and a strategy package borrows from its siblings.**
+`extreme_leg` takes one class from `sos_fade` and the shared live contract from a loose module
+beside it; `b_leg` takes six things across three files; `sos_fade` itself takes `loss_recovery`.
+None of it was copied, so **a snapshot for either benched bot could not import at all** — the
+promote staged 137 files, ran its verify step, and failed on a missing module.
+
+⚠ **Nothing caught it for as long as it existed, and the reason is the finding.** The only bot
+anybody has ever promoted is `sos_fade`, whose one borrowing is a LAZY import inside a method
+nothing on the live path calls — so every promote that has ever run was green, and the two bots
+that would have failed had never been promoted. **Rule 9: a feature nobody has RUN is not a
+feature**, and here the un-run feature was a deploy.
+
+✅ **The strategy side of the list is now DERIVED** — `strategies/python/package_deps.py` walks
+the imports and returns the closure, so a borrowing added tomorrow ships without anybody
+remembering. ⚠ **A hand-kept list of extra trees per bot was the obvious fix and is the same
+failure one level up**: a second statement of what the code already says, going stale in silence
+the first time somebody adds an import.
+
+⚠ **It REFUSES rather than answering partially** — an unparseable file or a package that does not
+exist raises, and the promote stops. A partial closure stages a snapshot that does not import,
+which is this defect exactly, except discovered later by a bot that will not start.
+
+⚠ **`command-center/backend/services/bot_versions.trees_for` calls the SAME resolver.** What is
+COPIED and what is COUNTED were previously kept in step by MIRRORING, and that is precisely how
+both came to be wrong together — they matched each other perfectly while neither described the
+code.
+
+🔴 **THE LIVE BOT'S VERSION NUMBER MOVES BECAUSE OF THIS, and it is a correction rather than a
+bug.** `loss_recovery` is now one of `sos_fade`'s counted trees, so commits touching it count
+toward the version and the Configure tab may show the bot further behind than it did yesterday.
+The old number was too small — the promoted-but-not-counted failure that file's own docstring
+warns about.
+
+🔴 **THE PIN DOES NOT COVER THE NEW FILES, AND THIS CHANGE WIDENED THAT GAP RATHER THAN CREATING
+IT.** `LiveConfig.source_roots` still hashes exactly three roots — the strategy dir, `engines/`
+and `backtest/` — so a borrowed package now SHIPS in the snapshot and is not hashed. Before, it
+was neither shipped nor hashed; now a file the bot really loads can change under a green pin.
+⚠ **The obvious fix breaks the running bot**: adding roots changes the hash (the root NAME is
+folded in before the missing-directory check), so the live bot would refuse to start until it is
+re-promoted. **The safe shape is for `deployed.json` to record the roots that were hashed and the
+runner to hash those**, which is backward-compatible by construction. **Not built — a stated gap,
+and it needs a promote in the same operation.**
+
 **Promoting is `algos/tools/promote.py`** (stage → verify in a clean subprocess → activate, so a
 failed promote leaves the running bot untouched) or the **Promote button on the Bots page →
 Configure**, which previews before it deploys. `instances/*/deployed/` and `deployed.json` are

@@ -198,6 +198,31 @@ already moved to breakeven is managed as though it never was. Pin it with a test
 list against what the class actually assigns while a position is open. **Restore REFUSES an
 incomplete record rather than defaulting, and that refusal is the safety property.**
 
+### A package may BORROW from its siblings, and `package_deps.py` is what makes that survive a deploy
+
+**`strategies/python/package_deps.py` (new 2026-09-04).** Borrowing is normal here — `b_leg`,
+`bos` and `realign` all build on `sos_fade`, `extreme_leg` takes one class from it plus the shared
+live contract, and `sos_fade` itself takes `loss_recovery`. The imports are BARE NAMES resolved by
+a `sys.path.insert` pointing at `python/`, so in the repo they simply work and **nothing anywhere
+recorded that a dependency existed.**
+
+🔴 **A live bot does not run from the repo — it runs from a frozen snapshot built out of ONE
+strategy directory, so a snapshot for any borrowing bot could not import.** This module walks the
+imports and answers with the closure; the deploy tool and the lab's version count both call it.
+The deploy story, the pin gap it exposes, and what it does to a bot's version number are in
+`algos/CLAUDE.md` → *A snapshot carries what the package IMPORTS* — not restated here.
+
+**What it means when you write a strategy:**
+
+- **Borrow freely from a sibling package or a loose module here.** It ships now.
+- ⚠ **A file that will not PARSE stops a promote**, by name. That is deliberate: the alternative
+  is a partial answer and a snapshot that does not import.
+- ⚠ **`tests/` is not scanned and not copied**, so a test's imports cannot widen a live bot's
+  deployment. `tools/` IS both — a parity harness ships with its strategy.
+- ⚠ **A borrowing is a REAL coupling and the closure makes it visible rather than acceptable.**
+  Every bot that borrows `sos_fade` now carries it, which is honest and is also a reason to think
+  before adding one: the snapshot, the version count and the parity surface all grow with it.
+
 ### Every order layer DECLARES how it opens a position (`entry_style`, 2026-09-03)
 
 🔴 **ONE OBSERVABLE STATE, TWO OPPOSITE CORRECT ANSWERS — WHICH IS WHY THIS IS DECLARED AND NEVER

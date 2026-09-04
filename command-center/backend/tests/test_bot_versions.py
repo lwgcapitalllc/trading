@@ -72,13 +72,58 @@ def test_the_counted_trees_are_the_trees_promote_actually_copies():
     shared = {t for t in literals if t not in {"strategies", "python"}}
     assert shared, "found no shared tree literals in repo_trees — the parse broke, not the code"
 
-    counted = set(bv.trees_for("anything"))
+    counted = set(bv.trees_for("sos_fade"))
     for tree in shared:
         assert tree in counted, (
             f"promote.py copies {tree!r} into the snapshot and bot_versions does not count it, "
             "so a change there would deploy while the page reads 'up to date'"
         )
-    assert "strategies/python/anything" in counted
+    assert "strategies/python/sos_fade" in counted
+
+
+def test_BOTH_sides_resolve_the_strategy_trees_through_the_ONE_resolver():
+    """🔴 The strategy side of that list is a DEPENDENCY CLOSURE, not a package name, and until
+    2026-09-04 both sides said `strategies/python/<package>` and were wrong together.
+
+    Agreement by MIRRORING is what let that happen — the two matched each other perfectly while
+    neither described the code. So this asserts each side calls
+    `strategies/python/package_deps.local_dependencies`, which is the only arrangement under
+    which they cannot drift. MUTATION: inline the old one-liner on either side and this reddens.
+    """
+    src = (_REPO / "algos" / "tools" / "promote.py").read_text(encoding="utf-8")
+    body = src.split("def repo_trees", 1)[1].split("\ndef ", 1)[0]
+    assert "local_dependencies(" in body, (
+        "promote.py::repo_trees no longer resolves the strategy trees through package_deps, so "
+        "what is COPIED can now differ from what is COUNTED"
+    )
+    ours = (_REPO / "command-center" / "backend" / "services" / "bot_versions.py").read_text(
+        encoding="utf-8"
+    )
+    assert "local_dependencies(" in ours
+
+
+def test_a_package_that_BORROWS_a_sibling_counts_that_sibling():
+    """The bug itself, as a case. `extreme_leg` takes one class from `sos_fade` and the shared
+    live contract from a loose module beside it; counting only its own directory says a change to
+    either is not a change to this bot.
+
+    ⚠ Asserted through the resolver rather than against a written-out list, so adding a fourth
+    borrowing tomorrow does not need this test edited — the thing being pinned is that the count
+    FOLLOWS the imports, not what today's imports happen to be."""
+    from package_deps import local_dependencies
+
+    borrowed = local_dependencies("extreme_leg")
+    assert len(borrowed) > 1, "extreme_leg borrows nothing — this case can no longer catch it"
+    counted = set(bv.trees_for("extreme_leg"))
+    assert set(borrowed) <= counted
+    assert "strategies/python/sos_fade" in counted
+
+
+def test_a_package_the_resolver_CANNOT_read_counts_NOTHING():
+    """Not the shared trees, which would be a confident number that is quietly too small — the
+    one outcome every function in this module refuses. `version_at` turns `[]` into *cannot say*.
+    """
+    assert bv.trees_for("no_such_strategy_package") == []
 
 
 def test_a_bot_with_no_strategy_package_counts_nothing():
