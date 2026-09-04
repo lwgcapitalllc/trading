@@ -167,7 +167,8 @@
       "Bash(ln -s /Users/alwg/trading/backtest/cache /private/tmp/claude-501/-Users-alwg-trading/abd987d6-fc6b-4af2-b973-252aebeb2c7a/scratchpad/head-wt/backtest/cache)",
       "Bash(git worktree *)",
       "Bash(python3 -m pytest algos/tests/test_notify_routing.py algos/tests/test_alerts.py -q)",
-      "Bash(python3 -m pytest algos/tests/test_notify_routing.py -q -k \"unformatted or markdown_false or even_number\")"
+      "Bash(python3 -m pytest algos/tests/test_notify_routing.py -q -k \"unformatted or markdown_false or even_number\")",
+      "Bash(git grep *)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
